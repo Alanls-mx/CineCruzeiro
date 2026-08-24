@@ -547,11 +547,21 @@ function timingSafeEqualHex(left, right) {
 
 function mercadoPagoManifest(dataId, requestId, ts) {
   const parts = [];
-  const normalizedDataId = String(dataId || "").trim().toLowerCase();
+  // The Orders API signs the exact query-string value. Order IDs are
+  // case-sensitive (for example, ORDTST...), so changing their casing breaks HMAC.
+  const normalizedDataId = String(dataId || "").trim();
   if (normalizedDataId) parts.push(`id:${normalizedDataId};`);
   if (requestId) parts.push(`request-id:${requestId};`);
   if (ts) parts.push(`ts:${ts};`);
   return parts.join("");
+}
+
+function normalizeMercadoPagoWebhookOrder(body = {}) {
+  const data = body?.type === "order" && body.data && typeof body.data === "object"
+    ? body.data
+    : null;
+  if (!data?.id) return null;
+  return normalizeMercadoPagoOrder(data);
 }
 
 function mercadoPagoSignatureDataId(url) {
@@ -656,6 +666,7 @@ module.exports = {
   fetchProviderPaymentStatus,
   getMercadoPagoAccessToken,
   normalizeMercadoPagoSubscriptionStatus,
+  normalizeMercadoPagoWebhookOrder,
   normalizeProviderPaymentStatus,
   verifyWebhookRequest
 };

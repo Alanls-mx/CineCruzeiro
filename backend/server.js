@@ -5989,8 +5989,9 @@ async function handleApi(req, res, pathname) {
     const webhookUrl = new URL(req.url, `http://${req.headers.host}`);
     const providerConfig = integrationConfigService.resolvedConfig(db, "mercadoPago");
     const verification = paymentService.verifyWebhookRequest(provider, req, webhookUrl, body, providerConfig || {});
-    const providerPaymentId = String(verification.dataId || body.data?.id || body.providerPaymentId || body.paymentId || "");
-    const orderId = String(body.orderId || body.externalReference || body.external_reference || body.reference || "");
+    const signedOrderStatus = paymentService.normalizeMercadoPagoWebhookOrder(body);
+    const providerPaymentId = String(verification.dataId || signedOrderStatus?.id || body.data?.id || body.providerPaymentId || body.paymentId || "");
+    const orderId = String(body.orderId || body.externalReference || body.external_reference || body.data?.external_reference || body.reference || "");
     const eventId = String(body.eventId || body.notificationId || req.headers["x-request-id"] || body.id || `${provider}:${providerPaymentId || orderId}:${body.status || body.action || ""}`);
     const webhookTopic = String([
       webhookUrl.searchParams.get("type"),
@@ -6061,7 +6062,9 @@ async function handleApi(req, res, pathname) {
       return;
     }
 
-    const providerStatus = await paymentService.fetchProviderPaymentStatus(provider, providerPaymentId, providerConfig || {});
+    // Prefer the provider lookup recommended by Mercado Pago. The signed Orders
+    // payload is a safe fallback when the lookup is temporarily unavailable.
+    const providerStatus = await paymentService.fetchProviderPaymentStatus(provider, providerPaymentId, providerConfig || {}) || signedOrderStatus;
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       if (lockedDb.webhookEvents.some((event) => event.provider === provider && event.eventId === eventId)) {
