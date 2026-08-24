@@ -7,7 +7,7 @@ import { loadMercadoPago } from "@mercadopago/sdk-js";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { AccountSubscription, CustomerUser, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
-import { cartTotal, findSession, money, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
+import { cartTotal, findSession, money, publicAssetPath, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
 
 type Step = "ingressos" | "extras" | "pagamento" | "confirmacao";
 type CheckoutPaymentResult = {
@@ -369,7 +369,7 @@ function ExtrasStep({ cart, updateCart, concessions }: { cart: StoredCheckoutCar
         {visibleConcessions.map((item) => (
           <article key={item.id}>
             <div className="flex aspect-[4/3] items-center justify-center bg-transparent">
-              {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="h-full w-full object-contain" /> : null}
+              {item.imageUrl ? <img src={publicAssetPath(item.imageUrl)} alt={item.name} className="h-full w-full object-contain" /> : null}
             </div>
             <h3 className="mt-4 text-lg font-black">{item.name}</h3>
             {item.description && (

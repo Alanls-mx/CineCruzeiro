@@ -346,6 +346,11 @@ async function readDbFromPostgres() {
         ticketsPerCycle: Number(row.included_tickets || 0),
         billingCycle: row.billing_cycle || "monthly",
         benefits: asArray(row.benefits),
+        imageUrl: row.image_url || "",
+        isFeatured: Boolean(row.is_featured),
+        displayOrder: Number(row.display_order || 100),
+        providerPlanId: row.provider_plan_id || "",
+        mercadoPagoPlanId: row.mercado_pago_plan_id || row.provider_plan_id || "",
         active: row.active !== false,
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
         updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
@@ -706,14 +711,19 @@ async function writeDbToPostgres(db) {
     }
 
     for (const plan of asArray(db.subscriptionPlans)) {
-      await query(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, active, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8::timestamptz, now()),COALESCE($9::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, image_url, is_featured, display_order, provider_plan_id, mercado_pago_plan_id, active, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE($13::timestamptz, now()),COALESCE($14::timestamptz, now()))`, [
         plan.id,
         plan.name,
         num(plan.monthlyPrice ?? plan.price),
         Number(plan.includedTickets ?? plan.ticketsPerCycle ?? 0),
         plan.billingCycle || "monthly",
         JSON.stringify(asArray(plan.benefits)),
+        plan.imageUrl || "",
+        Boolean(plan.isFeatured),
+        Number(plan.displayOrder || 100),
+        plan.providerPlanId || plan.mercadoPagoPlanId || "",
+        plan.mercadoPagoPlanId || plan.providerPlanId || "",
         plan.active !== false,
         plan.createdAt || "",
         plan.updatedAt || ""

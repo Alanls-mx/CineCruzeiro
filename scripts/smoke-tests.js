@@ -366,12 +366,24 @@ async function run() {
         name: "Plano Smoke 1",
         monthlyPrice: 9.9,
         includedTickets: 1,
+        imageUrl: uploadedImage.payload.url,
+        isFeatured: true,
+        displayOrder: 7,
         benefits: ["1 ingresso smoke"],
         active: true
       })
     });
     assert.equal(oneCreditPlan.response.status, 201);
     assert.equal(oneCreditPlan.payload.includedTickets, 1);
+    assert.equal(oneCreditPlan.payload.imageUrl, uploadedImage.payload.url);
+    assert.equal(oneCreditPlan.payload.isFeatured, true);
+    assert.equal(oneCreditPlan.payload.displayOrder, 7);
+
+    const plansAfterMediaSave = await request("/api/subscription-plans");
+    const persistedMediaPlan = plansAfterMediaSave.payload.find((plan) => plan.id === oneCreditPlan.payload.id);
+    assert.equal(persistedMediaPlan.imageUrl, uploadedImage.payload.url);
+    assert.equal(persistedMediaPlan.isFeatured, true);
+    assert.equal(persistedMediaPlan.displayOrder, 7);
 
     const pendingSubscription = await request("/api/subscriptions/subscribe", {
       method: "POST",

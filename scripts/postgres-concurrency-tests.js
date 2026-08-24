@@ -82,6 +82,21 @@ function baseDb({ capacity = 1, stock = 1 } = {}) {
     }],
     promotions: [],
     ads: [],
+    subscriptionPlans: [{
+      id: "plano-midia-postgres",
+      name: "Plano Midia PostgreSQL",
+      monthlyPrice: 19.9,
+      includedTickets: 2,
+      billingCycle: "monthly",
+      benefits: ["2 ingressos"],
+      imageUrl: "/uploads/club-plans/plano-teste.png",
+      isFeatured: true,
+      displayOrder: 3,
+      active: true
+    }],
+    subscriptions: [],
+    subscriptionCredits: [],
+    subscriptionUsage: [],
     users: [{
       id: "admin",
       name: "Admin",
@@ -191,10 +206,14 @@ async function run() {
     const order = content.payload.orders.find((item) => item.id === "webhook-concorrente");
     const tickets = content.payload.tickets.filter((ticket) => ticket.orderId === order.id);
     const combo = content.payload.concessions.find((item) => item.id === "combo-final");
+    const persistedPlan = content.payload.subscriptionPlans.find((item) => item.id === "plano-midia-postgres");
     assert.equal(order.status, "paid");
     assert.equal(tickets.length, 1);
     assert.equal(combo.sold, 1);
     assert.equal(combo.reserved, 0);
+    assert.equal(persistedPlan.imageUrl, "/uploads/club-plans/plano-teste.png");
+    assert.equal(persistedPlan.isFeatured, true);
+    assert.equal(persistedPlan.displayOrder, 3);
 
     console.log("PostgreSQL concurrency tests passed.");
   } finally {

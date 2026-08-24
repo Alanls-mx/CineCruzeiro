@@ -47,6 +47,7 @@ let state = {
     user: false,
     clubPlan: false
   },
+  pendingImages: {},
   clubSubscriptionsPage: 1,
   clubSubscriptionsPageSize: 5,
   boxOfficeTab: "newSale",
@@ -595,6 +596,34 @@ function creationPlaceholder(title, message) {
   `;
 }
 
+function syncCreationControl(type, cancelId, deleteId, hasItem) {
+  const creating = Boolean(state.creating[type]);
+  const cancelButton = $(cancelId);
+  const deleteButton = $(deleteId);
+  if (cancelButton) cancelButton.hidden = !creating;
+  if (deleteButton) deleteButton.hidden = creating || !hasItem;
+}
+
+function cancelCreation(type) {
+  const config = {
+    movie: ["movies", "selectedMovieId", renderMovies, ["moviePosterUrl", "movieBackdropUrl"]],
+    room: ["rooms", "selectedRoomId", renderRooms],
+    ticket: ["ticketTypes", "selectedTicketId", renderTickets],
+    concession: ["concessions", "selectedConcessionId", renderConcessions, ["concessionImageUrl"]],
+    promotion: ["promotions", "selectedPromotionId", renderPromotions],
+    ad: ["ads", "selectedAdId", renderAds, ["adImageUrl"]],
+    user: ["users", "selectedUserId", renderUsers],
+    clubPlan: ["subscriptionPlans", "selectedClubPlanId", renderClub, ["clubPlanImageUrl"]]
+  }[type];
+  if (!config) return;
+  const [collectionKey, selectedKey, render, imageFields = []] = config;
+  state.creating[type] = false;
+  state[selectedKey] = state.content?.[collectionKey]?.[0]?.id || "";
+  imageFields.forEach((field) => delete state.pendingImages[field]);
+  render();
+  showToast("Novo cadastro cancelado.");
+}
+
 function orderStatusLabel(status = "") {
   const normalized = String(status || "").toLowerCase();
   return {
@@ -735,6 +764,7 @@ function collectImageSettings(fields) {
 
 function clearImageField(inputId, previewId, label) {
   if ($(inputId)) $(inputId).value = "";
+  state.pendingImages[inputId] = "";
   renderAdminImagePreview(inputId, previewId, label);
 }
 
@@ -867,6 +897,7 @@ function renderMovies() {
 }
 
 function fillMovieForm(movie) {
+  syncCreationControl("movie", "cancelMovieCreateButton", "deleteMovieButton", Boolean(movie));
   setDisabled("deleteMovieButton", !movie);
   $("movieFormHint").textContent = movie ? `Editando ${movie.title}` : "Novo filme";
   $("movieId").value = movie?.id || "";
@@ -1274,9 +1305,10 @@ async function uploadAdminImage(fileInputId, targetInputId, previewId, folder, a
       })
     });
     target.value = cleanAdminAssetUrl(result.url || result.publicUrl || "");
+    state.pendingImages[targetInputId] = target.value;
     target.dispatchEvent(new Event("input", { bubbles: true }));
     if (previewId) renderMovieMediaPreview(targetInputId, previewId, file.name);
-    if (typeof afterUpload === "function") afterUpload({ ...result, url: target.value });
+    if (typeof afterUpload === "function") await afterUpload({ ...result, url: target.value });
     showToast("Imagem enviada.");
   } catch (error) {
     showToast(error.message, "error");
@@ -1339,6 +1371,7 @@ function newRoom() {
 }
 
 function fillRoomForm(room) {
+  syncCreationControl("room", "cancelRoomCreateButton", "deleteRoomButton", Boolean(room));
   setDisabled("deleteRoomButton", !room);
   $("roomId").value = room?.id || "";
   $("roomName").value = room?.name || "";
@@ -1432,6 +1465,7 @@ function newTicket() {
 }
 
 function fillTicketForm(ticket) {
+  syncCreationControl("ticket", "cancelTicketCreateButton", "deleteTicketButton", Boolean(ticket));
   setDisabled("deleteTicketButton", !ticket);
   $("ticketId").value = ticket?.id || "";
   $("ticketName").value = ticket?.name || "";
@@ -2424,12 +2458,14 @@ function renderConcessionInsights() {
 }
 
 function selectConcession(id) {
+  delete state.pendingImages.concessionImageUrl;
   state.creating.concession = false;
   state.selectedConcessionId = id;
   renderConcessions();
 }
 
 function newConcession() {
+  delete state.pendingImages.concessionImageUrl;
   state.creating.concession = true;
   state.selectedConcessionId = "";
   $("concessionsList").innerHTML = creationPlaceholder("Novo produto", "Preencha nome, preço, estoque e imagem por upload no quadro à direita.");
@@ -2437,13 +2473,16 @@ function newConcession() {
 }
 
 function fillConcessionForm(item) {
+  syncCreationControl("concession", "cancelConcessionCreateButton", "deleteConcessionButton", Boolean(item));
   setDisabled("deleteConcessionButton", !item);
   $("concessionId").value = item?.id || "";
   $("concessionSku").value = item?.sku || "";
   $("concessionName").value = item?.name || "";
   $("concessionBadge").value = item?.badge || "";
   $("concessionDescription").value = item?.description || "";
-  $("concessionImageUrl").value = item?.imageUrl || "";
+  $("concessionImageUrl").value = Object.prototype.hasOwnProperty.call(state.pendingImages, "concessionImageUrl")
+    ? state.pendingImages.concessionImageUrl
+    : item?.imageUrl || "";
   $("concessionPrice").value = item?.price ?? 0;
   $("concessionCompareAt").value = item?.compareAt || "";
   $("concessionStock").value = item?.stock ?? "";
@@ -2466,6 +2505,7 @@ function renderConcessionPreview() {
 
 async function saveConcession(event) {
   event.preventDefault();
+  const requestedImageUrl = cleanAdminAssetUrl($("concessionImageUrl").value);
   try {
     const payload = {
       id: $("concessionId").value || undefined,
@@ -2473,7 +2513,7 @@ async function saveConcession(event) {
       name: $("concessionName").value,
       badge: $("concessionBadge").value,
       description: $("concessionDescription").value,
-      imageUrl: cleanAdminAssetUrl($("concessionImageUrl").value),
+      imageUrl: requestedImageUrl,
       price: Number($("concessionPrice").value || 0),
       compareAt: $("concessionCompareAt").value,
       stock: $("concessionStock").value,
@@ -2491,6 +2531,10 @@ async function saveConcession(event) {
       : await api("/api/concessions", { method: "POST", body: JSON.stringify(payload) });
     state.creating.concession = false;
     state.selectedConcessionId = saved.id;
+    if (requestedImageUrl && cleanAdminAssetUrl(saved.imageUrl) !== requestedImageUrl) {
+      throw new Error("O produto foi salvo, mas a imagem não foi persistida. Envie o arquivo novamente.");
+    }
+    delete state.pendingImages.concessionImageUrl;
     await loadContent({ silent: true });
     showSuccess("Produto salvo", `${saved.name} ja pode aparecer na bomboniere do checkout.`);
   } catch (error) {
@@ -2621,6 +2665,7 @@ function newPromotion() {
 }
 
 function fillPromotionForm(item) {
+  syncCreationControl("promotion", "cancelPromotionCreateButton", "deletePromotionButton", Boolean(item));
   setDisabled("deletePromotionButton", !item);
   $("promotionId").value = item?.id || "";
   $("promotionTitle").value = item?.title || "";
@@ -2704,6 +2749,7 @@ function newAd() {
 }
 
 function fillAdForm(item) {
+  syncCreationControl("ad", "cancelAdCreateButton", "deleteAdButton", Boolean(item));
   setDisabled("deleteAdButton", !item);
   $("adId").value = item?.id || "";
   $("adTitle").value = item?.title || "";
@@ -2785,6 +2831,7 @@ function newUser() {
 }
 
 function fillUserForm(item) {
+  syncCreationControl("user", "cancelUserCreateButton", "deleteUserButton", Boolean(item));
   setDisabled("deleteUserButton", !item);
   $("userId").value = item?.id || "";
   $("userName").value = item?.name || "";
@@ -2933,12 +2980,15 @@ function renderClub() {
 
 function fillClubPlanForm(plan) {
   if (!$("clubPlanForm")) return;
+  syncCreationControl("clubPlan", "cancelClubPlanCreateButton", "deleteClubPlanButton", Boolean(plan));
   setDisabled("deleteClubPlanButton", !plan);
   $("clubPlanId").value = plan?.id || "";
   $("clubPlanName").value = plan?.name || "";
   $("clubPlanPrice").value = plan?.monthlyPrice ?? 24.9;
   $("clubPlanTickets").value = plan?.includedTickets ?? 3;
-  $("clubPlanImageUrl").value = plan?.imageUrl || "";
+  $("clubPlanImageUrl").value = Object.prototype.hasOwnProperty.call(state.pendingImages, "clubPlanImageUrl")
+    ? state.pendingImages.clubPlanImageUrl
+    : plan?.imageUrl || "";
   $("clubPlanDisplayOrder").value = plan?.displayOrder ?? 100;
   $("clubPlanFeatured").checked = Boolean(plan?.isFeatured);
   $("clubPlanBenefits").value = (plan?.benefits || []).join("\n");
@@ -2947,12 +2997,14 @@ function fillClubPlanForm(plan) {
 }
 
 function selectClubPlan(id) {
+  delete state.pendingImages.clubPlanImageUrl;
   state.creating.clubPlan = false;
   state.selectedClubPlanId = id;
   renderClub();
 }
 
 function newClubPlan() {
+  delete state.pendingImages.clubPlanImageUrl;
   state.creating.clubPlan = true;
   state.selectedClubPlanId = "";
   $("clubPlansList").innerHTML = creationPlaceholder("Novo plano", "Configure nome, créditos, preço e imagem local no quadro à direita.");
@@ -2967,12 +3019,13 @@ function changeClubSubscriptionsPage(delta) {
 async function saveClubPlan(event) {
   event.preventDefault();
   const existingId = $("clubPlanId").value || state.selectedClubPlanId;
+  const requestedImageUrl = cleanAdminAssetUrl($("clubPlanImageUrl").value);
   const payload = {
     id: existingId || undefined,
     name: $("clubPlanName").value,
     monthlyPrice: Number($("clubPlanPrice").value || 0),
     includedTickets: Number($("clubPlanTickets").value || 0),
-    imageUrl: cleanAdminAssetUrl($("clubPlanImageUrl").value),
+    imageUrl: requestedImageUrl,
     displayOrder: Number($("clubPlanDisplayOrder").value || 100),
     isFeatured: $("clubPlanFeatured").checked,
     benefits: $("clubPlanBenefits").value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
@@ -2984,6 +3037,10 @@ async function saveClubPlan(event) {
       : await api("/api/admin/subscription-plans", { method: "POST", body: JSON.stringify(payload) });
     state.creating.clubPlan = false;
     state.selectedClubPlanId = saved.id;
+    if (requestedImageUrl && cleanAdminAssetUrl(saved.imageUrl) !== requestedImageUrl) {
+      throw new Error("O plano foi salvo, mas a imagem não foi persistida. Envie o arquivo novamente.");
+    }
+    delete state.pendingImages.clubPlanImageUrl;
     await loadContent({ silent: true });
     showSuccess("Plano salvo", `${saved.name} foi atualizado no Clube Cine Cruzeiro.`);
   } catch (error) {
@@ -3410,6 +3467,7 @@ function bindEvents() {
     });
   });
   $("newMovieButton").addEventListener("click", newMovie);
+  $("cancelMovieCreateButton").addEventListener("click", () => cancelCreation("movie"));
   $("movieForm").addEventListener("submit", saveMovie);
   $("deleteMovieButton").addEventListener("click", () => deleteMovie());
   $("addSessionButton").addEventListener("click", addSession);
@@ -3444,10 +3502,12 @@ function bindEvents() {
   });
 
   $("newRoomButton").addEventListener("click", newRoom);
+  $("cancelRoomCreateButton").addEventListener("click", () => cancelCreation("room"));
   $("roomForm").addEventListener("submit", saveRoom);
   $("deleteRoomButton").addEventListener("click", deleteRoom);
 
   $("newTicketButton").addEventListener("click", newTicket);
+  $("cancelTicketCreateButton").addEventListener("click", () => cancelCreation("ticket"));
   $("ticketForm").addEventListener("submit", saveTicket);
   $("deleteTicketButton").addEventListener("click", deleteTicket);
   $("manualTicketForm").addEventListener("submit", createManualTicket);
@@ -3506,6 +3566,7 @@ function bindEvents() {
   });
 
   $("newConcessionButton").addEventListener("click", newConcession);
+  $("cancelConcessionCreateButton").addEventListener("click", () => cancelCreation("concession"));
   $("concessionForm").addEventListener("submit", saveConcession);
   $("deleteConcessionButton").addEventListener("click", deleteConcession);
   $("concessionImageUpload").addEventListener("change", () => uploadAdminImage("concessionImageUpload", "concessionImageUrl", "", "concessions", renderConcessionPreview));
@@ -3532,18 +3593,22 @@ function bindEvents() {
     $(clearId)?.addEventListener("click", () => clearImageField(inputId, previewId, label));
   });
   $("newPromotionButton").addEventListener("click", newPromotion);
+  $("cancelPromotionCreateButton").addEventListener("click", () => cancelCreation("promotion"));
   $("promotionForm").addEventListener("submit", savePromotion);
   $("deletePromotionButton").addEventListener("click", deletePromotion);
   $("newAdButton").addEventListener("click", newAd);
+  $("cancelAdCreateButton").addEventListener("click", () => cancelCreation("ad"));
   $("adForm").addEventListener("submit", saveAd);
   $("deleteAdButton").addEventListener("click", deleteAd);
   $("adImageUpload").addEventListener("change", () => uploadAdminImage("adImageUpload", "adImageUrl", "", "ads"));
 
   $("newUserButton").addEventListener("click", newUser);
+  $("cancelUserCreateButton").addEventListener("click", () => cancelCreation("user"));
   $("userForm").addEventListener("submit", saveUser);
   $("deleteUserButton").addEventListener("click", deleteUser);
 
   $("newClubPlanButton").addEventListener("click", newClubPlan);
+  $("cancelClubPlanCreateButton").addEventListener("click", () => cancelCreation("clubPlan"));
   $("clubPlanForm").addEventListener("submit", saveClubPlan);
   $("deleteClubPlanButton")?.addEventListener("click", deleteClubPlan);
   $("clubAssignForm").addEventListener("submit", assignClubSubscription);

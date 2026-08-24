@@ -164,7 +164,7 @@ function Plan({ plan, busy, onSubscribe }: { plan: SubscriptionPlan; busy: boole
     <article className={`grid overflow-hidden rounded-[10px] bg-[#0d1728] shadow-2xl shadow-blue-950/20 lg:grid-cols-[.86fr_1fr] ${plan.isFeatured ? "ring-1 ring-gold-400/45" : ""}`}>
       <div className="relative min-h-[240px]">
         {plan.imageUrl ? (
-          <img src={publicAssetPath(plan.imageUrl)} alt={`Imagem do ${plan.name}`} className="absolute inset-0 h-full w-full object-cover" />
+          <img src={publicAssetPath(plan.imageUrl)} alt={`Imagem do ${plan.name}`} className="absolute inset-0 h-full w-full bg-brand-950 object-contain p-3" />
         ) : (
           <div className="flex h-full min-h-[240px] items-center justify-center bg-brand-950 text-gold-400"><Sparkles className="h-12 w-12" /></div>
         )}
