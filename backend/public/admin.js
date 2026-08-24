@@ -1,0 +1,3721 @@
+const API_BASE = (() => {
+  const pathname = window.location.pathname || "";
+  const adminIndex = pathname.indexOf("/admin");
+  return adminIndex > 0 ? pathname.slice(0, adminIndex) : "";
+})();
+const QR_SCAN_DURATION_MS = 30000;
+
+let state = {
+  content: null,
+  adminUser: null,
+  selectedMovieId: "",
+  selectedRoomId: "",
+  selectedTicketId: "",
+  selectedConcessionId: "",
+  selectedPromotionId: "",
+  selectedAdId: "",
+  selectedUserId: "",
+  selectedIntegrationKey: "",
+  selectedClubPlanId: "",
+  selectedOrderId: "",
+  dashboard: null,
+  integrations: null,
+  movieWizardStep: 0,
+  movieDraftSessions: [],
+  dashboardPeriod: "today",
+  dashboardFrom: "",
+  dashboardTo: "",
+  payments: null,
+  paymentFilters: {
+    status: "",
+    method: "",
+    origin: "",
+    provider: ""
+  },
+  orderFilters: {
+    todayOrigin: "all",
+    todayStatus: "all",
+    allQuery: ""
+  },
+  creating: {
+    movie: false,
+    room: false,
+    ticket: false,
+    concession: false,
+    promotion: false,
+    ad: false,
+    user: false,
+    clubPlan: false
+  },
+  clubSubscriptionsPage: 1,
+  clubSubscriptionsPageSize: 5,
+  boxOfficeTab: "newSale",
+  saleMode: "registered",
+  selectedCustomer: null,
+  customerSearchResults: [],
+  qrStream: null,
+  qrScanTimer: null,
+  qrCloseTimer: null,
+  qrCountdownTimer: null,
+  qrScanDeadline: 0,
+  qrValidationLocked: false,
+  qrLastValue: "",
+  qrLastValueAt: 0,
+  qrTorchOn: false,
+  qrTorchTrack: null,
+  qrAutoRestartTimer: null,
+  toastTimer: null,
+  refreshStatusTimer: null
+};
+
+const $ = (id) => document.getElementById(id);
+const setDisabled = (id, disabled) => {
+  const element = $(id);
+  if (element) element.disabled = disabled;
+};
+const trashIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>`;
+
+function money(value) {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+
+function adminRoleLabel(role = "") {
+  return {
+    owner: "Dono",
+    master: "Dono",
+    manager: "Gerente",
+    operator: "Operador",
+    seller: "Operador",
+    customer: "Cliente"
+  }[String(role || "").toLowerCase()] || "Usuário";
+}
+
+function setStatus(label, type = "ok") {
+  const el = $("syncStatus");
+  if (!el) return;
+  const color = type === "error" ? "#fb7185" : type === "loading" ? "#facc15" : "#34d399";
+  const bg = type === "error" ? "rgba(251,113,133,.14)" : type === "loading" ? "rgba(250,204,21,.12)" : "rgba(52,211,153,.12)";
+  el.innerHTML = `<span class="status-dot"></span>${escapeHtml(label)}`;
+  el.style.background = bg;
+  el.style.color = color;
+}
+
+function showToast(message, type = "ok") {
+  const toast = $("toast");
+  clearTimeout(state.toastTimer);
+  toast.textContent = message;
+  toast.className = `toast show ${type === "error" ? "error" : ""}`;
+  state.toastTimer = setTimeout(() => {
+    toast.className = "toast";
+  }, 3200);
+}
+
+function showSuccess(title, message) {
+  $("successTitle").textContent = title;
+  $("successMessage").textContent = message;
+  $("successOverlay").hidden = false;
+}
+
+function hideSuccess() {
+  $("successOverlay").hidden = true;
+}
+
+function showError(message) {
+  const banner = $("errorBanner");
+  banner.hidden = false;
+  banner.textContent = message;
+}
+
+function clearError() {
+  const banner = $("errorBanner");
+  banner.hidden = true;
+  banner.textContent = "";
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = `${API_BASE}/admin`;
+      return {};
+    }
+    const error = new Error(data.error?.message || data.error || "Erro ao falar com o backend");
+    error.status = response.status;
+    error.payload = data;
+    throw error;
+  }
+  return data;
+}
+
+async function loadAdminUser() {
+  try {
+    const data = await api("/api/admin/me");
+    state.adminUser = data.user;
+    $("adminUserBadge").textContent = `${data.user.name || data.user.email} • ${adminRoleLabel(data.user.role)}`;
+    if ($("adminProfileName")) $("adminProfileName").textContent = data.user.name || data.user.email || "Usuário";
+    if ($("adminProfileRole")) $("adminProfileRole").textContent = adminRoleLabel(data.user.role);
+  } catch {
+    // api() redirects to login on 401.
+  }
+}
+
+async function logoutAdmin() {
+  await fetch(`${API_BASE}/api/admin/logout`, { method: "POST", credentials: "include" }).catch(() => null);
+  window.location.href = `${API_BASE}/admin`;
+}
+
+function toggleAdminProfileMenu(force) {
+  const menu = $("adminProfileMenu");
+  const button = $("adminProfileButton");
+  if (!menu || !button) return;
+  const open = force ?? menu.hidden;
+  menu.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+}
+
+function closeAdminProfileMenu() {
+  toggleAdminProfileMenu(false);
+}
+
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function adminAssetUrl(value = "") {
+  const url = String(value || "").trim();
+  if (!url || /^(data:|https?:|blob:)/i.test(url)) return url;
+  if (API_BASE && url.startsWith("/uploads/")) return `${API_BASE}${url}`;
+  return url;
+}
+
+function cleanAdminAssetUrl(value = "") {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  const localBase = API_BASE || "";
+  if (localBase && url.startsWith(`${localBase}/uploads/`)) return url.slice(localBase.length);
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.origin === window.location.origin) {
+      const path = `${parsed.pathname}${parsed.search || ""}`;
+      if (localBase && path.startsWith(`${localBase}/uploads/`)) return path.slice(localBase.length);
+      if (path.startsWith("/uploads/")) return path;
+    }
+  } catch {
+    // Mantem o valor original quando nao for URL parseavel.
+  }
+  return url;
+}
+
+function cleanAssetRecord(record, keys = []) {
+  if (!record || typeof record !== "object") return record;
+  const next = { ...record };
+  keys.forEach((key) => {
+    if (next[key]) next[key] = cleanAdminAssetUrl(next[key]);
+  });
+  return next;
+}
+
+function cleanAdminContentAssets(content) {
+  if (!content) return content;
+  return {
+    ...content,
+    settings: cleanAssetRecord(content.settings || {}, [
+      "eventHeroImageUrl",
+      "eventGamesImageUrl",
+      "eventPartiesImageUrl",
+      "eventCorporateImageUrl",
+      "eventGalleryImageUrl",
+      "clubHeroImageUrl",
+      "clubBannerImageUrl"
+    ]),
+    concessions: (content.concessions || []).map((item) => cleanAssetRecord(item, ["imageUrl"])),
+    promotions: (content.promotions || []).map((item) => cleanAssetRecord(item, ["imageUrl"])),
+    ads: (content.ads || []).map((item) => cleanAssetRecord(item, ["imageUrl"])),
+    subscriptionPlans: (content.subscriptionPlans || []).map((item) => cleanAssetRecord(item, ["imageUrl"])),
+    movies: (content.movies || []).map((item) => cleanAssetRecord(item, ["posterUrl", "backdropUrl", "localTrailerUrl"]))
+  };
+}
+
+function slugify(value = "") {
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90);
+}
+
+function workflowStatusLabel(status = "") {
+  return {
+    draft: "Rascunho",
+    published: "Publicado",
+    archived: "Arquivado"
+  }[String(status || "").toLowerCase()] || "Publicado";
+}
+
+function publicMovieStatusLabel(status = "") {
+  return {
+    now_playing: "Em cartaz",
+    upcoming: "Em breve",
+    hidden: "Oculto"
+  }[String(status || "").toLowerCase()] || "Em breve";
+}
+
+function moviePriorityState(movie = {}) {
+  const tag = String(movie.tag || "").toLowerCase();
+  const status = String(movie.status || "").toLowerCase();
+  if (status === "hidden") return { label: "Oculto", className: "hidden" };
+  if (tag.includes("estreia")) return { label: "Estreia", className: "premiere" };
+  if (status === "now_playing") return { label: "Em cartaz", className: "now" };
+  return { label: "Em breve", className: "soon" };
+}
+
+function dashboardQuery() {
+  const params = new URLSearchParams({ period: state.dashboardPeriod || "today" });
+  if (state.dashboardPeriod === "custom") {
+    if (state.dashboardFrom) params.set("from", state.dashboardFrom);
+    if (state.dashboardTo) params.set("to", state.dashboardTo);
+  }
+  return params.toString();
+}
+
+async function refreshDashboardOnly() {
+  state.dashboard = await api(`/api/admin/dashboard?${dashboardQuery()}`);
+  renderDashboard();
+}
+
+async function refreshPaymentsOnly() {
+  const params = new URLSearchParams(dashboardQuery());
+  Object.entries(state.paymentFilters || {}).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+  state.payments = await api(`/api/admin/payments?${params.toString()}`).catch(() => null);
+  renderPaymentsCenter();
+}
+
+async function loadContent(options = {}) {
+  const silent = Boolean(options.silent);
+  clearError();
+  if (!silent) {
+    setStatus("Sincronizando", "loading");
+  } else {
+    setDisabled("refreshButton", true);
+    clearTimeout(state.refreshStatusTimer);
+  }
+  if (!silent && !state.content) renderLoading();
+  try {
+    state.content = cleanAdminContentAssets(await api("/api/admin/content"));
+    state.dashboard = await api(`/api/admin/dashboard?${dashboardQuery()}`).catch(() => null);
+    state.payments = await api(`/api/admin/payments?${dashboardQuery()}`).catch(() => null);
+    state.integrations = isOwnerAdmin() ? await api("/api/integrations").catch(() => null) : null;
+    if (!state.creating.movie && !state.content.movies.some((movie) => movie.id === state.selectedMovieId)) {
+      state.selectedMovieId = state.content.movies[0]?.id || "";
+    }
+    if (!state.creating.room) state.selectedRoomId ||= state.content.rooms[0]?.id || "";
+    if (!state.creating.ticket) state.selectedTicketId ||= state.content.ticketTypes[0]?.id || "";
+    if (!state.creating.concession) state.selectedConcessionId ||= state.content.concessions?.[0]?.id || "";
+    if (!state.creating.promotion) state.selectedPromotionId ||= state.content.promotions?.[0]?.id || "";
+    if (!state.creating.ad) state.selectedAdId ||= state.content.ads?.[0]?.id || "";
+    if (!state.creating.user) state.selectedUserId ||= state.content.users?.[0]?.id || "";
+    if (!state.creating.clubPlan) state.selectedClubPlanId ||= state.content.subscriptionPlans?.[0]?.id || "";
+    renderAll();
+    if (!silent) {
+      setStatus("Salvo");
+    } else {
+      setStatus("Salvo");
+    }
+  } catch (error) {
+    console.error(error);
+    setStatus("Erro", "error");
+    showError(`Não foi possível sincronizar com o backend. ${error.message}`);
+    showToast("Falha ao carregar dados do painel.", "error");
+  } finally {
+    if (silent) {
+      state.refreshStatusTimer = setTimeout(() => setDisabled("refreshButton", false), 220);
+    }
+  }
+}
+
+function renderAll() {
+  applyRbacVisibility();
+  renderDashboard();
+  renderInsights();
+  renderMovies();
+  renderRooms();
+  renderTickets();
+  renderOrders();
+  renderPaymentsCenter();
+  renderConcessions();
+  renderMarketingOverview();
+  renderPromotions();
+  renderAds();
+  renderUsers();
+  renderClub();
+  renderIntegrations();
+  fillSettingsForm();
+  renderRoomOptions();
+  renderManualSaleOptions();
+}
+
+function renderLoading() {
+  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList"].forEach((id) => {
+    if ($(id)) {
+      $(id).innerHTML = Array.from({ length: 4 }, () => `<div class="skeleton-card"></div>`).join("");
+    }
+  });
+
+  if ($("ordersList")) {
+    $("ordersList").innerHTML = `<div class="skeleton-card"></div>`;
+  }
+}
+
+function renderInsights() {
+  const movies = state.content?.movies || [];
+  const nowPlaying = movies.filter((movie) => movie.status === "now_playing").length;
+  const upcoming = movies.filter((movie) => movie.status === "upcoming").length;
+  const sessions = movies.reduce((total, movie) => total + (movie.sessions?.length || 0), 0);
+  const activeTickets = state.content?.ticketTypes?.filter((ticket) => ticket.active !== false) || [];
+  const baseTicket = activeTickets[0]?.price ?? state.content?.ticketTypes?.[0]?.price ?? 0;
+
+  $("statNowPlaying").textContent = nowPlaying;
+  $("statUpcoming").textContent = upcoming;
+  $("statSessions").textContent = sessions;
+  $("statBaseTicket").textContent = money(baseTicket);
+}
+
+function renderDashboard() {
+  const data = state.dashboard || {};
+  if ($("dashRevenueToday")) $("dashRevenueToday").textContent = money(data.revenueToday || 0);
+  if ($("dashRevenueMonth")) $("dashRevenueMonth").textContent = money(data.revenuePeriod ?? data.revenueMonth ?? 0);
+  if ($("dashSalesToday")) $("dashSalesToday").textContent = Number(data.salesToday || 0);
+  if ($("dashSalesMonth")) $("dashSalesMonth").textContent = Number(data.salesPeriod ?? data.salesMonth ?? 0);
+  if ($("dashTicketsSold")) $("dashTicketsSold").textContent = Number(data.ticketsSold || 0);
+  if ($("dashAverageTicket")) $("dashAverageTicket").textContent = money(data.averageTicket || 0);
+  if ($("dashAverageOccupancy")) $("dashAverageOccupancy").textContent = `${Number(data.capacity?.occupancyRate || 0)}%`;
+  if ($("dashCustomers")) $("dashCustomers").textContent = Number(data.customers || 0);
+  if ($("dashSubscriptions")) $("dashSubscriptions").textContent = Number(data.activeSubscriptions || 0);
+  if ($("dashPendingPayments")) $("dashPendingPayments").textContent = Number(data.problematicPayments ?? data.pendingPayments ?? 0);
+  if ($("dashConcessionRevenue")) $("dashConcessionRevenue").textContent = money(data.concessionRevenue || 0);
+  if ($("dashRevenueCompare")) $("dashRevenueCompare").textContent = comparisonText(data.comparison?.revenue);
+  if ($("dashSalesCompare")) $("dashSalesCompare").textContent = comparisonText(data.comparison?.sales);
+  if ($("dashTicketsCompare")) $("dashTicketsCompare").textContent = comparisonText(data.comparison?.tickets);
+  renderDashboardChart(data.chart || []);
+  if ($("dashSalesOrigin")) {
+    const entries = Object.entries(data.revenueByOrigin || data.salesByOrigin || {});
+    const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0);
+    $("dashSalesOrigin").innerHTML = entries.length
+      ? entries.map(([name, value]) => `<div class="metric-row clickable-row" onclick="activatePanel('ordersPanel', { scroll: true })"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
+      : `<div class="empty-state compact"><strong>Sem vendas</strong><span>As origens aparecerão após os primeiros pedidos.</span></div>`;
+  }
+  if ($("dashPaymentMethods")) {
+    const entries = Object.entries(data.revenueByMethod || data.paymentMethods || {});
+    const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0);
+    $("dashPaymentMethods").innerHTML = entries.length
+      ? entries.map(([name, value]) => `<div class="metric-row clickable-row" onclick="setBoxOfficeTab('payments')"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
+      : `<div class="empty-state compact"><strong>Sem pagamentos</strong><span>As formas usadas aparecerão aqui.</span></div>`;
+  }
+  if ($("dashUpcomingSessions")) {
+    const sessions = data.todaySessions || data.upcomingSessions || [];
+    $("dashUpcomingSessions").innerHTML = sessions.length
+      ? sessions.map((item) => `
+          <div class="session-metric-row clickable-row" onclick="openSessionDashboardDetail('${escapeHtml(item.movie?.id || "")}', '${escapeHtml(item.session?.id || "")}')">
+            <div class="session-poster">${item.movie?.posterUrl ? `<img src="${escapeHtml(item.movie.posterUrl)}" alt="">` : `<span>${escapeHtml(item.movie?.rating || "L")}</span>`}</div>
+            <div>
+              <strong>${escapeHtml(item.movie?.title || "Filme")} • ${escapeHtml(item.session?.time || "-")}</strong>
+              <span>${escapeHtml(item.session?.format || "")}</span>
+              <div class="mini-progress"><i style="width:${Math.min(100, Number(item.occupancyRate || 0))}%"></i></div>
+              <small>${Number(item.sold || 0)} / ${Number(item.capacity || 0)} • ${Number(item.occupancyRate || 0)}% • ${escapeHtml(item.status || "Boa disponibilidade")}</small>
+            </div>
+          </div>`).join("")
+      : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre sessões no catálogo.</span></div>`;
+  }
+  if ($("dashCapacity")) {
+    const capacity = data.capacity || {};
+    $("dashCapacity").innerHTML = `
+      <div class="metric-row"><span>Lugares ocupados</span><strong>${Number(capacity.occupied || 0)}</strong></div>
+      <div class="metric-row"><span>Capacidade cadastrada</span><strong>${Number(capacity.roomCapacity || 0)}</strong></div>
+      <div class="metric-row"><span>Ocupação estimada</span><strong>${Number(capacity.occupancyRate || 0)}%</strong></div>
+    `;
+  }
+  if ($("dashTopProducts")) {
+    const products = data.topProducts || [];
+    $("dashTopProducts").innerHTML = products.length
+      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}</span><strong>${Number(item.quantity || 0)}</strong></div>`).join("")
+      : `<div class="empty-state compact"><strong>Sem itens vendidos</strong><span>Produtos da bomboniere aparecerão aqui.</span></div>`;
+  }
+  if ($("dashLatestOrders")) {
+    const orders = data.latestOrders || [];
+    $("dashLatestOrders").innerHTML = orders.length
+      ? orders.map((order) => `<div class="metric-row clickable-row" onclick="openOrderView('${escapeHtml(order.id)}')"><span>${escapeHtml(order.reference || orderReference(order))} • ${escapeHtml(order.customerName)}<small>${escapeHtml(order.movieTitle || "")} • ${escapeHtml(order.origin)} • ${escapeHtml(order.status)}</small></span><strong>${money(order.totalPrice)}</strong></div>`).join("")
+      : `<div class="empty-state compact"><strong>Sem pedidos recentes</strong><span>As últimas vendas aparecerão aqui.</span></div>`;
+  }
+  if ($("dashAttentionPayments")) {
+    const payments = data.attentionPayments || [];
+    $("dashAttentionPayments").innerHTML = payments.length
+      ? payments.map((payment) => `<div class="metric-row clickable-row alert-row" onclick="openOrderView('${escapeHtml(payment.orderId)}')"><span>${escapeHtml(payment.orderReference)}<small>${escapeHtml(payment.message)} • ${escapeHtml(payment.method)} • ${escapeHtml(payment.provider)}</small></span><strong>${money(payment.amount)}</strong></div>`).join("")
+      : `<div class="empty-state compact"><strong>Nenhum pagamento precisa de atenção.</strong><span>Pendências e falhas aparecerão aqui.</span></div>`;
+  }
+  if ($("dashClubMetrics")) {
+    const club = data.club || {};
+    $("dashClubMetrics").innerHTML = `
+      <div class="metric-row clickable-row" onclick="activatePanel('clubPanel', { scroll: true })"><span>Assinaturas ativas</span><strong>${Number(club.activeSubscriptions || 0)}</strong></div>
+      <div class="metric-row"><span>Novos assinantes no período</span><strong>${Number(club.newSubscribers || 0)}</strong></div>
+      <div class="metric-row"><span>Cancelamentos no período</span><strong>${Number(club.cancellations || 0)}</strong></div>
+      <div class="metric-row"><span>Receita recorrente estimada</span><strong>${money(club.recurringRevenueEstimate || 0)}</strong></div>
+      <div class="metric-row"><span>Créditos usados</span><strong>${Number(club.creditsUsed || 0)}</strong></div>
+    `;
+  }
+  if ($("dashOperationalAlerts")) {
+    const alerts = [];
+    if (data.cardTerminal && !data.cardTerminal.configured) alerts.push(["Maquininha sem integração automática", "Vendas por cartão serão registradas manualmente."]);
+    (data.lowStockProducts || []).forEach((item) => alerts.push([`Estoque baixo: ${item.name}`, `${item.stock} unidade(s) disponíveis.`]));
+    (data.todaySessions || []).filter((item) => ["Quase lotada", "Esgotada"].includes(item.status)).forEach((item) => alerts.push([`${item.movie.title} • ${item.session.time}`, item.status]));
+    $("dashOperationalAlerts").innerHTML = alerts.length
+      ? alerts.map(([title, text]) => `<div class="metric-row alert-row"><span>${escapeHtml(title)}<small>${escapeHtml(text)}</small></span><strong>Atenção</strong></div>`).join("")
+      : `<div class="empty-state compact"><strong>Nenhum alerta operacional.</strong><span>Estoque, sessões e integrações estão sem bloqueios críticos.</span></div>`;
+  }
+}
+
+function comparisonText(value) {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return "";
+  const number = Number(value);
+  if (!number) return "estável vs. período anterior";
+  return `${number > 0 ? "+" : ""}${number}% vs. período anterior`;
+}
+
+function renderDashboardChart(rows) {
+  const target = $("dashRevenueChart");
+  if (!target) return;
+  if (!rows.length) {
+    target.innerHTML = `<div class="empty-state compact"><strong>Nenhum dado disponível para este período.</strong></div>`;
+    return;
+  }
+  const width = 720;
+  const height = 250;
+  const pad = 28;
+  const maxRevenue = Math.max(1, ...rows.map((item) => Number(item.revenue || 0)));
+  const maxOrders = Math.max(1, ...rows.map((item) => Number(item.orders || 0)));
+  const x = (index) => pad + (rows.length === 1 ? (width - pad * 2) / 2 : (index / (rows.length - 1)) * (width - pad * 2));
+  const yRevenue = (value) => height - pad - (Number(value || 0) / maxRevenue) * (height - pad * 2);
+  const points = rows.map((item, index) => `${x(index)},${yRevenue(item.revenue)}`).join(" ");
+  target.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Receita e quantidade de vendas">
+      <path class="chart-grid" d="M${pad} ${height - pad}H${width - pad}M${pad} ${pad}V${height - pad}" />
+      <polyline class="chart-line" points="${points}" />
+      ${rows.map((item, index) => {
+        const barHeight = (Number(item.orders || 0) / maxOrders) * (height - pad * 2);
+        const barX = x(index) - Math.min(20, Math.max(5, 160 / rows.length)) / 2;
+        const barWidth = Math.min(20, Math.max(5, 160 / rows.length));
+        return `
+          <rect class="chart-bar" x="${barX}" y="${height - pad - barHeight}" width="${barWidth}" height="${barHeight}" rx="4" />
+          <circle class="chart-point" cx="${x(index)}" cy="${yRevenue(item.revenue)}" r="5" tabindex="0"
+            onmouseenter="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})"
+            onclick="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})" />
+        `;
+      }).join("")}
+    </svg>
+  `;
+}
+
+function showChartHint(date, revenue, orders, tickets) {
+  if (!$("dashChartHint")) return;
+  $("dashChartHint").textContent = `${new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR")} • ${money(revenue)} • ${orders} pedido(s) • ${tickets} ingresso(s)`;
+}
+
+function openSessionDashboardDetail(movieId, sessionId) {
+  activatePanel("ordersPanel", { scroll: true });
+  setBoxOfficeTab("todaySales");
+  showToast(`Sessão selecionada: ${sessionId || movieId}`);
+}
+
+function currentMovie() {
+  return state.content?.movies.find((movie) => movie.id === state.selectedMovieId) || null;
+}
+
+function currentRoom() {
+  return state.content?.rooms.find((room) => room.id === state.selectedRoomId) || null;
+}
+
+function currentTicket() {
+  return state.content?.ticketTypes.find((ticket) => ticket.id === state.selectedTicketId) || null;
+}
+
+function currentConcession() {
+  return state.content?.concessions?.find((item) => item.id === state.selectedConcessionId) || null;
+}
+
+function currentPromotion() {
+  return state.content?.promotions?.find((item) => item.id === state.selectedPromotionId) || null;
+}
+
+function currentAd() {
+  return state.content?.ads?.find((item) => item.id === state.selectedAdId) || null;
+}
+
+function currentUser() {
+  return state.content?.users?.find((item) => item.id === state.selectedUserId) || null;
+}
+
+function isOwnerAdmin() {
+  return ["owner", "master"].includes(state.adminUser?.role);
+}
+
+function currentOrder() {
+  return state.content?.orders?.find((item) => item.id === state.selectedOrderId) || null;
+}
+
+function currentClubPlan() {
+  return state.content?.subscriptionPlans?.find((item) => item.id === state.selectedClubPlanId) || null;
+}
+
+function creationPlaceholder(title, message) {
+  return `
+    <div class="empty-state creation-state">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(message)}</span>
+    </div>
+  `;
+}
+
+function orderStatusLabel(status = "") {
+  const normalized = String(status || "").toLowerCase();
+  return {
+    paid: "Pago",
+    approved: "Pago",
+    pending_payment: "Aguardando pagamento",
+    pix_pending: "Pix pendente",
+    manual_sale: "Venda manual",
+    pending: "Pendente",
+    processing: "Processando",
+    cancelled: "Cancelado",
+    canceled: "Cancelado",
+    refunded: "Reembolsado",
+    expired: "Expirado",
+    archived: "Arquivado",
+    used: "Usado",
+    draft: "Rascunho",
+    test: "Teste"
+  }[normalized] || humanizeEnum(status) || "Aguardando pagamento";
+}
+
+function paymentStatusLabel(status = "") {
+  const normalized = String(status || "").toLowerCase();
+  return {
+    pending: "Aguardando pagamento",
+    pending_payment: "Aguardando pagamento",
+    pix_pending: "Pix pendente",
+    manual_sale: "Venda manual",
+    processing: "Processando",
+    approved: "Pago",
+    paid: "Pago",
+    rejected: "Recusado",
+    cancelled: "Cancelado",
+    canceled: "Cancelado",
+    refunded: "Reembolsado",
+    expired: "Expirado",
+    archived: "Arquivado"
+  }[normalized] || humanizeEnum(status) || "Não informado";
+}
+
+function paymentMethodLabel(method = "") {
+  const normalized = String(method || "").toLowerCase();
+  return {
+    pix_pending: "Pix pendente",
+    pix: "Pix online",
+    PIX: "Pix online",
+    credit_card: "Cartão online",
+    CREDIT_CARD: "Cartão online",
+    cash: "Dinheiro",
+    card_terminal: "Cartão na maquininha",
+    external_pix: "Pix no balcão",
+    manual_sale: "Venda manual",
+    courtesy: "Cortesia",
+    club_credit: "Crédito do Clube"
+  }[normalized] || humanizeEnum(method) || "Não informado";
+}
+
+function providerLabel(provider = "") {
+  return {
+    open_finance: "Pix legado",
+    mercado_pago: "Mercado Pago",
+    box_office: "Bilheteria",
+    admin: "Administração",
+    internal_club: "Clube",
+    external_manual: "Registro manual",
+    manual_external: "Maquininha externa"
+  }[String(provider || "").toLowerCase()] || humanizeEnum(provider) || "Manual";
+}
+
+function humanizeEnum(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase()
+    .replace(/^\w|\s\w/g, (letter) => letter.toUpperCase());
+}
+
+function orderReference(order = {}) {
+  const raw = String(order.reference || order.id || "");
+  return `#CC-${raw.replace(/[^a-zA-Z0-9]/g, "").slice(-5).toUpperCase() || "00000"}`;
+}
+
+function clubStatusLabel(status = "") {
+  return {
+    active: "Ativa",
+    pending_payment: "Aguardando pagamento",
+    pending: "Pagamento pendente",
+    paused: "Pausada",
+    cancelled: "Cancelada",
+    ended: "Encerrada",
+    payment_failed: "Falha na renovação",
+    past_due: "Falha na renovação",
+    cancelled_by_admin: "Cancelada"
+  }[String(status || "").toLowerCase()] || "Não informado";
+}
+
+function renderMovieMediaPreview(inputId, previewId, label) {
+  const url = $(inputId)?.value || "";
+  const preview = $(previewId);
+  if (!preview) return;
+  preview.innerHTML = url
+    ? `<img src="${escapeHtml(adminAssetUrl(url))}" alt="${escapeHtml(label)}" onerror="this.parentElement.textContent='Imagem indisponível'" />`
+    : `<span>${escapeHtml(label)}</span>`;
+}
+
+const marketingImageFields = [
+  ["eventHeroImageUrl", "eventHeroImagePreview", "Prévia da imagem principal"],
+  ["eventGamesImageUrl", "eventGamesImagePreview", "Prévia de games"],
+  ["eventPartiesImageUrl", "eventPartiesImagePreview", "Prévia de festas"],
+  ["eventCorporateImageUrl", "eventCorporateImagePreview", "Prévia corporativa"],
+  ["eventGalleryImageUrl", "eventGalleryImagePreview", "Prévia da galeria"]
+];
+
+const clubImageFields = [
+  ["clubHeroImageUrl", "clubHeroImagePreview", "Prévia do hero"],
+  ["clubBannerImageUrl", "clubBannerImagePreview", "Prévia do banner"]
+];
+
+function renderAdminImagePreview(inputId, previewId, label) {
+  renderMovieMediaPreview(inputId, previewId, label);
+}
+
+function fillImageFields(fields, settings = {}) {
+  fields.forEach(([inputId, previewId, label]) => {
+    if ($(inputId)) $(inputId).value = settings[inputId] || "";
+    renderAdminImagePreview(inputId, previewId, label);
+  });
+}
+
+function collectImageSettings(fields) {
+  return fields.reduce((payload, [inputId]) => {
+    if ($(inputId)) payload[inputId] = cleanAdminAssetUrl($(inputId).value);
+    return payload;
+  }, {});
+}
+
+function clearImageField(inputId, previewId, label) {
+  if ($(inputId)) $(inputId).value = "";
+  renderAdminImagePreview(inputId, previewId, label);
+}
+
+async function persistSettings(payload, title, message) {
+  const saved = await api("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+  state.content.settings = cleanAssetRecord(saved, [
+    "eventHeroImageUrl",
+    "eventGamesImageUrl",
+    "eventPartiesImageUrl",
+    "eventCorporateImageUrl",
+    "eventGalleryImageUrl",
+    "clubHeroImageUrl",
+    "clubBannerImageUrl"
+  ]);
+  fillSettingsForm();
+  showSuccess(title, message);
+  showToast("Alterações salvas.");
+}
+
+function renderMoviePublishSummary() {
+  const target = $("moviePublishSummary");
+  if (!target) return;
+  const sessions = state.movieDraftSessions || [];
+  target.innerHTML = `
+    <div><span>Título</span><strong>${escapeHtml($("movieTitle").value || "Sem título")}</strong></div>
+    <div><span>Página</span><strong>/filmes/${escapeHtml($("movieSlug").value || slugify($("movieTitle").value) || "novo-filme")}</strong></div>
+    <div><span>Status no site</span><strong>${publicMovieStatusLabel($("movieStatus").value)}</strong></div>
+    <div><span>Sessões cadastradas</span><strong>${sessions.length}</strong></div>
+    <div><span>Destaque da home</span><strong>${$("movieHighlight").checked ? "Sim" : "Não"}</strong></div>
+  `;
+}
+
+function setMovieWizardStep(step) {
+  const nextStep = Math.max(0, Math.min(4, Number(step || 0)));
+  state.movieWizardStep = nextStep;
+  document.querySelectorAll("[data-movie-step]").forEach((button) => {
+    const buttonStep = Number(button.dataset.movieStep);
+    button.classList.toggle("active", buttonStep === nextStep);
+    button.classList.toggle("done", buttonStep < nextStep);
+  });
+  document.querySelectorAll("[data-movie-step-panel]").forEach((panel) => {
+    panel.classList.toggle("active", Number(panel.dataset.movieStepPanel) === nextStep);
+  });
+  setDisabled("movieWizardBack", nextStep === 0);
+  $("movieWizardNext").hidden = nextStep === 4;
+  $("moviePublishButton").hidden = nextStep !== 4;
+  if (nextStep === 4) renderMoviePublishSummary();
+}
+
+function validateMovieWizardStep(step, finalPublish = false) {
+  if (step >= 0 && !$("movieTitle").value.trim()) {
+    showToast("Informe o título do filme.", "error");
+    setMovieWizardStep(0);
+    $("movieTitle").focus();
+    return false;
+  }
+  if (step >= 0 && !$("movieSlug").value.trim()) {
+    $("movieSlug").value = slugify($("movieTitle").value);
+  }
+  if (!finalPublish) return true;
+  if (!$("moviePosterUrl").value.trim()) {
+    showToast("Adicione um pôster antes de publicar.", "error");
+    setMovieWizardStep(2);
+    return false;
+  }
+  if (!(state.movieDraftSessions || []).some((session) => session.date && session.time)) {
+    showToast("Adicione ao menos uma sessão com data e horário.", "error");
+    setMovieWizardStep(3);
+    return false;
+  }
+  return true;
+}
+
+function renderMovies() {
+  const movies = [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
+  if (state.creating.movie) {
+    $("moviesList").innerHTML = creationPlaceholder("Novo filme em edição", "Preencha o quadro à direita e publique quando estiver pronto.");
+    fillMovieForm(null);
+    return;
+  }
+  if (!movies.length) {
+    $("moviesList").innerHTML = `
+      <div class="empty-state">
+        <strong>Nenhum filme cadastrado</strong>
+        <span>Use Novo Filme ou a busca TMDB para montar o catálogo.</span>
+      </div>
+    `;
+    fillMovieForm(null);
+    return;
+  }
+
+  $("moviesList").innerHTML = movies
+    .map((movie) => {
+      const sessionCount = movie.sessions?.length || 0;
+      const active = movie.id === state.selectedMovieId ? "active" : "";
+      const statusLabel = publicMovieStatusLabel(movie.status);
+      const priorityState = moviePriorityState(movie);
+      const workflowLabel = workflowStatusLabel(movie.workflowStatus);
+      const release = movie.releaseDate ? ` • estreia ${new Date(`${movie.releaseDate}T12:00:00`).toLocaleDateString("pt-BR")}` : "";
+      const automation = movie.autoPublish ? " • auto" : "";
+      const updated = movie.updatedAt ? ` • atualizado ${new Date(movie.updatedAt).toLocaleDateString("pt-BR")}` : "";
+      return `
+        <div class="movie-row ${active}" draggable="true" data-movie-id="${escapeHtml(movie.id)}" ondragstart="handleMovieDragStart(event, '${escapeHtml(movie.id)}')" ondragover="handleMovieDragOver(event)" ondragleave="handleMovieDragLeave(event)" ondragend="handleMovieDragEnd()" ondrop="handleMovieDrop(event, '${escapeHtml(movie.id)}')" onclick="selectMovie('${escapeHtml(movie.id)}')">
+          <button class="drag-handle" type="button" draggable="true" aria-label="Arrastar para mudar prioridade" title="Arrastar para mudar prioridade" ondragstart="handleMovieDragStart(event, '${escapeHtml(movie.id)}')" ondragend="handleMovieDragEnd()" onclick="event.stopPropagation()">↕</button>
+          <div class="movie-thumb">${movie.posterUrl ? `<img src="${escapeHtml(movie.posterUrl)}" alt="">` : `<span>${escapeHtml(movie.rating || "L")}</span>`}</div>
+          <div>
+            <span class="list-title">${escapeHtml(movie.title)}</span>
+            <span class="movie-status-pill ${escapeHtml(priorityState.className)}"><span></span>${escapeHtml(priorityState.label)}</span>
+            <span class="list-meta">${workflowLabel} • ${statusLabel} • ${sessionCount} sessões • ${escapeHtml(movie.duration || "-")} • ${escapeHtml(movie.rating || "L")}${release}${automation}${movie.isHighlight ? " • destaque" : ""}${updated}</span>
+          </div>
+          <div class="movie-row-actions" onclick="event.stopPropagation()">
+            <button class="icon-button" type="button" onclick="toggleMovieMenu('${escapeHtml(movie.id)}')" aria-label="Ações do filme">•••</button>
+            <div id="movieMenu-${escapeHtml(movie.id)}" class="context-menu-popover" hidden>
+              <button type="button" onclick="duplicateMovie('${escapeHtml(movie.id)}')">Duplicar</button>
+              <button type="button" onclick="moveMovie('${escapeHtml(movie.id)}', -1)">Mover para cima</button>
+              <button type="button" onclick="moveMovie('${escapeHtml(movie.id)}', 1)">Mover para baixo</button>
+              <button type="button" onclick="archiveMovie('${escapeHtml(movie.id)}')">Arquivar</button>
+              <button class="danger-text" type="button" onclick="deleteMovie('${escapeHtml(movie.id)}')">Excluir</button>
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  fillMovieForm(currentMovie());
+}
+
+function fillMovieForm(movie) {
+  setDisabled("deleteMovieButton", !movie);
+  $("movieFormHint").textContent = movie ? `Editando ${movie.title}` : "Novo filme";
+  $("movieId").value = movie?.id || "";
+  $("movieWorkflowStatus").value = movie?.workflowStatus || "draft";
+  $("movieTitle").value = movie?.title || "";
+  $("movieOriginalTitle").value = movie?.originalTitle || "";
+  $("movieSlug").value = movie?.slug || movie?.id || "";
+  $("movieSlug").dataset.touched = movie ? "true" : "";
+  $("movieStatus").value = movie?.status || "now_playing";
+  $("movieRating").value = movie?.rating || "L";
+  $("movieReleaseDate").value = movie?.releaseDate || "";
+  $("movieAutoPublish").checked = Boolean(movie?.autoPublish);
+  $("movieDuration").value = movie?.duration || "";
+  $("movieDirector").value = movie?.director || "";
+  $("movieTag").value = movie?.tag || "Em Breve";
+  $("movieGenre").value = (movie?.genre || []).join(", ");
+  $("movieSynopsis").value = movie?.synopsis || "";
+  $("movieTrailer").value = movie?.trailerYoutubeId || "";
+  $("movieHighlight").checked = Boolean(movie?.isHighlight);
+  $("moviePosterUrl").value = movie?.posterUrl || "";
+  $("movieBackdropUrl").value = movie?.backdropUrl || "";
+  renderMovieMediaPreview("moviePosterUrl", "moviePosterPreview", "Prévia do pôster");
+  renderMovieMediaPreview("movieBackdropUrl", "movieBackdropPreview", "Prévia do banner");
+  state.movieDraftSessions = (movie?.sessions || []).map((session) => ({ ...session }));
+  renderSessions(state.movieDraftSessions);
+  setMovieWizardStep(0);
+}
+
+async function searchTmdb() {
+  const query = $("tmdbQuery").value.trim();
+  if (!query) {
+    $("tmdbMessage").textContent = "Digite um título para buscar.";
+    showToast("Digite o titulo do filme antes de buscar.", "error");
+    return;
+  }
+
+  setDisabled("tmdbSearchButton", true);
+  $("tmdbMessage").textContent = "Buscando no TMDB...";
+  $("tmdbResults").innerHTML = Array.from({ length: 3 }, () => `<div class="skeleton-card"></div>`).join("");
+
+  try {
+    const results = await api(`/api/tmdb/search?query=${encodeURIComponent(query)}`);
+    if (!results.length) {
+      $("tmdbMessage").textContent = "Nenhum filme encontrado com esse título.";
+      $("tmdbResults").innerHTML = "";
+      return;
+    }
+
+    $("tmdbMessage").textContent = "Selecione o filme correto para importar os dados.";
+    $("tmdbResults").innerHTML = results
+      .map(
+        (movie) => `
+          <button class="tmdb-result" type="button" onclick="importTmdbMovie('${movie.tmdbId}')">
+            <span class="tmdb-thumb">
+              ${movie.posterUrl ? `<img src="${movie.posterUrl}" alt="">` : ""}
+            </span>
+            <span>
+              <strong>${escapeHtml(movie.title)}</strong>
+              <small>${escapeHtml(movie.year || "Ano não informado")} • ${escapeHtml(movie.originalTitle || "")}</small>
+            </span>
+          </button>
+        `
+      )
+      .join("");
+  } catch (error) {
+    $("tmdbMessage").textContent = error.message;
+    showToast("TMDB não configurado ou indisponível.", "error");
+    $("tmdbResults").innerHTML = "";
+  } finally {
+    setDisabled("tmdbSearchButton", false);
+  }
+}
+
+async function importTmdbMovie(tmdbId) {
+  $("tmdbMessage").textContent = "Importando dados oficiais...";
+  try {
+    const existing = currentMovie();
+    const existingId = $("movieId").value || existing?.id || "";
+    const movie = await api(`/api/tmdb/movie/${encodeURIComponent(tmdbId)}`);
+    if (!existingId) state.selectedMovieId = "";
+    fillMovieForm({
+      ...movie,
+      id: existingId || movie.id,
+      slug: existing?.slug || movie.slug || movie.id,
+      workflowStatus: existing?.workflowStatus || movie.workflowStatus || "draft",
+      status: existing?.status || movie.status,
+      isHighlight: Boolean(existing?.isHighlight),
+      tag: existing?.tag || movie.tag,
+      sessions: existing?.sessions || []
+    });
+    if (!existingId) {
+      $("movieId").value = "";
+      $("movieStatus").value = "upcoming";
+    }
+    $("tmdbMessage").textContent = existingId
+      ? "Dados importados no filme selecionado. Revise e salve para atualizar."
+      : "Dados importados. Revise o status e salve o filme.";
+    showToast("Dados oficiais importados para o formulário.");
+  } catch (error) {
+    $("tmdbMessage").textContent = error.message;
+    showToast("Não foi possível importar o filme.", "error");
+  }
+}
+
+function renderSessions(sessions) {
+  if (!sessions.length) {
+    $("sessionsList").innerHTML = `
+      <div class="empty-state">
+        <strong>Nenhuma sessão cadastrada</strong>
+        <span>Adicione horários para liberar a venda no site.</span>
+      </div>
+    `;
+    return;
+  }
+
+  $("sessionsList").innerHTML = sessions
+    .map(
+      (session, index) => `
+        <div class="session-row">
+          <strong>${session.time}</strong>
+          <span>${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} • ` : ""}${session.format} • ${session.room}</span>
+          <span>${money(session.priceFull)}</span>
+          <button class="icon-button" type="button" onclick="removeSession(${index})" aria-label="Remover sessão">${trashIcon}</button>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderRoomOptions() {
+  const rooms = state.content?.rooms || [];
+  $("sessionRoom").innerHTML = rooms
+    .map((room) => `<option value="${room.name} (${room.technology || "Sala"})">${room.name}</option>`)
+    .join("");
+}
+
+function selectMovie(id) {
+  state.creating.movie = false;
+  state.selectedMovieId = id;
+  renderMovies();
+}
+
+function orderedMovies() {
+  return [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
+}
+
+async function saveMovieOrder(ids) {
+  if (!ids.length) return;
+  try {
+    const result = await api("/api/movies/order", {
+      method: "PUT",
+      body: JSON.stringify({ ids })
+    });
+    state.content.movies = result.movies || state.content.movies;
+    renderMovies();
+    setStatus("Salvo");
+    showToast("Prioridade dos filmes atualizada.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function moveMovie(id, direction) {
+  const ids = orderedMovies().map((movie) => movie.id);
+  const index = ids.indexOf(id);
+  const nextIndex = index + Number(direction || 0);
+  if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
+  [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
+  saveMovieOrder(ids);
+}
+
+function handleMovieDragStart(event, id) {
+  event.stopPropagation();
+  event.dataTransfer?.setData("text/plain", id);
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  document.querySelectorAll(".movie-row").forEach((row) => {
+    row.classList.toggle("dragging", row.dataset.movieId === id);
+  });
+}
+
+function handleMovieDragOver(event) {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+  event.currentTarget?.classList.add("drag-over");
+}
+
+function handleMovieDragLeave(event) {
+  event.currentTarget?.classList.remove("drag-over");
+}
+
+function handleMovieDragEnd() {
+  document.querySelectorAll(".movie-row.drag-over, .movie-row.dragging").forEach((row) => {
+    row.classList.remove("drag-over", "dragging");
+  });
+}
+
+function handleMovieDrop(event, targetId) {
+  event.preventDefault();
+  event.stopPropagation();
+  handleMovieDragEnd();
+  const sourceId = event.dataTransfer?.getData("text/plain");
+  if (!sourceId || sourceId === targetId) return;
+  const ids = orderedMovies().map((movie) => movie.id);
+  const from = ids.indexOf(sourceId);
+  const to = ids.indexOf(targetId);
+  if (from < 0 || to < 0) return;
+  ids.splice(to, 0, ids.splice(from, 1)[0]);
+  saveMovieOrder(ids);
+}
+
+function toggleMovieMenu(movieId) {
+  closeFloatingActionMenu();
+  document.querySelectorAll(".context-menu-popover").forEach((menu) => {
+    if (menu.id !== `movieMenu-${movieId}`) menu.hidden = true;
+  });
+  const menu = $(`movieMenu-${movieId}`);
+  if (menu) menu.hidden = !menu.hidden;
+}
+
+function newMovie() {
+  state.creating.movie = true;
+  state.selectedMovieId = "";
+  $("moviesList").innerHTML = creationPlaceholder("Novo filme em edição", "Preencha o quadro à direita e publique quando estiver pronto.");
+  fillMovieForm(null);
+  $("movieWorkflowStatus").value = "draft";
+  $("movieStatus").value = "upcoming";
+}
+
+function getMoviePayload(action = "published") {
+  const workflowStatus = action === "draft" ? "draft" : "published";
+  const status = action === "draft" ? "hidden" : $("movieStatus").value;
+  return {
+    id: $("movieId").value || $("movieSlug").value || undefined,
+    slug: $("movieSlug").value || slugify($("movieTitle").value),
+    workflowStatus,
+    status,
+    title: $("movieTitle").value,
+    originalTitle: $("movieOriginalTitle").value,
+    synopsis: $("movieSynopsis").value,
+    duration: $("movieDuration").value,
+    director: $("movieDirector").value,
+    genre: $("movieGenre").value.split(",").map((item) => item.trim()).filter(Boolean),
+    rating: $("movieRating").value,
+    releaseDate: $("movieReleaseDate").value,
+    autoPublish: $("movieAutoPublish").checked,
+    posterUrl: $("moviePosterUrl").value,
+    backdropUrl: $("movieBackdropUrl").value,
+    trailerYoutubeId: $("movieTrailer").value,
+    isHighlight: $("movieHighlight").checked,
+    tag: $("movieTag").value,
+    sortOrder: Number(currentMovie()?.sortOrder ?? 100),
+    sessions: state.movieDraftSessions || [],
+    metadata: {
+      updatedFromAdmin: true
+    }
+  };
+}
+
+async function saveMovieWithAction(action = "published") {
+  try {
+    if (!validateMovieWizardStep(4, action === "published")) return;
+    const payload = getMoviePayload(action);
+    const existingId = $("movieId").value || state.selectedMovieId;
+    if (existingId) payload.id = existingId;
+    const saved = existingId
+      ? await api(`/api/movies/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/movies", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.movie = false;
+    state.selectedMovieId = saved.id;
+    await loadContent({ silent: true });
+    showToast(action === "draft" ? "Rascunho salvo." : "Filme publicado.");
+    showSuccess(action === "draft" ? "Rascunho salvo" : "Filme publicado", `${saved.title} foi atualizado no catálogo administrativo.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function saveMovie(event) {
+  event.preventDefault();
+  await saveMovieWithAction("published");
+}
+
+async function deleteMovie(id = "") {
+  const movie = id ? state.content?.movies?.find((item) => item.id === id) : currentMovie();
+  if (!movie || !confirm(`Excluir ${movie.title}?`)) return;
+  try {
+    const result = await api(`/api/movies/${encodeURIComponent(movie.id)}`, { method: "DELETE" });
+    state.selectedMovieId = "";
+    await loadContent({ silent: true });
+    showToast(result.archived ? "Filme arquivado por possuir histórico." : "Filme excluído.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function addSession() {
+  if (!$("sessionDate").value || !$("sessionTime").value) {
+    showToast("Informe data e horário da sessão.", "error");
+    return;
+  }
+
+  const price = Number($("sessionPriceFull").value || 10);
+  const movieId = $("movieId").value || $("movieSlug").value || slugify($("movieTitle").value) || "filme";
+  state.movieDraftSessions ||= [];
+  state.movieDraftSessions.push({
+    id: `${movieId}-${Date.now()}`,
+    date: $("sessionDate").value,
+    time: $("sessionTime").value || "19:00",
+    format: $("sessionFormat").value,
+    room: $("sessionRoom").value || "Sala Cruzeiro (Laser 4K)",
+    priceFull: price,
+    priceHalf: price,
+    status: $("sessionStatus").value
+  });
+
+  renderSessions(state.movieDraftSessions);
+  renderMoviePublishSummary();
+  showToast("Sessão adicionada.");
+}
+
+async function removeSession(index) {
+  state.movieDraftSessions.splice(index, 1);
+  renderSessions(state.movieDraftSessions);
+  renderMoviePublishSummary();
+  showToast("Sessão removida.");
+}
+
+async function archiveMovie(id) {
+  const movie = state.content?.movies?.find((item) => item.id === id);
+  if (!movie) return;
+  try {
+    await api(`/api/movies/${encodeURIComponent(movie.id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...movie, workflowStatus: "archived", status: "hidden", isHighlight: false })
+    });
+    await loadContent({ silent: true });
+    showToast("Filme arquivado.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function duplicateMovie(id) {
+  const movie = state.content?.movies?.find((item) => item.id === id);
+  if (!movie) return;
+  const slug = `${movie.slug || movie.id}-copia`;
+  try {
+    const copy = await api("/api/movies", {
+      method: "POST",
+      body: JSON.stringify({
+        ...movie,
+        id: slug,
+        slug,
+        title: `${movie.title} (cópia)`,
+        workflowStatus: "draft",
+        status: "hidden",
+        isHighlight: false,
+        sessions: (movie.sessions || []).map((session, index) => ({ ...session, id: `${slug}-sessao-${index + 1}` }))
+      })
+    });
+    state.selectedMovieId = copy.id;
+    await loadContent({ silent: true });
+    showToast("Cópia criada como rascunho.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function uploadAdminImage(fileInputId, targetInputId, previewId, folder, afterUpload) {
+  const input = $(fileInputId);
+  const target = $(targetInputId);
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!target) {
+    showToast("Campo de destino da imagem não encontrado. Reabra este menu e tente novamente.", "error");
+    return;
+  }
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    showToast("Use JPG, PNG ou WebP.", "error");
+    input.value = "";
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast("Imagem muito grande. Limite de 5 MB.", "error");
+    input.value = "";
+    return;
+  }
+
+  const data = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  try {
+    input.disabled = true;
+    const result = await api("/api/uploads/images", {
+      method: "POST",
+      body: JSON.stringify({
+        data,
+        filename: file.name,
+        contentType: file.type,
+        folder
+      })
+    });
+    target.value = cleanAdminAssetUrl(result.url || result.publicUrl || "");
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    if (previewId) renderMovieMediaPreview(targetInputId, previewId, file.name);
+    if (typeof afterUpload === "function") afterUpload({ ...result, url: target.value });
+    showToast("Imagem enviada.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    input.disabled = false;
+    input.value = "";
+  }
+}
+
+function uploadMovieImage(fileInputId, targetInputId, previewId, folder) {
+  return uploadAdminImage(fileInputId, targetInputId, previewId, folder);
+}
+
+function renderRooms() {
+  const rooms = state.content?.rooms || [];
+  if (state.creating.room) {
+    $("roomsList").innerHTML = creationPlaceholder("Nova sala", "Cadastre nome, capacidade e tecnologia no quadro à direita.");
+    fillRoomForm(null);
+    return;
+  }
+  if (!rooms.length) {
+    $("roomsList").innerHTML = `
+      <div class="empty-state">
+        <strong>Nenhuma sala cadastrada</strong>
+        <span>Cadastre a sala principal para organizar as sessões.</span>
+      </div>
+    `;
+    fillRoomForm(null);
+    return;
+  }
+
+  $("roomsList").innerHTML = rooms
+    .map((room) => {
+      const active = room.id === state.selectedRoomId ? "active" : "";
+      return `
+        <button class="list-item ${active}" type="button" onclick="selectRoom('${room.id}')">
+          <span>
+            <span class="list-title">${room.name}</span>
+            <span class="list-meta">${room.capacity} lugares • ${room.technology || "sem tecnologia cadastrada"}</span>
+          </span>
+          <span class="badge">${room.status}</span>
+        </button>
+      `;
+    })
+    .join("");
+  fillRoomForm(currentRoom());
+}
+
+function selectRoom(id) {
+  state.creating.room = false;
+  state.selectedRoomId = id;
+  renderRooms();
+}
+
+function newRoom() {
+  state.creating.room = true;
+  state.selectedRoomId = "";
+  $("roomsList").innerHTML = creationPlaceholder("Nova sala", "Cadastre nome, capacidade e tecnologia no quadro à direita.");
+  fillRoomForm(null);
+}
+
+function fillRoomForm(room) {
+  setDisabled("deleteRoomButton", !room);
+  $("roomId").value = room?.id || "";
+  $("roomName").value = room?.name || "";
+  $("roomCapacity").value = room?.capacity || 80;
+  $("roomTechnology").value = room?.technology || "";
+  $("roomStatus").value = room?.status || "active";
+}
+
+async function saveRoom(event) {
+  event.preventDefault();
+  try {
+    const payload = {
+      id: $("roomId").value || undefined,
+      name: $("roomName").value,
+      capacity: Number($("roomCapacity").value || 80),
+      technology: $("roomTechnology").value,
+      status: $("roomStatus").value
+    };
+    const existingId = $("roomId").value;
+    const saved = existingId
+      ? await api(`/api/rooms/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.room = false;
+    state.selectedRoomId = saved.id;
+    await loadContent({ silent: true });
+    showToast("Sala salva.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteRoom() {
+  const room = currentRoom();
+  if (!room || !confirm(`Excluir ${room.name}?`)) return;
+  try {
+    await api(`/api/rooms/${encodeURIComponent(room.id)}`, { method: "DELETE" });
+    state.selectedRoomId = "";
+    await loadContent({ silent: true });
+    showToast("Sala excluida.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderTickets() {
+  const tickets = state.content?.ticketTypes || [];
+  if (state.creating.ticket) {
+    $("ticketsList").innerHTML = creationPlaceholder("Novo tipo de ingresso", "Defina nome, preço e disponibilidade no quadro à direita.");
+    fillTicketForm(null);
+    return;
+  }
+  if (!tickets.length) {
+    $("ticketsList").innerHTML = `
+      <div class="empty-state">
+        <strong>Nenhum ingresso cadastrado</strong>
+        <span>Crie o ticket promocional base para liberar vendas.</span>
+      </div>
+    `;
+    fillTicketForm(null);
+    return;
+  }
+
+  $("ticketsList").innerHTML = tickets
+    .map((ticket) => {
+      const active = ticket.id === state.selectedTicketId ? "active" : "";
+      return `
+        <button class="list-item ${active}" type="button" onclick="selectTicket('${ticket.id}')">
+          <span>
+            <span class="list-title">${ticket.name}</span>
+            <span class="list-meta">${ticket.description || "sem descricao"}</span>
+          </span>
+          <span class="badge">${money(ticket.price)}</span>
+        </button>
+      `;
+    })
+    .join("");
+  fillTicketForm(currentTicket());
+}
+
+function selectTicket(id) {
+  state.creating.ticket = false;
+  state.selectedTicketId = id;
+  renderTickets();
+}
+
+function newTicket() {
+  state.creating.ticket = true;
+  state.selectedTicketId = "";
+  $("ticketsList").innerHTML = creationPlaceholder("Novo tipo de ingresso", "Defina nome, preço e disponibilidade no quadro à direita.");
+  fillTicketForm(null);
+}
+
+function fillTicketForm(ticket) {
+  setDisabled("deleteTicketButton", !ticket);
+  $("ticketId").value = ticket?.id || "";
+  $("ticketName").value = ticket?.name || "";
+  $("ticketPrice").value = ticket?.price ?? 10;
+  $("ticketDescription").value = ticket?.description || "";
+  $("ticketActive").checked = ticket?.active !== false;
+}
+
+async function saveTicket(event) {
+  event.preventDefault();
+  try {
+    const payload = {
+      id: $("ticketId").value || undefined,
+      name: $("ticketName").value,
+      price: Number($("ticketPrice").value || 0),
+      description: $("ticketDescription").value,
+      active: $("ticketActive").checked
+    };
+    const existingId = $("ticketId").value;
+    const saved = existingId
+      ? await api(`/api/ticket-types/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/ticket-types", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.ticket = false;
+    state.selectedTicketId = saved.id;
+    await loadContent({ silent: true });
+    showToast("Ingresso salvo.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteTicket() {
+  const ticket = currentTicket();
+  if (!ticket || !confirm(`Excluir ${ticket.name}?`)) return;
+  try {
+    await api(`/api/ticket-types/${encodeURIComponent(ticket.id)}`, { method: "DELETE" });
+    state.selectedTicketId = "";
+    await loadContent({ silent: true });
+    showToast("Ingresso excluído.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderOrders() {
+  renderManualSaleOptions();
+  const orders = state.content?.orders || [];
+  const query = (state.orderFilters.allQuery || "").toLowerCase();
+  const filteredOrders = query
+    ? orders.filter((order) => [
+        orderReference(order),
+        order.customerName,
+        order.customerEmail,
+        order.customerPhone,
+        order.movieTitle,
+        order.sessionTime,
+        ...(order.tickets || []).map((ticket) => ticket.code)
+      ].join(" ").toLowerCase().includes(query))
+    : orders;
+  renderOrdersTable("ordersList", filteredOrders, { compact: false });
+  const today = state.content?.calendar?.today || new Date().toISOString().slice(0, 10);
+  let todayOrders = orders.filter((order) => String(order.createdAt || "").slice(0, 10) === today);
+  if (state.orderFilters.todayOrigin !== "all") todayOrders = todayOrders.filter((order) => String(order.origin || "online") === state.orderFilters.todayOrigin);
+  if (state.orderFilters.todayStatus !== "all") {
+    todayOrders = todayOrders.filter((order) => {
+      if (state.orderFilters.todayStatus === "pending") return ["pending", "pending_payment", "processing"].includes(order.status);
+      return order.status === state.orderFilters.todayStatus;
+    });
+  }
+  renderTodaySalesSummary(orders.filter((order) => String(order.createdAt || "").slice(0, 10) === today));
+  renderOrdersTable("todayOrdersList", todayOrders, { compact: true });
+}
+
+function renderTodaySalesSummary(orders) {
+  if (!$("todaySalesSummary")) return;
+  const paid = orders.filter((order) => order.status === "paid");
+  const revenue = paid.reduce((total, order) => total + Number(order.totalPrice || 0), 0);
+  const tickets = paid.reduce((total, order) => total + orderTicketCount(order), 0);
+  const boxOffice = paid.filter((order) => order.origin === "box_office").reduce((total, order) => total + Number(order.totalPrice || 0), 0);
+  $("todaySalesSummary").innerHTML = `
+    <div><span>Vendas hoje</span><strong>${paid.length}</strong></div>
+    <div><span>Receita hoje</span><strong>${money(revenue)}</strong></div>
+    <div><span>Ingressos</span><strong>${tickets}</strong></div>
+    <div><span>Bilheteria</span><strong>${money(boxOffice)}</strong></div>
+  `;
+}
+
+function orderTicketCount(order) {
+  return Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0);
+}
+
+function renderOrdersTable(targetId, orders, options = {}) {
+  const target = $(targetId);
+  if (!target) return;
+  if (!orders.length) {
+    target.innerHTML = `
+      <div class="empty-state">
+        <strong>Nenhum pedido registrado ainda</strong>
+        <span>As vendas online e de bilheteria aparecem aqui automaticamente.</span>
+      </div>
+    `;
+    return;
+  }
+
+  target.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Data/Hora</th>
+          <th>Cliente</th>
+          <th>Filme/Sessão</th>
+          <th>Itens</th>
+          <th>Total</th>
+          <th>Pagamento</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${orders
+          .map(
+            (order) => {
+              const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name)} x${Number(item.quantity || 0)}`).join("<br>") || "Sem extras";
+              const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>`).join(" ");
+              return `
+              <tr class="order-table-row" onclick="openOrderView('${escapeHtml(order.id)}')">
+                <td data-label="Data/Hora"><strong>${escapeHtml(orderReference(order))}</strong><br><span class="list-meta">${new Date(order.createdAt).toLocaleString("pt-BR")}</span></td>
+                <td data-label="Cliente">${escapeHtml(order.customerName || "Venda rápida")}<br><span class="list-meta">${escapeHtml(order.customerPhone || order.customerEmail || "")}</span></td>
+                <td data-label="Filme/Sessão"><strong>${escapeHtml(order.movieTitle || "-")}</strong><br><span class="list-meta">${escapeHtml([order.sessionTime, order.sessionFormat].filter(Boolean).join(" • ") || "-")}</span></td>
+                <td data-label="Itens">${orderTicketCount(order)} ingresso(s)<br><span class="list-meta">${extras}</span>${tickets ? `<div class="ticket-code-row">${tickets}</div>` : ""}</td>
+                <td data-label="Total"><strong>${money(order.totalPrice)}</strong></td>
+                <td data-label="Pagamento">${escapeHtml(originLabel(order.origin || "online"))}<br><span class="list-meta">${escapeHtml(paymentMethodLabel(order.paymentMethod))}</span></td>
+                <td data-label="Status"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
+                <td data-label="Ações" onclick="event.stopPropagation()">
+                  <div class="context-menu">
+                    <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
+                    <button class="icon-button" type="button" onclick="toggleOrderMenu('${escapeHtml(order.id)}', event)" aria-label="Ações do pedido">•••</button>
+                    <div id="orderMenu-${escapeHtml(order.id)}" class="context-menu-popover" hidden>
+                      <button type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
+                      <button type="button" onclick="openOrderEdit('${escapeHtml(order.id)}')">Editar</button>
+                      <button type="button" onclick="printOrderTicket('${escapeHtml(order.id)}')">Imprimir ingresso</button>
+                      <button type="button" onclick="resendOrderTicket('${escapeHtml(order.id)}')">Reenviar ingresso</button>
+                      <button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(order.id)}')">Cancelar</button>
+                      <button type="button" onclick="archiveOrderAdmin('${escapeHtml(order.id)}')">Arquivar</button>
+                      <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(order.id)}')">Excluir permanentemente</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            `;
+            }
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function statusClass(status = "") {
+  const normalized = String(status || "").toLowerCase();
+  if (["paid", "approved", "manual_sale"].includes(normalized)) return "ok";
+  if (["pending", "pending_payment", "pix_pending", "processing"].includes(normalized)) return "warn";
+  if (["cancelled", "rejected", "refunded", "expired"].includes(normalized)) return "danger";
+  return "";
+}
+
+function originLabel(origin = "") {
+  return {
+    online: "Site",
+    box_office: "Bilheteria",
+    club: "Clube",
+    manual: "Bilheteria",
+    manual_sale: "Venda manual",
+    admin: "Painel",
+    pix_pending: "Pix pendente"
+  }[String(origin || "").toLowerCase()] || humanizeEnum(origin) || "Site";
+}
+
+function paymentForOrder(orderId) {
+  return (state.content?.payments || []).find((payment) => payment.orderId === orderId) || null;
+}
+
+function movieForOrder(order) {
+  return (state.content?.movies || []).find((movie) => movie.id === order.movieId) || null;
+}
+
+function sectionHtml(title, rows) {
+  return `
+    <section class="order-detail-section">
+      <h3>${escapeHtml(title)}</h3>
+      <dl>
+        ${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${String(value).includes("<") ? value : escapeHtml(value || "-")}</dd></div>`).join("")}
+      </dl>
+    </section>
+  `;
+}
+
+function orderDetailHtml(order) {
+  const payment = paymentForOrder(order.id);
+  const movie = movieForOrder(order);
+  const tickets = (order.tickets || []).map((ticket) => `
+    <button class="copy-code" type="button" onclick="copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>
+    <span class="list-meta">${escapeHtml(orderStatusLabel(ticket.status))}</span>
+  `).join("<br>") || "-";
+  const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name || item.id)} x${Number(item.quantity || 0)}`).join("<br>") || "-";
+  const history = (order.auditTrail || []).map((entry) => `${escapeHtml(entry.action || "alteração")} • ${new Date(entry.at || order.createdAt).toLocaleString("pt-BR")}`).join("<br>") || `Criação • ${new Date(order.createdAt).toLocaleString("pt-BR")}`;
+  return `
+    ${sectionHtml("Pedido", [
+      ["Referência", orderReference(order)],
+      ["Data", new Date(order.createdAt).toLocaleString("pt-BR")],
+      ["Origem", originLabel(order.origin || "online")],
+      ["Status", orderStatusLabel(order.status)]
+    ])}
+    ${sectionHtml("Cliente", [
+      ["Tipo", order.customerUserId ? "Usuário cadastrado" : order.customerName ? "Cliente avulso" : "Venda rápida"],
+      ["Nome", order.customerName || "Venda rápida"],
+      ["Contato", [order.customerPhone, order.customerEmail].filter(Boolean).join(" • ") || "-"]
+    ])}
+    ${sectionHtml("Sessão", [
+      ["Filme", `${movie?.posterUrl ? `<img class="inline-poster" src="${escapeHtml(movie.posterUrl)}" alt="">` : ""}${escapeHtml(order.movieTitle || movie?.title || "-")}`],
+      ["Data e horário", [order.sessionDate, order.sessionTime].filter(Boolean).join(" • ") || order.sessionTime || "-"],
+      ["Sala", order.sessionRoom || "Sala Cruzeiro"],
+      ["Formato", order.sessionFormat || "-"]
+    ])}
+    ${sectionHtml("Ingressos", [
+      ["Quantidade", `${orderTicketCount(order)} ingresso(s)`],
+      ["Códigos", tickets]
+    ])}
+    ${sectionHtml("Bomboniere", [["Produtos", extras]])}
+    ${sectionHtml("Pagamento", [
+      ["Método", paymentMethodLabel(payment?.method || order.paymentMethod)],
+      ["Provider", providerLabel(payment?.provider || order.paymentProvider)],
+      ["Valor", money(payment?.amount ?? order.totalPrice)],
+      ["Status", paymentStatusLabel(payment?.status || order.paymentStatus)],
+      ["Referência externa", payment?.providerPaymentId || payment?.providerReference || "-"]
+    ])}
+    ${sectionHtml("Histórico", [["Eventos", history], ["Observação", order.operationalNotes || "-"]])}
+  `;
+}
+
+function fillOrderEditor(order, mode) {
+  state.selectedOrderId = order?.id || "";
+  $("orderOverlayTitle").textContent = mode === "edit" ? "Editar pedido" : "Visualizar pedido";
+  $("orderOverlaySubtitle").textContent = order ? `${orderReference(order)} • ${orderStatusLabel(order.status)}` : "Pedido não encontrado.";
+  $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
+  $("orderEditFields").hidden = mode !== "edit";
+  $("orderSaveButton").hidden = mode !== "edit";
+  $("orderCancelButton").hidden = !order || order.status === "cancelled" || order.status === "refunded";
+  $("orderPermanentDeleteButton").hidden = !order || !isOwnerAdmin();
+  if (order) {
+    $("orderCustomerName").value = order.customerName || "";
+    $("orderCustomerPhone").value = order.customerPhone || "";
+    $("orderCustomerEmail").value = order.customerEmail || "";
+    $("orderCustomerCpf").value = order.customerCpf || "";
+    $("orderOperationalNotes").value = order.operationalNotes || "";
+  }
+  $("orderOverlay").hidden = false;
+}
+
+function openOrderView(orderId) {
+  fillOrderEditor((state.content?.orders || []).find((order) => order.id === orderId), "view");
+}
+
+function openOrderEdit(orderId) {
+  fillOrderEditor((state.content?.orders || []).find((order) => order.id === orderId), "edit");
+}
+
+function closeOrderOverlay() {
+  $("orderOverlay").hidden = true;
+  state.selectedOrderId = "";
+}
+
+async function saveOrderEdit(event) {
+  event.preventDefault();
+  const order = currentOrder();
+  if (!order) return;
+  try {
+    await api(`/api/orders/${encodeURIComponent(order.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        customerName: $("orderCustomerName").value,
+        customerPhone: $("orderCustomerPhone").value,
+        customerEmail: $("orderCustomerEmail").value,
+        customerCpf: $("orderCustomerCpf").value,
+        operationalNotes: $("orderOperationalNotes").value,
+        reason: "Edição pelo painel"
+      })
+    });
+    await loadContent({ silent: true });
+    closeOrderOverlay();
+    showToast("Pedido atualizado.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function cancelOrDeleteOrder(orderId = state.selectedOrderId) {
+  const order = (state.content?.orders || []).find((item) => item.id === orderId);
+  if (!order) return;
+  const draft = ["draft", "test"].includes(order.status);
+  const action = draft ? "excluir" : "cancelar";
+  const reason = prompt(`Informe o motivo para ${action} este pedido:`);
+  if (reason === null) return;
+  try {
+    await api(`/api/orders/${encodeURIComponent(order.id)}`, {
+      method: draft ? "DELETE" : "PATCH",
+      body: JSON.stringify(draft ? { reason } : { action: "cancel", reason })
+    });
+    await loadContent({ silent: true });
+    closeOrderOverlay();
+    showToast(draft ? "Pedido excluído." : "Pedido cancelado.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function archiveOrderAdmin(orderId = state.selectedOrderId) {
+  const order = (state.content?.orders || []).find((item) => item.id === orderId);
+  if (!order) return;
+  const reason = prompt("Motivo para arquivar este pedido:");
+  if (reason === null) return;
+  try {
+    await api(`/api/orders/${encodeURIComponent(order.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action: "archive", reason })
+    });
+    await loadContent({ silent: true });
+    closeOrderOverlay();
+    showToast("Pedido arquivado.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function closeFloatingActionMenu() {
+  const menu = $("floatingActionMenu");
+  if (!menu) return;
+  menu.hidden = true;
+  menu.innerHTML = "";
+}
+
+function positionFloatingMenu(anchor, menu) {
+  const rect = anchor.getBoundingClientRect();
+  menu.hidden = false;
+  const menuRect = menu.getBoundingClientRect();
+  const margin = 12;
+  const left = Math.min(Math.max(margin, rect.right - menuRect.width), window.innerWidth - menuRect.width - margin);
+  const below = rect.bottom + 8;
+  const above = rect.top - menuRect.height - 8;
+  const top = below + menuRect.height + margin <= window.innerHeight ? below : Math.max(margin, above);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function toggleOrderMenu(orderId, event) {
+  event?.stopPropagation();
+  document.querySelectorAll(".context-menu-popover").forEach((menu) => {
+    menu.hidden = true;
+  });
+  const floating = $("floatingActionMenu");
+  const anchor = event?.currentTarget;
+  if (!floating || !anchor) return;
+  if (!floating.hidden && floating.dataset.orderId === orderId) {
+    closeFloatingActionMenu();
+    return;
+  }
+  floating.dataset.orderId = orderId;
+  floating.innerHTML = `
+    <button type="button" onclick="openOrderView('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Visualizar</button>
+    <button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>
+    <button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>
+    <button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>
+    <button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>
+    <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>
+  `;
+  positionFloatingMenu(anchor, floating);
+}
+
+async function copyTicketCode(code) {
+  await navigator.clipboard?.writeText(code).catch(() => null);
+  showToast("Código copiado.");
+}
+
+function printOrderTicket(orderId) {
+  openOrderView(orderId);
+  setTimeout(() => window.print(), 120);
+}
+
+function resendOrderTicket(orderId) {
+  showToast("Reenvio depende do provedor de e-mail/WhatsApp configurado.", "error");
+  openOrderView(orderId);
+}
+
+function openPermanentDelete(orderId = state.selectedOrderId) {
+  const order = (state.content?.orders || []).find((item) => item.id === orderId);
+  if (!order) return;
+  state.selectedOrderId = order.id;
+  const payment = paymentForOrder(order.id);
+  $("permanentDeleteSummary").textContent = `${orderReference(order)} • ${order.movieTitle || "Pedido"} • ${money(order.totalPrice)} • ${orderStatusLabel(order.status)}${payment && !["box_office", "admin", "external_manual", "manual_external", "internal_club"].includes(payment.provider) ? " • provider externo vinculado" : ""}`;
+  $("permanentDeleteReason").value = "";
+  $("permanentDeleteConfirmation").value = "";
+  $("permanentDeleteOverlay").hidden = false;
+}
+
+function closePermanentDelete() {
+  $("permanentDeleteOverlay").hidden = true;
+}
+
+async function permanentlyDeleteSelectedOrder(event) {
+  event.preventDefault();
+  const order = currentOrder();
+  if (!order) return;
+  try {
+    await api(`/api/orders/${encodeURIComponent(order.id)}/permanent`, {
+      method: "DELETE",
+      body: JSON.stringify({
+        reason: $("permanentDeleteReason").value,
+        confirmation: $("permanentDeleteConfirmation").value
+      })
+    });
+    await loadContent({ silent: true });
+    closePermanentDelete();
+    closeOrderOverlay();
+    showToast("Pedido excluído permanentemente.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderPaymentsCenter() {
+  const target = $("paymentsList");
+  if (!target) return;
+  const data = state.payments || {};
+  if ($("paymentProviderStatus")) {
+    $("paymentProviderStatus").textContent = data.cardTerminal?.configured
+      ? `Maquininha integrada: ${data.cardTerminal.provider}.`
+      : "Maquininha automática não configurada. Cartões de balcão são registrados manualmente.";
+  }
+  const rows = data.payments || [];
+  if (!rows.length) {
+    target.innerHTML = `<div class="empty-state"><strong>Nenhum pagamento encontrado.</strong><span>Ajuste os filtros ou selecione outro período.</span></div>`;
+    return;
+  }
+  target.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Pedido</th>
+          <th>Cliente</th>
+          <th>Filme</th>
+          <th>Origem</th>
+          <th>Método</th>
+          <th>Provider</th>
+          <th>Valor</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((payment) => `
+          <tr class="order-table-row" onclick="openOrderView('${escapeHtml(payment.orderId)}')">
+            <td data-label="Pedido"><strong>${escapeHtml(payment.orderReference || payment.orderId)}</strong><br><span class="list-meta">${new Date(payment.createdAt).toLocaleString("pt-BR")}</span></td>
+            <td data-label="Cliente">${escapeHtml(payment.customerName || "Cliente")}</td>
+            <td data-label="Filme">${escapeHtml(payment.movieTitle || "-")}</td>
+            <td data-label="Origem">${escapeHtml(payment.originLabel || originLabel(payment.origin))}</td>
+            <td data-label="Método">${escapeHtml(payment.methodLabel || paymentMethodLabel(payment.method))}</td>
+            <td data-label="Provider">${escapeHtml(payment.providerLabel || providerLabel(payment.provider))}</td>
+            <td data-label="Valor"><strong>${money(payment.amount)}</strong></td>
+            <td data-label="Status"><span class="status-label ${statusClass(payment.status)}">${escapeHtml(payment.statusLabel || paymentStatusLabel(payment.status))}</span></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderManualSaleOptions() {
+  const movies = state.content?.movies || [];
+  const movieSelect = $("manualMovieSelect");
+  if (!movieSelect) return;
+
+  const selectedMovieId = movieSelect.value || movies.find((movie) => movie.sessions?.length)?.id || movies[0]?.id || "";
+  movieSelect.innerHTML = movies
+    .map((movie) => `<option value="${movie.id}">${escapeHtml(movie.title)}</option>`)
+    .join("");
+  movieSelect.value = selectedMovieId;
+  renderManualSessionOptions();
+  renderSaleMode();
+}
+
+function renderManualSessionOptions() {
+  const movieId = $("manualMovieSelect")?.value;
+  const movie = (state.content?.movies || []).find((item) => item.id === movieId);
+  const sessions = movie?.sessions || [];
+  const selectedSessionId = $("manualSessionSelect")?.value || sessions[0]?.id || "";
+  $("manualSessionSelect").innerHTML = sessions.length
+    ? sessions.map((session) => `<option value="${session.id}">${session.time} • ${escapeHtml(session.format)}</option>`).join("")
+    : `<option value="">Sem sessões</option>`;
+  if (selectedSessionId) $("manualSessionSelect").value = selectedSessionId;
+  updateManualTotal();
+}
+
+function currentManualMovieSession() {
+  const movie = (state.content?.movies || []).find((item) => item.id === $("manualMovieSelect").value);
+  const session = movie?.sessions?.find((item) => item.id === $("manualSessionSelect").value) || movie?.sessions?.[0];
+  return { movie, session };
+}
+
+async function createManualTicket(event) {
+  event.preventDefault();
+  const { movie, session } = currentManualMovieSession();
+  if (!movie || !session) {
+    showToast("Selecione um filme com sessão.", "error");
+    return;
+  }
+
+  try {
+    const paymentMethod = document.querySelector("input[name='manualPaymentMethod']:checked")?.value || "cash";
+    const saleMode = state.saleMode;
+    const payload = {
+      movieId: movie.id,
+      sessionId: session.id,
+      fullTicketsCount: Number($("manualFullTickets").value || 0),
+      halfTicketsCount: Number($("manualHalfTickets").value || 0),
+      saleMode,
+      paymentMethod,
+      customerUserId: saleMode === "registered" ? $("manualCustomerUserId").value : "",
+      customerName: saleMode === "quick" ? "" : $("manualCustomerName").value,
+      customerEmail: saleMode === "quick" ? "" : $("manualCustomerEmail").value,
+      customerPhone: saleMode === "quick" ? "" : $("manualCustomerPhone").value,
+      customerCpf: saleMode === "quick" ? "" : $("manualCustomerCpf").value.replace(/\D/g, ""),
+      createdAt: new Date().toISOString()
+    };
+    const result = await api("/api/box-office/sales", { method: "POST", body: JSON.stringify(payload) });
+    await loadContent({ silent: true });
+    showSuccess("Venda finalizada", `Pedido ${result.order?.id || ""}. Codigos: ${(result.tickets || []).map((ticket) => ticket.code).join(", ")}`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function setSaleMode(mode) {
+  state.saleMode = mode;
+  if (mode !== "registered") clearSelectedCustomer();
+  renderSaleMode();
+}
+
+function renderSaleMode() {
+  document.querySelectorAll("[data-sale-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.saleMode === state.saleMode);
+  });
+  const registered = $("registeredCustomerBox");
+  const guest = $("guestCustomerBox");
+  const quick = $("quickSaleBox");
+  if (registered) registered.hidden = state.saleMode !== "registered";
+  if (guest) guest.hidden = state.saleMode !== "guest";
+  if (quick) quick.hidden = state.saleMode !== "quick";
+  if ($("manualSaleSubmitButton")) {
+    $("manualSaleSubmitButton").textContent = state.saleMode === "quick" ? "Finalizar venda rápida" : "Finalizar venda";
+  }
+  if (state.saleMode === "quick") {
+    $("manualCustomerName").value = "";
+    $("manualCustomerEmail").value = "";
+    $("manualCustomerPhone").value = "";
+    $("manualCustomerCpf").value = "";
+  }
+}
+
+function clearSelectedCustomer() {
+  state.selectedCustomer = null;
+  $("manualCustomerUserId").value = "";
+  $("manualSelectedCustomer").textContent = "Nenhum cliente selecionado.";
+}
+
+function selectBoxOfficeCustomer(customer) {
+  state.selectedCustomer = customer;
+  $("manualCustomerUserId").value = customer.id;
+  $("manualCustomerName").value = customer.name || "";
+  $("manualCustomerEmail").value = customer.email || "";
+  $("manualCustomerPhone").value = customer.phone || "";
+  $("manualCustomerCpf").value = customer.cpf || "";
+  $("manualSelectedCustomer").textContent = `${customer.name} selecionado. Os ingressos serao vinculados a esta conta.`;
+  $("manualCustomerResults").innerHTML = "";
+}
+
+function selectBoxOfficeCustomerById(customerId) {
+  const customer = state.customerSearchResults.find((item) => item.id === customerId);
+  if (customer) selectBoxOfficeCustomer(customer);
+}
+
+async function searchBoxOfficeCustomers() {
+  const query = $("manualCustomerSearch").value.trim();
+  const target = $("manualCustomerResults");
+  const digits = query.replace(/\D/g, "");
+  const keepSelection = state.selectedCustomer && (
+    query === state.selectedCustomer.name ||
+    query === state.selectedCustomer.email ||
+    query === state.selectedCustomer.phone
+  );
+  if (!keepSelection) clearSelectedCustomer();
+  if (query.length > 0 && query.length < 2 && digits.length < 3) {
+    state.customerSearchResults = [];
+    target.innerHTML = `<div class="empty-state compact"><strong>Continue digitando</strong><span>Busque por nome, e-mail, WhatsApp ou CPF.</span></div>`;
+    return;
+  }
+  target.innerHTML = `<div class="skeleton-card compact"></div>`;
+  try {
+    const result = await api(`/api/admin/customers?query=${encodeURIComponent(query)}`);
+    const customers = result.customers || [];
+    state.customerSearchResults = customers;
+    target.innerHTML = customers.length
+      ? customers.map((customer) => `
+          <button type="button" class="customer-result" onclick="selectBoxOfficeCustomerById('${escapeHtml(customer.id)}')">
+            <strong>${escapeHtml(customer.name)}</strong>
+            <span>${escapeHtml(customer.email || "")} ${customer.phone ? `- ${escapeHtml(customer.phone)}` : ""} ${customer.role ? `- ${escapeHtml(adminRoleLabel(customer.role))}` : ""}</span>
+          </button>
+        `).join("")
+      : `<div class="empty-state compact"><strong>Nenhum cliente encontrado</strong><span>Use Cliente avulso ou Venda rapida.</span></div>`;
+  } catch (error) {
+    target.innerHTML = `<div class="validation-result error">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function updateManualTotal() {
+  const { session } = currentManualMovieSession();
+  const fullPrice = Number(session?.priceFull || state.content?.settings?.defaultTicketPrice || 10);
+  const halfPrice = Number(session?.priceHalf || fullPrice);
+  const fullCount = Math.max(0, Number($("manualFullTickets")?.value || 0));
+  const halfCount = Math.max(0, Number($("manualHalfTickets")?.value || 0));
+  const total = fullCount * fullPrice + halfCount * halfPrice;
+  if ($("manualFullPrice")) $("manualFullPrice").textContent = money(fullPrice);
+  if ($("manualHalfPrice")) $("manualHalfPrice").textContent = money(halfPrice);
+  if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
+}
+
+function stepTicketInput(inputId, delta) {
+  const input = $(inputId);
+  if (!input) return;
+  input.value = Math.max(0, Number(input.value || 0) + Number(delta || 0));
+  updateManualTotal();
+}
+
+function setBoxOfficeTab(tab) {
+  state.boxOfficeTab = tab;
+  document.querySelectorAll("[data-box-office-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.boxOfficeTab === tab);
+  });
+  const panelByTab = {
+    newSale: "boxOfficeNewSale",
+    todaySales: "boxOfficeTodaySales",
+    allOrders: "boxOfficeAllOrders",
+    payments: "boxOfficePayments",
+    validateTicket: "boxOfficeValidateTicket"
+  };
+  Object.entries(panelByTab).forEach(([key, id]) => {
+    const panel = $(id);
+    if (panel) panel.classList.toggle("active", key === tab);
+  });
+  if (tab === "validateTicket") {
+    window.setTimeout(() => startQrReader(), 80);
+  } else {
+    stopQrReader();
+  }
+}
+
+function ticketResultDetails(ticket = {}) {
+  return [
+    ticket.movieTitle || "Ingresso Cine Cruzeiro",
+    [ticket.sessionTime, ticket.sessionRoom || "Sala Cruzeiro"].filter(Boolean).join(" • "),
+    [ticket.ticketType, ticket.sessionFormat].filter(Boolean).join(" • ")
+  ].filter(Boolean);
+}
+
+function renderTicketValidationResult(type, payload = {}) {
+  const target = $("ticketValidationResult");
+  if (!target) return;
+  const ticket = payload.ticket || {};
+  const details = ticketResultDetails(ticket);
+  const usedAt = ticket.usedAt ? new Date(ticket.usedAt).toLocaleString("pt-BR") : "";
+  const operator = ticket.usedBy ? `por ${escapeHtml(ticket.usedBy)}` : "";
+  const message = escapeHtml(payload.message || "");
+  const templates = {
+    ok: {
+      title: "Ingresso válido",
+      copy: "Entrada liberada",
+      action: "Escanear próximo"
+    },
+    used: {
+      title: "Ingresso já utilizado",
+      copy: [usedAt ? `Validado em ${usedAt}` : "", operator].filter(Boolean).join("<br>") || "Este código já deu entrada.",
+      action: "Escanear próximo"
+    },
+    expired: {
+      title: "Sessão indisponível",
+      copy: message || "Este ingresso está expirado, cancelado ou fora da janela de validação.",
+      action: "Tentar novamente"
+    },
+    invalid: {
+      title: "Ingresso inválido",
+      copy: message || "Código não reconhecido, cancelado ou sem autorização.",
+      action: "Tentar novamente"
+    },
+    offline: {
+      title: "Sem conexão",
+      copy: "Não foi possível validar este ingresso com segurança.",
+      action: "Tentar novamente"
+    }
+  };
+  const template = templates[type] || templates.invalid;
+  target.className = `validation-result scanner-result ${type}`;
+  target.innerHTML = `
+    <strong>${escapeHtml(template.title)}</strong>
+    ${details.length ? `<div class="scanner-result-details">${details.map(escapeHtml).join("<br>")}</div>` : ""}
+    <p>${template.copy}</p>
+    <button class="primary-button full" type="button" onclick="scanNextTicket()">${escapeHtml(template.action)}</button>
+  `;
+}
+
+async function validateTicketByCode(code, options = {}) {
+  const cleanCode = String(code || $("ticketValidationCode").value || "").trim();
+  if (!cleanCode) {
+    showToast("Informe ou leia um QR Code.", "error");
+    return;
+  }
+  if (state.qrValidationLocked) return;
+  state.qrValidationLocked = true;
+  clearTimeout(state.qrAutoRestartTimer);
+  setQrReaderActive(false, "Validando no servidor...");
+
+  try {
+    const result = await api("/api/tickets/validate", {
+      method: "POST",
+      body: JSON.stringify({ code: cleanCode })
+    });
+    renderTicketValidationResult("ok", { ticket: result.ticket });
+    if ($("ticketValidationCode")) $("ticketValidationCode").value = result.ticket?.code || cleanCode;
+    navigator.vibrate?.(80);
+    await loadContent({ silent: true });
+  } catch (error) {
+    if (!navigator.onLine) {
+      renderTicketValidationResult("offline");
+    } else {
+      const payload = error.payload || {};
+      const resultType = payload.result === "used"
+        ? "used"
+        : payload.result === "expired"
+          ? "expired"
+          : payload.error?.code === "TICKET_PAYMENT_PENDING"
+            ? "expired"
+            : payload.result === "invalid"
+              ? "invalid"
+              : /já validado|ja validado/i.test(error.message || "")
+                ? "used"
+                : /indispon|expir|sess|pago/i.test(error.message || "")
+                  ? "expired"
+                  : "invalid";
+      renderTicketValidationResult(resultType, {
+        ticket: payload.ticket,
+        message: payload.error?.message || error.message || "Não foi possível validar este ingresso."
+      });
+    }
+  } finally {
+    state.qrValidationLocked = false;
+    if (options.autoRestart) {
+      state.qrAutoRestartTimer = setTimeout(() => {
+        if (state.boxOfficeTab === "validateTicket") startQrReader();
+      }, 4200);
+    }
+  }
+}
+
+async function startQrReader() {
+  stopQrReader();
+  if (location.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(location.hostname)) {
+    renderTicketValidationResult("invalid", { message: "A câmera exige HTTPS em produção. Digite o código manualmente." });
+    $("manualCodeBox").hidden = false;
+    $("validateTicketButton").hidden = false;
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    renderTicketValidationResult("invalid", { message: "Este navegador não oferece câmera web. Digite o código manualmente." });
+    $("manualCodeBox").hidden = false;
+    $("validateTicketButton").hidden = false;
+    return;
+  }
+  try {
+    setQrReaderActive(true, "Solicitando permissão da câmera...");
+    state.qrStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+    const video = $("qrVideo");
+    video.srcObject = state.qrStream;
+    await video.play();
+    state.qrTorchTrack = state.qrStream.getVideoTracks()[0] || null;
+    await state.qrTorchTrack?.applyConstraints?.({ advanced: [{ focusMode: "continuous" }] }).catch(() => null);
+    setQrReaderActive(true, "Aponte para o QR Code");
+    let detector = null;
+    if ("BarcodeDetector" in window) {
+      try {
+        detector = new BarcodeDetector({ formats: ["qr_code"] });
+      } catch {
+        detector = null;
+      }
+    }
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    state.qrScanDeadline = Date.now() + QR_SCAN_DURATION_MS;
+    updateQrCountdown();
+    state.qrCountdownTimer = setInterval(updateQrCountdown, 250);
+    state.qrCloseTimer = setTimeout(() => {
+      stopQrReader("Tempo de leitura encerrado. Abra a camera novamente ou digite o codigo manualmente.");
+    }, QR_SCAN_DURATION_MS);
+    $("ticketValidationResult").className = "validation-result scanner-ready";
+    $("ticketValidationResult").textContent = detector
+      ? "Leitura automática ativa."
+      : "Leitura alternativa ativa via jsQR.";
+
+    state.qrScanTimer = setInterval(async () => {
+      if (!video.videoWidth || state.qrValidationLocked) return;
+
+      let value = "";
+      if (detector) {
+        const codes = await detector.detect(video).catch(() => []);
+        value = codes[0]?.rawValue || "";
+      } else if (window.jsQR && context) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        value = window.jsQR(imageData.data, imageData.width, imageData.height)?.data || "";
+      }
+
+      const now = Date.now();
+      if (value && (value !== state.qrLastValue || now - state.qrLastValueAt > 3000)) {
+        state.qrLastValue = value;
+        state.qrLastValueAt = now;
+        if ($("ticketValidationCode")) $("ticketValidationCode").value = value;
+        stopQrReader("QR Code lido. Validando ingresso...");
+        validateTicketByCode(value, { autoRestart: true });
+      }
+    }, 420);
+  } catch (error) {
+    stopQrReader();
+    renderTicketValidationResult("invalid", { message: "Não foi possível abrir a câmera. Verifique a permissão do navegador." });
+    $("manualCodeBox").hidden = false;
+    $("validateTicketButton").hidden = false;
+  }
+}
+
+function updateQrCountdown() {
+  const seconds = Math.max(0, Math.ceil((state.qrScanDeadline - Date.now()) / 1000));
+  const counter = $("qrCountdown");
+  if (counter) counter.textContent = `${seconds}s`;
+}
+
+function setQrReaderActive(active, status = "") {
+  const frame = $("qrReaderFrame");
+  if (frame) frame.classList.toggle("active", active);
+  const startButton = $("startQrButton");
+  const stopButton = $("stopQrButton");
+  if (startButton) startButton.disabled = active;
+  if (stopButton) stopButton.disabled = !active;
+  const torchButton = $("torchQrButton");
+  const hasTorch = Boolean(state.qrTorchTrack?.getCapabilities?.().torch);
+  if (torchButton) {
+    torchButton.disabled = !active || !hasTorch;
+    torchButton.classList.toggle("active", state.qrTorchOn);
+  }
+  const statusElement = $("qrReaderStatus");
+  if (statusElement) statusElement.textContent = status || (active ? "Câmera ativa" : "Câmera desligada");
+  const counter = $("qrCountdown");
+  if (counter && !active) counter.textContent = "30s";
+}
+
+function stopQrReader(message = "") {
+  clearTimeout(state.qrAutoRestartTimer);
+  if (state.qrScanTimer) {
+    clearInterval(state.qrScanTimer);
+    state.qrScanTimer = null;
+  }
+  if (state.qrCloseTimer) {
+    clearTimeout(state.qrCloseTimer);
+    state.qrCloseTimer = null;
+  }
+  if (state.qrCountdownTimer) {
+    clearInterval(state.qrCountdownTimer);
+    state.qrCountdownTimer = null;
+  }
+  state.qrScanDeadline = 0;
+  state.qrTorchOn = false;
+  state.qrTorchTrack = null;
+  if (state.qrStream) {
+    state.qrStream.getTracks().forEach((track) => track.stop());
+    state.qrStream = null;
+  }
+  const video = $("qrVideo");
+  if (video) video.srcObject = null;
+  setQrReaderActive(false, message || "Câmera desligada");
+  if (message && $("ticketValidationResult")) {
+    $("ticketValidationResult").className = "validation-result";
+    $("ticketValidationResult").textContent = message;
+  }
+}
+
+async function toggleQrTorch() {
+  const track = state.qrTorchTrack;
+  if (!track?.getCapabilities?.().torch) return;
+  state.qrTorchOn = !state.qrTorchOn;
+  await track.applyConstraints({ advanced: [{ torch: state.qrTorchOn }] }).catch(() => {
+    state.qrTorchOn = false;
+    showToast("Lanterna indisponível neste aparelho.", "error");
+  });
+  setQrReaderActive(Boolean(state.qrStream), state.qrStream ? "Aponte para o QR Code" : "Câmera desligada");
+}
+
+function toggleManualCodeBox() {
+  const box = $("manualCodeBox");
+  const button = $("validateTicketButton");
+  if (!box || !button) return;
+  const nextHidden = !box.hidden;
+  box.hidden = nextHidden;
+  button.hidden = nextHidden;
+  if (!nextHidden) $("ticketValidationCode")?.focus();
+}
+
+function scanNextTicket() {
+  if ($("ticketValidationCode")) $("ticketValidationCode").value = "";
+  state.qrLastValue = "";
+  state.qrLastValueAt = 0;
+  if ($("ticketValidationResult")) {
+    $("ticketValidationResult").className = "validation-result scanner-ready";
+    $("ticketValidationResult").textContent = "Pronto para o próximo ingresso.";
+  }
+  startQrReader();
+}
+
+function renderConcessions() {
+  const items = state.content?.concessions || [];
+  renderConcessionInsights();
+  if (state.creating.concession) {
+    $("concessionsList").innerHTML = creationPlaceholder("Novo produto", "Preencha nome, preço, estoque e imagem por upload no quadro à direita.");
+    fillConcessionForm(null);
+    return;
+  }
+  if (!items.length) {
+    $("concessionsList").innerHTML = `<div class="empty-state"><strong>Nenhum produto cadastrado</strong><span>Crie combos para aparecerem no checkout.</span></div>`;
+    fillConcessionForm(null);
+    return;
+  }
+
+  $("concessionsList").innerHTML = items
+    .map((item) => `
+      <button class="list-item ${item.id === state.selectedConcessionId ? "active" : ""}" type="button" onclick="selectConcession('${item.id}')">
+        <span>
+          <span class="list-title">${escapeHtml(item.name)}</span>
+          <span class="list-meta">${escapeHtml(item.category || "combo")} • ${item.active ? "ativo" : "inativo"}${item.featured ? " • destaque" : ""}${item.stock !== "" && item.stock !== undefined ? ` • estoque ${item.stock}` : ""}</span>
+        </span>
+        <span class="badge">${money(item.price)}</span>
+      </button>
+    `)
+    .join("");
+  fillConcessionForm(currentConcession());
+}
+
+function renderConcessionInsights() {
+  const orders = state.content?.orders || [];
+  const soldByItem = new Map();
+  orders.forEach((order) => {
+    (order.concessionItems || []).forEach((item) => {
+      const current = soldByItem.get(item.id) || { name: item.name, quantity: 0, revenue: 0 };
+      current.quantity += Number(item.quantity || 0);
+      current.revenue += Number(item.quantity || 0) * Number(item.unitPrice || 0);
+      soldByItem.set(item.id, current);
+    });
+  });
+
+  const totalQuantity = [...soldByItem.values()].reduce((sum, item) => sum + item.quantity, 0);
+  const totalRevenue = [...soldByItem.values()].reduce((sum, item) => sum + item.revenue, 0);
+  const topItem = [...soldByItem.values()].sort((a, b) => b.quantity - a.quantity)[0];
+
+  $("concessionInsights").innerHTML = `
+    <div class="mini-insight"><span>Itens vendidos</span><strong>${totalQuantity}</strong></div>
+    <div class="mini-insight"><span>Receita</span><strong>${money(totalRevenue)}</strong></div>
+    <div class="mini-insight"><span>Mais vendido</span><strong>${escapeHtml(topItem?.name || "-")}</strong></div>
+  `;
+}
+
+function selectConcession(id) {
+  state.creating.concession = false;
+  state.selectedConcessionId = id;
+  renderConcessions();
+}
+
+function newConcession() {
+  state.creating.concession = true;
+  state.selectedConcessionId = "";
+  $("concessionsList").innerHTML = creationPlaceholder("Novo produto", "Preencha nome, preço, estoque e imagem por upload no quadro à direita.");
+  fillConcessionForm(null);
+}
+
+function fillConcessionForm(item) {
+  setDisabled("deleteConcessionButton", !item);
+  $("concessionId").value = item?.id || "";
+  $("concessionSku").value = item?.sku || "";
+  $("concessionName").value = item?.name || "";
+  $("concessionBadge").value = item?.badge || "";
+  $("concessionDescription").value = item?.description || "";
+  $("concessionImageUrl").value = item?.imageUrl || "";
+  $("concessionPrice").value = item?.price ?? 0;
+  $("concessionCompareAt").value = item?.compareAt || "";
+  $("concessionStock").value = item?.stock ?? "";
+  $("concessionMaxPerOrder").value = item?.maxPerOrder ?? 8;
+  $("concessionSortOrder").value = item?.sortOrder ?? 100;
+  $("concessionTags").value = (item?.tags || []).join(", ");
+  $("concessionCategory").value = item?.category || "combo";
+  $("concessionComboItems").value = (item?.comboItems || []).map((comboItem) => `${comboItem.name} | ${comboItem.quantity}`).join("\n");
+  $("concessionFeatured").checked = Boolean(item?.featured);
+  $("concessionActive").checked = item?.active !== false;
+  renderConcessionPreview();
+}
+
+function renderConcessionPreview() {
+  const url = cleanAdminAssetUrl($("concessionImageUrl").value);
+  $("concessionImagePreview").innerHTML = url
+    ? `<img src="${escapeHtml(adminAssetUrl(url))}" alt="Prévia do produto" onerror="this.parentElement.innerHTML='<span>Imagem indisponível</span>'" />`
+    : "<span>Imagem do produto</span>";
+}
+
+async function saveConcession(event) {
+  event.preventDefault();
+  try {
+    const payload = {
+      id: $("concessionId").value || undefined,
+      sku: $("concessionSku").value,
+      name: $("concessionName").value,
+      badge: $("concessionBadge").value,
+      description: $("concessionDescription").value,
+      imageUrl: cleanAdminAssetUrl($("concessionImageUrl").value),
+      price: Number($("concessionPrice").value || 0),
+      compareAt: $("concessionCompareAt").value,
+      stock: $("concessionStock").value,
+      maxPerOrder: Number($("concessionMaxPerOrder").value || 8),
+      sortOrder: Number($("concessionSortOrder").value || 100),
+      tags: $("concessionTags").value,
+      category: $("concessionCategory").value,
+      comboItems: $("concessionComboItems").value,
+      featured: $("concessionFeatured").checked,
+      active: $("concessionActive").checked
+    };
+    const existingId = $("concessionId").value;
+    const saved = existingId
+      ? await api(`/api/concessions/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/concessions", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.concession = false;
+    state.selectedConcessionId = saved.id;
+    await loadContent({ silent: true });
+    showSuccess("Produto salvo", `${saved.name} ja pode aparecer na bomboniere do checkout.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteConcession() {
+  const item = currentConcession();
+  if (!item || !confirm(`Excluir ${item.name}?`)) return;
+  try {
+    await api(`/api/concessions/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    state.selectedConcessionId = "";
+    await loadContent({ silent: true });
+    showToast("Produto excluído.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function fillSettingsForm() {
+  const settings = state.content?.settings || {};
+  $("settingAnnouncementEnabled").checked = settings.announcementEnabled !== false;
+  $("settingAnnouncementText").value = settings.announcementText || "";
+  fillImageFields(marketingImageFields, settings);
+  fillImageFields(clubImageFields, settings);
+}
+
+function renderMarketingOverview() {
+  if (!$("marketingOverview")) return;
+  const settings = state.content?.settings || {};
+  const promotions = state.content?.promotions || [];
+  const ads = state.content?.ads || [];
+  const coupons = promotions.filter((item) => item.couponCode);
+  $("marketingOverview").innerHTML = `
+    <div class="mini-insight"><span>Faixa superior</span><strong>${settings.announcementEnabled === false ? "Oculta" : "Visível"}</strong></div>
+    <div class="mini-insight"><span>Promoções ativas</span><strong>${promotions.filter((item) => item.active !== false).length}</strong></div>
+    <div class="mini-insight"><span>Cupons</span><strong>${coupons.length}</strong></div>
+    <div class="mini-insight"><span>Anúncios ativos</span><strong>${ads.filter((item) => item.active !== false).length}</strong></div>
+  `;
+}
+
+async function saveSettings(event) {
+  event.preventDefault();
+  try {
+    await persistSettings(
+      {
+        announcementEnabled: $("settingAnnouncementEnabled").checked,
+        announcementText: $("settingAnnouncementText").value,
+        ...collectImageSettings(marketingImageFields)
+      },
+      "Configurações salvas",
+      "A home e a página de eventos já vão usar as novas definições."
+    );
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function saveClubVisualSettings(event) {
+  event.preventDefault();
+  try {
+    await persistSettings(
+      collectImageSettings(clubImageFields),
+      "Visual do Clube salvo",
+      "A página Clube já vai usar as novas imagens."
+    );
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function sendEmailCampaign(event) {
+  event.preventDefault();
+  const resultNode = $("emailCampaignResult");
+  if (resultNode) resultNode.textContent = "Enviando...";
+  try {
+    const result = await api("/api/admin/email/promotions", {
+      method: "POST",
+      body: JSON.stringify({
+        subject: $("emailCampaignSubject").value,
+        message: $("emailCampaignMessage").value,
+        ctaLabel: $("emailCampaignCtaLabel").value,
+        ctaUrl: $("emailCampaignCtaUrl").value
+      })
+    });
+    if (resultNode) resultNode.textContent = `${result.sent || 0} enviados, ${result.failed || 0} falharam.`;
+    $("emailCampaignForm").reset();
+    showSuccess("Campanha enviada", `${result.sent || 0} cliente(s) receberam o e-mail.`);
+  } catch (error) {
+    if (resultNode) resultNode.textContent = "";
+    showToast(error.message, "error");
+  }
+}
+
+function renderPromotions() {
+  const items = state.content?.promotions || [];
+  if (state.creating.promotion) {
+    $("promotionsList").innerHTML = creationPlaceholder("Nova promoção", "Crie a regra comercial no quadro à direita.");
+    fillPromotionForm(null);
+    return;
+  }
+  $("promotionsList").innerHTML = items.length
+    ? items.map((item) => `
+        <button class="list-item ${item.id === state.selectedPromotionId ? "active" : ""}" type="button" onclick="selectPromotion('${item.id}')">
+          <span>
+            <span class="list-title">${escapeHtml(item.title)}</span>
+            <span class="list-meta">${item.couponCode ? `cupom ${escapeHtml(item.couponCode)} • ` : ""}${item.active ? "ativa" : "inativa"}</span>
+          </span>
+          <span class="badge">${Number(item.value || 0)}</span>
+        </button>
+      `).join("")
+    : `<div class="empty-state"><strong>Nenhuma promocao</strong><span>Crie chamadas comerciais ou cupons.</span></div>`;
+  fillPromotionForm(currentPromotion());
+}
+
+function selectPromotion(id) {
+  state.creating.promotion = false;
+  state.selectedPromotionId = id;
+  renderPromotions();
+}
+
+function newPromotion() {
+  state.creating.promotion = true;
+  state.selectedPromotionId = "";
+  $("promotionsList").innerHTML = creationPlaceholder("Nova promoção", "Crie a regra comercial no quadro à direita.");
+  fillPromotionForm(null);
+}
+
+function fillPromotionForm(item) {
+  setDisabled("deletePromotionButton", !item);
+  $("promotionId").value = item?.id || "";
+  $("promotionTitle").value = item?.title || "";
+  $("promotionDescription").value = item?.description || "";
+  $("promotionDiscountType").value = item?.discountType || "fixed_price";
+  $("promotionValue").value = item?.value ?? 10;
+  $("promotionCouponCode").value = item?.couponCode || "";
+  $("promotionActive").checked = item?.active !== false;
+}
+
+async function savePromotion(event) {
+  event.preventDefault();
+  try {
+    const payload = {
+      id: $("promotionId").value || undefined,
+      title: $("promotionTitle").value,
+      description: $("promotionDescription").value,
+      discountType: $("promotionDiscountType").value,
+      value: Number($("promotionValue").value || 0),
+      couponCode: $("promotionCouponCode").value,
+      active: $("promotionActive").checked
+    };
+    const existingId = $("promotionId").value;
+    const saved = existingId
+      ? await api(`/api/promotions/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/promotions", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.promotion = false;
+    state.selectedPromotionId = saved.id;
+    await loadContent({ silent: true });
+    showSuccess("Promocao salva", `${saved.title} foi atualizada.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deletePromotion() {
+  const item = currentPromotion();
+  if (!item || !confirm(`Excluir ${item.title}?`)) return;
+  try {
+    await api(`/api/promotions/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    state.selectedPromotionId = "";
+    await loadContent({ silent: true });
+    showToast("Promocao excluida.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderAds() {
+  const items = state.content?.ads || [];
+  if (state.creating.ad) {
+    $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem por upload e defina onde o anúncio será exibido.");
+    fillAdForm(null);
+    return;
+  }
+  $("adsList").innerHTML = items.length
+    ? items.map((item) => `
+        <button class="list-item ${item.id === state.selectedAdId ? "active" : ""}" type="button" onclick="selectAd('${item.id}')">
+          <span>
+            <span class="list-title">${escapeHtml(item.title)}</span>
+            <span class="list-meta">${escapeHtml(item.placement || "home")} • ${item.active ? "ativo" : "inativo"}</span>
+          </span>
+          <span class="badge">Ad</span>
+        </button>
+      `).join("")
+    : `<div class="empty-state"><strong>Nenhum anuncio</strong><span>Crie banners e destaques comerciais.</span></div>`;
+  fillAdForm(currentAd());
+}
+
+function selectAd(id) {
+  state.creating.ad = false;
+  state.selectedAdId = id;
+  renderAds();
+}
+
+function newAd() {
+  state.creating.ad = true;
+  state.selectedAdId = "";
+  $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem por upload e defina onde o anúncio será exibido.");
+  fillAdForm(null);
+}
+
+function fillAdForm(item) {
+  setDisabled("deleteAdButton", !item);
+  $("adId").value = item?.id || "";
+  $("adTitle").value = item?.title || "";
+  $("adPlacement").value = item?.placement || "home";
+  $("adImageUrl").value = item?.imageUrl || "";
+  $("adLinkUrl").value = item?.linkUrl || "";
+  $("adActive").checked = item?.active !== false;
+}
+
+async function saveAd(event) {
+  event.preventDefault();
+  try {
+    const payload = {
+      id: $("adId").value || undefined,
+      title: $("adTitle").value,
+      placement: $("adPlacement").value,
+      imageUrl: cleanAdminAssetUrl($("adImageUrl").value),
+      linkUrl: $("adLinkUrl").value,
+      active: $("adActive").checked
+    };
+    const existingId = $("adId").value;
+    const saved = existingId
+      ? await api(`/api/ads/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/ads", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.ad = false;
+    state.selectedAdId = saved.id;
+    await loadContent({ silent: true });
+    showSuccess("Anúncio salvo", `${saved.title} foi atualizado.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteAd() {
+  const item = currentAd();
+  if (!item || !confirm(`Excluir ${item.title}?`)) return;
+  try {
+    await api(`/api/ads/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    state.selectedAdId = "";
+    await loadContent({ silent: true });
+    showToast("Anúncio excluído.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderUsers() {
+  const items = state.content?.users || [];
+  if (state.creating.user) {
+    $("usersList").innerHTML = creationPlaceholder("Novo usuário", "Cadastre operador, gerente ou dono no quadro à direita.");
+    fillUserForm(null);
+    return;
+  }
+  $("usersList").innerHTML = items.length
+    ? items.map((item) => `
+        <button class="list-item ${item.id === state.selectedUserId ? "active" : ""}" type="button" onclick="selectUser('${item.id}')">
+          <span>
+            <span class="list-title">${escapeHtml(item.name)}</span>
+            <span class="list-meta">${escapeHtml(item.email || "sem email")} • ${escapeHtml(item.role || "editor")}</span>
+          </span>
+          <span class="badge">${item.active ? "ativo" : "off"}</span>
+        </button>
+      `).join("")
+    : `<div class="empty-state"><strong>Nenhum usuario</strong><span>Cadastre operadores do painel.</span></div>`;
+  fillUserForm(currentUser());
+}
+
+function selectUser(id) {
+  state.creating.user = false;
+  state.selectedUserId = id;
+  renderUsers();
+}
+
+function newUser() {
+  state.creating.user = true;
+  state.selectedUserId = "";
+  $("usersList").innerHTML = creationPlaceholder("Novo usuário", "Cadastre operador, gerente ou dono no quadro à direita.");
+  fillUserForm(null);
+}
+
+function fillUserForm(item) {
+  setDisabled("deleteUserButton", !item);
+  $("userId").value = item?.id || "";
+  $("userName").value = item?.name || "";
+  $("userEmail").value = item?.email || "";
+  $("userPassword").value = "";
+  $("userRole").value = item?.role === "editor" ? "manager" : item?.role || "operator";
+  $("userActive").checked = item?.active !== false;
+}
+
+async function saveUser(event) {
+  event.preventDefault();
+  try {
+    const payload = {
+      id: $("userId").value || undefined,
+      name: $("userName").value,
+      email: $("userEmail").value,
+      password: $("userPassword").value || undefined,
+      role: $("userRole").value,
+      active: $("userActive").checked
+    };
+    const existingId = $("userId").value;
+    const saved = existingId
+      ? await api(`/api/users/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/users", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.user = false;
+    state.selectedUserId = saved.id;
+    $("userPassword").value = "";
+    await loadContent({ silent: true });
+    showSuccess("Usuário salvo", `${saved.name} foi atualizado.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteUser() {
+  const item = currentUser();
+  if (!item || !confirm(`Excluir ${item.name}?`)) return;
+  try {
+    await api(`/api/users/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    state.selectedUserId = "";
+    await loadContent({ silent: true });
+    showToast("Usuário excluído.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderClub() {
+  const plans = [...(state.content?.subscriptionPlans || [])].sort((a, b) => Number(a.displayOrder || 100) - Number(b.displayOrder || 100));
+  const subscriptions = state.content?.subscriptions || [];
+  const credits = state.content?.subscriptionCredits || [];
+  const usage = state.content?.subscriptionUsage || [];
+  if ($("clubOverview")) {
+    $("clubOverview").innerHTML = `
+      <div class="mini-insight"><span>Planos ativos</span><strong>${plans.filter((plan) => plan.active !== false).length}</strong></div>
+      <div class="mini-insight"><span>Assinaturas ativas</span><strong>${subscriptions.filter((item) => item.status === "active").length}</strong></div>
+      <div class="mini-insight"><span>Créditos disponíveis</span><strong>${credits.reduce((sum, item) => sum + Number(item.remaining || 0), 0)}</strong></div>
+      <div class="mini-insight"><span>Usos registrados</span><strong>${usage.length}</strong></div>
+    `;
+  }
+  if ($("clubPlansList")) {
+    $("clubPlansList").innerHTML = state.creating.clubPlan
+      ? creationPlaceholder("Novo plano", "Configure nome, créditos, preço e imagem local no quadro à direita.")
+      : plans.length
+      ? plans.map((plan) => `
+          <button class="list-item club-plan-item ${plan.id === state.selectedClubPlanId ? "active" : ""}" type="button" onclick="selectClubPlan('${escapeHtml(plan.id)}')">
+            <span class="plan-thumb">${plan.imageUrl ? `<img src="${escapeHtml(adminAssetUrl(plan.imageUrl))}" alt="">` : `<span>Plano</span>`}</span>
+            <span>
+              <span class="list-title">${escapeHtml(plan.name)}</span>
+              <span class="list-meta">Ordem ${Number(plan.displayOrder || 100)} • ${Number(plan.includedTickets || 0)} ingressos/mês • ${plan.isFeatured ? "recomendado • " : ""}${plan.active === false ? "inativo" : "ativo"}</span>
+            </span>
+            <span class="badge">${money(plan.monthlyPrice)}</span>
+          </button>
+        `).join("")
+      : `<div class="empty-state"><strong>Nenhum plano cadastrado</strong><span>Crie planos para vender assinatura recorrente.</span></div>`;
+  }
+  fillClubPlanForm(currentClubPlan());
+  if ($("clubAssignPlan")) {
+    $("clubAssignPlan").innerHTML = plans
+      .filter((plan) => plan.active !== false)
+      .map((plan) => `<option value="${escapeHtml(plan.id)}">${escapeHtml(plan.name)} - ${money(plan.monthlyPrice)}</option>`)
+      .join("");
+  }
+  if ($("clubSubscriptionsList")) {
+    const users = state.content?.users || [];
+    const sortedSubscriptions = [...subscriptions].sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+    const pageSize = state.clubSubscriptionsPageSize || 5;
+    const totalPages = Math.max(1, Math.ceil(sortedSubscriptions.length / pageSize));
+    state.clubSubscriptionsPage = Math.min(Math.max(1, state.clubSubscriptionsPage || 1), totalPages);
+    const start = (state.clubSubscriptionsPage - 1) * pageSize;
+    const pageItems = sortedSubscriptions.slice(start, start + pageSize);
+    $("clubSubscriptionsList").innerHTML = subscriptions.length
+      ? `
+        <div class="subscription-list-head">
+          <span>${sortedSubscriptions.length} assinatura(s)</span>
+          <span>Página ${state.clubSubscriptionsPage} de ${totalPages}</span>
+        </div>
+        ${pageItems.map((subscription) => {
+          const user = users.find((item) => item.id === subscription.userId) || {};
+          const plan = plans.find((item) => item.id === subscription.planId) || {};
+          const credit = credits.find((item) => item.id === subscription.currentCreditId) || credits.find((item) => item.subscriptionId === subscription.id);
+          const terminal = ["cancelled", "ended", "cancelled_by_admin"].includes(String(subscription.status || "").toLowerCase());
+          return `
+            <div class="list-item static">
+              <span>
+                <span class="list-title">${escapeHtml(user.name || user.email || "Cliente")}</span>
+                <span class="list-meta">${escapeHtml(plan.name || subscription.planId)} • ${clubStatusLabel(subscription.status)} • ${Number(credit?.remaining ?? subscription.creditsAvailable ?? 0)} de ${Number(credit?.total ?? plan.includedTickets ?? 0)} crédito(s)</span>
+              </span>
+              <span class="table-actions">
+                <button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>
+                <button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','paused')">Pausar</button>
+                <button class="ghost-button" type="button" onclick="adjustClubCredit('${escapeHtml(subscription.id)}')">Ajustar crédito</button>
+                ${terminal
+                  ? `<button class="danger-button" type="button" onclick="deleteClubSubscription('${escapeHtml(subscription.id)}')">Excluir</button>`
+                  : `<button class="danger-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','cancelled')">Cancelar</button>`}
+              </span>
+            </div>
+          `;
+        }).join("")}
+        <div class="subscription-pager">
+          <button class="ghost-button" type="button" ${state.clubSubscriptionsPage <= 1 ? "disabled" : ""} onclick="changeClubSubscriptionsPage(-1)">Anterior</button>
+          <button class="ghost-button" type="button" ${state.clubSubscriptionsPage >= totalPages ? "disabled" : ""} onclick="changeClubSubscriptionsPage(1)">Próxima</button>
+        </div>
+      `
+      : `<div class="empty-state"><strong>Nenhuma assinatura</strong><span>Atribuições manuais e assinaturas externas aparecerão aqui.</span></div>`;
+  }
+  if ($("clubUsageList")) {
+    $("clubUsageList").innerHTML = usage.length
+      ? `<table>
+          <thead><tr><th>Data</th><th>Assinatura</th><th>Pedido</th><th>Ingresso</th><th>Status</th></tr></thead>
+          <tbody>
+            ${usage.slice(0, 30).map((item) => `
+              <tr>
+                <td data-label="Data">${item.usedAt ? new Date(item.usedAt).toLocaleString("pt-BR") : "-"}</td>
+                <td data-label="Assinatura">${escapeHtml(item.subscriptionId || "-")}</td>
+                <td data-label="Pedido">${escapeHtml(item.orderId || "-")}</td>
+                <td data-label="Ingresso">${escapeHtml(item.ticketId || "-")}</td>
+                <td data-label="Status"><span class="badge ${item.refundedAt ? "muted" : ""}">${item.refundedAt ? "Crédito devolvido" : "Consumido"}</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>`
+      : `<div class="empty-state"><strong>Nenhum uso de crédito</strong><span>Os ingressos emitidos pelo Clube aparecerão aqui.</span></div>`;
+  }
+}
+
+function fillClubPlanForm(plan) {
+  if (!$("clubPlanForm")) return;
+  setDisabled("deleteClubPlanButton", !plan);
+  $("clubPlanId").value = plan?.id || "";
+  $("clubPlanName").value = plan?.name || "";
+  $("clubPlanPrice").value = plan?.monthlyPrice ?? 24.9;
+  $("clubPlanTickets").value = plan?.includedTickets ?? 3;
+  $("clubPlanImageUrl").value = plan?.imageUrl || "";
+  $("clubPlanDisplayOrder").value = plan?.displayOrder ?? 100;
+  $("clubPlanFeatured").checked = Boolean(plan?.isFeatured);
+  $("clubPlanBenefits").value = (plan?.benefits || []).join("\n");
+  $("clubPlanActive").checked = plan?.active !== false;
+  renderAdminImagePreview("clubPlanImageUrl", "clubPlanImagePreview", "Prévia do plano");
+}
+
+function selectClubPlan(id) {
+  state.creating.clubPlan = false;
+  state.selectedClubPlanId = id;
+  renderClub();
+}
+
+function newClubPlan() {
+  state.creating.clubPlan = true;
+  state.selectedClubPlanId = "";
+  $("clubPlansList").innerHTML = creationPlaceholder("Novo plano", "Configure nome, créditos, preço e imagem local no quadro à direita.");
+  fillClubPlanForm(null);
+}
+
+function changeClubSubscriptionsPage(delta) {
+  state.clubSubscriptionsPage = Math.max(1, Number(state.clubSubscriptionsPage || 1) + Number(delta || 0));
+  renderClub();
+}
+
+async function saveClubPlan(event) {
+  event.preventDefault();
+  const existingId = $("clubPlanId").value || state.selectedClubPlanId;
+  const payload = {
+    id: existingId || undefined,
+    name: $("clubPlanName").value,
+    monthlyPrice: Number($("clubPlanPrice").value || 0),
+    includedTickets: Number($("clubPlanTickets").value || 0),
+    imageUrl: cleanAdminAssetUrl($("clubPlanImageUrl").value),
+    displayOrder: Number($("clubPlanDisplayOrder").value || 100),
+    isFeatured: $("clubPlanFeatured").checked,
+    benefits: $("clubPlanBenefits").value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+    active: $("clubPlanActive").checked
+  };
+  try {
+    const saved = existingId
+      ? await api(`/api/admin/subscription-plans/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/admin/subscription-plans", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.clubPlan = false;
+    state.selectedClubPlanId = saved.id;
+    await loadContent({ silent: true });
+    showSuccess("Plano salvo", `${saved.name} foi atualizado no Clube Cine Cruzeiro.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteClubPlan() {
+  const plan = currentClubPlan();
+  if (!plan) return;
+  const reason = prompt(`Motivo para excluir ou desativar ${plan.name}:`);
+  if (reason === null) return;
+  if (!confirm(`Confirmar exclusão/desativação do plano ${plan.name}?`)) return;
+  try {
+    const result = await api(`/api/admin/subscription-plans/${encodeURIComponent(plan.id)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ reason })
+    });
+    state.selectedClubPlanId = "";
+    await loadContent({ silent: true });
+    showToast(result.deactivated ? "Plano desativado porque possui histórico de assinaturas." : "Plano excluído.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function assignClubSubscription(event) {
+  event.preventDefault();
+  try {
+    await api("/api/admin/subscriptions/assign", {
+      method: "POST",
+      body: JSON.stringify({
+        email: $("clubAssignEmail").value,
+        planId: $("clubAssignPlan").value,
+        status: "active"
+      })
+    });
+    $("clubAssignEmail").value = "";
+    state.clubSubscriptionsPage = 1;
+    await loadContent({ silent: true });
+    showSuccess("Assinatura atribuída", "O cliente já pode usar os créditos do Clube conforme o status do plano.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function updateClubSubscription(id, status) {
+  const reason = status === "cancelled" ? prompt("Motivo do cancelamento:") : "Ajuste pelo painel";
+  if (reason === null) return;
+  try {
+    await api(`/api/admin/subscriptions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, reason })
+    });
+    await loadContent({ silent: true });
+    showSuccess("Assinatura atualizada", `Status alterado para ${clubStatusLabel(status)}.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteClubSubscription(id) {
+  if (!confirm("Excluir esta assinatura cancelada do banco de dados?")) return;
+  try {
+    await api(`/api/admin/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    await loadContent({ silent: true });
+    showSuccess("Assinatura excluída", "A assinatura cancelada foi removida do cadastro do cliente.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function adjustClubCredit(id) {
+  const deltaInput = prompt("Informe o ajuste de créditos. Use negativo para remover:");
+  if (deltaInput === null) return;
+  const delta = Number(deltaInput);
+  if (!Number.isFinite(delta) || !Number.isInteger(delta) || delta === 0) {
+    showToast("Informe um número inteiro diferente de zero.", "error");
+    return;
+  }
+  const reason = prompt("Motivo obrigatório do ajuste:");
+  if (!reason) {
+    showToast("Informe o motivo do ajuste.", "error");
+    return;
+  }
+  try {
+    await api(`/api/admin/subscriptions/${encodeURIComponent(id)}/credits/adjust`, {
+      method: "POST",
+      body: JSON.stringify({ delta, reason })
+    });
+    await loadContent({ silent: true });
+    showSuccess("Créditos ajustados", "O saldo do cliente foi atualizado com registro no histórico da assinatura.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderIntegrations() {
+  if (!$("integrationsList")) return;
+  const entries = Object.entries(state.integrations?.integrations || {});
+  $("integrationsList").innerHTML = entries.length
+    ? entries.map(([key, item]) => `
+        <div class="integration-item">
+          <div class="integration-main">
+            <div class="integration-title-row">
+              <strong>${escapeHtml(item.name)}</strong>
+              <span class="integration-category">${escapeHtml(integrationCategory(key))}</span>
+            </div>
+            <span>${escapeHtml(item.purpose || "")}</span>
+            <div class="integration-meta">
+              <span class="badge ${item.enabled ? "" : "muted"}">${item.enabled ? "Ativa" : "Desativada"}</span>
+              <span class="integration-status ${escapeHtml(item.status || "pending")}">${integrationStatusLabel(item)}</span>
+              ${item.lastTestAt ? `<span>Último teste: ${escapeHtml(new Date(item.lastTestAt).toLocaleString("pt-BR"))}</span>` : ""}
+            </div>
+          </div>
+          <div class="integration-actions">
+            <button class="ghost-button" type="button" onclick="openIntegrationConfig('${escapeHtml(key)}')">Configurar</button>
+            <button class="ghost-button" type="button" onclick="testIntegration('${escapeHtml(key)}')">Testar</button>
+            <button class="${item.enabled ? "danger-button" : "primary-button"}" type="button" onclick="toggleIntegration('${escapeHtml(key)}', ${item.enabled ? "false" : "true"})">${item.enabled ? "Desativar" : "Ativar"}</button>
+          </div>
+        </div>
+      `).join("")
+    : `<div class="empty-state"><strong>Acesso restrito</strong><span>Somente o proprietário pode ver integrações.</span></div>`;
+}
+
+function integrationCategory(key) {
+  return {
+    mercadoPago: "Pagamentos",
+    googleLogin: "Login",
+    googleWallet: "Carteira digital",
+    tmdb: "Catálogo",
+    email: "E-mail",
+    crm: "CRM"
+  }[key] || "Integração";
+}
+
+function integrationStatusLabel(item) {
+  if (item.enabled && item.configured) return "Operacional";
+  if (item.configured) return "Configurada";
+  return "Pendente";
+}
+
+function integrationSecurityHint(field, integration) {
+  if (!field.secret) return "";
+  const secret = integration.secrets?.[field.key];
+  return secret?.hasValue
+    ? `<small class="integration-field-hint">Valor salvo com segurança: ${escapeHtml(secret.masked)}. Preencha somente para substituir.</small>`
+    : `<small class="integration-field-hint">Campo sensível. O valor será criptografado e ocultado após salvar.</small>`;
+}
+
+function integrationFieldInput(field, integration) {
+  const value = integration.values?.[field.key] ?? "";
+  if (field.type === "boolean") {
+    return `
+      <label class="check-field ${field.full ? "full" : ""}">
+        <input type="checkbox" data-integration-field="${escapeHtml(field.key)}" ${value ? "checked" : ""} />
+        <span>${escapeHtml(field.label)}</span>
+      </label>
+    `;
+  }
+  if (field.type === "select") {
+    return `
+      <label>
+        ${escapeHtml(field.label)}
+        <select data-integration-field="${escapeHtml(field.key)}">
+          ${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${String(value) === String(option) ? "selected" : ""}>${escapeHtml(option === "production" ? "Produção" : option === "sandbox" ? "Sandbox" : option)}</option>`).join("")}
+        </select>
+      </label>
+    `;
+  }
+  const secret = integration.secrets?.[field.key];
+  const placeholder = field.secret && secret?.hasValue ? "Manter valor salvo" : "";
+  const common = `data-integration-field="${escapeHtml(field.key)}" ${field.secret ? `data-secret="true" autocomplete="off" spellcheck="false"` : ""} placeholder="${escapeHtml(placeholder)}"`;
+  const labelClass = field.multiline ? "full" : "";
+  if (field.multiline) {
+    return `
+      <label class="${labelClass} integration-field ${field.secret ? "secret-field" : ""}">
+        ${escapeHtml(field.label)}
+        <textarea rows="4" ${common}></textarea>
+        ${integrationSecurityHint(field, integration)}
+      </label>
+    `;
+  }
+  return `
+    <label class="integration-field ${field.secret ? "secret-field" : ""}">
+      ${escapeHtml(field.label)}
+      <input type="${field.secret ? "password" : escapeHtml(field.type || "text")}" value="${field.secret ? "" : escapeHtml(value)}" ${common} />
+      ${integrationSecurityHint(field, integration)}
+    </label>
+  `;
+}
+
+async function openIntegrationConfig(key) {
+  try {
+    const data = await api(`/api/admin/integrations/${encodeURIComponent(key)}`);
+    const integration = data.integration;
+    state.selectedIntegrationKey = integration.key;
+    $("integrationTitle").textContent = integration.name;
+    $("integrationSubtitle").textContent = integration.purpose || "Configure o provider selecionado.";
+    $("integrationFields").innerHTML = (integration.fields || []).map((field) => integrationFieldInput(field, integration)).join("");
+    if ($("integrationContext")) {
+      $("integrationContext").innerHTML = `
+        <div class="integration-context-status">
+          <span class="integration-status ${escapeHtml(integration.status || "pending")}">${integrationStatusLabel(integration)}</span>
+          <strong>${integration.enabled ? "Ativa no sistema" : "Desativada"}</strong>
+          <p>${integration.configured ? "Credenciais mínimas configuradas." : "Preencha os campos obrigatórios para usar esta integração."}</p>
+        </div>
+        <dl class="integration-context-list">
+          <div>
+            <dt>Área</dt>
+            <dd>${escapeHtml(integrationCategory(integration.key))}</dd>
+          </div>
+          <div>
+            <dt>Ambiente</dt>
+            <dd>${escapeHtml(integration.environment === "sandbox" ? "Sandbox" : "Produção")}</dd>
+          </div>
+          <div>
+            <dt>Último teste</dt>
+            <dd>${integration.lastTestAt ? escapeHtml(new Date(integration.lastTestAt).toLocaleString("pt-BR")) : "Ainda não testada"}</dd>
+          </div>
+          <div>
+            <dt>Resultado</dt>
+            <dd>${escapeHtml(integration.lastTestMessage || "Sem mensagem registrada")}</dd>
+          </div>
+        </dl>
+      `;
+    }
+    $("integrationDisableButton").textContent = integration.enabled ? "Desativar" : "Ativar";
+    $("integrationDisableButton").className = integration.enabled ? "danger-button" : "ghost-button";
+    $("integrationTestButton").textContent = "Testar conexão";
+    $("integrationOverlay").hidden = false;
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function closeIntegrationConfig() {
+  state.selectedIntegrationKey = "";
+  if ($("integrationOverlay")) $("integrationOverlay").hidden = true;
+}
+
+function collectIntegrationForm() {
+  const payload = {};
+  document.querySelectorAll("[data-integration-field]").forEach((input) => {
+    const key = input.dataset.integrationField;
+    if (!key) return;
+    if (input.type === "checkbox") {
+      payload[key] = input.checked;
+      return;
+    }
+    const value = input.value || "";
+    if (input.dataset.secret === "true" && !value.trim()) return;
+    payload[key] = value;
+  });
+  return payload;
+}
+
+async function saveIntegration(event) {
+  event.preventDefault();
+  const key = state.selectedIntegrationKey;
+  if (!key) return;
+  try {
+    const data = await api(`/api/admin/integrations/${encodeURIComponent(key)}`, {
+      method: "PUT",
+      body: JSON.stringify(collectIntegrationForm())
+    });
+    state.integrations.integrations[key] = data.integration;
+    renderIntegrations();
+    closeIntegrationConfig();
+    showToast("Integração salva com segurança.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function testIntegration(key) {
+  try {
+    const result = await api(`/api/admin/integrations/${encodeURIComponent(key)}/test`, { method: "POST" });
+    if (state.integrations?.integrations && result.integration) state.integrations.integrations[key] = result.integration;
+    renderIntegrations();
+    showToast(result.message || "Integração testada.", result.ok ? "ok" : "error");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function toggleIntegration(key, enabled) {
+  try {
+    const result = await api(`/api/admin/integrations/${encodeURIComponent(key)}/${enabled ? "enable" : "disable"}`, { method: "POST" });
+    if (state.integrations?.integrations) state.integrations.integrations[key] = result.integration;
+    renderIntegrations();
+    showToast(enabled ? "Integração ativada." : "Integração desativada.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function applyRbacVisibility() {
+  const role = state.adminUser?.role || "";
+  const owner = ["owner", "master"].includes(role);
+  const manager = owner || role === "manager";
+  const operator = manager || role === "operator" || role === "seller";
+  const allowedPanels = new Set(
+    owner
+      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "concessionsPanel", "marketingPanel", "clubPanel", "usersPanel", "integrationsPanel"]
+      : manager
+      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "concessionsPanel", "marketingPanel", "clubPanel"]
+      : operator
+      ? ["dashboardPanel", "ordersPanel"]
+      : []
+  );
+  document.querySelectorAll(".nav-button").forEach((button) => {
+    button.hidden = !allowedPanels.has(button.dataset.panel);
+  });
+  document.querySelectorAll("[data-box-office-tab='payments']").forEach((button) => {
+    button.hidden = !manager;
+  });
+  const active = document.querySelector(".panel.active")?.id;
+  if (active && !allowedPanels.has(active)) activatePanel(allowedPanels.has("dashboardPanel") ? "dashboardPanel" : "ordersPanel", { scroll: false });
+}
+
+function bindEvents() {
+  const storedPanel = window.location.hash?.replace("#", "") || localStorage.getItem("cine_admin_panel") || "dashboardPanel";
+  activatePanel(storedPanel, { scroll: false });
+  document.body.classList.remove("admin-booting");
+  setupResponsiveSelects();
+
+  document.addEventListener("click", (event) => {
+    const floating = $("floatingActionMenu");
+    if (floating && !floating.hidden && !floating.contains(event.target)) closeFloatingActionMenu();
+    if (!event.target.closest?.(".admin-profile")) closeAdminProfileMenu();
+    if (!event.target.closest?.(".responsive-select")) closeResponsiveSelects();
+    if (!event.target.closest?.(".context-menu")) {
+      document.querySelectorAll(".context-menu-popover").forEach((menu) => {
+        menu.hidden = true;
+      });
+    }
+    document.querySelectorAll(".movie-row.drag-over").forEach((row) => row.classList.remove("drag-over"));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeFloatingActionMenu();
+      closeAdminProfileMenu();
+      closeAdminDrawer();
+      closeIntegrationConfig();
+      closeResponsiveSelects();
+      document.querySelectorAll(".context-menu-popover").forEach((menu) => {
+        menu.hidden = true;
+      });
+    }
+  });
+
+  $("adminMenuButton").addEventListener("click", () => toggleAdminDrawer());
+  $("adminDrawerBackdrop").addEventListener("click", closeAdminDrawer);
+  $("adminProfileButton")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleAdminProfileMenu();
+  });
+  $("profileLogoutButton")?.addEventListener("click", logoutAdmin);
+  document.querySelectorAll("[data-profile-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      closeAdminProfileMenu();
+      showToast("Área em preparação para o painel administrativo.");
+    });
+  });
+
+  document.querySelectorAll(".nav-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      activatePanel(button.dataset.panel, { scroll: true });
+      closeAdminDrawer();
+    });
+  });
+
+  $("logoutButton").addEventListener("click", logoutAdmin);
+  $("successCloseButton").addEventListener("click", hideSuccess);
+  $("successOverlay").addEventListener("click", (event) => {
+    if (event.target === $("successOverlay")) hideSuccess();
+  });
+  $("orderOverlayCloseButton").addEventListener("click", closeOrderOverlay);
+  $("orderOverlay").addEventListener("click", (event) => {
+    if (event.target === $("orderOverlay")) closeOrderOverlay();
+  });
+  $("orderEditorForm").addEventListener("submit", saveOrderEdit);
+  $("orderCancelButton").addEventListener("click", () => cancelOrDeleteOrder());
+  $("orderPermanentDeleteButton").addEventListener("click", () => openPermanentDelete());
+  $("permanentDeleteCloseButton").addEventListener("click", closePermanentDelete);
+  $("permanentDeleteBackButton").addEventListener("click", closePermanentDelete);
+  $("permanentDeleteOverlay").addEventListener("click", (event) => {
+    if (event.target === $("permanentDeleteOverlay")) closePermanentDelete();
+  });
+  $("permanentDeleteForm").addEventListener("submit", permanentlyDeleteSelectedOrder);
+  $("integrationForm").addEventListener("submit", saveIntegration);
+  $("integrationCloseButton").addEventListener("click", closeIntegrationConfig);
+  $("integrationOverlay").addEventListener("click", (event) => {
+    if (event.target === $("integrationOverlay")) closeIntegrationConfig();
+  });
+  $("integrationTestButton").addEventListener("click", () => {
+    if (state.selectedIntegrationKey) testIntegration(state.selectedIntegrationKey);
+  });
+  $("integrationDisableButton").addEventListener("click", () => {
+    const key = state.selectedIntegrationKey;
+    const current = state.integrations?.integrations?.[key];
+    if (key && current) toggleIntegration(key, !current.enabled);
+  });
+  document.querySelectorAll("[data-dashboard-period]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      state.dashboardPeriod = button.dataset.dashboardPeriod;
+      document.querySelectorAll("[data-dashboard-period]").forEach((item) => item.classList.toggle("active", item === button));
+      const custom = state.dashboardPeriod === "custom";
+      $("dashboardFrom").hidden = !custom;
+      $("dashboardTo").hidden = !custom;
+      await refreshDashboardOnly();
+      await refreshPaymentsOnly();
+    });
+  });
+  ["dashboardFrom", "dashboardTo"].forEach((id) => {
+    $(id).addEventListener("change", async () => {
+      state.dashboardFrom = $("dashboardFrom").value;
+      state.dashboardTo = $("dashboardTo").value;
+      if (state.dashboardPeriod === "custom") {
+        await refreshDashboardOnly();
+        await refreshPaymentsOnly();
+      }
+    });
+  });
+  $("newMovieButton").addEventListener("click", newMovie);
+  $("movieForm").addEventListener("submit", saveMovie);
+  $("deleteMovieButton").addEventListener("click", () => deleteMovie());
+  $("addSessionButton").addEventListener("click", addSession);
+  $("tmdbSearchButton").addEventListener("click", searchTmdb);
+  $("movieWizardBack").addEventListener("click", () => setMovieWizardStep(state.movieWizardStep - 1));
+  $("movieWizardNext").addEventListener("click", () => {
+    if (validateMovieWizardStep(state.movieWizardStep)) setMovieWizardStep(state.movieWizardStep + 1);
+  });
+  $("movieDraftButton").addEventListener("click", () => saveMovieWithAction("draft"));
+  document.querySelectorAll("[data-movie-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetStep = Number(button.dataset.movieStep);
+      if (targetStep <= state.movieWizardStep || validateMovieWizardStep(state.movieWizardStep)) setMovieWizardStep(targetStep);
+    });
+  });
+  $("movieTitle").addEventListener("input", () => {
+    if (!$("movieId").value && !$("movieSlug").dataset.touched) $("movieSlug").value = slugify($("movieTitle").value);
+  });
+  $("movieSlug").addEventListener("input", () => {
+    $("movieSlug").dataset.touched = "true";
+    $("movieSlug").value = slugify($("movieSlug").value);
+  });
+  $("moviePosterUpload").addEventListener("change", () => uploadMovieImage("moviePosterUpload", "moviePosterUrl", "moviePosterPreview", "movies/posters"));
+  $("movieBackdropUpload").addEventListener("change", () => uploadMovieImage("movieBackdropUpload", "movieBackdropUrl", "movieBackdropPreview", "movies/backdrops"));
+  $("moviePosterUrl").addEventListener("input", () => renderMovieMediaPreview("moviePosterUrl", "moviePosterPreview", "Prévia do pôster"));
+  $("movieBackdropUrl").addEventListener("input", () => renderMovieMediaPreview("movieBackdropUrl", "movieBackdropPreview", "Prévia do banner"));
+  $("tmdbQuery").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      searchTmdb();
+    }
+  });
+
+  $("newRoomButton").addEventListener("click", newRoom);
+  $("roomForm").addEventListener("submit", saveRoom);
+  $("deleteRoomButton").addEventListener("click", deleteRoom);
+
+  $("newTicketButton").addEventListener("click", newTicket);
+  $("ticketForm").addEventListener("submit", saveTicket);
+  $("deleteTicketButton").addEventListener("click", deleteTicket);
+  $("manualTicketForm").addEventListener("submit", createManualTicket);
+  $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
+  $("manualSessionSelect").addEventListener("change", updateManualTotal);
+  $("manualFullTickets").addEventListener("input", updateManualTotal);
+  $("manualHalfTickets").addEventListener("input", updateManualTotal);
+  $("manualCustomerSearch").addEventListener("input", searchBoxOfficeCustomers);
+  $("manualCustomerSearch").addEventListener("focus", searchBoxOfficeCustomers);
+  document.querySelectorAll("[data-sale-mode]").forEach((button) => {
+    button.addEventListener("click", () => setSaleMode(button.dataset.saleMode));
+  });
+  document.querySelectorAll("[data-ticket-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [inputId, delta] = button.dataset.ticketStep.split(":");
+      stepTicketInput(inputId, Number(delta));
+    });
+  });
+  document.querySelectorAll("[data-box-office-tab]").forEach((button) => {
+    button.addEventListener("click", () => setBoxOfficeTab(button.dataset.boxOfficeTab));
+  });
+  document.querySelectorAll("[data-order-filter]").forEach((group) => {
+    group.querySelectorAll("button").forEach((button) => {
+      button.addEventListener("click", () => {
+        group.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+        state.orderFilters[group.dataset.orderFilter] = button.dataset.value;
+        renderOrders();
+      });
+    });
+  });
+  $("ordersSearch").addEventListener("input", () => {
+    state.orderFilters.allQuery = $("ordersSearch").value.trim();
+    renderOrders();
+  });
+  [
+    ["paymentFilterStatus", "status"],
+    ["paymentFilterMethod", "method"],
+    ["paymentFilterOrigin", "origin"],
+    ["paymentFilterProvider", "provider"]
+  ].forEach(([id, key]) => {
+    $(id).addEventListener("change", async () => {
+      state.paymentFilters[key] = $(id).value;
+      await refreshPaymentsOnly();
+    });
+  });
+  $("startQrButton").addEventListener("click", startQrReader);
+  $("stopQrButton").addEventListener("click", stopQrReader);
+  $("torchQrButton").addEventListener("click", toggleQrTorch);
+  $("manualCodeToggle").addEventListener("click", toggleManualCodeBox);
+  $("validateTicketButton").addEventListener("click", () => validateTicketByCode());
+  $("ticketValidationCode").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      validateTicketByCode();
+    }
+  });
+
+  $("newConcessionButton").addEventListener("click", newConcession);
+  $("concessionForm").addEventListener("submit", saveConcession);
+  $("deleteConcessionButton").addEventListener("click", deleteConcession);
+  $("concessionImageUpload").addEventListener("change", () => uploadAdminImage("concessionImageUpload", "concessionImageUrl", "", "concessions", renderConcessionPreview));
+  $("concessionImageUrl").addEventListener("input", renderConcessionPreview);
+
+  $("settingsForm").addEventListener("submit", saveSettings);
+  $("clubVisualForm")?.addEventListener("submit", saveClubVisualSettings);
+  $("emailCampaignForm")?.addEventListener("submit", sendEmailCampaign);
+  [
+    ["eventHeroImageUpload", "eventHeroImageUrl", "eventHeroImagePreview", "events/hero", "Prévia da imagem principal", "eventHeroImageClear"],
+    ["eventGamesImageUpload", "eventGamesImageUrl", "eventGamesImagePreview", "events/games", "Prévia de games", "eventGamesImageClear"],
+    ["eventPartiesImageUpload", "eventPartiesImageUrl", "eventPartiesImagePreview", "events/parties", "Prévia de festas", "eventPartiesImageClear"],
+    ["eventCorporateImageUpload", "eventCorporateImageUrl", "eventCorporateImagePreview", "events/corporate", "Prévia corporativa", "eventCorporateImageClear"],
+    ["eventGalleryImageUpload", "eventGalleryImageUrl", "eventGalleryImagePreview", "events/gallery", "Prévia da galeria", "eventGalleryImageClear"],
+    ["clubHeroImageUpload", "clubHeroImageUrl", "clubHeroImagePreview", "club/hero", "Prévia do hero", "clubHeroImageClear"],
+    ["clubBannerImageUpload", "clubBannerImageUrl", "clubBannerImagePreview", "club/banner", "Prévia do banner", "clubBannerImageClear"],
+    ["clubPlanImageUpload", "clubPlanImageUrl", "clubPlanImagePreview", "club/plans", "Prévia do plano", "clubPlanImageClear"]
+  ].forEach(([uploadId, inputId, previewId, folder, label, clearId]) => {
+    $(uploadId)?.addEventListener("change", () => uploadAdminImage(uploadId, inputId, previewId, folder, async () => {
+      if (uploadId !== "clubPlanImageUpload") return;
+      showToast("Imagem enviada. Revise a prévia e clique em Salvar plano.");
+    }));
+    $(inputId)?.addEventListener("input", () => renderAdminImagePreview(inputId, previewId, label));
+    $(clearId)?.addEventListener("click", () => clearImageField(inputId, previewId, label));
+  });
+  $("newPromotionButton").addEventListener("click", newPromotion);
+  $("promotionForm").addEventListener("submit", savePromotion);
+  $("deletePromotionButton").addEventListener("click", deletePromotion);
+  $("newAdButton").addEventListener("click", newAd);
+  $("adForm").addEventListener("submit", saveAd);
+  $("deleteAdButton").addEventListener("click", deleteAd);
+  $("adImageUpload").addEventListener("change", () => uploadAdminImage("adImageUpload", "adImageUrl", "", "ads"));
+
+  $("newUserButton").addEventListener("click", newUser);
+  $("userForm").addEventListener("submit", saveUser);
+  $("deleteUserButton").addEventListener("click", deleteUser);
+
+  $("newClubPlanButton").addEventListener("click", newClubPlan);
+  $("clubPlanForm").addEventListener("submit", saveClubPlan);
+  $("deleteClubPlanButton")?.addEventListener("click", deleteClubPlan);
+  $("clubAssignForm").addEventListener("submit", assignClubSubscription);
+}
+
+function setupResponsiveSelects() {
+  ["paymentFilterStatus", "paymentFilterMethod", "paymentFilterOrigin", "paymentFilterProvider"].forEach((id) => {
+    const select = $(id);
+    if (!select || select.dataset.responsiveSelectReady) return;
+    select.dataset.responsiveSelectReady = "true";
+    const wrapper = document.createElement("div");
+    wrapper.className = "responsive-select";
+    wrapper.dataset.selectId = id;
+    wrapper.innerHTML = `
+      <button class="responsive-select-button" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <span></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="responsive-select-menu" role="listbox" hidden></div>
+    `;
+    select.insertAdjacentElement("afterend", wrapper);
+
+    const sync = () => syncResponsiveSelect(select, wrapper);
+    sync();
+    select.addEventListener("change", sync);
+    wrapper.querySelector(".responsive-select-button").addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const menu = wrapper.querySelector(".responsive-select-menu");
+      const willOpen = menu.hidden;
+      closeResponsiveSelects();
+      if (willOpen) {
+        syncResponsiveSelect(select, wrapper);
+        menu.hidden = false;
+        wrapper.querySelector(".responsive-select-button").setAttribute("aria-expanded", "true");
+        positionResponsiveSelectMenu(wrapper);
+      }
+    });
+  });
+
+  window.addEventListener("resize", positionOpenResponsiveSelect);
+  window.addEventListener("scroll", positionOpenResponsiveSelect, true);
+}
+
+function syncResponsiveSelect(select, wrapper) {
+  const selectedOption = select.options[select.selectedIndex] || select.options[0];
+  const label = selectedOption?.textContent || "Selecionar";
+  wrapper.querySelector(".responsive-select-button span").textContent = label;
+  wrapper.querySelector(".responsive-select-menu").innerHTML = Array.from(select.options).map((option) => `
+    <button type="button" role="option" aria-selected="${option.value === select.value}" data-value="${escapeHtml(option.value)}">
+      ${escapeHtml(option.textContent || option.value || "Selecionar")}
+    </button>
+  `).join("");
+  wrapper.querySelectorAll(".responsive-select-menu button").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      select.value = button.dataset.value || "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      closeResponsiveSelects();
+    });
+  });
+}
+
+function positionResponsiveSelectMenu(wrapper) {
+  const button = wrapper.querySelector(".responsive-select-button");
+  const menu = wrapper.querySelector(".responsive-select-menu");
+  if (!button || !menu || menu.hidden) return;
+  const rect = button.getBoundingClientRect();
+  const margin = 10;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const width = Math.min(Math.max(rect.width, 180), viewportWidth - margin * 2);
+  const maxHeight = Math.min(300, viewportHeight - margin * 2);
+  menu.style.width = `${width}px`;
+  menu.style.maxHeight = `${maxHeight}px`;
+  const height = Math.min(menu.scrollHeight || maxHeight, maxHeight);
+  const below = rect.bottom + 6;
+  const openAbove = below + height > viewportHeight - margin && rect.top > height + margin;
+  const top = openAbove ? Math.max(margin, rect.top - height - 6) : Math.min(below, viewportHeight - height - margin);
+  const left = Math.min(Math.max(margin, rect.left), viewportWidth - width - margin);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function positionOpenResponsiveSelect() {
+  document.querySelectorAll(".responsive-select-menu:not([hidden])").forEach((menu) => {
+    const wrapper = menu.closest(".responsive-select");
+    if (wrapper) positionResponsiveSelectMenu(wrapper);
+  });
+}
+
+function closeResponsiveSelects() {
+  document.querySelectorAll(".responsive-select-menu").forEach((menu) => {
+    menu.hidden = true;
+    menu.closest(".responsive-select")?.querySelector(".responsive-select-button")?.setAttribute("aria-expanded", "false");
+  });
+}
+
+function toggleAdminDrawer(force) {
+  const open = force ?? !document.body.classList.contains("admin-drawer-open");
+  document.body.classList.toggle("admin-drawer-open", open);
+  const button = $("adminMenuButton");
+  const backdrop = $("adminDrawerBackdrop");
+  if (button) button.setAttribute("aria-expanded", String(open));
+  if (backdrop) backdrop.hidden = !open;
+}
+
+function closeAdminDrawer() {
+  toggleAdminDrawer(false);
+}
+
+function activatePanel(panelId, options = {}) {
+  const target = $(panelId) ? panelId : "dashboardPanel";
+  document.querySelectorAll(".nav-button").forEach((item) => item.classList.toggle("active", item.dataset.panel === target));
+  document.querySelectorAll(".panel").forEach((item) => item.classList.toggle("active", item.id === target));
+  localStorage.setItem("cine_admin_panel", target);
+  if (window.location.hash !== `#${target}`) {
+    history.replaceState(null, "", `#${target}`);
+  }
+  if (options.scroll) window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+window.selectMovie = selectMovie;
+window.removeSession = removeSession;
+window.archiveMovie = archiveMovie;
+window.duplicateMovie = duplicateMovie;
+window.deleteMovie = deleteMovie;
+window.moveMovie = moveMovie;
+window.toggleMovieMenu = toggleMovieMenu;
+window.handleMovieDragStart = handleMovieDragStart;
+window.handleMovieDragOver = handleMovieDragOver;
+window.handleMovieDragLeave = handleMovieDragLeave;
+window.handleMovieDragEnd = handleMovieDragEnd;
+window.handleMovieDrop = handleMovieDrop;
+window.selectRoom = selectRoom;
+window.selectTicket = selectTicket;
+window.selectConcession = selectConcession;
+window.selectPromotion = selectPromotion;
+window.selectAd = selectAd;
+window.selectUser = selectUser;
+window.openOrderView = openOrderView;
+window.openOrderEdit = openOrderEdit;
+window.cancelOrDeleteOrder = cancelOrDeleteOrder;
+window.archiveOrderAdmin = archiveOrderAdmin;
+window.openPermanentDelete = openPermanentDelete;
+window.toggleOrderMenu = toggleOrderMenu;
+window.closeFloatingActionMenu = closeFloatingActionMenu;
+window.copyTicketCode = copyTicketCode;
+window.printOrderTicket = printOrderTicket;
+window.resendOrderTicket = resendOrderTicket;
+window.showChartHint = showChartHint;
+window.openSessionDashboardDetail = openSessionDashboardDetail;
+window.activatePanel = activatePanel;
+window.setBoxOfficeTab = setBoxOfficeTab;
+window.scanNextTicket = scanNextTicket;
+window.importTmdbMovie = importTmdbMovie;
+window.selectBoxOfficeCustomer = selectBoxOfficeCustomer;
+window.selectBoxOfficeCustomerById = selectBoxOfficeCustomerById;
+window.selectClubPlan = selectClubPlan;
+window.updateClubSubscription = updateClubSubscription;
+window.deleteClubPlan = deleteClubPlan;
+window.adjustClubCredit = adjustClubCredit;
+window.openIntegrationConfig = openIntegrationConfig;
+window.testIntegration = testIntegration;
+window.toggleIntegration = toggleIntegration;
+
+async function initAdmin() {
+  bindEvents();
+  setBoxOfficeTab("newSale");
+  await loadAdminUser();
+  await loadContent();
+}
+
+initAdmin();
