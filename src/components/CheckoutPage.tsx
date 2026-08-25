@@ -77,8 +77,12 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   useEffect(() => {
     const stored = readCheckoutCart();
-    setCart(stored?.sessionId === effectiveSessionId ? stored : stored);
-  }, [effectiveSessionId]);
+    if (sessionId === "carrinho") {
+      setCart(stored);
+      return;
+    }
+    setCart(stored?.sessionId === sessionId ? stored : null);
+  }, [sessionId]);
 
   useEffect(() => {
     if (!found || cart?.sessionId === found.session.id) return;
@@ -159,10 +163,12 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     setLoading(true);
     setPaymentError("");
     try {
+      const persisted = readCheckoutCart();
+      const checkoutCart = persisted?.sessionId === found.session.id ? persisted : cart;
       if (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured) {
         throw new Error("Mercado Pago indisponível: habilite a integração na Central de Integrações.");
       }
-      if (cart.paymentMethod === "credit_card" && !cardData?.token) {
+      if (checkoutCart.paymentMethod === "credit_card" && !cardData?.token) {
         throw new Error("Preencha os dados do cartão no formulário seguro do Mercado Pago.");
       }
       const idempotencyKey = `${found.session.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -172,21 +178,21 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           idempotencyKey,
           movieId: found.movie.id,
           sessionId: found.session.id,
-          fullTicketsCount: Number(cart.fullTickets || 0),
-          halfTicketsCount: Number(cart.halfTickets || 0),
-          concessionItems: Object.entries(cart.concessionQuantities || {})
+          fullTicketsCount: Number(checkoutCart.fullTickets || 0),
+          halfTicketsCount: Number(checkoutCart.halfTickets || 0),
+          concessionItems: Object.entries(checkoutCart.concessionQuantities || {})
             .filter(([, qty]) => Number(qty) > 0)
             .map(([id, qty]) => ({ id, quantity: Number(qty) })),
-          couponCode: cart.couponCode,
-          customerName: customerUser?.name || cart.customerName || "Cliente Cine Cruzeiro",
-          customerPhone: customerUser?.phone || cart.customerPhone || "",
-          customerEmail: customerUser?.email || cart.customerEmail || "",
-          customerCpf: customerUser?.cpf || cart.customerCpf || "",
-          useClubCredits: Boolean(activeClubForCart(clubSubscriptions, cart)),
-          paymentMethod: cart.paymentMethod === "credit_card" ? "CREDIT_CARD" : "PIX",
+          couponCode: checkoutCart.couponCode,
+          customerName: customerUser?.name || checkoutCart.customerName || "Cliente Cine Cruzeiro",
+          customerPhone: customerUser?.phone || checkoutCart.customerPhone || "",
+          customerEmail: customerUser?.email || checkoutCart.customerEmail || "",
+          customerCpf: customerUser?.cpf || checkoutCart.customerCpf || "",
+          useClubCredits: Boolean(activeClubForCart(clubSubscriptions, checkoutCart)),
+          paymentMethod: checkoutCart.paymentMethod === "credit_card" ? "CREDIT_CARD" : "PIX",
           createdAt: new Date().toISOString(),
         },
-        cart.paymentMethod || "pix",
+        checkoutCart.paymentMethod || "pix",
         {
           idempotencyKey,
           ...(cardData
@@ -413,7 +419,11 @@ function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: Store
   const quantities = cart.concessionQuantities || {};
   const visibleConcessions = (concessions || []).filter((item) => item.active !== false);
   const [openDescriptions, setOpenDescriptions] = useState<Record<string, boolean>>({});
-  const setQty = (id: string, qty: number) => updateCart({ concessionQuantities: { ...quantities, [id]: Math.max(0, qty) } });
+  const setQty = (id: string, qty: number) => {
+    const persisted = readCheckoutCart();
+    const baseQuantities = persisted?.sessionId === cart.sessionId ? persisted.concessionQuantities || {} : quantities;
+    updateCart({ concessionQuantities: { ...baseQuantities, [id]: Math.max(0, qty) } });
+  };
   return (
     <div>
       <h2 className="font-display text-3xl font-black">Bomboniere</h2>
