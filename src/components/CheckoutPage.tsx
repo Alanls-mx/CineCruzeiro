@@ -148,6 +148,37 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     }
   }, [cart, checkoutPathFor, confirmationStatus, found, router, step, updateCart]);
 
+  const confirmationResult = cart?.paymentResult as CheckoutPaymentResult | undefined;
+  const confirmationOrderId = String(confirmationResult?.order?.id || "");
+  const confirmationPaymentStatus = String(confirmationResult?.payment?.status || "");
+
+  useEffect(() => {
+    if (step !== "confirmacao" || !confirmationOrderId || !["pending", "processing"].includes(confirmationPaymentStatus)) return;
+
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const pollPayment = async () => {
+      try {
+        const fresh = await fetchCheckoutOrderStatus(confirmationOrderId);
+        if (cancelled) return;
+        updateCart({ paymentResult: fresh });
+        setConfirmationStatus("ready");
+        if (["pending", "processing"].includes(String(fresh.payment?.status || ""))) {
+          timer = window.setTimeout(pollPayment, 3000);
+        }
+      } catch {
+        if (!cancelled) timer = window.setTimeout(pollPayment, 5000);
+      }
+    };
+
+    timer = window.setTimeout(pollPayment, 3000);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [confirmationOrderId, confirmationPaymentStatus, step, updateCart]);
+
   const continueToPayment = useCallback(() => {
     if (!found || !cart) return;
     const persisted = readCheckoutCart();
@@ -706,11 +737,17 @@ function ConfirmationStep({ cart, confirmationStatus, orderReference }: { cart: 
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Referência</span>
               <strong className="mt-2 block break-all text-white">{orderReference}</strong>
             </div>
-            <div className="rounded-lg bg-brand-950/70 p-4">
+            <div className="rounded-lg bg-brand-950/70 p-4" aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
               <strong className="mt-2 block text-white">
                 {approved ? "Pagamento aprovado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
               </strong>
+              {pending && (
+                <span className="mt-2 flex items-center gap-2 text-xs font-semibold text-brand-300">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-brand-300" aria-hidden="true" />
+                  Atualização automática ativa
+                </span>
+              )}
             </div>
           </div>
 
