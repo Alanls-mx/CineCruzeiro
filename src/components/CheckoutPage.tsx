@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import QRCode from "qrcode";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { AccountSubscription, CustomerUser, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
@@ -714,12 +715,15 @@ function ConfirmationStep({ cart, confirmationStatus, orderReference }: { cart: 
           </div>
 
           {pending && result?.payment?.qrCode && (
-            <div className="mt-6 rounded-lg bg-gold-400/10 p-4">
-              <p className="text-sm font-black text-gold-200">Pix gerado</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">Copie o código Pix e conclua no app do seu banco. O ingresso só fica válido após aprovação.</p>
-              <button type="button" onClick={copyPix} className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
-                {copied ? "Código copiado" : "Copiar código Pix"}
-              </button>
+            <div className="mt-6 grid items-center gap-5 rounded-lg bg-gold-400/10 p-4 sm:grid-cols-[auto_1fr] sm:p-5">
+              <PixQrCode code={result.payment.qrCode} base64={result.payment.qrCodeBase64} />
+              <div>
+                <p className="text-sm font-black text-gold-200">Pix gerado</p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">Escaneie o QR Code ou copie o código Pix e conclua no app do seu banco. O ingresso só fica válido após aprovação.</p>
+                <button type="button" onClick={copyPix} className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition duration-200 hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
+                  {copied ? "Código copiado" : "Copiar código Pix"}
+                </button>
+              </div>
             </div>
           )}
 
@@ -736,6 +740,55 @@ function ConfirmationStep({ cart, confirmationStatus, orderReference }: { cart: 
         </div>
       </div>
     </section>
+  );
+}
+
+function PixQrCode({ code, base64 }: { code: string; base64?: string }) {
+  const providerImage = useMemo(() => {
+    const value = String(base64 || "").trim();
+    if (!value) return "";
+    return value.startsWith("data:") ? value : `data:image/png;base64,${value}`;
+  }, [base64]);
+  const [generatedImage, setGeneratedImage] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    setGeneratedImage("");
+
+    if (providerImage || !code) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    QRCode.toDataURL(code, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 224,
+      color: { dark: "#020617", light: "#ffffff" },
+    })
+      .then((imageUrl) => {
+        if (mounted) setGeneratedImage(imageUrl);
+      })
+      .catch(() => {
+        if (mounted) setGeneratedImage("");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [code, providerImage]);
+
+  const imageUrl = providerImage || generatedImage;
+
+  return (
+    <div className="flex h-[224px] w-[224px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 shadow-[0_12px_36px_rgba(2,6,23,.28)]" aria-live="polite">
+      {imageUrl ? (
+        <Image src={imageUrl} alt="QR Code para pagamento via Pix" width={208} height={208} className="h-[208px] w-[208px] object-contain" unoptimized />
+      ) : (
+        <div className="h-[208px] w-[208px] animate-pulse rounded bg-slate-100" role="status" aria-label="Gerando QR Code Pix" />
+      )}
+    </div>
   );
 }
 
