@@ -120,6 +120,14 @@ async function run() {
     ),
     (error) => error?.code === "MERCADO_PAGO_PRODUCTION_REQUIRED"
   );
+  await assert.rejects(
+    () => paymentService.createMercadoPagoOrderPayment(
+      { id: "smoke-test-payer", totalPrice: 10, customerEmail: "test_payer_123@testuser.com" },
+      { environment: "production", accessToken: "APP_USR_smoke" },
+      { method: "pix" }
+    ),
+    (error) => error?.code === "MERCADO_PAGO_TEST_PAYER_NOT_ALLOWED"
+  );
   if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = originalNodeEnv;
 

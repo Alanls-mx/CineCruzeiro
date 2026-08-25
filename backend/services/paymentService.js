@@ -358,9 +358,29 @@ function payerFromOrder(order) {
   if (!email) {
     throw paymentError("PAYER_EMAIL_REQUIRED", "Informe um e-mail para processar o pagamento online.", 422);
   }
+  if (isProduction() && /@testuser\.com$/i.test(email)) {
+    throw paymentError(
+      "MERCADO_PAGO_TEST_PAYER_NOT_ALLOWED",
+      "Uma cobranca real nao pode usar uma conta de teste do Mercado Pago. Entre com uma conta de cliente real.",
+      422
+    );
+  }
   return {
     email
   };
+}
+
+function mercadoPagoOrderFailureDetail(data = {}) {
+  const failedPayment = (data.transactions?.payments || []).find((payment) => payment?.status === "failed")
+    || data.transactions?.payments?.[0]
+    || {};
+  return data.errors?.[0]?.message
+    || data.errors?.[0]?.code
+    || data.cause?.[0]?.description
+    || data.cause?.[0]?.code
+    || failedPayment.status_detail
+    || data.status_detail
+    || "";
 }
 
 function mercadoPagoItems(order) {
@@ -514,9 +534,12 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = data.errors?.[0]?.message || data.errors?.[0]?.code || data.cause?.[0]?.description || data.cause?.[0]?.code || "";
-    const message = [data.message || data.error || "Mercado Pago recusou a criacao da order.", detail].filter(Boolean).join(" - ");
-    const error = paymentError("MERCADO_PAGO_ORDER_REJECTED", message, response.status);
+    const detail = mercadoPagoOrderFailureDetail(data);
+    const invalidUsers = detail === "invalid_users_involved";
+    const message = invalidUsers
+      ? "O pagador informado nao pode ser usado nesta cobranca. Use uma conta de cliente real, diferente da conta vendedora do Mercado Pago."
+      : [data.message || data.error || "Mercado Pago recusou a criacao da order.", detail].filter(Boolean).join(" - ");
+    const error = paymentError(invalidUsers ? "MERCADO_PAGO_INVALID_USERS_INVOLVED" : "MERCADO_PAGO_ORDER_REJECTED", message, invalidUsers ? 422 : response.status);
     error.raw = data;
     throw error;
   }
