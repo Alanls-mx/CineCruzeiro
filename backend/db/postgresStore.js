@@ -341,6 +341,18 @@ async function loadDbFromPostgres() {
         status: row.status,
         provider: row.provider || "manual_admin",
         providerSubscriptionId: row.provider_subscription_id || "",
+        providerPlanId: row.provider_plan_id || "",
+        providerStatus: row.provider_status || "",
+        providerPaymentId: row.provider_payment_id || "",
+        paymentStatus: row.payment_status || (row.status === "active" ? "approved" : "pending"),
+        paymentExpiresAt: row.payment_expires_at ? new Date(row.payment_expires_at).toISOString() : "",
+        paymentExpiredAt: row.payment_expired_at ? new Date(row.payment_expired_at).toISOString() : "",
+        approvedAt: row.approved_at ? new Date(row.approved_at).toISOString() : "",
+        preferredPaymentMethod: row.preferred_payment_method || "",
+        externalBillingPending: Boolean(row.external_billing_pending),
+        checkoutUrl: row.checkout_url || "",
+        lastAuthorizedPaymentId: row.last_authorized_payment_id || "",
+        lastProviderPaymentId: row.last_provider_payment_id || "",
         cycleStart: row.cycle_start ? new Date(row.cycle_start).toISOString() : "",
         cycleEnd: row.cycle_end ? new Date(row.cycle_end).toISOString() : "",
         nextBillingAt: row.next_billing_at ? new Date(row.next_billing_at).toISOString() : "",
@@ -750,14 +762,26 @@ async function writeDbToPostgres(db) {
     const planIds = new Set(asArray(db.subscriptionPlans).map((plan) => plan.id));
     for (const subscription of asArray(db.subscriptions)) {
       if (!userIds.has(subscription.userId) || !planIds.has(subscription.planId)) continue;
-      await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, history, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,'')::timestamptz,NULLIF($8,'')::timestamptz,NULLIF($9,'')::timestamptz,NULLIF($10,'')::timestamptz,$11,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,$14,$15,$16,NULLIF($17,'')::timestamptz,NULLIF($18,'')::timestamptz,NULLIF($19,'')::timestamptz,$20,COALESCE($21::timestamptz, now()),COALESCE($22::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, history, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,'')::timestamptz,NULLIF($20,'')::timestamptz,NULLIF($21,'')::timestamptz,NULLIF($22,'')::timestamptz,$23,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,$28,NULLIF($29,'')::timestamptz,NULLIF($30,'')::timestamptz,NULLIF($31,'')::timestamptz,$32,COALESCE($33::timestamptz, now()),COALESCE($34::timestamptz, now()))`, [
         subscription.id,
         subscription.userId,
         subscription.planId,
         subscription.status || "active",
         subscription.provider || "manual_admin",
         subscription.providerSubscriptionId || "",
+        subscription.providerPlanId || "",
+        subscription.providerStatus || "",
+        subscription.providerPaymentId || "",
+        subscription.paymentStatus || (subscription.status === "active" ? "approved" : "pending"),
+        subscription.paymentExpiresAt || "",
+        subscription.paymentExpiredAt || "",
+        subscription.approvedAt || "",
+        subscription.preferredPaymentMethod || "",
+        Boolean(subscription.externalBillingPending),
+        subscription.checkoutUrl || "",
+        subscription.lastAuthorizedPaymentId || "",
+        subscription.lastProviderPaymentId || "",
         subscription.cycleStart || subscription.currentPeriodStart || "",
         subscription.cycleEnd || subscription.currentPeriodEnd || "",
         subscription.nextBillingAt || "",

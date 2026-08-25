@@ -1596,6 +1596,10 @@ function applyMercadoPagoSubscriptionStatus(db, subscription, providerSubscripti
   } else if (nextStatus === "payment_failed") {
     subscription.status = "payment_failed";
     subscription.paymentStatus = "failed";
+  } else if (previousStatus === "active" && subscription.paymentStatus === "approved") {
+    // Mercado Pago may deliver an older pending event after authorization.
+    subscription.status = "active";
+    subscription.paymentStatus = "approved";
   } else {
     subscription.status = "pending_payment";
     subscription.paymentStatus = "pending";
@@ -1693,6 +1697,23 @@ async function expirePendingPaymentSubscriptions(db, options = {}) {
   for (const subscription of expired) {
     let providerSubscription = null;
     try {
+      if (subscription.provider === "mercado_pago" && subscription.providerSubscriptionId) {
+        providerSubscription = await paymentService.fetchMercadoPagoSubscription(
+          subscription.providerSubscriptionId,
+          mercadoPagoConfig || {}
+        );
+        if (providerSubscription?.localStatus === "active") {
+          applyMercadoPagoSubscriptionStatus(
+            db,
+            subscription,
+            providerSubscription,
+            "mercado_pago_expiration_reconciliation",
+            { paymentApproved: true }
+          );
+          changed += 1;
+          continue;
+        }
+      }
       providerSubscription = await cancelMercadoPagoSubscriptionSafely(subscription, mercadoPagoConfig || {});
       markSubscriptionPaymentExpired(db, subscription, providerSubscription, now);
       changed += 1;
@@ -7192,10 +7213,13 @@ async function handleApi(req, res, pathname) {
           subscription.lastAuthorizedPaymentId = authorizedPayment?.id || providerPaymentId;
           subscription.lastProviderPaymentId = authorizedPayment?.paymentId || "";
         } else {
+          const providerAuthorizationApproved = providerSubscription?.localStatus === "active";
           applyMercadoPagoSubscriptionStatus(lockedDb, subscription, providerSubscription || {
             id: effectiveProviderSubscriptionId,
             status: body.status || body.action || "pending"
-          }, "mercado_pago_webhook", { paymentApproved: subscription.paymentStatus === "approved" });
+          }, "mercado_pago_webhook", {
+            paymentApproved: providerAuthorizationApproved || subscription.paymentStatus === "approved"
+          });
         }
         lockedDb.webhookEvents.push({
           provider,

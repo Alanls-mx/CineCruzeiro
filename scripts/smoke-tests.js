@@ -495,6 +495,65 @@ async function run() {
     assert.equal(pendingClubCredit.response.status, 409);
     assert.equal(pendingClubCredit.payload.error.code, "NO_ACTIVE_SUBSCRIPTION");
 
+    const subscriptionResourceId = pendingSubscription.payload.subscription.providerSubscriptionId;
+    const subscriptionWebhookRequestId = crypto.randomUUID();
+    const subscriptionWebhookTimestamp = String(Math.floor(Date.now() / 1000));
+    const subscriptionWebhookBody = {
+      action: "updated",
+      api_version: "v1",
+      type: "subscription_preapproval",
+      live_mode: false,
+      data: { id: subscriptionResourceId, status: "authorized", version: 1 }
+    };
+    const subscriptionManifest = `id:${subscriptionResourceId};request-id:${subscriptionWebhookRequestId};ts:${subscriptionWebhookTimestamp};`;
+    const subscriptionWebhookSignature = crypto.createHmac("sha256", process.env.MERCADO_PAGO_WEBHOOK_SECRET).update(subscriptionManifest).digest("hex");
+    process.env.TEST_SUBSCRIPTIONS_AUTO_APPROVE = "true";
+    const approvedSubscriptionWebhook = await request(`/api/webhooks/mercado-pago?data.id=${encodeURIComponent(subscriptionResourceId)}&type=subscription_preapproval`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-request-id": subscriptionWebhookRequestId,
+        "x-signature": `ts=${subscriptionWebhookTimestamp},v1=${subscriptionWebhookSignature}`
+      },
+      body: JSON.stringify(subscriptionWebhookBody)
+    });
+    process.env.TEST_SUBSCRIPTIONS_AUTO_APPROVE = "false";
+    assert.equal(approvedSubscriptionWebhook.response.status, 200);
+    assert.equal(approvedSubscriptionWebhook.payload.processing.status, "active");
+
+    const subscriptionsAfterApproval = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    const providerApprovedSubscription = subscriptionsAfterApproval.payload.subscriptions.find((item) => item.id === pendingSubscription.payload.subscription.id);
+    assert.equal(providerApprovedSubscription.status, "active");
+    assert.equal(providerApprovedSubscription.paymentStatus, "approved");
+    assert.equal(providerApprovedSubscription.creditsRemaining, 1);
+
+    const staleWebhookRequestId = crypto.randomUUID();
+    const staleWebhookTimestamp = String(Math.floor(Date.now() / 1000));
+    const staleWebhookManifest = `id:${subscriptionResourceId};request-id:${staleWebhookRequestId};ts:${staleWebhookTimestamp};`;
+    const staleWebhookSignature = crypto.createHmac("sha256", process.env.MERCADO_PAGO_WEBHOOK_SECRET).update(staleWebhookManifest).digest("hex");
+    const stalePendingWebhook = await request(`/api/webhooks/mercado-pago?data.id=${encodeURIComponent(subscriptionResourceId)}&type=subscription_preapproval`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-request-id": staleWebhookRequestId,
+        "x-signature": `ts=${staleWebhookTimestamp},v1=${staleWebhookSignature}`
+      },
+      body: JSON.stringify({ ...subscriptionWebhookBody, data: { ...subscriptionWebhookBody.data, status: "pending", version: 2 } })
+    });
+    assert.equal(stalePendingWebhook.response.status, 200);
+    const subscriptionsAfterStaleEvent = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    const subscriptionAfterStaleEvent = subscriptionsAfterStaleEvent.payload.subscriptions.find((item) => item.id === pendingSubscription.payload.subscription.id);
+    assert.equal(subscriptionAfterStaleEvent.status, "active");
+    assert.equal(subscriptionAfterStaleEvent.paymentStatus, "approved");
+
+    const cancelProviderApprovedSubscription = await request(`/api/me/subscriptions/${encodeURIComponent(providerApprovedSubscription.id)}/cancel`, {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ reason: "Liberar usuario para continuidade do smoke", cancelImmediately: true })
+    });
+    assert.equal(cancelProviderApprovedSubscription.response.status, 200);
+    assert.ok(["cancelled", "ended"].includes(cancelProviderApprovedSubscription.payload.subscription.status));
+
     const assignSubscription = await request("/api/admin/subscriptions/assign", {
       method: "POST",
       headers: jsonHeaders(adminCookie),

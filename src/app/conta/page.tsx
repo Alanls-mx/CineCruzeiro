@@ -48,6 +48,7 @@ function ContaPageContent() {
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [subscriptions, setSubscriptions] = useState<AccountSubscription[]>([]);
   const [clubMessage, setClubMessage] = useState("");
+  const pendingSubscriptions = subscriptions.filter((subscription) => subscription.status === "pending_payment");
   const activeSubscriptions = subscriptions.filter((subscription) => ["active", "paused"].includes(subscription.status) && !isClubHistory(subscription));
   const historySubscriptions = subscriptions.filter(isClubHistory);
 
@@ -72,6 +73,14 @@ function ContaPageContent() {
       .then(setSubscriptions)
       .catch(() => setSubscriptions([]));
   }
+
+  useEffect(() => {
+    if (!user || !pendingSubscriptions.length) return;
+    const timer = window.setInterval(() => {
+      void loadClub();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [user, pendingSubscriptions.length]);
 
   useEffect(() => {
     const token = searchParams.get("emailToken");
@@ -272,18 +281,28 @@ function ContaPageContent() {
               </div>
               {subscriptions.length ? (
                 <>
+                  {pendingSubscriptions.length > 0 && (
+                    <div className="mb-5" aria-live="polite">
+                      <p className="mb-3 text-sm font-semibold text-amber-200">Confirmando o pagamento com o Mercado Pago. Esta página atualiza automaticamente.</p>
+                      <div className="grid gap-5 lg:grid-cols-2">
+                        {pendingSubscriptions.map((subscription) => (
+                          <ClubSubscriptionCard key={subscription.id} subscription={subscription} onCancel={cancelSubscription} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {activeSubscriptions.length ? (
                     <div className="grid gap-5 lg:grid-cols-2">
                       {activeSubscriptions.map((subscription) => (
                         <ClubSubscriptionCard key={subscription.id} subscription={subscription} onCancel={cancelSubscription} />
                       ))}
                     </div>
-                  ) : (
+                  ) : pendingSubscriptions.length === 0 ? (
                     <div className="bg-[#0d1728] p-5">
                       <p className="text-slate-300">Você não possui assinatura ativa com créditos disponíveis no momento.</p>
                       <Link href="/clube" className="mt-4 inline-flex bg-gold-400 px-6 py-3 text-sm font-black text-slate-950">Ver planos</Link>
                     </div>
-                  )}
+                  ) : null}
                   {historySubscriptions.length > 0 && (
                     <details className="mt-6 bg-[#0d1728] p-5 shadow-xl shadow-blue-950/10">
                       <summary className="cursor-pointer text-sm font-black uppercase tracking-[.14em] text-gold-400">
@@ -509,7 +528,7 @@ function isClubHistory(subscription: AccountSubscription) {
   const remaining = Number(subscription.creditsRemaining ?? subscription.creditsAvailable ?? 0);
   const endValue = subscription.cycleEnd || subscription.currentPeriodEnd || "";
   const ended = endValue ? new Date(endValue).getTime() <= Date.now() : false;
-  return (remaining <= 0 && ended) || ["pending_payment", "cancelled", "ended", "payment_failed"].includes(subscription.status);
+  return (remaining <= 0 && ended) || ["cancelled", "ended", "payment_failed"].includes(subscription.status);
 }
 
 function GoogleG() {
