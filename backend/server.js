@@ -4411,6 +4411,81 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
+  const snapshotOrder = (snapshotDb.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
+  if (!snapshotOrder) return false;
+  const snapshotPayment = (snapshotDb.payments || []).find((item) => item.orderId === snapshotOrder.id);
+  if (!snapshotPayment || snapshotPayment.provider !== "mercado_pago" || !snapshotPayment.providerPaymentId) return false;
+
+  const hasTickets = (snapshotDb.tickets || []).some((ticket) => ticket.orderId === snapshotOrder.id);
+  const needsReconciliation = ["pending", "processing"].includes(String(snapshotPayment.status || ""))
+    || (snapshotPayment.status === "approved" && (snapshotOrder.status !== "paid" || !hasTickets));
+  if (!needsReconciliation) return false;
+
+  const providerConfig = integrationConfigService.resolvedConfig(snapshotDb, "mercadoPago");
+  const providerStatus = await paymentService.fetchProviderPaymentStatus(
+    "mercado_pago",
+    snapshotPayment.providerPaymentId,
+    providerConfig || {}
+  );
+  if (!providerStatus || providerStatus.status === "pending") return false;
+
+  if (providerStatus.externalReference
+    && providerStatus.externalReference !== snapshotPayment.providerReference
+    && providerStatus.externalReference !== snapshotPayment.orderId) {
+    logEvent("warn", "payment.reconciliation_reference_mismatch", {
+      orderId: snapshotOrder.id,
+      providerPaymentId: snapshotPayment.providerPaymentId
+    });
+    return false;
+  }
+  if (providerStatus.amount && Math.abs(Number(providerStatus.amount) - Number(snapshotPayment.amount)) > 0.01) {
+    logEvent("warn", "payment.reconciliation_amount_mismatch", {
+      orderId: snapshotOrder.id,
+      providerPaymentId: snapshotPayment.providerPaymentId
+    });
+    return false;
+  }
+
+  return withCriticalMutation(async () => {
+    const lockedDb = await readDb();
+    const order = (lockedDb.orders || []).find((item) => item.id === snapshotOrder.id);
+    const payment = (lockedDb.payments || []).find((item) => item.orderId === snapshotOrder.id);
+    if (!order || !payment) return false;
+
+    const wasAlreadyPaid = order.status === "paid";
+    payment.status = providerStatus.status;
+    payment.updatedAt = new Date().toISOString();
+    payment.metadata = {
+      ...(payment.metadata || {}),
+      lastReconciliationAt: new Date().toISOString(),
+      providerStatus: providerStatus.raw || null
+    };
+
+    let tickets = [];
+    if (payment.status === "approved") {
+      tickets = finalizePaidOrder(lockedDb, order, payment, "online");
+      if (!wasAlreadyPaid && tickets.length) {
+        consumePendingClubCredit(lockedDb, order, tickets, order.customerUserId);
+        await deliverTicketsByEmail(lockedDb, order, tickets);
+      }
+    } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status) && order.status !== "paid") {
+      releaseConcessionReservation(lockedDb, order);
+      order.status = payment.status === "refunded" ? "refunded" : payment.status === "rejected" ? "cancelled" : payment.status;
+      order.paymentStatus = payment.status;
+    }
+
+    await writeDb(lockedDb);
+    logEvent("info", "payment.reconciled", {
+      orderId: order.id,
+      providerPaymentId: payment.providerPaymentId,
+      status: payment.status,
+      tickets: tickets.length
+    });
+    return true;
+  });
+}
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -6462,18 +6537,20 @@ async function handleApi(req, res, pathname) {
   const checkoutOrderMatch = pathname.match(/^\/api\/checkout\/orders\/([^/]+)$/);
   if (checkoutOrderMatch && method === "GET") {
     const orderId = decodeURIComponent(checkoutOrderMatch[1]);
-    const order = (db.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
+    await reconcileMercadoPagoCheckoutOrder(orderId, db);
+    const currentDb = await readDb();
+    const order = (currentDb.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
     if (!order) {
       sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
       return;
     }
-    const payment = (db.payments || []).find((item) => item.orderId === order.id) || null;
+    const payment = (currentDb.payments || []).find((item) => item.orderId === order.id) || null;
     if (!payment) {
       sendJson(res, 404, { error: { code: "PAYMENT_NOT_FOUND", message: "Pagamento nao encontrado para este pedido." } });
       return;
     }
     const tickets = payment.status === "approved"
-      ? (db.tickets || []).filter((ticket) => ticket.orderId === order.id).map((ticket) => enrichTicket(db, ticket))
+      ? (currentDb.tickets || []).filter((ticket) => ticket.orderId === order.id).map((ticket) => enrichTicket(currentDb, ticket))
       : [];
     sendJson(res, 200, { order, payment, tickets });
     return;

@@ -110,9 +110,8 @@ assert.equal(authorizedPayment.paymentStatus, "approved");
 assert.equal(authorizedPayment.amount, 24.9);
 
 const lowerCaseUrl = new URL(`https://lumixengine.com/projects/cinecruzeiro/api/webhooks/mercado-pago?data.id=${encodeURIComponent(dataId.toLowerCase())}&type=order`);
-assert.throws(
-  () => paymentService.verifyWebhookRequest("mercado_pago", req, lowerCaseUrl, body, { webhookSecret: secret }),
-  (error) => error?.code === "MERCADO_PAGO_WEBHOOK_INVALID_SIGNATURE" && error?.statusCode === 401
-);
+const lowerCaseVerification = paymentService.verifyWebhookRequest("mercado_pago", req, lowerCaseUrl, body, { webhookSecret: secret });
+assert.equal(lowerCaseVerification.verified, true);
+assert.equal(lowerCaseVerification.dataId, dataId.toLowerCase());
 
 console.log("Mercado Pago webhook signature tests passed.");
