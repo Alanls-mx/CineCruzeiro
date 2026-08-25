@@ -112,7 +112,7 @@ export default function ClubSubscriptionCheckoutPage() {
               <section className="bg-[#0d1728] p-5 shadow-[0_20px_54px_rgba(0,0,0,.28)] sm:p-8">
                 <h1 className="font-display text-3xl font-black leading-tight sm:text-4xl">Como você quer pagar?</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                  Escolha o meio de pagamento da assinatura mensal. A autorização é concluída no ambiente seguro do Mercado Pago.
+                  Escolha o meio de pagamento da assinatura mensal. A autorização é concluída no ambiente seguro do Mercado Pago e expira em 15 minutos se o pagamento não for aprovado.
                 </p>
 
                 {!authReady ? (
@@ -128,7 +128,7 @@ export default function ClubSubscriptionCheckoutPage() {
                         disabled={submitting}
                         icon={<CreditCard />}
                         title="Cartão de crédito ou débito"
-                        description="Autorize a cobrança mensal usando um cartão aceito pelo Mercado Pago."
+                        description="Autorize a cobrança mensal usando crédito ou débito aceito pelo Mercado Pago."
                       />
                       <PaymentOption
                         id="club-pix"
@@ -159,7 +159,7 @@ export default function ClubSubscriptionCheckoutPage() {
                       <>
                         <div className="mt-6 flex items-start gap-3 text-sm text-slate-300">
                           <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                          <p>Você continuará no Mercado Pago para revisar e autorizar a cobrança. O plano só será ativado após a confirmação do pagamento.</p>
+                          <p>Você continuará no Mercado Pago para revisar e autorizar a cobrança. O plano só será ativado após a confirmação do pagamento e a tentativa pendente vence em 15 minutos.</p>
                         </div>
 
                         {message && (

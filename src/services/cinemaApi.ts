@@ -209,6 +209,8 @@ export interface AccountSubscription {
   cycleStart?: string;
   cycleEnd?: string;
   nextBillingAt?: string;
+  paymentExpiresAt?: string;
+  paymentExpiredAt?: string;
   currentPeriodEnd?: string;
   plan?: SubscriptionPlan | null;
   credit?: {

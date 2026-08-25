@@ -18,6 +18,8 @@ const requestContext = new AsyncLocalStorage();
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
+const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
+const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
 const DATA_FILE = path.join(ROOT, "data", "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -1503,7 +1505,11 @@ function applyMercadoPagoSubscriptionStatus(db, subscription, providerSubscripti
 
   const paymentApproved = options.paymentApproved === true || subscription.paymentStatus === "approved";
 
-  if (nextStatus === "active" && paymentApproved) {
+  if (["cancelled", "ended"].includes(previousStatus) && nextStatus === "active") {
+    subscription.status = previousStatus;
+    subscription.paymentStatus = subscription.paymentStatus || "cancelled";
+    subscription.nextBillingAt = "";
+  } else if (nextStatus === "active" && paymentApproved) {
     subscription.status = "active";
     subscription.paymentStatus = "approved";
     subscription.approvedAt ||= now;
@@ -1560,6 +1566,81 @@ async function cancelMercadoPagoSubscriptionSafely(subscription, integrationConf
     if (!isMercadoPagoAlreadyCancelledError(error)) throw error;
     return { id: subscription.providerSubscriptionId, status: "cancelled", localStatus: "cancelled", alreadyCancelled: true };
   }
+}
+
+function subscriptionPaymentExpiresAt(subscription, now = new Date()) {
+  const explicit = subscription.paymentExpiresAt || subscription.pendingPaymentExpiresAt || subscription.expiresAt || "";
+  if (explicit) return new Date(explicit);
+  const createdAt = subscription.createdAt || subscription.updatedAt || now.toISOString();
+  return new Date(new Date(createdAt).getTime() + SUBSCRIPTION_PENDING_PAYMENT_TTL_MS);
+}
+
+function subscriptionPendingPaymentExpired(subscription, now = new Date()) {
+  if (subscription.status !== "pending_payment") return false;
+  return subscriptionPaymentExpiresAt(subscription, now).getTime() <= now.getTime();
+}
+
+function markSubscriptionPaymentExpired(db, subscription, providerSubscription, now = new Date()) {
+  const timestamp = now.toISOString();
+  subscription.status = "cancelled";
+  subscription.paymentStatus = "expired";
+  subscription.providerStatus = providerSubscription?.status || subscription.providerStatus || "cancelled";
+  subscription.cancelledAt ||= timestamp;
+  subscription.paymentExpiredAt = timestamp;
+  subscription.paymentExpiresAt = subscription.paymentExpiresAt || subscriptionPaymentExpiresAt(subscription, now).toISOString();
+  subscription.nextBillingAt = "";
+  subscription.cycleEnd = timestamp;
+  subscription.currentPeriodEnd = timestamp;
+  subscription.creditsAvailable = 0;
+  subscription.creditsUsed = 0;
+  const credit = currentSubscriptionCredit(db, subscription, now);
+  if (credit) {
+    credit.remaining = 0;
+    credit.updatedAt = timestamp;
+    syncSubscriptionCreditMirror(subscription, credit);
+  }
+  subscription.updatedAt = timestamp;
+  subscription.history ||= [];
+  subscription.history.push({
+    action: "pending_payment_expired",
+    reason: "Pagamento nao aprovado em 15 minutos.",
+    provider: subscription.provider || "",
+    providerStatus: subscription.providerStatus || "",
+    at: timestamp
+  });
+}
+
+async function expirePendingPaymentSubscriptions(db, options = {}) {
+  const now = options.now || new Date();
+  const expired = (db.subscriptions || []).filter((subscription) => subscriptionPendingPaymentExpired(subscription, now));
+  if (!expired.length) return { changed: false, expired: 0, failed: 0 };
+
+  const mercadoPagoConfig = integrationConfigService.resolvedConfig(db, "mercadoPago");
+  let changed = 0;
+  let failed = 0;
+  for (const subscription of expired) {
+    let providerSubscription = null;
+    try {
+      providerSubscription = await cancelMercadoPagoSubscriptionSafely(subscription, mercadoPagoConfig || {});
+      markSubscriptionPaymentExpired(db, subscription, providerSubscription, now);
+      changed += 1;
+    } catch (error) {
+      failed += 1;
+      subscription.history ||= [];
+      subscription.history.push({
+        action: "pending_payment_expiration_failed",
+        reason: error?.code || error?.message || "Falha ao cancelar assinatura pendente no provedor.",
+        at: now.toISOString()
+      });
+      logEvent("warn", "subscription.pending_payment_expiration_failed", {
+        subscriptionId: subscription.id,
+        provider: subscription.provider || "",
+        providerSubscriptionId: subscription.providerSubscriptionId || "",
+        code: error?.code || "SUBSCRIPTION_EXPIRATION_FAILED"
+      });
+    }
+  }
+  return { changed: changed > 0 || failed > 0, expired: changed, failed };
 }
 
 function normalizeProviderPaymentStatus(status) {
@@ -2232,13 +2313,19 @@ function createSubscription(db, userId, planId, adminUser, status = "pending_pay
     error.statusCode = 404;
     throw error;
   }
-  const existing = (db.subscriptions || []).find((item) => item.userId === userId && item.planId === planId && ["pending_payment", "active", "paused", "payment_failed"].includes(item.status));
+  const existing = (db.subscriptions || []).find((item) => item.userId === userId && item.planId === planId && ["pending_payment", "active", "paused"].includes(item.status));
   if (existing) {
+    const now = new Date();
     existing.status = status;
-    existing.updatedAt = new Date().toISOString();
+    existing.updatedAt = now.toISOString();
     existing.provider = existing.provider || provider;
+    if (status === "pending_payment") {
+      existing.paymentStatus = "pending";
+      existing.paymentExpiresAt = new Date(now.getTime() + SUBSCRIPTION_PENDING_PAYMENT_TTL_MS).toISOString();
+      existing.paymentExpiredAt = "";
+    }
     existing.history ||= [];
-    existing.history.push({ action: status === "active" ? "activate" : "status", status, by: adminUser?.id || userId || "", at: new Date().toISOString() });
+    existing.history.push({ action: status === "active" ? "activate" : "status", status, by: adminUser?.id || userId || "", at: now.toISOString() });
     if (status === "active" && !currentSubscriptionCredit(db, existing)) {
       createSubscriptionCreditCycle(db, existing, plan);
     } else if (status !== "active") {
@@ -2263,10 +2350,13 @@ function createSubscription(db, userId, planId, adminUser, status = "pending_pay
     currentPeriodEnd: "",
     creditsAvailable: 0,
     creditsUsed: 0,
+    paymentStatus: status === "active" ? "approved" : "pending",
+    paymentExpiresAt: status === "pending_payment" ? new Date(now.getTime() + SUBSCRIPTION_PENDING_PAYMENT_TTL_MS).toISOString() : "",
+    paymentExpiredAt: "",
     createdBy: adminUser?.id || "",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    history: [{ action: status === "active" ? "assign" : "subscribe", by: adminUser?.id || userId || "", at: new Date().toISOString(), provider }]
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    history: [{ action: status === "active" ? "assign" : "subscribe", by: adminUser?.id || userId || "", at: now.toISOString(), provider }]
   };
   db.subscriptions.unshift(subscription);
   if (status === "active") createSubscriptionCreditCycle(db, subscription, plan, now);
@@ -4233,7 +4323,8 @@ async function handleApi(req, res, pathname) {
   const db = await readDb();
   const scheduledChanged = applyScheduledPremieres(db);
   const reservationsChanged = expireStaleReservations(db);
-  if (scheduledChanged || reservationsChanged) {
+  const subscriptionMaintenance = await expirePendingPaymentSubscriptions(db);
+  if (scheduledChanged || reservationsChanged || subscriptionMaintenance.changed) {
     await writeDb(db);
   }
 
@@ -6961,6 +7052,27 @@ server.on("error", (error) => {
   throw error;
 });
 
+async function runSubscriptionMaintenance() {
+  try {
+    await withCriticalMutation(async () => {
+      const db = await readDb();
+      const result = await expirePendingPaymentSubscriptions(db);
+      if (result.changed) {
+        await writeDb(db);
+        logEvent("info", "subscription.pending_payment_maintenance", {
+          expired: result.expired,
+          failed: result.failed
+        });
+      }
+    });
+  } catch (error) {
+    logEvent("warn", "subscription.pending_payment_maintenance_failed", {
+      code: error?.code || "SUBSCRIPTION_MAINTENANCE_FAILED",
+      message: error?.message || "Falha ao executar manutencao do Clube."
+    });
+  }
+}
+
 loadEnvFiles().then(() => {
   if (isProduction() && !postgresEnabled()) {
     console.error("POSTGRES_REQUIRED_IN_PRODUCTION: configure DATABASE_URL ou POSTGRES_URL antes de iniciar em producao.");
@@ -6971,6 +7083,11 @@ loadEnvFiles().then(() => {
     console.log(`Cine Cruzeiro backend: http://${HOST}:${PORT}`);
     console.log(`Painel admin: http://${HOST}:${PORT}/admin`);
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
+    void runSubscriptionMaintenance();
+    const subscriptionMaintenanceTimer = setInterval(() => {
+      void runSubscriptionMaintenance();
+    }, SUBSCRIPTION_MAINTENANCE_INTERVAL_MS);
+    subscriptionMaintenanceTimer.unref?.();
   });
 }).catch((error) => {
   console.error(error);

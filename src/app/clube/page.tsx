@@ -103,7 +103,7 @@ export default function ClubePage() {
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">Planos recorrentes para quem vem sozinho, em casal ou divide a magia com a família.</p>
               </div>
               <div className="text-sm md:text-right">
-                <p className="font-bold text-brand-300">Pix recorrente ou cartão via Mercado Pago</p>
+                <p className="font-bold text-brand-300">Pix recorrente ou cartão de crédito/débito via Mercado Pago</p>
                 <p className="mt-1 text-xs text-slate-400">O meio de pagamento é escolhido no checkout seguro.</p>
               </div>
             </div>
@@ -221,7 +221,7 @@ function Plan({ plan }: { plan: SubscriptionPlan }) {
         </Link>
         <p className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
           <ShieldCheck className="h-4 w-4 text-emerald-300" />
-          Pix recorrente ou cartão no Mercado Pago. Créditos após a aprovação.
+          Pix recorrente ou cartão de crédito/débito no Mercado Pago. Créditos após a aprovação.
         </p>
       </div>
     </article>

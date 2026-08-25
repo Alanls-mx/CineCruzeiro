@@ -445,6 +445,7 @@ async function run() {
     assert.equal(Number(pendingSubscription.payload.subscription.creditsAvailable || 0), 0);
     assert.equal(pendingSubscription.payload.subscription.approvedAt || "", "");
     assert.equal(pendingSubscription.payload.subscription.providerPlanId, "");
+    assert.ok(pendingSubscription.payload.subscription.paymentExpiresAt);
     assert.equal(pendingSubscription.payload.paymentMethod, "pix");
     assert.ok(pendingSubscription.payload.checkoutUrl);
 
