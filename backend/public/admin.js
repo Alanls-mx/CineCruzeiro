@@ -456,6 +456,28 @@ function renderDashboard() {
       ? entries.map(([name, value]) => `<div class="metric-row clickable-row" onclick="setBoxOfficeTab('payments')"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
       : `<div class="empty-state compact"><strong>Sem pagamentos</strong><span>As formas usadas aparecerão aqui.</span></div>`;
   }
+  if ($("dashRevenueComposition")) {
+    const entries = Array.isArray(data.revenueComposition) ? data.revenueComposition : [];
+    const total = entries.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    $("dashRevenueComposition").innerHTML = entries.some((item) => Number(item.amount || 0) > 0)
+      ? entries.map((item) => `
+          <div class="metric-row finance-row">
+            <span>${escapeHtml(item.label || "Receita")}<small>${escapeHtml(item.hint || "")}${total ? ` • ${Math.round((Number(item.amount || 0) / total) * 100)}%` : ""}</small></span>
+            <strong>${money(item.amount)}</strong>
+          </div>`).join("")
+      : `<div class="empty-state compact"><strong>Sem receita aprovada</strong><span>Ingressos, bomboniere e assinaturas aparecerão aqui quando forem pagos.</span></div>`;
+  }
+  if ($("dashMovieRevenue")) {
+    const movies = Array.isArray(data.revenueByMovie) ? data.revenueByMovie : [];
+    const total = movies.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    $("dashMovieRevenue").innerHTML = movies.length
+      ? movies.map((item) => `
+          <div class="metric-row finance-row">
+            <span>${escapeHtml(item.name || "Filme")}<small>${total ? Math.round((Number(item.amount || 0) / total) * 100) : 0}% da receita de ingressos</small></span>
+            <strong>${money(item.amount)}</strong>
+          </div>`).join("")
+      : `<div class="empty-state compact"><strong>Sem receita por filme</strong><span>As vendas aprovadas por sessão entram nesta lista.</span></div>`;
+  }
   if ($("dashUpcomingSessions")) {
     const sessions = data.todaySessions || data.upcomingSessions || [];
     $("dashUpcomingSessions").innerHTML = sessions.length
@@ -2587,7 +2609,7 @@ async function validateTicketByCode(code, options = {}) {
 
 async function startQrReader() {
   stopQrReader();
-  if (location.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(location.hostname)) {
+  if (!window.isSecureContext && !["localhost", "127.0.0.1"].includes(location.hostname)) {
     renderTicketValidationResult("invalid", { message: "A câmera exige HTTPS em produção. Digite o código manualmente." });
     $("manualCodeBox").hidden = false;
     $("validateTicketButton").hidden = false;
@@ -2605,8 +2627,7 @@ async function startQrReader() {
     state.qrStream = await requestCameraStream();
     state.qrCameraPermission = "granted";
     const video = $("qrVideo");
-    video.srcObject = state.qrStream;
-    await video.play();
+    await prepareQrVideo(video, state.qrStream);
     state.qrTorchTrack = state.qrStream.getVideoTracks()[0] || null;
     await state.qrTorchTrack?.applyConstraints?.({ advanced: [{ focusMode: "continuous" }] }).catch(() => null);
     setQrReaderActive(true, "Aponte para o QR Code");
@@ -2675,19 +2696,84 @@ async function getCameraPermissionState() {
 }
 
 async function requestCameraStream() {
-  try {
-    return await navigator.mediaDevices.getUserMedia({
+  const attempts = [
+    {
       video: {
         facingMode: { ideal: "environment" },
         width: { ideal: 1280 },
         height: { ideal: 720 }
       },
       audio: false
-    });
-  } catch (error) {
-    if (!["OverconstrainedError", "ConstraintNotSatisfiedError"].includes(error?.name)) throw error;
-    return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    },
+    {
+      video: {
+        facingMode: "environment"
+      },
+      audio: false
+    },
+    {
+      video: true,
+      audio: false
+    }
+  ];
+  let lastError = null;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (error) {
+      lastError = error;
+      if (["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(error?.name)) throw error;
+    }
   }
+  throw lastError || new Error("Camera unavailable");
+}
+
+async function prepareQrVideo(video, stream) {
+  if (!video) throw new Error("Video do leitor nao encontrado.");
+  video.muted = true;
+  video.setAttribute("muted", "");
+  video.setAttribute("playsinline", "");
+  video.setAttribute("autoplay", "");
+  video.srcObject = stream;
+  try {
+    if (!video.videoWidth) {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("A câmera demorou para iniciar.")), 7000);
+        if (video.readyState >= 1) {
+          clearTimeout(timeout);
+          resolve();
+          return;
+        }
+        video.onloadedmetadata = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        video.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error("Não foi possível carregar a prévia da câmera."));
+        };
+      });
+    }
+    await video.play();
+  } catch (error) {
+    stream.getTracks().forEach((track) => track.stop());
+    throw error;
+  }
+}
+
+function cameraRecoverySteps(permissionState = "unknown") {
+  if (permissionState === "denied") {
+    return [
+      "Clique no cadeado ao lado do endereço do site.",
+      "Altere Câmera para Permitir.",
+      "Feche este aviso e toque em Solicitar acesso novamente."
+    ];
+  }
+  return [
+    "Confira se outro aplicativo não está usando a câmera.",
+    "Toque em Solicitar acesso novamente para o navegador abrir a permissão.",
+    "Se preferir, valide pelo código manual do ingresso."
+  ];
 }
 
 function renderCameraAccessError(error, permissionState = "unknown") {
@@ -2711,6 +2797,7 @@ function renderCameraAccessError(error, permissionState = "unknown") {
     title = "Câmera em uso por outro aplicativo";
     message = "Feche a câmera, videochamada ou outro leitor aberto e tente novamente.";
   }
+  const steps = cameraRecoverySteps(permissionState);
 
   if (!target) return;
   target.className = "validation-result camera-access-result";
@@ -2718,6 +2805,7 @@ function renderCameraAccessError(error, permissionState = "unknown") {
     <strong>${escapeHtml(title)}</strong>
     <p>${escapeHtml(message)}</p>
     <span>${escapeHtml(help)}</span>
+    <ol>${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
     <button class="primary-button" type="button" data-camera-retry>Solicitar acesso novamente</button>
   `;
   target.querySelector("[data-camera-retry]")?.addEventListener("click", startQrReader);

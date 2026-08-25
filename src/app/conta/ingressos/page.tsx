@@ -155,7 +155,7 @@ function TicketDetails({ ticket, onTransferred }: { ticket: TicketRecord; onTran
     QRCode.toDataURL(ticket.qrPayload || ticket.code, {
       margin: 1,
       width: 220,
-      color: { dark: "#020617", light: "#ffffff" },
+      color: { dark: "#020617", light: "#f8fafc" },
     }).then(setQrDataUrl).catch(() => setQrDataUrl(""));
   }, [ticket.code, ticket.qrPayload]);
 
@@ -215,7 +215,7 @@ function TicketDetails({ ticket, onTransferred }: { ticket: TicketRecord; onTran
               <Info label="Sala" value={ticket.sessionRoom || "Cine Cruzeiro"} />
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
-              <Info label="Pedido" value={friendlyReference(ticket.orderReference || ticket.orderId || "-")} title={ticket.orderReference || ticket.orderId || "-"} />
+              <Info label="Pedido" value={ticketHumanReference(ticket)} title={ticket.orderReference || ticket.orderId || ticketHumanReference(ticket)} />
               <Info label="Código" value={ticket.code} mono />
             </dl>
             <div className="rounded-lg bg-white p-4 text-center text-xs font-black text-slate-950">
@@ -320,8 +320,9 @@ function statusLabel(status: TicketRecord["status"]) {
   return labels[status] || status;
 }
 
-function friendlyReference(value: string) {
-  if (!value || value === "-") return "-";
-  if (value.length <= 18) return value;
-  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+function ticketHumanReference(ticket: TicketRecord) {
+  return [
+    ticket.movieTitle || "Filme",
+    [ticket.sessionTime, ticket.sessionFormat].filter(Boolean).join(" • "),
+  ].filter(Boolean).join(" - ");
 }

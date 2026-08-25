@@ -123,7 +123,7 @@ async function verifySmtp(db) {
 
 function button(label, url, secondary = false) {
   if (!url) return "";
-  return `<a href="${htmlEscape(url)}" style="display:inline-block;background:${secondary ? "#172554" : "#facc15"};color:${secondary ? "#eff6ff" : "#020617"};padding:13px 16px;border-radius:8px;text-decoration:none;font-weight:900;margin:6px 8px 6px 0">${htmlEscape(label)}</a>`;
+  return `<a href="${htmlEscape(url)}" style="display:inline-block;max-width:100%;box-sizing:border-box;background:${secondary ? "#172554" : "#facc15"};color:${secondary ? "#eff6ff" : "#020617"};padding:13px 16px;border-radius:8px;text-decoration:none;font-weight:900;line-height:1.2;margin:6px 8px 6px 0;word-break:break-word">${htmlEscape(label)}</a>`;
 }
 
 function absoluteUrl(value, siteUrl = "") {
@@ -143,16 +143,16 @@ function baseLayout(title, body, options = {}) {
     ? `<img src="${htmlEscape(options.logoUrl)}" width="126" alt="Cine Cruzeiro" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px">`
     : `<strong style="display:block;color:#facc15;font-size:12px;letter-spacing:.18em;text-transform:uppercase">Cine Cruzeiro</strong>`;
   return `
-    <div style="margin:0;background:#060a12;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#f8fafc">
-      <div style="max-width:680px;margin:0 auto">
+    <div style="margin:0;background:#060a12;padding:18px;font-family:'Segoe UI',Helvetica,sans-serif;color:#f8fafc;box-sizing:border-box;width:100%">
+      <div style="max-width:680px;width:100%;margin:0 auto;box-sizing:border-box">
         <div style="padding:8px 0 18px">
           ${logo}
           <span style="display:block;margin-top:6px;color:#93c5fd;font-size:13px">Cinema de rua, ingresso digital e atendimento de bairro.</span>
         </div>
-        <div style="background:#0d1728;padding:28px;border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.34)">
+        <div style="background:#0d1728;padding:22px;border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.34);box-sizing:border-box;overflow-wrap:break-word">
           ${options.kicker ? `<p style="margin:0 0 10px;color:#60a5fa;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase">${htmlEscape(options.kicker)}</p>` : ""}
-          <h1 style="margin:0 0 16px;font-size:28px;line-height:1.12;color:#fff">${htmlEscape(title)}</h1>
-          <div style="font-size:15px;line-height:1.65;color:#dbeafe">${body}</div>
+          <h1 style="margin:0 0 16px;font-size:26px;line-height:1.15;color:#fff;word-break:break-word">${htmlEscape(title)}</h1>
+          <div style="font-size:15px;line-height:1.65;color:#dbeafe;overflow-wrap:break-word">${body}</div>
         </div>
         <p style="margin:18px 0 0;color:#93a4bd;font-size:12px;line-height:1.6">Mensagem automática do Cine Cruzeiro. Se você não reconhece esta ação, entre em contato com o cinema.${unsubscribeFooter}</p>
       </div>
@@ -167,23 +167,29 @@ function extrasSummary(items = []) {
 function ticketCard(ticket = {}, options = {}) {
   const posterUrl = absoluteUrl(ticket.posterUrl, options.siteUrl);
   const poster = posterUrl
-    ? `<td style="width:116px;padding-right:16px;vertical-align:top"><img src="${htmlEscape(posterUrl)}" width="108" alt="${htmlEscape(ticket.movieTitle || "Filme")}" style="display:block;width:108px;max-width:108px;border-radius:8px;border:0"></td>`
+    ? `<td style="width:128px;padding:0 16px 0 0;vertical-align:top"><img src="${htmlEscape(posterUrl)}" width="120" alt="${htmlEscape(ticket.movieTitle || "Filme")}" style="display:block;width:120px;max-width:120px;height:auto;border-radius:8px;border:0;outline:0;text-decoration:none"></td>`
     : "";
   const wallet = ticket.googleWalletUrl ? button("Adicionar ao Google Wallet", ticket.googleWalletUrl, true) : "";
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;background:#09111f;border-radius:10px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;background:#09111f;border-radius:10px;table-layout:fixed;overflow:hidden">
       <tr>
-        ${poster}
         <td style="padding:16px;vertical-align:top">
-          <p style="margin:0 0 6px;color:#60a5fa;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase">Ingresso digital</p>
-          <h2 style="margin:0 0 10px;color:#fff;font-size:22px;line-height:1.16">${htmlEscape(ticket.movieTitle || "Cine Cruzeiro")}</h2>
-          <p style="margin:0 0 12px;color:#facc15;font-size:16px;font-weight:900">${htmlEscape(ticket.sessionDate || "")} às ${htmlEscape(ticket.sessionTime || "")}</p>
-          <p style="margin:0;color:#cbd5e1">${htmlEscape(ticket.sessionRoom || "Sala Cruzeiro")}<br>${htmlEscape(ticket.sessionFormat || "Sessão")}<br>Assento: ${htmlEscape(ticket.seat || "Livre")}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed">
+            <tr>
+              ${poster}
+              <td style="vertical-align:top;min-width:0">
+                <p style="margin:0 0 6px;color:#60a5fa;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase">Ingresso digital</p>
+                <h2 style="margin:0 0 10px;color:#fff;font-size:21px;line-height:1.18;word-break:break-word">${htmlEscape(ticket.movieTitle || "Cine Cruzeiro")}</h2>
+                <p style="margin:0 0 12px;color:#facc15;font-size:16px;font-weight:900;word-break:break-word">${htmlEscape(ticket.sessionDate || "")} às ${htmlEscape(ticket.sessionTime || "")}</p>
+                <p style="margin:0;color:#cbd5e1;word-break:break-word">${htmlEscape(ticket.sessionRoom || "Sala Cruzeiro")}<br>${htmlEscape(ticket.sessionFormat || "Sessão")}<br>Assento: ${htmlEscape(ticket.seat || "Livre")}</p>
+              </td>
+            </tr>
+          </table>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px">
             <tr>
-              <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px">Tipo<br><strong style="color:#fff;font-size:14px">${htmlEscape(ticket.ticketType || "Ingresso")}</strong></td>
+              <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px;vertical-align:top">Tipo<br><strong style="color:#fff;font-size:14px;word-break:break-word">${htmlEscape(ticket.ticketType || "Ingresso")}</strong></td>
               <td style="width:10px"></td>
-              <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px">Código<br><strong style="color:#fff;font-size:14px">${htmlEscape(ticket.code || "-")}</strong></td>
+              <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px;vertical-align:top">Código<br><strong style="color:#fff;font-size:14px;word-break:break-all">${htmlEscape(ticket.code || "-")}</strong></td>
             </tr>
           </table>
           <div style="margin-top:12px">${button("Ver meus ingressos", options.accountUrl)}${wallet}</div>

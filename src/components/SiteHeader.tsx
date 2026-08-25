@@ -135,7 +135,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
 export function SiteFooter() {
   return (
     <footer className="border-t border-white/8 bg-[#050810] text-sm text-slate-400">
-      <div className="mx-auto grid max-w-[1320px] gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.35fr_1fr_1fr] lg:px-8">
+      <div className="mx-auto grid max-w-[1320px] gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.35fr_1fr_1fr_1fr] lg:px-8">
         <div>
           <img
             src={assetPath("/images/logo-display.webp")}
@@ -163,11 +163,22 @@ export function SiteFooter() {
           <Link href="/conta/ingressos" className="block hover:text-white">Meus ingressos</Link>
           <Link href="/checkout/carrinho/extras" className="block hover:text-white">Carrinho</Link>
         </div>
+        <div className="space-y-2">
+          <h3 className="font-bold text-white">Legal</h3>
+          <Link href="/privacidade" className="block hover:text-white">Política de privacidade</Link>
+          <Link href="/termos" className="block hover:text-white">Termos de uso</Link>
+        </div>
       </div>
       <div className="border-t border-white/8">
         <div className="mx-auto flex max-w-[1320px] flex-col gap-3 px-4 py-5 text-xs text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>© Cine Cruzeiro. Plataforma de vendas, bilheteria e relacionamento.</span>
-          <span>Ingressos liberados somente após aprovação real do pagamento.</span>
+          <span>
+            Desenvolvido por{" "}
+            <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="font-bold text-slate-200 underline decoration-white/20 underline-offset-4 transition hover:text-gold-400">
+              LumixEngine
+            </a>
+            . Ingressos liberados somente após aprovação real do pagamento.
+          </span>
         </div>
       </div>
     </footer>

@@ -1959,7 +1959,7 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
     },
     validTimeInterval,
     textModulesData: [
-      { id: "pedido", header: "Pedido", body: enriched.orderReference },
+      { id: "pedido", header: "Pedido", body: `${enriched.movieTitle || "Cine Cruzeiro"} - ${enriched.sessionTime || "sessao"}${enriched.sessionFormat ? ` • ${enriched.sessionFormat}` : ""}` },
       { id: "sessao", header: "Sessao", body: `${enriched.sessionDate} as ${enriched.sessionTime}` },
       { id: "sala", header: "Sala", body: enriched.sessionRoom || "Sala Cruzeiro" },
       { id: "formato", header: "Formato", body: enriched.sessionFormat || "Sessao Cine Cruzeiro" },
@@ -4014,11 +4014,19 @@ function adminDashboard(db, options = {}) {
   }, {});
   const productSales = {};
   let concessionRevenue = 0;
+  const revenueByMovie = {};
   periodPaidOrders.forEach((order) => (order.concessionItems || []).forEach((item) => {
     const key = item.name || item.id;
     productSales[key] = (productSales[key] || 0) + Number(item.quantity || 0);
     concessionRevenue += Number(item.totalPrice ?? item.price * item.quantity ?? 0);
   }));
+  periodPaidOrders.forEach((order) => {
+    const movie = movieForOrder(db, order);
+    const movieTitle = order.movieTitle || movie?.title || "Filme não identificado";
+    const extrasTotal = (order.concessionItems || []).reduce((total, item) => total + Number(item.totalPrice ?? item.price * item.quantity ?? 0), 0);
+    const ticketRevenue = Math.max(0, Number(order.totalPrice || 0) - extrasTotal);
+    revenueByMovie[movieTitle] = (revenueByMovie[movieTitle] || 0) + ticketRevenue;
+  });
   const lowStockProducts = (db.concessions || [])
     .filter((item) => item.active !== false && item.stock !== "" && item.stock !== undefined && Number(item.stock || 0) <= 5)
     .map((item) => ({ id: item.id, name: item.name, imageUrl: item.imageUrl || "", stock: Number(item.stock || 0) }))
@@ -4035,6 +4043,16 @@ function adminDashboard(db, options = {}) {
     createdAt: order.createdAt || ""
   }));
   const paymentsInPeriod = (db.payments || []).filter((payment) => inDateRange(payment.createdAt, period.start, period.end));
+  const approvedPaymentStatuses = new Set(["approved", "paid", "processed"]);
+  const clubRevenue = paymentsInPeriod
+    .filter((payment) => approvedPaymentStatuses.has(String(payment.status || "").toLowerCase()) && payment.metadata?.kind === "club_subscription")
+    .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+  const ticketRevenue = Math.max(0, sum(periodPaidOrders) - concessionRevenue);
+  const revenueComposition = [
+    { key: "tickets", label: "Ingressos", amount: ticketRevenue, hint: `${ticketsSold} ingresso(s) vendidos` },
+    { key: "concessions", label: "Bomboniere", amount: concessionRevenue, hint: `${Object.values(productSales).reduce((total, quantity) => total + Number(quantity || 0), 0)} item(ns) vendido(s)` },
+    { key: "club", label: "Assinaturas do Clube", amount: clubRevenue, hint: "Pagamentos recorrentes aprovados" }
+  ];
   const attentionPayments = (db.payments || []).filter((payment) => {
     const status = String(payment.status || "").toLowerCase();
     if (["rejected", "cancelled"].includes(status)) return true;
@@ -4090,6 +4108,13 @@ function adminDashboard(db, options = {}) {
     rejectedPayments: (db.payments || []).filter((payment) => payment.status === "rejected").length,
     problematicPayments: (db.payments || []).filter((payment) => problematicStatuses.includes(String(payment.status || "").toLowerCase())).length,
     concessionRevenue,
+    ticketRevenue,
+    clubRevenue,
+    revenueComposition,
+    revenueByMovie: Object.entries(revenueByMovie)
+      .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+      .slice(0, 8)
+      .map(([name, amount]) => ({ name, amount })),
     capacity: { roomCapacity: totalCapacity, occupied, occupancyRate: totalCapacity ? Math.round((occupied / totalCapacity) * 100) : 0 },
     salesByOrigin: groupCount(periodOrders, (order) => originLabel(order.origin || "online")),
     revenueByOrigin: groupAmount(periodPaidOrders, (order) => originLabel(order.origin || "online")),

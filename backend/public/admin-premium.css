@@ -2149,6 +2149,18 @@ body:has(.success-overlay:not([hidden])) {
   color: #c7d2e1;
 }
 
+.camera-access-result ol {
+  display: grid;
+  gap: 5px;
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: #dbeafe;
+}
+
+.camera-access-result li {
+  line-height: 1.45;
+}
+
 .camera-access-result .primary-button {
   justify-self: start;
   margin-top: 4px;
