@@ -215,6 +215,14 @@ async function run() {
     assert.equal(persistedPlan.isFeatured, true);
     assert.equal(persistedPlan.displayOrder, 3);
 
+    const validated = await request("/api/tickets/validate", {
+      method: "POST",
+      headers: jsonHeaders(await loginAdmin()),
+      body: JSON.stringify({ code: tickets[0].code })
+    });
+    assert.equal(validated.response.status, 200);
+    assert.equal(validated.payload.ticket.status, "used");
+
     console.log("PostgreSQL concurrency tests passed.");
   } finally {
     await new Promise((resolve) => server.close(resolve));

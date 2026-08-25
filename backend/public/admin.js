@@ -2495,7 +2495,7 @@ function setBoxOfficeTab(tab) {
     if (panel) panel.classList.toggle("active", key === tab);
   });
   if (tab === "validateTicket") {
-    window.setTimeout(() => startQrReader(), 80);
+    startQrReader();
   } else {
     stopQrReader();
   }
@@ -2622,7 +2622,7 @@ async function startQrReader() {
     return;
   }
   try {
-    state.qrCameraPermission = await getCameraPermissionState();
+    state.qrCameraPermission = "prompt";
     setQrReaderActive(true, "Solicitando permissão da câmera...");
     state.qrStream = await requestCameraStream();
     state.qrCameraPermission = "granted";
@@ -2630,7 +2630,8 @@ async function startQrReader() {
     await prepareQrVideo(video, state.qrStream);
     state.qrTorchTrack = state.qrStream.getVideoTracks()[0] || null;
     await state.qrTorchTrack?.applyConstraints?.({ advanced: [{ focusMode: "continuous" }] }).catch(() => null);
-    setQrReaderActive(true, "Aponte para o QR Code");
+    const cameraLabel = String(state.qrTorchTrack?.label || "").trim();
+    setQrReaderActive(true, cameraLabel ? `Câmera ativa: ${cameraLabel}` : "Aponte para o QR Code");
     let detector = null;
     if ("BarcodeDetector" in window) {
       try {
@@ -2656,15 +2657,20 @@ async function startQrReader() {
       if (!video.videoWidth || state.qrValidationLocked) return;
 
       let value = "";
-      if (detector) {
-        const codes = await detector.detect(video).catch(() => []);
-        value = codes[0]?.rawValue || "";
-      } else if (window.jsQR && context) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-        value = window.jsQR(imageData.data, imageData.width, imageData.height)?.data || "";
+      try {
+        if (detector) {
+          const codes = await detector.detect(video).catch(() => []);
+          value = codes[0]?.rawValue || "";
+        }
+        if (!value && window.jsQR && context) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          value = window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" })?.data || "";
+        }
+      } catch {
+        // Uma falha isolada de leitura nao deve encerrar a camera.
       }
 
       const now = Date.now();
@@ -2755,6 +2761,17 @@ async function prepareQrVideo(video, stream) {
       });
     }
     await video.play();
+    await new Promise((resolve, reject) => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        resolve();
+        return;
+      }
+      const timeout = setTimeout(() => reject(new Error("A câmera abriu, mas não enviou imagem.")), 5000);
+      video.addEventListener("playing", () => {
+        clearTimeout(timeout);
+        resolve();
+      }, { once: true });
+    });
   } catch (error) {
     stream.getTracks().forEach((track) => track.stop());
     throw error;
