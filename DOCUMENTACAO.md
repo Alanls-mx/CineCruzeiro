@@ -165,10 +165,11 @@ Variáveis externas relevantes:
 
 - `GOOGLE_WALLET_ISSUER_ID`
 - `GOOGLE_WALLET_CLASS_ID`
-- `GOOGLE_WALLET_CLIENT_EMAIL` ou `GOOGLE_WALLET_SERVICE_ACCOUNT_JSON`
-- `GOOGLE_WALLET_PRIVATE_KEY` ou `GOOGLE_WALLET_SERVICE_ACCOUNT_JSON`
+- `GOOGLE_WALLET_SERVICE_ACCOUNT_JSON` com uma chave JSON nova da Service Account
 - `GOOGLE_WALLET_ORIGINS`
 - `EMAIL_VERIFICATION_WEBHOOK_URL`
+
+O painel de integrações também aceita configurar o Google Wallet por JSON da Service Account. O backend extrai `client_email` e `private_key`, criptografa a credencial e nunca devolve a chave ao navegador. A geração de passes usa `EventTicketObject` com `aud=google`, `typ=savetowallet`, origem sem subpasta e `classId` completo do Issuer.
 
 ## 5. Estrutura de Pastas
 

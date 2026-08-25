@@ -201,19 +201,46 @@ function getGoogleWalletConfig(db) {
   const classId = configured?.classId || getFirstEnv(GOOGLE_WALLET_CLASS_ID_ENV_KEYS)?.value || "";
   const clientEmail = configured?.clientEmail || getFirstEnv(GOOGLE_WALLET_CLIENT_EMAIL_ENV_KEYS)?.value || serviceAccount.client_email || "";
   const privateKey = (configured?.privateKey || getFirstEnv(GOOGLE_WALLET_PRIVATE_KEY_ENV_KEYS)?.value || serviceAccount.private_key || "").replace(/\\n/g, "\n");
-  const origins = (configured?.origins || getFirstEnv(GOOGLE_WALLET_ORIGINS_ENV_KEYS)?.value || "http://localhost:3000")
-    .split(",")
-    .map((origin) => origin.trim().replace(/\/+$/, ""))
-    .filter(Boolean);
+  const origins = normalizeGoogleWalletOrigins(configured?.origins || getFirstEnv(GOOGLE_WALLET_ORIGINS_ENV_KEYS)?.value || appFrontendUrl());
 
   return {
     configured: Boolean(issuerId && classId && clientEmail && privateKey),
     issuerId,
-    classId,
+    classId: googleWalletResourceId(issuerId, classId),
     clientEmail,
     privateKey,
-    origins
+    origins,
+    projectId: serviceAccount.project_id || "",
+    serviceAccountConfigured: Boolean(serviceAccountJson || privateKey),
+    environment: configured?.environment || "production"
   };
+}
+
+function normalizeGoogleWalletOrigins(value) {
+  const candidates = String(value || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  candidates.push(appFrontendUrl(), "https://lumixengine.com", "https://www.lumixengine.com");
+  return [...new Set(candidates.map((origin) => {
+    try {
+      return new URL(origin).origin.replace(/\/+$/, "");
+    } catch {
+      return origin.replace(/\/+$/, "");
+    }
+  }).filter(Boolean))];
+}
+
+function googleWalletResourceId(issuerId, resourceId) {
+  const safeIssuer = String(issuerId || "").trim();
+  const safeResource = String(resourceId || "").trim();
+  if (!safeIssuer || !safeResource) return safeResource;
+  return safeResource.includes(".") ? safeResource : `${safeIssuer}.${safeResource}`;
+}
+
+function googleWalletObjectId(config, ticket) {
+  const stableId = String(ticket.id || ticket.code || "").replace(/[^A-Za-z0-9._-]/g, "_");
+  return googleWalletResourceId(config.issuerId, `ticket_${stableId}`);
 }
 
 function getGoogleOAuthConfig(req, db) {
@@ -1837,24 +1864,37 @@ function signWalletJwt(claims, privateKey) {
   return `${payload}.${signature}`;
 }
 
-function walletObjectForTicket(db, ticket, user, req) {
+function googleWalletLocalized(value) {
+  return { defaultValue: { language: "pt-BR", value: String(value || "") } };
+}
+
+function googleWalletAbsoluteUrl(req, db, value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const frontendUrl = getGoogleOAuthConfig(req, db).frontendUrl.replace(/\/+$/, "");
+  return `${frontendUrl}${raw.startsWith("/") ? raw : `/${raw}`}`;
+}
+
+function walletEventTicketObjectForTicket(db, ticket, user, req) {
   const config = getGoogleWalletConfig(db);
   const enriched = enrichTicket(db, ticket);
-  const objectId = `${config.issuerId}.${String(ticket.id).replace(/[^A-Za-z0-9._-]/g, "_")}`;
+  const objectId = googleWalletObjectId(config, ticket);
   const validTimeInterval = {
     start: { date: `${ticket.sessionDate}T00:00:00-03:00` },
     end: { date: enriched.archiveAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
   };
+  const frontendUrl = getGoogleOAuthConfig(req, db).frontendUrl;
 
   return {
     id: objectId,
-    classId: config.classId.includes(".") ? config.classId : `${config.issuerId}.${config.classId}`,
+    classId: config.classId,
     state: enriched.status === "active" ? "ACTIVE" : "INACTIVE",
-    heroImage: enriched.backdropUrl ? { sourceUri: { uri: enriched.backdropUrl } } : undefined,
-    logo: { sourceUri: { uri: `${getGoogleOAuthConfig(req, db).frontendUrl}/images/logo.png` } },
-    cardTitle: { defaultValue: { language: "pt-BR", value: "Cine Cruzeiro" } },
-    header: { defaultValue: { language: "pt-BR", value: enriched.movieTitle } },
-    subheader: { defaultValue: { language: "pt-BR", value: `${enriched.sessionDate} as ${enriched.sessionTime}` } },
+    heroImage: enriched.backdropUrl ? { sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.backdropUrl) } } : undefined,
+    imageModulesData: enriched.posterUrl ? [{ mainImage: { sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.posterUrl) } }, id: "poster" }] : undefined,
+    eventName: googleWalletLocalized(enriched.movieTitle || "Ingresso Cine Cruzeiro"),
+    ticketHolderName: user.name || enriched.customerName || "Cliente Cine Cruzeiro",
+    ticketNumber: enriched.code,
     barcode: {
       type: "QR_CODE",
       value: enriched.qrPayload,
@@ -1863,16 +1903,17 @@ function walletObjectForTicket(db, ticket, user, req) {
     validTimeInterval,
     textModulesData: [
       { id: "pedido", header: "Pedido", body: enriched.orderReference },
-      { id: "sala", header: "Sala", body: enriched.sessionRoom },
-      { id: "formato", header: "Formato", body: enriched.sessionFormat },
+      { id: "sessao", header: "Sessao", body: `${enriched.sessionDate} as ${enriched.sessionTime}` },
+      { id: "sala", header: "Sala", body: enriched.sessionRoom || "Sala Cruzeiro" },
+      { id: "formato", header: "Formato", body: enriched.sessionFormat || "Sessao Cine Cruzeiro" },
       { id: "tipo", header: "Tipo", body: enriched.ticketType },
-      { id: "cliente", header: "Cliente", body: user.name || enriched.customerName }
+      { id: "entrada", header: "Entrada", body: "Apresente o QR Code na portaria. Chegue com 15 minutos de antecedencia." }
     ],
     linksModuleData: {
       uris: [
         {
           id: "conta",
-          uri: `${getGoogleOAuthConfig(req, db).frontendUrl}/conta/ingressos`,
+          uri: `${frontendUrl}/conta/ingressos`,
           description: "Meus ingressos"
         }
       ]
@@ -1893,6 +1934,7 @@ function googleWalletSaveUrl(db, ticket, user, req) {
     error.statusCode = 409;
     throw error;
   }
+  const eventTicketObject = walletEventTicketObjectForTicket(db, ticket, user, req);
   const claims = {
     iss: config.clientEmail,
     aud: "google",
@@ -1900,9 +1942,24 @@ function googleWalletSaveUrl(db, ticket, user, req) {
     iat: Math.floor(Date.now() / 1000),
     origins: config.origins,
     payload: {
-      genericObjects: [walletObjectForTicket(db, ticket, user, req)]
+      eventTicketObjects: [eventTicketObject]
     }
   };
+  logEvent("info", "google_wallet.jwt.generated", {
+    issuerId: config.issuerId,
+    classId: config.classId,
+    objectId: eventTicketObject.id,
+    clientEmail: config.clientEmail,
+    origins: config.origins,
+    passType: "eventTicketObjects",
+    objectPreview: {
+      state: eventTicketObject.state,
+      eventName: eventTicketObject.eventName?.defaultValue?.value || "",
+      barcodeType: eventTicketObject.barcode?.type || "",
+      hasHeroImage: Boolean(eventTicketObject.heroImage),
+      hasPoster: Boolean(eventTicketObject.imageModulesData?.length)
+    }
+  });
   return `https://pay.google.com/gp/v/save/${signWalletJwt(claims, config.privateKey)}`;
 }
 
@@ -4030,6 +4087,147 @@ function adminIntegrationsStatus(req, db) {
   return integrations;
 }
 
+function googleWalletApiError(error, fallback = "Google Wallet recusou a requisicao.") {
+  if (!error) return fallback;
+  if (error.error) {
+    const apiError = error.error;
+    const details = Array.isArray(apiError.errors) && apiError.errors[0] ? apiError.errors[0] : {};
+    return [apiError.status || details.reason || "", apiError.message || fallback].filter(Boolean).join(": ");
+  }
+  return error.message || fallback;
+}
+
+async function googleWalletAccessToken(config) {
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = signWalletJwt({
+    iss: config.clientEmail,
+    scope: "https://www.googleapis.com/auth/wallet_object",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600
+  }, config.privateKey);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload.access_token) {
+    const error = new Error(googleWalletApiError(payload, "Falha ao autenticar a Service Account."));
+    error.statusCode = response.status;
+    throw error;
+  }
+  return payload.access_token;
+}
+
+async function googleWalletApiGet(pathname, config) {
+  const token = await googleWalletAccessToken(config);
+  const response = await fetch(`https://walletobjects.googleapis.com/walletobjects/v1${pathname}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(googleWalletApiError(payload));
+    error.statusCode = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+async function testGoogleWalletIntegration(db) {
+  const wallet = getGoogleWalletConfig(db);
+  const checks = [
+    { key: "serviceAccount", label: "Service Account", ok: Boolean(wallet.clientEmail && wallet.privateKey), detail: wallet.clientEmail ? `Configurada como ${wallet.clientEmail}` : "JSON da Service Account ausente." },
+    { key: "issuer", label: "Issuer", ok: Boolean(wallet.issuerId), detail: wallet.issuerId || "Issuer ID ausente." },
+    { key: "class", label: "Classe", ok: Boolean(wallet.classId), detail: wallet.classId || "Class ID ausente." },
+    { key: "origin", label: "Origem", ok: wallet.origins.length > 0, detail: wallet.origins.join(", ") || "Origem ausente." }
+  ];
+  if (checks.some((item) => !item.ok)) {
+    return {
+      ok: false,
+      message: checks.find((item) => !item.ok)?.detail || "Configuração incompleta.",
+      checks,
+      diagnostics: {
+        issuerId: wallet.issuerId,
+        classId: wallet.classId,
+        clientEmail: wallet.clientEmail,
+        origins: wallet.origins,
+        passType: "EventTicket"
+      }
+    };
+  }
+
+  try {
+    const eventClass = await googleWalletApiGet(`/eventTicketClass/${encodeURIComponent(wallet.classId)}`, wallet);
+    const issuerFromClass = String(eventClass.id || "").split(".")[0] || "";
+    const classApproved = String(eventClass.reviewStatus || "").toUpperCase() === "APPROVED";
+    checks.push(
+      { key: "auth", label: "Autenticação", ok: true, detail: "Service Account autenticada na API Google Wallet." },
+      { key: "classRead", label: "EventTicketClass", ok: true, detail: `${eventClass.id || wallet.classId} encontrada.` },
+      { key: "classIssuer", label: "Classe do Issuer", ok: issuerFromClass === wallet.issuerId, detail: issuerFromClass === wallet.issuerId ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
+      { key: "classStatus", label: "Status da classe", ok: classApproved, detail: eventClass.reviewStatus || "Status não informado." },
+      { key: "jwt", label: "Geração JWT", ok: true, detail: "Assinatura RS256 pronta para Save to Google Wallet." },
+      { key: "publication", label: "Publicação", ok: true, detail: String(wallet.environment || "production") === "sandbox" ? "Modo de demonstração/teste." : "Produção configurada." }
+    );
+    const ok = checks.every((item) => item.ok);
+    logEvent("info", "google_wallet.integration.tested", {
+      ok,
+      issuerId: wallet.issuerId,
+      classId: wallet.classId,
+      clientEmail: wallet.clientEmail,
+      origins: wallet.origins,
+      passType: "EventTicket",
+      reviewStatus: eventClass.reviewStatus || ""
+    });
+    return {
+      ok,
+      message: ok
+        ? "Google Wallet autenticado, Issuer encontrado e EventTicketClass pronta."
+        : checks.find((item) => !item.ok)?.detail || "Revise a configuração do Google Wallet.",
+      checks,
+      diagnostics: {
+        issuerId: wallet.issuerId,
+        classId: wallet.classId,
+        clientEmail: wallet.clientEmail,
+        origins: wallet.origins,
+        passType: "EventTicket",
+        reviewStatus: eventClass.reviewStatus || "",
+        demoModeNotice: "Se o Issuer estiver em modo de demonstração, apenas usuários de teste conseguem adicionar o ingresso."
+      }
+    };
+  } catch (error) {
+    checks.push({ key: "api", label: "API Google Wallet", ok: false, detail: error.message || "Falha ao consultar a classe." });
+    logEvent("warn", "google_wallet.integration_failed", {
+      issuerId: wallet.issuerId,
+      classId: wallet.classId,
+      clientEmail: wallet.clientEmail,
+      origins: wallet.origins,
+      passType: "EventTicket",
+      statusCode: error.statusCode || 0,
+      message: error.message
+    });
+    return {
+      ok: false,
+      message: error.statusCode === 403
+        ? `Falha: a Service Account não possui acesso ao Issuer ${wallet.issuerId}.`
+        : error.message || "Falha ao testar Google Wallet.",
+      checks,
+      diagnostics: {
+        issuerId: wallet.issuerId,
+        classId: wallet.classId,
+        clientEmail: wallet.clientEmail,
+        origins: wallet.origins,
+        passType: "EventTicket",
+        statusCode: error.statusCode || 0
+      }
+    };
+  }
+}
+
 async function testIntegrationProvider(db, provider, req) {
   const key = integrationConfigService.providerKey(provider);
   const config = integrationConfigService.resolvedConfig(db, key);
@@ -4052,10 +4250,7 @@ async function testIntegrationProvider(db, provider, req) {
       : { ok: false, message: "Informe Client ID e Client secret." };
   }
   if (key === "googleWallet") {
-    const wallet = getGoogleWalletConfig(db);
-    return wallet.configured
-      ? { ok: true, message: "Google Wallet possui credenciais mínimas." }
-      : { ok: false, message: "Informe Issuer ID, Class ID e credenciais da service account." };
+    return testGoogleWalletIntegration(db);
   }
   if (key === "email") {
     if (String(config.provider || "smtp") === "smtp" || config.smtpHost) {

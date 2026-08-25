@@ -801,6 +801,7 @@ body:has(.success-overlay:not([hidden])) {
   align-content: start;
   padding: 22px;
   background: #0a111d;
+  overflow-wrap: anywhere;
 }
 
 .integration-config-main {
@@ -1042,6 +1043,88 @@ body:has(.success-overlay:not([hidden])) {
   padding: 16px 22px;
   border-top: 1px solid var(--line-soft);
   background: rgba(13, 20, 32, 0.97);
+}
+
+.integration-diagnostics {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.integration-diagnostics > strong {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.integration-diagnostics ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.integration-diagnostics li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.integration-diagnostics li > span {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.integration-diagnostics li.ok > span {
+  background: var(--green);
+}
+
+.integration-diagnostics li.error > span {
+  background: var(--danger);
+}
+
+.integration-diagnostics b,
+.integration-diagnostics small,
+.integration-diagnostics-meta dt,
+.integration-diagnostics-meta dd {
+  display: block;
+  min-width: 0;
+}
+
+.integration-diagnostics b {
+  color: var(--text);
+}
+
+.integration-diagnostics small,
+.integration-diagnostics p,
+.integration-demo-note {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.integration-diagnostics-meta {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.integration-diagnostics-meta div {
+  min-width: 0;
+}
+
+.integration-demo-note {
+  margin: 12px 0 0;
 }
 
 .integration-item {

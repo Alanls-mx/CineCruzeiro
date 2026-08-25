@@ -3471,6 +3471,78 @@ function integrationSecurityHint(field, integration) {
     : `<small class="integration-field-hint">Campo sensível. O valor será criptografado e ocultado após salvar.</small>`;
 }
 
+function integrationDiagnosticsMarkup(checks = [], diagnostics = {}) {
+  const items = Array.isArray(checks) ? checks : [];
+  const summary = diagnostics && Object.keys(diagnostics).length
+    ? `
+      <dl class="integration-diagnostics-meta">
+        ${diagnostics.issuerId ? `<div><dt>Issuer</dt><dd>${escapeHtml(diagnostics.issuerId)}</dd></div>` : ""}
+        ${diagnostics.classId ? `<div><dt>Class ID</dt><dd>${escapeHtml(diagnostics.classId)}</dd></div>` : ""}
+        ${diagnostics.clientEmail ? `<div><dt>Service Account</dt><dd>${escapeHtml(diagnostics.clientEmail)}</dd></div>` : ""}
+        ${diagnostics.passType ? `<div><dt>Tipo</dt><dd>${escapeHtml(diagnostics.passType)}</dd></div>` : ""}
+        ${diagnostics.reviewStatus ? `<div><dt>Status Google</dt><dd>${escapeHtml(diagnostics.reviewStatus)}</dd></div>` : ""}
+      </dl>
+    `
+    : "";
+  return `
+    <div class="integration-diagnostics">
+      <strong>Diagnóstico</strong>
+      ${items.length ? `
+        <ol>
+          ${items.map((item) => `
+            <li class="${item.ok ? "ok" : "error"}">
+              <span aria-hidden="true"></span>
+              <div><b>${escapeHtml(item.label || item.key || "Verificação")}</b>${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ""}</div>
+            </li>
+          `).join("")}
+        </ol>
+      ` : `<p>Execute um teste para validar credenciais, Issuer e classe.</p>`}
+      ${summary}
+      ${diagnostics.demoModeNotice ? `<p class="integration-demo-note">${escapeHtml(diagnostics.demoModeNotice)}</p>` : ""}
+    </div>
+  `;
+}
+
+function renderIntegrationContext(integration, testResult = null) {
+  const values = integration.values || {};
+  return `
+    <div class="integration-context-status">
+      <span class="integration-status ${escapeHtml(integration.status || "pending")}">${integrationStatusLabel(integration)}</span>
+      <strong>${integration.enabled ? "Ativa no sistema" : "Desativada"}</strong>
+      <p>${integration.configured ? "Credenciais mínimas configuradas." : "Preencha os campos obrigatórios para usar esta integração."}</p>
+    </div>
+    <dl class="integration-context-list">
+      <div>
+        <dt>Área</dt>
+        <dd>${escapeHtml(integrationCategory(integration.key))}</dd>
+      </div>
+      <div>
+        <dt>Ambiente</dt>
+        <dd>${escapeHtml(integration.environment === "sandbox" ? "Sandbox" : "Produção")}</dd>
+      </div>
+      ${integration.key === "googleWallet" ? `
+        <div>
+          <dt>Service Account</dt>
+          <dd>${values.clientEmail ? escapeHtml(values.clientEmail) : "Não importada"}</dd>
+        </div>
+        <div>
+          <dt>Credencial</dt>
+          <dd>${values.serviceAccountConfigured ? "JSON salvo com segurança" : "Pendente"}</dd>
+        </div>
+      ` : ""}
+      <div>
+        <dt>Último teste</dt>
+        <dd>${integration.lastTestAt ? escapeHtml(new Date(integration.lastTestAt).toLocaleString("pt-BR")) : "Ainda não testada"}</dd>
+      </div>
+      <div>
+        <dt>Resultado</dt>
+        <dd>${escapeHtml(testResult?.message || integration.lastTestMessage || "Sem mensagem registrada")}</dd>
+      </div>
+    </dl>
+    ${integration.key === "googleWallet" ? integrationDiagnosticsMarkup(testResult?.checks, testResult?.diagnostics) : ""}
+  `;
+}
+
 function integrationFieldInput(field, integration) {
   const value = integration.values?.[field.key] ?? "";
   if (field.type === "boolean") {
@@ -3492,14 +3564,14 @@ function integrationFieldInput(field, integration) {
     `;
   }
   const secret = integration.secrets?.[field.key];
-  const placeholder = field.secret && secret?.hasValue ? "Manter valor salvo" : "";
+  const placeholder = field.secret && secret?.hasValue ? "Manter valor salvo" : field.key === "serviceAccountJson" ? "Cole aqui o JSON novo da Service Account" : "";
   const common = `data-integration-field="${escapeHtml(field.key)}" ${field.secret ? `data-secret="true" autocomplete="off" spellcheck="false"` : ""} placeholder="${escapeHtml(placeholder)}"`;
   const labelClass = field.multiline ? "full" : "";
   if (field.multiline) {
     return `
       <label class="${labelClass} integration-field ${field.secret ? "secret-field" : ""}">
         ${escapeHtml(field.label)}
-        <textarea rows="4" ${common}></textarea>
+        <textarea rows="${field.key === "serviceAccountJson" ? "7" : "4"}" ${common}></textarea>
         ${integrationSecurityHint(field, integration)}
       </label>
     `;
@@ -3674,31 +3746,7 @@ async function openIntegrationConfig(key) {
     $("integrationSubtitle").textContent = integration.purpose || "Configure o provider selecionado.";
     $("integrationFields").innerHTML = (integration.fields || []).map((field) => integrationFieldInput(field, integration)).join("");
     if ($("integrationContext")) {
-      $("integrationContext").innerHTML = `
-        <div class="integration-context-status">
-          <span class="integration-status ${escapeHtml(integration.status || "pending")}">${integrationStatusLabel(integration)}</span>
-          <strong>${integration.enabled ? "Ativa no sistema" : "Desativada"}</strong>
-          <p>${integration.configured ? "Credenciais mínimas configuradas." : "Preencha os campos obrigatórios para usar esta integração."}</p>
-        </div>
-        <dl class="integration-context-list">
-          <div>
-            <dt>Área</dt>
-            <dd>${escapeHtml(integrationCategory(integration.key))}</dd>
-          </div>
-          <div>
-            <dt>Ambiente</dt>
-            <dd>${escapeHtml(integration.environment === "sandbox" ? "Sandbox" : "Produção")}</dd>
-          </div>
-          <div>
-            <dt>Último teste</dt>
-            <dd>${integration.lastTestAt ? escapeHtml(new Date(integration.lastTestAt).toLocaleString("pt-BR")) : "Ainda não testada"}</dd>
-          </div>
-          <div>
-            <dt>Resultado</dt>
-            <dd>${escapeHtml(integration.lastTestMessage || "Sem mensagem registrada")}</dd>
-          </div>
-        </dl>
-      `;
+      $("integrationContext").innerHTML = renderIntegrationContext(integration);
     }
     $("integrationDisableButton").textContent = integration.enabled ? "Desativar" : "Ativar";
     $("integrationDisableButton").className = integration.enabled ? "danger-button" : "ghost-button";
@@ -3756,6 +3804,9 @@ async function testIntegration(key) {
     const result = await api(`/api/admin/integrations/${encodeURIComponent(key)}/test`, { method: "POST" });
     if (state.integrations?.integrations && result.integration) state.integrations.integrations[key] = result.integration;
     renderIntegrations();
+    if (state.selectedIntegrationKey === key && $("integrationContext") && result.integration) {
+      $("integrationContext").innerHTML = renderIntegrationContext(result.integration, result);
+    }
     showToast(result.message || "Integração testada.", result.ok ? "ok" : "error");
   } catch (error) {
     showToast(error.message, "error");

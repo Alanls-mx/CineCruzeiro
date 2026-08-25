@@ -36,13 +36,11 @@ const DEFINITIONS = {
     name: "Google Wallet",
     purpose: "Adicionar ingressos digitais à carteira do cliente",
     defaults: { enabled: false, environment: "production", issuerId: "", classId: "", clientEmail: "", origins: "" },
-    secrets: ["privateKey", "serviceAccountJson"],
+    secrets: ["serviceAccountJson"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
       { key: "issuerId", label: "Issuer ID", type: "text" },
       { key: "classId", label: "Class ID", type: "text" },
-      { key: "clientEmail", label: "E-mail da service account", type: "text" },
-      { key: "privateKey", label: "Chave privada", type: "secret", multiline: true },
       { key: "serviceAccountJson", label: "JSON da service account", type: "secret", multiline: true },
       { key: "origins", label: "Origens permitidas", type: "text" }
     ]
@@ -203,7 +201,7 @@ function resolvedConfig(db, provider) {
 function isConfigured(provider, config) {
   if (provider === "mercadoPago") return Boolean(config.publicKey && config.accessToken);
   if (provider === "googleLogin") return Boolean(config.clientId && config.clientSecret);
-  if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.privateKey || config.serviceAccountJson));
+  if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.serviceAccountJson || config.privateKey));
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
   if (provider === "crm") return Boolean(config.url);
@@ -232,6 +230,17 @@ function sanitizeConfig(db, provider) {
       values[field.key] = resolved[field.key] ?? "";
     }
   });
+  if (key === "googleWallet") {
+    const serviceAccountJson = decryptSecret(stored.serviceAccountJson) || firstEnv((ENV[key] || {}).serviceAccountJson || []);
+    let serviceAccount = {};
+    try {
+      serviceAccount = serviceAccountJson ? JSON.parse(serviceAccountJson) : {};
+    } catch {
+      serviceAccount = {};
+    }
+    values.clientEmail = resolved.clientEmail || serviceAccount.client_email || "";
+    values.serviceAccountConfigured = Boolean(serviceAccountJson || resolved.privateKey);
+  }
   return {
     key,
     name: definition.name,

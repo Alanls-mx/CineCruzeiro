@@ -676,6 +676,48 @@ async function run() {
     });
     assert.equal(walletMissing.response.status, 412);
 
+    const walletKeyPair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const walletPrivateKey = walletKeyPair.privateKey.export({ type: "pkcs8", format: "pem" });
+    const walletIntegration = await request("/api/admin/integrations/googleWallet", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        issuerId: "3388000000023188948",
+        classId: "lumixengine_ingressos",
+        origins: "https://lumixengine.com/projects/cinecruzeiro,https://www.lumixengine.com/projects/cinecruzeiro",
+        serviceAccountJson: JSON.stringify({
+          type: "service_account",
+          project_id: "painel-interno-lumix",
+          client_email: "lumixengine@painel-interno-lumix.iam.gserviceaccount.com",
+          private_key: walletPrivateKey
+        })
+      })
+    });
+    assert.equal(walletIntegration.response.status, 200);
+    assert.equal(walletIntegration.payload.integration.values.clientEmail, "lumixengine@painel-interno-lumix.iam.gserviceaccount.com");
+    assert.equal(walletIntegration.payload.integration.values.serviceAccountConfigured, true);
+    assert.equal(walletIntegration.payload.integration.secrets.serviceAccountJson.hasValue, true);
+
+    const walletPass = await request(`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/google-wallet`, {
+      method: "POST",
+      headers: jsonHeaders(cookie)
+    });
+    assert.equal(walletPass.response.status, 200);
+    assert.match(walletPass.payload.url, /^https:\/\/pay\.google\.com\/gp\/v\/save\//);
+    const walletJwt = walletPass.payload.url.split("/save/")[1];
+    const walletPayload = JSON.parse(Buffer.from(walletJwt.split(".")[1], "base64url").toString("utf8"));
+    assert.equal(walletPayload.iss, "lumixengine@painel-interno-lumix.iam.gserviceaccount.com");
+    assert.equal(walletPayload.aud, "google");
+    assert.equal(walletPayload.typ, "savetowallet");
+    assert.ok(walletPayload.origins.includes("https://lumixengine.com"));
+    assert.ok(walletPayload.origins.includes("https://www.lumixengine.com"));
+    assert.equal(walletPayload.origins.some((origin) => origin.includes("/projects/cinecruzeiro")), false);
+    assert.ok(Array.isArray(walletPayload.payload.eventTicketObjects));
+    assert.equal(walletPayload.payload.genericObjects, undefined);
+    assert.equal(walletPayload.payload.eventTicketObjects[0].classId, "3388000000023188948.lumixengine_ingressos");
+    assert.equal(walletPayload.payload.eventTicketObjects[0].id, `3388000000023188948.ticket_${manualTicket.id.replace(/[^A-Za-z0-9._-]/g, "_")}`);
+    assert.equal(walletPayload.payload.eventTicketObjects[0].state, "ACTIVE");
+
     const transfer = await request(`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/transfer`, {
       method: "POST",
       headers: jsonHeaders(cookie),
