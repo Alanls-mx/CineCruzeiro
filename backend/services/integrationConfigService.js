@@ -107,8 +107,6 @@ const ENV = {
   googleWallet: {
     issuerId: ["GOOGLE_WALLET_ISSUER_ID"],
     classId: ["GOOGLE_WALLET_CLASS_ID"],
-    clientEmail: ["GOOGLE_WALLET_CLIENT_EMAIL", "GOOGLE_SERVICE_ACCOUNT_EMAIL"],
-    privateKey: ["GOOGLE_WALLET_PRIVATE_KEY", "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"],
     serviceAccountJson: ["GOOGLE_WALLET_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_JSON"],
     origins: ["GOOGLE_WALLET_ORIGINS", "FRONTEND_URL", "NEXT_PUBLIC_SITE_URL"]
   },
@@ -201,7 +199,7 @@ function resolvedConfig(db, provider) {
 function isConfigured(provider, config) {
   if (provider === "mercadoPago") return Boolean(config.publicKey && config.accessToken);
   if (provider === "googleLogin") return Boolean(config.clientId && config.clientSecret);
-  if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.serviceAccountJson || config.privateKey));
+  if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && config.serviceAccountJson);
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
   if (provider === "crm") return Boolean(config.url);
@@ -239,7 +237,7 @@ function sanitizeConfig(db, provider) {
       serviceAccount = {};
     }
     values.clientEmail = resolved.clientEmail || serviceAccount.client_email || "";
-    values.serviceAccountConfigured = Boolean(serviceAccountJson || resolved.privateKey);
+    values.serviceAccountConfigured = Boolean(serviceAccountJson);
   }
   return {
     key,
