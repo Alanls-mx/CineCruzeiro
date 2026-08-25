@@ -4411,6 +4411,16 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+function mercadoPagoReferenceMatches(payment, externalReference) {
+  const received = String(externalReference || "");
+  if (!received) return true;
+  const localOrderId = String(payment?.orderId || "");
+  const providerReference = String(payment?.providerReference || "");
+  return received === providerReference
+    || received === localOrderId
+    || received === localOrderId.slice(0, 64);
+}
+
 async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
   const snapshotOrder = (snapshotDb.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
   if (!snapshotOrder) return false;
@@ -4430,9 +4440,7 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
   );
   if (!providerStatus || providerStatus.status === "pending") return false;
 
-  if (providerStatus.externalReference
-    && providerStatus.externalReference !== snapshotPayment.providerReference
-    && providerStatus.externalReference !== snapshotPayment.orderId) {
+  if (!mercadoPagoReferenceMatches(snapshotPayment, providerStatus.externalReference)) {
     logEvent("warn", "payment.reconciliation_reference_mismatch", {
       orderId: snapshotOrder.id,
       providerPaymentId: snapshotPayment.providerPaymentId
@@ -4461,6 +4469,7 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
       lastReconciliationAt: new Date().toISOString(),
       providerStatus: providerStatus.raw || null
     };
+    if (providerStatus.externalReference) payment.providerReference = providerStatus.externalReference;
 
     let tickets = [];
     if (payment.status === "approved") {
@@ -7081,7 +7090,7 @@ async function handleApi(req, res, pathname) {
         payment.metadata = { ...(payment.metadata || {}), previousProviderPaymentId: payment.providerPaymentId };
         payment.providerPaymentId = providerStatus.id;
       }
-      if (providerStatus?.externalReference && providerStatus.externalReference !== payment.providerReference && providerStatus.externalReference !== payment.orderId) {
+      if (!mercadoPagoReferenceMatches(payment, providerStatus?.externalReference)) {
         sendJson(res, 409, {
           error: {
             code: "PAYMENT_REFERENCE_MISMATCH",
@@ -7090,6 +7099,7 @@ async function handleApi(req, res, pathname) {
         });
         return;
       }
+      if (providerStatus?.externalReference) payment.providerReference = providerStatus.externalReference;
       if (providerStatus?.amount && Math.abs(Number(providerStatus.amount) - Number(payment.amount)) > 0.01) {
         sendJson(res, 409, {
           error: {

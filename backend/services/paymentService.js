@@ -129,7 +129,7 @@ function createPaymentRecord(order, providerPayment, method) {
     method,
     provider: providerPayment.provider,
     providerPaymentId: providerPayment.id,
-    providerReference: order.id,
+    providerReference: providerPayment.externalReference || String(order.id || "").slice(0, 64),
     status,
     amount: Number(order.totalPrice || 0),
     currency: "BRL",
