@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, CreditCard, LockKeyhole, QrCode, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Check, Copy, CreditCard, Landmark, LockKeyhole, QrCode, ShieldCheck } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import {
   CustomerUser,
@@ -16,7 +16,8 @@ import {
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
 import { money, publicAssetPath } from "@/utils/cinema";
 
-type PaymentMethod = "card" | "pix";
+type PaymentMethod = "credit_card" | "debit_card" | "pix";
+type SubscriptionPayment = Awaited<ReturnType<typeof subscribeToPlan>>["payment"];
 
 export default function ClubSubscriptionCheckoutPage() {
   const params = useParams<{ planId: string }>();
@@ -27,12 +28,14 @@ export default function ClubSubscriptionCheckoutPage() {
   const [authReady, setAuthReady] = useState(false);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [pixPayment, setPixPayment] = useState<SubscriptionPayment | null>(null);
+  const [copiedPix, setCopiedPix] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     const requestedMethod = new URLSearchParams(window.location.search).get("method");
-    if (requestedMethod === "card" || requestedMethod === "pix") setPaymentMethod(requestedMethod);
+    if (requestedMethod === "credit_card" || requestedMethod === "debit_card" || requestedMethod === "pix") setPaymentMethod(requestedMethod);
   }, []);
 
   useEffect(() => {
@@ -73,6 +76,11 @@ export default function ClubSubscriptionCheckoutPage() {
     setMessage("");
     try {
       const result = await subscribeToPlan(plan.id, paymentMethod);
+      if (paymentMethod === "pix" && result.payment?.qrCode) {
+        setPixPayment(result.payment);
+        setMessage(result.message || "Pix recorrente gerado. O plano será ativado automaticamente após a aprovação.");
+        return;
+      }
       const checkoutUrl = result.checkoutUrl || result.initPoint || "";
       if (!checkoutUrl) {
         setMessage(result.message || "A assinatura foi iniciada, mas o Mercado Pago não retornou o checkout.");
@@ -85,6 +93,14 @@ export default function ClubSubscriptionCheckoutPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function copyPixCode() {
+    const code = pixPayment?.qrCode || "";
+    if (!code) return;
+    await navigator.clipboard?.writeText(code);
+    setCopiedPix(true);
+    window.setTimeout(() => setCopiedPix(false), 1800);
   }
 
   return (
@@ -119,25 +135,43 @@ export default function ClubSubscriptionCheckoutPage() {
                   <div className="mt-8 h-28 skeleton-soft" />
                 ) : (
                   <>
-                    <fieldset className="mt-8 grid gap-4 sm:grid-cols-2">
+                    <fieldset className="mt-8 grid gap-4 lg:grid-cols-3">
                       <legend className="sr-only">Meio de pagamento recorrente</legend>
                       <PaymentOption
-                        id="club-card"
-                        checked={paymentMethod === "card"}
-                        onChange={() => setPaymentMethod("card")}
+                        id="club-credit-card"
+                        checked={paymentMethod === "credit_card"}
+                        onChange={() => {
+                          setPixPayment(null);
+                          setPaymentMethod("credit_card");
+                        }}
                         disabled={submitting}
                         icon={<CreditCard />}
-                        title="Cartão de crédito ou débito"
-                        description="Autorize a cobrança mensal usando crédito ou débito aceito pelo Mercado Pago."
+                        title="Cartão de crédito"
+                        description="Autorize a cobrança mensal no cartão de crédito pelo Mercado Pago."
+                      />
+                      <PaymentOption
+                        id="club-debit-card"
+                        checked={paymentMethod === "debit_card"}
+                        onChange={() => {
+                          setPixPayment(null);
+                          setPaymentMethod("debit_card");
+                        }}
+                        disabled={submitting}
+                        icon={<Landmark />}
+                        title="Cartão de débito"
+                        description="Use um cartão de débito aceito no fluxo seguro do Mercado Pago."
                       />
                       <PaymentOption
                         id="club-pix"
                         checked={paymentMethod === "pix"}
-                        onChange={() => setPaymentMethod("pix")}
+                        onChange={() => {
+                          setPixPayment(null);
+                          setPaymentMethod("pix");
+                        }}
                         disabled={submitting}
                         icon={<QrCode />}
                         title="Pix recorrente"
-                        description="Autorize o Pix recorrente e deixe as próximas mensalidades programadas."
+                        description="Gere o Pix dentro do site. O plano entra em vigor somente quando o pagamento for aprovado."
                       />
                     </fieldset>
 
@@ -159,7 +193,11 @@ export default function ClubSubscriptionCheckoutPage() {
                       <>
                         <div className="mt-6 flex items-start gap-3 text-sm text-slate-300">
                           <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                          <p>Você continuará no Mercado Pago para revisar e autorizar a cobrança. O plano só será ativado após a confirmação do pagamento e a tentativa pendente vence em 15 minutos.</p>
+                          <p>
+                            {paymentMethod === "pix"
+                              ? "O Pix será gerado aqui no site. O plano só será ativado após a confirmação do Mercado Pago e a tentativa pendente vence em 15 minutos."
+                              : "Você continuará no ambiente seguro do Mercado Pago para revisar e autorizar a cobrança. O plano só será ativado após a confirmação do pagamento e a tentativa pendente vence em 15 minutos."}
+                          </p>
                         </div>
 
                         {message && (
@@ -168,13 +206,42 @@ export default function ClubSubscriptionCheckoutPage() {
                           </p>
                         )}
 
+                        {pixPayment?.qrCode && (
+                          <div className="mt-6 bg-[#091122] p-5 shadow-[inset_0_0_0_1px_rgba(148,163,184,.16)]">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <h2 className="font-display text-xl font-black">Pix gerado</h2>
+                                <p className="mt-1 text-sm leading-6 text-slate-300">Pague no app do seu banco. Assim que o Mercado Pago aprovar, seus créditos aparecem em Minha Conta.</p>
+                              </div>
+                              <span className="rounded-full bg-gold-400/12 px-3 py-1 text-xs font-black uppercase tracking-[.12em] text-gold-300">vence em 15 min</span>
+                            </div>
+                            {pixPayment.qrCodeBase64 && (
+                              <div className="mt-5 inline-flex bg-white p-3">
+                                <Image src={`data:image/png;base64,${pixPayment.qrCodeBase64}`} alt="QR Code Pix da assinatura" width={184} height={184} className="h-[184px] w-[184px]" unoptimized />
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void copyPixCode()}
+                              className="mt-5 inline-flex min-h-[48px] items-center justify-center gap-2 bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300"
+                            >
+                              <Copy className="h-4 w-4" />
+                              {copiedPix ? "Código copiado" : "Copiar Pix copia-e-cola"}
+                            </button>
+                          </div>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => void continueToMercadoPago()}
-                          disabled={!paymentMethod || submitting}
+                          disabled={!paymentMethod || submitting || Boolean(pixPayment?.qrCode)}
                           className="mt-7 flex min-h-[54px] w-full items-center justify-center bg-gold-400 px-6 text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                         >
-                          {submitting ? "Preparando pagamento..." : "Continuar no Mercado Pago"}
+                          {submitting
+                            ? "Preparando pagamento..."
+                            : paymentMethod === "pix"
+                              ? "Gerar Pix recorrente"
+                              : "Continuar no Mercado Pago"}
                         </button>
                       </>
                     )}

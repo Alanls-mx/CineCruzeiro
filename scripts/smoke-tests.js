@@ -447,7 +447,8 @@ async function run() {
     assert.equal(pendingSubscription.payload.subscription.providerPlanId, "");
     assert.ok(pendingSubscription.payload.subscription.paymentExpiresAt);
     assert.equal(pendingSubscription.payload.paymentMethod, "pix");
-    assert.ok(pendingSubscription.payload.checkoutUrl);
+    assert.equal(pendingSubscription.payload.payment.method, "pix");
+    assert.ok(pendingSubscription.payload.payment.qrCode);
 
     const pendingClubCredit = await request("/api/checkout/club-credit", {
       method: "POST",

@@ -46,6 +46,34 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const effectiveSessionId = sessionId === "carrinho" ? cart?.sessionId || "" : sessionId;
   const found = findSession(content, effectiveSessionId);
   const total = cartTotal(cart, found?.session, content?.concessions || []);
+  const checkoutPathFor = useCallback((targetStep: Step) => {
+    if (!found) return "/filmes";
+    const suffix: Record<Step, string> = {
+      ingressos: "",
+      extras: "/extras",
+      pagamento: "/pagamento",
+      confirmacao: "/confirmacao",
+    };
+    return `/checkout/${found.session.id}${suffix[targetStep]}`;
+  }, [found]);
+
+  const updateCart = useCallback((patch: Partial<StoredCheckoutCart>) => {
+    if (!found) return;
+    const persisted = readCheckoutCart();
+    const source = persisted?.sessionId === found.session.id ? persisted : cart;
+    const next = {
+      movieId: found.movie.id,
+      sessionId: found.session.id,
+      fullTickets: source?.fullTickets ?? 1,
+      halfTickets: source?.halfTickets ?? 0,
+      concessionQuantities: source?.concessionQuantities || {},
+      extrasVisited: source?.extrasVisited || false,
+      paymentMethod: source?.paymentMethod || "credit_card",
+      ...patch,
+    };
+    writeCheckoutCart(next);
+    setCart(next);
+  }, [cart, found]);
 
   useEffect(() => {
     const stored = readCheckoutCart();
@@ -80,11 +108,11 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       return;
     }
     if (step === "pagamento" && !hasVisitedExtras) {
-      router.replace(`/checkout/${found.session.id}/extras`);
+      updateCart({ extrasVisited: true });
       return;
     }
     if (step === "confirmacao" && !hasPaymentResult) {
-      router.replace(`/checkout/${found.session.id}/${cart.extrasVisited ? "pagamento" : "extras"}`);
+      router.replace(checkoutPathFor(cart.extrasVisited ? "pagamento" : "extras"));
       return;
     }
     if (step === "confirmacao" && hasPaymentResult && confirmationStatus === "idle") {
@@ -97,32 +125,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         })
         .catch(() => {
           setConfirmationStatus("invalid");
-          router.replace(`/checkout/${found.session.id}/pagamento`);
+          router.replace(checkoutPathFor("pagamento"));
         });
       return;
     }
     if (step !== "confirmacao" && confirmationStatus !== "idle") {
       setConfirmationStatus("idle");
     }
-  }, [cart, confirmationStatus, found, router, step]);
-
-  const updateCart = useCallback((patch: Partial<StoredCheckoutCart>) => {
-    if (!found) return;
-    const persisted = readCheckoutCart();
-    const source = persisted?.sessionId === found.session.id ? persisted : cart;
-    const next = {
-      movieId: found.movie.id,
-      sessionId: found.session.id,
-      fullTickets: source?.fullTickets ?? 1,
-      halfTickets: source?.halfTickets ?? 0,
-      concessionQuantities: source?.concessionQuantities || {},
-      extrasVisited: source?.extrasVisited || false,
-      paymentMethod: source?.paymentMethod || "credit_card",
-      ...patch,
-    };
-    writeCheckoutCart(next);
-    setCart(next);
-  }, [cart, found]);
+  }, [cart, checkoutPathFor, confirmationStatus, found, router, step, updateCart]);
 
   const continueToPayment = useCallback(() => {
     if (!found || !cart) return;
@@ -136,8 +146,8 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     };
     writeCheckoutCart(next);
     setCart(next);
-    router.push(`/checkout/${found.session.id}/pagamento`);
-  }, [cart, found, router]);
+    router.push(checkoutPathFor("pagamento"));
+  }, [cart, checkoutPathFor, found, router]);
 
   const selectedConcessions = useMemo(() => {
     const quantities = cart?.concessionQuantities || {};
@@ -190,14 +200,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         }
       );
       updateCart({ paymentResult: result });
-      router.push(`/checkout/${found.session.id}/confirmacao`);
+      router.push(checkoutPathFor("confirmacao"));
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : "Nao foi possivel iniciar o pagamento.");
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [cart, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions]);
+  }, [cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions]);
 
   async function submitClubCredit() {
     if (!found || !cart) return;
@@ -215,7 +225,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         couponCode: cart.couponCode,
       });
       updateCart({ paymentResult: result });
-      router.push(`/checkout/${found.session.id}/confirmacao`);
+      router.push(checkoutPathFor("confirmacao"));
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : "Nao foi possivel usar o beneficio do Clube.");
     } finally {

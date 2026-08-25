@@ -1582,6 +1582,12 @@ function subscriptionPendingPaymentExpired(subscription, now = new Date()) {
 
 function markSubscriptionPaymentExpired(db, subscription, providerSubscription, now = new Date()) {
   const timestamp = now.toISOString();
+  const payment = findSubscriptionPayment(db, subscription.id);
+  if (payment && payment.status !== "approved") {
+    payment.status = "expired";
+    payment.expiredAt ||= timestamp;
+    payment.updatedAt = timestamp;
+  }
   subscription.status = "cancelled";
   subscription.paymentStatus = "expired";
   subscription.providerStatus = providerSubscription?.status || subscription.providerStatus || "cancelled";
@@ -1703,6 +1709,98 @@ function createClubCreditPaymentRecord(order, subscription) {
       benefit: "club_credit"
     }
   };
+}
+
+function createSubscriptionPixOrder(subscription, plan, user) {
+  return {
+    id: subscription.id,
+    idempotencyKey: `club-subscription-pix-${subscription.id}`,
+    movieTitle: `Clube Cine Cruzeiro - ${plan.name}`,
+    totalPrice: Number(plan.monthlyPrice || plan.price || 0),
+    customerUserId: user.id,
+    customerName: user.name || "Cliente Cine Cruzeiro",
+    customerEmail: user.email,
+    customerPhone: user.phone || "",
+    customerCpf: user.cpf || "",
+    paymentMethod: "PIX",
+    createdAt: new Date().toISOString()
+  };
+}
+
+function createSubscriptionPaymentRecord(subscriptionOrder, providerPayment, method, subscription, plan) {
+  const payment = createPaymentRecord(subscriptionOrder, providerPayment, method);
+  payment.orderId = subscription.id;
+  payment.providerReference = subscription.id;
+  payment.metadata = {
+    ...(payment.metadata || {}),
+    kind: "club_subscription",
+    subscriptionId: subscription.id,
+    planId: plan.id,
+    planName: plan.name,
+    preferredPaymentMethod: method
+  };
+  return payment;
+}
+
+function findSubscriptionPayment(db, subscriptionId, method = "") {
+  return (db.payments || []).find((payment) =>
+    payment.metadata?.kind === "club_subscription" &&
+    payment.metadata?.subscriptionId === subscriptionId &&
+    (!method || payment.method === method) &&
+    !["approved", "expired", "cancelled", "rejected", "refunded"].includes(String(payment.status || ""))
+  ) || null;
+}
+
+function activateSubscriptionFromPayment(db, subscription, payment, actor = "mercado_pago_order_webhook") {
+  if (!subscription) return null;
+  if (subscription.status === "active" && currentSubscriptionCredit(db, subscription)) return refreshSubscriptionCredits(db, subscription);
+  subscription.status = "active";
+  subscription.paymentStatus = "approved";
+  subscription.provider = subscription.provider || "mercado_pago";
+  subscription.providerStatus = payment?.status || subscription.providerStatus || "approved";
+  subscription.providerPaymentId = payment?.providerPaymentId || subscription.providerPaymentId || "";
+  subscription.approvedAt ||= payment?.approvedAt || new Date().toISOString();
+  subscription.startedAt ||= subscription.approvedAt;
+  subscription.paymentExpiredAt = "";
+  subscription.updatedAt = new Date().toISOString();
+  if (!currentSubscriptionCredit(db, subscription)) {
+    const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
+    if (plan) createSubscriptionCreditCycle(db, subscription, plan, new Date());
+  }
+  subscription.history ||= [];
+  subscription.history.push({
+    action: "payment_approved",
+    by: actor,
+    paymentId: payment?.id || "",
+    providerPaymentId: payment?.providerPaymentId || "",
+    at: subscription.approvedAt
+  });
+  return refreshSubscriptionCredits(db, subscription);
+}
+
+function failSubscriptionFromPayment(db, subscription, payment, status, actor = "mercado_pago_order_webhook") {
+  if (!subscription || subscription.status === "active") return subscription;
+  const now = new Date().toISOString();
+  const terminalStatus = status === "expired" || status === "cancelled" ? "cancelled" : "payment_failed";
+  subscription.status = terminalStatus;
+  subscription.paymentStatus = status === "expired" ? "expired" : status === "cancelled" ? "cancelled" : "failed";
+  subscription.providerStatus = status || subscription.providerStatus || "";
+  subscription.cancelledAt ||= terminalStatus === "cancelled" ? now : "";
+  subscription.paymentExpiredAt = status === "expired" ? now : subscription.paymentExpiredAt || "";
+  subscription.nextBillingAt = "";
+  subscription.creditsAvailable = 0;
+  subscription.creditsUsed = 0;
+  subscription.updatedAt = now;
+  subscription.history ||= [];
+  subscription.history.push({
+    action: "payment_not_approved",
+    by: actor,
+    status,
+    paymentId: payment?.id || "",
+    providerPaymentId: payment?.providerPaymentId || "",
+    at: now
+  });
+  return refreshSubscriptionCredits(db, subscription);
 }
 
 async function deliverTicketsByEmail(db, order, tickets) {
@@ -5328,11 +5426,11 @@ async function handleApi(req, res, pathname) {
     }
     const body = await readBody(req);
     const paymentMethod = String(body.paymentMethod || "").trim().toLowerCase();
-    if (!["card", "pix"].includes(paymentMethod)) {
+    if (!["card", "credit_card", "debit_card", "pix"].includes(paymentMethod)) {
       sendJson(res, 422, {
         error: {
           code: "SUBSCRIPTION_PAYMENT_METHOD_REQUIRED",
-          message: "Escolha cartão ou Pix recorrente antes de continuar."
+          message: "Escolha crédito, débito ou Pix recorrente antes de continuar."
         }
       });
       return;
@@ -5373,11 +5471,80 @@ async function handleApi(req, res, pathname) {
         }
 
         const subscription = createSubscription(lockedDb, lockedUser.id, plan.id, lockedUser, "pending_payment", "mercado_pago");
+        const normalizedPaymentMethod = paymentMethod === "card" ? "credit_card" : paymentMethod;
         subscription.provider = "mercado_pago";
         subscription.providerPlanId = "";
         subscription.externalBillingPending = true;
         subscription.paymentStatus = "pending";
-        subscription.preferredPaymentMethod = paymentMethod;
+        subscription.preferredPaymentMethod = normalizedPaymentMethod;
+
+        if (normalizedPaymentMethod === "pix") {
+          const existingPayment = findSubscriptionPayment(lockedDb, subscription.id, "pix");
+          if (existingPayment) {
+            await writeDb(lockedDb);
+            sendJson(res, 202, {
+              subscription: {
+                ...subscription,
+                plan,
+                statusLabel: subscriptionStatusLabel(subscription.status)
+              },
+              payment: {
+                id: existingPayment.id,
+                status: existingPayment.status,
+                method: "pix",
+                qrCode: existingPayment.qrCode || "",
+                qrCodeBase64: existingPayment.qrCodeBase64 || "",
+                ticketUrl: existingPayment.ticketUrl || "",
+                checkoutUrl: existingPayment.checkoutUrl || ""
+              },
+              provider: "mercado_pago",
+              paymentMethod: "pix",
+              externalBillingPending: true,
+              message: "Pix recorrente já gerado. Pague em até 15 minutos para ativar o Clube."
+            });
+            return;
+          }
+
+          const subscriptionOrder = createSubscriptionPixOrder(subscription, plan, lockedUser);
+          const providerPayment = await createMercadoPagoOrderPayment(subscriptionOrder, mercadoPagoConfig || {}, {
+            method: "pix",
+            idempotencyKey: subscriptionOrder.idempotencyKey
+          });
+          const payment = createSubscriptionPaymentRecord(subscriptionOrder, providerPayment, "pix", subscription, plan);
+          subscription.providerPaymentId = payment.providerPaymentId;
+          subscription.providerStatus = payment.status;
+          subscription.checkoutUrl = payment.checkoutUrl || payment.ticketUrl || "";
+          subscription.history ||= [];
+          subscription.history.push({
+            action: "mercado_pago_pix_created",
+            providerPaymentId: subscription.providerPaymentId,
+            paymentMethod: "pix",
+            at: new Date().toISOString()
+          });
+          lockedDb.payments.unshift(payment);
+          await writeDb(lockedDb);
+          sendJson(res, 202, {
+            subscription: {
+              ...subscription,
+              plan,
+              statusLabel: subscriptionStatusLabel(subscription.status)
+            },
+            payment: {
+              id: payment.id,
+              status: payment.status,
+              method: "pix",
+              qrCode: payment.qrCode || "",
+              qrCodeBase64: payment.qrCodeBase64 || "",
+              ticketUrl: payment.ticketUrl || "",
+              checkoutUrl: payment.checkoutUrl || ""
+            },
+            provider: "mercado_pago",
+            paymentMethod: "pix",
+            externalBillingPending: true,
+            message: "Pix recorrente gerado. O plano será ativado automaticamente após a aprovação."
+          });
+          return;
+        }
 
         const providerSubscription = await paymentService.createMercadoPagoSubscription(subscription, plan, lockedUser, mercadoPagoConfig || {}, {
           // Checkout hospedado: assinatura pendente sem plano associado. O
@@ -5395,7 +5562,7 @@ async function handleApi(req, res, pathname) {
         subscription.history.push({
           action: "mercado_pago_checkout_created",
           providerSubscriptionId: subscription.providerSubscriptionId,
-          paymentMethod,
+          paymentMethod: normalizedPaymentMethod,
           at: new Date().toISOString()
         });
 
@@ -5409,7 +5576,7 @@ async function handleApi(req, res, pathname) {
           checkoutUrl: subscription.checkoutUrl,
           initPoint: subscription.checkoutUrl,
           provider: "mercado_pago",
-          paymentMethod,
+          paymentMethod: normalizedPaymentMethod,
           externalBillingPending: true,
           message: "Finalize a assinatura recorrente no Mercado Pago para liberar os creditos do Clube."
         });
@@ -6828,7 +6995,8 @@ async function handleApi(req, res, pathname) {
         return;
       }
 
-      const order = lockedDb.orders.find((item) => item.id === payment.orderId);
+      const isClubSubscriptionPayment = payment.metadata?.kind === "club_subscription";
+      const order = isClubSubscriptionPayment ? null : lockedDb.orders.find((item) => item.id === payment.orderId);
       if (provider === "mercado_pago" && providerPaymentId && payment.providerPaymentId !== providerPaymentId && providerStatus?.id) {
         payment.metadata = { ...(payment.metadata || {}), previousProviderPaymentId: payment.providerPaymentId };
         payment.providerPaymentId = providerStatus.id;
@@ -6861,6 +7029,15 @@ async function handleApi(req, res, pathname) {
       if (payment.status === "cancelled") payment.cancelledAt = payment.cancelledAt || new Date().toISOString();
       if (payment.status === "refunded") payment.refundedAt = payment.refundedAt || new Date().toISOString();
       let tickets = [];
+      let subscription = null;
+      if (isClubSubscriptionPayment) {
+        subscription = (lockedDb.subscriptions || []).find((item) => item.id === payment.metadata?.subscriptionId) || null;
+        if (payment.status === "approved") {
+          activateSubscriptionFromPayment(lockedDb, subscription, payment);
+        } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status)) {
+          failSubscriptionFromPayment(lockedDb, subscription, payment, payment.status);
+        }
+      } else
       if (payment.status === "approved") {
         const wasAlreadyPaid = order?.status === "paid";
         tickets = finalizePaidOrder(lockedDb, order, payment, "online");
@@ -6880,6 +7057,7 @@ async function handleApi(req, res, pathname) {
         requestId: verification.requestId,
         action: webhookAction,
         status: payment.status,
+        subscriptionId: subscription?.id || "",
         verified: verification.verified,
         createdAt: new Date().toISOString()
       });

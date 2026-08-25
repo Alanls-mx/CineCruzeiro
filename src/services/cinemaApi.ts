@@ -436,7 +436,7 @@ export async function fetchMySubscriptions() {
   return (payload.subscriptions || []) as AccountSubscription[];
 }
 
-export async function subscribeToPlan(planId: string, paymentMethod: "card" | "pix") {
+export async function subscribeToPlan(planId: string, paymentMethod: "credit_card" | "debit_card" | "pix") {
   const response = await fetch(`${API_BASE}/api/subscriptions/subscribe`, {
     method: "POST",
     credentials: "include",
@@ -449,10 +449,19 @@ export async function subscribeToPlan(planId: string, paymentMethod: "card" | "p
   }
   return payload as {
     subscription: AccountSubscription;
+    payment?: {
+      id: string;
+      status: string;
+      method: "pix" | "credit_card" | "debit_card";
+      qrCode?: string;
+      qrCodeBase64?: string;
+      ticketUrl?: string;
+      checkoutUrl?: string;
+    };
     checkoutUrl?: string;
     initPoint?: string;
     provider?: string;
-    paymentMethod?: "card" | "pix";
+    paymentMethod?: "credit_card" | "debit_card" | "pix";
     externalBillingPending?: boolean;
     message?: string;
   };
