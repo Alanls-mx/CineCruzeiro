@@ -1,7 +1,8 @@
 import { ConcessionItem, Movie, TicketOrder } from "@/types";
 import { publicAssetPath } from "@/utils/cinema";
 
-const API_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
+const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
+const API_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
 const CUSTOMER_SESSION_TOKEN_KEY = "cine-cruzeiro-session-token";
 const CUSTOMER_FALLBACK_COOKIE = "cine_customer_fallback";
 const CUSTOMER_TOKEN_MAX_AGE = 60 * 60 * 24 * 30;

@@ -2,7 +2,8 @@ import type { CinemaContent } from "@/services/cinemaApi";
 import { Movie, Session } from "@/types";
 
 export const CART_STORAGE_KEY = "cine-cruzeiro-cart";
-export const PUBLIC_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
+const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
+export const PUBLIC_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
 
 export function assetPath(path: string) {
   const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;

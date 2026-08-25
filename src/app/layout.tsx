@@ -15,7 +15,8 @@ const outfit = Outfit({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
-const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
+const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 const logoUrl = `${basePath}/images/logo.png`;
 const iconUrl = `${basePath}/images/logo-icon.png`;
 

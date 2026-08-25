@@ -1,6 +1,7 @@
 import { TicketOrder, ClubLead, PrivateEventRequest, WebhookResponse } from "@/types";
 
-const API_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
+const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
+const API_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
 
 async function sendBackendEvent(event: string, data: unknown): Promise<WebhookResponse> {
   try {
