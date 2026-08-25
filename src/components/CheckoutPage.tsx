@@ -36,6 +36,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const router = useRouter();
   const { content, status, error } = useCinemaContent();
   const [cart, setCart] = useState<StoredCheckoutCart | null>(null);
+  const [hydratedSessionId, setHydratedSessionId] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
   const [confirmationStatus, setConfirmationStatus] = useState<"idle" | "checking" | "ready" | "invalid">("idle");
   const [loading, setLoading] = useState(false);
@@ -79,13 +80,15 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     const stored = readCheckoutCart();
     if (sessionId === "carrinho") {
       setCart(stored);
+      setHydratedSessionId(sessionId);
       return;
     }
     setCart(stored?.sessionId === sessionId ? stored : null);
+    setHydratedSessionId(sessionId);
   }, [sessionId]);
 
   useEffect(() => {
-    if (!found || cart?.sessionId === found.session.id) return;
+    if (hydratedSessionId !== sessionId || !found || cart?.sessionId === found.session.id) return;
     const next = {
       movieId: found.movie.id,
       sessionId: found.session.id,
@@ -97,7 +100,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     };
     writeCheckoutCart(next);
     setCart(next);
-  }, [found, cart?.sessionId]);
+  }, [hydratedSessionId, sessionId, found, cart?.sessionId]);
 
   useEffect(() => {
     if (!found || !cart) return;
@@ -278,6 +281,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   if (status === "loading") return <PageShell><div className="h-96 skeleton-soft" /></PageShell>;
   if (status === "error") return <PageShell><p className="text-rose-200">{error}</p></PageShell>;
+  if (hydratedSessionId !== sessionId) return <PageShell><div className="h-96 skeleton-soft" /></PageShell>;
   if (!found || !cart) return <PageShell><p className="text-slate-300">Sessão não encontrada. Volte para a programação.</p><Link className="mt-4 inline-flex text-gold-400" href="/filmes">Ver filmes</Link></PageShell>;
 
   return (
