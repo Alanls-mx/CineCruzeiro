@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Building2, CalendarDays, Gamepad2, Mail, PartyPopper, Send, UsersRound } from "lucide-react";
+import { AlertCircle, Building2, CalendarDays, CheckCircle2, Gamepad2, Mail, PartyPopper, Send, UsersRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { fetchCinemaContent } from "@/services/cinemaApi";
 import type { CinemaContent } from "@/services/cinemaApi";
@@ -21,8 +21,10 @@ export default function EventosPage() {
     desiredDate: "",
     desiredTime: "",
     notes: "",
+    website: "",
   });
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error" | "">("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -35,6 +37,7 @@ export default function EventosPage() {
     event.preventDefault();
     setLoading(true);
     setMessage("");
+    setMessageType("");
     const payload: PrivateEventRequest = {
       name: form.name,
       phone: form.phone,
@@ -43,12 +46,20 @@ export default function EventosPage() {
       estimatedGuests: form.estimatedGuests,
       desiredDate: [form.desiredDate, form.desiredTime].filter(Boolean).join(" "),
       notes: form.notes,
+      website: form.website,
       source: "landing_page_feche_o_cinema",
       createdAt: new Date().toISOString(),
     };
-    const result = await sendPrivateEventWebhook(payload);
-    setMessage(result.message || "Solicitação enviada. Em breve chamamos você no WhatsApp.");
-    setLoading(false);
+    try {
+      const result = await sendPrivateEventWebhook(payload);
+      setMessage(result.message || "Solicitação enviada. Em breve entraremos em contato.");
+      setMessageType(result.success ? "success" : "error");
+      if (result.success) {
+        setForm({ name: "", phone: "", email: "", eventType: "aniversario", estimatedGuests: "", desiredDate: "", desiredTime: "", notes: "", website: "" });
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -116,7 +127,11 @@ export default function EventosPage() {
           <form onSubmit={submit} className="grid gap-4 bg-brand-900/65 p-5 shadow-2xl shadow-blue-950/20 sm:grid-cols-2 sm:p-7">
             <Field label="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
             <Field label="WhatsApp" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} required />
-            <Field label="E-mail" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} />
+            <Field label="E-mail" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} required />
+            <label className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
+              Site
+              <input tabIndex={-1} autoComplete="off" value={form.website} onChange={(event) => setForm({ ...form, website: event.target.value })} />
+            </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-[.16em] text-slate-400">Tipo de evento</span>
               <select value={form.eventType} onChange={(event) => setForm({ ...form, eventType: event.target.value })} className="mt-2 w-full">
@@ -138,7 +153,12 @@ export default function EventosPage() {
               <Send className="h-4 w-4" />
               {loading ? "Enviando..." : "Solicitar orçamento"}
             </button>
-            {message && <p className="text-sm font-semibold text-amber-200 sm:col-span-2">{message}</p>}
+            {message && (
+              <p role="status" className={`flex items-start gap-2 p-3 text-sm font-semibold sm:col-span-2 ${messageType === "success" ? "bg-emerald-400/10 text-emerald-200" : "bg-rose-400/10 text-rose-200"}`}>
+                {messageType === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+                <span>{message}</span>
+              </p>
+            )}
           </form>
         </section>
 

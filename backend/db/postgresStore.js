@@ -366,6 +366,13 @@ async function loadDbFromPostgres() {
         assignedAt: row.assigned_at ? new Date(row.assigned_at).toISOString() : "",
         renewedAt: row.renewed_at ? new Date(row.renewed_at).toISOString() : "",
         cancelledAt: row.cancelled_at ? new Date(row.cancelled_at).toISOString() : "",
+        cancelAtPeriodEnd: Boolean(row.cancel_at_period_end),
+        cancellationRequestedAt: row.cancellation_requested_at ? new Date(row.cancellation_requested_at).toISOString() : "",
+        billingCancelledAt: row.billing_cancelled_at ? new Date(row.billing_cancelled_at).toISOString() : "",
+        benefitsUntil: row.benefits_until ? new Date(row.benefits_until).toISOString() : "",
+        cancellationMode: row.cancellation_mode || "",
+        reactivationBlocked: Boolean(row.reactivation_blocked),
+        endedAt: row.ended_at ? new Date(row.ended_at).toISOString() : "",
         history: asArray(row.history),
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
         updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
@@ -762,8 +769,8 @@ async function writeDbToPostgres(db) {
     const planIds = new Set(asArray(db.subscriptionPlans).map((plan) => plan.id));
     for (const subscription of asArray(db.subscriptions)) {
       if (!userIds.has(subscription.userId) || !planIds.has(subscription.planId)) continue;
-      await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, history, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,'')::timestamptz,NULLIF($20,'')::timestamptz,NULLIF($21,'')::timestamptz,NULLIF($22,'')::timestamptz,$23,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,$28,NULLIF($29,'')::timestamptz,NULLIF($30,'')::timestamptz,NULLIF($31,'')::timestamptz,$32,COALESCE(NULLIF($33,'')::timestamptz, now()),COALESCE(NULLIF($34,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, cancel_at_period_end, cancellation_requested_at, billing_cancelled_at, benefits_until, cancellation_mode, reactivation_blocked, ended_at, history, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,'')::timestamptz,NULLIF($20,'')::timestamptz,NULLIF($21,'')::timestamptz,NULLIF($22,'')::timestamptz,$23,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,$28,NULLIF($29,'')::timestamptz,NULLIF($30,'')::timestamptz,NULLIF($31,'')::timestamptz,$32,NULLIF($33,'')::timestamptz,NULLIF($34,'')::timestamptz,NULLIF($35,'')::timestamptz,NULLIF($36,''),$37,NULLIF($38,'')::timestamptz,$39,COALESCE(NULLIF($40,'')::timestamptz, now()),COALESCE(NULLIF($41,'')::timestamptz, now()))`, [
         subscription.id,
         subscription.userId,
         subscription.planId,
@@ -795,6 +802,13 @@ async function writeDbToPostgres(db) {
         subscription.assignedAt || "",
         subscription.renewedAt || "",
         subscription.cancelledAt || "",
+        Boolean(subscription.cancelAtPeriodEnd),
+        subscription.cancellationRequestedAt || "",
+        subscription.billingCancelledAt || "",
+        subscription.benefitsUntil || "",
+        subscription.cancellationMode || "",
+        Boolean(subscription.reactivationBlocked),
+        subscription.endedAt || "",
         JSON.stringify(asArray(subscription.history)),
         subscription.createdAt || "",
         subscription.updatedAt || ""

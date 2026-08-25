@@ -224,6 +224,61 @@ async function sendEmailVerification(db, email, verificationUrl, options = {}) {
   }, "email_verification.requested", { email, verificationUrl });
 }
 
+function eventTypeLabel(value = "") {
+  return {
+    aniversario: "Aniversário ou festa",
+    videogame: "Games",
+    filme_classico: "Sessão privada",
+    corporativo: "Evento corporativo",
+    outro: "Outro formato"
+  }[String(value || "")] || "Evento privado";
+}
+
+async function sendPrivateEventInquiry(db, inquiry = {}, options = {}) {
+  const config = emailConfig(db);
+  const notificationEmail = String(config.notificationEmail || config.replyTo || config.fromEmail || config.smtpUser || "").trim();
+  if (!notificationEmail) return { inquiryDelivered: false, acknowledgementDelivered: false };
+  const requesterEmail = String(inquiry.email || "").trim().toLowerCase();
+  const eventLabel = eventTypeLabel(inquiry.eventType);
+  const details = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;background:#09111f;border-radius:10px">
+      <tr><td style="padding:16px;color:#dbeafe;line-height:1.7;overflow-wrap:anywhere">
+        <strong style="color:#fff">Cliente:</strong> ${htmlEscape(inquiry.name)}<br>
+        <strong style="color:#fff">E-mail:</strong> ${htmlEscape(requesterEmail)}<br>
+        <strong style="color:#fff">WhatsApp:</strong> ${htmlEscape(inquiry.phone)}<br>
+        <strong style="color:#fff">Evento:</strong> ${htmlEscape(eventLabel)}<br>
+        <strong style="color:#fff">Data desejada:</strong> ${htmlEscape(inquiry.desiredDate || "A combinar")}<br>
+        <strong style="color:#fff">Público estimado:</strong> ${htmlEscape(inquiry.estimatedGuests || "Não informado")}
+      </td></tr>
+    </table>
+    ${inquiry.notes ? `<div style="margin-top:16px;padding:14px 16px;background:#111827;border-radius:10px"><strong style="display:block;margin-bottom:6px;color:#60a5fa">Mensagem</strong><span style="white-space:pre-wrap;overflow-wrap:anywhere">${htmlEscape(inquiry.notes)}</span></div>` : ""}
+  `;
+  const inquiryDelivered = await sendTransactional(db, {
+    to: notificationEmail,
+    replyTo: requesterEmail,
+    subject: `Novo pedido de evento: ${eventLabel} - ${inquiry.name}`,
+    html: baseLayout("Nova solicitação de evento", details, { kicker: "Eventos" }),
+    text: `Nova solicitação de evento\nCliente: ${inquiry.name}\nE-mail: ${requesterEmail}\nWhatsApp: ${inquiry.phone}\nEvento: ${eventLabel}\nData: ${inquiry.desiredDate || "A combinar"}\nPúblico: ${inquiry.estimatedGuests || "Não informado"}\nMensagem: ${inquiry.notes || ""}`
+  }, "private_rental.inquiry", { source: inquiry.source || "eventos" });
+  if (!inquiryDelivered) return { inquiryDelivered: false, acknowledgementDelivered: false };
+
+  const acknowledgementDelivered = await sendTransactional(db, {
+    to: requesterEmail,
+    subject: "Recebemos sua solicitação de evento - Cine Cruzeiro",
+    html: baseLayout("Sua solicitação chegou", `
+      <p>Olá, <strong>${htmlEscape(inquiry.name)}</strong>.</p>
+      <p>Recebemos seu pedido para <strong>${htmlEscape(eventLabel)}</strong>. Nossa equipe vai analisar a data, o tamanho do grupo e os detalhes enviados.</p>
+      <p>Entraremos em contato em breve pelo WhatsApp <strong>${htmlEscape(inquiry.phone)}</strong> ou por este e-mail.</p>
+      <div style="margin-top:18px;padding:14px 16px;background:#111827;border-radius:10px;color:#dbeafe">
+        <strong style="display:block;margin-bottom:6px;color:#facc15">Resumo</strong>
+        ${htmlEscape(inquiry.desiredDate || "Data a combinar")} · ${htmlEscape(inquiry.estimatedGuests || "Público a combinar")}
+      </div>
+    `, { kicker: "Eventos" }),
+    text: `Olá, ${inquiry.name}. Recebemos sua solicitação de ${eventLabel}. Entraremos em contato em breve.`
+  }, "private_rental.acknowledged", { source: inquiry.source || "eventos" });
+  return { inquiryDelivered, acknowledgementDelivered };
+}
+
 async function sendTicketDelivery(db, order, tickets = [], options = {}) {
   if (!order?.customerEmail || !tickets.length) return false;
   const extras = tickets.flatMap((ticket) => ticket.extras || []);
@@ -330,6 +385,7 @@ module.exports = {
   sendIntegrationTest,
   sendPasswordReset,
   sendEmailVerification,
+  sendPrivateEventInquiry,
   sendTicketTransfer,
   sendTicketDelivery,
   sendPromotionCampaign,

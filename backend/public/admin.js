@@ -65,6 +65,7 @@ let state = {
   pendingImages: {},
   clubSubscriptionsPage: 1,
   clubSubscriptionsPageSize: 5,
+  clubSubscriptionsSearch: "",
   boxOfficeTab: "newSale",
   saleMode: "registered",
   selectedCustomer: null,
@@ -818,6 +819,7 @@ function clubStatusLabel(status = "") {
     pending_payment: "Aguardando pagamento",
     pending: "Pagamento pendente",
     paused: "Pausada",
+    ending: "Sem renovação",
     cancelled: "Cancelada",
     ended: "Encerrada",
     payment_failed: "Falha na renovação",
@@ -3474,38 +3476,59 @@ function renderClub() {
       .map((plan) => `<option value="${escapeHtml(plan.id)}">${escapeHtml(plan.name)} - ${money(plan.monthlyPrice)}</option>`)
       .join("");
   }
+  if ($("clubSubscriptionSearch")) {
+    $("clubSubscriptionSearch").value = state.clubSubscriptionsSearch || "";
+    $("clubSubscriptionSearch").oninput = (event) => filterClubSubscriptions(event.target.value);
+  }
   if ($("clubSubscriptionsList")) {
     const users = state.content?.users || [];
-    const sortedSubscriptions = [...subscriptions].sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+    const search = String(state.clubSubscriptionsSearch || "").trim().toLocaleLowerCase("pt-BR");
+    const sortedSubscriptions = [...subscriptions]
+      .filter((subscription) => {
+        if (!search) return true;
+        const user = subscription.user || users.find((item) => item.id === subscription.userId) || {};
+        const plan = subscription.plan || plans.find((item) => item.id === subscription.planId) || {};
+        return [user.name, user.email, plan.name, subscription.id]
+          .filter(Boolean)
+          .some((value) => String(value).toLocaleLowerCase("pt-BR").includes(search));
+      })
+      .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
     const pageSize = state.clubSubscriptionsPageSize || 5;
     const totalPages = Math.max(1, Math.ceil(sortedSubscriptions.length / pageSize));
     state.clubSubscriptionsPage = Math.min(Math.max(1, state.clubSubscriptionsPage || 1), totalPages);
     const start = (state.clubSubscriptionsPage - 1) * pageSize;
     const pageItems = sortedSubscriptions.slice(start, start + pageSize);
-    $("clubSubscriptionsList").innerHTML = subscriptions.length
+    $("clubSubscriptionsList").innerHTML = sortedSubscriptions.length
       ? `
         <div class="subscription-list-head">
           <span>${sortedSubscriptions.length} assinatura(s)</span>
           <span>Página ${state.clubSubscriptionsPage} de ${totalPages}</span>
         </div>
         ${pageItems.map((subscription) => {
-          const user = users.find((item) => item.id === subscription.userId) || {};
-          const plan = plans.find((item) => item.id === subscription.planId) || {};
+          const user = subscription.user || users.find((item) => item.id === subscription.userId) || {};
+          const plan = subscription.plan || plans.find((item) => item.id === subscription.planId) || {};
           const credit = credits.find((item) => item.id === subscription.currentCreditId) || credits.find((item) => item.subscriptionId === subscription.id);
           const terminal = ["cancelled", "ended", "cancelled_by_admin"].includes(String(subscription.status || "").toLowerCase());
+          const ending = String(subscription.status || "").toLowerCase() === "ending";
+          const canReactivate = !subscription.reactivationBlocked
+            && !["cancelled", "canceled"].includes(String(subscription.providerStatus || "").toLowerCase())
+            && String(subscription.provider || "") === "manual_admin"
+            && String(subscription.status || "") === "paused";
           return `
             <div class="list-item static">
-              <span>
+              <span class="subscription-identity">
                 <span class="list-title">${escapeHtml(user.name || user.email || "Cliente")}</span>
+                <span class="subscription-email">${escapeHtml(user.email || "E-mail não informado")}</span>
                 <span class="list-meta">${escapeHtml(plan.name || subscription.planId)} • ${clubStatusLabel(subscription.status)} • ${Number(credit?.remaining ?? subscription.creditsAvailable ?? 0)} de ${Number(credit?.total ?? plan.includedTickets ?? 0)} crédito(s)</span>
+                ${ending ? `<span class="subscription-ending-note">Cobrança encerrada; benefícios válidos até ${subscription.benefitsUntil ? new Date(subscription.benefitsUntil).toLocaleDateString("pt-BR") : "o fim do ciclo"}.</span>` : ""}
               </span>
               <span class="table-actions">
-                <button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>
-                <button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','paused')">Pausar</button>
+                ${canReactivate ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>` : ""}
+                ${!terminal && !ending && subscription.status === "active" ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','paused')">Pausar</button>` : ""}
                 <button class="ghost-button" type="button" onclick="adjustClubCredit('${escapeHtml(subscription.id)}')">Ajustar crédito</button>
                 ${terminal
                   ? `<button class="danger-button" type="button" onclick="deleteClubSubscription('${escapeHtml(subscription.id)}')">Excluir</button>`
-                  : `<button class="danger-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','cancelled')">Cancelar</button>`}
+                  : ending ? "" : `<button class="danger-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','cancelled')">Cancelar renovação</button>`}
               </span>
             </div>
           `;
@@ -3515,7 +3538,7 @@ function renderClub() {
           <button class="ghost-button" type="button" ${state.clubSubscriptionsPage >= totalPages ? "disabled" : ""} onclick="changeClubSubscriptionsPage(1)">Próxima</button>
         </div>
       `
-      : `<div class="empty-state"><strong>Nenhuma assinatura</strong><span>Atribuições manuais e assinaturas externas aparecerão aqui.</span></div>`;
+      : `<div class="empty-state"><strong>${search ? "Nenhuma assinatura encontrada" : "Nenhuma assinatura"}</strong><span>${search ? "Revise o nome, e-mail ou plano informado." : "Atribuições manuais e assinaturas externas aparecerão aqui."}</span></div>`;
   }
   if ($("clubUsageList")) {
     $("clubUsageList").innerHTML = usage.length
@@ -3574,6 +3597,17 @@ function newClubPlan() {
 function changeClubSubscriptionsPage(delta) {
   state.clubSubscriptionsPage = Math.max(1, Number(state.clubSubscriptionsPage || 1) + Number(delta || 0));
   renderClub();
+}
+
+function filterClubSubscriptions(value) {
+  state.clubSubscriptionsSearch = String(value || "");
+  state.clubSubscriptionsPage = 1;
+  renderClub();
+  const input = $("clubSubscriptionSearch");
+  if (input) {
+    input.value = state.clubSubscriptionsSearch;
+    input.focus();
+  }
 }
 
 async function saveClubPlan(event) {

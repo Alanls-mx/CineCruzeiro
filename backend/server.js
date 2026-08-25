@@ -1571,7 +1571,7 @@ function applyMercadoPagoSubscriptionStatus(db, subscription, providerSubscripti
 
   const paymentApproved = options.paymentApproved === true || subscription.paymentStatus === "approved";
 
-  if (["cancelled", "ended"].includes(previousStatus) && nextStatus === "active") {
+  if (["ending", "cancelled", "ended"].includes(previousStatus) && nextStatus === "active") {
     subscription.status = previousStatus;
     subscription.paymentStatus = subscription.paymentStatus || "cancelled";
     subscription.nextBillingAt = "";
@@ -1587,6 +1587,9 @@ function applyMercadoPagoSubscriptionStatus(db, subscription, providerSubscripti
   } else if (nextStatus === "active") {
     subscription.status = "pending_payment";
     subscription.paymentStatus = "pending";
+  } else if (nextStatus === "cancelled" && previousStatus === "ending") {
+    subscription.status = "ending";
+    subscription.nextBillingAt = "";
   } else if (nextStatus === "cancelled") {
     subscription.status = "cancelled";
     subscription.paymentStatus = "cancelled";
@@ -1636,6 +1639,67 @@ async function cancelMercadoPagoSubscriptionSafely(subscription, integrationConf
     if (!isMercadoPagoAlreadyCancelledError(error)) throw error;
     return { id: subscription.providerSubscriptionId, status: "cancelled", localStatus: "cancelled", alreadyCancelled: true };
   }
+}
+
+function subscriptionEntitlementEnd(db, subscription, now = new Date()) {
+  const credit = currentSubscriptionCredit(db, subscription, now);
+  const candidates = [
+    credit?.cycleEnd,
+    subscription.benefitsUntil,
+    subscription.currentPeriodEnd,
+    subscription.cycleEnd
+  ].filter(Boolean).map((value) => new Date(value)).filter((value) => Number.isFinite(value.getTime()) && value.getTime() > now.getTime());
+  return candidates.sort((a, b) => a.getTime() - b.getTime())[0]?.toISOString() || now.toISOString();
+}
+
+function markSubscriptionWithoutRenewal(db, subscription, options = {}) {
+  const now = options.now || new Date();
+  const timestamp = now.toISOString();
+  const benefitsUntil = subscriptionEntitlementEnd(db, subscription, now);
+  subscription.status = new Date(benefitsUntil).getTime() > now.getTime() ? "ending" : "ended";
+  subscription.cancelAtPeriodEnd = true;
+  subscription.cancellationRequestedAt ||= timestamp;
+  subscription.billingCancelledAt ||= timestamp;
+  subscription.benefitsUntil = benefitsUntil;
+  subscription.cancellationMode = options.mode || "period_end";
+  subscription.reactivationBlocked = true;
+  subscription.cancelledAt ||= timestamp;
+  subscription.endedAt = subscription.status === "ended" ? (subscription.endedAt || timestamp) : "";
+  subscription.nextBillingAt = "";
+  subscription.updatedAt = timestamp;
+  return subscription;
+}
+
+function finalizeEndingSubscriptions(db, options = {}) {
+  const now = options.now || new Date();
+  const timestamp = now.toISOString();
+  let changed = 0;
+  for (const subscription of db.subscriptions || []) {
+    const activeCredit = currentSubscriptionCredit(db, subscription, now);
+    if (subscription.status === "cancelled" && activeCredit && Number(activeCredit.remaining || 0) > 0) {
+      subscription.status = "ending";
+      subscription.cancelAtPeriodEnd = true;
+      subscription.benefitsUntil = activeCredit.cycleEnd;
+      subscription.billingCancelledAt ||= subscription.cancelledAt || timestamp;
+      subscription.cancellationRequestedAt ||= subscription.cancelledAt || timestamp;
+      subscription.cancellationMode ||= "period_end";
+      subscription.reactivationBlocked = true;
+      subscription.nextBillingAt = "";
+      subscription.updatedAt = timestamp;
+      changed += 1;
+      continue;
+    }
+    if (subscription.status !== "ending") continue;
+    const endValue = subscription.benefitsUntil || subscription.currentPeriodEnd || subscription.cycleEnd || "";
+    if (endValue && new Date(endValue).getTime() > now.getTime()) continue;
+    subscription.status = "ended";
+    subscription.endedAt ||= timestamp;
+    subscription.creditsAvailable = 0;
+    subscription.nextBillingAt = "";
+    subscription.updatedAt = timestamp;
+    changed += 1;
+  }
+  return { changed: changed > 0, finalized: changed };
 }
 
 function subscriptionPaymentExpiresAt(subscription, now = new Date()) {
@@ -2393,6 +2457,7 @@ function subscriptionStatusLabel(status = "") {
     pending_payment: "Aguardando pagamento",
     pending: "Pagamento pendente",
     paused: "Pausada",
+    ending: "Sem renovação",
     cancelled: "Cancelada",
     ended: "Encerrada",
     payment_failed: "Falha na renovação",
@@ -2463,12 +2528,23 @@ function refreshSubscriptionCredits(db, subscription, now = new Date()) {
   if (!credit && !db.subscriptionCredits?.some((item) => item.subscriptionId === subscription.id) && status === "active") {
     credit = createSubscriptionCreditCycle(db, subscription, plan, now);
   }
+  if (!credit && subscription.status === "ending") {
+    subscription.status = "ended";
+    subscription.endedAt ||= now.toISOString();
+    subscription.creditsAvailable = 0;
+    subscription.nextBillingAt = "";
+    return subscription;
+  }
   return syncSubscriptionCreditMirror(subscription, credit);
 }
 
 function subscriptionCanUseCredit(subscription, now = new Date()) {
   if (!subscription) return false;
   if (subscription.status === "active") return true;
+  if (subscription.status === "ending") {
+    const benefitsUntil = subscription.benefitsUntil || subscription.currentPeriodEnd || subscription.cycleEnd || "";
+    return Boolean(benefitsUntil && new Date(benefitsUntil).getTime() > now.getTime());
+  }
   return false;
 }
 
@@ -2483,7 +2559,7 @@ function activeSubscriptionForUser(db, userId) {
 function subscriptionBlocksNewPlan(subscription, now = new Date()) {
   if (!subscription) return false;
   const status = String(subscription.status || "");
-  if (["pending_payment", "active", "paused"].includes(status)) return true;
+  if (["pending_payment", "active", "paused", "ending"].includes(status)) return true;
   return false;
 }
 
@@ -2512,9 +2588,9 @@ function subscriptionSummary(db, userId) {
         cycleStart: subscription.cycleStart || subscription.currentPeriodStart || credit?.cycleStart || "",
         cycleEnd: subscription.cycleEnd || subscription.currentPeriodEnd || credit?.cycleEnd || "",
         nextBillingAt: subscription.nextBillingAt || subscription.cycleEnd || "",
-        creditsTotal: subscription.status === "active" ? Number(credit?.total || 0) : 0,
-        creditsRemaining: subscription.status === "active" ? Math.max(0, Number(subscription.creditsAvailable || 0)) : 0,
-        creditsUsed: subscription.status === "active" ? Number(subscription.creditsUsed || 0) : 0
+        creditsTotal: subscriptionCanUseCredit(subscription) ? Number(credit?.total || 0) : 0,
+        creditsRemaining: subscriptionCanUseCredit(subscription) ? Math.max(0, Number(subscription.creditsAvailable || 0)) : 0,
+        creditsUsed: subscriptionCanUseCredit(subscription) ? Number(subscription.creditsUsed || 0) : 0
       };
     });
 }
@@ -2566,6 +2642,13 @@ function createSubscription(db, userId, planId, adminUser, status = "pending_pay
     paymentStatus: status === "active" ? "approved" : "pending",
     paymentExpiresAt: status === "pending_payment" ? new Date(now.getTime() + SUBSCRIPTION_PENDING_PAYMENT_TTL_MS).toISOString() : "",
     paymentExpiredAt: "",
+    cancelAtPeriodEnd: false,
+    cancellationRequestedAt: "",
+    billingCancelledAt: "",
+    benefitsUntil: "",
+    cancellationMode: "",
+    reactivationBlocked: false,
+    endedAt: "",
     createdBy: adminUser?.id || "",
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -4784,7 +4867,8 @@ async function handleApi(req, res, pathname) {
   const scheduledChanged = applyScheduledPremieres(db);
   const reservationsChanged = expireStaleReservations(db);
   const subscriptionMaintenance = await expirePendingPaymentSubscriptions(db);
-  if (scheduledChanged || reservationsChanged || subscriptionMaintenance.changed) {
+  const subscriptionLifecycle = finalizeEndingSubscriptions(db);
+  if (scheduledChanged || reservationsChanged || subscriptionMaintenance.changed || subscriptionLifecycle.changed) {
     await writeDb(db);
   }
 
@@ -5168,6 +5252,35 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: { code: "EVENT_NOT_ALLOWED", message: "Evento nao suportado." } });
       return;
     }
+    if (body.event === "private_rental.inquiry") {
+      const inquiry = body.data && typeof body.data === "object" ? body.data : {};
+      if (String(inquiry.website || "").trim()) {
+        sendJson(res, 202, { success: true, message: "Solicitação recebida." });
+        return;
+      }
+      inquiry.name = String(inquiry.name || "").trim().slice(0, 100);
+      inquiry.phone = String(inquiry.phone || "").trim().slice(0, 30);
+      inquiry.email = String(inquiry.email || "").trim().toLowerCase().slice(0, 160);
+      inquiry.desiredDate = String(inquiry.desiredDate || "").trim().slice(0, 80);
+      inquiry.estimatedGuests = String(inquiry.estimatedGuests || "").trim().slice(0, 80);
+      inquiry.notes = String(inquiry.notes || "").trim().slice(0, 2000);
+      if (inquiry.name.length < 2 || inquiry.phone.replace(/\D/g, "").length < 8 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inquiry.email)) {
+        sendJson(res, 422, { error: { code: "EVENT_INQUIRY_INVALID", message: "Informe nome, WhatsApp e um e-mail válido para receber a confirmação." } });
+        return;
+      }
+      const emailConfig = integrationConfigService.resolvedConfig(db, "email");
+      if (!(emailConfig?.enabled && emailConfig?.configured)) {
+        sendJson(res, 412, { error: { code: "EVENT_EMAIL_NOT_CONFIGURED", message: "O canal de atendimento por e-mail está temporariamente indisponível. Tente novamente em instantes." } });
+        return;
+      }
+      const delivery = await emailService.sendPrivateEventInquiry(db, inquiry);
+      if (!delivery.inquiryDelivered) {
+        sendJson(res, 502, { error: { code: "EVENT_EMAIL_DELIVERY_FAILED", message: "Não foi possível entregar sua solicitação agora. Confira os dados e tente novamente." } });
+        return;
+      }
+      body.data = inquiry;
+      body.delivery = { acknowledgementSent: Boolean(delivery.acknowledgementDelivered) };
+    }
     const crmUrl = getCrmWebhookUrl(db);
     if (crmUrl) {
       await fetch(crmUrl, {
@@ -5183,7 +5296,15 @@ async function handleApi(req, res, pathname) {
         })
       }).catch(() => null);
     }
-    sendJson(res, 202, { success: true, message: "Evento recebido pelo backend." });
+    sendJson(res, 202, {
+      success: true,
+      acknowledgementSent: body.event === "private_rental.inquiry" ? Boolean(body.delivery?.acknowledgementSent) : undefined,
+      message: body.event === "private_rental.inquiry"
+        ? (body.delivery?.acknowledgementSent
+          ? "Solicitação enviada. Enviamos uma confirmação para o seu e-mail."
+          : "Solicitação recebida. Nossa equipe entrará em contato em breve.")
+        : "Evento recebido pelo backend."
+    });
     return;
   }
 
@@ -5279,10 +5400,22 @@ async function handleApi(req, res, pathname) {
     user.emailVerificationRequestedAt = new Date().toISOString();
     db.users.push(user);
     await writeDb(db);
-    notifyEmailVerification(email, verificationUrl, db).catch((error) => {
-      logEvent("warn", "email_verification.delivery_failed", { email, message: error.message });
-    });
-    sendJson(res, 201, authResponse(user), { "Set-Cookie": customerCookie(customerSessionValue(user)) });
+    const verificationEmailSent = await notifyEmailVerification(email, verificationUrl, db);
+    if (isProduction() && !verificationEmailSent) {
+      user.pendingEmail = "";
+      user.emailVerificationHash = "";
+      user.emailVerificationExpiresAt = "";
+      user.emailVerificationRequestedAt = "";
+      user.updatedAt = new Date().toISOString();
+      await writeDb(db);
+    }
+    sendJson(res, 201, {
+      ...authResponse(user),
+      verificationEmailSent,
+      message: verificationEmailSent
+        ? "Conta criada. Enviamos um link para confirmar seu e-mail."
+        : "Conta criada, mas não foi possível enviar a confirmação agora. Você pode solicitar um novo link em Minha Conta."
+    }, { "Set-Cookie": customerCookie(customerSessionValue(user)) });
     return;
   }
 
@@ -5529,6 +5662,9 @@ async function handleApi(req, res, pathname) {
     if (isProduction() && !delivered) {
       user.emailVerificationHash = "";
       user.emailVerificationExpiresAt = "";
+      user.emailVerificationRequestedAt = "";
+      user.pendingEmail = "";
+      user.updatedAt = new Date().toISOString();
       await writeDb(db);
       sendJson(res, 412, { error: { code: "EMAIL_DELIVERY_FAILED", message: "Não foi possível enviar a confirmação agora. Confira a integração de e-mail." } });
       return;
@@ -5542,7 +5678,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/me/email-change/confirm" && method === "POST") {
+  if (["/api/auth/email/verify", "/api/me/email-change/confirm"].includes(pathname) && method === "POST") {
     const body = await readBody(req);
     const tokenHash = hashResetToken(body.token || "");
     const user = (db.users || []).find((item) =>
@@ -5734,8 +5870,11 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 404, { error: { code: "SUBSCRIPTION_NOT_FOUND", message: "Assinatura nao encontrada." } });
         return;
       }
-      if (["ended", "cancelled"].includes(subscription.status)) {
-        sendJson(res, 200, { subscription: { ...refreshSubscriptionCredits(lockedDb, subscription), statusLabel: subscriptionStatusLabel(subscription.status) } });
+      if (["ending", "ended", "cancelled"].includes(subscription.status)) {
+        sendJson(res, 200, {
+          subscription: { ...refreshSubscriptionCredits(lockedDb, subscription), statusLabel: subscriptionStatusLabel(subscription.status) },
+          message: subscription.status === "ending" ? "A renovação já está cancelada. Seus créditos continuam válidos até o fim do ciclo." : "Esta assinatura já está encerrada."
+        });
         return;
       }
       const now = new Date().toISOString();
@@ -5746,20 +5885,10 @@ async function handleApi(req, res, pathname) {
         providerSubscription = await cancelMercadoPagoSubscriptionSafely(subscription, mercadoPagoConfig || {});
         subscription.providerStatus = providerSubscription?.status || "cancelled";
       }
-      subscription.status = cancelImmediately ? "ended" : "cancelled";
-      subscription.cancelledAt = now;
-      if (cancelImmediately) {
-        subscription.cycleEnd = now;
-        subscription.currentPeriodEnd = now;
-        subscription.nextBillingAt = "";
-        const credit = currentSubscriptionCredit(lockedDb, subscription);
-        if (credit) {
-          credit.remaining = 0;
-          credit.updatedAt = now;
-          syncSubscriptionCreditMirror(subscription, credit);
-        }
-      }
-      subscription.updatedAt = new Date().toISOString();
+      markSubscriptionWithoutRenewal(lockedDb, subscription, {
+        mode: cancelImmediately ? "immediate_billing_end" : "period_end",
+        now: new Date(now)
+      });
       subscription.history ||= [];
       subscription.history.push({
         action: "cancel",
@@ -5773,7 +5902,9 @@ async function handleApi(req, res, pathname) {
       await writeDb(lockedDb);
       sendJson(res, 200, {
         subscription: { ...refreshSubscriptionCredits(lockedDb, subscription), statusLabel: subscriptionStatusLabel(subscription.status) },
-        message: cancelImmediately ? "Assinatura encerrada agora." : "Assinatura cancelada para o fim do ciclo atual."
+        message: cancelImmediately
+          ? "Cobrança encerrada. Seus créditos atuais continuam válidos até o fim do ciclo."
+          : "Renovação cancelada. Não haverá nova cobrança e os créditos atuais continuam válidos até o fim do ciclo."
       });
     });
     return;
@@ -6089,7 +6220,20 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 404, { error: { code: "SUBSCRIPTION_NOT_FOUND", message: "Assinatura nao encontrada." } });
       return;
     }
-    const allowedStatus = new Set(["pending_payment", "active", "paused", "cancelled", "ended", "payment_failed"]);
+    const allowedStatus = new Set(["pending_payment", "active", "paused", "ending", "cancelled", "ended", "payment_failed"]);
+    if (body.status === "active" && (
+      subscription.reactivationBlocked
+      || ["cancelled", "canceled"].includes(String(subscription.providerStatus || "").toLowerCase())
+      || ["ending", "cancelled", "ended"].includes(String(subscription.status || "").toLowerCase())
+    )) {
+      sendJson(res, 409, {
+        error: {
+          code: "SUBSCRIPTION_REAUTHORIZATION_REQUIRED",
+          message: "Esta autorização de cobrança foi encerrada. Crie uma nova assinatura para obter uma nova autorização do cliente; a anterior não pode ser reativada."
+        }
+      });
+      return;
+    }
     if (allowedStatus.has(body.status)) subscription.status = body.status;
     if (body.status === "active" && !currentSubscriptionCredit(db, subscription)) {
       const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
@@ -6104,16 +6248,7 @@ async function handleApi(req, res, pathname) {
         providerSubscription = await cancelMercadoPagoSubscriptionSafely(subscription, mercadoPagoConfig || {});
         subscription.providerStatus = providerSubscription?.status || "cancelled";
       }
-      subscription.cancelledAt = subscription.cancelledAt || now;
-      subscription.cycleEnd = now;
-      subscription.currentPeriodEnd = now;
-      subscription.nextBillingAt = "";
-      const credit = currentSubscriptionCredit(db, subscription);
-      if (credit) {
-        credit.remaining = 0;
-        credit.updatedAt = now;
-        syncSubscriptionCreditMirror(subscription, credit);
-      }
+      markSubscriptionWithoutRenewal(db, subscription, { mode: "admin_billing_end", now: new Date(now) });
     }
     subscription.updatedAt = new Date().toISOString();
     subscription.history ||= [];
@@ -7572,11 +7707,13 @@ async function runSubscriptionMaintenance() {
     await withCriticalMutation(async () => {
       const db = await readDb();
       const result = await expirePendingPaymentSubscriptions(db);
-      if (result.changed) {
+      const lifecycle = finalizeEndingSubscriptions(db);
+      if (result.changed || lifecycle.changed) {
         await writeDb(db);
         logEvent("info", "subscription.pending_payment_maintenance", {
           expired: result.expired,
-          failed: result.failed
+          failed: result.failed,
+          finalized: lifecycle.finalized
         });
       }
     });

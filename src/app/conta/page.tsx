@@ -49,7 +49,7 @@ function ContaPageContent() {
   const [subscriptions, setSubscriptions] = useState<AccountSubscription[]>([]);
   const [clubMessage, setClubMessage] = useState("");
   const pendingSubscriptions = subscriptions.filter((subscription) => subscription.status === "pending_payment");
-  const activeSubscriptions = subscriptions.filter((subscription) => ["active", "paused"].includes(subscription.status) && !isClubHistory(subscription));
+  const activeSubscriptions = subscriptions.filter((subscription) => ["active", "paused", "ending"].includes(subscription.status) && !isClubHistory(subscription));
   const historySubscriptions = subscriptions.filter(isClubHistory);
 
   useEffect(() => {
@@ -146,7 +146,12 @@ function ContaPageContent() {
         confirmPassword: "",
       });
       loadClub();
-      router.replace(returnTo || "/conta/ingressos");
+      if (mode === "register") {
+        setProfileMessage(result.message || "Conta criada. Confirme seu e-mail para manter sua conta protegida.");
+        router.replace("/conta");
+      } else {
+        router.replace(returnTo || "/conta/ingressos");
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível continuar.");
     } finally {
@@ -222,7 +227,9 @@ function ContaPageContent() {
     try {
       const result = await cancelMySubscription(subscriptionId, reason, { cancelImmediately });
       await loadClub();
-      setClubMessage(result.message || (cancelImmediately ? "Assinatura encerrada agora." : "Assinatura cancelada. Benefícios do ciclo atual continuam disponíveis até o fim do ciclo."));
+      setClubMessage(result.message || (cancelImmediately
+        ? "Cobrança encerrada. Seus créditos atuais continuam válidos até o fim do ciclo."
+        : "Renovação cancelada. Não haverá nova cobrança e os créditos atuais continuam disponíveis até o fim do ciclo."));
     } catch (error) {
       setClubMessage(error instanceof Error ? error.message : "Não foi possível cancelar o Clube.");
     }
@@ -431,7 +438,7 @@ function ClubSubscriptionCard({
       </div>
       <dl className="mt-5 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
         <Info label="Ciclo" value={`${dateLabel(subscription.cycleStart)} → ${dateLabel(subscription.cycleEnd || subscription.currentPeriodEnd)}`} />
-        <Info label="Próxima renovação" value={dateLabel(subscription.nextBillingAt || subscription.cycleEnd)} />
+        <Info label="Próxima renovação" value={subscription.status === "ending" ? "Não haverá renovação" : dateLabel(subscription.nextBillingAt || subscription.cycleEnd)} />
         <Info label="Utilizados" value={String(subscription.creditsUsed || 0)} />
         <Info label="Disponíveis" value={String(subscription.creditsRemaining ?? subscription.creditsAvailable ?? 0)} />
       </dl>
@@ -448,7 +455,7 @@ function ClubSubscriptionCard({
           </div>
         </details>
       ) : null}
-      {!compact && onCancel && !["cancelled", "ended"].includes(subscription.status) && (
+      {!compact && onCancel && !["ending", "cancelled", "ended"].includes(subscription.status) && (
         <div className="mt-5 flex flex-wrap gap-4 text-sm font-black">
           <button type="button" onClick={() => onCancel(subscription.id)} className="text-amber-200 transition hover:text-amber-100">
             Cancelar no fim do ciclo
@@ -490,6 +497,7 @@ function clubStatusLabel(status = "") {
     active: "Ativa",
     pending_payment: "Aguardando pagamento",
     paused: "Pausada",
+    ending: "Sem renovação; créditos válidos até o fim do ciclo",
     cancelled: "Cancelada",
     ended: "Encerrada",
     payment_failed: "Falha na renovação",

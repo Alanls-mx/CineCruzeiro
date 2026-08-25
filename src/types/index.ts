@@ -115,11 +115,12 @@ export interface ClubLead {
 export interface PrivateEventRequest {
   name: string;
   phone: string;
-  email?: string;
+  email: string;
   eventType: "aniversario" | "videogame" | "filme_classico" | "corporativo" | "outro";
   desiredDate: string;
   estimatedGuests: string;
   notes?: string;
+  website?: string;
   source: "landing_page_feche_o_cinema";
   createdAt: string;
 }

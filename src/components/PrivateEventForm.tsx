@@ -12,6 +12,7 @@ interface PrivateEventFormProps {
 export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [eventType, setEventType] = useState<
     "aniversario" | "videogame" | "filme_classico" | "corporativo" | "outro"
   >("aniversario");
@@ -20,6 +21,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
   const [notes, setNotes] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handlePhoneChange = (val: string) => {
     const raw = val.replace(/\D/g, "").slice(0, 11);
@@ -34,13 +36,15 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !phone.trim() || !desiredDate) return;
+    if (!name.trim() || !phone.trim() || !email.trim() || !desiredDate) return;
 
     setIsLoading(true);
+    setErrorMessage("");
 
     const eventPayload: PrivateEventRequest = {
       name,
       phone,
+      email,
       eventType,
       desiredDate,
       estimatedGuests,
@@ -52,7 +56,8 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
     const response = await sendPrivateEventWebhook(eventPayload);
 
     setIsLoading(false);
-    setIsSuccess(true);
+    setIsSuccess(response.success);
+    if (!response.success) setErrorMessage(response.message);
 
     if (onSuccessToast) {
       onSuccessToast(response.message);
@@ -134,6 +139,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
                   setIsSuccess(false);
                   setName("");
                   setPhone("");
+                  setEmail("");
                   setDesiredDate("");
                   setNotes("");
                 }}
@@ -172,6 +178,18 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
                     placeholder="(00) 00000-0000"
                     value={phone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
+                    className="w-full rounded-xl border border-brand-800 bg-brand-950 py-3 px-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  />
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-bold text-brand-300">E-mail para Confirmação *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="voce@exemplo.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="w-full rounded-xl border border-brand-800 bg-brand-950 py-3 px-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   />
                 </div>
@@ -236,7 +254,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
               {/* Gold / Royal Blue CTA */}
               <button
                 type="submit"
-                disabled={isLoading || !name.trim() || !phone.trim() || !desiredDate}
+                disabled={isLoading || !name.trim() || !phone.trim() || !email.trim() || !desiredDate}
                 className="w-full flex items-center justify-center gap-2 rounded-2xl bg-gold-400 py-4 px-6 text-sm font-black text-slate-950 shadow-glow hover:bg-gold-300 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
@@ -248,6 +266,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
                   </>
                 )}
               </button>
+              {errorMessage ? <p role="alert" className="bg-rose-400/10 p-3 text-sm font-semibold text-rose-200">{errorMessage}</p> : null}
             </form>
           )}
         </div>

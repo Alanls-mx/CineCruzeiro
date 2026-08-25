@@ -59,7 +59,7 @@ const DEFINITIONS = {
   email: {
     name: "E-mail transacional",
     purpose: "SMTP para recuperação de senha, verificação, entrega de ingressos e campanhas",
-    defaults: { enabled: false, environment: "production", provider: "smtp", fromEmail: "", fromName: "Cine Cruzeiro", replyTo: "", webhookUrl: "", smtpHost: "", smtpPort: 587, smtpSecure: false, smtpUser: "" },
+    defaults: { enabled: false, environment: "production", provider: "smtp", fromEmail: "", fromName: "Cine Cruzeiro", replyTo: "", notificationEmail: "", webhookUrl: "", smtpHost: "", smtpPort: 587, smtpSecure: false, smtpUser: "" },
     secrets: ["apiKey", "webhookSecret", "smtpPassword"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
@@ -67,6 +67,7 @@ const DEFINITIONS = {
       { key: "fromEmail", label: "E-mail remetente", type: "email" },
       { key: "fromName", label: "Nome remetente", type: "text" },
       { key: "replyTo", label: "Responder para", type: "email" },
+      { key: "notificationEmail", label: "E-mail de atendimento", type: "email" },
       { key: "smtpHost", label: "Host SMTP", type: "text" },
       { key: "smtpPort", label: "Porta SMTP", type: "number" },
       { key: "smtpSecure", label: "Usar SSL/TLS direto", type: "boolean" },
@@ -123,7 +124,8 @@ const ENV = {
     smtpPassword: ["SMTP_PASSWORD", "EMAIL_SMTP_PASSWORD"],
     fromEmail: ["SMTP_FROM_EMAIL", "EMAIL_FROM"],
     fromName: ["SMTP_FROM_NAME", "EMAIL_FROM_NAME"],
-    replyTo: ["SMTP_REPLY_TO", "EMAIL_REPLY_TO"]
+    replyTo: ["SMTP_REPLY_TO", "EMAIL_REPLY_TO"],
+    notificationEmail: ["EVENTS_EMAIL", "CONTACT_EMAIL", "SMTP_NOTIFICATION_EMAIL"]
   },
   crm: {
     url: ["CRM_WEBHOOK_URL", "LUMIX_WEBHOOK_URL"],

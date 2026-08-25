@@ -1,6 +1,7 @@
 const fs = require("fs");
 const assert = require("assert/strict");
 const crypto = require("crypto");
+const http = require("http");
 
 const DATA_FILE = "backend/data/db.json";
 const PORT = 4199;
@@ -132,9 +133,20 @@ async function run() {
   else process.env.NODE_ENV = originalNodeEnv;
 
   const server = require("../backend/server.js");
+  const deliveredEmails = [];
+  const emailWebhookServer = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      deliveredEmails.push(JSON.parse(raw || "{}"));
+      res.writeHead(202, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+  });
 
   try {
     await new Promise((resolve) => setTimeout(resolve, 700));
+    await new Promise((resolve) => emailWebhookServer.listen(4200, "127.0.0.1", resolve));
 
     const health = await request("/api/health");
     assert.equal(health.response.status, 200);
@@ -148,6 +160,54 @@ async function run() {
     let cookie = registered.cookie;
     const targetCookie = target.cookie;
     const adminCookie = await loginAdmin();
+
+    const emailIntegration = await request("/api/admin/integrations/email", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        enabled: true,
+        provider: "webhook",
+        webhookUrl: "http://127.0.0.1:4200/email",
+        fromEmail: "atendimento@cinecruzeiro.local",
+        notificationEmail: "eventos@cinecruzeiro.local"
+      })
+    });
+    assert.equal(emailIntegration.response.status, 200);
+
+    const verificationCandidate = await registerCustomer(`verify-${Date.now()}@cine.local`);
+    const verificationDelivery = [...deliveredEmails].reverse().find((item) => item.event === "email_verification.requested");
+    assert.ok(verificationDelivery?.data?.verificationUrl);
+    const verificationToken = new URL(verificationDelivery.data.verificationUrl).searchParams.get("emailToken");
+    assert.ok(verificationToken);
+    const verifiedAccount = await request("/api/auth/email/verify", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ token: verificationToken })
+    });
+    assert.equal(verifiedAccount.response.status, 200);
+    assert.equal(verifiedAccount.payload.user.id, verificationCandidate.user.id);
+    assert.equal(verifiedAccount.payload.user.emailVerified, true);
+
+    const eventInquiry = await request("/api/events", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        event: "private_rental.inquiry",
+        data: {
+          name: "Cliente Evento",
+          phone: "(11) 99999-9999",
+          email: "evento@cliente.local",
+          eventType: "corporativo",
+          desiredDate: "2099-12-30 19:00",
+          estimatedGuests: "40 pessoas",
+          notes: "Teste de evento"
+        }
+      })
+    });
+    assert.equal(eventInquiry.response.status, 202);
+    assert.equal(eventInquiry.payload.success, true);
+    assert.equal(eventInquiry.payload.acknowledgementSent, true);
+    assert.deepEqual(deliveredEmails.slice(-2).map((item) => item.event), ["private_rental.inquiry", "private_rental.acknowledged"]);
 
     const me = await request("/api/auth/me", { headers: { Cookie: cookie } });
     assert.equal(me.response.status, 200);
@@ -166,7 +226,7 @@ async function run() {
     assert.equal(emailChange.response.status, 202);
     assert.ok(emailChange.payload.verificationToken);
 
-    const emailConfirm = await request("/api/me/email-change/confirm", {
+    const emailConfirm = await request("/api/auth/email/verify", {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify({ token: emailChange.payload.verificationToken })
@@ -552,7 +612,24 @@ async function run() {
       body: JSON.stringify({ reason: "Liberar usuario para continuidade do smoke", cancelImmediately: true })
     });
     assert.equal(cancelProviderApprovedSubscription.response.status, 200);
-    assert.ok(["cancelled", "ended"].includes(cancelProviderApprovedSubscription.payload.subscription.status));
+    assert.equal(cancelProviderApprovedSubscription.payload.subscription.status, "ending");
+    assert.equal(cancelProviderApprovedSubscription.payload.subscription.reactivationBlocked, true);
+    assert.equal(cancelProviderApprovedSubscription.payload.subscription.creditsAvailable, 1);
+
+    const forbiddenReactivation = await request(`/api/admin/subscriptions/${encodeURIComponent(providerApprovedSubscription.id)}`, {
+      method: "PATCH",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ status: "active", reason: "Não deve reativar autorização cancelada" })
+    });
+    assert.equal(forbiddenReactivation.response.status, 409);
+    assert.equal(forbiddenReactivation.payload.error.code, "SUBSCRIPTION_REAUTHORIZATION_REQUIRED");
+
+    const closeProviderSubscription = await request(`/api/admin/subscriptions/${encodeURIComponent(providerApprovedSubscription.id)}`, {
+      method: "PATCH",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ status: "ended", reason: "Encerrar ciclo no smoke" })
+    });
+    assert.equal(closeProviderSubscription.response.status, 200);
 
     const assignSubscription = await request("/api/admin/subscriptions/assign", {
       method: "POST",
@@ -614,14 +691,22 @@ async function run() {
       body: JSON.stringify({ reason: "Smoke cancelamento" })
     });
     assert.equal(cancelledSubscription.response.status, 200);
-    assert.equal(cancelledSubscription.payload.subscription.status, "cancelled");
+    assert.equal(cancelledSubscription.payload.subscription.status, "ending");
+    assert.equal(cancelledSubscription.payload.subscription.creditsAvailable, 1);
 
     const clubAfterSubscriptionCancel = await request("/api/checkout/club-credit", {
       method: "POST",
       headers: jsonHeaders(cookie),
       body: JSON.stringify({ movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, idempotencyKey: `club-smoke-cancelled-valid-${Date.now()}` })
     });
-    assert.equal(clubAfterSubscriptionCancel.response.status, 409);
+    assert.equal(clubAfterSubscriptionCancel.response.status, 201);
+
+    const closeManualSubscription = await request(`/api/admin/subscriptions/${encodeURIComponent(activeClub.id)}`, {
+      method: "PATCH",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ status: "ended", reason: "Fim do ciclo no smoke" })
+    });
+    assert.equal(closeManualSubscription.response.status, 200);
 
     const renewedSubscription = await request("/api/admin/subscriptions/assign", {
       method: "POST",
@@ -985,6 +1070,7 @@ async function run() {
 
     console.log("Smoke tests passed.");
   } finally {
+    await new Promise((resolve) => emailWebhookServer.close(resolve));
     await new Promise((resolve) => server.close(resolve));
     fs.writeFileSync(DATA_FILE, backup);
   }

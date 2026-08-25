@@ -201,7 +201,7 @@ export interface AccountSubscription {
   id: string;
   userId: string;
   planId: string;
-  status: "pending_payment" | "active" | "paused" | "cancelled" | "ended" | "payment_failed";
+  status: "pending_payment" | "active" | "paused" | "ending" | "cancelled" | "ended" | "payment_failed";
   statusLabel?: string;
   creditsAvailable: number;
   creditsRemaining: number;
@@ -213,6 +213,10 @@ export interface AccountSubscription {
   paymentExpiresAt?: string;
   paymentExpiredAt?: string;
   currentPeriodEnd?: string;
+  benefitsUntil?: string;
+  cancelAtPeriodEnd?: boolean;
+  cancellationMode?: string;
+  reactivationBlocked?: boolean;
   plan?: SubscriptionPlan | null;
   credit?: {
     id: string;
@@ -536,7 +540,7 @@ export async function registerCustomer(data: {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel criar a conta."));
   }
   rememberSessionToken(payload.token);
-  return payload as { token?: string; user: CustomerUser };
+  return payload as { token?: string; user: CustomerUser; verificationEmailSent?: boolean; message?: string };
 }
 
 export async function loginCustomer(data: { email: string; password: string }) {
@@ -551,7 +555,7 @@ export async function loginCustomer(data: { email: string; password: string }) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel entrar."));
   }
   rememberSessionToken(payload.token);
-  return payload as { token?: string; user: CustomerUser };
+  return payload as { token?: string; user: CustomerUser; message?: string };
 }
 
 export function googleLoginUrl(returnTo = "") {
@@ -620,7 +624,7 @@ export async function requestAccountEmailVerification() {
 }
 
 export async function confirmEmailChange(token: string) {
-  const response = await fetch(`${API_BASE}/api/me/email-change/confirm`, {
+  const response = await fetch(`${API_BASE}/api/auth/email/verify`, {
     method: "POST",
     credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),

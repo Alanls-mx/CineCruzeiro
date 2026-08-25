@@ -3,7 +3,7 @@ import { TicketOrder, ClubLead, PrivateEventRequest, WebhookResponse } from "@/t
 const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const API_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
 
-async function sendBackendEvent(event: string, data: unknown): Promise<WebhookResponse> {
+async function sendBackendEvent(event: string, data: unknown, options: { required?: boolean } = {}): Promise<WebhookResponse> {
   try {
     const response = await fetch(`${API_BASE}/api/events`, {
       method: "POST",
@@ -15,15 +15,24 @@ async function sendBackendEvent(event: string, data: unknown): Promise<WebhookRe
       }),
     });
 
+    const payload = await response.json().catch(() => ({}));
     if (response.ok) {
-      const payload = await response.json().catch(() => ({}));
       return {
         success: true,
         message: payload.message || "Evento recebido pelo backend.",
       };
     }
+    if (options.required) {
+      return {
+        success: false,
+        message: payload?.error?.message || payload?.message || "Não foi possível enviar a solicitação agora. Tente novamente."
+      };
+    }
   } catch {
     // Eventos comerciais nao devem quebrar o checkout ou formulario.
+    if (options.required) {
+      return { success: false, message: "Não foi possível conectar ao atendimento. Verifique sua conexão e tente novamente." };
+    }
   }
 
   return {
@@ -51,5 +60,5 @@ export async function sendPrivateEventWebhook(eventRequest: PrivateEventRequest)
   return sendBackendEvent("private_rental.inquiry", {
     ...eventRequest,
     priority: "high_ticket_vip",
-  });
+  }, { required: true });
 }
