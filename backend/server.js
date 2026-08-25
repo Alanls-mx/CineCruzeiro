@@ -1777,37 +1777,6 @@ function createClubCreditPaymentRecord(order, subscription) {
   };
 }
 
-function createSubscriptionPixOrder(subscription, plan, user) {
-  return {
-    id: subscription.id,
-    idempotencyKey: `club-subscription-pix-${subscription.id}`,
-    movieTitle: `Clube Cine Cruzeiro - ${plan.name}`,
-    totalPrice: Number(plan.monthlyPrice || plan.price || 0),
-    customerUserId: user.id,
-    customerName: user.name || "Cliente Cine Cruzeiro",
-    customerEmail: user.email,
-    customerPhone: user.phone || "",
-    customerCpf: user.cpf || "",
-    paymentMethod: "PIX",
-    createdAt: new Date().toISOString()
-  };
-}
-
-function createSubscriptionPaymentRecord(subscriptionOrder, providerPayment, method, subscription, plan) {
-  const payment = createPaymentRecord(subscriptionOrder, providerPayment, method);
-  payment.orderId = subscription.id;
-  payment.providerReference = subscription.id;
-  payment.metadata = {
-    ...(payment.metadata || {}),
-    kind: "club_subscription",
-    subscriptionId: subscription.id,
-    planId: plan.id,
-    planName: plan.name,
-    preferredPaymentMethod: method
-  };
-  return payment;
-}
-
 function findSubscriptionPayment(db, subscriptionId, method = "") {
   return (db.payments || []).find((payment) =>
     payment.metadata?.kind === "club_subscription" &&
@@ -5772,11 +5741,11 @@ async function handleApi(req, res, pathname) {
     }
     const body = await readBody(req);
     const paymentMethod = String(body.paymentMethod || "").trim().toLowerCase();
-    if (!["card", "credit_card", "debit_card", "pix"].includes(paymentMethod)) {
+    if (!["card", "credit_card"].includes(paymentMethod)) {
       sendJson(res, 422, {
         error: {
           code: "SUBSCRIPTION_PAYMENT_METHOD_REQUIRED",
-          message: "Escolha crédito, débito ou Pix recorrente antes de continuar."
+          message: "Assinaturas do Clube aceitam somente cartão de crédito via Mercado Pago."
         }
       });
       return;
@@ -5823,74 +5792,6 @@ async function handleApi(req, res, pathname) {
         subscription.externalBillingPending = true;
         subscription.paymentStatus = "pending";
         subscription.preferredPaymentMethod = normalizedPaymentMethod;
-
-        if (normalizedPaymentMethod === "pix") {
-          const existingPayment = findSubscriptionPayment(lockedDb, subscription.id, "pix");
-          if (existingPayment) {
-            await writeDb(lockedDb);
-            sendJson(res, 202, {
-              subscription: {
-                ...subscription,
-                plan,
-                statusLabel: subscriptionStatusLabel(subscription.status)
-              },
-              payment: {
-                id: existingPayment.id,
-                status: existingPayment.status,
-                method: "pix",
-                qrCode: existingPayment.qrCode || "",
-                qrCodeBase64: existingPayment.qrCodeBase64 || "",
-                ticketUrl: existingPayment.ticketUrl || "",
-                checkoutUrl: existingPayment.checkoutUrl || ""
-              },
-              provider: "mercado_pago",
-              paymentMethod: "pix",
-              externalBillingPending: true,
-              message: "Pix recorrente já gerado. Pague em até 15 minutos para ativar o Clube."
-            });
-            return;
-          }
-
-          const subscriptionOrder = createSubscriptionPixOrder(subscription, plan, lockedUser);
-          const providerPayment = await createMercadoPagoOrderPayment(subscriptionOrder, mercadoPagoConfig || {}, {
-            method: "pix",
-            idempotencyKey: subscriptionOrder.idempotencyKey
-          });
-          const payment = createSubscriptionPaymentRecord(subscriptionOrder, providerPayment, "pix", subscription, plan);
-          subscription.providerPaymentId = payment.providerPaymentId;
-          subscription.providerStatus = payment.status;
-          subscription.checkoutUrl = payment.checkoutUrl || payment.ticketUrl || "";
-          subscription.history ||= [];
-          subscription.history.push({
-            action: "mercado_pago_pix_created",
-            providerPaymentId: subscription.providerPaymentId,
-            paymentMethod: "pix",
-            at: new Date().toISOString()
-          });
-          lockedDb.payments.unshift(payment);
-          await writeDb(lockedDb);
-          sendJson(res, 202, {
-            subscription: {
-              ...subscription,
-              plan,
-              statusLabel: subscriptionStatusLabel(subscription.status)
-            },
-            payment: {
-              id: payment.id,
-              status: payment.status,
-              method: "pix",
-              qrCode: payment.qrCode || "",
-              qrCodeBase64: payment.qrCodeBase64 || "",
-              ticketUrl: payment.ticketUrl || "",
-              checkoutUrl: payment.checkoutUrl || ""
-            },
-            provider: "mercado_pago",
-            paymentMethod: "pix",
-            externalBillingPending: true,
-            message: "Pix recorrente gerado. O plano será ativado automaticamente após a aprovação."
-          });
-          return;
-        }
 
         const providerSubscription = await paymentService.createMercadoPagoSubscription(subscription, plan, lockedUser, mercadoPagoConfig || {}, {
           // Checkout hospedado: assinatura pendente sem plano associado. O

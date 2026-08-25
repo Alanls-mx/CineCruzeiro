@@ -456,10 +456,26 @@ async function run() {
     assert.equal(subscriptionWithoutPaymentMethod.response.status, 422);
     assert.equal(subscriptionWithoutPaymentMethod.payload.error.code, "SUBSCRIPTION_PAYMENT_METHOD_REQUIRED");
 
-    const pendingSubscription = await request("/api/subscriptions/subscribe", {
+    const subscriptionWithPix = await request("/api/subscriptions/subscribe", {
       method: "POST",
       headers: jsonHeaders(cookie),
       body: JSON.stringify({ planId: oneCreditPlan.payload.id, paymentMethod: "pix" })
+    });
+    assert.equal(subscriptionWithPix.response.status, 422);
+    assert.equal(subscriptionWithPix.payload.error.code, "SUBSCRIPTION_PAYMENT_METHOD_REQUIRED");
+
+    const subscriptionWithDebitCard = await request("/api/subscriptions/subscribe", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ planId: oneCreditPlan.payload.id, paymentMethod: "debit_card" })
+    });
+    assert.equal(subscriptionWithDebitCard.response.status, 422);
+    assert.equal(subscriptionWithDebitCard.payload.error.code, "SUBSCRIPTION_PAYMENT_METHOD_REQUIRED");
+
+    const pendingSubscription = await request("/api/subscriptions/subscribe", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ planId: oneCreditPlan.payload.id, paymentMethod: "credit_card" })
     });
     assert.equal(pendingSubscription.response.status, 202);
     assert.equal(pendingSubscription.payload.subscription.status, "pending_payment");
@@ -468,9 +484,8 @@ async function run() {
     assert.equal(pendingSubscription.payload.subscription.approvedAt || "", "");
     assert.equal(pendingSubscription.payload.subscription.providerPlanId, "");
     assert.ok(pendingSubscription.payload.subscription.paymentExpiresAt);
-    assert.equal(pendingSubscription.payload.paymentMethod, "pix");
-    assert.equal(pendingSubscription.payload.payment.method, "pix");
-    assert.ok(pendingSubscription.payload.payment.qrCode);
+    assert.equal(pendingSubscription.payload.paymentMethod, "credit_card");
+    assert.ok(pendingSubscription.payload.checkoutUrl);
 
     const pendingClubCredit = await request("/api/checkout/club-credit", {
       method: "POST",
