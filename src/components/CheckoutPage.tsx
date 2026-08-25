@@ -15,7 +15,13 @@ type CheckoutPaymentResult = {
   payment?: { id?: string; status?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string };
   tickets?: Array<{ code: string }>;
 };
-type MercadoPagoCheckoutConfig = { enabled: boolean; configured: boolean; publicKey: string };
+type MercadoPagoCheckoutConfig = {
+  enabled: boolean;
+  configured: boolean;
+  publicKey: string;
+  environment: "sandbox" | "production";
+  livePayments: boolean;
+};
 type MercadoPagoCardPayload = {
   token: string;
   paymentMethodId: string;
@@ -168,8 +174,8 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     try {
       const persisted = readCheckoutCart();
       const checkoutCart = persisted?.sessionId === found.session.id ? persisted : cart;
-      if (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured) {
-        throw new Error("Mercado Pago indisponível: habilite a integração na Central de Integrações.");
+      if (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments) {
+        throw new Error("Pix real indisponível: configure o Mercado Pago no ambiente de produção.");
       }
       if (checkoutCart.paymentMethod === "credit_card" && !cardData?.token) {
         throw new Error("Preencha os dados do cartão no formulário seguro do Mercado Pago.");
@@ -272,7 +278,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         if (mounted) setMercadoPagoConfig(config);
       })
       .catch(() => {
-        if (mounted) setMercadoPagoConfig({ enabled: false, configured: false, publicKey: "" });
+        if (mounted) setMercadoPagoConfig({ enabled: false, configured: false, publicKey: "", environment: "sandbox", livePayments: false });
       });
     return () => {
       mounted = false;
@@ -341,7 +347,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         paymentMethod={cart.paymentMethod || "pix"}
         onSubmit={submitPayment}
         onContinueToPayment={continueToPayment}
-        submitDisabled={cart.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured}
+        submitDisabled={cart.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments}
       />
     </PageShell>
   );
@@ -370,7 +376,9 @@ function Steps({ sessionId, step, extrasVisited, onContinueToPayment }: { sessio
       {steps.map(([id, label, href], index) => {
         const isCurrent = id === step;
         const isDone = index < currentIndex;
-        const locked = (id === "pagamento" && !extrasVisited && step !== "extras") || id === "confirmacao";
+        const locked = step === "confirmacao"
+          || (id === "pagamento" && !extrasVisited && step !== "extras")
+          || id === "confirmacao";
         const numberClassName = isCurrent
           ? "bg-gold-400 text-slate-950"
           : isDone
@@ -491,7 +499,7 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
   const requestedTickets = Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0);
   const selectedExtras = Object.values(cart.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
-  const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured;
+  const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
       <section>
@@ -539,7 +547,7 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
             </div>
             {mercadoPagoUnavailable && (
               <p className="text-sm font-semibold text-amber-200">
-                Mercado Pago indisponível no momento. Habilite a integração em Admin → Integrações.
+                Mercado Pago indisponível para cobranças reais. Ative a integração com credenciais de produção em Admin → Integrações.
               </p>
             )}
             {!mercadoPagoUnavailable && (

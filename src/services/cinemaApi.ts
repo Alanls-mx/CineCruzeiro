@@ -408,6 +408,8 @@ export async function fetchMercadoPagoCheckoutConfig() {
     enabled: boolean;
     configured: boolean;
     publicKey: string;
+    environment: "sandbox" | "production";
+    livePayments: boolean;
   };
 }
 

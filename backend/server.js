@@ -4580,11 +4580,14 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/payments/config/mercado-pago" && method === "GET") {
     const mercadoPago = integrationConfigService.resolvedConfig(db, "mercadoPago");
+    const environment = mercadoPago?.environment === "production" ? "production" : "sandbox";
     sendJson(res, 200, {
       provider: "mercado_pago",
       enabled: Boolean(mercadoPago?.enabled),
       configured: Boolean(mercadoPago?.configured),
-      publicKey: mercadoPago?.publicKey || ""
+      publicKey: mercadoPago?.publicKey || "",
+      environment,
+      livePayments: !isProduction() || environment === "production"
     });
     return;
   }

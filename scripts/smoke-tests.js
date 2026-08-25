@@ -109,6 +109,20 @@ async function run() {
   });
   fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
 
+  const paymentService = require("../backend/services/paymentService");
+  const originalNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  await assert.rejects(
+    () => paymentService.createMercadoPagoOrderPayment(
+      { id: "smoke-real-pix", totalPrice: 10, customerEmail: "pix@cine.local" },
+      { environment: "sandbox", accessToken: "APP_USR_smoke" },
+      { method: "pix" }
+    ),
+    (error) => error?.code === "MERCADO_PAGO_PRODUCTION_REQUIRED"
+  );
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = originalNodeEnv;
+
   const server = require("../backend/server.js");
 
   try {

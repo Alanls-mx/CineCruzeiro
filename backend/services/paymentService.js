@@ -31,6 +31,16 @@ function paymentError(code, message, statusCode = 400) {
   return error;
 }
 
+function ensureMercadoPagoProductionEnvironment(config = {}) {
+  if (isProduction() && String(config.environment || "").trim().toLowerCase() !== "production") {
+    throw paymentError(
+      "MERCADO_PAGO_PRODUCTION_REQUIRED",
+      "O Pix real exige credenciais e ambiente de producao do Mercado Pago.",
+      412
+    );
+  }
+}
+
 function getMercadoPagoAccessToken(config = {}) {
   return config.accessToken || getFirstEnv(MERCADO_PAGO_TOKEN_ENV_KEYS)?.value || "";
 }
@@ -421,12 +431,13 @@ function normalizeMercadoPagoOrder(data = {}, method) {
 }
 
 async function createMercadoPagoOrderPayment(order, integrationConfig = {}, options = {}) {
+  ensureMercadoPagoProductionEnvironment(integrationConfig);
   const accessToken = getMercadoPagoAccessToken(integrationConfig);
   const method = options.method === "credit_card" ? "credit_card" : "pix";
   const amount = moneyString(order.totalPrice);
   const idempotencyKey = options.idempotencyKey || order.idempotencyKey || order.id || crypto.randomUUID();
 
-  if (!accessToken && isTestPaymentsMode()) {
+  if (!accessToken && isTestPaymentsMode() && !isProduction()) {
     const id = `ORD_TEST_${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
     const transactionId = `PAY_TEST_${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
     return {
@@ -508,6 +519,14 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     const error = paymentError("MERCADO_PAGO_ORDER_REJECTED", message, response.status);
     error.raw = data;
     throw error;
+  }
+
+  if (isProduction() && data.live_mode === false) {
+    throw paymentError(
+      "MERCADO_PAGO_TEST_CREDENTIALS",
+      "O Mercado Pago respondeu em modo de teste. Configure as credenciais de producao para gerar um Pix real.",
+      412
+    );
   }
 
   return normalizeMercadoPagoOrder(data, method);
