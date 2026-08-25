@@ -390,6 +390,7 @@
                       <button id="cancelSessionButton" class="ghost-button" type="button">Cancelar</button>
                       <button id="saveSessionButton" class="primary-button" type="button">Salvar sessão</button>
                     </div>
+                    <div id="sessionLinkedTickets" class="session-linked-tickets" hidden></div>
                   </div>
                 </div>
               </div>
@@ -525,6 +526,45 @@
                 <button id="deleteTicketButton" class="danger-button" type="button">Excluir</button>
               </div>
             </form>
+          </div>
+          <div class="surface issued-tickets-surface">
+            <div class="surface-head">
+              <div>
+                <div class="section-title">Ingressos emitidos</div>
+                <p>Consulta operacional ligada diretamente às sessões publicadas.</p>
+              </div>
+            </div>
+            <div class="filters-grid issued-ticket-filters" aria-label="Filtros de ingressos emitidos">
+              <label>
+                Filme
+                <select id="issuedTicketMovieFilter"></select>
+              </label>
+              <label>
+                Sessão
+                <select id="issuedTicketSessionFilter"></select>
+              </label>
+              <label>
+                Data
+                <input id="issuedTicketDateFilter" type="date" />
+              </label>
+              <label>
+                Status
+                <select id="issuedTicketStatusFilter">
+                  <option value="">Todos</option>
+                  <option value="active">Válido</option>
+                  <option value="pending_payment">Aguardando pagamento</option>
+                  <option value="used">Usado</option>
+                  <option value="archived">Arquivado</option>
+                  <option value="cancelled">Cancelado</option>
+                  <option value="refunded">Estornado</option>
+                </select>
+              </label>
+              <label>
+                Sala
+                <select id="issuedTicketRoomFilter"></select>
+              </label>
+            </div>
+            <div id="issuedTicketsList" class="issued-tickets-list"></div>
           </div>
         </section>
 

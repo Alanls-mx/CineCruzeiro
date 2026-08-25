@@ -279,6 +279,118 @@ textarea:focus-visible,
   min-width: 0;
 }
 
+.issued-tickets-surface {
+  margin-top: 16px;
+}
+
+.issued-ticket-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1.2fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(180px, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.issued-tickets-list {
+  display: grid;
+  gap: 8px;
+}
+
+.issued-ticket-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 0.9fr) minmax(80px, 0.5fr) minmax(90px, 0.55fr) minmax(150px, 0.9fr) minmax(140px, 0.8fr) minmax(110px, 0.65fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #101827;
+  box-shadow: inset 0 -1px var(--line-soft);
+}
+
+.issued-ticket-row > div,
+.issued-ticket-row strong,
+.issued-ticket-row span {
+  min-width: 0;
+}
+
+.issued-ticket-row strong,
+.issued-ticket-row span:not(.status-pill) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issued-ticket-row > div:first-child strong {
+  font-size: 14px;
+}
+
+.issued-ticket-row > div:first-child span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mini-label {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.text-button {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #93c5fd;
+  font: inherit;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.status-pill {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #dbeafe;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.status-active {
+  background: rgba(69, 214, 161, 0.14);
+  color: #86efac;
+}
+
+.status-pending_payment {
+  background: rgba(250, 204, 21, 0.14);
+  color: #facc15;
+}
+
+.status-used,
+.status-archived {
+  background: rgba(96, 165, 250, 0.14);
+  color: #bfdbfe;
+}
+
+.status-cancelled,
+.status-refunded,
+.status-expired {
+  background: rgba(255, 113, 133, 0.14);
+  color: #fecdd3;
+}
+
 .section-title {
   margin-bottom: 13px;
   color: var(--muted-strong);
@@ -1200,6 +1312,14 @@ body:has(.success-overlay:not([hidden])) {
     grid-template-columns: 1fr;
   }
 
+  .issued-ticket-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .issued-ticket-row {
+    grid-template-columns: minmax(180px, 1fr) minmax(120px, 0.7fr) minmax(105px, 0.6fr);
+  }
+
   .integration-config-layout {
     grid-template-columns: 250px minmax(0, 1fr);
   }
@@ -1279,6 +1399,11 @@ body:has(.success-overlay:not([hidden])) {
 
   .image-setting-grid,
   .plan-image-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .issued-ticket-filters,
+  .issued-ticket-row {
     grid-template-columns: 1fr;
   }
 }
@@ -1685,6 +1810,39 @@ body:has(.success-overlay:not([hidden])) {
 .session-row-actions .ghost-button,
 .session-row-actions .icon-button {
   min-height: 34px;
+}
+
+.session-linked-tickets {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0a111d;
+}
+
+.session-linked-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text);
+}
+
+.session-linked-head span,
+.session-linked-list {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.session-linked-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.session-linked-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .danger-icon {

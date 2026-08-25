@@ -1231,26 +1231,27 @@ function ticketQrPayload(code) {
   return `CINECRUZEIRO:TICKET:${code}`;
 }
 
-function ticketSessionStartsAt(ticket) {
-  const date = String(ticket.sessionDate || todayIsoDate()).trim();
-  const time = String(ticket.sessionTime || "00:00").trim();
+function ticketSessionStartsAt(ticket, db = null) {
+  const session = db ? sessionForTicket(db, ticket) : null;
+  const date = String(session?.date || ticket.sessionDate || todayIsoDate()).trim();
+  const time = String(session?.time || ticket.sessionTime || "00:00").trim();
   const parsed = new Date(`${date}T${time.length === 5 ? time : "00:00"}:00-03:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function ticketArchiveAt(ticket) {
-  const startsAt = ticketSessionStartsAt(ticket);
+function ticketArchiveAt(ticket, db = null) {
+  const startsAt = ticketSessionStartsAt(ticket, db);
   return startsAt ? new Date(startsAt.getTime() + 4 * 60 * 60 * 1000) : null;
 }
 
-function isTicketArchived(ticket) {
+function isTicketArchived(ticket, db = null) {
   if (ticket.status === "used") return true;
-  const archiveAt = ticketArchiveAt(ticket);
+  const archiveAt = ticketArchiveAt(ticket, db);
   return archiveAt ? archiveAt.getTime() <= Date.now() : false;
 }
 
-function ticketIsExpired(ticket) {
-  return isTicketArchived(ticket);
+function ticketIsExpired(ticket, db = null) {
+  return isTicketArchived(ticket, db);
 }
 
 function movieForTicket(db, ticket) {
@@ -1262,17 +1263,43 @@ function sessionForTicket(db, ticket) {
   return (movie?.sessions || []).find((session) => session.id === ticket.sessionId) || null;
 }
 
+function roomForSession(db, session) {
+  if (!session) return null;
+  const roomName = String(session.room || "").split("(")[0].trim().toLowerCase();
+  return (db.rooms || []).find((room) => {
+    const candidate = String(room.name || "").trim().toLowerCase();
+    return candidate && (roomName === candidate || String(session.room || "").toLowerCase().includes(candidate));
+  }) || null;
+}
+
+function sessionTicketStats(db, sessionId) {
+  const tickets = (db.tickets || []).filter((ticket) => ticket.sessionId === sessionId);
+  const sold = tickets.filter((ticket) => {
+    const order = orderForTicket(db, ticket);
+    const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
+    return !["cancelled", "refunded", "expired", "pending_payment"].includes(status);
+  }).length;
+  return {
+    sold,
+    total: tickets.length,
+    active: tickets.filter((ticket) => effectiveTicketStatus(ticket, orderForTicket(db, ticket), sessionForTicket(db, ticket), db) === "active").length,
+    used: tickets.filter((ticket) => ticket.status === "used").length,
+    cancelled: tickets.filter((ticket) => ["cancelled", "refunded"].includes(ticket.status)).length
+  };
+}
+
 function orderForTicket(db, ticket) {
   if (!ticket) return null;
   return (db.orders || []).find((order) => order.id === ticket.orderId) || null;
 }
 
-function effectiveTicketStatus(ticket, order) {
+function effectiveTicketStatus(ticket, order, session = null, db = null) {
   if (ticket.status === "used") return "used";
   if (["cancelled", "refunded", "expired"].includes(ticket.status)) return ticket.status;
   if (order && ["cancelled", "refunded", "expired"].includes(order.status)) return order.status;
   if (order && order.status !== "paid") return "pending_payment";
-  if (ticketIsExpired(ticket)) return "archived";
+  if (session && ["cancelled", "hidden"].includes(session.status)) return "cancelled";
+  if (ticketIsExpired(ticket, db)) return "archived";
   return ticket.status || "active";
 }
 
@@ -1293,8 +1320,15 @@ function enrichTicket(db, ticket) {
   const order = orderForTicket(db, ticket);
   const movie = movieForTicket(db, ticket);
   const session = sessionForTicket(db, ticket);
-  const archiveAt = ticketArchiveAt(ticket);
-  const status = effectiveTicketStatus(ticket, order);
+  const room = roomForSession(db, session);
+  const archiveAt = ticketArchiveAt(ticket, db);
+  const status = effectiveTicketStatus(ticket, order, session, db);
+  const stats = session ? sessionTicketStats(db, session.id) : null;
+  const sessionDate = session?.date || order?.sessionDate || ticket.sessionDate || todayIsoDate();
+  const sessionTime = session?.time || order?.sessionTime || ticket.sessionTime || "";
+  const sessionRoom = session?.room || order?.sessionRoom || ticket.sessionRoom || "Sala Cruzeiro";
+  const sessionFormat = session?.format || order?.sessionFormat || ticket.sessionFormat || "";
+  const capacity = Number(session?.capacity || room?.capacity || 0);
   const orderTickets = (db.tickets || [])
     .filter((item) => item.orderId && item.orderId === ticket.orderId)
     .sort((a, b) => String(a.createdAt || a.id || "").localeCompare(String(b.createdAt || b.id || "")));
@@ -1309,11 +1343,18 @@ function enrichTicket(db, ticket) {
     customerPhone: ticket.customerPhone || order?.customerPhone || "",
     customerCpf: ticket.customerCpf || order?.customerCpf || "",
     customerUserId: ticket.customerUserId || order?.customerUserId || "",
-    movieTitle: ticket.movieTitle || movie?.title || "",
+    movieTitle: movie?.title || order?.movieTitle || ticket.movieTitle || "",
     posterUrl: publicAssetUrl(movie?.posterUrl || ""),
     backdropUrl: publicAssetUrl(movie?.backdropUrl || ""),
-    sessionRoom: ticket.sessionRoom || session?.room || order?.sessionRoom || "Sala Cruzeiro",
-    sessionFormat: ticket.sessionFormat || session?.format || order?.sessionFormat || "",
+    sessionDate,
+    sessionTime,
+    sessionRoom,
+    sessionFormat,
+    sessionStatus: session?.status || "",
+    sessionCapacity: capacity,
+    sessionSold: stats?.sold || 0,
+    sessionAvailable: capacity ? Math.max(0, capacity - (stats?.sold || 0)) : null,
+    seat: ticket.seat || ticket.seatLabel || ticket.assento || ticket.metadata?.seat || "Livre",
     orderReference: order?.id || ticket.orderId,
     orderStatus: order?.status || "",
     paymentStatus: order?.paymentStatus || "",
@@ -1331,10 +1372,10 @@ function enrichTicket(db, ticket) {
 function canTransferTicket(db, ticket) {
   if (!ticket) return { ok: false, message: "Ingresso nao encontrado." };
   const order = orderForTicket(db, ticket);
-  const status = effectiveTicketStatus(ticket, order);
+  const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
   if (!order || order.status !== "paid") return { ok: false, message: "Somente ingressos pagos podem ser transferidos." };
   if (status !== "active") return { ok: false, message: "Este ingresso nao esta valido para transferencia." };
-  if (ticketIsExpired(ticket)) return { ok: false, message: "Este ingresso ja passou do prazo de transferencia." };
+  if (ticketIsExpired(ticket, db)) return { ok: false, message: "Este ingresso ja passou do prazo de transferencia." };
   return { ok: true };
 }
 
@@ -1440,7 +1481,7 @@ function validateTicket(db, code, adminUser) {
     throw error;
   }
   const order = (db.orders || []).find((item) => item.id === ticket.orderId);
-  const status = effectiveTicketStatus(ticket, order);
+  const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
   if (status === "used") {
     const error = new Error(`Ingresso ja validado em ${new Date(ticket.usedAt).toLocaleString("pt-BR")}.`);
     error.statusCode = 409;
@@ -1834,8 +1875,36 @@ async function deliverTicketsByEmail(db, order, tickets) {
     user.active !== false &&
     (user.id === order.customerUserId || String(user.email || "").toLowerCase() === String(order.customerEmail || "").toLowerCase())
   );
-  const delivered = await emailService.sendTicketDelivery(db, order, tickets, {
-    unsubscribeUrl: emailUser ? emailUnsubscribeUrlForUser(emailUser) : ""
+  const enrichedTickets = tickets.map((ticket) => {
+    const enriched = enrichTicket(db, ticket);
+    try {
+      enriched.googleWalletUrl = googleWalletSaveUrl(db, ticket, emailUser || {
+        id: order.customerUserId || "",
+        name: order.customerName || enriched.customerName || "Cliente Cine Cruzeiro",
+        email: order.customerEmail || enriched.customerEmail || ""
+      }, null);
+    } catch {
+      enriched.googleWalletUrl = "";
+    }
+    return enriched;
+  });
+  const attachments = [];
+  for (const ticket of tickets) {
+    try {
+      attachments.push({
+        filename: `cine-cruzeiro-${String(ticket.code || ticket.id || "ingresso").replace(/[^a-z0-9-]/gi, "-").toLowerCase()}.pdf`,
+        content: await ticketDownloadPdf(db, ticket),
+        contentType: "application/pdf"
+      });
+    } catch (error) {
+      logEvent("warn", "ticket_email.pdf_failed", { orderId: order.id, ticketId: ticket.id, message: error.message });
+    }
+  }
+  const delivered = await emailService.sendTicketDelivery(db, order, enrichedTickets, {
+    attachments,
+    accountUrl: `${appFrontendUrl()}/conta/ingressos`,
+    logoUrl: `${appFrontendUrl()}/images/logo-official.png`,
+    siteUrl: appFrontendUrl()
   }).catch((error) => {
     logEvent("warn", "ticket_email.failed", { orderId: order.id, message: error.message });
     return false;
@@ -1879,7 +1948,7 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
   const enriched = enrichTicket(db, ticket);
   const objectId = googleWalletObjectId(config, ticket);
   const validTimeInterval = {
-    start: { date: `${ticket.sessionDate}T00:00:00-03:00` },
+    start: { date: `${enriched.sessionDate}T00:00:00-03:00` },
     end: { date: enriched.archiveAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
   };
   const frontendUrl = getGoogleOAuthConfig(req, db).frontendUrl;
@@ -2249,7 +2318,8 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteValueBlock("PEDIDO", enriched.orderReference || enriched.orderId || "-", 78, 462, { valueSize: 10, maxChars: 48, maxLines: 3, boldValue: false });
   page2 += pdfWriteValueBlock("TIPO", enriched.ticketType || "Ingresso", 338, 538, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
-  page2 += pdfWriteValueBlock("STATUS", ticketStatusLabel(enriched.status), 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
+  page2 += pdfWriteValueBlock("ASSENTO", enriched.seat || "Livre", 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
+  page2 += pdfWriteValueBlock("STATUS", ticketStatusLabel(enriched.status), 78, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfLine(78, 344, 517, 344, "#334155", 1);
   page2 += pdfWriteText("BOMBONIERE", 78, 306, 9, { bold: true, color: "#facc15" });
   page2 += pdfWriteMultiline(extras || "Sem extras comprados neste pedido.", 78, 282, 11, { color: "#cbd5e1", maxChars: 72, maxLines: 5, lineHeight: 15 });
@@ -3742,10 +3812,10 @@ function getContent(db, options = {}) {
           users: db.users.map(sanitizeUser),
           orders: db.orders.map((order) => ({
             ...order,
-            tickets: ticketsByOrderId.get(String(order.id || "")) || []
+            tickets: (ticketsByOrderId.get(String(order.id || "")) || []).map((ticket) => enrichTicket(db, ticket))
           })),
           payments: db.payments || [],
-          tickets: db.tickets || [],
+          tickets: (db.tickets || []).map((ticket) => enrichTicket(db, ticket)),
           auditLogs: db.auditLogs || [],
           subscriptionPlans: (db.subscriptionPlans || []).map((item) => assetRecord(item, ["imageUrl"])),
           subscriptions: db.subscriptions || [],
@@ -5192,10 +5262,9 @@ async function handleApi(req, res, pathname) {
     user.emailVerificationHash = hashResetToken(verificationToken);
     user.emailVerificationExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     user.emailVerificationRequestedAt = new Date().toISOString();
-    const unsubscribeUrl = emailUnsubscribeUrlForUser(user);
     db.users.push(user);
     await writeDb(db);
-    notifyEmailVerification(email, verificationUrl, db, { unsubscribeUrl }).catch((error) => {
+    notifyEmailVerification(email, verificationUrl, db).catch((error) => {
       logEvent("warn", "email_verification.delivery_failed", { email, message: error.message });
     });
     sendJson(res, 201, authResponse(user), { "Set-Cookie": customerCookie(customerSessionValue(user)) });
@@ -5270,9 +5339,8 @@ async function handleApi(req, res, pathname) {
       user.passwordResetExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       user.passwordResetRequestedAt = new Date().toISOString();
       user.updatedAt = new Date().toISOString();
-      const unsubscribeUrl = emailUnsubscribeUrlForUser(user);
       await writeDb(db);
-      const delivered = await notifyPasswordReset(email, resetUrl, db, { unsubscribeUrl });
+      const delivered = await notifyPasswordReset(email, resetUrl, db);
       if (isProduction() && !delivered) {
         user.passwordResetHash = "";
         user.passwordResetExpiresAt = "";
@@ -5396,9 +5464,8 @@ async function handleApi(req, res, pathname) {
     user.emailVerificationExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     user.emailVerificationRequestedAt = new Date().toISOString();
     user.updatedAt = new Date().toISOString();
-    const unsubscribeUrl = emailUnsubscribeUrlForUser(user);
     await writeDb(db);
-    const delivered = await notifyEmailVerification(email, verificationUrl, db, { unsubscribeUrl });
+    const delivered = await notifyEmailVerification(email, verificationUrl, db);
     if (isProduction() && !delivered) {
       user.pendingEmail = "";
       user.emailVerificationHash = "";
@@ -5442,9 +5509,8 @@ async function handleApi(req, res, pathname) {
     user.emailVerificationExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     user.emailVerificationRequestedAt = new Date().toISOString();
     user.updatedAt = new Date().toISOString();
-    const unsubscribeUrl = emailUnsubscribeUrlForUser(user);
     await writeDb(db);
-    const delivered = await notifyEmailVerification(user.email, verificationUrl, db, { unsubscribeUrl });
+    const delivered = await notifyEmailVerification(user.email, verificationUrl, db);
     if (isProduction() && !delivered) {
       user.emailVerificationHash = "";
       user.emailVerificationExpiresAt = "";
@@ -6898,15 +6964,31 @@ async function handleApi(req, res, pathname) {
           ip: clientIp(req),
           createdAt: ticket.transferredAt
         });
-        const fromUnsubscribeUrl = emailUnsubscribeUrlForUser(freshUser);
-        const toUnsubscribeUrl = emailUnsubscribeUrlForUser(targetUser);
+        const enrichedTransferTicket = enrichTicket(lockedDb, ticket);
+        let transferAttachment = null;
+        try {
+          transferAttachment = {
+            filename: `cine-cruzeiro-${String(ticket.code || ticket.id || "ingresso").replace(/[^a-z0-9-]/gi, "-").toLowerCase()}.pdf`,
+            content: await ticketDownloadPdf(lockedDb, ticket),
+            contentType: "application/pdf"
+          };
+        } catch (error) {
+          logEvent("warn", "ticket_transfer_pdf.failed", { ticketId: ticket.id, message: error.message });
+        }
+        try {
+          enrichedTransferTicket.googleWalletUrl = googleWalletSaveUrl(lockedDb, ticket, targetUser, null);
+        } catch {
+          enrichedTransferTicket.googleWalletUrl = "";
+        }
         await writeDb(lockedDb);
         emailService.sendTicketTransfer(lockedDb, {
-          ticket: enrichTicket(lockedDb, ticket),
+          ticket: enrichedTransferTicket,
           fromUser: freshUser,
           toUser: targetUser,
-          fromUnsubscribeUrl,
-          toUnsubscribeUrl
+          accountUrl: `${appFrontendUrl()}/conta/ingressos`,
+          logoUrl: `${appFrontendUrl()}/images/logo-official.png`,
+          siteUrl: appFrontendUrl(),
+          attachments: transferAttachment ? [transferAttachment] : []
         }).catch((error) => {
           logEvent("warn", "ticket_transfer_email.failed", { ticketId: ticket.id, message: error.message });
         });
@@ -7380,6 +7462,28 @@ async function handleApi(req, res, pathname) {
   }
 
   const adminOrderMatch = pathname.match(/^\/api\/orders\/([^/]+)$/);
+  const orderResendEmailMatch = pathname.match(/^\/api\/orders\/([^/]+)\/resend-ticket-email$/);
+  if (orderResendEmailMatch && method === "POST") {
+    const orderId = decodeURIComponent(orderResendEmailMatch[1]);
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const order = (lockedDb.orders || []).find((item) => item.id === orderId);
+      if (!order) {
+        sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
+        return;
+      }
+      const tickets = orderTickets(lockedDb, order.id);
+      if (order.status !== "paid" || !tickets.length) {
+        sendJson(res, 409, { error: { code: "ORDER_NOT_DELIVERABLE", message: "Somente pedidos pagos com ingressos emitidos podem ser reenviados." } });
+        return;
+      }
+      const delivered = await deliverTicketsByEmail(lockedDb, order, tickets);
+      await writeDb(lockedDb);
+      sendJson(res, 200, { ok: delivered, emailDeliveredAt: order.emailDeliveredAt || "" });
+    });
+    return;
+  }
+
   if (adminOrderMatch && method === "GET") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
     const order = (db.orders || []).find((item) => item.id === orderId);

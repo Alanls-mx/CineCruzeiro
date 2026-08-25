@@ -45,6 +45,13 @@ let state = {
     todayStatus: "all",
     allQuery: ""
   },
+  issuedTicketFilters: {
+    movieId: "",
+    sessionId: "",
+    date: "",
+    status: "",
+    room: ""
+  },
   creating: {
     movie: false,
     room: false,
@@ -605,6 +612,35 @@ function currentTicket() {
   return state.content?.ticketTypes.find((ticket) => ticket.id === state.selectedTicketId) || null;
 }
 
+function movieById(id) {
+  return state.content?.movies?.find((movie) => movie.id === id) || null;
+}
+
+function sessionForIssuedTicket(ticket) {
+  const movie = movieById(ticket.movieId);
+  return movie?.sessions?.find((session) => session.id === ticket.sessionId) || null;
+}
+
+function issuedTicketSessionLabel(ticket) {
+  const session = sessionForIssuedTicket(ticket);
+  const date = ticket.sessionDate || session?.date || "";
+  const time = ticket.sessionTime || session?.time || "";
+  const format = ticket.sessionFormat || session?.format || "";
+  return [date ? new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR") : "", time, format].filter(Boolean).join(" • ");
+}
+
+function ticketStatusText(status = "") {
+  return {
+    active: "Válido",
+    pending_payment: "Aguardando pagamento",
+    used: "Usado",
+    archived: "Arquivado",
+    cancelled: "Cancelado",
+    refunded: "Estornado",
+    expired: "Expirado"
+  }[String(status || "").toLowerCase()] || status || "Indefinido";
+}
+
 function currentConcession() {
   return state.content?.concessions?.find((item) => item.id === state.selectedConcessionId) || null;
 }
@@ -1063,17 +1099,23 @@ function renderSessions(sessions) {
 
   $("sessionsList").innerHTML = sessions
     .map(
-      (session) => `
+      (session) => {
+        const linkedTickets = (state.content?.tickets || []).filter((ticket) => ticket.sessionId === session.id);
+        const sold = linkedTickets.filter((ticket) => !["cancelled", "refunded", "pending_payment"].includes(ticket.status)).length;
+        const capacity = Number(session.capacity || linkedTickets[0]?.sessionCapacity || 0);
+        return `
         <div class="session-row">
           <strong>${session.time}</strong>
           <span>${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} • ` : ""}${session.format} • ${session.room}</span>
-          <span>${money(session.priceFull)}</span>
+          <span>${money(session.priceFull)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
           <div class="session-row-actions">
+            <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(session.id)}')">Ingressos</button>
             <button class="ghost-button" type="button" onclick="openSessionEditor('${escapeHtml(session.id)}')">Editar</button>
             <button class="icon-button danger-icon" type="button" onclick="removeSession('${escapeHtml(session.id)}')" aria-label="Excluir sessão">${trashIcon}</button>
           </div>
         </div>
-      `
+      `;
+      }
     )
     .join("");
 }
@@ -1247,6 +1289,37 @@ function closeSessionEditor() {
   state.editingSessionId = "";
   if ($("sessionEditor")) $("sessionEditor").hidden = true;
   if ($("sessionId")) $("sessionId").value = "";
+  if ($("sessionLinkedTickets")) $("sessionLinkedTickets").hidden = true;
+}
+
+function renderSessionLinkedTickets(sessionId) {
+  const target = $("sessionLinkedTickets");
+  if (!target) return;
+  if (!sessionId) {
+    target.hidden = true;
+    target.innerHTML = "";
+    return;
+  }
+  const linkedTickets = (state.content?.tickets || []).filter((ticket) => ticket.sessionId === sessionId);
+  target.hidden = false;
+  target.innerHTML = linkedTickets.length
+    ? `
+      <div class="session-linked-head">
+        <strong>${linkedTickets.length} ingresso(s) vinculado(s)</strong>
+        <button class="text-button" type="button" onclick="showSessionTickets('${escapeHtml(sessionId)}')">Ver na aba Ingressos</button>
+      </div>
+      <div class="session-linked-list">
+        ${linkedTickets.slice(0, 6).map((ticket) => `
+          <span>${escapeHtml(ticket.code || ticket.id)} • ${escapeHtml(ticketStatusText(ticket.status))} • ${escapeHtml(ticket.customerName || ticket.customerEmail || "Cliente")}</span>
+        `).join("")}
+      </div>
+    `
+    : `
+      <div class="session-linked-head">
+        <strong>Nenhum ingresso vinculado</strong>
+        <span>Novas vendas desta sessão aparecerão aqui automaticamente.</span>
+      </div>
+    `;
 }
 
 function openSessionEditor(sessionId = "") {
@@ -1269,6 +1342,7 @@ function openSessionEditor(sessionId = "") {
   $("sessionEditorTitle").textContent = session ? "Editar sessão" : "Nova sessão";
   $("saveSessionButton").textContent = session ? "Salvar alterações" : "Adicionar sessão";
   $("sessionEditor").hidden = false;
+  renderSessionLinkedTickets(session?.id || "");
   $("sessionDate").focus();
 }
 
@@ -1603,6 +1677,7 @@ function renderTickets() {
   if (state.creating.ticket) {
     $("ticketsList").innerHTML = creationPlaceholder("Novo tipo de ingresso", "Defina nome, preço e disponibilidade no quadro à direita.");
     fillTicketForm(null);
+    renderIssuedTickets();
     return;
   }
   if (!tickets.length) {
@@ -1613,6 +1688,7 @@ function renderTickets() {
       </div>
     `;
     fillTicketForm(null);
+    renderIssuedTickets();
     return;
   }
 
@@ -1631,6 +1707,100 @@ function renderTickets() {
     })
     .join("");
   fillTicketForm(currentTicket());
+  renderIssuedTickets();
+}
+
+function renderIssuedTicketFilters(tickets) {
+  const movieSelect = $("issuedTicketMovieFilter");
+  const sessionSelect = $("issuedTicketSessionFilter");
+  const roomSelect = $("issuedTicketRoomFilter");
+  if (!movieSelect || !sessionSelect || !roomSelect) return;
+
+  const movies = [...new Map(tickets.map((ticket) => [ticket.movieId, ticket.movieTitle || movieById(ticket.movieId)?.title]).filter(([id]) => id)).entries()]
+    .sort((a, b) => String(a[1] || "").localeCompare(String(b[1] || "")));
+  movieSelect.innerHTML = `<option value="">Todos</option>${movies.map(([id, title]) => `<option value="${escapeHtml(id)}">${escapeHtml(title || id)}</option>`).join("")}`;
+  movieSelect.value = state.issuedTicketFilters.movieId;
+
+  const sessionTickets = state.issuedTicketFilters.movieId ? tickets.filter((ticket) => ticket.movieId === state.issuedTicketFilters.movieId) : tickets;
+  const sessions = [...new Map(sessionTickets.map((ticket) => [ticket.sessionId, issuedTicketSessionLabel(ticket)]).filter(([id]) => id)).entries()]
+    .sort((a, b) => String(a[1] || "").localeCompare(String(b[1] || "")));
+  sessionSelect.innerHTML = `<option value="">Todas</option>${sessions.map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label || id)}</option>`).join("")}`;
+  sessionSelect.value = state.issuedTicketFilters.sessionId;
+
+  const rooms = [...new Set(tickets.map((ticket) => ticket.sessionRoom).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  roomSelect.innerHTML = `<option value="">Todas</option>${rooms.map((room) => `<option value="${escapeHtml(room)}">${escapeHtml(room)}</option>`).join("")}`;
+  roomSelect.value = state.issuedTicketFilters.room;
+  $("issuedTicketDateFilter").value = state.issuedTicketFilters.date;
+  $("issuedTicketStatusFilter").value = state.issuedTicketFilters.status;
+}
+
+function filteredIssuedTickets() {
+  const filters = state.issuedTicketFilters;
+  return (state.content?.tickets || [])
+    .filter((ticket) => !filters.movieId || ticket.movieId === filters.movieId)
+    .filter((ticket) => !filters.sessionId || ticket.sessionId === filters.sessionId)
+    .filter((ticket) => !filters.date || ticket.sessionDate === filters.date)
+    .filter((ticket) => !filters.status || ticket.status === filters.status)
+    .filter((ticket) => !filters.room || ticket.sessionRoom === filters.room)
+    .sort((a, b) => String(`${b.sessionDate || ""} ${b.sessionTime || ""}`).localeCompare(String(`${a.sessionDate || ""} ${a.sessionTime || ""}`)));
+}
+
+function renderIssuedTickets() {
+  const allTickets = state.content?.tickets || [];
+  if (!$("issuedTicketsList")) return;
+  renderIssuedTicketFilters(allTickets);
+  const tickets = filteredIssuedTickets();
+  if (!tickets.length) {
+    $("issuedTicketsList").innerHTML = `
+      <div class="empty-state">
+        <strong>Nenhum ingresso encontrado</strong>
+        <span>Altere os filtros ou emita uma venda para visualizar os tickets vinculados às sessões.</span>
+      </div>
+    `;
+    return;
+  }
+  $("issuedTicketsList").innerHTML = tickets.map((ticket) => `
+    <article class="issued-ticket-row">
+      <div>
+        <strong>${escapeHtml(ticket.movieTitle || "Filme não identificado")}</strong>
+        <span>${escapeHtml(issuedTicketSessionLabel(ticket) || "Sessão não identificada")}</span>
+      </div>
+      <div>
+        <span class="mini-label">Sala</span>
+        <strong>${escapeHtml(ticket.sessionRoom || "Sala não informada")}</strong>
+      </div>
+      <div>
+        <span class="mini-label">Assento</span>
+        <strong>${escapeHtml(ticket.seat || "Livre")}</strong>
+      </div>
+      <div>
+        <span class="mini-label">Tipo</span>
+        <strong>${escapeHtml(ticket.ticketType || "Ingresso")}</strong>
+      </div>
+      <div>
+        <span class="mini-label">Cliente</span>
+        <strong>${escapeHtml(ticket.customerName || ticket.customerEmail || "Cliente")}</strong>
+      </div>
+      <div>
+        <span class="mini-label">Pedido</span>
+        <button class="text-button" type="button" onclick="openOrderView('${escapeHtml(ticket.orderId || ticket.orderReference || "")}')">${escapeHtml(ticket.orderReference || ticket.orderId || "-")}</button>
+      </div>
+      <div>
+        <span class="mini-label">Status</span>
+        <span class="status-pill status-${escapeHtml(ticket.status || "unknown")}">${escapeHtml(ticketStatusText(ticket.status))}</span>
+      </div>
+      <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(ticket.sessionId || "")}')">Sessão</button>
+    </article>
+  `).join("");
+}
+
+function showSessionTickets(sessionId) {
+  if (!sessionId) return;
+  const ticket = (state.content?.tickets || []).find((item) => item.sessionId === sessionId);
+  state.issuedTicketFilters.sessionId = sessionId;
+  state.issuedTicketFilters.movieId = ticket?.movieId || state.issuedTicketFilters.movieId || "";
+  activatePanel("ticketsPanel", { scroll: true });
+  renderIssuedTickets();
 }
 
 function selectTicket(id) {
@@ -2028,9 +2198,14 @@ function printOrderTicket(orderId) {
   setTimeout(() => window.print(), 120);
 }
 
-function resendOrderTicket(orderId) {
-  showToast("Reenvio depende do provedor de e-mail/WhatsApp configurado.", "error");
-  openOrderView(orderId);
+async function resendOrderTicket(orderId) {
+  try {
+    await api(`/api/orders/${encodeURIComponent(orderId)}/resend-ticket-email`, { method: "POST" });
+    showToast("Ingresso reenviado por e-mail.");
+    openOrderView(orderId);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 function openPermanentDelete(orderId = state.selectedOrderId) {
@@ -4018,6 +4193,20 @@ function bindEvents() {
   $("cancelTicketCreateButton").addEventListener("click", () => cancelCreation("ticket"));
   $("ticketForm").addEventListener("submit", saveTicket);
   $("deleteTicketButton").addEventListener("click", deleteTicket);
+  ["issuedTicketMovieFilter", "issuedTicketSessionFilter", "issuedTicketDateFilter", "issuedTicketStatusFilter", "issuedTicketRoomFilter"].forEach((id) => {
+    $(id)?.addEventListener("change", (event) => {
+      const key = {
+        issuedTicketMovieFilter: "movieId",
+        issuedTicketSessionFilter: "sessionId",
+        issuedTicketDateFilter: "date",
+        issuedTicketStatusFilter: "status",
+        issuedTicketRoomFilter: "room"
+      }[id];
+      state.issuedTicketFilters[key] = event.target.value;
+      if (id === "issuedTicketMovieFilter") state.issuedTicketFilters.sessionId = "";
+      renderIssuedTickets();
+    });
+  });
   $("manualTicketForm").addEventListener("submit", createManualTicket);
   $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
   $("manualSessionSelect").addEventListener("change", updateManualTotal);
@@ -4257,6 +4446,7 @@ window.handleMovieDragEnd = handleMovieDragEnd;
 window.handleMovieDrop = handleMovieDrop;
 window.selectRoom = selectRoom;
 window.selectTicket = selectTicket;
+window.showSessionTickets = showSessionTickets;
 window.selectConcession = selectConcession;
 window.selectPromotion = selectPromotion;
 window.selectAd = selectAd;
