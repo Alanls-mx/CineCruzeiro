@@ -29,6 +29,7 @@ export type StoredCheckoutCart = {
   couponCode?: string;
   extrasVisited?: boolean;
   paymentMethod?: "pix" | "credit_card";
+  useClubBenefits?: boolean;
   customerName?: string;
   customerPhone?: string;
   customerEmail?: string;

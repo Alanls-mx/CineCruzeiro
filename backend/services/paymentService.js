@@ -427,15 +427,20 @@ function normalizeMercadoPagoOrder(data = {}, method) {
   const transaction = extractMercadoPagoTransaction(data);
   const paymentMethod = transaction.payment_method || {};
   const transactionSecurity = paymentMethod.transaction_security || {};
-  const transactionStatus = transaction.status || data.status || "pending";
+  const transactionStatus = transaction.status || "pending";
   const statusDetail = transaction.status_detail || data.status_detail || "";
+  const normalizedStatus = statusDetail === "accredited"
+    ? "approved"
+    : String(transactionStatus).toLowerCase() === "processed"
+      ? "pending"
+      : normalizeProviderPaymentStatus(transactionStatus);
   return {
     provider: "mercado_pago",
     id: String(data.id || ""),
     orderId: String(data.id || ""),
     transactionId: String(transaction.id || ""),
     referenceId: String(transaction.reference_id || ""),
-    status: normalizeProviderPaymentStatus(statusDetail === "accredited" ? "accredited" : transactionStatus),
+    status: normalizedStatus,
     statusDetail,
     amount: Number(transaction.amount || data.total_amount || 0),
     externalReference: data.external_reference || "",

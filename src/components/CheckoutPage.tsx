@@ -9,6 +9,7 @@ import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { AccountSubscription, CustomerUser, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
 import { cartTotal, findSession, money, publicAssetPath, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
+import { trackMarketingEvent } from "@/utils/tracking";
 
 type Step = "ingressos" | "extras" | "pagamento" | "confirmacao";
 type CheckoutPaymentResult = {
@@ -153,6 +154,28 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const confirmationPaymentStatus = String(confirmationResult?.payment?.status || "");
 
   useEffect(() => {
+    if (!found || !cart) return;
+    const key = `cine-tracked-checkout-${found.session.id}`;
+    if (window.sessionStorage.getItem(key)) return;
+    window.sessionStorage.setItem(key, "1");
+    trackMarketingEvent("begin_checkout", {
+      currency: "BRL",
+      value: total,
+      content_id: found.movie.id,
+      content_name: found.movie.title,
+      num_items: Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0),
+    });
+  }, [cart, found, total]);
+
+  useEffect(() => {
+    if (confirmationPaymentStatus !== "approved" || !confirmationOrderId) return;
+    const key = `cine-tracked-purchase-${confirmationOrderId}`;
+    if (window.localStorage.getItem(key)) return;
+    window.localStorage.setItem(key, "1");
+    trackMarketingEvent("purchase", { currency: "BRL", value: total, transaction_id: confirmationOrderId });
+  }, [confirmationOrderId, confirmationPaymentStatus, total]);
+
+  useEffect(() => {
     if (step !== "confirmacao" || !confirmationOrderId || !["pending", "processing"].includes(confirmationPaymentStatus)) return;
 
     let cancelled = false;
@@ -229,7 +252,8 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           customerPhone: customerUser?.phone || checkoutCart.customerPhone || "",
           customerEmail: customerUser?.email || checkoutCart.customerEmail || "",
           customerCpf: customerUser?.cpf || checkoutCart.customerCpf || "",
-          useClubCredits: Boolean(activeClubForCart(clubSubscriptions, checkoutCart)),
+          useClubCredits: false,
+          useClubBenefits: checkoutCart.useClubBenefits !== false && Boolean(activeClubSubscription(clubSubscriptions)),
           paymentMethod: checkoutCart.paymentMethod === "credit_card" ? "CREDIT_CARD" : "PIX",
           createdAt: new Date().toISOString(),
         },
@@ -467,6 +491,11 @@ function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: Store
     const persisted = readCheckoutCart();
     const baseQuantities = persisted?.sessionId === cart.sessionId ? persisted.concessionQuantities || {} : quantities;
     updateCart({ concessionQuantities: { ...baseQuantities, [id]: Math.max(0, qty) } });
+    const previous = Number(baseQuantities[id] || 0);
+    if (qty > previous) {
+      const item = visibleConcessions.find((candidate) => candidate.id === id);
+      trackMarketingEvent("add_to_cart", { currency: "BRL", value: Number(item?.price || 0), content_id: id, content_name: item?.name, quantity: qty - previous });
+    }
   };
   return (
     <div>
@@ -527,10 +556,12 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
   onSubmit: (cardData?: MercadoPagoCardPayload) => Promise<void>;
   onClubCredit: () => void;
 }) {
-  const activeClub = activeClubForCart(clubSubscriptions, cart);
+  const activeClub = activeClubSubscription(clubSubscriptions);
   const requestedTickets = Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0);
   const selectedExtras = Object.values(cart.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
+  const plan = activeClub?.plan;
+  const clubBenefitsEnabled = cart.useClubBenefits !== false;
   const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
@@ -604,12 +635,25 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
         )}
         {activeClub && (
           <div className="mt-5 border-t border-white/10 pt-5">
-            <p className="text-sm leading-6 text-slate-300">
-              Seu Clube tem {clubCredits} crédito(s). Este pedido usa {requestedTickets} ingresso(s).
-              {selectedExtras > 0 ? " Os créditos abatem os ingressos; Pix/cartão cobra apenas os extras restantes." : ""}
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-brand-900/70 p-4">
+              <input
+                type="checkbox"
+                checked={clubBenefitsEnabled}
+                onChange={(event) => updateCart({ useClubBenefits: event.target.checked })}
+                className="mt-1 h-4 w-4 accent-yellow-400"
+              />
+              <span>
+                <strong className="block text-sm text-white">Aplicar benefícios do {plan?.name || "Clube"}</strong>
+                <span className="mt-1 block text-xs leading-5 text-slate-300">
+                  {Number(plan?.ticketDiscountPercent || 0)}% nos ingressos, {Number(plan?.concessionDiscountPercent || 0)}% na bomboniere e itens grátis elegíveis. O servidor valida o saldo do ciclo.
+                </span>
+              </span>
+            </label>
+            <p className="mt-4 text-sm leading-6 text-slate-300">
+              Você tem {clubCredits} crédito(s) de ingresso. Este pedido usa {requestedTickets} ingresso(s).
             </p>
             {selectedExtras > 0 ? (
-              <p className="mt-3 text-xs font-bold text-brand-200">Finalize com Pix ou cartão para aplicar o abatimento dos ingressos e pagar os extras.</p>
+              <p className="mt-3 text-xs font-bold text-brand-200">Créditos de ingresso são usados em compra exclusiva; nesta compra, Pix/cartão receberá somente os descontos e itens grátis elegíveis.</p>
             ) : (
               <button type="button" onClick={onClubCredit} disabled={clubLoading || loading || clubCredits < requestedTickets} className="mt-3 w-full bg-brand-700 px-7 py-4 text-sm font-black text-white transition hover:bg-brand-600 disabled:opacity-50">
                 {clubLoading ? "Emitindo benefício..." : `Usar ${requestedTickets} crédito(s) do Clube`}
@@ -835,13 +879,8 @@ function isValidPaymentResult(value: unknown) {
   return Boolean(result?.order?.id && result?.payment?.id && ["pending", "processing", "approved"].includes(String(paymentStatus || "")));
 }
 
-function activeClubForCart(subscriptions: AccountSubscription[], cart: StoredCheckoutCart | null) {
-  const requestedTickets = Number(cart?.fullTickets || 0) + Number(cart?.halfTickets || 0);
-  if (!requestedTickets) return null;
-  return subscriptions.find((subscription) =>
-    subscription.status === "active" &&
-    Number(subscription.creditsRemaining || subscription.creditsAvailable || 0) >= requestedTickets
-  ) || null;
+function activeClubSubscription(subscriptions: AccountSubscription[]) {
+  return subscriptions.find((subscription) => subscription.status === "active") || null;
 }
 
 function OrderSummary({ cart, total, selectedConcessions }: { cart: StoredCheckoutCart; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }> }) {

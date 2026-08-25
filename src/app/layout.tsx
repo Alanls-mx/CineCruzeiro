@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
+import { TrackingManager } from "@/components/TrackingManager";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -18,7 +19,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 const logoUrl = `${basePath}/images/logo.png`;
-const iconUrl = `${basePath}/images/logo-icon.png`;
+const iconUrl = `${basePath}/images/favicon.svg`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -54,6 +55,7 @@ export default function RootLayout({
     <html lang="pt-BR" className={`${inter.variable} ${outfit.variable} dark scroll-smooth`}>
       <body className="min-h-dvh bg-brand-950 text-slate-100 antialiased selection:bg-gold-400 selection:text-slate-950">
         {children}
+        <TrackingManager />
       </body>
     </html>
   );

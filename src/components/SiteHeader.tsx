@@ -134,8 +134,8 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-white/8 bg-[#050810] text-sm text-slate-400">
-      <div className="mx-auto grid max-w-[1320px] gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.35fr_1fr_1fr_1fr] lg:px-8">
+    <footer className="border-t border-white/8 bg-[#050810] text-xs text-slate-400">
+      <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
         <div>
           <img
             src={assetPath("/images/logo-display.webp")}
@@ -144,12 +144,12 @@ export function SiteFooter() {
             height={183}
             loading="lazy"
             decoding="async"
-            className="h-16 w-auto"
+            className="h-11 w-auto"
           />
-          <p className="mt-4 max-w-md leading-relaxed">
+          <p className="mt-3 max-w-sm leading-relaxed">
             Cinema de rua, sala única, preço justo e tecnologia para comprar sem complicação.
           </p>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Cultura e lazer no bairro</p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[.16em] text-slate-500">Cultura e lazer no bairro</p>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Programação</h3>
@@ -170,14 +170,13 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-white/8">
-        <div className="mx-auto flex max-w-[1320px] flex-col gap-3 px-4 py-5 text-xs text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+        <div className="mx-auto flex max-w-[1320px] flex-col gap-2 px-4 py-3 text-xs text-slate-500 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>© Cine Cruzeiro. Plataforma de vendas, bilheteria e relacionamento.</span>
-          <span>
+          <span className="opacity-55 md:ml-auto md:text-right">
             Desenvolvido por{" "}
-            <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="font-bold text-slate-200 underline decoration-white/20 underline-offset-4 transition hover:text-gold-400">
+            <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="font-semibold text-slate-400 transition hover:text-gold-400">
               LumixEngine
             </a>
-            . Ingressos liberados somente após aprovação real do pagamento.
           </span>
         </div>
       </div>

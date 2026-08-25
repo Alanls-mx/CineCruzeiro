@@ -1316,6 +1316,17 @@ function closeSessionEditor() {
   if ($("sessionLinkedTickets")) $("sessionLinkedTickets").hidden = true;
 }
 
+function syncSessionCreationMode() {
+  const editing = Boolean(state.editingSessionId);
+  const range = !editing && $("sessionCreationMode")?.value === "range";
+  if ($("sessionCreationModeRow")) $("sessionCreationModeRow").hidden = editing;
+  if ($("sessionDateEndField")) $("sessionDateEndField").hidden = !range;
+  if ($("sessionWeekdays")) $("sessionWeekdays").hidden = !range;
+  if ($("sessionDateLabel")) $("sessionDateLabel").textContent = range ? "De" : "Data";
+  if ($("saveSessionButton")) $("saveSessionButton").textContent = editing ? "Salvar alterações" : range ? "Criar sessões" : "Adicionar sessão";
+  if (range && !$("sessionDateEnd").value) $("sessionDateEnd").value = $("sessionDate").value;
+}
+
 function renderSessionLinkedTickets(sessionId) {
   const target = $("sessionLinkedTickets");
   if (!target) return;
@@ -1363,9 +1374,11 @@ function openSessionEditor(sessionId = "") {
   }
   $("sessionPriceFull").value = Number(session?.priceFull ?? 10);
   $("sessionStatus").value = session?.status || "available";
+  $("sessionCreationMode").value = "single";
+  $("sessionDateEnd").value = session?.date || "";
   $("sessionEditorTitle").textContent = session ? "Editar sessão" : "Nova sessão";
-  $("saveSessionButton").textContent = session ? "Salvar alterações" : "Adicionar sessão";
   $("sessionEditor").hidden = false;
+  syncSessionCreationMode();
   renderSessionLinkedTickets(session?.id || "");
   $("sessionDate").focus();
 }
@@ -1387,8 +1400,19 @@ async function saveSession() {
   }
 
   const sessionId = state.editingSessionId;
+  const range = !sessionId && $("sessionCreationMode").value === "range";
+  if (range && (!$('sessionDateEnd').value || $('sessionDateEnd').value < $('sessionDate').value)) {
+    showToast("A data final precisa ser igual ou posterior à data inicial.", "error");
+    return;
+  }
   const payload = {
     date: $("sessionDate").value,
+    ...(range ? {
+      dateFrom: $("sessionDate").value,
+      dateTo: $("sessionDateEnd").value,
+      times: [$("sessionTime").value],
+      weekdays: [...document.querySelectorAll("#sessionWeekdays input:checked")].map((input) => Number(input.value))
+    } : {}),
     time: $("sessionTime").value,
     format: $("sessionFormat").value,
     room: $("sessionRoom").value,
@@ -1399,14 +1423,18 @@ async function saveSession() {
 
   try {
     setDisabled("saveSessionButton", true);
-    await api(`/api/movies/${encodeURIComponent(movieId)}/sessions${sessionId ? `/${encodeURIComponent(sessionId)}` : ""}`, {
+    const result = await api(`/api/movies/${encodeURIComponent(movieId)}/sessions${sessionId ? `/${encodeURIComponent(sessionId)}` : ""}`, {
       method: sessionId ? "PUT" : "POST",
       body: JSON.stringify(payload)
     });
     closeSessionEditor();
     await loadContent({ silent: true });
     setMovieWizardStep(3);
-    showToast(sessionId ? "Sessão atualizada." : "Sessão adicionada.");
+    if (range) {
+      showSuccess("Programação criada", `${Number(result.totalCreated || 0)} sessão(ões) adicionada(s)${result.totalSkipped ? ` e ${result.totalSkipped} duplicada(s) ignorada(s)` : ""}.`);
+    } else {
+      showToast(sessionId ? "Sessão atualizada." : "Sessão adicionada.");
+    }
   } catch (error) {
     showToast(error.message, "error");
   } finally {
@@ -3568,6 +3596,8 @@ function fillClubPlanForm(plan) {
   $("clubPlanName").value = plan?.name || "";
   $("clubPlanPrice").value = plan?.monthlyPrice ?? 24.9;
   $("clubPlanTickets").value = plan?.includedTickets ?? 3;
+  $("clubPlanTicketDiscount").value = Number(plan?.ticketDiscountPercent || 0);
+  $("clubPlanConcessionDiscount").value = Number(plan?.concessionDiscountPercent || 0);
   $("clubPlanImageUrl").value = Object.prototype.hasOwnProperty.call(state.pendingImages, "clubPlanImageUrl")
     ? state.pendingImages.clubPlanImageUrl
     : plan?.imageUrl || "";
@@ -3575,7 +3605,26 @@ function fillClubPlanForm(plan) {
   $("clubPlanFeatured").checked = Boolean(plan?.isFeatured);
   $("clubPlanBenefits").value = (plan?.benefits || []).join("\n");
   $("clubPlanActive").checked = plan?.active !== false;
+  renderClubPlanFreeItems(plan);
   renderAdminImagePreview("clubPlanImageUrl", "clubPlanImagePreview", "Prévia do plano");
+}
+
+function renderClubPlanFreeItems(plan) {
+  const target = $("clubPlanFreeItems");
+  if (!target) return;
+  const configured = new Map((plan?.freeConcessionItems || []).map((item) => [String(item.concessionId || item.id), Number(item.quantityPerCycle || item.quantity || 1)]));
+  const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
+  target.innerHTML = concessions.length
+    ? concessions.map((item) => {
+        const quantity = configured.get(String(item.id)) || 1;
+        const checked = configured.has(String(item.id));
+        return `
+          <div class="benefit-product-row">
+            <label><input type="checkbox" data-club-free-item="${escapeHtml(item.id)}" ${checked ? "checked" : ""} /> <span>${escapeHtml(item.name)}</span></label>
+            <input type="number" min="1" max="20" step="1" value="${quantity}" data-club-free-quantity="${escapeHtml(item.id)}" aria-label="Quantidade grátis por ciclo de ${escapeHtml(item.name)}" />
+          </div>`;
+      }).join("")
+    : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre itens na Bomboniere para incluí-los como benefício.</span></div>`;
 }
 
 function selectClubPlan(id) {
@@ -3619,6 +3668,12 @@ async function saveClubPlan(event) {
     name: $("clubPlanName").value,
     monthlyPrice: Number($("clubPlanPrice").value || 0),
     includedTickets: Number($("clubPlanTickets").value || 0),
+    ticketDiscountPercent: Number($("clubPlanTicketDiscount").value || 0),
+    concessionDiscountPercent: Number($("clubPlanConcessionDiscount").value || 0),
+    freeConcessionItems: [...document.querySelectorAll("[data-club-free-item]:checked")].map((input) => ({
+      concessionId: input.dataset.clubFreeItem,
+      quantityPerCycle: Number(document.querySelector(`[data-club-free-quantity="${CSS.escape(input.dataset.clubFreeItem)}"]`)?.value || 1)
+    })),
     imageUrl: requestedImageUrl,
     displayOrder: Number($("clubPlanDisplayOrder").value || 100),
     isFeatured: $("clubPlanFeatured").checked,
@@ -3767,6 +3822,7 @@ function integrationCategory(key) {
     googleWallet: "Carteira digital",
     tmdb: "Catálogo",
     email: "E-mail",
+    analytics: "Medição",
     crm: "CRM"
   }[key] || "Integração";
 }
@@ -4291,6 +4347,12 @@ function bindEvents() {
   $("movieForm").addEventListener("submit", saveMovie);
   $("deleteMovieButton").addEventListener("click", () => deleteMovie());
   $("addSessionButton").addEventListener("click", () => openSessionEditor());
+  $("sessionCreationMode").addEventListener("change", syncSessionCreationMode);
+  $("sessionDate").addEventListener("change", () => {
+    if ($("sessionCreationMode").value === "range" && (!$("sessionDateEnd").value || $("sessionDateEnd").value < $("sessionDate").value)) {
+      $("sessionDateEnd").value = $("sessionDate").value;
+    }
+  });
   $("saveSessionButton").addEventListener("click", saveSession);
   $("cancelSessionButton").addEventListener("click", closeSessionEditor);
   $("tmdbSearchButton").addEventListener("click", searchTmdb);

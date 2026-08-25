@@ -173,6 +173,11 @@ export interface CinemaContent {
     eventPartiesImageUrl?: string;
     eventCorporateImageUrl?: string;
     eventGalleryImageUrl?: string;
+    tracking?: {
+      enabled?: boolean;
+      googleMeasurementId?: string;
+      metaPixelId?: string;
+    };
   };
 }
 
@@ -191,6 +196,9 @@ export interface SubscriptionPlan {
   ticketsPerCycle?: number;
   billingCycle?: string;
   benefits: string[];
+  ticketDiscountPercent?: number;
+  concessionDiscountPercent?: number;
+  freeConcessionItems?: Array<{ concessionId: string; quantityPerCycle: number }>;
   imageUrl?: string;
   isFeatured?: boolean;
   displayOrder?: number;

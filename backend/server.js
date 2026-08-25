@@ -509,7 +509,9 @@ function isSessionSellable(session = {}, fallbackDate = todayIsoDate(), now = ne
 }
 
 function sellableSessions(movie = {}, now = new Date()) {
-  return (movie.sessions || []).filter((session) => isSessionSellable(session, session.date || todayIsoDate(), now));
+  return (movie.sessions || [])
+    .filter((session) => isSessionSellable(session, session.date || todayIsoDate(), now))
+    .sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
 }
 
 function datePartsInSaoPaulo(date = new Date()) {
@@ -560,6 +562,31 @@ function buildCalendarDays(count = 5) {
       label: index === 0 ? "Hoje" : index === 1 ? "Amanhã" : weekdayShort,
       weekday: weekdayLong,
       displayDate: dayMonth
+    };
+  });
+}
+
+function buildCalendarDaysForMovies(movies = [], minimumDays = 7) {
+  const baseDays = buildCalendarDays(minimumDays);
+  const dates = new Set(baseDays.map((day) => day.isoDate));
+  (movies || []).forEach((movie) => {
+    (movie.sessions || []).forEach((session) => {
+      const date = String(session.date || "").slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date >= todayIsoDate()) dates.add(date);
+    });
+  });
+  const today = new Date(`${todayIsoDate()}T12:00:00-03:00`).getTime();
+  return [...dates].sort().slice(0, 31).map((isoDate) => {
+    const date = new Date(`${isoDate}T12:00:00-03:00`);
+    const difference = Math.round((date.getTime() - today) / 86400000);
+    const weekdayLong = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "long" }).format(date);
+    const weekdayShort = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "short" }).format(date).replace(".", "");
+    const displayDate = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }).format(date);
+    return {
+      isoDate,
+      label: difference === 0 ? "Hoje" : difference === 1 ? "Amanhã" : weekdayShort,
+      weekday: weekdayLong,
+      displayDate
     };
   });
 }
@@ -1214,6 +1241,7 @@ function normalizePaymentOrder(input) {
     payerLastName: lastNameParts.join(" ") || "Cine Cruzeiro",
     paymentMethod: input.paymentMethod || "PIX",
     useClubCredits: Boolean(input.useClubCredits),
+    useClubBenefits: Boolean(input.useClubBenefits),
     createdAt: input.createdAt || new Date().toISOString()
   };
 }
@@ -1957,7 +1985,7 @@ async function deliverTicketsByEmail(db, order, tickets) {
   const delivered = await emailService.sendTicketDelivery(db, order, enrichedTickets, {
     attachments,
     accountUrl: `${appFrontendUrl()}/conta/ingressos`,
-    logoUrl: `${appFrontendUrl()}/images/logo-official.png`,
+    logoUrl: `${appFrontendUrl()}/images/favicon-email.png`,
     siteUrl: appFrontendUrl()
   }).catch((error) => {
     logEvent("warn", "ticket_email.failed", { orderId: order.id, message: error.message });
@@ -2429,6 +2457,13 @@ function normalizeSubscriptionPlan(input, existing = {}) {
   const name = String(input.name || existing.name || "Plano do Clube").trim();
   const monthlyPrice = Number(input.monthlyPrice ?? input.priceMonthly ?? input.price ?? existing.monthlyPrice ?? existing.price ?? 0);
   const includedTickets = Math.max(0, Number(input.includedTickets ?? input.creditsPerMonth ?? input.ticketsPerCycle ?? existing.includedTickets ?? existing.ticketsPerCycle ?? 0));
+  const normalizePercent = (value) => Math.min(90, Math.max(0, Number(value || 0)));
+  const freeConcessionItems = (Array.isArray(input.freeConcessionItems) ? input.freeConcessionItems : existing.freeConcessionItems || [])
+    .map((item) => ({
+      concessionId: String(item.concessionId || item.id || "").trim(),
+      quantityPerCycle: Math.min(20, Math.max(1, Math.floor(Number(item.quantityPerCycle || item.quantity || 1))))
+    }))
+    .filter((item, index, items) => item.concessionId && items.findIndex((candidate) => candidate.concessionId === item.concessionId) === index);
   return {
     id: String(input.id || existing.id || slugify(name) || `plano-${Date.now()}`),
     name,
@@ -2440,6 +2475,9 @@ function normalizeSubscriptionPlan(input, existing = {}) {
     benefits: Array.isArray(input.benefits)
       ? input.benefits.map((item) => String(item).trim()).filter(Boolean)
       : String(input.benefits || existing.benefits || "").split(/\n|,/).map((item) => item.trim()).filter(Boolean),
+    ticketDiscountPercent: normalizePercent(input.ticketDiscountPercent ?? existing.ticketDiscountPercent),
+    concessionDiscountPercent: normalizePercent(input.concessionDiscountPercent ?? existing.concessionDiscountPercent),
+    freeConcessionItems,
     imageUrl: input.imageUrl !== undefined ? storedLocalUploadUrl(input.imageUrl) : storedLocalUploadUrl(existing.imageUrl || ""),
     isFeatured: input.isFeatured !== undefined ? Boolean(input.isFeatured) : Boolean(existing.isFeatured || existing.featured),
     displayOrder: Number(input.displayOrder ?? input.sortOrder ?? existing.displayOrder ?? existing.sortOrder ?? 100),
@@ -2739,6 +2777,87 @@ function applyClubCreditDiscount(db, order, user, idempotencyKey) {
   order.clubCreditPending = true;
   order.clubCreditIdempotencyKey = `${idempotencyKey || order.id}:club-credit`;
   return { order, subscription, quantity };
+}
+
+function activeClubPlanForBenefits(db, userId) {
+  if (!userId) return null;
+  const subscription = activeSubscriptionForUser(db, userId);
+  if (!subscription || !subscriptionCanUseCredit(subscription)) return null;
+  const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId && item.active !== false);
+  return plan ? { subscription, plan } : null;
+}
+
+function reservedFreeConcessionQuantity(db, subscription, concessionId, currentOrderId = "") {
+  const credit = currentSubscriptionCredit(db, subscription);
+  const cycleStart = new Date(credit?.cycleStart || subscription.currentPeriodStart || subscription.cycleStart || 0).getTime();
+  const cycleEnd = new Date(credit?.cycleEnd || subscription.currentPeriodEnd || subscription.cycleEnd || 0).getTime();
+  if (!Number.isFinite(cycleStart) || !Number.isFinite(cycleEnd)) return 0;
+  const now = Date.now();
+  return (db.orders || []).reduce((sum, existingOrder) => {
+    if (existingOrder.id === currentOrderId || existingOrder.clubSubscriptionId !== subscription.id) return sum;
+    if (!["pending_payment", "paid"].includes(existingOrder.status)) return sum;
+    if (existingOrder.status === "pending_payment" && existingOrder.reservationExpiresAt && new Date(existingOrder.reservationExpiresAt).getTime() <= now) return sum;
+    const createdAt = new Date(existingOrder.createdAt || 0).getTime();
+    if (createdAt < cycleStart || createdAt >= cycleEnd) return sum;
+    const claim = (existingOrder.clubBenefits?.freeConcessionItems || []).find((item) => item.concessionId === concessionId);
+    return sum + Number(claim?.quantity || 0);
+  }, 0);
+}
+
+function applyClubPlanBenefits(db, order, user) {
+  if (!order?.useClubBenefits) return { order, subscription: null, plan: null };
+  if (!user) {
+    const error = new Error("Entre na sua conta para aplicar os benefícios do Clube.");
+    error.statusCode = 401;
+    error.code = "CLUB_AUTH_REQUIRED";
+    throw error;
+  }
+  const benefit = activeClubPlanForBenefits(db, user.id);
+  if (!benefit) {
+    const error = new Error("Nenhuma assinatura ativa foi encontrada para aplicar os benefícios.");
+    error.statusCode = 409;
+    error.code = "NO_ACTIVE_SUBSCRIPTION";
+    throw error;
+  }
+  const { subscription, plan } = benefit;
+  const ticketSubtotal = ticketSubtotalForOrder(db, order);
+  const ticketDiscountPercent = Math.min(90, Math.max(0, Number(plan.ticketDiscountPercent || 0)));
+  const concessionDiscountPercent = Math.min(90, Math.max(0, Number(plan.concessionDiscountPercent || 0)));
+  const freeConcessionItems = [];
+  let freeConcessionDiscount = 0;
+
+  for (const configured of plan.freeConcessionItems || []) {
+    const concessionId = String(configured.concessionId || configured.id || "");
+    const item = (order.concessionItems || []).find((candidate) => candidate.id === concessionId);
+    if (!item) continue;
+    const limit = Math.min(20, Math.max(0, Number(configured.quantityPerCycle || configured.quantity || 0)));
+    const used = reservedFreeConcessionQuantity(db, subscription, concessionId, order.id);
+    const quantity = Math.min(Number(item.quantity || 0), Math.max(0, limit - used));
+    if (!quantity) continue;
+    freeConcessionItems.push({ concessionId, name: item.name, quantity, unitPrice: Number(item.unitPrice || 0) });
+    freeConcessionDiscount += quantity * Number(item.unitPrice || 0);
+  }
+
+  const concessionSubtotal = (order.concessionItems || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
+  const ticketDiscount = ticketSubtotal * (ticketDiscountPercent / 100);
+  const concessionDiscountBase = Math.max(0, concessionSubtotal - freeConcessionDiscount);
+  const concessionDiscount = concessionDiscountBase * (concessionDiscountPercent / 100);
+  const clubDiscount = Math.min(Number(order.totalPrice || 0), Number((ticketDiscount + freeConcessionDiscount + concessionDiscount).toFixed(2)));
+
+  order.discountValue = Number((Number(order.discountValue || 0) + clubDiscount).toFixed(2));
+  order.totalPrice = Math.max(0, Number((Number(order.totalPrice || 0) - clubDiscount).toFixed(2)));
+  order.clubSubscriptionId = subscription.id;
+  order.clubBenefits = {
+    planId: plan.id,
+    ticketDiscountPercent,
+    concessionDiscountPercent,
+    ticketDiscount: Number(ticketDiscount.toFixed(2)),
+    concessionDiscount: Number(concessionDiscount.toFixed(2)),
+    freeConcessionDiscount: Number(freeConcessionDiscount.toFixed(2)),
+    totalDiscount: clubDiscount,
+    freeConcessionItems
+  };
+  return { order, subscription, plan };
 }
 
 function consumePendingClubCredit(db, order, tickets, userId) {
@@ -3072,6 +3191,61 @@ function normalizeMovieSession(input, movieId, existing = {}) {
       ? input.status || existing.status
       : "available"
   };
+}
+
+function sessionDatesInRange(dateFrom, dateTo, weekdays = []) {
+  const start = new Date(`${String(dateFrom || "").slice(0, 10)}T12:00:00Z`);
+  const end = new Date(`${String(dateTo || "").slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    const error = new Error("Informe um período válido para criar as sessões.");
+    error.statusCode = 422;
+    throw error;
+  }
+  const totalDays = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+  if (totalDays > 120) {
+    const error = new Error("Crie sessões em períodos de no máximo 120 dias.");
+    error.statusCode = 422;
+    throw error;
+  }
+  const allowedWeekdays = new Set((weekdays || []).map(Number).filter((day) => day >= 0 && day <= 6));
+  return Array.from({ length: totalDays }, (_, index) => {
+    const date = new Date(start.getTime() + index * 86400000);
+    return { date, isoDate: date.toISOString().slice(0, 10) };
+  }).filter(({ date }) => !allowedWeekdays.size || allowedWeekdays.has(date.getUTCDay())).map(({ isoDate }) => isoDate);
+}
+
+function createMovieSessionBatch(input, movieId, existingSessions = []) {
+  const dateFrom = String(input.dateFrom || input.date || "").slice(0, 10);
+  const dateTo = String(input.dateTo || input.dateEnd || dateFrom).slice(0, 10);
+  const times = (Array.isArray(input.times) ? input.times : [input.time])
+    .map((time) => String(time || "").trim())
+    .filter((time, index, items) => /^\d{2}:\d{2}$/.test(time) && items.indexOf(time) === index);
+  if (!times.length) {
+    const error = new Error("Informe pelo menos um horário válido.");
+    error.statusCode = 422;
+    throw error;
+  }
+  const dates = sessionDatesInRange(dateFrom, dateTo, input.weekdays);
+  const created = [];
+  const skipped = [];
+  for (const date of dates) {
+    for (const time of times) {
+      const duplicate = [...existingSessions, ...created].some((session) =>
+        session.date === date && session.time === time && session.room === input.room && session.format === input.format
+      );
+      if (duplicate) {
+        skipped.push({ date, time, reason: "duplicate" });
+        continue;
+      }
+      created.push(normalizeMovieSession({ ...input, date, time }, movieId));
+    }
+  }
+  if (!created.length && !skipped.length) {
+    const error = new Error("Nenhuma data corresponde aos dias da semana selecionados.");
+    error.statusCode = 422;
+    throw error;
+  }
+  return { created, skipped };
 }
 
 function sessionHasAuditHistory(db, sessionId) {
@@ -3835,6 +4009,12 @@ function getContent(db, options = {}) {
   delete publicSettings.integrations;
   delete publicSettings.webhookSimulatorRuns;
   delete publicSettings.emailCampaigns;
+  const analyticsConfig = integrationConfigService.resolvedConfig(db, "analytics");
+  publicSettings.tracking = {
+    enabled: Boolean(analyticsConfig?.enabled && analyticsConfig?.configured),
+    googleMeasurementId: analyticsConfig?.enabled ? String(analyticsConfig.googleMeasurementId || "") : "",
+    metaPixelId: analyticsConfig?.enabled ? String(analyticsConfig.metaPixelId || "") : ""
+  };
   const movies = [...(db.movies || [])]
     .sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")))
     .map(assetMovie);
@@ -3869,7 +4049,7 @@ function getContent(db, options = {}) {
     calendar: {
       timezone: "America/Sao_Paulo",
       today: todayIsoDate(),
-      days: buildCalendarDays(5)
+      days: buildCalendarDaysForMovies(visibleMovies, 7)
     },
     rooms: db.rooms,
     ticketTypes: db.ticketTypes,
@@ -4426,6 +4606,19 @@ async function testIntegrationProvider(db, provider, req) {
     }
     if (!config.webhookUrl) return { ok: false, message: "Informe SMTP ou webhook do provedor de e-mail." };
     return emailService.sendIntegrationTest(db, req.adminUser?.email || config.fromEmail);
+  }
+  if (key === "analytics") {
+    const googleValid = !config.googleMeasurementId || /^G-[A-Z0-9]+$/i.test(config.googleMeasurementId);
+    const metaValid = !config.metaPixelId || /^\d{5,30}$/.test(config.metaPixelId);
+    const configured = Boolean(config.googleMeasurementId || config.metaPixelId);
+    return {
+      ok: configured && googleValid && metaValid,
+      message: !configured
+        ? "Informe ao menos um identificador de medição."
+        : googleValid && metaValid
+          ? "Identificadores válidos. A coleta inicia somente após consentimento do visitante."
+          : "Revise o ID do Google Analytics ou do Pixel da Meta."
+    };
   }
   if (key === "crm") {
     if (!config.url) return { ok: false, message: "Informe a URL do webhook CRM." };
@@ -6054,9 +6247,12 @@ async function handleApi(req, res, pathname) {
         customerEmail: lockedUser.email,
         customerPhone: lockedUser.phone || "",
         customerCpf: lockedUser.cpf || "",
-        paymentMethod: "CLUB_CREDIT"
+        paymentMethod: "CLUB_CREDIT",
+        useClubBenefits: true
       }));
-      const ticketDiscount = Math.min(ticketSubtotalForOrder(lockedDb, pricedOrder), Number(pricedOrder.totalPrice || 0));
+      applyClubPlanBenefits(lockedDb, pricedOrder, lockedUser);
+      const ticketValueAfterPlanDiscount = Math.max(0, ticketSubtotalForOrder(lockedDb, pricedOrder) - Number(pricedOrder.clubBenefits?.ticketDiscount || 0));
+      const ticketDiscount = Math.min(ticketValueAfterPlanDiscount, Number(pricedOrder.totalPrice || 0));
       pricedOrder.discountValue = Number((Number(pricedOrder.discountValue || 0) + ticketDiscount).toFixed(2));
       pricedOrder.totalPrice = Math.max(0, Number((Number(pricedOrder.totalPrice || 0) - ticketDiscount).toFixed(2)));
       if (pricedOrder.totalPrice > 0) {
@@ -6417,6 +6613,15 @@ async function handleApi(req, res, pathname) {
 
     if (method === "POST" && !sessionId) {
       const body = await readBody(req);
+      if (body.dateTo || body.dateEnd || Array.isArray(body.times)) {
+        const batch = createMovieSessionBatch(body, movieId, movie.sessions);
+        movie.sessions.push(...batch.created);
+        movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
+        movie.updatedAt = new Date().toISOString();
+        await writeDb(db);
+        sendJson(res, 201, { ...batch, totalCreated: batch.created.length, totalSkipped: batch.skipped.length });
+        return;
+      }
       const session = normalizeMovieSession(body, movieId);
       if (movie.sessions.some((item) => item.id === session.id)) {
         sendJson(res, 409, { error: { code: "SESSION_EXISTS", message: "Já existe uma sessão com este identificador." } });
@@ -6741,26 +6946,13 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
-      const clubCredit = applyClubCreditDiscount(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
+      if (normalizedOrder.useClubCredits) {
+        sendJson(res, 422, { error: { code: "CLUB_CREDIT_ROUTE_REQUIRED", message: "Use a ação exclusiva de créditos do Clube. O pagamento Pix nunca aprova créditos automaticamente." } });
+        return;
+      }
+      applyClubPlanBenefits(lockedDb, order, customerUser);
       if (order.totalPrice <= 0) {
-        const payment = createClubCreditPaymentRecord(order, clubCredit.subscription);
-        const savedOrder = {
-          ...order,
-          paymentMethod: "CLUB_CREDIT",
-          paymentProvider: "internal_club",
-          paymentId: payment.id,
-          paymentStatus: "approved",
-          status: "paid",
-          paidAt: new Date().toISOString()
-        };
-        reserveConcessionStock(lockedDb, savedOrder);
-        const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, "club_credit");
-        consumePendingClubCredit(lockedDb, savedOrder, tickets, customerUser?.id);
-        if (tickets.length) await deliverTicketsByEmail(lockedDb, savedOrder, tickets);
-        lockedDb.payments.unshift(payment);
-        lockedDb.orders.unshift(savedOrder);
-        await writeDb(lockedDb);
-        sendJson(res, 201, { order: savedOrder, payment, tickets, subscription: clubCredit.subscription });
+        sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de gerar o Pix." } });
         return;
       }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
@@ -6818,26 +7010,13 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
-      const clubCredit = applyClubCreditDiscount(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
+      if (normalizedOrder.useClubCredits) {
+        sendJson(res, 422, { error: { code: "CLUB_CREDIT_ROUTE_REQUIRED", message: "Use a ação exclusiva de créditos do Clube. O pagamento por cartão nunca aprova créditos automaticamente." } });
+        return;
+      }
+      applyClubPlanBenefits(lockedDb, order, customerUser);
       if (order.totalPrice <= 0) {
-        const payment = createClubCreditPaymentRecord(order, clubCredit.subscription);
-        const savedOrder = {
-          ...order,
-          paymentMethod: "CLUB_CREDIT",
-          paymentProvider: "internal_club",
-          paymentId: payment.id,
-          paymentStatus: "approved",
-          status: "paid",
-          paidAt: new Date().toISOString()
-        };
-        reserveConcessionStock(lockedDb, savedOrder);
-        const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, "club_credit");
-        consumePendingClubCredit(lockedDb, savedOrder, tickets, customerUser?.id);
-        if (tickets.length) await deliverTicketsByEmail(lockedDb, savedOrder, tickets);
-        lockedDb.payments.unshift(payment);
-        lockedDb.orders.unshift(savedOrder);
-        await writeDb(lockedDb);
-        sendJson(res, 201, { order: savedOrder, payment, tickets, subscription: clubCredit.subscription });
+        sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de pagar." } });
         return;
       }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
@@ -7068,7 +7247,7 @@ async function handleApi(req, res, pathname) {
           fromUser: freshUser,
           toUser: targetUser,
           accountUrl: `${appFrontendUrl()}/conta/ingressos`,
-          logoUrl: `${appFrontendUrl()}/images/logo-official.png`,
+          logoUrl: `${appFrontendUrl()}/images/favicon-email.png`,
           siteUrl: appFrontendUrl(),
           attachments: transferAttachment ? [transferAttachment] : []
         }).catch((error) => {

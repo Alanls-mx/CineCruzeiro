@@ -455,6 +455,31 @@ async function run() {
     assert.equal(deleteSession.response.status, 200);
     const afterSessionDelete = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
     assert.equal(afterSessionDelete.payload.movies.find((movie) => movie.id === "smoke-rascunho-admin").sessions.length, 0);
+
+    const createSessionRange = await request("/api/movies/smoke-rascunho-admin/sessions", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        dateFrom: "2099-08-25",
+        dateTo: "2099-08-27",
+        times: ["20:00"],
+        format: "2D Dublado",
+        room: "Sala Cruzeiro (Laser 4K)",
+        priceFull: 10,
+        priceHalf: 10,
+        status: "available"
+      })
+    });
+    assert.equal(createSessionRange.response.status, 201);
+    assert.equal(createSessionRange.payload.totalCreated, 3);
+    assert.equal(createSessionRange.payload.totalSkipped, 0);
+    for (const session of createSessionRange.payload.created) {
+      const removeBatchSession = await request(`/api/movies/smoke-rascunho-admin/sessions/${encodeURIComponent(session.id)}`, {
+        method: "DELETE",
+        headers: jsonHeaders(adminCookie)
+      });
+      assert.equal(removeBatchSession.response.status, 200);
+    }
     assert.equal(movieContent.payload.movies.some((movie) => movie.id === "id-nao-deve-duplicar"), false);
 
     const orderBefore = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
@@ -493,6 +518,9 @@ async function run() {
         isFeatured: true,
         displayOrder: 7,
         benefits: ["1 ingresso smoke"],
+        ticketDiscountPercent: 10,
+        concessionDiscountPercent: 5,
+        freeConcessionItems: [{ concessionId: "combo-classico", quantityPerCycle: 1 }],
         active: true
       })
     });
@@ -501,6 +529,9 @@ async function run() {
     assert.equal(oneCreditPlan.payload.imageUrl, uploadedImage.payload.url);
     assert.equal(oneCreditPlan.payload.isFeatured, true);
     assert.equal(oneCreditPlan.payload.displayOrder, 7);
+    assert.equal(oneCreditPlan.payload.ticketDiscountPercent, 10);
+    assert.equal(oneCreditPlan.payload.concessionDiscountPercent, 5);
+    assert.equal(oneCreditPlan.payload.freeConcessionItems[0].concessionId, "combo-classico");
 
     const plansAfterMediaSave = await request("/api/subscription-plans");
     const persistedMediaPlan = plansAfterMediaSave.payload.find((plan) => plan.id === oneCreditPlan.payload.id);
@@ -586,6 +617,36 @@ async function run() {
     assert.equal(providerApprovedSubscription.status, "active");
     assert.equal(providerApprovedSubscription.paymentStatus, "approved");
     assert.equal(providerApprovedSubscription.creditsRemaining, 1);
+
+    const benefitOrderId = `smoke-club-benefits-${Date.now()}`;
+    const planBenefitsPix = await request("/api/payments/pix", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({
+        order: {
+          id: benefitOrderId,
+          idempotencyKey: benefitOrderId,
+          movieId: TEST_MOVIE_ID,
+          sessionId: TEST_SESSION_ID,
+          fullTicketsCount: 1,
+          halfTicketsCount: 0,
+          concessionItems: [{ id: "combo-classico", quantity: 1 }],
+          useClubBenefits: true
+        }
+      })
+    });
+    assert.equal(planBenefitsPix.response.status, 201);
+    assert.equal(planBenefitsPix.payload.payment.status, "pending");
+    assert.equal(planBenefitsPix.payload.order.clubBenefits.ticketDiscountPercent, 10);
+    assert.equal(planBenefitsPix.payload.order.clubBenefits.freeConcessionItems[0].concessionId, "combo-classico");
+    assert.equal(planBenefitsPix.payload.tickets.length, 0);
+
+    const cancelBenefitOrder = await request(`/api/orders/${encodeURIComponent(benefitOrderId)}`, {
+      method: "DELETE",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ reason: "Liberar reserva do teste de benefícios" })
+    });
+    assert.equal(cancelBenefitOrder.response.status, 200);
 
     const staleWebhookRequestId = crypto.randomUUID();
     const staleWebhookTimestamp = String(Math.floor(Date.now() / 1000));
@@ -967,6 +1028,31 @@ async function run() {
     assert.equal(checkoutStatus.response.status, 200);
     assert.equal(checkoutStatus.payload.payment.status, "pending");
     assert.equal(checkoutStatus.payload.tickets.length, 0);
+
+    const noExtrasOrderId = `smoke-pix-sem-extras-${Date.now()}`;
+    const noExtrasPix = await request("/api/payments/pix", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({
+        order: {
+          id: noExtrasOrderId,
+          idempotencyKey: noExtrasOrderId,
+          movieId: TEST_MOVIE_ID,
+          sessionId: TEST_SESSION_ID,
+          fullTicketsCount: 1,
+          halfTicketsCount: 0,
+          customerName: "Teste Smoke",
+          customerEmail: emailChangeAddress,
+          customerPhone: "11999999999",
+          concessionItems: [],
+          useClubCredits: false
+        }
+      })
+    });
+    assert.equal(noExtrasPix.response.status, 201);
+    assert.equal(noExtrasPix.payload.payment.status, "pending");
+    assert.equal(noExtrasPix.payload.order.status, "pending_payment");
+    assert.equal(noExtrasPix.payload.tickets.length, 0);
 
     const webhookResourceId = pix.payload.payment.providerPaymentId;
     const webhookRequestId = crypto.randomUUID();

@@ -87,6 +87,7 @@ export interface TicketOrder {
   couponCode?: string;
   discountValue?: number;
   useClubCredits?: boolean;
+  useClubBenefits?: boolean;
   clubSubscriptionId?: string;
   clubCreditQuantity?: number;
   totalPrice?: number;

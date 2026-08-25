@@ -9,6 +9,7 @@ import { fetchCinemaContent } from "@/services/cinemaApi";
 import type { CinemaContent } from "@/services/cinemaApi";
 import { sendPrivateEventWebhook } from "@/services/webhook";
 import type { PrivateEventRequest } from "@/types";
+import { trackMarketingEvent } from "@/utils/tracking";
 
 export default function EventosPage() {
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
@@ -55,6 +56,7 @@ export default function EventosPage() {
       setMessage(result.message || "Solicitação enviada. Em breve entraremos em contato.");
       setMessageType(result.success ? "success" : "error");
       if (result.success) {
+        trackMarketingEvent("lead", { lead_type: "evento_privado" });
         setForm({ name: "", phone: "", email: "", eventType: "aniversario", estimatedGuests: "", desiredDate: "", desiredTime: "", notes: "", website: "" });
       }
     } finally {

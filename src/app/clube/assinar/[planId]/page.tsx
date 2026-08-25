@@ -15,6 +15,7 @@ import {
 } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
 import { money, publicAssetPath } from "@/utils/cinema";
+import { trackMarketingEvent } from "@/utils/tracking";
 
 export default function ClubSubscriptionCheckoutPage() {
   const params = useParams<{ planId: string }>();
@@ -69,6 +70,13 @@ export default function ClubSubscriptionCheckoutPage() {
         setMessage(result.message || "A assinatura foi iniciada, mas o Mercado Pago não retornou o checkout.");
         return;
       }
+      trackMarketingEvent("begin_checkout", {
+        checkout_type: "club_subscription",
+        item_id: plan.id,
+        item_name: plan.name,
+        value: Number(plan.monthlyPrice || 0),
+        currency: "BRL",
+      });
       setMessage("Abrindo o ambiente seguro do Mercado Pago...");
       window.location.assign(checkoutUrl);
     } catch (error) {

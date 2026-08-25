@@ -2107,6 +2107,73 @@ input[type="file"]::file-selector-button {
   gap: 8px;
 }
 
+.weekday-selector,
+.benefit-products-fieldset {
+  margin: 12px 0 0;
+  padding: 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.weekday-selector legend,
+.benefit-products-fieldset legend {
+  padding: 0 6px;
+  color: #dbeafe;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.weekday-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.weekday-selector label {
+  align-items: center;
+  display: inline-flex;
+  flex-direction: row;
+  gap: 7px;
+}
+
+.benefit-products-fieldset > p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.benefit-product-list {
+  display: grid;
+  gap: 8px;
+}
+
+.benefit-product-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 12px;
+  align-items: center;
+}
+
+.benefit-product-row > label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.benefit-product-row input[type="number"] {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .benefit-product-row {
+    grid-template-columns: minmax(0, 1fr) 88px;
+  }
+}
+
 .primary-button,
 .ghost-button,
 .danger-button,

@@ -78,6 +78,17 @@ const DEFINITIONS = {
       { key: "webhookSecret", label: "Segredo do webhook", type: "secret" }
     ]
   },
+  analytics: {
+    name: "Medição e anúncios",
+    purpose: "Google Analytics 4 e Meta Pixel com carregamento após consentimento",
+    defaults: { enabled: false, environment: "production", googleMeasurementId: "", metaPixelId: "" },
+    secrets: [],
+    fields: [
+      { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
+      { key: "googleMeasurementId", label: "ID de medição do Google Analytics", type: "text", placeholder: "G-XXXXXXXXXX" },
+      { key: "metaPixelId", label: "ID do Pixel da Meta", type: "text", placeholder: "123456789012345" }
+    ]
+  },
   crm: {
     name: "Webhook CRM",
     purpose: "Sincronização de eventos comerciais e operacionais",
@@ -126,6 +137,10 @@ const ENV = {
     fromName: ["SMTP_FROM_NAME", "EMAIL_FROM_NAME"],
     replyTo: ["SMTP_REPLY_TO", "EMAIL_REPLY_TO"],
     notificationEmail: ["EVENTS_EMAIL", "CONTACT_EMAIL", "SMTP_NOTIFICATION_EMAIL"]
+  },
+  analytics: {
+    googleMeasurementId: ["GOOGLE_ANALYTICS_MEASUREMENT_ID", "NEXT_PUBLIC_GA_MEASUREMENT_ID"],
+    metaPixelId: ["META_PIXEL_ID", "NEXT_PUBLIC_META_PIXEL_ID"]
   },
   crm: {
     url: ["CRM_WEBHOOK_URL", "LUMIX_WEBHOOK_URL"],
@@ -204,6 +219,7 @@ function isConfigured(provider, config) {
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && config.serviceAccountJson);
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
+  if (provider === "analytics") return Boolean(config.googleMeasurementId || config.metaPixelId);
   if (provider === "crm") return Boolean(config.url);
   return false;
 }

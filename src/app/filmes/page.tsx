@@ -3,8 +3,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays } from "lucide-react";
-import { useMemo, useState } from "react";
-import { filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
+import { useEffect, useMemo, useState } from "react";
+import { filterLabel, filtersForMovies, firstAvailableDayIndex, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { calendarDayDate, calendarDayTitle, movieSlug } from "@/utils/cinema";
@@ -20,6 +20,13 @@ export default function FilmesPage() {
     : [{ isoDate: "", label: "Hoje", weekday: "HOJE", displayDate: "--/--" }];
   const movies = content?.nowPlaying || [];
   const availableFilters = useMemo(() => filtersForMovies(movies), [movies]);
+
+  useEffect(() => {
+    if (!movies.length || !days.length) return;
+    const selectedDate = days[selectedDay]?.isoDate;
+    const selectedHasSessions = movies.some((movie) => movie.sessions.some((session) => String(session.date || "").slice(0, 10) === selectedDate));
+    if (!selectedHasSessions) setSelectedDay(firstAvailableDayIndex(movies, days, filter));
+  }, [days, filter, movies, selectedDay]);
 
   return (
     <div className="min-h-screen bg-[#060a12] text-white">
@@ -75,8 +82,8 @@ export default function FilmesPage() {
             </section>
 
             <section className="space-y-8">
-              {movies.length ? movies.map((movie) => (
-                <MovieSchedule key={movie.id} movie={movie} filter={filter} selectedDay={selectedDay} days={days} />
+              {movies.length ? movies.map((movie, index) => (
+                <MovieSchedule key={movie.id} movie={movie} filter={filter} selectedDay={selectedDay} days={days} priority={index === 0} />
               )) : <p className="text-sm text-slate-400">Nenhum filme em cartaz.</p>}
             </section>
 
@@ -113,7 +120,7 @@ export default function FilmesPage() {
   );
 }
 
-function MovieSchedule({ movie, filter, selectedDay, days }: { movie: Movie; filter: SessionFilter; selectedDay: number; days: Array<{ isoDate: string; label: string; weekday: string; displayDate: string }> }) {
+function MovieSchedule({ movie, filter, selectedDay, days, priority = false }: { movie: Movie; filter: SessionFilter; selectedDay: number; days: Array<{ isoDate: string; label: string; weekday: string; displayDate: string }>; priority?: boolean }) {
   return (
     <article className="grid gap-5 border-t border-white/8 pt-8 lg:grid-cols-[180px_1fr]">
       <Link href={`/filmes/${movieSlug(movie)}`} className="relative block aspect-[2/3] w-full max-w-[180px] overflow-hidden bg-brand-950">
@@ -122,6 +129,7 @@ function MovieSchedule({ movie, filter, selectedDay, days }: { movie: Movie; fil
             src={movie.posterUrl}
             alt={`Poster de ${movie.title}`}
             fill
+            priority={priority}
             quality={72}
             sizes="180px"
             className="object-cover"

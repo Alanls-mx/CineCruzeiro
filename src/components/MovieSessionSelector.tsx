@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarDays, Clock, MonitorPlay } from "lucide-react";
+import { ArrowRight, CalendarDays, Clock, MonitorPlay } from "lucide-react";
 import { Movie, Session } from "@/types";
 import { calendarDayFullLabel, money } from "@/utils/cinema";
 
@@ -27,7 +27,26 @@ export function MovieSessionSelector({
 }) {
   const day = days[selectedDay] || days[0];
   const sessions = movie.sessions.filter((session) => sessionMatchesFilter(session, filter) && sessionMatchesDay(session, day));
-  if (!sessions.length) return null;
+  if (!sessions.length) {
+    const nextSession = [...movie.sessions]
+      .filter((session) => sessionMatchesFilter(session, filter))
+      .sort(compareSessions)[0];
+    if (!nextSession) return null;
+    return (
+      <section className="border-t border-white/8 pt-5">
+        <p className="text-xs font-black uppercase tracking-[.16em] text-brand-300">Próxima sessão disponível</p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <strong className="block text-lg text-white">{sessionDateLabel(nextSession.date)} às {nextSession.time}</strong>
+            <span className="mt-1 block text-sm text-slate-400">{nextSession.format} • {nextSession.room}</span>
+          </div>
+          <Link href={`/checkout/${nextSession.id}`} className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-gold-400 px-4 text-sm font-black text-slate-950 transition duration-200 hover:bg-gold-300">
+            Escolher sessão <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
+    );
+  }
   const grouped = groupSessions(sessions);
 
   return (
@@ -85,6 +104,12 @@ export function filtersForMovies(movies: Movie[]): SessionFilter[] {
   return filters;
 }
 
+export function firstAvailableDayIndex(movies: Movie[], days: CalendarDay[], filter: SessionFilter = "todos") {
+  const availableDates = new Set(movies.flatMap((movie) => movie.sessions || []).filter((session) => sessionMatchesFilter(session, filter)).map((session) => String(session.date || "").slice(0, 10)));
+  const index = days.findIndex((day) => availableDates.has(day.isoDate));
+  return index >= 0 ? index : 0;
+}
+
 export function filterLabel(filter: SessionFilter) {
   return {
     todos: "Todos",
@@ -117,4 +142,15 @@ function groupSessions(sessions: Session[]) {
     map.set(group, [...(map.get(group) || []), session]);
   });
   return Array.from(map.entries());
+}
+
+function compareSessions(a: Session, b: Session) {
+  return `${a.date || "9999-12-31"}T${a.time || "23:59"}`.localeCompare(`${b.date || "9999-12-31"}T${b.time || "23:59"}`);
+}
+
+function sessionDateLabel(value?: string) {
+  const date = String(value || "").slice(0, 10);
+  if (!date) return "Em breve";
+  return new Intl.DateTimeFormat("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })
+    .format(new Date(`${date}T12:00:00-03:00`));
 }

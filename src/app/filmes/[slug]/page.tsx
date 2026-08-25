@@ -5,11 +5,12 @@ import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
+import { filterLabel, filtersForMovies, firstAvailableDayIndex, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { TrailerModal } from "@/components/TrailerModal";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { calendarDayDate, calendarDayTitle, findMovieBySlug, movieSlug } from "@/utils/cinema";
+import { trackMarketingEvent } from "@/utils/tracking";
 
 export default function FilmeDetalhePage() {
   const params = useParams<{ slug: string }>();
@@ -31,6 +32,21 @@ export default function FilmeDetalhePage() {
       router.replace(`/filmes/${canonicalSlug}`);
     }
   }, [movie, params.slug, router]);
+
+  useEffect(() => {
+    if (!movie || !days.length) return;
+    const selectedDate = days[selectedDay]?.isoDate;
+    const selectedHasSessions = movie.sessions.some((session) => String(session.date || "").slice(0, 10) === selectedDate);
+    if (!selectedHasSessions) setSelectedDay(firstAvailableDayIndex([movie], days, filter));
+  }, [days, filter, movie, selectedDay]);
+
+  useEffect(() => {
+    if (!movie) return;
+    const trackingKey = `cine-view-content:${movie.id}`;
+    if (window.sessionStorage.getItem(trackingKey)) return;
+    window.sessionStorage.setItem(trackingKey, "1");
+    trackMarketingEvent("view_content", { content_type: "movie", content_id: movie.id, content_name: movie.title });
+  }, [movie]);
 
   return (
     <div className="min-h-screen bg-[#060a12] text-white">

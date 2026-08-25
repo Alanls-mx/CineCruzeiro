@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { Sparkles, Gamepad2, Cake, Film, Send, CheckCircle2 } from "lucide-react";
 import { sendPrivateEventWebhook } from "@/services/webhook";
 import { PrivateEventRequest } from "@/types";
+import { trackMarketingEvent } from "@/utils/tracking";
 
 interface PrivateEventFormProps {
   onSuccessToast?: (msg: string) => void;
@@ -57,6 +58,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
 
     setIsLoading(false);
     setIsSuccess(response.success);
+    if (response.success) trackMarketingEvent("lead", { lead_type: "evento_privado" });
     if (!response.success) setErrorMessage(response.message);
 
     if (onSuccessToast) {

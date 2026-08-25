@@ -183,6 +183,12 @@ export default function ClubePage() {
 }
 
 function Plan({ plan }: { plan: SubscriptionPlan }) {
+  const configuredBenefits = [
+    ...(Number(plan.ticketDiscountPercent || 0) > 0 ? [`${Number(plan.ticketDiscountPercent)}% de desconto em ingressos`] : []),
+    ...(Number(plan.concessionDiscountPercent || 0) > 0 ? [`${Number(plan.concessionDiscountPercent)}% de desconto na bomboniere`] : []),
+    ...(plan.freeConcessionItems?.length ? [`${plan.freeConcessionItems.length} benefício(s) grátis na bomboniere por ciclo`] : []),
+    ...(plan.benefits || []),
+  ].filter((item, index, items) => items.indexOf(item) === index);
   return (
     <article className={`grid overflow-hidden rounded-[10px] bg-[#0d1728] shadow-2xl shadow-blue-950/20 lg:grid-cols-[.86fr_1fr] ${plan.isFeatured ? "ring-1 ring-gold-400/45" : ""}`}>
       <div className="relative min-h-[240px]">
@@ -209,7 +215,7 @@ function Plan({ plan }: { plan: SubscriptionPlan }) {
           <span className="bg-brand-700 px-3 py-2 text-xs font-black text-white">{plan.includedTickets} ingressos/mês</span>
         </div>
         <ul className="mt-7 space-y-3 text-slate-300">
-          {plan.benefits.map((item) => (
+          {configuredBenefits.map((item) => (
             <li key={item} className="flex gap-3">
               <Check className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
               <span>{item}</span>

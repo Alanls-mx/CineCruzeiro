@@ -325,6 +325,9 @@ async function loadDbFromPostgres() {
         ticketsPerCycle: Number(row.included_tickets || 0),
         billingCycle: row.billing_cycle || "monthly",
         benefits: asArray(row.benefits),
+        ticketDiscountPercent: num(row.ticket_discount_percent),
+        concessionDiscountPercent: num(row.concession_discount_percent),
+        freeConcessionItems: asArray(row.free_concession_items),
         imageUrl: row.image_url || "",
         isFeatured: Boolean(row.is_featured),
         displayOrder: Number(row.display_order || 100),
@@ -404,6 +407,7 @@ async function loadDbFromPostgres() {
         refundedAt: row.refunded_at ? new Date(row.refunded_at).toISOString() : "",
         refundedBy: row.refunded_by || "",
         refundReason: row.refund_reason || "",
+        metadata: row.metadata || {},
         usedAt: row.used_at ? new Date(row.used_at).toISOString() : ""
       }))
     };
@@ -747,14 +751,17 @@ async function writeDbToPostgres(db) {
     }
 
     for (const plan of asArray(db.subscriptionPlans)) {
-      await query(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, image_url, is_featured, display_order, provider_plan_id, mercado_pago_plan_id, active, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,COALESCE(NULLIF($13,'')::timestamptz, now()),COALESCE(NULLIF($14,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, ticket_discount_percent, concession_discount_percent, free_concession_items, image_url, is_featured, display_order, provider_plan_id, mercado_pago_plan_id, active, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
         plan.id,
         plan.name,
         num(plan.monthlyPrice ?? plan.price),
         Number(plan.includedTickets ?? plan.ticketsPerCycle ?? 0),
         plan.billingCycle || "monthly",
         JSON.stringify(asArray(plan.benefits)),
+        num(plan.ticketDiscountPercent),
+        num(plan.concessionDiscountPercent),
+        JSON.stringify(asArray(plan.freeConcessionItems)),
         plan.imageUrl || "",
         Boolean(plan.isFeatured),
         Number(plan.displayOrder || 100),
@@ -838,8 +845,8 @@ async function writeDbToPostgres(db) {
     const ticketIds = new Set(asArray(db.tickets).map((ticket) => ticket.id));
     for (const usage of asArray(db.subscriptionUsage)) {
       if (!subscriptionIds.has(usage.subscriptionId) || !userIds.has(usage.userId)) continue;
-      await query(client, `INSERT INTO subscription_usage (id, subscription_id, credit_id, user_id, order_id, ticket_id, movie_id, session_id, month_key, idempotency_key, refunded_at, refunded_by, refund_reason, used_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,'')::timestamptz,NULLIF($12,''),$13,COALESCE(NULLIF($14,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscription_usage (id, subscription_id, credit_id, user_id, order_id, ticket_id, movie_id, session_id, month_key, idempotency_key, refunded_at, refunded_by, refund_reason, metadata, used_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,'')::timestamptz,NULLIF($12,''),$13,$14,COALESCE(NULLIF($15,'')::timestamptz, now()))`, [
         usage.id,
         usage.subscriptionId,
         usage.creditId || null,
@@ -853,6 +860,7 @@ async function writeDbToPostgres(db) {
         usage.refundedAt || "",
         usage.refundedBy || "",
         usage.refundReason || "",
+        JSON.stringify(usage.metadata || {}),
         usage.usedAt || ""
       ]);
     }
