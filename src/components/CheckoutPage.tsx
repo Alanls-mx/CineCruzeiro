@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadMercadoPago } from "@mercadopago/sdk-js";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { AccountSubscription, CustomerUser, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
@@ -70,11 +70,16 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   useEffect(() => {
     if (!found || !cart) return;
     const hasPaymentResult = isValidPaymentResult(cart.paymentResult);
+    const persistedCart = readCheckoutCart();
+    const hasVisitedExtras = Boolean(
+      cart.extrasVisited
+      || (persistedCart?.sessionId === found.session.id && persistedCart.extrasVisited)
+    );
     if (step === "extras" && !cart.extrasVisited) {
       updateCart({ extrasVisited: true });
       return;
     }
-    if (step === "pagamento" && !cart.extrasVisited) {
+    if (step === "pagamento" && !hasVisitedExtras) {
       router.replace(`/checkout/${found.session.id}/extras`);
       return;
     }
@@ -103,19 +108,36 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   const updateCart = useCallback((patch: Partial<StoredCheckoutCart>) => {
     if (!found) return;
+    const persisted = readCheckoutCart();
+    const source = persisted?.sessionId === found.session.id ? persisted : cart;
     const next = {
       movieId: found.movie.id,
       sessionId: found.session.id,
-      fullTickets: cart?.fullTickets ?? 1,
-      halfTickets: cart?.halfTickets ?? 0,
-      concessionQuantities: cart?.concessionQuantities || {},
-      extrasVisited: cart?.extrasVisited || false,
-      paymentMethod: cart?.paymentMethod || "credit_card",
+      fullTickets: source?.fullTickets ?? 1,
+      halfTickets: source?.halfTickets ?? 0,
+      concessionQuantities: source?.concessionQuantities || {},
+      extrasVisited: source?.extrasVisited || false,
+      paymentMethod: source?.paymentMethod || "credit_card",
       ...patch,
     };
     writeCheckoutCart(next);
     setCart(next);
   }, [cart, found]);
+
+  const continueToPayment = useCallback(() => {
+    if (!found || !cart) return;
+    const persisted = readCheckoutCart();
+    const source = persisted?.sessionId === found.session.id ? persisted : cart;
+    const next: StoredCheckoutCart = {
+      ...source,
+      movieId: found.movie.id,
+      sessionId: found.session.id,
+      extrasVisited: true,
+    };
+    writeCheckoutCart(next);
+    setCart(next);
+    router.push(`/checkout/${found.session.id}/pagamento`);
+  }, [cart, found, router]);
 
   const selectedConcessions = useMemo(() => {
     const quantities = cart?.concessionQuantities || {};
@@ -251,9 +273,21 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       </div>
       <div className="grid gap-10 lg:grid-cols-[1fr_360px]">
         <section className="min-w-0">
-          <Steps sessionId={found.session.id} step={step} extrasVisited={Boolean(cart.extrasVisited)} />
+          <Steps
+            sessionId={found.session.id}
+            step={step}
+            extrasVisited={Boolean(cart.extrasVisited)}
+            onContinueToPayment={continueToPayment}
+          />
           {step === "ingressos" && <TicketsStep cart={cart} updateCart={updateCart} />}
-          {step === "extras" && <ExtrasStep cart={cart} updateCart={updateCart} concessions={content?.concessions || []} />}
+          {step === "extras" && (
+            <ExtrasStep
+              cart={cart}
+              updateCart={updateCart}
+              concessions={content?.concessions || []}
+              onContinue={continueToPayment}
+            />
+          )}
           {step === "pagamento" && (
             <PaymentStep
               cart={cart}
@@ -286,6 +320,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         loading={loading || clubLoading}
         paymentMethod={cart.paymentMethod || "pix"}
         onSubmit={submitPayment}
+        onContinueToPayment={continueToPayment}
         submitDisabled={cart.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured}
       />
     </PageShell>
@@ -302,7 +337,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Steps({ sessionId, step, extrasVisited }: { sessionId: string; step: Step; extrasVisited: boolean }) {
+function Steps({ sessionId, step, extrasVisited, onContinueToPayment }: { sessionId: string; step: Step; extrasVisited: boolean; onContinueToPayment: () => void }) {
   const steps: Array<[Step, string, string]> = [
     ["ingressos", "Ingressos", `/checkout/${sessionId}`],
     ["extras", "Extras", `/checkout/${sessionId}/extras`],
@@ -337,6 +372,13 @@ function Steps({ sessionId, step, extrasVisited }: { sessionId: string; step: St
           </>
         );
         const className = `flex min-h-[52px] items-center gap-3 rounded-lg px-3 text-sm font-black transition ${stateClassName}`;
+        if (id === "pagamento" && step === "extras") {
+          return (
+            <button key={id} type="button" onClick={onContinueToPayment} className={className}>
+              {content}
+            </button>
+          );
+        }
         return locked ? (
           <div key={id} className={className} aria-disabled="true">{content}</div>
         ) : (
@@ -357,7 +399,7 @@ function TicketsStep({ cart, updateCart }: { cart: StoredCheckoutCart; updateCar
   );
 }
 
-function ExtrasStep({ cart, updateCart, concessions }: { cart: StoredCheckoutCart; updateCart: (patch: Partial<StoredCheckoutCart>) => void; concessions: Parameters<typeof cartTotal>[2] }) {
+function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: StoredCheckoutCart; updateCart: (patch: Partial<StoredCheckoutCart>) => void; concessions: Parameters<typeof cartTotal>[2]; onContinue: () => void }) {
   const quantities = cart.concessionQuantities || {};
   const visibleConcessions = (concessions || []).filter((item) => item.active !== false);
   const [openDescriptions, setOpenDescriptions] = useState<Record<string, boolean>>({});
@@ -368,8 +410,17 @@ function ExtrasStep({ cart, updateCart, concessions }: { cart: StoredCheckoutCar
       <div className="mt-8 grid gap-x-5 gap-y-10 sm:grid-cols-2 xl:grid-cols-3">
         {visibleConcessions.map((item) => (
           <article key={item.id}>
-            <div className="flex aspect-[4/3] items-center justify-center bg-transparent">
-              {item.imageUrl ? <img src={publicAssetPath(item.imageUrl)} alt={item.name} className="h-full w-full object-contain" /> : null}
+            <div className="relative aspect-[4/3] bg-transparent">
+              {item.imageUrl ? (
+                <Image
+                  src={publicAssetPath(item.imageUrl)}
+                  alt={item.name}
+                  fill
+                  quality={74}
+                  sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 260px"
+                  className="object-contain"
+                />
+              ) : null}
             </div>
             <h3 className="mt-4 text-lg font-black">{item.name}</h3>
             {item.description && (
@@ -392,7 +443,9 @@ function ExtrasStep({ cart, updateCart, concessions }: { cart: StoredCheckoutCar
           </article>
         ))}
       </div>
-      <Link href={`/checkout/${cart.sessionId}/pagamento`} className="mt-10 inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950">Continuar para Pagamento</Link>
+      <button type="button" onClick={onContinue} className="mt-10 inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300">
+        Continuar para Pagamento
+      </button>
     </div>
   );
 }
@@ -522,6 +575,7 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
       setReady(false);
       setError("");
       try {
+        const { loadMercadoPago } = await import("@mercadopago/sdk-js");
         await loadMercadoPago();
         if (!mounted) return;
         const MercadoPago = (window as typeof window & { MercadoPago?: MercadoPagoConstructor }).MercadoPago;
@@ -690,7 +744,7 @@ function OrderSummary({ cart, total, selectedConcessions }: { cart: StoredChecko
   );
 }
 
-function MobileCheckoutBar({ cart, step, total, loading, paymentMethod, onSubmit, submitDisabled = false }: { cart: StoredCheckoutCart; step: Step; total: number; loading: boolean; paymentMethod: StoredCheckoutCart["paymentMethod"]; onSubmit: () => void; submitDisabled?: boolean }) {
+function MobileCheckoutBar({ cart, step, total, loading, paymentMethod, onSubmit, onContinueToPayment, submitDisabled = false }: { cart: StoredCheckoutCart; step: Step; total: number; loading: boolean; paymentMethod: StoredCheckoutCart["paymentMethod"]; onSubmit: () => void; onContinueToPayment: () => void; submitDisabled?: boolean }) {
   const hrefByStep: Partial<Record<Step, string>> = {
     ingressos: `/checkout/${cart.sessionId}/extras`,
     extras: `/checkout/${cart.sessionId}/pagamento`,
@@ -713,6 +767,10 @@ function MobileCheckoutBar({ cart, step, total, loading, paymentMethod, onSubmit
         {step === "pagamento" ? (
           <button type="button" onClick={onSubmit} disabled={loading || submitDisabled} className="min-h-[50px] min-w-[132px] bg-gold-400 px-5 text-sm font-black text-slate-950 disabled:opacity-50">
             {loading ? "Aguarde" : labelByStep[step]}
+          </button>
+        ) : step === "extras" ? (
+          <button type="button" onClick={onContinueToPayment} className="inline-flex min-h-[50px] min-w-[132px] items-center justify-center bg-gold-400 px-5 text-sm font-black text-slate-950">
+            {labelByStep[step]}
           </button>
         ) : (
           <Link href={hrefByStep[step] || "/filmes"} className="inline-flex min-h-[50px] min-w-[132px] items-center justify-center bg-gold-400 px-5 text-sm font-black text-slate-950">

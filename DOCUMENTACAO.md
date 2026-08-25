@@ -778,7 +778,7 @@ Uso no Cine Cruzeiro:
 Cartão de crédito
 ```
 
-Mercado Pago não é usado como infraestrutura principal de Pix.
+Mercado Pago é o provedor ativo para Pix e cartão no Checkout Transparente.
 
 Variáveis:
 
@@ -787,18 +787,21 @@ MERCADO_PAGO_ACCESS_TOKEN=
 MP_ACCESS_TOKEN=
 MERCADOPAGO_ACCESS_TOKEN=
 MERCADO_PAGO_WEBHOOK_SECRET=
+MERCADO_PAGO_WEBHOOK_SECRET_SANDBOX=
+MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION=
 MP_WEBHOOK_SECRET=
 MERCADOPAGO_WEBHOOK_SECRET=
 NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=
+WEBHOOK_TESTER_ENABLED=true
 ```
 
-Endpoint usado pelo backend:
+Endpoint de pagamentos usado pelo backend:
 
 ```text
-https://api.mercadopago.com/v1/payments
+https://api.mercadopago.com/v1/orders
 ```
 
-O backend cria pagamento de cartão com:
+O backend cria Pix e pagamentos de cartão pela API de Orders com:
 
 - Valor
 - Descrição
@@ -808,6 +811,30 @@ O backend cria pagamento de cartão com:
 - Token de cartão gerado no frontend pelo mecanismo oficial do Mercado Pago
 
 O navegador nunca envia ao backend número completo, CVV ou validade bruta. Esses dados são usados somente pelo SDK oficial do Mercado Pago para gerar `cardToken`.
+
+### Webhook Mercado Pago
+
+URL pública, sem autenticação de usuário ou JWT:
+
+```text
+POST /api/webhooks/mercado-pago?data.id=<RESOURCE_ID>&type=order
+```
+
+A origem é validada com `x-signature`, `x-request-id`, o valor exato de `data.id` da query string e o Segredo do webhook configurado no painel do Mercado Pago. O manifesto HMAC-SHA256 é:
+
+```text
+id:<data.id>;request-id:<x-request-id>;ts:<ts>;
+```
+
+O Segredo do webhook não é o Access Token. Notificações com assinatura inválida ou campos obrigatórios ausentes retornam `401`; eventos assinados ainda não suportados retornam `200` sem alterar pedidos. A chave idempotente combina ação, resource ID e revisão/status para impedir geração duplicada de pagamentos, créditos, e-mails ou ingressos em reenvios.
+
+O proxy do Next.js preserva `x-signature`, `x-request-id` e a query string ao encaminhar a rota pública ao backend.
+
+### Simulador interno
+
+Disponível somente para administradores proprietários em `Integrações → Mercado Pago → Testar Webhook`. O simulador assina e envia uma requisição HTTP ao próprio endpoint público, passando pelo mesmo validador e handler das notificações reais.
+
+Ele cobre notificação válida, assinatura/header/query ausentes ou inválidos, evento desconhecido, recurso inexistente, `order.action_required`, `order.processed` e reenvio idempotente. Defina `WEBHOOK_TESTER_ENABLED=false` para desativá-lo completamente; o endpoint público do Mercado Pago permanece ativo.
 
 ### Pix via Open Finance
 

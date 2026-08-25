@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -33,7 +34,7 @@ export default function FilmeDetalhePage() {
 
   return (
     <div className="min-h-screen bg-[#060a12] text-white">
-      <SiteHeader />
+      <SiteHeader settings={content?.settings} />
       <main>
         {status === "loading" && <div className="mx-auto max-w-[1320px] px-4 py-20 sm:px-6 lg:px-8"><div className="h-96 skeleton-soft" /></div>}
         {status === "error" && <p className="mx-auto max-w-[1320px] px-4 py-20 text-rose-200 sm:px-6 lg:px-8">{error}</p>}
@@ -42,11 +43,17 @@ export default function FilmeDetalhePage() {
           <>
             <section className="relative overflow-hidden">
               <div className="absolute inset-0 opacity-30">
-                {movie.backdropUrl && <img src={movie.backdropUrl} alt="" className="h-full w-full object-cover" />}
+                {movie.backdropUrl && (
+                  <Image src={movie.backdropUrl} alt="" fill priority quality={68} sizes="100vw" className="object-cover" />
+                )}
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,10,18,.55),#060a12)]" />
               </div>
               <div className="relative mx-auto grid max-w-[1320px] gap-10 px-4 py-14 sm:px-6 md:grid-cols-[300px_1fr] lg:px-8">
-                <img src={movie.posterUrl} alt={`Poster de ${movie.title}`} className="aspect-[2/3] w-full max-w-[300px] object-cover" />
+                <div className="relative aspect-[2/3] w-full max-w-[300px] overflow-hidden bg-brand-950">
+                  {movie.posterUrl && (
+                    <Image src={movie.posterUrl} alt={`Poster de ${movie.title}`} fill quality={74} sizes="300px" className="object-cover" />
+                  )}
+                </div>
                 <div className="self-end pb-4">
                   <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Filme</p>
                   <h1 className="mt-4 font-display text-5xl font-black leading-none tracking-tight sm:text-6xl">{movie.title}</h1>

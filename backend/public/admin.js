@@ -20,8 +20,16 @@ let state = {
   selectedOrderId: "",
   dashboard: null,
   integrations: null,
+  webhookSimulatorRuns: [],
+  selectedWebhookRunId: "",
   movieWizardStep: 0,
   movieDraftSessions: [],
+  editingSessionId: "",
+  dashboardMetric: "revenue",
+  adminSubtabs: {
+    marketing: "overview",
+    club: "overview"
+  },
   dashboardPeriod: "today",
   dashboardFrom: "",
   dashboardTo: "",
@@ -64,6 +72,7 @@ let state = {
   qrLastValueAt: 0,
   qrTorchOn: false,
   qrTorchTrack: null,
+  qrCameraPermission: "unknown",
   qrAutoRestartTimer: null,
   toastTimer: null,
   refreshStatusTimer: null
@@ -323,10 +332,16 @@ async function loadContent(options = {}) {
   }
   if (!silent && !state.content) renderLoading();
   try {
-    state.content = cleanAdminContentAssets(await api("/api/admin/content"));
-    state.dashboard = await api(`/api/admin/dashboard?${dashboardQuery()}`).catch(() => null);
-    state.payments = await api(`/api/admin/payments?${dashboardQuery()}`).catch(() => null);
-    state.integrations = isOwnerAdmin() ? await api("/api/integrations").catch(() => null) : null;
+    const [content, dashboard, payments, integrations] = await Promise.all([
+      api("/api/admin/content"),
+      api(`/api/admin/dashboard?${dashboardQuery()}`).catch(() => null),
+      api(`/api/admin/payments?${dashboardQuery()}`).catch(() => null),
+      isOwnerAdmin() ? api("/api/integrations").catch(() => null) : Promise.resolve(null)
+    ]);
+    state.content = cleanAdminContentAssets(content);
+    state.dashboard = dashboard;
+    state.payments = payments;
+    state.integrations = integrations;
     if (!state.creating.movie && !state.content.movies.some((movie) => movie.id === state.selectedMovieId)) {
       state.selectedMovieId = state.content.movies[0]?.id || "";
     }
@@ -374,6 +389,7 @@ function renderAll() {
   fillSettingsForm();
   renderRoomOptions();
   renderManualSaleOptions();
+  document.querySelectorAll("form[data-dirty-track]").forEach((form) => markFormClean(form));
 }
 
 function renderLoading() {
@@ -446,7 +462,7 @@ function renderDashboard() {
               <small>${Number(item.sold || 0)} / ${Number(item.capacity || 0)} • ${Number(item.occupancyRate || 0)}% • ${escapeHtml(item.status || "Boa disponibilidade")}</small>
             </div>
           </div>`).join("")
-      : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre sessões no catálogo.</span></div>`;
+      : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre um horário quando a programação estiver definida.</span><button class="ghost-button" type="button" onclick="createSessionFromDashboard()">Criar sessão</button></div>`;
   }
   if ($("dashCapacity")) {
     const capacity = data.capacity || {};
@@ -460,7 +476,7 @@ function renderDashboard() {
     const products = data.topProducts || [];
     $("dashTopProducts").innerHTML = products.length
       ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}</span><strong>${Number(item.quantity || 0)}</strong></div>`).join("")
-      : `<div class="empty-state compact"><strong>Sem itens vendidos</strong><span>Produtos da bomboniere aparecerão aqui.</span></div>`;
+      : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" onclick="activatePanel('concessionsPanel', { scroll: true })">Ver Bomboniere</button></div>`;
   }
   if ($("dashLatestOrders")) {
     const orders = data.latestOrders || [];
@@ -472,7 +488,7 @@ function renderDashboard() {
     const payments = data.attentionPayments || [];
     $("dashAttentionPayments").innerHTML = payments.length
       ? payments.map((payment) => `<div class="metric-row clickable-row alert-row" onclick="openOrderView('${escapeHtml(payment.orderId)}')"><span>${escapeHtml(payment.orderReference)}<small>${escapeHtml(payment.message)} • ${escapeHtml(payment.method)} • ${escapeHtml(payment.provider)}</small></span><strong>${money(payment.amount)}</strong></div>`).join("")
-      : `<div class="empty-state compact"><strong>Nenhum pagamento precisa de atenção.</strong><span>Pendências e falhas aparecerão aqui.</span></div>`;
+      : `<div class="empty-state compact success-state"><span class="success-mark" aria-hidden="true"></span><strong>Nenhum pagamento precisa de atenção.</strong><span>Pendências e falhas aparecerão aqui.</span></div>`;
   }
   if ($("dashClubMetrics")) {
     const club = data.club || {};
@@ -506,30 +522,44 @@ function renderDashboardChart(rows) {
   const target = $("dashRevenueChart");
   if (!target) return;
   if (!rows.length) {
-    target.innerHTML = `<div class="empty-state compact"><strong>Nenhum dado disponível para este período.</strong></div>`;
+    target.innerHTML = `<div class="empty-state compact"><strong>Nenhum dado disponível para este período.</strong><span>O gráfico será preenchido após as primeiras vendas.</span></div>`;
     return;
   }
   const width = 720;
-  const height = 250;
-  const pad = 28;
-  const maxRevenue = Math.max(1, ...rows.map((item) => Number(item.revenue || 0)));
-  const maxOrders = Math.max(1, ...rows.map((item) => Number(item.orders || 0)));
-  const x = (index) => pad + (rows.length === 1 ? (width - pad * 2) / 2 : (index / (rows.length - 1)) * (width - pad * 2));
-  const yRevenue = (value) => height - pad - (Number(value || 0) / maxRevenue) * (height - pad * 2);
-  const points = rows.map((item, index) => `${x(index)},${yRevenue(item.revenue)}`).join(" ");
+  const height = 270;
+  const padLeft = 62;
+  const padRight = 24;
+  const padTop = 22;
+  const padBottom = 44;
+  const metric = state.dashboardMetric === "sales" ? "sales" : "revenue";
+  const valueOf = (item) => metric === "sales" ? Number(item.orders || 0) : Number(item.revenue || 0);
+  const maxValue = Math.max(1, ...rows.map(valueOf));
+  const x = (index) => padLeft + (rows.length === 1 ? (width - padLeft - padRight) / 2 : (index / (rows.length - 1)) * (width - padLeft - padRight));
+  const y = (value) => height - padBottom - (Number(value || 0) / maxValue) * (height - padTop - padBottom);
+  const points = rows.map((item, index) => `${x(index)},${y(valueOf(item))}`).join(" ");
+  const axisLabel = (value) => metric === "revenue" ? money(value).replace(",00", "") : String(Math.round(value));
+  const gridLines = [0, 0.5, 1].map((ratio) => {
+    const value = maxValue * ratio;
+    const lineY = y(value);
+    return `<g class="chart-axis"><line x1="${padLeft}" y1="${lineY}" x2="${width - padRight}" y2="${lineY}" /><text x="${padLeft - 10}" y="${lineY + 4}" text-anchor="end">${escapeHtml(axisLabel(value))}</text></g>`;
+  }).join("");
+  const showEvery = Math.max(1, Math.ceil(rows.length / 7));
   target.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Receita e quantidade de vendas">
-      <path class="chart-grid" d="M${pad} ${height - pad}H${width - pad}M${pad} ${pad}V${height - pad}" />
-      <polyline class="chart-line" points="${points}" />
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${metric === "revenue" ? "Receita" : "Vendas"} por período">
+      ${gridLines}
+      ${metric === "revenue" ? `<polyline class="chart-line" points="${points}" />` : ""}
       ${rows.map((item, index) => {
-        const barHeight = (Number(item.orders || 0) / maxOrders) * (height - pad * 2);
-        const barX = x(index) - Math.min(20, Math.max(5, 160 / rows.length)) / 2;
-        const barWidth = Math.min(20, Math.max(5, 160 / rows.length));
+        const value = valueOf(item);
+        const barWidth = Math.min(28, Math.max(7, 220 / rows.length));
+        const barHeight = Math.max(value > 0 ? 3 : 0, height - padBottom - y(value));
+        const dateLabel = new Date(`${item.date}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
         return `
-          <rect class="chart-bar" x="${barX}" y="${height - pad - barHeight}" width="${barWidth}" height="${barHeight}" rx="4" />
-          <circle class="chart-point" cx="${x(index)}" cy="${yRevenue(item.revenue)}" r="5" tabindex="0"
+          ${metric === "sales" ? `<rect class="chart-bar" x="${x(index) - barWidth / 2}" y="${height - padBottom - barHeight}" width="${barWidth}" height="${barHeight}" rx="3" />` : ""}
+          <circle class="chart-point" cx="${x(index)}" cy="${y(value)}" r="${rows.length === 1 ? 7 : 5}" tabindex="0"
             onmouseenter="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})"
+            onfocus="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})"
             onclick="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})" />
+          ${index % showEvery === 0 || index === rows.length - 1 ? `<text class="chart-date" x="${x(index)}" y="${height - 16}" text-anchor="middle">${dateLabel}</text>` : ""}
         `;
       }).join("")}
     </svg>
@@ -545,6 +575,22 @@ function openSessionDashboardDetail(movieId, sessionId) {
   activatePanel("ordersPanel", { scroll: true });
   setBoxOfficeTab("todaySales");
   showToast(`Sessão selecionada: ${sessionId || movieId}`);
+}
+
+function createSessionFromDashboard() {
+  const movie = orderedMovies()[0];
+  if (!movie) {
+    activatePanel("moviesPanel", { scroll: true });
+    newMovie();
+    showToast("Cadastre o filme antes de criar a sessão.");
+    return;
+  }
+  state.creating.movie = false;
+  state.selectedMovieId = movie.id;
+  activatePanel("moviesPanel", { scroll: true });
+  renderMovies();
+  setMovieWizardStep(3);
+  openSessionEditor();
 }
 
 function currentMovie() {
@@ -729,6 +775,10 @@ function renderMovieMediaPreview(inputId, previewId, label) {
   preview.innerHTML = url
     ? `<img src="${escapeHtml(adminAssetUrl(url))}" alt="${escapeHtml(label)}" onerror="this.parentElement.textContent='Imagem indisponível'" />`
     : `<span>${escapeHtml(label)}</span>`;
+  const uploadRoot = preview.closest(".image-setting-grid, .media-grid");
+  uploadRoot?.classList.toggle("has-image", Boolean(url));
+  const action = uploadRoot?.querySelector(".upload-action-label");
+  if (action) action.textContent = url ? "Trocar imagem" : "Escolher imagem";
 }
 
 const marketingImageFields = [
@@ -833,11 +883,6 @@ function validateMovieWizardStep(step, finalPublish = false) {
     setMovieWizardStep(2);
     return false;
   }
-  if (!(state.movieDraftSessions || []).some((session) => session.date && session.time)) {
-    showToast("Adicione ao menos uma sessão com data e horário.", "error");
-    setMovieWizardStep(3);
-    return false;
-  }
   return true;
 }
 
@@ -899,6 +944,7 @@ function renderMovies() {
 function fillMovieForm(movie) {
   syncCreationControl("movie", "cancelMovieCreateButton", "deleteMovieButton", Boolean(movie));
   setDisabled("deleteMovieButton", !movie);
+  setDisabled("addSessionButton", !movie);
   $("movieFormHint").textContent = movie ? `Editando ${movie.title}` : "Novo filme";
   $("movieId").value = movie?.id || "";
   $("movieWorkflowStatus").value = movie?.workflowStatus || "draft";
@@ -922,6 +968,7 @@ function fillMovieForm(movie) {
   renderMovieMediaPreview("moviePosterUrl", "moviePosterPreview", "Prévia do pôster");
   renderMovieMediaPreview("movieBackdropUrl", "movieBackdropPreview", "Prévia do banner");
   state.movieDraftSessions = (movie?.sessions || []).map((session) => ({ ...session }));
+  closeSessionEditor();
   renderSessions(state.movieDraftSessions);
   setMovieWizardStep(0);
 }
@@ -1007,7 +1054,8 @@ function renderSessions(sessions) {
     $("sessionsList").innerHTML = `
       <div class="empty-state">
         <strong>Nenhuma sessão cadastrada</strong>
-        <span>Adicione horários para liberar a venda no site.</span>
+        <span>O filme está salvo normalmente. Adicione um horário apenas quando a programação estiver definida.</span>
+        ${$("movieId").value ? `<button class="ghost-button" type="button" onclick="openSessionEditor()">Adicionar primeira sessão</button>` : `<span class="empty-state-note">Salve o filme antes de cadastrar sessões.</span>`}
       </div>
     `;
     return;
@@ -1015,12 +1063,15 @@ function renderSessions(sessions) {
 
   $("sessionsList").innerHTML = sessions
     .map(
-      (session, index) => `
+      (session) => `
         <div class="session-row">
           <strong>${session.time}</strong>
           <span>${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} • ` : ""}${session.format} • ${session.room}</span>
           <span>${money(session.priceFull)}</span>
-          <button class="icon-button" type="button" onclick="removeSession(${index})" aria-label="Remover sessão">${trashIcon}</button>
+          <div class="session-row-actions">
+            <button class="ghost-button" type="button" onclick="openSessionEditor('${escapeHtml(session.id)}')">Editar</button>
+            <button class="icon-button danger-icon" type="button" onclick="removeSession('${escapeHtml(session.id)}')" aria-label="Excluir sessão">${trashIcon}</button>
+          </div>
         </div>
       `
     )
@@ -1149,7 +1200,6 @@ function getMoviePayload(action = "published") {
     isHighlight: $("movieHighlight").checked,
     tag: $("movieTag").value,
     sortOrder: Number(currentMovie()?.sortOrder ?? 100),
-    sessions: state.movieDraftSessions || [],
     metadata: {
       updatedFromAdmin: true
     }
@@ -1193,45 +1243,102 @@ async function deleteMovie(id = "") {
   }
 }
 
-async function addSession() {
-  if (!$("sessionDate").value || !$("sessionTime").value) {
-    showToast("Informe data e horário da sessão.", "error");
+function closeSessionEditor() {
+  state.editingSessionId = "";
+  if ($("sessionEditor")) $("sessionEditor").hidden = true;
+  if ($("sessionId")) $("sessionId").value = "";
+}
+
+function openSessionEditor(sessionId = "") {
+  const movieId = $("movieId").value || state.selectedMovieId;
+  if (!movieId) {
+    showToast("Salve o filme antes de adicionar uma sessão.", "error");
+    return;
+  }
+  const session = (state.movieDraftSessions || []).find((item) => item.id === sessionId);
+  state.editingSessionId = session?.id || "";
+  $("sessionId").value = session?.id || "";
+  $("sessionDate").value = session?.date || "";
+  $("sessionTime").value = session?.time || "19:00";
+  $("sessionFormat").value = session?.format || "2D Dublado";
+  if (session?.room && [...$("sessionRoom").options].some((option) => option.value === session.room)) {
+    $("sessionRoom").value = session.room;
+  }
+  $("sessionPriceFull").value = Number(session?.priceFull ?? 10);
+  $("sessionStatus").value = session?.status || "available";
+  $("sessionEditorTitle").textContent = session ? "Editar sessão" : "Nova sessão";
+  $("saveSessionButton").textContent = session ? "Salvar alterações" : "Adicionar sessão";
+  $("sessionEditor").hidden = false;
+  $("sessionDate").focus();
+}
+
+async function saveSession() {
+  const movieId = $("movieId").value || state.selectedMovieId;
+  if (!movieId) {
+    showToast("Salve o filme antes de adicionar uma sessão.", "error");
+    return;
+  }
+  if (!$("sessionDate").value || !$("sessionTime").value || !$("sessionRoom").value || !$("sessionFormat").value) {
+    showToast("Preencha data, horário, sala e formato da sessão.", "error");
+    return;
+  }
+  const price = Number($("sessionPriceFull").value);
+  if (!Number.isFinite(price) || price < 0) {
+    showToast("Informe um preço válido para a sessão.", "error");
     return;
   }
 
-  const price = Number($("sessionPriceFull").value || 10);
-  const movieId = $("movieId").value || $("movieSlug").value || slugify($("movieTitle").value) || "filme";
-  state.movieDraftSessions ||= [];
-  state.movieDraftSessions.push({
-    id: `${movieId}-${Date.now()}`,
+  const sessionId = state.editingSessionId;
+  const payload = {
     date: $("sessionDate").value,
-    time: $("sessionTime").value || "19:00",
+    time: $("sessionTime").value,
     format: $("sessionFormat").value,
-    room: $("sessionRoom").value || "Sala Cruzeiro (Laser 4K)",
+    room: $("sessionRoom").value,
     priceFull: price,
     priceHalf: price,
     status: $("sessionStatus").value
-  });
+  };
 
-  renderSessions(state.movieDraftSessions);
-  renderMoviePublishSummary();
-  showToast("Sessão adicionada.");
+  try {
+    setDisabled("saveSessionButton", true);
+    await api(`/api/movies/${encodeURIComponent(movieId)}/sessions${sessionId ? `/${encodeURIComponent(sessionId)}` : ""}`, {
+      method: sessionId ? "PUT" : "POST",
+      body: JSON.stringify(payload)
+    });
+    closeSessionEditor();
+    await loadContent({ silent: true });
+    setMovieWizardStep(3);
+    showToast(sessionId ? "Sessão atualizada." : "Sessão adicionada.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    setDisabled("saveSessionButton", false);
+  }
 }
 
-async function removeSession(index) {
-  state.movieDraftSessions.splice(index, 1);
-  renderSessions(state.movieDraftSessions);
-  renderMoviePublishSummary();
-  showToast("Sessão removida.");
+async function removeSession(sessionId) {
+  const movieId = $("movieId").value || state.selectedMovieId;
+  const session = (state.movieDraftSessions || []).find((item) => item.id === sessionId);
+  if (!movieId || !session || !confirm(`Excluir a sessão de ${session.time}?`)) return;
+  try {
+    await api(`/api/movies/${encodeURIComponent(movieId)}/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    closeSessionEditor();
+    await loadContent({ silent: true });
+    setMovieWizardStep(3);
+    showToast("Sessão excluída.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 async function archiveMovie(id) {
   const movie = state.content?.movies?.find((item) => item.id === id);
   if (!movie) return;
   try {
+    const { sessions, ...movieData } = movie;
     await api(`/api/movies/${encodeURIComponent(movie.id)}`, {
       method: "PUT",
-      body: JSON.stringify({ ...movie, workflowStatus: "archived", status: "hidden", isHighlight: false })
+      body: JSON.stringify({ ...movieData, workflowStatus: "archived", status: "hidden", isHighlight: false })
     });
     await loadContent({ silent: true });
     showToast("Filme arquivado.");
@@ -1255,7 +1362,7 @@ async function duplicateMovie(id) {
         workflowStatus: "draft",
         status: "hidden",
         isHighlight: false,
-        sessions: (movie.sessions || []).map((session, index) => ({ ...session, id: `${slug}-sessao-${index + 1}` }))
+        sessions: []
       })
     });
     state.selectedMovieId = copy.id;
@@ -1266,9 +1373,80 @@ async function duplicateMovie(id) {
   }
 }
 
+function enhanceImageUploads() {
+  document.querySelectorAll('input[type="file"][accept*="image"]').forEach((input) => {
+    const label = input.closest("label");
+    if (!label || label.dataset.enhancedUpload) return;
+    label.dataset.enhancedUpload = "true";
+    label.classList.add("enhanced-upload");
+    const action = document.createElement("span");
+    action.className = "upload-action-label";
+    action.textContent = "Escolher imagem";
+    input.insertAdjacentElement("afterend", action);
+    ["dragenter", "dragover"].forEach((eventName) => label.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      label.classList.add("is-dragging");
+    }));
+    ["dragleave", "drop"].forEach((eventName) => label.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      label.classList.remove("is-dragging");
+    }));
+    label.addEventListener("drop", (event) => {
+      const file = [...(event.dataTransfer?.files || [])].find((item) => item.type.startsWith("image/"));
+      if (!file) {
+        label.classList.add("is-error");
+        showToast("Arraste uma imagem JPG, PNG ou WebP.", "error");
+        return;
+      }
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}
+
+function enhanceLongForms() {
+  document.querySelectorAll("form[data-dirty-track]").forEach((form) => {
+    let actions = form.querySelector(".wizard-actions, .button-row:last-of-type");
+    if (!actions) {
+      const primary = form.querySelector(":scope > .primary-button:last-of-type");
+      if (primary) {
+        actions = document.createElement("div");
+        actions.className = "button-row";
+        primary.before(actions);
+        actions.append(primary);
+      }
+    }
+    if (!actions || actions.querySelector(".unsaved-indicator")) return;
+    actions.classList.add("sticky-form-actions");
+    const indicator = document.createElement("span");
+    indicator.className = "unsaved-indicator";
+    indicator.textContent = "Alterações não salvas";
+    indicator.hidden = true;
+    actions.prepend(indicator);
+    const markDirty = () => {
+      form.dataset.dirty = "true";
+      indicator.hidden = false;
+    };
+    form.addEventListener("input", markDirty);
+    form.addEventListener("change", markDirty);
+    form.addEventListener("reset", () => markFormClean(form.id));
+  });
+}
+
+function markFormClean(formId) {
+  const form = typeof formId === "string" ? $(formId) : formId;
+  if (!form) return;
+  form.dataset.dirty = "false";
+  const indicator = form.querySelector(".unsaved-indicator");
+  if (indicator) indicator.hidden = true;
+}
+
 async function uploadAdminImage(fileInputId, targetInputId, previewId, folder, afterUpload) {
   const input = $(fileInputId);
   const target = $(targetInputId);
+  const uploadRoot = input?.closest(".image-setting-grid") || input?.closest(".media-grid") || input?.closest("label");
   const file = input?.files?.[0];
   if (!file) return;
   if (!target) {
@@ -1295,6 +1473,8 @@ async function uploadAdminImage(fileInputId, targetInputId, previewId, folder, a
 
   try {
     input.disabled = true;
+    uploadRoot?.classList.remove("is-error");
+    uploadRoot?.classList.add("is-loading");
     const result = await api("/api/uploads/images", {
       method: "POST",
       body: JSON.stringify({
@@ -1311,8 +1491,10 @@ async function uploadAdminImage(fileInputId, targetInputId, previewId, folder, a
     if (typeof afterUpload === "function") await afterUpload({ ...result, url: target.value });
     showToast("Imagem enviada.");
   } catch (error) {
+    uploadRoot?.classList.add("is-error");
     showToast(error.message, "error");
   } finally {
+    uploadRoot?.classList.remove("is-loading");
     input.disabled = false;
     input.value = "";
   }
@@ -1603,15 +1785,6 @@ function renderOrdersTable(targetId, orders, options = {}) {
                   <div class="context-menu">
                     <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
                     <button class="icon-button" type="button" onclick="toggleOrderMenu('${escapeHtml(order.id)}', event)" aria-label="Ações do pedido">•••</button>
-                    <div id="orderMenu-${escapeHtml(order.id)}" class="context-menu-popover" hidden>
-                      <button type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
-                      <button type="button" onclick="openOrderEdit('${escapeHtml(order.id)}')">Editar</button>
-                      <button type="button" onclick="printOrderTicket('${escapeHtml(order.id)}')">Imprimir ingresso</button>
-                      <button type="button" onclick="resendOrderTicket('${escapeHtml(order.id)}')">Reenviar ingresso</button>
-                      <button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(order.id)}')">Cancelar</button>
-                      <button type="button" onclick="archiveOrderAdmin('${escapeHtml(order.id)}')">Arquivar</button>
-                      <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(order.id)}')">Excluir permanentemente</button>
-                    </div>
                   </div>
                 </td>
               </tr>
@@ -1837,6 +2010,7 @@ function toggleOrderMenu(orderId, event) {
     <button type="button" onclick="openOrderView('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Visualizar</button>
     <button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>
     <button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>
+    <button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>
     <button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>
     <button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>
     <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>
@@ -2251,15 +2425,10 @@ async function startQrReader() {
     return;
   }
   try {
+    state.qrCameraPermission = await getCameraPermissionState();
     setQrReaderActive(true, "Solicitando permissão da câmera...");
-    state.qrStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      },
-      audio: false
-    });
+    state.qrStream = await requestCameraStream();
+    state.qrCameraPermission = "granted";
     const video = $("qrVideo");
     video.srcObject = state.qrStream;
     await video.play();
@@ -2313,10 +2482,72 @@ async function startQrReader() {
     }, 420);
   } catch (error) {
     stopQrReader();
-    renderTicketValidationResult("invalid", { message: "Não foi possível abrir a câmera. Verifique a permissão do navegador." });
+    state.qrCameraPermission = await getCameraPermissionState();
+    renderCameraAccessError(error, state.qrCameraPermission);
     $("manualCodeBox").hidden = false;
     $("validateTicketButton").hidden = false;
   }
+}
+
+async function getCameraPermissionState() {
+  if (!navigator.permissions?.query) return "unknown";
+  try {
+    const permission = await navigator.permissions.query({ name: "camera" });
+    return permission.state || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function requestCameraStream() {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+  } catch (error) {
+    if (!["OverconstrainedError", "ConstraintNotSatisfiedError"].includes(error?.name)) throw error;
+    return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  }
+}
+
+function renderCameraAccessError(error, permissionState = "unknown") {
+  const target = $("ticketValidationResult");
+  const errorName = String(error?.name || "");
+  const blocked = permissionState === "denied" || ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(errorName);
+  const unavailable = ["NotFoundError", "DevicesNotFoundError"].includes(errorName);
+  const busy = ["NotReadableError", "TrackStartError", "AbortError"].includes(errorName);
+  let title = "Não foi possível abrir a câmera";
+  let message = "Feche outros aplicativos que usam a câmera e tente novamente.";
+  let help = "Você também pode digitar o código do ingresso abaixo.";
+
+  if (blocked) {
+    title = "Permissão da câmera bloqueada";
+    message = "Libere a câmera nas permissões deste site e tente novamente.";
+    help = "No computador, use o cadeado ao lado do endereço. No celular, abra as permissões do navegador ou do site e selecione Câmera: Permitir.";
+  } else if (unavailable) {
+    title = "Nenhuma câmera encontrada";
+    message = "Conecte ou ative uma câmera neste dispositivo.";
+  } else if (busy) {
+    title = "Câmera em uso por outro aplicativo";
+    message = "Feche a câmera, videochamada ou outro leitor aberto e tente novamente.";
+  }
+
+  if (!target) return;
+  target.className = "validation-result camera-access-result";
+  target.innerHTML = `
+    <strong>${escapeHtml(title)}</strong>
+    <p>${escapeHtml(message)}</p>
+    <span>${escapeHtml(help)}</span>
+    <button class="primary-button" type="button" data-camera-retry>Solicitar acesso novamente</button>
+  `;
+  target.querySelector("[data-camera-retry]")?.addEventListener("click", startQrReader);
+  const startButton = $("startQrButton");
+  if (startButton) startButton.textContent = "Solicitar câmera";
 }
 
 function updateQrCountdown() {
@@ -2330,7 +2561,11 @@ function setQrReaderActive(active, status = "") {
   if (frame) frame.classList.toggle("active", active);
   const startButton = $("startQrButton");
   const stopButton = $("stopQrButton");
-  if (startButton) startButton.disabled = active;
+  if (startButton) {
+    startButton.disabled = active;
+    if (active) startButton.textContent = "Abrindo câmera...";
+    else if (state.qrCameraPermission === "granted") startButton.textContent = "Abrir câmera";
+  }
   if (stopButton) stopButton.disabled = !active;
   const torchButton = $("torchQrButton");
   const hasTorch = Boolean(state.qrTorchTrack?.getCapabilities?.().torch);
@@ -2577,6 +2812,47 @@ function renderMarketingOverview() {
   `;
 }
 
+function setAdminSubtab(group, tab, options = {}) {
+  const tabList = document.querySelector(`[data-admin-tablist="${group}"]`);
+  const panel = document.querySelector(`[data-admin-tab-panel="${group}:${tab}"]`);
+  if (!tabList || !panel) return;
+  state.adminSubtabs[group] = tab;
+  tabList.querySelectorAll("[data-admin-tab]").forEach((button) => {
+    const active = button.dataset.adminTab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  document.querySelectorAll(`[data-admin-tab-panel^="${group}:"]`).forEach((item) => {
+    const active = item === panel;
+    item.hidden = !active;
+    item.classList.toggle("active", active);
+  });
+  if (options.focus) panel.querySelector("input:not([type=hidden]), button, select, textarea")?.focus();
+}
+
+function bindAdminSubtabs() {
+  document.querySelectorAll("[data-admin-tablist]").forEach((tabList) => {
+    const group = tabList.dataset.adminTablist;
+    tabList.setAttribute("role", "tablist");
+    tabList.querySelectorAll("[data-admin-tab]").forEach((button) => {
+      button.setAttribute("role", "tab");
+      button.addEventListener("click", () => setAdminSubtab(group, button.dataset.adminTab));
+    });
+    setAdminSubtab(group, state.adminSubtabs[group] || tabList.querySelector("[data-admin-tab]")?.dataset.adminTab);
+  });
+
+  document.querySelectorAll("[data-marketing-shortcut]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.marketingShortcut;
+      setAdminSubtab("marketing", target);
+      if (target === "promotions") newPromotion();
+      if (target === "ads") newAd();
+      if (target === "campaigns") $("emailCampaignSubject")?.focus();
+    });
+  });
+}
+
 async function saveSettings(event) {
   event.preventDefault();
   try {
@@ -2658,6 +2934,7 @@ function selectPromotion(id) {
 }
 
 function newPromotion() {
+  setAdminSubtab("marketing", "promotions");
   state.creating.promotion = true;
   state.selectedPromotionId = "";
   $("promotionsList").innerHTML = creationPlaceholder("Nova promoção", "Crie a regra comercial no quadro à direita.");
@@ -2742,6 +3019,7 @@ function selectAd(id) {
 }
 
 function newAd() {
+  setAdminSubtab("marketing", "ads");
   state.creating.ad = true;
   state.selectedAdId = "";
   $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem por upload e defina onde o anúncio será exibido.");
@@ -2757,6 +3035,7 @@ function fillAdForm(item) {
   $("adImageUrl").value = item?.imageUrl || "";
   $("adLinkUrl").value = item?.linkUrl || "";
   $("adActive").checked = item?.active !== false;
+  renderAdminImagePreview("adImageUrl", "adImagePreview", "Prévia do anúncio");
 }
 
 async function saveAd(event) {
@@ -3004,6 +3283,7 @@ function selectClubPlan(id) {
 }
 
 function newClubPlan() {
+  setAdminSubtab("club", "plans");
   delete state.pendingImages.clubPlanImageUrl;
   state.creating.clubPlan = true;
   state.selectedClubPlanId = "";
@@ -3233,6 +3513,158 @@ function integrationFieldInput(field, integration) {
   `;
 }
 
+function webhookStep(label, stateValue, detail) {
+  const stateClass = stateValue === "ok" ? "ok" : stateValue === "error" ? "error" : "muted";
+  return `
+    <li class="webhook-step ${stateClass}">
+      <span class="webhook-step-mark" aria-hidden="true"></span>
+      <span><strong>${escapeHtml(label)}</strong>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</span>
+    </li>
+  `;
+}
+
+function renderWebhookRun(run) {
+  const target = $("webhookTestResult");
+  if (!target) return;
+  if (!run) {
+    target.innerHTML = `<div class="empty-state compact"><strong>Nenhum teste executado</strong><span>Simule uma notificação para acompanhar cada etapa do fluxo.</span></div>`;
+    return;
+  }
+  const request = run.request || {};
+  const processing = run.processing || {};
+  const signatureRejectedAsExpected = run.expectedStatus === 401 && run.httpStatus === 401;
+  const signatureState = run.signatureValid || signatureRejectedAsExpected ? "ok" : "error";
+  const recognizedState = run.httpStatus === 401 ? "muted" : processing.recognized === false ? (run.scenario === "unknown_event" ? "ok" : "error") : "ok";
+  const orderState = processing.orderLocated === true ? "ok" : processing.orderLocated === false ? (run.scenario === "resource_not_found" || run.scenario === "unknown_event" ? "ok" : "muted") : "muted";
+  const stateUpdated = processing.stateUpdated === true ? "ok" : run.duplicate || run.expectedStatus !== 200 || run.scenario === "resource_not_found" || run.scenario === "unknown_event" ? "ok" : "muted";
+  target.innerHTML = `
+    <div class="webhook-result-head">
+      <div>
+        <span class="webhook-http ${run.passed ? "ok" : "error"}">HTTP ${escapeHtml(run.httpStatus || "sem resposta")}</span>
+        <strong>${run.passed ? "Comportamento confirmado" : "Teste requer atenção"}</strong>
+      </div>
+      <span>${escapeHtml(`${Number(run.elapsedMs || 0)} ms`)}</span>
+    </div>
+    <dl class="webhook-result-meta">
+      <div><dt>Evento</dt><dd>${escapeHtml(run.action || "")}</dd></div>
+      <div><dt>Resource ID</dt><dd>${escapeHtml(run.resourceId || "")}</dd></div>
+      <div><dt>Referência</dt><dd>${escapeHtml(run.externalReference || "")}</dd></div>
+      <div><dt>Request ID</dt><dd>${escapeHtml(run.requestId || "")}</dd></div>
+    </dl>
+    <ol class="webhook-steps">
+      ${webhookStep("Webhook recebido", run.httpStatus ? "ok" : "error", run.httpStatus ? `Resposta HTTP ${run.httpStatus}` : "Sem resposta do endpoint")}
+      ${webhookStep("Headers obrigatórios", request.signaturePresent && request.requestIdPresent ? "ok" : run.expectedStatus === 401 ? "ok" : "error", `x-signature ${request.signaturePresent ? "presente" : "ausente"}; x-request-id ${request.requestIdPresent ? "presente" : "ausente"}`)}
+      ${webhookStep("data.id da query", request.dataIdPresent ? "ok" : run.expectedStatus === 401 ? "ok" : "error", request.dataIdPresent ? "Parâmetro encontrado" : "Parâmetro ausente")}
+      ${webhookStep("Validação da assinatura", signatureState, run.signatureValid ? "HMAC validado" : signatureRejectedAsExpected ? "Rejeição esperada confirmada" : "Assinatura não validada")}
+      ${webhookStep("Evento interpretado", recognizedState, processing.recognized === false ? "Evento desconhecido aceito sem alteração" : run.httpStatus === 401 ? "Não processado após rejeição" : "Evento reconhecido")}
+      ${webhookStep("Pedido localizado", orderState, processing.orderLocated === true ? "Pedido de teste encontrado" : processing.orderLocated === false ? "Nenhum pedido correspondente" : "Etapa não aplicável")}
+      ${webhookStep("Estado e idempotência", stateUpdated, run.duplicate ? "Reenvio detectado sem duplicação" : processing.stateUpdated ? `Estado atualizado para ${processing.status || "novo status"}` : "Nenhuma duplicação ou alteração indevida")}
+    </ol>
+    <div class="webhook-result-message">${escapeHtml(run.result || "")}</div>
+  `;
+}
+
+function renderWebhookHistory() {
+  const target = $("webhookTestHistory");
+  if (!target) return;
+  const runs = state.webhookSimulatorRuns || [];
+  $("webhookHistoryCount").textContent = runs.length ? `${runs.length} registro${runs.length === 1 ? "" : "s"}` : "Nenhum teste";
+  target.innerHTML = runs.length ? runs.map((run) => `
+    <div class="webhook-history-row ${state.selectedWebhookRunId === run.id ? "selected" : ""}">
+      <button type="button" class="webhook-history-main" onclick="showWebhookRun('${escapeHtml(run.id)}')">
+        <span>${escapeHtml(new Date(run.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</span>
+        <strong>${escapeHtml(run.action || "Evento")}</strong>
+        <span class="truncate">${escapeHtml(run.resourceId || "")}</span>
+        <span class="webhook-http ${run.passed ? "ok" : "error"}">${escapeHtml(String(run.httpStatus || "--"))}</span>
+        <span>${escapeHtml(run.passed ? "Aprovado" : "Falhou")}</span>
+      </button>
+      <button class="ghost-button webhook-resend" type="button" onclick="resendWebhookRun('${escapeHtml(run.id)}')">Reenviar</button>
+    </div>
+  `).join("") : `<div class="empty-state compact"><strong>Console vazio</strong><span>Os testes recentes aparecerão aqui.</span></div>`;
+}
+
+function showWebhookRun(id) {
+  const run = state.webhookSimulatorRuns.find((item) => item.id === id);
+  if (!run) return;
+  state.selectedWebhookRunId = id;
+  renderWebhookRun(run);
+  renderWebhookHistory();
+}
+
+async function loadWebhookSimulator() {
+  const data = await api("/api/admin/integrations/mercadoPago/webhook-simulations");
+  state.webhookSimulatorRuns = data.runs || [];
+  renderWebhookHistory();
+  renderWebhookRun(state.webhookSimulatorRuns.find((item) => item.id === state.selectedWebhookRunId) || state.webhookSimulatorRuns[0]);
+}
+
+function webhookSimulationPayload() {
+  return {
+    action: $("webhookTestAction").value,
+    status: $("webhookTestStatus").value,
+    resourceId: $("webhookTestResourceId").value.trim(),
+    externalReference: $("webhookTestExternalReference").value.trim(),
+    amount: Number($("webhookTestAmount").value || 10),
+    scenario: $("webhookTestScenario").value
+  };
+}
+
+async function simulateWebhook() {
+  const button = $("webhookSimulateButton");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Simulando...";
+  try {
+    const data = await api("/api/admin/integrations/mercadoPago/webhook-simulations", {
+      method: "POST",
+      body: JSON.stringify(webhookSimulationPayload())
+    });
+    state.webhookSimulatorRuns.unshift(data.run);
+    state.webhookSimulatorRuns = state.webhookSimulatorRuns.slice(0, 60);
+    state.selectedWebhookRunId = data.run.id;
+    renderWebhookRun(data.run);
+    renderWebhookHistory();
+    showToast(data.run.passed ? "Webhook testado com o comportamento esperado." : "O teste encontrou uma divergência.", data.run.passed ? "ok" : "error");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function runWebhookBatch() {
+  const button = $("webhookBatchButton");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Executando 8 testes...";
+  try {
+    const data = await api("/api/admin/integrations/mercadoPago/webhook-simulations/batch", { method: "POST" });
+    await loadWebhookSimulator();
+    const failed = Number(data.failed || 0);
+    showSuccess("Bateria de Webhooks concluída", `${data.total} testes executados, ${data.passed} aprovados e ${failed} ${failed === 1 ? "falhou" : "falharam"}.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function resendWebhookRun(id) {
+  try {
+    const data = await api(`/api/admin/integrations/mercadoPago/webhook-simulations/${encodeURIComponent(id)}/resend`, { method: "POST" });
+    state.webhookSimulatorRuns.unshift(data.run);
+    state.webhookSimulatorRuns = state.webhookSimulatorRuns.slice(0, 60);
+    state.selectedWebhookRunId = data.run.id;
+    renderWebhookRun(data.run);
+    renderWebhookHistory();
+    showToast(data.run.duplicate ? "Idempotência confirmada: nenhuma duplicação." : "Webhook reenviado.", data.run.passed ? "ok" : "error");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
 async function openIntegrationConfig(key) {
   try {
     const data = await api(`/api/admin/integrations/${encodeURIComponent(key)}`);
@@ -3271,7 +3703,10 @@ async function openIntegrationConfig(key) {
     $("integrationDisableButton").textContent = integration.enabled ? "Desativar" : "Ativar";
     $("integrationDisableButton").className = integration.enabled ? "danger-button" : "ghost-button";
     $("integrationTestButton").textContent = "Testar conexão";
+    const webhookPanel = $("webhookTesterPanel");
+    webhookPanel.hidden = integration.key !== "mercadoPago";
     $("integrationOverlay").hidden = false;
+    if (integration.key === "mercadoPago") await loadWebhookSimulator();
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -3363,6 +3798,9 @@ function applyRbacVisibility() {
 }
 
 function bindEvents() {
+  bindAdminSubtabs();
+  enhanceImageUploads();
+  enhanceLongForms();
   const storedPanel = window.location.hash?.replace("#", "") || localStorage.getItem("cine_admin_panel") || "dashboardPanel";
   activatePanel(storedPanel, { scroll: false });
   document.body.classList.remove("admin-booting");
@@ -3445,6 +3883,15 @@ function bindEvents() {
     const current = state.integrations?.integrations?.[key];
     if (key && current) toggleIntegration(key, !current.enabled);
   });
+  $("webhookSimulateButton")?.addEventListener("click", simulateWebhook);
+  $("webhookBatchButton")?.addEventListener("click", runWebhookBatch);
+  $("webhookTestAction")?.addEventListener("change", () => {
+    const action = $("webhookTestAction").value;
+    if (action === "order.action_required") $("webhookTestStatus").value = "action_required";
+    else if (action === "order.cancelled") $("webhookTestStatus").value = "cancelled";
+    else if (action === "order.refunded") $("webhookTestStatus").value = "refunded";
+    else if (action === "order.processed") $("webhookTestStatus").value = "processed";
+  });
   document.querySelectorAll("[data-dashboard-period]").forEach((button) => {
     button.addEventListener("click", async () => {
       state.dashboardPeriod = button.dataset.dashboardPeriod;
@@ -3454,6 +3901,14 @@ function bindEvents() {
       $("dashboardTo").hidden = !custom;
       await refreshDashboardOnly();
       await refreshPaymentsOnly();
+    });
+  });
+  document.querySelectorAll("[data-dashboard-metric]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.dashboardMetric = button.dataset.dashboardMetric;
+      document.querySelectorAll("[data-dashboard-metric]").forEach((item) => item.classList.toggle("active", item === button));
+      if ($("dashChartHint")) $("dashChartHint").textContent = "";
+      renderDashboardChart(state.dashboard?.chart || []);
     });
   });
   ["dashboardFrom", "dashboardTo"].forEach((id) => {
@@ -3470,7 +3925,9 @@ function bindEvents() {
   $("cancelMovieCreateButton").addEventListener("click", () => cancelCreation("movie"));
   $("movieForm").addEventListener("submit", saveMovie);
   $("deleteMovieButton").addEventListener("click", () => deleteMovie());
-  $("addSessionButton").addEventListener("click", addSession);
+  $("addSessionButton").addEventListener("click", () => openSessionEditor());
+  $("saveSessionButton").addEventListener("click", saveSession);
+  $("cancelSessionButton").addEventListener("click", closeSessionEditor);
   $("tmdbSearchButton").addEventListener("click", searchTmdb);
   $("movieWizardBack").addEventListener("click", () => setMovieWizardStep(state.movieWizardStep - 1));
   $("movieWizardNext").addEventListener("click", () => {
@@ -3571,6 +4028,7 @@ function bindEvents() {
   $("deleteConcessionButton").addEventListener("click", deleteConcession);
   $("concessionImageUpload").addEventListener("change", () => uploadAdminImage("concessionImageUpload", "concessionImageUrl", "", "concessions", renderConcessionPreview));
   $("concessionImageUrl").addEventListener("input", renderConcessionPreview);
+  $("concessionImageClear").addEventListener("click", () => clearImageField("concessionImageUrl", "concessionImagePreview", "Imagem do produto"));
 
   $("settingsForm").addEventListener("submit", saveSettings);
   $("clubVisualForm")?.addEventListener("submit", saveClubVisualSettings);
@@ -3600,7 +4058,9 @@ function bindEvents() {
   $("cancelAdCreateButton").addEventListener("click", () => cancelCreation("ad"));
   $("adForm").addEventListener("submit", saveAd);
   $("deleteAdButton").addEventListener("click", deleteAd);
-  $("adImageUpload").addEventListener("change", () => uploadAdminImage("adImageUpload", "adImageUrl", "", "ads"));
+  $("adImageUpload").addEventListener("change", () => uploadAdminImage("adImageUpload", "adImageUrl", "adImagePreview", "ads"));
+  $("adImageUrl").addEventListener("input", () => renderAdminImagePreview("adImageUrl", "adImagePreview", "Prévia do anúncio"));
+  $("adImageClear").addEventListener("click", () => clearImageField("adImageUrl", "adImagePreview", "Prévia do anúncio"));
 
   $("newUserButton").addEventListener("click", newUser);
   $("cancelUserCreateButton").addEventListener("click", () => cancelCreation("user"));
@@ -3774,6 +4234,8 @@ window.deleteClubPlan = deleteClubPlan;
 window.adjustClubCredit = adjustClubCredit;
 window.openIntegrationConfig = openIntegrationConfig;
 window.testIntegration = testIntegration;
+window.showWebhookRun = showWebhookRun;
+window.resendWebhookRun = resendWebhookRun;
 window.toggleIntegration = toggleIntegration;
 
 async function initAdmin() {

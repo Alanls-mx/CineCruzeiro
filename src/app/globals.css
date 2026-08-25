@@ -179,6 +179,22 @@ a[href] {
   animation: skeletonShimmer 1.25s infinite;
 }
 
+.deferred-content {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 760px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body {
+    scroll-behavior: auto;
+  }
+
+  .skeleton-soft::after {
+    animation: none;
+  }
+}
+
 @keyframes skeletonShimmer {
   100% {
     transform: translateX(100%);

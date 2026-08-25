@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { Play, Ticket } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { TrailerModal } from "@/components/TrailerModal";
@@ -25,7 +26,18 @@ export default function HomePage() {
           <>
             <section className="relative overflow-hidden">
               <div className="absolute inset-0 opacity-35">
-                {featured.backdropUrl && <img src={featured.backdropUrl} alt="" className="h-full w-full object-cover" />}
+                {featured.backdropUrl && (
+                  <Image
+                    src={featured.backdropUrl}
+                    alt=""
+                    fill
+                    priority
+                    fetchPriority="high"
+                    quality={58}
+                    sizes="100vw"
+                    className="object-cover"
+                  />
+                )}
                 <div className="absolute inset-0 bg-[linear-gradient(90deg,#060a12_0%,rgba(6,10,18,.86)_35%,rgba(6,10,18,.38)_100%)]" />
                 <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#060a12] to-transparent" />
               </div>
@@ -57,8 +69,17 @@ export default function HomePage() {
                     )}
                   </div>
                 </div>
-                <Link href={`/filmes/${movieSlug(featured)}`} className="block w-full max-w-[260px] justify-self-center sm:max-w-[300px] lg:max-w-none lg:justify-self-end" aria-label={`Abrir ${featured.title}`}>
-                  <img src={featured.posterUrl} alt={`Poster de ${featured.title}`} className="aspect-[2/3] max-h-[420px] w-full object-cover shadow-[0_22px_80px_rgba(0,0,0,.45)] lg:max-h-[520px] lg:w-auto" />
+                <Link href={`/filmes/${movieSlug(featured)}`} className="relative block aspect-[2/3] w-full max-w-[260px] justify-self-center overflow-hidden bg-brand-950 shadow-[0_22px_80px_rgba(0,0,0,.45)] sm:max-w-[300px] lg:justify-self-end" aria-label={`Abrir ${featured.title}`}>
+                  {featured.posterUrl && (
+                    <Image
+                      src={featured.posterUrl}
+                      alt={`Poster de ${featured.title}`}
+                      fill
+                      quality={74}
+                      sizes="(max-width: 640px) 260px, 300px"
+                      className="object-cover"
+                    />
+                  )}
                 </Link>
               </div>
             </section>
@@ -77,7 +98,7 @@ export default function HomePage() {
 function MovieStrip({ title, movies, muted = false }: { title: string; movies: Movie[]; muted?: boolean }) {
   if (!movies.length) return null;
   return (
-    <section className="mx-auto max-w-[1320px] px-4 py-16 sm:px-6 lg:px-8">
+    <section className="deferred-content mx-auto max-w-[1320px] px-4 py-16 sm:px-6 lg:px-8">
       <div className="mb-8 flex items-end justify-between gap-4">
         <h2 className="font-display text-3xl font-black sm:text-4xl">{title}</h2>
         <Link href="/filmes" className="text-sm font-bold text-brand-300 hover:text-gold-400">Ver programação</Link>
@@ -85,7 +106,18 @@ function MovieStrip({ title, movies, muted = false }: { title: string; movies: M
       <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
         {movies.slice(0, 5).map((movie) => (
           <Link key={movie.id} href={`/filmes/${movieSlug(movie)}`} className={muted ? "opacity-90 transition hover:opacity-100" : "group"}>
-            <img src={movie.posterUrl} alt={`Poster de ${movie.title}`} className="aspect-[2/3] w-full object-cover" />
+            <div className="relative aspect-[2/3] overflow-hidden bg-brand-950">
+              {movie.posterUrl && (
+                <Image
+                  src={movie.posterUrl}
+                  alt={`Poster de ${movie.title}`}
+                  fill
+                  quality={72}
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                  className="object-cover transition duration-200 group-hover:scale-[1.02]"
+                />
+              )}
+            </div>
             <h3 className="mt-3 line-clamp-2 text-sm font-black text-white">{movie.title}</h3>
             <p className="mt-1 text-xs font-semibold text-slate-400">{movie.duration} • {movie.rating}</p>
           </Link>
@@ -97,11 +129,36 @@ function MovieStrip({ title, movies, muted = false }: { title: string; movies: M
 
 function HomeSkeleton() {
   return (
-    <div className="mx-auto max-w-[1320px] px-4 py-20 sm:px-6 lg:px-8">
-      <div className="h-6 w-64 skeleton-soft" />
-      <div className="mt-6 h-20 max-w-3xl skeleton-soft" />
-      <div className="mt-5 h-28 max-w-2xl skeleton-soft" />
+    <div aria-hidden="true">
+      <section className="mx-auto grid min-h-[620px] max-w-[1320px] items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8">
+        <div className="max-w-3xl">
+          <div className="h-4 w-64 skeleton-soft" />
+          <div className="mt-6 h-24 max-w-2xl skeleton-soft" />
+          <div className="mt-5 h-28 max-w-2xl skeleton-soft" />
+          <div className="mt-8 h-[52px] w-52 skeleton-soft" />
+        </div>
+        <div className="aspect-[2/3] w-full max-w-[260px] justify-self-center skeleton-soft sm:max-w-[300px] lg:justify-self-end" />
+      </section>
+      <SkeletonMovieStrip />
+      <SkeletonMovieStrip />
     </div>
+  );
+}
+
+function SkeletonMovieStrip() {
+  return (
+    <section className="mx-auto max-w-[1320px] px-4 py-16 sm:px-6 lg:px-8">
+      <div className="mb-8 h-10 w-52 skeleton-soft" />
+      <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index}>
+            <div className="aspect-[2/3] skeleton-soft" />
+            <div className="mt-3 h-4 w-4/5 skeleton-soft" />
+            <div className="mt-2 h-3 w-2/5 skeleton-soft" />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

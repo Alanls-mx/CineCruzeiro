@@ -1,5 +1,6 @@
 const fs = require("fs");
 const assert = require("assert/strict");
+const crypto = require("crypto");
 
 const DATA_FILE = "backend/data/db.json";
 const PORT = 4199;
@@ -13,6 +14,8 @@ process.env.PAYMENTS_MODE = "test";
 process.env.TEST_PAYMENTS_AUTO_APPROVE = "false";
 process.env.ADMIN_EMAIL = "admin@cinecruzeiro.local";
 process.env.ADMIN_PASSWORD = "admin-smoke-123456";
+process.env.MERCADO_PAGO_WEBHOOK_SECRET = "smoke-mercado-pago-webhook-secret";
+process.env.WEBHOOK_TESTER_ENABLED = "true";
 
 function jsonHeaders(cookie = "") {
   return {
@@ -314,24 +317,62 @@ async function run() {
         posterUrl: uploadedImage.payload.url,
         synopsis: "Filme publicado pelo teste de fluxo administrativo.",
         duration: "1h 20m",
-        rating: "L",
-        sessions: [
-          {
-            id: "smoke-rascunho-admin-1",
-            date: "2026-08-24",
-            time: "18:00",
-            format: "2D Dublado",
-            room: "Sala Cruzeiro (Laser 4K)",
-            priceFull: 10,
-            priceHalf: 10,
-            status: "available"
-          }
-        ]
+        rating: "L"
       })
     });
     assert.equal(publishMovie.response.status, 200);
     assert.equal(publishMovie.payload.workflowStatus, "published");
     assert.equal(publishMovie.payload.slug, "smoke-rascunho-admin");
+    assert.equal(publishMovie.payload.sessions.length, 0);
+
+    const createSession = await request("/api/movies/smoke-rascunho-admin/sessions", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        date: "2099-08-24",
+        time: "18:00",
+        format: "2D Dublado",
+        room: "Sala Cruzeiro (Laser 4K)",
+        priceFull: 10,
+        priceHalf: 10,
+        status: "available"
+      })
+    });
+    assert.equal(createSession.response.status, 201);
+    assert.ok(createSession.payload.id);
+
+    const updateSession = await request(`/api/movies/smoke-rascunho-admin/sessions/${encodeURIComponent(createSession.payload.id)}`, {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        date: "2099-08-24",
+        time: "19:15",
+        format: "2D Legendado",
+        room: "Sala Cruzeiro (Laser 4K)",
+        priceFull: 12,
+        priceHalf: 12,
+        status: "available"
+      })
+    });
+    assert.equal(updateSession.response.status, 200);
+    assert.equal(updateSession.payload.time, "19:15");
+
+    const editMovieWithoutSessions = await request("/api/movies/smoke-rascunho-admin", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ title: "Smoke Rascunho Atualizado", workflowStatus: "published", status: "upcoming" })
+    });
+    assert.equal(editMovieWithoutSessions.response.status, 200);
+    assert.equal(editMovieWithoutSessions.payload.sessions.length, 1);
+    assert.equal(editMovieWithoutSessions.payload.sessions[0].id, createSession.payload.id);
+
+    const deleteSession = await request(`/api/movies/smoke-rascunho-admin/sessions/${encodeURIComponent(createSession.payload.id)}`, {
+      method: "DELETE",
+      headers: jsonHeaders(adminCookie)
+    });
+    assert.equal(deleteSession.response.status, 200);
+    const afterSessionDelete = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(afterSessionDelete.payload.movies.find((movie) => movie.id === "smoke-rascunho-admin").sessions.length, 0);
     assert.equal(movieContent.payload.movies.some((movie) => movie.id === "id-nao-deve-duplicar"), false);
 
     const orderBefore = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
@@ -385,13 +426,35 @@ async function run() {
     assert.equal(persistedMediaPlan.isFeatured, true);
     assert.equal(persistedMediaPlan.displayOrder, 7);
 
-    const pendingSubscription = await request("/api/subscriptions/subscribe", {
+    const subscriptionWithoutPaymentMethod = await request("/api/subscriptions/subscribe", {
       method: "POST",
       headers: jsonHeaders(cookie),
       body: JSON.stringify({ planId: oneCreditPlan.payload.id })
     });
+    assert.equal(subscriptionWithoutPaymentMethod.response.status, 422);
+    assert.equal(subscriptionWithoutPaymentMethod.payload.error.code, "SUBSCRIPTION_PAYMENT_METHOD_REQUIRED");
+
+    const pendingSubscription = await request("/api/subscriptions/subscribe", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ planId: oneCreditPlan.payload.id, paymentMethod: "pix" })
+    });
     assert.equal(pendingSubscription.response.status, 202);
     assert.equal(pendingSubscription.payload.subscription.status, "pending_payment");
+    assert.equal(pendingSubscription.payload.subscription.paymentStatus, "pending");
+    assert.equal(Number(pendingSubscription.payload.subscription.creditsAvailable || 0), 0);
+    assert.equal(pendingSubscription.payload.subscription.approvedAt || "", "");
+    assert.equal(pendingSubscription.payload.subscription.providerPlanId, "");
+    assert.equal(pendingSubscription.payload.paymentMethod, "pix");
+    assert.ok(pendingSubscription.payload.checkoutUrl);
+
+    const pendingClubCredit = await request("/api/checkout/club-credit", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, idempotencyKey: `club-smoke-pending-${Date.now()}` })
+    });
+    assert.equal(pendingClubCredit.response.status, 409);
+    assert.equal(pendingClubCredit.payload.error.code, "NO_ACTIVE_SUBSCRIPTION");
 
     const assignSubscription = await request("/api/admin/subscriptions/assign", {
       method: "POST",
@@ -679,6 +742,84 @@ async function run() {
     assert.equal(checkoutStatus.response.status, 200);
     assert.equal(checkoutStatus.payload.payment.status, "pending");
     assert.equal(checkoutStatus.payload.tickets.length, 0);
+
+    const webhookResourceId = pix.payload.payment.providerPaymentId;
+    const webhookRequestId = crypto.randomUUID();
+    const webhookTimestamp = String(Math.floor(Date.now() / 1000));
+    const webhookBody = {
+      action: "order.processed",
+      api_version: "v1",
+      type: "order",
+      live_mode: false,
+      data: {
+        id: webhookResourceId,
+        external_reference: pix.payload.order.id,
+        status: "processed",
+        status_detail: "accredited",
+        total_amount: String(pix.payload.payment.amount),
+        total_paid_amount: String(pix.payload.payment.amount),
+        version: 1,
+        transactions: {
+          payments: [{
+            id: "PAY_SMOKE_APPROVED",
+            amount: String(pix.payload.payment.amount),
+            paid_amount: String(pix.payload.payment.amount),
+            status: "processed",
+            status_detail: "accredited",
+            payment_method: { id: "pix", type: "bank_transfer" }
+          }]
+        }
+      }
+    };
+    const manifest = `id:${webhookResourceId};request-id:${webhookRequestId};ts:${webhookTimestamp};`;
+    const webhookSignature = crypto.createHmac("sha256", process.env.MERCADO_PAGO_WEBHOOK_SECRET).update(manifest).digest("hex");
+    const webhookHeaders = {
+      "Content-Type": "application/json",
+      "x-request-id": webhookRequestId,
+      "x-signature": `ts=${webhookTimestamp},v1=${webhookSignature}`
+    };
+    const approvedWebhook = await request(`/api/webhooks/mercado-pago?data.id=${encodeURIComponent(webhookResourceId)}&type=order`, {
+      method: "POST",
+      headers: webhookHeaders,
+      body: JSON.stringify(webhookBody)
+    });
+    assert.equal(approvedWebhook.response.status, 200);
+    assert.equal(approvedWebhook.payload.processed, true);
+    assert.equal(approvedWebhook.payload.processing.status, "approved");
+
+    const duplicateWebhook = await request(`/api/webhooks/mercado-pago?data.id=${encodeURIComponent(webhookResourceId)}&type=order`, {
+      method: "POST",
+      headers: webhookHeaders,
+      body: JSON.stringify(webhookBody)
+    });
+    assert.equal(duplicateWebhook.response.status, 200);
+    assert.equal(duplicateWebhook.payload.duplicate, true);
+
+    const invalidWebhook = await request(`/api/webhooks/mercado-pago?data.id=${encodeURIComponent(webhookResourceId)}&type=order`, {
+      method: "POST",
+      headers: { ...webhookHeaders, "x-signature": `${webhookHeaders["x-signature"]}invalid` },
+      body: JSON.stringify(webhookBody)
+    });
+    assert.equal(invalidWebhook.response.status, 401);
+
+    const simulator = await request("/api/admin/integrations/mercadoPago/webhook-simulations", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ scenario: "resource_not_found", action: "order.processed", amount: 10 })
+    });
+    assert.equal(simulator.response.status, 200);
+    assert.equal(simulator.payload.run.httpStatus, 200);
+    assert.equal(simulator.payload.run.passed, true);
+
+    const webhookBatch = await request("/api/admin/integrations/mercadoPago/webhook-simulations/batch", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({})
+    });
+    assert.equal(webhookBatch.response.status, 200);
+    assert.equal(webhookBatch.payload.total, 8);
+    assert.equal(webhookBatch.payload.passed, 8);
+    assert.equal(webhookBatch.payload.failed, 0);
 
     const cardBody = {
       order: {

@@ -15,9 +15,10 @@ const navItems = [
 
 type SiteHeaderProps = {
   settings?: CinemaContent["settings"];
+  mutedPrimaryAction?: boolean;
 };
 
-export function SiteHeader({ settings }: SiteHeaderProps = {}) {
+export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderProps = {}) {
   const [open, setOpen] = useState(false);
   const [cartCount, setCartCount] = useState(0);
   const [cartSessionId, setCartSessionId] = useState("");
@@ -66,7 +67,14 @@ export function SiteHeader({ settings }: SiteHeaderProps = {}) {
       )}
       <div className="mx-auto flex h-20 max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center" aria-label="Cine Cruzeiro">
-          <img src={assetPath("/images/logo.png")} alt="Cine Cruzeiro" className="h-14 w-auto object-contain sm:h-16" />
+          <img
+            src={assetPath("/images/logo-display.webp")}
+            alt="Cine Cruzeiro"
+            width={320}
+            height={183}
+            decoding="async"
+            className="h-14 w-auto object-contain sm:h-16"
+          />
         </Link>
 
         <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-200 md:flex">
@@ -85,7 +93,7 @@ export function SiteHeader({ settings }: SiteHeaderProps = {}) {
             <ShoppingBag className="h-5 w-5" />
             {cartCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-gold-400" />}
           </Link>
-          <Link href="/filmes" className="bg-gold-400 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400">
+          <Link href="/filmes" className={`${mutedPrimaryAction ? "bg-white/8 text-slate-100 hover:bg-white/12" : "bg-gold-400 text-slate-950 hover:bg-gold-300"} px-5 py-3 text-sm font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400`}>
             Comprar ingresso
           </Link>
         </div>
@@ -114,7 +122,7 @@ export function SiteHeader({ settings }: SiteHeaderProps = {}) {
             ))}
             <Link href="/conta" onClick={() => setOpen(false)}>Minha conta</Link>
             <Link href={cartHref} onClick={() => setOpen(false)}>Carrinho</Link>
-            <Link href="/filmes" onClick={() => setOpen(false)} className="mt-2 bg-gold-400 px-5 py-3 text-center text-sm font-black text-slate-950">
+            <Link href="/filmes" onClick={() => setOpen(false)} className={`${mutedPrimaryAction ? "bg-white/8 text-white" : "bg-gold-400 text-slate-950"} mt-2 px-5 py-3 text-center text-sm font-black`}>
               Comprar ingresso
             </Link>
           </nav>
@@ -129,11 +137,19 @@ export function SiteFooter() {
     <footer className="border-t border-white/8 bg-[#050810] text-sm text-slate-400">
       <div className="mx-auto grid max-w-[1320px] gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.35fr_1fr_1fr] lg:px-8">
         <div>
-          <img src={assetPath("/images/logo.png")} alt="Cine Cruzeiro" className="h-16 w-auto" />
+          <img
+            src={assetPath("/images/logo-display.webp")}
+            alt="Cine Cruzeiro"
+            width={320}
+            height={183}
+            loading="lazy"
+            decoding="async"
+            className="h-16 w-auto"
+          />
           <p className="mt-4 max-w-md leading-relaxed">
             Cinema de rua, sala única, preço justo e tecnologia para comprar sem complicação.
           </p>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[.16em] text-slate-500">Cultura e lazer no bairro</p>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Cultura e lazer no bairro</p>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Programação</h3>
@@ -149,7 +165,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-white/8">
-        <div className="mx-auto flex max-w-[1320px] flex-col gap-3 px-4 py-5 text-xs text-slate-500 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+        <div className="mx-auto flex max-w-[1320px] flex-col gap-3 px-4 py-5 text-xs text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>© Cine Cruzeiro. Plataforma de vendas, bilheteria e relacionamento.</span>
           <span>Ingressos liberados somente após aprovação real do pagamento.</span>
         </div>

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CinemaContent, fetchCinemaContent } from "@/services/cinemaApi";
+import { CinemaContent, fetchCinemaContent, getCachedCinemaContent } from "@/services/cinemaApi";
 
 export function useCinemaContent() {
-  const [content, setContent] = useState<CinemaContent | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const cachedContent = getCachedCinemaContent();
+  const [content, setContent] = useState<CinemaContent | null>(cachedContent);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(cachedContent ? "ready" : "loading");
   const [error, setError] = useState("");
 
   useEffect(() => {

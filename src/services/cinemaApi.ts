@@ -5,6 +5,10 @@ const API_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
 const CUSTOMER_SESSION_TOKEN_KEY = "cine-cruzeiro-session-token";
 const CUSTOMER_FALLBACK_COOKIE = "cine_customer_fallback";
 const CUSTOMER_TOKEN_MAX_AGE = 60 * 60 * 24 * 30;
+const CINEMA_CONTENT_CACHE_TTL = 30_000;
+
+let cinemaContentCache: { value: CinemaContent; expiresAt: number } | null = null;
+let cinemaContentRequest: Promise<CinemaContent> | null = null;
 
 function apiErrorMessage(payload: Record<string, unknown>, fallback: string) {
   const error = payload.error;
@@ -255,16 +259,7 @@ function normalizeMovie(movie: Partial<Movie> & { status?: string }): Movie {
   };
 }
 
-export async function fetchCinemaContent(): Promise<CinemaContent> {
-  const response = await fetch(`${API_BASE}/api/content`, {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Nao foi possivel carregar a programacao do backend.");
-  }
-
-  const data = await response.json();
+function normalizeCinemaContent(data: Record<string, any>): CinemaContent {
   const nowPlaying = Array.isArray(data.nowPlaying)
     ? data.nowPlaying.map(normalizeMovie)
     : [];
@@ -300,6 +295,38 @@ export async function fetchCinemaContent(): Promise<CinemaContent> {
       eventGalleryImageUrl: publicAssetPath(data.settings?.eventGalleryImageUrl),
     },
   };
+}
+
+export function getCachedCinemaContent() {
+  if (!cinemaContentCache || cinemaContentCache.expiresAt <= Date.now()) return null;
+  return cinemaContentCache.value;
+}
+
+export async function fetchCinemaContent(): Promise<CinemaContent> {
+  const cached = getCachedCinemaContent();
+  if (cached) return cached;
+  if (cinemaContentRequest) return cinemaContentRequest;
+
+  cinemaContentRequest = fetch(`${API_BASE}/api/content`)
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error("Nao foi possivel carregar a programacao do backend.");
+      }
+      return normalizeCinemaContent(await response.json());
+    })
+    .then((content) => {
+      cinemaContentCache = {
+        value: content,
+        expiresAt: Date.now() + CINEMA_CONTENT_CACHE_TTL,
+      };
+      return content;
+    });
+
+  try {
+    return await cinemaContentRequest;
+  } finally {
+    cinemaContentRequest = null;
+  }
 }
 
 export async function recordTicketOrder(order: TicketOrder) {
@@ -383,7 +410,7 @@ export async function fetchMercadoPagoCheckoutConfig() {
 }
 
 export async function fetchSubscriptionPlans() {
-  const response = await fetch(`${API_BASE}/api/subscription-plans`, { cache: "no-store" });
+  const response = await fetch(`${API_BASE}/api/subscription-plans`);
   const payload = await response.json().catch(() => []);
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar os planos do Clube."));
@@ -407,12 +434,12 @@ export async function fetchMySubscriptions() {
   return (payload.subscriptions || []) as AccountSubscription[];
 }
 
-export async function subscribeToPlan(planId: string) {
+export async function subscribeToPlan(planId: string, paymentMethod: "card" | "pix") {
   const response = await fetch(`${API_BASE}/api/subscriptions/subscribe`, {
     method: "POST",
     credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ planId }),
+    body: JSON.stringify({ planId, paymentMethod }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -423,6 +450,7 @@ export async function subscribeToPlan(planId: string) {
     checkoutUrl?: string;
     initPoint?: string;
     provider?: string;
+    paymentMethod?: "card" | "pix";
     externalBillingPending?: boolean;
     message?: string;
   };
@@ -521,8 +549,11 @@ export async function loginCustomer(data: { email: string; password: string }) {
   return payload as { token?: string; user: CustomerUser };
 }
 
-export function googleLoginUrl() {
-  return `${API_BASE}/api/auth/google/start`;
+export function googleLoginUrl(returnTo = "") {
+  const safeReturnTo = returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "";
+  return safeReturnTo
+    ? `${API_BASE}/api/auth/google/start?returnTo=${encodeURIComponent(safeReturnTo)}`
+    : `${API_BASE}/api/auth/google/start`;
 }
 
 export async function fetchCurrentCustomer() {

@@ -33,6 +33,10 @@ export default function ContaPage() {
 function ContaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedReturnTo = searchParams.get("returnTo") || "";
+  const returnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//")
+    ? requestedReturnTo
+    : "";
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [mode, setMode] = useState<"login" | "register" | "recover" | "reset">("login");
   const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", cpf: "" });
@@ -44,7 +48,7 @@ function ContaPageContent() {
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [subscriptions, setSubscriptions] = useState<AccountSubscription[]>([]);
   const [clubMessage, setClubMessage] = useState("");
-  const activeSubscriptions = subscriptions.filter((subscription) => !isClubHistory(subscription));
+  const activeSubscriptions = subscriptions.filter((subscription) => ["active", "paused"].includes(subscription.status) && !isClubHistory(subscription));
   const historySubscriptions = subscriptions.filter(isClubHistory);
 
   useEffect(() => {
@@ -133,7 +137,7 @@ function ContaPageContent() {
         confirmPassword: "",
       });
       loadClub();
-      router.replace("/conta/ingressos");
+      router.replace(returnTo || "/conta/ingressos");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível continuar.");
     } finally {
@@ -219,8 +223,9 @@ function ContaPageContent() {
     <div className="min-h-screen bg-[#060a12] text-white">
       <SiteHeader />
       <main className="mx-auto max-w-[1320px] px-4 py-12 sm:px-6 lg:px-8">
-        <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Minha Conta</p>
-        <h1 className="mt-4 font-display text-5xl font-black">Acesse seus ingressos</h1>
+        <h1 className="font-display text-4xl font-black sm:text-5xl">
+          {returnTo.startsWith("/clube/assinar") ? "Entre para continuar sua assinatura" : "Acesse seus ingressos"}
+        </h1>
 
         {user ? (
           <section className="mt-12 grid gap-10 lg:grid-cols-[1fr_1fr]">
@@ -354,7 +359,7 @@ function ContaPageContent() {
                 </button>
               </form>
               <div className="mt-5 flex flex-wrap items-center gap-5 text-sm font-black">
-                <a href={googleLoginUrl()} className="inline-flex min-h-[46px] items-center gap-3 bg-white px-5 text-sm font-black text-slate-950 shadow-lg shadow-blue-950/20 transition hover:bg-slate-100">
+                <a href={googleLoginUrl(returnTo)} className="inline-flex min-h-[46px] items-center gap-3 bg-white px-5 text-sm font-black text-slate-950 shadow-lg shadow-blue-950/20 transition hover:bg-slate-100">
                   <GoogleG />
                   Entrar com Google
                 </a>
@@ -504,7 +509,7 @@ function isClubHistory(subscription: AccountSubscription) {
   const remaining = Number(subscription.creditsRemaining ?? subscription.creditsAvailable ?? 0);
   const endValue = subscription.cycleEnd || subscription.currentPeriodEnd || "";
   const ended = endValue ? new Date(endValue).getTime() <= Date.now() : false;
-  return (remaining <= 0 && ended) || ["cancelled", "ended"].includes(subscription.status);
+  return (remaining <= 0 && ended) || ["pending_payment", "cancelled", "ended", "payment_failed"].includes(subscription.status);
 }
 
 function GoogleG() {

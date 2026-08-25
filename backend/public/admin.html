@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="stylesheet" href="admin/admin.css?v=20260824-05" />
-    <link rel="stylesheet" href="admin/admin-premium.css?v=20260824-01" />
+    <link rel="stylesheet" href="admin/admin-premium.css?v=20260824-06" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -13,7 +13,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <div class="brand">
-        <img src="images/logo.png" alt="Cine Cruzeiro" />
+        <img src="images/logo-display.webp" alt="Cine Cruzeiro" width="320" height="183" />
         <div>
           <strong>Console Cine Cruzeiro</strong>
           <span>Programação, vendas e operação</span>
@@ -106,17 +106,17 @@
             </div>
           </div>
           <div class="insight-grid">
-            <div class="insight"><span>Receita hoje</span><strong id="dashRevenueToday">R$ 0,00</strong></div>
-            <div class="insight clickable" data-goto-panel="ordersPanel"><span>Receita do período</span><strong id="dashRevenueMonth">R$ 0,00</strong><small id="dashRevenueCompare"></small></div>
-            <div class="insight"><span>Vendas hoje</span><strong id="dashSalesToday">0</strong></div>
-            <div class="insight clickable" data-goto-panel="ordersPanel"><span>Vendas no período</span><strong id="dashSalesMonth">0</strong><small id="dashSalesCompare"></small></div>
-            <div class="insight"><span>Ingressos vendidos</span><strong id="dashTicketsSold">0</strong><small id="dashTicketsCompare"></small></div>
-            <div class="insight"><span>Ticket médio</span><strong id="dashAverageTicket">R$ 0,00</strong></div>
-            <div class="insight"><span>Ocupação média</span><strong id="dashAverageOccupancy">0%</strong></div>
-            <div class="insight"><span>Clientes</span><strong id="dashCustomers">0</strong></div>
-            <div class="insight"><span>Assinaturas ativas</span><strong id="dashSubscriptions">0</strong></div>
-            <div class="insight"><span>Pagamentos pendentes</span><strong id="dashPendingPayments">0</strong></div>
-            <div class="insight"><span>Receita bomboniere</span><strong id="dashConcessionRevenue">R$ 0,00</strong></div>
+            <div class="insight primary-metric"><span>Receita hoje</span><strong id="dashRevenueToday">R$ 0,00</strong></div>
+            <div class="insight primary-metric clickable" data-goto-panel="ordersPanel"><span>Receita do período</span><strong id="dashRevenueMonth">R$ 0,00</strong><small id="dashRevenueCompare"></small></div>
+            <div class="insight primary-metric"><span>Vendas hoje</span><strong id="dashSalesToday">0</strong></div>
+            <div class="insight primary-metric clickable" data-goto-panel="ordersPanel"><span>Vendas no período</span><strong id="dashSalesMonth">0</strong><small id="dashSalesCompare"></small></div>
+            <div class="insight primary-metric"><span>Ingressos vendidos</span><strong id="dashTicketsSold">0</strong><small id="dashTicketsCompare"></small></div>
+            <div class="insight primary-metric"><span>Ticket médio</span><strong id="dashAverageTicket">R$ 0,00</strong></div>
+            <div class="insight secondary-metric"><span>Ocupação média</span><strong id="dashAverageOccupancy">0%</strong></div>
+            <div class="insight secondary-metric"><span>Clientes</span><strong id="dashCustomers">0</strong></div>
+            <div class="insight secondary-metric"><span>Assinaturas ativas</span><strong id="dashSubscriptions">0</strong></div>
+            <div class="insight secondary-metric"><span>Pagamentos pendentes</span><strong id="dashPendingPayments">0</strong></div>
+            <div class="insight secondary-metric"><span>Receita bomboniere</span><strong id="dashConcessionRevenue">R$ 0,00</strong></div>
           </div>
 
           <div class="dashboard-main-grid">
@@ -126,11 +126,17 @@
                   <div class="section-title">Receita e vendas</div>
                   <p>Movimento diário do período selecionado.</p>
                 </div>
-                <span id="dashChartHint" class="status-pill muted">Passe o mouse</span>
+                <div class="chart-toolbar">
+                  <div class="chart-mode-switch" aria-label="Métrica do gráfico">
+                    <button class="active" type="button" data-dashboard-metric="revenue">Receita</button>
+                    <button type="button" data-dashboard-metric="sales">Vendas</button>
+                  </div>
+                  <span id="dashChartHint" class="chart-tooltip" aria-live="polite"></span>
+                </div>
               </div>
               <div id="dashRevenueChart" class="dashboard-chart"></div>
             </div>
-            <div class="surface">
+            <div class="surface dashboard-attention-surface">
               <div class="section-title">Pagamentos que precisam de atenção</div>
               <div id="dashAttentionPayments" class="metric-list"></div>
             </div>
@@ -203,7 +209,7 @@
               <div id="moviesList" class="list"></div>
             </div>
 
-            <form id="movieForm" class="surface form-grid">
+            <form id="movieForm" class="surface form-grid long-form" data-dirty-track>
               <div class="form-head">
                 <div>
                   <div class="section-title">Edição do filme</div>
@@ -296,33 +302,37 @@
               </div>
 
               <div class="wizard-panel" data-movie-step-panel="2">
-                <div class="media-grid">
-                  <label class="upload-field">
-                    Pôster vertical
-                    <input id="moviePosterUpload" type="file" accept="image/jpeg,image/png,image/webp" />
-                    <span>JPG, PNG ou WebP até 5 MB. PNG/WebP transparente é preservado.</span>
-                  </label>
-                  <div class="media-preview poster-preview" id="moviePosterPreview">Prévia do pôster</div>
+                <div class="movie-media-pair">
+                  <div class="movie-media-card">
+                    <div class="media-grid">
+                      <label class="upload-field">
+                        Pôster vertical
+                        <input id="moviePosterUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+                        <span>JPG, PNG ou WebP até 5 MB. Recomendado: proporção 2:3.</span>
+                      </label>
+                      <div class="media-preview poster-preview" id="moviePosterPreview">Prévia do pôster</div>
+                    </div>
+                    <label>
+                      URL alternativa do pôster
+                      <input id="moviePosterUrl" placeholder="Cole a URL HTTPS do pôster vertical" />
+                    </label>
+                  </div>
+
+                  <div class="movie-media-card">
+                    <div class="media-grid">
+                      <label class="upload-field">
+                        Banner horizontal
+                        <input id="movieBackdropUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+                        <span>Use imagem paisagem. Recomendado: proporção 16:9.</span>
+                      </label>
+                      <div class="media-preview backdrop-preview" id="movieBackdropPreview">Prévia do banner</div>
+                    </div>
+                    <label>
+                      URL alternativa do banner
+                      <input id="movieBackdropUrl" placeholder="Cole a URL HTTPS do banner horizontal" />
+                    </label>
+                  </div>
                 </div>
-
-                <label>
-                  URL alternativa do pôster
-                  <input id="moviePosterUrl" placeholder="Cole a URL HTTPS do pôster vertical" />
-                </label>
-
-                <div class="media-grid">
-                  <label class="upload-field">
-                    Banner horizontal
-                    <input id="movieBackdropUpload" type="file" accept="image/jpeg,image/png,image/webp" />
-                    <span>Use imagem paisagem para detalhes e hero.</span>
-                  </label>
-                  <div class="media-preview backdrop-preview" id="movieBackdropPreview">Prévia do banner</div>
-                </div>
-
-                <label>
-                  URL alternativa do banner
-                  <input id="movieBackdropUrl" placeholder="Cole a URL HTTPS do banner horizontal" />
-                </label>
 
                 <label>
                   YouTube trailer ID
@@ -344,29 +354,42 @@
                 </div>
 
                 <div class="sessions-block">
-                  <div class="section-title">Sessões</div>
-                  <div id="sessionsList" class="sessions-list"></div>
-
-                  <div class="session-editor">
-                    <input id="sessionDate" type="date" aria-label="Data da sessão" />
-                    <input id="sessionTime" type="time" />
-                    <select id="sessionFormat">
-                      <option value="2D Dublado">2D Dublado</option>
-                      <option value="2D Legendado">2D Legendado</option>
-                      <option value="3D Dublado">3D Dublado</option>
-                      <option value="3D Legendado">3D Legendado</option>
-                    </select>
-                    <select id="sessionRoom"></select>
-                    <input id="sessionPriceFull" type="number" min="0" step="0.01" value="10" />
-                    <select id="sessionStatus">
-                      <option value="available">Disponível</option>
-                      <option value="filling_fast">Lotando</option>
-                      <option value="sold_out">Esgotado</option>
-                    </select>
+                  <div class="section-header compact-section-header">
+                    <div>
+                      <div class="section-title">Sessões do filme</div>
+                      <p>Cadastre horários somente quando a programação estiver definida. O filme pode permanecer sem sessões.</p>
+                    </div>
                     <button id="addSessionButton" class="ghost-button icon-label" type="button">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                      Sessão
+                      Adicionar sessão
                     </button>
+                  </div>
+                  <div id="sessionsList" class="sessions-list"></div>
+
+                  <div id="sessionEditor" class="session-editor-panel" hidden>
+                    <div class="section-title" id="sessionEditorTitle">Nova sessão</div>
+                    <input id="sessionId" type="hidden" />
+                    <div class="session-editor">
+                      <label>Data<input id="sessionDate" type="date" /></label>
+                      <label>Horário<input id="sessionTime" type="time" /></label>
+                      <label>Formato<select id="sessionFormat">
+                        <option value="2D Dublado">2D Dublado</option>
+                        <option value="2D Legendado">2D Legendado</option>
+                        <option value="3D Dublado">3D Dublado</option>
+                        <option value="3D Legendado">3D Legendado</option>
+                      </select></label>
+                      <label>Sala<select id="sessionRoom"></select></label>
+                      <label>Preço<input id="sessionPriceFull" type="number" min="0" step="0.01" value="10" /></label>
+                      <label>Status<select id="sessionStatus">
+                        <option value="available">Disponível</option>
+                        <option value="filling_fast">Lotando</option>
+                        <option value="sold_out">Esgotado</option>
+                      </select></label>
+                    </div>
+                    <div class="button-row session-editor-actions">
+                      <button id="cancelSessionButton" class="ghost-button" type="button">Cancelar</button>
+                      <button id="saveSessionButton" class="primary-button" type="button">Salvar sessão</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -765,11 +788,8 @@
               <div id="concessionInsights" class="insight-strip"></div>
               <div id="concessionsList" class="list"></div>
             </div>
-            <form id="concessionForm" class="surface form-grid">
+            <form id="concessionForm" class="surface form-grid long-form" data-dirty-track>
               <input type="hidden" id="concessionId" />
-              <div class="concession-preview" id="concessionImagePreview">
-                <span>Imagem do produto</span>
-              </div>
               <label>
                 Nome
                 <input id="concessionName" required />
@@ -788,11 +808,16 @@
                 Descricao
                 <input id="concessionDescription" />
               </label>
-              <label>
-                Upload da imagem
-                <input id="concessionImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
-              </label>
-              <input id="concessionImageUrl" type="hidden" />
+              <div class="image-setting-grid">
+                <label class="upload-field compact">
+                  Imagem do produto
+                  <input id="concessionImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+                  <span>JPG, PNG ou WebP até 5 MB.</span>
+                </label>
+                <input id="concessionImageUrl" type="hidden" />
+                <div class="media-preview product-preview" id="concessionImagePreview"><span>Imagem do produto</span></div>
+                <button id="concessionImageClear" class="ghost-button" type="button">Remover imagem</button>
+              </div>
               <div class="field-row">
                 <label>
                   Preco
@@ -858,12 +883,39 @@
         <section id="marketingPanel" class="panel">
           <div class="panel-heading">
             <div>
-              <h1>Promocoes e Destaques</h1>
+              <h1>Marketing</h1>
               <p>Controle anúncios, chamadas comerciais e destaques da home.</p>
             </div>
           </div>
 
-          <form id="settingsForm" class="surface form-grid marketing-settings">
+          <nav class="admin-subtabs" aria-label="Seções de Marketing" data-admin-tablist="marketing">
+            <button class="active" type="button" data-admin-tab="overview">Visão geral</button>
+            <button type="button" data-admin-tab="home">Home</button>
+            <button type="button" data-admin-tab="campaigns">Campanhas</button>
+            <button type="button" data-admin-tab="promotions">Promoções</button>
+            <button type="button" data-admin-tab="ads">Anúncios</button>
+          </nav>
+
+          <div class="admin-tab-panel active" data-admin-tab-panel="marketing:overview">
+            <div id="marketingOverview" class="admin-overview"></div>
+            <div class="quick-actions" aria-label="Atalhos de Marketing">
+              <button class="ghost-button icon-label" type="button" data-marketing-shortcut="promotions">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                Nova promoção
+              </button>
+              <button class="ghost-button icon-label" type="button" data-marketing-shortcut="ads">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                Novo anúncio
+              </button>
+              <button class="ghost-button icon-label" type="button" data-marketing-shortcut="campaigns">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/><path d="m4 7 8 6 8-6"/></svg>
+                Criar campanha
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-tab-panel="marketing:home" hidden>
+          <form id="settingsForm" class="surface form-grid marketing-settings long-form" data-dirty-track>
             <div class="section-title">Configurações da home</div>
             <label class="check-field">
               <input id="settingAnnouncementEnabled" type="checkbox" />
@@ -874,6 +926,7 @@
               <input id="settingAnnouncementText" />
             </label>
             <div class="section-title">Imagens de Eventos</div>
+            <div class="media-settings-grid media-settings-grid-events">
             <div class="image-setting-grid">
               <label class="upload-field compact">
                 Imagem principal
@@ -924,11 +977,12 @@
               <div class="media-preview backdrop-preview" id="eventGalleryImagePreview">Prévia da galeria</div>
               <button id="eventGalleryImageClear" class="ghost-button" type="button">Remover imagem</button>
             </div>
+            </div>
             <button class="primary-button full" type="submit">Salvar configurações</button>
           </form>
+          </div>
 
-          <div id="marketingOverview" class="admin-overview"></div>
-
+          <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
           <form id="emailCampaignForm" class="surface form-grid email-campaign-surface">
             <div class="form-head">
               <div>
@@ -959,28 +1013,30 @@
               <span id="emailCampaignResult" class="helper-text"></span>
             </div>
           </form>
+          </div>
 
+          <div class="admin-tab-panel" data-admin-tab-panel="marketing:promotions" hidden>
           <div class="split-grid compact marketing-grid">
             <div class="surface">
-              <div class="section-title">Promocoes</div>
+              <div class="section-title">Promoções</div>
               <div id="promotionsList" class="list"></div>
-              <button id="newPromotionButton" class="ghost-button full" type="button">Nova Promocao</button>
+              <button id="newPromotionButton" class="ghost-button full" type="button">Nova promoção</button>
             </div>
-            <form id="promotionForm" class="surface form-grid">
+            <form id="promotionForm" class="surface form-grid long-form" data-dirty-track>
               <input type="hidden" id="promotionId" />
               <label>
-                Titulo
+                  Título
                 <input id="promotionTitle" required />
               </label>
               <label>
-                Descricao
+                Descrição
                 <input id="promotionDescription" />
               </label>
               <div class="field-row">
                 <label>
                   Tipo
                   <select id="promotionDiscountType">
-                    <option value="fixed_price">Preco fixo</option>
+                    <option value="fixed_price">Preço fixo</option>
                     <option value="percent">Percentual</option>
                     <option value="amount">Valor</option>
                   </select>
@@ -996,41 +1052,48 @@
               </label>
               <label class="check-field">
                 <input id="promotionActive" type="checkbox" />
-                Promocao ativa
+                Promoção ativa
               </label>
               <div class="button-row">
-                <button class="primary-button" type="submit">Salvar Promocao</button>
+                <button class="primary-button" type="submit">Salvar promoção</button>
                 <button id="cancelPromotionCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
                 <button id="deletePromotionButton" class="danger-button" type="button">Excluir</button>
               </div>
             </form>
           </div>
+          </div>
 
+          <div class="admin-tab-panel" data-admin-tab-panel="marketing:ads" hidden>
           <div class="split-grid compact marketing-grid">
             <div class="surface">
               <div class="section-title">Anúncios</div>
               <div id="adsList" class="list"></div>
               <button id="newAdButton" class="ghost-button full" type="button">Novo anúncio</button>
             </div>
-            <form id="adForm" class="surface form-grid">
+            <form id="adForm" class="surface form-grid long-form" data-dirty-track>
               <input type="hidden" id="adId" />
               <label>
-                Titulo
+                  Título
                 <input id="adTitle" required />
               </label>
               <label>
-                Posicao
+                Posição
                 <select id="adPlacement">
                   <option value="home">Home</option>
                   <option value="checkout">Checkout</option>
                   <option value="clube">Clube</option>
                 </select>
               </label>
-              <label>
-                Upload da imagem
-                <input id="adImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
-              </label>
-              <input id="adImageUrl" type="hidden" />
+              <div class="image-setting-grid">
+                <label class="upload-field compact">
+                  Imagem do anúncio
+                  <input id="adImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+                  <span>JPG, PNG ou WebP até 5 MB.</span>
+                </label>
+                <input id="adImageUrl" type="hidden" />
+                <div class="media-preview backdrop-preview" id="adImagePreview">Prévia do anúncio</div>
+                <button id="adImageClear" class="ghost-button" type="button">Remover imagem</button>
+              </div>
               <label>
                 Link
                 <input id="adLinkUrl" placeholder="Cole o link de destino do anúncio" />
@@ -1045,6 +1108,7 @@
                 <button id="deleteAdButton" class="danger-button" type="button">Excluir</button>
               </div>
             </form>
+          </div>
           </div>
         </section>
 
@@ -1110,9 +1174,20 @@
               Novo plano
             </button>
           </div>
+          <nav class="admin-subtabs" aria-label="Seções do Clube" data-admin-tablist="club">
+            <button class="active" type="button" data-admin-tab="overview">Visão geral</button>
+            <button type="button" data-admin-tab="appearance">Aparência</button>
+            <button type="button" data-admin-tab="plans">Planos</button>
+            <button type="button" data-admin-tab="subscriptions">Assinaturas</button>
+            <button type="button" data-admin-tab="credits">Créditos</button>
+          </nav>
+          <div class="admin-tab-panel active" data-admin-tab-panel="club:overview">
           <div id="clubOverview" class="admin-overview"></div>
-          <form id="clubVisualForm" class="surface form-grid marketing-settings">
+          </div>
+          <div class="admin-tab-panel" data-admin-tab-panel="club:appearance" hidden>
+          <form id="clubVisualForm" class="surface form-grid marketing-settings long-form" data-dirty-track>
             <div class="section-title">Visual da página Clube</div>
+            <div class="media-settings-grid media-settings-grid-club">
             <div class="image-setting-grid">
               <label class="upload-field compact">
                 Imagem principal do Clube
@@ -1133,14 +1208,17 @@
               <div class="media-preview backdrop-preview" id="clubBannerImagePreview">Prévia do banner</div>
               <button id="clubBannerImageClear" class="ghost-button" type="button">Remover imagem</button>
             </div>
+            </div>
             <button class="primary-button full" type="submit">Salvar visual do Clube</button>
           </form>
+          </div>
+          <div class="admin-tab-panel" data-admin-tab-panel="club:plans" hidden>
           <div class="split-grid compact">
             <div class="surface">
               <div class="section-title">Planos</div>
               <div id="clubPlansList" class="list"></div>
             </div>
-            <form id="clubPlanForm" class="surface form-grid">
+            <form id="clubPlanForm" class="surface form-grid long-form" data-dirty-track>
               <input type="hidden" id="clubPlanId" />
               <label>
                 Nome do plano
@@ -1191,6 +1269,8 @@
               </div>
             </form>
           </div>
+          </div>
+          <div class="admin-tab-panel" data-admin-tab-panel="club:subscriptions" hidden>
           <div class="split-grid compact marketing-grid">
             <form id="clubAssignForm" class="surface form-grid">
               <div class="section-title">Atribuir assinatura</div>
@@ -1210,9 +1290,12 @@
               <div id="clubSubscriptionsList" class="list"></div>
             </div>
           </div>
+          </div>
+          <div class="admin-tab-panel" data-admin-tab-panel="club:credits" hidden>
           <div class="surface marketing-grid">
             <div class="section-title">Uso de créditos</div>
             <div id="clubUsageList" class="orders-table"></div>
+          </div>
           </div>
         </section>
 
@@ -1334,6 +1417,73 @@
           <div class="integration-config-main">
             <div id="integrationFields" class="integration-fields"></div>
             <div class="integration-secret-note">Campos sensíveis são gravados criptografados. Após salvar, o painel mostra apenas uma máscara.</div>
+            <section id="webhookTesterPanel" class="webhook-tester" hidden aria-labelledby="webhookTesterTitle">
+              <div class="webhook-tester-head">
+                <div>
+                  <h3 id="webhookTesterTitle">Testar Webhook</h3>
+                  <p>Envia uma notificação assinada ao endpoint público e verifica validação, interpretação e idempotência.</p>
+                </div>
+                <span class="webhook-environment">Ambiente de teste</span>
+              </div>
+              <div class="webhook-test-form">
+                <label>
+                  Evento
+                  <select id="webhookTestAction">
+                    <option value="order.processed">order.processed</option>
+                    <option value="order.action_required">order.action_required</option>
+                    <option value="order.created">order.created</option>
+                    <option value="order.cancelled">order.cancelled</option>
+                    <option value="order.refunded">order.refunded</option>
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select id="webhookTestStatus">
+                    <option value="processed">Processado</option>
+                    <option value="pending">Pendente</option>
+                    <option value="action_required">Requer ação</option>
+                    <option value="cancelled">Cancelado</option>
+                    <option value="refunded">Estornado</option>
+                    <option value="rejected">Recusado</option>
+                  </select>
+                </label>
+                <label>
+                  ID do recurso
+                  <input id="webhookTestResourceId" placeholder="Gerado automaticamente" maxlength="96" />
+                </label>
+                <label>
+                  Referência externa
+                  <input id="webhookTestExternalReference" placeholder="Gerada automaticamente" maxlength="96" />
+                </label>
+                <label>
+                  Valor
+                  <input id="webhookTestAmount" type="number" min="0.01" step="0.01" value="10.00" />
+                </label>
+                <label>
+                  Cenário
+                  <select id="webhookTestScenario">
+                    <option value="valid">Notificação válida</option>
+                    <option value="invalid_signature">Assinatura inválida</option>
+                    <option value="missing_signature">x-signature ausente</option>
+                    <option value="missing_request_id">x-request-id ausente</option>
+                    <option value="missing_data_id">data.id ausente</option>
+                    <option value="invalid_payload">Payload inválido</option>
+                    <option value="unknown_event">Evento desconhecido</option>
+                    <option value="resource_not_found">Recurso inexistente</option>
+                  </select>
+                </label>
+              </div>
+              <div class="webhook-test-actions">
+                <button id="webhookSimulateButton" class="primary-button" type="button">Simular Webhook</button>
+                <button id="webhookBatchButton" class="ghost-button" type="button">Executar bateria de testes</button>
+              </div>
+              <div id="webhookTestResult" class="webhook-test-result" aria-live="polite"></div>
+              <div class="webhook-history-head">
+                <h3>Console de Webhooks</h3>
+                <span id="webhookHistoryCount">Nenhum teste</span>
+              </div>
+              <div id="webhookTestHistory" class="webhook-test-history"></div>
+            </section>
           </div>
         </div>
         <div class="button-row integration-footer-actions">
@@ -1347,6 +1497,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260824-07"></script>
+    <script src="admin/admin.js?v=20260824-12"></script>
   </body>
 </html>

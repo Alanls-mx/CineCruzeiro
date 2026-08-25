@@ -1,8 +1,15 @@
-const configuredBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || process.env.NEXT_BASE_PATH || "").replace(/\/+$/, "");
+const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
+const configuredBasePath = (
+  process.env.NEXT_PUBLIC_BASE_PATH ||
+  process.env.NEXT_BASE_PATH ||
+  productionBasePath
+).replace(/\/+$/, "");
+const configuredDistDir = process.env.NEXT_DIST_DIR || "";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   agentRules: false,
+  ...(configuredDistDir ? { distDir: configuredDistDir } : {}),
   ...(configuredBasePath ? { basePath: configuredBasePath, assetPrefix: configuredBasePath } : {}),
   async rewrites() {
     const backendUrl =
@@ -17,6 +24,8 @@ const nextConfig = {
     ];
   },
   images: {
+    minimumCacheTTL: 2678400,
+    qualities: [58, 68, 72, 74, 75],
     remotePatterns: [
       {
         protocol: "https",

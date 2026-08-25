@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { CalendarCheck, Check, CircleHelp, Popcorn, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
-import { fetchCinemaContent, fetchSubscriptionPlans, subscribeToPlan } from "@/services/cinemaApi";
+import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
 import { money, publicAssetPath } from "@/utils/cinema";
 
@@ -16,17 +17,28 @@ export default function ClubePage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [message, setMessage] = useState("");
-  const [busyPlan, setBusyPlan] = useState("");
+
+  async function loadAvailablePlans() {
+    setStatus("loading");
+    try {
+      const plansResult = await fetchSubscriptionPlans();
+      setPlans(plansResult.filter((plan) => (
+        plan.active !== false
+        && Boolean(plan.id && plan.name)
+        && Number(plan.monthlyPrice) > 0
+        && Number(plan.includedTickets) > 0
+      )));
+      setStatus("ready");
+    } catch {
+      setStatus("error");
+    }
+  }
 
   useEffect(() => {
-    Promise.all([fetchSubscriptionPlans(), fetchCinemaContent()])
-      .then(([plansResult, content]) => {
-        setPlans(plansResult);
-        setSettings(content.settings || {});
-        setStatus("ready");
-      })
-      .catch(() => setStatus("error"));
+    void loadAvailablePlans();
+    fetchCinemaContent()
+      .then((content) => setSettings(content.settings || {}))
+      .catch(() => setSettings({}));
   }, []);
 
   const sortedPlans = useMemo(
@@ -34,29 +46,9 @@ export default function ClubePage() {
     [plans]
   );
 
-  async function handleSubscribe(planId: string) {
-    setBusyPlan(planId);
-    setMessage("");
-    try {
-      const result = await subscribeToPlan(planId);
-      const checkoutUrl = result.checkoutUrl || result.initPoint || "";
-      if (checkoutUrl) {
-        setMessage("Redirecionando para a assinatura recorrente no Mercado Pago...");
-        window.location.assign(checkoutUrl);
-        return;
-      }
-      setMessage(result.message || "Assinatura iniciada. Aguarde a confirmação do Mercado Pago para liberar seus créditos.");
-    } catch (error) {
-      const text = error instanceof Error ? error.message : "Não foi possível iniciar a assinatura.";
-      setMessage(text);
-    } finally {
-      setBusyPlan("");
-    }
-  }
-
   return (
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
-      <SiteHeader />
+      <SiteHeader settings={settings} />
       <main className="flex-1 overflow-hidden">
         <section className="mx-auto grid max-w-[1040px] items-center gap-7 px-4 py-6 sm:px-6 md:grid-cols-[.9fr_.7fr] lg:px-8 lg:py-9">
           <div className="relative z-10 max-w-lg">
@@ -77,7 +69,15 @@ export default function ClubePage() {
           </div>
           <div className="relative min-h-[190px] overflow-hidden rounded-[10px] shadow-[0_18px_44px_rgba(0,0,0,.32)] sm:min-h-[220px] lg:min-h-[280px]">
             {uploadedImageUrl(settings.clubHeroImageUrl) ? (
-              <img src={uploadedImageUrl(settings.clubHeroImageUrl)} alt="Público em uma sala de cinema" className="absolute inset-0 h-full w-full object-cover" />
+              <Image
+                src={uploadedImageUrl(settings.clubHeroImageUrl)}
+                alt="Público em uma sala de cinema"
+                fill
+                priority
+                quality={72}
+                sizes="(max-width: 768px) 100vw, 44vw"
+                className="object-cover"
+              />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
@@ -102,25 +102,48 @@ export default function ClubePage() {
                 <h2 className="font-display text-3xl font-black sm:text-4xl">Escolha seu ritmo de cinema</h2>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">Planos recorrentes para quem vem sozinho, em casal ou divide a magia com a família.</p>
               </div>
-              <p className="text-sm font-bold text-brand-300">Cobrança recorrente via Mercado Pago</p>
+              <div className="text-sm md:text-right">
+                <p className="font-bold text-brand-300">Pix recorrente ou cartão via Mercado Pago</p>
+                <p className="mt-1 text-xs text-slate-400">O meio de pagamento é escolhido no checkout seguro.</p>
+              </div>
             </div>
             {status === "loading" && <div className="h-72 skeleton-soft" />}
-            {status === "error" && <p className="text-rose-200">Não foi possível carregar os planos do backend.</p>}
-            {status === "ready" && (
-              <div className="grid gap-6 md:grid-cols-2">
-                {sortedPlans.map((plan) => (
-                  <Plan key={plan.id} plan={plan} busy={busyPlan === plan.id} onSubscribe={() => handleSubscribe(plan.id)} />
-                ))}
+            {status === "error" && (
+              <div className="flex flex-col items-start gap-4 bg-rose-950/20 p-5 text-rose-100 sm:flex-row sm:items-center sm:justify-between">
+                <p>Não foi possível consultar os planos disponíveis agora.</p>
+                <button type="button" onClick={() => void loadAvailablePlans()} className="min-h-[44px] bg-white/10 px-5 text-sm font-black text-white transition hover:bg-white/15">
+                  Tentar novamente
+                </button>
               </div>
             )}
-            {message && <p className="mt-6 max-w-3xl text-sm font-semibold text-amber-200">{message}</p>}
+            {status === "ready" && (
+              sortedPlans.length ? (
+                <div className="grid gap-6 md:grid-cols-2">
+                  {sortedPlans.map((plan) => (
+                    <Plan key={plan.id} plan={plan} />
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-white/[0.035] px-5 py-8 text-center">
+                  <h3 className="font-display text-xl font-black">Nenhum plano disponível para assinatura</h3>
+                  <p className="mt-2 text-sm text-slate-300">Os planos publicados no painel aparecerão aqui automaticamente.</p>
+                </div>
+              )
+            )}
           </div>
         </section>
 
         <section className="mx-auto grid max-w-[1320px] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[.9fr_1.1fr] lg:px-8">
           <div className="relative min-h-[320px] overflow-hidden rounded-[10px]">
             {uploadedImageUrl(settings.clubBannerImageUrl) ? (
-              <img src={uploadedImageUrl(settings.clubBannerImageUrl)} alt="Sala de cinema iluminada antes da sessão" className="absolute inset-0 h-full w-full object-cover" />
+              <Image
+                src={uploadedImageUrl(settings.clubBannerImageUrl)}
+                alt="Sala de cinema iluminada antes da sessão"
+                fill
+                quality={72}
+                sizes="(max-width: 1024px) 100vw, 45vw"
+                className="object-cover"
+              />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(250,204,21,.18),transparent_32%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
@@ -159,12 +182,19 @@ export default function ClubePage() {
   );
 }
 
-function Plan({ plan, busy, onSubscribe }: { plan: SubscriptionPlan; busy: boolean; onSubscribe: () => void }) {
+function Plan({ plan }: { plan: SubscriptionPlan }) {
   return (
     <article className={`grid overflow-hidden rounded-[10px] bg-[#0d1728] shadow-2xl shadow-blue-950/20 lg:grid-cols-[.86fr_1fr] ${plan.isFeatured ? "ring-1 ring-gold-400/45" : ""}`}>
       <div className="relative min-h-[240px]">
         {plan.imageUrl ? (
-          <img src={publicAssetPath(plan.imageUrl)} alt={`Imagem do ${plan.name}`} className="absolute inset-0 h-full w-full bg-brand-950 object-contain p-3" />
+          <Image
+            src={publicAssetPath(plan.imageUrl)}
+            alt={`Imagem do ${plan.name}`}
+            fill
+            quality={74}
+            sizes="(max-width: 768px) 100vw, (max-width: 1280px) 42vw, 280px"
+            className="bg-brand-950 object-contain p-3"
+          />
         ) : (
           <div className="flex h-full min-h-[240px] items-center justify-center bg-brand-950 text-gold-400"><Sparkles className="h-12 w-12" /></div>
         )}
@@ -186,12 +216,12 @@ function Plan({ plan, busy, onSubscribe }: { plan: SubscriptionPlan; busy: boole
             </li>
           ))}
         </ul>
-        <button type="button" onClick={onSubscribe} disabled={busy} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300 disabled:opacity-50">
-          {busy ? "Verificando..." : `Assinar ${plan.name}`}
-        </button>
+        <Link href={`/clube/assinar/${encodeURIComponent(plan.id)}`} className="mt-8 flex min-h-[52px] w-full items-center justify-center bg-gold-400 px-7 py-4 text-center text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
+          Assinar {plan.name}
+        </Link>
         <p className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
           <ShieldCheck className="h-4 w-4 text-emerald-300" />
-          Cobrança recorrente segura via Mercado Pago
+          Pix recorrente ou cartão no Mercado Pago. Créditos após a aprovação.
         </p>
       </div>
     </article>

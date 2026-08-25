@@ -17,6 +17,7 @@ const outfit = Outfit({
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "").replace(/\/+$/, "");
 const logoUrl = `${basePath}/images/logo.png`;
+const iconUrl = `${basePath}/images/logo-icon.png`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -32,8 +33,8 @@ export const metadata: Metadata = {
     "aluguel de cinema para eventos",
   ],
   icons: {
-    icon: logoUrl,
-    apple: logoUrl,
+    icon: iconUrl,
+    apple: iconUrl,
   },
   openGraph: {
     title: "Cine Cruzeiro | O Cinema do Seu Bairro",

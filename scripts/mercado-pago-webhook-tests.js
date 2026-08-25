@@ -35,9 +35,7 @@ const body = {
 };
 
 function signatureFor(id) {
-  const manifest = `id:${id};request-id:${requestId};ts:${timestamp};`;
-  const hash = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
-  return `ts=${timestamp},v1=${hash}`;
+  return paymentService.createMercadoPagoWebhookSignature({ dataId: id, requestId, timestamp }, secret).header;
 }
 
 const req = {
@@ -57,6 +55,59 @@ assert.equal(normalized.id, dataId);
 assert.equal(normalized.externalReference, externalReference);
 assert.equal(normalized.status, "approved");
 assert.equal(normalized.amount, 10);
+
+const bodyWithDifferentId = structuredClone(body);
+bodyWithDifferentId.data.id = "ID_DO_BODY_NAO_ASSINADO";
+const queryWins = paymentService.verifyWebhookRequest("mercado_pago", req, url, bodyWithDifferentId, { webhookSecret: secret });
+assert.equal(queryWins.dataId, dataId);
+
+const mixedCaseHeaders = {
+  headers: {
+    "X-Request-ID": requestId,
+    "X-Signature": signatureFor(dataId)
+  }
+};
+assert.equal(paymentService.verifyWebhookRequest("mercado_pago", mixedCaseHeaders, url, body, { webhookSecret: secret }).verified, true);
+
+for (const [expectedCode, request, requestUrl] of [
+  ["MERCADO_PAGO_WEBHOOK_SIGNATURE_REQUIRED", { headers: { "x-request-id": requestId } }, url],
+  ["MERCADO_PAGO_WEBHOOK_REQUEST_ID_REQUIRED", { headers: { "x-signature": signatureFor(dataId) } }, url],
+  ["MERCADO_PAGO_WEBHOOK_DATA_ID_REQUIRED", req, new URL("https://lumixengine.com/projects/cinecruzeiro/api/webhooks/mercado-pago?type=order")]
+]) {
+  assert.throws(
+    () => paymentService.verifyWebhookRequest("mercado_pago", request, requestUrl, body, { webhookSecret: secret }),
+    (error) => error?.code === expectedCode && error?.statusCode === 401
+  );
+}
+
+assert.throws(
+  () => paymentService.verifyWebhookRequest("mercado_pago", req, url, body, {}),
+  (error) => error?.code === "MERCADO_PAGO_WEBHOOK_SECRET_REQUIRED" && error?.statusCode === 412
+);
+
+const actionRequired = structuredClone(body);
+actionRequired.action = "order.action_required";
+actionRequired.data.status = "action_required";
+actionRequired.data.status_detail = "action_required";
+actionRequired.data.transactions.payments[0].status = "action_required";
+actionRequired.data.transactions.payments[0].status_detail = "action_required";
+assert.equal(paymentService.normalizeMercadoPagoWebhookOrder(actionRequired).status, "pending");
+
+const authorizedPayment = paymentService.normalizeMercadoPagoAuthorizedPayment({
+  id: 6114264375,
+  preapproval_id: "PREAPPROVAL_APPROVED_1",
+  external_reference: "assinatura-local-1",
+  transaction_amount: "24.90",
+  payment: {
+    id: 19951521071,
+    status: "approved",
+    status_detail: "accredited"
+  }
+});
+assert.equal(authorizedPayment.preapprovalId, "PREAPPROVAL_APPROVED_1");
+assert.equal(authorizedPayment.externalReference, "assinatura-local-1");
+assert.equal(authorizedPayment.paymentStatus, "approved");
+assert.equal(authorizedPayment.amount, 24.9);
 
 const lowerCaseUrl = new URL(`https://lumixengine.com/projects/cinecruzeiro/api/webhooks/mercado-pago?data.id=${encodeURIComponent(dataId.toLowerCase())}&type=order`);
 assert.throws(

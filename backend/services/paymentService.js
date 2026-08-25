@@ -2,6 +2,8 @@ const crypto = require("crypto");
 
 const MERCADO_PAGO_TOKEN_ENV_KEYS = ["MERCADO_PAGO_ACCESS_TOKEN", "MP_ACCESS_TOKEN", "MERCADOPAGO_ACCESS_TOKEN"];
 const MERCADO_PAGO_WEBHOOK_SECRET_ENV_KEYS = ["MERCADO_PAGO_WEBHOOK_SECRET", "MP_WEBHOOK_SECRET", "MERCADOPAGO_WEBHOOK_SECRET"];
+const MERCADO_PAGO_WEBHOOK_SECRET_SANDBOX_ENV_KEYS = ["MERCADO_PAGO_WEBHOOK_SECRET_SANDBOX", "MERCADO_PAGO_WEBHOOK_SECRET_TEST"];
+const MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION_ENV_KEYS = ["MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION", "MERCADO_PAGO_WEBHOOK_SECRET_LIVE"];
 const OPEN_FINANCE_PIX_ENDPOINT_ENV_KEYS = ["OPEN_FINANCE_PIX_ENDPOINT", "PIX_OPEN_FINANCE_ENDPOINT"];
 const OPEN_FINANCE_PIX_STATUS_ENDPOINT_ENV_KEYS = ["OPEN_FINANCE_PIX_STATUS_ENDPOINT", "PIX_OPEN_FINANCE_STATUS_ENDPOINT"];
 const OPEN_FINANCE_PIX_TOKEN_ENV_KEYS = ["OPEN_FINANCE_PIX_TOKEN", "PIX_OPEN_FINANCE_TOKEN"];
@@ -34,11 +36,18 @@ function getMercadoPagoAccessToken(config = {}) {
 }
 
 function getMercadoPagoWebhookSecret(config = {}) {
-  return config.webhookSecret || getFirstEnv(MERCADO_PAGO_WEBHOOK_SECRET_ENV_KEYS)?.value || "";
+  return getMercadoPagoWebhookSecrets(config)[0] || "";
 }
 
 function getMercadoPagoWebhookSecrets(config = {}) {
-  return [config.webhookSecret, ...MERCADO_PAGO_WEBHOOK_SECRET_ENV_KEYS.map((key) => process.env[key])]
+  const environmentKeys = String(config.environment || "").toLowerCase() === "production"
+    ? MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION_ENV_KEYS
+    : MERCADO_PAGO_WEBHOOK_SECRET_SANDBOX_ENV_KEYS;
+  return [
+    config.webhookSecret,
+    ...environmentKeys.map((key) => process.env[key]),
+    ...MERCADO_PAGO_WEBHOOK_SECRET_ENV_KEYS.map((key) => process.env[key])
+  ]
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .filter((value, index, list) => list.indexOf(value) === index);
@@ -181,6 +190,22 @@ function normalizeMercadoPagoSubscription(data = {}) {
   };
 }
 
+function normalizeMercadoPagoAuthorizedPayment(data = {}) {
+  const paymentStatus = normalizeProviderPaymentStatus(data.payment?.status || data.summarized || data.status || "pending");
+  return {
+    provider: "mercado_pago",
+    id: String(data.id || ""),
+    preapprovalId: String(data.preapproval_id || ""),
+    externalReference: String(data.external_reference || ""),
+    status: String(data.status || ""),
+    paymentId: String(data.payment?.id || ""),
+    paymentStatus,
+    statusDetail: String(data.payment?.status_detail || ""),
+    amount: Number(data.transaction_amount || 0),
+    raw: data
+  };
+}
+
 async function createMercadoPagoSubscriptionPlan(plan, integrationConfig = {}, options = {}) {
   const amount = recurringAmount(plan);
   if (amount <= 0) {
@@ -234,12 +259,15 @@ async function createMercadoPagoSubscription(subscription, plan, user, integrati
     });
   }
 
-  const providerPlanId = String(options.providerPlanId || plan.providerPlanId || plan.mercadoPagoPlanId || "").trim();
+  const providerPlanId = options.associatedPlan === false
+    ? ""
+    : String(options.providerPlanId || plan.providerPlanId || plan.mercadoPagoPlanId || "").trim();
   const body = {
     reason: subscriptionReason(plan),
     external_reference: String(subscription.id || "").slice(0, 64),
     payer_email: payerEmail,
     back_url: `${siteUrl(options.frontendUrl)}/conta`,
+    ...(options.notificationUrl ? { notification_url: String(options.notificationUrl) } : {}),
     status: "pending",
     ...(providerPlanId
       ? { preapproval_plan_id: providerPlanId }
@@ -275,6 +303,26 @@ async function fetchMercadoPagoSubscription(providerSubscriptionId, integrationC
   return normalizeMercadoPagoSubscription(data);
 }
 
+async function fetchMercadoPagoAuthorizedPayment(authorizedPaymentId, integrationConfig = {}) {
+  if (!authorizedPaymentId) return null;
+  if (!getMercadoPagoAccessToken(integrationConfig) && isTestPaymentsMode()) {
+    return normalizeMercadoPagoAuthorizedPayment({
+      id: authorizedPaymentId,
+      preapproval_id: "",
+      status: "processed",
+      summarized: "approved",
+      payment: {
+        id: `PAYMENT_${authorizedPaymentId}`,
+        status: process.env.TEST_SUBSCRIPTIONS_AUTO_APPROVE === "true" ? "approved" : "pending",
+        status_detail: process.env.TEST_SUBSCRIPTIONS_AUTO_APPROVE === "true" ? "accredited" : "pending"
+      },
+      testMode: true
+    });
+  }
+  const data = await mercadoPagoRequest(`/authorized_payments/${encodeURIComponent(authorizedPaymentId)}`, {}, integrationConfig);
+  return normalizeMercadoPagoAuthorizedPayment(data);
+}
+
 async function cancelMercadoPagoSubscription(providerSubscriptionId, integrationConfig = {}) {
   if (!providerSubscriptionId) return null;
   if (!getMercadoPagoAccessToken(integrationConfig) && isTestPaymentsMode()) {
@@ -282,7 +330,7 @@ async function cancelMercadoPagoSubscription(providerSubscriptionId, integration
   }
   const data = await mercadoPagoRequest(`/preapproval/${encodeURIComponent(providerSubscriptionId)}`, {
     method: "PUT",
-    body: { status: "canceled" }
+    body: { status: "cancelled" }
   }, integrationConfig);
   return normalizeMercadoPagoSubscription(data);
 }
@@ -534,15 +582,26 @@ async function createOpenFinancePixPayment(order, integrationConfig = {}) {
 function parseSignatureHeader(header) {
   return String(header || "").split(",").reduce((acc, part) => {
     const [key, ...rest] = part.split("=");
-    if (key && rest.length) acc[key.trim()] = rest.join("=").trim();
+    if (key && rest.length) acc[key.trim().toLowerCase()] = rest.join("=").trim();
     return acc;
   }, {});
 }
 
 function timingSafeEqualHex(left, right) {
+  if (!/^[a-f0-9]{64}$/i.test(String(left || "")) || !/^[a-f0-9]{64}$/i.test(String(right || ""))) return false;
   const leftBuffer = Buffer.from(String(left || ""), "hex");
   const rightBuffer = Buffer.from(String(right || ""), "hex");
   return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function requestHeader(req, name) {
+  const expected = String(name || "").toLowerCase();
+  const direct = req?.headers?.[expected];
+  if (Array.isArray(direct)) return String(direct[0] || "").trim();
+  if (direct !== undefined) return String(direct || "").trim();
+  const found = Object.entries(req?.headers || {}).find(([key]) => String(key).toLowerCase() === expected);
+  if (!found) return "";
+  return String(Array.isArray(found[1]) ? found[1][0] : found[1] || "").trim();
 }
 
 function mercadoPagoManifest(dataId, requestId, ts) {
@@ -565,21 +624,33 @@ function normalizeMercadoPagoWebhookOrder(body = {}) {
 }
 
 function mercadoPagoSignatureDataId(url) {
-  return String(url.searchParams.get("data.id") || url.searchParams.get("data_id") || "").trim();
+  return String(url.searchParams.get("data.id") || "").trim();
+}
+
+function createMercadoPagoWebhookSignature({ dataId, requestId, timestamp } = {}, secret = "") {
+  const ts = String(timestamp || Math.floor(Date.now() / 1000));
+  const manifest = mercadoPagoManifest(dataId, requestId, ts);
+  const hash = crypto.createHmac("sha256", String(secret || "")).update(manifest).digest("hex");
+  return { header: `ts=${ts},v1=${hash}`, manifest, timestamp: ts };
 }
 
 function verifyMercadoPagoWebhook(req, url, body, config = {}) {
   const secrets = getMercadoPagoWebhookSecrets(config);
   if (!secrets.length) {
-    if (isProduction()) {
-      throw paymentError("MERCADO_PAGO_WEBHOOK_SECRET_REQUIRED", "Configure MERCADO_PAGO_WEBHOOK_SECRET para validar webhooks em producao.", 412);
-    }
-    return { verified: false, reason: "secret_not_configured_dev" };
+    throw paymentError("MERCADO_PAGO_WEBHOOK_SECRET_REQUIRED", "Configure o segredo do Webhook do Mercado Pago para validar notificacoes.", 412);
   }
 
-  const signature = parseSignatureHeader(req.headers["x-signature"]);
-  const requestId = req.headers["x-request-id"] || "";
+  const signatureHeader = requestHeader(req, "x-signature");
+  const requestId = requestHeader(req, "x-request-id");
   const dataId = mercadoPagoSignatureDataId(url);
+  if (!signatureHeader) throw paymentError("MERCADO_PAGO_WEBHOOK_SIGNATURE_REQUIRED", "Header x-signature ausente.", 401);
+  if (!requestId) throw paymentError("MERCADO_PAGO_WEBHOOK_REQUEST_ID_REQUIRED", "Header x-request-id ausente.", 401);
+  if (!dataId) throw paymentError("MERCADO_PAGO_WEBHOOK_DATA_ID_REQUIRED", "Query parameter data.id ausente.", 401);
+
+  const signature = parseSignatureHeader(signatureHeader);
+  if (!signature.ts || !signature.v1) {
+    throw paymentError("MERCADO_PAGO_WEBHOOK_SIGNATURE_MALFORMED", "Header x-signature malformado.", 401);
+  }
   const manifest = mercadoPagoManifest(dataId, requestId, signature.ts);
   const verified = secrets.some((secret) => {
     const expected = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
@@ -590,7 +661,7 @@ function verifyMercadoPagoWebhook(req, url, body, config = {}) {
     throw paymentError("MERCADO_PAGO_WEBHOOK_INVALID_SIGNATURE", "Assinatura do webhook Mercado Pago invalida.", 401);
   }
 
-  return { verified: true, manifest, dataId };
+  return { verified: true, dataId, requestId, timestamp: signature.ts };
 }
 
 function verifyOpenFinanceWebhook(req, configInput = {}) {
@@ -660,11 +731,15 @@ module.exports = {
   createMercadoPagoOrderPayment,
   createMercadoPagoSubscription,
   createMercadoPagoSubscriptionPlan,
+  createMercadoPagoWebhookSignature,
   createPaymentRecord,
   cancelMercadoPagoSubscription,
+  fetchMercadoPagoAuthorizedPayment,
   fetchMercadoPagoSubscription,
   fetchProviderPaymentStatus,
   getMercadoPagoAccessToken,
+  getMercadoPagoWebhookSecret,
+  normalizeMercadoPagoAuthorizedPayment,
   normalizeMercadoPagoSubscriptionStatus,
   normalizeMercadoPagoWebhookOrder,
   normalizeProviderPaymentStatus,

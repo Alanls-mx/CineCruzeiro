@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { CalendarDays } from "lucide-react";
 import { useMemo, useState } from "react";
 import { filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
@@ -22,7 +23,7 @@ export default function FilmesPage() {
 
   return (
     <div className="min-h-screen bg-[#060a12] text-white">
-      <SiteHeader />
+      <SiteHeader settings={content?.settings} />
       <main className="mx-auto max-w-[1320px] px-4 py-12 sm:px-6 lg:px-8">
         <div className="mb-10 max-w-3xl">
           <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Programação</p>
@@ -85,7 +86,18 @@ export default function FilmesPage() {
                 <div className="mt-6 grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 lg:grid-cols-5">
                   {content.upcoming.map((movie) => (
                     <Link key={movie.id} href={`/filmes/${movieSlug(movie)}`} className="group">
-                      <img src={movie.posterUrl} alt={`Poster de ${movie.title}`} className="aspect-[2/3] w-full object-cover" />
+                      <div className="relative aspect-[2/3] overflow-hidden bg-brand-950">
+                        {movie.posterUrl && (
+                          <Image
+                            src={movie.posterUrl}
+                            alt={`Poster de ${movie.title}`}
+                            fill
+                            quality={72}
+                            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+                            className="object-cover transition duration-200 group-hover:scale-[1.02]"
+                          />
+                        )}
+                      </div>
                       <strong className="mt-3 block line-clamp-2 group-hover:text-gold-400">{movie.title}</strong>
                       <span className="mt-1 block text-sm text-slate-500">Em breve</span>
                     </Link>
@@ -104,8 +116,17 @@ export default function FilmesPage() {
 function MovieSchedule({ movie, filter, selectedDay, days }: { movie: Movie; filter: SessionFilter; selectedDay: number; days: Array<{ isoDate: string; label: string; weekday: string; displayDate: string }> }) {
   return (
     <article className="grid gap-5 border-t border-white/8 pt-8 lg:grid-cols-[180px_1fr]">
-      <Link href={`/filmes/${movieSlug(movie)}`} className="block">
-        <img src={movie.posterUrl} alt={`Poster de ${movie.title}`} className="aspect-[2/3] w-full max-w-[180px] object-cover" />
+      <Link href={`/filmes/${movieSlug(movie)}`} className="relative block aspect-[2/3] w-full max-w-[180px] overflow-hidden bg-brand-950">
+        {movie.posterUrl && (
+          <Image
+            src={movie.posterUrl}
+            alt={`Poster de ${movie.title}`}
+            fill
+            quality={72}
+            sizes="180px"
+            className="object-cover"
+          />
+        )}
       </Link>
       <div className="min-w-0">
         <div className="flex flex-wrap items-start justify-between gap-4">

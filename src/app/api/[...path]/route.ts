@@ -18,7 +18,14 @@ async function proxy(request: NextRequest, context: RouteContext) {
   const targetUrl = new URL(`/api/${path}${sourceUrl.search}`, BACKEND_URL);
   const headers = new Headers();
 
-  ["content-type", "authorization", "cookie", "x-idempotency-key"].forEach((name) => {
+  [
+    "content-type",
+    "authorization",
+    "cookie",
+    "x-idempotency-key",
+    "x-signature",
+    "x-request-id",
+  ].forEach((name) => {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   });

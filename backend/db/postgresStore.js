@@ -101,53 +101,32 @@ function mapMovie(row, sessions) {
   };
 }
 
-async function readDbFromPostgres() {
+async function loadDbFromPostgres() {
   const existingClient = contextClient();
   const client = existingClient || await getPool().connect();
   try {
-    const [
-      settings,
-      rooms,
-      ticketTypes,
-      movies,
-      sessions,
-      concessions,
-      inventory,
-      promotions,
-      ads,
-      users,
-      orders,
-      orderItems,
-      payments,
-      tickets,
-      webhookEvents,
-      auditLogs,
-      subscriptionPlans,
-      subscriptionCredits,
-      subscriptions,
-      subscriptionUsage
-    ] = await Promise.all([
-      client.query("SELECT value FROM settings WHERE key = 'app'"),
-      client.query("SELECT * FROM rooms ORDER BY name"),
-      client.query("SELECT * FROM ticket_types ORDER BY name"),
-      client.query("SELECT * FROM movies ORDER BY sort_order, title"),
-      client.query("SELECT * FROM sessions ORDER BY time_label"),
-      client.query("SELECT * FROM concessions ORDER BY sort_order, name"),
-      client.query("SELECT * FROM concession_inventory"),
-      client.query("SELECT * FROM promotions ORDER BY created_at"),
-      client.query("SELECT * FROM ads ORDER BY created_at"),
-      client.query("SELECT * FROM users ORDER BY created_at"),
-      client.query("SELECT * FROM orders ORDER BY created_at DESC"),
-      client.query("SELECT * FROM order_items"),
-      client.query("SELECT * FROM payments ORDER BY created_at DESC"),
-      client.query("SELECT * FROM tickets ORDER BY created_at DESC"),
-      client.query("SELECT * FROM webhook_events ORDER BY created_at DESC"),
-      client.query("SELECT * FROM audit_logs ORDER BY created_at DESC"),
-      client.query("SELECT * FROM subscription_plans ORDER BY monthly_price, name").catch(() => ({ rows: [] })),
-      client.query("SELECT * FROM subscription_credits ORDER BY cycle_start DESC").catch(() => ({ rows: [] })),
-      client.query("SELECT * FROM subscriptions ORDER BY created_at DESC").catch(() => ({ rows: [] })),
-      client.query("SELECT * FROM subscription_usage ORDER BY used_at DESC").catch(() => ({ rows: [] }))
-    ]);
+    // A single pg client must execute queries sequentially. Promise.all here only
+    // queued work on the same socket and emits a deprecation warning in pg 8.
+    const settings = await client.query("SELECT value FROM settings WHERE key = 'app'");
+    const rooms = await client.query("SELECT * FROM rooms ORDER BY name");
+    const ticketTypes = await client.query("SELECT * FROM ticket_types ORDER BY name");
+    const movies = await client.query("SELECT * FROM movies ORDER BY sort_order, title");
+    const sessions = await client.query("SELECT * FROM sessions ORDER BY time_label");
+    const concessions = await client.query("SELECT * FROM concessions ORDER BY sort_order, name");
+    const inventory = await client.query("SELECT * FROM concession_inventory");
+    const promotions = await client.query("SELECT * FROM promotions ORDER BY created_at");
+    const ads = await client.query("SELECT * FROM ads ORDER BY created_at");
+    const users = await client.query("SELECT * FROM users ORDER BY created_at");
+    const orders = await client.query("SELECT * FROM orders ORDER BY created_at DESC");
+    const orderItems = await client.query("SELECT * FROM order_items");
+    const payments = await client.query("SELECT * FROM payments ORDER BY created_at DESC");
+    const tickets = await client.query("SELECT * FROM tickets ORDER BY created_at DESC");
+    const webhookEvents = await client.query("SELECT * FROM webhook_events ORDER BY created_at DESC");
+    const auditLogs = await client.query("SELECT * FROM audit_logs ORDER BY created_at DESC");
+    const subscriptionPlans = await client.query("SELECT * FROM subscription_plans ORDER BY monthly_price, name").catch(() => ({ rows: [] }));
+    const subscriptionCredits = await client.query("SELECT * FROM subscription_credits ORDER BY cycle_start DESC").catch(() => ({ rows: [] }));
+    const subscriptions = await client.query("SELECT * FROM subscriptions ORDER BY created_at DESC").catch(() => ({ rows: [] }));
+    const subscriptionUsage = await client.query("SELECT * FROM subscription_usage ORDER BY used_at DESC").catch(() => ({ rows: [] }));
 
     const inventoryById = new Map(inventory.rows.map((item) => [item.concession_id, item]));
     const sessionsByMovie = new Map();
@@ -414,6 +393,43 @@ async function readDbFromPostgres() {
   }
 }
 
+const SNAPSHOT_CACHE_TTL_MS = 500;
+let snapshotCache = null;
+let snapshotCacheExpiresAt = 0;
+let snapshotLoadPromise = null;
+
+function cloneSnapshot(snapshot) {
+  return structuredClone(snapshot);
+}
+
+function invalidateSnapshotCache() {
+  snapshotCache = null;
+  snapshotCacheExpiresAt = 0;
+}
+
+async function readDbFromPostgres() {
+  // Reads made inside a critical mutation must observe the transaction directly.
+  if (contextClient()) return loadDbFromPostgres();
+
+  if (snapshotCache && Date.now() < snapshotCacheExpiresAt) {
+    return cloneSnapshot(snapshotCache);
+  }
+
+  if (!snapshotLoadPromise) {
+    snapshotLoadPromise = loadDbFromPostgres()
+      .then((snapshot) => {
+        snapshotCache = cloneSnapshot(snapshot);
+        snapshotCacheExpiresAt = Date.now() + SNAPSHOT_CACHE_TTL_MS;
+        return snapshot;
+      })
+      .finally(() => {
+        snapshotLoadPromise = null;
+      });
+  }
+
+  return cloneSnapshot(await snapshotLoadPromise);
+}
+
 async function query(client, text, params = []) {
   return client.query(text, params);
 }
@@ -425,6 +441,7 @@ async function withPostgresMutationLock(callback) {
     await client.query("SELECT pg_advisory_xact_lock(318642901, 20260823)");
     const result = await transactionContext.run({ client }, callback);
     await client.query("COMMIT");
+    invalidateSnapshotCache();
     return result;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -827,7 +844,10 @@ async function writeDbToPostgres(db) {
       ]);
     }
 
-    if (!existingClient) await client.query("COMMIT");
+    if (!existingClient) {
+      await client.query("COMMIT");
+      invalidateSnapshotCache();
+    }
   } catch (error) {
     if (!existingClient) await client.query("ROLLBACK");
     throw error;
@@ -850,6 +870,7 @@ async function appendAuditLogToPostgres(log) {
       log.ip || "",
       log.createdAt || ""
     ]);
+    if (!existingClient) invalidateSnapshotCache();
   } finally {
     if (!existingClient) client.release();
   }
