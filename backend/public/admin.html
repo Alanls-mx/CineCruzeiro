@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
+    <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
     <link rel="stylesheet" href="admin/admin.css?v=20260824-05" />
     <link rel="stylesheet" href="admin/admin-premium.css?v=20260825-01" />
   </head>
@@ -548,6 +549,11 @@
                 <input id="ticketPrice" type="number" min="0" step="0.01" required />
               </label>
               <label>
+                Ingressos gerados por unidade
+                <input id="ticketBundleQuantity" type="number" min="1" max="20" step="1" value="1" required />
+                <span class="helper-text">Ex.: Triple Ingresso gera 3 códigos individuais a cada unidade vendida.</span>
+              </label>
+              <label>
                 Descricao
                 <input id="ticketDescription" />
               </label>
@@ -1071,11 +1077,33 @@
               Assunto
               <input id="emailCampaignSubject" placeholder="Ex: Semana da pipoca em dobro" required />
             </label>
-            <label class="full">
+            <div class="field-row">
+              <label>
+                Formato do conteúdo
+                <select id="emailCampaignMode">
+                  <option value="visual">Editor visual</option>
+                  <option value="html">HTML5 personalizado</option>
+                </select>
+              </label>
+              <label>
+                Pré-cabeçalho
+                <input id="emailCampaignPreheader" maxlength="140" placeholder="Resumo exibido ao lado do assunto" />
+              </label>
+            </div>
+            <label>
+              Título em destaque
+              <input id="emailCampaignHeadline" placeholder="A oferta principal da campanha" />
+            </label>
+            <label class="full" data-email-campaign-visual>
               Mensagem
               <textarea id="emailCampaignMessage" rows="4" placeholder="Escreva uma chamada curta, com benefício claro e prazo da promoção." required></textarea>
             </label>
-            <div class="field-row">
+            <label class="full" data-email-campaign-html hidden>
+              HTML5 personalizado
+              <textarea id="emailCampaignHtml" rows="14" spellcheck="false" placeholder="<section style=&quot;padding:24px&quot;>...</section>"></textarea>
+              <span class="helper-text">Crie o conteúdo do zero com HTML5. Logo, estrutura responsiva e cancelamento de marketing são acrescentados automaticamente.</span>
+            </label>
+            <div class="field-row" data-email-campaign-visual>
               <label>
                 Texto do botão
                 <input id="emailCampaignCtaLabel" placeholder="Ver programação" />

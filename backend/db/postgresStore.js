@@ -187,6 +187,7 @@ async function loadDbFromPostgres() {
         name: row.name,
         price: num(row.price, 10),
         description: row.description || "",
+        bundleQuantity: Math.max(1, Number(row.bundle_quantity || 1)),
         active: row.active !== false
       })),
       movies: movies.rows.map((row) => mapMovie(row, sessionsByMovie.get(row.id) || [])),
@@ -588,12 +589,13 @@ async function writeDbToPostgres(db) {
     const firstRoomId = asArray(db.rooms)[0]?.id || "sala-cruzeiro";
 
     for (const ticket of asArray(db.ticketTypes)) {
-      await query(client, "INSERT INTO ticket_types (id, name, price, description, active) VALUES ($1,$2,$3,$4,$5)", [
+      await query(client, "INSERT INTO ticket_types (id, name, price, description, active, bundle_quantity) VALUES ($1,$2,$3,$4,$5,$6)", [
         ticket.id,
         ticket.name,
         num(ticket.price, 10),
         ticket.description || "",
-        ticket.active !== false
+        ticket.active !== false,
+        Math.max(1, Number(ticket.bundleQuantity || 1))
       ]);
     }
 

@@ -79,6 +79,8 @@ export interface TicketOrder {
     name?: string;
     description?: string;
     quantity: number;
+    bundleQuantity?: number;
+    ticketQuantity?: number;
     unitPrice?: number;
   }>;
   includeComboUpsell?: boolean;

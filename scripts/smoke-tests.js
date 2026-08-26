@@ -82,6 +82,8 @@ async function run() {
   db.concessions = (db.concessions || []).map((item) =>
     item.id === "combo-classico" ? { ...item, stock: 3, reserved: 0, sold: 0 } : item
   );
+  db.ticketTypes = (db.ticketTypes || []).filter((item) => item.id !== "triple-smoke");
+  db.ticketTypes.push({ id: "triple-smoke", name: "Triple Ingresso", price: 25, description: "Pacote de teste", bundleQuantity: 3, active: true });
   db.movies = (db.movies || []).filter((movie) => ![TEST_MOVIE_ID, TEST_SECOND_MOVIE_ID, "smoke-filme-edicao", "smoke-rascunho-admin"].includes(movie.id));
   db.movies.push({
     id: TEST_MOVIE_ID,
@@ -104,7 +106,7 @@ async function run() {
         time: "19:00",
         format: "2D Dublado",
         room: "Sala Cruzeiro (Laser 4K)",
-        ticketTypeIds: ["promocional"],
+        ticketTypeIds: ["promocional", "triple-smoke"],
         priceFull: 10,
         priceHalf: 10,
         status: "available"
@@ -940,6 +942,24 @@ async function run() {
     assert.equal(allowedTicketTypeSale.payload.order.totalPrice, 20);
     assert.equal(allowedTicketTypeSale.payload.tickets.length, 2);
     assert.ok(allowedTicketTypeSale.payload.tickets.every((ticket) => ticket.ticketType === "Ingresso Promocional"));
+
+    const bundledTicketSale = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        ticketItems: [{ id: "triple-smoke", quantity: 2 }],
+        saleMode: "quick",
+        paymentMethod: "cash"
+      })
+    });
+    assert.equal(bundledTicketSale.response.status, 201);
+    assert.equal(bundledTicketSale.payload.order.totalPrice, 50);
+    assert.equal(bundledTicketSale.payload.order.ticketItems[0].bundleQuantity, 3);
+    assert.equal(bundledTicketSale.payload.order.ticketItems[0].ticketQuantity, 6);
+    assert.equal(bundledTicketSale.payload.tickets.length, 6);
+    assert.ok(bundledTicketSale.payload.tickets.every((ticket) => ticket.ticketType === "Triple Ingresso"));
 
     const adminLogs = await request("/api/admin/logs?page=1&pageSize=10", { headers: jsonHeaders(adminCookie) });
     assert.equal(adminLogs.response.status, 200);

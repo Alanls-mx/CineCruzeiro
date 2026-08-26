@@ -65,6 +65,14 @@ function selectedTicketItems(cart: StoredCheckoutCart, ticketTypes: TicketTypeRe
     .filter((item) => ticketTypes.some((ticketType) => ticketType.id === item.id));
 }
 
+function generatedTicketCount(cart: StoredCheckoutCart, ticketTypes: TicketTypeRecord[]) {
+  const byId = new Map(ticketTypes.map((ticketType) => [ticketType.id, ticketType]));
+  return selectedTicketItems(cart, ticketTypes).reduce((sum, item) => {
+    const bundleQuantity = Math.max(1, Number(byId.get(item.id)?.bundleQuantity || 1));
+    return sum + item.quantity * bundleQuantity;
+  }, 0);
+}
+
 export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Step }) {
   const router = useRouter();
   const { content, status, error } = useCinemaContent();
@@ -514,7 +522,7 @@ function TicketsStep({ cart, updateCart, ticketTypes }: { cart: StoredCheckoutCa
       {ticketTypes.map((ticketType) => (
         <div key={ticketType.id}>
           <QuantityRow
-            label={`${ticketType.name} · ${money(ticketType.price)}`}
+            label={`${ticketType.name} · ${money(ticketType.price)}${Number(ticketType.bundleQuantity || 1) > 1 ? ` · gera ${ticketType.bundleQuantity} ingressos` : ""}`}
             value={Number(quantities[ticketType.id] || 0)}
             onChange={(value) => updateCart({ ticketQuantities: { ...quantities, [ticketType.id]: value } })}
           />
@@ -603,7 +611,7 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
   ticketTypes: TicketTypeRecord[];
 }) {
   const activeClub = activeClubSubscription(clubSubscriptions);
-  const requestedTickets = selectedTicketItems(cart, ticketTypes).reduce((sum, item) => sum + item.quantity, 0);
+  const requestedTickets = generatedTicketCount(cart, ticketTypes);
   const selectedExtras = Object.values(cart.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
   const plan = activeClub?.plan;
@@ -926,7 +934,13 @@ function isValidPaymentResult(value: unknown) {
 }
 
 function activeClubSubscription(subscriptions: AccountSubscription[]) {
-  return subscriptions.find((subscription) => subscription.status === "active") || null;
+  const now = Date.now();
+  return subscriptions.find((subscription) => {
+    if (!['active', 'ending'].includes(subscription.status)) return false;
+    if (Number(subscription.creditsRemaining ?? subscription.creditsAvailable ?? 0) <= 0) return false;
+    const benefitsUntil = subscription.benefitsUntil || subscription.currentPeriodEnd || subscription.cycleEnd;
+    return !benefitsUntil || new Date(benefitsUntil).getTime() > now;
+  }) || null;
 }
 
 function OrderSummary({ cart, total, selectedConcessions, ticketTypes }: { cart: StoredCheckoutCart; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[] }) {
@@ -936,7 +950,12 @@ function OrderSummary({ cart, total, selectedConcessions, ticketTypes }: { cart:
         <h2 className="font-display text-2xl font-black">Resumo</h2>
         <dl className="mt-5 space-y-3 text-sm text-slate-300">
           {ticketTypes.filter((ticketType) => Number(cart.ticketQuantities?.[ticketType.id] || 0) > 0).map((ticketType) => (
-            <div key={ticketType.id} className="flex justify-between gap-4"><dt>{ticketType.name}</dt><dd>{cart.ticketQuantities?.[ticketType.id] || 0}</dd></div>
+            <div key={ticketType.id} className="flex justify-between gap-4">
+              <dt>{ticketType.name}</dt>
+              <dd>{Number(ticketType.bundleQuantity || 1) > 1
+                ? `${cart.ticketQuantities?.[ticketType.id] || 0} pacote(s) · ${Number(cart.ticketQuantities?.[ticketType.id] || 0) * Number(ticketType.bundleQuantity || 1)} ingressos`
+                : cart.ticketQuantities?.[ticketType.id] || 0}</dd>
+            </div>
           ))}
           {selectedConcessions.map((item) => (
             <div key={item.id} className="flex justify-between gap-4"><dt>{item.name}</dt><dd>{cart.concessionQuantities?.[item.id] || 0}</dd></div>

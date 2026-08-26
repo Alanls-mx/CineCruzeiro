@@ -1896,7 +1896,7 @@ function renderTickets() {
         <button class="list-item ${active}" type="button" onclick="selectTicket('${ticket.id}')">
           <span>
             <span class="list-title">${ticket.name}</span>
-            <span class="list-meta">${ticket.description || "sem descricao"}</span>
+            <span class="list-meta">${ticket.description || "Sem descrição"}${Number(ticket.bundleQuantity || 1) > 1 ? ` • gera ${Number(ticket.bundleQuantity)} ingressos por unidade` : ""}</span>
           </span>
           <span class="badge">${money(ticket.price)}</span>
         </button>
@@ -2019,6 +2019,7 @@ function fillTicketForm(ticket) {
   $("ticketId").value = ticket?.id || "";
   $("ticketName").value = ticket?.name || "";
   $("ticketPrice").value = ticket?.price ?? 10;
+  $("ticketBundleQuantity").value = ticket?.bundleQuantity ?? 1;
   $("ticketDescription").value = ticket?.description || "";
   $("ticketActive").checked = ticket?.active !== false;
 }
@@ -2030,6 +2031,7 @@ async function saveTicket(event) {
       id: $("ticketId").value || undefined,
       name: $("ticketName").value,
       price: Number($("ticketPrice").value || 0),
+      bundleQuantity: Math.max(1, Number($("ticketBundleQuantity").value || 1)),
       description: $("ticketDescription").value,
       active: $("ticketActive").checked
     };
@@ -3485,18 +3487,31 @@ async function sendEmailCampaign(event) {
       method: "POST",
       body: JSON.stringify({
         subject: $("emailCampaignSubject").value,
+        mode: $("emailCampaignMode").value,
+        preheader: $("emailCampaignPreheader").value,
+        headline: $("emailCampaignHeadline").value,
         message: $("emailCampaignMessage").value,
+        html: $("emailCampaignHtml").value,
         ctaLabel: $("emailCampaignCtaLabel").value,
         ctaUrl: $("emailCampaignCtaUrl").value
       })
     });
     if (resultNode) resultNode.textContent = `${result.sent || 0} enviados, ${result.failed || 0} falharam.`;
     $("emailCampaignForm").reset();
+    syncEmailCampaignMode();
     showSuccess("Campanha enviada", `${result.sent || 0} cliente(s) receberam o e-mail.`);
   } catch (error) {
     if (resultNode) resultNode.textContent = "";
     showToast(error.message, "error");
   }
+}
+
+function syncEmailCampaignMode() {
+  const htmlMode = $("emailCampaignMode")?.value === "html";
+  document.querySelectorAll("[data-email-campaign-visual]").forEach((node) => { node.hidden = htmlMode; });
+  document.querySelectorAll("[data-email-campaign-html]").forEach((node) => { node.hidden = !htmlMode; });
+  if ($("emailCampaignMessage")) $("emailCampaignMessage").required = !htmlMode;
+  if ($("emailCampaignHtml")) $("emailCampaignHtml").required = htmlMode;
 }
 
 function renderPromotions() {
@@ -4783,6 +4798,8 @@ function bindEvents() {
   $("settingsForm").addEventListener("submit", saveSettings);
   $("clubVisualForm")?.addEventListener("submit", saveClubVisualSettings);
   $("emailCampaignForm")?.addEventListener("submit", sendEmailCampaign);
+  $("emailCampaignMode")?.addEventListener("change", syncEmailCampaignMode);
+  syncEmailCampaignMode();
   [
     ["eventHeroImageUpload", "eventHeroImageUrl", "eventHeroImagePreview", "events/hero", "Prévia da imagem principal", "eventHeroImageClear"],
     ["eventGamesImageUpload", "eventGamesImageUrl", "eventGamesImagePreview", "events/games", "Prévia de games", "eventGamesImageClear"],

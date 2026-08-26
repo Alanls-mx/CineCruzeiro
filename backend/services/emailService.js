@@ -143,6 +143,7 @@ function baseLayout(title, body, options = {}) {
     ? `<img src="${htmlEscape(options.logoUrl)}" width="126" alt="Cine Cruzeiro" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px">`
     : `<strong style="display:block;color:#facc15;font-size:12px;letter-spacing:.18em;text-transform:uppercase">Cine Cruzeiro</strong>`;
   return `
+    ${options.preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${htmlEscape(options.preheader)}</div>` : ""}
     <div style="margin:0;background:#060a12;padding:18px;font-family:'Segoe UI',Helvetica,sans-serif;color:#f8fafc;box-sizing:border-box;width:100%">
       <div style="max-width:680px;width:100%;margin:0 auto;box-sizing:border-box">
         <div style="padding:8px 0 18px">
@@ -157,6 +158,14 @@ function baseLayout(title, body, options = {}) {
         <p style="margin:18px 0 0;color:#93a4bd;font-size:12px;line-height:1.6">Mensagem automática do Cine Cruzeiro. Se você não reconhece esta ação, entre em contato com o cinema.${unsubscribeFooter}</p>
       </div>
     </div>`;
+}
+
+function sanitizeCampaignHtml(value) {
+  return String(value || "")
+    .replace(/<(script|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+    .replace(/<(script|iframe|object|embed|form)[^>]*\/?>/gi, "")
+    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, '$1="#"');
 }
 
 function extrasSummary(items = []) {
@@ -345,14 +354,18 @@ async function sendPromotionCampaign(db, input = {}) {
   let failed = 0;
   for (const recipient of recipients) {
     try {
-      const ok = await sendTransactional(db, {
-        to: recipient.email,
-        subject: input.subject,
-        html: baseLayout(input.subject, `
+      const personalizedHtml = String(input.html || "").replace(/\{\{\s*nome\s*\}\}/gi, htmlEscape(recipient.name || "cliente"));
+      const campaignBody = input.mode === "html"
+        ? sanitizeCampaignHtml(personalizedHtml)
+        : `
           <p>Olá${recipient.name ? `, ${htmlEscape(recipient.name)}` : ""}.</p>
           <p>${htmlEscape(input.message).replace(/\n/g, "<br>")}</p>
           ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl)}</p>` : ""}
-        `, { kicker: "Promoção", unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl }),
+        `;
+      const ok = await sendTransactional(db, {
+        to: recipient.email,
+        subject: input.subject,
+        html: baseLayout(input.headline || input.subject, campaignBody, { kicker: "Promoção", preheader: input.preheader, unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl }),
         text: `${input.message}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`
       }, "email.promotion", { campaignSubject: input.subject });
       sent += ok ? 1 : 0;

@@ -1525,7 +1525,8 @@ function buildTicketsForOrder(order, db, source = "online") {
 
   let ticketIndex = 0;
   selectedTicketItems.forEach((item) => {
-    Array.from({ length: Math.max(0, Number(item.quantity || 0)) }).forEach(() => {
+    const quantity = Math.max(0, Math.floor(Number(item.ticketQuantity ?? (Number(item.quantity || 0) * Number(item.bundleQuantity || 1)))));
+    Array.from({ length: quantity }).forEach(() => {
       ticketIndex += 1;
       pushTicket(String(item.name || "Ingresso"), ticketIndex);
     });
@@ -3388,6 +3389,7 @@ function normalizeTicketType(input, existing = {}) {
     name,
     price: Number(input.price ?? existing.price ?? 10),
     description: input.description || existing.description || "",
+    bundleQuantity: Math.max(1, Math.min(20, Math.floor(Number(input.bundleQuantity ?? existing.bundleQuantity ?? 1) || 1))),
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false
   };
 }
@@ -3713,10 +3715,12 @@ function resolveOrderTicketItems(db, order, session) {
 
   const addItem = (ticketType, quantity) => {
     const safeQuantity = Math.max(0, Math.floor(Number(quantity || 0)));
+    const bundleQuantity = Math.max(1, Math.min(20, Math.floor(Number(ticketType?.bundleQuantity || 1))));
     if (!ticketType || !safeQuantity) return;
     const existing = normalized.find((item) => item.id === ticketType.id);
     if (existing) {
       existing.quantity += safeQuantity;
+      existing.ticketQuantity = existing.quantity * bundleQuantity;
       return;
     }
     normalized.push({
@@ -3724,6 +3728,8 @@ function resolveOrderTicketItems(db, order, session) {
       name: ticketType.name,
       description: ticketType.description || "",
       quantity: safeQuantity,
+      bundleQuantity,
+      ticketQuantity: safeQuantity * bundleQuantity,
       unitPrice: Math.max(0, Number(ticketType.price || 0))
     });
   };
@@ -4382,7 +4388,11 @@ function sessionForOrder(db, order) {
 
 function orderTicketCount(order) {
   if (Array.isArray(order.ticketItems) && order.ticketItems.length) {
-    return order.ticketItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
+    return order.ticketItems.reduce((sum, item) => {
+      const selectedQuantity = Math.max(0, Math.floor(Number(item.quantity || 0)));
+      const bundleQuantity = Math.max(1, Math.floor(Number(item.bundleQuantity || 1)));
+      return sum + Math.max(0, Math.floor(Number(item.ticketQuantity ?? selectedQuantity * bundleQuantity)));
+    }, 0);
   }
   return Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0);
 }
@@ -5599,8 +5609,10 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const subject = String(body.subject || "").trim();
     const message = String(body.message || "").trim();
-    if (!subject || !message) {
-      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: "Informe assunto e mensagem da campanha." } });
+    const mode = body.mode === "html" ? "html" : "visual";
+    const customHtml = String(body.html || "").trim();
+    if (!subject || (mode === "html" ? !customHtml : !message)) {
+      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: mode === "html" ? "Informe assunto e conteúdo HTML5 da campanha." : "Informe assunto e mensagem da campanha." } });
       return;
     }
     const emailConfig = integrationConfigService.resolvedConfig(db, "email");
@@ -5627,15 +5639,24 @@ async function handleApi(req, res, pathname) {
     const result = await emailService.sendPromotionCampaign(db, {
       recipients,
       subject,
+      mode,
+      preheader: String(body.preheader || "").trim().slice(0, 140),
+      headline: String(body.headline || "").trim(),
       message,
+      html: customHtml,
       ctaLabel: String(body.ctaLabel || "Ver promoção").trim(),
-      ctaUrl: String(body.ctaUrl || "").trim()
+      ctaUrl: String(body.ctaUrl || "").trim(),
+      logoUrl: `${appFrontendUrl()}/images/favicon-email.png`
     });
     db.emailCampaigns ||= [];
     db.emailCampaigns.unshift({
       id: `campanha-email-${Date.now()}`,
       subject,
+      mode,
+      preheader: String(body.preheader || "").trim().slice(0, 140),
+      headline: String(body.headline || "").trim(),
       message,
+      html: customHtml,
       ctaLabel: String(body.ctaLabel || "").trim(),
       ctaUrl: String(body.ctaUrl || "").trim(),
       recipients: recipients.length,

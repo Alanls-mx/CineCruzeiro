@@ -139,6 +139,7 @@ export interface TicketTypeRecord {
   name: string;
   price: number;
   description?: string;
+  bundleQuantity?: number;
   active: boolean;
 }
 
