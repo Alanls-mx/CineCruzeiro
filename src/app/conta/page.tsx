@@ -38,6 +38,7 @@ function ContaPageContent() {
     ? requestedReturnTo
     : "";
   const [user, setUser] = useState<CustomerUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [mode, setMode] = useState<"login" | "register" | "recover" | "reset">("login");
   const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", cpf: "" });
   const [resetToken, setResetToken] = useState("");
@@ -53,19 +54,33 @@ function ContaPageContent() {
   const historySubscriptions = subscriptions.filter(isClubHistory);
 
   useEffect(() => {
-    fetchCurrentCustomer().then((result) => {
-      setUser(result.user);
-      setProfile({
-        name: result.user.name || "",
-        email: result.user.email || "",
-        phone: result.user.phone || "",
-        cpf: result.user.cpf || "",
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
+    let active = true;
+
+    fetchCurrentCustomer()
+      .then((result) => {
+        if (!active) return;
+        setUser(result.user);
+        setProfile({
+          name: result.user.name || "",
+          email: result.user.email || "",
+          phone: result.user.phone || "",
+          cpf: result.user.cpf || "",
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        });
+        void loadClub();
+      })
+      .catch(() => {
+        if (active) setUser(null);
+      })
+      .finally(() => {
+        if (active) setAuthReady(true);
       });
-      loadClub();
-    }).catch(() => null);
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function loadClub() {
@@ -136,6 +151,7 @@ function ContaPageContent() {
         ? await registerCustomer(form)
         : await loginCustomer({ email: form.email, password: form.password });
       setUser(result.user);
+      setAuthReady(true);
       setProfile({
         name: result.user.name || "",
         email: result.user.email || "",
@@ -162,6 +178,7 @@ function ContaPageContent() {
   async function logout() {
     await logoutCustomer();
     setUser(null);
+    setAuthReady(true);
     setSubscriptions([]);
   }
 
@@ -243,7 +260,9 @@ function ContaPageContent() {
           {returnTo.startsWith("/clube/assinar") ? "Entre para continuar sua assinatura" : "Acesse seus ingressos"}
         </h1>
 
-        {user ? (
+        {!authReady ? (
+          <AccountLoadingState />
+        ) : user ? (
           <section className="mt-12 grid gap-10 lg:grid-cols-[1fr_1fr]">
             <div>
               <h2 className="font-display text-3xl font-black">Olá, {user.name}</h2>
@@ -413,6 +432,29 @@ function ContaPageContent() {
       </main>
       <SiteFooter />
     </div>
+  );
+}
+
+function AccountLoadingState() {
+  return (
+    <section className="mt-12 grid gap-10 lg:grid-cols-[1fr_1fr]" aria-busy="true" aria-live="polite">
+      <span className="sr-only">Verificando sua conta</span>
+      <div>
+        <div className="h-9 w-56 max-w-full skeleton-soft" />
+        <div className="mt-7 space-y-4">
+          <div className="h-10 w-full max-w-sm skeleton-soft" />
+          <div className="h-10 w-full max-w-xs skeleton-soft" />
+          <div className="h-10 w-full max-w-72 skeleton-soft" />
+        </div>
+      </div>
+      <div className="border-t border-white/8 pt-8 lg:border-t-0 lg:pt-0">
+        <div className="h-9 w-44 max-w-full skeleton-soft" />
+        <div className="mt-5 h-5 w-full max-w-md skeleton-soft" />
+        <div className="mt-3 h-5 w-2/3 max-w-xs skeleton-soft" />
+        <div className="mt-8 h-12 w-40 skeleton-soft" />
+      </div>
+      <div className="h-48 skeleton-soft lg:col-span-2" />
+    </section>
   );
 }
 
