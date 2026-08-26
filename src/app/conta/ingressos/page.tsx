@@ -14,6 +14,12 @@ import {
   transferTicket,
 } from "@/services/cinemaApi";
 
+function formatSessionDate(value: string) {
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+  if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+  return value || "Data não informada";
+}
+
 export default function IngressosPage() {
   const [upcoming, setUpcoming] = useState<TicketRecord[]>([]);
   const [archived, setArchived] = useState<TicketRecord[]>([]);
@@ -133,7 +139,7 @@ function TicketList({ tickets, selectedId, onSelect, empty }: { tickets: TicketR
           onClick={() => onSelect(ticket.id)}
           className={`w-full rounded-lg p-4 text-left transition ${ticket.id === selectedId ? "bg-brand-700 shadow-glow-blue" : "bg-brand-900/70 hover:bg-brand-850"}`}
         >
-          <span className="text-xs font-black uppercase tracking-[.14em] text-gold-400">{ticket.sessionDate} • {ticket.sessionTime}</span>
+          <span className="text-xs font-black uppercase tracking-[.14em] text-gold-400">{formatSessionDate(ticket.sessionDate)} • {ticket.sessionTime}</span>
           <strong className="mt-2 block line-clamp-2 text-lg">{ticket.movieTitle}</strong>
           <span className="mt-1 block text-sm text-slate-300">{ticket.ticketType} • {statusLabel(ticket.status)}</span>
         </button>
@@ -243,7 +249,7 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
 
           <div className="mt-8 grid gap-5 md:grid-cols-[1fr_220px]">
             <dl className="grid gap-4 sm:grid-cols-2">
-              <Info label="Data e horário" value={`${ticket.sessionDate} às ${ticket.sessionTime}`} />
+              <Info label="Data e horário" value={`${formatSessionDate(ticket.sessionDate)} às ${ticket.sessionTime}`} />
               <Info label="Sala" value={ticket.sessionRoom || "Cine Cruzeiro"} />
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
