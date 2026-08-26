@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { Play, Ticket, Clock, Film } from "lucide-react";
 import { Movie, Session } from "@/types";
+import { isUploadedAsset } from "@/utils/cinema";
 
 interface MovieCardProps {
   movie: Movie;
@@ -43,6 +44,7 @@ export function MovieCard({ movie, onOpenCheckout, onOpenTrailer }: MovieCardPro
             src={movie.posterUrl}
             alt={`Pôster de ${movie.title}`}
             fill
+            unoptimized={isUploadedAsset(movie.posterUrl)}
             sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
             className="object-cover transition duration-300 group-hover:scale-105"
           />

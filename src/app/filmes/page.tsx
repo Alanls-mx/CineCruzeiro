@@ -4,10 +4,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { CalendarDays } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { filterLabel, filtersForMovies, firstAvailableDayIndex, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
+import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter, sessionsForCalendarDay } from "@/components/MovieSessionSelector";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
-import { calendarDayDate, calendarDayTitle, movieSlug } from "@/utils/cinema";
+import { calendarDayDate, calendarDayTitle, isUploadedAsset, movieSlug } from "@/utils/cinema";
 import { Movie } from "@/types";
 
 export default function FilmesPage() {
@@ -15,18 +15,21 @@ export default function FilmesPage() {
   const [selectedDay, setSelectedDay] = useState(0);
   const [filter, setFilter] = useState<SessionFilter>("todos");
 
-  const days = content?.calendar?.days?.length
-    ? content.calendar.days
-    : [{ isoDate: "", label: "Hoje", weekday: "HOJE", displayDate: "--/--" }];
   const movies = content?.nowPlaying || [];
   const availableFilters = useMemo(() => filtersForMovies(movies), [movies]);
+  const calendarDays = useMemo(() => content?.calendar?.days || [], [content?.calendar?.days]);
+  const days = useMemo(() => availableCalendarDays(movies, calendarDays, filter), [calendarDays, filter, movies]);
+  const visibleMovies = useMemo(() => {
+    const day = days[selectedDay] || days[0];
+    if (!day) return [];
+    return movies.filter((movie) => sessionsForCalendarDay(movie, day, filter).length > 0);
+  }, [days, filter, movies, selectedDay]);
+
+  useEffect(() => setSelectedDay(0), [filter]);
 
   useEffect(() => {
-    if (!movies.length || !days.length) return;
-    const selectedDate = days[selectedDay]?.isoDate;
-    const selectedHasSessions = movies.some((movie) => movie.sessions.some((session) => String(session.date || "").slice(0, 10) === selectedDate));
-    if (!selectedHasSessions) setSelectedDay(firstAvailableDayIndex(movies, days, filter));
-  }, [days, filter, movies, selectedDay]);
+    if (selectedDay >= days.length) setSelectedDay(0);
+  }, [days.length, selectedDay]);
 
   return (
     <div className="min-h-screen bg-[#060a12] text-white">
@@ -63,6 +66,7 @@ export default function FilmesPage() {
                     <span className="mt-1 block text-lg font-black">{calendarDayDate(day)}</span>
                   </button>
                 ))}
+                {!days.length && <p className="py-3 text-sm normal-case tracking-normal text-slate-400">Nenhuma sessão disponível para este formato.</p>}
               </div>
             </section>
 
@@ -82,9 +86,9 @@ export default function FilmesPage() {
             </section>
 
             <section className="space-y-8">
-              {movies.length ? movies.map((movie, index) => (
+              {visibleMovies.length ? visibleMovies.map((movie, index) => (
                 <MovieSchedule key={movie.id} movie={movie} filter={filter} selectedDay={selectedDay} days={days} priority={index === 0} />
-              )) : <p className="text-sm text-slate-400">Nenhum filme em cartaz.</p>}
+              )) : <p className="text-sm text-slate-400">Nenhuma sessão disponível nesta data e formato.</p>}
             </section>
 
             {!!content.upcoming.length && (
@@ -99,6 +103,7 @@ export default function FilmesPage() {
                             src={movie.posterUrl}
                             alt={`Poster de ${movie.title}`}
                             fill
+                            unoptimized={isUploadedAsset(movie.posterUrl)}
                             quality={72}
                             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
                             className="object-cover transition duration-200 group-hover:scale-[1.02]"
@@ -129,6 +134,7 @@ function MovieSchedule({ movie, filter, selectedDay, days, priority = false }: {
             src={movie.posterUrl}
             alt={`Poster de ${movie.title}`}
             fill
+            unoptimized={isUploadedAsset(movie.posterUrl)}
             priority={priority}
             quality={72}
             sizes="180px"

@@ -1377,6 +1377,309 @@ input[type="file"]::file-selector-button {
   object-fit: cover;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.club-plan-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(620px, 1.45fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.club-plan-catalog {
+  position: sticky;
+  top: 96px;
+  max-height: calc(100vh - 118px);
+  overflow: hidden;
+}
+
+.club-plan-catalog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.club-plan-catalog-head .section-title {
+  margin-bottom: 4px;
+}
+
+.club-plan-catalog-head p,
+.club-plan-editor-head p,
+.club-plan-section-head p,
+.club-plan-actions > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.club-plan-catalog-hint {
+  flex: 0 0 auto;
+  color: #b7c2d2;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.club-plan-list {
+  max-height: calc(100vh - 200px);
+  margin-top: 12px;
+  padding-right: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.32) transparent;
+}
+
+.club-plan-item {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  min-height: 84px;
+  padding: 11px;
+  gap: 12px;
+  box-shadow: inset 0 0 0 1px transparent;
+}
+
+.club-plan-item .plan-thumb {
+  width: 60px;
+  aspect-ratio: 4 / 3;
+}
+
+.club-plan-item.active {
+  background: rgba(250, 204, 21, 0.075);
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.24), 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.club-plan-list-copy {
+  align-self: center;
+}
+
+.club-plan-list-side {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.club-plan-list-side small {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-plan-list-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #8ce8c4;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.club-plan-list-status i,
+.club-plan-editor-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.1);
+}
+
+.club-plan-list-status.inactive {
+  color: var(--muted);
+}
+
+.club-plan-list-status.inactive i,
+.club-plan-editor.is-inactive .club-plan-editor-status i {
+  background: #64748b;
+  box-shadow: none;
+}
+
+.club-plan-editor {
+  display: grid;
+  gap: 14px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.club-plan-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 20px 18px;
+  background: rgba(23, 34, 53, 0.54);
+  border-bottom: 1px solid var(--line);
+}
+
+.club-plan-editor-head .section-title {
+  margin-bottom: 5px;
+}
+
+.club-plan-editor-head h2 {
+  margin: 0 0 5px;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.club-plan-editor-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.08);
+  color: #8ce8c4;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.club-plan-editor.is-inactive .club-plan-editor-status {
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--muted);
+}
+
+.club-plan-form-section {
+  display: grid;
+  gap: 14px;
+  margin: 0 16px;
+  padding: 17px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.028);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
+.club-plan-form-section-primary {
+  background: rgba(20, 35, 58, 0.62);
+}
+
+.club-plan-section-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.club-plan-section-head h3 {
+  margin: 0 0 4px;
+  color: #f4f7fb;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.club-plan-fields {
+  display: grid;
+  gap: 12px;
+  align-items: end;
+}
+
+.club-plan-fields-four {
+  grid-template-columns: minmax(120px, 0.8fr) minmax(125px, 0.8fr) minmax(110px, 0.7fr) minmax(180px, 1fr);
+}
+
+.club-plan-fields-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.club-plan-switches {
+  display: grid;
+  gap: 7px;
+  min-height: 42px;
+  align-content: center;
+}
+
+.club-plan-switches .check-field {
+  min-height: 0;
+}
+
+.input-prefix {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: rgba(2, 6, 23, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.24);
+}
+
+.input-prefix:focus-within {
+  box-shadow: inset 0 0 0 1px #4d8dff, 0 0 0 3px rgba(77, 141, 255, 0.12);
+}
+
+.input-prefix > span {
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.input-prefix input {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.club-plan-benefits-copy {
+  margin-top: 2px;
+}
+
+.club-plan-products {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.club-plan-products .benefit-product-row {
+  min-height: 46px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.club-plan-media-section .plan-image-grid {
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) auto;
+}
+
+.club-plan-media-section .plan-image-grid > input[type="hidden"] {
+  display: none;
+}
+
+.club-plan-media-section .media-preview {
+  max-width: 240px;
+  min-height: 126px;
+}
+
+.club-plan-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 20px;
+  background: rgba(9, 16, 29, 0.96);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+
+.club-plan-actions .button-row {
+  flex: 0 0 auto;
+}
+
 .media-preview img {
   width: 100%;
   height: 100%;
@@ -3484,4 +3787,72 @@ th {
 
 .box-office-form .payment-options {
   box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
+}
+
+@media (max-width: 1120px) {
+  .club-plan-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .club-plan-catalog {
+    position: static;
+    max-height: none;
+  }
+
+  .club-plan-list {
+    max-height: 340px;
+  }
+
+  .club-plan-fields-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .club-plan-fields-four,
+  .club-plan-fields-two,
+  .club-plan-media-section .plan-image-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .club-plan-editor-head,
+  .club-plan-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .club-plan-form-section {
+    margin-inline: 10px;
+    padding: 14px;
+  }
+
+  .club-plan-editor-head,
+  .club-plan-actions {
+    padding-inline: 14px;
+  }
+
+  .club-plan-item {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+
+  .club-plan-item .plan-thumb {
+    width: 52px;
+  }
+
+  .club-plan-list-side {
+    grid-column: 2;
+    grid-template-columns: auto auto 1fr;
+    justify-items: start;
+    align-items: center;
+  }
+
+  .club-plan-actions .button-row,
+  .club-plan-actions .button-row > * {
+    width: 100%;
+  }
+
+  .club-plan-media-section .media-preview {
+    max-width: none;
+    justify-self: stretch;
+  }
 }

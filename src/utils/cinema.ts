@@ -20,6 +20,16 @@ export function publicAssetPath(value: string | undefined | null) {
   return url;
 }
 
+export function isUploadedAsset(value: string | undefined | null) {
+  const url = publicAssetPath(value);
+  if (!url) return false;
+  try {
+    return new URL(url, "http://cine-cruzeiro.local").pathname.includes("/uploads/");
+  } catch {
+    return url.includes("/uploads/");
+  }
+}
+
 export type StoredCheckoutCart = {
   movieId: string;
   sessionId: string;
@@ -60,9 +70,10 @@ function titleCasePt(value = "") {
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
 }
 
-export function calendarDayTitle(day: CalendarDayLike, index = 0) {
-  if (index === 0) return "Hoje";
-  if (index === 1 && String(day.label || "").toLowerCase().includes("aman")) return "Amanhã";
+export function calendarDayTitle(day: CalendarDayLike, _index = 0) {
+  const label = String(day.label || "").toLowerCase();
+  if (label.includes("hoje")) return "Hoje";
+  if (label.includes("aman")) return "Amanhã";
   return titleCasePt(day.weekday || day.label || "");
 }
 

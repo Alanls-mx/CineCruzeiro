@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { Play, Ticket, Sparkles, Clock, ShieldCheck, Zap, Popcorn, Smartphone, Film } from "lucide-react";
 import { Movie, Session } from "@/types";
+import { isUploadedAsset } from "@/utils/cinema";
 
 interface HeroProps {
   movie: Movie;
@@ -191,6 +192,7 @@ export function Hero({ movie, onOpenCheckout, onOpenTrailer }: HeroProps) {
                       alt={`Pôster de ${movie.title}`}
                       fill
                       priority
+                      unoptimized={isUploadedAsset(movie.posterUrl)}
                       sizes="(min-width: 1024px) 384px, 90vw"
                       className="object-cover transition duration-300 group-hover:scale-105"
                     />

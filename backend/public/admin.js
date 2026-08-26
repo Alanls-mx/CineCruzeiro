@@ -3488,11 +3488,15 @@ function renderClub() {
       ? plans.map((plan) => `
           <button class="list-item club-plan-item ${plan.id === state.selectedClubPlanId ? "active" : ""}" type="button" onclick="selectClubPlan('${escapeHtml(plan.id)}')">
             <span class="plan-thumb">${plan.imageUrl ? `<img src="${escapeHtml(adminAssetUrl(plan.imageUrl))}" alt="">` : `<span>Plano</span>`}</span>
-            <span>
+            <span class="club-plan-list-copy">
               <span class="list-title">${escapeHtml(plan.name)}</span>
-              <span class="list-meta">Ordem ${Number(plan.displayOrder || 100)} • ${Number(plan.includedTickets || 0)} ingressos/mês • ${plan.isFeatured ? "recomendado • " : ""}${plan.active === false ? "inativo" : "ativo"}</span>
+              <span class="list-meta">${Number(plan.includedTickets || 0)} ingresso(s) por mês${plan.isFeatured ? " • Recomendado" : ""}</span>
             </span>
-            <span class="badge">${money(plan.monthlyPrice)}</span>
+            <span class="club-plan-list-side">
+              <span class="badge">${money(plan.monthlyPrice)}</span>
+              <span class="club-plan-list-status ${plan.active === false ? "inactive" : ""}"><i></i>${plan.active === false ? "Inativo" : "Ativo"}</span>
+              <small>Ordem ${Number(plan.displayOrder || 100)}</small>
+            </span>
           </button>
         `).join("")
       : `<div class="empty-state"><strong>Nenhum plano cadastrado</strong><span>Crie planos para vender assinatura recorrente.</span></div>`;
@@ -3605,6 +3609,14 @@ function fillClubPlanForm(plan) {
   $("clubPlanFeatured").checked = Boolean(plan?.isFeatured);
   $("clubPlanBenefits").value = (plan?.benefits || []).join("\n");
   $("clubPlanActive").checked = plan?.active !== false;
+  if ($("clubPlanEditorTitle")) $("clubPlanEditorTitle").textContent = plan?.name || "Novo plano";
+  if ($("clubPlanEditorSubtitle")) {
+    $("clubPlanEditorSubtitle").textContent = plan
+      ? "Ajuste a oferta publicada sem alterar o histórico das assinaturas existentes."
+      : "Preencha a oferta que será exibida na página do Clube.";
+  }
+  if ($("clubPlanEditorStatusText")) $("clubPlanEditorStatusText").textContent = plan?.active === false ? "Inativo" : "Ativo";
+  $("clubPlanForm")?.classList.toggle("is-inactive", plan?.active === false);
   renderClubPlanFreeItems(plan);
   renderAdminImagePreview("clubPlanImageUrl", "clubPlanImagePreview", "Prévia do plano");
 }
@@ -4509,6 +4521,11 @@ function bindEvents() {
   $("deleteUserButton").addEventListener("click", deleteUser);
 
   $("newClubPlanButton").addEventListener("click", newClubPlan);
+  $("clubPlanActive")?.addEventListener("change", (event) => {
+    const active = Boolean(event.target.checked);
+    $("clubPlanForm")?.classList.toggle("is-inactive", !active);
+    if ($("clubPlanEditorStatusText")) $("clubPlanEditorStatusText").textContent = active ? "Ativo" : "Inativo";
+  });
   $("cancelClubPlanCreateButton").addEventListener("click", () => cancelCreation("clubPlan"));
   $("clubPlanForm").addEventListener("submit", saveClubPlan);
   $("deleteClubPlanButton")?.addEventListener("click", deleteClubPlan);

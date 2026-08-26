@@ -5,11 +5,11 @@ import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { filterLabel, filtersForMovies, firstAvailableDayIndex, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
+import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { TrailerModal } from "@/components/TrailerModal";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
-import { calendarDayDate, calendarDayTitle, findMovieBySlug, movieSlug } from "@/utils/cinema";
+import { calendarDayDate, calendarDayTitle, findMovieBySlug, isUploadedAsset, movieSlug } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
 export default function FilmeDetalhePage() {
@@ -20,9 +20,8 @@ export default function FilmeDetalhePage() {
   const [selectedDay, setSelectedDay] = useState(0);
   const [filter, setFilter] = useState<SessionFilter>("todos");
   const movie = findMovieBySlug(content, params.slug);
-  const days = content?.calendar?.days?.length
-    ? content.calendar.days
-    : [{ isoDate: "", label: "Hoje", weekday: "HOJE", displayDate: "--/--" }];
+  const calendarDays = useMemo(() => content?.calendar?.days || [], [content?.calendar?.days]);
+  const days = useMemo(() => availableCalendarDays(movie ? [movie] : [], calendarDays, filter), [calendarDays, filter, movie]);
   const filters = useMemo(() => filtersForMovies(movie ? [movie] : []), [movie]);
 
   useEffect(() => {
@@ -33,12 +32,11 @@ export default function FilmeDetalhePage() {
     }
   }, [movie, params.slug, router]);
 
+  useEffect(() => setSelectedDay(0), [filter, movie?.id]);
+
   useEffect(() => {
-    if (!movie || !days.length) return;
-    const selectedDate = days[selectedDay]?.isoDate;
-    const selectedHasSessions = movie.sessions.some((session) => String(session.date || "").slice(0, 10) === selectedDate);
-    if (!selectedHasSessions) setSelectedDay(firstAvailableDayIndex([movie], days, filter));
-  }, [days, filter, movie, selectedDay]);
+    if (selectedDay >= days.length) setSelectedDay(0);
+  }, [days.length, selectedDay]);
 
   useEffect(() => {
     if (!movie) return;
@@ -60,14 +58,14 @@ export default function FilmeDetalhePage() {
             <section className="relative overflow-hidden">
               <div className="absolute inset-0 opacity-30">
                 {movie.backdropUrl && (
-                  <Image src={movie.backdropUrl} alt="" fill priority quality={68} sizes="100vw" className="object-cover" />
+                  <Image src={movie.backdropUrl} alt="" fill priority unoptimized={isUploadedAsset(movie.backdropUrl)} quality={68} sizes="100vw" className="object-cover" />
                 )}
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,10,18,.55),#060a12)]" />
               </div>
               <div className="relative mx-auto grid max-w-[1320px] gap-10 px-4 py-14 sm:px-6 md:grid-cols-[300px_1fr] lg:px-8">
                 <div className="relative aspect-[2/3] w-full max-w-[300px] overflow-hidden bg-brand-950">
                   {movie.posterUrl && (
-                    <Image src={movie.posterUrl} alt={`Poster de ${movie.title}`} fill quality={74} sizes="300px" className="object-cover" />
+                    <Image src={movie.posterUrl} alt={`Poster de ${movie.title}`} fill unoptimized={isUploadedAsset(movie.posterUrl)} quality={74} sizes="300px" className="object-cover" />
                   )}
                 </div>
                 <div className="self-end pb-4">
@@ -91,7 +89,7 @@ export default function FilmeDetalhePage() {
 
             <section className="mx-auto max-w-[1320px] px-4 py-14 sm:px-6 lg:px-8">
               <h2 className="font-display text-3xl font-black">Sessões disponíveis</h2>
-              {movie.sessions.length ? (
+              {days.length ? (
                 <div className="mt-8 space-y-6">
                   <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                     {days.map((day, index) => (
@@ -125,7 +123,7 @@ export default function FilmeDetalhePage() {
                   <MovieSessionSelector movie={movie} filter={filter} selectedDay={selectedDay} days={days} />
                 </div>
               ) : (
-                <p className="mt-5 text-slate-400">Sessões serão divulgadas em breve.</p>
+                <p className="mt-5 text-slate-400">Nenhuma sessão disponível para este formato.</p>
               )}
             </section>
           </>

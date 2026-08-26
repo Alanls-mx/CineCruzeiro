@@ -14,7 +14,7 @@ import {
   subscribeToPlan,
 } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
-import { money, publicAssetPath } from "@/utils/cinema";
+import { isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
 export default function ClubSubscriptionCheckoutPage() {
@@ -169,7 +169,7 @@ export default function ClubSubscriptionCheckoutPage() {
                 <div className="grid grid-cols-[96px_1fr] items-center gap-4">
                   <div className="relative aspect-[2/3] overflow-hidden bg-brand-950">
                     {plan.imageUrl ? (
-                      <Image src={publicAssetPath(plan.imageUrl)} alt={`Imagem do ${plan.name}`} fill quality={72} sizes="96px" className="object-contain" />
+                      <Image src={publicAssetPath(plan.imageUrl)} alt={`Imagem do ${plan.name}`} fill unoptimized={isUploadedAsset(plan.imageUrl)} quality={72} sizes="96px" className="object-contain" />
                     ) : (
                       <div className="flex h-full items-center justify-center text-gold-400"><ShieldCheck className="h-8 w-8" /></div>
                     )}

@@ -1280,74 +1280,121 @@
           </form>
           </div>
           <div class="admin-tab-panel" data-admin-tab-panel="club:plans" hidden>
-          <div class="split-grid compact">
-            <div class="surface">
-              <div class="section-title">Planos</div>
-              <div id="clubPlansList" class="list"></div>
+          <div class="club-plan-workspace">
+            <div class="surface club-plan-catalog">
+              <div class="club-plan-catalog-head">
+                <div>
+                  <div class="section-title">Planos cadastrados</div>
+                  <p>Selecione um plano para revisar preço, benefícios e publicação.</p>
+                </div>
+                <span class="club-plan-catalog-hint">Ordem do site</span>
+              </div>
+              <div id="clubPlansList" class="list club-plan-list"></div>
             </div>
-            <form id="clubPlanForm" class="surface form-grid long-form" data-dirty-track>
+            <form id="clubPlanForm" class="surface club-plan-editor" data-dirty-track>
               <input type="hidden" id="clubPlanId" />
-              <label>
-                Nome do plano
-                <input id="clubPlanName" required />
-              </label>
-              <div class="field-row">
-                <label>
-                  Mensalidade
-                  <input id="clubPlanPrice" type="number" min="0" step="0.01" required />
-                </label>
-                <label>
-                  Ingressos por mês
-                  <input id="clubPlanTickets" type="number" min="0" step="1" required />
-                </label>
+              <div class="club-plan-editor-head">
+                <div>
+                  <div class="section-title">Edição do plano</div>
+                  <h2 id="clubPlanEditorTitle">Configure o plano</h2>
+                  <p id="clubPlanEditorSubtitle">Defina a oferta que será exibida na página do Clube.</p>
+                </div>
+                <span class="club-plan-editor-status"><i></i><span id="clubPlanEditorStatusText">Ativo</span></span>
               </div>
-              <div class="field-row">
+
+              <section class="club-plan-form-section club-plan-form-section-primary">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Informações do plano</h3>
+                    <p>Nome, mensalidade, créditos e posição na vitrine.</p>
+                  </div>
+                </div>
                 <label>
-                  Desconto em ingressos (%)
-                  <input id="clubPlanTicketDiscount" type="number" min="0" max="90" step="0.5" value="0" />
+                  Nome do plano
+                  <input id="clubPlanName" required />
                 </label>
-                <label>
-                  Desconto na bomboniere (%)
-                  <input id="clubPlanConcessionDiscount" type="number" min="0" max="90" step="0.5" value="0" />
+                <div class="club-plan-fields club-plan-fields-four">
+                  <label>
+                    Mensalidade
+                    <span class="input-prefix"><span>R$</span><input id="clubPlanPrice" type="number" min="0" step="0.01" required /></span>
+                  </label>
+                  <label>
+                    Ingressos por mês
+                    <input id="clubPlanTickets" type="number" min="0" step="1" required />
+                  </label>
+                  <label>
+                    Ordem de exibição
+                    <input id="clubPlanDisplayOrder" type="number" min="1" step="1" value="100" />
+                  </label>
+                  <div class="club-plan-switches">
+                    <label class="check-field"><input id="clubPlanFeatured" type="checkbox" /> Plano recomendado</label>
+                    <label class="check-field"><input id="clubPlanActive" type="checkbox" /> Plano ativo</label>
+                  </div>
+                </div>
+              </section>
+
+              <section class="club-plan-form-section">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Benefícios comerciais</h3>
+                    <p>Descontos aplicados com validação de preço no servidor.</p>
+                  </div>
+                </div>
+                <div class="club-plan-fields club-plan-fields-two">
+                  <label>
+                    Desconto em ingressos (%)
+                    <input id="clubPlanTicketDiscount" type="number" min="0" max="90" step="0.5" value="0" />
+                  </label>
+                  <label>
+                    Desconto na bomboniere (%)
+                    <input id="clubPlanConcessionDiscount" type="number" min="0" max="90" step="0.5" value="0" />
+                  </label>
+                </div>
+                <label class="club-plan-benefits-copy">
+                  Benefícios exibidos, um por linha
+                  <textarea id="clubPlanBenefits" rows="4" placeholder="Ex.: Fila expressa na bomboniere"></textarea>
                 </label>
-              </div>
-              <fieldset class="benefit-products-fieldset">
-                <legend>Itens grátis por ciclo</legend>
-                <p>Selecione os produtos e a quantidade mensal incluída. O consumo é validado no servidor.</p>
-                <div id="clubPlanFreeItems" class="benefit-product-list"></div>
-              </fieldset>
-              <div class="image-setting-grid plan-image-grid">
-                <label class="upload-field compact">
-                  Imagem do plano
-                  <input id="clubPlanImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
-                  <span>JPG, PNG ou WebP até 5 MB.</span>
-                </label>
-                <input id="clubPlanImageUrl" type="hidden" />
-                <div class="media-preview backdrop-preview" id="clubPlanImagePreview">Prévia do plano</div>
-                <button id="clubPlanImageClear" class="ghost-button" type="button">Remover imagem</button>
-              </div>
-              <div class="field-row">
-                <label>
-                  Ordem de exibição
-                  <input id="clubPlanDisplayOrder" type="number" min="1" step="1" value="100" />
-                </label>
-                <label class="check-field">
-                  <input id="clubPlanFeatured" type="checkbox" />
-                  Plano recomendado
-                </label>
-              </div>
-              <label>
-                Benefícios, um por linha
-                <textarea id="clubPlanBenefits" rows="5"></textarea>
-              </label>
-              <label class="check-field">
-                <input id="clubPlanActive" type="checkbox" />
-                Plano ativo
-              </label>
-              <div class="button-row">
+              </section>
+
+              <section class="club-plan-form-section">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Itens inclusos</h3>
+                    <p>Produtos grátis por ciclo, com quantidade mensal protegida pelo backend.</p>
+                  </div>
+                </div>
+                <fieldset class="benefit-products-fieldset club-plan-products">
+                  <legend class="sr-only">Itens grátis por ciclo</legend>
+                  <div id="clubPlanFreeItems" class="benefit-product-list"></div>
+                </fieldset>
+              </section>
+
+              <section class="club-plan-form-section club-plan-media-section">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Imagem do plano</h3>
+                    <p>Envie a arte usada no card de assinatura. JPG, PNG ou WebP até 5 MB.</p>
+                  </div>
+                </div>
+                <div class="image-setting-grid plan-image-grid">
+                  <label class="upload-field compact">
+                    Arquivo de imagem
+                    <input id="clubPlanImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+                    <span>A prévia será atualizada após o envio.</span>
+                  </label>
+                  <input id="clubPlanImageUrl" type="hidden" />
+                  <div class="media-preview backdrop-preview" id="clubPlanImagePreview">Prévia do plano</div>
+                  <button id="clubPlanImageClear" class="ghost-button" type="button">Remover imagem</button>
+                </div>
+              </section>
+
+              <div class="club-plan-actions">
+                <p>Revise os dados antes de publicar a oferta no site.</p>
+                <div class="button-row">
                 <button class="primary-button" type="submit">Salvar plano</button>
                 <button id="cancelClubPlanCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
                 <button id="deleteClubPlanButton" class="danger-button" type="button">Excluir plano</button>
+                </div>
               </div>
             </form>
           </div>

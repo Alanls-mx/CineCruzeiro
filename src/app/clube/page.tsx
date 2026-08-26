@@ -7,7 +7,7 @@ import { CalendarCheck, Check, CircleHelp, Popcorn, ShieldCheck, Sparkles, Ticke
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
-import { money, publicAssetPath } from "@/utils/cinema";
+import { isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
 
 function uploadedImageUrl(value: string | undefined) {
   return publicAssetPath(value) || "";
@@ -74,6 +74,7 @@ export default function ClubePage() {
                 alt="Público em uma sala de cinema"
                 fill
                 priority
+                unoptimized={isUploadedAsset(settings.clubHeroImageUrl)}
                 quality={72}
                 sizes="(max-width: 768px) 100vw, 44vw"
                 className="object-cover"
@@ -140,6 +141,7 @@ export default function ClubePage() {
                 src={uploadedImageUrl(settings.clubBannerImageUrl)}
                 alt="Sala de cinema iluminada antes da sessão"
                 fill
+                unoptimized={isUploadedAsset(settings.clubBannerImageUrl)}
                 quality={72}
                 sizes="(max-width: 1024px) 100vw, 45vw"
                 className="object-cover"
@@ -197,6 +199,7 @@ function Plan({ plan }: { plan: SubscriptionPlan }) {
             src={publicAssetPath(plan.imageUrl)}
             alt={`Imagem do ${plan.name}`}
             fill
+            unoptimized={isUploadedAsset(plan.imageUrl)}
             quality={74}
             sizes="(max-width: 768px) 100vw, (max-width: 1280px) 42vw, 280px"
             className="bg-brand-950 object-contain p-3"

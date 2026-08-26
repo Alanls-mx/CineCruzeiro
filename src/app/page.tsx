@@ -6,7 +6,7 @@ import { Play, Ticket } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { TrailerModal } from "@/components/TrailerModal";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
-import { movieSlug, money } from "@/utils/cinema";
+import { isUploadedAsset, movieSlug, money } from "@/utils/cinema";
 import { useState } from "react";
 import { Movie } from "@/types";
 
@@ -32,6 +32,7 @@ export default function HomePage() {
                     alt=""
                     fill
                     priority
+                    unoptimized={isUploadedAsset(featured.backdropUrl)}
                     fetchPriority="high"
                     quality={58}
                     sizes="100vw"
@@ -75,6 +76,7 @@ export default function HomePage() {
                       src={featured.posterUrl}
                       alt={`Poster de ${featured.title}`}
                       fill
+                      unoptimized={isUploadedAsset(featured.posterUrl)}
                       quality={74}
                       sizes="(max-width: 640px) 260px, 300px"
                       className="object-cover"
@@ -112,6 +114,7 @@ function MovieStrip({ title, movies, muted = false }: { title: string; movies: M
                   src={movie.posterUrl}
                   alt={`Poster de ${movie.title}`}
                   fill
+                  unoptimized={isUploadedAsset(movie.posterUrl)}
                   quality={72}
                   sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
                   className="object-cover transition duration-200 group-hover:scale-[1.02]"

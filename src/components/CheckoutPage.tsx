@@ -8,7 +8,7 @@ import QRCode from "qrcode";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { AccountSubscription, CustomerUser, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
-import { cartTotal, findSession, money, publicAssetPath, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
+import { cartTotal, findSession, isUploadedAsset, money, publicAssetPath, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
 type Step = "ingressos" | "extras" | "pagamento" | "confirmacao";
@@ -509,6 +509,7 @@ function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: Store
                   src={publicAssetPath(item.imageUrl)}
                   alt={item.name}
                   fill
+                  unoptimized={isUploadedAsset(item.imageUrl)}
                   quality={74}
                   sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 260px"
                   className="object-contain"

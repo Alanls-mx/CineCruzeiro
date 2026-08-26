@@ -10,6 +10,7 @@ import type { CinemaContent } from "@/services/cinemaApi";
 import { sendPrivateEventWebhook } from "@/services/webhook";
 import type { PrivateEventRequest } from "@/types";
 import { trackMarketingEvent } from "@/utils/tracking";
+import { isUploadedAsset } from "@/utils/cinema";
 
 export default function EventosPage() {
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
@@ -80,7 +81,7 @@ export default function EventosPage() {
           </div>
           <div className="relative min-h-[360px] overflow-hidden rounded-[10px] shadow-[0_30px_90px_rgba(0,0,0,.45)] lg:min-h-[560px]">
             {settings.eventHeroImageUrl ? (
-              <Image src={settings.eventHeroImageUrl} alt="Sala de cinema reservada para evento privado" fill priority className="object-cover" sizes="(max-width: 1024px) 100vw, 56vw" />
+              <Image src={settings.eventHeroImageUrl} alt="Sala de cinema reservada para evento privado" fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} className="object-cover" sizes="(max-width: 1024px) 100vw, 56vw" />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
@@ -98,7 +99,7 @@ export default function EventosPage() {
             </div>
             <div className="relative min-h-[420px] overflow-hidden rounded-[10px]">
               {settings.eventGalleryImageUrl ? (
-                <Image src={settings.eventGalleryImageUrl} alt="Público entrando em uma sala de cinema" fill className="object-cover" sizes="(max-width: 768px) 100vw, 42vw" />
+                <Image src={settings.eventGalleryImageUrl} alt="Público entrando em uma sala de cinema" fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} className="object-cover" sizes="(max-width: 768px) 100vw, 42vw" />
               ) : (
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(250,204,21,.18),transparent_32%),linear-gradient(135deg,#0d1930,#030712)]" />
               )}
@@ -181,7 +182,7 @@ function Experience({ image, icon, title, text }: { image: string; icon: React.R
     <article className="grid gap-4 sm:grid-cols-[190px_1fr]">
       <div className="relative min-h-[160px] overflow-hidden rounded-[10px]">
         {image ? (
-          <Image src={image} alt={title} fill className="object-cover" sizes="(max-width: 640px) 100vw, 190px" />
+          <Image src={image} alt={title} fill unoptimized={isUploadedAsset(image)} className="object-cover" sizes="(max-width: 640px) 100vw, 190px" />
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.24),transparent_38%),linear-gradient(135deg,#0d1930,#030712)]" />
         )}
