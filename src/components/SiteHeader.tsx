@@ -70,8 +70,8 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
           <img
             src={assetPath("/images/logo-header.webp")}
             alt="Cine Cruzeiro"
-            width={224}
-            height={128}
+            width={112}
+            height={64}
             decoding="async"
             className="h-14 w-auto object-contain sm:h-16"
           />
@@ -140,8 +140,8 @@ export function SiteFooter() {
           <img
             src={assetPath("/images/logo-header.webp")}
             alt="Cine Cruzeiro"
-            width={224}
-            height={128}
+            width={112}
+            height={64}
             loading="lazy"
             decoding="async"
             className="h-11 w-auto"

@@ -6,13 +6,13 @@ import { TrackingManager } from "@/components/TrackingManager";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
-  display: "swap",
+  display: "optional",
 });
 
 const outfit = Outfit({
   subsets: ["latin"],
   variable: "--font-outfit",
-  display: "swap",
+  display: "optional",
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.NODE_ENV === "production" ? "https://lumixengine.com" : "http://localhost:3000");

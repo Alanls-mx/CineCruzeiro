@@ -58,7 +58,7 @@ export default async function HomePage() {
                     priority
                     unoptimized={isUploadedAsset(featured.backdropUrl)}
                     fetchPriority="high"
-                    quality={48}
+                    quality={40}
                     sizes="100vw"
                     className="object-cover"
                   />
