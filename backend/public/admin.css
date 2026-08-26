@@ -2435,21 +2435,27 @@ input[type="file"]::file-selector-button {
 
 .session-ticket-type-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 10px;
 }
 
 .session-ticket-type-option {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
-  padding: 11px 12px;
+  min-height: 72px;
+  padding: 12px 14px;
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.46);
   cursor: pointer;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.session-ticket-type-option:hover {
+  background: rgba(30, 41, 59, 0.72);
+  transform: translateY(-1px);
 }
 
 .session-ticket-type-option:has(input:checked) {
@@ -2457,22 +2463,68 @@ input[type="file"]::file-selector-button {
   box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.28);
 }
 
-.session-ticket-type-option input {
-  flex: 0 0 auto;
-  margin-top: 2px;
+.session-ticket-type-option:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.7), 0 0 0 3px rgba(59, 130, 246, 0.14);
 }
 
-.session-ticket-type-option span {
+.session-ticket-type-option input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--gold);
+}
+
+.session-ticket-type-copy {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 4px;
 }
 
-.session-ticket-type-option small {
+.session-ticket-type-copy strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.session-ticket-type-copy small {
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.4;
+}
+
+.session-ticket-type-price {
+  align-self: start;
+  color: #fde68a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .session-ticket-type-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .session-ticket-type-option {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .session-ticket-type-price {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 .manual-ticket-types {

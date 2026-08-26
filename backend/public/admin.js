@@ -1275,7 +1275,11 @@ function renderSessionTicketTypeOptions(selectedIds = []) {
     ? activeTypes.map((ticketType) => `
       <label class="session-ticket-type-option">
         <input type="checkbox" value="${escapeHtml(ticketType.id)}" ${selected.has(ticketType.id) ? "checked" : ""} />
-        <span><strong>${escapeHtml(ticketType.name)}</strong><small>${money(ticketType.price)}${ticketType.description ? ` • ${escapeHtml(ticketType.description)}` : ""}</small></span>
+        <span class="session-ticket-type-copy">
+          <strong>${escapeHtml(ticketType.name)}</strong>
+          <small>${ticketType.description ? escapeHtml(ticketType.description) : "Tipo de ingresso ativo"}</small>
+        </span>
+        <span class="session-ticket-type-price">${money(ticketType.price)}</span>
       </label>
     `).join("")
     : `<div class="empty-state compact"><strong>Nenhum tipo de ingresso ativo</strong><span>Cadastre e ative os tipos na aba Ingressos antes de criar sessões.</span></div>`;
