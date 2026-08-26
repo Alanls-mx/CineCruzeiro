@@ -12,24 +12,25 @@ import { Movie } from "@/types";
 
 export default function FilmesPage() {
   const { content, status, error } = useCinemaContent();
-  const [selectedDay, setSelectedDay] = useState(0);
+  const [selectedDate, setSelectedDate] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("todos");
 
   const movies = content?.nowPlaying || [];
   const availableFilters = useMemo(() => filtersForMovies(movies), [movies]);
   const calendarDays = useMemo(() => content?.calendar?.days || [], [content?.calendar?.days]);
   const days = useMemo(() => availableCalendarDays(movies, calendarDays, filter), [calendarDays, filter, movies]);
+  const selectedDay = Math.max(0, days.findIndex((day) => day.isoDate === selectedDate));
   const visibleMovies = useMemo(() => {
     const day = days[selectedDay] || days[0];
     if (!day) return [];
     return movies.filter((movie) => sessionsForCalendarDay(movie, day, filter).length > 0);
   }, [days, filter, movies, selectedDay]);
 
-  useEffect(() => setSelectedDay(0), [filter]);
+  useEffect(() => setSelectedDate(""), [filter]);
 
   useEffect(() => {
-    if (selectedDay >= days.length) setSelectedDay(0);
-  }, [days.length, selectedDay]);
+    if (!days.some((day) => day.isoDate === selectedDate)) setSelectedDate(days[0]?.isoDate || "");
+  }, [days, selectedDate]);
 
   return (
     <div className="min-h-screen bg-[#060a12] text-white">
@@ -57,7 +58,7 @@ export default function FilmesPage() {
                   <button
                     key={day.isoDate || `${day.label}-${index}`}
                     type="button"
-                    onClick={() => setSelectedDay(index)}
+                    onClick={() => setSelectedDate(day.isoDate)}
                     className={`min-w-[112px] rounded-lg px-4 py-3 text-left transition ${
                       selectedDay === index ? "bg-gold-400 text-slate-950" : "bg-brand-900/80 text-white hover:bg-brand-850"
                     }`}

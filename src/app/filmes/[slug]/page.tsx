@@ -17,11 +17,12 @@ export default function FilmeDetalhePage() {
   const router = useRouter();
   const { content, status, error } = useCinemaContent();
   const [trailerOpen, setTrailerOpen] = useState(false);
-  const [selectedDay, setSelectedDay] = useState(0);
+  const [selectedDate, setSelectedDate] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("todos");
   const movie = findMovieBySlug(content, params.slug);
   const calendarDays = useMemo(() => content?.calendar?.days || [], [content?.calendar?.days]);
   const days = useMemo(() => availableCalendarDays(movie ? [movie] : [], calendarDays, filter), [calendarDays, filter, movie]);
+  const selectedDay = Math.max(0, days.findIndex((day) => day.isoDate === selectedDate));
   const filters = useMemo(() => filtersForMovies(movie ? [movie] : []), [movie]);
 
   useEffect(() => {
@@ -32,11 +33,11 @@ export default function FilmeDetalhePage() {
     }
   }, [movie, params.slug, router]);
 
-  useEffect(() => setSelectedDay(0), [filter, movie?.id]);
+  useEffect(() => setSelectedDate(""), [filter, movie?.id]);
 
   useEffect(() => {
-    if (selectedDay >= days.length) setSelectedDay(0);
-  }, [days.length, selectedDay]);
+    if (!days.some((day) => day.isoDate === selectedDate)) setSelectedDate(days[0]?.isoDate || "");
+  }, [days, selectedDate]);
 
   useEffect(() => {
     if (!movie) return;
@@ -96,7 +97,7 @@ export default function FilmeDetalhePage() {
                       <button
                         key={day.isoDate || `${day.label}-${index}`}
                         type="button"
-                        onClick={() => setSelectedDay(index)}
+                        onClick={() => setSelectedDate(day.isoDate)}
                         className={`min-w-[112px] rounded-lg px-4 py-3 text-left transition ${
                           selectedDay === index ? "bg-gold-400 text-slate-950" : "bg-brand-900/80 text-white hover:bg-brand-850"
                         }`}

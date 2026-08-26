@@ -6648,6 +6648,7 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const session = normalizeMovieSession(body, movieId, movie.sessions[sessionIndex]);
       movie.sessions[sessionIndex] = session;
+      movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
       movie.updatedAt = new Date().toISOString();
       await writeDb(db);
       sendJson(res, 200, session);

@@ -1438,7 +1438,8 @@ async function saveSession() {
     if (range) {
       showSuccess("Programação criada", `${Number(result.totalCreated || 0)} sessão(ões) adicionada(s)${result.totalSkipped ? ` e ${result.totalSkipped} duplicada(s) ignorada(s)` : ""}.`);
     } else {
-      showToast(sessionId ? "Sessão atualizada." : "Sessão adicionada.");
+      const savedDate = result.date ? new Date(`${result.date}T12:00:00`).toLocaleDateString("pt-BR") : payload.date;
+      showSuccess(sessionId ? "Sessão atualizada" : "Sessão adicionada", `${savedDate} às ${result.time || payload.time}.`);
     }
   } catch (error) {
     showToast(error.message, "error");

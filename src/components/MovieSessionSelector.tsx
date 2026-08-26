@@ -14,6 +14,8 @@ export type CalendarDay = {
   displayDate: string;
 };
 
+export const MAX_PROGRAMMING_DAYS = 6;
+
 export function MovieSessionSelector({
   movie,
   filter,
@@ -94,7 +96,7 @@ export function availableCalendarDays(movies: Movie[], days: CalendarDay[], filt
       .map((session) => String(session.date || "").slice(0, 10))
       .filter(Boolean)
   );
-  return days.filter((day) => availableDates.has(day.isoDate));
+  return days.filter((day) => availableDates.has(day.isoDate)).slice(0, MAX_PROGRAMMING_DAYS);
 }
 
 export function sessionsForCalendarDay(movie: Movie, day: CalendarDay, filter: SessionFilter = "todos") {
