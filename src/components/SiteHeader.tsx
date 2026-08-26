@@ -68,7 +68,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
       <div className="mx-auto flex h-20 max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center" aria-label="Cine Cruzeiro">
           <img
-            src={assetPath("/images/logo-header.webp")}
+            src={assetPath("/images/logo-header-compact.webp")}
             alt="Cine Cruzeiro"
             width={112}
             height={64}
@@ -138,7 +138,7 @@ export function SiteFooter() {
       <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
         <div>
           <img
-            src={assetPath("/images/logo-header.webp")}
+            src={assetPath("/images/logo-header-compact.webp")}
             alt="Cine Cruzeiro"
             width={112}
             height={64}
