@@ -459,7 +459,7 @@ http://localhost:4000/admin
 | --- | --- |
 | Filmes | Criar, editar, destacar, ocultar e programar filmes. |
 | Salas | Gerenciar sala, capacidade, tecnologia e status. |
-| Ingressos | Gerenciar tipos e preços de ingresso. |
+| Ingressos | Gerenciar o catálogo de tipos e preços; cada sessão escolhe quais tipos aceita. |
 | Pedidos | Visualizar pedidos Pix e itens vendidos. |
 | Venda manual | Atribuir/vender ingresso manualmente. |
 | QR Code | Ler ou digitar código para validar ingresso. |
@@ -468,6 +468,7 @@ http://localhost:4000/admin
 | Anúncios | Configurar destaques e comunicação comercial. |
 | Usuários | Gerenciar contas, papéis e acesso. |
 | Settings | Ajustar anúncio superior e trailer de fundo. |
+| Logs | Filtrar, inspecionar e exportar eventos, falhas, requisições e auditoria. |
 
 ### Autenticação e RBAC
 
@@ -493,6 +494,8 @@ Mutações administrativas registram entrada em `auditLogs`/`audit_logs` com:
 - antes/depois sanitizados.
 
 Campos sensíveis, como hash de senha, token, segredo, payload bruto de provider e Pix copia-e-cola, são mascarados como `[redacted]`.
+
+O módulo **Logs** complementa a auditoria com eventos operacionais persistidos em `system_logs`. Proprietários e gerentes podem filtrar por nível, categoria, período, rota, usuário ou `requestId`; somente o proprietário pode aplicar a limpeza por retenção. A retenção automática usa `SYSTEM_LOG_RETENTION_DAYS`, com padrão de 90 dias.
 
 ### Por que o admin é HTML/CSS/JS puro
 
@@ -1130,6 +1133,8 @@ http://localhost:4000
 | POST | `/api/ticket-types` | Cria tipo de ingresso. |
 | PUT | `/api/ticket-types/:id` | Atualiza tipo de ingresso. |
 | DELETE | `/api/ticket-types/:id` | Remove tipo de ingresso. |
+| GET | `/api/admin/logs` | Lista logs operacionais paginados e filtrados. |
+| DELETE | `/api/admin/logs` | Aplica a retenção informada; exclusivo do proprietário. |
 
 ### Bomboniere
 
@@ -1537,6 +1542,10 @@ O backend registra eventos operacionais em JSON:
 - `ticket.used`
 - `manual_sale.created`
 - `request.failed`
+- `http.request.completed`
+- `admin.action`
+
+Com PostgreSQL, esses eventos também são persistidos em `system_logs` com nível, categoria, duração, status HTTP, ator, rota, IP, user agent e metadados sanitizados. Cada resposta da API envia `X-Request-Id`, permitindo correlacionar um erro relatado pelo usuário com o evento correspondente no painel.
 
 Campos sensíveis são redigidos antes do log:
 
@@ -1629,9 +1638,9 @@ O sistema já está funcional para desenvolvimento e demonstração, mas o paine
 
 ### Preço
 
-- Ingresso padrão: R$ 10,00.
-- Meia entrada também pode ser R$ 10,00 conforme promoção permanente.
-- Sessões carregam o preço usado no checkout.
+- Os valores pertencem ao catálogo de tipos de ingresso.
+- A sessão define quais tipos de ingresso ficam disponíveis, sem copiar ou permitir editar um valor avulso.
+- Checkout e bilheteria enviam apenas ID e quantidade; o backend resolve o preço vigente no catálogo e rejeita tipos não atribuídos à sessão.
 
 ### Sessões
 
@@ -1640,9 +1649,10 @@ Cada sessão possui:
 - Horário
 - Formato
 - Sala
-- Preço inteira
-- Preço meia
+- Tipos de ingresso permitidos (`ticketTypeIds`)
 - Status
+
+A relação PostgreSQL fica em `session_ticket_types`. A migration inicial vincula os tipos ativos às sessões existentes para preservar a programação anterior.
 
 ### Status de sessão
 

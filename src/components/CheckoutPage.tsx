@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
-import { AccountSubscription, CustomerUser, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
+import { AccountSubscription, CustomerUser, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
 import { cartTotal, findSession, isUploadedAsset, money, publicAssetPath, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
@@ -40,6 +40,31 @@ type MercadoPagoConstructor = new (
   };
 };
 
+function ticketTypesForSession(ticketTypes: TicketTypeRecord[], ticketTypeIds?: string[]) {
+  const allowedIds = new Set(ticketTypeIds || []);
+  return ticketTypes.filter((ticketType) => ticketType.active !== false && (!allowedIds.size || allowedIds.has(ticketType.id)));
+}
+
+function initialTicketQuantities(ticketTypes: TicketTypeRecord[], fullTickets = 1, halfTickets = 0) {
+  if (!ticketTypes.length) return {};
+  const fullType = ticketTypes.find((ticketType) => /inteira|normal|adulto/i.test(ticketType.name))
+    || ticketTypes.find((ticketType) => !/meia/i.test(ticketType.name))
+    || ticketTypes[0];
+  const halfType = ticketTypes.find((ticketType) => /meia/i.test(ticketType.name)) || ticketTypes[1] || ticketTypes[0];
+  const quantities: Record<string, number> = {};
+  if (fullTickets > 0) quantities[fullType.id] = Number(fullTickets);
+  if (halfTickets > 0) quantities[halfType.id] = Number(quantities[halfType.id] || 0) + Number(halfTickets);
+  return quantities;
+}
+
+function selectedTicketItems(cart: StoredCheckoutCart, ticketTypes: TicketTypeRecord[]) {
+  const quantities = cart.ticketQuantities ?? initialTicketQuantities(ticketTypes, cart.fullTickets ?? 1, cart.halfTickets ?? 0);
+  return Object.entries(quantities)
+    .filter(([, quantity]) => Number(quantity) > 0)
+    .map(([id, quantity]) => ({ id, quantity: Number(quantity) }))
+    .filter((item) => ticketTypes.some((ticketType) => ticketType.id === item.id));
+}
+
 export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Step }) {
   const router = useRouter();
   const { content, status, error } = useCinemaContent();
@@ -54,7 +79,11 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [mercadoPagoConfig, setMercadoPagoConfig] = useState<MercadoPagoCheckoutConfig | null>(null);
   const effectiveSessionId = sessionId === "carrinho" ? cart?.sessionId || "" : sessionId;
   const found = findSession(content, effectiveSessionId);
-  const total = cartTotal(cart, found?.session, content?.concessions || []);
+  const availableTicketTypes = useMemo(
+    () => ticketTypesForSession(content?.ticketTypes || [], found?.session.ticketTypeIds),
+    [content?.ticketTypes, found?.session.ticketTypeIds]
+  );
+  const total = cartTotal(cart, found?.session, content?.concessions || [], content?.ticketTypes || []);
   const checkoutPathFor = useCallback((targetStep: Step) => {
     if (!found) return "/filmes";
     const suffix: Record<Step, string> = {
@@ -75,6 +104,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       sessionId: found.session.id,
       fullTickets: source?.fullTickets ?? 1,
       halfTickets: source?.halfTickets ?? 0,
+      ticketQuantities: source?.ticketQuantities ?? initialTicketQuantities(availableTicketTypes, source?.fullTickets ?? 1, source?.halfTickets ?? 0),
       concessionQuantities: source?.concessionQuantities || {},
       extrasVisited: source?.extrasVisited || false,
       paymentMethod: source?.paymentMethod || "credit_card",
@@ -82,7 +112,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     };
     writeCheckoutCart(next);
     setCart(next);
-  }, [cart, found]);
+  }, [availableTicketTypes, cart, found]);
 
   useEffect(() => {
     const stored = readCheckoutCart();
@@ -102,13 +132,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       sessionId: found.session.id,
       fullTickets: 1,
       halfTickets: 0,
+      ticketQuantities: initialTicketQuantities(availableTicketTypes),
       concessionQuantities: {},
       extrasVisited: false,
       paymentMethod: "credit_card" as const,
     };
     writeCheckoutCart(next);
     setCart(next);
-  }, [hydratedSessionId, sessionId, found, cart?.sessionId]);
+  }, [hydratedSessionId, sessionId, found, cart?.sessionId, availableTicketTypes]);
 
   useEffect(() => {
     if (!found || !cart) return;
@@ -163,7 +194,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       value: total,
       content_id: found.movie.id,
       content_name: found.movie.title,
-      num_items: Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0),
+      num_items: selectedTicketItems(cart, availableTicketTypes).reduce((sum, item) => sum + item.quantity, 0),
     });
   }, [cart, found, total]);
 
@@ -244,6 +275,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           sessionId: found.session.id,
           fullTicketsCount: Number(checkoutCart.fullTickets || 0),
           halfTicketsCount: Number(checkoutCart.halfTickets || 0),
+          ticketItems: selectedTicketItems(checkoutCart, availableTicketTypes),
           concessionItems: Object.entries(checkoutCart.concessionQuantities || {})
             .filter(([, qty]) => Number(qty) > 0)
             .map(([id, qty]) => ({ id, quantity: Number(qty) })),
@@ -278,7 +310,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     } finally {
       setLoading(false);
     }
-  }, [cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions]);
+  }, [availableTicketTypes, cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions]);
 
   async function submitClubCredit() {
     if (!found || !cart) return;
@@ -290,6 +322,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         sessionId: found.session.id,
         fullTicketsCount: Number(cart.fullTickets || 0),
         halfTicketsCount: Number(cart.halfTickets || 0),
+        ticketItems: selectedTicketItems(cart, availableTicketTypes),
         concessionItems: Object.entries(cart.concessionQuantities || {})
           .filter(([, qty]) => Number(qty) > 0)
           .map(([id, qty]) => ({ id, quantity: Number(qty) })),
@@ -361,7 +394,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             extrasVisited={Boolean(cart.extrasVisited)}
             onContinueToPayment={continueToPayment}
           />
-          {step === "ingressos" && <TicketsStep cart={cart} updateCart={updateCart} />}
+          {step === "ingressos" && <TicketsStep cart={cart} updateCart={updateCart} ticketTypes={availableTicketTypes} />}
           {step === "extras" && (
             <ExtrasStep
               cart={cart}
@@ -383,6 +416,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               customerUser={customerUser}
               onSubmit={submitPayment}
               onClubCredit={submitClubCredit}
+              ticketTypes={availableTicketTypes}
             />
           )}
           {step === "confirmacao" && (
@@ -393,7 +427,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             />
           )}
         </section>
-        <OrderSummary cart={cart} total={total} selectedConcessions={selectedConcessions} />
+        <OrderSummary cart={cart} total={total} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} />
       </div>
       <MobileCheckoutBar
         cart={cart}
@@ -473,11 +507,21 @@ function Steps({ sessionId, step, extrasVisited, onContinueToPayment }: { sessio
   );
 }
 
-function TicketsStep({ cart, updateCart }: { cart: StoredCheckoutCart; updateCart: (patch: Partial<StoredCheckoutCart>) => void }) {
+function TicketsStep({ cart, updateCart, ticketTypes }: { cart: StoredCheckoutCart; updateCart: (patch: Partial<StoredCheckoutCart>) => void; ticketTypes: TicketTypeRecord[] }) {
+  const quantities = cart.ticketQuantities || {};
   return (
     <div className="space-y-8">
-      <QuantityRow label="Inteira" value={cart.fullTickets || 0} onChange={(value) => updateCart({ fullTickets: value })} />
-      <QuantityRow label="Meia" value={cart.halfTickets || 0} onChange={(value) => updateCart({ halfTickets: value })} />
+      {ticketTypes.map((ticketType) => (
+        <div key={ticketType.id}>
+          <QuantityRow
+            label={`${ticketType.name} · ${money(ticketType.price)}`}
+            value={Number(quantities[ticketType.id] || 0)}
+            onChange={(value) => updateCart({ ticketQuantities: { ...quantities, [ticketType.id]: value } })}
+          />
+          {ticketType.description && <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">{ticketType.description}</p>}
+        </div>
+      ))}
+      {!ticketTypes.length && <p className="text-sm font-semibold text-amber-200">Nenhum tipo de ingresso foi liberado para esta sessão.</p>}
       <Link href={`/checkout/${cart.sessionId}/extras`} className="inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950">Continuar para Extras</Link>
     </div>
   );
@@ -544,7 +588,7 @@ function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: Store
   );
 }
 
-function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, onSubmit, onClubCredit }: {
+function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, onSubmit, onClubCredit, ticketTypes }: {
   cart: StoredCheckoutCart;
   updateCart: (patch: Partial<StoredCheckoutCart>) => void;
   total: number;
@@ -556,9 +600,10 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
   customerUser: CustomerUser | null;
   onSubmit: (cardData?: MercadoPagoCardPayload) => Promise<void>;
   onClubCredit: () => void;
+  ticketTypes: TicketTypeRecord[];
 }) {
   const activeClub = activeClubSubscription(clubSubscriptions);
-  const requestedTickets = Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0);
+  const requestedTickets = selectedTicketItems(cart, ticketTypes).reduce((sum, item) => sum + item.quantity, 0);
   const selectedExtras = Object.values(cart.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
   const plan = activeClub?.plan;
@@ -847,7 +892,7 @@ function PixQrCode({ code, base64 }: { code: string; base64?: string }) {
       errorCorrectionLevel: "M",
       margin: 1,
       width: 224,
-      color: { dark: "#020617", light: "#ffffff" },
+      color: { dark: "#020617", light: "#f3f6fb" },
     })
       .then((imageUrl) => {
         if (mounted) setGeneratedImage(imageUrl);
@@ -884,14 +929,15 @@ function activeClubSubscription(subscriptions: AccountSubscription[]) {
   return subscriptions.find((subscription) => subscription.status === "active") || null;
 }
 
-function OrderSummary({ cart, total, selectedConcessions }: { cart: StoredCheckoutCart; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }> }) {
+function OrderSummary({ cart, total, selectedConcessions, ticketTypes }: { cart: StoredCheckoutCart; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[] }) {
   return (
     <aside className="lg:sticky lg:top-28 lg:self-start">
       <div className="border-t border-white/12 pt-5 lg:border-t-0 lg:pt-0">
         <h2 className="font-display text-2xl font-black">Resumo</h2>
         <dl className="mt-5 space-y-3 text-sm text-slate-300">
-          <div className="flex justify-between"><dt>Inteiras</dt><dd>{cart.fullTickets || 0}</dd></div>
-          <div className="flex justify-between"><dt>Meias</dt><dd>{cart.halfTickets || 0}</dd></div>
+          {ticketTypes.filter((ticketType) => Number(cart.ticketQuantities?.[ticketType.id] || 0) > 0).map((ticketType) => (
+            <div key={ticketType.id} className="flex justify-between gap-4"><dt>{ticketType.name}</dt><dd>{cart.ticketQuantities?.[ticketType.id] || 0}</dd></div>
+          ))}
           {selectedConcessions.map((item) => (
             <div key={item.id} className="flex justify-between gap-4"><dt>{item.name}</dt><dd>{cart.concessionQuantities?.[item.id] || 0}</dd></div>
           ))}

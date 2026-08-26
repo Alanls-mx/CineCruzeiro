@@ -7,7 +7,16 @@ const { AsyncLocalStorage } = require("async_hooks");
 const { Readable, Transform } = require("stream");
 const { pipeline } = require("stream/promises");
 const QRCode = require("qrcode");
-const { postgresEnabled, readDbFromPostgres, writeDbToPostgres, withPostgresMutationLock, appendAuditLogToPostgres } = require("./db/postgresStore");
+const {
+  postgresEnabled,
+  readDbFromPostgres,
+  writeDbToPostgres,
+  withPostgresMutationLock,
+  appendAuditLogToPostgres,
+  appendSystemLogToPostgres,
+  listSystemLogsFromPostgres,
+  pruneSystemLogsFromPostgres
+} = require("./db/postgresStore");
 const paymentService = require("./services/paymentService");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
@@ -368,6 +377,7 @@ function logEvent(level, event, fields = {}) {
   const payload = redactLogValue({
     level,
     event,
+    requestId: store?.requestId,
     method: store?.method,
     path: store?.pathname,
     ip: store?.req ? clientIp(store.req) : undefined,
@@ -377,6 +387,25 @@ function logEvent(level, event, fields = {}) {
   const line = JSON.stringify(payload);
   if (level === "error") console.error(line);
   else console.log(line);
+  if (postgresEnabled()) {
+    const [category = "system"] = String(event || "system").split(".");
+    void appendSystemLogToPostgres({
+      level,
+      category,
+      event,
+      message: String(fields.message || ""),
+      requestId: store?.requestId || "",
+      actorUserId: store?.adminUser?.id || store?.customerUser?.id || "",
+      actorEmail: store?.adminUser?.email || store?.customerUser?.email || "",
+      method: store?.method || "",
+      path: store?.pathname || "",
+      statusCode: fields.status,
+      ip: store?.req ? clientIp(store.req) : "",
+      userAgent: store?.req?.headers?.["user-agent"] || "",
+      metadata: payload,
+      createdAt: payload.timestamp
+    }).catch((error) => console.error(JSON.stringify({ level: "error", event: "system_log.persist_failed", message: error.message })));
+  }
 }
 
 const MERCADO_PAGO_ORDER_ACTIONS = new Set([
@@ -448,7 +477,8 @@ function sanitizeWebhookTestPayload(body = {}) {
 }
 
 function sendJson(res, status, data, extraHeaders = {}) {
-  const req = requestContext.getStore()?.req;
+  const store = requestContext.getStore();
+  const req = store?.req;
   const payload = normalizeApiPayload(data, status);
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, {
@@ -459,20 +489,23 @@ function sendJson(res, status, data, extraHeaders = {}) {
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Idempotency-Key, Authorization",
+    "X-Request-Id": store?.requestId || "",
     ...extraHeaders
   });
   res.end(body);
 }
 
 function sendNoContent(res) {
-  const req = requestContext.getStore()?.req;
+  const store = requestContext.getStore();
+  const req = store?.req;
   res.writeHead(204, {
     ...securityHeaders(),
     "Access-Control-Allow-Origin": responseCorsOrigin(req),
     "Access-Control-Allow-Credentials": "true",
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Idempotency-Key, Authorization"
+    "Access-Control-Allow-Headers": "Content-Type, X-Idempotency-Key, Authorization",
+    "X-Request-Id": store?.requestId || ""
   });
   res.end();
 }
@@ -609,6 +642,7 @@ function defaultPremiereSessions(movie, db) {
       time: "19:00",
       format: "2D Dublado",
       room: roomName,
+      ticketTypeIds: (db.ticketTypes || []).filter((ticketType) => ticketType.active !== false).map((ticketType) => ticketType.id),
       priceFull: price,
       priceHalf: price,
       status: "available"
@@ -772,7 +806,10 @@ function getCustomerUser(req, db) {
   const user = (db.users || []).find((item) => item.id === userId && item.active !== false);
   if (!user || !["customer", ...adminRoles()].includes(user.role)) return null;
   const normalizedRole = roleAlias(user.role);
-  return normalizedRole === user.role ? user : { ...user, role: normalizedRole };
+  const normalizedUser = normalizedRole === user.role ? user : { ...user, role: normalizedRole };
+  const store = requestContext.getStore();
+  if (store) store.customerUser = normalizedUser;
+  return normalizedUser;
 }
 
 function adminAuthRequired(pathname, method) {
@@ -820,6 +857,7 @@ function adminOriginAllowed(req) {
 function requiredAdminRoles(pathname, method) {
   if (pathname === "/api/admin/content") return ["owner", "manager", "operator"];
   if (pathname === "/api/admin/dashboard") return ["owner", "manager", "operator"];
+  if (pathname.startsWith("/api/admin/logs")) return method === "DELETE" ? ["owner"] : ["owner", "manager"];
   if (pathname.startsWith("/api/admin/integrations")) return ["owner"];
   if (pathname.startsWith("/api/admin/email")) return ["owner", "manager"];
   if (pathname.startsWith("/api/admin/payments")) return ["owner", "manager"];
@@ -923,6 +961,12 @@ function appendAuditLog(db) {
     ip: clientIp(store.req),
     createdAt: new Date().toISOString()
   });
+  logEvent("info", "admin.action", {
+    entityType,
+    entityId,
+    actorUserId: store.adminUser.id,
+    actorEmail: store.adminUser.email
+  });
   store.beforeDb = structuredCloneSafe(db);
   store.auditInProgress = false;
 }
@@ -967,6 +1011,21 @@ function normalizeDb(db) {
   })).sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
   db.rooms ||= [];
   db.ticketTypes ||= [];
+  const activeTicketTypeIds = db.ticketTypes.filter((ticketType) => ticketType.active !== false).map((ticketType) => ticketType.id);
+  db.movies = db.movies.map((movie) => ({
+    ...movie,
+    sessions: (movie.sessions || []).map((session) => {
+      const selectedIds = (Array.isArray(session.ticketTypeIds) && session.ticketTypeIds.length ? session.ticketTypeIds : activeTicketTypeIds)
+        .filter((id, index, ids) => db.ticketTypes.some((ticketType) => ticketType.id === id) && ids.indexOf(id) === index);
+      const selectedTypes = selectedIds.map((id) => db.ticketTypes.find((ticketType) => ticketType.id === id)).filter(Boolean);
+      return {
+        ...session,
+        ticketTypeIds: selectedIds,
+        priceFull: Number(selectedTypes[0]?.price ?? session.priceFull ?? db.settings.defaultTicketPrice ?? 10),
+        priceHalf: Number(selectedTypes[1]?.price ?? selectedTypes[0]?.price ?? session.priceHalf ?? session.priceFull ?? db.settings.defaultTicketPrice ?? 10)
+      };
+    })
+  }));
   db.orders ||= [];
   db.payments ||= [];
   db.subscriptionPlans ||= db.settings.subscriptionPlans || [
@@ -1228,6 +1287,14 @@ function normalizePaymentOrder(input) {
     sessionId: String(input.sessionId || ""),
     fullTicketsCount: Math.max(0, Number(input.fullTicketsCount || 0)),
     halfTicketsCount: Math.max(0, Number(input.halfTicketsCount || 0)),
+    ticketItems: Array.isArray(input.ticketItems)
+      ? input.ticketItems
+          .map((item) => ({
+            id: String(item.id || item.ticketTypeId || "").trim(),
+            quantity: Math.max(0, Math.floor(Number(item.quantity || 0)))
+          }))
+          .filter((item) => item.id && item.quantity > 0)
+      : [],
     concessionItems: Array.isArray(input.concessionItems)
       ? input.concessionItems.map((item) => ({
           id: String(item.id || ""),
@@ -1418,8 +1485,12 @@ function extractTicketCode(value) {
 
 function buildTicketsForOrder(order, db, source = "online") {
   const tickets = [];
-  const fullCount = Number(order.fullTicketsCount || 0);
-  const halfCount = Number(order.halfTicketsCount || 0);
+  const selectedTicketItems = Array.isArray(order.ticketItems) && order.ticketItems.length
+    ? order.ticketItems
+    : [
+        { name: "Inteira", quantity: Number(order.fullTicketsCount || 0) },
+        { name: "Meia", quantity: Number(order.halfTicketsCount || 0) }
+      ];
   const base = {
     orderId: order.id,
     movieId: order.movieId || "",
@@ -1452,8 +1523,13 @@ function buildTicketsForOrder(order, db, source = "online") {
     });
   };
 
-  Array.from({ length: fullCount }).forEach((_, index) => pushTicket("Inteira", index + 1));
-  Array.from({ length: halfCount }).forEach((_, index) => pushTicket("Meia", fullCount + index + 1));
+  let ticketIndex = 0;
+  selectedTicketItems.forEach((item) => {
+    Array.from({ length: Math.max(0, Number(item.quantity || 0)) }).forEach(() => {
+      ticketIndex += 1;
+      pushTicket(String(item.name || "Ingresso"), ticketIndex);
+    });
+  });
   return tickets;
 }
 
@@ -2745,6 +2821,11 @@ function consumeSubscriptionCredit(db, subscription, context) {
 }
 
 function ticketSubtotalForOrder(db, order) {
+  if (Array.isArray(order.ticketItems) && order.ticketItems.length) {
+    return Number(order.ticketItems.reduce((sum, item) => (
+      sum + Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0))
+    ), 0).toFixed(2));
+  }
   const movie = (db.movies || []).find((item) => item.id === order.movieId);
   const session = (movie?.sessions || []).find((item) => item.id === order.sessionId);
   if (!session) return 0;
@@ -2755,7 +2836,7 @@ function ticketSubtotalForOrder(db, order) {
 
 function applyClubCreditDiscount(db, order, user, idempotencyKey) {
   if (!user || !order?.useClubCredits) return { order, subscription: null, quantity: 0 };
-  const quantity = Math.max(0, Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0));
+  const quantity = orderTicketCount(order);
   if (!quantity) return { order, subscription: null, quantity: 0 };
   const subscription = activeSubscriptionForUser(db, user.id);
   if (!subscription || !subscriptionCanUseCredit(subscription)) {
@@ -3106,6 +3187,7 @@ function normalizeMovie(input, existing = {}) {
         time: String(session.time || "19:00"),
         format: session.format || "2D Dublado",
         room: String(session.room || "Sala Cruzeiro (Laser 4K)"),
+        ticketTypeIds: Array.isArray(session.ticketTypeIds) ? session.ticketTypeIds.map(String) : [],
         priceFull: Number(session.priceFull ?? 10),
         priceHalf: Number(session.priceHalf ?? 10),
         status: session.status || "available"
@@ -3153,14 +3235,24 @@ function normalizeMovie(input, existing = {}) {
   };
 }
 
-function normalizeMovieSession(input, movieId, existing = {}) {
+function normalizeMovieSession(input, movieId, existing = {}, ticketTypes = []) {
   const preserveExistingDate = Boolean(existing.id && existing.date && input.dateChanged !== true);
   const date = String(preserveExistingDate ? existing.date : input.date ?? input.sessionDate ?? existing.date ?? "").trim();
   const time = String(input.time ?? existing.time ?? "").trim();
   const room = String(input.room ?? existing.room ?? "").trim();
   const format = String(input.format ?? existing.format ?? "").trim();
-  const priceFull = Number(input.priceFull ?? existing.priceFull);
-  const priceHalf = Number(input.priceHalf ?? input.priceFull ?? existing.priceHalf ?? existing.priceFull);
+  const knownTicketTypes = (ticketTypes || []).filter((ticketType) => ticketType.active !== false);
+  const requestedTicketTypeIds = Array.isArray(input.ticketTypeIds)
+    ? input.ticketTypeIds.map(String)
+    : Array.isArray(existing.ticketTypeIds) && existing.ticketTypeIds.length
+      ? existing.ticketTypeIds.map(String)
+      : knownTicketTypes.map((ticketType) => ticketType.id);
+  const ticketTypeIds = requestedTicketTypeIds.filter((id, index, ids) => (
+    knownTicketTypes.some((ticketType) => ticketType.id === id) && ids.indexOf(id) === index
+  ));
+  const selectedTicketTypes = ticketTypeIds.map((id) => knownTicketTypes.find((ticketType) => ticketType.id === id)).filter(Boolean);
+  const priceFull = Number(selectedTicketTypes[0]?.price ?? input.priceFull ?? existing.priceFull ?? 0);
+  const priceHalf = Number(selectedTicketTypes[1]?.price ?? selectedTicketTypes[0]?.price ?? input.priceHalf ?? input.priceFull ?? existing.priceHalf ?? existing.priceFull ?? 0);
 
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     const error = new Error("Informe uma data válida para a sessão.");
@@ -3177,6 +3269,11 @@ function normalizeMovieSession(input, movieId, existing = {}) {
     error.statusCode = 422;
     throw error;
   }
+  if (!ticketTypeIds.length) {
+    const error = new Error("Selecione pelo menos um tipo de ingresso disponível nesta sessão.");
+    error.statusCode = 422;
+    throw error;
+  }
   if (!Number.isFinite(priceFull) || priceFull < 0 || !Number.isFinite(priceHalf) || priceHalf < 0) {
     const error = new Error("Informe um preço válido para a sessão.");
     error.statusCode = 422;
@@ -3189,6 +3286,7 @@ function normalizeMovieSession(input, movieId, existing = {}) {
     time,
     format,
     room,
+    ticketTypeIds,
     priceFull,
     priceHalf,
     status: ["available", "filling_fast", "sold_out"].includes(input.status || existing.status)
@@ -3218,7 +3316,7 @@ function sessionDatesInRange(dateFrom, dateTo, weekdays = []) {
   }).filter(({ date }) => !allowedWeekdays.size || allowedWeekdays.has(date.getUTCDay())).map(({ isoDate }) => isoDate);
 }
 
-function createMovieSessionBatch(input, movieId, existingSessions = []) {
+function createMovieSessionBatch(input, movieId, existingSessions = [], ticketTypes = []) {
   const dateFrom = String(input.dateFrom || input.date || "").slice(0, 10);
   const dateTo = String(input.dateTo || input.dateEnd || dateFrom).slice(0, 10);
   const times = (Array.isArray(input.times) ? input.times : [input.time])
@@ -3241,7 +3339,7 @@ function createMovieSessionBatch(input, movieId, existingSessions = []) {
         skipped.push({ date, time, reason: "duplicate" });
         continue;
       }
-      created.push(normalizeMovieSession({ ...input, date, time }, movieId));
+      created.push(normalizeMovieSession({ ...input, date, time }, movieId, {}, ticketTypes));
     }
   }
   if (!created.length && !skipped.length) {
@@ -3586,6 +3684,63 @@ function removableDraftOrder(order, payment, tickets) {
   return draftStatuses.has(order.status) && !payment && !tickets.some((ticket) => ticket.status === "used");
 }
 
+function ticketTypesForSession(db, session) {
+  const activeTicketTypes = (db.ticketTypes || []).filter((ticketType) => ticketType.active !== false);
+  const allowedIds = Array.isArray(session?.ticketTypeIds) && session.ticketTypeIds.length
+    ? new Set(session.ticketTypeIds.map(String))
+    : new Set(activeTicketTypes.map((ticketType) => ticketType.id));
+  return activeTicketTypes.filter((ticketType) => allowedIds.has(ticketType.id));
+}
+
+function resolveOrderTicketItems(db, order, session) {
+  const availableTypes = ticketTypesForSession(db, session);
+  const byId = new Map(availableTypes.map((ticketType) => [ticketType.id, ticketType]));
+  const requested = Array.isArray(order.ticketItems) ? order.ticketItems : [];
+  const normalized = [];
+
+  const addItem = (ticketType, quantity) => {
+    const safeQuantity = Math.max(0, Math.floor(Number(quantity || 0)));
+    if (!ticketType || !safeQuantity) return;
+    const existing = normalized.find((item) => item.id === ticketType.id);
+    if (existing) {
+      existing.quantity += safeQuantity;
+      return;
+    }
+    normalized.push({
+      id: ticketType.id,
+      name: ticketType.name,
+      description: ticketType.description || "",
+      quantity: safeQuantity,
+      unitPrice: Math.max(0, Number(ticketType.price || 0))
+    });
+  };
+
+  if (requested.length) {
+    requested.forEach((item) => {
+      const ticketType = byId.get(String(item.id || item.ticketTypeId || ""));
+      if (!ticketType) {
+        const error = new Error("Um dos tipos de ingresso selecionados não está disponível nesta sessão.");
+        error.statusCode = 409;
+        error.code = "SESSION_TICKET_TYPE_UNAVAILABLE";
+        throw error;
+      }
+      addItem(ticketType, item.quantity);
+    });
+    return normalized;
+  }
+
+  // Compatibilidade com carrinhos e pedidos criados antes dos tipos por sessão.
+  const fullType = availableTypes.find((ticketType) => /inteira|normal|adulto/i.test(ticketType.name))
+    || availableTypes.find((ticketType) => !/meia/i.test(ticketType.name))
+    || availableTypes[0];
+  const halfType = availableTypes.find((ticketType) => /meia/i.test(ticketType.name))
+    || availableTypes[1]
+    || availableTypes[0];
+  addItem(fullType, order.fullTicketsCount);
+  addItem(halfType, order.halfTicketsCount);
+  return normalized;
+}
+
 function repriceOrderFromCatalog(db, order) {
   const movie = db.movies.find((item) => item.id === order.movieId);
   if (!movie) {
@@ -3606,14 +3761,13 @@ function repriceOrderFromCatalog(db, order) {
     throw error;
   }
 
-  const fullTicketsCount = Math.max(0, Number(order.fullTicketsCount || 0));
-  const halfTicketsCount = Math.max(0, Number(order.halfTicketsCount || 0));
-  if (fullTicketsCount + halfTicketsCount <= 0) {
+  const ticketItems = resolveOrderTicketItems(db, order, session);
+  const requestedTickets = ticketItems.reduce((sum, item) => sum + item.quantity, 0);
+  if (requestedTickets <= 0) {
     const error = new Error("Selecione pelo menos um ingresso.");
     error.statusCode = 400;
     throw error;
   }
-  const requestedTickets = fullTicketsCount + halfTicketsCount;
   const roomCapacity = Number((db.rooms || []).find((room) => room.status === "active")?.capacity || 120);
   const paidTickets = (db.tickets || []).filter((ticket) =>
     ticket.sessionId === session.id && !["cancelled", "refunded"].includes(ticket.status)
@@ -3622,14 +3776,14 @@ function repriceOrderFromCatalog(db, order) {
     existingOrder.sessionId === session.id &&
     existingOrder.status === "pending_payment" &&
     (!existingOrder.reservationExpiresAt || new Date(existingOrder.reservationExpiresAt).getTime() > Date.now())
-  ).reduce((sum, existingOrder) => sum + Number(existingOrder.fullTicketsCount || 0) + Number(existingOrder.halfTicketsCount || 0), 0);
+  ).reduce((sum, existingOrder) => sum + orderTicketCount(existingOrder), 0);
   if (paidTickets + reservedTickets + requestedTickets > roomCapacity) {
     const error = new Error("Esta sessao nao possui lugares suficientes para a quantidade escolhida.");
     error.statusCode = 409;
     throw error;
   }
 
-  const ticketTotal = fullTicketsCount * Number(session.priceFull || 0) + halfTicketsCount * Number(session.priceHalf || 0);
+  const ticketTotal = ticketItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const concessionItems = (order.concessionItems || [])
     .map((item) => {
       const concession = db.concessions.find((catalogItem) => catalogItem.id === item.id && catalogItem.active !== false);
@@ -3669,8 +3823,9 @@ function repriceOrderFromCatalog(db, order) {
     sessionDate: session.date || order.sessionDate || todayIsoDate(),
     sessionFormat: session.format,
     sessionRoom: session.room || "Sala Cruzeiro",
-    fullTicketsCount,
-    halfTicketsCount,
+    fullTicketsCount: Math.max(0, Number(order.fullTicketsCount || 0)),
+    halfTicketsCount: Math.max(0, Number(order.halfTicketsCount || 0)),
+    ticketItems,
     concessionItems: pricedItems,
     includeComboUpsell: pricedItems.length > 0,
     comboUpsellQuantity: pricedItems.reduce((sum, item) => sum + item.quantity, 0),
@@ -4213,6 +4368,9 @@ function sessionForOrder(db, order) {
 }
 
 function orderTicketCount(order) {
+  if (Array.isArray(order.ticketItems) && order.ticketItems.length) {
+    return order.ticketItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
+  }
   return Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0);
 }
 
@@ -5177,6 +5335,60 @@ async function handleApi(req, res, pathname) {
   if ((pathname === "/api/dashboard" || pathname === "/api/admin/dashboard") && method === "GET") {
     const dashboardUrl = new URL(req.url, `http://${req.headers.host}`);
     sendJson(res, 200, adminDashboard(db, { period: parseAdminPeriod(dashboardUrl) }));
+    return;
+  }
+
+  if (pathname === "/api/admin/logs" && method === "GET") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const filters = {
+      level: String(url.searchParams.get("level") || "").trim(),
+      category: String(url.searchParams.get("category") || "").trim(),
+      search: String(url.searchParams.get("search") || "").trim().slice(0, 160),
+      from: String(url.searchParams.get("from") || "").trim(),
+      to: String(url.searchParams.get("to") || "").trim(),
+      page: Math.max(1, Number(url.searchParams.get("page") || 1)),
+      pageSize: Math.min(100, Math.max(10, Number(url.searchParams.get("pageSize") || 50)))
+    };
+    if (postgresEnabled()) {
+      sendJson(res, 200, await listSystemLogsFromPostgres(filters));
+      return;
+    }
+    const filtered = (db.auditLogs || []).map((item) => ({
+      id: item.id,
+      level: "info",
+      category: "audit",
+      event: item.action || "admin.action",
+      message: "",
+      requestId: "",
+      actorUserId: item.userId || item.updatedBy || "",
+      actorEmail: item.userEmail || item.updatedByEmail || "",
+      method: String(item.action || "").split(" ")[0] || "",
+      path: String(item.action || "").split(" ")[1] || "",
+      statusCode: null,
+      durationMs: null,
+      ip: item.ip || "",
+      userAgent: "",
+      metadata: item,
+      createdAt: item.createdAt || item.at || ""
+    })).filter((item) => (!filters.search || JSON.stringify(item).toLowerCase().includes(filters.search.toLowerCase())));
+    const start = (filters.page - 1) * filters.pageSize;
+    sendJson(res, 200, {
+      logs: filtered.slice(start, start + filters.pageSize),
+      total: filtered.length,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      pages: Math.max(1, Math.ceil(filtered.length / filters.pageSize)),
+      last24Hours: { info: filtered.length }
+    });
+    return;
+  }
+
+  if (pathname === "/api/admin/logs" && method === "DELETE") {
+    const body = await readBody(req);
+    const retentionDays = Math.min(3650, Math.max(1, Number(body.retentionDays || 90)));
+    const deleted = postgresEnabled() ? await pruneSystemLogsFromPostgres(retentionDays) : 0;
+    logEvent("info", "logs.retention_applied", { retentionDays, deleted, actorUserId: req.adminUser?.id || "" });
+    sendJson(res, 200, { deleted, retentionDays, message: `${deleted} registro(s) antigo(s) removido(s).` });
     return;
   }
 
@@ -6235,15 +6447,10 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "NO_ACTIVE_SUBSCRIPTION", message: "Voce nao possui assinatura ativa com creditos disponiveis." } });
         return;
       }
-      const requestedCredits = Math.max(0, Number(body.fullTicketsCount || 1) + Number(body.halfTicketsCount || 0));
-      if (Number(subscription.creditsAvailable || 0) < requestedCredits) {
-        sendJson(res, 409, { error: { code: "CLUB_CREDITS_EXHAUSTED", message: "Creditos do Clube insuficientes para a quantidade de ingressos selecionada." } });
-        return;
-      }
       const pricedOrder = repriceOrderFromCatalog(lockedDb, normalizePaymentOrder({
         ...body,
         idempotencyKey,
-        fullTicketsCount: Number(body.fullTicketsCount ?? 1),
+        fullTicketsCount: Array.isArray(body.ticketItems) && body.ticketItems.length ? Number(body.fullTicketsCount || 0) : Number(body.fullTicketsCount ?? 1),
         halfTicketsCount: Number(body.halfTicketsCount || 0),
         concessionItems: Array.isArray(body.concessionItems) ? body.concessionItems : [],
         customerUserId: lockedUser.id,
@@ -6254,6 +6461,11 @@ async function handleApi(req, res, pathname) {
         paymentMethod: "CLUB_CREDIT",
         useClubBenefits: true
       }));
+      const requestedCredits = orderTicketCount(pricedOrder);
+      if (Number(subscription.creditsAvailable || 0) < requestedCredits) {
+        sendJson(res, 409, { error: { code: "CLUB_CREDITS_EXHAUSTED", message: "Creditos do Clube insuficientes para a quantidade de ingressos selecionada." } });
+        return;
+      }
       applyClubPlanBenefits(lockedDb, pricedOrder, lockedUser);
       const ticketValueAfterPlanDiscount = Math.max(0, ticketSubtotalForOrder(lockedDb, pricedOrder) - Number(pricedOrder.clubBenefits?.ticketDiscount || 0));
       const ticketDiscount = Math.min(ticketValueAfterPlanDiscount, Number(pricedOrder.totalPrice || 0));
@@ -6618,7 +6830,7 @@ async function handleApi(req, res, pathname) {
     if (method === "POST" && !sessionId) {
       const body = await readBody(req);
       if (body.dateTo || body.dateEnd || Array.isArray(body.times)) {
-        const batch = createMovieSessionBatch(body, movieId, movie.sessions);
+        const batch = createMovieSessionBatch(body, movieId, movie.sessions, db.ticketTypes);
         movie.sessions.push(...batch.created);
         movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
         movie.updatedAt = new Date().toISOString();
@@ -6626,7 +6838,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 201, { ...batch, totalCreated: batch.created.length, totalSkipped: batch.skipped.length });
         return;
       }
-      const session = normalizeMovieSession(body, movieId);
+      const session = normalizeMovieSession(body, movieId, {}, db.ticketTypes);
       if (movie.sessions.some((item) => item.id === session.id)) {
         sendJson(res, 409, { error: { code: "SESSION_EXISTS", message: "Já existe uma sessão com este identificador." } });
         return;
@@ -6646,7 +6858,7 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const body = await readBody(req);
-      const session = normalizeMovieSession(body, movieId, movie.sessions[sessionIndex]);
+      const session = normalizeMovieSession(body, movieId, movie.sessions[sessionIndex], db.ticketTypes);
       movie.sessions[sessionIndex] = session;
       movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
       movie.updatedAt = new Date().toISOString();
@@ -7846,7 +8058,36 @@ async function handleApi(req, res, pathname) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
-  requestContext.run({ req, pathname, method: req.method }, async () => {
+  const store = {
+    req,
+    pathname,
+    method: req.method,
+    requestId: crypto.randomUUID(),
+    startedAt: Date.now()
+  };
+  res.once("finish", () => {
+    if (!pathname.startsWith("/api/") || !postgresEnabled()) return;
+    const durationMs = Date.now() - store.startedAt;
+    const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
+    void appendSystemLogToPostgres({
+      level,
+      category: "http",
+      event: "http.request.completed",
+      message: `${req.method} ${pathname} respondeu ${res.statusCode}`,
+      requestId: store.requestId,
+      actorUserId: store.adminUser?.id || store.customerUser?.id || "",
+      actorEmail: store.adminUser?.email || store.customerUser?.email || "",
+      method: req.method,
+      path: pathname,
+      statusCode: res.statusCode,
+      durationMs,
+      ip: clientIp(req),
+      userAgent: req.headers["user-agent"] || "",
+      metadata: { statusCode: res.statusCode, durationMs },
+      createdAt: new Date().toISOString()
+    }).catch((error) => console.error(JSON.stringify({ level: "error", event: "system_log.request_persist_failed", message: error.message })));
+  });
+  requestContext.run(store, async () => {
     try {
 
       if (pathname.startsWith("/api/")) {
@@ -7920,6 +8161,11 @@ loadEnvFiles().then(() => {
     console.log(`Painel admin: http://${HOST}:${PORT}/admin`);
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
     void runSubscriptionMaintenance();
+    if (postgresEnabled()) {
+      void pruneSystemLogsFromPostgres(process.env.SYSTEM_LOG_RETENTION_DAYS || 90).catch((error) => {
+        logEvent("warn", "logs.retention_failed", { message: error.message });
+      });
+    }
     const subscriptionMaintenanceTimer = setInterval(() => {
       void runSubscriptionMaintenance();
     }, SUBSCRIPTION_MAINTENANCE_INTERVAL_MS);

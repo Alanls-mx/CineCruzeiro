@@ -113,6 +113,7 @@ function mapMovie(row, sessions) {
       time: session.time_label,
       format: session.format,
       room: session.room_label || session.room_id || "",
+      ticketTypeIds: asArray(session.ticket_type_ids),
       priceFull: num(session.price_full, 10),
       priceHalf: num(session.price_half, 10),
       status: session.status || "available"
@@ -130,7 +131,18 @@ async function loadDbFromPostgres() {
     const rooms = await client.query("SELECT * FROM rooms ORDER BY name");
     const ticketTypes = await client.query("SELECT * FROM ticket_types ORDER BY name");
     const movies = await client.query("SELECT * FROM movies ORDER BY sort_order, title");
-    const sessions = await client.query("SELECT * FROM sessions ORDER BY time_label");
+    const sessions = await client.query(`
+      SELECT sessions.*,
+        COALESCE(
+          array_agg(session_ticket_types.ticket_type_id ORDER BY session_ticket_types.position)
+            FILTER (WHERE session_ticket_types.ticket_type_id IS NOT NULL),
+          '{}'
+        ) AS ticket_type_ids
+      FROM sessions
+      LEFT JOIN session_ticket_types ON session_ticket_types.session_id = sessions.id
+      GROUP BY sessions.id
+      ORDER BY sessions.time_label
+    `);
     const concessions = await client.query("SELECT * FROM concessions ORDER BY sort_order, name");
     const inventory = await client.query("SELECT * FROM concession_inventory");
     const promotions = await client.query("SELECT * FROM promotions ORDER BY created_at");
@@ -275,7 +287,16 @@ async function loadDbFromPostgres() {
               quantity: item.quantity,
               unitPrice: num(item.unit_price),
               ...(item.metadata || {})
-            }))
+            })),
+          ticketItems: items.some((item) => item.item_type === "ticket")
+            ? items.filter((item) => item.item_type === "ticket").map((item) => ({
+                id: item.item_id,
+                name: item.name,
+                quantity: item.quantity,
+                unitPrice: num(item.unit_price),
+                ...(item.metadata || {})
+              }))
+            : asArray(metadata.ticketItems)
         };
       }),
       payments: payments.rows.map((row) => ({
@@ -514,6 +535,7 @@ async function writeDbToPostgres(db) {
     await query(client, "DELETE FROM payments");
     await query(client, "DELETE FROM orders");
     await query(client, "DELETE FROM sessions");
+    await query(client, "DELETE FROM session_ticket_types");
     await query(client, "DELETE FROM concession_inventory");
     await query(client, "DELETE FROM concessions");
     await query(client, "DELETE FROM promotions");
@@ -624,6 +646,15 @@ async function writeDbToPostgres(db) {
           num(session.priceHalf, 10),
           session.status || "available"
         ]);
+        for (const [position, ticketTypeId] of asArray(session.ticketTypeIds).entries()) {
+          if (!asArray(db.ticketTypes).some((ticketType) => ticketType.id === ticketTypeId)) continue;
+          await query(client, `INSERT INTO session_ticket_types (session_id, ticket_type_id, position)
+            VALUES ($1,$2,$3) ON CONFLICT (session_id, ticket_type_id) DO UPDATE SET position = EXCLUDED.position`, [
+            session.id,
+            ticketTypeId,
+            (position + 1) * 10
+          ]);
+        }
       }
     }
 
@@ -714,6 +745,17 @@ async function writeDbToPostgres(db) {
           item.category === "promocao" ? "promotion" : "concession",
           item.id,
           item.name,
+          Number(item.quantity || 1),
+          num(item.unitPrice),
+          Number(item.quantity || 1) * num(item.unitPrice),
+          item
+        ]);
+      }
+      for (const item of asArray(order.ticketItems)) {
+        await query(client, "INSERT INTO order_items (order_id, item_type, item_id, name, quantity, unit_price, total_price, metadata) VALUES ($1,'ticket',$2,$3,$4,$5,$6,$7)", [
+          order.id,
+          item.id,
+          item.name || "Ingresso",
           Number(item.quantity || 1),
           num(item.unitPrice),
           Number(item.quantity || 1) * num(item.unitPrice),
@@ -941,11 +983,106 @@ async function appendAuditLogToPostgres(log) {
   }
 }
 
+async function appendSystemLogToPostgres(log) {
+  if (!postgresEnabled()) return null;
+  const client = await getPool().connect();
+  try {
+    const result = await query(client, `INSERT INTO system_logs
+      (level, category, event, message, request_id, actor_user_id, actor_email, method, path, status_code, duration_ms, ip, user_agent, metadata, created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE(NULLIF($15,'')::timestamptz, now()))
+      RETURNING id`, [
+      log.level || "info",
+      log.category || "system",
+      log.event || "system.event",
+      log.message || "",
+      log.requestId || "",
+      log.actorUserId || "",
+      log.actorEmail || "",
+      log.method || "",
+      log.path || "",
+      Number.isFinite(Number(log.statusCode)) ? Number(log.statusCode) : null,
+      Number.isFinite(Number(log.durationMs)) ? Math.max(0, Math.round(Number(log.durationMs))) : null,
+      log.ip || "",
+      log.userAgent || "",
+      jsonParam(log.metadata, {}),
+      log.createdAt || ""
+    ]);
+    return result.rows[0]?.id || null;
+  } finally {
+    client.release();
+  }
+}
+
+async function listSystemLogsFromPostgres(filters = {}) {
+  const client = await getPool().connect();
+  try {
+    const values = [];
+    const where = [];
+    const add = (clause, value) => {
+      values.push(value);
+      where.push(clause.replace("?", `$${values.length}`));
+    };
+    if (filters.level) add("level = ?", filters.level);
+    if (filters.category) add("category = ?", filters.category);
+    if (filters.from) add("created_at >= NULLIF(?, '')::timestamptz", filters.from);
+    if (filters.to) add("created_at <= NULLIF(?, '')::timestamptz", filters.to);
+    if (filters.search) {
+      values.push(`%${filters.search}%`);
+      const index = values.length;
+      where.push(`(event ILIKE $${index} OR message ILIKE $${index} OR actor_email ILIKE $${index} OR path ILIKE $${index} OR request_id ILIKE $${index})`);
+    }
+    const page = Math.max(1, Number(filters.page || 1));
+    const pageSize = Math.min(100, Math.max(10, Number(filters.pageSize || 50)));
+    const predicate = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const count = await query(client, `SELECT COUNT(*)::INTEGER AS total FROM system_logs ${predicate}`, values);
+    values.push(pageSize, (page - 1) * pageSize);
+    const rows = await query(client, `SELECT * FROM system_logs ${predicate} ORDER BY created_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`, values);
+    const stats = await query(client, `SELECT level, COUNT(*)::INTEGER AS total FROM system_logs
+      WHERE created_at >= now() - interval '24 hours' GROUP BY level`);
+    return {
+      logs: rows.rows.map((row) => ({
+        id: row.id,
+        level: row.level,
+        category: row.category,
+        event: row.event,
+        message: row.message || "",
+        requestId: row.request_id || "",
+        actorUserId: row.actor_user_id || "",
+        actorEmail: row.actor_email || "",
+        method: row.method || "",
+        path: row.path || "",
+        statusCode: row.status_code,
+        durationMs: row.duration_ms,
+        ip: row.ip || "",
+        userAgent: row.user_agent || "",
+        metadata: row.metadata || {},
+        createdAt: row.created_at ? new Date(row.created_at).toISOString() : ""
+      })),
+      total: Number(count.rows[0]?.total || 0),
+      page,
+      pageSize,
+      pages: Math.max(1, Math.ceil(Number(count.rows[0]?.total || 0) / pageSize)),
+      last24Hours: Object.fromEntries(stats.rows.map((row) => [row.level, Number(row.total || 0)]))
+    };
+  } finally {
+    client.release();
+  }
+}
+
+async function pruneSystemLogsFromPostgres(retentionDays = 90) {
+  const days = Math.min(3650, Math.max(1, Number(retentionDays || 90)));
+  const result = await getPool().query("DELETE FROM system_logs WHERE created_at < now() - ($1::text || ' days')::interval", [String(days)]);
+  return Number(result.rowCount || 0);
+}
+
 module.exports = {
   postgresEnabled,
   readDbFromPostgres,
   writeDbToPostgres,
   withPostgresMutationLock,
   appendAuditLogToPostgres,
+  appendSystemLogToPostgres,
+  listSystemLogsFromPostgres,
+  pruneSystemLogsFromPostgres,
   cinemaIsoDate
 };

@@ -20,6 +20,7 @@ type StoredCart = {
   sessionId: string;
   fullTickets?: number;
   halfTickets?: number;
+  ticketQuantities?: Record<string, number>;
   concessionQuantities?: Record<string, number>;
 };
 
@@ -56,7 +57,11 @@ export function CartDrawer({ isOpen, onClose, content, onCheckout, onCleared }: 
       (sum, value) => sum + Number(value || 0),
       0
     );
-    const items = Number(cart?.fullTickets || 0) + Number(cart?.halfTickets || 0) + concessions;
+    const selectedTickets = Object.values(cart?.ticketQuantities || {}).reduce<number>((sum, value) => sum + Number(value || 0), 0);
+    const ticketCount = cart?.ticketQuantities !== undefined
+      ? selectedTickets
+      : Number(cart?.fullTickets || 0) + Number(cart?.halfTickets || 0);
+    const items = ticketCount + concessions;
     return { movie: selectedMovie, session: selectedSession, concessionCount: concessions, totalItems: items };
   }, [cart, content]);
 
@@ -119,7 +124,9 @@ export function CartDrawer({ isOpen, onClose, content, onCheckout, onCleared }: 
                 <div className="mt-5 grid grid-cols-2 gap-3 text-xs">
                   <div className="rounded-2xl bg-brand-950/70 p-3">
                     <span className="text-slate-400">Ingressos</span>
-                    <div className="mt-1 text-lg font-black">{Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0)}</div>
+                    <div className="mt-1 text-lg font-black">{cart.ticketQuantities !== undefined
+                      ? Object.values(cart.ticketQuantities).reduce((sum, value) => sum + Number(value || 0), 0)
+                      : Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0)}</div>
                   </div>
                   <div className="rounded-2xl bg-brand-950/70 p-3">
                     <span className="text-slate-400">Produtos</span>

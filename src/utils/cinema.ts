@@ -1,4 +1,4 @@
-import type { CinemaContent } from "@/services/cinemaApi";
+import type { CinemaContent, TicketTypeRecord } from "@/services/cinemaApi";
 import { Movie, Session } from "@/types";
 
 export const CART_STORAGE_KEY = "cine-cruzeiro-cart";
@@ -37,6 +37,7 @@ export type StoredCheckoutCart = {
   sessionId: string;
   fullTickets?: number;
   halfTickets?: number;
+  ticketQuantities?: Record<string, number>;
   concessionQuantities?: Record<string, number>;
   couponCode?: string;
   extrasVisited?: boolean;
@@ -140,12 +141,27 @@ export function writeCheckoutCart(cart: StoredCheckoutCart) {
 export function cartItemCount(cart: StoredCheckoutCart | null) {
   if (!cart) return 0;
   const concessions = Object.values(cart.concessionQuantities || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-  return Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0) + concessions;
+  const selectedTickets = Object.values(cart.ticketQuantities || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const tickets = cart.ticketQuantities !== undefined
+    ? selectedTickets
+    : Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0);
+  return tickets + concessions;
 }
 
-export function cartTotal(cart: StoredCheckoutCart | null, session?: Session, concessions: CinemaContent["concessions"] = []) {
+export function cartTotal(
+  cart: StoredCheckoutCart | null,
+  session?: Session,
+  concessions: CinemaContent["concessions"] = [],
+  ticketTypes: TicketTypeRecord[] = []
+) {
   if (!cart || !session) return 0;
-  const tickets = Number(cart.fullTickets || 0) * Number(session.priceFull || 0) + Number(cart.halfTickets || 0) * Number(session.priceHalf || 0);
+  const selectedTickets = Object.entries(cart.ticketQuantities || {}).reduce((sum, [id, quantity]) => {
+    const ticketType = ticketTypes.find((item) => item.id === id);
+    return sum + Number(quantity || 0) * Number(ticketType?.price || 0);
+  }, 0);
+  const tickets = cart.ticketQuantities !== undefined
+    ? selectedTickets
+    : Number(cart.fullTickets || 0) * Number(session.priceFull || 0) + Number(cart.halfTickets || 0) * Number(session.priceHalf || 0);
   const extras = concessions.reduce((sum, item) => {
     const qty = Number(cart.concessionQuantities?.[item.id] || 0);
     return sum + qty * Number(item.price || 0);

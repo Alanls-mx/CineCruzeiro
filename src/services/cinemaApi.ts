@@ -492,6 +492,7 @@ export async function createClubCreditCheckout(data: {
   sessionId: string;
   fullTicketsCount: number;
   halfTicketsCount: number;
+  ticketItems?: Array<{ id: string; quantity: number }>;
   concessionItems?: Array<{ id: string; quantity: number }>;
   couponCode?: string;
 }) {

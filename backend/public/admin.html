@@ -84,6 +84,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           Integrações
         </button>
+        <button class="nav-button" type="button" data-panel="logsPanel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/><circle cx="19" cy="19" r="2"/></svg>
+          Logs
+        </button>
       </aside>
 
       <section class="workspace">
@@ -396,13 +400,17 @@
                         <option value="3D Legendado">3D Legendado</option>
                       </select></label>
                       <label>Sala<select id="sessionRoom"></select></label>
-                      <label>Preço<input id="sessionPriceFull" type="number" min="0" step="0.01" value="10" /></label>
                       <label>Status<select id="sessionStatus">
                         <option value="available">Disponível</option>
                         <option value="filling_fast">Lotando</option>
                         <option value="sold_out">Esgotado</option>
                       </select></label>
                     </div>
+                    <fieldset class="session-ticket-types-field">
+                      <legend>Ingressos disponíveis nesta sessão</legend>
+                      <p>Selecione os tipos cadastrados em Ingressos. Os preços são sempre obtidos do catálogo e não podem ser alterados aqui.</p>
+                      <div id="sessionTicketTypes" class="session-ticket-type-grid"></div>
+                    </fieldset>
                     <fieldset id="sessionWeekdays" class="weekday-selector" hidden>
                       <legend>Dias da semana</legend>
                       <label><input type="checkbox" value="0" /> Dom</label>
@@ -665,26 +673,7 @@
                   <select id="manualSessionSelect"></select>
                 </label>
               </div>
-              <div class="field-row">
-                <div class="quantity-line">
-                  <span>Inteira</span>
-                  <strong id="manualFullPrice">R$ 10,00</strong>
-                  <div class="stepper">
-                    <button type="button" data-ticket-step="manualFullTickets:-1">-</button>
-                    <input id="manualFullTickets" type="number" min="0" value="1" />
-                    <button type="button" data-ticket-step="manualFullTickets:1">+</button>
-                  </div>
-                </div>
-                <div class="quantity-line">
-                  <span>Meia</span>
-                  <strong id="manualHalfPrice">R$ 10,00</strong>
-                  <div class="stepper">
-                    <button type="button" data-ticket-step="manualHalfTickets:-1">-</button>
-                    <input id="manualHalfTickets" type="number" min="0" value="0" />
-                    <button type="button" data-ticket-step="manualHalfTickets:1">+</button>
-                  </div>
-                </div>
-              </div>
+              <div id="manualTicketTypes" class="manual-ticket-types" aria-label="Tipos de ingresso disponíveis"></div>
 
               <div class="payment-options" role="radiogroup" aria-label="Forma de pagamento">
                 <label><input name="manualPaymentMethod" type="radio" value="cash" checked /> Dinheiro</label>
@@ -1446,6 +1435,37 @@
           </div>
           <div class="surface">
             <div id="integrationsList" class="integration-grid"></div>
+          </div>
+        </section>
+
+        <section id="logsPanel" class="panel">
+          <div class="panel-heading logs-heading">
+            <div>
+              <h1>Logs do sistema</h1>
+              <p>Acompanhe requisições, falhas, pagamentos, ações administrativas e rotinas do backend.</p>
+            </div>
+            <div class="button-row">
+              <button id="logsExportButton" class="ghost-button" type="button">Exportar JSON</button>
+              <button id="logsRefreshButton" class="primary-button" type="button">Atualizar</button>
+            </div>
+          </div>
+          <div id="logsStats" class="logs-stats" aria-live="polite"></div>
+          <div class="surface logs-workspace">
+            <div class="logs-filters" aria-label="Filtros de logs">
+              <label>Buscar<input id="logsSearch" type="search" placeholder="Evento, rota, usuário ou request ID" /></label>
+              <label>Nível<select id="logsLevel"><option value="">Todos</option><option value="error">Erro</option><option value="warn">Aviso</option><option value="info">Informação</option><option value="debug">Depuração</option></select></label>
+              <label>Categoria<input id="logsCategory" placeholder="Ex.: payment" /></label>
+              <label>De<input id="logsFrom" type="datetime-local" /></label>
+              <label>Até<input id="logsTo" type="datetime-local" /></label>
+            </div>
+            <div id="logsList" class="logs-list"></div>
+            <div class="logs-footer">
+              <div id="logsPagination" class="logs-pagination"></div>
+              <div class="logs-retention" data-owner-only="true">
+                <label>Reter por <input id="logsRetentionDays" type="number" min="1" max="3650" value="90" /> dias</label>
+                <button id="logsPruneButton" class="danger-button" type="button">Remover logs antigos</button>
+              </div>
+            </div>
           </div>
         </section>
       </section>

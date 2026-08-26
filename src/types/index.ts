@@ -6,6 +6,7 @@ export interface Session {
   time: string; // e.g. "16:30", "19:00", "21:30"
   format: "2D Dublado" | "2D Legendado" | "3D Dublado" | "3D Legendado";
   room: string; // "Sala Cruzeiro (Única)"
+  ticketTypeIds?: string[];
   priceFull: number; // e.g. 10.00
   priceHalf: number; // e.g. 10.00
   status: "available" | "filling_fast" | "sold_out";
@@ -73,6 +74,13 @@ export interface TicketOrder {
   sessionDate?: string;
   fullTicketsCount: number;
   halfTicketsCount: number;
+  ticketItems?: Array<{
+    id: string;
+    name?: string;
+    description?: string;
+    quantity: number;
+    unitPrice?: number;
+  }>;
   includeComboUpsell?: boolean;
   comboUpsellQuantity?: number;
   concessionItems?: Array<{

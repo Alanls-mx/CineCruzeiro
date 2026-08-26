@@ -102,6 +102,7 @@ async function run() {
         time: "19:00",
         format: "2D Dublado",
         room: "Sala Cruzeiro (Laser 4K)",
+        ticketTypeIds: ["promocional"],
         priceFull: 10,
         priceHalf: 10,
         status: "available"
@@ -415,13 +416,14 @@ async function run() {
         time: "18:00",
         format: "2D Dublado",
         room: "Sala Cruzeiro (Laser 4K)",
-        priceFull: 10,
-        priceHalf: 10,
+        ticketTypeIds: ["promocional"],
         status: "available"
       })
     });
     assert.equal(createSession.response.status, 201);
     assert.ok(createSession.payload.id);
+    assert.deepEqual(createSession.payload.ticketTypeIds, ["promocional"]);
+    assert.equal(createSession.payload.priceFull, 10);
 
     const updateSession = await request(`/api/movies/smoke-rascunho-admin/sessions/${encodeURIComponent(createSession.payload.id)}`, {
       method: "PUT",
@@ -439,6 +441,8 @@ async function run() {
     assert.equal(updateSession.response.status, 200);
     assert.equal(updateSession.payload.time, "19:15");
     assert.equal(updateSession.payload.date, "2099-08-24");
+    assert.deepEqual(updateSession.payload.ticketTypeIds, ["promocional"]);
+    assert.equal(updateSession.payload.priceFull, 10);
 
     const moveSessionDate = await request(`/api/movies/smoke-rascunho-admin/sessions/${encodeURIComponent(createSession.payload.id)}`, {
       method: "PUT",
@@ -843,6 +847,41 @@ async function run() {
     assert.equal(boxOfficeSale.payload.order.customerUserId, registered.user.id);
     assert.equal(boxOfficeSale.payload.payment.method, "external_pix");
     assert.equal(boxOfficeSale.payload.tickets.length, 1);
+    assert.equal(boxOfficeSale.payload.tickets[0].ticketType, "Ingresso Promocional");
+
+    const blockedTicketTypeSale = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        ticketItems: [{ id: "meia", quantity: 1 }],
+        saleMode: "quick",
+        paymentMethod: "cash"
+      })
+    });
+    assert.equal(blockedTicketTypeSale.response.status, 409);
+    assert.equal(blockedTicketTypeSale.payload.error.code, "SESSION_TICKET_TYPE_UNAVAILABLE");
+
+    const allowedTicketTypeSale = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 2 }],
+        saleMode: "quick",
+        paymentMethod: "cash"
+      })
+    });
+    assert.equal(allowedTicketTypeSale.response.status, 201);
+    assert.equal(allowedTicketTypeSale.payload.order.totalPrice, 20);
+    assert.equal(allowedTicketTypeSale.payload.tickets.length, 2);
+    assert.ok(allowedTicketTypeSale.payload.tickets.every((ticket) => ticket.ticketType === "Ingresso Promocional"));
+
+    const adminLogs = await request("/api/admin/logs?page=1&pageSize=10", { headers: jsonHeaders(adminCookie) });
+    assert.equal(adminLogs.response.status, 200);
+    assert.ok(Array.isArray(adminLogs.payload.logs));
 
     const editedOrder = await request(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
       method: "PATCH",

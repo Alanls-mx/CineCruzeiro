@@ -20,6 +20,10 @@ let state = {
   selectedOrderId: "",
   dashboard: null,
   integrations: null,
+  logs: null,
+  logsPage: 1,
+  logsPageSize: 40,
+  logFilters: { search: "", level: "", category: "", from: "", to: "" },
   webhookSimulatorRuns: [],
   selectedWebhookRunId: "",
   movieWizardStep: 0,
@@ -85,7 +89,8 @@ let state = {
   qrCameraPermission: "unknown",
   qrAutoRestartTimer: null,
   toastTimer: null,
-  refreshStatusTimer: null
+  refreshStatusTimer: null,
+  logsSearchTimer: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -396,6 +401,7 @@ function renderAll() {
   renderUsers();
   renderClub();
   renderIntegrations();
+  if (state.logs) renderLogs();
   fillSettingsForm();
   renderRoomOptions();
   renderManualSaleOptions();
@@ -403,7 +409,7 @@ function renderAll() {
 }
 
 function renderLoading() {
-  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList"].forEach((id) => {
+  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList", "logsList"].forEach((id) => {
     if ($(id)) {
       $(id).innerHTML = Array.from({ length: 4 }, () => `<div class="skeleton-card"></div>`).join("");
     }
@@ -412,6 +418,110 @@ function renderLoading() {
   if ($("ordersList")) {
     $("ordersList").innerHTML = `<div class="skeleton-card"></div>`;
   }
+}
+
+function logLevelLabel(level = "") {
+  return { error: "Erro", warn: "Aviso", info: "Informação", debug: "Depuração" }[level] || level || "Informação";
+}
+
+function logDate(value = "") {
+  if (!value) return "Sem data";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" });
+}
+
+function logFilterDate(value, endOfMinute = false) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  if (endOfMinute) date.setSeconds(59, 999);
+  return date.toISOString();
+}
+
+async function loadLogs(options = {}) {
+  state.logsPage = Math.max(1, Number(options.page || state.logsPage || 1));
+  const params = new URLSearchParams({ page: String(state.logsPage), pageSize: String(state.logsPageSize) });
+  const filters = state.logFilters || {};
+  if (filters.search) params.set("search", filters.search);
+  if (filters.level) params.set("level", filters.level);
+  if (filters.category) params.set("category", filters.category);
+  if (filters.from) params.set("from", logFilterDate(filters.from));
+  if (filters.to) params.set("to", logFilterDate(filters.to, true));
+  if ($("logsList")) $("logsList").innerHTML = Array.from({ length: 6 }, () => `<div class="skeleton-card"></div>`).join("");
+  try {
+    state.logs = await api(`/api/admin/logs?${params.toString()}`);
+    renderLogs();
+  } catch (error) {
+    if ($("logsList")) $("logsList").innerHTML = `<div class="empty-state"><strong>Não foi possível carregar os logs</strong><span>${escapeHtml(error.message)}</span></div>`;
+    showToast(error.message, "error");
+  }
+}
+
+function renderLogs() {
+  const data = state.logs || { logs: [], last24Hours: {}, page: 1, pages: 1, total: 0 };
+  const stats = data.last24Hours || {};
+  if ($("logsStats")) {
+    $("logsStats").innerHTML = [
+      ["Total filtrado", Number(data.total || 0), "all"],
+      ["Erros · 24h", Number(stats.error || 0), "error"],
+      ["Avisos · 24h", Number(stats.warn || 0), "warn"],
+      ["Informações · 24h", Number(stats.info || 0), "info"]
+    ].map(([label, value, tone]) => `<div class="log-stat ${tone}"><span>${label}</span><strong>${value}</strong></div>`).join("");
+  }
+  if ($("logsList")) {
+    $("logsList").innerHTML = data.logs?.length
+      ? data.logs.map((log) => `
+        <details class="log-entry log-${escapeHtml(log.level || "info")}">
+          <summary>
+            <span class="log-level">${escapeHtml(logLevelLabel(log.level))}</span>
+            <span class="log-main"><strong>${escapeHtml(log.event || "system.event")}</strong><small>${escapeHtml(log.message || [log.method, log.path].filter(Boolean).join(" ") || "Evento registrado pelo sistema")}</small></span>
+            <span class="log-http">${log.statusCode ? `${Number(log.statusCode)}${log.durationMs != null ? ` · ${Number(log.durationMs)} ms` : ""}` : "-"}</span>
+            <time datetime="${escapeHtml(log.createdAt || "")}">${escapeHtml(logDate(log.createdAt))}</time>
+          </summary>
+          <div class="log-details">
+            <dl>
+              <div><dt>Categoria</dt><dd>${escapeHtml(log.category || "system")}</dd></div>
+              <div><dt>Requisição</dt><dd>${escapeHtml(log.requestId || "-")}</dd></div>
+              <div><dt>Operador</dt><dd>${escapeHtml(log.actorEmail || log.actorUserId || "Sistema")}</dd></div>
+              <div><dt>Rota</dt><dd>${escapeHtml([log.method, log.path].filter(Boolean).join(" ") || "-")}</dd></div>
+              <div><dt>IP</dt><dd>${escapeHtml(log.ip || "-")}</dd></div>
+            </dl>
+            <pre>${escapeHtml(JSON.stringify(log.metadata || {}, null, 2))}</pre>
+          </div>
+        </details>
+      `).join("")
+      : `<div class="empty-state"><strong>Nenhum log encontrado</strong><span>Ajuste os filtros ou aguarde novos eventos do sistema.</span></div>`;
+  }
+  if ($("logsPagination")) {
+    $("logsPagination").innerHTML = `
+      <button class="ghost-button" type="button" data-log-page="${Math.max(1, Number(data.page || 1) - 1)}" ${Number(data.page || 1) <= 1 ? "disabled" : ""}>Anterior</button>
+      <span>Página ${Number(data.page || 1)} de ${Number(data.pages || 1)}</span>
+      <button class="ghost-button" type="button" data-log-page="${Math.min(Number(data.pages || 1), Number(data.page || 1) + 1)}" ${Number(data.page || 1) >= Number(data.pages || 1) ? "disabled" : ""}>Próxima</button>
+    `;
+    $("logsPagination").querySelectorAll("[data-log-page]").forEach((button) => button.addEventListener("click", () => loadLogs({ page: Number(button.dataset.logPage) })));
+  }
+}
+
+async function pruneLogs() {
+  const days = Math.max(1, Number($("logsRetentionDays")?.value || 90));
+  if (!confirm(`Remover logs com mais de ${days} dias? Esta ação não apaga o histórico auditável de pedidos.`)) return;
+  try {
+    const result = await api("/api/admin/logs", { method: "DELETE", body: JSON.stringify({ retentionDays: days }) });
+    showSuccess("Logs organizados", result.message || "A política de retenção foi aplicada.");
+    await loadLogs({ page: 1 });
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function exportLogs() {
+  const payload = JSON.stringify(state.logs?.logs || [], null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `cine-cruzeiro-logs-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function renderInsights() {
@@ -1129,11 +1239,15 @@ function renderSessions(sessions) {
         const linkedTickets = (state.content?.tickets || []).filter((ticket) => ticket.sessionId === session.id);
         const sold = linkedTickets.filter((ticket) => !["cancelled", "refunded", "pending_payment"].includes(ticket.status)).length;
         const capacity = Number(session.capacity || linkedTickets[0]?.sessionCapacity || 0);
+        const allowedTypes = sessionTicketTypes(session);
+        const ticketTypeSummary = allowedTypes.length
+          ? allowedTypes.map((ticketType) => `${ticketType.name} ${money(ticketType.price)}`).join(" • ")
+          : "Sem ingressos liberados";
         return `
         <div class="session-row">
           <strong>${session.time}</strong>
           <span>${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} • ` : ""}${session.format} • ${session.room}</span>
-          <span>${money(session.priceFull)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
+          <span>${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
           <div class="session-row-actions">
             <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(session.id)}')">Ingressos</button>
             <button class="ghost-button" type="button" onclick="openSessionEditor('${escapeHtml(session.id)}')">Editar</button>
@@ -1144,6 +1258,27 @@ function renderSessions(sessions) {
       }
     )
     .join("");
+}
+
+function sessionTicketTypes(session = {}) {
+  const activeTypes = (state.content?.ticketTypes || []).filter((ticketType) => ticketType.active !== false);
+  const selectedIds = new Set(Array.isArray(session.ticketTypeIds) && session.ticketTypeIds.length ? session.ticketTypeIds : activeTypes.map((ticketType) => ticketType.id));
+  return activeTypes.filter((ticketType) => selectedIds.has(ticketType.id));
+}
+
+function renderSessionTicketTypeOptions(selectedIds = []) {
+  const target = $("sessionTicketTypes");
+  if (!target) return;
+  const activeTypes = (state.content?.ticketTypes || []).filter((ticketType) => ticketType.active !== false);
+  const selected = new Set(selectedIds.length ? selectedIds : activeTypes.map((ticketType) => ticketType.id));
+  target.innerHTML = activeTypes.length
+    ? activeTypes.map((ticketType) => `
+      <label class="session-ticket-type-option">
+        <input type="checkbox" value="${escapeHtml(ticketType.id)}" ${selected.has(ticketType.id) ? "checked" : ""} />
+        <span><strong>${escapeHtml(ticketType.name)}</strong><small>${money(ticketType.price)}${ticketType.description ? ` • ${escapeHtml(ticketType.description)}` : ""}</small></span>
+      </label>
+    `).join("")
+    : `<div class="empty-state compact"><strong>Nenhum tipo de ingresso ativo</strong><span>Cadastre e ative os tipos na aba Ingressos antes de criar sessões.</span></div>`;
 }
 
 function renderRoomOptions() {
@@ -1376,7 +1511,7 @@ function openSessionEditor(sessionId = "") {
   if (session?.room && [...$("sessionRoom").options].some((option) => option.value === session.room)) {
     $("sessionRoom").value = session.room;
   }
-  $("sessionPriceFull").value = Number(session?.priceFull ?? 10);
+  renderSessionTicketTypeOptions(Array.isArray(session?.ticketTypeIds) ? session.ticketTypeIds : []);
   $("sessionStatus").value = session?.status || "available";
   $("sessionCreationMode").value = "single";
   $("sessionDateEnd").value = session?.date || "";
@@ -1397,9 +1532,9 @@ async function saveSession() {
     showToast("Preencha data, horário, sala e formato da sessão.", "error");
     return;
   }
-  const price = Number($("sessionPriceFull").value);
-  if (!Number.isFinite(price) || price < 0) {
-    showToast("Informe um preço válido para a sessão.", "error");
+  const ticketTypeIds = [...document.querySelectorAll("#sessionTicketTypes input:checked")].map((input) => input.value);
+  if (!ticketTypeIds.length) {
+    showToast("Selecione pelo menos um tipo de ingresso para esta sessão.", "error");
     return;
   }
 
@@ -1421,8 +1556,7 @@ async function saveSession() {
     time: $("sessionTime").value,
     format: $("sessionFormat").value,
     room: $("sessionRoom").value,
-    priceFull: price,
-    priceHalf: price,
+    ticketTypeIds,
     status: $("sessionStatus").value
   };
 
@@ -2371,6 +2505,7 @@ function renderManualSessionOptions() {
     ? sessions.map((session) => `<option value="${session.id}">${session.time} • ${escapeHtml(session.format)}</option>`).join("")
     : `<option value="">Sem sessões</option>`;
   if (selectedSessionId) $("manualSessionSelect").value = selectedSessionId;
+  renderManualTicketTypes();
   updateManualTotal();
 }
 
@@ -2378,6 +2513,44 @@ function currentManualMovieSession() {
   const movie = (state.content?.movies || []).find((item) => item.id === $("manualMovieSelect").value);
   const session = movie?.sessions?.find((item) => item.id === $("manualSessionSelect").value) || movie?.sessions?.[0];
   return { movie, session };
+}
+
+function currentManualTicketTypes() {
+  const { session } = currentManualMovieSession();
+  return sessionTicketTypes(session || {});
+}
+
+function renderManualTicketTypes() {
+  const target = $("manualTicketTypes");
+  if (!target) return;
+  const ticketTypes = currentManualTicketTypes();
+  target.innerHTML = ticketTypes.length
+    ? ticketTypes.map((ticketType, index) => `
+      <div class="quantity-line">
+        <span>${escapeHtml(ticketType.name)}</span>
+        <strong>${money(ticketType.price)}</strong>
+        <div class="stepper">
+          <button type="button" data-manual-ticket-step="-1" data-ticket-type-id="${escapeHtml(ticketType.id)}" aria-label="Remover ${escapeHtml(ticketType.name)}">-</button>
+          <input type="number" min="0" value="${index === 0 ? 1 : 0}" data-manual-ticket-quantity="${escapeHtml(ticketType.id)}" aria-label="Quantidade de ${escapeHtml(ticketType.name)}" />
+          <button type="button" data-manual-ticket-step="1" data-ticket-type-id="${escapeHtml(ticketType.id)}" aria-label="Adicionar ${escapeHtml(ticketType.name)}">+</button>
+        </div>
+      </div>
+    `).join("")
+    : `<div class="empty-state compact"><strong>Sem ingressos disponíveis</strong><span>Edite a sessão e atribua pelo menos um tipo de ingresso.</span></div>`;
+  target.querySelectorAll("[data-manual-ticket-step]").forEach((button) => button.addEventListener("click", () => {
+    const input = [...target.querySelectorAll("[data-manual-ticket-quantity]")]
+      .find((candidate) => candidate.dataset.manualTicketQuantity === button.dataset.ticketTypeId);
+    if (!input) return;
+    input.value = Math.max(0, Number(input.value || 0) + Number(button.dataset.manualTicketStep || 0));
+    updateManualTotal();
+  }));
+  target.querySelectorAll("[data-manual-ticket-quantity]").forEach((input) => input.addEventListener("input", updateManualTotal));
+}
+
+function manualTicketItems() {
+  return [...document.querySelectorAll("#manualTicketTypes [data-manual-ticket-quantity]")]
+    .map((input) => ({ id: input.dataset.manualTicketQuantity, quantity: Math.max(0, Number(input.value || 0)) }))
+    .filter((item) => item.id && item.quantity > 0);
 }
 
 async function createManualTicket(event) {
@@ -2394,8 +2567,9 @@ async function createManualTicket(event) {
     const payload = {
       movieId: movie.id,
       sessionId: session.id,
-      fullTicketsCount: Number($("manualFullTickets").value || 0),
-      halfTicketsCount: Number($("manualHalfTickets").value || 0),
+      fullTicketsCount: 0,
+      halfTicketsCount: 0,
+      ticketItems: manualTicketItems(),
       saleMode,
       paymentMethod,
       customerUserId: saleMode === "registered" ? $("manualCustomerUserId").value : "",
@@ -2496,22 +2670,9 @@ async function searchBoxOfficeCustomers() {
 }
 
 function updateManualTotal() {
-  const { session } = currentManualMovieSession();
-  const fullPrice = Number(session?.priceFull || state.content?.settings?.defaultTicketPrice || 10);
-  const halfPrice = Number(session?.priceHalf || fullPrice);
-  const fullCount = Math.max(0, Number($("manualFullTickets")?.value || 0));
-  const halfCount = Math.max(0, Number($("manualHalfTickets")?.value || 0));
-  const total = fullCount * fullPrice + halfCount * halfPrice;
-  if ($("manualFullPrice")) $("manualFullPrice").textContent = money(fullPrice);
-  if ($("manualHalfPrice")) $("manualHalfPrice").textContent = money(halfPrice);
+  const types = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
+  const total = manualTicketItems().reduce((sum, item) => sum + item.quantity * Number(types.get(item.id)?.price || 0), 0);
   if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
-}
-
-function stepTicketInput(inputId, delta) {
-  const input = $(inputId);
-  if (!input) return;
-  input.value = Math.max(0, Number(input.value || 0) + Number(delta || 0));
-  updateManualTotal();
 }
 
 function setBoxOfficeTab(tab) {
@@ -4219,15 +4380,18 @@ function applyRbacVisibility() {
   const operator = manager || role === "operator" || role === "seller";
   const allowedPanels = new Set(
     owner
-      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "concessionsPanel", "marketingPanel", "clubPanel", "usersPanel", "integrationsPanel"]
+      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "concessionsPanel", "marketingPanel", "clubPanel", "usersPanel", "integrationsPanel", "logsPanel"]
       : manager
-      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "concessionsPanel", "marketingPanel", "clubPanel"]
+      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "concessionsPanel", "marketingPanel", "clubPanel", "logsPanel"]
       : operator
       ? ["dashboardPanel", "ordersPanel"]
       : []
   );
   document.querySelectorAll(".nav-button").forEach((button) => {
     button.hidden = !allowedPanels.has(button.dataset.panel);
+  });
+  document.querySelectorAll("[data-owner-only='true']").forEach((element) => {
+    if (!element.classList.contains("nav-button")) element.hidden = !owner;
   });
   document.querySelectorAll("[data-box-office-tab='payments']").forEach((button) => {
     button.hidden = !manager;
@@ -4321,6 +4485,20 @@ function bindEvents() {
     const key = state.selectedIntegrationKey;
     const current = state.integrations?.integrations?.[key];
     if (key && current) toggleIntegration(key, !current.enabled);
+  });
+  $("logsRefreshButton")?.addEventListener("click", () => loadLogs());
+  $("logsExportButton")?.addEventListener("click", exportLogs);
+  $("logsPruneButton")?.addEventListener("click", pruneLogs);
+  [["logsLevel", "level"], ["logsCategory", "category"], ["logsFrom", "from"], ["logsTo", "to"]].forEach(([id, key]) => {
+    $(id)?.addEventListener("change", () => {
+      state.logFilters[key] = $(id).value.trim();
+      loadLogs({ page: 1 });
+    });
+  });
+  $("logsSearch")?.addEventListener("input", () => {
+    clearTimeout(state.logsSearchTimer);
+    state.logFilters.search = $("logsSearch").value.trim();
+    state.logsSearchTimer = setTimeout(() => loadLogs({ page: 1 }), 350);
   });
   $("webhookSimulateButton")?.addEventListener("click", simulateWebhook);
   $("webhookBatchButton")?.addEventListener("click", runWebhookBatch);
@@ -4431,19 +4609,11 @@ function bindEvents() {
   });
   $("manualTicketForm").addEventListener("submit", createManualTicket);
   $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
-  $("manualSessionSelect").addEventListener("change", updateManualTotal);
-  $("manualFullTickets").addEventListener("input", updateManualTotal);
-  $("manualHalfTickets").addEventListener("input", updateManualTotal);
+  $("manualSessionSelect").addEventListener("change", renderManualTicketTypes);
   $("manualCustomerSearch").addEventListener("input", searchBoxOfficeCustomers);
   $("manualCustomerSearch").addEventListener("focus", searchBoxOfficeCustomers);
   document.querySelectorAll("[data-sale-mode]").forEach((button) => {
     button.addEventListener("click", () => setSaleMode(button.dataset.saleMode));
-  });
-  document.querySelectorAll("[data-ticket-step]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const [inputId, delta] = button.dataset.ticketStep.split(":");
-      stepTicketInput(inputId, Number(delta));
-    });
   });
   document.querySelectorAll("[data-box-office-tab]").forEach((button) => {
     button.addEventListener("click", () => setBoxOfficeTab(button.dataset.boxOfficeTab));
@@ -4657,6 +4827,7 @@ function activatePanel(panelId, options = {}) {
     history.replaceState(null, "", `#${target}`);
   }
   if (options.scroll) window.scrollTo({ top: 0, behavior: "smooth" });
+  if (target === "logsPanel" && !state.logs) void loadLogs({ page: 1 });
 }
 
 window.selectMovie = selectMovie;
