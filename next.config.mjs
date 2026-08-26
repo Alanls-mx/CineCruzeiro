@@ -9,6 +9,8 @@ const configuredDistDir = process.env.NEXT_DIST_DIR || "";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   agentRules: false,
+  poweredByHeader: false,
+  skipTrailingSlashRedirect: true,
   ...(configuredDistDir ? { distDir: configuredDistDir } : {}),
   ...(configuredBasePath ? { basePath: configuredBasePath, assetPrefix: configuredBasePath } : {}),
   async rewrites() {
@@ -23,9 +25,20 @@ const nextConfig = {
       },
     ];
   },
+  async headers() {
+    return [
+      {
+        source: "/images/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+    ];
+  },
   images: {
     minimumCacheTTL: 2678400,
-    qualities: [58, 68, 72, 74, 75],
+    formats: ["image/avif", "image/webp"],
+    qualities: [48, 58, 68, 72, 74, 75],
     remotePatterns: [
       {
         protocol: "https",

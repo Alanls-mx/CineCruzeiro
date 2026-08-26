@@ -274,7 +274,7 @@ function normalizeMovie(movie: Partial<Movie> & { status?: string }): Movie {
   };
 }
 
-function normalizeCinemaContent(data: Record<string, any>): CinemaContent {
+export function normalizeCinemaContent(data: Record<string, any>): CinemaContent {
   const nowPlaying = Array.isArray(data.nowPlaying)
     ? data.nowPlaying.map(normalizeMovie)
     : [];

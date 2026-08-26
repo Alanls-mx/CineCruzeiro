@@ -3,24 +3,39 @@
 import Script from "next/script";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { measurementConsentKey } from "@/utils/tracking";
 
 type Consent = "granted" | "denied" | null;
+type TrackingSettings = {
+  enabled?: boolean;
+  googleMeasurementId?: string;
+  metaPixelId?: string;
+};
+
+const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
+const apiBase = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 
 export function TrackingManager() {
   const pathname = usePathname();
-  const { content } = useCinemaContent();
+  const [tracking, setTracking] = useState<TrackingSettings | null>(null);
   const [consent, setConsent] = useState<Consent>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const [metaReady, setMetaReady] = useState(false);
   const lastGooglePath = useRef("");
   const lastMetaPath = useRef("");
-  const tracking = content?.settings.tracking;
   const enabled = Boolean(tracking?.enabled && (tracking.googleMeasurementId || tracking.metaPixelId));
 
   useEffect(() => {
     setConsent((window.localStorage.getItem(measurementConsentKey) as Consent) || null);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${apiBase}/api/content`, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((content) => setTracking(content?.settings?.tracking || {}))
+      .catch(() => setTracking({}));
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -48,8 +63,8 @@ export function TrackingManager() {
     <>
       {consent === "granted" && tracking?.googleMeasurementId && (
         <>
-          <Script src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tracking.googleMeasurementId)}`} strategy="afterInteractive" />
-          <Script id="cine-google-analytics" strategy="afterInteractive" onReady={() => setGoogleReady(true)}>{`
+          <Script src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tracking.googleMeasurementId)}`} strategy="lazyOnload" />
+          <Script id="cine-google-analytics" strategy="lazyOnload" onReady={() => setGoogleReady(true)}>{`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             window.gtag = gtag;
@@ -59,7 +74,7 @@ export function TrackingManager() {
         </>
       )}
       {consent === "granted" && tracking?.metaPixelId && (
-        <Script id="cine-meta-pixel" strategy="afterInteractive" onReady={() => setMetaReady(true)}>{`
+        <Script id="cine-meta-pixel" strategy="lazyOnload" onReady={() => setMetaReady(true)}>{`
           !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
           n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
           n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;

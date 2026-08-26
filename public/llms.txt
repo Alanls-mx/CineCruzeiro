@@ -1,0 +1,15 @@
+# LumixEngine
+
+> LumixEngine desenvolve soluções digitais sob medida, combinando tecnologia, design e experiências digitais.
+
+## Principal
+
+- [LumixEngine](https://lumixengine.com/): Página principal da LumixEngine.
+
+## Projetos
+
+- [Cine Cruzeiro](https://lumixengine.com/projects/cinecruzeiro): Plataforma de programação, venda de ingressos, bomboniere e Clube Cine Cruzeiro.
+
+## Informações adicionais
+
+- [Projetos da LumixEngine](https://lumixengine.com/projects/): Conheça outros projetos e experiências desenvolvidos pela LumixEngine.

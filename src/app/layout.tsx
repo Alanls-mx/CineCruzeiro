@@ -15,11 +15,11 @@ const outfit = Outfit({
   display: "swap",
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.NODE_ENV === "production" ? "https://lumixengine.com" : "http://localhost:3000");
 const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
-const logoUrl = `${basePath}/images/logo.png`;
-const iconUrl = `${basePath}/images/favicon.svg`;
+const logoUrl = `${basePath}/images/logo-display.webp`;
+const iconUrl = `${basePath}/images/favicon-64.png`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -38,9 +38,17 @@ export const metadata: Metadata = {
     icon: iconUrl,
     apple: iconUrl,
   },
+  alternates: {
+    canonical: `${basePath || ""}/`,
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
   openGraph: {
     title: "Cine Cruzeiro | O Cinema do Seu Bairro",
     description: "Sem filas de shopping, pipoca crocante na manteiga e ingressos sem taxas no Pix.",
+    url: `${basePath || ""}/`,
     type: "website",
     images: [logoUrl],
   },

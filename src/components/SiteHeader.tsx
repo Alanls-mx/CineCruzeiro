@@ -68,10 +68,10 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
       <div className="mx-auto flex h-20 max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center" aria-label="Cine Cruzeiro">
           <img
-            src={assetPath("/images/logo-display.webp")}
+            src={assetPath("/images/logo-header.webp")}
             alt="Cine Cruzeiro"
-            width={320}
-            height={183}
+            width={224}
+            height={128}
             decoding="async"
             className="h-14 w-auto object-contain sm:h-16"
           />
@@ -138,10 +138,10 @@ export function SiteFooter() {
       <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
         <div>
           <img
-            src={assetPath("/images/logo-display.webp")}
+            src={assetPath("/images/logo-header.webp")}
             alt="Cine Cruzeiro"
-            width={320}
-            height={183}
+            width={224}
+            height={128}
             loading="lazy"
             decoding="async"
             className="h-11 w-auto"
@@ -149,7 +149,7 @@ export function SiteFooter() {
           <p className="mt-3 max-w-sm leading-relaxed">
             Cinema de rua, sala única, preço justo e tecnologia para comprar sem complicação.
           </p>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[.16em] text-slate-500">Cultura e lazer no bairro</p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Cultura e lazer no bairro</p>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Programação</h3>
@@ -170,11 +170,11 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-white/8">
-        <div className="mx-auto flex max-w-[1320px] flex-col gap-2 px-4 py-3 text-xs text-slate-500 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+        <div className="mx-auto flex max-w-[1320px] flex-col gap-2 px-4 py-3 text-xs text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>© Cine Cruzeiro. Plataforma de vendas, bilheteria e relacionamento.</span>
-          <span className="opacity-55 md:ml-auto md:text-right">
+          <span className="md:ml-auto md:text-right">
             Desenvolvido por{" "}
-            <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="font-semibold text-slate-400 transition hover:text-gold-400">
+            <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="font-semibold text-slate-300 transition hover:text-gold-400">
               LumixEngine
             </a>
           </span>
