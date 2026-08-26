@@ -49,7 +49,7 @@ export default async function HomePage() {
         {content && featured ? (
           <>
             <section className="relative overflow-hidden">
-              <div className="absolute inset-0 opacity-35">
+              <div className="absolute inset-0 hidden opacity-35 sm:block">
                 {featured.backdropUrl && (
                   <Image
                     src={featured.backdropUrl}
@@ -59,7 +59,7 @@ export default async function HomePage() {
                     unoptimized={isUploadedAsset(featured.backdropUrl)}
                     fetchPriority="high"
                     quality={40}
-                    sizes="100vw"
+                    sizes="(max-width: 639px) 1px, 100vw"
                     className="object-cover"
                   />
                 )}
