@@ -7531,58 +7531,105 @@ async function handleApi(req, res, pathname) {
       const selectedCustomer = body.customerUserId
         ? (lockedDb.users || []).find((user) => user.id === body.customerUserId && user.active !== false && ["customer", ...adminRoles()].includes(user.role))
         : null;
+      if (body.customerUserId && !selectedCustomer) {
+        sendJson(res, 404, { error: { code: "BOX_OFFICE_CUSTOMER_NOT_FOUND", message: "O usuário selecionado não está mais disponível. Busque o cliente novamente." } });
+        return;
+      }
       const saleMode = body.saleMode || (selectedCustomer ? "registered" : body.customerName ? "guest" : "quick");
-      const order = repriceOrderFromCatalog(lockedDb, normalizePaymentOrder({
-        ...body,
+      const requestedSales = Array.isArray(body.saleItems) && body.saleItems.length ? body.saleItems : [body];
+      if (requestedSales.length > 20) {
+        sendJson(res, 400, { error: { code: "BOX_OFFICE_BATCH_LIMIT", message: "Finalize no máximo 20 filmes por venda." } });
+        return;
+      }
+      const saleKeys = requestedSales.map((item) => `${String(item?.movieId || "").trim()}::${String(item?.sessionId || "").trim()}`);
+      if (new Set(saleKeys).size !== saleKeys.length) {
+        sendJson(res, 409, { error: { code: "BOX_OFFICE_DUPLICATE_SESSION", message: "A mesma sessão foi adicionada mais de uma vez. Ajuste as quantidades no item existente." } });
+        return;
+      }
+
+      const batchId = requestedSales.length > 1 ? `venda-lote-${Date.now()}-${crypto.randomBytes(4).toString("hex")}` : "";
+      const customerData = {
         customerUserId: selectedCustomer?.id || "",
         customerName: selectedCustomer?.name || body.customerName || (saleMode === "quick" ? "Venda rápida de balcão" : "Cliente avulso"),
         customerEmail: selectedCustomer?.email || body.customerEmail || "",
         customerPhone: selectedCustomer?.phone || body.customerPhone || "",
-        customerCpf: selectedCustomer?.cpf || body.customerCpf || "",
-        paymentMethod,
-        status: "paid",
-        paymentStatus: "approved"
-      }));
-      if (paymentMethod === "courtesy") {
-        order.discountValue = Number(order.totalPrice || 0);
-        order.totalPrice = 0;
-      }
-      if (!selectedCustomer && !body.customerEmail) order.customerEmail = "";
-      const payment = createBoxOfficePaymentRecord(order, paymentMethod, adminUser);
-      const savedOrder = {
-        ...order,
-        id: order.id,
-        status: "paid",
-        origin: "box_office",
-        saleMode,
-        paymentMethod,
-        paymentProvider: payment.provider,
-        paymentId: payment.id,
-        paymentStatus: "approved",
-        createdBy: adminUser.id,
-        createdByEmail: adminUser.email,
-        createdAt: order.createdAt || new Date().toISOString(),
-        paidAt: new Date().toISOString(),
-        audit: {
-          origin: "box_office",
-          paymentMethod,
-          createdBy: adminUser.id,
-          createdAt: new Date().toISOString(),
-          customerId: selectedCustomer?.id || ""
-        }
+        customerCpf: selectedCustomer?.cpf || body.customerCpf || ""
       };
-      const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, paymentMethod === "courtesy" ? "courtesy" : "box_office");
-      lockedDb.payments.unshift(payment);
-      lockedDb.orders.unshift(savedOrder);
+
+      // Valida e precifica o lote inteiro antes de emitir qualquer ingresso.
+      const preparedOrders = requestedSales.map((saleItem, index) => {
+        const order = repriceOrderFromCatalog(lockedDb, normalizePaymentOrder({
+          ...body,
+          ...saleItem,
+          id: saleItem.id || `pedido-bilheteria-${Date.now()}-${index}-${crypto.randomBytes(4).toString("hex")}`,
+          ...customerData,
+          paymentMethod,
+          status: "paid",
+          paymentStatus: "approved"
+        }));
+        if (paymentMethod === "courtesy") {
+          order.discountValue = Number(order.totalPrice || 0);
+          order.totalPrice = 0;
+        }
+        if (!selectedCustomer && !body.customerEmail) order.customerEmail = "";
+        return order;
+      });
+
+      const sales = preparedOrders.map((order) => {
+        const payment = createBoxOfficePaymentRecord(order, paymentMethod, adminUser);
+        const timestamp = new Date().toISOString();
+        const savedOrder = {
+          ...order,
+          id: order.id,
+          batchId,
+          status: "paid",
+          origin: "box_office",
+          saleMode,
+          paymentMethod,
+          paymentProvider: payment.provider,
+          paymentId: payment.id,
+          paymentStatus: "approved",
+          createdBy: adminUser.id,
+          createdByEmail: adminUser.email,
+          createdAt: order.createdAt || timestamp,
+          paidAt: timestamp,
+          audit: {
+            origin: "box_office",
+            batchId,
+            paymentMethod,
+            createdBy: adminUser.id,
+            createdAt: timestamp,
+            customerId: selectedCustomer?.id || ""
+          }
+        };
+        const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, paymentMethod === "courtesy" ? "courtesy" : "box_office");
+        return { order: savedOrder, payment, tickets };
+      });
+      const orders = sales.map((sale) => sale.order);
+      const payments = sales.map((sale) => sale.payment);
+      const tickets = sales.flatMap((sale) => sale.tickets);
+      lockedDb.payments.unshift(...payments);
+      lockedDb.orders.unshift(...orders);
       await writeDb(lockedDb);
       logEvent("info", "box_office_sale.created", {
-        orderId: savedOrder.id,
+        orderId: orders[0].id,
+        orderIds: orders.map((order) => order.id),
+        batchId,
+        movies: orders.length,
         tickets: tickets.length,
         paymentMethod,
         createdBy: adminUser.id,
         customerId: selectedCustomer?.id || ""
       });
-      sendJson(res, 201, { order: savedOrder, payment, tickets });
+      sendJson(res, 201, {
+        order: orders[0],
+        payment: payments[0],
+        orders,
+        payments,
+        tickets,
+        batchId,
+        totalPrice: orders.reduce((sum, order) => sum + Number(order.totalPrice || 0), 0)
+      });
     });
     return;
   }

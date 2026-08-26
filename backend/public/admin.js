@@ -76,6 +76,7 @@ let state = {
   saleMode: "registered",
   selectedCustomer: null,
   customerSearchResults: [],
+  manualSaleItems: [],
   qrStream: null,
   qrScanTimer: null,
   qrCloseTimer: null,
@@ -2498,6 +2499,7 @@ function renderManualSaleOptions() {
   movieSelect.value = selectedMovieId;
   renderManualSessionOptions();
   renderSaleMode();
+  renderManualSaleItems();
 }
 
 function renderManualSessionOptions() {
@@ -2557,23 +2559,119 @@ function manualTicketItems() {
     .filter((item) => item.id && item.quantity > 0);
 }
 
+function manualSaleDraft() {
+  const { movie, session } = currentManualMovieSession();
+  const ticketItems = manualTicketItems();
+  if (!movie || !session || !ticketItems.length) return null;
+  const ticketTypes = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
+  const subtotal = ticketItems.reduce((sum, item) => sum + item.quantity * Number(ticketTypes.get(item.id)?.price || 0), 0);
+  return {
+    movieId: movie.id,
+    movieTitle: movie.title,
+    sessionId: session.id,
+    sessionDate: session.date || "",
+    sessionTime: session.time || "",
+    sessionFormat: session.format || "",
+    ticketItems,
+    ticketSummary: ticketItems.map((item) => ({
+      ...item,
+      name: ticketTypes.get(item.id)?.name || "Ingresso",
+      unitPrice: Number(ticketTypes.get(item.id)?.price || 0)
+    })),
+    subtotal
+  };
+}
+
+function addManualSaleItem() {
+  const draft = manualSaleDraft();
+  if (!draft) {
+    showToast("Selecione ao menos um ingresso para adicionar este filme.", "error");
+    return;
+  }
+  const existingIndex = state.manualSaleItems.findIndex((item) => item.sessionId === draft.sessionId);
+  if (existingIndex >= 0) {
+    state.manualSaleItems.splice(existingIndex, 1, draft);
+    showToast("Quantidades da sessão atualizadas.");
+  } else {
+    state.manualSaleItems.push(draft);
+    showToast(`${draft.movieTitle} adicionado à venda.`);
+  }
+  renderManualSaleItems();
+  renderManualTicketTypes();
+}
+
+function removeManualSaleItem(sessionId) {
+  state.manualSaleItems = state.manualSaleItems.filter((item) => item.sessionId !== sessionId);
+  renderManualSaleItems();
+}
+
+function clearManualSaleItems() {
+  state.manualSaleItems = [];
+  renderManualSaleItems();
+}
+
+function renderManualSaleItems() {
+  const target = $("manualSaleItems");
+  if (!target) return;
+  const count = state.manualSaleItems.length;
+  $("manualSaleBasketCount").textContent = count
+    ? `${count} ${count === 1 ? "filme adicionado" : "filmes adicionados"}`
+    : "Nenhum filme adicionado";
+  $("manualClearSaleButton").hidden = count === 0;
+  target.innerHTML = count
+    ? state.manualSaleItems.map((item) => `
+      <article class="manual-sale-item">
+        <div class="manual-sale-item-main">
+          <strong>${escapeHtml(item.movieTitle)}</strong>
+          <span>${escapeHtml([item.sessionDate, item.sessionTime, item.sessionFormat].filter(Boolean).join(" • "))}</span>
+          <small>${item.ticketSummary.map((ticket) => `${ticket.quantity}× ${escapeHtml(ticket.name)}`).join(" · ")}</small>
+        </div>
+        <strong class="manual-sale-item-price">${money(item.subtotal)}</strong>
+        <button class="icon-button danger" type="button" data-remove-manual-session="${escapeHtml(item.sessionId)}" aria-label="Remover ${escapeHtml(item.movieTitle)} desta venda">
+          ${trashIcon}
+        </button>
+      </article>
+    `).join("")
+    : `<div class="manual-sale-empty">Escolha uma sessão e adicione-a para atribuir vários filmes ao cliente.</div>`;
+  target.querySelectorAll("[data-remove-manual-session]").forEach((button) => {
+    button.addEventListener("click", () => removeManualSaleItem(button.dataset.removeManualSession));
+  });
+  updateManualTotal();
+  const submitButton = $("manualSaleSubmitButton");
+  if (submitButton) {
+    submitButton.textContent = count > 1
+      ? `Finalizar venda de ${count} filmes`
+      : state.saleMode === "quick" ? "Finalizar venda rápida" : "Finalizar venda";
+  }
+}
+
 async function createManualTicket(event) {
   event.preventDefault();
-  const { movie, session } = currentManualMovieSession();
-  if (!movie || !session) {
-    showToast("Selecione um filme com sessão.", "error");
+  const draft = manualSaleDraft();
+  const saleItems = state.manualSaleItems.length ? state.manualSaleItems : draft ? [draft] : [];
+  if (!saleItems.length) {
+    showToast("Adicione ao menos um filme com ingressos à venda.", "error");
+    return;
+  }
+  if (state.saleMode === "registered" && !$("manualCustomerUserId").value) {
+    showToast("Selecione o usuário que receberá os ingressos.", "error");
     return;
   }
 
+  const submitButton = $("manualSaleSubmitButton");
   try {
+    submitButton.disabled = true;
+    submitButton.textContent = "Finalizando venda...";
     const paymentMethod = document.querySelector("input[name='manualPaymentMethod']:checked")?.value || "cash";
     const saleMode = state.saleMode;
     const payload = {
-      movieId: movie.id,
-      sessionId: session.id,
       fullTicketsCount: 0,
       halfTicketsCount: 0,
-      ticketItems: manualTicketItems(),
+      saleItems: saleItems.map((item) => ({
+        movieId: item.movieId,
+        sessionId: item.sessionId,
+        ticketItems: item.ticketItems
+      })),
       saleMode,
       paymentMethod,
       customerUserId: saleMode === "registered" ? $("manualCustomerUserId").value : "",
@@ -2584,10 +2682,19 @@ async function createManualTicket(event) {
       createdAt: new Date().toISOString()
     };
     const result = await api("/api/box-office/sales", { method: "POST", body: JSON.stringify(payload) });
+    state.manualSaleItems = [];
     await loadContent({ silent: true });
-    showSuccess("Venda finalizada", `Pedido ${result.order?.id || ""}. Codigos: ${(result.tickets || []).map((ticket) => ticket.code).join(", ")}`);
+    renderManualSaleItems();
+    const orders = result.orders || (result.order ? [result.order] : []);
+    showSuccess(
+      "Venda finalizada",
+      `${orders.length} ${orders.length === 1 ? "pedido criado" : "pedidos criados"} e ${(result.tickets || []).length} ingresso(s) atribuído(s) ao cliente.`
+    );
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    submitButton.disabled = false;
+    renderManualSaleItems();
   }
 }
 
@@ -2674,6 +2781,11 @@ async function searchBoxOfficeCustomers() {
 }
 
 function updateManualTotal() {
+  if (state.manualSaleItems.length) {
+    const total = state.manualSaleItems.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+    if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
+    return;
+  }
   const types = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
   const total = manualTicketItems().reduce((sum, item) => sum + item.quantity * Number(types.get(item.id)?.price || 0), 0);
   if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
@@ -4614,6 +4726,8 @@ function bindEvents() {
   $("manualTicketForm").addEventListener("submit", createManualTicket);
   $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
   $("manualSessionSelect").addEventListener("change", renderManualTicketTypes);
+  $("manualAddMovieButton").addEventListener("click", addManualSaleItem);
+  $("manualClearSaleButton").addEventListener("click", clearManualSaleItems);
   $("manualCustomerSearch").addEventListener("input", searchBoxOfficeCustomers);
   $("manualCustomerSearch").addEventListener("focus", searchBoxOfficeCustomers);
   document.querySelectorAll("[data-sale-mode]").forEach((button) => {

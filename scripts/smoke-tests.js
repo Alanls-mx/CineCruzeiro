@@ -8,6 +8,8 @@ const PORT = 4199;
 const BASE_URL = `http://localhost:${PORT}`;
 const TEST_MOVIE_ID = "smoke-programacao";
 const TEST_SESSION_ID = "smoke-programacao-1";
+const TEST_SECOND_MOVIE_ID = "smoke-programacao-2";
+const TEST_SECOND_SESSION_ID = "smoke-programacao-2-sessao";
 
 process.env.PORT = String(PORT);
 process.env.DATA_STORE = "json";
@@ -80,7 +82,7 @@ async function run() {
   db.concessions = (db.concessions || []).map((item) =>
     item.id === "combo-classico" ? { ...item, stock: 3, reserved: 0, sold: 0 } : item
   );
-  db.movies = (db.movies || []).filter((movie) => ![TEST_MOVIE_ID, "smoke-filme-edicao", "smoke-rascunho-admin"].includes(movie.id));
+  db.movies = (db.movies || []).filter((movie) => ![TEST_MOVIE_ID, TEST_SECOND_MOVIE_ID, "smoke-filme-edicao", "smoke-rascunho-admin"].includes(movie.id));
   db.movies.push({
     id: TEST_MOVIE_ID,
     status: "now_playing",
@@ -108,6 +110,23 @@ async function run() {
         status: "available"
       }
     ]
+  });
+  db.movies.push({
+    id: TEST_SECOND_MOVIE_ID,
+    status: "now_playing",
+    title: "Segundo Filme Smoke",
+    duration: "1h 15m",
+    genre: ["Teste"],
+    rating: "L",
+    sessions: [{
+      id: TEST_SECOND_SESSION_ID,
+      date: "2099-12-31",
+      time: "21:00",
+      format: "2D Legendado",
+      room: "Sala Cruzeiro (Laser 4K)",
+      ticketTypeIds: ["promocional"],
+      status: "available"
+    }]
   });
   fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
 
@@ -870,6 +889,27 @@ async function run() {
     assert.equal(boxOfficeSale.payload.payment.method, "external_pix");
     assert.equal(boxOfficeSale.payload.tickets.length, 1);
     assert.equal(boxOfficeSale.payload.tickets[0].ticketType, "Ingresso Promocional");
+
+    const multiMovieSale = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        customerUserId: registered.user.id,
+        saleMode: "registered",
+        paymentMethod: "cash",
+        saleItems: [
+          { movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, ticketItems: [{ id: "promocional", quantity: 1 }] },
+          { movieId: TEST_SECOND_MOVIE_ID, sessionId: TEST_SECOND_SESSION_ID, ticketItems: [{ id: "promocional", quantity: 2 }] }
+        ]
+      })
+    });
+    assert.equal(multiMovieSale.response.status, 201);
+    assert.equal(multiMovieSale.payload.orders.length, 2);
+    assert.equal(multiMovieSale.payload.payments.length, 2);
+    assert.equal(multiMovieSale.payload.tickets.length, 3);
+    assert.ok(multiMovieSale.payload.batchId);
+    assert.ok(multiMovieSale.payload.orders.every((order) => order.customerUserId === registered.user.id));
+    assert.deepEqual(new Set(multiMovieSale.payload.orders.map((order) => order.movieId)), new Set([TEST_MOVIE_ID, TEST_SECOND_MOVIE_ID]));
 
     const blockedTicketTypeSale = await request("/api/box-office/sales", {
       method: "POST",

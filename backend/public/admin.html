@@ -675,6 +675,27 @@
               </div>
               <div id="manualTicketTypes" class="manual-ticket-types" aria-label="Tipos de ingresso disponíveis"></div>
 
+              <div class="manual-sale-add-row">
+                <p>Adicione uma sessão por vez. Todos os ingressos serão vinculados ao mesmo cliente.</p>
+                <button id="manualAddMovieButton" class="ghost-button" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  Adicionar filme à venda
+                </button>
+              </div>
+
+              <section class="manual-sale-basket" aria-labelledby="manualSaleBasketTitle">
+                <div class="manual-sale-basket-heading">
+                  <div>
+                    <strong id="manualSaleBasketTitle">Filmes desta venda</strong>
+                    <span id="manualSaleBasketCount">Nenhum filme adicionado</span>
+                  </div>
+                  <button id="manualClearSaleButton" class="text-button" type="button" hidden>Limpar seleção</button>
+                </div>
+                <div id="manualSaleItems" class="manual-sale-items" aria-live="polite">
+                  <div class="manual-sale-empty">Escolha uma sessão e adicione-a para atribuir vários filmes ao cliente.</div>
+                </div>
+              </section>
+
               <div class="payment-options" role="radiogroup" aria-label="Forma de pagamento">
                 <label><input name="manualPaymentMethod" type="radio" value="cash" checked /> Dinheiro</label>
                 <label><input name="manualPaymentMethod" type="radio" value="card_terminal" /> Maquininha</label>
