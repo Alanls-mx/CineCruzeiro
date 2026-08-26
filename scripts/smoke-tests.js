@@ -427,7 +427,7 @@ async function run() {
       method: "PUT",
       headers: jsonHeaders(adminCookie),
       body: JSON.stringify({
-        date: "2099-08-24",
+        date: "2099-08-26",
         time: "19:15",
         format: "2D Legendado",
         room: "Sala Cruzeiro (Laser 4K)",
@@ -438,6 +438,24 @@ async function run() {
     });
     assert.equal(updateSession.response.status, 200);
     assert.equal(updateSession.payload.time, "19:15");
+    assert.equal(updateSession.payload.date, "2099-08-24");
+
+    const moveSessionDate = await request(`/api/movies/smoke-rascunho-admin/sessions/${encodeURIComponent(createSession.payload.id)}`, {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        date: "2099-08-25",
+        dateChanged: true,
+        time: "19:15",
+        format: "2D Legendado",
+        room: "Sala Cruzeiro (Laser 4K)",
+        priceFull: 12,
+        priceHalf: 12,
+        status: "available"
+      })
+    });
+    assert.equal(moveSessionDate.response.status, 200);
+    assert.equal(moveSessionDate.payload.date, "2099-08-25");
 
     const editMovieWithoutSessions = await request("/api/movies/smoke-rascunho-admin", {
       method: "PUT",

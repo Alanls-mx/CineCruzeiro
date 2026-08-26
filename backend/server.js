@@ -3154,7 +3154,8 @@ function normalizeMovie(input, existing = {}) {
 }
 
 function normalizeMovieSession(input, movieId, existing = {}) {
-  const date = String(input.date ?? input.sessionDate ?? existing.date ?? "").trim();
+  const preserveExistingDate = Boolean(existing.id && existing.date && input.dateChanged !== true);
+  const date = String(preserveExistingDate ? existing.date : input.date ?? input.sessionDate ?? existing.date ?? "").trim();
   const time = String(input.time ?? existing.time ?? "").trim();
   const room = String(input.room ?? existing.room ?? "").trim();
   const format = String(input.format ?? existing.format ?? "").trim();

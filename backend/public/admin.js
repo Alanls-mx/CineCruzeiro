@@ -25,6 +25,8 @@ let state = {
   movieWizardStep: 0,
   movieDraftSessions: [],
   editingSessionId: "",
+  editingSessionOriginalDate: "",
+  editingSessionDateChanged: false,
   dashboardMetric: "revenue",
   adminSubtabs: {
     marketing: "overview",
@@ -1365,6 +1367,8 @@ function openSessionEditor(sessionId = "") {
   }
   const session = (state.movieDraftSessions || []).find((item) => item.id === sessionId);
   state.editingSessionId = session?.id || "";
+  state.editingSessionOriginalDate = session?.date || "";
+  state.editingSessionDateChanged = false;
   $("sessionId").value = session?.id || "";
   $("sessionDate").value = session?.date || "";
   $("sessionTime").value = session?.time || "19:00";
@@ -1407,6 +1411,7 @@ async function saveSession() {
   }
   const payload = {
     date: $("sessionDate").value,
+    dateChanged: !sessionId || state.editingSessionDateChanged,
     ...(range ? {
       dateFrom: $("sessionDate").value,
       dateTo: $("sessionDateEnd").value,
@@ -4361,6 +4366,9 @@ function bindEvents() {
   $("addSessionButton").addEventListener("click", () => openSessionEditor());
   $("sessionCreationMode").addEventListener("change", syncSessionCreationMode);
   $("sessionDate").addEventListener("change", () => {
+    if (state.editingSessionId) {
+      state.editingSessionDateChanged = $("sessionDate").value !== state.editingSessionOriginalDate;
+    }
     if ($("sessionCreationMode").value === "range" && (!$("sessionDateEnd").value || $("sessionDateEnd").value < $("sessionDate").value)) {
       $("sessionDateEnd").value = $("sessionDate").value;
     }
