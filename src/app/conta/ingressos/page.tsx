@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { ArrowLeft, Download, Eye, Send, Ticket as TicketIcon, WalletCards } from "lucide-react";
+import { ArrowLeft, Check, Download, Eye, Send, Ticket as TicketIcon, WalletCards } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import {
   createGoogleWalletPass,
@@ -20,6 +20,9 @@ export default function IngressosPage() {
   const [selectedId, setSelectedId] = useState("");
   const [tab, setTab] = useState<"upcoming" | "archived">("upcoming");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [validatedTicketId, setValidatedTicketId] = useState("");
+  const ticketStatusesRef = useRef(new Map<string, TicketRecord["status"]>());
+  const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const visibleTickets = tab === "upcoming" ? upcoming : archived;
   const selectedTicket = useMemo(
@@ -27,20 +30,42 @@ export default function IngressosPage() {
     [selectedId, visibleTickets]
   );
 
-  function reloadTickets() {
-    setStatus("loading");
+  function reloadTickets(silent = false) {
+    if (!silent) setStatus("loading");
     fetchAccountTicketsGrouped()
       .then((result) => {
+        const allTickets = [...result.upcoming, ...result.archived];
+        const newlyValidated = ticketStatusesRef.current.size
+          ? allTickets.find((ticket) => ticket.status === "used" && ticketStatusesRef.current.get(ticket.id) === "active")
+          : null;
+        ticketStatusesRef.current = new Map(allTickets.map((ticket) => [ticket.id, ticket.status]));
         setUpcoming(result.upcoming);
         setArchived(result.archived);
-        setSelectedId((current) => current || result.upcoming[0]?.id || result.archived[0]?.id || "");
+        if (newlyValidated) {
+          setTab("archived");
+          setSelectedId(newlyValidated.id);
+          setValidatedTicketId(newlyValidated.id);
+          if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
+          validationTimerRef.current = setTimeout(() => setValidatedTicketId(""), 4800);
+        } else {
+          setSelectedId((current) => current || result.upcoming[0]?.id || result.archived[0]?.id || "");
+        }
         setStatus("ready");
       })
-      .catch(() => setStatus("error"));
+      .catch(() => {
+        if (!silent) setStatus("error");
+      });
   }
 
   useEffect(() => {
     reloadTickets();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") reloadTickets(true);
+    }, 3500);
+    return () => {
+      window.clearInterval(interval);
+      if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
+    };
   }, []);
 
   return (
@@ -82,7 +107,7 @@ export default function IngressosPage() {
             </aside>
 
             {selectedTicket ? (
-              <TicketDetails ticket={selectedTicket} onTransferred={(ticket) => {
+              <TicketDetails ticket={selectedTicket} justValidated={selectedTicket.id === validatedTicketId} onTransferred={(ticket) => {
                 setSelectedId(ticket.id);
                 reloadTickets();
               }} />
@@ -141,7 +166,7 @@ function TicketEmptyState({ tab }: { tab: "upcoming" | "archived" }) {
   );
 }
 
-function TicketDetails({ ticket, onTransferred }: { ticket: TicketRecord; onTransferred: (ticket: TicketRecord) => void }) {
+function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: TicketRecord; justValidated: boolean; onTransferred: (ticket: TicketRecord) => void }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [transferEmail, setTransferEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -188,7 +213,14 @@ function TicketDetails({ ticket, onTransferred }: { ticket: TicketRecord; onTran
   }
 
   return (
-    <article className="overflow-hidden rounded-lg bg-[#101827] shadow-2xl shadow-blue-950/20">
+    <article className="relative overflow-hidden rounded-lg bg-[#101827] shadow-2xl shadow-blue-950/20">
+      {justValidated && (
+        <div className="ticket-validation-celebration" role="status" aria-live="assertive">
+          <span className="ticket-validation-check" aria-hidden="true"><Check /></span>
+          <strong>Entrada validada</strong>
+          <span>QR Code confirmado pelo Cine Cruzeiro</span>
+        </div>
+      )}
       <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
         <div className="bg-brand-950">
           {ticket.posterUrl ? (

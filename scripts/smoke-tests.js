@@ -820,6 +820,28 @@ async function run() {
     });
     assert.equal(cancelUsedClubOrder.response.status, 409);
 
+    const deletableCustomer = await registerCustomer(`delete-${Date.now()}@cine.local`);
+    const deletableSubscription = await request("/api/admin/subscriptions/assign", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ userId: deletableCustomer.user.id, planId: oneCreditPlan.payload.id })
+    });
+    assert.equal(deletableSubscription.response.status, 201);
+    const deleteCustomer = await request(`/api/users/${encodeURIComponent(deletableCustomer.user.id)}`, {
+      method: "DELETE",
+      headers: jsonHeaders(adminCookie)
+    });
+    assert.equal(deleteCustomer.response.status, 200);
+    const subscriptionsAfterUserDelete = await request("/api/admin/subscriptions", { headers: jsonHeaders(adminCookie) });
+    assert.equal(subscriptionsAfterUserDelete.response.status, 200);
+    assert.ok(!subscriptionsAfterUserDelete.payload.subscriptions.some((subscription) => subscription.userId === deletableCustomer.user.id));
+
+    const deleteOwnAdmin = await request("/api/users/admin", {
+      method: "DELETE",
+      headers: jsonHeaders(adminCookie)
+    });
+    assert.equal(deleteOwnAdmin.response.status, 409);
+
     const deactivateSmokePlan = await request(`/api/admin/subscription-plans/${encodeURIComponent(oneCreditPlan.payload.id)}`, {
       method: "DELETE",
       headers: jsonHeaders(adminCookie),
@@ -945,7 +967,9 @@ async function run() {
     });
     assert.equal(download.status, 200);
     assert.match(download.headers.get("content-disposition") || "", /attachment/);
-    assert.match(await download.text(), /Cine Cruzeiro/);
+    const downloadedPdf = await download.text();
+    assert.match(downloadedPdf, /Cine Cruzeiro/);
+    assert.match(downloadedPdf, /\/ImLogo Do/);
 
     const walletMissing = await request(`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/google-wallet`, {
       method: "POST",

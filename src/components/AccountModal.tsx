@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { Check, LogOut, QrCode, ShieldCheck, Ticket, UserRound, X } from "lucide-react";
 import {
@@ -54,6 +54,9 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
   const [loading, setLoading] = useState(false);
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [validatedTicketId, setValidatedTicketId] = useState("");
+  const ticketStatusesRef = useRef(new Map<string, TicketRecord["status"]>());
+  const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -90,11 +93,30 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
 
   useEffect(() => {
     if (!isOpen || mode !== "profile" || !auth) return;
+    const applyTickets = (nextTickets: TicketRecord[]) => {
+      const newlyValidated = ticketStatusesRef.current.size
+        ? nextTickets.find((ticket) => ticket.status === "used" && ticketStatusesRef.current.get(ticket.id) === "active")
+        : null;
+      ticketStatusesRef.current = new Map(nextTickets.map((ticket) => [ticket.id, ticket.status]));
+      setTickets(nextTickets);
+      if (newlyValidated) {
+        setValidatedTicketId(newlyValidated.id);
+        if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
+        validationTimerRef.current = setTimeout(() => setValidatedTicketId(""), 4800);
+      }
+    };
     setTicketsLoading(true);
     fetchAccountTickets()
-      .then(setTickets)
+      .then(applyTickets)
       .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel carregar seus ingressos."))
       .finally(() => setTicketsLoading(false));
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") fetchAccountTickets().then(applyTickets).catch(() => undefined);
+    }, 3500);
+    return () => {
+      window.clearInterval(interval);
+      if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
+    };
   }, [isOpen, mode, auth]);
 
   const persistAuth = (nextAuth: { token?: string; user: CustomerUser }) => {
@@ -423,6 +445,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
                       <AccountTicketCard
                         key={ticket.id}
                         ticket={ticket}
+                        justValidated={ticket.id === validatedTicketId}
                         onValidated={handleTicketValidated}
                       />
                     ))}
@@ -450,9 +473,11 @@ function GoogleG() {
 
 function AccountTicketCard({
   ticket,
+  justValidated,
   onValidated,
 }: {
   ticket: TicketRecord;
+  justValidated: boolean;
   onValidated: (ticket: TicketRecord) => void;
 }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
@@ -495,7 +520,14 @@ function AccountTicketCard({
   };
 
   return (
-    <div className="overflow-hidden rounded-3xl bg-brand-900/70 shadow-xl shadow-blue-950/20">
+    <div className="relative overflow-hidden rounded-3xl bg-brand-900/70 shadow-xl shadow-blue-950/20">
+      {justValidated && (
+        <div className="ticket-validation-celebration" role="status" aria-live="assertive">
+          <span className="ticket-validation-check" aria-hidden="true"><Check /></span>
+          <strong>Entrada validada</strong>
+          <span>QR Code confirmado pelo Cine Cruzeiro</span>
+        </div>
+      )}
       <div className="grid grid-cols-[104px_1fr] gap-4 p-4">
         <div className="rounded-2xl bg-white p-2">
           {qrDataUrl ? (

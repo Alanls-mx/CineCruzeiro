@@ -148,6 +148,73 @@ a[href] {
   }
 }
 
+@keyframes ticketValidationReveal {
+  0% {
+    opacity: 0;
+    clip-path: circle(4% at 50% 54%);
+  }
+  14%, 72% {
+    opacity: 1;
+    clip-path: circle(76% at 50% 54%);
+  }
+  100% {
+    opacity: 0;
+    clip-path: circle(76% at 50% 54%);
+  }
+}
+
+@keyframes ticketValidationCheck {
+  0% { transform: scale(0.72); box-shadow: 0 0 0 0 rgba(69, 214, 161, 0.38); }
+  28% { transform: scale(1); box-shadow: 0 0 0 18px rgba(69, 214, 161, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 18px rgba(69, 214, 161, 0); }
+}
+
+.ticket-validation-celebration {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: rgba(5, 16, 25, 0.96);
+  color: #ecfdf5;
+  text-align: center;
+  pointer-events: none;
+  animation: ticketValidationReveal 4.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.ticket-validation-celebration strong {
+  font-family: var(--font-outfit), sans-serif;
+  font-size: clamp(1.75rem, 5vw, 3rem);
+  line-height: 1;
+}
+
+.ticket-validation-celebration > span:last-child {
+  color: #a7f3d0;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.ticket-validation-check {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 999px;
+  background: #45d6a1;
+  color: #03251d;
+  animation: ticketValidationCheck 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ticket-validation-check svg {
+  width: 38px;
+  height: 38px;
+  stroke-width: 3;
+}
+
 .animate-fade-in {
   animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -191,6 +258,15 @@ a[href] {
   }
 
   .skeleton-soft::after {
+    animation: none;
+  }
+
+  .ticket-validation-celebration {
+    clip-path: none;
+    animation: fadeIn 0.15s ease-out both;
+  }
+
+  .ticket-validation-check {
     animation: none;
   }
 }

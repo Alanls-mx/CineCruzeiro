@@ -2385,12 +2385,19 @@ function pdfQr(payload, x, y, size) {
 function buildPdf(pages, options = {}) {
   const normalizedPages = Array.isArray(pages) ? pages : [pages];
   const pageCount = normalizedPages.length;
+  const images = Array.isArray(options.images)
+    ? options.images.filter((image) => image?.name && image?.buffer && image?.width && image?.height)
+    : options.image
+      ? [{ name: "Im1", ...options.image }]
+      : [];
   const firstPageObject = 3;
   const contentStart = firstPageObject + pageCount;
   const fontRegularObject = contentStart + pageCount;
   const fontBoldObject = fontRegularObject + 1;
-  const imageObject = options.image ? fontBoldObject + 1 : null;
-  const resourceImage = imageObject ? " /XObject << /Im1 " + imageObject + " 0 R >>" : "";
+  const imageStartObject = fontBoldObject + 1;
+  const resourceImage = images.length
+    ? ` /XObject << ${images.map((image, index) => `/${image.name} ${imageStartObject + index} 0 R`).join(" ")} >>`
+    : "";
   const pageKids = Array.from({ length: pageCount }, (_, index) => `${firstPageObject + index} 0 R`).join(" ");
   const objects = [
     Buffer.from("<< /Type /Catalog /Pages 2 0 R >>", "utf8"),
@@ -2413,13 +2420,13 @@ function buildPdf(pages, options = {}) {
   objects.push(Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "utf8"));
   objects.push(Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>", "utf8"));
 
-  if (options.image) {
+  images.forEach((image) => {
     objects.push(Buffer.concat([
-      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${options.image.width} /Height ${options.image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${options.image.buffer.length} >>\nstream\n`, "utf8"),
-      options.image.buffer,
+      Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.buffer.length} >>\nstream\n`, "utf8"),
+      image.buffer,
       Buffer.from("\nendstream", "utf8")
     ]));
-  }
+  });
 
   const chunks = [Buffer.from("%PDF-1.4\n% Cine Cruzeiro\n", "utf8")];
   const offsets = [0];
@@ -2442,18 +2449,23 @@ async function ticketDownloadPdf(db, ticket) {
   const formatLine = [enriched.sessionRoom || "Cine Cruzeiro", enriched.sessionFormat || "Sessao"].filter(Boolean).join(" - ");
   const posterBuffer = await cachedPosterBufferForTicket(db, enriched);
   const posterSize = posterBuffer ? jpegDimensions(posterBuffer) : null;
-  const image = posterBuffer && posterSize ? { buffer: posterBuffer, ...posterSize } : null;
+  const posterImage = posterBuffer && posterSize ? { name: "ImPoster", buffer: posterBuffer, ...posterSize } : null;
+  const logoBuffer = await fs.readFile(path.join(__dirname, "..", "public", "images", "logo-pdf.jpg")).catch(() => null);
+  const logoSize = logoBuffer ? jpegDimensions(logoBuffer) : null;
+  const logoImage = logoBuffer && logoSize ? { name: "ImLogo", buffer: logoBuffer, ...logoSize } : null;
+  const pdfImages = [posterImage, logoImage].filter(Boolean);
 
   let page1 = "";
   page1 += pdfRect(0, 0, 595, 842, "#050914");
   page1 += pdfRect(46, 54, 503, 734, "#101827");
   page1 += pdfRect(46, 714, 503, 74, "#0b1220");
   page1 += pdfRect(46, 54, 503, 10, "#facc15");
-  page1 += pdfWriteText("CINE CRUZEIRO", 78, 758, 15, { bold: true, color: "#facc15" });
-  page1 += pdfWriteText("Ingresso digital", 78, 735, 11, { color: "#bfdbfe" });
+  if (logoImage) page1 += pdfDrawImage("ImLogo", 68, 718, 98, 66);
+  else page1 += pdfWriteText("CINE CRUZEIRO", 78, 758, 15, { bold: true, color: "#facc15" });
+  page1 += pdfWriteText("Ingresso digital", logoImage ? 184 : 78, 744, 11, { color: "#bfdbfe" });
   page1 += pdfWriteText(ticketStatusLabel(enriched.status).toUpperCase(), 434, 752, 11, { bold: true, color: "#facc15" });
   page1 += pdfRect(78, 390, 180, 270, "#0b1220");
-  if (image) page1 += pdfDrawImage("Im1", 86, 402, 164, 246);
+  if (posterImage) page1 += pdfDrawImage("ImPoster", 86, 402, 164, 246);
   else page1 += pdfWriteMultiline(enriched.movieTitle, 104, 550, 18, { bold: true, color: "#ffffff", maxChars: 13, maxLines: 5, lineHeight: 22 });
   page1 += pdfWriteText("FILME", 286, 650, 9, { bold: true, color: "#60a5fa" });
   page1 += pdfWriteMultiline(enriched.movieTitle, 286, 612, 22, { bold: true, color: "#ffffff", maxChars: 21, maxLines: 3, lineHeight: 26 });
@@ -2470,8 +2482,9 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfRect(46, 54, 503, 734, "#101827");
   page2 += pdfRect(46, 714, 503, 74, "#0b1220");
   page2 += pdfRect(46, 54, 503, 10, "#facc15");
-  page2 += pdfWriteText("CINE CRUZEIRO", 78, 758, 15, { bold: true, color: "#facc15" });
-  page2 += pdfWriteText("Detalhes do ingresso", 78, 735, 11, { color: "#bfdbfe" });
+  if (logoImage) page2 += pdfDrawImage("ImLogo", 68, 718, 98, 66);
+  else page2 += pdfWriteText("CINE CRUZEIRO", 78, 758, 15, { bold: true, color: "#facc15" });
+  page2 += pdfWriteText("Detalhes do ingresso", logoImage ? 184 : 78, 744, 11, { color: "#bfdbfe" });
   page2 += pdfWriteMultiline(enriched.movieTitle, 78, 672, 20, { bold: true, color: "#ffffff", maxChars: 34, maxLines: 2, lineHeight: 24 });
   page2 += pdfWriteText(`${enriched.sessionDate} as ${enriched.sessionTime}`, 78, 608, 14, { bold: true, color: "#facc15" });
   page2 += pdfLine(78, 574, 517, 574, "#334155", 1);
@@ -2489,7 +2502,7 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteText("Chegue com 15 minutos de antecedencia.", 78, 134, 10, { color: "#cbd5e1" });
   page2 += pdfWriteText("A validade depende do status real no servidor do Cine Cruzeiro.", 78, 116, 10, { color: "#cbd5e1" });
   page2 += pdfWriteText("Pagina 2 de 2", 462, 86, 9, { color: "#94a3b8" });
-  return buildPdf([page1, page2], image ? { image } : {});
+  return buildPdf([page1, page2], { images: pdfImages });
 }
 
 function finalizePaidOrder(db, order, payment, source = "online") {
@@ -7137,6 +7150,24 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "DELETE") {
+      if (req.adminUser?.id === id) {
+        sendJson(res, 409, { error: "Sua propria conta nao pode ser excluida enquanto estiver em uso." });
+        return;
+      }
+      const linkedSubscriptions = (db.subscriptions || []).filter((subscription) => subscription.userId === id);
+      const billableSubscription = linkedSubscriptions.find((subscription) =>
+        ["pending_payment", "active", "paused"].includes(subscription.status)
+        && (subscription.providerSubscriptionId || subscription.provider === "mercado_pago")
+      );
+      if (billableSubscription) {
+        sendJson(res, 409, { error: "Cancele a assinatura recorrente deste usuario antes de excluir a conta." });
+        return;
+      }
+      const subscriptionIds = new Set(linkedSubscriptions.map((subscription) => subscription.id));
+      db.subscriptions = (db.subscriptions || []).filter((subscription) => subscription.userId !== id);
+      db.subscriptionCredits = (db.subscriptionCredits || []).filter((credit) => !subscriptionIds.has(credit.subscriptionId));
+      db.subscriptionUsage = (db.subscriptionUsage || []).filter((usage) => usage.userId !== id && !subscriptionIds.has(usage.subscriptionId));
+      db.orders = (db.orders || []).map((order) => order.customerUserId === id ? { ...order, customerUserId: "" } : order);
       const [removed] = db.users.splice(index, 1);
       await writeDb(db);
       sendJson(res, 200, sanitizeUser(removed));

@@ -835,6 +835,7 @@ async function writeDbToPostgres(db) {
     }
 
     const planIds = new Set(asArray(db.subscriptionPlans).map((plan) => plan.id));
+    const persistedSubscriptionIds = new Set();
     for (const subscription of asArray(db.subscriptions)) {
       if (!userIds.has(subscription.userId) || !planIds.has(subscription.planId)) continue;
       await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, cancel_at_period_end, cancellation_requested_at, billing_cancelled_at, benefits_until, cancellation_mode, reactivation_blocked, ended_at, history, created_at, updated_at)
@@ -881,11 +882,11 @@ async function writeDbToPostgres(db) {
         subscription.createdAt || "",
         subscription.updatedAt || ""
       ]);
+      persistedSubscriptionIds.add(subscription.id);
     }
 
-    const subscriptionIds = new Set(asArray(db.subscriptions).map((subscription) => subscription.id));
     for (const credit of asArray(db.subscriptionCredits)) {
-      if (!subscriptionIds.has(credit.subscriptionId)) continue;
+      if (!persistedSubscriptionIds.has(credit.subscriptionId)) continue;
       await query(client, `INSERT INTO subscription_credits (id, subscription_id, cycle_start, cycle_end, total, used, remaining, rollover_from_id, metadata, created_at, updated_at)
         VALUES ($1,$2,NULLIF($3,'')::timestamptz,NULLIF($4,'')::timestamptz,$5,$6,$7,NULLIF($8,''),$9,COALESCE(NULLIF($10,'')::timestamptz, now()),COALESCE(NULLIF($11,'')::timestamptz, now()))`, [
         credit.id,
@@ -905,7 +906,7 @@ async function writeDbToPostgres(db) {
     const orderIds = new Set(asArray(db.orders).map((order) => order.id));
     const ticketIds = new Set(asArray(db.tickets).map((ticket) => ticket.id));
     for (const usage of asArray(db.subscriptionUsage)) {
-      if (!subscriptionIds.has(usage.subscriptionId) || !userIds.has(usage.userId)) continue;
+      if (!persistedSubscriptionIds.has(usage.subscriptionId) || !userIds.has(usage.userId)) continue;
       await query(client, `INSERT INTO subscription_usage (id, subscription_id, credit_id, user_id, order_id, ticket_id, movie_id, session_id, month_key, idempotency_key, refunded_at, refunded_by, refund_reason, metadata, used_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,'')::timestamptz,NULLIF($12,''),$13,$14,COALESCE(NULLIF($15,'')::timestamptz, now()))`, [
         usage.id,
