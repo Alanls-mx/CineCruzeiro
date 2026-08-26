@@ -3,6 +3,7 @@ const { AsyncLocalStorage } = require("async_hooks");
 
 let pool;
 const transactionContext = new AsyncLocalStorage();
+const CINEMA_TIME_ZONE = process.env.CINEMA_TIME_ZONE || "America/Sao_Paulo";
 
 function databaseUrl() {
   return process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
@@ -58,6 +59,24 @@ function pgDate(value) {
   return "";
 }
 
+function cinemaIsoDate(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: CINEMA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value || "";
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  return year && month && day ? `${year}-${month}-${day}` : "";
+}
+
 function mapMovie(row, sessions) {
   return {
     id: row.id,
@@ -90,7 +109,7 @@ function mapMovie(row, sessions) {
     updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : "",
     sessions: sessions.map((session) => ({
       id: session.id,
-      date: session.starts_at ? new Date(session.starts_at).toISOString().slice(0, 10) : "",
+      date: cinemaIsoDate(session.starts_at),
       time: session.time_label,
       format: session.format,
       room: session.room_label || session.room_id || "",
@@ -927,5 +946,6 @@ module.exports = {
   readDbFromPostgres,
   writeDbToPostgres,
   withPostgresMutationLock,
-  appendAuditLogToPostgres
+  appendAuditLogToPostgres,
+  cinemaIsoDate
 };
