@@ -123,7 +123,7 @@ function sessionMatchesFilter(session: Session, filter: SessionFilter) {
 }
 
 function sessionMatchesDay(session: Session, day?: CalendarDay) {
-  if (!day?.isoDate || !session.date) return true;
+  if (!day?.isoDate || !session.date) return false;
   return String(session.date).slice(0, 10) === day.isoDate;
 }
 
