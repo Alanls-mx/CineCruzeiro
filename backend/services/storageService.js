@@ -34,8 +34,10 @@ function parseBase64Image(data) {
   };
 }
 
-function createStorageService({ publicDir, publicBasePath = "/uploads", maxBytes = DEFAULT_MAX_BYTES }) {
-  const rootDir = path.join(publicDir, publicBasePath.replace(/^\//, ""));
+function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir: configuredRootDir = "", maxBytes = DEFAULT_MAX_BYTES }) {
+  const rootDir = configuredRootDir
+    ? path.resolve(configuredRootDir)
+    : path.join(publicDir, publicBasePath.replace(/^\//, ""));
 
   async function uploadImage({ data, filename = "", contentType = "", folder = "general" }) {
     const parsed = parseBase64Image(data);

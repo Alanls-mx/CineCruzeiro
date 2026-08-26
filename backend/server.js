@@ -25,7 +25,10 @@ const DATA_FILE = path.join(ROOT, "data", "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
 const TRAILERS_DIR = path.join(PUBLIC_DIR, "trailers");
 const FRONTEND_PUBLIC_DIR = path.join(ROOT, "..", "public");
-const storageService = createStorageService({ publicDir: PUBLIC_DIR });
+const storageService = createStorageService({
+  publicDir: PUBLIC_DIR,
+  rootDir: process.env.CINE_UPLOADS_DIR || ""
+});
 const PROJECT_ROOT = path.resolve(ROOT, "..");
 const MAX_TRAILER_BYTES = Number(process.env.MAX_TRAILER_BYTES || 120 * 1024 * 1024);
 const ENV_FILES = [
