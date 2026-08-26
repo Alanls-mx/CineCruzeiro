@@ -3,6 +3,7 @@ import { Movie, Session } from "@/types";
 
 export const CART_STORAGE_KEY = "cine-cruzeiro-cart";
 const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
+const UPLOAD_ASSET_VERSION = "2";
 export const PUBLIC_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
 
 export function assetPath(path: string) {
@@ -15,7 +16,8 @@ export function publicAssetPath(value: string | undefined | null) {
   if (!url || /^(data:|blob:|https?:)/i.test(url)) return url;
   if (PUBLIC_BASE_PATH && url.startsWith(`${PUBLIC_BASE_PATH}/`)) return url;
   if (url.startsWith("/uploads/") || url.startsWith("/images/") || url.startsWith("/trailers/")) {
-    return assetPath(url);
+    const publicUrl = assetPath(url);
+    return url.startsWith("/uploads/") ? `${publicUrl}?v=${UPLOAD_ASSET_VERSION}` : publicUrl;
   }
   return url;
 }

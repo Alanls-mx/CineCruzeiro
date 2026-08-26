@@ -4878,7 +4878,7 @@ async function serveStatic(req, res, pathname) {
       res.writeHead(200, {
         ...securityHeaders(),
         "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-        "Cache-Control": "public, max-age=31536000, immutable"
+        "Cache-Control": "public, max-age=300, must-revalidate"
       });
       res.end(file);
       return;
