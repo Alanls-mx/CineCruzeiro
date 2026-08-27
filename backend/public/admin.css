@@ -537,14 +537,14 @@ h1 {
 
 .split-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  grid-template-columns: minmax(310px, 0.82fr) minmax(420px, 1.18fr);
   gap: 18px;
   align-items: start;
   min-width: 0;
 }
 
 .split-grid.compact {
-  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  grid-template-columns: minmax(320px, 0.92fr) minmax(380px, 1.08fr);
 }
 
 .surface {
@@ -1391,7 +1391,7 @@ input[type="file"]::file-selector-button {
 
 .club-plan-workspace {
   display: grid;
-  grid-template-columns: minmax(300px, 0.72fr) minmax(620px, 1.45fr);
+  grid-template-columns: minmax(330px, 0.76fr) minmax(620px, 1.41fr);
   gap: 18px;
   align-items: start;
   min-width: 0;

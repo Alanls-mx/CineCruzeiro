@@ -4387,7 +4387,40 @@ function integrationFieldInput(field, integration) {
     `;
   }
   const secret = integration.secrets?.[field.key];
-  const placeholder = field.secret && secret?.hasValue ? "Manter valor salvo" : field.key === "serviceAccountJson" ? "Cole aqui o JSON novo da Service Account" : "";
+  const placeholders = {
+    publicKey: "Ex.: APP_USR-...",
+    accessToken: "Cole o token de acesso",
+    webhookSecret: "Cole o segredo do webhook",
+    pointStoreId: "Ex.: STORE123",
+    pointPosId: "Ex.: POS001",
+    pointDeviceId: "Ex.: DEVICE001",
+    clientId: "Ex.: 000000000000-abc.apps.googleusercontent.com",
+    clientSecret: "Cole o segredo do cliente",
+    redirectUri: "Ex.: https://seusite.com/api/auth/google/callback",
+    issuerId: "Ex.: 3388000000020000000",
+    classId: "Ex.: emissor.classe_ingresso",
+    serviceAccountJson: "Cole o JSON completo da Service Account",
+    origins: "Ex.: https://seusite.com",
+    apiKey: "Cole a chave da API",
+    bearerToken: "Cole o bearer token",
+    fromEmail: "Ex.: ingressos@seusite.com",
+    fromName: "Ex.: Cine Cruzeiro",
+    replyTo: "Ex.: atendimento@seusite.com",
+    notificationEmail: "Ex.: contato@seusite.com",
+    smtpHost: "Ex.: smtp.seuprovedor.com",
+    smtpPort: "Ex.: 587",
+    smtpUser: "Ex.: ingressos@seusite.com",
+    smtpPassword: "Cole a senha SMTP",
+    webhookUrl: "Ex.: https://api.seusite.com/webhook",
+    googleMeasurementId: "Ex.: G-XXXXXXXXXX",
+    metaPixelId: "Ex.: 123456789012345",
+    url: "Ex.: https://crm.seusite.com/webhook",
+    secret: "Cole o segredo de assinatura",
+    events: "Ex.: order.created,payment.approved",
+    timeout: "Ex.: 8000",
+    retryLimit: "Ex.: 2"
+  };
+  const placeholder = field.secret && secret?.hasValue ? "Valor já salvo; preencha apenas para substituir" : field.placeholder || placeholders[field.key] || "";
   const common = `data-integration-field="${escapeHtml(field.key)}" ${field.secret ? `data-secret="true" autocomplete="off" spellcheck="false"` : ""} placeholder="${escapeHtml(placeholder)}"`;
   const labelClass = field.multiline ? "full" : "";
   if (field.multiline) {

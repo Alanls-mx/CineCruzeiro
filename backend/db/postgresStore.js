@@ -173,8 +173,12 @@ async function loadDbFromPostgres() {
       orderItemsByOrder.set(item.order_id, list);
     });
 
+    const appSettings = settings.rows[0]?.value || {};
+
     return {
-      settings: settings.rows[0]?.value || {},
+      settings: appSettings,
+      integrations: appSettings.integrations || {},
+      emailCampaigns: appSettings.emailCampaigns || [],
       rooms: rooms.rows.map((row) => ({
         id: row.id,
         name: row.name,

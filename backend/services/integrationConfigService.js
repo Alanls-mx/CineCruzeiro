@@ -185,7 +185,12 @@ function providerKey(provider) {
 }
 
 function ensureStore(db) {
-  db.integrations ||= {};
+  db.settings ||= {};
+  const persisted = db.settings.integrations;
+  if (!db.integrations || !Object.keys(db.integrations).length) {
+    db.integrations = persisted && typeof persisted === "object" ? persisted : {};
+  }
+  db.settings.integrations = db.integrations;
   return db.integrations;
 }
 
