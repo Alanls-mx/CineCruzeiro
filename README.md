@@ -266,7 +266,7 @@ Fluxo operacional:
 6. recusa, expiração ou cancelamento não emitem ingressos;
 7. a mesma confirmação pode ser reenviada sem duplicar pedidos ou tickets.
 
-O comprovante do vendedor pode ser impresso pela própria Point. O ingresso físico do cinema é liberado no painel para impressão apenas depois da aprovação.
+O comprovante do vendedor pode ser impresso pela própria Point nas cobranças processadas pela maquininha. Nas vendas rápidas concluídas como `Dinheiro`, `Pix no balcão` ou `Cortesia`, o backend usa a API oficial de ações de impressão (`POST /terminals/v1/actions`) para enviar um ingresso personalizado à Point Smart configurada, com filme, sessão, sala, tipo, código e QR Code. A falha da impressora não desfaz a venda: o painel informa o problema e o ingresso continua disponível para impressão individual.
 
 Endpoints administrativos:
 

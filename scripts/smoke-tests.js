@@ -1032,6 +1032,30 @@ async function run() {
     assert.equal(allowedTicketTypeSale.payload.tickets.length, 2);
     assert.ok(allowedTicketTypeSale.payload.tickets.every((ticket) => ticket.ticketType === "Ingresso Promocional"));
 
+    const wrongSessionValidation = await request("/api/tickets/validate", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        code: allowedTicketTypeSale.payload.tickets[0].code,
+        sessionId: TEST_SECOND_SESSION_ID
+      })
+    });
+    assert.equal(wrongSessionValidation.response.status, 409);
+    assert.equal(wrongSessionValidation.payload.result, "wrong_session");
+    assert.equal(wrongSessionValidation.payload.error.code, "TICKET_SESSION_MISMATCH");
+    assert.notEqual(wrongSessionValidation.payload.ticket.status, "used");
+
+    const correctSessionValidation = await request("/api/tickets/validate", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        code: allowedTicketTypeSale.payload.tickets[0].code,
+        sessionId: TEST_SESSION_ID
+      })
+    });
+    assert.equal(correctSessionValidation.response.status, 200);
+    assert.equal(correctSessionValidation.payload.ticket.status, "used");
+
     const bundledTicketSale = await request("/api/box-office/sales", {
       method: "POST",
       headers: jsonHeaders(adminCookie),

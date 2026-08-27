@@ -107,6 +107,8 @@ let state = {
   qrTorchTrack: null,
   qrCameraPermission: "unknown",
   qrAutoRestartTimer: null,
+  validationSessionLock: false,
+  validationSessionId: "",
   toastTimer: null,
   refreshStatusTimer: null,
   logsSearchTimer: null,
@@ -551,6 +553,7 @@ function renderAll() {
   fillSettingsForm();
   renderRoomOptions();
   renderManualSaleOptions();
+  renderValidationSessionScope();
   document.querySelectorAll("form[data-dirty-track]").forEach((form) => markFormClean(form));
 }
 
@@ -3007,9 +3010,13 @@ async function createManualTicket(event) {
       return;
     }
     await loadContent({ silent: true });
+    const pointPrint = result.pointPrint || {};
+    const printMessage = pointPrint.status === "queued"
+      ? " Os ingressos foram enviados para impressão na Point."
+      : pointPrint.message ? ` ${pointPrint.message}` : "";
     showSuccess(
       "Venda finalizada",
-      `${orders.length} ${orders.length === 1 ? "pedido criado" : "pedidos criados"} e ${(result.tickets || []).length} ingresso(s) atribuído(s) ao cliente.`
+      `${orders.length} ${orders.length === 1 ? "pedido criado" : "pedidos criados"} e ${(result.tickets || []).length} ingresso(s) emitido(s).${printMessage}`
     );
   } catch (error) {
     showToast(error.message, "error");
@@ -3274,6 +3281,68 @@ function setBoxOfficeTab(tab) {
   }
 }
 
+function validationSessionOptions() {
+  const today = state.content?.calendar?.today || new Date().toLocaleDateString("sv-SE");
+  return (state.content?.movies || [])
+    .flatMap((movie) => (movie.sessions || []).map((session) => ({
+      ...session,
+      movieId: movie.id,
+      movieTitle: movie.title || "Filme"
+    })))
+    .filter((session) => session.id && session.date >= today && !["cancelled", "hidden"].includes(String(session.status || "").toLowerCase()))
+    .sort((a, b) => String(`${a.date} ${a.time} ${a.movieTitle}`).localeCompare(String(`${b.date} ${b.time} ${b.movieTitle}`)));
+}
+
+function validationSessionLabel(session = {}) {
+  const date = session.date
+    ? new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })
+    : "Sem data";
+  return `${date} • ${session.time || "--:--"} • ${session.movieTitle || "Filme"}${session.format ? ` • ${session.format}` : ""}`;
+}
+
+function renderValidationSessionScope() {
+  const lock = $("ticketValidationSessionLock");
+  const field = $("ticketValidationSessionField");
+  const select = $("ticketValidationSessionSelect");
+  const hint = $("ticketValidationSessionHint");
+  if (!lock || !field || !select || !hint) return;
+
+  const sessions = validationSessionOptions();
+  if (!sessions.some((session) => session.id === state.validationSessionId)) {
+    state.validationSessionId = sessions[0]?.id || "";
+  }
+  if (!sessions.length) state.validationSessionLock = false;
+
+  lock.checked = state.validationSessionLock;
+  lock.disabled = sessions.length === 0;
+  field.hidden = !state.validationSessionLock;
+  select.disabled = !state.validationSessionLock || sessions.length === 0;
+  select.innerHTML = sessions.length
+    ? sessions.map((session) => `<option value="${escapeHtml(session.id)}">${escapeHtml(validationSessionLabel(session))}</option>`).join("")
+    : `<option value="">Nenhuma sessão futura disponível</option>`;
+  if (state.validationSessionId) select.value = state.validationSessionId;
+
+  const selected = sessions.find((session) => session.id === state.validationSessionId);
+  hint.classList.toggle("locked", state.validationSessionLock && Boolean(selected));
+  hint.textContent = state.validationSessionLock && selected
+    ? `Proteção ativa: somente ${validationSessionLabel(selected)}.`
+    : sessions.length
+      ? "O leitor aceitará ingressos de qualquer sessão válida."
+      : "Não há sessões futuras disponíveis para restringir o leitor.";
+}
+
+function updateValidationSessionLock() {
+  state.validationSessionLock = Boolean($("ticketValidationSessionLock")?.checked);
+  if (state.validationSessionLock && !state.validationSessionId) {
+    state.validationSessionId = validationSessionOptions()[0]?.id || "";
+  }
+  renderValidationSessionScope();
+  $("ticketValidationResult").className = "validation-result scanner-ready";
+  $("ticketValidationResult").textContent = state.validationSessionLock
+    ? "Filtro de sessão ativado. Ingressos de outras sessões serão recusados sem serem utilizados."
+    : "Filtro removido. O leitor aceita qualquer sessão válida.";
+}
+
 function ticketResultDetails(ticket = {}) {
   return [
     ticket.movieTitle || "Ingresso Cine Cruzeiro",
@@ -3305,6 +3374,11 @@ function renderTicketValidationResult(type, payload = {}) {
       title: "Sessão indisponível",
       copy: message || "Este ingresso está expirado, cancelado ou fora da janela de validação.",
       action: "Tentar novamente"
+    },
+    wrongSession: {
+      title: "Ingresso de outra sessão",
+      copy: message || "Este ingresso não pertence à sessão escolhida e não foi utilizado.",
+      action: "Escanear próximo"
     },
     invalid: {
       title: "Ingresso inválido",
@@ -3339,9 +3413,14 @@ async function validateTicketByCode(code, options = {}) {
   setQrReaderActive(false, "Validando no servidor...");
 
   try {
+    const sessionId = state.validationSessionLock ? state.validationSessionId : "";
+    if (state.validationSessionLock && !sessionId) {
+      showToast("Escolha a sessão permitida antes de validar.", "error");
+      return;
+    }
     const result = await api("/api/tickets/validate", {
       method: "POST",
-      body: JSON.stringify({ code: cleanCode })
+      body: JSON.stringify({ code: cleanCode, sessionId })
     });
     renderTicketValidationResult("ok", { ticket: result.ticket });
     if ($("ticketValidationCode")) $("ticketValidationCode").value = result.ticket?.code || cleanCode;
@@ -3354,6 +3433,8 @@ async function validateTicketByCode(code, options = {}) {
       const payload = error.payload || {};
       const resultType = payload.result === "used"
         ? "used"
+        : payload.result === "wrong_session" || payload.error?.code === "TICKET_SESSION_MISMATCH"
+          ? "wrongSession"
         : payload.result === "expired"
           ? "expired"
           : payload.error?.code === "TICKET_PAYMENT_PENDING"
@@ -5562,6 +5643,11 @@ function bindEvents() {
   $("stopQrButton").addEventListener("click", stopQrReader);
   $("torchQrButton").addEventListener("click", toggleQrTorch);
   $("manualCodeToggle").addEventListener("click", toggleManualCodeBox);
+  $("ticketValidationSessionLock").addEventListener("change", updateValidationSessionLock);
+  $("ticketValidationSessionSelect").addEventListener("change", (event) => {
+    state.validationSessionId = event.target.value;
+    renderValidationSessionScope();
+  });
   $("validateTicketButton").addEventListener("click", () => validateTicketByCode());
   $("ticketValidationCode").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {

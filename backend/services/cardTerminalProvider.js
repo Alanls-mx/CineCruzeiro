@@ -44,6 +44,54 @@ function decimalAmount(value) {
   return number.toFixed(2);
 }
 
+function printText(value, maxLength = 80) {
+  return String(value || "")
+    .replace(/[{}]/g, "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function brazilianDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : printText(value, 10);
+}
+
+function ticketPrintContent(tickets = []) {
+  const normalized = (Array.isArray(tickets) ? tickets : []).filter(Boolean);
+  if (!normalized.length) {
+    throw providerError("Nenhum ingresso foi informado para impressão.", 400, "POINT_PRINT_TICKETS_MISSING");
+  }
+
+  let content = "{center}{w}{b}CINE CRUZEIRO{/b}{/w}{br}{s}INGRESSO FISICO{/s}{/center}{br}";
+  normalized.forEach((ticket, index) => {
+    const movie = printText(ticket.movieTitle || "Filme", 38);
+    const date = brazilianDate(ticket.sessionDate);
+    const time = printText(ticket.sessionTime, 5);
+    const format = printText(ticket.sessionFormat, 24);
+    const room = printText(ticket.sessionRoom || "Sala Cruzeiro", 30);
+    const type = printText(ticket.ticketType || "Ingresso", 24);
+    const code = printText(ticket.code, 42);
+    const qrPayload = printText(ticket.qrPayload || ticket.code, 160);
+    content += `{center}{b}${index + 1}/${normalized.length} - ${movie}{/b}{br}`;
+    content += `${date} ${time}${format ? ` - ${format}` : ""}{br}`;
+    content += `${room}{br}${type}{br}{s}${code}{/s}{br}`;
+    content += `{qr}${qrPayload}{/qr}{br}--------------------------------{/center}{br}`;
+  });
+  content += "{center}{s}Apresente o QR Code na entrada.{/s}{/center}{br}";
+
+  if (content.length > 4096) {
+    throw providerError(
+      "A venda possui ingressos demais para uma única impressão na Point. Use a impressão individual pelo painel.",
+      400,
+      "POINT_PRINT_CONTENT_TOO_LARGE",
+      { contentLength: content.length, ticketCount: normalized.length }
+    );
+  }
+  return content.padEnd(100, " ");
+}
+
 function normalizeStatus(order = {}) {
   const status = String(order.status || "").toLowerCase();
   const detail = String(order.status_detail || order.statusDetail || "").toLowerCase();
@@ -143,6 +191,38 @@ async function createPayment(order = {}, config = {}, options = {}) {
   return { ...normalizeOrder(payload), idempotencyKey };
 }
 
+async function createTicketPrint(tickets = [], config = {}, options = {}) {
+  if (!cardTerminalConfigured(config)) {
+    throw providerError("Configure e habilite um Terminal ID do Mercado Pago Point.", 412, "POINT_NOT_CONFIGURED");
+  }
+  const externalReference = safeReference(options.externalReference || `ticket-print-${Date.now()}`);
+  const idempotencyKey = String(options.idempotencyKey || crypto.randomUUID());
+  const content = ticketPrintContent(tickets);
+  const payload = await request("/terminals/v1/actions", config, {
+    method: "POST",
+    headers: { "X-Idempotency-Key": idempotencyKey },
+    body: {
+      type: "print",
+      external_reference: externalReference,
+      config: {
+        point: {
+          terminal_id: terminalId(config),
+          subtype: "custom"
+        }
+      },
+      content
+    }
+  });
+  return {
+    id: String(payload.id || ""),
+    status: String(payload.status || "created"),
+    externalReference: String(payload.external_reference || externalReference),
+    terminalId: String(payload.config?.point?.terminal_id || terminalId(config)),
+    subtype: String(payload.config?.point?.subtype || "custom"),
+    idempotencyKey
+  };
+}
+
 async function getStatus(providerOrderId, config = {}) {
   if (!providerOrderId) throw providerError("Order ID do Point não informado.", 400, "POINT_ORDER_ID_MISSING");
   return normalizeOrder(await request(`/v1/orders/${encodeURIComponent(providerOrderId)}`, config));
@@ -185,6 +265,8 @@ module.exports = {
   manualTerminalPaymentMetadata,
   listTerminals,
   createPayment,
+  createTicketPrint,
+  ticketPrintContent,
   getStatus,
   cancelPayment,
   refundPayment,

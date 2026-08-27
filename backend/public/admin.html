@@ -772,6 +772,24 @@
                 <span id="qrReaderStatus">Câmera desligada</span>
               </div>
 
+              <section class="validation-scope" aria-labelledby="validationScopeTitle">
+                <div class="validation-scope-heading">
+                  <div>
+                    <strong id="validationScopeTitle">Sessão da validação</strong>
+                    <span>Opcional: bloqueie o leitor para aceitar somente a sessão selecionada.</span>
+                  </div>
+                  <label class="validation-scope-toggle">
+                    <input id="ticketValidationSessionLock" type="checkbox" />
+                    <span>Restringir a uma sessão</span>
+                  </label>
+                </div>
+                <label id="ticketValidationSessionField" class="validation-session-field" hidden>
+                  Sessão permitida
+                  <select id="ticketValidationSessionSelect" aria-describedby="ticketValidationSessionHint"></select>
+                </label>
+                <p id="ticketValidationSessionHint" class="validation-scope-status" aria-live="polite">O leitor aceitará ingressos de qualquer sessão válida.</p>
+              </section>
+
               <div id="qrReaderFrame" class="qr-reader" aria-label="Leitor de QR Code">
                 <video id="qrVideo" playsinline autoplay muted></video>
                 <div class="qr-reader-placeholder">

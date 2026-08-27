@@ -1602,7 +1602,7 @@ function searchCustomers(db, query) {
     .map(sanitizeUser);
 }
 
-function validateTicket(db, code, adminUser) {
+function validateTicket(db, code, adminUser, expectedSessionId = "") {
   const ticketCode = extractTicketCode(code);
   const ticket = (db.tickets || []).find((item) => item.code === ticketCode);
   if (!ticket) {
@@ -1612,6 +1612,28 @@ function validateTicket(db, code, adminUser) {
     throw error;
   }
   const order = (db.orders || []).find((item) => item.id === ticket.orderId);
+  const requiredSessionId = String(expectedSessionId || "").trim();
+  if (requiredSessionId) {
+    const requiredMovie = (db.movies || []).find((movie) => (movie.sessions || []).some((session) => session.id === requiredSessionId));
+    const requiredSession = requiredMovie?.sessions?.find((session) => session.id === requiredSessionId);
+    if (!requiredSession) {
+      const error = new Error("A sessão selecionada para validação não existe mais. Atualize o painel e escolha novamente.");
+      error.statusCode = 400;
+      error.code = "VALIDATION_SESSION_NOT_FOUND";
+      throw error;
+    }
+    const actualSessionId = String(ticket.sessionId || order?.sessionId || "").trim();
+    if (actualSessionId !== requiredSessionId) {
+      const date = String(requiredSession.date || "").split("-").reverse().join("/");
+      const error = new Error(`Este ingresso não pertence à sessão selecionada (${requiredMovie.title}, ${date} às ${requiredSession.time}). Ele não foi utilizado.`);
+      error.statusCode = 409;
+      error.code = "TICKET_SESSION_MISMATCH";
+      error.ticket = enrichTicket(db, ticket);
+      error.expectedSessionId = requiredSessionId;
+      error.actualSessionId = actualSessionId;
+      throw error;
+    }
+  }
   const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
   if (status === "used") {
     const error = new Error(`Ingresso ja validado em ${new Date(ticket.usedAt).toLocaleString("pt-BR")}.`);
@@ -8534,6 +8556,76 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(...payments);
       lockedDb.orders.unshift(...orders);
       await writeDb(lockedDb);
+      let pointPrint = {
+        requested: false,
+        status: "not_requested",
+        terminalId: "",
+        actionId: "",
+        message: ""
+      };
+      if (saleMode === "quick" && ["cash", "external_pix", "courtesy"].includes(paymentMethod)) {
+        const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
+        if (!cardTerminalProvider.configured(mercadoPagoConfig)) {
+          pointPrint = {
+            ...pointPrint,
+            status: "not_configured",
+            message: "A venda foi concluída, mas o Mercado Pago Point não está habilitado para imprimir o ingresso."
+          };
+        } else {
+          try {
+            const printAction = await cardTerminalProvider.createTicketPrint(
+              tickets.map((ticket) => enrichTicket(lockedDb, ticket)),
+              mercadoPagoConfig,
+              {
+                externalReference: `print-${batchId}`,
+                idempotencyKey: `print-${batchId}`
+              }
+            );
+            pointPrint = {
+              requested: true,
+              status: "queued",
+              terminalId: printAction.terminalId,
+              actionId: printAction.id,
+              message: "Os ingressos foram enviados para impressão na Point."
+            };
+            orders.forEach((order) => {
+              order.pointPrint = {
+                status: pointPrint.status,
+                actionId: pointPrint.actionId,
+                terminalId: pointPrint.terminalId,
+                requestedAt: new Date().toISOString()
+              };
+            });
+            await writeDb(lockedDb);
+            logEvent("info", "box_office_ticket_print.queued", {
+              actionId: printAction.id,
+              terminalId: printAction.terminalId,
+              orderIds: orders.map((order) => order.id),
+              ticketIds: tickets.map((ticket) => ticket.id),
+              paymentMethod,
+              createdBy: adminUser.id
+            });
+          } catch (error) {
+            pointPrint = {
+              requested: true,
+              status: "failed",
+              terminalId: String(mercadoPagoConfig.pointDeviceId || ""),
+              actionId: "",
+              code: error.code || "POINT_PRINT_FAILED",
+              message: `A venda foi concluída, mas a Point não recebeu a impressão: ${error.message}`
+            };
+            logEvent("warn", "box_office_ticket_print.failed", {
+              code: pointPrint.code,
+              message: error.message,
+              terminalId: pointPrint.terminalId,
+              orderIds: orders.map((order) => order.id),
+              ticketIds: tickets.map((ticket) => ticket.id),
+              paymentMethod,
+              createdBy: adminUser.id
+            });
+          }
+        }
+      }
       logEvent("info", "box_office_sale.created", {
         orderId: orders[0].id,
         orderIds: orders.map((order) => order.id),
@@ -8551,6 +8643,7 @@ async function handleApi(req, res, pathname) {
         payments,
         tickets,
         batchId,
+        pointPrint,
         totalPrice: orders.reduce((sum, order) => sum + Number(order.totalPrice || 0), 0)
       });
     });
@@ -8563,7 +8656,7 @@ async function handleApi(req, res, pathname) {
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
         const adminUser = getAdminUser(req, lockedDb);
-        const ticket = validateTicket(lockedDb, body.code || body.qrPayload, adminUser);
+        const ticket = validateTicket(lockedDb, body.code || body.qrPayload, adminUser, body.sessionId);
         lockedDb.auditLogs ||= [];
         lockedDb.auditLogs.push({
           id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
@@ -8591,7 +8684,7 @@ async function handleApi(req, res, pathname) {
           const lockedDb = await readDb();
           const adminUser = getAdminUser(req, lockedDb);
           const failedTicketId = error.ticket?.id || "";
-          const result = error.code === "TICKET_ALREADY_USED" ? "used" : error.code === "TICKET_EXPIRED" ? "expired" : "invalid";
+          const result = error.code === "TICKET_ALREADY_USED" ? "used" : error.code === "TICKET_EXPIRED" ? "expired" : error.code === "TICKET_SESSION_MISMATCH" ? "wrong_session" : "invalid";
           lockedDb.auditLogs ||= [];
           lockedDb.auditLogs.push({
             id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
@@ -8607,6 +8700,8 @@ async function handleApi(req, res, pathname) {
               operatorId: adminUser?.id || "",
               validatedAt: new Date().toISOString(),
               result,
+              expectedSessionId: error.expectedSessionId || String(body.sessionId || ""),
+              actualSessionId: error.actualSessionId || error.ticket?.sessionId || "",
               code: error.code || "TICKET_VALIDATION_FAILED",
               message: error.message,
               payloadPreview: String(body.code || body.qrPayload || "").slice(0, 80)
@@ -8619,7 +8714,7 @@ async function handleApi(req, res, pathname) {
       }
       sendJson(res, error.statusCode || 400, {
         ok: false,
-        result: error.code === "TICKET_ALREADY_USED" ? "used" : error.code === "TICKET_EXPIRED" ? "expired" : "invalid",
+        result: error.code === "TICKET_ALREADY_USED" ? "used" : error.code === "TICKET_EXPIRED" ? "expired" : error.code === "TICKET_SESSION_MISMATCH" ? "wrong_session" : "invalid",
         error: {
           code: error.code || "TICKET_VALIDATION_FAILED",
           message: error.message

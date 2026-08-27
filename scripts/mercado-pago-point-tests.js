@@ -12,6 +12,15 @@ global.fetch = async (url, options = {}) => {
   if (url.endsWith("/cancel")) {
     return new Response(JSON.stringify({ id: "ORD_POINT_1", external_reference: "point-venda-1", status: "canceled", total_amount: "35.00" }), { status: 200 });
   }
+  if (url.endsWith("/terminals/v1/actions")) {
+    return new Response(JSON.stringify({
+      id: "PRINT_ACTION_1",
+      type: "print",
+      external_reference: "print-venda-1",
+      status: "created",
+      config: { point: { terminal_id: "PAX_A910__123", subtype: "custom" } }
+    }), { status: 201 });
+  }
   if (url.endsWith("/v1/orders/ORD_POINT_1")) {
     return new Response(JSON.stringify({
       id: "ORD_POINT_1",
@@ -76,6 +85,41 @@ async function run() {
   const terminals = await point.listTerminals(config);
   assert.deepEqual(terminals.map((terminal) => terminal.id), ["PAX_A910__123"]);
   assert.equal(terminals[0].operatingMode, "PDV");
+
+  const printContent = point.ticketPrintContent([{
+    movieTitle: "Filme de Teste",
+    sessionDate: "2026-08-27",
+    sessionTime: "19:00",
+    sessionFormat: "2D Dublado",
+    sessionRoom: "Sala Cruzeiro",
+    ticketType: "Inteira",
+    code: "CC-ABCDEF123456",
+    qrPayload: "CINECRUZEIRO:TICKET:CC-ABCDEF123456"
+  }]);
+  assert.ok(printContent.includes("27/08/2026 19:00"));
+  assert.ok(printContent.includes("{qr}CINECRUZEIRO:TICKET:CC-ABCDEF123456{/qr}"));
+
+  const printed = await point.createTicketPrint([{
+    movieTitle: "Filme de Teste",
+    sessionDate: "2026-08-27",
+    sessionTime: "19:00",
+    sessionFormat: "2D Dublado",
+    sessionRoom: "Sala Cruzeiro",
+    ticketType: "Inteira",
+    code: "CC-ABCDEF123456",
+    qrPayload: "CINECRUZEIRO:TICKET:CC-ABCDEF123456"
+  }], config, {
+    externalReference: "print-venda-1",
+    idempotencyKey: "idem-print-venda-1"
+  });
+  assert.equal(printed.id, "PRINT_ACTION_1");
+  assert.equal(printed.status, "created");
+  const printCall = calls.find((call) => call.url.endsWith("/terminals/v1/actions"));
+  assert.equal(printCall.options.headers["X-Idempotency-Key"], "idem-print-venda-1");
+  assert.equal(printCall.body.type, "print");
+  assert.equal(printCall.body.config.point.terminal_id, "PAX_A910__123");
+  assert.equal(printCall.body.config.point.subtype, "custom");
+  assert.ok(printCall.body.content.includes("Filme de Teste"));
 
   const cancelled = await point.cancelPayment("ORD_POINT_1", config, { idempotencyKey: "cancel-1" });
   assert.equal(cancelled.status, "cancelled");
