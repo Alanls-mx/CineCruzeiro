@@ -547,8 +547,8 @@ h1 {
   grid-template-columns: minmax(320px, 0.92fr) minmax(380px, 1.08fr);
 }
 
-.concessions-workspace {
-  grid-template-columns: minmax(360px, 0.96fr) minmax(440px, 1.04fr);
+.split-grid.compact.concessions-workspace {
+  grid-template-columns: minmax(380px, 0.96fr) minmax(440px, 1.04fr);
 }
 
 .surface {
@@ -3453,6 +3453,7 @@ th {
   .layout,
   .split-grid,
   .split-grid.compact,
+  .split-grid.compact.concessions-workspace,
   .dashboard-main-grid {
     grid-template-columns: 1fr;
   }
