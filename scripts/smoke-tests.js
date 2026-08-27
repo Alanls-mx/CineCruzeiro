@@ -9,6 +9,7 @@ const PORT = 4199;
 const BASE_URL = `http://localhost:${PORT}`;
 const TEST_MOVIE_ID = "smoke-programacao";
 const TEST_SESSION_ID = "smoke-programacao-1";
+const TEST_EXPIRED_SESSION_ID = "smoke-programacao-expirada";
 const TEST_SECOND_MOVIE_ID = "smoke-programacao-2";
 const TEST_SECOND_SESSION_ID = "smoke-programacao-2-sessao";
 
@@ -108,6 +109,17 @@ async function run() {
         format: "2D Dublado",
         room: "Sala Cruzeiro (Laser 4K)",
         ticketTypeIds: ["promocional", "triple-smoke"],
+        priceFull: 10,
+        priceHalf: 10,
+        status: "available"
+      },
+      {
+        id: TEST_EXPIRED_SESSION_ID,
+        date: "2000-01-01",
+        time: "19:00",
+        format: "2D Dublado",
+        room: "Sala Cruzeiro (Laser 4K)",
+        ticketTypeIds: ["promocional"],
         priceFull: 10,
         priceHalf: 10,
         status: "available"
@@ -1073,6 +1085,40 @@ async function run() {
     assert.equal(editedOrder.response.status, 200);
     assert.equal(editedOrder.payload.order.customerPhone, "11888888888");
     assert.ok(Array.isArray(editedOrder.payload.order.auditTrail));
+
+    const archivedOrder = await request(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
+      method: "PATCH",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ action: "archive", reason: "Arquivamento smoke" })
+    });
+    assert.equal(archivedOrder.response.status, 200);
+    assert.equal(archivedOrder.payload.order.archived, true);
+    assert.ok(archivedOrder.payload.order.archivedAt);
+    assert.ok(archivedOrder.payload.order.auditTrail.some((entry) => entry.action === "archive"));
+
+    const restoredOrder = await request(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
+      method: "PATCH",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ action: "unarchive", reason: "Restauração smoke" })
+    });
+    assert.equal(restoredOrder.response.status, 200);
+    assert.equal(restoredOrder.payload.order.archived, false);
+    assert.equal(restoredOrder.payload.order.archivedAt, "");
+    assert.ok(restoredOrder.payload.order.auditTrail.some((entry) => entry.action === "unarchive"));
+
+    const expiredQuickSale = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_EXPIRED_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        saleMode: "quick",
+        paymentMethod: "cash"
+      })
+    });
+    assert.equal(expiredQuickSale.response.status, 409);
+    assert.equal(expiredQuickSale.payload.error.code, "SESSION_SALES_CLOSED");
 
     const deletionSale = await request("/api/box-office/sales", {
       method: "POST",

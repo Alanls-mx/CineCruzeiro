@@ -52,6 +52,7 @@ let state = {
   orderFilters: {
     todayOrigin: "all",
     todayStatus: "all",
+    archiveStatus: "active",
     allQuery: ""
   },
   issuedTicketFilters: {
@@ -2273,20 +2274,32 @@ function renderOrders() {
   renderManualSaleOptions();
   const orders = state.content?.orders || [];
   const query = (state.orderFilters.allQuery || "").toLowerCase();
-  const filteredOrders = query
-    ? orders.filter((order) => [
+  let filteredOrders = orders.filter((order) => {
+    if (state.orderFilters.archiveStatus === "archived") return order.archived === true;
+    if (state.orderFilters.archiveStatus === "active") return order.archived !== true;
+    return true;
+  });
+  filteredOrders = query
+    ? filteredOrders.filter((order) => [
         orderReference(order),
         order.customerName,
         order.customerEmail,
         order.customerPhone,
         order.movieTitle,
         order.sessionTime,
+        order.saleMode,
         ...(order.tickets || []).map((ticket) => ticket.code)
       ].join(" ").toLowerCase().includes(query))
-    : orders;
-  renderOrdersTable("ordersList", filteredOrders, { compact: false });
+    : filteredOrders;
+  renderOrdersTable("ordersList", filteredOrders, {
+    compact: false,
+    emptyTitle: state.orderFilters.archiveStatus === "archived" ? "Nenhum pedido arquivado" : "Nenhum pedido encontrado",
+    emptyMessage: state.orderFilters.archiveStatus === "archived"
+      ? "Os pedidos arquivados ficam preservados e podem ser restaurados aqui."
+      : "Ajuste a busca ou aguarde uma nova venda."
+  });
   const today = state.content?.calendar?.today || new Date().toISOString().slice(0, 10);
-  let todayOrders = orders.filter((order) => String(order.createdAt || "").slice(0, 10) === today);
+  let todayOrders = orders.filter((order) => order.archived !== true && String(order.createdAt || "").slice(0, 10) === today);
   if (state.orderFilters.todayOrigin !== "all") todayOrders = todayOrders.filter((order) => String(order.origin || "online") === state.orderFilters.todayOrigin);
   if (state.orderFilters.todayStatus !== "all") {
     todayOrders = todayOrders.filter((order) => {
@@ -2322,8 +2335,8 @@ function renderOrdersTable(targetId, orders, options = {}) {
   if (!orders.length) {
     target.innerHTML = `
       <div class="empty-state">
-        <strong>Nenhum pedido registrado ainda</strong>
-        <span>As vendas online e de bilheteria aparecem aqui automaticamente.</span>
+        <strong>${escapeHtml(options.emptyTitle || "Nenhum pedido registrado ainda")}</strong>
+        <span>${escapeHtml(options.emptyMessage || "As vendas online e de bilheteria aparecem aqui automaticamente.")}</span>
       </div>
     `;
     return;
@@ -2370,15 +2383,17 @@ function renderOrdersTable(targetId, orders, options = {}) {
               (order) => {
                 const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name)} x${Number(item.quantity || 0)}`).join("<br>") || "Sem extras";
                 const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>`).join(" ");
+                const quickSale = order.saleMode === "quick";
+                const customerLabel = quickSale ? "Venda rápida" : order.customerName || "Cliente avulso";
                 return `
-                <tr class="order-table-row" onclick="openOrderView('${escapeHtml(order.id)}')">
+                <tr class="order-table-row ${order.archived ? "is-archived" : ""}" onclick="openOrderView('${escapeHtml(order.id)}')">
                   <td data-label="Data/Hora"><strong>${escapeHtml(orderReference(order))}</strong><br><span class="list-meta">${new Date(order.createdAt).toLocaleString("pt-BR")}</span></td>
-                  <td data-label="Cliente">${escapeHtml(order.customerName || "Venda rápida")}<br><span class="list-meta">${escapeHtml(order.customerPhone || order.customerEmail || "")}</span></td>
+                  <td data-label="Cliente">${escapeHtml(customerLabel)}<br><span class="list-meta">${escapeHtml(quickSale ? "Sem identificação do cliente" : order.customerPhone || order.customerEmail || "")}</span></td>
                   <td data-label="Filme/Sessão"><strong>${escapeHtml(order.movieTitle || "-")}</strong><br><span class="list-meta">${escapeHtml([order.sessionTime, order.sessionFormat].filter(Boolean).join(" • ") || "-")}</span></td>
                   <td data-label="Itens">${orderTicketCount(order)} ingresso(s)<br><span class="list-meta">${extras}</span>${tickets ? `<div class="ticket-code-row">${tickets}</div>` : ""}</td>
                   <td data-label="Total"><strong>${money(order.totalPrice)}</strong></td>
                   <td data-label="Pagamento">${escapeHtml(originLabel(order.origin || "online"))}<br><span class="list-meta">${escapeHtml(paymentMethodLabel(order.paymentMethod))}</span></td>
-                  <td data-label="Status"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
+                  <td data-label="Status"><div class="order-status-stack"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span>${order.archived ? '<span class="status-label archived">Arquivado</span>' : ""}</div></td>
                   <td data-label="Ações" onclick="event.stopPropagation()">
                     <div class="context-menu">
                       <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
@@ -2455,11 +2470,12 @@ function orderDetailHtml(order) {
       ["Referência", orderReference(order)],
       ["Data", new Date(order.createdAt).toLocaleString("pt-BR")],
       ["Origem", originLabel(order.origin || "online")],
-      ["Status", orderStatusLabel(order.status)]
+      ["Status", orderStatusLabel(order.status)],
+      ["Arquivamento", order.archived ? `Arquivado em ${new Date(order.archivedAt || order.updatedAt).toLocaleString("pt-BR")}` : "Pedido ativo"]
     ])}
     ${sectionHtml("Cliente", [
-      ["Tipo", order.customerUserId ? "Usuário cadastrado" : order.customerName ? "Cliente avulso" : "Venda rápida"],
-      ["Nome", order.customerName || "Venda rápida"],
+      ["Tipo", order.saleMode === "quick" ? "Venda rápida" : order.customerUserId ? "Usuário cadastrado" : "Cliente avulso"],
+      ["Nome", order.saleMode === "quick" ? "Sem identificação do cliente" : order.customerName || "Cliente avulso"],
       ["Contato", [order.customerPhone, order.customerEmail].filter(Boolean).join(" • ") || "-"]
     ])}
     ${sectionHtml("Sessão", [
@@ -2491,7 +2507,7 @@ function fillOrderEditor(order, mode) {
   $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
   $("orderEditFields").hidden = mode !== "edit";
   $("orderSaveButton").hidden = mode !== "edit";
-  $("orderCancelButton").hidden = !order || order.status === "cancelled" || order.status === "refunded";
+  $("orderCancelButton").hidden = !order || order.archived || order.status === "cancelled" || order.status === "refunded";
   $("orderPermanentDeleteButton").hidden = !order || !isOwnerAdmin();
   if (order) {
     $("orderCustomerName").value = order.customerName || "";
@@ -2578,6 +2594,22 @@ async function archiveOrderAdmin(orderId = state.selectedOrderId) {
   }
 }
 
+async function restoreOrderAdmin(orderId = state.selectedOrderId) {
+  const order = (state.content?.orders || []).find((item) => item.id === orderId);
+  if (!order || !order.archived || !confirm("Restaurar este pedido para a lista de ativos?")) return;
+  try {
+    await api(`/api/orders/${encodeURIComponent(order.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action: "unarchive", reason: "Restaurado pelo painel" })
+    });
+    await loadContent({ silent: true });
+    closeOrderOverlay();
+    showToast("Pedido restaurado.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
 function closeFloatingActionMenu() {
   const menu = $("floatingActionMenu");
   if (!menu) return;
@@ -2606,6 +2638,8 @@ function toggleOrderMenu(orderId, event) {
   const floating = $("floatingActionMenu");
   const anchor = event?.currentTarget;
   if (!floating || !anchor) return;
+  const order = (state.content?.orders || []).find((item) => item.id === orderId);
+  if (!order) return;
   if (!floating.hidden && floating.dataset.orderId === orderId) {
     closeFloatingActionMenu();
     return;
@@ -2616,8 +2650,10 @@ function toggleOrderMenu(orderId, event) {
     <button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>
     <button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>
     <button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>
-    <button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>
-    <button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>
+    ${order.archived ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
+    ${order.archived
+      ? `<button type="button" onclick="restoreOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Restaurar pedido</button>`
+      : `<button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>`}
     <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>
   `;
   positionFloatingMenu(anchor, floating);
@@ -2725,16 +2761,46 @@ function renderPaymentsCenter() {
   `;
 }
 
+function manualSessionStartsAt(session = {}) {
+  const date = String(session.date || "").slice(0, 10);
+  const time = /^\d{2}:\d{2}$/.test(String(session.time || "")) ? session.time : "00:00";
+  const parsed = new Date(`${date}T${time}:00-03:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isManualSessionSellable(session = {}, now = new Date()) {
+  if (!session || session.status === "sold_out") return false;
+  const startsAt = manualSessionStartsAt(session);
+  return startsAt ? startsAt.getTime() + 10 * 60 * 1000 > now.getTime() : false;
+}
+
+function manualSessionsForDate(movie, date) {
+  return (movie?.sessions || [])
+    .filter((session) => session.date === date && isManualSessionSellable(session))
+    .sort((a, b) => (manualSessionStartsAt(a)?.getTime() || 0) - (manualSessionStartsAt(b)?.getTime() || 0));
+}
+
 function renderManualSaleOptions() {
   const movies = state.content?.movies || [];
   const movieSelect = $("manualMovieSelect");
-  if (!movieSelect) return;
+  const dateInput = $("manualSessionDate");
+  if (!movieSelect || !dateInput) return;
 
-  const selectedMovieId = movieSelect.value || movies.find((movie) => movie.sessions?.length)?.id || movies[0]?.id || "";
-  movieSelect.innerHTML = movies
+  const sellableSessions = movies.flatMap((movie) => (movie.sessions || []).filter((session) => isManualSessionSellable(session)));
+  const availableDates = [...new Set(sellableSessions.map((session) => session.date).filter(Boolean))].sort();
+  const today = state.content?.calendar?.today || new Date().toISOString().slice(0, 10);
+  dateInput.min = today;
+  if (!dateInput.value) dateInput.value = availableDates[0] || today;
+
+  const moviesForDate = movies.filter((movie) => manualSessionsForDate(movie, dateInput.value).length);
+  const selectedMovieId = moviesForDate.some((movie) => movie.id === movieSelect.value)
+    ? movieSelect.value
+    : moviesForDate[0]?.id || "";
+  movieSelect.innerHTML = moviesForDate.length ? moviesForDate
     .map((movie) => `<option value="${movie.id}">${escapeHtml(movie.title)}</option>`)
-    .join("");
+    .join("") : `<option value="">Sem filmes nesta data</option>`;
   movieSelect.value = selectedMovieId;
+  movieSelect.disabled = moviesForDate.length === 0;
   renderManualSessionOptions();
   renderSaleMode();
   renderManualSaleItems();
@@ -2743,19 +2809,32 @@ function renderManualSaleOptions() {
 function renderManualSessionOptions() {
   const movieId = $("manualMovieSelect")?.value;
   const movie = (state.content?.movies || []).find((item) => item.id === movieId);
-  const sessions = movie?.sessions || [];
-  const selectedSessionId = $("manualSessionSelect")?.value || sessions[0]?.id || "";
+  const selectedDate = $("manualSessionDate")?.value || "";
+  const sessions = manualSessionsForDate(movie, selectedDate);
+  const selectedSessionId = sessions.some((session) => session.id === $("manualSessionSelect")?.value)
+    ? $("manualSessionSelect").value
+    : sessions[0]?.id || "";
   $("manualSessionSelect").innerHTML = sessions.length
-    ? sessions.map((session) => `<option value="${session.id}">${session.time} • ${escapeHtml(session.format)}</option>`).join("")
-    : `<option value="">Sem sessões</option>`;
+    ? sessions.map((session) => `<option value="${session.id}">${escapeHtml(session.time)} • ${escapeHtml(session.format)} • ${escapeHtml(session.room || "Sala")}</option>`).join("")
+    : `<option value="">Sem sessões disponíveis</option>`;
   if (selectedSessionId) $("manualSessionSelect").value = selectedSessionId;
+  $("manualSessionSelect").disabled = sessions.length === 0;
+  $("manualAddMovieButton").disabled = sessions.length === 0;
+  const availability = $("manualSessionAvailability");
+  if (availability) {
+    const formattedDate = selectedDate ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR") : "a data selecionada";
+    availability.textContent = sessions.length
+      ? `${sessions.length} ${sessions.length === 1 ? "sessão disponível" : "sessões disponíveis"} em ${formattedDate}. Sessões encerradas não são exibidas.`
+      : `Nenhuma sessão disponível em ${formattedDate}. Escolha outra data.`;
+  }
   renderManualTicketTypes();
   updateManualTotal();
 }
 
 function currentManualMovieSession() {
   const movie = (state.content?.movies || []).find((item) => item.id === $("manualMovieSelect").value);
-  const session = movie?.sessions?.find((item) => item.id === $("manualSessionSelect").value) || movie?.sessions?.[0];
+  const session = manualSessionsForDate(movie, $("manualSessionDate")?.value || "")
+    .find((item) => item.id === $("manualSessionSelect").value);
   return { movie, session };
 }
 
@@ -5439,6 +5518,7 @@ function bindEvents() {
   $("pointPaymentRetryButton")?.addEventListener("click", () => pollPointPayment({ manual: true }));
   $("pointPaymentCancelButton")?.addEventListener("click", cancelPointPayment);
   $("pointPaymentNewSaleButton")?.addEventListener("click", resetPointPaymentPanel);
+  $("manualSessionDate").addEventListener("change", renderManualSaleOptions);
   $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
   $("manualSessionSelect").addEventListener("change", renderManualTicketTypes);
   $("manualAddMovieButton").addEventListener("click", addManualSaleItem);
@@ -5694,6 +5774,7 @@ window.openOrderView = openOrderView;
 window.openOrderEdit = openOrderEdit;
 window.cancelOrDeleteOrder = cancelOrDeleteOrder;
 window.archiveOrderAdmin = archiveOrderAdmin;
+window.restoreOrderAdmin = restoreOrderAdmin;
 window.openPermanentDelete = openPermanentDelete;
 window.toggleOrderMenu = toggleOrderMenu;
 window.closeFloatingActionMenu = closeFloatingActionMenu;

@@ -3850,6 +3850,7 @@ function cancelOrder(db, order, reason, adminUser) {
 }
 
 function archiveOrder(order, reason, adminUser) {
+  if (order.archived === true) return;
   const before = structuredCloneSafe(order);
   const now = new Date().toISOString();
   order.archived = true;
@@ -3861,6 +3862,24 @@ function archiveOrder(order, reason, adminUser) {
     action: "archive",
     updatedBy: order.archivedBy,
     reason: String(reason || "Arquivado pelo painel").trim(),
+    before,
+    after: structuredCloneSafe(order)
+  });
+}
+
+function unarchiveOrder(order, reason, adminUser) {
+  if (order.archived !== true) return;
+  const before = structuredCloneSafe(order);
+  const now = new Date().toISOString();
+  order.archived = false;
+  order.archivedAt = "";
+  order.archivedBy = "";
+  order.archivedByEmail = "";
+  order.updatedAt = now;
+  appendOrderAudit(order, {
+    action: "unarchive",
+    updatedBy: adminUser?.id || "",
+    reason: String(reason || "Restaurado pelo painel").trim(),
     before,
     after: structuredCloneSafe(order)
   });
@@ -8986,6 +9005,8 @@ async function handleApi(req, res, pathname) {
         cancelOrder(lockedDb, order, body.reason, req.adminUser);
       } else if (body.action === "archive") {
         archiveOrder(order, body.reason, req.adminUser);
+      } else if (body.action === "unarchive") {
+        unarchiveOrder(order, body.reason, req.adminUser);
       } else {
         safeOrderUpdate(order, body, req.adminUser);
       }

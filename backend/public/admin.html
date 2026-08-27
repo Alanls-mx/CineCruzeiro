@@ -709,7 +709,11 @@
                 <span>Sem cadastro e sem dados do cliente. Escolha a sessão, confirme a quantidade e finalize.</span>
               </div>
 
-              <div class="field-row">
+              <div class="field-row manual-session-fields">
+                <label>
+                  Data da sessão
+                  <input id="manualSessionDate" type="date" />
+                </label>
                 <label>
                   Filme
                   <select id="manualMovieSelect"></select>
@@ -719,6 +723,7 @@
                   <select id="manualSessionSelect"></select>
                 </label>
               </div>
+              <p id="manualSessionAvailability" class="helper-text" aria-live="polite"></p>
               <div id="manualTicketTypes" class="manual-ticket-types" aria-label="Tipos de ingresso disponíveis"></div>
 
               <div class="manual-sale-add-row">
@@ -829,6 +834,11 @@
                   Buscar pedido
                   <input id="ordersSearch" placeholder="Cliente, filme, código ou referência" />
                 </label>
+                <div class="segmented-filter" data-order-filter="archiveStatus" aria-label="Arquivamento dos pedidos">
+                  <button class="active" type="button" data-value="active">Ativos</button>
+                  <button type="button" data-value="archived">Arquivados</button>
+                  <button type="button" data-value="all">Todos</button>
+                </div>
               </div>
               <div id="ordersList" class="orders-table"></div>
             </div>
@@ -1828,6 +1838,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260827-point-1"></script>
+    <script src="admin/admin.js?v=20260827-orders-1"></script>
   </body>
 </html>
