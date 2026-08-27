@@ -37,7 +37,7 @@ export interface Movie {
   releaseDate?: string;
   autoPublish?: boolean;
   publishedAt?: string;
-  tag?: "Estreia" | "Destaque da Semana" | "Últimos Dias" | "Em Breve" | "Sessão Família";
+  tag?: "Pré-Estreia" | "Estreia" | "Destaque da Semana" | "Últimos Dias" | "Em Breve" | "Sessão Família";
   sessions: Session[];
 }
 

@@ -738,6 +738,11 @@ h1 {
   color: #fde047;
 }
 
+.movie-status-pill.pre-premiere {
+  background: rgba(56, 189, 248, 0.13);
+  color: #7dd3fc;
+}
+
 .movie-status-pill.soon {
   background: rgba(96, 165, 250, 0.13);
   color: #93c5fd;

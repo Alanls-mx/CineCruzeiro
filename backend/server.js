@@ -22,6 +22,11 @@ const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const { createStorageService } = require("./services/storageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
+const {
+  applyMovieTagTransition,
+  startMovieTagTransition,
+  stopMovieTagTransition
+} = require("./utils/movieTagLifecycle");
 
 const requestContext = new AsyncLocalStorage();
 
@@ -664,6 +669,16 @@ function applyScheduledPremieres(db) {
       };
     }
     return movie;
+  });
+  return changed;
+}
+
+function applyAutomatedMovieTags(db, now = new Date()) {
+  let changed = false;
+  db.movies = (db.movies || []).map((movie) => {
+    const result = applyMovieTagTransition(movie, now);
+    if (result.changed) changed = true;
+    return result.movie;
   });
   return changed;
 }
@@ -3207,6 +3222,14 @@ function normalizeMovie(input, existing = {}) {
         status: session.status || "available"
       }))
     : existing.sessions || [];
+  const tag = input.tag || existing.tag || "Em Breve";
+  const existingMetadata = existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {};
+  let metadata = input.metadata && typeof input.metadata === "object" ? input.metadata : existingMetadata;
+  if (tag !== existing.tag) {
+    metadata = tag === "Pré-Estreia"
+      ? startMovieTagTransition(metadata)
+      : stopMovieTagTransition(metadata);
+  }
 
   return {
     id,
@@ -3219,7 +3242,7 @@ function normalizeMovie(input, existing = {}) {
     synopsis: input.synopsis || existing.synopsis || "",
     duration: input.duration || existing.duration || "1h 40m",
     director: input.director || existing.director || "",
-    metadata: input.metadata && typeof input.metadata === "object" ? input.metadata : existing.metadata || {},
+    metadata,
     genre: Array.isArray(input.genre)
       ? input.genre
       : String(input.genre || existing.genre || "")
@@ -3243,7 +3266,7 @@ function normalizeMovie(input, existing = {}) {
     releaseDate: input.releaseDate !== undefined ? input.releaseDate : existing.releaseDate || "",
     autoPublish: input.autoPublish !== undefined ? Boolean(input.autoPublish) : Boolean(existing.autoPublish),
     publishedAt: workflowStatus === "published" ? (input.publishedAt || existing.publishedAt || new Date().toISOString()) : input.publishedAt || existing.publishedAt || "",
-    tag: input.tag || existing.tag || "Em Breve",
+    tag,
     updatedAt: new Date().toISOString(),
     sessions
   };
@@ -5248,10 +5271,11 @@ async function handleApi(req, res, pathname) {
 
   const db = await readDb();
   const scheduledChanged = applyScheduledPremieres(db);
+  const movieTagsChanged = applyAutomatedMovieTags(db);
   const reservationsChanged = expireStaleReservations(db);
   const subscriptionMaintenance = await expirePendingPaymentSubscriptions(db);
   const subscriptionLifecycle = finalizeEndingSubscriptions(db);
-  if (scheduledChanged || reservationsChanged || subscriptionMaintenance.changed || subscriptionLifecycle.changed) {
+  if (scheduledChanged || movieTagsChanged || reservationsChanged || subscriptionMaintenance.changed || subscriptionLifecycle.changed) {
     await writeDb(db);
   }
 
@@ -8235,14 +8259,17 @@ async function runSubscriptionMaintenance() {
   try {
     await withCriticalMutation(async () => {
       const db = await readDb();
+      const scheduledChanged = applyScheduledPremieres(db);
+      const movieTagsChanged = applyAutomatedMovieTags(db);
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
-      if (result.changed || lifecycle.changed) {
+      if (scheduledChanged || movieTagsChanged || result.changed || lifecycle.changed) {
         await writeDb(db);
         logEvent("info", "subscription.pending_payment_maintenance", {
           expired: result.expired,
           failed: result.failed,
-          finalized: lifecycle.finalized
+          finalized: lifecycle.finalized,
+          catalogUpdated: scheduledChanged || movieTagsChanged
         });
       }
     });

@@ -6,6 +6,7 @@ type MovieTagBadgeProps = {
 };
 
 const tagStyles: Record<string, string> = {
+  "pre-estreia": "bg-cyan-400 text-cyan-950",
   estreia: "bg-gold-400 text-slate-950",
   "ultimos dias": "bg-rose-500 text-white",
   "destaque da semana": "bg-brand-600 text-white",

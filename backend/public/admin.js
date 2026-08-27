@@ -319,6 +319,7 @@ function moviePriorityState(movie = {}) {
   const tag = String(movie.tag || "").toLowerCase();
   const status = String(movie.status || "").toLowerCase();
   if (status === "hidden") return { label: "Oculto", className: "hidden" };
+  if (tag.includes("pré-estreia") || tag.includes("pre-estreia")) return { label: "Pré-Estreia", className: "pre-premiere" };
   if (tag.includes("estreia")) return { label: "Estreia", className: "premiere" };
   if (status === "now_playing") return { label: "Em cartaz", className: "now" };
   return { label: "Em breve", className: "soon" };
