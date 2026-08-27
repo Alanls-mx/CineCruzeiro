@@ -28,6 +28,7 @@ export default function EventosPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error" | "">("");
   const [loading, setLoading] = useState(false);
+  const preserveTransparentImages = settings.eventTransparentImages === true;
 
   useEffect(() => {
     fetchCinemaContent()
@@ -79,13 +80,13 @@ export default function EventosPage() {
               Solicitar orçamento
             </a>
           </div>
-          <div className="relative min-h-[360px] overflow-hidden rounded-[10px] shadow-[0_30px_90px_rgba(0,0,0,.45)] lg:min-h-[560px]">
+          <div className={`relative min-h-[360px] overflow-hidden rounded-[10px] shadow-[0_30px_90px_rgba(0,0,0,.45)] lg:min-h-[560px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
             {settings.eventHeroImageUrl ? (
-              <Image src={settings.eventHeroImageUrl} alt="Sala de cinema reservada para evento privado" fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} className="object-cover" sizes="(max-width: 1024px) 100vw, 56vw" />
+              <Image src={settings.eventHeroImageUrl} alt="Sala de cinema reservada para evento privado" fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} className={preserveTransparentImages ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 1024px) 100vw, 56vw" />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
-            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,10,18,.05),rgba(6,10,18,.78))]" />
+            <div className={`absolute inset-0 ${preserveTransparentImages ? "bg-[linear-gradient(180deg,transparent_58%,rgba(6,10,18,.82))]" : "bg-[linear-gradient(180deg,rgba(6,10,18,.05),rgba(6,10,18,.78))]"}`} />
             <p className="absolute bottom-0 left-0 max-w-md p-6 font-display text-3xl font-black leading-tight">A tela grande vira aniversário, campeonato, apresentação ou sessão privada.</p>
           </div>
         </section>
@@ -93,17 +94,17 @@ export default function EventosPage() {
         <section className="mx-auto max-w-[1320px] px-4 py-10 sm:px-6 lg:px-8">
           <div className="grid gap-8 md:grid-cols-[1.08fr_.92fr]">
             <div className="grid gap-5">
-              <Experience image={settings.eventGamesImageUrl || ""} icon={<Gamepad2 />} title="Games" text="Console na tela grande, som da sala e clima de campeonato com os amigos." />
-              <Experience image={settings.eventPartiesImageUrl || ""} icon={<PartyPopper />} title="Aniversários e festas" text="Sessão especial, bomboniere e registro fotográfico para transformar a data em estreia." />
-              <Experience image={settings.eventCorporateImageUrl || ""} icon={<Building2 />} title="Corporativo" text="Treinamentos, apresentações e encontros fora da sala de reunião convencional." />
+              <Experience image={settings.eventGamesImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<Gamepad2 />} title="Games" text="Console na tela grande, som da sala e clima de campeonato com os amigos." />
+              <Experience image={settings.eventPartiesImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<PartyPopper />} title="Aniversários e festas" text="Sessão especial, bomboniere e registro fotográfico para transformar a data em estreia." />
+              <Experience image={settings.eventCorporateImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<Building2 />} title="Corporativo" text="Treinamentos, apresentações e encontros fora da sala de reunião convencional." />
             </div>
-            <div className="relative min-h-[420px] overflow-hidden rounded-[10px]">
+            <div className={`relative min-h-[420px] overflow-hidden rounded-[10px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
               {settings.eventGalleryImageUrl ? (
-                <Image src={settings.eventGalleryImageUrl} alt="Público entrando em uma sala de cinema" fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} className="object-cover" sizes="(max-width: 768px) 100vw, 42vw" />
+                <Image src={settings.eventGalleryImageUrl} alt="Público entrando em uma sala de cinema" fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} className={preserveTransparentImages ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 768px) 100vw, 42vw" />
               ) : (
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(250,204,21,.18),transparent_32%),linear-gradient(135deg,#0d1930,#030712)]" />
               )}
-              <div className="absolute inset-0 bg-brand-950/35" />
+              <div className={`absolute inset-0 ${preserveTransparentImages ? "bg-brand-950/5" : "bg-brand-950/35"}`} />
             </div>
           </div>
         </section>
@@ -177,12 +178,12 @@ export default function EventosPage() {
   );
 }
 
-function Experience({ image, icon, title, text }: { image: string; icon: React.ReactNode; title: string; text: string }) {
+function Experience({ image, preserveTransparency, icon, title, text }: { image: string; preserveTransparency: boolean; icon: React.ReactNode; title: string; text: string }) {
   return (
     <article className="grid gap-4 sm:grid-cols-[190px_1fr]">
-      <div className="relative min-h-[160px] overflow-hidden rounded-[10px]">
+      <div className={`relative min-h-[160px] overflow-hidden rounded-[10px] ${preserveTransparency ? "bg-[#091122]" : ""}`}>
         {image ? (
-          <Image src={image} alt={title} fill unoptimized={isUploadedAsset(image)} className="object-cover" sizes="(max-width: 640px) 100vw, 190px" />
+          <Image src={image} alt={title} fill unoptimized={isUploadedAsset(image)} className={preserveTransparency ? "object-contain p-4" : "object-cover"} sizes="(max-width: 640px) 100vw, 190px" />
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.24),transparent_38%),linear-gradient(135deg,#0d1930,#030712)]" />
         )}

@@ -963,6 +963,25 @@ async function run() {
     assert.equal(bundledTicketSale.payload.tickets.length, 6);
     assert.ok(bundledTicketSale.payload.tickets.every((ticket) => ticket.ticketType === "Triple Ingresso"));
 
+    const fiscalPrepared = await request("/api/admin/fiscal-documents", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ orderId: boxOfficeSale.payload.order.id })
+    });
+    assert.equal(fiscalPrepared.response.status, 201);
+    assert.equal(fiscalPrepared.payload.document.orderId, boxOfficeSale.payload.order.id);
+    assert.ok(["pending_configuration", "ready"].includes(fiscalPrepared.payload.document.status));
+
+    const fiscalList = await request("/api/admin/fiscal-documents?page=1&pageSize=10", { headers: jsonHeaders(adminCookie) });
+    assert.equal(fiscalList.response.status, 200);
+    assert.ok(fiscalList.payload.documents.some((document) => document.orderId === boxOfficeSale.payload.order.id));
+    assert.ok(fiscalList.payload.summary.total >= 1);
+
+    const fiscalReport = await fetch(`${BASE_URL}/api/admin/fiscal-reports.csv?period=30d`, { headers: { Cookie: adminCookie } });
+    assert.equal(fiscalReport.status, 200);
+    assert.match(fiscalReport.headers.get("content-type") || "", /text\/csv/);
+    assert.match(await fiscalReport.text(), /Referência/);
+
     const adminLogs = await request("/api/admin/logs?page=1&pageSize=10", { headers: jsonHeaders(adminCookie) });
     assert.equal(adminLogs.response.status, 200);
     assert.ok(Array.isArray(adminLogs.payload.logs));

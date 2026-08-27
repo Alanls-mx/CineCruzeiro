@@ -78,6 +78,54 @@ const DEFINITIONS = {
       { key: "webhookSecret", label: "Segredo do webhook", type: "secret" }
     ]
   },
+  fiscal: {
+    name: "Nota fiscal",
+    purpose: "Emissão, consulta, download e entrega de NFS-e pela Focus NFe",
+    defaults: {
+      enabled: false,
+      environment: "sandbox",
+      provider: "focus_nfe",
+      autoIssue: false,
+      autoEmail: true,
+      cnpj: "",
+      municipalRegistration: "",
+      municipalityCode: "",
+      serviceListItem: "",
+      municipalTaxCode: "",
+      serviceDescription: "Ingressos e serviços cinematográficos do pedido {{pedido}}",
+      natureOperation: "1",
+      specialTaxRegime: "",
+      simpleNational: false,
+      culturalIncentive: false,
+      issWithheld: false,
+      issRate: 0,
+      includeConcessionsInServiceAmount: false,
+      timeout: 15000
+    },
+    secrets: ["apiToken", "webhookAuthorization"],
+    fields: [
+      { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
+      { key: "provider", label: "Provedor", type: "select", options: ["focus_nfe"] },
+      { key: "apiToken", label: "Token da API Focus NFe", type: "secret" },
+      { key: "webhookAuthorization", label: "Autorização do webhook", type: "secret" },
+      { key: "autoIssue", label: "Emitir automaticamente após pagamento aprovado", type: "boolean" },
+      { key: "autoEmail", label: "Enviar nota autorizada por e-mail", type: "boolean" },
+      { key: "cnpj", label: "CNPJ do Cine Cruzeiro", type: "text", placeholder: "00.000.000/0000-00" },
+      { key: "municipalRegistration", label: "Inscrição municipal", type: "text" },
+      { key: "municipalityCode", label: "Código IBGE do município", type: "text", placeholder: "7 dígitos" },
+      { key: "serviceListItem", label: "Item da lista de serviço", type: "text", placeholder: "Ex.: 12.02" },
+      { key: "municipalTaxCode", label: "Código tributário municipal", type: "text" },
+      { key: "serviceDescription", label: "Discriminação do serviço", type: "text", multiline: true },
+      { key: "natureOperation", label: "Natureza da operação", type: "text" },
+      { key: "specialTaxRegime", label: "Regime especial de tributação", type: "text" },
+      { key: "simpleNational", label: "Optante pelo Simples Nacional", type: "boolean" },
+      { key: "culturalIncentive", label: "Incentivador cultural", type: "boolean" },
+      { key: "issWithheld", label: "ISS retido", type: "boolean" },
+      { key: "issRate", label: "Alíquota de ISS", type: "number" },
+      { key: "includeConcessionsInServiceAmount", label: "Incluir bomboniere no valor de serviço", type: "boolean" },
+      { key: "timeout", label: "Timeout em ms", type: "number" }
+    ]
+  },
   analytics: {
     name: "Medição e anúncios",
     purpose: "Google Analytics 4 e Meta Pixel com carregamento após consentimento",
@@ -137,6 +185,15 @@ const ENV = {
     fromName: ["SMTP_FROM_NAME", "EMAIL_FROM_NAME"],
     replyTo: ["SMTP_REPLY_TO", "EMAIL_REPLY_TO"],
     notificationEmail: ["EVENTS_EMAIL", "CONTACT_EMAIL", "SMTP_NOTIFICATION_EMAIL"]
+  },
+  fiscal: {
+    apiToken: ["FOCUS_NFE_API_TOKEN", "FOCUS_NFE_TOKEN"],
+    webhookAuthorization: ["FOCUS_NFE_WEBHOOK_AUTHORIZATION", "FOCUS_NFE_WEBHOOK_SECRET"],
+    cnpj: ["CINE_CNPJ", "FISCAL_CNPJ"],
+    municipalRegistration: ["CINE_MUNICIPAL_REGISTRATION", "FISCAL_MUNICIPAL_REGISTRATION"],
+    municipalityCode: ["CINE_MUNICIPALITY_CODE", "FISCAL_MUNICIPALITY_CODE"],
+    serviceListItem: ["FISCAL_SERVICE_LIST_ITEM"],
+    municipalTaxCode: ["FISCAL_MUNICIPAL_TAX_CODE"]
   },
   analytics: {
     googleMeasurementId: ["GOOGLE_ANALYTICS_MEASUREMENT_ID", "NEXT_PUBLIC_GA_MEASUREMENT_ID"],
@@ -224,6 +281,7 @@ function isConfigured(provider, config) {
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && config.serviceAccountJson);
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
+  if (provider === "fiscal") return Boolean(config.apiToken && config.cnpj && config.municipalRegistration && config.municipalityCode && config.serviceListItem && config.municipalTaxCode);
   if (provider === "analytics") return Boolean(config.googleMeasurementId || config.metaPixelId);
   if (provider === "crm") return Boolean(config.url);
   return false;

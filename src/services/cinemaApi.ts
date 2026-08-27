@@ -167,8 +167,10 @@ export interface CinemaContent {
     defaultTicketPrice?: number;
     announcementEnabled?: boolean;
     announcementText?: string;
+    clubTransparentImages?: boolean;
     clubHeroImageUrl?: string;
     clubBannerImageUrl?: string;
+    eventTransparentImages?: boolean;
     eventHeroImageUrl?: string;
     eventGamesImageUrl?: string;
     eventPartiesImageUrl?: string;
@@ -302,8 +304,10 @@ export function normalizeCinemaContent(data: Record<string, any>): CinemaContent
       : [],
     settings: {
       ...(data.settings || {}),
+      clubTransparentImages: data.settings?.clubTransparentImages === true,
       clubHeroImageUrl: publicAssetPath(data.settings?.clubHeroImageUrl),
       clubBannerImageUrl: publicAssetPath(data.settings?.clubBannerImageUrl),
+      eventTransparentImages: data.settings?.eventTransparentImages === true,
       eventHeroImageUrl: publicAssetPath(data.settings?.eventHeroImageUrl),
       eventGamesImageUrl: publicAssetPath(data.settings?.eventGamesImageUrl),
       eventPartiesImageUrl: publicAssetPath(data.settings?.eventPartiesImageUrl),

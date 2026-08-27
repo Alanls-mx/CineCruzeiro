@@ -45,6 +45,7 @@ export default function ClubePage() {
     () => [...plans].sort((a, b) => Number(a.displayOrder || 100) - Number(b.displayOrder || 100)),
     [plans]
   );
+  const preserveTransparentImages = settings.clubTransparentImages === true;
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
@@ -67,7 +68,7 @@ export default function ClubePage() {
               </Link>
             </div>
           </div>
-          <div className="relative min-h-[190px] overflow-hidden rounded-[10px] shadow-[0_18px_44px_rgba(0,0,0,.32)] sm:min-h-[220px] lg:min-h-[280px]">
+          <div className={`relative min-h-[190px] overflow-hidden rounded-[10px] shadow-[0_18px_44px_rgba(0,0,0,.32)] sm:min-h-[220px] lg:min-h-[280px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
             {uploadedImageUrl(settings.clubHeroImageUrl) ? (
               <Image
                 src={uploadedImageUrl(settings.clubHeroImageUrl)}
@@ -77,12 +78,12 @@ export default function ClubePage() {
                 unoptimized={isUploadedAsset(settings.clubHeroImageUrl)}
                 quality={72}
                 sizes="(max-width: 768px) 100vw, 44vw"
-                className="object-cover"
+                className={preserveTransparentImages ? "object-contain p-4 sm:p-6" : "object-cover"}
               />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
-            <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_32%,rgba(6,10,18,.9))]" />
+            <div className={`absolute inset-0 ${preserveTransparentImages ? "bg-[linear-gradient(180deg,transparent_58%,rgba(6,10,18,.88))]" : "bg-[linear-gradient(180deg,transparent_32%,rgba(6,10,18,.9))]"}`} />
             <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5">
               <p className="max-w-[15rem] font-display text-lg font-black leading-tight sm:text-xl">Créditos prontos para a próxima sessão.</p>
             </div>
@@ -135,7 +136,7 @@ export default function ClubePage() {
         </section>
 
         <section className="mx-auto grid max-w-[1320px] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[.9fr_1.1fr] lg:px-8">
-          <div className="relative min-h-[320px] overflow-hidden rounded-[10px]">
+          <div className={`relative min-h-[320px] overflow-hidden rounded-[10px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
             {uploadedImageUrl(settings.clubBannerImageUrl) ? (
               <Image
                 src={uploadedImageUrl(settings.clubBannerImageUrl)}
@@ -144,12 +145,12 @@ export default function ClubePage() {
                 unoptimized={isUploadedAsset(settings.clubBannerImageUrl)}
                 quality={72}
                 sizes="(max-width: 1024px) 100vw, 45vw"
-                className="object-cover"
+                className={preserveTransparentImages ? "object-contain p-5 sm:p-8" : "object-cover"}
               />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(250,204,21,.18),transparent_32%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
-            <div className="absolute inset-0 bg-brand-950/25" />
+            <div className={`absolute inset-0 ${preserveTransparentImages ? "bg-brand-950/5" : "bg-brand-950/25"}`} />
           </div>
           <div className="self-center">
             <h2 className="font-display text-4xl font-black">Como funciona</h2>

@@ -152,6 +152,7 @@ async function loadDbFromPostgres() {
     const orderItems = await client.query("SELECT * FROM order_items");
     const payments = await client.query("SELECT * FROM payments ORDER BY created_at DESC");
     const tickets = await client.query("SELECT * FROM tickets ORDER BY created_at DESC");
+    const fiscalDocuments = await client.query("SELECT * FROM fiscal_documents ORDER BY created_at DESC").catch(() => ({ rows: [] }));
     const webhookEvents = await client.query("SELECT * FROM webhook_events ORDER BY created_at DESC");
     const auditLogs = await client.query("SELECT * FROM audit_logs ORDER BY created_at DESC");
     const subscriptionPlans = await client.query("SELECT * FROM subscription_plans ORDER BY monthly_price, name").catch(() => ({ rows: [] }));
@@ -340,6 +341,39 @@ async function loadDbFromPostgres() {
         usedAt: row.used_at ? new Date(row.used_at).toISOString() : "",
         usedBy: row.used_by || "",
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : ""
+      })),
+      fiscalDocuments: fiscalDocuments.rows.map((row) => ({
+        id: row.id,
+        orderId: row.order_id,
+        reference: row.reference,
+        type: row.document_type || "nfse",
+        provider: row.provider || "focus_nfe",
+        environment: row.environment || "sandbox",
+        status: row.status,
+        customerName: row.customer_name || "",
+        customerEmail: row.customer_email || "",
+        customerTaxId: row.customer_tax_id || "",
+        amount: num(row.amount),
+        serviceAmount: num(row.service_amount),
+        concessionAmount: num(row.concession_amount),
+        invoiceNumber: row.invoice_number || "",
+        verificationCode: row.verification_code || "",
+        providerStatus: row.provider_status || "",
+        municipalUrl: row.municipal_url || "",
+        pdfUrl: row.pdf_url || "",
+        xmlUrl: row.xml_url || "",
+        lastError: row.last_error || "",
+        attempts: Number(row.attempts || 0),
+        autoIssued: Boolean(row.auto_issued),
+        emailStatus: row.email_status || "pending",
+        emailSentAt: row.email_sent_at ? new Date(row.email_sent_at).toISOString() : "",
+        issuedAt: row.issued_at ? new Date(row.issued_at).toISOString() : "",
+        authorizedAt: row.authorized_at ? new Date(row.authorized_at).toISOString() : "",
+        cancelledAt: row.cancelled_at ? new Date(row.cancelled_at).toISOString() : "",
+        metadata: row.metadata || {},
+        history: asArray(row.history),
+        createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
+        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
       })),
       webhookEvents: webhookEvents.rows.map((row) => ({
         ...(row.payload || {}),
@@ -536,6 +570,7 @@ async function writeDbToPostgres(db) {
     await query(client, "DELETE FROM subscriptions").catch(() => null);
     await query(client, "DELETE FROM subscription_plans").catch(() => null);
     await query(client, "DELETE FROM order_items");
+    await query(client, "DELETE FROM fiscal_documents").catch(() => null);
     await query(client, "DELETE FROM tickets");
     await query(client, "DELETE FROM payments");
     await query(client, "DELETE FROM orders");
@@ -790,6 +825,45 @@ async function writeDbToPostgres(db) {
         payment.cancelledAt || "",
         payment.refundedAt || "",
         payment
+      ]);
+    }
+
+    for (const document of asArray(db.fiscalDocuments)) {
+      if (!asArray(db.orders).some((order) => order.id === document.orderId)) continue;
+      await query(client, `INSERT INTO fiscal_documents
+        (id, order_id, reference, document_type, provider, environment, status, customer_name, customer_email, customer_tax_id, amount, service_amount, concession_amount, invoice_number, verification_code, provider_status, municipal_url, pdf_url, xml_url, last_error, attempts, auto_issued, email_status, email_sent_at, issued_at, authorized_at, cancelled_at, metadata, history, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,NULLIF($26,'')::timestamptz,NULLIF($27,'')::timestamptz,$28,$29,COALESCE(NULLIF($30,'')::timestamptz, now()),COALESCE(NULLIF($31,'')::timestamptz, now()))`, [
+        document.id,
+        document.orderId,
+        document.reference,
+        document.type || "nfse",
+        document.provider || "focus_nfe",
+        document.environment || "sandbox",
+        document.status || "queued",
+        document.customerName || "",
+        document.customerEmail || "",
+        document.customerTaxId || "",
+        num(document.amount),
+        num(document.serviceAmount),
+        num(document.concessionAmount),
+        document.invoiceNumber || "",
+        document.verificationCode || "",
+        document.providerStatus || "",
+        document.municipalUrl || "",
+        document.pdfUrl || "",
+        document.xmlUrl || "",
+        document.lastError || "",
+        Number(document.attempts || 0),
+        Boolean(document.autoIssued),
+        document.emailStatus || "pending",
+        document.emailSentAt || "",
+        document.issuedAt || "",
+        document.authorizedAt || "",
+        document.cancelledAt || "",
+        jsonParam(document.metadata, {}),
+        jsonParam(document.history, []),
+        document.createdAt || "",
+        document.updatedAt || ""
       ]);
     }
 

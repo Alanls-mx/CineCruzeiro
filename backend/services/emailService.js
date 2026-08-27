@@ -349,6 +349,40 @@ async function sendTicketTransfer(db, input = {}) {
   return Boolean(toSent || fromSent);
 }
 
+async function sendFiscalDocument(db, document = {}, order = {}, options = {}) {
+  const email = String(document.customerEmail || order.customerEmail || "").trim().toLowerCase();
+  if (!email || document.status !== "authorized") return false;
+  const links = [
+    button("Baixar nota fiscal em PDF", options.pdfUrl || document.pdfUrl),
+    button("Baixar XML", options.xmlUrl || document.xmlUrl, true),
+    button("Consultar na prefeitura", document.municipalUrl, true)
+  ].filter(Boolean).join("");
+  return sendTransactional(db, {
+    to: email,
+    subject: `Nota fiscal do pedido ${order.reference || order.id || document.reference}`,
+    html: baseLayout("Sua nota fiscal está disponível", `
+      <p>Olá, <strong>${htmlEscape(document.customerName || order.customerName || "cliente")}</strong>.</p>
+      <p>A NFS-e vinculada ao seu pedido foi autorizada e segue anexada a este e-mail.</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;background:#09111f;border-radius:10px">
+        <tr><td style="padding:16px;color:#dbeafe;line-height:1.7;overflow-wrap:anywhere">
+          <strong style="color:#fff">Pedido:</strong> ${htmlEscape(order.reference || order.id || "-")}<br>
+          <strong style="color:#fff">Número da nota:</strong> ${htmlEscape(document.invoiceNumber || "-")}<br>
+          <strong style="color:#fff">Código de verificação:</strong> ${htmlEscape(document.verificationCode || "-")}<br>
+          <strong style="color:#fff">Valor de serviços:</strong> ${money(document.serviceAmount)}
+        </td></tr>
+      </table>
+      <div style="margin-top:16px">${links}</div>
+    `, { kicker: "Nota fiscal autorizada", logoUrl: options.logoUrl }),
+    text: `Nota fiscal ${document.invoiceNumber || document.reference} autorizada para o pedido ${order.reference || order.id}.`,
+    attachments: options.attachments || []
+  }, "fiscal_document.authorized", {
+    fiscalDocumentId: document.id,
+    orderId: document.orderId,
+    invoiceNumber: document.invoiceNumber,
+    attachments: (options.attachments || []).map((item) => item.filename)
+  });
+}
+
 async function sendPromotionCampaign(db, input = {}) {
   const recipients = input.recipients || [];
   if (!recipients.length) return { sent: 0, failed: 0 };
@@ -403,6 +437,7 @@ module.exports = {
   sendPrivateEventInquiry,
   sendTicketTransfer,
   sendTicketDelivery,
+  sendFiscalDocument,
   sendPromotionCampaign,
   _test: {
     baseLayout,
