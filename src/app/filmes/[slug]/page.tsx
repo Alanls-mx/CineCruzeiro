@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
+import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { TrailerModal } from "@/components/TrailerModal";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
@@ -70,7 +71,7 @@ export default function FilmeDetalhePage() {
                   )}
                 </div>
                 <div className="self-end pb-4">
-                  <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Filme</p>
+                  <MovieTagBadge tag={movie.tag} />
                   <h1 className="mt-4 font-display text-5xl font-black leading-none tracking-tight sm:text-6xl">{movie.title}</h1>
                   <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-slate-300">
                     <span>{movie.rating}</span>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { Ticket } from "lucide-react";
 import { HomeTrailerButton } from "@/components/HomeTrailerButton";
+import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { CinemaContent, normalizeCinemaContent } from "@/services/cinemaApi";
 import { Movie } from "@/types";
@@ -68,6 +69,7 @@ export default async function HomePage() {
               </div>
               <div className="relative mx-auto grid min-h-[620px] max-w-[1320px] items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8">
                 <div className="max-w-3xl">
+                  <MovieTagBadge tag={featured.tag} className="mb-4" />
                   <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Cinema de bairro • Sala única laser 4K</p>
                   <h1 className="mt-5 font-display text-5xl font-black leading-none tracking-tight sm:text-6xl lg:text-7xl">{featured.title}</h1>
                   <p className="mt-5 max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">{featured.synopsis}</p>
@@ -137,6 +139,7 @@ function MovieStrip({ title, movies, muted = false }: { title: string; movies: M
                   className="object-cover transition duration-200 group-hover:scale-[1.02]"
                 />
               )}
+              <MovieTagBadge tag={movie.tag} className="absolute left-3 top-3" />
             </div>
             <h3 className="mt-3 line-clamp-2 text-sm font-black text-white">{movie.title}</h3>
             <p className="mt-1 text-xs font-semibold text-slate-400">{movie.duration} • {movie.rating}</p>

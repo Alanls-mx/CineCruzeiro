@@ -5,6 +5,7 @@ import Image from "next/image";
 import { CalendarDays } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter, sessionsForCalendarDay } from "@/components/MovieSessionSelector";
+import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { calendarDayDate, calendarDayTitle, isUploadedAsset, movieSlug } from "@/utils/cinema";
@@ -110,6 +111,7 @@ export default function FilmesPage() {
                             className="object-cover transition duration-200 group-hover:scale-[1.02]"
                           />
                         )}
+                        <MovieTagBadge tag={movie.tag} className="absolute left-3 top-3" />
                       </div>
                       <strong className="mt-3 block line-clamp-2 group-hover:text-gold-400">{movie.title}</strong>
                       <span className="mt-1 block text-sm text-slate-500">Em breve</span>
@@ -146,6 +148,7 @@ function MovieSchedule({ movie, filter, selectedDay, days, priority = false }: {
       <div className="min-w-0">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
+            <MovieTagBadge tag={movie.tag} className="mb-3" />
             <h2 className="font-display text-3xl font-black">{movie.title}</h2>
             <p className="mt-2 text-sm font-semibold text-slate-400">{movie.rating} • {movie.duration}</p>
           </div>
