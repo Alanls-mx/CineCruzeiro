@@ -1971,6 +1971,98 @@ function createBoxOfficePaymentRecord(order, method, adminUser) {
   };
 }
 
+function createPointPaymentRecord(orders, providerPayment, adminUser, batchId) {
+  const now = new Date().toISOString();
+  const relatedOrderIds = orders.map((order) => order.id);
+  return {
+    id: `pagamento-point-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    orderId: relatedOrderIds[0],
+    method: "card_terminal",
+    provider: "mercado_pago",
+    providerPaymentId: providerPayment.id,
+    providerReference: providerPayment.externalReference,
+    status: providerPayment.status || "pending",
+    amount: orders.reduce((sum, order) => sum + Number(order.totalPrice || 0), 0),
+    currency: "BRL",
+    createdAt: now,
+    updatedAt: now,
+    approvedAt: providerPayment.status === "approved" ? now : "",
+    metadata: {
+      kind: "point_sale",
+      origin: "box_office",
+      batchId,
+      relatedOrderIds,
+      terminalId: providerPayment.terminalId || "",
+      providerStatus: providerPayment.providerStatus || "",
+      statusDetail: providerPayment.statusDetail || "",
+      idempotencyKey: providerPayment.idempotencyKey || "",
+      createdBy: adminUser?.id || "",
+      createdByEmail: adminUser?.email || ""
+    }
+  };
+}
+
+function pointPaymentOrders(db, payment) {
+  const ids = Array.isArray(payment?.metadata?.relatedOrderIds) && payment.metadata.relatedOrderIds.length
+    ? payment.metadata.relatedOrderIds
+    : [payment?.orderId].filter(Boolean);
+  return ids.map((id) => (db.orders || []).find((order) => order.id === id)).filter(Boolean);
+}
+
+function pointReservationExpiresAt(config = {}) {
+  const match = String(config.pointExpirationTime || "PT15M").match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  const requested = match
+    ? (Number(match[1] || 0) * 60 * 60 + Number(match[2] || 0) * 60 + Number(match[3] || 0)) * 1000
+    : 15 * 60 * 1000;
+  const duration = Math.min(3 * 60 * 60 * 1000, Math.max(30 * 1000, requested || 15 * 60 * 1000));
+  return new Date(Date.now() + duration).toISOString();
+}
+
+function applyPointPaymentStatus(db, payment, providerPayment = {}) {
+  const now = new Date().toISOString();
+  const nextStatus = providerPayment.status || payment.status || "pending";
+  payment.status = nextStatus;
+  payment.updatedAt = now;
+  if (providerPayment.externalReference) payment.providerReference = providerPayment.externalReference;
+  payment.metadata = {
+    ...(payment.metadata || {}),
+    terminalId: providerPayment.terminalId || payment.metadata?.terminalId || "",
+    providerStatus: providerPayment.providerStatus || payment.metadata?.providerStatus || "",
+    statusDetail: providerPayment.statusDetail || payment.metadata?.statusDetail || "",
+    paymentMethod: providerPayment.paymentMethod || payment.metadata?.paymentMethod || "",
+    providerPaymentTransactionId: providerPayment.paymentId || payment.metadata?.providerPaymentTransactionId || "",
+    lastPointSyncAt: now
+  };
+  if (nextStatus === "approved") payment.approvedAt ||= now;
+  if (nextStatus === "expired") payment.expiredAt ||= now;
+  if (nextStatus === "cancelled") payment.cancelledAt ||= now;
+  if (nextStatus === "refunded") payment.refundedAt ||= now;
+
+  const orders = pointPaymentOrders(db, payment);
+  const newlyPaidOrders = [];
+  const tickets = [];
+  for (const order of orders) {
+    if (nextStatus === "approved") {
+      const wasPaid = order.status === "paid";
+      const orderTickets = finalizePaidOrder(db, order, payment, "box_office");
+      tickets.push(...orderTickets);
+      if (!wasPaid && order.status === "paid") newlyPaidOrders.push(order);
+      continue;
+    }
+    if (["expired", "cancelled", "rejected", "refunded"].includes(nextStatus) && order.status !== "paid") {
+      releaseConcessionReservation(db, order);
+      order.status = nextStatus === "rejected" ? "cancelled" : nextStatus;
+      order.paymentStatus = nextStatus;
+      order.updatedAt = now;
+    } else if (order.status !== "paid") {
+      order.status = "pending_payment";
+      order.paymentStatus = nextStatus;
+      order.updatedAt = now;
+    }
+  }
+  return { orders, tickets, newlyPaidOrders };
+}
+
 function createClubCreditPaymentRecord(order, subscription) {
   const now = new Date().toISOString();
   return {
@@ -4853,7 +4945,7 @@ function adminDashboard(db, options = {}) {
       }))
     },
     cardTerminal: {
-      configured: cardTerminalProvider.configured(),
+      configured: cardTerminalProvider.configured(integrationConfigService.resolvedConfig(db, "mercadoPago") || {}),
       provider: providerLabel(cardTerminalProvider.providerName())
     },
     latestOrders,
@@ -5025,7 +5117,21 @@ async function testIntegrationProvider(db, provider, req) {
   if (key === "mercadoPago") {
     if (!config.accessToken || !config.publicKey) return { ok: false, message: "Informe public key e access token do Mercado Pago." };
     const response = await fetch("https://api.mercadopago.com/users/me", { headers: { Authorization: `Bearer ${config.accessToken}` } });
-    return { ok: response.ok, message: response.ok ? "Mercado Pago autenticado com sucesso." : "Mercado Pago recusou as credenciais." };
+    if (!response.ok) return { ok: false, message: "Mercado Pago recusou as credenciais." };
+    if (!config.pointEnabled) return { ok: true, message: "Mercado Pago autenticado com sucesso. A integração Point está desativada." };
+    if (!config.pointDeviceId) return { ok: false, message: "Informe o Terminal ID para testar o Mercado Pago Point." };
+    try {
+      const terminals = await cardTerminalProvider.listTerminals(config);
+      const selected = terminals.find((terminal) => terminal.id === String(config.pointDeviceId));
+      if (!selected) return { ok: false, message: "Credenciais válidas, mas o Terminal ID informado não pertence a esta conta." };
+      if (selected.operatingMode && String(selected.operatingMode).toLowerCase() !== "pdv") {
+        return { ok: false, message: `O terminal ${selected.name || selected.id} está no modo ${selected.operatingMode}. Altere-o para PDV no Mercado Pago.` };
+      }
+      const mode = selected.operatingMode ? `, modo ${selected.operatingMode}` : "";
+      return { ok: true, message: `Mercado Pago e terminal ${selected.name || selected.id} conectados${mode}.` };
+    } catch (error) {
+      return { ok: false, message: error.message || "Não foi possível consultar os terminais Point." };
+    }
   }
   if (key === "tmdb") {
     const data = await tmdbFetch("/configuration", {}, db).catch((error) => ({ error }));
@@ -5991,7 +6097,7 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, {
       period,
       cardTerminal: {
-        configured: cardTerminalProvider.configured(),
+        configured: cardTerminalProvider.configured(integrationConfigService.resolvedConfig(db, "mercadoPago") || {}),
         provider: providerLabel(cardTerminalProvider.providerName())
       },
       payments: rows.slice(0, 200).map((payment) => {
@@ -8088,6 +8194,136 @@ async function handleApi(req, res, pathname) {
     }
   }
 
+  const adminTicketPrintMatch = pathname.match(/^\/api\/admin\/tickets\/([^/]+)\/print$/);
+  if (adminTicketPrintMatch && method === "GET") {
+    const adminUser = getAdminUser(req, db);
+    if (!adminUser) {
+      sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para imprimir o ingresso." } });
+      return;
+    }
+    const ticketId = decodeURIComponent(adminTicketPrintMatch[1]);
+    const ticket = (db.tickets || []).find((item) => item.id === ticketId);
+    if (!ticket) {
+      sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso não encontrado." } });
+      return;
+    }
+    const pdf = await ticketDownloadPdf(db, ticket);
+    res.writeHead(200, {
+      ...securityHeaders({
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="cine-cruzeiro-${ticket.code}.pdf"`,
+        "Cache-Control": "no-store"
+      }),
+      "Access-Control-Allow-Origin": responseCorsOrigin(req),
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
+    });
+    res.end(pdf);
+    return;
+  }
+
+  if (pathname === "/api/box-office/point-terminals" && method === "GET") {
+    const adminUser = getAdminUser(req, db);
+    if (!adminUser) {
+      sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para consultar as maquininhas." } });
+      return;
+    }
+    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
+    if (!cardTerminalProvider.configured(config)) {
+      sendJson(res, 412, { error: { code: "POINT_NOT_CONFIGURED", message: "Mercado Pago Point ainda não está configurado." } });
+      return;
+    }
+    const terminals = await cardTerminalProvider.listTerminals(config);
+    sendJson(res, 200, { terminals, selectedTerminalId: config.pointDeviceId || "" });
+    return;
+  }
+
+  const pointPaymentMatch = pathname.match(/^\/api\/box-office\/point-payments\/([^/]+)$/);
+  if (pointPaymentMatch && method === "GET") {
+    const adminUser = getAdminUser(req, db);
+    if (!adminUser) {
+      sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para acompanhar a cobrança." } });
+      return;
+    }
+    const paymentId = decodeURIComponent(pointPaymentMatch[1]);
+    const snapshotPayment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+    if (!snapshotPayment) {
+      sendJson(res, 404, { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } });
+      return;
+    }
+    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
+    const providerPayment = await cardTerminalProvider.getStatus(snapshotPayment.providerPaymentId, config);
+    if (!mercadoPagoReferenceMatches(snapshotPayment, providerPayment.externalReference)) {
+      sendJson(res, 409, { error: { code: "POINT_REFERENCE_MISMATCH", message: "A referência retornada pela maquininha não confere com a venda." } });
+      return;
+    }
+    if (providerPayment.amount && Math.abs(Number(providerPayment.amount) - Number(snapshotPayment.amount)) > 0.01) {
+      sendJson(res, 409, { error: { code: "POINT_AMOUNT_MISMATCH", message: "O valor retornado pela maquininha não confere com a venda." } });
+      return;
+    }
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+      if (!payment) {
+        sendJson(res, 404, { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } });
+        return;
+      }
+      const result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
+      for (const paidOrder of result.newlyPaidOrders) {
+        const paidTickets = result.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
+        if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
+      }
+      await writeDb(lockedDb);
+      logEvent("info", "box_office_point_sale.synced", {
+        paymentId: payment.id,
+        providerPaymentId: payment.providerPaymentId,
+        status: payment.status,
+        tickets: result.tickets.length,
+        actorUserId: adminUser.id
+      });
+      sendJson(res, 200, {
+        payment,
+        orders: result.orders,
+        tickets: result.tickets,
+        completed: payment.status === "approved",
+        terminal: { id: payment.metadata?.terminalId || "", providerStatus: payment.metadata?.providerStatus || "" }
+      });
+    });
+    return;
+  }
+
+  const pointPaymentCancelMatch = pathname.match(/^\/api\/box-office\/point-payments\/([^/]+)\/cancel$/);
+  if (pointPaymentCancelMatch && method === "POST") {
+    const adminUser = getAdminUser(req, db);
+    if (!adminUser) {
+      sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para cancelar a cobrança." } });
+      return;
+    }
+    const paymentId = decodeURIComponent(pointPaymentCancelMatch[1]);
+    const snapshotPayment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+    if (!snapshotPayment) {
+      sendJson(res, 404, { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } });
+      return;
+    }
+    if (snapshotPayment.status === "approved") {
+      sendJson(res, 409, { error: { code: "POINT_ALREADY_APPROVED", message: "O pagamento já foi aprovado. Use o fluxo de estorno para desfazer a venda." } });
+      return;
+    }
+    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
+    const providerPayment = await cardTerminalProvider.cancelPayment(snapshotPayment.providerPaymentId, config, {
+      idempotencyKey: `cancel-${snapshotPayment.id}`
+    });
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId);
+      const result = applyPointPaymentStatus(lockedDb, payment, { ...providerPayment, status: providerPayment.status === "pending" ? "cancelled" : providerPayment.status });
+      await writeDb(lockedDb);
+      logEvent("info", "box_office_point_sale.cancelled", { paymentId, providerPaymentId: payment.providerPaymentId, actorUserId: adminUser.id });
+      sendJson(res, 200, { payment, orders: result.orders, tickets: result.tickets });
+    });
+    return;
+  }
+
   if ((pathname === "/api/box-office/sales" || pathname === "/api/tickets/manual") && method === "POST") {
     const body = await readBody(req);
     await withCriticalMutation(async () => {
@@ -8127,7 +8363,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
 
-      const batchId = requestedSales.length > 1 ? `venda-lote-${Date.now()}-${crypto.randomBytes(4).toString("hex")}` : "";
+      const batchId = `venda-lote-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
       const customerData = {
         customerUserId: selectedCustomer?.id || "",
         customerName: selectedCustomer?.name || body.customerName || (saleMode === "quick" ? "Venda rápida de balcão" : "Cliente avulso"),
@@ -8144,8 +8380,8 @@ async function handleApi(req, res, pathname) {
           id: saleItem.id || `pedido-bilheteria-${Date.now()}-${index}-${crypto.randomBytes(4).toString("hex")}`,
           ...customerData,
           paymentMethod,
-          status: "paid",
-          paymentStatus: "approved"
+          status: paymentMethod === "card_terminal" ? "pending_payment" : "paid",
+          paymentStatus: paymentMethod === "card_terminal" ? "pending" : "approved"
         }));
         if (paymentMethod === "courtesy") {
           order.discountValue = Number(order.totalPrice || 0);
@@ -8154,6 +8390,94 @@ async function handleApi(req, res, pathname) {
         if (!selectedCustomer && !body.customerEmail) order.customerEmail = "";
         return order;
       });
+
+      if (paymentMethod === "card_terminal") {
+        const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
+        if (!cardTerminalProvider.configured(mercadoPagoConfig)) {
+          sendJson(res, 412, {
+            error: {
+              code: "POINT_NOT_CONFIGURED",
+              message: "Habilite o Mercado Pago Point e informe o Terminal ID em Integrações antes de vender pela maquininha."
+            }
+          });
+          return;
+        }
+        const totalPrice = preparedOrders.reduce((sum, order) => sum + Number(order.totalPrice || 0), 0);
+        preparedOrders.forEach((order) => reserveConcessionStock(lockedDb, order));
+        const externalReference = cardTerminalProvider.safeReference(`point-${batchId}`);
+        const providerPayment = await cardTerminalProvider.createPayment({
+          id: externalReference,
+          totalPrice,
+          description: preparedOrders.length === 1
+            ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
+            : `${preparedOrders.length} filmes - Cine Cruzeiro`
+        }, mercadoPagoConfig, {
+          externalReference,
+          idempotencyKey: `point-${batchId}`,
+          ticketNumber: batchId,
+          description: preparedOrders.length === 1
+            ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
+            : `Venda de ${preparedOrders.length} filmes - Cine Cruzeiro`
+        });
+        const pointPayment = createPointPaymentRecord(preparedOrders, providerPayment, adminUser, batchId);
+        const timestamp = new Date().toISOString();
+        const orders = preparedOrders.map((order) => ({
+          ...order,
+          batchId,
+          status: "pending_payment",
+          origin: "box_office",
+          saleMode,
+          paymentMethod,
+          paymentProvider: pointPayment.provider,
+          paymentId: pointPayment.id,
+          paymentStatus: pointPayment.status,
+          createdBy: adminUser.id,
+          createdByEmail: adminUser.email,
+          createdAt: order.createdAt || timestamp,
+          reservationExpiresAt: pointPayment.status === "approved" ? "" : pointReservationExpiresAt(mercadoPagoConfig),
+          audit: {
+            origin: "box_office",
+            batchId,
+            paymentMethod,
+            createdBy: adminUser.id,
+            createdAt: timestamp,
+            customerId: selectedCustomer?.id || ""
+          }
+        }));
+        lockedDb.orders.unshift(...orders);
+        lockedDb.payments.unshift(pointPayment);
+        const pointResult = applyPointPaymentStatus(lockedDb, pointPayment, providerPayment);
+        for (const paidOrder of pointResult.newlyPaidOrders) {
+          const paidTickets = pointResult.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
+          if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
+        }
+        await writeDb(lockedDb);
+        logEvent("info", "box_office_point_sale.created", {
+          paymentId: pointPayment.id,
+          providerPaymentId: pointPayment.providerPaymentId,
+          orderIds: orders.map((order) => order.id),
+          batchId,
+          amount: totalPrice,
+          status: pointPayment.status,
+          terminalId: pointPayment.metadata.terminalId,
+          createdBy: adminUser.id
+        });
+        sendJson(res, pointPayment.status === "approved" ? 201 : 202, {
+          order: orders[0],
+          payment: pointPayment,
+          orders,
+          payments: [pointPayment],
+          tickets: pointResult.tickets,
+          batchId,
+          totalPrice,
+          point: {
+            status: pointPayment.status,
+            providerOrderId: pointPayment.providerPaymentId,
+            terminalId: pointPayment.metadata.terminalId
+          }
+        });
+        return;
+      }
 
       const sales = preparedOrders.map((order) => {
         const payment = createBoxOfficePaymentRecord(order, paymentMethod, adminUser);
@@ -8499,6 +8823,7 @@ async function handleApi(req, res, pathname) {
       }
 
       const isClubSubscriptionPayment = payment.metadata?.kind === "club_subscription";
+      const isPointPayment = payment.metadata?.kind === "point_sale";
       const order = isClubSubscriptionPayment ? null : lockedDb.orders.find((item) => item.id === payment.orderId);
       if (provider === "mercado_pago" && providerPaymentId && payment.providerPaymentId !== providerPaymentId && providerStatus?.id) {
         payment.metadata = { ...(payment.metadata || {}), previousProviderPaymentId: payment.providerPaymentId };
@@ -8541,8 +8866,17 @@ async function handleApi(req, res, pathname) {
         } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status)) {
           failSubscriptionFromPayment(lockedDb, subscription, payment, payment.status);
         }
-      } else
-      if (payment.status === "approved") {
+      } else if (isPointPayment) {
+        const pointResult = applyPointPaymentStatus(lockedDb, payment, {
+          ...(providerStatus || {}),
+          status: payment.status
+        });
+        tickets = pointResult.tickets;
+        for (const paidOrder of pointResult.newlyPaidOrders) {
+          const paidTickets = tickets.filter((ticket) => ticket.orderId === paidOrder.id);
+          if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
+        }
+      } else if (payment.status === "approved") {
         const wasAlreadyPaid = order?.status === "paid";
         tickets = finalizePaidOrder(lockedDb, order, payment, "online");
         if (!wasAlreadyPaid && tickets.length) consumePendingClubCredit(lockedDb, order, tickets, order?.customerUserId);

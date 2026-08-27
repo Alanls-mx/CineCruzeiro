@@ -252,6 +252,31 @@ Configurações principais:
 - recorrência do Clube;
 - configuração opcional de Point.
 
+### Mercado Pago Point na bilheteria
+
+A venda presencial usa a Orders API atual do Mercado Pago, com `type: point`. Em Integrações, habilite Point e informe o `Terminal ID` de uma maquininha pertencente à mesma conta do Access Token. O terminal deve estar no modo PDV.
+
+Fluxo operacional:
+
+1. o operador seleciona um ou vários filmes e escolhe `Maquininha`;
+2. o backend envia uma única cobrança agregada ao terminal configurado;
+3. pedidos e pagamento permanecem pendentes enquanto o cliente paga;
+4. o painel consulta o estado automaticamente e também aceita a confirmação pelo webhook de Orders;
+5. somente `processed` com `status_detail: accredited` libera e imprime os ingressos;
+6. recusa, expiração ou cancelamento não emitem ingressos;
+7. a mesma confirmação pode ser reenviada sem duplicar pedidos ou tickets.
+
+O comprovante do vendedor pode ser impresso pela própria Point. O ingresso físico do cinema é liberado no painel para impressão apenas depois da aprovação.
+
+Endpoints administrativos:
+
+```text
+GET  /api/box-office/point-terminals
+GET  /api/box-office/point-payments/:paymentId
+POST /api/box-office/point-payments/:paymentId/cancel
+GET  /api/admin/tickets/:ticketId/print
+```
+
 Webhook público:
 
 ```text

@@ -1343,6 +1343,153 @@ td {
   width: auto;
 }
 
+.point-payment-panel {
+  display: grid;
+  width: min(100%, 860px);
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.point-payment-panel[hidden] {
+  display: none;
+}
+
+.point-payment-status {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.point-payment-status h2,
+.point-payment-status p,
+.point-payment-print-actions p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.point-payment-status h2 {
+  font-size: 18px;
+  letter-spacing: 0;
+}
+
+.point-payment-status p,
+.point-payment-print-actions p {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.point-payment-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: var(--radius);
+  color: var(--gold);
+  background: rgba(245, 197, 24, 0.12);
+}
+
+.point-payment-icon svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.point-payment-panel[data-status="approved"] .point-payment-icon {
+  color: var(--green);
+  background: rgba(69, 214, 161, 0.13);
+}
+
+.point-payment-panel[data-status="rejected"] .point-payment-icon,
+.point-payment-panel[data-status="cancelled"] .point-payment-icon,
+.point-payment-panel[data-status="expired"] .point-payment-icon,
+.point-payment-panel[data-status="refunded"] .point-payment-icon {
+  color: var(--rose);
+  background: rgba(255, 113, 133, 0.12);
+}
+
+.point-payment-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-block: 1px solid var(--line-soft);
+}
+
+.point-payment-facts > div {
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.point-payment-facts > div + div {
+  border-inline-start: 1px solid var(--line-soft);
+}
+
+.point-payment-facts dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.point-payment-facts dd {
+  margin: 5px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.point-payment-print-actions {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: rgba(69, 214, 161, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(69, 214, 161, 0.16);
+}
+
+.point-payment-print-actions .button-row {
+  margin-top: 12px;
+}
+
+.point-payment-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .point-payment-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .point-payment-facts > div + div {
+    border-inline-start: 0;
+  }
+
+  .point-payment-facts > div:nth-child(even) {
+    border-inline-start: 1px solid var(--line-soft);
+  }
+
+  .point-payment-facts > div:nth-child(n + 3) {
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .point-payment-actions,
+  .point-payment-print-actions .button-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .point-payment-actions button,
+  .point-payment-print-actions button {
+    width: 100%;
+  }
+}
+
 /* ── 19. Status Pills & Badges ────────────────────────────────────────── */
 .status-pill {
   display: inline-flex;

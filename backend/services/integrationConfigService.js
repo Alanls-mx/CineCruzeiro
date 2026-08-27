@@ -5,18 +5,20 @@ const SECRET_MASK = "••••••••";
 const DEFINITIONS = {
   mercadoPago: {
     name: "Mercado Pago",
-    purpose: "Cartão, Pix, webhooks e assinaturas recorrentes do Clube",
-    defaults: { enabled: false, environment: "sandbox", publicKey: "", pointEnabled: false, pointStoreId: "", pointPosId: "", pointDeviceId: "", recurringEnabled: false },
+    purpose: "Cartão, Pix, webhooks, assinaturas recorrentes e pagamentos presenciais Point",
+    defaults: { enabled: false, environment: "sandbox", publicKey: "", pointEnabled: false, pointStoreId: "", pointPosId: "", pointDeviceId: "", pointPrintOnTerminal: "seller_ticket", pointExpirationTime: "PT15M", recurringEnabled: false },
     secrets: ["publicKey", "accessToken", "webhookSecret"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
       { key: "publicKey", label: "Chave pública", type: "secret" },
       { key: "accessToken", label: "Token de acesso", type: "secret" },
       { key: "webhookSecret", label: "Segredo do webhook", type: "secret" },
-      { key: "pointEnabled", label: "Habilitar Point", type: "boolean" },
-      { key: "pointStoreId", label: "Store ID Point", type: "text" },
-      { key: "pointPosId", label: "POS ID Point", type: "text" },
-      { key: "pointDeviceId", label: "Dispositivo Point", type: "text" },
+      { key: "pointEnabled", label: "Habilitar Mercado Pago Point", type: "boolean" },
+      { key: "pointStoreId", label: "Store ID Point (opcional)", type: "text" },
+      { key: "pointPosId", label: "POS ID Point (opcional)", type: "text" },
+      { key: "pointDeviceId", label: "Terminal ID Point", type: "text", placeholder: "Identificador exibido na lista de terminais" },
+      { key: "pointPrintOnTerminal", label: "Comprovante na maquininha", type: "select", options: ["seller_ticket", "no_ticket"] },
+      { key: "pointExpirationTime", label: "Tempo limite da cobrança", type: "text", placeholder: "PT15M" },
       { key: "recurringEnabled", label: "Assinaturas recorrentes do Clube", type: "boolean" }
     ]
   },

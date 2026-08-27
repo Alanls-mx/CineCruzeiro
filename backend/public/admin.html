@@ -488,6 +488,30 @@
                 </button>
               </div>
             </form>
+
+            <section id="pointPaymentPanel" class="surface point-payment-panel" hidden aria-labelledby="pointPaymentTitle" aria-live="polite">
+              <div class="point-payment-status">
+                <div id="pointPaymentIcon" class="point-payment-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+                </div>
+                <div>
+                  <h2 id="pointPaymentTitle">Aguardando pagamento na maquininha</h2>
+                  <p id="pointPaymentMessage">A cobrança foi enviada. Oriente o cliente a concluir o pagamento no terminal.</p>
+                </div>
+              </div>
+              <dl class="point-payment-facts">
+                <div><dt>Total</dt><dd id="pointPaymentAmount">R$ 0,00</dd></div>
+                <div><dt>Terminal</dt><dd id="pointPaymentTerminal">-</dd></div>
+                <div><dt>Referência</dt><dd id="pointPaymentReference">-</dd></div>
+                <div><dt>Status</dt><dd id="pointPaymentStatus">Pendente</dd></div>
+              </dl>
+              <div id="pointPaymentPrintActions" class="point-payment-print-actions" hidden></div>
+              <div class="button-row point-payment-actions">
+                <button id="pointPaymentRetryButton" class="ghost-button" type="button">Atualizar agora</button>
+                <button id="pointPaymentCancelButton" class="danger-button" type="button">Cancelar cobrança</button>
+                <button id="pointPaymentNewSaleButton" class="primary-button" type="button" hidden>Iniciar nova venda</button>
+              </div>
+            </section>
           </div>
         </section>
 
@@ -1804,6 +1828,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260826-13"></script>
+    <script src="admin/admin.js?v=20260827-point-1"></script>
   </body>
 </html>

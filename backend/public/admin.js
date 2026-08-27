@@ -90,6 +90,10 @@ let state = {
   selectedCustomer: null,
   customerSearchResults: [],
   manualSaleItems: [],
+  pointPaymentId: "",
+  pointPaymentTimer: null,
+  pointPaymentSnapshot: null,
+  pointPaymentSyncing: false,
   qrStream: null,
   qrScanTimer: null,
   qrCloseTimer: null,
@@ -2916,10 +2920,14 @@ async function createManualTicket(event) {
       createdAt: new Date().toISOString()
     };
     const result = await api("/api/box-office/sales", { method: "POST", body: JSON.stringify(payload) });
-    state.manualSaleItems = [];
-    await loadContent({ silent: true });
-    renderManualSaleItems();
     const orders = result.orders || (result.order ? [result.order] : []);
+    state.manualSaleItems = [];
+    renderManualSaleItems();
+    if (paymentMethod === "card_terminal") {
+      startPointPaymentTracking(result);
+      return;
+    }
+    await loadContent({ silent: true });
     showSuccess(
       "Venda finalizada",
       `${orders.length} ${orders.length === 1 ? "pedido criado" : "pedidos criados"} e ${(result.tickets || []).length} ingresso(s) atribuído(s) ao cliente.`
@@ -2930,6 +2938,145 @@ async function createManualTicket(event) {
     submitButton.disabled = false;
     renderManualSaleItems();
   }
+}
+
+function pointPaymentStatusLabel(status = "") {
+  return {
+    pending: "Aguardando no terminal",
+    approved: "Pagamento aprovado",
+    rejected: "Pagamento recusado",
+    cancelled: "Cobrança cancelada",
+    expired: "Cobrança expirada",
+    refunded: "Pagamento estornado"
+  }[status] || status || "Aguardando no terminal";
+}
+
+function stopPointPaymentPolling() {
+  clearTimeout(state.pointPaymentTimer);
+  state.pointPaymentTimer = null;
+}
+
+function renderPointPayment(data = {}) {
+  const payment = data.payment || state.pointPaymentSnapshot?.payment || {};
+  const orders = data.orders || state.pointPaymentSnapshot?.orders || [];
+  const tickets = data.tickets || state.pointPaymentSnapshot?.tickets || [];
+  const status = payment.status || "pending";
+  const finalStatus = ["approved", "rejected", "cancelled", "expired", "refunded"].includes(status);
+  state.pointPaymentSnapshot = { payment, orders, tickets };
+
+  const panel = $("pointPaymentPanel");
+  panel.hidden = false;
+  panel.dataset.status = status;
+  $("manualTicketForm").hidden = true;
+  $("pointPaymentAmount").textContent = money(payment.amount);
+  $("pointPaymentTerminal").textContent = payment.metadata?.terminalId || data.terminal?.id || "Terminal Point";
+  $("pointPaymentReference").textContent = payment.providerReference || payment.providerPaymentId || "-";
+  $("pointPaymentStatus").textContent = pointPaymentStatusLabel(status);
+  $("pointPaymentRetryButton").hidden = status === "approved";
+  $("pointPaymentCancelButton").hidden = finalStatus;
+  $("pointPaymentNewSaleButton").hidden = !finalStatus;
+
+  const copy = {
+    approved: ["Pagamento aprovado e ingressos emitidos", "A venda foi confirmada pelo Mercado Pago. Imprima os ingressos físicos abaixo."],
+    rejected: ["Pagamento recusado", "Nenhum ingresso foi emitido. Inicie uma nova venda para tentar outra forma de pagamento."],
+    cancelled: ["Cobrança cancelada", "A ordem foi cancelada no terminal e nenhum ingresso foi emitido."],
+    expired: ["Tempo de pagamento encerrado", "A cobrança expirou sem aprovação e os ingressos não foram emitidos."],
+    refunded: ["Pagamento estornado", "O Mercado Pago informou o estorno desta cobrança."]
+  }[status] || ["Aguardando pagamento na maquininha", "A cobrança foi enviada. Oriente o cliente a concluir o pagamento no terminal."];
+  $("pointPaymentTitle").textContent = copy[0];
+  $("pointPaymentMessage").textContent = copy[1];
+
+  const printActions = $("pointPaymentPrintActions");
+  if (status === "approved" && orders.length) {
+    printActions.hidden = false;
+    printActions.innerHTML = `
+      <strong>Ingressos físicos disponíveis</strong>
+      <p>${tickets.length} ingresso(s) emitido(s). Abra o PDF individual para imprimir o ingresso físico.</p>
+      <div class="button-row">
+        ${tickets.map((ticket, index) => `<button class="ghost-button" type="button" onclick="printPhysicalTicket('${escapeHtml(ticket.id)}')">Imprimir ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
+      </div>
+    `;
+  } else {
+    printActions.hidden = true;
+    printActions.innerHTML = "";
+  }
+}
+
+function schedulePointPaymentPoll(delay = 2200) {
+  stopPointPaymentPolling();
+  if (!state.pointPaymentId) return;
+  state.pointPaymentTimer = setTimeout(() => pollPointPayment(), delay);
+}
+
+async function pollPointPayment({ manual = false } = {}) {
+  if (!state.pointPaymentId || state.pointPaymentSyncing) return;
+  state.pointPaymentSyncing = true;
+  const retryButton = $("pointPaymentRetryButton");
+  if (manual) retryButton.disabled = true;
+  try {
+    const result = await api(`/api/box-office/point-payments/${encodeURIComponent(state.pointPaymentId)}`);
+    renderPointPayment(result);
+    if (result.payment?.status === "approved") {
+      stopPointPaymentPolling();
+      await loadContent({ silent: true });
+      renderPointPayment(result);
+      showToast("Pagamento aprovado. Ingressos liberados para impressão.");
+    } else if (["rejected", "cancelled", "expired", "refunded"].includes(result.payment?.status)) {
+      stopPointPaymentPolling();
+      await loadContent({ silent: true });
+    } else {
+      schedulePointPaymentPoll();
+    }
+  } catch (error) {
+    $("pointPaymentMessage").textContent = `${error.message} Tentaremos consultar novamente automaticamente.`;
+    schedulePointPaymentPoll(3500);
+  } finally {
+    state.pointPaymentSyncing = false;
+    retryButton.disabled = false;
+  }
+}
+
+function startPointPaymentTracking(result) {
+  state.pointPaymentId = result.payment?.id || "";
+  renderPointPayment(result);
+  if (result.payment?.status === "approved") {
+    void loadContent({ silent: true }).then(() => renderPointPayment(result));
+    return;
+  }
+  schedulePointPaymentPoll(1200);
+}
+
+async function cancelPointPayment() {
+  if (!state.pointPaymentId || !confirm("Cancelar a cobrança enviada à maquininha? Nenhum ingresso será emitido.")) return;
+  const button = $("pointPaymentCancelButton");
+  button.disabled = true;
+  try {
+    const result = await api(`/api/box-office/point-payments/${encodeURIComponent(state.pointPaymentId)}/cancel`, { method: "POST" });
+    stopPointPaymentPolling();
+    renderPointPayment(result);
+    await loadContent({ silent: true });
+    showToast("Cobrança cancelada no Mercado Pago Point.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function resetPointPaymentPanel() {
+  stopPointPaymentPolling();
+  state.pointPaymentId = "";
+  state.pointPaymentSnapshot = null;
+  $("pointPaymentPanel").hidden = true;
+  $("manualTicketForm").hidden = false;
+  renderManualSaleItems();
+  $("manualTicketForm").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function printPhysicalTicket(ticketId) {
+  const popup = window.open(`${API_BASE}/api/admin/tickets/${encodeURIComponent(ticketId)}/print`, "_blank");
+  if (popup) popup.opener = null;
+  else showToast("O navegador bloqueou a abertura do PDF. Permita pop-ups para imprimir.", "error");
 }
 
 function setSaleMode(mode) {
@@ -5289,6 +5436,9 @@ function bindEvents() {
     });
   });
   $("manualTicketForm").addEventListener("submit", createManualTicket);
+  $("pointPaymentRetryButton")?.addEventListener("click", () => pollPointPayment({ manual: true }));
+  $("pointPaymentCancelButton")?.addEventListener("click", cancelPointPayment);
+  $("pointPaymentNewSaleButton")?.addEventListener("click", resetPointPaymentPanel);
   $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
   $("manualSessionSelect").addEventListener("change", renderManualTicketTypes);
   $("manualAddMovieButton").addEventListener("click", addManualSaleItem);
@@ -5549,6 +5699,7 @@ window.toggleOrderMenu = toggleOrderMenu;
 window.closeFloatingActionMenu = closeFloatingActionMenu;
 window.copyTicketCode = copyTicketCode;
 window.printOrderTicket = printOrderTicket;
+window.printPhysicalTicket = printPhysicalTicket;
 window.resendOrderTicket = resendOrderTicket;
 window.showChartHint = showChartHint;
 window.openSessionDashboardDetail = openSessionDashboardDetail;
