@@ -69,8 +69,18 @@ let state = {
     clubPlan: false
   },
   pendingImages: {},
+  issuedTicketsPage: 1,
+  issuedTicketsPageSize: 5,
+  ordersPage: 1,
+  ordersPageSize: 5,
+  todayOrdersPage: 1,
+  todayOrdersPageSize: 5,
   clubSubscriptionsPage: 1,
   clubSubscriptionsPageSize: 5,
+  clubUsagePage: 1,
+  clubUsagePageSize: 5,
+  movieSessionsPage: 1,
+  movieSessionsPageSize: 5,
   clubSubscriptionsSearch: "",
   boxOfficeTab: "newSale",
   saleMode: "registered",
@@ -1234,31 +1244,62 @@ function renderSessions(sessions) {
     return;
   }
 
-  $("sessionsList").innerHTML = sessions
-    .map(
-      (session) => {
-        const linkedTickets = (state.content?.tickets || []).filter((ticket) => ticket.sessionId === session.id);
-        const sold = linkedTickets.filter((ticket) => !["cancelled", "refunded", "pending_payment"].includes(ticket.status)).length;
-        const capacity = Number(session.capacity || linkedTickets[0]?.sessionCapacity || 0);
-        const allowedTypes = sessionTicketTypes(session);
-        const ticketTypeSummary = allowedTypes.length
-          ? allowedTypes.map((ticketType) => `${ticketType.name} ${money(ticketType.price)}`).join(" • ")
-          : "Sem ingressos liberados";
-        return `
-        <div class="session-row">
-          <strong>${session.time}</strong>
-          <span>${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} • ` : ""}${session.format} • ${session.room}</span>
-          <span>${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
-          <div class="session-row-actions">
-            <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(session.id)}')">Ingressos</button>
-            <button class="ghost-button" type="button" onclick="openSessionEditor('${escapeHtml(session.id)}')">Editar</button>
-            <button class="icon-button danger-icon" type="button" onclick="removeSession('${escapeHtml(session.id)}')" aria-label="Excluir sessão">${trashIcon}</button>
-          </div>
-        </div>
-      `;
-      }
-    )
-    .join("");
+  const pageSize = state.movieSessionsPageSize || 5;
+  const totalPages = Math.max(1, Math.ceil(sessions.length / pageSize));
+  state.movieSessionsPage = Math.min(Math.max(1, state.movieSessionsPage || 1), totalPages);
+  const start = (state.movieSessionsPage - 1) * pageSize;
+  const pageItems = sessions.slice(start, start + pageSize);
+
+  const pagerMarkup = `
+    <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, sessions.length)}</strong> de <strong>${sessions.length}</strong> sessão(ões)</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state.movieSessionsPage <= 1 ? "disabled" : ""} onclick="changeMovieSessionsPage(-1)">← Anterior</button>
+        <span class="pager-page-indicator">Página ${state.movieSessionsPage} de ${totalPages}</span>
+        <button class="ghost-button" type="button" ${state.movieSessionsPage >= totalPages ? "disabled" : ""} onclick="changeMovieSessionsPage(1)">Próxima →</button>
+      </div>
+    </div>
+  `;
+
+  $("sessionsList").innerHTML = `
+    ${pagerMarkup}
+    <div class="sessions-list">
+      ${pageItems
+        .map(
+          (session) => {
+            const linkedTickets = (state.content?.tickets || []).filter((ticket) => ticket.sessionId === session.id);
+            const sold = linkedTickets.filter((ticket) => !["cancelled", "refunded", "pending_payment"].includes(ticket.status)).length;
+            const capacity = Number(session.capacity || linkedTickets[0]?.sessionCapacity || 0);
+            const allowedTypes = sessionTicketTypes(session);
+            const ticketTypeSummary = allowedTypes.length
+              ? allowedTypes.map((ticketType) => `${ticketType.name} ${money(ticketType.price)}`).join(" • ")
+              : "Sem ingressos liberados";
+            return `
+            <div class="session-row">
+              <strong>${session.time}</strong>
+              <span>${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} • ` : ""}${session.format} • ${session.room}</span>
+              <span>${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
+              <div class="session-row-actions">
+                <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(session.id)}')">Ingressos</button>
+                <button class="ghost-button" type="button" onclick="openSessionEditor('${escapeHtml(session.id)}')">Editar</button>
+                <button class="icon-button danger-icon" type="button" onclick="removeSession('${escapeHtml(session.id)}')" aria-label="Excluir sessão">${trashIcon}</button>
+              </div>
+            </div>
+          `;
+          }
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function changeMovieSessionsPage(delta) {
+  const movie = currentMovie();
+  const sessions = movie?.sessions || [];
+  const pageSize = state.movieSessionsPageSize || 5;
+  const totalPages = Math.max(1, Math.ceil(sessions.length / pageSize));
+  state.movieSessionsPage = Math.min(Math.max(1, (state.movieSessionsPage || 1) + delta), totalPages);
+  renderSessions(sessions);
 }
 
 function sessionTicketTypes(session = {}) {
@@ -1956,44 +1997,71 @@ function renderIssuedTickets() {
     `;
     return;
   }
-  $("issuedTicketsList").innerHTML = tickets.map((ticket) => `
-    <article class="issued-ticket-row">
-      <div>
-        <strong>${escapeHtml(ticket.movieTitle || "Filme não identificado")}</strong>
-        <span>${escapeHtml(issuedTicketSessionLabel(ticket) || "Sessão não identificada")}</span>
+  const pageSize = state.issuedTicketsPageSize || 5;
+  const totalPages = Math.max(1, Math.ceil(tickets.length / pageSize));
+  state.issuedTicketsPage = Math.min(Math.max(1, state.issuedTicketsPage || 1), totalPages);
+  const start = (state.issuedTicketsPage - 1) * pageSize;
+  const pageItems = tickets.slice(start, start + pageSize);
+
+  $("issuedTicketsList").innerHTML = `
+    <div class="issued-tickets-pager-bar">
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, tickets.length)}</strong> de <strong>${tickets.length}</strong> ingresso(s)</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state.issuedTicketsPage <= 1 ? "disabled" : ""} onclick="changeIssuedTicketsPage(-1)">← Anterior</button>
+        <span class="pager-page-indicator">Página ${state.issuedTicketsPage} de ${totalPages}</span>
+        <button class="ghost-button" type="button" ${state.issuedTicketsPage >= totalPages ? "disabled" : ""} onclick="changeIssuedTicketsPage(1)">Próxima →</button>
       </div>
-      <div>
-        <span class="mini-label">Sala</span>
-        <strong>${escapeHtml(ticket.sessionRoom || "Sala não informada")}</strong>
-      </div>
-      <div>
-        <span class="mini-label">Assento</span>
-        <strong>${escapeHtml(ticket.seat || "Livre")}</strong>
-      </div>
-      <div>
-        <span class="mini-label">Tipo</span>
-        <strong>${escapeHtml(ticket.ticketType || "Ingresso")}</strong>
-      </div>
-      <div>
-        <span class="mini-label">Cliente</span>
-        <strong>${escapeHtml(ticket.customerName || ticket.customerEmail || "Cliente")}</strong>
-      </div>
-      <div>
-        <span class="mini-label">Pedido</span>
-        <button class="text-button" type="button" onclick="openOrderView('${escapeHtml(ticket.orderId || ticket.orderReference || "")}')">${escapeHtml(ticket.orderReference || ticket.orderId || "-")}</button>
-      </div>
-      <div>
-        <span class="mini-label">Status</span>
-        <span class="status-pill status-${escapeHtml(ticket.status || "unknown")}">${escapeHtml(ticketStatusText(ticket.status))}</span>
-      </div>
-      <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(ticket.sessionId || "")}')">Sessão</button>
-    </article>
-  `).join("");
+    </div>
+    <div class="issued-tickets-rows">
+      ${pageItems.map((ticket) => `
+        <article class="issued-ticket-row">
+          <div>
+            <strong>${escapeHtml(ticket.movieTitle || "Filme não identificado")}</strong>
+            <span>${escapeHtml(issuedTicketSessionLabel(ticket) || "Sessão não identificada")}</span>
+          </div>
+          <div>
+            <span class="mini-label">Sala</span>
+            <strong>${escapeHtml(ticket.sessionRoom || "Sala não informada")}</strong>
+          </div>
+          <div>
+            <span class="mini-label">Assento</span>
+            <strong>${escapeHtml(ticket.seat || "Livre")}</strong>
+          </div>
+          <div>
+            <span class="mini-label">Tipo</span>
+            <strong>${escapeHtml(ticket.ticketType || "Ingresso")}</strong>
+          </div>
+          <div>
+            <span class="mini-label">Cliente</span>
+            <strong>${escapeHtml(ticket.customerName || ticket.customerEmail || "Cliente")}</strong>
+          </div>
+          <div>
+            <span class="mini-label">Pedido</span>
+            <button class="text-button" type="button" onclick="openOrderView('${escapeHtml(ticket.orderId || ticket.orderReference || "")}')">${escapeHtml(ticket.orderReference || ticket.orderId || "-")}</button>
+          </div>
+          <div>
+            <span class="mini-label">Status</span>
+            <span class="status-pill status-${escapeHtml(ticket.status || "unknown")}">${escapeHtml(ticketStatusText(ticket.status))}</span>
+          </div>
+          <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(ticket.sessionId || "")}')">Sessão</button>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function changeIssuedTicketsPage(delta) {
+  const tickets = filteredIssuedTickets();
+  const pageSize = state.issuedTicketsPageSize || 5;
+  const totalPages = Math.max(1, Math.ceil(tickets.length / pageSize));
+  state.issuedTicketsPage = Math.min(Math.max(1, (state.issuedTicketsPage || 1) + delta), totalPages);
+  renderIssuedTickets();
 }
 
 function showSessionTickets(sessionId) {
   if (!sessionId) return;
   const ticket = (state.content?.tickets || []).find((item) => item.sessionId === sessionId);
+  state.issuedTicketsPage = 1;
   state.issuedTicketFilters.sessionId = sessionId;
   state.issuedTicketFilters.movieId = ticket?.movieId || state.issuedTicketFilters.movieId || "";
   activatePanel("ticketsPanel", { scroll: true });
@@ -2121,49 +2189,77 @@ function renderOrdersTable(targetId, orders, options = {}) {
     return;
   }
 
-  target.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Data/Hora</th>
-          <th>Cliente</th>
-          <th>Filme/Sessão</th>
-          <th>Itens</th>
-          <th>Total</th>
-          <th>Pagamento</th>
-          <th>Status</th>
-          <th>Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${orders
-          .map(
-            (order) => {
-              const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name)} x${Number(item.quantity || 0)}`).join("<br>") || "Sem extras";
-              const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>`).join(" ");
-              return `
-              <tr class="order-table-row" onclick="openOrderView('${escapeHtml(order.id)}')">
-                <td data-label="Data/Hora"><strong>${escapeHtml(orderReference(order))}</strong><br><span class="list-meta">${new Date(order.createdAt).toLocaleString("pt-BR")}</span></td>
-                <td data-label="Cliente">${escapeHtml(order.customerName || "Venda rápida")}<br><span class="list-meta">${escapeHtml(order.customerPhone || order.customerEmail || "")}</span></td>
-                <td data-label="Filme/Sessão"><strong>${escapeHtml(order.movieTitle || "-")}</strong><br><span class="list-meta">${escapeHtml([order.sessionTime, order.sessionFormat].filter(Boolean).join(" • ") || "-")}</span></td>
-                <td data-label="Itens">${orderTicketCount(order)} ingresso(s)<br><span class="list-meta">${extras}</span>${tickets ? `<div class="ticket-code-row">${tickets}</div>` : ""}</td>
-                <td data-label="Total"><strong>${money(order.totalPrice)}</strong></td>
-                <td data-label="Pagamento">${escapeHtml(originLabel(order.origin || "online"))}<br><span class="list-meta">${escapeHtml(paymentMethodLabel(order.paymentMethod))}</span></td>
-                <td data-label="Status"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
-                <td data-label="Ações" onclick="event.stopPropagation()">
-                  <div class="context-menu">
-                    <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
-                    <button class="icon-button" type="button" onclick="toggleOrderMenu('${escapeHtml(order.id)}', event)" aria-label="Ações do pedido">•••</button>
-                  </div>
-                </td>
-              </tr>
-            `;
-            }
-          )
-          .join("")}
-      </tbody>
-    </table>
+  const pageKey = targetId === "todayOrdersList" ? "todayOrdersPage" : "ordersPage";
+  const sizeKey = targetId === "todayOrdersList" ? "todayOrdersPageSize" : "ordersPageSize";
+  const pageSize = state[sizeKey] || 5;
+  const totalPages = Math.max(1, Math.ceil(orders.length / pageSize));
+  state[pageKey] = Math.min(Math.max(1, state[pageKey] || 1), totalPages);
+  const start = (state[pageKey] - 1) * pageSize;
+  const pageItems = orders.slice(start, start + pageSize);
+
+  const pagerMarkup = `
+    <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, orders.length)}</strong> de <strong>${orders.length}</strong> pedido(s)</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state[pageKey] <= 1 ? "disabled" : ""} onclick="changeOrdersPage(-1, '${targetId}')">← Anterior</button>
+        <span class="pager-page-indicator">Página ${state[pageKey]} de ${totalPages}</span>
+        <button class="ghost-button" type="button" ${state[pageKey] >= totalPages ? "disabled" : ""} onclick="changeOrdersPage(1, '${targetId}')">Próxima →</button>
+      </div>
+    </div>
   `;
+
+  target.innerHTML = `
+    ${pagerMarkup}
+    <div class="orders-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Data/Hora</th>
+            <th>Cliente</th>
+            <th>Filme/Sessão</th>
+            <th>Itens</th>
+            <th>Total</th>
+            <th>Pagamento</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageItems
+            .map(
+              (order) => {
+                const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name)} x${Number(item.quantity || 0)}`).join("<br>") || "Sem extras";
+                const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>`).join(" ");
+                return `
+                <tr class="order-table-row" onclick="openOrderView('${escapeHtml(order.id)}')">
+                  <td data-label="Data/Hora"><strong>${escapeHtml(orderReference(order))}</strong><br><span class="list-meta">${new Date(order.createdAt).toLocaleString("pt-BR")}</span></td>
+                  <td data-label="Cliente">${escapeHtml(order.customerName || "Venda rápida")}<br><span class="list-meta">${escapeHtml(order.customerPhone || order.customerEmail || "")}</span></td>
+                  <td data-label="Filme/Sessão"><strong>${escapeHtml(order.movieTitle || "-")}</strong><br><span class="list-meta">${escapeHtml([order.sessionTime, order.sessionFormat].filter(Boolean).join(" • ") || "-")}</span></td>
+                  <td data-label="Itens">${orderTicketCount(order)} ingresso(s)<br><span class="list-meta">${extras}</span>${tickets ? `<div class="ticket-code-row">${tickets}</div>` : ""}</td>
+                  <td data-label="Total"><strong>${money(order.totalPrice)}</strong></td>
+                  <td data-label="Pagamento">${escapeHtml(originLabel(order.origin || "online"))}<br><span class="list-meta">${escapeHtml(paymentMethodLabel(order.paymentMethod))}</span></td>
+                  <td data-label="Status"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
+                  <td data-label="Ações" onclick="event.stopPropagation()">
+                    <div class="context-menu">
+                      <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
+                      <button class="icon-button" type="button" onclick="toggleOrderMenu('${escapeHtml(order.id)}', event)" aria-label="Ações do pedido">•••</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+              }
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function changeOrdersPage(delta, targetId) {
+  const pageKey = targetId === "todayOrdersList" ? "todayOrdersPage" : "ordersPage";
+  state[pageKey] = Math.max(1, (state[pageKey] || 1) + delta);
+  renderOrders();
 }
 
 function statusClass(status = "") {
@@ -3830,64 +3926,111 @@ function renderClub() {
     const pageItems = sortedSubscriptions.slice(start, start + pageSize);
     $("clubSubscriptionsList").innerHTML = sortedSubscriptions.length
       ? `
-        <div class="subscription-list-head">
-          <span>${sortedSubscriptions.length} assinatura(s)</span>
-          <span>Página ${state.clubSubscriptionsPage} de ${totalPages}</span>
+        <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
+          <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, sortedSubscriptions.length)}</strong> de <strong>${sortedSubscriptions.length}</strong> assinatura(s)</span>
+          <div class="pager-controls">
+            <button class="ghost-button" type="button" ${state.clubSubscriptionsPage <= 1 ? "disabled" : ""} onclick="changeClubSubscriptionsPage(-1)">← Anterior</button>
+            <span class="pager-page-indicator">Página ${state.clubSubscriptionsPage} de ${totalPages}</span>
+            <button class="ghost-button" type="button" ${state.clubSubscriptionsPage >= totalPages ? "disabled" : ""} onclick="changeClubSubscriptionsPage(1)">Próxima →</button>
+          </div>
         </div>
-        ${pageItems.map((subscription) => {
-          const user = subscription.user || users.find((item) => item.id === subscription.userId) || {};
-          const plan = subscription.plan || plans.find((item) => item.id === subscription.planId) || {};
-          const credit = credits.find((item) => item.id === subscription.currentCreditId) || credits.find((item) => item.subscriptionId === subscription.id);
-          const terminal = ["cancelled", "ended", "cancelled_by_admin"].includes(String(subscription.status || "").toLowerCase());
-          const ending = String(subscription.status || "").toLowerCase() === "ending";
-          const canReactivate = !subscription.reactivationBlocked
-            && !["cancelled", "canceled"].includes(String(subscription.providerStatus || "").toLowerCase())
-            && String(subscription.provider || "") === "manual_admin"
-            && String(subscription.status || "") === "paused";
-          return `
-            <div class="list-item static">
-              <span class="subscription-identity">
-                <span class="list-title">${escapeHtml(user.name || user.email || "Cliente")}</span>
-                <span class="subscription-email">${escapeHtml(user.email || "E-mail não informado")}</span>
-                <span class="list-meta">${escapeHtml(plan.name || subscription.planId)} • ${clubStatusLabel(subscription.status)} • ${Number(credit?.remaining ?? subscription.creditsAvailable ?? 0)} de ${Number(credit?.total ?? plan.includedTickets ?? 0)} crédito(s)</span>
-                ${ending ? `<span class="subscription-ending-note">Cobrança encerrada; benefícios válidos até ${subscription.benefitsUntil ? new Date(subscription.benefitsUntil).toLocaleDateString("pt-BR") : "o fim do ciclo"}.</span>` : ""}
-              </span>
-              <span class="table-actions">
-                ${canReactivate ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>` : ""}
-                ${!terminal && !ending && subscription.status === "active" ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','paused')">Pausar</button>` : ""}
-                <button class="ghost-button" type="button" onclick="adjustClubCredit('${escapeHtml(subscription.id)}')">Ajustar crédito</button>
-                ${terminal
-                  ? `<button class="danger-button" type="button" onclick="deleteClubSubscription('${escapeHtml(subscription.id)}')">Excluir</button>`
-                  : ending ? "" : `<button class="danger-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','cancelled')">Cancelar renovação</button>`}
-              </span>
-            </div>
-          `;
-        }).join("")}
-        <div class="subscription-pager">
-          <button class="ghost-button" type="button" ${state.clubSubscriptionsPage <= 1 ? "disabled" : ""} onclick="changeClubSubscriptionsPage(-1)">Anterior</button>
-          <button class="ghost-button" type="button" ${state.clubSubscriptionsPage >= totalPages ? "disabled" : ""} onclick="changeClubSubscriptionsPage(1)">Próxima</button>
+        <div class="list">
+          ${pageItems.map((subscription) => {
+            const user = subscription.user || users.find((item) => item.id === subscription.userId) || {};
+            const plan = subscription.plan || plans.find((item) => item.id === subscription.planId) || {};
+            const credit = credits.find((item) => item.id === subscription.currentCreditId) || credits.find((item) => item.subscriptionId === subscription.id);
+            const terminal = ["cancelled", "ended", "cancelled_by_admin"].includes(String(subscription.status || "").toLowerCase());
+            const ending = String(subscription.status || "").toLowerCase() === "ending";
+            const canReactivate = !subscription.reactivationBlocked
+              && !["cancelled", "canceled"].includes(String(subscription.providerStatus || "").toLowerCase())
+              && String(subscription.provider || "") === "manual_admin"
+              && String(subscription.status || "") === "paused";
+            return `
+              <div class="list-item static">
+                <span class="subscription-identity">
+                  <span class="list-title">${escapeHtml(user.name || user.email || "Cliente")}</span>
+                  <span class="subscription-email">${escapeHtml(user.email || "E-mail não informado")}</span>
+                  <span class="list-meta">${escapeHtml(plan.name || subscription.planId)} • ${clubStatusLabel(subscription.status)} • ${Number(credit?.remaining ?? subscription.creditsAvailable ?? 0)} de ${Number(credit?.total ?? plan.includedTickets ?? 0)} crédito(s)</span>
+                  ${ending ? `<span class="subscription-ending-note">Cobrança encerrada; benefícios válidos até ${subscription.benefitsUntil ? new Date(subscription.benefitsUntil).toLocaleDateString("pt-BR") : "o fim do ciclo"}.</span>` : ""}
+                </span>
+                <span class="table-actions">
+                  ${canReactivate ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>` : ""}
+                  ${!terminal && !ending && subscription.status === "active" ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','paused')">Pausar</button>` : ""}
+                  <button class="ghost-button" type="button" onclick="adjustClubCredit('${escapeHtml(subscription.id)}')">Ajustar crédito</button>
+                  ${terminal
+                    ? `<button class="danger-button" type="button" onclick="deleteClubSubscription('${escapeHtml(subscription.id)}')">Excluir</button>`
+                    : ending ? "" : `<button class="danger-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','cancelled')">Cancelar renovação</button>`}
+                </span>
+              </div>
+            `;
+          }).join("")}
         </div>
       `
       : `<div class="empty-state"><strong>${search ? "Nenhuma assinatura encontrada" : "Nenhuma assinatura"}</strong><span>${search ? "Revise o nome, e-mail ou plano informado." : "Atribuições manuais e assinaturas externas aparecerão aqui."}</span></div>`;
   }
   if ($("clubUsageList")) {
+    const usagePageSize = state.clubUsagePageSize || 5;
+    const totalUsagePages = Math.max(1, Math.ceil(usage.length / usagePageSize));
+    state.clubUsagePage = Math.min(Math.max(1, state.clubUsagePage || 1), totalUsagePages);
+    const usageStart = (state.clubUsagePage - 1) * usagePageSize;
+    const pageUsage = usage.slice(usageStart, usageStart + usagePageSize);
+
     $("clubUsageList").innerHTML = usage.length
-      ? `<table>
-          <thead><tr><th>Data</th><th>Assinatura</th><th>Pedido</th><th>Ingresso</th><th>Status</th></tr></thead>
-          <tbody>
-            ${usage.slice(0, 30).map((item) => `
-              <tr>
-                <td data-label="Data">${item.usedAt ? new Date(item.usedAt).toLocaleString("pt-BR") : "-"}</td>
-                <td data-label="Assinatura">${escapeHtml(item.subscriptionId || "-")}</td>
-                <td data-label="Pedido">${escapeHtml(item.orderId || "-")}</td>
-                <td data-label="Ingresso">${escapeHtml(item.ticketId || "-")}</td>
-                <td data-label="Status"><span class="badge ${item.refundedAt ? "muted" : ""}">${item.refundedAt ? "Crédito devolvido" : "Consumido"}</span></td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>`
+      ? `
+        <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
+          <span>Exibindo <strong>${usageStart + 1}–${Math.min(usageStart + pageUsage.length, usage.length)}</strong> de <strong>${usage.length}</strong> registro(s)</span>
+          <div class="pager-controls">
+            <button class="ghost-button" type="button" ${state.clubUsagePage <= 1 ? "disabled" : ""} onclick="changeClubUsagePage(-1)">← Anterior</button>
+            <span class="pager-page-indicator">Página ${state.clubUsagePage} de ${totalUsagePages}</span>
+            <button class="ghost-button" type="button" ${state.clubUsagePage >= totalUsagePages ? "disabled" : ""} onclick="changeClubUsagePage(1)">Próxima →</button>
+          </div>
+        </div>
+        <div class="orders-table">
+          <table>
+            <thead><tr><th>Data</th><th>Assinatura</th><th>Pedido</th><th>Ingresso</th><th>Status</th></tr></thead>
+            <tbody>
+              ${pageUsage.map((item) => `
+                <tr>
+                  <td data-label="Data">${item.usedAt ? new Date(item.usedAt).toLocaleString("pt-BR") : "-"}</td>
+                  <td data-label="Assinatura">${escapeHtml(item.subscriptionId || "-")}</td>
+                  <td data-label="Pedido">${escapeHtml(item.orderId || "-")}</td>
+                  <td data-label="Ingresso">${escapeHtml(item.ticketId || "-")}</td>
+                  <td data-label="Status"><span class="badge ${item.refundedAt ? "muted" : ""}">${item.refundedAt ? "Crédito devolvido" : "Consumido"}</span></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `
       : `<div class="empty-state"><strong>Nenhum uso de crédito</strong><span>Os ingressos emitidos pelo Clube aparecerão aqui.</span></div>`;
   }
+}
+
+function changeClubSubscriptionsPage(delta) {
+  const subscriptions = state.content?.subscriptions || [];
+  const search = String(state.clubSubscriptionsSearch || "").trim().toLocaleLowerCase("pt-BR");
+  const filtered = subscriptions.filter((subscription) => {
+    if (!search) return true;
+    const users = state.content?.users || [];
+    const plans = state.content?.subscriptionPlans || [];
+    const user = subscription.user || users.find((item) => item.id === subscription.userId) || {};
+    const plan = subscription.plan || plans.find((item) => item.id === subscription.planId) || {};
+    return [user.name, user.email, plan.name, subscription.id]
+      .filter(Boolean)
+      .some((value) => String(value).toLocaleLowerCase("pt-BR").includes(search));
+  });
+  const pageSize = state.clubSubscriptionsPageSize || 5;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  state.clubSubscriptionsPage = Math.min(Math.max(1, (state.clubSubscriptionsPage || 1) + delta), totalPages);
+  renderClub();
+}
+
+function changeClubUsagePage(delta) {
+  const usage = state.content?.subscriptionUsage || [];
+  const pageSize = state.clubUsagePageSize || 5;
+  const totalPages = Math.max(1, Math.ceil(usage.length / pageSize));
+  state.clubUsagePage = Math.min(Math.max(1, (state.clubUsagePage || 1) + delta), totalPages);
+  renderClub();
 }
 
 function fillClubPlanForm(plan) {
@@ -4733,6 +4876,7 @@ function bindEvents() {
         issuedTicketStatusFilter: "status",
         issuedTicketRoomFilter: "room"
       }[id];
+      state.issuedTicketsPage = 1;
       state.issuedTicketFilters[key] = event.target.value;
       if (id === "issuedTicketMovieFilter") state.issuedTicketFilters.sessionId = "";
       renderIssuedTickets();
@@ -4755,12 +4899,15 @@ function bindEvents() {
     group.querySelectorAll("button").forEach((button) => {
       button.addEventListener("click", () => {
         group.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+        state.ordersPage = 1;
+        state.todayOrdersPage = 1;
         state.orderFilters[group.dataset.orderFilter] = button.dataset.value;
         renderOrders();
       });
     });
   });
   $("ordersSearch").addEventListener("input", () => {
+    state.ordersPage = 1;
     state.orderFilters.allQuery = $("ordersSearch").value.trim();
     renderOrders();
   });

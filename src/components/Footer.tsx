@@ -16,7 +16,7 @@ export function Footer() {
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <img
-                src={assetPath("/images/logo.png")}
+                src={assetPath("/images/logo-header-compact.webp")}
                 alt="Cine Cruzeiro - Cultura e Lazer"
                 className="h-12 w-auto object-contain drop-shadow-md"
               />

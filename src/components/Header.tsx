@@ -49,7 +49,7 @@ export function Header({ settings, onOpenCheckoutForHighlight, onOpenCart, onOpe
           >
             <div className="relative flex items-center justify-center group-hover:scale-105 transition-transform">
               <img
-                src={assetPath("/images/logo.png")}
+                src={assetPath("/images/logo-header-compact.webp")}
                 alt="Cine Cruzeiro - Cultura e Lazer"
                 className="h-16 w-auto object-contain drop-shadow-xl sm:h-20 lg:h-[88px]"
               />
