@@ -21,15 +21,15 @@
         margin: 0;
         display: grid;
         place-items: center;
-        background: radial-gradient(circle at top, rgba(37, 99, 235, .22), transparent 36%), var(--bg);
+        background: var(--bg);
         color: var(--text);
         font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       main {
         width: min(420px, calc(100vw - 32px));
         padding: 28px;
-        border-radius: 24px;
-        background: rgba(11, 19, 43, .92);
+        border-radius: 8px;
+        background: var(--panel);
         box-shadow: 0 24px 80px rgba(0, 0, 0, .38);
       }
       img { width: 120px; height: auto; display: block; margin-bottom: 22px; }
@@ -53,7 +53,7 @@
         width: 100%;
         margin-top: 22px;
         border: 0;
-        border-radius: 16px;
+        border-radius: 7px;
         padding: 14px 18px;
         background: var(--gold);
         color: #020617;
@@ -65,6 +65,18 @@
       button:active { transform: scale(.99); }
       button:disabled { cursor: wait; opacity: .65; }
       .error { min-height: 20px; margin-top: 14px; color: var(--danger); font-size: 12px; font-weight: 800; }
+      [hidden] { display: none !important; }
+      .two-factor-head { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 14px; align-items: center; margin: 6px 0 20px; }
+      .two-factor-head svg { width: 42px; height: 42px; padding: 9px; border-radius: 8px; color: #60a5fa; background: rgba(37, 99, 235, .16); stroke: currentColor; fill: none; stroke-width: 1.8; }
+      .two-factor-head strong { display: block; font-size: 16px; }
+      .two-factor-head span { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+      .code-input { text-align: center; text-transform: uppercase; font-size: 20px; font-weight: 800; letter-spacing: .16em; font-variant-numeric: tabular-nums; }
+      .secondary-button { margin-top: 10px; background: transparent; color: #bfdbfe; box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .26); }
+      .recovery-hint { margin: 10px 0 0; font-size: 12px; }
+      @media (max-width: 520px) {
+        main { padding: 22px 20px; }
+        input { font-size: 16px; }
+      }
     </style>
   </head>
   <body>
@@ -73,15 +85,30 @@
       <h1>Painel Cine Cruzeiro</h1>
       <p>Entre com uma conta autorizada para gerenciar programação, vendas, bomboniere e validação de ingressos.</p>
       <form id="loginForm">
-        <label>
-          E-mail
-          <input id="email" type="email" autocomplete="username" required />
-        </label>
-        <label>
-          Senha
-          <input id="password" type="password" autocomplete="current-password" required />
-        </label>
-        <button id="submitButton" type="submit">Entrar no painel</button>
+        <div id="credentialsStage">
+          <label>
+            E-mail
+            <input id="email" type="email" autocomplete="username" required />
+          </label>
+          <label>
+            Senha
+            <input id="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button id="submitButton" type="submit">Entrar no painel</button>
+        </div>
+        <div id="twoFactorStage" hidden>
+          <div class="two-factor-head">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+            <div><strong>Confirme sua identidade</strong><span>Abra seu aplicativo autenticador e informe o código atual.</span></div>
+          </div>
+          <label>
+            Código de verificação
+            <input id="twoFactorCode" class="code-input" type="text" inputmode="text" autocomplete="one-time-code" maxlength="11" placeholder="000000" />
+          </label>
+          <p class="recovery-hint">Sem acesso ao celular? Informe um dos códigos de recuperação.</p>
+          <button id="verifyButton" type="submit">Verificar e entrar</button>
+          <button id="backButton" class="secondary-button" type="button">Voltar para o login</button>
+        </div>
         <div id="error" class="error" role="status"></div>
       </form>
     </main>
@@ -93,28 +120,55 @@
       })();
       const form = document.getElementById("loginForm");
       const button = document.getElementById("submitButton");
+      const verifyButton = document.getElementById("verifyButton");
       const error = document.getElementById("error");
+      const credentialsStage = document.getElementById("credentialsStage");
+      const twoFactorStage = document.getElementById("twoFactorStage");
+      let challenge = "";
+
+      function setSecondFactorStage(enabled) {
+        credentialsStage.hidden = enabled;
+        twoFactorStage.hidden = !enabled;
+        error.textContent = "";
+        if (enabled) requestAnimationFrame(() => document.getElementById("twoFactorCode").focus());
+      }
+
+      document.getElementById("backButton").addEventListener("click", () => {
+        challenge = "";
+        document.getElementById("twoFactorCode").value = "";
+        setSecondFactorStage(false);
+        document.getElementById("password").focus();
+      });
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        button.disabled = true;
+        const verifying = Boolean(challenge);
+        const activeButton = verifying ? verifyButton : button;
+        activeButton.disabled = true;
         error.textContent = "";
         try {
-          const response = await fetch(`${ADMIN_BASE}/api/admin/login`, {
+          const endpoint = verifying ? "/api/admin/login/2fa" : "/api/admin/login";
+          const payload = verifying
+            ? { challenge, code: document.getElementById("twoFactorCode").value }
+            : { email: document.getElementById("email").value, password: document.getElementById("password").value };
+          const response = await fetch(`${ADMIN_BASE}${endpoint}`, {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: document.getElementById("email").value,
-              password: document.getElementById("password").value
-            })
+            body: JSON.stringify(payload)
           });
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(data.error?.message || data.error || "Nao foi possivel entrar.");
+          if (data.twoFactorRequired) {
+            challenge = data.challenge;
+            setSecondFactorStage(true);
+            return;
+          }
           window.location.href = `${ADMIN_BASE}/admin`;
         } catch (err) {
           error.textContent = err.message;
         } finally {
-          button.disabled = false;
+          activeButton.disabled = false;
         }
       });
     </script>

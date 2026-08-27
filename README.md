@@ -588,7 +588,7 @@ O frontend usa uma versão compacta para header e metadados; e-mail e PDF usam v
 | Google Wallet | Passe oficial de ingresso |
 | TMDB | Catálogo e mídia de filmes |
 | E-mail | SMTP ou webhook de entrega |
-| Nota fiscal | Emissão, consulta, PDF/XML e webhook via Focus NFe |
+| Nota fiscal | Emissão de NFS-e Nacional, consulta, PDF/XML e webhook via Focus NFe |
 | CRM | Leads, eventos e automações |
 
 Campos sensíveis são criptografados no backend e retornam mascarados ao painel.
@@ -617,9 +617,12 @@ Migrations atuais:
 015_system_logs.sql
 016_ticket_type_bundle_quantity.sql
 017_fiscal_documents.sql
+018_admin_two_factor.sql
 ```
 
 A migration 017 adiciona o controle fiscal persistente por pedido, com status, tentativas, dados do tomador, links PDF/XML, entrega por e-mail e histórico do provedor.
+
+A migration 018 adiciona autenticação em duas etapas às contas administrativas, com segredo TOTP criptografado, estado de configuração e códigos de recuperação armazenados somente como hash.
 
 ## 23. APIs principais
 
@@ -652,8 +655,14 @@ POST /api/webhooks/focus-nfe
 
 ```text
 POST /api/admin/login
+POST /api/admin/login/2fa
 POST /api/admin/logout
 GET  /api/admin/me
+GET  /api/admin/2fa/status
+POST /api/admin/2fa/setup
+POST /api/admin/2fa/enable
+POST /api/admin/2fa/disable
+POST /api/admin/2fa/recovery-codes
 GET  /api/admin/dashboard
 GET  /api/admin/content
 GET  /api/admin/integrations
@@ -682,6 +691,7 @@ Existem rotas parametrizadas adicionais para edição, cancelamento, exclusão, 
 Controles implementados:
 
 - cookies HttpOnly para sessões;
+- 2FA TOTP opcional para contas administrativas, com desafio curto e códigos de recuperação de uso único;
 - RBAC no backend;
 - hash de senha e tokens temporários;
 - rate limit em autenticação e envio de e-mails;
@@ -720,6 +730,8 @@ Variáveis centrais:
 | `DATA_STORE` | Store ativo |
 | `JWT_SECRET` | Sessões e tokens |
 | `INTEGRATION_SECRET_KEY` | Criptografia das integrações |
+| `TWO_FACTOR_SECRET_KEY` | Chave dedicada para criptografar segredos TOTP (usa `INTEGRATION_SECRET_KEY`/`JWT_SECRET` como fallback) |
+| `TWO_FACTOR_RECOVERY_PEPPER` | Pepper dedicado para hash dos códigos de recuperação (usa `JWT_SECRET` como fallback) |
 | `FRONTEND_URL` | URL pública usada em links |
 | `NEXT_PUBLIC_SITE_URL` | URL base do frontend |
 | `NEXT_PUBLIC_BASE_PATH` | Base path público |
@@ -727,6 +739,7 @@ Variáveis centrais:
 | `MERCADO_PAGO_WEBHOOK_SECRET` | Validação HMAC |
 | `FOCUS_NFE_API_TOKEN` | Token da API fiscal |
 | `FOCUS_NFE_WEBHOOK_AUTHORIZATION` | Autorização privada do webhook fiscal |
+| `FISCAL_NATIONAL_TAX_CODE` | Código nacional do ISS com 6 dígitos |
 | `FISCAL_CNPJ` | CNPJ do prestador usado na NFS-e |
 | `FISCAL_MUNICIPAL_REGISTRATION` | Inscrição municipal do prestador |
 | `FISCAL_MUNICIPALITY_CODE` | Código IBGE do município de prestação |
@@ -895,6 +908,8 @@ O deploy não deve alterar a aplicação principal da LumixEngine fora do caminh
 7. usar o relatório consolidado do Dashboard para conciliar ingressos, bomboniere, Clube e documentos fiscais.
 
 O controle nasce apenas para pedidos pagos. A referência fiscal é idempotente por pedido, evitando duplicidade em reprocessamentos. Por padrão, itens de bomboniere ficam fora da base de serviço da NFS-e; essa regra pode ser alterada na integração somente após validação contábil.
+
+Para Cruzeiro/SP, emissão e consulta usam o padrão nacional da Focus NFe (`/v2/nfsen`). No cadastro da empresa na Focus NFe, é obrigatório habilitar **Ambiente da NFS-e Nacional** no ambiente utilizado e desabilitar a NFS-e municipal; essa habilitação pertence à conta externa da Focus e não é alterada silenciosamente pelo Cine Cruzeiro.
 
 Status operacionais principais:
 

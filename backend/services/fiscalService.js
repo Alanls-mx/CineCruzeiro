@@ -25,16 +25,28 @@ function configFor(db) {
   return integrationConfigService.resolvedConfig(db, "fiscal") || {};
 }
 
+function nationalTaxCode(config = {}) {
+  const explicit = digits(config.nationalTaxCode);
+  if (explicit) return explicit;
+  const legacyItem = digits(config.serviceListItem);
+  return legacyItem ? legacyItem.padEnd(6, "0").slice(0, 6) : "";
+}
+
+function dpsNumberForDocument(document = {}) {
+  const source = String(document.reference || document.orderId || document.id || "cine-cruzeiro");
+  const hash = crypto.createHash("sha256").update(source).digest("hex").slice(0, 14);
+  return String((BigInt(`0x${hash}`) % 999999999999999n) + 1n);
+}
+
 function missingConfiguration(config = {}) {
   const required = [
     ["apiToken", "token da Focus NFe"],
     ["cnpj", "CNPJ do cinema"],
     ["municipalRegistration", "inscrição municipal"],
     ["municipalityCode", "código IBGE do município"],
-    ["serviceListItem", "item da lista de serviço"],
-    ["municipalTaxCode", "código tributário municipal"]
+    ["nationalTaxCode", "código de tributação nacional do ISS (6 dígitos)"]
   ];
-  return required.filter(([key]) => !String(config[key] || "").trim()).map(([, label]) => label);
+  return required.filter(([key]) => key === "nationalTaxCode" ? nationalTaxCode(config).length !== 6 : !String(config[key] || "").trim()).map(([, label]) => label);
 }
 
 function configured(config = {}) {
@@ -91,7 +103,7 @@ function createDocument(order, config = {}, options = {}) {
     id: `nfse-${reference.toLowerCase()}`,
     orderId: order.id,
     reference,
-    type: "nfse",
+    type: "nfsen",
     provider: PROVIDER,
     environment: config.environment === "production" ? "production" : "sandbox",
     status,
@@ -115,7 +127,7 @@ function createDocument(order, config = {}, options = {}) {
     issuedAt: "",
     authorizedAt: "",
     cancelledAt: "",
-    metadata: { includeConcessionsInServiceAmount: Boolean(config.includeConcessionsInServiceAmount) },
+    metadata: { fiscalStandard: "national", includeConcessionsInServiceAmount: Boolean(config.includeConcessionsInServiceAmount) },
     history: [statusHistory(status, options.actor || "system", lastError)],
     createdAt: now,
     updatedAt: now
@@ -131,39 +143,42 @@ function descriptionFor(order, config = {}) {
 
 function buildPayload(order, document, config = {}) {
   const taxId = customerTaxId(order);
-  const recipient = {
-    razao_social: String(order.customerName || "Cliente Cine Cruzeiro").trim(),
-    email: String(order.customerEmail || "").trim(),
-    telefone: digits(order.customerPhone || "")
-  };
-  if (taxId.length === 14) recipient.cnpj = taxId;
-  else recipient.cpf = taxId;
-  if (!recipient.telefone) delete recipient.telefone;
-  if (!recipient.email) delete recipient.email;
-
+  const now = new Date();
   const payload = {
-    data_emissao: new Date().toISOString(),
-    natureza_operacao: String(config.natureOperation || "1"),
-    optante_simples_nacional: Boolean(config.simpleNational),
-    incentivador_cultural: Boolean(config.culturalIncentive),
-    prestador: {
-      cnpj: digits(config.cnpj),
-      inscricao_municipal: String(config.municipalRegistration || "").trim(),
-      codigo_municipio: digits(config.municipalityCode)
-    },
-    tomador: recipient,
-    servico: {
-      valor_servicos: money(document.serviceAmount),
-      iss_retido: Boolean(config.issWithheld),
-      item_lista_servico: String(config.serviceListItem || "").trim(),
-      codigo_tributario_municipio: String(config.municipalTaxCode || "").trim(),
-      discriminacao: descriptionFor(order, config),
-      codigo_municipio: digits(config.municipalityCode)
-    }
+    data_emissao: now.toISOString(),
+    data_competencia: new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(now),
+    serie_dps: Number(config.dpsSeries || 1),
+    numero_dps: dpsNumberForDocument(document),
+    emitente_dps: 1,
+    codigo_municipio_emissora: digits(config.municipalityCode),
+    cnpj_prestador: digits(config.cnpj),
+    inscricao_municipal_prestador: String(config.municipalRegistration || "").trim(),
+    codigo_opcao_simples_nacional: config.simpleNational ? Number(config.simpleNationalProfile || 3) : 1,
+    regime_especial_tributacao: Number(config.specialTaxRegime || 0),
+    razao_social_tomador: String(order.customerName || "Cliente Cine Cruzeiro").trim(),
+    email_tomador: String(order.customerEmail || "").trim(),
+    telefone_tomador: digits(order.customerPhone || ""),
+    codigo_municipio_prestacao: digits(config.municipalityCode),
+    codigo_tributacao_nacional_iss: nationalTaxCode(config),
+    descricao_servico: descriptionFor(order, config),
+    valor_servico: money(document.serviceAmount),
+    tributacao_iss: 1,
+    tipo_retencao_iss: config.issWithheld ? 2 : 1
   };
+  if (taxId.length === 14) payload.cnpj_tomador = taxId;
+  else payload.cpf_tomador = taxId;
+  if (!payload.telefone_tomador) delete payload.telefone_tomador;
+  if (!payload.email_tomador) delete payload.email_tomador;
+  if (!payload.inscricao_municipal_prestador) delete payload.inscricao_municipal_prestador;
+  const municipalCode = String(config.municipalTaxCode || "").trim();
+  if (/^[A-Za-z0-9]{1,3}$/.test(municipalCode)) payload.codigo_tributacao_municipal_iss = municipalCode;
   const rate = Number(config.issRate || 0);
-  if (rate > 0) payload.servico.aliquota = rate;
-  if (String(config.specialTaxRegime || "").trim()) payload.regime_especial_tributacao = String(config.specialTaxRegime).trim();
+  if (rate > 0) payload.percentual_aliquota_relativa_municipio = rate;
   return payload;
 }
 
@@ -194,7 +209,11 @@ async function providerRequest(config, pathname, options = {}) {
     try { payload = text ? JSON.parse(text) : {}; } catch { payload = { message: text }; }
     if (!response.ok) {
       const details = Array.isArray(payload.erros) ? payload.erros.map((item) => item.mensagem || item.message || item.codigo).filter(Boolean).join("; ") : "";
-      const error = new Error(details || payload.mensagem || payload.message || `Focus NFe respondeu HTTP ${response.status}.`);
+      const providerMessage = details || payload.mensagem || payload.message || `Focus NFe respondeu HTTP ${response.status}.`;
+      const nationalEnvironmentError = /habilita_nfsen_(?:producao|homologacao)|ambiente nacional/i.test(providerMessage);
+      const error = new Error(nationalEnvironmentError
+        ? `${providerMessage} Na Focus NFe, abra a empresa do Cine Cruzeiro em Documentos Fiscais, habilite “Ambiente da NFS-e Nacional – ${config.environment === "production" ? "Produção" : "Homologação"}” e desabilite a NFS-e municipal antes de tentar novamente.`
+        : providerMessage);
       error.statusCode = response.status;
       error.providerPayload = payload;
       throw error;
@@ -243,7 +262,7 @@ async function issue(document, order, config) {
   const payload = buildPayload(order, document, config);
   document.attempts = Number(document.attempts || 0) + 1;
   document.issuedAt ||= new Date().toISOString();
-  const result = await providerRequest(config, `/nfse?ref=${encodeURIComponent(document.reference)}`, {
+  const result = await providerRequest(config, `/nfsen?ref=${encodeURIComponent(document.reference)}`, {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -251,7 +270,7 @@ async function issue(document, order, config) {
 }
 
 async function consult(document, config) {
-  const result = await providerRequest(config, `/nfse/${encodeURIComponent(document.reference)}`, { method: "GET" });
+  const result = await providerRequest(config, `/nfsen/${encodeURIComponent(document.reference)}`, { method: "GET" });
   return applyProviderResult(document, result, config);
 }
 
@@ -287,6 +306,8 @@ module.exports = {
   concessionAmount,
   serviceAmount,
   customerValidation,
+  nationalTaxCode,
+  dpsNumberForDocument,
   createDocument,
   buildPayload,
   applyProviderResult,

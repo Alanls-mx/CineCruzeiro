@@ -21,6 +21,7 @@ const paymentService = require("./services/paymentService");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const fiscalService = require("./services/fiscalService");
+const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
 const {
@@ -30,6 +31,7 @@ const {
 } = require("./utils/movieTagLifecycle");
 
 const requestContext = new AsyncLocalStorage();
+const adminTwoFactorChallenges = new Map();
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
@@ -830,6 +832,7 @@ function getCustomerUser(req, db) {
 
 function adminAuthRequired(pathname, method) {
   if (pathname.startsWith("/api/webhooks/")) return false;
+  if (pathname === "/api/admin/login" || pathname === "/api/admin/login/2fa") return false;
   if (pathname.startsWith("/api/admin/")) return true;
   if (pathname.startsWith("/api/dashboard")) return true;
   if (pathname.startsWith("/api/uploads/")) return true;
@@ -4060,6 +4063,12 @@ function normalizeUser(input, existing = {}) {
     passwordResetRequestedAt: input.passwordResetRequestedAt !== undefined ? input.passwordResetRequestedAt : existing.passwordResetRequestedAt || "",
     emailUnsubscribedAt: input.emailUnsubscribedAt !== undefined ? input.emailUnsubscribedAt : existing.emailUnsubscribedAt || "",
     emailUnsubscribeToken: input.emailUnsubscribeToken !== undefined ? input.emailUnsubscribeToken : existing.emailUnsubscribeToken || "",
+    twoFactorEnabled: input.twoFactorEnabled !== undefined ? Boolean(input.twoFactorEnabled) : Boolean(existing.twoFactorEnabled),
+    twoFactorSecret: input.twoFactorSecret !== undefined ? input.twoFactorSecret : existing.twoFactorSecret || "",
+    twoFactorPendingSecret: input.twoFactorPendingSecret !== undefined ? input.twoFactorPendingSecret : existing.twoFactorPendingSecret || "",
+    twoFactorRecoveryCodes: input.twoFactorRecoveryCodes !== undefined ? (Array.isArray(input.twoFactorRecoveryCodes) ? input.twoFactorRecoveryCodes : []) : existing.twoFactorRecoveryCodes || [],
+    twoFactorConfirmedAt: input.twoFactorConfirmedAt !== undefined ? input.twoFactorConfirmedAt : existing.twoFactorConfirmedAt || "",
+    twoFactorUpdatedAt: input.twoFactorUpdatedAt !== undefined ? input.twoFactorUpdatedAt : existing.twoFactorUpdatedAt || "",
     role: ["owner", "master", "manager", "operator", "seller", "customer"].includes(role) ? role : "customer",
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false,
     updatedAt: new Date().toISOString(),
@@ -4069,8 +4078,24 @@ function normalizeUser(input, existing = {}) {
 
 function sanitizeUser(user) {
   if (!user) return null;
-  const { passwordHash, passwordResetHash, passwordResetExpiresAt, passwordResetRequestedAt, emailVerificationHash, emailUnsubscribeToken, ...safeUser } = user;
-  return safeUser;
+  const {
+    passwordHash,
+    passwordResetHash,
+    passwordResetExpiresAt,
+    passwordResetRequestedAt,
+    emailVerificationHash,
+    emailUnsubscribeToken,
+    twoFactorSecret,
+    twoFactorPendingSecret,
+    twoFactorRecoveryCodes,
+    ...safeUser
+  } = user;
+  return {
+    ...safeUser,
+    twoFactorEnabled: Boolean(user.twoFactorEnabled),
+    twoFactorSetupPending: Boolean(user.twoFactorPendingSecret),
+    twoFactorRecoveryCodesRemaining: Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0
+  };
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("base64url")) {
@@ -4087,6 +4112,63 @@ function verifyPassword(password, passwordHash) {
     .toString("base64url");
   if (Buffer.byteLength(actualHash) !== Buffer.byteLength(expectedHash)) return false;
   return crypto.timingSafeEqual(Buffer.from(actualHash), Buffer.from(expectedHash));
+}
+
+function createAdminTwoFactorChallenge(userId) {
+  const now = Date.now();
+  for (const [token, challenge] of adminTwoFactorChallenges.entries()) {
+    if (challenge.expiresAt <= now || challenge.used) adminTwoFactorChallenges.delete(token);
+  }
+  const token = crypto.randomBytes(32).toString("base64url");
+  adminTwoFactorChallenges.set(token, {
+    userId,
+    expiresAt: now + 5 * 60 * 1000,
+    attempts: 0,
+    used: false
+  });
+  return token;
+}
+
+function readAdminTwoFactorChallenge(token) {
+  const key = String(token || "");
+  const challenge = adminTwoFactorChallenges.get(key);
+  if (!challenge || challenge.used || challenge.expiresAt <= Date.now() || challenge.attempts >= 6) {
+    if (challenge) adminTwoFactorChallenges.delete(key);
+    return null;
+  }
+  return challenge;
+}
+
+async function sendAdminLoginSuccess(req, res, db, user, twoFactorMethod = "not_required") {
+  const methods = twoFactorMethod === "not_required" ? ["pwd"] : ["pwd", "otp"];
+  const session = signedValue({ sub: user.id, role: user.role, exp: Date.now() + 1000 * 60 * 60 * 8, amr: methods });
+  const loginAudit = {
+    id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    userId: user.id,
+    userEmail: user.email,
+    action: "POST /api/admin/login",
+    entityType: "admin_session",
+    entityId: user.id,
+    before: null,
+    after: { role: user.role, twoFactorMethod },
+    ip: clientIp(req),
+    createdAt: new Date().toISOString()
+  };
+  if (postgresEnabled()) {
+    await appendAuditLogToPostgres(loginAudit);
+  } else {
+    db.auditLogs ||= [];
+    db.auditLogs.push(loginAudit);
+    await writeDb(db);
+  }
+  res.writeHead(200, {
+    ...securityHeaders({ "Content-Type": "application/json; charset=utf-8" }),
+    "Set-Cookie": adminCookie(session),
+    "Access-Control-Allow-Origin": responseCorsOrigin(req),
+    "Access-Control-Allow-Credentials": "true",
+    "Vary": "Origin"
+  });
+  res.end(JSON.stringify({ user: sanitizeUser(user) }, null, 2));
 }
 
 function hashResetToken(token) {
@@ -5443,34 +5525,64 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 401, { error: { code: "ADMIN_LOGIN_INVALID", message: "E-mail ou senha invalidos." } });
       return;
     }
-    const session = signedValue({ sub: user.id, role: user.role, exp: Date.now() + 1000 * 60 * 60 * 8 });
-    const loginAudit = {
-      id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
-      userId: user.id,
-      userEmail: user.email,
-      action: "POST /api/admin/login",
-      entityType: "admin_session",
-      entityId: user.id,
-      before: null,
-      after: { role: user.role },
-      ip: clientIp(req),
-      createdAt: new Date().toISOString()
-    };
-    if (postgresEnabled()) {
-      await appendAuditLogToPostgres(loginAudit);
-    } else {
-      db.auditLogs ||= [];
-      db.auditLogs.push(loginAudit);
-      await writeDb(db);
+    if (user.twoFactorEnabled) {
+      const secret = adminTwoFactorService.decryptSecret(user.twoFactorSecret);
+      if (!secret) {
+        sendJson(res, 503, { error: { code: "ADMIN_2FA_CONFIGURATION_INVALID", message: "O 2FA desta conta precisa ser recuperado pelo administrador do sistema." } });
+        return;
+      }
+      sendJson(res, 202, {
+        twoFactorRequired: true,
+        challenge: createAdminTwoFactorChallenge(user.id),
+        expiresIn: 300
+      });
+      return;
     }
-    res.writeHead(200, {
-      ...securityHeaders({ "Content-Type": "application/json; charset=utf-8" }),
-      "Set-Cookie": adminCookie(session),
-      "Access-Control-Allow-Origin": responseCorsOrigin(req),
-      "Access-Control-Allow-Credentials": "true",
-      "Vary": "Origin"
+    await sendAdminLoginSuccess(req, res, db, user);
+    return;
+  }
+
+  if (pathname === "/api/admin/login/2fa" && method === "POST") {
+    const body = await readBody(req);
+    const challengeToken = String(body.challenge || "");
+    const challenge = readAdminTwoFactorChallenge(challengeToken);
+    if (!challenge) {
+      sendJson(res, 401, { error: { code: "ADMIN_2FA_CHALLENGE_EXPIRED", message: "A verificacao expirou. Entre com e-mail e senha novamente." } });
+      return;
+    }
+    challenge.attempts += 1;
+    const submittedCode = String(body.code || "").trim();
+    let authenticatedUser = null;
+    let authenticatedDb = null;
+    let methodUsed = "totp";
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const user = (lockedDb.users || []).find((item) => item.id === challenge.userId && item.active !== false && adminRoles().has(item.role));
+      const secret = adminTwoFactorService.decryptSecret(user?.twoFactorSecret);
+      if (!user || !user.twoFactorEnabled || !secret) return;
+      let valid = adminTwoFactorService.verifyTotp(secret, submittedCode);
+      if (!valid) {
+        const recoveryIndex = adminTwoFactorService.recoveryCodeIndex(user.twoFactorRecoveryCodes, submittedCode);
+        if (recoveryIndex >= 0) {
+          user.twoFactorRecoveryCodes.splice(recoveryIndex, 1);
+          user.twoFactorUpdatedAt = new Date().toISOString();
+          methodUsed = "recovery_code";
+          valid = true;
+          await writeDb(lockedDb);
+        }
+      }
+      if (!valid) return;
+      authenticatedUser = user;
+      authenticatedDb = lockedDb;
     });
-    res.end(JSON.stringify({ user: sanitizeUser(user) }, null, 2));
+    if (!authenticatedUser) {
+      if (challenge.attempts >= 6) adminTwoFactorChallenges.delete(challengeToken);
+      sendJson(res, 401, { error: { code: "ADMIN_2FA_INVALID", message: "Codigo invalido. Confira o autenticador ou use um codigo de recuperacao." } });
+      return;
+    }
+    challenge.used = true;
+    adminTwoFactorChallenges.delete(challengeToken);
+    await sendAdminLoginSuccess(req, res, authenticatedDb, authenticatedUser, methodUsed);
     return;
   }
 
@@ -5548,6 +5660,122 @@ async function handleApi(req, res, pathname) {
   }
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
+
+  if (pathname === "/api/admin/2fa/status" && method === "GET") {
+    const user = (db.users || []).find((item) => item.id === req.adminUser.id);
+    sendJson(res, 200, {
+      enabled: Boolean(user?.twoFactorEnabled),
+      setupPending: Boolean(user?.twoFactorPendingSecret),
+      confirmedAt: user?.twoFactorConfirmedAt || "",
+      recoveryCodesRemaining: Array.isArray(user?.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0
+    });
+    return;
+  }
+
+  if (pathname === "/api/admin/2fa/setup" && method === "POST") {
+    const body = await readBody(req);
+    const password = String(body.password || "");
+    let secret = "";
+    let accountEmail = "";
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+      if (!user || !verifyPassword(password, user.passwordHash)) {
+        throw Object.assign(new Error("Informe sua senha atual para configurar o 2FA."), { statusCode: 422, code: "ADMIN_2FA_PASSWORD_INVALID" });
+      }
+      if (user.twoFactorEnabled) {
+        throw Object.assign(new Error("O 2FA ja esta ativo nesta conta."), { statusCode: 409, code: "ADMIN_2FA_ALREADY_ENABLED" });
+      }
+      secret = adminTwoFactorService.generateSecret();
+      accountEmail = user.email;
+      user.twoFactorPendingSecret = adminTwoFactorService.encryptSecret(secret);
+      user.twoFactorUpdatedAt = new Date().toISOString();
+      await writeDb(lockedDb);
+    });
+    const provisioningUri = adminTwoFactorService.otpauthUrl(secret, accountEmail);
+    const qrCodeDataUrl = await QRCode.toDataURL(provisioningUri, {
+      width: 280,
+      margin: 2,
+      color: { dark: "#07101f", light: "#ffffff" },
+      errorCorrectionLevel: "M"
+    });
+    sendJson(res, 200, { qrCodeDataUrl, secret, provisioningUri });
+    return;
+  }
+
+  if (pathname === "/api/admin/2fa/enable" && method === "POST") {
+    const body = await readBody(req);
+    const code = String(body.code || "");
+    let recoveryCodes = [];
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+      const secret = adminTwoFactorService.decryptSecret(user?.twoFactorPendingSecret);
+      if (!user || !secret) {
+        throw Object.assign(new Error("Inicie a configuracao do 2FA antes de confirmar."), { statusCode: 409, code: "ADMIN_2FA_SETUP_REQUIRED" });
+      }
+      if (!adminTwoFactorService.verifyTotp(secret, code)) {
+        throw Object.assign(new Error("O codigo nao confere. Aguarde um novo codigo no autenticador e tente novamente."), { statusCode: 422, code: "ADMIN_2FA_INVALID" });
+      }
+      recoveryCodes = adminTwoFactorService.generateRecoveryCodes();
+      user.twoFactorEnabled = true;
+      user.twoFactorSecret = user.twoFactorPendingSecret;
+      user.twoFactorPendingSecret = "";
+      user.twoFactorRecoveryCodes = recoveryCodes.map(adminTwoFactorService.hashRecoveryCode);
+      user.twoFactorConfirmedAt = new Date().toISOString();
+      user.twoFactorUpdatedAt = user.twoFactorConfirmedAt;
+      await writeDb(lockedDb);
+    });
+    sendJson(res, 200, {
+      enabled: true,
+      recoveryCodes,
+      message: "Autenticacao em duas etapas ativada. Guarde os codigos de recuperacao agora."
+    });
+    return;
+  }
+
+  if (pathname === "/api/admin/2fa/disable" && method === "POST") {
+    const body = await readBody(req);
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+      const secret = adminTwoFactorService.decryptSecret(user?.twoFactorSecret);
+      const passwordValid = user && verifyPassword(String(body.password || ""), user.passwordHash);
+      const code = String(body.code || "");
+      const codeValid = secret && (adminTwoFactorService.verifyTotp(secret, code) || adminTwoFactorService.recoveryCodeIndex(user.twoFactorRecoveryCodes, code) >= 0);
+      if (!passwordValid || !codeValid) {
+        throw Object.assign(new Error("Senha ou codigo de verificacao invalido."), { statusCode: 422, code: "ADMIN_2FA_DISABLE_INVALID" });
+      }
+      user.twoFactorEnabled = false;
+      user.twoFactorSecret = "";
+      user.twoFactorPendingSecret = "";
+      user.twoFactorRecoveryCodes = [];
+      user.twoFactorConfirmedAt = "";
+      user.twoFactorUpdatedAt = new Date().toISOString();
+      await writeDb(lockedDb);
+    });
+    sendJson(res, 200, { enabled: false, message: "Autenticacao em duas etapas desativada." });
+    return;
+  }
+
+  if (pathname === "/api/admin/2fa/recovery-codes" && method === "POST") {
+    const body = await readBody(req);
+    let recoveryCodes = [];
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+      const secret = adminTwoFactorService.decryptSecret(user?.twoFactorSecret);
+      if (!user || !user.twoFactorEnabled || !verifyPassword(String(body.password || ""), user.passwordHash) || !adminTwoFactorService.verifyTotp(secret, String(body.code || ""))) {
+        throw Object.assign(new Error("Confirme sua senha e o codigo atual do autenticador."), { statusCode: 422, code: "ADMIN_2FA_RECOVERY_REGEN_INVALID" });
+      }
+      recoveryCodes = adminTwoFactorService.generateRecoveryCodes();
+      user.twoFactorRecoveryCodes = recoveryCodes.map(adminTwoFactorService.hashRecoveryCode);
+      user.twoFactorUpdatedAt = new Date().toISOString();
+      await writeDb(lockedDb);
+    });
+    sendJson(res, 200, { recoveryCodes, message: "Novos codigos gerados. Os anteriores deixaram de funcionar." });
+    return;
+  }
 
   if (pathname === "/api/health" && method === "GET") {
     sendJson(res, 200, {

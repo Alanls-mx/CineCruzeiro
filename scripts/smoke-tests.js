@@ -2,6 +2,7 @@ const fs = require("fs");
 const assert = require("assert/strict");
 const crypto = require("crypto");
 const http = require("http");
+const adminTwoFactorService = require("../backend/services/adminTwoFactorService");
 
 const DATA_FILE = "backend/data/db.json";
 const PORT = 4199;
@@ -181,7 +182,50 @@ async function run() {
     const target = await registerCustomer(`target-${Date.now()}@cine.local`);
     let cookie = registered.cookie;
     const targetCookie = target.cookie;
-    const adminCookie = await loginAdmin();
+    let adminCookie = await loginAdmin();
+
+    const twoFactorSetup = await request("/api/admin/2fa/setup", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ password: process.env.ADMIN_PASSWORD })
+    });
+    assert.equal(twoFactorSetup.response.status, 200);
+    assert.match(twoFactorSetup.payload.qrCodeDataUrl, /^data:image\/png;base64,/);
+    const twoFactorCode = adminTwoFactorService.totp(twoFactorSetup.payload.secret);
+    const twoFactorEnable = await request("/api/admin/2fa/enable", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ code: twoFactorCode })
+    });
+    assert.equal(twoFactorEnable.response.status, 200);
+    assert.equal(twoFactorEnable.payload.recoveryCodes.length, 10);
+
+    const protectedLogin = await request("/api/admin/login", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD })
+    });
+    assert.equal(protectedLogin.response.status, 202);
+    assert.equal(protectedLogin.payload.twoFactorRequired, true);
+    const verifiedLogin = await request("/api/admin/login/2fa", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ challenge: protectedLogin.payload.challenge, code: adminTwoFactorService.totp(twoFactorSetup.payload.secret) })
+    });
+    assert.equal(verifiedLogin.response.status, 200);
+    adminCookie = (verifiedLogin.response.headers.get("set-cookie") || "").split(";")[0] || "";
+    assert.match(adminCookie, /^cine_admin=/);
+
+    const twoFactorStatus = await request("/api/admin/2fa/status", { headers: jsonHeaders(adminCookie) });
+    assert.equal(twoFactorStatus.response.status, 200);
+    assert.equal(twoFactorStatus.payload.enabled, true);
+    assert.equal(twoFactorStatus.payload.recoveryCodesRemaining, 10);
+    const twoFactorDisable = await request("/api/admin/2fa/disable", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ password: process.env.ADMIN_PASSWORD, code: adminTwoFactorService.totp(twoFactorSetup.payload.secret) })
+    });
+    assert.equal(twoFactorDisable.response.status, 200);
 
     const emailIntegration = await request("/api/admin/integrations/email", {
       method: "PUT",
@@ -301,6 +345,37 @@ async function run() {
     const integrations = await request("/api/integrations", { headers: jsonHeaders(adminCookie) });
     assert.equal(integrations.response.status, 200);
     assert.ok(integrations.payload.integrations.tmdb);
+
+    const googleLoginInitial = await request("/api/admin/integrations/googleLogin", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        clientId: "client-id-preservado.apps.googleusercontent.com",
+        clientSecret: "segredo-original-1234",
+        redirectUri: "https://cine.local/api/auth/google/callback"
+      })
+    });
+    assert.equal(googleLoginInitial.response.status, 200);
+    assert.equal(googleLoginInitial.payload.integration.values.clientId, "client-id-preservado.apps.googleusercontent.com");
+    assert.match(googleLoginInitial.payload.integration.secrets.clientSecret.masked, /1234$/);
+
+    const googleLoginSecretOnly = await request("/api/admin/integrations/googleLogin", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ clientSecret: "segredo-atualizado-5678", clientId: null })
+    });
+    assert.equal(googleLoginSecretOnly.response.status, 200);
+    assert.equal(googleLoginSecretOnly.payload.integration.values.clientId, "client-id-preservado.apps.googleusercontent.com");
+    assert.equal(googleLoginSecretOnly.payload.integration.values.redirectUri, "https://cine.local/api/auth/google/callback");
+    assert.match(googleLoginSecretOnly.payload.integration.secrets.clientSecret.masked, /5678$/);
+
+    const googleLoginMaskedSecret = await request("/api/admin/integrations/googleLogin", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ clientSecret: "••••••••5678" })
+    });
+    assert.equal(googleLoginMaskedSecret.response.status, 200);
+    assert.match(googleLoginMaskedSecret.payload.integration.secrets.clientSecret.masked, /5678$/);
 
     const uploadedImage = await request("/api/uploads/images", {
       method: "POST",

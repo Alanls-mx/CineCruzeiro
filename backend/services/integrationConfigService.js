@@ -90,6 +90,8 @@ const DEFINITIONS = {
       cnpj: "",
       municipalRegistration: "",
       municipalityCode: "",
+      nationalTaxCode: "",
+      dpsSeries: 1,
       serviceListItem: "",
       municipalTaxCode: "",
       serviceDescription: "Ingressos e serviços cinematográficos do pedido {{pedido}}",
@@ -113,8 +115,9 @@ const DEFINITIONS = {
       { key: "cnpj", label: "CNPJ do Cine Cruzeiro", type: "text", placeholder: "00.000.000/0000-00" },
       { key: "municipalRegistration", label: "Inscrição municipal", type: "text" },
       { key: "municipalityCode", label: "Código IBGE do município", type: "text", placeholder: "7 dígitos" },
-      { key: "serviceListItem", label: "Item da lista de serviço", type: "text", placeholder: "Ex.: 12.02" },
-      { key: "municipalTaxCode", label: "Código tributário municipal", type: "text" },
+      { key: "nationalTaxCode", label: "Código nacional do ISS", type: "text", placeholder: "6 dígitos, ex.: 120200" },
+      { key: "municipalTaxCode", label: "Código municipal do ISS (se exigido)", type: "text", placeholder: "Até 3 caracteres" },
+      { key: "dpsSeries", label: "Série da DPS Nacional", type: "number", placeholder: "1" },
       { key: "serviceDescription", label: "Discriminação do serviço", type: "text", multiline: true },
       { key: "natureOperation", label: "Natureza da operação", type: "text" },
       { key: "specialTaxRegime", label: "Regime especial de tributação", type: "text" },
@@ -192,6 +195,7 @@ const ENV = {
     cnpj: ["CINE_CNPJ", "FISCAL_CNPJ"],
     municipalRegistration: ["CINE_MUNICIPAL_REGISTRATION", "FISCAL_MUNICIPAL_REGISTRATION"],
     municipalityCode: ["CINE_MUNICIPALITY_CODE", "FISCAL_MUNICIPALITY_CODE"],
+    nationalTaxCode: ["FISCAL_NATIONAL_TAX_CODE", "FISCAL_SERVICE_LIST_ITEM"],
     serviceListItem: ["FISCAL_SERVICE_LIST_ITEM"],
     municipalTaxCode: ["FISCAL_MUNICIPAL_TAX_CODE"]
   },
@@ -281,7 +285,7 @@ function isConfigured(provider, config) {
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && config.serviceAccountJson);
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
-  if (provider === "fiscal") return Boolean(config.apiToken && config.cnpj && config.municipalRegistration && config.municipalityCode && config.serviceListItem && config.municipalTaxCode);
+  if (provider === "fiscal") return Boolean(config.apiToken && config.cnpj && config.municipalRegistration && config.municipalityCode && (config.nationalTaxCode || config.serviceListItem));
   if (provider === "analytics") return Boolean(config.googleMeasurementId || config.metaPixelId);
   if (provider === "crm") return Boolean(config.url);
   return false;
@@ -291,6 +295,11 @@ function mask(value) {
   const text = String(value || "");
   if (!text) return "";
   return `${SECRET_MASK}${text.slice(-4)}`;
+}
+
+function isMaskedSecret(value) {
+  const text = String(value || "").trim();
+  return text.startsWith(SECRET_MASK) || /^[*•]{8,}/u.test(text);
 }
 
 function sanitizeConfig(db, provider) {
@@ -371,8 +380,9 @@ function save(db, provider, input = {}, user) {
     if (!(field.key in input)) return;
     const value = input[field.key];
     if (definition.secrets.includes(field.key)) {
+      if (value === null || value === undefined) return;
       const normalized = String(value || "").trim();
-      if (!normalized || normalized.startsWith(SECRET_MASK)) return;
+      if (!normalized || isMaskedSecret(normalized)) return;
       if (normalized === "__CLEAR__") {
         delete next[field.key];
       } else {
@@ -380,6 +390,8 @@ function save(db, provider, input = {}, user) {
       }
       return;
     }
+    // PATCH semantics: omitted/null fields preserve the stored integration value.
+    if (value === null || value === undefined) return;
     if (field.type === "boolean") next[field.key] = Boolean(value);
     else if (field.type === "number") next[field.key] = Number(value || 0);
     else next[field.key] = String(value ?? "").trim();
@@ -428,6 +440,7 @@ module.exports = {
   sanitizeConfig,
   resolvedConfig,
   isConfigured,
+  isMaskedSecret,
   save,
   setEnabled,
   setTestResult

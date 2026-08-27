@@ -105,7 +105,10 @@ let state = {
   toastTimer: null,
   refreshStatusTimer: null,
   logsSearchTimer: null,
-  fiscalSearchTimer: null
+  fiscalSearchTimer: null,
+  twoFactorStatus: null,
+  twoFactorSetup: null,
+  twoFactorRecoveryCodes: []
 };
 
 const $ = (id) => document.getElementById(id);
@@ -227,6 +230,127 @@ function toggleAdminProfileMenu(force) {
 
 function closeAdminProfileMenu() {
   toggleAdminProfileMenu(false);
+}
+
+function closeTwoFactorSettings() {
+  const overlay = $("twoFactorOverlay");
+  if (state.twoFactorRecoveryCodes.length && !window.confirm("Os códigos não serão exibidos novamente. Confirma que já os guardou?")) return;
+  if (overlay) overlay.hidden = true;
+  state.twoFactorSetup = null;
+  state.twoFactorRecoveryCodes = [];
+}
+
+function twoFactorDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("pt-BR", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function renderTwoFactorSettings() {
+  const body = $("twoFactorBody");
+  if (!body) return;
+  if (!state.twoFactorStatus) {
+    body.innerHTML = `<div class="two-factor-loading"><span class="loading-spinner"></span>Carregando segurança da conta...</div>`;
+    return;
+  }
+  if (state.twoFactorRecoveryCodes.length) {
+    body.innerHTML = `
+      <div class="two-factor-success">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        <div><strong>2FA ativo</strong><span>Estes códigos aparecem uma única vez.</span></div>
+      </div>
+      <p class="two-factor-instruction">Guarde os códigos em um local seguro. Cada código substitui o autenticador apenas uma vez.</p>
+      <div class="recovery-code-grid">${state.twoFactorRecoveryCodes.map((code) => `<code>${escapeHtml(code)}</code>`).join("")}</div>
+      <div class="button-row">
+        <button class="primary-button" type="button" data-two-factor-action="copy-recovery">Copiar códigos</button>
+        <button class="ghost-button" type="button" data-two-factor-action="download-recovery">Baixar arquivo</button>
+        <button class="ghost-button" type="button" data-two-factor-action="finish">Concluir</button>
+      </div>`;
+    return;
+  }
+  if (state.twoFactorSetup) {
+    const groupedSecret = String(state.twoFactorSetup.secret || "").match(/.{1,4}/g)?.join(" ") || "";
+    body.innerHTML = `
+      <div class="two-factor-setup-grid">
+        <div class="authenticator-qr"><img src="${escapeHtml(state.twoFactorSetup.qrCodeDataUrl)}" alt="QR Code para configurar o aplicativo autenticador" /></div>
+        <div class="two-factor-setup-copy">
+          <h3>Conecte seu autenticador</h3>
+          <ol><li>Abra Google Authenticator, Microsoft Authenticator, Authy ou equivalente.</li><li>Escaneie o QR Code.</li><li>Informe abaixo o código de 6 dígitos.</li></ol>
+          <div class="manual-secret"><span>Chave manual</span><code>${escapeHtml(groupedSecret)}</code></div>
+        </div>
+      </div>
+      <form id="twoFactorEnableForm" class="two-factor-action-form">
+        <label>Código do aplicativo<input name="code" class="two-factor-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required /></label>
+        <button class="primary-button" type="submit">Ativar autenticação em duas etapas</button>
+      </form>`;
+    return;
+  }
+  if (state.twoFactorStatus.enabled) {
+    body.innerHTML = `
+      <div class="two-factor-status active">
+        <span class="two-factor-status-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></span>
+        <div><strong>Autenticação em duas etapas ativa</strong><span>${state.twoFactorStatus.confirmedAt ? `Ativada em ${escapeHtml(twoFactorDate(state.twoFactorStatus.confirmedAt))}. ` : ""}${Number(state.twoFactorStatus.recoveryCodesRemaining || 0)} código(s) de recuperação disponível(is).</span></div>
+      </div>
+      <div class="two-factor-actions">
+        <details>
+          <summary>Gerar novos códigos de recuperação</summary>
+          <p>Os códigos atuais serão invalidados imediatamente.</p>
+          <form id="twoFactorRecoveryForm" class="two-factor-action-form compact">
+            <label>Senha atual<input name="password" type="password" autocomplete="current-password" required /></label>
+            <label>Código do autenticador<input name="code" class="two-factor-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required /></label>
+            <button class="ghost-button" type="submit">Gerar novos códigos</button>
+          </form>
+        </details>
+        <details class="danger-zone">
+          <summary>Desativar 2FA</summary>
+          <p>O painel voltará a aceitar apenas e-mail e senha.</p>
+          <form id="twoFactorDisableForm" class="two-factor-action-form compact">
+            <label>Senha atual<input name="password" type="password" autocomplete="current-password" required /></label>
+            <label>Código ou recuperação<input name="code" class="two-factor-code" autocomplete="one-time-code" maxlength="11" required /></label>
+            <button class="danger-button" type="submit">Desativar 2FA</button>
+          </form>
+        </details>
+      </div>`;
+    return;
+  }
+  body.innerHTML = `
+    <div class="two-factor-status">
+      <span class="two-factor-status-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg></span>
+      <div><strong>2FA ainda não está ativo</strong><span>Depois da senha, o painel solicitará um código temporário do seu celular.</span></div>
+    </div>
+    <form id="twoFactorSetupForm" class="two-factor-action-form">
+      <label>Confirme sua senha atual<input name="password" type="password" autocomplete="current-password" required /></label>
+      <button class="primary-button" type="submit">Configurar aplicativo autenticador</button>
+    </form>`;
+}
+
+async function loadTwoFactorStatus() {
+  state.twoFactorStatus = null;
+  renderTwoFactorSettings();
+  state.twoFactorStatus = await api("/api/admin/2fa/status");
+  renderTwoFactorSettings();
+}
+
+async function openTwoFactorSettings() {
+  closeAdminProfileMenu();
+  $("twoFactorOverlay").hidden = false;
+  state.twoFactorSetup = null;
+  state.twoFactorRecoveryCodes = [];
+  try {
+    await loadTwoFactorStatus();
+  } catch (error) {
+    showToast(error.message, "error");
+    closeTwoFactorSettings();
+  }
+}
+
+function downloadRecoveryCodes() {
+  const content = `Cine Cruzeiro - códigos de recuperação 2FA\n\n${state.twoFactorRecoveryCodes.join("\n")}\n\nCada código pode ser usado uma única vez.`;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+  link.download = "cine-cruzeiro-codigos-recuperacao.txt";
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function escapeHtml(value = "") {
@@ -4525,7 +4649,7 @@ function integrationFieldInput(field, integration) {
   if (field.type === "boolean") {
     return `
       <label class="check-field ${field.full ? "full" : ""}">
-        <input type="checkbox" data-integration-field="${escapeHtml(field.key)}" ${value ? "checked" : ""} />
+        <input type="checkbox" data-integration-field="${escapeHtml(field.key)}" data-integration-original="${value ? "true" : "false"}" ${value ? "checked" : ""} />
         <span>${escapeHtml(field.label)}</span>
       </label>
     `;
@@ -4534,7 +4658,7 @@ function integrationFieldInput(field, integration) {
     return `
       <label>
         ${escapeHtml(field.label)}
-        <select data-integration-field="${escapeHtml(field.key)}">
+        <select data-integration-field="${escapeHtml(field.key)}" data-integration-original="${escapeHtml(String(value))}">
           ${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${String(value) === String(option) ? "selected" : ""}>${escapeHtml(option === "production" ? "Produção" : option === "sandbox" ? "Sandbox" : option)}</option>`).join("")}
         </select>
       </label>
@@ -4575,7 +4699,7 @@ function integrationFieldInput(field, integration) {
     retryLimit: "Ex.: 2"
   };
   const placeholder = field.secret && secret?.hasValue ? "Valor já salvo; preencha apenas para substituir" : field.placeholder || placeholders[field.key] || "";
-  const common = `data-integration-field="${escapeHtml(field.key)}" ${field.secret ? `data-secret="true" autocomplete="off" spellcheck="false"` : ""} placeholder="${escapeHtml(placeholder)}"`;
+  const common = `data-integration-field="${escapeHtml(field.key)}" data-integration-original="${field.secret ? "" : escapeHtml(String(value))}" ${field.secret ? `data-secret="true" autocomplete="off" spellcheck="false"` : ""} placeholder="${escapeHtml(placeholder)}"`;
   const labelClass = field.multiline ? "full" : "";
   if (field.multiline) {
     return `
@@ -4777,15 +4901,17 @@ function closeIntegrationConfig() {
 
 function collectIntegrationForm() {
   const payload = {};
-  document.querySelectorAll("[data-integration-field]").forEach((input) => {
+  $("integrationForm").querySelectorAll("[data-integration-field]").forEach((input) => {
     const key = input.dataset.integrationField;
     if (!key) return;
     if (input.type === "checkbox") {
+      if (String(input.checked) === input.dataset.integrationOriginal) return;
       payload[key] = input.checked;
       return;
     }
     const value = input.value || "";
     if (input.dataset.secret === "true" && !value.trim()) return;
+    if (input.dataset.secret !== "true" && value === (input.dataset.integrationOriginal || "")) return;
     payload[key] = value;
   });
   return payload;
@@ -4908,6 +5034,7 @@ function bindEvents() {
       closeAdminProfileMenu();
       closeAdminDrawer();
       closeIntegrationConfig();
+      if (!$("twoFactorOverlay")?.hidden) closeTwoFactorSettings();
       closeResponsiveSelects();
       document.querySelectorAll(".context-menu-popover").forEach((menu) => {
         menu.hidden = true;
@@ -4924,9 +5051,81 @@ function bindEvents() {
   $("profileLogoutButton")?.addEventListener("click", logoutAdmin);
   document.querySelectorAll("[data-profile-action]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.profileAction === "account") {
+        void openTwoFactorSettings();
+        return;
+      }
       closeAdminProfileMenu();
-      showToast("Área em preparação para o painel administrativo.");
+      showToast("Preferências adicionais estarão disponíveis em breve.");
     });
+  });
+  $("twoFactorCloseButton")?.addEventListener("click", closeTwoFactorSettings);
+  $("twoFactorOverlay")?.addEventListener("click", (event) => {
+    if (event.target === $("twoFactorOverlay")) closeTwoFactorSettings();
+  });
+  $("twoFactorBody")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const submitButton = form.querySelector("button[type='submit']");
+    const values = Object.fromEntries(new FormData(form).entries());
+    if (submitButton) submitButton.disabled = true;
+    try {
+      if (form.id === "twoFactorSetupForm") {
+        state.twoFactorSetup = await api("/api/admin/2fa/setup", { method: "POST", body: JSON.stringify(values) });
+        renderTwoFactorSettings();
+        return;
+      }
+      if (form.id === "twoFactorEnableForm") {
+        const result = await api("/api/admin/2fa/enable", { method: "POST", body: JSON.stringify(values) });
+        state.twoFactorSetup = null;
+        state.twoFactorRecoveryCodes = result.recoveryCodes || [];
+        state.twoFactorStatus = { enabled: true, recoveryCodesRemaining: state.twoFactorRecoveryCodes.length, confirmedAt: new Date().toISOString() };
+        renderTwoFactorSettings();
+        showToast("Autenticação em duas etapas ativada.");
+        return;
+      }
+      if (form.id === "twoFactorRecoveryForm") {
+        const result = await api("/api/admin/2fa/recovery-codes", { method: "POST", body: JSON.stringify(values) });
+        state.twoFactorRecoveryCodes = result.recoveryCodes || [];
+        renderTwoFactorSettings();
+        showToast("Novos códigos gerados.");
+        return;
+      }
+      if (form.id === "twoFactorDisableForm") {
+        await api("/api/admin/2fa/disable", { method: "POST", body: JSON.stringify(values) });
+        await loadTwoFactorStatus();
+        closeTwoFactorSettings();
+        showSuccess("2FA desativado", "Esta conta voltará a entrar somente com e-mail e senha.");
+      }
+    } catch (error) {
+      showToast(error.message, "error");
+    } finally {
+      if (submitButton && submitButton.isConnected) submitButton.disabled = false;
+    }
+  });
+  $("twoFactorBody")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-two-factor-action]");
+    if (!button) return;
+    const action = button.dataset.twoFactorAction;
+    if (action === "download-recovery") downloadRecoveryCodes();
+    if (action === "copy-recovery") {
+      const text = state.twoFactorRecoveryCodes.join("\n");
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const field = document.createElement("textarea");
+        field.value = text;
+        document.body.appendChild(field);
+        field.select();
+        document.execCommand("copy");
+        field.remove();
+      }
+      showToast("Códigos copiados.");
+    }
+    if (action === "finish") {
+      state.twoFactorRecoveryCodes = [];
+      await loadTwoFactorStatus();
+    }
   });
 
   document.querySelectorAll(".nav-button").forEach((button) => {

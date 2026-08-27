@@ -13,7 +13,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "test": "node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/fiscal-service-tests.js && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
+    "test": "node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/fiscal-service-tests.js && node scripts/admin-two-factor-tests.js && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
   },
   "dependencies": {
     "@mercadopago/sdk-js": "^0.0.3",

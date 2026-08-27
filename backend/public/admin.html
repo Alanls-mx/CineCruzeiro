@@ -6,7 +6,7 @@
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
     <link rel="stylesheet" href="admin/admin.css?v=20260824-05" />
-    <link rel="stylesheet" href="admin/admin-premium.css?v=20260826-13" />
+    <link rel="stylesheet" href="admin/admin-premium.css?v=20260827-14" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -1784,6 +1784,21 @@
           <button class="primary-button" type="submit">Salvar configuração</button>
         </div>
       </form>
+    </div>
+
+    <div id="twoFactorOverlay" class="success-overlay two-factor-overlay" hidden>
+      <section class="success-card two-factor-card" role="dialog" aria-modal="true" aria-labelledby="twoFactorTitle">
+        <div class="form-head">
+          <div>
+            <div id="twoFactorTitle" class="section-title">Segurança da conta</div>
+            <p>Proteja o acesso ao painel com um aplicativo autenticador.</p>
+          </div>
+          <button id="twoFactorCloseButton" class="ghost-button icon-only-sm" type="button" aria-label="Fechar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div id="twoFactorBody" class="two-factor-body" aria-live="polite"></div>
+      </section>
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
