@@ -20,6 +20,7 @@ const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/ci
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 const logoUrl = `${basePath}/images/logo-display.webp`;
 const iconUrl = `${basePath}/images/favicon-64.png`;
+const googleMeasurementId = (process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-BVVNLHRVD0").replace(/[^A-Za-z0-9-]/g, "");
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -61,6 +62,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className={`${inter.variable} ${outfit.variable} dark scroll-smooth`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.dataLayer = window.dataLayer || [];
+          window.gtag = window.gtag || function(){window.dataLayer.push(arguments);};
+          window.gtag('consent', 'default', {
+            analytics_storage: 'denied',
+            ad_storage: 'denied',
+            ad_user_data: 'denied',
+            ad_personalization: 'denied',
+            wait_for_update: 500
+          });
+          window.gtag('js', new Date());
+          window.gtag('config', '${googleMeasurementId}', { send_page_view: false, anonymize_ip: true });
+        ` }} />
+      </head>
       <body className="min-h-dvh bg-brand-950 text-slate-100 antialiased selection:bg-gold-400 selection:text-slate-950">
         {children}
         <TrackingManager />

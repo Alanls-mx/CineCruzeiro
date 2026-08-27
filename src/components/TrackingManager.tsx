@@ -52,7 +52,12 @@ export function TrackingManager() {
       trackedWindow.dataLayer?.push(args);
     };
     trackedWindow.gtag("js", new Date());
-    trackedWindow.gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    trackedWindow.gtag("consent", "update", {
+      analytics_storage: "granted",
+      ad_storage: "granted",
+      ad_user_data: "granted",
+      ad_personalization: "granted",
+    });
     trackedWindow.gtag("config", measurementId, { send_page_view: false, anonymize_ip: true });
     initializedGoogleId.current = measurementId;
     setGoogleReady(true);
