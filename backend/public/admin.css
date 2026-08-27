@@ -547,6 +547,10 @@ h1 {
   grid-template-columns: minmax(320px, 0.92fr) minmax(380px, 1.08fr);
 }
 
+.concessions-workspace {
+  grid-template-columns: minmax(360px, 0.96fr) minmax(440px, 1.04fr);
+}
+
 .surface {
   border-radius: var(--radius);
   background: var(--surface);
