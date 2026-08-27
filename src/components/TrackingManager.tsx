@@ -66,7 +66,11 @@ export function TrackingManager() {
   useEffect(() => {
     if (consent !== "granted" || !googleReady || lastGooglePath.current === pathname) return;
     const trackedWindow = window as typeof window & { gtag?: (...args: unknown[]) => void };
-    trackedWindow.gtag?.("event", "page_view", { page_path: pathname, page_location: window.location.href });
+    trackedWindow.gtag?.("event", "page_view", {
+      page_path: `${pathname}${window.location.search}`,
+      page_location: window.location.href,
+      page_title: document.title,
+    });
     lastGooglePath.current = pathname;
   }, [consent, googleReady, pathname]);
 

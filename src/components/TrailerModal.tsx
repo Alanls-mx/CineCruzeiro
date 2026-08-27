@@ -65,7 +65,7 @@ export function TrailerModal({
         <div className="relative aspect-video w-full bg-black">
           <iframe
             className="h-full w-full"
-            src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0`}
+            src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0&enablejsapi=1`}
             title={`Trailer de ${movieTitle}`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
