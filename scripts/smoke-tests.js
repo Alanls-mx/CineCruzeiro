@@ -199,6 +199,8 @@ async function run() {
     const verificationCandidate = await registerCustomer(`verify-${Date.now()}@cine.local`);
     const verificationDelivery = [...deliveredEmails].reverse().find((item) => item.event === "email_verification.requested");
     assert.ok(verificationDelivery?.data?.verificationUrl);
+    assert.match(verificationDelivery.html || "", /favicon-email\.png/);
+    assert.match(verificationDelivery.html || "", /Confirmar e-mail/);
     const verificationToken = new URL(verificationDelivery.data.verificationUrl).searchParams.get("emailToken");
     assert.ok(verificationToken);
     const verifiedAccount = await request("/api/auth/email/verify", {

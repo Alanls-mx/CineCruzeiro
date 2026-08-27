@@ -225,10 +225,12 @@ async function sendEmailVerification(db, email, verificationUrl, options = {}) {
     to: email,
     subject: "Confirme seu e-mail no Cine Cruzeiro",
     html: baseLayout("Confirme seu e-mail", `
-      <p>Para manter sua conta protegida, confirme este endereço de e-mail.</p>
-      <p>${button("Confirmar e-mail", verificationUrl)}</p>
-      <p>O link expira em 1 hora.</p>
-    `, { kicker: "Verificação", logoUrl: options.logoUrl }),
+      <p style="margin:0 0 16px">Para manter sua conta protegida e receber seus ingressos com segurança, confirme este endereço de e-mail.</p>
+      <p style="margin:0 0 16px">${button("Confirmar e-mail", verificationUrl)}</p>
+      <div style="margin-top:18px;padding:14px 16px;background:#09111f;border-radius:8px;color:#bfdbfe;font-size:13px;line-height:1.6">
+        Este link expira em 1 hora e pode ser usado apenas uma vez. Se você não criou uma conta no Cine Cruzeiro, ignore esta mensagem.
+      </div>
+    `, { kicker: "Verificação da conta", logoUrl: options.logoUrl }),
     text: `Confirme seu e-mail: ${verificationUrl}`
   }, "email_verification.requested", { email, verificationUrl });
 }

@@ -3992,7 +3992,12 @@ async function notifyPasswordReset(email, resetUrl, db, options = {}) {
 }
 
 async function notifyEmailVerification(email, verificationUrl, db, options = {}) {
-  const sentBySmtp = await emailService.sendEmailVerification(db, email, verificationUrl, options).catch(() => false);
+  const brandedOptions = {
+    logoUrl: `${appFrontendUrl()}/images/favicon-email.png`,
+    siteUrl: appFrontendUrl(),
+    ...options
+  };
+  const sentBySmtp = await emailService.sendEmailVerification(db, email, verificationUrl, brandedOptions).catch(() => false);
   if (sentBySmtp) return true;
   const deliveryUrl = getEmailVerificationWebhookUrl(db);
   if (!deliveryUrl) {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
@@ -33,6 +34,7 @@ export default function ContaPage() {
 function ContaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const emailToken = searchParams.get("emailToken") || "";
   const requestedReturnTo = searchParams.get("returnTo") || "";
   const returnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
@@ -47,6 +49,11 @@ function ContaPageContent() {
   const [profileMessage, setProfileMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationNotice, setVerificationNotice] = useState<{
+    type: "success" | "error";
+    title: string;
+    message: string;
+  } | null>(null);
   const [subscriptions, setSubscriptions] = useState<AccountSubscription[]>([]);
   const [clubMessage, setClubMessage] = useState("");
   const pendingSubscriptions = subscriptions.filter((subscription) => subscription.status === "pending_payment");
@@ -54,6 +61,7 @@ function ContaPageContent() {
   const historySubscriptions = subscriptions.filter(isClubHistory);
 
   useEffect(() => {
+    if (emailToken) return;
     let active = true;
 
     fetchCurrentCustomer()
@@ -81,7 +89,7 @@ function ContaPageContent() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [emailToken]);
 
   async function loadClub() {
     fetchMySubscriptions()
@@ -98,10 +106,12 @@ function ContaPageContent() {
   }, [user, pendingSubscriptions.length]);
 
   useEffect(() => {
-    const token = searchParams.get("emailToken");
-    if (!token) return;
-    confirmEmailChange(token)
+    if (!emailToken) return;
+    let active = true;
+    setAuthReady(false);
+    confirmEmailChange(emailToken)
       .then((result) => {
+        if (!active) return;
         setUser(result.user);
         setProfile({
           name: result.user.name || "",
@@ -112,11 +122,45 @@ function ContaPageContent() {
           newPassword: "",
           confirmPassword: "",
         });
-        setProfileMessage("E-mail confirmado com sucesso.");
-        router.replace("/conta");
+        setVerificationNotice({
+          type: "success",
+          title: "E-mail confirmado",
+          message: "Seu endereço foi verificado e sua conta está protegida.",
+        });
+        setAuthReady(true);
+        router.replace("/conta?emailVerified=success");
       })
-      .catch((error) => setProfileMessage(error instanceof Error ? error.message : "Não foi possível confirmar o e-mail."));
-  }, [router, searchParams]);
+      .catch((error) => {
+        if (!active) return;
+        setVerificationNotice({
+          type: "error",
+          title: "Não foi possível confirmar o e-mail",
+          message: error instanceof Error ? error.message : "Solicite um novo link de confirmação na sua conta.",
+        });
+        setAuthReady(true);
+        router.replace("/conta?emailVerified=error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [emailToken, router]);
+
+  useEffect(() => {
+    const status = searchParams.get("emailVerified");
+    if (status === "success") {
+      setVerificationNotice({
+        type: "success",
+        title: "E-mail confirmado",
+        message: "Seu endereço foi verificado e sua conta está protegida.",
+      });
+    } else if (status === "error") {
+      setVerificationNotice((current) => current || {
+        type: "error",
+        title: "Não foi possível confirmar o e-mail",
+        message: "O link pode ter expirado. Entre na sua conta e solicite uma nova confirmação.",
+      });
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const token = searchParams.get("resetToken");
@@ -259,6 +303,37 @@ function ContaPageContent() {
         <h1 className="font-display text-4xl font-black sm:text-5xl">
           {returnTo.startsWith("/clube/assinar") ? "Entre para continuar sua assinatura" : "Acesse seus ingressos"}
         </h1>
+
+        {verificationNotice && (
+          <div
+            className={`mt-7 flex max-w-3xl items-start gap-4 rounded-[8px] p-4 shadow-[0_18px_45px_rgba(0,0,0,.22)] sm:p-5 ${
+              verificationNotice.type === "success" ? "bg-emerald-950/70 text-emerald-50" : "bg-rose-950/70 text-rose-50"
+            }`}
+            role={verificationNotice.type === "success" ? "status" : "alert"}
+            aria-live="polite"
+          >
+            {verificationNotice.type === "success" ? (
+              <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-300" aria-hidden="true" />
+            ) : (
+              <AlertCircle className="mt-0.5 h-6 w-6 shrink-0 text-rose-300" aria-hidden="true" />
+            )}
+            <div className="min-w-0 flex-1">
+              <strong className="block font-display text-lg font-black">{verificationNotice.title}</strong>
+              <p className="mt-1 text-sm leading-6 opacity-90">{verificationNotice.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setVerificationNotice(null);
+                router.replace("/conta");
+              }}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-[7px] text-current opacity-70 transition hover:bg-white/10 hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
+              aria-label="Fechar mensagem"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
 
         {!authReady ? (
           <AccountLoadingState />
