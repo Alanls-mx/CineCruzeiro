@@ -26,6 +26,7 @@ let state = {
   logs: null,
   logsPage: 1,
   logsPageSize: 40,
+  logsView: "business",
   logFilters: { search: "", level: "", category: "", from: "", to: "" },
   webhookSimulatorRuns: [],
   selectedWebhookRunId: "",
@@ -570,7 +571,148 @@ function renderLoading() {
 }
 
 function logLevelLabel(level = "") {
-  return { error: "Erro", warn: "Aviso", info: "Informação", debug: "Depuração" }[level] || level || "Informação";
+  return { error: "Precisa de ação", warn: "Atenção", info: "Concluído", debug: "Diagnóstico" }[level] || "Informação";
+}
+
+function logCategoryLabel(category = "") {
+  const normalized = String(category || "").toLowerCase();
+  const exact = {
+    payment: "Pagamentos",
+    box_office: "Bilheteria",
+    ticket: "Ingressos",
+    subscription: "Clube",
+    fiscal: "Notas fiscais",
+    email: "E-mails",
+    password_reset: "Acesso de clientes",
+    email_verification: "Verificação de e-mail",
+    admin: "Painel administrativo",
+    integration: "Integrações",
+    google_wallet: "Carteira digital",
+    webhook: "Confirmações automáticas",
+    request: "Operação do sistema",
+    logs: "Histórico",
+    system: "Sistema"
+  }[normalized];
+  if (exact) return exact;
+  if (normalized.startsWith("box_office")) return "Bilheteria";
+  if (normalized.startsWith("ticket")) return "Ingressos";
+  if (normalized.startsWith("subscription")) return "Clube";
+  if (normalized.startsWith("fiscal")) return "Notas fiscais";
+  if (normalized.includes("email")) return "E-mails";
+  if (normalized.startsWith("google_wallet")) return "Carteira digital";
+  return "Sistema";
+}
+
+function logPaymentMethod(value = "") {
+  return {
+    pix: "Pix",
+    cash: "Dinheiro",
+    credit_card: "Cartão de crédito",
+    card: "Cartão",
+    courtesy: "Cortesia",
+    external_pix: "Pix no balcão",
+    club_credit: "Crédito do Clube"
+  }[String(value || "").toLowerCase()] || value;
+}
+
+function logFriendlyError(message = "") {
+  const text = String(message || "").trim();
+  if (!text) return "O sistema registrou uma ocorrência que precisa ser conferida.";
+  const translations = [
+    [/invalid input syntax for type timestamp with time zone/i, "Uma data ou horário foi enviado em formato inválido."],
+    [/unauthorized|não autorizado|nao autorizado/i, "A operação foi recusada por falta de autorização."],
+    [/not found|não encontrado|nao encontrado/i, "O registro solicitado não foi encontrado."],
+    [/timeout|timed out/i, "O serviço demorou mais que o esperado para responder."],
+    [/network|fetch failed|econnreset|econnrefused/i, "Não foi possível se comunicar com o serviço externo."],
+    [/duplicate|already exists/i, "O registro já existia e não foi duplicado."],
+    [/invalid signature/i, "A confirmação automática foi recusada por assinatura inválida."]
+  ];
+  return translations.find(([pattern]) => pattern.test(text))?.[1] || text;
+}
+
+function logAdminAction(log) {
+  const path = String(log.path || "");
+  const method = String(log.method || "").toUpperCase();
+  const operation = method === "POST" ? "criado" : method === "DELETE" ? "excluído" : "atualizado";
+  const resources = [
+    [/\/users/, "Usuário"],
+    [/\/movies/, "Filme"],
+    [/\/rooms/, "Sala"],
+    [/\/tickets/, "Ingresso"],
+    [/\/orders/, "Pedido"],
+    [/\/club/, "Clube"],
+    [/\/concessions/, "Produto da bomboniere"],
+    [/\/integrations/, "Integração"],
+    [/\/fiscal/, "Nota fiscal"],
+    [/\/marketing/, "Campanha"]
+  ];
+  const resource = resources.find(([pattern]) => pattern.test(path))?.[1] || "Configuração";
+  return { title: `${resource} ${operation}`, description: "Uma alteração foi realizada pelo painel administrativo." };
+}
+
+function logPresentation(log = {}) {
+  const event = String(log.event || "");
+  const metadata = log.metadata || {};
+  const method = logPaymentMethod(metadata.method || metadata.paymentMethod || "");
+  const entries = {
+    "payment.created": { title: "Pagamento iniciado", description: method ? `Uma cobrança por ${method} foi criada e aguarda confirmação.` : "Uma cobrança foi criada e aguarda confirmação." },
+    "payment.reconciled": { title: "Pagamento confirmado", description: "O pagamento foi localizado e conciliado com o pedido." },
+    "payment.reconciliation_reference_mismatch": { title: "Pagamento não localizado no pedido", description: "A referência recebida não corresponde ao pedido e precisa ser conferida." },
+    "payment.reconciliation_amount_mismatch": { title: "Valor do pagamento diferente", description: "O valor confirmado pelo provedor não corresponde ao total do pedido." },
+    "ticket.used": { title: "Ingresso validado", description: "A entrada foi liberada e o ingresso foi marcado como utilizado." },
+    "ticket.transferred": { title: "Ingresso transferido", description: "O ingresso foi enviado para outro cliente." },
+    "ticket_email.failed": { title: "E-mail do ingresso não enviado", description: "O ingresso foi emitido, mas o e-mail não pôde ser entregue." },
+    "ticket_email.pdf_failed": { title: "PDF do ingresso não gerado", description: "O sistema não conseguiu preparar o PDF anexado ao e-mail." },
+    "box_office_sale.created": { title: "Venda concluída na bilheteria", description: method ? `A venda presencial foi registrada com pagamento em ${method}.` : "A venda presencial foi registrada com sucesso." },
+    "box_office_point_sale.created": { title: "Pagamento enviado à maquininha", description: "A cobrança presencial foi enviada para a Point selecionada." },
+    "box_office_point_sale.synced": { title: "Pagamento da maquininha atualizado", description: "O status da venda presencial foi atualizado pelo Mercado Pago." },
+    "box_office_point_sale.cancelled": { title: "Cobrança da maquininha cancelada", description: "A cobrança presencial foi cancelada no Mercado Pago." },
+    "box_office_ticket_print.queued": { title: "Ingresso enviado para impressão", description: "A impressão física foi enviada para a maquininha Point." },
+    "box_office_ticket_print.failed": { title: "Ingresso não impresso", description: "A venda foi concluída, mas a maquininha não recebeu a impressão." },
+    "webhook.processed": { title: "Pagamento atualizado automaticamente", description: "O Mercado Pago confirmou uma mudança no pagamento do pedido." },
+    "webhook.subscription.processed": { title: "Assinatura do Clube atualizada", description: "O Mercado Pago confirmou uma mudança na assinatura do cliente." },
+    "webhook.payment.not_found": { title: "Pagamento sem pedido correspondente", description: "O provedor confirmou uma cobrança, mas o sistema não encontrou o pedido relacionado." },
+    "webhook.subscription.not_found": { title: "Pagamento sem assinatura correspondente", description: "O provedor enviou uma atualização, mas a assinatura relacionada não foi encontrada." },
+    "webhook.mercado_pago.rejected": { title: "Confirmação do Mercado Pago recusada", description: "A notificação recebida não passou pela verificação de segurança." },
+    "subscription.pending_payment_expiration_failed": { title: "Plano pendente não cancelado", description: "O sistema não conseguiu cancelar automaticamente um plano sem pagamento." },
+    "subscription.pending_payment_maintenance_failed": { title: "Revisão de planos pendentes falhou", description: "A rotina automática de assinaturas precisa ser conferida." },
+    "fiscal.email_failed": { title: "Nota fiscal não enviada por e-mail", description: "A nota foi processada, mas não pôde ser entregue ao cliente." },
+    "fiscal.email_attachment_failed": { title: "Anexo da nota fiscal não preparado", description: "O sistema não conseguiu anexar o arquivo da nota ao e-mail do cliente." },
+    "fiscal.webhook_sync_failed": { title: "Nota fiscal não atualizada", description: "A resposta do emissor fiscal não pôde ser sincronizada." },
+    "fiscal.maintenance_failed": { title: "Rotina de notas fiscais falhou", description: "Existem notas fiscais que podem precisar de revisão manual." },
+    "email_verification.delivery_failed": { title: "E-mail de verificação não entregue", description: "A mensagem de confirmação do cadastro não pôde ser enviada." },
+    "email_verification.delivery_missing_channel": { title: "Envio de verificação não configurado", description: "Não há um serviço de e-mail disponível para confirmar o cadastro do cliente." },
+    "password_reset.delivery_failed": { title: "E-mail de recuperação não entregue", description: "A mensagem para redefinir a senha não pôde ser enviada." },
+    "password_reset.delivery_missing_channel": { title: "Recuperação de senha não configurada", description: "Não há um serviço de e-mail disponível para enviar a recuperação de senha." },
+    "password_reset.delivery_not_configured": { title: "Recuperação de senha indisponível", description: "As configurações necessárias para enviar a recuperação de senha estão incompletas." },
+    "ticket_transfer_email.failed": { title: "Transferência não enviada por e-mail", description: "O ingresso foi transferido, mas o destinatário não recebeu a mensagem." },
+    "ticket_transfer_pdf.failed": { title: "PDF da transferência não gerado", description: "O ingresso foi transferido, mas o PDF atualizado não pôde ser preparado." },
+    "google_wallet.integration_failed": { title: "Carteira digital indisponível", description: "A conexão com o Google Wallet apresentou uma falha." },
+    "logs.retention_applied": { title: "Histórico antigo organizado", description: "A política de retenção removeu registros técnicos antigos." },
+    "logs.retention_failed": { title: "Histórico antigo não foi limpo", description: "A rotina de organização dos registros precisa ser executada novamente." }
+  };
+  if (entries[event]) return entries[event];
+  if (event === "admin.action") return logAdminAction(log);
+  if (event === "request.failed") return { title: "Operação não concluída", description: logFriendlyError(log.message || metadata.message) };
+  if (/\.failed$|_failed$/.test(event)) return { title: "Operação com falha", description: logFriendlyError(log.message || metadata.message) };
+  return {
+    title: logCategoryLabel(log.category),
+    description: logFriendlyError(log.message || "Uma atividade foi registrada pelo sistema.")
+  };
+}
+
+function logReferenceItems(log = {}) {
+  const metadata = log.metadata || {};
+  const candidates = [
+    ["Pedido", metadata.orderId],
+    ["Pagamento", metadata.paymentId || metadata.providerPaymentId],
+    ["Ingresso", metadata.ticketId],
+    ["Assinatura", metadata.subscriptionId],
+    ["Nota fiscal", metadata.fiscalDocumentId],
+    ["Sessão", metadata.sessionId],
+    ["Cliente", metadata.customerEmail || metadata.email]
+  ];
+  return candidates.filter(([, value]) => value != null && String(value).trim()).slice(0, 4);
 }
 
 function logDate(value = "") {
@@ -590,6 +732,7 @@ function logFilterDate(value, endOfMinute = false) {
 async function loadLogs(options = {}) {
   state.logsPage = Math.max(1, Number(options.page || state.logsPage || 1));
   const params = new URLSearchParams({ page: String(state.logsPage), pageSize: String(state.logsPageSize) });
+  params.set("view", state.logsView || "business");
   const filters = state.logFilters || {};
   if (filters.search) params.set("search", filters.search);
   if (filters.level) params.set("level", filters.level);
@@ -611,35 +754,44 @@ function renderLogs() {
   const stats = data.last24Hours || {};
   if ($("logsStats")) {
     $("logsStats").innerHTML = [
-      ["Total filtrado", Number(data.total || 0), "all"],
-      ["Erros · 24h", Number(stats.error || 0), "error"],
-      ["Avisos · 24h", Number(stats.warn || 0), "warn"],
-      ["Informações · 24h", Number(stats.info || 0), "info"]
+      ["Resultados encontrados", Number(data.total || 0), "all"],
+      ["Precisa de ação · 24h", Number(stats.error || 0), "error"],
+      ["Atenção · 24h", Number(stats.warn || 0), "warn"],
+      ["Operações normais · 24h", Number(stats.info || 0), "info"]
     ].map(([label, value, tone]) => `<div class="log-stat ${tone}"><span>${label}</span><strong>${value}</strong></div>`).join("");
+  }
+  if ($("logsResultsSummary")) {
+    const viewLabel = state.logsView === "technical" ? "Diagnóstico técnico" : "Visão do cinema";
+    $("logsResultsSummary").innerHTML = `<strong>${escapeHtml(viewLabel)}</strong><span>${Number(data.total || 0)} ocorrência(s), da mais recente para a mais antiga.</span>`;
   }
   if ($("logsList")) {
     $("logsList").innerHTML = data.logs?.length
-      ? data.logs.map((log) => `
+      ? data.logs.map((log) => {
+        const presentation = logPresentation(log);
+        const references = logReferenceItems(log);
+        const technical = state.logsView === "technical";
+        return `
         <details class="log-entry log-${escapeHtml(log.level || "info")}">
           <summary>
             <span class="log-level">${escapeHtml(logLevelLabel(log.level))}</span>
-            <span class="log-main"><strong>${escapeHtml(log.event || "system.event")}</strong><small>${escapeHtml(log.message || [log.method, log.path].filter(Boolean).join(" ") || "Evento registrado pelo sistema")}</small></span>
-            <span class="log-http">${log.statusCode ? `${Number(log.statusCode)}${log.durationMs != null ? ` · ${Number(log.durationMs)} ms` : ""}` : "-"}</span>
+            <span class="log-main"><strong>${escapeHtml(presentation.title)}</strong><small>${escapeHtml(presentation.description)}</small></span>
+            <span class="log-category">${escapeHtml(logCategoryLabel(log.category))}</span>
             <time datetime="${escapeHtml(log.createdAt || "")}">${escapeHtml(logDate(log.createdAt))}</time>
           </summary>
           <div class="log-details">
-            <dl>
-              <div><dt>Categoria</dt><dd>${escapeHtml(log.category || "system")}</dd></div>
-              <div><dt>Requisição</dt><dd>${escapeHtml(log.requestId || "-")}</dd></div>
-              <div><dt>Operador</dt><dd>${escapeHtml(log.actorEmail || log.actorUserId || "Sistema")}</dd></div>
-              <div><dt>Rota</dt><dd>${escapeHtml([log.method, log.path].filter(Boolean).join(" ") || "-")}</dd></div>
-              <div><dt>IP</dt><dd>${escapeHtml(log.ip || "-")}</dd></div>
-            </dl>
-            <pre>${escapeHtml(JSON.stringify(log.metadata || {}, null, 2))}</pre>
+            <div class="log-readable-detail">
+              <p>${escapeHtml(presentation.description)}</p>
+              <dl>
+                <div><dt>Responsável</dt><dd>${escapeHtml(log.actorEmail || log.actorUserId || "Ação automática do sistema")}</dd></div>
+                <div><dt>Assunto</dt><dd>${escapeHtml(logCategoryLabel(log.category))}</dd></div>
+                ${references.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd></div>`).join("")}
+              </dl>
+            </div>
+            ${technical ? `<details class="log-technical-detail"><summary>Ver dados para suporte técnico</summary><dl><div><dt>Evento</dt><dd>${escapeHtml(log.event || "-")}</dd></div><div><dt>Requisição</dt><dd>${escapeHtml(log.requestId || "-")}</dd></div><div><dt>Rota</dt><dd>${escapeHtml([log.method, log.path].filter(Boolean).join(" ") || "-")}</dd></div><div><dt>Resposta</dt><dd>${escapeHtml(log.statusCode ? String(log.statusCode) : "-")}</dd></div></dl><pre>${escapeHtml(JSON.stringify(log.metadata || {}, null, 2))}</pre></details>` : ""}
           </div>
         </details>
-      `).join("")
-      : `<div class="empty-state"><strong>Nenhum log encontrado</strong><span>Ajuste os filtros ou aguarde novos eventos do sistema.</span></div>`;
+      `; }).join("")
+      : `<div class="empty-state"><strong>Nenhuma ocorrência encontrada</strong><span>Está tudo tranquilo neste período ou os filtros não encontraram resultados.</span></div>`;
   }
   if ($("logsPagination")) {
     $("logsPagination").innerHTML = `
@@ -664,11 +816,16 @@ async function pruneLogs() {
 }
 
 function exportLogs() {
-  const payload = JSON.stringify(state.logs?.logs || [], null, 2);
-  const blob = new Blob([payload], { type: "application/json" });
+  const rows = (state.logs?.logs || []).map((log) => {
+    const presentation = logPresentation(log);
+    return [logDate(log.createdAt), logLevelLabel(log.level), logCategoryLabel(log.category), presentation.title, presentation.description, log.actorEmail || log.actorUserId || "Sistema"];
+  });
+  const csvCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const payload = [["Data e hora", "Importância", "Assunto", "Ocorrência", "Explicação", "Responsável"], ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
+  const blob = new Blob([`\ufeff${payload}`], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `cine-cruzeiro-logs-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = `historico-cine-cruzeiro-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -5476,6 +5633,13 @@ function bindEvents() {
   $("logsRefreshButton")?.addEventListener("click", () => loadLogs());
   $("logsExportButton")?.addEventListener("click", exportLogs);
   $("logsPruneButton")?.addEventListener("click", pruneLogs);
+  document.querySelectorAll("[data-logs-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.logsView = button.dataset.logsView || "business";
+      document.querySelectorAll("[data-logs-view]").forEach((item) => item.classList.toggle("active", item === button));
+      loadLogs({ page: 1 });
+    });
+  });
   [["logsLevel", "level"], ["logsCategory", "category"], ["logsFrom", "from"], ["logsTo", "to"]].forEach(([id, key]) => {
     $(id)?.addEventListener("change", () => {
       state.logFilters[key] = $(id).value.trim();

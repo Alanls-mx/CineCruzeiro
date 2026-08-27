@@ -426,6 +426,49 @@ const MERCADO_PAGO_ORDER_ACTIONS = new Set([
   "order.refunded"
 ]);
 
+const BUSINESS_LOG_EVENTS = new Set([
+  "admin.action",
+  "payment.created",
+  "payment.reconciled",
+  "payment.reconciliation_reference_mismatch",
+  "payment.reconciliation_amount_mismatch",
+  "ticket.used",
+  "ticket.transferred",
+  "ticket_email.failed",
+  "ticket_email.pdf_failed",
+  "ticket_transfer_email.failed",
+  "ticket_transfer_pdf.failed",
+  "box_office_sale.created",
+  "box_office_point_sale.created",
+  "box_office_point_sale.synced",
+  "box_office_point_sale.cancelled",
+  "box_office_ticket_print.queued",
+  "box_office_ticket_print.failed",
+  "webhook.processed",
+  "webhook.subscription.processed",
+  "webhook.payment.not_found",
+  "webhook.subscription.not_found",
+  "webhook.mercado_pago.rejected",
+  "subscription.pending_payment_expiration_failed",
+  "subscription.pending_payment_maintenance_failed",
+  "fiscal.email_failed",
+  "fiscal.email_attachment_failed",
+  "fiscal.webhook_sync_failed",
+  "fiscal.maintenance_failed",
+  "email_verification.delivery_failed",
+  "email_verification.delivery_missing_channel",
+  "password_reset.delivery_failed",
+  "password_reset.delivery_missing_channel",
+  "password_reset.delivery_not_configured",
+  "google_wallet.integration_failed",
+  "logs.retention_applied",
+  "logs.retention_failed"
+]);
+
+function businessLogVisible(log = {}) {
+  return String(log.level || "").toLowerCase() === "error" || BUSINESS_LOG_EVENTS.has(String(log.event || ""));
+}
+
 function webhookTesterEnabled() {
   return String(process.env.WEBHOOK_TESTER_ENABLED || "true").toLowerCase() !== "false";
 }
@@ -6072,6 +6115,8 @@ async function handleApi(req, res, pathname) {
       search: String(url.searchParams.get("search") || "").trim().slice(0, 160),
       from: String(url.searchParams.get("from") || "").trim(),
       to: String(url.searchParams.get("to") || "").trim(),
+      view: url.searchParams.get("view") === "technical" ? "technical" : "business",
+      businessEvents: [...BUSINESS_LOG_EVENTS],
       page: Math.max(1, Number(url.searchParams.get("page") || 1)),
       pageSize: Math.min(100, Math.max(10, Number(url.searchParams.get("pageSize") || 50)))
     };
@@ -6096,7 +6141,10 @@ async function handleApi(req, res, pathname) {
       userAgent: "",
       metadata: item,
       createdAt: item.createdAt || item.at || ""
-    })).filter((item) => (!filters.search || JSON.stringify(item).toLowerCase().includes(filters.search.toLowerCase())));
+    })).filter((item) => (filters.view === "technical" || businessLogVisible(item)))
+      .filter((item) => (!filters.level || item.level === filters.level))
+      .filter((item) => (!filters.category || item.category === filters.category || String(item.event || "").startsWith(`${filters.category}.`) || String(item.event || "").startsWith(`${filters.category}_`)))
+      .filter((item) => (!filters.search || JSON.stringify(item).toLowerCase().includes(filters.search.toLowerCase())));
     const start = (filters.page - 1) * filters.pageSize;
     sendJson(res, 200, {
       logs: filtered.slice(start, start + filters.pageSize),

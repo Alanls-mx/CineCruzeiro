@@ -1627,29 +1627,34 @@
         <section id="logsPanel" class="panel">
           <div class="panel-heading logs-heading">
             <div>
-              <h1>Logs do sistema</h1>
-              <p>Acompanhe requisições, falhas, pagamentos, ações administrativas e rotinas do backend.</p>
+              <h1>Histórico do sistema</h1>
+              <p>Veja o que aconteceu no cinema, quem realizou cada ação e o que precisa de atenção.</p>
             </div>
             <div class="button-row">
-              <button id="logsExportButton" class="ghost-button" type="button">Exportar JSON</button>
-              <button id="logsRefreshButton" class="primary-button" type="button">Atualizar</button>
+              <button id="logsExportButton" class="ghost-button" type="button">Exportar relatório</button>
+              <button id="logsRefreshButton" class="primary-button" type="button">Atualizar histórico</button>
             </div>
           </div>
           <div id="logsStats" class="logs-stats" aria-live="polite"></div>
           <div class="surface logs-workspace">
-            <div class="logs-filters" aria-label="Filtros de logs">
-              <label>Buscar<input id="logsSearch" type="search" placeholder="Evento, rota, usuário ou request ID" /></label>
-              <label>Nível<select id="logsLevel"><option value="">Todos</option><option value="error">Erro</option><option value="warn">Aviso</option><option value="info">Informação</option><option value="debug">Depuração</option></select></label>
-              <label>Categoria<input id="logsCategory" placeholder="Ex.: pagamento" /></label>
-              <label>De<input id="logsFrom" type="datetime-local" /></label>
-              <label>Até<input id="logsTo" type="datetime-local" /></label>
+            <div class="logs-view-switch" role="group" aria-label="Tipo de visualização">
+              <button class="active" type="button" data-logs-view="business">Visão do cinema</button>
+              <button type="button" data-logs-view="technical">Diagnóstico técnico</button>
             </div>
+            <div class="logs-filters" aria-label="Filtros de logs">
+              <label class="logs-search-field">Buscar<input id="logsSearch" type="search" placeholder="Pedido, cliente, operador ou ação" /></label>
+              <label>Importância<select id="logsLevel"><option value="">Todas</option><option value="error">Precisa de ação</option><option value="warn">Atenção</option><option value="info">Operação normal</option><option value="debug">Diagnóstico</option></select></label>
+              <label>Assunto<select id="logsCategory"><option value="">Todos os assuntos</option><option value="payment">Pagamentos</option><option value="box_office">Bilheteria</option><option value="ticket">Ingressos</option><option value="subscription">Clube</option><option value="fiscal">Notas fiscais</option><option value="email">E-mails</option><option value="admin">Painel administrativo</option><option value="integration">Integrações</option><option value="webhook">Confirmações automáticas</option><option value="request">Erros de operação</option><option value="logs">Histórico</option></select></label>
+              <label>Período inicial<input id="logsFrom" type="datetime-local" /></label>
+              <label>Período final<input id="logsTo" type="datetime-local" /></label>
+            </div>
+            <div id="logsResultsSummary" class="logs-results-summary" aria-live="polite"></div>
             <div id="logsList" class="logs-list"></div>
             <div class="logs-footer">
               <div id="logsPagination" class="logs-pagination"></div>
               <div class="logs-retention" data-owner-only="true">
                 <label>Reter por <input id="logsRetentionDays" type="number" min="1" max="3650" value="90" /> dias</label>
-                <button id="logsPruneButton" class="danger-button" type="button">Remover logs antigos</button>
+                <button id="logsPruneButton" class="danger-button" type="button">Limpar histórico antigo</button>
               </div>
             </div>
           </div>

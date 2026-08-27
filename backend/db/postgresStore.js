@@ -1116,13 +1116,21 @@ async function listSystemLogsFromPostgres(filters = {}) {
       where.push(clause.replace("?", `$${values.length}`));
     };
     if (filters.level) add("level = ?", filters.level);
-    if (filters.category) add("category = ?", filters.category);
+    if (filters.category) {
+      values.push(filters.category, `${filters.category}.%`, `${filters.category}_%`);
+      const index = values.length;
+      where.push(`(category = $${index - 2} OR event LIKE $${index - 1} OR event LIKE $${index})`);
+    }
+    if (filters.view !== "technical") {
+      values.push(filters.businessEvents || []);
+      where.push(`(level = 'error' OR event = ANY($${values.length}::text[]))`);
+    }
     if (filters.from) add("created_at >= NULLIF(?, '')::timestamptz", filters.from);
     if (filters.to) add("created_at <= NULLIF(?, '')::timestamptz", filters.to);
     if (filters.search) {
       values.push(`%${filters.search}%`);
       const index = values.length;
-      where.push(`(event ILIKE $${index} OR message ILIKE $${index} OR actor_email ILIKE $${index} OR path ILIKE $${index} OR request_id ILIKE $${index})`);
+      where.push(`(event ILIKE $${index} OR message ILIKE $${index} OR actor_email ILIKE $${index} OR path ILIKE $${index} OR request_id ILIKE $${index} OR metadata::text ILIKE $${index})`);
     }
     const page = Math.max(1, Number(filters.page || 1));
     const pageSize = Math.min(100, Math.max(10, Number(filters.pageSize || 50)));
@@ -1130,8 +1138,14 @@ async function listSystemLogsFromPostgres(filters = {}) {
     const count = await query(client, `SELECT COUNT(*)::INTEGER AS total FROM system_logs ${predicate}`, values);
     values.push(pageSize, (page - 1) * pageSize);
     const rows = await query(client, `SELECT * FROM system_logs ${predicate} ORDER BY created_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`, values);
+    const statsValues = [];
+    let statsVisibility = "";
+    if (filters.view !== "technical") {
+      statsValues.push(filters.businessEvents || []);
+      statsVisibility = `AND (level = 'error' OR event = ANY($1::text[]))`;
+    }
     const stats = await query(client, `SELECT level, COUNT(*)::INTEGER AS total FROM system_logs
-      WHERE created_at >= now() - interval '24 hours' GROUP BY level`);
+      WHERE created_at >= now() - interval '24 hours' ${statsVisibility} GROUP BY level`, statsValues);
     return {
       logs: rows.rows.map((row) => ({
         id: row.id,

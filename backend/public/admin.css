@@ -2699,12 +2699,51 @@ input[type="file"]::file-selector-button {
   min-width: 0;
 }
 
+.logs-view-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  margin-bottom: 16px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.42);
+}
+
+.logs-view-switch button {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.logs-view-switch button:hover { color: var(--text); }
+.logs-view-switch button.active { background: var(--panel-soft); color: var(--text); box-shadow: 0 1px 5px rgba(0, 0, 0, 0.24); }
+
 .logs-filters {
   display: grid;
   grid-template-columns: minmax(240px, 1.6fr) repeat(2, minmax(130px, 0.75fr)) repeat(2, minmax(180px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
+
+.logs-results-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.logs-results-summary strong { color: var(--text); font-size: 12px; }
 
 .logs-list {
   display: grid;
@@ -2713,12 +2752,17 @@ input[type="file"]::file-selector-button {
 
 .log-entry {
   min-width: 0;
+  border: 1px solid transparent;
   border-radius: 8px;
   background: rgba(2, 6, 23, 0.42);
   overflow: hidden;
 }
 
-.log-entry summary {
+.log-entry[open] { border-color: var(--line); }
+.log-entry.log-error { border-color: rgba(251, 113, 133, 0.34); }
+.log-entry.log-warn { border-color: rgba(250, 204, 21, 0.25); }
+
+.log-entry > summary {
   display: grid;
   grid-template-columns: 92px minmax(220px, 1fr) 110px 150px;
   gap: 12px;
@@ -2730,8 +2774,8 @@ input[type="file"]::file-selector-button {
   transition: background 0.2s ease;
 }
 
-.log-entry summary::-webkit-details-marker { display: none; }
-.log-entry summary:hover { background: rgba(255, 255, 255, 0.035); }
+.log-entry > summary::-webkit-details-marker { display: none; }
+.log-entry > summary:hover { background: rgba(255, 255, 255, 0.035); }
 
 .log-level {
   width: max-content;
@@ -2762,18 +2806,32 @@ input[type="file"]::file-selector-button {
 
 .log-main small,
 .log-entry time,
-.log-http {
+.log-category {
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
-.log-http,
+.log-category,
 .log-entry time { text-align: right; }
+
+.log-category {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .log-details {
   padding: 15px;
   background: rgba(255, 255, 255, 0.025);
+}
+
+.log-readable-detail > p {
+  max-width: 850px;
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .log-details dl {
@@ -2798,6 +2856,22 @@ input[type="file"]::file-selector-button {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.log-technical-detail {
+  margin-top: 14px;
+  padding-top: 12px;
+  box-shadow: inset 0 1px var(--line);
+}
+
+.log-technical-detail > summary {
+  width: max-content;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.log-technical-detail[open] > summary { margin-bottom: 12px; color: var(--text); }
 
 .logs-footer,
 .logs-pagination,
@@ -3908,8 +3982,8 @@ th {
 
   .logs-stats { grid-template-columns: 1fr 1fr; }
   .logs-filters { grid-template-columns: 1fr 1fr; }
-  .log-entry summary { grid-template-columns: 84px minmax(0, 1fr) 100px; }
-  .log-entry summary time { grid-column: 2 / -1; text-align: left; }
+  .log-entry > summary { grid-template-columns: 84px minmax(0, 1fr) 100px; }
+  .log-entry > summary time { grid-column: 2 / -1; text-align: left; }
   .log-details dl { grid-template-columns: 1fr 1fr; }
 
   .movie-row {
@@ -3927,13 +4001,13 @@ th {
   .logs-filters,
   .log-details dl { grid-template-columns: 1fr; }
 
-  .log-entry summary {
+  .log-entry > summary {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 8px 10px;
   }
 
-  .log-http,
-  .log-entry summary time {
+  .log-category,
+  .log-entry > summary time {
     grid-column: 2;
     text-align: left;
   }
