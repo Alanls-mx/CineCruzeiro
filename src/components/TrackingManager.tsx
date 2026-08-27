@@ -23,6 +23,7 @@ export function TrackingManager() {
   const [metaReady, setMetaReady] = useState(false);
   const lastGooglePath = useRef("");
   const lastMetaPath = useRef("");
+  const initializedGoogleId = useRef("");
   const enabled = Boolean(tracking?.enabled && (tracking.googleMeasurementId || tracking.metaPixelId));
 
   useEffect(() => {
@@ -37,6 +38,25 @@ export function TrackingManager() {
       .catch(() => setTracking({}));
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    const measurementId = tracking?.googleMeasurementId?.replace(/[^A-Za-z0-9-]/g, "") || "";
+    if (consent !== "granted" || !measurementId || initializedGoogleId.current === measurementId) return;
+
+    const trackedWindow = window as typeof window & {
+      dataLayer?: unknown[][];
+      gtag?: (...args: unknown[]) => void;
+    };
+    trackedWindow.dataLayer = trackedWindow.dataLayer || [];
+    trackedWindow.gtag = trackedWindow.gtag || function gtag(...args: unknown[]) {
+      trackedWindow.dataLayer?.push(args);
+    };
+    trackedWindow.gtag("js", new Date());
+    trackedWindow.gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    trackedWindow.gtag("config", measurementId, { send_page_view: false, anonymize_ip: true });
+    initializedGoogleId.current = measurementId;
+    setGoogleReady(true);
+  }, [consent, tracking?.googleMeasurementId]);
 
   useEffect(() => {
     if (consent !== "granted" || !googleReady || lastGooglePath.current === pathname) return;
@@ -62,16 +82,11 @@ export function TrackingManager() {
   return (
     <>
       {consent === "granted" && tracking?.googleMeasurementId && (
-        <>
-          <Script src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tracking.googleMeasurementId)}`} strategy="lazyOnload" />
-          <Script id="cine-google-analytics" strategy="lazyOnload" onReady={() => setGoogleReady(true)}>{`
-            window.dataLayer = window.dataLayer || [];
-            function gtag(){dataLayer.push(arguments);}
-            window.gtag = gtag;
-            gtag('js', new Date());
-            gtag('config', '${tracking.googleMeasurementId.replace(/[^A-Za-z0-9-]/g, "")}', { send_page_view: false, anonymize_ip: true });
-          `}</Script>
-        </>
+        <Script
+          id="cine-google-analytics-loader"
+          src={`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(tracking.googleMeasurementId)}`}
+          strategy="afterInteractive"
+        />
       )}
       {consent === "granted" && tracking?.metaPixelId && (
         <Script id="cine-meta-pixel" strategy="lazyOnload" onReady={() => setMetaReady(true)}>{`
