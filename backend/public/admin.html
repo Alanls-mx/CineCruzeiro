@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
-    <link rel="stylesheet" href="admin/admin.css?v=20260828-account-separation-2" />
+    <link rel="stylesheet" href="admin/admin.css?v=20260828-club-priority-1" />
     <link rel="stylesheet" href="admin/admin-premium.css?v=20260827-14" />
   </head>
   <body class="admin-booting">
@@ -1537,7 +1537,7 @@
                   <div class="section-title">Planos cadastrados</div>
                   <p>Selecione um plano para revisar preço, benefícios e publicação.</p>
                 </div>
-                <span class="club-plan-catalog-hint">Ordem do site</span>
+                <span class="club-plan-catalog-hint">Prioridade da vitrine</span>
               </div>
               <div id="clubPlansList" class="list club-plan-list"></div>
             </div>
@@ -1556,7 +1556,7 @@
                 <div class="club-plan-section-head">
                   <div>
                     <h3>Informações do plano</h3>
-                    <p>Nome, mensalidade, créditos e posição na vitrine.</p>
+                    <p>Nome, mensalidade, créditos e prioridade na vitrine.</p>
                   </div>
                 </div>
                 <label>
@@ -1573,8 +1573,9 @@
                     <input id="clubPlanTickets" type="number" min="0" step="1" required />
                   </label>
                   <label>
-                    Ordem de exibição
-                    <input id="clubPlanDisplayOrder" type="number" min="1" step="1" value="100" />
+                    Prioridade da vitrine
+                    <input id="clubPlanDisplayOrder" type="number" min="0" max="999" step="1" value="100" aria-describedby="clubPlanPriorityHelp" />
+                    <small id="clubPlanPriorityHelp" class="field-help">Quanto maior o número, maior a prioridade. O recomendado sempre abre no centro.</small>
                   </label>
                   <div class="club-plan-switches">
                     <label class="check-field"><input id="clubPlanFeatured" type="checkbox" /> Plano recomendado</label>
@@ -1991,6 +1992,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260828-account-separation-2"></script>
+    <script src="admin/admin.js?v=20260828-club-priority-1"></script>
   </body>
 </html>

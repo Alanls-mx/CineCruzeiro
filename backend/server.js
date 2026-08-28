@@ -3103,7 +3103,7 @@ function normalizeSubscriptionPlan(input, existing = {}) {
     freeConcessionItems,
     imageUrl: input.imageUrl !== undefined ? storedLocalUploadUrl(input.imageUrl) : storedLocalUploadUrl(existing.imageUrl || ""),
     isFeatured: input.isFeatured !== undefined ? Boolean(input.isFeatured) : Boolean(existing.isFeatured || existing.featured),
-    displayOrder: Number(input.displayOrder ?? input.sortOrder ?? existing.displayOrder ?? existing.sortOrder ?? 100),
+    displayOrder: Math.min(999, Math.max(0, Math.floor(Number(input.displayOrder ?? input.sortOrder ?? existing.displayOrder ?? existing.sortOrder ?? 100) || 0))),
     providerPlanId: String(input.providerPlanId || input.mercadoPagoPlanId || existing.providerPlanId || existing.mercadoPagoPlanId || "").trim(),
     mercadoPagoPlanId: String(input.mercadoPagoPlanId || input.providerPlanId || existing.mercadoPagoPlanId || existing.providerPlanId || "").trim(),
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false,
@@ -7879,6 +7879,9 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const plan = normalizeSubscriptionPlan(body);
     db.subscriptionPlans = (db.subscriptionPlans || []).filter((item) => item.id !== plan.id);
+    if (plan.isFeatured) {
+      db.subscriptionPlans = db.subscriptionPlans.map((item) => ({ ...item, isFeatured: false }));
+    }
     db.subscriptionPlans.push(plan);
     await writeDb(db);
     sendJson(res, 201, plan);
@@ -7894,6 +7897,9 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const plan = normalizeSubscriptionPlan({ ...(await readBody(req)), id }, db.subscriptionPlans[index]);
+    if (plan.isFeatured) {
+      db.subscriptionPlans = db.subscriptionPlans.map((item) => item.id === id ? item : ({ ...item, isFeatured: false }));
+    }
     db.subscriptionPlans[index] = plan;
     await writeDb(db);
     sendJson(res, 200, plan);

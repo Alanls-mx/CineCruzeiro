@@ -41,8 +41,8 @@ export default function ClubePage() {
       .catch(() => setSettings({}));
   }, []);
 
-  const sortedPlans = useMemo(
-    () => [...plans].sort((a, b) => Number(a.displayOrder || 100) - Number(b.displayOrder || 100)),
+  const carouselPlans = useMemo(
+    () => arrangePlansForCarousel(plans),
     [plans]
   );
   const preserveTransparentImages = settings.clubTransparentImages === true;
@@ -119,8 +119,8 @@ export default function ClubePage() {
               </div>
             )}
             {status === "ready" && (
-              sortedPlans.length ? (
-                <PlansCarousel plans={sortedPlans} />
+              carouselPlans.length ? (
+                <PlansCarousel plans={carouselPlans} />
               ) : (
                 <div className="bg-white/[0.035] px-5 py-8 text-center">
                   <h3 className="font-display text-xl font-black">Nenhum plano disponível para assinatura</h3>
@@ -179,6 +179,32 @@ export default function ClubePage() {
       <SiteFooter />
     </div>
   );
+}
+
+function arrangePlansForCarousel(plans: SubscriptionPlan[]) {
+  const indexedPlans = plans.map((plan, index) => ({ plan, index }));
+  const byPriorityAscending = (a: typeof indexedPlans[number], b: typeof indexedPlans[number]) => (
+    Number(a.plan.displayOrder ?? 100) - Number(b.plan.displayOrder ?? 100) || a.index - b.index
+  );
+  const recommended = indexedPlans
+    .filter(({ plan }) => plan.isFeatured)
+    .sort((a, b) => Number(b.plan.displayOrder ?? 100) - Number(a.plan.displayOrder ?? 100) || a.index - b.index)[0];
+
+  if (!recommended) {
+    return indexedPlans.sort(byPriorityAscending).map(({ plan }) => plan);
+  }
+
+  const remaining = indexedPlans.filter(({ index }) => index !== recommended.index).sort(byPriorityAscending);
+  if (!remaining.length) return [recommended.plan];
+
+  const lowest = remaining.shift();
+  const highest = remaining.pop();
+  return [
+    ...remaining,
+    ...(lowest ? [lowest] : []),
+    recommended,
+    ...(highest ? [highest] : []),
+  ].map(({ plan }) => plan);
 }
 
 function PlansCarousel({ plans }: { plans: SubscriptionPlan[] }) {

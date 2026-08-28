@@ -4804,7 +4804,7 @@ async function deleteUser() {
 }
 
 function renderClub() {
-  const plans = [...(state.content?.subscriptionPlans || [])].sort((a, b) => Number(a.displayOrder || 100) - Number(b.displayOrder || 100));
+  const plans = [...(state.content?.subscriptionPlans || [])].sort((a, b) => Number(b.displayOrder ?? 100) - Number(a.displayOrder ?? 100));
   const subscriptions = state.content?.subscriptions || [];
   const credits = state.content?.subscriptionCredits || [];
   const usage = state.content?.subscriptionUsage || [];
@@ -4830,7 +4830,7 @@ function renderClub() {
             <span class="club-plan-list-side">
               <span class="badge">${money(plan.monthlyPrice)}</span>
               <span class="club-plan-list-status ${plan.active === false ? "inactive" : ""}"><i></i>${plan.active === false ? "Inativo" : "Ativo"}</span>
-              <small>Ordem ${Number(plan.displayOrder || 100)}</small>
+              <small>Prioridade ${Number(plan.displayOrder ?? 100)}</small>
             </span>
           </button>
         `).join("")

@@ -843,6 +843,24 @@ async function run() {
     assert.equal(persistedMediaPlan.isFeatured, true);
     assert.equal(persistedMediaPlan.displayOrder, 7);
 
+    const secondFeaturedPlan = await request("/api/admin/subscription-plans", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        id: "smoke-clube-destaque-2",
+        name: "Plano Smoke Destaque 2",
+        monthlyPrice: 19.9,
+        includedTickets: 2,
+        isFeatured: true,
+        displayOrder: 15,
+        active: true
+      })
+    });
+    assert.equal(secondFeaturedPlan.response.status, 201);
+    const plansAfterFeaturedChange = await request("/api/subscription-plans");
+    assert.equal(plansAfterFeaturedChange.payload.find((plan) => plan.id === oneCreditPlan.payload.id).isFeatured, false);
+    assert.equal(plansAfterFeaturedChange.payload.find((plan) => plan.id === secondFeaturedPlan.payload.id).isFeatured, true);
+
     const subscriptionWithoutPaymentMethod = await request("/api/subscriptions/subscribe", {
       method: "POST",
       headers: jsonHeaders(cookie),
