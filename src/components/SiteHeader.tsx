@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { Menu, ShoppingBag, UserRound, X } from "lucide-react";
 import { fetchCinemaContent } from "@/services/cinemaApi";
 import type { CinemaContent } from "@/services/cinemaApi";
-import { assetPath, cartItemCount, readCheckoutCart } from "@/utils/cinema";
+import { assetPath, checkoutCartsItemCount, readCheckoutCarts } from "@/utils/cinema";
+import { CartDrawer } from "@/components/CartDrawer";
 
 const navItems = [
   { href: "/filmes", label: "Filmes" },
@@ -22,10 +23,11 @@ type SiteHeaderProps = {
 export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderProps = {}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { cartCount, cartHref } = useCartDestination();
-  const [remoteSettings, setRemoteSettings] = useState<CinemaContent["settings"] | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const { cartCount } = useCartDestination();
+  const [remoteContent, setRemoteContent] = useState<CinemaContent | null>(null);
 
-  const effectiveSettings = settings || remoteSettings;
+  const effectiveSettings = settings || remoteContent?.settings;
   const showAnnouncement = effectiveSettings?.announcementEnabled === true;
   const announcementText = effectiveSettings?.announcementText?.trim();
 
@@ -41,19 +43,19 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
   }, [open]);
 
   useEffect(() => {
-    if (settings) return;
     let mounted = true;
     fetchCinemaContent()
       .then((content) => {
-        if (mounted) setRemoteSettings(content.settings);
+        if (mounted) setRemoteContent(content);
       })
       .catch(() => null);
     return () => {
       mounted = false;
     };
-  }, [settings]);
+  }, []);
 
   return (
+    <>
     <header className="sticky top-0 z-40 bg-[#060a12]/92 backdrop-blur-xl">
       {showAnnouncement && announcementText && (
         <div className="border-b border-white/8 bg-brand-700 px-4 py-1.5 text-center text-xs font-bold text-white">
@@ -84,10 +86,10 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
           <Link href="/conta" className="inline-flex h-11 w-11 items-center justify-center text-slate-200 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label="Minha conta">
             <UserRound className="h-5 w-5" />
           </Link>
-          <Link href={cartHref} className="relative inline-flex h-11 w-11 items-center justify-center text-slate-200 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label="Carrinho">
+          <button type="button" onClick={() => setCartOpen(true)} className="relative inline-flex h-11 w-11 items-center justify-center text-slate-200 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label="Abrir carrinho">
             <ShoppingBag className="h-5 w-5" />
             {cartCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-gold-400" />}
-          </Link>
+          </button>
           <Link href="/filmes" className={`${mutedPrimaryAction ? "bg-white/8 text-slate-100 hover:bg-white/12" : "bg-gold-400 text-slate-950 hover:bg-gold-300"} px-5 py-3 text-sm font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400`}>
             Comprar ingresso
           </Link>
@@ -97,10 +99,10 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
           <Link href="/conta" className="inline-flex h-11 w-11 items-center justify-center text-slate-100" aria-label="Minha conta">
             <UserRound className="h-5 w-5" />
           </Link>
-          <Link href={cartHref} className="relative inline-flex h-11 w-11 items-center justify-center text-slate-100" aria-label="Carrinho">
+          <button type="button" onClick={() => setCartOpen(true)} className="relative inline-flex h-11 w-11 items-center justify-center text-slate-100" aria-label="Abrir carrinho">
             <ShoppingBag className="h-5 w-5" />
             {cartCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-gold-400" />}
-          </Link>
+          </button>
           <button type="button" onClick={() => setOpen((value) => !value)} className="inline-flex h-11 w-11 items-center justify-center text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label={open ? "Fechar menu" : "Abrir menu"} aria-expanded={open} aria-controls="site-mobile-navigation">
             {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
@@ -116,7 +118,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
               </Link>
             ))}
             <Link href="/conta" onClick={() => setOpen(false)}>Minha conta</Link>
-            <Link href={cartHref} onClick={() => setOpen(false)}>Carrinho</Link>
+            <button type="button" className="text-left" onClick={() => { setOpen(false); setCartOpen(true); }}>Carrinho</button>
             <Link href="/filmes" onClick={() => setOpen(false)} className={`${mutedPrimaryAction ? "bg-white/8 text-white" : "bg-gold-400 text-slate-950"} mt-2 px-5 py-3 text-center text-sm font-black`}>
               Comprar ingresso
             </Link>
@@ -124,6 +126,8 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
         </div>
       )}
     </header>
+    <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} content={remoteContent} />
+    </>
   );
 }
 
@@ -186,9 +190,9 @@ function useCartDestination() {
 
   useEffect(() => {
     const update = () => {
-      const cart = readCheckoutCart();
-      setCartCount(cartItemCount(cart));
-      setCartSessionId(cart?.sessionId || "");
+      const carts = readCheckoutCarts();
+      setCartCount(checkoutCartsItemCount(carts));
+      setCartSessionId(carts[0]?.sessionId || "");
     };
     update();
     window.addEventListener("cine-cruzeiro-cart-updated", update);

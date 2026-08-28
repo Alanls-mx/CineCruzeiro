@@ -1806,6 +1806,60 @@ function validateTicket(db, code, adminUser, expectedSessionId = "") {
   return ticket;
 }
 
+function validateTicketConcessions(db, code, adminUser) {
+  const ticketCode = extractTicketCode(code);
+  const ticket = (db.tickets || []).find((item) => item.code === ticketCode);
+  if (!ticket) {
+    const error = new Error("Ingresso não encontrado.");
+    error.statusCode = 404;
+    error.code = "TICKET_NOT_FOUND";
+    throw error;
+  }
+  const order = orderForTicket(db, ticket);
+  if (!order || order.status !== "paid") {
+    const error = new Error("A bomboniere só pode ser entregue após a aprovação do pagamento.");
+    error.statusCode = 409;
+    error.code = "TICKET_PAYMENT_PENDING";
+    error.ticket = ticket;
+    throw error;
+  }
+  if (["cancelled", "refunded", "expired"].includes(String(ticket.status || ""))) {
+    const error = new Error("Este ingresso não está disponível para retirada na bomboniere.");
+    error.statusCode = 409;
+    error.code = "TICKET_EXPIRED";
+    error.ticket = ticket;
+    throw error;
+  }
+
+  const concessions = Array.isArray(order.concessionItems) ? order.concessionItems : [];
+  if (!concessions.length) {
+    const error = new Error("Este pedido não possui itens de bomboniere.");
+    error.statusCode = 409;
+    error.code = "ORDER_WITHOUT_CONCESSIONS";
+    error.ticket = ticket;
+    throw error;
+  }
+  const pending = concessions.filter((item) => Number(item.quantity || 0) > Number(item.fulfilledQuantity || 0));
+  if (!pending.length) {
+    const error = new Error(`Itens já entregues em ${new Date(order.concessionsFulfilledAt || concessions[0]?.fulfilledAt || Date.now()).toLocaleString("pt-BR")}.`);
+    error.statusCode = 409;
+    error.code = "CONCESSIONS_ALREADY_FULFILLED";
+    error.ticket = ticket;
+    error.concessions = concessions;
+    throw error;
+  }
+
+  const fulfilledAt = new Date().toISOString();
+  pending.forEach((item) => {
+    item.fulfilledQuantity = Number(item.quantity || 0);
+    item.fulfilledAt = fulfilledAt;
+    item.fulfilledBy = adminUser?.id || "";
+  });
+  order.concessionsFulfilledAt = fulfilledAt;
+  order.concessionsFulfilledBy = adminUser?.id || "";
+  return { ticket, order, concessions: pending, fulfilledAt };
+}
+
 async function createOpenFinancePixPayment(order, config = {}) {
   return paymentService.createOpenFinancePixPayment(order, config);
 }
@@ -3812,6 +3866,85 @@ function sessionHasAuditHistory(db, sessionId) {
     || (db.subscriptionUsage || db.subscriptionUsages || []).some((usage) => usage.sessionId === sessionId);
 }
 
+function movieDurationMinutes(movie = {}) {
+  const raw = String(movie.duration || "").trim().toLowerCase();
+  const hours = Number(raw.match(/(\d+(?:[.,]\d+)?)\s*h/)?.[1]?.replace(",", ".") || 0);
+  const minutes = Number(raw.match(/(\d+)\s*(?:m|min)/)?.[1] || 0);
+  if (hours || minutes) return Math.max(1, Math.round(hours * 60 + minutes));
+  const numeric = Number(raw.replace(/[^\d.,]/g, "").replace(",", "."));
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 100;
+}
+
+function finishedSessionEndsAt(movie, session) {
+  const startsAt = sessionStartsAt(session, session.date || todayIsoDate());
+  return startsAt ? new Date(startsAt.getTime() + movieDurationMinutes(movie) * 60 * 1000) : null;
+}
+
+function snapshotFinishedSessionRecord(record, movie, session, archivedAt) {
+  if (!record || String(record.sessionId || "") !== String(session.id || "")) return false;
+  record.archivedSessionId = record.archivedSessionId || session.id;
+  record.movieId = movie.id;
+  record.movieTitle = movie.title || record.movieTitle || "";
+  record.sessionDate = session.date || record.sessionDate || "";
+  record.sessionTime = session.time || record.sessionTime || "";
+  record.sessionRoom = session.room || record.sessionRoom || "Sala Cruzeiro";
+  record.sessionFormat = session.format || record.sessionFormat || "";
+  record.sessionEndedAt = archivedAt;
+  record.sessionId = "";
+  return true;
+}
+
+function archiveFinishedSessions(db, now = new Date()) {
+  const archived = [];
+  const archivedAt = now.toISOString();
+  for (const movie of db.movies || []) {
+    const activeSessions = [];
+    for (const session of movie.sessions || []) {
+      const endsAt = finishedSessionEndsAt(movie, session);
+      if (!endsAt || endsAt.getTime() > now.getTime()) {
+        activeSessions.push(session);
+        continue;
+      }
+
+      let detachedOrders = 0;
+      let detachedTickets = 0;
+      (db.orders || []).forEach((order) => {
+        if (snapshotFinishedSessionRecord(order, movie, session, archivedAt)) detachedOrders += 1;
+      });
+      (db.tickets || []).forEach((ticket) => {
+        if (!snapshotFinishedSessionRecord(ticket, movie, session, archivedAt)) return;
+        if (!['used', 'cancelled', 'refunded'].includes(String(ticket.status || ''))) ticket.status = 'expired';
+        detachedTickets += 1;
+      });
+      (db.payments || []).forEach((payment) => {
+        if (String(payment.sessionId || "") === String(session.id || "")) {
+          payment.archivedSessionId = payment.archivedSessionId || session.id;
+          payment.sessionId = "";
+        }
+      });
+      (db.subscriptionUsage || db.subscriptionUsages || []).forEach((usage) => {
+        if (String(usage.sessionId || "") === String(session.id || "")) {
+          usage.archivedSessionId = usage.archivedSessionId || session.id;
+          usage.sessionId = "";
+        }
+      });
+      archived.push({
+        sessionId: session.id,
+        movieId: movie.id,
+        movieTitle: movie.title || "",
+        endedAt: endsAt.toISOString(),
+        detachedOrders,
+        detachedTickets
+      });
+    }
+    if (activeSessions.length !== (movie.sessions || []).length) {
+      movie.sessions = activeSessions;
+      movie.updatedAt = archivedAt;
+    }
+  }
+  return { changed: archived.length > 0, archived };
+}
+
 function normalizeRoom(input, existing = {}) {
   const name = String(input.name || existing.name || "Nova Sala").trim();
   return {
@@ -4237,8 +4370,9 @@ function repriceOrderFromCatalog(db, order) {
   }
   const session = (movie.sessions || []).find((item) => item.id === order.sessionId);
   if (!session || session.status === "sold_out") {
-    const error = new Error("Sessao indisponivel para este pedido.");
-    error.statusCode = 400;
+    const error = new Error(session ? "Esta sessão está esgotada." : "Esta sessão já terminou ou não está mais disponível.");
+    error.statusCode = session ? 409 : 404;
+    error.code = session ? "SESSION_SOLD_OUT" : "SESSION_NOT_FOUND";
     throw error;
   }
   if (!isSessionSellable(session, order.sessionDate || session.date || todayIsoDate())) {
@@ -5878,11 +6012,15 @@ async function handleApi(req, res, pathname) {
   const db = await readDb();
   const scheduledChanged = applyScheduledPremieres(db);
   const movieTagsChanged = applyAutomatedMovieTags(db);
+  const sessionMaintenance = archiveFinishedSessions(db);
   const reservationsChanged = expireStaleReservations(db);
   const subscriptionMaintenance = await expirePendingPaymentSubscriptions(db);
   const subscriptionLifecycle = finalizeEndingSubscriptions(db);
-  if (scheduledChanged || movieTagsChanged || reservationsChanged || subscriptionMaintenance.changed || subscriptionLifecycle.changed) {
+  if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || subscriptionMaintenance.changed || subscriptionLifecycle.changed) {
     await writeDb(db);
+    if (sessionMaintenance.changed) {
+      sessionMaintenance.archived.forEach((session) => logEvent("info", "session.finished_archived", session));
+    }
   }
 
   const limited = rateLimit(req, pathname);
@@ -9014,31 +9152,54 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/tickets/validate" && method === "POST") {
     const body = await readBody(req);
+    const validationMode = body.mode === "concessions" ? "concessions" : "entry";
     try {
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
         const adminUser = getAdminUser(req, lockedDb);
-        const ticket = validateTicket(lockedDb, body.code || body.qrPayload, adminUser, body.sessionId);
+        const validation = validationMode === "concessions"
+          ? validateTicketConcessions(lockedDb, body.code || body.qrPayload, adminUser)
+          : { ticket: validateTicket(lockedDb, body.code || body.qrPayload, adminUser, body.sessionId) };
+        const ticket = validation.ticket;
         lockedDb.auditLogs ||= [];
         lockedDb.auditLogs.push({
           id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
           entityType: "ticket_validation",
           entityId: ticket.id,
-          action: "ticket.validated",
+          action: validationMode === "concessions" ? "concessions.fulfilled" : "ticket.validated",
           updatedBy: adminUser?.id || "",
           updatedByEmail: adminUser?.email || "",
           at: new Date().toISOString(),
           before: null,
           after: {
             ticketId: ticket.id,
+            orderId: ticket.orderId,
             operatorId: adminUser?.id || "",
-            validatedAt: ticket.usedAt,
-            result: "validated"
+            validatedAt: validationMode === "concessions" ? validation.fulfilledAt : ticket.usedAt,
+            result: validationMode === "concessions" ? "concessions_fulfilled" : "validated",
+            concessions: validationMode === "concessions"
+              ? validation.concessions.map((item) => ({ id: item.id, name: item.name, quantity: item.quantity }))
+              : []
           }
         });
         await writeDb(lockedDb);
-        logEvent("info", "ticket.used", { ticketId: ticket.id, orderId: ticket.orderId, usedBy: ticket.usedBy });
-        sendJson(res, 200, { ok: true, result: "valid", ticket: enrichTicket(lockedDb, ticket) });
+        if (validationMode === "concessions") {
+          logEvent("info", "concessions.fulfilled", {
+            ticketId: ticket.id,
+            orderId: ticket.orderId,
+            fulfilledBy: adminUser?.id || "",
+            items: validation.concessions.length
+          });
+          sendJson(res, 200, {
+            ok: true,
+            result: "concessions_fulfilled",
+            ticket: enrichTicket(lockedDb, ticket),
+            concessions: validation.concessions
+          });
+        } else {
+          logEvent("info", "ticket.used", { ticketId: ticket.id, orderId: ticket.orderId, usedBy: ticket.usedBy });
+          sendJson(res, 200, { ok: true, result: "valid", ticket: enrichTicket(lockedDb, ticket) });
+        }
       });
     } catch (error) {
       try {
@@ -9046,13 +9207,18 @@ async function handleApi(req, res, pathname) {
           const lockedDb = await readDb();
           const adminUser = getAdminUser(req, lockedDb);
           const failedTicketId = error.ticket?.id || "";
-          const result = error.code === "TICKET_ALREADY_USED" ? "used" : error.code === "TICKET_EXPIRED" ? "expired" : error.code === "TICKET_SESSION_MISMATCH" ? "wrong_session" : "invalid";
+          const result = error.code === "TICKET_ALREADY_USED" ? "used"
+            : error.code === "CONCESSIONS_ALREADY_FULFILLED" ? "concessions_already_fulfilled"
+            : error.code === "ORDER_WITHOUT_CONCESSIONS" ? "without_concessions"
+            : error.code === "TICKET_EXPIRED" ? "expired"
+            : error.code === "TICKET_SESSION_MISMATCH" ? "wrong_session"
+            : "invalid";
           lockedDb.auditLogs ||= [];
           lockedDb.auditLogs.push({
             id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
             entityType: "ticket_validation",
             entityId: failedTicketId,
-            action: "ticket.validation_denied",
+            action: validationMode === "concessions" ? "concessions.validation_denied" : "ticket.validation_denied",
             updatedBy: adminUser?.id || "",
             updatedByEmail: adminUser?.email || "",
             at: new Date().toISOString(),
@@ -9062,6 +9228,7 @@ async function handleApi(req, res, pathname) {
               operatorId: adminUser?.id || "",
               validatedAt: new Date().toISOString(),
               result,
+              validationMode,
               expectedSessionId: error.expectedSessionId || String(body.sessionId || ""),
               actualSessionId: error.actualSessionId || error.ticket?.sessionId || "",
               code: error.code || "TICKET_VALIDATION_FAILED",
@@ -9076,12 +9243,18 @@ async function handleApi(req, res, pathname) {
       }
       sendJson(res, error.statusCode || 400, {
         ok: false,
-        result: error.code === "TICKET_ALREADY_USED" ? "used" : error.code === "TICKET_EXPIRED" ? "expired" : error.code === "TICKET_SESSION_MISMATCH" ? "wrong_session" : "invalid",
+        result: error.code === "TICKET_ALREADY_USED" ? "used"
+          : error.code === "CONCESSIONS_ALREADY_FULFILLED" ? "concessions_already_fulfilled"
+          : error.code === "ORDER_WITHOUT_CONCESSIONS" ? "without_concessions"
+          : error.code === "TICKET_EXPIRED" ? "expired"
+          : error.code === "TICKET_SESSION_MISMATCH" ? "wrong_session"
+          : "invalid",
         error: {
           code: error.code || "TICKET_VALIDATION_FAILED",
           message: error.message
         },
-        ticket: error.ticket ? enrichTicket(db, error.ticket) : null
+        ticket: error.ticket ? enrichTicket(db, error.ticket) : null,
+        concessions: error.concessions || []
       });
     }
     return;
@@ -9594,15 +9767,18 @@ async function runSubscriptionMaintenance() {
       const db = await readDb();
       const scheduledChanged = applyScheduledPremieres(db);
       const movieTagsChanged = applyAutomatedMovieTags(db);
+      const sessionMaintenance = archiveFinishedSessions(db);
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
-      if (scheduledChanged || movieTagsChanged || result.changed || lifecycle.changed) {
+      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || result.changed || lifecycle.changed) {
         await writeDb(db);
+        sessionMaintenance.archived.forEach((session) => logEvent("info", "session.finished_archived", session));
         logEvent("info", "subscription.pending_payment_maintenance", {
           expired: result.expired,
           failed: result.failed,
           finalized: lifecycle.finalized,
-          catalogUpdated: scheduledChanged || movieTagsChanged
+          catalogUpdated: scheduledChanged || movieTagsChanged,
+          sessionsArchived: sessionMaintenance.archived.length
         });
       }
     });

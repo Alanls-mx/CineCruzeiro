@@ -111,6 +111,7 @@ let state = {
   qrAutoRestartTimer: null,
   validationSessionLock: false,
   validationSessionId: "",
+  validationMode: "entry",
   toastTimer: null,
   refreshStatusTimer: null,
   logsSearchTimer: null,
@@ -3578,6 +3579,27 @@ function updateValidationSessionLock() {
     : "Filtro removido. O leitor aceita qualquer sessão válida.";
 }
 
+function setTicketValidationMode(mode) {
+  state.validationMode = mode === "concessions" ? "concessions" : "entry";
+  document.querySelectorAll("[data-validation-mode]").forEach((button) => {
+    const active = button.dataset.validationMode === state.validationMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  const concessionsMode = state.validationMode === "concessions";
+  const scope = document.querySelector(".validation-scope");
+  if (scope) scope.hidden = concessionsMode;
+  const validateButton = $("validateTicketButton");
+  if (validateButton) validateButton.textContent = concessionsMode ? "Validar itens da bomboniere" : "Validar entrada";
+  const result = $("ticketValidationResult");
+  if (result) {
+    result.className = "validation-result scanner-ready";
+    result.textContent = concessionsMode
+      ? "Leitor pronto para conferir e entregar os itens da bomboniere."
+      : "Leitor pronto para validar a entrada.";
+  }
+}
+
 function ticketResultDetails(ticket = {}) {
   return [
     ticket.movieTitle || "Ingresso Cine Cruzeiro",
@@ -3624,13 +3646,30 @@ function renderTicketValidationResult(type, payload = {}) {
       title: "Sem conexão",
       copy: "Não foi possível validar este ingresso com segurança.",
       action: "Tentar novamente"
+    },
+    concessionsOk: {
+      title: "Itens liberados",
+      copy: "Entrega da bomboniere registrada.",
+      action: "Escanear próximo"
+    },
+    concessionsUsed: {
+      title: "Itens já entregues",
+      copy: message || "A bomboniere deste pedido já foi retirada.",
+      action: "Escanear próximo"
+    },
+    withoutConcessions: {
+      title: "Pedido sem bomboniere",
+      copy: message || "Este pedido não possui produtos para retirada.",
+      action: "Escanear próximo"
     }
   };
   const template = templates[type] || templates.invalid;
+  const concessions = Array.isArray(payload.concessions) ? payload.concessions : [];
   target.className = `validation-result scanner-result ${type}`;
   target.innerHTML = `
     <strong>${escapeHtml(template.title)}</strong>
     ${details.length ? `<div class="scanner-result-details">${details.map(escapeHtml).join("<br>")}</div>` : ""}
+    ${concessions.length ? `<div class="scanner-result-items">${concessions.map((item) => `<span><b>${Number(item.quantity || 0)}x</b> ${escapeHtml(item.name || item.id || "Item")}</span>`).join("")}</div>` : ""}
     <p>${template.copy}</p>
     <button class="primary-button full" type="button" onclick="scanNextTicket()">${escapeHtml(template.action)}</button>
   `;
@@ -3648,16 +3687,19 @@ async function validateTicketByCode(code, options = {}) {
   setQrReaderActive(false, "Validando no servidor...");
 
   try {
-    const sessionId = state.validationSessionLock ? state.validationSessionId : "";
-    if (state.validationSessionLock && !sessionId) {
+    const sessionId = state.validationMode === "entry" && state.validationSessionLock ? state.validationSessionId : "";
+    if (state.validationMode === "entry" && state.validationSessionLock && !sessionId) {
       showToast("Escolha a sessão permitida antes de validar.", "error");
       return;
     }
     const result = await api("/api/tickets/validate", {
       method: "POST",
-      body: JSON.stringify({ code: cleanCode, sessionId })
+      body: JSON.stringify({ code: cleanCode, sessionId, mode: state.validationMode })
     });
-    renderTicketValidationResult("ok", { ticket: result.ticket });
+    renderTicketValidationResult(
+      result.result === "concessions_fulfilled" ? "concessionsOk" : "ok",
+      { ticket: result.ticket, concessions: result.concessions }
+    );
     if ($("ticketValidationCode")) $("ticketValidationCode").value = result.ticket?.code || cleanCode;
     navigator.vibrate?.(80);
     await loadContent({ silent: true });
@@ -3666,7 +3708,11 @@ async function validateTicketByCode(code, options = {}) {
       renderTicketValidationResult("offline");
     } else {
       const payload = error.payload || {};
-      const resultType = payload.result === "used"
+      const resultType = payload.result === "concessions_already_fulfilled"
+        ? "concessionsUsed"
+        : payload.result === "without_concessions"
+          ? "withoutConcessions"
+        : payload.result === "used"
         ? "used"
         : payload.result === "wrong_session" || payload.error?.code === "TICKET_SESSION_MISMATCH"
           ? "wrongSession"
@@ -3683,6 +3729,7 @@ async function validateTicketByCode(code, options = {}) {
                   : "invalid";
       renderTicketValidationResult(resultType, {
         ticket: payload.ticket,
+        concessions: payload.concessions,
         message: payload.error?.message || error.message || "Não foi possível validar este ingresso."
       });
     }
@@ -3767,7 +3814,7 @@ async function startQrReader() {
         state.qrLastValue = value;
         state.qrLastValueAt = now;
         if ($("ticketValidationCode")) $("ticketValidationCode").value = value;
-        stopQrReader("QR Code lido. Validando ingresso...");
+        stopQrReader(state.validationMode === "concessions" ? "QR Code lido. Conferindo bomboniere..." : "QR Code lido. Validando ingresso...");
         validateTicketByCode(value, { autoRestart: true });
       }
     }, 420);
@@ -5516,7 +5563,7 @@ function applyRbacVisibility() {
       ? ["dashboardPanel", "ordersPanel"]
       : []
   );
-  document.querySelectorAll(".nav-button").forEach((button) => {
+  document.querySelectorAll(".nav-button[data-panel]").forEach((button) => {
     button.hidden = !allowedPanels.has(button.dataset.panel);
   });
   document.querySelectorAll("[data-owner-only='true']").forEach((element) => {
@@ -5590,6 +5637,10 @@ function bindEvents() {
     event.stopPropagation();
     toggleAdminProfileMenu();
   });
+  $("twoFactorNavButton")?.addEventListener("click", () => {
+    closeAdminDrawer();
+    void openTwoFactorSettings();
+  });
   $("profileLogoutButton")?.addEventListener("click", logoutAdmin);
   document.querySelectorAll("[data-profile-action]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -5600,6 +5651,9 @@ function bindEvents() {
       closeAdminProfileMenu();
       showToast("Preferências adicionais estarão disponíveis em breve.");
     });
+  });
+  document.querySelectorAll("[data-validation-mode]").forEach((button) => {
+    button.addEventListener("click", () => setTicketValidationMode(button.dataset.validationMode));
   });
   $("twoFactorCloseButton")?.addEventListener("click", closeTwoFactorSettings);
   $("twoFactorOverlay")?.addEventListener("click", (event) => {

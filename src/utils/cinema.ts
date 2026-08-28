@@ -2,6 +2,7 @@ import type { CinemaContent, TicketTypeRecord } from "@/services/cinemaApi";
 import { Movie, Session } from "@/types";
 
 export const CART_STORAGE_KEY = "cine-cruzeiro-cart";
+export const CART_COLLECTION_STORAGE_KEY = "cine-cruzeiro-carts";
 const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const UPLOAD_ASSET_VERSION = "2";
 export const PUBLIC_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
@@ -132,10 +133,65 @@ export function readCheckoutCart(): StoredCheckoutCart | null {
   }
 }
 
+export function readCheckoutCarts(): StoredCheckoutCart[] {
+  if (typeof window === "undefined") return [];
+  let carts: StoredCheckoutCart[] = [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CART_COLLECTION_STORAGE_KEY) || "[]");
+    if (Array.isArray(parsed)) carts = parsed;
+  } catch {
+    carts = [];
+  }
+  const active = readCheckoutCart();
+  if (active?.sessionId && !carts.some((cart) => cart.sessionId === active.sessionId)) carts.push(active);
+  return carts
+    .filter((cart) => cart?.sessionId && !cart.paymentResult && cartItemCount(cart) > 0)
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+}
+
 export function writeCheckoutCart(cart: StoredCheckoutCart) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ ...cart, updatedAt: new Date().toISOString() }));
+  const next = { ...cart, updatedAt: new Date().toISOString() };
+  window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(next));
+  let carts: StoredCheckoutCart[] = [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CART_COLLECTION_STORAGE_KEY) || "[]");
+    if (Array.isArray(parsed)) carts = parsed;
+  } catch {
+    carts = [];
+  }
+  carts = [next, ...carts.filter((item) => item.sessionId !== next.sessionId)].slice(0, 12);
+  window.localStorage.setItem(CART_COLLECTION_STORAGE_KEY, JSON.stringify(carts));
   window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+}
+
+export function selectCheckoutCart(cart: StoredCheckoutCart) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+  window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+}
+
+export function removeCheckoutCart(sessionId: string) {
+  if (typeof window === "undefined") return;
+  const remaining = readCheckoutCarts().filter((cart) => cart.sessionId !== sessionId);
+  window.localStorage.setItem(CART_COLLECTION_STORAGE_KEY, JSON.stringify(remaining));
+  const active = readCheckoutCart();
+  if (active?.sessionId === sessionId) {
+    if (remaining[0]) window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(remaining[0]));
+    else window.localStorage.removeItem(CART_STORAGE_KEY);
+  }
+  window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+}
+
+export function clearCheckoutCarts() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(CART_STORAGE_KEY);
+  window.localStorage.removeItem(CART_COLLECTION_STORAGE_KEY);
+  window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+}
+
+export function checkoutCartsItemCount(carts = readCheckoutCarts()) {
+  return carts.reduce((sum, cart) => sum + cartItemCount(cart), 0);
 }
 
 export function cartItemCount(cart: StoredCheckoutCart | null) {

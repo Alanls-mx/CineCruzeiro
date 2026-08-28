@@ -89,6 +89,8 @@ async function run() {
   db.ticketTypes = (db.ticketTypes || []).filter((item) => item.id !== "triple-smoke");
   db.ticketTypes.push({ id: "triple-smoke", name: "Triple Ingresso", price: 25, description: "Pacote de teste", bundleQuantity: 3, active: true });
   db.movies = (db.movies || []).filter((movie) => ![TEST_MOVIE_ID, TEST_SECOND_MOVIE_ID, "smoke-filme-edicao", "smoke-rascunho-admin"].includes(movie.id));
+  db.orders = (db.orders || []).filter((order) => order.id !== "smoke-expired-history-order");
+  db.tickets = (db.tickets || []).filter((ticket) => ticket.id !== "smoke-expired-history-ticket");
   db.movies.push({
     id: TEST_MOVIE_ID,
     status: "now_playing",
@@ -127,6 +129,30 @@ async function run() {
         status: "available"
       }
     ]
+  });
+  db.orders.push({
+    id: "smoke-expired-history-order",
+    movieId: TEST_MOVIE_ID,
+    sessionId: TEST_EXPIRED_SESSION_ID,
+    status: "paid",
+    customerName: "Histórico Smoke",
+    customerEmail: "historico@smoke.local",
+    totalPrice: 10,
+    concessionItems: [],
+    createdAt: "2000-01-01T20:00:00.000Z"
+  });
+  db.tickets.push({
+    id: "smoke-expired-history-ticket",
+    orderId: "smoke-expired-history-order",
+    movieId: TEST_MOVIE_ID,
+    sessionId: TEST_EXPIRED_SESSION_ID,
+    code: "CC-0011223344556677",
+    qrPayload: "CINECRUZEIRO:TICKET:CC-0011223344556677",
+    ticketType: "Ingresso Promocional",
+    status: "active",
+    customerName: "Histórico Smoke",
+    customerEmail: "historico@smoke.local",
+    createdAt: "2000-01-01T20:00:00.000Z"
   });
   db.movies.push({
     id: TEST_SECOND_MOVIE_ID,
@@ -190,6 +216,16 @@ async function run() {
     assert.equal(health.payload.status, "ok");
     assert.equal("envFilesLoaded" in health.payload, false);
     assert.equal("jwtConfigured" in health.payload, false);
+    const maintainedDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    const maintainedMovie = maintainedDb.movies.find((movie) => movie.id === TEST_MOVIE_ID);
+    const maintainedOrder = maintainedDb.orders.find((order) => order.id === "smoke-expired-history-order");
+    const maintainedTicket = maintainedDb.tickets.find((ticket) => ticket.id === "smoke-expired-history-ticket");
+    assert.equal(maintainedMovie.sessions.some((session) => session.id === TEST_EXPIRED_SESSION_ID), false);
+    assert.equal(maintainedOrder.sessionId, "");
+    assert.equal(maintainedOrder.archivedSessionId, TEST_EXPIRED_SESSION_ID);
+    assert.equal(maintainedOrder.sessionTime, "19:00");
+    assert.equal(maintainedTicket.sessionId, "");
+    assert.equal(maintainedTicket.status, "expired");
 
     const invalidRegistration = await request("/api/auth/register", {
       method: "POST",
@@ -1105,6 +1141,23 @@ async function run() {
     assert.equal(allowedTicketTypeSale.payload.tickets.length, 2);
     assert.ok(allowedTicketTypeSale.payload.tickets.every((ticket) => ticket.ticketType === "Ingresso Promocional"));
 
+    const concessionValidation = await request("/api/tickets/validate", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ code: allowedTicketTypeSale.payload.tickets[0].code, mode: "concessions" })
+    });
+    assert.equal(concessionValidation.response.status, 200);
+    assert.equal(concessionValidation.payload.result, "concessions_fulfilled");
+    assert.equal(concessionValidation.payload.concessions[0].fulfilledQuantity, 1);
+
+    const duplicateConcessionValidation = await request("/api/tickets/validate", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ code: allowedTicketTypeSale.payload.tickets[1].code, mode: "concessions" })
+    });
+    assert.equal(duplicateConcessionValidation.response.status, 409);
+    assert.equal(duplicateConcessionValidation.payload.result, "concessions_already_fulfilled");
+
     const wrongSessionValidation = await request("/api/tickets/validate", {
       method: "POST",
       headers: jsonHeaders(adminCookie),
@@ -1214,8 +1267,8 @@ async function run() {
         paymentMethod: "cash"
       })
     });
-    assert.equal(expiredQuickSale.response.status, 409);
-    assert.equal(expiredQuickSale.payload.error.code, "SESSION_SALES_CLOSED");
+    assert.equal(expiredQuickSale.response.status, 404);
+    assert.equal(expiredQuickSale.payload.error.code, "SESSION_NOT_FOUND");
 
     const deletionSale = await request("/api/box-office/sales", {
       method: "POST",

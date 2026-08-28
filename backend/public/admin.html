@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
-    <link rel="stylesheet" href="admin/admin.css?v=20260828-fiscal-layout-1" />
+    <link rel="stylesheet" href="admin/admin.css?v=20260828-validation-cart-1" />
     <link rel="stylesheet" href="admin/admin-premium.css?v=20260827-14" />
   </head>
   <body class="admin-booting">
@@ -92,6 +92,10 @@
         <button class="nav-button" type="button" data-panel="logsPanel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/><circle cx="19" cy="19" r="2"/></svg>
           Logs
+        </button>
+        <button id="twoFactorNavButton" class="nav-button" type="button" data-admin-action="two-factor">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M9 12h6M12 9v6"/></svg>
+          Segurança e 2FA
         </button>
       </aside>
 
@@ -783,6 +787,13 @@
                 <span id="qrReaderStatus">Câmera desligada</span>
               </div>
 
+              <div class="validation-mode-switch" role="tablist" aria-label="Tipo de validação">
+                <button class="active" type="button" role="tab" aria-selected="true" data-validation-mode="entry">Entrada</button>
+                <button type="button" role="tab" aria-selected="false" data-validation-mode="concessions">Bomboniere</button>
+              </div>
+
+              <div id="ticketValidationResult" class="validation-result scanner-ready" aria-live="assertive">Leitor pronto para validar a entrada.</div>
+
               <section class="validation-scope" aria-labelledby="validationScopeTitle">
                 <div class="validation-scope-heading">
                   <div>
@@ -831,7 +842,6 @@
                 <input id="ticketValidationCode" placeholder="Ex.: CC-AB12CD34" />
               </label>
               <button id="validateTicketButton" class="primary-button full" type="button" hidden>Validar entrada</button>
-              <div id="ticketValidationResult" class="validation-result"></div>
             </div>
           </div>
 
@@ -1872,6 +1882,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260828-fiscal-layout-1"></script>
+    <script src="admin/admin.js?v=20260828-validation-cart-1"></script>
   </body>
 </html>
