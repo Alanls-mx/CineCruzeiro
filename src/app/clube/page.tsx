@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
-import { CalendarCheck, Check, CircleHelp, Popcorn, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarCheck, Check, ChevronLeft, ChevronRight, CircleHelp, Popcorn, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
@@ -120,11 +120,7 @@ export default function ClubePage() {
             )}
             {status === "ready" && (
               sortedPlans.length ? (
-                <div className="grid gap-6 md:grid-cols-2">
-                  {sortedPlans.map((plan) => (
-                    <Plan key={plan.id} plan={plan} />
-                  ))}
-                </div>
+                <PlansCarousel plans={sortedPlans} />
               ) : (
                 <div className="bg-white/[0.035] px-5 py-8 text-center">
                   <h3 className="font-display text-xl font-black">Nenhum plano disponível para assinatura</h3>
@@ -185,7 +181,108 @@ export default function ClubePage() {
   );
 }
 
-function Plan({ plan }: { plan: SubscriptionPlan }) {
+function PlansCarousel({ plans }: { plans: SubscriptionPlan[] }) {
+  const featuredIndex = Math.max(0, plans.findIndex((plan) => plan.isFeatured));
+  const [activeIndex, setActiveIndex] = useState(featuredIndex);
+  const planRefs = useRef<Array<HTMLElement | null>>([]);
+
+  useEffect(() => {
+    setActiveIndex(featuredIndex);
+  }, [featuredIndex, plans]);
+
+  const selectPlan = useCallback((index: number, behavior: ScrollBehavior = "smooth") => {
+    const normalizedIndex = (index + plans.length) % plans.length;
+    setActiveIndex(normalizedIndex);
+    planRefs.current[normalizedIndex]?.scrollIntoView({ behavior, block: "nearest", inline: "center" });
+  }, [plans.length]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => selectPlan(featuredIndex, "auto"));
+    return () => window.cancelAnimationFrame(frame);
+  }, [featuredIndex, selectPlan]);
+
+  return (
+    <div
+      className="relative"
+      role="region"
+      aria-roledescription="carrossel"
+      aria-label="Planos do Clube Cine Cruzeiro"
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          selectPlan(activeIndex - 1);
+        }
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          selectPlan(activeIndex + 1);
+        }
+      }}
+    >
+      {plans.length > 1 && (
+        <div className="pointer-events-none absolute inset-x-2 top-1/2 z-20 hidden -translate-y-1/2 items-center justify-between sm:flex">
+          <button
+            type="button"
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-[8px] bg-[#111b2d]/95 text-white shadow-[0_10px_30px_rgba(0,0,0,.35)] transition hover:bg-[#1b2940] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300"
+            aria-label="Mostrar plano anterior"
+            title="Plano anterior"
+            onClick={() => selectPlan(activeIndex - 1)}
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-[8px] bg-[#111b2d]/95 text-white shadow-[0_10px_30px_rgba(0,0,0,.35)] transition hover:bg-[#1b2940] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300"
+            aria-label="Mostrar próximo plano"
+            title="Próximo plano"
+            onClick={() => selectPlan(activeIndex + 1)}
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+
+      <div className="overflow-hidden">
+        <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth px-[6%] pb-7 pt-2 [scrollbar-width:none] sm:gap-6 sm:px-[12%] lg:px-[21%] xl:px-[25%] [&::-webkit-scrollbar]:hidden">
+          {plans.map((plan, index) => (
+            <Plan
+              key={plan.id}
+              plan={plan}
+              active={index === activeIndex}
+              position={index + 1}
+              total={plans.length}
+              setRef={(element) => { planRefs.current[index] = element; }}
+              onSelect={() => selectPlan(index)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {plans.length > 1 && (
+        <div className="flex items-center justify-center gap-2" aria-label="Selecionar plano">
+          {plans.map((plan, index) => (
+            <button
+              key={plan.id}
+              type="button"
+              className={`h-2.5 rounded-full transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300 ${index === activeIndex ? "w-8 bg-gold-400" : "w-2.5 bg-slate-600 hover:bg-slate-400"}`}
+              aria-label={`Mostrar ${plan.name}`}
+              aria-current={index === activeIndex ? "true" : undefined}
+              onClick={() => selectPlan(index)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Plan({ plan, active, position, total, setRef, onSelect }: {
+  plan: SubscriptionPlan;
+  active: boolean;
+  position: number;
+  total: number;
+  setRef: (element: HTMLElement | null) => void;
+  onSelect: () => void;
+}) {
   const configuredBenefits = [
     ...(Number(plan.ticketDiscountPercent || 0) > 0 ? [`${Number(plan.ticketDiscountPercent)}% de desconto em ingressos`] : []),
     ...(Number(plan.concessionDiscountPercent || 0) > 0 ? [`${Number(plan.concessionDiscountPercent)}% de desconto na bomboniere`] : []),
@@ -193,8 +290,17 @@ function Plan({ plan }: { plan: SubscriptionPlan }) {
     ...(plan.benefits || []),
   ].filter((item, index, items) => items.indexOf(item) === index);
   return (
-    <article className={`grid overflow-hidden rounded-[10px] bg-[#0d1728] shadow-2xl shadow-blue-950/20 lg:grid-cols-[.86fr_1fr] ${plan.isFeatured ? "ring-1 ring-gold-400/45" : ""}`}>
-      <div className="relative min-h-[240px]">
+    <article
+      ref={setRef}
+      className={`shrink-0 snap-center overflow-hidden rounded-[12px] bg-[#0d1728] shadow-[0_22px_54px_rgba(0,0,0,.34)] transition-[transform,filter,opacity] duration-500 ease-out ${active ? "relative z-10 scale-100 opacity-100" : "scale-[.94] cursor-pointer opacity-45 blur-[.7px] hover:opacity-65"} ${plan.isFeatured ? "ring-1 ring-gold-400/65" : "ring-1 ring-white/10"}`}
+      style={{ width: "min(88vw, 760px)", flexBasis: "min(88vw, 760px)" }}
+      aria-label={`${plan.name}, plano ${position} de ${total}`}
+      aria-current={active ? "true" : undefined}
+      onClick={() => { if (!active) onSelect(); }}
+      onFocusCapture={() => { if (!active) onSelect(); }}
+    >
+      <div className="grid items-start md:grid-cols-[minmax(190px,.78fr)_minmax(0,1.22fr)]">
+      <div className="relative aspect-[4/5] w-full self-start bg-[#050914] md:aspect-[3/4]">
         {plan.imageUrl ? (
           <Image
             src={publicAssetPath(plan.imageUrl)}
@@ -202,15 +308,15 @@ function Plan({ plan }: { plan: SubscriptionPlan }) {
             fill
             unoptimized={isUploadedAsset(plan.imageUrl)}
             quality={74}
-            sizes="(max-width: 768px) 100vw, (max-width: 1280px) 42vw, 280px"
-            className="bg-brand-950 object-contain p-3"
+            sizes="(max-width: 767px) 78vw, (max-width: 1280px) 32vw, 300px"
+            className="object-contain p-3 sm:p-4"
           />
         ) : (
           <div className="flex h-full min-h-[240px] items-center justify-center bg-brand-950 text-gold-400"><Sparkles className="h-12 w-12" /></div>
         )}
-        {plan.isFeatured && <span className="absolute left-4 top-4 bg-gold-400 px-3 py-2 text-xs font-black text-slate-950">Recomendado</span>}
+        {plan.isFeatured && <span className="absolute left-4 top-4 bg-gold-400 px-3 py-2 text-xs font-black text-slate-950 shadow-[0_8px_24px_rgba(250,204,21,.18)]">Destaque do Clube</span>}
       </div>
-      <div className="p-6 sm:p-7">
+      <div className="flex min-h-full flex-col p-5 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h3 className="font-display text-3xl font-black">{plan.name}</h3>
@@ -226,13 +332,14 @@ function Plan({ plan }: { plan: SubscriptionPlan }) {
             </li>
           ))}
         </ul>
-        <Link href={`/clube/assinar/${encodeURIComponent(plan.id)}`} className="mt-8 flex min-h-[52px] w-full items-center justify-center bg-gold-400 px-7 py-4 text-center text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
+        <Link href={`/clube/assinar/${encodeURIComponent(plan.id)}`} tabIndex={active ? 0 : -1} className="mt-auto flex min-h-[52px] w-full items-center justify-center bg-gold-400 px-7 py-4 text-center text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
           Assinar {plan.name}
         </Link>
         <p className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
           <ShieldCheck className="h-4 w-4 text-emerald-300" />
           Cartão de crédito via Mercado Pago. Créditos liberados após a aprovação.
         </p>
+      </div>
       </div>
     </article>
   );

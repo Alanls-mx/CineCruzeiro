@@ -5772,7 +5772,13 @@ function applyRbacVisibility() {
     button.hidden = !allowedPanels.has(button.dataset.panel);
   });
   document.querySelectorAll("[data-owner-only='true']").forEach((element) => {
-    if (!element.classList.contains("nav-button")) element.hidden = !owner;
+    if (element.classList.contains("nav-button")) return;
+    if (element.matches("[data-admin-tab-panel]")) {
+      const [group, tab] = String(element.dataset.adminTabPanel || "").split(":");
+      element.hidden = !owner || state.adminSubtabs[group] !== tab;
+      return;
+    }
+    element.hidden = !owner;
   });
   const teamTab = document.querySelector('[data-admin-tablist="accounts"] [data-admin-tab="team"]');
   if (teamTab) teamTab.hidden = !owner;
