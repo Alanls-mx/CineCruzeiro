@@ -54,6 +54,12 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
     };
   }, []);
 
+  useEffect(() => {
+    const openCart = () => setCartOpen(true);
+    window.addEventListener("cine-cruzeiro-open-cart", openCart);
+    return () => window.removeEventListener("cine-cruzeiro-open-cart", openCart);
+  }, []);
+
   return (
     <>
     <header className="sticky top-0 z-40 bg-[#060a12]/92 backdrop-blur-xl">
@@ -132,7 +138,6 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
 }
 
 export function SiteFooter() {
-  const { cartHref } = useCartDestination();
   return (
     <footer className="border-t border-white/8 bg-[#050810] text-xs text-slate-400">
       <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
@@ -161,7 +166,7 @@ export function SiteFooter() {
           <h3 className="font-bold text-white">Compra rápida</h3>
           <Link href="/filmes" className="block hover:text-white">Comprar ingresso</Link>
           <Link href="/conta/ingressos" className="block hover:text-white">Meus ingressos</Link>
-          <Link href={cartHref} className="block hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">Carrinho</Link>
+          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("cine-cruzeiro-open-cart"))} className="block hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">Meu carrinho</button>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Legal</h3>
@@ -186,13 +191,11 @@ export function SiteFooter() {
 
 function useCartDestination() {
   const [cartCount, setCartCount] = useState(0);
-  const [cartSessionId, setCartSessionId] = useState("");
 
   useEffect(() => {
     const update = () => {
       const carts = readCheckoutCarts();
       setCartCount(checkoutCartsItemCount(carts));
-      setCartSessionId(carts[0]?.sessionId || "");
     };
     update();
     window.addEventListener("cine-cruzeiro-cart-updated", update);
@@ -203,8 +206,5 @@ function useCartDestination() {
     };
   }, []);
 
-  return {
-    cartCount,
-    cartHref: cartCount > 0 && cartSessionId ? `/checkout/${cartSessionId}/extras` : "/filmes",
-  };
+  return { cartCount };
 }

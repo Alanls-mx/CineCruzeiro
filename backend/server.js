@@ -438,6 +438,7 @@ const BUSINESS_LOG_EVENTS = new Set([
   "admin_two_factor.setup_started",
   "admin_two_factor.enabled",
   "admin_two_factor.disabled",
+  "admin_two_factor.policy_updated",
   "admin_two_factor.recovery_codes_regenerated",
   "payment.created",
   "payment.reconciled",
@@ -940,6 +941,45 @@ function adminRoles() {
   return new Set(["owner", "master", "manager", "operator", "seller"]);
 }
 
+const ADMIN_PERMISSION_KEYS = [
+  "dashboard.view",
+  "movies.manage",
+  "rooms.manage",
+  "ticket_types.manage",
+  "box_office.manage",
+  "tickets.validate",
+  "orders.manage",
+  "concessions.manage",
+  "marketing.manage",
+  "club.manage",
+  "fiscal.manage",
+  "integrations.manage",
+  "logs.view",
+  "settings.manage",
+  "media.manage"
+];
+
+function roleAdminPermissions(role) {
+  const normalized = roleAlias(role);
+  if (normalized === "owner") return [...ADMIN_PERMISSION_KEYS];
+  if (normalized === "manager") return ADMIN_PERMISSION_KEYS.filter((permission) => !["integrations.manage", "settings.manage"].includes(permission));
+  if (normalized === "operator") return ["dashboard.view", "box_office.manage", "tickets.validate", "orders.manage"];
+  return [];
+}
+
+function effectiveAdminPermissions(user) {
+  if (!user) return [];
+  if (roleAlias(user.role) === "owner") return [...ADMIN_PERMISSION_KEYS];
+  if (user.useCustomPermissions === true) {
+    return [...new Set((Array.isArray(user.adminPermissions) ? user.adminPermissions : []).filter((permission) => ADMIN_PERMISSION_KEYS.includes(permission)))];
+  }
+  return roleAdminPermissions(user.role);
+}
+
+function adminHasPermission(user, permission) {
+  return roleAlias(user?.role) === "owner" || effectiveAdminPermissions(user).includes(permission);
+}
+
 function roleAlias(role) {
   const value = String(role || "").trim();
   if (value === "master") return "owner";
@@ -953,7 +993,12 @@ function getAdminUser(req, db) {
   const user = (db.users || []).find((item) => item.id === session.sub && item.active !== false);
   if (!user || !adminRoles().has(user.role) || Number(session.sv || 0) !== Number(user.sessionVersion || 0)) return null;
   const normalizedRole = roleAlias(user.role);
-  return normalizedRole === user.role ? user : { ...user, role: normalizedRole };
+  const normalizedUser = normalizedRole === user.role ? user : { ...user, role: normalizedRole };
+  return {
+    ...normalizedUser,
+    effectivePermissions: effectiveAdminPermissions(normalizedUser),
+    twoFactorSetupRequired: db.settings?.adminTwoFactorRequired !== false && !normalizedUser.twoFactorEnabled
+  };
 }
 
 function getCustomerUser(req, db) {
@@ -1041,14 +1086,44 @@ function requiredAdminRoles(pathname, method) {
   return ["owner", "manager", "operator"];
 }
 
-function ensureAdmin(req, res, db, pathname, method, allowedRoles = requiredAdminRoles(pathname, method)) {
+function requiredAdminPermission(pathname, method) {
+  if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
+  if (pathname === "/api/admin/content") return "";
+  if (pathname.startsWith("/api/admin/logs")) return "logs.view";
+  if (pathname.startsWith("/api/admin/integrations") || pathname.startsWith("/api/integrations")) return "integrations.manage";
+  if (pathname.startsWith("/api/admin/email") || /^\/api\/(promotions|ads)(\/|$)/.test(pathname)) return "marketing.manage";
+  if (pathname.startsWith("/api/admin/fiscal") || pathname.startsWith("/api/admin/reports")) return "fiscal.manage";
+  if (pathname.startsWith("/api/admin/payments") || pathname.startsWith("/api/dashboard")) return "dashboard.view";
+  if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return "club.manage";
+  if (pathname.startsWith("/api/box-office/") || pathname === "/api/tickets/manual") return "box_office.manage";
+  if (pathname === "/api/tickets/validate") return "tickets.validate";
+  if (pathname.startsWith("/api/uploads/")) return "media.manage";
+  if (pathname === "/api/content" && method === "PUT" || pathname === "/api/settings") return "settings.manage";
+  if (/^\/api\/movies(\/|$)/.test(pathname)) return "movies.manage";
+  if (/^\/api\/rooms(\/|$)/.test(pathname)) return "rooms.manage";
+  if (/^\/api\/ticket-types(\/|$)/.test(pathname)) return "ticket_types.manage";
+  if (/^\/api\/concessions(\/|$)/.test(pathname)) return "concessions.manage";
+  if (/^\/api\/orders(\/|$)/.test(pathname)) return "orders.manage";
+  if (/^\/api\/users(\/|$)/.test(pathname)) return "settings.manage";
+  return "dashboard.view";
+}
+
+function ensureAdmin(req, res, db, pathname, method, allowedRoles = null) {
   if (!adminAuthRequired(pathname, method)) return true;
   const user = getAdminUser(req, db);
   if (!user) {
     sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para continuar." } });
     return false;
   }
-  if (!allowedRoles.includes(user.role)) {
+  const setupAllowed = pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/");
+  if (user.twoFactorSetupRequired && !setupAllowed) {
+    sendJson(res, 428, { error: { code: "ADMIN_2FA_SETUP_REQUIRED", message: "Configure a autenticação em duas etapas para continuar no painel." } });
+    return false;
+  }
+  const permitted = Array.isArray(allowedRoles)
+    ? allowedRoles.includes(user.role)
+    : !requiredAdminPermission(pathname, method) || adminHasPermission(user, requiredAdminPermission(pathname, method));
+  if (!permitted) {
     sendJson(res, 403, { error: { code: "ADMIN_FORBIDDEN", message: "Seu usuario nao tem permissao para esta acao." } });
     return false;
   }
@@ -1153,6 +1228,7 @@ function normalizeDb(db) {
     eventPartiesImageUrl: "",
     eventCorporateImageUrl: "",
     eventGalleryImageUrl: "",
+    adminTwoFactorRequired: true,
     ...db.settings
   };
   [
@@ -4513,6 +4589,10 @@ function normalizeUser(input, existing = {}) {
     twoFactorRecoveryCodes: input.twoFactorRecoveryCodes !== undefined ? (Array.isArray(input.twoFactorRecoveryCodes) ? input.twoFactorRecoveryCodes : []) : existing.twoFactorRecoveryCodes || [],
     twoFactorConfirmedAt: input.twoFactorConfirmedAt !== undefined ? input.twoFactorConfirmedAt : existing.twoFactorConfirmedAt || "",
     twoFactorUpdatedAt: input.twoFactorUpdatedAt !== undefined ? input.twoFactorUpdatedAt : existing.twoFactorUpdatedAt || "",
+    useCustomPermissions: role === "owner" ? false : input.useCustomPermissions !== undefined ? Boolean(input.useCustomPermissions) : Boolean(existing.useCustomPermissions),
+    adminPermissions: input.adminPermissions !== undefined
+      ? [...new Set((Array.isArray(input.adminPermissions) ? input.adminPermissions : []).filter((permission) => ADMIN_PERMISSION_KEYS.includes(permission)))]
+      : Array.isArray(existing.adminPermissions) ? existing.adminPermissions : [],
     sessionVersion: Number(existing.sessionVersion || 0),
     role: ["owner", "master", "manager", "operator", "seller", "customer"].includes(role) ? role : "customer",
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false,
@@ -4542,7 +4622,9 @@ function adminUserPayload(input = {}, existing = {}) {
     cpf: input.cpf,
     ...(password ? { password } : {}),
     role: input.role,
-    active: input.active
+    active: input.active,
+    useCustomPermissions: input.useCustomPermissions,
+    adminPermissions: input.adminPermissions
   };
 }
 
@@ -4565,7 +4647,11 @@ function sanitizeUser(user) {
     ...safeUser,
     twoFactorEnabled: Boolean(user.twoFactorEnabled),
     twoFactorSetupPending: Boolean(user.twoFactorPendingSecret),
-    twoFactorRecoveryCodesRemaining: Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0
+    twoFactorRecoveryCodesRemaining: Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0,
+    useCustomPermissions: Boolean(user.useCustomPermissions),
+    adminPermissions: Array.isArray(user.adminPermissions) ? user.adminPermissions : [],
+    effectivePermissions: effectiveAdminPermissions(user),
+    twoFactorSetupRequired: Boolean(user.twoFactorSetupRequired)
   };
 }
 
@@ -4657,7 +4743,12 @@ async function sendAdminLoginSuccess(req, res, db, user, twoFactorMethod = "not_
     "Access-Control-Allow-Credentials": "true",
     "Vary": "Origin"
   });
-  res.end(JSON.stringify({ user: sanitizeUser(user) }, null, 2));
+  res.end(JSON.stringify({
+    user: sanitizeUser({
+      ...user,
+      twoFactorSetupRequired: db.settings?.adminTwoFactorRequired !== false && !user.twoFactorEnabled
+    })
+  }, null, 2));
 }
 
 function hashResetToken(token) {
@@ -4923,6 +5014,7 @@ function getContent(db, options = {}) {
   delete publicSettings.integrations;
   delete publicSettings.webhookSimulatorRuns;
   delete publicSettings.emailCampaigns;
+  if (!includePrivate) delete publicSettings.adminTwoFactorRequired;
   const analyticsConfig = integrationConfigService.resolvedConfig(db, "analytics");
   publicSettings.tracking = {
     enabled: Boolean(analyticsConfig?.enabled && analyticsConfig?.configured),
@@ -4991,6 +5083,31 @@ function getContent(db, options = {}) {
         }
       : {})
   };
+}
+
+function getAdminContent(db, adminUser) {
+  const content = getContent(db, { includePrivate: true });
+  const isOwner = roleAlias(adminUser?.role) === "owner";
+
+  if (!isOwner) {
+    content.users = [];
+  }
+  if (!adminHasPermission(adminUser, "orders.manage")) {
+    content.orders = [];
+    content.payments = [];
+    content.tickets = [];
+  }
+  if (!adminHasPermission(adminUser, "logs.view")) {
+    content.auditLogs = [];
+  }
+  if (!adminHasPermission(adminUser, "club.manage")) {
+    content.subscriptionPlans = [];
+    content.subscriptions = [];
+    content.subscriptionCredits = [];
+    content.subscriptionUsage = [];
+  }
+
+  return content;
 }
 
 function paymentStatusLabel(status = "") {
@@ -6122,7 +6239,8 @@ async function handleApi(req, res, pathname) {
       return;
     }
     if (user) {
-      user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+      const storedUser = (db.users || []).find((item) => item.id === user.id);
+      if (storedUser) storedUser.sessionVersion = Number(storedUser.sessionVersion || 0) + 1;
       db.auditLogs ||= [];
       db.auditLogs.push({
         id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
@@ -6203,6 +6321,7 @@ async function handleApi(req, res, pathname) {
       setupPending: Boolean(user?.twoFactorPendingSecret),
       confirmedAt: user?.twoFactorConfirmedAt || "",
       recoveryCodesRemaining: Array.isArray(user?.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0,
+      requiredByPolicy: db.settings?.adminTwoFactorRequired !== false,
       serverTime: new Date().toISOString()
     });
     return;
@@ -6277,6 +6396,10 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/2fa/disable" && method === "POST") {
+    if (db.settings?.adminTwoFactorRequired !== false) {
+      sendJson(res, 409, { error: { code: "ADMIN_2FA_REQUIRED_BY_POLICY", message: "O 2FA é obrigatório para todas as contas do painel. Desative primeiro a exigência global em Contas." } });
+      return;
+    }
     const body = await readBody(req);
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
@@ -6298,6 +6421,25 @@ async function handleApi(req, res, pathname) {
     });
     sendJson(res, 200, { enabled: false, message: "Autenticacao em duas etapas desativada." });
     logEvent("info", "admin_two_factor.disabled", { actorUserId: req.adminUser.id });
+    return;
+  }
+
+  if (pathname === "/api/admin/security-policy" && method === "GET") {
+    if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
+    sendJson(res, 200, { adminTwoFactorRequired: db.settings?.adminTwoFactorRequired !== false });
+    return;
+  }
+
+  if (pathname === "/api/admin/security-policy" && method === "PUT") {
+    if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
+    const body = await readBody(req);
+    db.settings.adminTwoFactorRequired = Boolean(body.adminTwoFactorRequired);
+    await writeDb(db);
+    sendJson(res, 200, { adminTwoFactorRequired: db.settings.adminTwoFactorRequired });
+    logEvent("info", "admin_two_factor.policy_updated", {
+      actorUserId: req.adminUser.id,
+      required: db.settings.adminTwoFactorRequired
+    });
     return;
   }
 
@@ -6336,7 +6478,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/content" && method === "GET") {
-    sendJson(res, 200, getContent(db, { includePrivate: true }));
+    sendJson(res, 200, getAdminContent(db, req.adminUser));
     return;
   }
 
@@ -8338,11 +8480,24 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const body = await readBody(req);
-      const user = normalizeUser(adminUserPayload(body, db.users[index]), db.users[index]);
+      const existingUser = db.users[index];
+      const nextRole = roleAlias(body.role || existingUser.role);
+      const activeOwners = db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false);
+      if (roleAlias(existingUser.role) === "owner" && existingUser.active !== false && (nextRole !== "owner" || body.active === false) && activeOwners.length <= 1) {
+        sendJson(res, 409, { error: { code: "LAST_OWNER_REQUIRED", message: "Mantenha ao menos uma conta de dono ativa no painel." } });
+        return;
+      }
+      const user = normalizeUser(adminUserPayload(body, existingUser), existingUser);
       if (db.users.some((existing, existingIndex) => existingIndex !== index && existing.email === user.email)) {
         sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
         return;
       }
+      const accessChanged = user.role !== existingUser.role
+        || user.active !== existingUser.active
+        || user.useCustomPermissions !== existingUser.useCustomPermissions
+        || JSON.stringify(user.adminPermissions || []) !== JSON.stringify(existingUser.adminPermissions || [])
+        || Boolean(body.password);
+      if (accessChanged) user.sessionVersion = Number(existingUser.sessionVersion || 0) + 1;
       db.users[index] = user;
       await writeDb(db);
       sendJson(res, 200, sanitizeUser(user));
@@ -8352,6 +8507,10 @@ async function handleApi(req, res, pathname) {
     if (method === "DELETE") {
       if (req.adminUser?.id === id) {
         sendJson(res, 409, { error: "Sua propria conta nao pode ser excluida enquanto estiver em uso." });
+        return;
+      }
+      if (roleAlias(db.users[index].role) === "owner" && db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false).length <= 1) {
+        sendJson(res, 409, { error: { code: "LAST_OWNER_REQUIRED", message: "A última conta de dono ativa não pode ser excluída." } });
         return;
       }
       const linkedSubscriptions = (db.subscriptions || []).filter((subscription) => subscription.userId === id);

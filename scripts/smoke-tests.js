@@ -75,6 +75,7 @@ async function loginAdmin() {
 async function run() {
   const backup = fs.readFileSync(DATA_FILE);
   const db = JSON.parse(String(backup));
+  db.settings = { ...(db.settings || {}), adminTwoFactorRequired: false };
   db.users = (db.users || []).map((user) =>
     user.id === "admin" || user.email === process.env.ADMIN_EMAIL
       ? { ...user, id: "admin", email: process.env.ADMIN_EMAIL, role: "owner", active: true, passwordHash: "" }
@@ -515,11 +516,16 @@ async function run() {
         twoFactorEnabled: true,
         twoFactorSecret: "attacker-secret",
         role: "operator",
+        useCustomPermissions: true,
+        adminPermissions: ["tickets.validate", "unknown.permission"],
         active: true
       })
     });
     assert.equal(operatorUser.response.status, 201);
     assert.equal(operatorUser.payload.twoFactorEnabled, false);
+    assert.equal(operatorUser.payload.useCustomPermissions, true);
+    assert.deepEqual(operatorUser.payload.adminPermissions, ["tickets.validate"]);
+    assert.deepEqual(operatorUser.payload.effectivePermissions, ["tickets.validate"]);
     assert.equal("passwordHash" in operatorUser.payload, false);
     const operatorLogin = await request("/api/admin/login", {
       method: "POST",
@@ -528,6 +534,22 @@ async function run() {
     });
     assert.equal(operatorLogin.response.status, 200);
     const operatorCookie = operatorLogin.response.headers.get("set-cookie").split(";")[0] || "";
+    const operatorContent = await request("/api/admin/content", { headers: jsonHeaders(operatorCookie) });
+    assert.equal(operatorContent.response.status, 200);
+    assert.equal(operatorContent.payload.users.length, 0);
+    assert.equal(operatorContent.payload.orders.length, 0);
+    assert.equal(operatorContent.payload.payments.length, 0);
+    assert.equal(operatorContent.payload.tickets.length, 0);
+    assert.equal(operatorContent.payload.subscriptions.length, 0);
+    assert.ok(operatorContent.payload.movies.length > 0);
+    const operatorDashboardDenied = await request("/api/admin/dashboard", { headers: jsonHeaders(operatorCookie) });
+    assert.equal(operatorDashboardDenied.response.status, 403);
+    const operatorValidationAllowed = await request("/api/tickets/validate", {
+      method: "POST",
+      headers: jsonHeaders(operatorCookie),
+      body: JSON.stringify({ code: "codigo-inexistente" })
+    });
+    assert.equal(operatorValidationAllowed.response.status, 404);
     const operatorPlanDenied = await request("/api/admin/subscription-plans", {
       method: "POST",
       headers: jsonHeaders(operatorCookie),
@@ -1625,6 +1647,28 @@ async function run() {
     assert.equal(card.response.status, 201);
     assert.equal(card.payload.payment.provider, "mercado_pago");
     assert.equal(card.payload.payment.method, "credit_card");
+
+    const requiredPolicy = await request("/api/admin/security-policy", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ adminTwoFactorRequired: true })
+    });
+    assert.equal(requiredPolicy.response.status, 200);
+    assert.equal(requiredPolicy.payload.adminTwoFactorRequired, true);
+    const setupRequiredLogin = await request("/api/admin/login", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ email: "operador-smoke@cine.local", password: "operador-smoke-123" })
+    });
+    assert.equal(setupRequiredLogin.response.status, 200);
+    assert.equal(setupRequiredLogin.payload.user.twoFactorSetupRequired, true);
+    const setupRequiredCookie = (setupRequiredLogin.response.headers.get("set-cookie") || "").split(";")[0] || "";
+    const blockedBeforeSetup = await request("/api/admin/content", { headers: jsonHeaders(setupRequiredCookie) });
+    assert.equal(blockedBeforeSetup.response.status, 428);
+    assert.equal(blockedBeforeSetup.payload.error.code, "ADMIN_2FA_SETUP_REQUIRED");
+    const setupStatusAllowed = await request("/api/admin/2fa/status", { headers: jsonHeaders(setupRequiredCookie) });
+    assert.equal(setupStatusAllowed.response.status, 200);
+    assert.equal(setupStatusAllowed.payload.requiredByPolicy, true);
 
     const logout = await request("/api/auth/logout", {
       method: "POST",

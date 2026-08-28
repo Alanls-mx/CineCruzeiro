@@ -38,7 +38,8 @@ let state = {
   dashboardMetric: "revenue",
   adminSubtabs: {
     marketing: "overview",
-    club: "overview"
+    club: "overview",
+    accounts: "team"
   },
   dashboardPeriod: "today",
   dashboardFrom: "",
@@ -219,8 +220,11 @@ async function loadAdminUser() {
     $("adminUserBadge").textContent = `${data.user.name || data.user.email} • ${adminRoleLabel(data.user.role)}`;
     if ($("adminProfileName")) $("adminProfileName").textContent = data.user.name || data.user.email || "Usuário";
     if ($("adminProfileRole")) $("adminProfileRole").textContent = adminRoleLabel(data.user.role);
+    renderAccountSecuritySummary();
+    return data.user;
   } catch {
     // api() redirects to login on 401.
+    return null;
   }
 }
 
@@ -244,6 +248,10 @@ function closeAdminProfileMenu() {
 
 function closeTwoFactorSettings() {
   const overlay = $("twoFactorOverlay");
+  if (state.adminUser?.twoFactorSetupRequired && !state.twoFactorStatus?.enabled) {
+    showToast("Configure o 2FA para liberar o painel.", "error");
+    return;
+  }
   if (state.twoFactorRecoveryCodes.length && !window.confirm("Os códigos não serão exibidos novamente. Confirma que já os guardou?")) return;
   if (overlay) overlay.hidden = true;
   state.twoFactorSetup = null;
@@ -320,6 +328,8 @@ function renderTwoFactorSettings() {
             <button class="ghost-button" type="submit">Gerar novos códigos</button>
           </form>
         </details>
+        ${state.twoFactorStatus.requiredByPolicy ? `
+        <div class="two-factor-policy-note"><strong>Proteção obrigatória</strong><span>A política da equipe exige 2FA. Para desativá-lo, o dono deve primeiro desligar a exigência global em Contas.</span></div>` : `
         <details class="danger-zone">
           <summary>Desativar 2FA</summary>
           <p>O painel voltará a aceitar apenas e-mail e senha.</p>
@@ -328,7 +338,7 @@ function renderTwoFactorSettings() {
             <label>Código ou recuperação<input name="code" class="two-factor-code" autocomplete="one-time-code" maxlength="11" required /></label>
             <button class="danger-button" type="submit">Desativar 2FA</button>
           </form>
-        </details>
+        </details>`}
       </div>`;
     return;
   }
@@ -348,6 +358,18 @@ async function loadTwoFactorStatus() {
   renderTwoFactorSettings();
   state.twoFactorStatus = await api("/api/admin/2fa/status");
   renderTwoFactorSettings();
+  renderAccountSecuritySummary();
+}
+
+function renderAccountSecuritySummary() {
+  const target = $("accountSecuritySummary");
+  if (!target) return;
+  const enabled = Boolean(state.twoFactorStatus?.enabled ?? state.adminUser?.twoFactorEnabled);
+  const required = Boolean(state.twoFactorStatus?.requiredByPolicy ?? state.content?.settings?.adminTwoFactorRequired);
+  target.innerHTML = `
+    <span class="security-state ${enabled ? "active" : "pending"}">${enabled ? "Protegida" : "Configuração pendente"}</span>
+    <strong>${enabled ? "Seu acesso exige senha e código temporário" : "Adicione uma segunda etapa ao seu login"}</strong>
+    <p>${required ? "A política atual exige 2FA para todas as contas administrativas." : "O 2FA é opcional na política atual, mas recomendado para contas administrativas."}</p>`;
 }
 
 async function openTwoFactorSettings() {
@@ -566,6 +588,8 @@ function renderAll() {
   renderRoomOptions();
   renderManualSaleOptions();
   renderValidationSessionScope();
+  if ($("adminTwoFactorRequired")) $("adminTwoFactorRequired").checked = state.content?.settings?.adminTwoFactorRequired !== false;
+  renderAccountSecuritySummary();
   document.querySelectorAll("form[data-dirty-track]").forEach((form) => markFormClean(form));
 }
 
@@ -4520,6 +4544,31 @@ async function deleteAd() {
   }
 }
 
+const ADMIN_PERMISSION_PRESETS = {
+  owner: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "fiscal.manage", "integrations.manage", "logs.view", "settings.manage", "media.manage"],
+  manager: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "fiscal.manage", "logs.view", "media.manage"],
+  operator: ["dashboard.view", "box_office.manage", "tickets.validate", "orders.manage"]
+};
+
+function selectedUserPermissions() {
+  return [...document.querySelectorAll("#userPermissions input:checked")].map((input) => input.value);
+}
+
+function syncUserPermissionEditor(permissions = null) {
+  const custom = Boolean($("userUseCustomPermissions")?.checked);
+  const role = $("userRole")?.value || "operator";
+  const selected = new Set(Array.isArray(permissions) ? permissions : ADMIN_PERMISSION_PRESETS[role] || []);
+  document.querySelectorAll("#userPermissions input").forEach((input) => {
+    input.checked = selected.has(input.value);
+    input.disabled = !custom || role === "owner";
+  });
+  if ($("userUseCustomPermissions")) {
+    $("userUseCustomPermissions").disabled = role === "owner";
+    if (role === "owner") $("userUseCustomPermissions").checked = false;
+  }
+  $("userPermissions")?.classList.toggle("is-readonly", !custom || role === "owner");
+}
+
 function renderUsers() {
   const items = state.content?.users || [];
   if (state.creating.user) {
@@ -4532,7 +4581,7 @@ function renderUsers() {
         <button class="list-item ${item.id === state.selectedUserId ? "active" : ""}" type="button" onclick="selectUser('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.name)}</span>
-            <span class="list-meta">${escapeHtml(item.email || "sem email")} • ${escapeHtml(item.role || "editor")}</span>
+            <span class="list-meta">${escapeHtml(item.email || "sem email")} • ${escapeHtml(adminRoleLabel(item.role))} • ${item.twoFactorEnabled ? "2FA ativo" : "2FA pendente"}${item.useCustomPermissions ? " • acesso personalizado" : ""}</span>
           </span>
           <span class="badge">${item.active ? "ativo" : "off"}</span>
         </button>
@@ -4563,6 +4612,8 @@ function fillUserForm(item) {
   $("userPassword").value = "";
   $("userRole").value = item?.role === "editor" ? "manager" : item?.role || "operator";
   $("userActive").checked = item?.active !== false;
+  $("userUseCustomPermissions").checked = Boolean(item?.useCustomPermissions);
+  syncUserPermissionEditor(item?.useCustomPermissions ? item.adminPermissions : null);
 }
 
 async function saveUser(event) {
@@ -4574,7 +4625,9 @@ async function saveUser(event) {
       email: $("userEmail").value,
       password: $("userPassword").value || undefined,
       role: $("userRole").value,
-      active: $("userActive").checked
+      active: $("userActive").checked,
+      useCustomPermissions: $("userUseCustomPermissions").checked,
+      adminPermissions: selectedUserPermissions()
     };
     const existingId = $("userId").value;
     const saved = existingId
@@ -4587,6 +4640,26 @@ async function saveUser(event) {
     showSuccess("Usuário salvo", `${saved.name} foi atualizado.`);
   } catch (error) {
     showToast(error.message, "error");
+  }
+}
+
+async function saveAdminSecurityPolicy(event) {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button[type='submit']");
+  if (button) button.disabled = true;
+  try {
+    const result = await api("/api/admin/security-policy", {
+      method: "PUT",
+      body: JSON.stringify({ adminTwoFactorRequired: $("adminTwoFactorRequired").checked })
+    });
+    if (state.content?.settings) state.content.settings.adminTwoFactorRequired = result.adminTwoFactorRequired;
+    if (state.twoFactorStatus) state.twoFactorStatus.requiredByPolicy = result.adminTwoFactorRequired;
+    renderAccountSecuritySummary();
+    showSuccess("Política atualizada", result.adminTwoFactorRequired ? "O 2FA agora é obrigatório para todas as contas do painel." : "Cada conta poderá ativar ou desativar o próprio 2FA.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -5552,26 +5625,39 @@ async function toggleIntegration(key, enabled) {
 function applyRbacVisibility() {
   const role = state.adminUser?.role || "";
   const owner = ["owner", "master"].includes(role);
-  const manager = owner || role === "manager";
-  const operator = manager || role === "operator" || role === "seller";
-  const allowedPanels = new Set(
-    owner
-      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "fiscalPanel", "concessionsPanel", "marketingPanel", "clubPanel", "usersPanel", "integrationsPanel", "logsPanel"]
-      : manager
-      ? ["dashboardPanel", "moviesPanel", "roomsPanel", "ticketsPanel", "ordersPanel", "fiscalPanel", "concessionsPanel", "marketingPanel", "clubPanel", "logsPanel"]
-      : operator
-      ? ["dashboardPanel", "ordersPanel"]
-      : []
-  );
+  const permissions = new Set(state.adminUser?.effectivePermissions || ADMIN_PERMISSION_PRESETS[role] || []);
+  const has = (permission) => owner || permissions.has(permission);
+  const allowedPanels = new Set([
+    has("dashboard.view") && "dashboardPanel",
+    has("movies.manage") && "moviesPanel",
+    has("rooms.manage") && "roomsPanel",
+    (has("ticket_types.manage") || has("orders.manage")) && "ticketsPanel",
+    (has("box_office.manage") || has("orders.manage") || has("tickets.validate") || has("dashboard.view")) && "ordersPanel",
+    has("fiscal.manage") && "fiscalPanel",
+    has("concessions.manage") && "concessionsPanel",
+    has("marketing.manage") && "marketingPanel",
+    has("club.manage") && "clubPanel",
+    "usersPanel",
+    has("integrations.manage") && "integrationsPanel",
+    has("logs.view") && "logsPanel"
+  ].filter(Boolean));
   document.querySelectorAll(".nav-button[data-panel]").forEach((button) => {
     button.hidden = !allowedPanels.has(button.dataset.panel);
   });
   document.querySelectorAll("[data-owner-only='true']").forEach((element) => {
     if (!element.classList.contains("nav-button")) element.hidden = !owner;
   });
-  document.querySelectorAll("[data-box-office-tab='payments']").forEach((button) => {
-    button.hidden = !manager;
+  const teamTab = document.querySelector('[data-admin-tablist="accounts"] [data-admin-tab="team"]');
+  if (teamTab) teamTab.hidden = !owner;
+  if (!owner && state.adminSubtabs.accounts !== "security") setAdminSubtab("accounts", "security");
+  document.querySelectorAll("[data-permission]").forEach((element) => {
+    element.hidden = !has(element.dataset.permission);
   });
+  const activeBoxOfficeTab = document.querySelector("[data-box-office-tab].active");
+  if (activeBoxOfficeTab?.hidden) {
+    const firstAvailableTab = [...document.querySelectorAll(".box-office-tabs [data-box-office-tab]")].find((button) => !button.hidden);
+    if (firstAvailableTab) setBoxOfficeTab(firstAvailableTab.dataset.boxOfficeTab);
+  }
   const active = document.querySelector(".panel.active")?.id;
   if (active && !allowedPanels.has(active)) activatePanel(allowedPanels.has("dashboardPanel") ? "dashboardPanel" : "ordersPanel", { scroll: false });
 }
@@ -5637,15 +5723,15 @@ function bindEvents() {
     event.stopPropagation();
     toggleAdminProfileMenu();
   });
-  $("twoFactorNavButton")?.addEventListener("click", () => {
-    closeAdminDrawer();
-    void openTwoFactorSettings();
-  });
+  $("accountTwoFactorButton")?.addEventListener("click", () => void openTwoFactorSettings());
+  $("adminSecurityPolicyForm")?.addEventListener("submit", saveAdminSecurityPolicy);
   $("profileLogoutButton")?.addEventListener("click", logoutAdmin);
   document.querySelectorAll("[data-profile-action]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.profileAction === "account") {
-        void openTwoFactorSettings();
+        closeAdminProfileMenu();
+        activatePanel("usersPanel", { scroll: true });
+        setAdminSubtab("accounts", "security", { focus: true });
         return;
       }
       closeAdminProfileMenu();
@@ -5721,6 +5807,12 @@ function bindEvents() {
     if (action === "finish") {
       state.twoFactorRecoveryCodes = [];
       await loadTwoFactorStatus();
+      if (state.adminUser?.twoFactorSetupRequired && state.twoFactorStatus?.enabled) {
+        state.adminUser.twoFactorSetupRequired = false;
+        state.adminUser.twoFactorEnabled = true;
+        closeTwoFactorSettings();
+        await loadContent();
+      }
     }
   });
 
@@ -6022,6 +6114,8 @@ function bindEvents() {
   $("cancelUserCreateButton").addEventListener("click", () => cancelCreation("user"));
   $("userForm").addEventListener("submit", saveUser);
   $("deleteUserButton").addEventListener("click", deleteUser);
+  $("userRole")?.addEventListener("change", () => syncUserPermissionEditor());
+  $("userUseCustomPermissions")?.addEventListener("change", () => syncUserPermissionEditor(selectedUserPermissions()));
 
   $("newClubPlanButton").addEventListener("click", newClubPlan);
   $("clubPlanActive")?.addEventListener("change", (event) => {
@@ -6210,7 +6304,13 @@ window.toggleIntegration = toggleIntegration;
 async function initAdmin() {
   bindEvents();
   setBoxOfficeTab("newSale");
-  await loadAdminUser();
+  const user = await loadAdminUser();
+  if (user?.twoFactorSetupRequired) {
+    setAdminSubtab("accounts", "security");
+    activatePanel("usersPanel", { scroll: false });
+    await openTwoFactorSettings();
+    return;
+  }
   await loadContent();
 }
 

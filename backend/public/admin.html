@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
-    <link rel="stylesheet" href="admin/admin.css?v=20260828-validation-cart-1" />
+    <link rel="stylesheet" href="admin/admin.css?v=20260828-accounts-security-2" />
     <link rel="stylesheet" href="admin/admin-premium.css?v=20260827-14" />
   </head>
   <body class="admin-booting">
@@ -83,7 +83,7 @@
         </button>
         <button class="nav-button" type="button" data-panel="usersPanel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          Usuários
+          Contas
         </button>
         <button class="nav-button" type="button" data-panel="integrationsPanel" data-owner-only="true">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -92,10 +92,6 @@
         <button class="nav-button" type="button" data-panel="logsPanel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h10"/><circle cx="19" cy="19" r="2"/></svg>
           Logs
-        </button>
-        <button id="twoFactorNavButton" class="nav-button" type="button" data-admin-action="two-factor">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M9 12h6M12 9v6"/></svg>
-          Segurança e 2FA
         </button>
       </aside>
 
@@ -572,12 +568,12 @@
               <h1>Ingressos e Precos</h1>
               <p>Controle tipos de ingresso e preço base usado nas sessões.</p>
             </div>
-            <button id="newTicketButton" class="primary-button icon-label" type="button">
+            <button id="newTicketButton" class="primary-button icon-label" type="button" data-permission="ticket_types.manage">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Novo Tipo
             </button>
           </div>
-          <div class="split-grid compact">
+          <div class="split-grid compact" data-permission="ticket_types.manage">
             <div class="surface">
               <div class="section-title">Tipos de ingresso</div>
               <div id="ticketsList" class="list"></div>
@@ -662,11 +658,11 @@
           </div>
 
           <div class="box-office-tabs" aria-label="Areas da bilheteria">
-            <button class="active" type="button" data-box-office-tab="newSale">Nova venda</button>
-            <button type="button" data-box-office-tab="todaySales">Vendas de hoje</button>
-            <button type="button" data-box-office-tab="allOrders">Pedidos</button>
-            <button type="button" data-box-office-tab="payments">Financeiro / Pagamentos</button>
-            <button type="button" data-box-office-tab="validateTicket">Validar ingresso</button>
+            <button class="active" type="button" data-box-office-tab="newSale" data-permission="box_office.manage">Nova venda</button>
+            <button type="button" data-box-office-tab="todaySales" data-permission="orders.manage">Vendas de hoje</button>
+            <button type="button" data-box-office-tab="allOrders" data-permission="orders.manage">Pedidos</button>
+            <button type="button" data-box-office-tab="payments" data-permission="dashboard.view">Financeiro / Pagamentos</button>
+            <button type="button" data-box-office-tab="validateTicket" data-permission="tickets.validate">Validar ingresso</button>
           </div>
 
           <div id="boxOfficeNewSale" class="box-office-tab-panel active">
@@ -1316,15 +1312,20 @@
         <section id="usersPanel" class="panel">
           <div class="panel-heading">
             <div>
-              <h1>Usuários e permissões</h1>
-              <p>Gerencie a equipe do painel. Tokens são internos e não devem ser gerados manualmente.</p>
+              <h1>Contas e acessos</h1>
+              <p>Gerencie a equipe, as permissões do painel e a segurança da sua própria conta.</p>
             </div>
-            <button id="newUserButton" class="primary-button icon-label" type="button">
+            <button id="newUserButton" class="primary-button icon-label" type="button" data-owner-only="true">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Novo usuário
             </button>
           </div>
-          <div class="split-grid compact">
+          <nav class="admin-subtabs" aria-label="Configurações de contas" data-admin-tablist="accounts">
+            <button class="active" type="button" data-admin-tab="team">Equipe e permissões</button>
+            <button type="button" data-admin-tab="security">Minha segurança</button>
+          </nav>
+          <div class="admin-tab-panel active" data-admin-tab-panel="accounts:team" data-owner-only="true">
+          <div class="split-grid compact accounts-grid">
             <div class="surface">
               <div class="section-title">Equipe</div>
               <div id="usersList" class="list"></div>
@@ -1355,12 +1356,61 @@
                 <input id="userActive" type="checkbox" />
                 Usuário ativo
               </label>
+              <fieldset class="permission-editor full-span">
+                <legend>Permissões no painel</legend>
+                <label class="check-field permission-mode">
+                  <input id="userUseCustomPermissions" type="checkbox" />
+                  <span>
+                    Personalizar permissões desta conta
+                    <small>Desativado usa automaticamente as permissões do cargo selecionado.</small>
+                  </span>
+                </label>
+                <div id="userPermissions" class="permission-grid" aria-label="Permissões personalizadas">
+                  <label><input type="checkbox" value="dashboard.view" /> Dashboard e indicadores</label>
+                  <label><input type="checkbox" value="movies.manage" /> Filmes e sessões</label>
+                  <label><input type="checkbox" value="rooms.manage" /> Salas</label>
+                  <label><input type="checkbox" value="ticket_types.manage" /> Tipos de ingresso</label>
+                  <label><input type="checkbox" value="box_office.manage" /> Bilheteria e venda rápida</label>
+                  <label><input type="checkbox" value="tickets.validate" /> Validar ingressos e bomboniere</label>
+                  <label><input type="checkbox" value="orders.manage" /> Pedidos e pagamentos</label>
+                  <label><input type="checkbox" value="concessions.manage" /> Bomboniere</label>
+                  <label><input type="checkbox" value="marketing.manage" /> Marketing e e-mails</label>
+                  <label><input type="checkbox" value="club.manage" /> Clube e assinaturas</label>
+                  <label><input type="checkbox" value="fiscal.manage" /> Notas fiscais e relatórios</label>
+                  <label><input type="checkbox" value="integrations.manage" /> Integrações</label>
+                  <label><input type="checkbox" value="logs.view" /> Logs do sistema</label>
+                  <label><input type="checkbox" value="settings.manage" /> Configurações gerais</label>
+                  <label><input type="checkbox" value="media.manage" /> Uploads e imagens</label>
+                </div>
+                <p class="helper-text">A conta do dono mantém acesso total para evitar o bloqueio administrativo.</p>
+              </fieldset>
               <div class="button-row">
                 <button id="deleteUserButton" class="danger-button" type="button">Excluir</button>
                 <button id="cancelUserCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
                 <button class="primary-button" type="submit">Salvar usuário</button>
               </div>
             </form>
+          </div>
+          </div>
+          <div class="admin-tab-panel" data-admin-tab-panel="accounts:security" hidden>
+            <div class="account-security-layout">
+              <section class="surface account-security-primary">
+                <div class="section-title">Autenticação em duas etapas</div>
+                <div id="accountSecuritySummary" class="account-security-summary"></div>
+                <button id="accountTwoFactorButton" class="primary-button" type="button">Gerenciar meu 2FA</button>
+              </section>
+              <form id="adminSecurityPolicyForm" class="surface" data-owner-only="true">
+                <div class="section-title">Política da equipe</div>
+                <label class="check-field security-policy-toggle">
+                  <input id="adminTwoFactorRequired" type="checkbox" />
+                  <span>
+                    Exigir 2FA de todas as contas administrativas
+                    <small>Novos usuários deverão configurar o autenticador no primeiro login antes de acessar qualquer área do painel.</small>
+                  </span>
+                </label>
+                <button class="primary-button" type="submit">Salvar política de segurança</button>
+              </form>
+            </div>
           </div>
         </section>
 
@@ -1882,6 +1932,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260828-validation-cart-1"></script>
+    <script src="admin/admin.js?v=20260828-accounts-security-2"></script>
   </body>
 </html>

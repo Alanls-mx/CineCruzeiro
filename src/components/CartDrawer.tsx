@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ShoppingBag, Ticket, Trash2, X } from "lucide-react";
+import { CalendarDays, Popcorn, ShoppingBag, Ticket, Trash2, X } from "lucide-react";
 import type { CinemaContent } from "@/services/cinemaApi";
 import {
   allMovies,
@@ -54,11 +54,30 @@ export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
     return carts.map((cart) => {
       const movie = movies.find((item) => item.id === cart.movieId);
       const session = movie?.sessions.find((item) => item.id === cart.sessionId);
-      const ticketCount = cart.ticketQuantities !== undefined
-        ? Object.values(cart.ticketQuantities).reduce((sum, value) => sum + Number(value || 0), 0)
-        : Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0);
-      const concessionCount = Object.values(cart.concessionQuantities || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-      return { cart, movie, session, ticketCount, concessionCount };
+      const ticketItems = cart.ticketQuantities !== undefined
+        ? Object.entries(cart.ticketQuantities)
+          .map(([id, quantity]) => {
+            const ticketType = content?.ticketTypes?.find((item) => item.id === id);
+            return {
+              id,
+              name: ticketType?.name || "Tipo de ingresso indisponível",
+              quantity: Number(quantity || 0),
+              bundleQuantity: Math.max(1, Number(ticketType?.bundleQuantity || 1)),
+            };
+          })
+          .filter((item) => item.quantity > 0)
+        : [
+          { id: "full", name: "Inteira", quantity: Number(cart.fullTickets || 0), bundleQuantity: 1 },
+          { id: "half", name: "Meia-entrada", quantity: Number(cart.halfTickets || 0), bundleQuantity: 1 },
+        ].filter((item) => item.quantity > 0);
+      const concessionItems = Object.entries(cart.concessionQuantities || {})
+        .map(([id, quantity]) => ({
+          id,
+          name: content?.concessions?.find((item) => item.id === id)?.name || "Item indisponível",
+          quantity: Number(quantity || 0),
+        }))
+        .filter((item) => item.quantity > 0);
+      return { cart, movie, session, ticketItems, concessionItems };
     });
   }, [carts, content]);
 
@@ -101,7 +120,7 @@ export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {entries.map(({ cart, movie, session, ticketCount, concessionCount }) => (
+              {entries.map(({ cart, movie, session, ticketItems, concessionItems }) => (
                 <article key={cart.sessionId} className="rounded-lg bg-[#172235] p-4">
                   <div className="flex items-start gap-3">
                     <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-gold-400/10 text-gold-400">
@@ -118,9 +137,37 @@ export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-white/8 pt-3 text-xs text-slate-300">
-                    <span>{ticketCount} ingresso(s)</span>
-                    <span>{concessionCount} item(ns) da bomboniere</span>
+                  <div className="mt-4 space-y-3 border-t border-white/8 pt-3">
+                    <div>
+                      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-black uppercase text-blue-200">
+                        <Ticket className="h-3.5 w-3.5" /> Ingressos
+                      </p>
+                      <div className="space-y-1 text-xs text-slate-300">
+                        {ticketItems.map((item) => (
+                          <div key={item.id} className="flex min-w-0 items-start justify-between gap-3">
+                            <span className="min-w-0 break-words">{item.name}</span>
+                            <strong className="flex-none text-white">
+                              {item.quantity}x{item.bundleQuantity > 1 ? ` · ${item.quantity * item.bundleQuantity} ingressos` : ""}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {concessionItems.length > 0 && (
+                      <div>
+                        <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-black uppercase text-gold-400">
+                          <Popcorn className="h-3.5 w-3.5" /> Bomboniere
+                        </p>
+                        <div className="space-y-1 text-xs text-slate-300">
+                          {concessionItems.map((item) => (
+                            <div key={item.id} className="flex min-w-0 items-start justify-between gap-3">
+                              <span className="min-w-0 break-words">{item.name}</span>
+                              <strong className="flex-none text-white">{item.quantity}x</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <button type="button" disabled={!movie || !session || cartItemCount(cart) <= 0} onClick={() => openCart(cart)} className="mt-4 min-h-11 w-full bg-white/8 px-4 py-3 text-sm font-black text-white transition hover:bg-blue-500/18 disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400">
                     Revisar e continuar

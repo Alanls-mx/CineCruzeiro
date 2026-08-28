@@ -1,0 +1,2 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_permissions JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS use_custom_permissions BOOLEAN NOT NULL DEFAULT false;
