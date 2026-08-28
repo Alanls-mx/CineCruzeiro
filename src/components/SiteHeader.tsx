@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, ShoppingBag, UserRound, X } from "lucide-react";
 import { fetchCinemaContent } from "@/services/cinemaApi";
@@ -19,31 +20,25 @@ type SiteHeaderProps = {
 };
 
 export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderProps = {}) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [cartCount, setCartCount] = useState(0);
-  const [cartSessionId, setCartSessionId] = useState("");
+  const { cartCount, cartHref } = useCartDestination();
   const [remoteSettings, setRemoteSettings] = useState<CinemaContent["settings"] | null>(null);
 
   const effectiveSettings = settings || remoteSettings;
   const showAnnouncement = effectiveSettings?.announcementEnabled === true;
   const announcementText = effectiveSettings?.announcementText?.trim();
 
-  useEffect(() => {
-    const update = () => {
-      const cart = readCheckoutCart();
-      setCartCount(cartItemCount(cart));
-      setCartSessionId(cart?.sessionId || "");
-    };
-    update();
-    window.addEventListener("cine-cruzeiro-cart-updated", update);
-    window.addEventListener("storage", update);
-    return () => {
-      window.removeEventListener("cine-cruzeiro-cart-updated", update);
-      window.removeEventListener("storage", update);
-    };
-  }, []);
+  useEffect(() => setOpen(false), [pathname]);
 
-  const cartHref = cartCount > 0 && cartSessionId ? `/checkout/${cartSessionId}/extras` : "/filmes";
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   useEffect(() => {
     if (settings) return;
@@ -106,14 +101,14 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
             <ShoppingBag className="h-5 w-5" />
             {cartCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-gold-400" />}
           </Link>
-          <button type="button" onClick={() => setOpen((value) => !value)} className="inline-flex h-11 w-11 items-center justify-center text-white" aria-label="Abrir menu">
+          <button type="button" onClick={() => setOpen((value) => !value)} className="inline-flex h-11 w-11 items-center justify-center text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label={open ? "Fechar menu" : "Abrir menu"} aria-expanded={open} aria-controls="site-mobile-navigation">
             {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
         </div>
       </div>
 
       {open && (
-        <div className="border-t border-white/8 bg-[#060a12] px-4 py-5 md:hidden">
+        <div id="site-mobile-navigation" className="border-t border-white/8 bg-[#060a12] px-4 py-5 md:hidden">
           <nav className="mx-auto flex max-w-[1320px] flex-col gap-4 text-base font-bold text-slate-100">
             {navItems.map((item) => (
               <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
@@ -133,6 +128,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
 }
 
 export function SiteFooter() {
+  const { cartHref } = useCartDestination();
   return (
     <footer className="border-t border-white/8 bg-[#050810] text-xs text-slate-400">
       <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
@@ -161,7 +157,7 @@ export function SiteFooter() {
           <h3 className="font-bold text-white">Compra rápida</h3>
           <Link href="/filmes" className="block hover:text-white">Comprar ingresso</Link>
           <Link href="/conta/ingressos" className="block hover:text-white">Meus ingressos</Link>
-          <Link href="/checkout/carrinho/extras" className="block hover:text-white">Carrinho</Link>
+          <Link href={cartHref} className="block hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">Carrinho</Link>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Legal</h3>
@@ -182,4 +178,29 @@ export function SiteFooter() {
       </div>
     </footer>
   );
+}
+
+function useCartDestination() {
+  const [cartCount, setCartCount] = useState(0);
+  const [cartSessionId, setCartSessionId] = useState("");
+
+  useEffect(() => {
+    const update = () => {
+      const cart = readCheckoutCart();
+      setCartCount(cartItemCount(cart));
+      setCartSessionId(cart?.sessionId || "");
+    };
+    update();
+    window.addEventListener("cine-cruzeiro-cart-updated", update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener("cine-cruzeiro-cart-updated", update);
+      window.removeEventListener("storage", update);
+    };
+  }, []);
+
+  return {
+    cartCount,
+    cartHref: cartCount > 0 && cartSessionId ? `/checkout/${cartSessionId}/extras` : "/filmes",
+  };
 }

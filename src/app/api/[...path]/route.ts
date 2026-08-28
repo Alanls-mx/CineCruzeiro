@@ -33,13 +33,30 @@ async function proxy(request: NextRequest, context: RouteContext) {
   headers.set("x-forwarded-proto", sourceUrl.protocol.replace(":", ""));
 
   const method = request.method.toUpperCase();
-  const backendResponse = await fetch(targetUrl, {
-    method,
-    headers,
-    body: method === "GET" || method === "HEAD" ? undefined : await request.text(),
-    redirect: "manual",
-    cache: "no-store",
-  });
+  let backendResponse: Response;
+  try {
+    backendResponse = await fetch(targetUrl, {
+      method,
+      headers,
+      body: method === "GET" || method === "HEAD" ? undefined : await request.text(),
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    return NextResponse.json(
+      {
+        error: {
+          code: timedOut ? "BACKEND_TIMEOUT" : "BACKEND_UNAVAILABLE",
+          message: timedOut
+            ? "O servidor demorou para responder. Tente novamente."
+            : "Não foi possível falar com o servidor agora. Tente novamente.",
+        },
+      },
+      { status: timedOut ? 504 : 502 }
+    );
+  }
 
   const responseHeaders = new Headers();
   const contentType = backendResponse.headers.get("content-type");

@@ -22,6 +22,7 @@ const loadHomeContent = unstable_cache(
     const response = await fetch(`${backendUrl}/api/content`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) throw new Error("Não foi possível carregar a programação do backend.");
     return normalizeCinemaContent(await response.json());

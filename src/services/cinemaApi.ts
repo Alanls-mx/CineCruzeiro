@@ -7,9 +7,17 @@ const CUSTOMER_SESSION_TOKEN_KEY = "cine-cruzeiro-session-token";
 const CUSTOMER_FALLBACK_COOKIE = "cine_customer_fallback";
 const CUSTOMER_TOKEN_MAX_AGE = 60 * 60 * 24 * 30;
 const CINEMA_CONTENT_CACHE_TTL = 30_000;
+const API_TIMEOUT_MS = 20_000;
 
 let cinemaContentCache: { value: CinemaContent; expiresAt: number } | null = null;
 let cinemaContentRequest: Promise<CinemaContent> | null = null;
+
+function apiFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  return fetch(input, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+}
 
 function apiErrorMessage(payload: Record<string, unknown>, fallback: string) {
   const error = payload.error;
@@ -322,12 +330,13 @@ export function getCachedCinemaContent() {
   return cinemaContentCache.value;
 }
 
-export async function fetchCinemaContent(): Promise<CinemaContent> {
+export async function fetchCinemaContent(force = false): Promise<CinemaContent> {
+  if (force) cinemaContentCache = null;
   const cached = getCachedCinemaContent();
   if (cached) return cached;
   if (cinemaContentRequest) return cinemaContentRequest;
 
-  cinemaContentRequest = fetch(`${API_BASE}/api/content`)
+  cinemaContentRequest = apiFetch(`${API_BASE}/api/content`)
     .then(async (response) => {
       if (!response.ok) {
         throw new Error("Nao foi possivel carregar a programacao do backend.");
@@ -379,7 +388,7 @@ export async function createCheckoutPayment(
   } = {}
 ) {
   const endpoint = method === "pix" ? "/api/payments/pix" : "/api/payments/card";
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await apiFetch(`${API_BASE}${endpoint}`, {
     method: "POST",
     credentials: "include",
     headers: authHeaders({
@@ -413,7 +422,7 @@ export async function createPixPayment(order: TicketOrder) {
 }
 
 export async function fetchMercadoPagoCheckoutConfig() {
-  const response = await fetch(`${API_BASE}/api/payments/config/mercado-pago`, {
+  const response = await apiFetch(`${API_BASE}/api/payments/config/mercado-pago`, {
     cache: "no-store",
     credentials: "include",
   });
@@ -432,7 +441,7 @@ export async function fetchMercadoPagoCheckoutConfig() {
 }
 
 export async function fetchSubscriptionPlans() {
-  const response = await fetch(`${API_BASE}/api/subscription-plans`);
+  const response = await apiFetch(`${API_BASE}/api/subscription-plans`);
   const payload = await response.json().catch(() => []);
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar os planos do Clube."));
@@ -457,7 +466,7 @@ export async function fetchMySubscriptions() {
 }
 
 export async function subscribeToPlan(planId: string, paymentMethod: "credit_card") {
-  const response = await fetch(`${API_BASE}/api/subscriptions/subscribe`, {
+  const response = await apiFetch(`${API_BASE}/api/subscriptions/subscribe`, {
     method: "POST",
     credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),
@@ -520,7 +529,7 @@ export async function createClubCreditCheckout(data: {
 }
 
 export async function fetchCheckoutOrderStatus(orderId: string) {
-  const response = await fetch(`${API_BASE}/api/checkout/orders/${encodeURIComponent(orderId)}`, {
+  const response = await apiFetch(`${API_BASE}/api/checkout/orders/${encodeURIComponent(orderId)}`, {
     cache: "no-store",
     credentials: "include",
     headers: authHeaders(),
@@ -543,7 +552,7 @@ export async function registerCustomer(data: {
   phone?: string;
   cpf?: string;
 }) {
-  const response = await fetch(`${API_BASE}/api/auth/register`, {
+  const response = await apiFetch(`${API_BASE}/api/auth/register`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -558,7 +567,7 @@ export async function registerCustomer(data: {
 }
 
 export async function loginCustomer(data: { email: string; password: string }) {
-  const response = await fetch(`${API_BASE}/api/auth/login`, {
+  const response = await apiFetch(`${API_BASE}/api/auth/login`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

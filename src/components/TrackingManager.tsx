@@ -32,11 +32,15 @@ export function TrackingManager() {
 
   useEffect(() => {
     const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
     fetch(`${apiBase}/api/content`, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
       .then((content) => setTracking(content?.settings?.tracking || {}))
       .catch(() => setTracking({}));
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {

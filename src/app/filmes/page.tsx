@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter, sessionsForCalendarDay } from "@/components/MovieSessionSelector";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
@@ -12,7 +12,7 @@ import { calendarDayDate, calendarDayTitle, isUploadedAsset, movieSlug } from "@
 import { Movie } from "@/types";
 
 export default function FilmesPage() {
-  const { content, status, error } = useCinemaContent();
+  const { content, status, error, retry } = useCinemaContent();
   const [selectedDate, setSelectedDate] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("todos");
 
@@ -46,7 +46,14 @@ export default function FilmesPage() {
         </div>
 
         {status === "loading" && <div className="h-80 skeleton-soft" />}
-        {status === "error" && <p className="text-rose-200">{error}</p>}
+        {status === "error" && (
+          <div role="alert" className="flex flex-col items-start gap-4 bg-rose-400/10 p-5 text-rose-100 sm:flex-row sm:items-center sm:justify-between">
+            <p>{error}</p>
+            <button type="button" onClick={retry} className="inline-flex min-h-[44px] items-center gap-2 bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-300">
+              <RefreshCw className="h-4 w-4" /> Tentar novamente
+            </button>
+          </div>
+        )}
         {status === "ready" && content && (
           <div className="space-y-8">
             <section className="space-y-5">

@@ -48,6 +48,7 @@ const storageService = createStorageService({
 });
 const PROJECT_ROOT = path.resolve(ROOT, "..");
 const MAX_TRAILER_BYTES = Number(process.env.MAX_TRAILER_BYTES || 120 * 1024 * 1024);
+const MAX_JSON_BODY_BYTES = Number(process.env.MAX_JSON_BODY_BYTES || 8 * 1024 * 1024);
 const ENV_FILES = [
   path.join(ROOT, ".env"),
   path.join(ROOT, ".env.local"),
@@ -735,7 +736,24 @@ function applyAutomatedMovieTags(db, now = new Date()) {
 
 async function readBody(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let receivedBytes = 0;
+  const declaredBytes = Number(req.headers["content-length"] || 0);
+  if (declaredBytes > MAX_JSON_BODY_BYTES) {
+    const error = new Error("A requisição excede o limite permitido.");
+    error.statusCode = 413;
+    error.code = "PAYLOAD_TOO_LARGE";
+    throw error;
+  }
+  for await (const chunk of req) {
+    receivedBytes += chunk.length;
+    if (receivedBytes > MAX_JSON_BODY_BYTES) {
+      const error = new Error("A requisição excede o limite permitido.");
+      error.statusCode = 413;
+      error.code = "PAYLOAD_TOO_LARGE";
+      throw error;
+    }
+    chunks.push(chunk);
+  }
   const raw = Buffer.concat(chunks).toString("utf8");
   req.rawBody = raw;
   if (!raw) return {};
@@ -750,6 +768,7 @@ async function readBody(req) {
 }
 
 const rateBuckets = new Map();
+let lastRateBucketSweep = 0;
 
 function clientIp(req) {
   return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local").split(",")[0].trim();
@@ -760,6 +779,12 @@ function rateLimit(req, pathname) {
   if (!sensitive) return null;
 
   const now = Date.now();
+  if (now - lastRateBucketSweep >= 60 * 1000) {
+    for (const [bucketKey, bucketValue] of rateBuckets) {
+      if (bucketValue.resetAt <= now) rateBuckets.delete(bucketKey);
+    }
+    lastRateBucketSweep = now;
+  }
   const windowMs = 60 * 1000;
   const limit = pathname.includes("/tickets/validate") ? 40 : pathname.includes("/payments") ? 15 : 30;
   const key = `${clientIp(req)}:${pathname}`;
@@ -4225,20 +4250,20 @@ function normalizeAd(input, existing = {}) {
 }
 
 function normalizeUser(input, existing = {}) {
-  const name = String(input.name || existing.name || "Usuario").trim();
-  const email = String(input.email || existing.email || "").trim().toLowerCase();
+  const name = String(input.name || existing.name || "Usuario").trim().slice(0, 120);
+  const email = String(input.email || existing.email || "").trim().toLowerCase().slice(0, 160);
   const rawRole = input.role || existing.role || "customer";
   const role = rawRole === "editor" ? "manager" : rawRole;
   return {
     id: String(input.id || existing.id || slugify(email || name) || `usuario-${Date.now()}`),
     name,
     email,
-    phone: input.phone !== undefined ? String(input.phone || "").trim() : existing.phone || "",
+    phone: input.phone !== undefined ? String(input.phone || "").trim().slice(0, 30) : existing.phone || "",
     cpf: input.cpf !== undefined ? String(input.cpf || "").replace(/\D/g, "").slice(0, 11) : existing.cpf || "",
     passwordHash: input.password ? hashPassword(String(input.password)) : input.passwordHash || existing.passwordHash || "",
     authProvider: input.authProvider || existing.authProvider || (input.googleSub || existing.googleSub ? "google" : "email"),
-    googleSub: input.googleSub || existing.googleSub || "",
-    picture: input.picture || existing.picture || "",
+    googleSub: String(input.googleSub || existing.googleSub || "").slice(0, 255),
+    picture: String(input.picture || existing.picture || "").slice(0, 2048),
     emailVerified: input.emailVerified !== undefined ? Boolean(input.emailVerified) : Boolean(existing.emailVerified),
     pendingEmail: input.pendingEmail !== undefined ? String(input.pendingEmail || "").trim().toLowerCase() : existing.pendingEmail || "",
     emailVerificationHash: input.emailVerificationHash !== undefined ? input.emailVerificationHash : existing.emailVerificationHash || "",
@@ -6589,8 +6614,17 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    if (!email || !password || password.length < 6) {
-      sendJson(res, 400, { error: "Informe e-mail e senha com pelo menos 6 caracteres." });
+    const name = String(body.name || "").trim();
+    if (name.length < 2 || name.length > 120) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_NAME_INVALID", message: "Informe seu nome com 2 a 120 caracteres." } });
+      return;
+    }
+    if (email.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_EMAIL_INVALID", message: "Informe um e-mail válido." } });
+      return;
+    }
+    if (password.length < 6 || password.length > 128) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_PASSWORD_INVALID", message: "Use uma senha entre 6 e 128 caracteres." } });
       return;
     }
     if (db.users.some((item) => item.email === email)) {
@@ -6599,7 +6633,7 @@ async function handleApi(req, res, pathname) {
     }
 
     const user = normalizeUser({
-      name: body.name,
+      name,
       email,
       phone: body.phone,
       cpf: body.cpf,
@@ -6723,8 +6757,8 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const token = String(body.token || "").trim();
     const password = String(body.password || "");
-    if (!token || password.length < 6) {
-      sendJson(res, 400, { error: { code: "PASSWORD_RESET_INVALID", message: "Informe token e senha com pelo menos 6 caracteres." } });
+    if (!token || password.length < 6 || password.length > 128) {
+      sendJson(res, 400, { error: { code: "PASSWORD_RESET_INVALID", message: "Informe token e senha entre 6 e 128 caracteres." } });
       return;
     }
 
@@ -6760,12 +6794,21 @@ async function handleApi(req, res, pathname) {
     }
     const body = await readBody(req);
     const requestedEmail = String(body.email || "").trim().toLowerCase();
+    const requestedName = String(body.name ?? user.name ?? "").trim();
+    if (requestedName.length < 2 || requestedName.length > 120) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_NAME_INVALID", message: "Informe seu nome com 2 a 120 caracteres." } });
+      return;
+    }
+    if (requestedEmail && (requestedEmail.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail))) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_EMAIL_INVALID", message: "Informe um e-mail válido." } });
+      return;
+    }
     if (requestedEmail && requestedEmail !== user.email) {
       sendJson(res, 400, { error: { code: "EMAIL_CHANGE_REQUIRES_VERIFICATION", message: "Use o fluxo de verificacao para trocar o e-mail." } });
       return;
     }
-    user.name = String(body.name || user.name || "").trim();
-    user.phone = String(body.phone || user.phone || "").trim();
+    user.name = requestedName;
+    user.phone = String(body.phone || user.phone || "").trim().slice(0, 30);
     user.cpf = String(body.cpf || user.cpf || "").replace(/\D/g, "").slice(0, 11);
     const wantsPasswordChange = body.password !== undefined || body.newPassword !== undefined || body.currentPassword !== undefined || body.confirmPassword !== undefined;
     if (wantsPasswordChange) {
@@ -6786,8 +6829,8 @@ async function handleApi(req, res, pathname) {
       } else if (nextPassword !== confirmPassword) {
         sendJson(res, 400, { error: { code: "PASSWORD_CONFIRMATION_MISMATCH", message: "As novas senhas não coincidem." } });
         return;
-      } else if (nextPassword.length < 6) {
-        sendJson(res, 400, { error: { code: "PASSWORD_TOO_SHORT", message: "A senha precisa ter pelo menos 6 caracteres." } });
+      } else if (nextPassword.length < 6 || nextPassword.length > 128) {
+        sendJson(res, 400, { error: { code: "PASSWORD_LENGTH_INVALID", message: "A senha precisa ter entre 6 e 128 caracteres." } });
         return;
       } else {
         user.passwordHash = hashPassword(nextPassword);
@@ -6808,7 +6851,7 @@ async function handleApi(req, res, pathname) {
     }
     const body = await readBody(req);
     const email = String(body.email || "").trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (email.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       sendJson(res, 400, { error: { code: "EMAIL_INVALID", message: "Informe um e-mail valido." } });
       return;
     }

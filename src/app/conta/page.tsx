@@ -507,14 +507,14 @@ function ContaPageContent() {
                 <button onClick={() => setMode("register")} className={mode === "register" ? "text-gold-400" : ""}>Criar conta</button>
               </div>
               <form onSubmit={submit} className="mt-8 space-y-5">
-                {mode === "register" && <Input label="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} />}
-                {mode !== "reset" && <Input label="E-mail" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} />}
+                {mode === "register" && <Input label="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required minLength={2} maxLength={120} autoComplete="name" />}
+                {mode !== "reset" && <Input label="E-mail" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} required maxLength={160} autoComplete="email" />}
                 {mode === "reset" && (
                   <p className="rounded-xl bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">
                     Link de recuperação validado. Digite sua nova senha para continuar.
                   </p>
                 )}
-                {mode !== "recover" && <Input label={mode === "reset" ? "Nova senha" : "Senha"} type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} />}
+                {mode !== "recover" && <Input label={mode === "reset" ? "Nova senha" : "Senha"} type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} required minLength={6} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} />}
                 {mode === "register" && (
                   <>
                     <Input label="WhatsApp" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />
@@ -634,13 +634,26 @@ function ClubSubscriptionCard({
   );
 }
 
-function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+function Input({ label, value, onChange, type = "text", required = false, minLength, maxLength, autoComplete }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+  minLength?: number;
+  maxLength?: number;
+  autoComplete?: string;
+}) {
   return (
     <label className="block">
       <span className="text-xs font-black uppercase tracking-[.16em] text-slate-400">{label}</span>
       <input
         type={type}
         value={value}
+        required={required}
+        minLength={minLength}
+        maxLength={maxLength}
+        autoComplete={autoComplete}
         onChange={(event) => onChange(event.target.value)}
         className="mt-2 min-h-[48px] w-full rounded-lg border border-white/12 bg-white/[0.07] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 hover:border-white/24 focus:border-gold-400 focus:bg-white/[0.09] focus:shadow-[0_0_0_4px_rgba(250,204,21,.12)]"
       />

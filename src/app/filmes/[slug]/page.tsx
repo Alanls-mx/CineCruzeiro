@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { Play } from "lucide-react";
+import { Play, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
@@ -16,7 +16,7 @@ import { trackMarketingEvent } from "@/utils/tracking";
 export default function FilmeDetalhePage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
-  const { content, status, error } = useCinemaContent();
+  const { content, status, error, retry } = useCinemaContent();
   const [trailerOpen, setTrailerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("todos");
@@ -56,7 +56,14 @@ export default function FilmeDetalhePage() {
       <SiteHeader settings={content?.settings} />
       <main>
         {status === "loading" && <div className="mx-auto max-w-[1320px] px-4 py-20 sm:px-6 lg:px-8"><div className="h-96 skeleton-soft" /></div>}
-        {status === "error" && <p className="mx-auto max-w-[1320px] px-4 py-20 text-rose-200 sm:px-6 lg:px-8">{error}</p>}
+        {status === "error" && (
+          <div role="alert" className="mx-auto flex max-w-[1320px] flex-col items-start gap-4 px-4 py-20 text-rose-100 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+            <p>{error}</p>
+            <button type="button" onClick={retry} className="inline-flex min-h-[44px] items-center gap-2 bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-300">
+              <RefreshCw className="h-4 w-4" /> Tentar novamente
+            </button>
+          </div>
+        )}
         {status === "ready" && !movie && <p className="mx-auto max-w-[1320px] px-4 py-20 text-slate-300 sm:px-6 lg:px-8">Filme não encontrado.</p>}
         {movie && (
           <>

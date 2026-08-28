@@ -21,6 +21,7 @@ process.env.ADMIN_EMAIL = "admin@cinecruzeiro.local";
 process.env.ADMIN_PASSWORD = "admin-smoke-123456";
 process.env.MERCADO_PAGO_WEBHOOK_SECRET = "smoke-mercado-pago-webhook-secret";
 process.env.WEBHOOK_TESTER_ENABLED = "true";
+process.env.MAX_JSON_BODY_BYTES = String(64 * 1024);
 
 function jsonHeaders(cookie = "") {
   return {
@@ -188,6 +189,22 @@ async function run() {
     assert.equal(health.payload.status, "ok");
     assert.equal("envFilesLoaded" in health.payload, false);
     assert.equal("jwtConfigured" in health.payload, false);
+
+    const invalidRegistration = await request("/api/auth/register", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ name: "T", email: "email-invalido", password: "123456" })
+    });
+    assert.equal(invalidRegistration.response.status, 422);
+    assert.equal(invalidRegistration.payload.error.code, "CUSTOMER_NAME_INVALID");
+
+    const oversizedPayload = await request("/api/events", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ event: "club_lead.created", data: { notes: "x".repeat(70 * 1024) } })
+    });
+    assert.equal(oversizedPayload.response.status, 413);
+    assert.equal(oversizedPayload.payload.error.code, "PAYLOAD_TOO_LARGE");
 
     const email = `smoke-${Date.now()}@cine.local`;
     const registered = await registerCustomer(email);
