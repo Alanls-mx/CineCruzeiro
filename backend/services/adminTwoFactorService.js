@@ -72,8 +72,17 @@ function verifyTotp(secret, code, options = {}) {
 }
 
 function encryptionKey() {
-  const source = process.env.TWO_FACTOR_SECRET_KEY || process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || "cine-cruzeiro-local-dev-secret";
+  const source = process.env.TWO_FACTOR_SECRET_KEY || process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "cine-cruzeiro-local-dev-secret");
+  if (!source) {
+    const error = new Error("Configure TWO_FACTOR_SECRET_KEY para usar autenticação em duas etapas.");
+    error.code = "ADMIN_2FA_SECRET_KEY_REQUIRED";
+    throw error;
+  }
   return crypto.createHash("sha256").update(source).digest();
+}
+
+function encryptionConfigured() {
+  return Boolean(process.env.TWO_FACTOR_SECRET_KEY || process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || process.env.NODE_ENV !== "production");
 }
 
 function encryptSecret(value) {
@@ -132,6 +141,7 @@ module.exports = {
   normalizeCode,
   totp,
   verifyTotp,
+  encryptionConfigured,
   encryptSecret,
   decryptSecret,
   normalizeRecoveryCode,

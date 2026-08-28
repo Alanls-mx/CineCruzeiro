@@ -20,8 +20,6 @@ const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/ci
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 const logoUrl = `${basePath}/images/logo-display.webp`;
 const iconUrl = `${basePath}/images/favicon-64.png`;
-const googleMeasurementId = (process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-BVVNLHRVD0").replace(/[^A-Za-z0-9-]/g, "");
-
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
@@ -73,8 +71,6 @@ export default function RootLayout({
             ad_personalization: 'denied',
             wait_for_update: 500
           });
-          window.gtag('js', new Date());
-          window.gtag('config', '${googleMeasurementId}', { send_page_view: false, anonymize_ip: true });
         ` }} />
       </head>
       <body className="min-h-dvh bg-brand-950 text-slate-100 antialiased selection:bg-gold-400 selection:text-slate-950">

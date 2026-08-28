@@ -16,6 +16,7 @@ import {
   resetPassword,
   updateCurrentCustomer,
 } from "@/services/cinemaApi";
+import { trackMarketingEvent } from "@/utils/tracking";
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -139,6 +140,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
     setError("");
     try {
       persistAuth(await loginCustomer({ email, password }));
+      trackMarketingEvent("login", { method: "email" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel entrar.");
     } finally {
@@ -151,6 +153,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
     setError("");
     try {
       persistAuth(await registerCustomer({ name, email, password, phone, cpf: onlyCpf(cpf) }));
+      trackMarketingEvent("sign_up", { method: "email" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel criar sua conta.");
     } finally {

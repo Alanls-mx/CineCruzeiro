@@ -1023,12 +1023,15 @@ async function run() {
         movieId: TEST_MOVIE_ID,
         sessionId: TEST_SESSION_ID,
         ticketItems: [{ id: "promocional", quantity: 2 }],
+        concessionItems: [{ id: "combo-classico", quantity: 1 }],
         saleMode: "quick",
         paymentMethod: "cash"
       })
     });
     assert.equal(allowedTicketTypeSale.response.status, 201);
-    assert.equal(allowedTicketTypeSale.payload.order.totalPrice, 20);
+    assert.equal(allowedTicketTypeSale.payload.order.totalPrice, 45);
+    assert.equal(allowedTicketTypeSale.payload.order.concessionItems[0].id, "combo-classico");
+    assert.equal(allowedTicketTypeSale.payload.order.concessionItems[0].quantity, 1);
     assert.equal(allowedTicketTypeSale.payload.tickets.length, 2);
     assert.ok(allowedTicketTypeSale.payload.tickets.every((ticket) => ticket.ticketType === "Ingresso Promocional"));
 

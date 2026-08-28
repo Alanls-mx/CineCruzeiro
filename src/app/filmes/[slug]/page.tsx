@@ -45,7 +45,10 @@ export default function FilmeDetalhePage() {
     const trackingKey = `cine-view-content:${movie.id}`;
     if (window.sessionStorage.getItem(trackingKey)) return;
     window.sessionStorage.setItem(trackingKey, "1");
-    trackMarketingEvent("view_content", { content_type: "movie", content_id: movie.id, content_name: movie.title });
+    trackMarketingEvent("view_content", {
+      currency: "BRL",
+      items: [{ item_id: `movie-${movie.id}`, item_name: movie.title, item_category: "Filme" }],
+    });
   }, [movie]);
 
   return (

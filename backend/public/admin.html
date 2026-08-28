@@ -30,7 +30,7 @@
           <div id="adminProfileMenu" class="admin-profile-menu" hidden>
             <strong id="adminProfileName">Usuário</strong>
             <span id="adminProfileRole">Operador</span>
-            <button type="button" data-profile-action="account">Minha conta</button>
+            <button type="button" data-profile-action="account">Segurança e 2FA</button>
             <button type="button" data-profile-action="preferences">Preferências</button>
             <button id="profileLogoutButton" type="button">Sair</button>
           </div>
@@ -725,6 +725,17 @@
               </div>
               <p id="manualSessionAvailability" class="helper-text" aria-live="polite"></p>
               <div id="manualTicketTypes" class="manual-ticket-types" aria-label="Tipos de ingresso disponíveis"></div>
+
+              <section id="manualConcessionsSection" class="manual-concessions-section" aria-labelledby="manualConcessionsTitle">
+                <div class="manual-concessions-heading">
+                  <div>
+                    <strong id="manualConcessionsTitle">Bomboniere desta venda</strong>
+                    <span>Opcional. Os produtos entram no mesmo pedido e baixam o estoque.</span>
+                  </div>
+                  <span id="manualConcessionsCount" class="status-pill muted">Nenhum item</span>
+                </div>
+                <div id="manualConcessions" class="manual-concessions-grid"></div>
+              </section>
 
               <div class="manual-sale-add-row">
                 <p>Adicione uma sessão por vez. Todos os ingressos serão vinculados ao mesmo cliente.</p>
@@ -1644,7 +1655,7 @@
             <div class="logs-filters" aria-label="Filtros de logs">
               <label class="logs-search-field">Buscar<input id="logsSearch" type="search" placeholder="Pedido, cliente, operador ou ação" /></label>
               <label>Importância<select id="logsLevel"><option value="">Todas</option><option value="error">Precisa de ação</option><option value="warn">Atenção</option><option value="info">Operação normal</option><option value="debug">Diagnóstico</option></select></label>
-              <label>Assunto<select id="logsCategory"><option value="">Todos os assuntos</option><option value="payment">Pagamentos</option><option value="box_office">Bilheteria</option><option value="ticket">Ingressos</option><option value="subscription">Clube</option><option value="fiscal">Notas fiscais</option><option value="email">E-mails</option><option value="admin">Painel administrativo</option><option value="integration">Integrações</option><option value="webhook">Confirmações automáticas</option><option value="request">Erros de operação</option><option value="logs">Histórico</option></select></label>
+              <label>Assunto<select id="logsCategory"><option value="">Todos os assuntos</option><option value="payment">Pagamentos</option><option value="box_office">Bilheteria</option><option value="ticket">Ingressos</option><option value="subscription">Clube</option><option value="fiscal">Notas fiscais</option><option value="email">E-mails</option><option value="admin">Painel administrativo</option><option value="admin_two_factor">Segurança e 2FA</option><option value="integration">Integrações</option><option value="webhook">Confirmações automáticas</option><option value="request">Erros de operação</option><option value="logs">Histórico</option></select></label>
               <label>Período inicial<input id="logsFrom" type="datetime-local" /></label>
               <label>Período final<input id="logsTo" type="datetime-local" /></label>
             </div>
@@ -1861,6 +1872,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260827-orders-1"></script>
+    <script src="admin/admin.js?v=20260827-security-analytics-1"></script>
   </body>
 </html>

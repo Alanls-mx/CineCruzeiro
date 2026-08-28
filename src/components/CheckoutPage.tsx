@@ -191,6 +191,29 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const confirmationResult = cart?.paymentResult as CheckoutPaymentResult | undefined;
   const confirmationOrderId = String(confirmationResult?.order?.id || "");
   const confirmationPaymentStatus = String(confirmationResult?.payment?.status || "");
+  const trackingItems = useMemo(() => {
+    if (!cart || !found) return [];
+    const ticketTypesById = new Map(availableTicketTypes.map((ticketType) => [ticketType.id, ticketType]));
+    const ticketItems = selectedTicketItems(cart, availableTicketTypes).map((item) => {
+      const ticketType = ticketTypesById.get(item.id);
+      return {
+        item_id: `ticket-${item.id}`,
+        item_name: `${found.movie.title} - ${ticketType?.name || "Ingresso"}`,
+        item_category: "Ingresso",
+        item_variant: found.session.format || "",
+        price: Number(ticketType?.price || 0),
+        quantity: item.quantity,
+      };
+    });
+    const concessionItems = (content?.concessions || []).filter((item) => Number(cart.concessionQuantities?.[item.id] || 0) > 0).map((item) => ({
+      item_id: `concession-${item.id}`,
+      item_name: item.name,
+      item_category: "Bomboniere",
+      price: Number(item.price || 0),
+      quantity: Number(cart.concessionQuantities?.[item.id] || 0),
+    }));
+    return [...ticketItems, ...concessionItems];
+  }, [availableTicketTypes, cart, content?.concessions, found]);
 
   useEffect(() => {
     if (!found || !cart) return;
@@ -200,19 +223,18 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     trackMarketingEvent("begin_checkout", {
       currency: "BRL",
       value: total,
-      content_id: found.movie.id,
-      content_name: found.movie.title,
       num_items: selectedTicketItems(cart, availableTicketTypes).reduce((sum, item) => sum + item.quantity, 0),
+      items: trackingItems,
     });
-  }, [cart, found, total]);
+  }, [availableTicketTypes, cart, found, total, trackingItems]);
 
   useEffect(() => {
     if (confirmationPaymentStatus !== "approved" || !confirmationOrderId) return;
     const key = `cine-tracked-purchase-${confirmationOrderId}`;
     if (window.localStorage.getItem(key)) return;
     window.localStorage.setItem(key, "1");
-    trackMarketingEvent("purchase", { currency: "BRL", value: total, transaction_id: confirmationOrderId });
-  }, [confirmationOrderId, confirmationPaymentStatus, total]);
+    trackMarketingEvent("purchase", { currency: "BRL", value: total, transaction_id: confirmationOrderId, affiliation: "Cine Cruzeiro Online", items: trackingItems });
+  }, [confirmationOrderId, confirmationPaymentStatus, total, trackingItems]);
 
   useEffect(() => {
     if (step !== "confirmacao" || !confirmationOrderId || !["pending", "processing"].includes(confirmationPaymentStatus)) return;
@@ -274,6 +296,12 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       if (checkoutCart.paymentMethod === "credit_card" && !cardData?.token) {
         throw new Error("Preencha os dados do cartão no formulário seguro do Mercado Pago.");
       }
+      trackMarketingEvent("add_payment_info", {
+        currency: "BRL",
+        value: total,
+        payment_type: checkoutCart.paymentMethod === "credit_card" ? "credit_card" : "pix",
+        items: trackingItems,
+      });
       const idempotencyKey = `${found.session.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       const result = await createCheckoutPayment(
         {
@@ -318,7 +346,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     } finally {
       setLoading(false);
     }
-  }, [availableTicketTypes, cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions]);
+  }, [availableTicketTypes, cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions, total, trackingItems]);
 
   async function submitClubCredit() {
     if (!found || !cart) return;
@@ -524,7 +552,17 @@ function TicketsStep({ cart, updateCart, ticketTypes }: { cart: StoredCheckoutCa
           <QuantityRow
             label={`${ticketType.name} · ${money(ticketType.price)}${Number(ticketType.bundleQuantity || 1) > 1 ? ` · gera ${ticketType.bundleQuantity} ingressos` : ""}`}
             value={Number(quantities[ticketType.id] || 0)}
-            onChange={(value) => updateCart({ ticketQuantities: { ...quantities, [ticketType.id]: value } })}
+            onChange={(value) => {
+              const previous = Number(quantities[ticketType.id] || 0);
+              updateCart({ ticketQuantities: { ...quantities, [ticketType.id]: value } });
+              if (value > previous) {
+                trackMarketingEvent("add_to_cart", {
+                  currency: "BRL",
+                  value: Number(ticketType.price || 0) * (value - previous),
+                  items: [{ item_id: `ticket-${ticketType.id}`, item_name: ticketType.name, item_category: "Ingresso", price: Number(ticketType.price || 0), quantity: value - previous }],
+                });
+              }
+            }}
           />
           {ticketType.description && <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">{ticketType.description}</p>}
         </div>
@@ -546,7 +584,11 @@ function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: Store
     const previous = Number(baseQuantities[id] || 0);
     if (qty > previous) {
       const item = visibleConcessions.find((candidate) => candidate.id === id);
-      trackMarketingEvent("add_to_cart", { currency: "BRL", value: Number(item?.price || 0), content_id: id, content_name: item?.name, quantity: qty - previous });
+      trackMarketingEvent("add_to_cart", {
+        currency: "BRL",
+        value: Number(item?.price || 0) * (qty - previous),
+        items: [{ item_id: `concession-${id}`, item_name: item?.name || "Produto", item_category: "Bomboniere", price: Number(item?.price || 0), quantity: qty - previous }],
+      });
     }
   };
   return (

@@ -72,10 +72,9 @@ export default function ClubSubscriptionCheckoutPage() {
       }
       trackMarketingEvent("begin_checkout", {
         checkout_type: "club_subscription",
-        item_id: plan.id,
-        item_name: plan.name,
         value: Number(plan.monthlyPrice || 0),
         currency: "BRL",
+        items: [{ item_id: `club-${plan.id}`, item_name: plan.name, item_category: "Clube", price: Number(plan.monthlyPrice || 0), quantity: 1 }],
       });
       setMessage("Abrindo o ambiente seguro do Mercado Pago...");
       window.location.assign(checkoutUrl);

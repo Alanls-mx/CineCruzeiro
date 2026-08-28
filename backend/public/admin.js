@@ -92,6 +92,7 @@ let state = {
   selectedCustomer: null,
   customerSearchResults: [],
   manualSaleItems: [],
+  manualConcessionQuantities: {},
   pointPaymentId: "",
   pointPaymentTimer: null,
   pointPaymentSnapshot: null,
@@ -261,6 +262,14 @@ function renderTwoFactorSettings() {
     body.innerHTML = `<div class="two-factor-loading"><span class="loading-spinner"></span>Carregando segurança da conta...</div>`;
     return;
   }
+  if (state.twoFactorStatus.configurationReady === false) {
+    body.innerHTML = `
+      <div class="two-factor-status danger-zone">
+        <span class="two-factor-status-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M12 8v4M12 16h.01"/></svg></span>
+        <div><strong>2FA aguardando configuração do servidor</strong><span>A chave de proteção ainda não foi definida. Nenhuma configuração incompleta será salva.</span></div>
+      </div>`;
+    return;
+  }
   if (state.twoFactorRecoveryCodes.length) {
     body.innerHTML = `
       <div class="two-factor-success">
@@ -290,7 +299,8 @@ function renderTwoFactorSettings() {
       <form id="twoFactorEnableForm" class="two-factor-action-form">
         <label>Código do aplicativo<input name="code" class="two-factor-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required /></label>
         <button class="primary-button" type="submit">Ativar autenticação em duas etapas</button>
-      </form>`;
+      </form>
+      <p class="helper-text">Os códigos mudam a cada 30 segundos. Se não conferir, ative data e hora automáticas no celular e tente o próximo código.</p>`;
     return;
   }
   if (state.twoFactorStatus.enabled) {
@@ -586,6 +596,7 @@ function logCategoryLabel(category = "") {
     password_reset: "Acesso de clientes",
     email_verification: "Verificação de e-mail",
     admin: "Painel administrativo",
+    admin_two_factor: "Segurança e 2FA",
     integration: "Integrações",
     google_wallet: "Carteira digital",
     webhook: "Confirmações automáticas",
@@ -689,7 +700,11 @@ function logPresentation(log = {}) {
     "ticket_transfer_pdf.failed": { title: "PDF da transferência não gerado", description: "O ingresso foi transferido, mas o PDF atualizado não pôde ser preparado." },
     "google_wallet.integration_failed": { title: "Carteira digital indisponível", description: "A conexão com o Google Wallet apresentou uma falha." },
     "logs.retention_applied": { title: "Histórico antigo organizado", description: "A política de retenção removeu registros técnicos antigos." },
-    "logs.retention_failed": { title: "Histórico antigo não foi limpo", description: "A rotina de organização dos registros precisa ser executada novamente." }
+    "logs.retention_failed": { title: "Histórico antigo não foi limpo", description: "A rotina de organização dos registros precisa ser executada novamente." },
+    "admin_two_factor.setup_started": { title: "Configuração do 2FA iniciada", description: "O aplicativo autenticador foi preparado para esta conta administrativa." },
+    "admin_two_factor.enabled": { title: "2FA ativado", description: "A conta administrativa passou a exigir senha e código temporário no login." },
+    "admin_two_factor.disabled": { title: "2FA desativado", description: "A autenticação em duas etapas foi removida desta conta administrativa." },
+    "admin_two_factor.recovery_codes_regenerated": { title: "Códigos de recuperação renovados", description: "Os códigos anteriores foram invalidados e substituídos." }
   };
   if (entries[event]) return entries[event];
   if (event === "admin.action") return logAdminAction(log);
@@ -3030,6 +3045,64 @@ function renderManualTicketTypes() {
   target.querySelectorAll("[data-manual-ticket-quantity]").forEach((input) => input.addEventListener("input", updateManualTotal));
 }
 
+function manualConcessionItems() {
+  return Object.entries(state.manualConcessionQuantities || {})
+    .map(([id, quantity]) => ({ id, quantity: Math.max(0, Number(quantity || 0)) }))
+    .filter((item) => item.id && item.quantity > 0);
+}
+
+function renderManualConcessions() {
+  const target = $("manualConcessions");
+  if (!target) return;
+  const products = (state.content?.concessions || []).filter((item) => item.active !== false);
+  const productIds = new Set(products.map((item) => item.id));
+  state.manualConcessionQuantities = Object.fromEntries(
+    Object.entries(state.manualConcessionQuantities || {}).filter(([id, quantity]) => productIds.has(id) && Number(quantity) > 0)
+  );
+  const selectedCount = manualConcessionItems().reduce((sum, item) => sum + item.quantity, 0);
+  if ($("manualConcessionsCount")) $("manualConcessionsCount").textContent = selectedCount ? `${selectedCount} item(ns)` : "Nenhum item";
+  target.innerHTML = products.length
+    ? products.map((item) => {
+      const finiteStock = item.stock !== null && item.stock !== undefined && item.stock !== "";
+      const stock = finiteStock ? Math.max(0, Number(item.stock || 0)) : null;
+      const max = Math.max(1, Math.min(Number(item.maxPerOrder || 8), stock ?? Number(item.maxPerOrder || 8)));
+      const quantity = Math.min(max, Number(state.manualConcessionQuantities[item.id] || 0));
+      if (quantity > 0) state.manualConcessionQuantities[item.id] = quantity;
+      return `
+        <article class="manual-concession-item ${stock === 0 ? "unavailable" : ""}">
+          <div class="manual-concession-copy">
+            <strong>${escapeHtml(item.name)}</strong>
+            <span>${money(item.price)}${stock !== null ? ` · ${stock} em estoque` : ""}</span>
+          </div>
+          <div class="stepper">
+            <button type="button" data-manual-concession-step="-1" data-concession-id="${escapeHtml(item.id)}" aria-label="Remover ${escapeHtml(item.name)}" ${quantity <= 0 ? "disabled" : ""}>-</button>
+            <input type="number" min="0" max="${max}" value="${quantity}" data-manual-concession-quantity="${escapeHtml(item.id)}" aria-label="Quantidade de ${escapeHtml(item.name)}" ${stock === 0 ? "disabled" : ""} />
+            <button type="button" data-manual-concession-step="1" data-concession-id="${escapeHtml(item.id)}" aria-label="Adicionar ${escapeHtml(item.name)}" ${stock === 0 || quantity >= max ? "disabled" : ""}>+</button>
+          </div>
+        </article>`;
+    }).join("")
+    : `<div class="manual-sale-empty">Nenhum produto ativo na bomboniere.</div>`;
+  target.querySelectorAll("[data-manual-concession-step]").forEach((button) => button.addEventListener("click", () => {
+    const id = button.dataset.concessionId;
+    const product = products.find((item) => item.id === id);
+    if (!product) return;
+    const finiteStock = product.stock !== null && product.stock !== undefined && product.stock !== "";
+    const max = Math.max(1, Math.min(Number(product.maxPerOrder || 8), finiteStock ? Number(product.stock || 0) : Number(product.maxPerOrder || 8)));
+    state.manualConcessionQuantities[id] = Math.max(0, Math.min(max, Number(state.manualConcessionQuantities[id] || 0) + Number(button.dataset.manualConcessionStep || 0)));
+    renderManualConcessions();
+    updateManualTotal();
+  }));
+  target.querySelectorAll("[data-manual-concession-quantity]").forEach((input) => input.addEventListener("change", () => {
+    const product = products.find((item) => item.id === input.dataset.manualConcessionQuantity);
+    if (!product) return;
+    const finiteStock = product.stock !== null && product.stock !== undefined && product.stock !== "";
+    const max = Math.max(1, Math.min(Number(product.maxPerOrder || 8), finiteStock ? Number(product.stock || 0) : Number(product.maxPerOrder || 8)));
+    state.manualConcessionQuantities[product.id] = Math.max(0, Math.min(max, Number(input.value || 0)));
+    renderManualConcessions();
+    updateManualTotal();
+  }));
+}
+
 function manualTicketItems() {
   return [...document.querySelectorAll("#manualTicketTypes [data-manual-ticket-quantity]")]
     .map((input) => ({ id: input.dataset.manualTicketQuantity, quantity: Math.max(0, Number(input.value || 0)) }))
@@ -3114,6 +3187,7 @@ function renderManualSaleItems() {
     button.addEventListener("click", () => removeManualSaleItem(button.dataset.removeManualSession));
   });
   updateManualTotal();
+  renderManualConcessions();
   const submitButton = $("manualSaleSubmitButton");
   if (submitButton) {
     submitButton.textContent = count > 1
@@ -3149,6 +3223,7 @@ async function createManualTicket(event) {
         sessionId: item.sessionId,
         ticketItems: item.ticketItems
       })),
+      concessionItems: manualConcessionItems(),
       saleMode,
       paymentMethod,
       customerUserId: saleMode === "registered" ? $("manualCustomerUserId").value : "",
@@ -3161,6 +3236,7 @@ async function createManualTicket(event) {
     const result = await api("/api/box-office/sales", { method: "POST", body: JSON.stringify(payload) });
     const orders = result.orders || (result.order ? [result.order] : []);
     state.manualSaleItems = [];
+    state.manualConcessionQuantities = {};
     renderManualSaleItems();
     if (paymentMethod === "card_terminal") {
       startPointPaymentTracking(result);
@@ -3405,13 +3481,15 @@ async function searchBoxOfficeCustomers() {
 }
 
 function updateManualTotal() {
+  const concessionsById = new Map((state.content?.concessions || []).map((item) => [item.id, item]));
+  const concessionsTotal = manualConcessionItems().reduce((sum, item) => sum + item.quantity * Number(concessionsById.get(item.id)?.price || 0), 0);
   if (state.manualSaleItems.length) {
-    const total = state.manualSaleItems.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+    const total = state.manualSaleItems.reduce((sum, item) => sum + Number(item.subtotal || 0), 0) + concessionsTotal;
     if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
     return;
   }
   const types = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
-  const total = manualTicketItems().reduce((sum, item) => sum + item.quantity * Number(types.get(item.id)?.price || 0), 0);
+  const total = manualTicketItems().reduce((sum, item) => sum + item.quantity * Number(types.get(item.id)?.price || 0), 0) + concessionsTotal;
   if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
 }
 

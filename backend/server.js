@@ -428,6 +428,10 @@ const MERCADO_PAGO_ORDER_ACTIONS = new Set([
 
 const BUSINESS_LOG_EVENTS = new Set([
   "admin.action",
+  "admin_two_factor.setup_started",
+  "admin_two_factor.enabled",
+  "admin_two_factor.disabled",
+  "admin_two_factor.recovery_codes_regenerated",
   "payment.created",
   "payment.reconciled",
   "payment.reconciliation_reference_mismatch",
@@ -5855,14 +5859,20 @@ async function handleApi(req, res, pathname) {
     const user = (db.users || []).find((item) => item.id === req.adminUser.id);
     sendJson(res, 200, {
       enabled: Boolean(user?.twoFactorEnabled),
+      configurationReady: adminTwoFactorService.encryptionConfigured(),
       setupPending: Boolean(user?.twoFactorPendingSecret),
       confirmedAt: user?.twoFactorConfirmedAt || "",
-      recoveryCodesRemaining: Array.isArray(user?.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0
+      recoveryCodesRemaining: Array.isArray(user?.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0,
+      serverTime: new Date().toISOString()
     });
     return;
   }
 
   if (pathname === "/api/admin/2fa/setup" && method === "POST") {
+    if (!adminTwoFactorService.encryptionConfigured()) {
+      sendJson(res, 503, { error: { code: "ADMIN_2FA_SECRET_KEY_REQUIRED", message: "O servidor ainda não possui a chave de segurança do 2FA. Configure TWO_FACTOR_SECRET_KEY e tente novamente." } });
+      return;
+    }
     const body = await readBody(req);
     const password = String(body.password || "");
     let secret = "";
@@ -5890,6 +5900,7 @@ async function handleApi(req, res, pathname) {
       errorCorrectionLevel: "M"
     });
     sendJson(res, 200, { qrCodeDataUrl, secret, provisioningUri });
+    logEvent("info", "admin_two_factor.setup_started", { actorUserId: req.adminUser.id });
     return;
   }
 
@@ -5921,6 +5932,7 @@ async function handleApi(req, res, pathname) {
       recoveryCodes,
       message: "Autenticacao em duas etapas ativada. Guarde os codigos de recuperacao agora."
     });
+    logEvent("info", "admin_two_factor.enabled", { actorUserId: req.adminUser.id });
     return;
   }
 
@@ -5945,6 +5957,7 @@ async function handleApi(req, res, pathname) {
       await writeDb(lockedDb);
     });
     sendJson(res, 200, { enabled: false, message: "Autenticacao em duas etapas desativada." });
+    logEvent("info", "admin_two_factor.disabled", { actorUserId: req.adminUser.id });
     return;
   }
 
@@ -5964,6 +5977,7 @@ async function handleApi(req, res, pathname) {
       await writeDb(lockedDb);
     });
     sendJson(res, 200, { recoveryCodes, message: "Novos codigos gerados. Os anteriores deixaram de funcionar." });
+    logEvent("info", "admin_two_factor.recovery_codes_regenerated", { actorUserId: req.adminUser.id });
     return;
   }
 
@@ -8462,10 +8476,12 @@ async function handleApi(req, res, pathname) {
       };
 
       // Valida e precifica o lote inteiro antes de emitir qualquer ingresso.
+      const sharedConcessionItems = Array.isArray(body.concessionItems) ? body.concessionItems : [];
       const preparedOrders = requestedSales.map((saleItem, index) => {
         const order = repriceOrderFromCatalog(lockedDb, normalizePaymentOrder({
           ...body,
           ...saleItem,
+          concessionItems: index === 0 ? sharedConcessionItems : (Array.isArray(saleItem.concessionItems) ? saleItem.concessionItems : []),
           id: saleItem.id || `pedido-bilheteria-${Date.now()}-${index}-${crypto.randomBytes(4).toString("hex")}`,
           ...customerData,
           paymentMethod,

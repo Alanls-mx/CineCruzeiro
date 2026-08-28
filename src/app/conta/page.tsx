@@ -22,6 +22,7 @@ import {
   resetPassword,
   updateAccountProfile,
 } from "@/services/cinemaApi";
+import { trackMarketingEvent } from "@/utils/tracking";
 
 export default function ContaPage() {
   return (
@@ -106,6 +107,25 @@ function ContaPageContent() {
   }, [user, pendingSubscriptions.length]);
 
   useEffect(() => {
+    if (!user) return;
+    activeSubscriptions.forEach((subscription) => {
+      const plan = subscription.plan;
+      if (!plan) return;
+      const key = `cine-tracked-subscription-${subscription.id}`;
+      if (window.localStorage.getItem(key)) return;
+      window.localStorage.setItem(key, "1");
+      const parameters = {
+        currency: "BRL",
+        value: Number(plan.monthlyPrice || 0),
+        transaction_id: `subscription-${subscription.id}`,
+        items: [{ item_id: `club-${plan.id}`, item_name: plan.name, item_category: "Clube", price: Number(plan.monthlyPrice || 0), quantity: 1 }],
+      };
+      trackMarketingEvent("subscribe", parameters);
+      trackMarketingEvent("purchase", { ...parameters, affiliation: "Clube Cine Cruzeiro" });
+    });
+  }, [activeSubscriptions, user]);
+
+  useEffect(() => {
     if (!emailToken) return;
     let active = true;
     setAuthReady(false);
@@ -127,6 +147,7 @@ function ContaPageContent() {
           title: "E-mail confirmado",
           message: "Seu endereço foi verificado e sua conta está protegida.",
         });
+        trackMarketingEvent("email_verified", { method: "email_link" });
         setAuthReady(true);
         router.replace("/conta?emailVerified=success");
       })
@@ -207,9 +228,11 @@ function ContaPageContent() {
       });
       loadClub();
       if (mode === "register") {
+        trackMarketingEvent("sign_up", { method: "email" });
         setProfileMessage(result.message || "Conta criada. Confirme seu e-mail para manter sua conta protegida.");
         router.replace("/conta");
       } else {
+        trackMarketingEvent("login", { method: "email" });
         router.replace(returnTo || "/conta/ingressos");
       }
     } catch (error) {
@@ -257,6 +280,7 @@ function ContaPageContent() {
     setVerificationLoading(true);
     try {
       const result = await requestEmailChange(profile.email);
+      trackMarketingEvent("email_verification_requested", { reason: "email_change" });
       setUser(result.user);
       setProfileMessage(result.message || "Enviamos a verificação para o novo e-mail.");
     } catch (error) {
@@ -272,6 +296,7 @@ function ContaPageContent() {
     setVerificationLoading(true);
     try {
       const result = await requestAccountEmailVerification();
+      trackMarketingEvent("email_verification_requested", { reason: "account_confirmation" });
       setUser(result.user);
       setProfileMessage(result.message || "Enviamos um link de confirmação para o e-mail da sua conta.");
     } catch (error) {
