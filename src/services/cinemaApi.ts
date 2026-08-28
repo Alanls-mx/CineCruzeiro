@@ -579,6 +579,11 @@ export function googleLoginUrl(returnTo = "") {
     : `${API_BASE}/api/auth/google/start`;
 }
 
+export function googleLoginCallbackUrl(code: string, state: string) {
+  const params = new URLSearchParams({ code, state });
+  return `${API_BASE}/api/auth/google/callback?${params.toString()}`;
+}
+
 export async function fetchCurrentCustomer() {
   const response = await fetch(`${API_BASE}/api/auth/me`, {
     cache: "no-store",

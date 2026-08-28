@@ -364,7 +364,7 @@ async function run() {
       body: JSON.stringify({
         clientId: "client-id-preservado.apps.googleusercontent.com",
         clientSecret: "segredo-original-1234",
-        redirectUri: "https://cine.local/api/auth/google/callback"
+        redirectUri: "https://cine.local/conta"
       })
     });
     assert.equal(googleLoginInitial.response.status, 200);
@@ -378,7 +378,7 @@ async function run() {
     });
     assert.equal(googleLoginSecretOnly.response.status, 200);
     assert.equal(googleLoginSecretOnly.payload.integration.values.clientId, "client-id-preservado.apps.googleusercontent.com");
-    assert.equal(googleLoginSecretOnly.payload.integration.values.redirectUri, "https://cine.local/api/auth/google/callback");
+    assert.equal(googleLoginSecretOnly.payload.integration.values.redirectUri, "https://cine.local/conta");
     assert.match(googleLoginSecretOnly.payload.integration.secrets.clientSecret.masked, /5678$/);
 
     const googleLoginMaskedSecret = await request("/api/admin/integrations/googleLogin", {
@@ -388,6 +388,16 @@ async function run() {
     });
     assert.equal(googleLoginMaskedSecret.response.status, 200);
     assert.match(googleLoginMaskedSecret.payload.integration.secrets.clientSecret.masked, /5678$/);
+
+    const googleLoginStart = await request("/api/auth/google/start?returnTo=%2Fconta", { redirect: "manual" });
+    assert.equal(googleLoginStart.response.status, 302);
+    const googleAuthorizationUrl = new URL(googleLoginStart.response.headers.get("location"));
+    assert.equal(googleAuthorizationUrl.origin, "https://accounts.google.com");
+    assert.equal(googleAuthorizationUrl.searchParams.get("redirect_uri"), "https://cine.local/conta");
+    assert.equal(googleAuthorizationUrl.searchParams.get("scope"), "openid email profile");
+    assert.match(googleLoginStart.response.headers.get("set-cookie") || "", /cine_google_oauth=/);
+    assert.match(googleLoginStart.response.headers.get("set-cookie") || "", /Path=\//);
+    assert.match(googleLoginStart.response.headers.get("set-cookie") || "", /HttpOnly/i);
 
     const uploadedImage = await request("/api/uploads/images", {
       method: "POST",

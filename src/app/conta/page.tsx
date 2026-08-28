@@ -12,6 +12,7 @@ import {
   CustomerUser,
   fetchCurrentCustomer,
   fetchMySubscriptions,
+  googleLoginCallbackUrl,
   googleLoginUrl,
   loginCustomer,
   logoutCustomer,
@@ -36,6 +37,10 @@ function ContaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const emailToken = searchParams.get("emailToken") || "";
+  const googleCode = searchParams.get("code") || "";
+  const googleState = searchParams.get("state") || "";
+  const googleProviderError = searchParams.get("error") || "";
+  const googleAuthError = searchParams.get("authError") || "";
   const requestedReturnTo = searchParams.get("returnTo") || "";
   const returnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
@@ -62,7 +67,25 @@ function ContaPageContent() {
   const historySubscriptions = subscriptions.filter(isClubHistory);
 
   useEffect(() => {
-    if (emailToken) return;
+    if (!googleCode || !googleState) return;
+    window.location.replace(googleLoginCallbackUrl(googleCode, googleState));
+  }, [googleCode, googleState]);
+
+  useEffect(() => {
+    const errorCode = googleProviderError || googleAuthError;
+    if (!errorCode) return;
+    const messages: Record<string, string> = {
+      access_denied: "O login com Google foi cancelado.",
+      google_oauth: "A sessão de login com Google expirou. Tente novamente.",
+      google_token: "O Google não autorizou a entrada. Tente novamente ou revise a integração no painel.",
+      google_profile: "Não foi possível obter o perfil da conta Google selecionada.",
+    };
+    setMessage(messages[errorCode] || "Não foi possível entrar com Google. Tente novamente.");
+    router.replace("/conta");
+  }, [googleAuthError, googleProviderError, router]);
+
+  useEffect(() => {
+    if (emailToken || (googleCode && googleState)) return;
     let active = true;
 
     fetchCurrentCustomer()
@@ -90,7 +113,7 @@ function ContaPageContent() {
     return () => {
       active = false;
     };
-  }, [emailToken]);
+  }, [emailToken, googleCode, googleState]);
 
   async function loadClub() {
     fetchMySubscriptions()
@@ -504,7 +527,7 @@ function ContaPageContent() {
                 </button>
               </form>
               <div className="mt-5 flex flex-wrap items-center gap-5 text-sm font-black">
-                <a href={googleLoginUrl(returnTo)} className="inline-flex min-h-[46px] items-center gap-3 bg-white px-5 text-sm font-black text-slate-950 shadow-lg shadow-blue-950/20 transition hover:bg-slate-100">
+                <a href={googleLoginUrl(returnTo || "/conta")} className="inline-flex min-h-[46px] items-center gap-3 bg-white px-5 text-sm font-black text-slate-950 shadow-lg shadow-blue-950/20 transition hover:bg-slate-100">
                   <GoogleG />
                   Entrar com Google
                 </a>

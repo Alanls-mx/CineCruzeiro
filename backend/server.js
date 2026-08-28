@@ -832,9 +832,15 @@ function customerCookie(value, maxAge = 60 * 60 * 24 * 30) {
 }
 
 function googleOAuthCookie(value, maxAge = 60 * 10) {
+  let cookiePath = "/";
+  try {
+    cookiePath = new URL(appFrontendUrl()).pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    cookiePath = configuredAppBasePath() || "/";
+  }
   return [
     `cine_google_oauth=${encodeURIComponent(value)}`,
-    "Path=/api/auth/google",
+    `Path=${cookiePath}`,
     "HttpOnly",
     "SameSite=Lax",
     `Max-Age=${maxAge}`,
@@ -6638,16 +6644,14 @@ async function handleApi(req, res, pathname) {
       return;
     }
 
-    if (user.passwordHash && !verifyPassword(String(body.password || ""), user.passwordHash)) {
-      sendJson(res, 401, { error: "E-mail ou senha invalidos." });
+    if (!user.passwordHash) {
+      sendJson(res, 401, { error: { code: "GOOGLE_LOGIN_REQUIRED", message: "Esta conta usa login com Google. Entre pelo botão do Google." } });
       return;
     }
 
-    if (!user.passwordHash && body.password) {
-      user.passwordHash = hashPassword(String(body.password));
-      user.authProvider = user.authProvider || "email";
-      user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+    if (!verifyPassword(String(body.password || ""), user.passwordHash)) {
+      sendJson(res, 401, { error: "E-mail ou senha invalidos." });
+      return;
     }
 
     sendJson(res, 200, authResponse(user), { "Set-Cookie": customerCookie(customerSessionValue(user)) });
@@ -6938,6 +6942,12 @@ async function handleApi(req, res, pathname) {
     googleUrl.searchParams.set("scope", "openid email profile");
     googleUrl.searchParams.set("state", state);
     googleUrl.searchParams.set("prompt", "select_account");
+    logEvent("info", "google_oauth.started", {
+      redirectPath: (() => {
+        try { return new URL(config.redirectUri).pathname; } catch { return "invalid"; }
+      })(),
+      hasReturnTo: Boolean(returnTo)
+    });
     res.writeHead(302, { Location: googleUrl.toString(), "Set-Cookie": googleOAuthCookie(state) });
     res.end();
     return;
@@ -6951,7 +6961,8 @@ async function handleApi(req, res, pathname) {
     const stateCookie = parseCookies(req).cine_google_oauth;
     const config = getGoogleOAuthConfig(req, db);
     if (!code || state?.type !== "google_oauth" || stateParam !== stateCookie) {
-      res.writeHead(302, { Location: `${config.frontendUrl}/?authError=google_oauth`, "Set-Cookie": googleOAuthCookie("", 0) });
+      logEvent("warn", "google_oauth.failed", { reason: "invalid_state", codePresent: Boolean(code), statePresent: Boolean(stateParam), cookiePresent: Boolean(stateCookie) });
+      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_oauth`, "Set-Cookie": googleOAuthCookie("", 0) });
       res.end();
       return;
     }
@@ -6969,7 +6980,8 @@ async function handleApi(req, res, pathname) {
     });
     const tokenData = await tokenResponse.json().catch(() => ({}));
     if (!tokenResponse.ok || !tokenData.access_token) {
-      res.writeHead(302, { Location: `${config.frontendUrl}/?authError=google_token`, "Set-Cookie": googleOAuthCookie("", 0) });
+      logEvent("warn", "google_oauth.failed", { reason: "token_exchange", providerError: String(tokenData.error || "unknown").slice(0, 80) });
+      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_token`, "Set-Cookie": googleOAuthCookie("", 0) });
       res.end();
       return;
     }
@@ -6979,13 +6991,15 @@ async function handleApi(req, res, pathname) {
     });
     const profile = await profileResponse.json().catch(() => ({}));
     if (!profileResponse.ok || !profile.email) {
-      res.writeHead(302, { Location: `${config.frontendUrl}/?authError=google_profile`, "Set-Cookie": googleOAuthCookie("", 0) });
+      logEvent("warn", "google_oauth.failed", { reason: "profile_unavailable", status: profileResponse.status });
+      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_profile`, "Set-Cookie": googleOAuthCookie("", 0) });
       res.end();
       return;
     }
 
     const email = String(profile.email).toLowerCase();
     const existingIndex = db.users.findIndex((item) => item.email === email || item.googleSub === profile.sub);
+    const existingUser = existingIndex >= 0 ? db.users[existingIndex] : null;
     const user = normalizeUser(
       {
         name: profile.name || email,
@@ -6994,15 +7008,16 @@ async function handleApi(req, res, pathname) {
         picture: profile.picture || "",
         emailVerified: Boolean(profile.email_verified),
         role: existingIndex >= 0 ? db.users[existingIndex].role : "customer",
-        authProvider: "google",
+        authProvider: existingUser?.passwordHash ? (existingUser.authProvider || "email") : "google",
         active: true
       },
-      existingIndex >= 0 ? db.users[existingIndex] : {}
+      existingUser || {}
     );
 
     if (existingIndex >= 0) db.users[existingIndex] = user;
     else db.users.push(user);
     await writeDb(db);
+    logEvent("info", "google_oauth.completed", { userId: user.id, accountCreated: existingIndex < 0 });
 
     const successUrl = new URL(`${config.frontendUrl}${state.returnTo || "/"}`);
     successUrl.searchParams.set("auth", "google_success");
