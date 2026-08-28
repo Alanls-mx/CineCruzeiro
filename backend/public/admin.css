@@ -2970,9 +2970,20 @@ input[type="file"]::file-selector-button {
 }
 
 .dashboard-fiscal-strip {
+  width: 100%;
+  max-width: 1080px;
   justify-content: space-between;
   gap: 24px;
   margin-top: 18px;
+}
+
+.dashboard-fiscal-copy {
+  min-width: 0;
+  flex: 1 1 520px;
+}
+
+.dashboard-fiscal-strip .section-title {
+  margin-bottom: 0;
 }
 
 .dashboard-fiscal-strip p {
@@ -2985,6 +2996,11 @@ input[type="file"]::file-selector-button {
 .fiscal-actions {
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.dashboard-fiscal-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
 }
 
 .fiscal-stats {

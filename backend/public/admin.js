@@ -5677,6 +5677,28 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-goto-panel]").forEach((element) => {
+    const openTargetPanel = () => {
+      const panelId = element.dataset.gotoPanel;
+      const navButton = document.querySelector(`.nav-button[data-panel="${panelId}"]`);
+      if (!panelId || !$(panelId)) return;
+      if (navButton?.hidden) {
+        showToast("Seu perfil não possui permissão para abrir esta área.", "error");
+        return;
+      }
+      activatePanel(panelId, { scroll: true });
+      closeAdminDrawer();
+    };
+    element.addEventListener("click", openTargetPanel);
+    if (element.getAttribute("role") === "button") {
+      element.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openTargetPanel();
+      });
+    }
+  });
+
   $("logoutButton").addEventListener("click", logoutAdmin);
   $("successCloseButton").addEventListener("click", hideSuccess);
   $("successOverlay").addEventListener("click", (event) => {

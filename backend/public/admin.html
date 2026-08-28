@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
-    <link rel="stylesheet" href="admin/admin.css?v=20260824-05" />
+    <link rel="stylesheet" href="admin/admin.css?v=20260828-fiscal-layout-1" />
     <link rel="stylesheet" href="admin/admin-premium.css?v=20260827-14" />
   </head>
   <body class="admin-booting">
@@ -116,9 +116,9 @@
           </div>
           <div class="insight-grid">
             <div class="insight primary-metric"><span>Receita hoje</span><strong id="dashRevenueToday">R$ 0,00</strong></div>
-            <div class="insight primary-metric clickable" data-goto-panel="ordersPanel"><span>Receita do período</span><strong id="dashRevenueMonth">R$ 0,00</strong><small id="dashRevenueCompare"></small></div>
+            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Receita do período</span><strong id="dashRevenueMonth">R$ 0,00</strong><small id="dashRevenueCompare"></small></div>
             <div class="insight primary-metric"><span>Vendas hoje</span><strong id="dashSalesToday">0</strong></div>
-            <div class="insight primary-metric clickable" data-goto-panel="ordersPanel"><span>Vendas no período</span><strong id="dashSalesMonth">0</strong><small id="dashSalesCompare"></small></div>
+            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Vendas no período</span><strong id="dashSalesMonth">0</strong><small id="dashSalesCompare"></small></div>
             <div class="insight primary-metric"><span>Ingressos vendidos</span><strong id="dashTicketsSold">0</strong><small id="dashTicketsCompare"></small></div>
             <div class="insight primary-metric"><span>Ticket médio</span><strong id="dashAverageTicket">R$ 0,00</strong></div>
             <div class="insight secondary-metric"><span>Ocupação média</span><strong id="dashAverageOccupancy">0%</strong></div>
@@ -162,7 +162,7 @@
             </div>
           </div>
           <div class="surface dashboard-fiscal-strip">
-            <div>
+            <div class="dashboard-fiscal-copy">
               <div class="section-title">Controle fiscal</div>
               <p id="dashFiscalSummary">Nenhuma nota fiscal no período.</p>
             </div>
@@ -1872,6 +1872,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260827-security-analytics-1"></script>
+    <script src="admin/admin.js?v=20260828-fiscal-layout-1"></script>
   </body>
 </html>
