@@ -512,6 +512,7 @@ async function run() {
         name: "Operador Smoke",
         email: "operador-smoke@cine.local",
         password: "operador-smoke-123",
+        accountType: "team",
         passwordHash: "plaintext-attacker-value",
         twoFactorEnabled: true,
         twoFactorSecret: "attacker-secret",
@@ -527,6 +528,48 @@ async function run() {
     assert.deepEqual(operatorUser.payload.adminPermissions, ["tickets.validate"]);
     assert.deepEqual(operatorUser.payload.effectivePermissions, ["tickets.validate"]);
     assert.equal("passwordHash" in operatorUser.payload, false);
+
+    const customerCreatedByAdmin = await request("/api/users", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        id: "smoke-cliente-sem-painel",
+        name: "Cliente sem Painel",
+        email: "cliente-sem-painel@cine.local",
+        password: "cliente-seguro-123",
+        role: "owner",
+        useCustomPermissions: true,
+        adminPermissions: ["settings.manage"],
+        active: true
+      })
+    });
+    assert.equal(customerCreatedByAdmin.response.status, 201);
+    assert.equal(customerCreatedByAdmin.payload.role, "customer");
+    assert.equal(customerCreatedByAdmin.payload.useCustomPermissions, false);
+    assert.deepEqual(customerCreatedByAdmin.payload.adminPermissions, []);
+    assert.deepEqual(customerCreatedByAdmin.payload.effectivePermissions, []);
+
+    const customerAdminLogin = await request("/api/admin/login", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ email: "cliente-sem-painel@cine.local", password: "cliente-seguro-123" })
+    });
+    assert.equal(customerAdminLogin.response.status, 401);
+
+    const crossAccountTypeUpdate = await request(`/api/users/${encodeURIComponent(customerCreatedByAdmin.payload.id)}`, {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        accountType: "team",
+        name: "Cliente sem Painel",
+        email: "cliente-sem-painel@cine.local",
+        role: "owner",
+        active: true
+      })
+    });
+    assert.equal(crossAccountTypeUpdate.response.status, 409);
+    assert.equal(crossAccountTypeUpdate.payload.error.code, "USER_ACCOUNT_TYPE_MISMATCH");
+
     const operatorLogin = await request("/api/admin/login", {
       method: "POST",
       headers: jsonHeaders(),
@@ -569,6 +612,7 @@ async function run() {
         name: "Gerente Smoke",
         email: "gerente-smoke@cine.local",
         password: "gerente-smoke-123",
+        accountType: "team",
         role: "manager",
         active: true
       })

@@ -4605,6 +4605,16 @@ function adminUserPayload(input = {}, existing = {}) {
   const email = String(input.email ?? existing.email ?? "").trim().toLowerCase();
   const name = String(input.name ?? existing.name ?? "").trim();
   const password = input.password === undefined ? "" : String(input.password || "");
+  const existingAccountType = existing.id && adminRoles().has(roleAlias(existing.role)) ? "team" : "customer";
+  const requestedAccountType = input.accountType === "team" ? "team" : "customer";
+  const accountType = existing.id ? existingAccountType : requestedAccountType;
+  if (existing.id && input.accountType && requestedAccountType !== existingAccountType) {
+    throw Object.assign(new Error("O tipo da conta não pode ser alterado por este formulário. Use a área correta de Contas."), { statusCode: 409, code: "USER_ACCOUNT_TYPE_MISMATCH" });
+  }
+  const requestedRole = roleAlias(input.role || existing.role || "operator");
+  const role = accountType === "team" && ["owner", "manager", "operator"].includes(requestedRole)
+    ? requestedRole
+    : accountType === "team" ? "operator" : "customer";
   if (name.length < 2 || name.length > 120) {
     throw Object.assign(new Error("Informe o nome com 2 a 120 caracteres."), { statusCode: 422, code: "USER_NAME_INVALID" });
   }
@@ -4621,10 +4631,10 @@ function adminUserPayload(input = {}, existing = {}) {
     phone: input.phone,
     cpf: input.cpf,
     ...(password ? { password } : {}),
-    role: input.role,
+    role,
     active: input.active,
-    useCustomPermissions: input.useCustomPermissions,
-    adminPermissions: input.adminPermissions
+    useCustomPermissions: accountType === "team" ? input.useCustomPermissions : false,
+    adminPermissions: accountType === "team" ? input.adminPermissions : []
   };
 }
 

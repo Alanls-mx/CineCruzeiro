@@ -30,6 +30,8 @@ let state = {
   logFilters: { search: "", level: "", category: "", from: "", to: "" },
   webhookSimulatorRuns: [],
   selectedWebhookRunId: "",
+  selectedCustomerAccountId: "",
+  customerAccountsSearch: "",
   movieWizardStep: 0,
   movieDraftSessions: [],
   editingSessionId: "",
@@ -72,6 +74,7 @@ let state = {
     promotion: false,
     ad: false,
     user: false,
+    customerUser: false,
     clubPlan: false
   },
   pendingImages: {},
@@ -134,6 +137,14 @@ function money(value) {
     style: "currency",
     currency: "BRL"
   });
+}
+
+function normalizedSearchText(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function adminRoleLabel(role = "") {
@@ -546,7 +557,10 @@ async function loadContent(options = {}) {
     if (!state.creating.concession) state.selectedConcessionId ||= state.content.concessions?.[0]?.id || "";
     if (!state.creating.promotion) state.selectedPromotionId ||= state.content.promotions?.[0]?.id || "";
     if (!state.creating.ad) state.selectedAdId ||= state.content.ads?.[0]?.id || "";
-    if (!state.creating.user) state.selectedUserId ||= state.content.users?.[0]?.id || "";
+    const teamUsers = (state.content.users || []).filter((user) => user.role !== "customer");
+    const customerUsers = (state.content.users || []).filter((user) => user.role === "customer");
+    if (!state.creating.user && !teamUsers.some((user) => user.id === state.selectedUserId)) state.selectedUserId = teamUsers[0]?.id || "";
+    if (!state.creating.customerUser && !customerUsers.some((user) => user.id === state.selectedCustomerAccountId)) state.selectedCustomerAccountId = customerUsers[0]?.id || "";
     if (!state.creating.clubPlan) state.selectedClubPlanId ||= state.content.subscriptionPlans?.[0]?.id || "";
     renderAll();
     if (!silent) {
@@ -580,6 +594,7 @@ function renderAll() {
   renderPromotions();
   renderAds();
   renderUsers();
+  renderCustomerUsers();
   renderClub();
   renderIntegrations();
   if (state.fiscal) renderFiscalDocuments();
@@ -594,7 +609,7 @@ function renderAll() {
 }
 
 function renderLoading() {
-  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList", "logsList", "fiscalDocumentsList"].forEach((id) => {
+  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "customerUsersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList", "logsList", "fiscalDocumentsList"].forEach((id) => {
     if ($(id)) {
       $(id).innerHTML = Array.from({ length: 4 }, () => `<div class="skeleton-card"></div>`).join("");
     }
@@ -1144,6 +1159,10 @@ function currentUser() {
   return state.content?.users?.find((item) => item.id === state.selectedUserId) || null;
 }
 
+function currentCustomerAccount() {
+  return state.content?.users?.find((item) => item.id === state.selectedCustomerAccountId && item.role === "customer") || null;
+}
+
 function isOwnerAdmin() {
   return ["owner", "master"].includes(state.adminUser?.role);
 }
@@ -1182,12 +1201,17 @@ function cancelCreation(type) {
     promotion: ["promotions", "selectedPromotionId", renderPromotions],
     ad: ["ads", "selectedAdId", renderAds, ["adImageUrl"]],
     user: ["users", "selectedUserId", renderUsers],
+    customerUser: ["users", "selectedCustomerAccountId", renderCustomerUsers],
     clubPlan: ["subscriptionPlans", "selectedClubPlanId", renderClub, ["clubPlanImageUrl"]]
   }[type];
   if (!config) return;
   const [collectionKey, selectedKey, render, imageFields = []] = config;
   state.creating[type] = false;
-  state[selectedKey] = state.content?.[collectionKey]?.[0]?.id || "";
+  state[selectedKey] = type === "customerUser"
+    ? state.content?.users?.find((item) => item.role === "customer")?.id || ""
+    : type === "user"
+      ? state.content?.users?.find((item) => item.role !== "customer")?.id || ""
+      : state.content?.[collectionKey]?.[0]?.id || "";
   imageFields.forEach((field) => delete state.pendingImages[field]);
   render();
   showToast("Novo cadastro cancelado.");
@@ -4570,7 +4594,7 @@ function syncUserPermissionEditor(permissions = null) {
 }
 
 function renderUsers() {
-  const items = state.content?.users || [];
+  const items = (state.content?.users || []).filter((item) => item.role !== "customer");
   if (state.creating.user) {
     $("usersList").innerHTML = creationPlaceholder("Novo usuário", "Cadastre operador, gerente ou dono no quadro à direita.");
     fillUserForm(null);
@@ -4586,7 +4610,7 @@ function renderUsers() {
           <span class="badge">${item.active ? "ativo" : "off"}</span>
         </button>
       `).join("")
-    : `<div class="empty-state"><strong>Nenhum usuario</strong><span>Cadastre operadores do painel.</span></div>`;
+    : `<div class="empty-state"><strong>Ninguém na equipe</strong><span>Adicione uma conta administrativa para conceder acesso ao painel.</span></div>`;
   fillUserForm(currentUser());
 }
 
@@ -4624,6 +4648,7 @@ async function saveUser(event) {
       name: $("userName").value,
       email: $("userEmail").value,
       password: $("userPassword").value || undefined,
+      accountType: "team",
       role: $("userRole").value,
       active: $("userActive").checked,
       useCustomPermissions: $("userUseCustomPermissions").checked,
@@ -4638,6 +4663,108 @@ async function saveUser(event) {
     $("userPassword").value = "";
     await loadContent({ silent: true });
     showSuccess("Usuário salvo", `${saved.name} foi atualizado.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function filteredCustomerAccounts() {
+  const query = normalizedSearchText(state.customerAccountsSearch || "");
+  const digits = query.replace(/\D/g, "");
+  return (state.content?.users || [])
+    .filter((item) => item.role === "customer")
+    .filter((item) => {
+      if (!query) return true;
+      return [item.name, item.email].some((value) => normalizedSearchText(value).includes(query))
+        || (digits && [item.phone, item.cpf].some((value) => String(value || "").replace(/\D/g, "").includes(digits)));
+    });
+}
+
+function renderCustomerUsers() {
+  if (!$("customerUsersList")) return;
+  const items = filteredCustomerAccounts();
+  if (state.creating.customerUser) {
+    $("customerUsersList").innerHTML = creationPlaceholder("Novo cliente", "Cadastre uma conta comum no formulário ao lado. Ela não terá acesso ao painel.");
+    fillCustomerUserForm(null);
+    return;
+  }
+  $("customerUsersList").innerHTML = items.length
+    ? items.map((item) => `
+        <button class="list-item ${item.id === state.selectedCustomerAccountId ? "active" : ""}" type="button" onclick="selectCustomerAccount('${item.id}')">
+          <span>
+            <span class="list-title">${escapeHtml(item.name)}</span>
+            <span class="list-meta">${escapeHtml(item.email || "sem e-mail")} • ${item.emailVerified ? "e-mail verificado" : "verificação pendente"}</span>
+          </span>
+          <span class="badge">${item.active ? "ativo" : "off"}</span>
+        </button>
+      `).join("")
+    : `<div class="empty-state"><strong>${state.customerAccountsSearch ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"}</strong><span>${state.customerAccountsSearch ? "Revise o nome, e-mail, telefone ou CPF pesquisado." : "As contas criadas no site também aparecerão aqui."}</span></div>`;
+  fillCustomerUserForm(currentCustomerAccount());
+}
+
+function selectCustomerAccount(id) {
+  state.creating.customerUser = false;
+  state.selectedCustomerAccountId = id;
+  renderCustomerUsers();
+}
+
+function newCustomerUser() {
+  state.creating.customerUser = true;
+  state.selectedCustomerAccountId = "";
+  renderCustomerUsers();
+}
+
+function fillCustomerUserForm(item) {
+  syncCreationControl("customerUser", "cancelCustomerUserCreateButton", "deleteCustomerUserButton", Boolean(item));
+  setDisabled("deleteCustomerUserButton", !item);
+  $("customerUserId").value = item?.id || "";
+  $("customerUserName").value = item?.name || "";
+  $("customerUserEmail").value = item?.email || "";
+  $("customerUserPhone").value = item?.phone || "";
+  $("customerUserCpf").value = item?.cpf || "";
+  $("customerUserPassword").value = "";
+  $("customerUserPassword").required = !item;
+  $("customerUserActive").checked = item?.active !== false;
+  $("customerAccountStatus").textContent = item
+    ? `${item.emailVerified ? "E-mail verificado" : "E-mail ainda não verificado"}. Criada em ${twoFactorDate(item.createdAt || "") || "data não informada"}.`
+    : "A nova conta será criada como cliente, sem qualquer permissão administrativa.";
+}
+
+async function saveCustomerUser(event) {
+  event.preventDefault();
+  try {
+    const payload = {
+      id: $("customerUserId").value || undefined,
+      name: $("customerUserName").value,
+      email: $("customerUserEmail").value,
+      phone: $("customerUserPhone").value,
+      cpf: $("customerUserCpf").value,
+      password: $("customerUserPassword").value || undefined,
+      active: $("customerUserActive").checked,
+      accountType: "customer"
+    };
+    const existingId = $("customerUserId").value;
+    const saved = existingId
+      ? await api(`/api/users/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
+      : await api("/api/users", { method: "POST", body: JSON.stringify(payload) });
+    state.creating.customerUser = false;
+    state.selectedCustomerAccountId = saved.id;
+    $("customerUserPassword").value = "";
+    await loadContent({ silent: true });
+    showSuccess("Cliente salvo", `${saved.name} continua com acesso somente ao site e à própria conta.`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function deleteCustomerUser() {
+  const item = currentCustomerAccount();
+  if (!item || !confirm(`Excluir a conta de cliente de ${item.name}?`)) return;
+  try {
+    await api(`/api/users/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    state.selectedCustomerAccountId = "";
+    await loadContent({ silent: true });
+    showToast("Conta de cliente excluída.");
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -6116,6 +6243,14 @@ function bindEvents() {
   $("deleteUserButton").addEventListener("click", deleteUser);
   $("userRole")?.addEventListener("change", () => syncUserPermissionEditor());
   $("userUseCustomPermissions")?.addEventListener("change", () => syncUserPermissionEditor(selectedUserPermissions()));
+  $("newCustomerUserButton")?.addEventListener("click", newCustomerUser);
+  $("cancelCustomerUserCreateButton")?.addEventListener("click", () => cancelCreation("customerUser"));
+  $("customerUserForm")?.addEventListener("submit", saveCustomerUser);
+  $("deleteCustomerUserButton")?.addEventListener("click", deleteCustomerUser);
+  $("customerAccountsSearch")?.addEventListener("input", (event) => {
+    state.customerAccountsSearch = event.target.value;
+    renderCustomerUsers();
+  });
 
   $("newClubPlanButton").addEventListener("click", newClubPlan);
   $("clubPlanActive")?.addEventListener("change", (event) => {
@@ -6268,6 +6403,7 @@ window.selectConcession = selectConcession;
 window.selectPromotion = selectPromotion;
 window.selectAd = selectAd;
 window.selectUser = selectUser;
+window.selectCustomerAccount = selectCustomerAccount;
 window.openOrderView = openOrderView;
 window.openOrderEdit = openOrderEdit;
 window.cancelOrDeleteOrder = cancelOrDeleteOrder;

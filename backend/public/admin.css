@@ -3031,6 +3031,52 @@ input[type="file"]::file-selector-button {
   grid-template-columns: minmax(260px, .78fr) minmax(520px, 1.7fr);
 }
 
+.account-list-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.account-list-heading p {
+  max-width: 46ch;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.compact-button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 8px 11px;
+}
+
+.account-search {
+  margin-bottom: 14px;
+}
+
+.account-type-notice {
+  display: grid;
+  gap: 3px;
+  padding: 13px 14px;
+  border-radius: 8px;
+  background: rgba(77, 141, 255, .1);
+}
+
+.account-type-notice strong {
+  color: #bfdbfe;
+  font-size: 13px;
+}
+
+.account-type-notice span,
+.account-status {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .permission-editor {
   min-width: 0;
   margin: 4px 0 0;
@@ -3080,9 +3126,25 @@ input[type="file"]::file-selector-button {
   min-width: 0;
   padding: 8px 0;
   color: var(--text-soft);
+}
+
+.permission-grid label > span {
+  display: grid;
+  gap: 3px;
+}
+
+.permission-grid strong {
+  color: var(--text-soft);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 780;
   line-height: 1.35;
+}
+
+.permission-grid small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.42;
 }
 
 .permission-grid input {
@@ -3173,6 +3235,15 @@ input[type="file"]::file-selector-button {
 @media (max-width: 640px) {
   .permission-grid {
     grid-template-columns: 1fr;
+  }
+
+  .account-list-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .compact-button {
+    width: 100%;
   }
 }
 
