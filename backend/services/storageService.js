@@ -34,6 +34,18 @@ function parseBase64Image(data) {
   };
 }
 
+function detectedImageType(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  return "";
+}
+
+function insideRoot(rootDir, filePath) {
+  const relative = path.relative(rootDir, filePath);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir: configuredRootDir = "", maxBytes = DEFAULT_MAX_BYTES }) {
   const rootDir = configuredRootDir
     ? path.resolve(configuredRootDir)
@@ -41,10 +53,16 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
 
   async function uploadImage({ data, filename = "", contentType = "", folder = "general" }) {
     const parsed = parseBase64Image(data);
-    const type = String(contentType || parsed.contentType || "").toLowerCase();
-    const extension = SUPPORTED_IMAGE_TYPES.get(type) || SUPPORTED_IMAGE_TYPES.get(parsed.contentType);
+    const declaredType = String(contentType || parsed.contentType || "").toLowerCase().replace("image/jpg", "image/jpeg");
+    const detectedType = detectedImageType(parsed.buffer);
+    const extension = SUPPORTED_IMAGE_TYPES.get(detectedType);
     if (!extension) {
       const error = new Error("Formato de imagem não permitido. Use JPG, PNG ou WebP.");
+      error.statusCode = 415;
+      throw error;
+    }
+    if (declaredType && declaredType !== detectedType) {
+      const error = new Error("O conteúdo do arquivo não corresponde ao formato de imagem informado.");
       error.statusCode = 415;
       throw error;
     }
@@ -72,7 +90,7 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
     return {
       path: filePath,
       url: `${publicBasePath}/${targetFolder}/${fileName}`,
-      contentType: type || parsed.contentType,
+      contentType: detectedType,
       size: parsed.buffer.length
     };
   }
@@ -84,7 +102,7 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
     if (!value.startsWith(`${publicBasePath}/`)) return false;
     const relative = value.replace(publicBasePath, "").replace(/^\/+/, "");
     const filePath = path.normalize(path.join(rootDir, relative));
-    if (!filePath.startsWith(rootDir)) return false;
+    if (!insideRoot(rootDir, filePath)) return false;
     try {
       await fs.unlink(filePath);
       return true;
@@ -99,7 +117,7 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
     deleteByPublicUrl,
     getPublicUrl(filePath) {
       const normalized = path.normalize(filePath);
-      if (!normalized.startsWith(rootDir)) return "";
+      if (!insideRoot(rootDir, normalized)) return "";
       return `${publicBasePath}/${path.relative(rootDir, normalized).replace(/\\/g, "/")}`;
     }
   };

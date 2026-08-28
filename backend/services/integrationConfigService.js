@@ -217,7 +217,13 @@ function firstEnv(keys = []) {
 }
 
 function secretKey() {
-  return crypto.createHash("sha256").update(process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || "cine-cruzeiro-local-dev-secret").digest();
+  const source = process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "cine-cruzeiro-local-dev-secret");
+  if (!source) {
+    const error = new Error("INTEGRATION_SECRET_KEY ou JWT_SECRET deve estar configurada em produção.");
+    error.code = "INTEGRATION_SECRET_KEY_REQUIRED";
+    throw error;
+  }
+  return crypto.createHash("sha256").update(source).digest();
 }
 
 function encryptSecret(value) {

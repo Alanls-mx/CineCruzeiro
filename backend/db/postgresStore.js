@@ -269,6 +269,7 @@ async function loadDbFromPostgres() {
         twoFactorRecoveryCodes: Array.isArray(row.two_factor_recovery_codes) ? row.two_factor_recovery_codes : [],
         twoFactorConfirmedAt: row.two_factor_confirmed_at ? new Date(row.two_factor_confirmed_at).toISOString() : "",
         twoFactorUpdatedAt: row.two_factor_updated_at ? new Date(row.two_factor_updated_at).toISOString() : "",
+        sessionVersion: Number(row.session_version || 0),
         role: row.role || "customer",
         active: row.active !== false,
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
@@ -594,8 +595,8 @@ async function writeDbToPostgres(db) {
     await query(client, "DELETE FROM users");
 
     for (const user of asArray(db.users)) {
-      await query(client, `INSERT INTO users (id, name, email, phone, cpf, password_hash, auth_provider, google_sub, picture, email_verified, pending_email, email_verification_hash, email_verification_expires_at, email_verification_requested_at, password_reset_hash, password_reset_expires_at, password_reset_requested_at, email_unsubscribed_at, email_unsubscribe_token, two_factor_enabled, two_factor_secret, two_factor_pending_secret, two_factor_recovery_codes, two_factor_confirmed_at, two_factor_updated_at, role, active, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,NULLIF($12,''),NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,NULLIF($15,''),NULLIF($16,'')::timestamptz,NULLIF($17,'')::timestamptz,NULLIF($18,'')::timestamptz,NULLIF($19,''),$20,NULLIF($21,''),NULLIF($22,''),$23::jsonb,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,COALESCE(NULLIF($28,'')::timestamptz, now()),COALESCE(NULLIF($29,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO users (id, name, email, phone, cpf, password_hash, auth_provider, google_sub, picture, email_verified, pending_email, email_verification_hash, email_verification_expires_at, email_verification_requested_at, password_reset_hash, password_reset_expires_at, password_reset_requested_at, email_unsubscribed_at, email_unsubscribe_token, two_factor_enabled, two_factor_secret, two_factor_pending_secret, two_factor_recovery_codes, two_factor_confirmed_at, two_factor_updated_at, session_version, role, active, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,NULLIF($12,''),NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,NULLIF($15,''),NULLIF($16,'')::timestamptz,NULLIF($17,'')::timestamptz,NULLIF($18,'')::timestamptz,NULLIF($19,''),$20,NULLIF($21,''),NULLIF($22,''),$23::jsonb,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,$28,COALESCE(NULLIF($29,'')::timestamptz, now()),COALESCE(NULLIF($30,'')::timestamptz, now()))`, [
         user.id,
         user.name,
         user.email,
@@ -621,6 +622,7 @@ async function writeDbToPostgres(db) {
         JSON.stringify(Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes : []),
         user.twoFactorConfirmedAt || "",
         user.twoFactorUpdatedAt || "",
+        Number(user.sessionVersion || 0),
         user.role || "customer",
         user.active !== false,
         user.createdAt || null,

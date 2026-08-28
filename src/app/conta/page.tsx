@@ -514,7 +514,7 @@ function ContaPageContent() {
                     Link de recuperação validado. Digite sua nova senha para continuar.
                   </p>
                 )}
-                {mode !== "recover" && <Input label={mode === "reset" ? "Nova senha" : "Senha"} type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} required minLength={6} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} />}
+                {mode !== "recover" && <Input label={mode === "reset" ? "Nova senha" : "Senha"} type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} required minLength={mode === "login" ? undefined : 10} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} />}
                 {mode === "register" && (
                   <>
                     <Input label="WhatsApp" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />

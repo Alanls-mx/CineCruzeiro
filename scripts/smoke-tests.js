@@ -36,7 +36,7 @@ async function request(pathname, options = {}) {
   return { response, payload };
 }
 
-async function registerCustomer(email, password = "123456") {
+async function registerCustomer(email, password = "cliente-smoke-123") {
   const result = await request("/api/auth/register", {
     method: "POST",
     headers: jsonHeaders(),
@@ -49,7 +49,8 @@ async function registerCustomer(email, password = "123456") {
   assert.match(setCookie, /Max-Age=/i);
   const cookie = setCookie.split(";")[0] || "";
   assert.match(cookie, /^cine_customer=/);
-  return { cookie, token: result.payload.token, user: result.payload.user };
+  assert.equal("token" in result.payload, false);
+  return { cookie, user: result.payload.user };
 }
 
 async function loginAdmin() {
@@ -198,6 +199,14 @@ async function run() {
     assert.equal(invalidRegistration.response.status, 422);
     assert.equal(invalidRegistration.payload.error.code, "CUSTOMER_NAME_INVALID");
 
+    const weakPasswordRegistration = await request("/api/auth/register", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ name: "Cliente Teste", email: `weak-${Date.now()}@cine.local`, password: "1234567890" })
+    });
+    assert.equal(weakPasswordRegistration.response.status, 422);
+    assert.equal(weakPasswordRegistration.payload.error.code, "CUSTOMER_PASSWORD_INVALID");
+
     const oversizedPayload = await request("/api/events", {
       method: "POST",
       headers: jsonHeaders(),
@@ -310,9 +319,25 @@ async function run() {
     assert.equal(me.response.status, 200);
     assert.equal(me.payload.user.email, email);
 
-    const meByBearer = await request("/api/auth/me", { headers: { Authorization: `Bearer ${registered.token}` } });
-    assert.equal(meByBearer.response.status, 200);
-    assert.equal(meByBearer.payload.user.email, email);
+    const legacyBearer = await request("/api/auth/me", { headers: { Authorization: "Bearer legacy-browser-token" } });
+    assert.equal(legacyBearer.response.status, 401);
+
+    const csrfAttempt = await request("/api/me", {
+      method: "PATCH",
+      headers: { ...jsonHeaders(cookie), Origin: "https://attacker.invalid", "Sec-Fetch-Site": "cross-site" },
+      body: JSON.stringify({ name: "Ataque CSRF" })
+    });
+    assert.equal(csrfAttempt.response.status, 403);
+    assert.equal(csrfAttempt.payload.error.code, "CUSTOMER_CSRF_BLOCKED");
+
+    const privilegeEscalation = await request("/api/me", {
+      method: "PATCH",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ name: "Teste Smoke", role: "owner", active: false })
+    });
+    assert.equal(privilegeEscalation.response.status, 200);
+    assert.equal(privilegeEscalation.payload.user.role, "customer");
+    assert.equal(privilegeEscalation.payload.user.active, true);
 
     const emailChangeAddress = `verified-${Date.now()}@cine.local`;
     const emailChange = await request("/api/me/email-change/request", {
@@ -343,16 +368,17 @@ async function run() {
     const passwordMismatch = await request("/api/me", {
       method: "PATCH",
       headers: jsonHeaders(cookie),
-      body: JSON.stringify({ currentPassword: "123456", newPassword: "senha-nova-123", confirmPassword: "senha-diferente" })
+      body: JSON.stringify({ currentPassword: "cliente-smoke-123", newPassword: "senha-nova-123", confirmPassword: "senha-diferente" })
     });
     assert.equal(passwordMismatch.response.status, 400);
 
     const passwordChanged = await request("/api/me", {
       method: "PATCH",
       headers: jsonHeaders(cookie),
-      body: JSON.stringify({ currentPassword: "123456", newPassword: "senha-nova-123", confirmPassword: "senha-nova-123" })
+      body: JSON.stringify({ currentPassword: "cliente-smoke-123", newPassword: "senha-nova-123", confirmPassword: "senha-nova-123" })
     });
     assert.equal(passwordChanged.response.status, 200);
+    cookie = passwordChanged.response.headers.get("set-cookie")?.split(";")[0] || cookie;
 
     const adminMe = await request("/api/admin/me", { headers: { Cookie: adminCookie } });
     assert.equal(adminMe.response.status, 200);
@@ -429,6 +455,18 @@ async function run() {
     assert.equal(uploadedImage.response.status, 201);
     assert.match(uploadedImage.payload.url, /^\/uploads\/smoke\//);
 
+    const spoofedImage = await request("/api/uploads/images", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        filename: "arquivo-falso.png",
+        contentType: "image/png",
+        folder: "smoke",
+        data: `data:image/png;base64,${Buffer.from("<script>alert(1)</script>").toString("base64")}`
+      })
+    });
+    assert.equal(spoofedImage.response.status, 415);
+
     const operatorUser = await request("/api/users", {
       method: "POST",
       headers: jsonHeaders(adminCookie),
@@ -437,11 +475,16 @@ async function run() {
         name: "Operador Smoke",
         email: "operador-smoke@cine.local",
         password: "operador-smoke-123",
+        passwordHash: "plaintext-attacker-value",
+        twoFactorEnabled: true,
+        twoFactorSecret: "attacker-secret",
         role: "operator",
         active: true
       })
     });
     assert.equal(operatorUser.response.status, 201);
+    assert.equal(operatorUser.payload.twoFactorEnabled, false);
+    assert.equal("passwordHash" in operatorUser.payload, false);
     const operatorLogin = await request("/api/admin/login", {
       method: "POST",
       headers: jsonHeaders(),
@@ -1299,9 +1342,25 @@ async function run() {
     });
     assert.equal(oldQrValidation.response.status, 404);
 
-    const accountTicketsByBearer = await request("/api/me/tickets", { headers: { Authorization: `Bearer ${registered.token}` } });
-    assert.equal(accountTicketsByBearer.response.status, 200);
-    assert.equal(accountTicketsByBearer.payload.tickets.some((ticket) => ticket.orderId === boxOfficeSale.payload.order.id), false);
+    const accountTicketsByBearer = await request("/api/me/tickets", { headers: { Authorization: "Bearer legacy-browser-token" } });
+    assert.equal(accountTicketsByBearer.response.status, 401);
+
+    const bruteForceEmail = `brute-${Date.now()}@cine.local`;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const failedAttempt = await request("/api/auth/login", {
+        method: "POST",
+        headers: { ...jsonHeaders(), "X-Forwarded-For": "203.0.113.77" },
+        body: JSON.stringify({ email: bruteForceEmail, password: "senha-incorreta" })
+      });
+      assert.equal(failedAttempt.response.status, 401);
+    }
+    const blockedLogin = await request("/api/auth/login", {
+      method: "POST",
+      headers: { ...jsonHeaders(), "X-Forwarded-For": "203.0.113.77" },
+      body: JSON.stringify({ email: bruteForceEmail, password: "senha-incorreta" })
+    });
+    assert.equal(blockedLogin.response.status, 429);
+    assert.ok(Number(blockedLogin.response.headers.get("retry-after")) >= 1);
 
     const badLogin = await request("/api/auth/login", {
       method: "POST",
@@ -1325,6 +1384,14 @@ async function run() {
       body: JSON.stringify({ token: resetRequest.payload.resetToken, password: "nova123456" })
     });
     assert.equal(reset.response.status, 200);
+    cookie = reset.response.headers.get("set-cookie")?.split(";")[0] || cookie;
+
+    const resetReuse = await request("/api/auth/password/reset", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ token: resetRequest.payload.resetToken, password: "outra-senha-123" })
+    });
+    assert.equal(resetReuse.response.status, 400);
 
     const orderBody = {
       order: {
@@ -1365,6 +1432,21 @@ async function run() {
     assert.equal(checkoutStatus.response.status, 200);
     assert.equal(checkoutStatus.payload.payment.status, "pending");
     assert.equal(checkoutStatus.payload.tickets.length, 0);
+
+    const checkoutWithoutProof = await request("/api/checkout/orders/smoke-pix-pendente");
+    assert.equal(checkoutWithoutProof.response.status, 404);
+
+    const checkoutAsOtherCustomer = await request("/api/checkout/orders/smoke-pix-pendente", {
+      headers: jsonHeaders(targetCookie)
+    });
+    assert.equal(checkoutAsOtherCustomer.response.status, 404);
+
+    const legacyOrderCreation = await request("/api/orders", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ id: "attacker-order", status: "paid", totalPrice: 0 })
+    });
+    assert.equal(legacyOrderCreation.response.status, 410);
 
     const noExtrasOrderId = `smoke-pix-sem-extras-${Date.now()}`;
     const noExtrasPix = await request("/api/payments/pix", {
@@ -1489,7 +1571,23 @@ async function run() {
     });
     assert.equal(card.response.status, 201);
     assert.equal(card.payload.payment.provider, "mercado_pago");
-    assert.equal(card.payload.payment.metadata.paymentMethodType, "credit_card");
+    assert.equal(card.payload.payment.method, "credit_card");
+
+    const logout = await request("/api/auth/logout", {
+      method: "POST",
+      headers: jsonHeaders(cookie)
+    });
+    assert.equal(logout.response.status, 200);
+    const revokedCustomerSession = await request("/api/auth/me", { headers: jsonHeaders(cookie) });
+    assert.equal(revokedCustomerSession.response.status, 401);
+
+    const adminLogout = await request("/api/admin/logout", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie)
+    });
+    assert.equal(adminLogout.response.status, 204);
+    const revokedAdminSession = await request("/api/admin/me", { headers: jsonHeaders(adminCookie) });
+    assert.equal(revokedAdminSession.response.status, 401);
 
     console.log("Smoke tests passed.");
   } finally {

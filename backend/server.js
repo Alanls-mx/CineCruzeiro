@@ -183,7 +183,13 @@ function getTmdbCredentials(db) {
 
 function getJwtSecret() {
   const configured = getFirstEnv(JWT_SECRET_ENV_KEYS);
-  return configured?.value || "cine-cruzeiro-local-dev-secret";
+  if (configured?.value) return configured.value;
+  if (isProduction()) {
+    throw Object.assign(new Error("Configure JWT_SECRET no ambiente de produção."), {
+      code: "JWT_SECRET_REQUIRED"
+    });
+  }
+  return "cine-cruzeiro-local-dev-secret";
 }
 
 function getCrmWebhookUrl(db) {
@@ -769,6 +775,10 @@ async function readBody(req) {
 
 const rateBuckets = new Map();
 let lastRateBucketSweep = 0;
+const loginFailures = new Map();
+const LOGIN_FAILURE_THRESHOLD = 5;
+const LOGIN_BLOCK_BASE_MS = 30 * 1000;
+const LOGIN_BLOCK_MAX_MS = 15 * 60 * 1000;
 
 function clientIp(req) {
   return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local").split(",")[0].trim();
@@ -800,6 +810,39 @@ function rateLimit(req, pathname) {
     : null;
 }
 
+function loginFailureKey(req, scope, email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase().slice(0, 160);
+  return `${scope}:${clientIp(req)}:${normalizedEmail || "sem-email"}`;
+}
+
+function loginBlockStatus(req, scope, email) {
+  const key = loginFailureKey(req, scope, email);
+  const record = loginFailures.get(key);
+  if (!record) return null;
+  if (record.blockedUntil > Date.now()) {
+    return { key, retryAfter: Math.max(1, Math.ceil((record.blockedUntil - Date.now()) / 1000)) };
+  }
+  if (record.lastFailureAt < Date.now() - LOGIN_BLOCK_MAX_MS) loginFailures.delete(key);
+  return null;
+}
+
+function recordLoginFailure(req, scope, email) {
+  const key = loginFailureKey(req, scope, email);
+  const now = Date.now();
+  const current = loginFailures.get(key) || { failures: 0, blockedUntil: 0, lastFailureAt: now };
+  current.failures += 1;
+  current.lastFailureAt = now;
+  if (current.failures >= LOGIN_FAILURE_THRESHOLD) {
+    const exponent = Math.min(5, current.failures - LOGIN_FAILURE_THRESHOLD);
+    current.blockedUntil = now + Math.min(LOGIN_BLOCK_MAX_MS, LOGIN_BLOCK_BASE_MS * (2 ** exponent));
+  }
+  loginFailures.set(key, current);
+}
+
+function clearLoginFailures(req, scope, email) {
+  loginFailures.delete(loginFailureKey(req, scope, email));
+}
+
 function parseCookies(req) {
   return Object.fromEntries(
     String(req.headers.cookie || "")
@@ -820,7 +863,9 @@ function signedValue(payload) {
 }
 
 function verifySignedValue(value) {
-  const [encoded, signature] = String(value || "").split(".");
+  const segments = String(value || "").split(".");
+  if (segments.length !== 2) return null;
+  const [encoded, signature] = segments;
   if (!encoded || !signature) return null;
   const expected = crypto.createHmac("sha256", getJwtSecret()).update(encoded).digest("base64url");
   if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
@@ -848,6 +893,24 @@ function adminCookie(value, maxAge = 60 * 60 * 8) {
 function customerCookie(value, maxAge = 60 * 60 * 24 * 30) {
   return [
     `cine_customer=${encodeURIComponent(value)}`,
+    "Path=/",
+    "HttpOnly",
+    cookieSameSite(),
+    `Max-Age=${maxAge}`,
+    ...(isProduction() ? ["Secure"] : [])
+  ].join("; ");
+}
+
+function checkoutAccessCookie(req, orderId, maxAge = 2 * 60 * 60) {
+  const existing = verifySignedValue(parseCookies(req).cine_checkout);
+  const orderIds = Array.isArray(existing?.orderIds)
+    ? existing.orderIds.map(String).filter(Boolean).slice(-4)
+    : [];
+  const normalizedOrderId = String(orderId || "");
+  if (normalizedOrderId && !orderIds.includes(normalizedOrderId)) orderIds.push(normalizedOrderId);
+  const value = signedValue({ orderIds: orderIds.slice(-5), exp: Date.now() + maxAge * 1000 });
+  return [
+    `cine_checkout=${encodeURIComponent(value)}`,
     "Path=/",
     "HttpOnly",
     cookieSameSite(),
@@ -888,19 +951,17 @@ function getAdminUser(req, db) {
   const session = verifySignedValue(parseCookies(req).cine_admin);
   if (!session?.sub) return null;
   const user = (db.users || []).find((item) => item.id === session.sub && item.active !== false);
-  if (!user || !adminRoles().has(user.role)) return null;
+  if (!user || !adminRoles().has(user.role) || Number(session.sv || 0) !== Number(user.sessionVersion || 0)) return null;
   const normalizedRole = roleAlias(user.role);
   return normalizedRole === user.role ? user : { ...user, role: normalizedRole };
 }
 
 function getCustomerUser(req, db) {
   const session = verifySignedValue(parseCookies(req).cine_customer);
-  const bearer = bearerPayload(req);
-  const fallback = verifyJwt(parseCookies(req).cine_customer_fallback);
-  const userId = session?.sub || bearer?.sub || fallback?.sub;
+  const userId = session?.sub;
   if (!userId) return null;
   const user = (db.users || []).find((item) => item.id === userId && item.active !== false);
-  if (!user || !["customer", ...adminRoles()].includes(user.role)) return null;
+  if (!user || !["customer", ...adminRoles()].includes(user.role) || Number(session.sv || 0) !== Number(user.sessionVersion || 0)) return null;
   const normalizedRole = roleAlias(user.role);
   const normalizedUser = normalizedRole === user.role ? user : { ...user, role: normalizedRole };
   const store = requestContext.getStore();
@@ -941,7 +1002,7 @@ function adminOriginAllowed(req) {
   const fetchSite = String(req.headers["sec-fetch-site"] || "").toLowerCase();
   if (fetchSite === "cross-site") return false;
 
-  const requestHost = req.headers.host || "";
+  const requestHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
   const origin = originHost(req.headers.origin);
   const referer = originHost(req.headers.referer);
   const allowedHosts = new Set([requestHost, originHost(corsOrigin()), originHost(publicBackendUrl())].filter(Boolean));
@@ -949,6 +1010,11 @@ function adminOriginAllowed(req) {
   if (origin) return allowedHosts.has(origin);
   if (referer) return allowedHosts.has(referer);
   return true;
+}
+
+function customerMutationOriginAllowed(req) {
+  if (!parseCookies(req).cine_customer || !mutatesState(req.method || "GET")) return true;
+  return adminOriginAllowed(req);
 }
 
 function requiredAdminRoles(pathname, method) {
@@ -3342,6 +3408,39 @@ function findExistingCheckout(db, order, method) {
   };
 }
 
+function checkoutAccessAllowed(req, db, order) {
+  const user = getCustomerUser(req, db);
+  if (user && order.customerUserId && order.customerUserId === user.id) return true;
+  const proof = verifySignedValue(parseCookies(req).cine_checkout);
+  return Array.isArray(proof?.orderIds) && proof.orderIds.map(String).includes(String(order.id));
+}
+
+function sanitizeCheckoutOrder(order) {
+  if (!order) return null;
+  const { customerName, customerEmail, customerPhone, customerCpf, metadata, ...safeOrder } = order;
+  return safeOrder;
+}
+
+function sanitizeCheckoutPayment(payment) {
+  if (!payment) return null;
+  const { metadata, raw, ...safePayment } = payment;
+  return safePayment;
+}
+
+function sanitizeCheckoutTicket(ticket) {
+  if (!ticket) return null;
+  const { customerName, customerEmail, customerPhone, customerCpf, qrPayload, metadata, ...safeTicket } = ticket;
+  return safeTicket;
+}
+
+function checkoutResponse(db, order, payment, tickets = []) {
+  return {
+    order: sanitizeCheckoutOrder(order),
+    payment: sanitizeCheckoutPayment(payment),
+    tickets: tickets.map((ticket) => sanitizeCheckoutTicket(enrichTicket(db, ticket)))
+  };
+}
+
 function expireStaleReservations(db) {
   const now = Date.now();
   let changed = false;
@@ -4280,10 +4379,36 @@ function normalizeUser(input, existing = {}) {
     twoFactorRecoveryCodes: input.twoFactorRecoveryCodes !== undefined ? (Array.isArray(input.twoFactorRecoveryCodes) ? input.twoFactorRecoveryCodes : []) : existing.twoFactorRecoveryCodes || [],
     twoFactorConfirmedAt: input.twoFactorConfirmedAt !== undefined ? input.twoFactorConfirmedAt : existing.twoFactorConfirmedAt || "",
     twoFactorUpdatedAt: input.twoFactorUpdatedAt !== undefined ? input.twoFactorUpdatedAt : existing.twoFactorUpdatedAt || "",
+    sessionVersion: Number(existing.sessionVersion || 0),
     role: ["owner", "master", "manager", "operator", "seller", "customer"].includes(role) ? role : "customer",
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false,
     updatedAt: new Date().toISOString(),
     createdAt: existing.createdAt || input.createdAt || new Date().toISOString()
+  };
+}
+
+function adminUserPayload(input = {}, existing = {}) {
+  const email = String(input.email ?? existing.email ?? "").trim().toLowerCase();
+  const name = String(input.name ?? existing.name ?? "").trim();
+  const password = input.password === undefined ? "" : String(input.password || "");
+  if (name.length < 2 || name.length > 120) {
+    throw Object.assign(new Error("Informe o nome com 2 a 120 caracteres."), { statusCode: 422, code: "USER_NAME_INVALID" });
+  }
+  if (email.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw Object.assign(new Error("Informe um e-mail válido."), { statusCode: 422, code: "USER_EMAIL_INVALID" });
+  }
+  if (password && passwordPolicyError(password)) {
+    throw Object.assign(new Error(passwordPolicyError(password)), { statusCode: 422, code: "USER_PASSWORD_INVALID" });
+  }
+  return {
+    id: existing.id || input.id,
+    name,
+    email,
+    phone: input.phone,
+    cpf: input.cpf,
+    ...(password ? { password } : {}),
+    role: input.role,
+    active: input.active
   };
 }
 
@@ -4299,6 +4424,7 @@ function sanitizeUser(user) {
     twoFactorSecret,
     twoFactorPendingSecret,
     twoFactorRecoveryCodes,
+    sessionVersion,
     ...safeUser
   } = user;
   return {
@@ -4309,9 +4435,22 @@ function sanitizeUser(user) {
   };
 }
 
+const PASSWORD_HASH_ITERATIONS = 600000;
+const PASSWORD_MIN_LENGTH = 10;
+const COMMON_PASSWORDS = new Set([
+  "1234567890", "123456789", "password", "password123", "qwerty12345", "senha12345", "admin12345"
+]);
+
+function passwordPolicyError(password) {
+  const value = String(password || "");
+  if (value.length < PASSWORD_MIN_LENGTH || value.length > 128) return `Use uma senha entre ${PASSWORD_MIN_LENGTH} e 128 caracteres.`;
+  if (COMMON_PASSWORDS.has(value.toLowerCase())) return "Escolha uma senha menos comum.";
+  return "";
+}
+
 function hashPassword(password, salt = crypto.randomBytes(16).toString("base64url")) {
-  const hash = crypto.pbkdf2Sync(String(password), salt, 120000, 32, "sha256").toString("base64url");
-  return `pbkdf2_sha256$120000$${salt}$${hash}`;
+  const hash = crypto.pbkdf2Sync(String(password), salt, PASSWORD_HASH_ITERATIONS, 32, "sha256").toString("base64url");
+  return `pbkdf2_sha256$${PASSWORD_HASH_ITERATIONS}$${salt}$${hash}`;
 }
 
 function verifyPassword(password, passwordHash) {
@@ -4323,6 +4462,11 @@ function verifyPassword(password, passwordHash) {
     .toString("base64url");
   if (Buffer.byteLength(actualHash) !== Buffer.byteLength(expectedHash)) return false;
   return crypto.timingSafeEqual(Buffer.from(actualHash), Buffer.from(expectedHash));
+}
+
+function passwordNeedsRehash(passwordHash) {
+  const [algorithm, iterations] = String(passwordHash || "").split("$");
+  return algorithm !== "pbkdf2_sha256" || Number(iterations) < PASSWORD_HASH_ITERATIONS;
 }
 
 function createAdminTwoFactorChallenge(userId) {
@@ -4352,7 +4496,7 @@ function readAdminTwoFactorChallenge(token) {
 
 async function sendAdminLoginSuccess(req, res, db, user, twoFactorMethod = "not_required") {
   const methods = twoFactorMethod === "not_required" ? ["pwd"] : ["pwd", "otp"];
-  const session = signedValue({ sub: user.id, role: user.role, exp: Date.now() + 1000 * 60 * 60 * 8, amr: methods });
+  const session = signedValue({ sub: user.id, role: user.role, sv: Number(user.sessionVersion || 0), exp: Date.now() + 1000 * 60 * 60 * 8, amr: methods });
   const loginAudit = {
     id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
     userId: user.id,
@@ -4474,14 +4618,18 @@ function base64Url(input) {
   return Buffer.from(input).toString("base64url");
 }
 
+const JWT_ISSUER = "cine-cruzeiro";
+const JWT_AUDIENCE = "cine-cruzeiro-web";
+
 function signJwt(payload) {
   const header = { alg: "HS256", typ: "JWT" };
   const now = Math.floor(Date.now() / 1000);
   const body = {
+    ...payload,
     iat: now,
     exp: now + 60 * 60 * 8,
-    iss: "cine-cruzeiro-admin",
-    ...payload
+    iss: JWT_ISSUER,
+    aud: JWT_AUDIENCE
   };
   const encoded = `${base64Url(JSON.stringify(header))}.${base64Url(JSON.stringify(body))}`;
   const signature = crypto.createHmac("sha256", getJwtSecret()).update(encoded).digest("base64url");
@@ -4489,14 +4637,20 @@ function signJwt(payload) {
 }
 
 function verifyJwt(token) {
-  const [header, body, signature] = String(token || "").split(".");
+  const segments = String(token || "").split(".");
+  if (segments.length !== 3) return null;
+  const [header, body, signature] = segments;
   if (!header || !body || !signature) return null;
   const expected = crypto.createHmac("sha256", getJwtSecret()).update(`${header}.${body}`).digest("base64url");
   if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
   if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
   try {
+    const parsedHeader = JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
+    if (parsedHeader.alg !== "HS256" || parsedHeader.typ !== "JWT") return null;
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (!payload.exp || payload.exp < now || payload.iat > now + 60) return null;
+    if (payload.iss !== JWT_ISSUER || payload.aud !== JWT_AUDIENCE) return null;
     return payload;
   } catch {
     return null;
@@ -4505,7 +4659,6 @@ function verifyJwt(token) {
 
 function authResponse(user) {
   return {
-    token: signJwt({ sub: user.id, email: user.email, role: user.role, name: user.name }),
     user: sanitizeUser(user)
   };
 }
@@ -4515,13 +4668,9 @@ function customerSessionValue(user) {
     sub: user.id,
     role: user.role,
     email: user.email,
+    sv: Number(user.sessionVersion || 0),
     exp: Date.now() + 1000 * 60 * 60 * 24 * 30
   });
-}
-
-function bearerPayload(req) {
-  const match = String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i);
-  return match ? verifyJwt(match[1]) : null;
 }
 
 function tmdbAuthUrl(pathname, params = {}, db) {
@@ -5742,13 +5891,30 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (!customerMutationOriginAllowed(req)) {
+    sendJson(res, 403, { error: { code: "CUSTOMER_CSRF_BLOCKED", message: "Origem da requisição não autorizada." } });
+    return;
+  }
+
   if (pathname === "/api/admin/login" && method === "POST") {
     const body = await readBody(req);
     const email = String(body.email || "").trim().toLowerCase();
+    const blocked = loginBlockStatus(req, "admin", email);
+    if (blocked) {
+      sendJson(res, 429, { error: { code: "ADMIN_LOGIN_BLOCKED", message: "Muitas tentativas. Aguarde antes de tentar novamente." } }, { "Retry-After": String(blocked.retryAfter) });
+      return;
+    }
     const user = (db.users || []).find((item) => item.email === email && item.active !== false && adminRoles().has(item.role));
     if (!user || !verifyPassword(String(body.password || ""), user.passwordHash)) {
+      recordLoginFailure(req, "admin", email);
       sendJson(res, 401, { error: { code: "ADMIN_LOGIN_INVALID", message: "E-mail ou senha invalidos." } });
       return;
+    }
+    clearLoginFailures(req, "admin", email);
+    if (passwordNeedsRehash(user.passwordHash)) {
+      user.passwordHash = hashPassword(String(body.password || ""));
+      user.updatedAt = new Date().toISOString();
+      await writeDb(db);
     }
     if (user.twoFactorEnabled) {
       const secret = adminTwoFactorService.decryptSecret(user.twoFactorSecret);
@@ -5813,7 +5979,12 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/logout" && method === "POST") {
     const user = getAdminUser(req, db);
+    if (user && !adminOriginAllowed(req)) {
+      sendJson(res, 403, { error: { code: "ADMIN_CSRF_BLOCKED", message: "Origem da requisição administrativa não autorizada." } });
+      return;
+    }
     if (user) {
+      user.sessionVersion = Number(user.sessionVersion || 0) + 1;
       db.auditLogs ||= [];
       db.auditLogs.push({
         id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
@@ -6623,8 +6794,9 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 422, { error: { code: "CUSTOMER_EMAIL_INVALID", message: "Informe um e-mail válido." } });
       return;
     }
-    if (password.length < 6 || password.length > 128) {
-      sendJson(res, 422, { error: { code: "CUSTOMER_PASSWORD_INVALID", message: "Use uma senha entre 6 e 128 caracteres." } });
+    const passwordError = passwordPolicyError(password);
+    if (passwordError) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_PASSWORD_INVALID", message: passwordError } });
       return;
     }
     if (db.users.some((item) => item.email === email)) {
@@ -6672,20 +6844,36 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/auth/login" && method === "POST") {
     const body = await readBody(req);
-    const user = db.users.find((item) => item.email === String(body.email || "").trim().toLowerCase() && item.active);
+    const email = String(body.email || "").trim().toLowerCase();
+    const blocked = loginBlockStatus(req, "customer", email);
+    if (blocked) {
+      sendJson(res, 429, { error: { code: "CUSTOMER_LOGIN_BLOCKED", message: "Muitas tentativas. Aguarde antes de tentar novamente." } }, { "Retry-After": String(blocked.retryAfter) });
+      return;
+    }
+    const user = db.users.find((item) => item.email === email && item.active);
     if (!user) {
+      recordLoginFailure(req, "customer", email);
       sendJson(res, 401, { error: "E-mail ou senha invalidos." });
       return;
     }
 
     if (!user.passwordHash) {
-      sendJson(res, 401, { error: { code: "GOOGLE_LOGIN_REQUIRED", message: "Esta conta usa login com Google. Entre pelo botão do Google." } });
+      recordLoginFailure(req, "customer", email);
+      sendJson(res, 401, { error: "E-mail ou senha invalidos." });
       return;
     }
 
     if (!verifyPassword(String(body.password || ""), user.passwordHash)) {
+      recordLoginFailure(req, "customer", email);
       sendJson(res, 401, { error: "E-mail ou senha invalidos." });
       return;
+    }
+
+    clearLoginFailures(req, "customer", email);
+    if (passwordNeedsRehash(user.passwordHash)) {
+      user.passwordHash = hashPassword(String(body.password || ""));
+      user.updatedAt = new Date().toISOString();
+      await writeDb(db);
     }
 
     sendJson(res, 200, authResponse(user), { "Set-Cookie": customerCookie(customerSessionValue(user)) });
@@ -6703,6 +6891,12 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/auth/logout" && method === "POST") {
+    const user = getCustomerUser(req, db);
+    if (user) {
+      user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+      user.updatedAt = new Date().toISOString();
+      await writeDb(db);
+    }
     sendJson(res, 200, { ok: true }, { "Set-Cookie": customerCookie("", 0) });
     return;
   }
@@ -6757,8 +6951,9 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const token = String(body.token || "").trim();
     const password = String(body.password || "");
-    if (!token || password.length < 6 || password.length > 128) {
-      sendJson(res, 400, { error: { code: "PASSWORD_RESET_INVALID", message: "Informe token e senha entre 6 e 128 caracteres." } });
+    const passwordError = passwordPolicyError(password);
+    if (!token || passwordError) {
+      sendJson(res, 400, { error: { code: "PASSWORD_RESET_INVALID", message: passwordError || "Token de recuperação inválido." } });
       return;
     }
 
@@ -6776,6 +6971,7 @@ async function handleApi(req, res, pathname) {
     }
 
     user.passwordHash = hashPassword(password);
+    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
     user.authProvider = user.authProvider || "email";
     user.passwordResetHash = "";
     user.passwordResetExpiresAt = "";
@@ -6829,17 +7025,20 @@ async function handleApi(req, res, pathname) {
       } else if (nextPassword !== confirmPassword) {
         sendJson(res, 400, { error: { code: "PASSWORD_CONFIRMATION_MISMATCH", message: "As novas senhas não coincidem." } });
         return;
-      } else if (nextPassword.length < 6 || nextPassword.length > 128) {
-        sendJson(res, 400, { error: { code: "PASSWORD_LENGTH_INVALID", message: "A senha precisa ter entre 6 e 128 caracteres." } });
+      } else if (passwordPolicyError(nextPassword)) {
+        sendJson(res, 400, { error: { code: "PASSWORD_LENGTH_INVALID", message: passwordPolicyError(nextPassword) } });
         return;
       } else {
         user.passwordHash = hashPassword(nextPassword);
+        user.sessionVersion = Number(user.sessionVersion || 0) + 1;
         user.authProvider = user.authProvider || "email";
       }
     }
     user.updatedAt = new Date().toISOString();
     await writeDb(db);
-    sendJson(res, 200, { user: sanitizeUser(user) });
+    sendJson(res, 200, { user: sanitizeUser(user) }, {
+      "Set-Cookie": customerCookie(customerSessionValue(user))
+    });
     return;
   }
 
@@ -7294,12 +7493,16 @@ async function handleApi(req, res, pathname) {
       const idempotencyKey = String(req.headers["x-idempotency-key"] || body.idempotencyKey || `club-${lockedUser.id}-${body.movieId}-${body.sessionId}`).trim();
       const existing = (lockedDb.orders || []).find((order) => order.idempotencyKey === idempotencyKey && order.origin === "club");
       if (existing) {
+        if (existing.customerUserId !== lockedUser.id) {
+          sendJson(res, 409, { error: { code: "IDEMPOTENCY_KEY_CONFLICT", message: "Esta referência de compra já está em uso." } });
+          return;
+        }
         sendJson(res, 200, {
           order: existing,
           payment: orderPayment(lockedDb, existing.id),
           tickets: orderTickets(lockedDb, existing.id),
           subscription: (lockedDb.subscriptions || []).find((item) => item.id === existing.clubSubscriptionId) || null
-        });
+        }, { "Set-Cookie": checkoutAccessCookie(req, existing.id) });
         return;
       }
       const subscription = activeSubscriptionForUser(lockedDb, lockedUser.id);
@@ -7367,7 +7570,9 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
-      sendJson(res, 201, { order: savedOrder, payment, tickets, subscription });
+      sendJson(res, 201, { order: savedOrder, payment, tickets, subscription }, {
+        "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
+      });
       });
     } catch (error) {
       sendJson(res, error.statusCode || 400, { error: { code: error.code || "CLUB_CREDIT_ERROR", message: error.message } });
@@ -7970,7 +8175,12 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/users" && method === "POST") {
     if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
-    const user = normalizeUser(await readBody(req));
+    const body = await readBody(req);
+    const user = normalizeUser(adminUserPayload(body));
+    if (db.users.some((existing) => existing.email === user.email)) {
+      sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
+      return;
+    }
     db.users = db.users.filter((existing) => existing.id !== user.id);
     db.users.push(user);
     await writeDb(db);
@@ -7989,7 +8199,12 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "PUT") {
-      const user = normalizeUser(await readBody(req), db.users[index]);
+      const body = await readBody(req);
+      const user = normalizeUser(adminUserPayload(body, db.users[index]), db.users[index]);
+      if (db.users.some((existing, existingIndex) => existingIndex !== index && existing.email === user.email)) {
+        sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
+        return;
+      }
       db.users[index] = user;
       await writeDb(db);
       sendJson(res, 200, sanitizeUser(user));
@@ -8034,10 +8249,18 @@ async function handleApi(req, res, pathname) {
         normalizedOrder.customerUserId = customerUser.id;
         normalizedOrder.customerEmail = customerUser.email || normalizedOrder.customerEmail;
         normalizedOrder.customerCpf = customerUser.cpf || normalizedOrder.customerCpf;
+      } else {
+        normalizedOrder.customerUserId = "";
       }
       const existing = findExistingCheckout(lockedDb, normalizedOrder, "pix");
       if (existing) {
-        sendJson(res, 200, existing);
+        if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {
+          sendJson(res, 409, { error: { code: "IDEMPOTENCY_KEY_CONFLICT", message: "Esta referência de compra já está em uso." } });
+          return;
+        }
+        sendJson(res, 200, checkoutResponse(lockedDb, existing.order, existing.payment, existing.tickets), {
+          "Set-Cookie": checkoutAccessCookie(req, existing.order.id)
+        });
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
@@ -8077,7 +8300,9 @@ async function handleApi(req, res, pathname) {
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
       logEvent("info", "payment.created", { orderId: savedOrder.id, paymentId: payment.id, method: payment.method, provider: payment.provider, status: payment.status });
-      sendJson(res, 201, { order: savedOrder, payment, tickets });
+      sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
+        "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
+      });
     });
     return;
   }
@@ -8098,10 +8323,18 @@ async function handleApi(req, res, pathname) {
         normalizedOrder.customerUserId = customerUser.id;
         normalizedOrder.customerEmail = customerUser.email || normalizedOrder.customerEmail;
         normalizedOrder.customerCpf = customerUser.cpf || normalizedOrder.customerCpf;
+      } else {
+        normalizedOrder.customerUserId = "";
       }
       const existing = findExistingCheckout(lockedDb, normalizedOrder, "credit_card");
       if (existing) {
-        sendJson(res, 200, existing);
+        if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {
+          sendJson(res, 409, { error: { code: "IDEMPOTENCY_KEY_CONFLICT", message: "Esta referência de compra já está em uso." } });
+          return;
+        }
+        sendJson(res, 200, checkoutResponse(lockedDb, existing.order, existing.payment, existing.tickets), {
+          "Set-Cookie": checkoutAccessCookie(req, existing.order.id)
+        });
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
@@ -8148,7 +8381,9 @@ async function handleApi(req, res, pathname) {
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
       logEvent("info", "payment.created", { orderId: savedOrder.id, paymentId: payment.id, method: payment.method, provider: payment.provider, status: payment.status });
-      sendJson(res, 201, { order: savedOrder, payment, tickets });
+      sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
+        "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
+      });
     });
     return;
   }
@@ -8161,9 +8396,14 @@ async function handleApi(req, res, pathname) {
   const checkoutOrderMatch = pathname.match(/^\/api\/checkout\/orders\/([^/]+)$/);
   if (checkoutOrderMatch && method === "GET") {
     const orderId = decodeURIComponent(checkoutOrderMatch[1]);
-    await reconcileMercadoPagoCheckoutOrder(orderId, db);
+    const snapshotOrder = (db.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
+    if (!snapshotOrder || !checkoutAccessAllowed(req, db, snapshotOrder)) {
+      sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
+      return;
+    }
+    await reconcileMercadoPagoCheckoutOrder(snapshotOrder.id, db);
     const currentDb = await readDb();
-    const order = (currentDb.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
+    const order = (currentDb.orders || []).find((item) => item.id === snapshotOrder.id);
     if (!order) {
       sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
       return;
@@ -8176,7 +8416,7 @@ async function handleApi(req, res, pathname) {
     const tickets = payment.status === "approved"
       ? (currentDb.tickets || []).filter((ticket) => ticket.orderId === order.id).map((ticket) => enrichTicket(currentDb, ticket))
       : [];
-    sendJson(res, 200, { order, payment, tickets });
+    sendJson(res, 200, checkoutResponse(currentDb, order, payment, tickets));
     return;
   }
 
@@ -9269,16 +9509,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/orders" && method === "POST") {
-    const body = await readBody(req);
-    const order = {
-      ...body,
-      id: body.id || `pedido-${Date.now()}`,
-      status: "pending_payment",
-      createdAt: body.createdAt || new Date().toISOString()
-    };
-    db.orders.unshift(order);
-    await writeDb(db);
-    sendJson(res, 201, { ...order, tickets: [] });
+    sendJson(res, 410, { error: { code: "ENDPOINT_REMOVED", message: "Use um fluxo de pagamento autenticado para criar pedidos." } });
     return;
   }
 

@@ -5,7 +5,6 @@ const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/
 const API_BASE = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
 const CUSTOMER_SESSION_TOKEN_KEY = "cine-cruzeiro-session-token";
 const CUSTOMER_FALLBACK_COOKIE = "cine_customer_fallback";
-const CUSTOMER_TOKEN_MAX_AGE = 60 * 60 * 24 * 30;
 const CINEMA_CONTENT_CACHE_TTL = 30_000;
 const API_TIMEOUT_MS = 20_000;
 
@@ -27,18 +26,6 @@ function apiErrorMessage(payload: Record<string, unknown>, fallback: string) {
   return typeof error === "string" ? error : fallback;
 }
 
-function sessionToken() {
-  if (typeof window === "undefined") return "";
-  return safeStorage("sessionStorage").getItem(CUSTOMER_SESSION_TOKEN_KEY) || safeStorage("localStorage").getItem(CUSTOMER_SESSION_TOKEN_KEY) || "";
-}
-
-function rememberSessionToken(token?: string) {
-  if (typeof window === "undefined" || !token) return;
-  safeStorage("sessionStorage").setItem(CUSTOMER_SESSION_TOKEN_KEY, token);
-  safeStorage("localStorage").setItem(CUSTOMER_SESSION_TOKEN_KEY, token);
-  document.cookie = `${CUSTOMER_FALLBACK_COOKIE}=${encodeURIComponent(token)}; Path=/; SameSite=Lax; Max-Age=${CUSTOMER_TOKEN_MAX_AGE}`;
-}
-
 function clearSessionToken() {
   if (typeof window === "undefined") return;
   safeStorage("sessionStorage").removeItem(CUSTOMER_SESSION_TOKEN_KEY);
@@ -48,20 +35,6 @@ function clearSessionToken() {
 
 function safeStorage(kind: "localStorage" | "sessionStorage") {
   return {
-    getItem(key: string) {
-      try {
-        return window[kind].getItem(key);
-      } catch {
-        return "";
-      }
-    },
-    setItem(key: string, value: string) {
-      try {
-        window[kind].setItem(key, value);
-      } catch {
-        // Cookie HttpOnly segue sendo o caminho principal de autenticacao.
-      }
-    },
     removeItem(key: string) {
       try {
         window[kind].removeItem(key);
@@ -73,11 +46,7 @@ function safeStorage(kind: "localStorage" | "sessionStorage") {
 }
 
 function authHeaders(extra: Record<string, string> = {}) {
-  const token = sessionToken();
-  return {
-    ...extra,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  return extra;
 }
 
 export interface CustomerUser {
@@ -562,8 +531,7 @@ export async function registerCustomer(data: {
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel criar a conta."));
   }
-  rememberSessionToken(payload.token);
-  return payload as { token?: string; user: CustomerUser; verificationEmailSent?: boolean; message?: string };
+  return payload as { user: CustomerUser; verificationEmailSent?: boolean; message?: string };
 }
 
 export async function loginCustomer(data: { email: string; password: string }) {
@@ -577,8 +545,7 @@ export async function loginCustomer(data: { email: string; password: string }) {
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel entrar."));
   }
-  rememberSessionToken(payload.token);
-  return payload as { token?: string; user: CustomerUser; message?: string };
+  return payload as { user: CustomerUser; message?: string };
 }
 
 export function googleLoginUrl(returnTo = "") {
@@ -662,8 +629,7 @@ export async function confirmEmailChange(token: string) {
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel confirmar o e-mail."));
   }
-  if (payload.token) rememberSessionToken(payload.token);
-  return payload as { ok: boolean; token?: string; user: CustomerUser };
+  return payload as { ok: boolean; user: CustomerUser };
 }
 
 export async function logoutCustomer() {
@@ -700,7 +666,6 @@ export async function resetPassword(data: { token: string; password: string }) {
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel redefinir a senha."));
   }
-  if (payload.token) rememberSessionToken(payload.token);
   return payload as { ok: boolean; user: CustomerUser };
 }
 
