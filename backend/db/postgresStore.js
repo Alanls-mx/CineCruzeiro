@@ -185,7 +185,12 @@ async function loadDbFromPostgres() {
         name: row.name,
         capacity: row.capacity,
         technology: row.technology || "",
-        status: row.status
+        status: row.status,
+        seatSelectionEnabled: Boolean(row.seat_selection_enabled),
+        seatTypes: asArray(row.seat_types),
+        seatLayout: row.seat_layout && typeof row.seat_layout === "object"
+          ? row.seat_layout
+          : { screenLabel: "TELA", rows: [] }
       })),
       ticketTypes: ticketTypes.rows.map((row) => ({
         id: row.id,
@@ -635,12 +640,15 @@ async function writeDbToPostgres(db) {
     }
 
     for (const room of asArray(db.rooms)) {
-      await query(client, "INSERT INTO rooms (id, name, capacity, technology, status) VALUES ($1,$2,$3,$4,$5)", [
+      await query(client, "INSERT INTO rooms (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)", [
         room.id,
         room.name,
         Number(room.capacity || 120),
         room.technology || "",
-        room.status || "active"
+        room.status || "active",
+        Boolean(room.seatSelectionEnabled),
+        JSON.stringify(asArray(room.seatTypes)),
+        JSON.stringify(room.seatLayout && typeof room.seatLayout === "object" ? room.seatLayout : { screenLabel: "TELA", rows: [] })
       ]);
     }
     const firstRoomId = asArray(db.rooms)[0]?.id || "sala-cruzeiro";
