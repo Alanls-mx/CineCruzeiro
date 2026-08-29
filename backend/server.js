@@ -38,7 +38,7 @@ const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
-const DATA_FILE = path.join(ROOT, "data", "db.json");
+const DATA_FILE = process.env.CINE_DATA_FILE ? path.resolve(process.env.CINE_DATA_FILE) : path.join(ROOT, "data", "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
 const TRAILERS_DIR = path.join(PUBLIC_DIR, "trailers");
 const FRONTEND_PUBLIC_DIR = path.join(ROOT, "..", "public");
@@ -1544,6 +1544,10 @@ function normalizePaymentOrder(input) {
           quantity: Math.max(0, Number(item.quantity || 0))
         }))
       : [],
+    selectedSeatIds: Array.isArray(input.selectedSeatIds)
+      ? input.selectedSeatIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : [],
+    autoAssignSeats: Boolean(input.autoAssignSeats),
     couponCode: String(input.couponCode || "").trim().toUpperCase(),
     customerUserId: String(input.customerUserId || input.userId || "").trim(),
     customerName,
@@ -1611,6 +1615,100 @@ function roomForSession(db, session) {
     const candidate = String(room.name || "").trim().toLowerCase();
     return candidate && (roomName === candidate || String(session.room || "").toLowerCase().includes(candidate));
   }) || null;
+}
+
+function roomSeatTypes(room) {
+  return Array.isArray(room?.seatTypes) ? room.seatTypes : [];
+}
+
+function roomSeats(room) {
+  const rows = Array.isArray(room?.seatLayout?.rows) ? room.seatLayout.rows : [];
+  return rows.flatMap((row) => (Array.isArray(row.seats) ? row.seats : []).map((seat) => ({
+    ...seat,
+    rowId: row.id,
+    rowLabel: row.label
+  })));
+}
+
+function roomSeatSelectionEnabled(room) {
+  return Boolean(room?.seatSelectionEnabled && roomSeats(room).some((seat) => seat.enabled !== false));
+}
+
+function occupiedSeatIds(db, sessionId, ignoredOrderId = "") {
+  const occupied = new Set();
+  (db.tickets || []).forEach((ticket) => {
+    if (ticket.sessionId !== sessionId || ["cancelled", "refunded", "expired"].includes(ticket.status)) return;
+    if (ticket.seatId) occupied.add(String(ticket.seatId));
+  });
+  const now = Date.now();
+  (db.orders || []).forEach((order) => {
+    if (order.id === ignoredOrderId || order.sessionId !== sessionId || !["pending_payment", "paid"].includes(order.status)) return;
+    if (order.status === "pending_payment" && order.reservationExpiresAt && new Date(order.reservationExpiresAt).getTime() <= now) return;
+    (order.selectedSeatIds || []).forEach((seatId) => occupied.add(String(seatId)));
+  });
+  return occupied;
+}
+
+function assignSeatsToOrder(db, order, session) {
+  const room = roomForSession(db, session);
+  if (!roomSeatSelectionEnabled(room)) {
+    order.selectedSeatIds = [];
+    order.selectedSeats = [];
+    order.seatSelectionEnabled = false;
+    order.seatDisplay = "Lugar livre";
+    return order;
+  }
+
+  const requested = orderTicketCount(order);
+  let selectedSeatIds = Array.from(new Set((order.selectedSeatIds || []).map(String)));
+  if (!selectedSeatIds.length && order.autoAssignSeats) {
+    const occupied = occupiedSeatIds(db, session.id, order.id);
+    selectedSeatIds = roomSeats(room)
+      .filter((seat) => seat.enabled !== false && !occupied.has(String(seat.id)))
+      .slice(0, requested)
+      .map((seat) => String(seat.id));
+  }
+  if (selectedSeatIds.length !== requested) {
+    const error = new Error(`Selecione ${requested} poltrona(s), uma para cada ingresso gerado.`);
+    error.statusCode = 422;
+    error.code = "SEAT_SELECTION_INCOMPLETE";
+    throw error;
+  }
+
+  const seatTypes = new Map(roomSeatTypes(room).map((type) => [String(type.id), type]));
+  const seats = new Map(roomSeats(room).filter((seat) => seat.enabled !== false).map((seat) => [String(seat.id), seat]));
+  const invalid = selectedSeatIds.find((seatId) => !seats.has(seatId));
+  if (invalid) {
+    const error = new Error("Uma das poltronas selecionadas não existe mais neste mapa. Escolha novamente.");
+    error.statusCode = 409;
+    error.code = "SEAT_LAYOUT_CHANGED";
+    throw error;
+  }
+
+  const occupied = occupiedSeatIds(db, session.id, order.id);
+  const unavailable = selectedSeatIds.find((seatId) => occupied.has(seatId));
+  if (unavailable) {
+    const error = new Error(`A poltrona ${seats.get(unavailable)?.label || unavailable} acabou de ser reservada. Escolha outra para continuar.`);
+    error.statusCode = 409;
+    error.code = "SEAT_UNAVAILABLE";
+    throw error;
+  }
+
+  order.selectedSeatIds = selectedSeatIds;
+  order.selectedSeats = selectedSeatIds.map((seatId) => {
+    const seat = seats.get(seatId);
+    const type = seatTypes.get(String(seat.typeId || ""));
+    return {
+      id: seatId,
+      label: String(seat.label || seatId),
+      rowLabel: String(seat.rowLabel || ""),
+      typeId: String(seat.typeId || "standard"),
+      typeName: String(type?.name || "Padrão")
+    };
+  });
+  order.seatSelectionEnabled = true;
+  order.seatDisplay = order.selectedSeats.map((seat) => seat.label).join(", ");
+  return order;
 }
 
 function sessionTicketStats(db, sessionId) {
@@ -1695,7 +1793,7 @@ function enrichTicket(db, ticket) {
     sessionCapacity: capacity,
     sessionSold: stats?.sold || 0,
     sessionAvailable: capacity ? Math.max(0, capacity - (stats?.sold || 0)) : null,
-    seat: ticket.seat || ticket.seatLabel || ticket.assento || ticket.metadata?.seat || "Livre",
+    seat: ticket.seat || ticket.seatLabel || ticket.assento || ticket.metadata?.seat || "Lugar livre",
     orderReference: order?.id || ticket.orderId,
     orderStatus: order?.status || "",
     paymentStatus: order?.paymentStatus || "",
@@ -1755,12 +1853,17 @@ function buildTicketsForOrder(order, db, source = "online") {
 
   const pushTicket = (ticketType, index) => {
     const code = createTicketCode([...(db.tickets || []), ...tickets]);
+    const selectedSeat = Array.isArray(order.selectedSeats) ? order.selectedSeats[index - 1] : null;
     tickets.push({
       ...base,
       id: `ticket-${Date.now()}-${index}-${crypto.randomBytes(2).toString("hex")}`,
       code,
       qrPayload: ticketQrPayload(code),
       ticketType,
+      seatId: selectedSeat?.id || "",
+      seat: selectedSeat?.label || "Lugar livre",
+      seatLabel: selectedSeat?.label || "Lugar livre",
+      seatType: selectedSeat?.typeName || "",
       usedAt: "",
       usedBy: ""
     });
@@ -2545,6 +2648,7 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
       { id: "pedido", header: "Pedido", body: `${enriched.movieTitle || "Cine Cruzeiro"} - ${enriched.sessionTime || "sessao"}${enriched.sessionFormat ? ` • ${enriched.sessionFormat}` : ""}` },
       { id: "sessao", header: "Sessao", body: `${enriched.sessionDate} as ${enriched.sessionTime}` },
       { id: "sala", header: "Sala", body: enriched.sessionRoom || "Sala Cruzeiro" },
+      { id: "poltrona", header: "Poltrona", body: enriched.seat || "Lugar livre" },
       { id: "formato", header: "Formato", body: enriched.sessionFormat || "Sessao Cine Cruzeiro" },
       { id: "tipo", header: "Tipo", body: enriched.ticketType },
       { id: "entrada", header: "Entrada", body: "Apresente o QR Code na portaria. Chegue com 15 minutos de antecedencia." }
@@ -2904,7 +3008,7 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteValueBlock("PEDIDO", enriched.orderReference || enriched.orderId || "-", 78, 462, { valueSize: 10, maxChars: 48, maxLines: 3, boldValue: false });
   page2 += pdfWriteValueBlock("TIPO", enriched.ticketType || "Ingresso", 338, 538, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
-  page2 += pdfWriteValueBlock("ASSENTO", enriched.seat || "Livre", 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
+  page2 += pdfWriteValueBlock("ASSENTO", enriched.seat || "Lugar livre", 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("STATUS", ticketStatusLabel(enriched.status), 78, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfLine(78, 344, 517, 344, "#334155", 1);
   page2 += pdfWriteText("BOMBONIERE", 78, 306, 9, { bold: true, color: "#facc15" });
@@ -4023,12 +4127,55 @@ function archiveFinishedSessions(db, now = new Date()) {
 
 function normalizeRoom(input, existing = {}) {
   const name = String(input.name || existing.name || "Nova Sala").trim();
+  const rawTypes = Array.isArray(input.seatTypes) ? input.seatTypes : (Array.isArray(existing.seatTypes) ? existing.seatTypes : []);
+  const seatTypes = rawTypes.map((type, index) => ({
+    id: String(type.id || slugify(type.name || "") || `tipo-${index + 1}`).trim(),
+    name: String(type.name || `Tipo ${index + 1}`).trim().slice(0, 40),
+    color: /^#[0-9a-f]{6}$/i.test(String(type.color || "")) ? String(type.color) : "#2563eb",
+    description: String(type.description || "").trim().slice(0, 120)
+  })).filter((type, index, items) => type.id && items.findIndex((item) => item.id === type.id) === index);
+  if (!seatTypes.length) seatTypes.push({ id: "standard", name: "Padrão", color: "#2563eb", description: "Poltrona convencional" });
+  const allowedTypeIds = new Set(seatTypes.map((type) => type.id));
+  const rawRows = Array.isArray(input.seatLayout?.rows)
+    ? input.seatLayout.rows
+    : (Array.isArray(existing.seatLayout?.rows) ? existing.seatLayout.rows : []);
+  const seenSeatIds = new Set();
+  const rows = rawRows.slice(0, 40).map((row, rowIndex) => {
+    const rowLabel = String(row.label || String.fromCharCode(65 + rowIndex)).trim().slice(0, 8);
+    const rowId = String(row.id || slugify(rowLabel) || `fila-${rowIndex + 1}`).trim();
+    const seats = (Array.isArray(row.seats) ? row.seats : []).slice(0, 80).map((seat, seatIndex) => {
+      const label = String(seat.label || `${rowLabel}${seatIndex + 1}`).trim().slice(0, 16);
+      const typeId = allowedTypeIds.has(String(seat.typeId || "")) ? String(seat.typeId) : seatTypes[0].id;
+      return {
+        id: String(seat.id || `${rowId}-${seatIndex + 1}`).trim(),
+        label,
+        typeId,
+        enabled: seat.enabled !== false,
+        aisleAfter: Boolean(seat.aisleAfter)
+      };
+    }).filter((seat) => {
+      if (!seat.id || seenSeatIds.has(seat.id)) return false;
+      seenSeatIds.add(seat.id);
+      return true;
+    });
+    return { id: rowId, label: rowLabel, seats };
+  }).filter((row) => row.seats.length);
+  const seatSelectionEnabled = input.seatSelectionEnabled !== undefined
+    ? Boolean(input.seatSelectionEnabled)
+    : Boolean(existing.seatSelectionEnabled);
+  const enabledSeatCount = rows.reduce((sum, row) => sum + row.seats.filter((seat) => seat.enabled !== false).length, 0);
   return {
     id: String(input.id || existing.id || slugify(name) || `sala-${Date.now()}`),
     name,
-    capacity: Number(input.capacity ?? existing.capacity ?? 80),
+    capacity: seatSelectionEnabled && enabledSeatCount ? enabledSeatCount : Math.max(1, Number(input.capacity ?? existing.capacity ?? 80)),
     technology: input.technology || existing.technology || "",
-    status: input.status || existing.status || "active"
+    status: input.status || existing.status || "active",
+    seatSelectionEnabled,
+    seatTypes,
+    seatLayout: {
+      screenLabel: String(input.seatLayout?.screenLabel || existing.seatLayout?.screenLabel || "TELA").trim().slice(0, 40),
+      rows
+    }
   };
 }
 
@@ -4459,13 +4606,16 @@ function repriceOrderFromCatalog(db, order) {
   }
 
   const ticketItems = resolveOrderTicketItems(db, order, session);
-  const requestedTickets = ticketItems.reduce((sum, item) => sum + item.quantity, 0);
+  const requestedTickets = ticketItems.reduce((sum, item) => sum + Number(item.ticketQuantity || item.quantity || 0), 0);
   if (requestedTickets <= 0) {
     const error = new Error("Selecione pelo menos um ingresso.");
     error.statusCode = 400;
     throw error;
   }
-  const roomCapacity = Number((db.rooms || []).find((room) => room.status === "active")?.capacity || 120);
+  const sessionRoom = roomForSession(db, session);
+  const roomCapacity = roomSeatSelectionEnabled(sessionRoom)
+    ? roomSeats(sessionRoom).filter((seat) => seat.enabled !== false).length
+    : Number(sessionRoom?.capacity || 120);
   const paidTickets = (db.tickets || []).filter((ticket) =>
     ticket.sessionId === session.id && !["cancelled", "refunded"].includes(ticket.status)
   ).length;
@@ -4513,7 +4663,7 @@ function repriceOrderFromCatalog(db, order) {
   const discountValue = couponCode === "CINE10" ? (ticketTotal + concessionTotal) * 0.1 : 0;
   const totalPrice = Math.max(0, Number((ticketTotal + concessionTotal - discountValue).toFixed(2)));
 
-  return {
+  const pricedOrder = {
     ...order,
     movieTitle: movie.title,
     sessionTime: session.time,
@@ -4529,6 +4679,7 @@ function repriceOrderFromCatalog(db, order) {
     discountValue,
     totalPrice
   };
+  return assignSeatsToOrder(db, pricedOrder, session);
 }
 
 function normalizePromotion(input, existing = {}) {
@@ -6484,6 +6635,52 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, getContent(db), {
       "Cache-Control": "public, max-age=15, stale-while-revalidate=45"
     });
+    return;
+  }
+
+  const sessionSeatsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/seats$/);
+  if (sessionSeatsMatch && method === "GET") {
+    const sessionId = decodeURIComponent(sessionSeatsMatch[1]);
+    let session = null;
+    let movie = null;
+    for (const candidate of db.movies || []) {
+      const found = (candidate.sessions || []).find((item) => item.id === sessionId);
+      if (found) {
+        session = found;
+        movie = candidate;
+        break;
+      }
+    }
+    if (!session) {
+      sendJson(res, 404, { error: { code: "SESSION_NOT_FOUND", message: "Sessão não encontrada." } });
+      return;
+    }
+    const room = roomForSession(db, session);
+    const enabled = roomSeatSelectionEnabled(room);
+    const occupied = enabled ? occupiedSeatIds(db, sessionId) : new Set();
+    sendJson(res, 200, {
+      sessionId,
+      movieTitle: movie?.title || "",
+      roomId: room?.id || "",
+      roomName: room?.name || session.room || "Sala Cruzeiro",
+      enabled,
+      capacity: enabled ? roomSeats(room).filter((seat) => seat.enabled !== false).length : Number(room?.capacity || session.capacity || 0),
+      placeholder: enabled ? "Selecione sua poltrona" : "Lugar livre",
+      screenLabel: room?.seatLayout?.screenLabel || "TELA",
+      seatTypes: roomSeatTypes(room),
+      rows: (room?.seatLayout?.rows || []).map((row) => ({
+        id: row.id,
+        label: row.label,
+        seats: (row.seats || []).map((seat) => ({
+          id: seat.id,
+          label: seat.label,
+          typeId: seat.typeId,
+          enabled: seat.enabled !== false,
+          aisleAfter: Boolean(seat.aisleAfter),
+          status: seat.enabled === false ? "blocked" : occupied.has(String(seat.id)) ? "unavailable" : "available"
+        }))
+      }))
+    }, { "Cache-Control": "no-store" });
     return;
   }
 
@@ -9097,7 +9294,8 @@ async function handleApi(req, res, pathname) {
           ...customerData,
           paymentMethod,
           status: paymentMethod === "card_terminal" ? "pending_payment" : "paid",
-          paymentStatus: paymentMethod === "card_terminal" ? "pending" : "approved"
+          paymentStatus: paymentMethod === "card_terminal" ? "pending" : "approved",
+          autoAssignSeats: true
         }));
         if (paymentMethod === "courtesy") {
           order.discountValue = Number(order.totalPrice || 0);

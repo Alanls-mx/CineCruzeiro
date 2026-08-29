@@ -39,6 +39,7 @@ export type StoredCheckoutCart = {
   fullTickets?: number;
   halfTickets?: number;
   ticketQuantities?: Record<string, number>;
+  selectedSeatIds?: string[];
   concessionQuantities?: Record<string, number>;
   couponCode?: string;
   extrasVisited?: boolean;

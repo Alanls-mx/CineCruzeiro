@@ -76,6 +76,10 @@ export interface TicketRecord {
   sessionRoom?: string;
   sessionDate: string;
   ticketType: string;
+  seatId?: string;
+  seat?: string;
+  seatLabel?: string;
+  seatType?: string;
   customerName: string;
   customerEmail?: string;
   customerPhone?: string;
@@ -109,6 +113,53 @@ export interface RoomRecord {
   capacity: number;
   technology?: string;
   status: "active" | "maintenance" | "hidden";
+  seatSelectionEnabled?: boolean;
+  seatTypes?: SeatTypeRecord[];
+  seatLayout?: {
+    screenLabel?: string;
+    rows: Array<{
+      id: string;
+      label: string;
+      seats: Array<{
+        id: string;
+        label: string;
+        typeId: string;
+        enabled: boolean;
+        aisleAfter?: boolean;
+      }>;
+    }>;
+  };
+}
+
+export interface SeatTypeRecord {
+  id: string;
+  name: string;
+  color: string;
+  description?: string;
+}
+
+export interface SessionSeatMap {
+  sessionId: string;
+  movieTitle: string;
+  roomId: string;
+  roomName: string;
+  enabled: boolean;
+  capacity: number;
+  placeholder: string;
+  screenLabel: string;
+  seatTypes: SeatTypeRecord[];
+  rows: Array<{
+    id: string;
+    label: string;
+    seats: Array<{
+      id: string;
+      label: string;
+      typeId: string;
+      enabled: boolean;
+      status: "available" | "unavailable" | "blocked";
+      aisleAfter?: boolean;
+    }>;
+  }>;
 }
 
 export interface TicketTypeRecord {
@@ -327,6 +378,18 @@ export async function fetchCinemaContent(force = false): Promise<CinemaContent> 
   }
 }
 
+export async function fetchSessionSeatMap(sessionId: string): Promise<SessionSeatMap> {
+  const response = await apiFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/seats`, {
+    cache: "no-store",
+    credentials: "include",
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(apiErrorMessage(payload, "Não foi possível carregar as poltronas desta sessão."));
+  }
+  return payload as SessionSeatMap;
+}
+
 export async function recordTicketOrder(order: TicketOrder) {
   const response = await fetch(`${API_BASE}/api/orders`, {
     method: "POST",
@@ -476,6 +539,7 @@ export async function createClubCreditCheckout(data: {
   fullTicketsCount: number;
   halfTicketsCount: number;
   ticketItems?: Array<{ id: string; quantity: number }>;
+  selectedSeatIds?: string[];
   concessionItems?: Array<{ id: string; quantity: number }>;
   couponCode?: string;
 }) {

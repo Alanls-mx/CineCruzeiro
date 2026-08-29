@@ -12,6 +12,8 @@ const TEST_SESSION_ID = "smoke-programacao-1";
 const TEST_EXPIRED_SESSION_ID = "smoke-programacao-expirada";
 const TEST_SECOND_MOVIE_ID = "smoke-programacao-2";
 const TEST_SECOND_SESSION_ID = "smoke-programacao-2-sessao";
+const TEST_SEAT_MOVIE_ID = "smoke-poltronas";
+const TEST_SEAT_SESSION_ID = "smoke-poltronas-sessao";
 
 process.env.PORT = String(PORT);
 process.env.DATA_STORE = "json";
@@ -89,7 +91,35 @@ async function run() {
   );
   db.ticketTypes = (db.ticketTypes || []).filter((item) => item.id !== "triple-smoke");
   db.ticketTypes.push({ id: "triple-smoke", name: "Triple Ingresso", price: 25, description: "Pacote de teste", bundleQuantity: 3, active: true });
-  db.movies = (db.movies || []).filter((movie) => ![TEST_MOVIE_ID, TEST_SECOND_MOVIE_ID, "smoke-filme-edicao", "smoke-rascunho-admin"].includes(movie.id));
+  db.movies = (db.movies || []).filter((movie) => ![TEST_MOVIE_ID, TEST_SECOND_MOVIE_ID, TEST_SEAT_MOVIE_ID, "smoke-filme-edicao", "smoke-rascunho-admin"].includes(movie.id));
+  db.rooms = (db.rooms || []).filter((room) => room.id !== "sala-poltronas-smoke");
+  db.rooms.push({
+    id: "sala-poltronas-smoke",
+    name: "Sala Poltronas Smoke",
+    capacity: 6,
+    technology: "Teste numerado",
+    status: "active",
+    seatSelectionEnabled: true,
+    seatTypes: [
+      { id: "standard", name: "Padrão", color: "#2563eb", description: "Convencional" },
+      { id: "premium", name: "Premium", color: "#b45309", description: "Conforto ampliado" }
+    ],
+    seatLayout: {
+      screenLabel: "TELA TESTE",
+      rows: [
+        { id: "row-a", label: "A", seats: [
+          { id: "a1", label: "A1", typeId: "standard", enabled: true },
+          { id: "a2", label: "A2", typeId: "standard", enabled: true, aisleAfter: true },
+          { id: "a3", label: "A3", typeId: "premium", enabled: true }
+        ] },
+        { id: "row-b", label: "B", seats: [
+          { id: "b1", label: "B1", typeId: "standard", enabled: true },
+          { id: "b2", label: "B2", typeId: "standard", enabled: false },
+          { id: "b3", label: "B3", typeId: "premium", enabled: true }
+        ] }
+      ]
+    }
+  });
   db.orders = (db.orders || []).filter((order) => order.id !== "smoke-expired-history-order");
   db.tickets = (db.tickets || []).filter((ticket) => ticket.id !== "smoke-expired-history-ticket");
   db.movies.push({
@@ -130,6 +160,23 @@ async function run() {
         status: "available"
       }
     ]
+  });
+  db.movies.push({
+    id: TEST_SEAT_MOVIE_ID,
+    status: "now_playing",
+    title: "Filme Smoke Poltronas",
+    duration: "1h 20m",
+    genre: ["Teste"],
+    rating: "L",
+    sessions: [{
+      id: TEST_SEAT_SESSION_ID,
+      date: "2099-12-31",
+      time: "18:00",
+      format: "2D Dublado",
+      room: "Sala Poltronas Smoke (Teste numerado)",
+      ticketTypeIds: ["promocional", "triple-smoke"],
+      status: "available"
+    }]
   });
   db.orders.push({
     id: "smoke-expired-history-order",
@@ -420,6 +467,70 @@ async function run() {
     const adminMe = await request("/api/admin/me", { headers: { Cookie: adminCookie } });
     assert.equal(adminMe.response.status, 200);
     assert.equal(adminMe.payload.user.role, "owner");
+
+    const seatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
+    assert.equal(seatMap.response.status, 200);
+    assert.equal(seatMap.payload.enabled, true);
+    assert.equal(seatMap.payload.capacity, 5);
+    assert.equal(seatMap.payload.rows[0].seats[1].aisleAfter, true);
+    assert.equal(seatMap.payload.rows[1].seats[1].status, "blocked");
+
+    const seatCheckoutOrder = (id, selectedSeatIds) => ({
+      order: {
+        id,
+        idempotencyKey: id,
+        movieId: TEST_SEAT_MOVIE_ID,
+        sessionId: TEST_SEAT_SESSION_ID,
+        fullTicketsCount: 0,
+        halfTicketsCount: 0,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        selectedSeatIds,
+        customerName: "Cliente Poltrona",
+        customerEmail: `${id}@smoke.local`,
+        customerPhone: "12999999999",
+        paymentMethod: "PIX"
+      }
+    });
+    const missingSeat = await request("/api/payments/pix", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(seatCheckoutOrder("smoke-seat-missing", []))
+    });
+    assert.equal(missingSeat.response.status, 422);
+    assert.equal(missingSeat.payload.error.code, "SEAT_SELECTION_INCOMPLETE");
+
+    const firstSeat = await request("/api/payments/pix", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(seatCheckoutOrder("smoke-seat-a1", ["a1"]))
+    });
+    assert.equal(firstSeat.response.status, 201);
+    assert.deepEqual(firstSeat.payload.order.selectedSeats.map((seat) => seat.label), ["A1"]);
+
+    const occupiedSeatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
+    assert.equal(occupiedSeatMap.payload.rows[0].seats[0].status, "unavailable");
+    const duplicateSeat = await request("/api/payments/pix", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(seatCheckoutOrder("smoke-seat-a1-duplicate", ["a1"]))
+    });
+    assert.equal(duplicateSeat.response.status, 409);
+    assert.equal(duplicateSeat.payload.error.code, "SEAT_UNAVAILABLE");
+
+    const boxOfficeSeat = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_SEAT_MOVIE_ID,
+        sessionId: TEST_SEAT_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        paymentMethod: "courtesy",
+        saleMode: "quick"
+      })
+    });
+    assert.equal(boxOfficeSeat.response.status, 201);
+    assert.equal(boxOfficeSeat.payload.tickets[0].seat, "A2");
+    assert.equal(boxOfficeSeat.payload.orders[0].selectedSeats[0].label, "A2");
 
     const dashboard = await request("/api/dashboard", { headers: jsonHeaders(adminCookie) });
     assert.equal(dashboard.response.status, 200);

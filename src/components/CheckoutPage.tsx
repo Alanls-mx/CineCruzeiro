@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
-import { AccountSubscription, CustomerUser, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions } from "@/services/cinemaApi";
+import { AccountSubscription, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap } from "@/services/cinemaApi";
 import { cartTotal, findSession, isUploadedAsset, money, publicAssetPath, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
@@ -85,6 +85,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [clubSubscriptions, setClubSubscriptions] = useState<AccountSubscription[]>([]);
   const [customerUser, setCustomerUser] = useState<CustomerUser | null>(null);
   const [mercadoPagoConfig, setMercadoPagoConfig] = useState<MercadoPagoCheckoutConfig | null>(null);
+  const [seatMap, setSeatMap] = useState<SessionSeatMap | null>(null);
+  const [seatMapStatus, setSeatMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const loadedSeatSessionRef = useRef("");
   const effectiveSessionId = sessionId === "carrinho" ? cart?.sessionId || "" : sessionId;
   const found = findSession(content, effectiveSessionId);
   const availableTicketTypes = useMemo(
@@ -102,6 +105,20 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     };
     return `/checkout/${found.session.id}${suffix[targetStep]}`;
   }, [found]);
+
+  const activeSessionId = found?.session.id || "";
+  const refreshSeatMap = useCallback(async () => {
+    if (!activeSessionId) return;
+    setSeatMapStatus("loading");
+    try {
+      const next = await fetchSessionSeatMap(activeSessionId);
+      setSeatMap(next);
+      setSeatMapStatus("ready");
+    } catch {
+      setSeatMap(null);
+      setSeatMapStatus("error");
+    }
+  }, [activeSessionId]);
 
   const updateCart = useCallback((patch: Partial<StoredCheckoutCart>) => {
     if (!found) return;
@@ -132,6 +149,19 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     setCart(stored?.sessionId === sessionId ? stored : null);
     setHydratedSessionId(sessionId);
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!activeSessionId || loadedSeatSessionRef.current === activeSessionId) return;
+    loadedSeatSessionRef.current = activeSessionId;
+    void refreshSeatMap();
+  }, [activeSessionId, refreshSeatMap]);
+
+  useEffect(() => {
+    if (!cart || !seatMap?.enabled) return;
+    const required = generatedTicketCount(cart, availableTicketTypes);
+    const selected = cart.selectedSeatIds || [];
+    if (selected.length > required) updateCart({ selectedSeatIds: selected.slice(0, required) });
+  }, [availableTicketTypes, cart, seatMap?.enabled, updateCart]);
 
   useEffect(() => {
     if (hydratedSessionId !== sessionId || !found || cart?.sessionId === found.session.id) return;
@@ -312,6 +342,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           fullTicketsCount: Number(checkoutCart.fullTickets || 0),
           halfTicketsCount: Number(checkoutCart.halfTickets || 0),
           ticketItems: selectedTicketItems(checkoutCart, availableTicketTypes),
+          selectedSeatIds: checkoutCart.selectedSeatIds || [],
           concessionItems: Object.entries(checkoutCart.concessionQuantities || {})
             .filter(([, qty]) => Number(qty) > 0)
             .map(([id, qty]) => ({ id, quantity: Number(qty) })),
@@ -342,11 +373,12 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       router.push(checkoutPathFor("confirmacao"));
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : "Nao foi possivel iniciar o pagamento.");
+      void refreshSeatMap();
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [availableTicketTypes, cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions, total, trackingItems]);
+  }, [availableTicketTypes, cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions, total, trackingItems, refreshSeatMap]);
 
   async function submitClubCredit() {
     if (!found || !cart) return;
@@ -359,6 +391,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         fullTicketsCount: Number(cart.fullTickets || 0),
         halfTicketsCount: Number(cart.halfTickets || 0),
         ticketItems: selectedTicketItems(cart, availableTicketTypes),
+        selectedSeatIds: cart.selectedSeatIds || [],
         concessionItems: Object.entries(cart.concessionQuantities || {})
           .filter(([, qty]) => Number(qty) > 0)
           .map(([id, qty]) => ({ id, quantity: Number(qty) })),
@@ -368,6 +401,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       router.push(checkoutPathFor("confirmacao"));
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : "Nao foi possivel usar o beneficio do Clube.");
+      void refreshSeatMap();
     } finally {
       setClubLoading(false);
     }
@@ -428,9 +462,19 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             sessionId={found.session.id}
             step={step}
             extrasVisited={Boolean(cart.extrasVisited)}
+            ticketsComplete={seatMapStatus === "ready" && (!seatMap?.enabled || (cart.selectedSeatIds || []).length === generatedTicketCount(cart, availableTicketTypes))}
             onContinueToPayment={continueToPayment}
           />
-          {step === "ingressos" && <TicketsStep cart={cart} updateCart={updateCart} ticketTypes={availableTicketTypes} />}
+          {step === "ingressos" && (
+            <TicketsStep
+              cart={cart}
+              updateCart={updateCart}
+              ticketTypes={availableTicketTypes}
+              seatMap={seatMap}
+              seatMapStatus={seatMapStatus}
+              onRefreshSeatMap={refreshSeatMap}
+            />
+          )}
           {step === "extras" && (
             <ExtrasStep
               cart={cart}
@@ -463,7 +507,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             />
           )}
         </section>
-        <OrderSummary cart={cart} total={total} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} />
+        <OrderSummary cart={cart} total={total} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
       <MobileCheckoutBar
         cart={cart}
@@ -474,6 +518,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         onSubmit={submitPayment}
         onContinueToPayment={continueToPayment}
         submitDisabled={cart.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments}
+        continueDisabled={step === "ingressos" && !(seatMapStatus === "ready" && (!seatMap?.enabled || (cart.selectedSeatIds || []).length === generatedTicketCount(cart, availableTicketTypes)))}
       />
     </PageShell>
   );
@@ -489,7 +534,13 @@ function PageShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Steps({ sessionId, step, extrasVisited, onContinueToPayment }: { sessionId: string; step: Step; extrasVisited: boolean; onContinueToPayment: () => void }) {
+function Steps({ sessionId, step, extrasVisited, ticketsComplete, onContinueToPayment }: {
+  sessionId: string;
+  step: Step;
+  extrasVisited: boolean;
+  ticketsComplete: boolean;
+  onContinueToPayment: () => void;
+}) {
   const steps: Array<[Step, string, string]> = [
     ["ingressos", "Ingressos", `/checkout/${sessionId}`],
     ["extras", "Extras", `/checkout/${sessionId}/extras`],
@@ -503,6 +554,7 @@ function Steps({ sessionId, step, extrasVisited, onContinueToPayment }: { sessio
         const isCurrent = id === step;
         const isDone = index < currentIndex;
         const locked = step === "confirmacao"
+          || (id === "extras" && step === "ingressos" && !ticketsComplete)
           || (id === "pagamento" && !extrasVisited && step !== "extras")
           || id === "confirmacao";
         const numberClassName = isCurrent
@@ -543,8 +595,32 @@ function Steps({ sessionId, step, extrasVisited, onContinueToPayment }: { sessio
   );
 }
 
-function TicketsStep({ cart, updateCart, ticketTypes }: { cart: StoredCheckoutCart; updateCart: (patch: Partial<StoredCheckoutCart>) => void; ticketTypes: TicketTypeRecord[] }) {
+function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, onRefreshSeatMap }: {
+  cart: StoredCheckoutCart;
+  updateCart: (patch: Partial<StoredCheckoutCart>) => void;
+  ticketTypes: TicketTypeRecord[];
+  seatMap: SessionSeatMap | null;
+  seatMapStatus: "idle" | "loading" | "ready" | "error";
+  onRefreshSeatMap: () => Promise<void>;
+}) {
   const quantities = cart.ticketQuantities || {};
+  const requiredSeats = generatedTicketCount(cart, ticketTypes);
+  const selectedSeatIds = cart.selectedSeatIds || [];
+  const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat]));
+  const seatTypesById = new Map((seatMap?.seatTypes || []).map((type) => [type.id, type]));
+  const seatSelectionComplete = seatMapStatus === "ready" && (!seatMap?.enabled || selectedSeatIds.length === requiredSeats);
+
+  const toggleSeat = (seatId: string) => {
+    const seat = seatsById.get(seatId);
+    if (!seat || seat.status !== "available") return;
+    if (selectedSeatIds.includes(seatId)) {
+      updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== seatId) });
+      return;
+    }
+    if (selectedSeatIds.length >= requiredSeats) return;
+    updateCart({ selectedSeatIds: [...selectedSeatIds, seatId] });
+  };
+
   return (
     <div className="space-y-8">
       {ticketTypes.map((ticketType) => (
@@ -568,7 +644,87 @@ function TicketsStep({ cart, updateCart, ticketTypes }: { cart: StoredCheckoutCa
         </div>
       ))}
       {!ticketTypes.length && <p className="text-sm font-semibold text-amber-200">Nenhum tipo de ingresso foi liberado para esta sessão.</p>}
-      <Link href={`/checkout/${cart.sessionId}/extras`} className="inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950">Continuar para Extras</Link>
+      <section aria-labelledby="seat-selection-title" className="border-t border-white/10 pt-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 id="seat-selection-title" className="font-display text-2xl font-black text-white">Escolha de poltronas</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+              {seatMap?.enabled
+                ? `Selecione ${requiredSeats} lugar(es), um para cada ingresso que será emitido.`
+                : seatMapStatus === "ready" ? "Esta sessão usa lugares livres, ocupados por ordem de chegada." : "Consultando o mapa desta sala..."}
+            </p>
+          </div>
+          {seatMap?.enabled && (
+            <strong className={`rounded-md px-3 py-2 text-sm ${selectedSeatIds.length === requiredSeats ? "bg-emerald-400/15 text-emerald-200" : "bg-gold-400/10 text-gold-300"}`}>
+              {selectedSeatIds.length} de {requiredSeats}
+            </strong>
+          )}
+        </div>
+
+        {seatMapStatus === "error" && (
+          <div className="mt-5 rounded-lg bg-rose-400/10 p-4 text-sm text-rose-100">
+            Não foi possível carregar as poltronas. <button type="button" onClick={() => void onRefreshSeatMap()} className="font-black text-white underline underline-offset-4">Tentar novamente</button>
+          </div>
+        )}
+        {seatMapStatus === "loading" && <div className="mt-6 h-28 animate-pulse rounded-lg bg-white/[0.04]" aria-label="Carregando poltronas" />}
+        {seatMapStatus === "ready" && seatMap?.enabled && (
+          <div className="mt-6">
+            <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-bold text-slate-300">
+              {seatMap.seatTypes.map((type) => (
+                <span key={type.id} className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm" style={{ backgroundColor: type.color }} />{type.name}</span>
+              ))}
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-slate-500" />Indisponível</span>
+            </div>
+            <div className="mt-5 overflow-x-auto rounded-lg bg-[#080f1b] px-4 pb-6 pt-5">
+              <div className="mx-auto mb-7 w-[min(620px,75%)] border-t-[3px] border-gold-400 pt-2 text-center text-xs font-black uppercase tracking-[.16em] text-slate-500">
+                {seatMap.screenLabel || "TELA"}
+              </div>
+              <div className="mx-auto grid w-max gap-2">
+                {seatMap.rows.map((row) => (
+                  <div key={row.id} className="flex items-center gap-1.5">
+                    <span className="w-6 text-center text-[11px] font-black text-slate-500">{row.label}</span>
+                    {row.seats.map((seat) => {
+                      const selected = selectedSeatIds.includes(seat.id);
+                      const type = seatTypesById.get(seat.typeId);
+                      const unavailable = seat.status !== "available";
+                      return (
+                        <button
+                          key={seat.id}
+                          type="button"
+                          disabled={unavailable}
+                          onClick={() => toggleSeat(seat.id)}
+                          aria-pressed={selected}
+                          aria-label={`${seat.label}, ${type?.name || "poltrona"}${unavailable ? ", indisponível" : selected ? ", selecionada" : ""}`}
+                          title={`${seat.label} • ${type?.name || "Padrão"}`}
+                          className={`h-9 w-10 shrink-0 rounded-md border border-white/10 text-xs font-black text-white shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected ? "scale-105 border-gold-700 bg-gold-400 !text-slate-950" : unavailable ? "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60" : "bg-brand-700 hover:-translate-y-0.5"}`}
+                          style={{
+                            ...(selected || unavailable || !type?.color ? {} : { backgroundColor: type.color }),
+                            marginRight: seat.aisleAfter ? 24 : 0,
+                          }}
+                        >
+                          {seat.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {selectedSeatIds.length > 0 && (
+              <p className="mt-4 text-sm font-bold text-slate-300">
+                Selecionadas: {selectedSeatIds.map((id) => seatsById.get(id)?.label || id).join(", ")}
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+      {seatSelectionComplete && requiredSeats > 0 ? (
+        <Link href={`/checkout/${cart.sessionId}/extras`} className="inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300">Continuar para Extras</Link>
+      ) : (
+        <button type="button" disabled className="inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 opacity-45">
+          {requiredSeats <= 0 ? "Selecione um ingresso" : seatMap?.enabled ? "Selecione todas as poltronas" : "Carregando a sala..."}
+        </button>
+      )}
     </div>
   );
 }
@@ -985,7 +1141,8 @@ function activeClubSubscription(subscriptions: AccountSubscription[]) {
   }) || null;
 }
 
-function OrderSummary({ cart, total, selectedConcessions, ticketTypes }: { cart: StoredCheckoutCart; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[] }) {
+function OrderSummary({ cart, total, selectedConcessions, ticketTypes, seatMap }: { cart: StoredCheckoutCart; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
+  const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat.label]));
   return (
     <aside className="lg:sticky lg:top-28 lg:self-start">
       <div className="border-t border-white/12 pt-5 lg:border-t-0 lg:pt-0">
@@ -1002,6 +1159,12 @@ function OrderSummary({ cart, total, selectedConcessions, ticketTypes }: { cart:
           {selectedConcessions.map((item) => (
             <div key={item.id} className="flex justify-between gap-4"><dt>{item.name}</dt><dd>{cart.concessionQuantities?.[item.id] || 0}</dd></div>
           ))}
+          <div className="flex justify-between gap-4">
+            <dt>Poltronas</dt>
+            <dd className="max-w-[55%] text-right">{seatMap?.enabled
+              ? (cart.selectedSeatIds || []).map((id) => seatsById.get(id) || id).join(", ") || "A selecionar"
+              : "Lugar livre"}</dd>
+          </div>
         </dl>
         <div className="mt-6 flex items-end justify-between border-t border-white/8 pt-5">
           <span className="text-sm font-bold text-slate-400">Total estimado</span>
@@ -1013,7 +1176,7 @@ function OrderSummary({ cart, total, selectedConcessions, ticketTypes }: { cart:
   );
 }
 
-function MobileCheckoutBar({ cart, step, total, loading, paymentMethod, onSubmit, onContinueToPayment, submitDisabled = false }: { cart: StoredCheckoutCart; step: Step; total: number; loading: boolean; paymentMethod: StoredCheckoutCart["paymentMethod"]; onSubmit: () => void; onContinueToPayment: () => void; submitDisabled?: boolean }) {
+function MobileCheckoutBar({ cart, step, total, loading, paymentMethod, onSubmit, onContinueToPayment, submitDisabled = false, continueDisabled = false }: { cart: StoredCheckoutCart; step: Step; total: number; loading: boolean; paymentMethod: StoredCheckoutCart["paymentMethod"]; onSubmit: () => void; onContinueToPayment: () => void; submitDisabled?: boolean; continueDisabled?: boolean }) {
   const hrefByStep: Partial<Record<Step, string>> = {
     ingressos: `/checkout/${cart.sessionId}/extras`,
     extras: `/checkout/${cart.sessionId}/pagamento`,
@@ -1040,6 +1203,10 @@ function MobileCheckoutBar({ cart, step, total, loading, paymentMethod, onSubmit
         ) : step === "extras" ? (
           <button type="button" onClick={onContinueToPayment} className="inline-flex min-h-[50px] min-w-[132px] items-center justify-center bg-gold-400 px-5 text-sm font-black text-slate-950">
             {labelByStep[step]}
+          </button>
+        ) : continueDisabled ? (
+          <button type="button" disabled className="inline-flex min-h-[50px] min-w-[132px] items-center justify-center bg-gold-400 px-5 text-sm font-black text-slate-950 opacity-45">
+            Selecione os lugares
           </button>
         ) : (
           <Link href={hrefByStep[step] || "/filmes"} className="inline-flex min-h-[50px] min-w-[132px] items-center justify-center bg-gold-400 px-5 text-sm font-black text-slate-950">

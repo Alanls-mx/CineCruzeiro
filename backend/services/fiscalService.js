@@ -127,7 +127,11 @@ function createDocument(order, config = {}, options = {}) {
     issuedAt: "",
     authorizedAt: "",
     cancelledAt: "",
-    metadata: { fiscalStandard: "national", includeConcessionsInServiceAmount: Boolean(config.includeConcessionsInServiceAmount) },
+    metadata: {
+      fiscalStandard: "national",
+      includeConcessionsInServiceAmount: Boolean(config.includeConcessionsInServiceAmount),
+      seats: Array.isArray(order.selectedSeats) && order.selectedSeats.length ? order.selectedSeats.map((seat) => seat.label) : ["Lugar livre"]
+    },
     history: [statusHistory(status, options.actor || "system", lastError)],
     createdAt: now,
     updatedAt: now
@@ -136,9 +140,18 @@ function createDocument(order, config = {}, options = {}) {
 
 function descriptionFor(order, config = {}) {
   const template = String(config.serviceDescription || "Ingressos e serviços cinematográficos do pedido {{pedido}}");
-  return template
+  const seats = Array.isArray(order.selectedSeats) && order.selectedSeats.length
+    ? order.selectedSeats.map((seat) => seat.label).join(", ")
+    : "Lugar livre";
+  const hasSeatPlaceholder = /{{\s*assentos?\s*}}/i.test(template);
+  const description = template
     .replace(/{{\s*pedido\s*}}/gi, String(order.reference || order.id || ""))
-    .replace(/{{\s*cliente\s*}}/gi, String(order.customerName || ""));
+    .replace(/{{\s*cliente\s*}}/gi, String(order.customerName || ""))
+    .replace(/{{\s*filme\s*}}/gi, String(order.movieTitle || ""))
+    .replace(/{{\s*sessao\s*}}/gi, [order.sessionDate, order.sessionTime].filter(Boolean).join(" às "))
+    .replace(/{{\s*sala\s*}}/gi, String(order.sessionRoom || ""))
+    .replace(/{{\s*assentos?\s*}}/gi, seats);
+  return hasSeatPlaceholder ? description : `${description} | Poltrona(s): ${seats}`;
 }
 
 function buildPayload(order, document, config = {}) {

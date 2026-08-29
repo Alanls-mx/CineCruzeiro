@@ -120,7 +120,7 @@ const DEFINITIONS = {
       { key: "nationalTaxCode", label: "Código nacional do ISS", type: "text", placeholder: "6 dígitos, ex.: 120200" },
       { key: "municipalTaxCode", label: "Código municipal do ISS (se exigido)", type: "text", placeholder: "Até 3 caracteres" },
       { key: "dpsSeries", label: "Série da DPS Nacional", type: "number", placeholder: "1" },
-      { key: "serviceDescription", label: "Discriminação do serviço", type: "text", multiline: true },
+      { key: "serviceDescription", label: "Discriminação do serviço", type: "text", multiline: true, placeholder: "Use {{pedido}}, {{cliente}}, {{filme}}, {{sessao}}, {{sala}} e {{assentos}}" },
       { key: "natureOperation", label: "Natureza da operação", type: "text" },
       { key: "specialTaxRegime", label: "Regime especial de tributação", type: "text" },
       { key: "simpleNational", label: "Optante pelo Simples Nacional", type: "boolean" },

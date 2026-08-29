@@ -45,7 +45,7 @@ const payload = fiscalService.buildPayload(order, document, config);
 assert.equal(payload.cnpj_prestador, "12345678000190");
 assert.equal(payload.cpf_tomador, "12345678901");
 assert.equal(payload.valor_servico, 30);
-assert.equal(payload.descricao_servico, "Serviços do pedido CC-001");
+assert.equal(payload.descricao_servico, "Serviços do pedido CC-001 | Poltrona(s): Lugar livre");
 assert.equal(payload.codigo_municipio_emissora, "3550308");
 assert.equal(payload.codigo_municipio_prestacao, "3550308");
 assert.equal(payload.codigo_tributacao_nacional_iss, "120200");
@@ -56,6 +56,20 @@ assert.equal(payload.serie_dps, 1);
 assert.match(payload.numero_dps, /^\d{1,15}$/);
 assert.equal(payload.numero_dps, fiscalService.dpsNumberForDocument(document));
 assert.equal(fiscalService.nationalTaxCode({ serviceListItem: "12.02" }), "120200");
+
+const assignedSeatOrder = {
+  ...order,
+  selectedSeats: [{ id: "A1", label: "A1", typeId: "standard" }]
+};
+const assignedSeatDocument = fiscalService.createDocument(assignedSeatOrder, {
+  ...config,
+  serviceDescription: "Pedido {{pedido}} · Poltrona {{assento}}"
+}, {});
+const assignedSeatPayload = fiscalService.buildPayload(assignedSeatOrder, assignedSeatDocument, {
+  ...config,
+  serviceDescription: "Pedido {{pedido}} · Poltrona {{assento}}"
+});
+assert.equal(assignedSeatPayload.descricao_servico, "Pedido CC-001 · Poltrona A1");
 
 fiscalService.applyProviderResult(document, {
   status: "autorizado",

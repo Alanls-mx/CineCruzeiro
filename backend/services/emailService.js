@@ -190,7 +190,7 @@ function ticketCard(ticket = {}, options = {}) {
                 <p style="margin:0 0 6px;color:#60a5fa;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase">Ingresso digital</p>
                 <h2 style="margin:0 0 10px;color:#fff;font-size:21px;line-height:1.18;word-break:break-word">${htmlEscape(ticket.movieTitle || "Cine Cruzeiro")}</h2>
                 <p style="margin:0 0 12px;color:#facc15;font-size:16px;font-weight:900;word-break:break-word">${htmlEscape(ticket.sessionDate || "")} às ${htmlEscape(ticket.sessionTime || "")}</p>
-                <p style="margin:0;color:#cbd5e1;word-break:break-word">${htmlEscape(ticket.sessionRoom || "Sala Cruzeiro")}<br>${htmlEscape(ticket.sessionFormat || "Sessão")}<br>Assento: ${htmlEscape(ticket.seat || "Livre")}</p>
+                <p style="margin:0;color:#cbd5e1;word-break:break-word">${htmlEscape(ticket.sessionRoom || "Sala Cruzeiro")}<br>${htmlEscape(ticket.sessionFormat || "Sessão")}<br>Poltrona: ${htmlEscape(ticket.seat || "Lugar livre")}</p>
               </td>
             </tr>
           </table>

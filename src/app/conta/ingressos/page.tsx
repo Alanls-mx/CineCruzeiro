@@ -251,6 +251,7 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
             <dl className="grid gap-4 sm:grid-cols-2">
               <Info label="Data e horário" value={`${formatSessionDate(ticket.sessionDate)} às ${ticket.sessionTime}`} />
               <Info label="Sala" value={ticket.sessionRoom || "Cine Cruzeiro"} />
+              <Info label="Poltrona" value={ticket.seat || ticket.seatLabel || "Lugar livre"} />
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
               <Info label="Pedido" value={ticketHumanReference(ticket)} title={ticket.orderReference || ticket.orderId || ticketHumanReference(ticket)} />

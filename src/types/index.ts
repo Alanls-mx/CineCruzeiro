@@ -83,6 +83,16 @@ export interface TicketOrder {
     ticketQuantity?: number;
     unitPrice?: number;
   }>;
+  selectedSeatIds?: string[];
+  selectedSeats?: Array<{
+    id: string;
+    label: string;
+    rowLabel?: string;
+    typeId?: string;
+    typeName?: string;
+  }>;
+  seatSelectionEnabled?: boolean;
+  seatDisplay?: string;
   includeComboUpsell?: boolean;
   comboUpsellQuantity?: number;
   concessionItems?: Array<{

@@ -540,6 +540,7 @@
               <label>
                 Capacidade
                 <input id="roomCapacity" type="number" min="1" required />
+                <span id="roomCapacityHelp" class="helper-text">Usada para sessões sem lugares marcados.</span>
               </label>
               <label>
                 Tecnologia
@@ -553,6 +554,58 @@
                   <option value="hidden">Oculta</option>
                 </select>
               </label>
+              <section class="room-seat-settings form-span-all" aria-labelledby="roomSeatSettingsTitle">
+                <div class="surface-head room-seat-settings-head">
+                  <div>
+                    <div id="roomSeatSettingsTitle" class="section-title">Poltronas numeradas</div>
+                    <p>Habilite a escolha de lugares no checkout e monte o mapa real desta sala.</p>
+                  </div>
+                  <label class="check-field compact-switch">
+                    <input id="roomSeatSelectionEnabled" type="checkbox" />
+                    <span>Habilitar seleção</span>
+                  </label>
+                </div>
+
+                <div id="roomSeatEditor" class="room-seat-editor" hidden>
+                  <div class="room-seat-builder">
+                    <div class="room-seat-builder-fields">
+                      <label>Filas <input id="roomSeatRows" type="number" min="1" max="40" value="8" /></label>
+                      <label>Poltronas por fila <input id="roomSeatColumns" type="number" min="1" max="80" value="12" /></label>
+                      <label>Corredor após <input id="roomSeatAisleAfter" type="number" min="0" max="79" value="6" /></label>
+                      <label>Identificação da tela <input id="roomSeatScreenLabel" maxlength="40" value="TELA" /></label>
+                    </div>
+                    <button id="generateRoomSeatsButton" class="ghost-button" type="button">Gerar mapa</button>
+                  </div>
+
+                  <div class="room-seat-types-head">
+                    <div>
+                      <div class="section-title">Tipos de poltrona</div>
+                      <p>Crie categorias e aplique-as diretamente no mapa.</p>
+                    </div>
+                    <button id="addRoomSeatTypeButton" class="ghost-button" type="button">Adicionar tipo</button>
+                  </div>
+                  <div id="roomSeatTypes" class="room-seat-types"></div>
+
+                  <div class="room-seat-tools" aria-label="Ferramentas do mapa">
+                    <label>
+                      Tipo para aplicar
+                      <select id="roomSeatActiveType"></select>
+                    </label>
+                    <label>
+                      Ação ao clicar
+                      <select id="roomSeatEditorMode">
+                        <option value="assign">Aplicar tipo</option>
+                        <option value="block">Bloquear ou liberar</option>
+                      </select>
+                    </label>
+                    <div id="roomSeatCount" class="room-seat-count"></div>
+                  </div>
+                  <div class="room-seat-map-shell">
+                    <div id="roomSeatScreen" class="room-seat-screen">TELA</div>
+                    <div id="roomSeatMap" class="room-seat-map" aria-label="Mapa de poltronas da sala"></div>
+                  </div>
+                </div>
+              </section>
               <div class="button-row">
                 <button id="deleteRoomButton" class="danger-button" type="button">Excluir</button>
                 <button id="cancelRoomCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>

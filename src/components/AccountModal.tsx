@@ -549,7 +549,7 @@ function AccountTicketCard({
             </span>
           </div>
           <p className="mt-1 text-xs font-semibold text-brand-300">
-            {ticket.sessionDate} • {ticket.sessionTime} • {ticket.ticketType}
+            {ticket.sessionDate} • {ticket.sessionTime} • {ticket.ticketType} • {ticket.seat || ticket.seatLabel || "Lugar livre"}
           </p>
           <p className="mt-2 font-mono text-xs font-black text-gold-400">{ticket.code}</p>
         </div>

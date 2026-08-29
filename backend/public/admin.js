@@ -10,6 +10,7 @@ let state = {
   adminUser: null,
   selectedMovieId: "",
   selectedRoomId: "",
+  roomSeatDraft: null,
   selectedTicketId: "",
   selectedConcessionId: "",
   selectedPromotionId: "",
@@ -2181,6 +2182,134 @@ function uploadMovieImage(fileInputId, targetInputId, previewId, folder) {
   return uploadAdminImage(fileInputId, targetInputId, previewId, folder);
 }
 
+function defaultRoomSeatDraft(room = null) {
+  const seatTypes = Array.isArray(room?.seatTypes) && room.seatTypes.length
+    ? structuredClone(room.seatTypes)
+    : [{ id: "standard", name: "Padrão", color: "#2563eb", description: "Poltrona convencional" }];
+  return {
+    enabled: Boolean(room?.seatSelectionEnabled),
+    screenLabel: room?.seatLayout?.screenLabel || "TELA",
+    seatTypes,
+    rows: Array.isArray(room?.seatLayout?.rows) ? structuredClone(room.seatLayout.rows) : []
+  };
+}
+
+function roomSeatColor(typeId) {
+  return state.roomSeatDraft?.seatTypes?.find((type) => type.id === typeId)?.color || "#2563eb";
+}
+
+function renderRoomSeatTypes() {
+  const draft = state.roomSeatDraft || defaultRoomSeatDraft();
+  const target = $("roomSeatTypes");
+  const typeSelect = $("roomSeatActiveType");
+  if (!target || !typeSelect) return;
+  target.innerHTML = draft.seatTypes.map((type) => `
+    <div class="room-seat-type-row" data-seat-type-id="${escapeHtml(type.id)}">
+      <input type="color" value="${escapeHtml(type.color || "#2563eb")}" aria-label="Cor de ${escapeHtml(type.name)}" data-seat-type-field="color" />
+      <input value="${escapeHtml(type.name)}" maxlength="40" aria-label="Nome do tipo de poltrona" data-seat-type-field="name" />
+      <input value="${escapeHtml(type.description || "")}" maxlength="120" placeholder="Descrição opcional" aria-label="Descrição do tipo de poltrona" data-seat-type-field="description" />
+      <button class="icon-button danger" type="button" title="Remover tipo" aria-label="Remover ${escapeHtml(type.name)}" data-remove-seat-type="${escapeHtml(type.id)}">${trashIcon}</button>
+    </div>
+  `).join("");
+  const previous = typeSelect.value;
+  typeSelect.innerHTML = draft.seatTypes.map((type) => `<option value="${escapeHtml(type.id)}">${escapeHtml(type.name)}</option>`).join("");
+  if (draft.seatTypes.some((type) => type.id === previous)) typeSelect.value = previous;
+}
+
+function renderRoomSeatMap() {
+  const draft = state.roomSeatDraft || defaultRoomSeatDraft();
+  const target = $("roomSeatMap");
+  if (!target) return;
+  $("roomSeatScreen").textContent = draft.screenLabel || "TELA";
+  const enabled = draft.rows.reduce((sum, row) => sum + row.seats.filter((seat) => seat.enabled !== false).length, 0);
+  const blocked = draft.rows.reduce((sum, row) => sum + row.seats.filter((seat) => seat.enabled === false).length, 0);
+  $("roomSeatCount").textContent = `${enabled} poltrona(s) disponível(is)${blocked ? ` • ${blocked} bloqueada(s)` : ""}`;
+  $("roomCapacity").value = enabled || Number($("roomCapacity").value || 1);
+  target.innerHTML = draft.rows.length ? draft.rows.map((row) => `
+    <div class="room-seat-row">
+      <span class="room-seat-row-label">${escapeHtml(row.label)}</span>
+      ${(row.seats || []).map((seat) => `
+        <button
+          type="button"
+          class="room-seat-button ${seat.enabled === false ? "is-blocked" : ""} ${seat.aisleAfter ? "has-aisle" : ""}"
+          style="--seat-color:${escapeHtml(roomSeatColor(seat.typeId))}"
+          data-room-seat-id="${escapeHtml(seat.id)}"
+          title="${escapeHtml(seat.label)} • ${escapeHtml(state.roomSeatDraft.seatTypes.find((type) => type.id === seat.typeId)?.name || "Padrão")}${seat.enabled === false ? " • bloqueada" : ""}"
+          aria-label="Editar poltrona ${escapeHtml(seat.label)}"
+        >${escapeHtml(seat.label)}</button>
+      `).join("")}
+    </div>
+  `).join("") : `<div class="empty-state"><strong>Mapa ainda não gerado</strong><span>Defina filas, poltronas e corredor; depois clique em Gerar mapa.</span></div>`;
+}
+
+function renderRoomSeatEditor() {
+  const draft = state.roomSeatDraft || defaultRoomSeatDraft();
+  $("roomSeatSelectionEnabled").checked = draft.enabled;
+  $("roomSeatEditor").hidden = !draft.enabled;
+  $("roomCapacity").readOnly = draft.enabled;
+  $("roomCapacityHelp").textContent = draft.enabled ? "Calculada automaticamente pelas poltronas disponíveis no mapa." : "Usada para sessões sem lugares marcados.";
+  $("roomSeatScreenLabel").value = draft.screenLabel || "TELA";
+  if (draft.rows.length) {
+    $("roomSeatRows").value = draft.rows.length;
+    $("roomSeatColumns").value = Math.max(...draft.rows.map((row) => row.seats.length), 1);
+    const aisle = draft.rows[0]?.seats?.findIndex((seat) => seat.aisleAfter);
+    $("roomSeatAisleAfter").value = aisle >= 0 ? aisle + 1 : 0;
+  }
+  renderRoomSeatTypes();
+  renderRoomSeatMap();
+}
+
+function generateRoomSeatMap() {
+  const rowCount = Math.max(1, Math.min(40, Number($("roomSeatRows").value || 1)));
+  const columnCount = Math.max(1, Math.min(80, Number($("roomSeatColumns").value || 1)));
+  const aisleAfter = Math.max(0, Math.min(columnCount - 1, Number($("roomSeatAisleAfter").value || 0)));
+  if (state.roomSeatDraft?.rows?.length && !confirm("Gerar um novo mapa substituirá o desenho atual desta sala. Continuar?")) return;
+  const defaultTypeId = state.roomSeatDraft?.seatTypes?.[0]?.id || "standard";
+  state.roomSeatDraft.rows = Array.from({ length: rowCount }, (_, rowIndex) => {
+    const label = rowIndex < 26 ? String.fromCharCode(65 + rowIndex) : `F${rowIndex + 1}`;
+    const rowId = `row-${rowIndex + 1}`;
+    return {
+      id: rowId,
+      label,
+      seats: Array.from({ length: columnCount }, (_, seatIndex) => ({
+        id: `${rowId}-seat-${seatIndex + 1}`,
+        label: `${label}${seatIndex + 1}`,
+        typeId: defaultTypeId,
+        enabled: true,
+        aisleAfter: aisleAfter > 0 && seatIndex + 1 === aisleAfter
+      }))
+    };
+  });
+  renderRoomSeatMap();
+}
+
+function addRoomSeatType() {
+  const id = `tipo-${Date.now().toString(36)}`;
+  state.roomSeatDraft.seatTypes.push({ id, name: `Tipo ${state.roomSeatDraft.seatTypes.length + 1}`, color: "#0f766e", description: "" });
+  renderRoomSeatTypes();
+  renderRoomSeatMap();
+}
+
+function removeRoomSeatType(id) {
+  if (state.roomSeatDraft.seatTypes.length <= 1) {
+    showToast("A sala precisa manter pelo menos um tipo de poltrona.", "error");
+    return;
+  }
+  const fallback = state.roomSeatDraft.seatTypes.find((type) => type.id !== id)?.id;
+  state.roomSeatDraft.seatTypes = state.roomSeatDraft.seatTypes.filter((type) => type.id !== id);
+  state.roomSeatDraft.rows.forEach((row) => row.seats.forEach((seat) => { if (seat.typeId === id) seat.typeId = fallback; }));
+  renderRoomSeatTypes();
+  renderRoomSeatMap();
+}
+
+function editRoomSeat(seatId) {
+  const seat = state.roomSeatDraft.rows.flatMap((row) => row.seats).find((candidate) => candidate.id === seatId);
+  if (!seat) return;
+  if ($("roomSeatEditorMode").value === "block") seat.enabled = seat.enabled === false;
+  else seat.typeId = $("roomSeatActiveType").value || state.roomSeatDraft.seatTypes[0].id;
+  renderRoomSeatMap();
+}
+
 function renderRooms() {
   const rooms = state.content?.rooms || [];
   if (state.creating.room) {
@@ -2237,6 +2366,8 @@ function fillRoomForm(room) {
   $("roomCapacity").value = room?.capacity || 80;
   $("roomTechnology").value = room?.technology || "";
   $("roomStatus").value = room?.status || "active";
+  state.roomSeatDraft = defaultRoomSeatDraft(room);
+  renderRoomSeatEditor();
 }
 
 async function saveRoom(event) {
@@ -2247,8 +2378,17 @@ async function saveRoom(event) {
       name: $("roomName").value,
       capacity: Number($("roomCapacity").value || 80),
       technology: $("roomTechnology").value,
-      status: $("roomStatus").value
+      status: $("roomStatus").value,
+      seatSelectionEnabled: Boolean(state.roomSeatDraft?.enabled),
+      seatTypes: state.roomSeatDraft?.seatTypes || [],
+      seatLayout: {
+        screenLabel: state.roomSeatDraft?.screenLabel || "TELA",
+        rows: state.roomSeatDraft?.rows || []
+      }
     };
+    if (payload.seatSelectionEnabled && !payload.seatLayout.rows.some((row) => row.seats.some((seat) => seat.enabled !== false))) {
+      throw new Error("Gere o mapa e mantenha ao menos uma poltrona disponível antes de salvar.");
+    }
     const existingId = $("roomId").value;
     const saved = existingId
       ? await api(`/api/rooms/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
@@ -2390,7 +2530,7 @@ function renderIssuedTickets() {
           </div>
           <div>
             <span class="mini-label">Assento</span>
-            <strong>${escapeHtml(ticket.seat || "Livre")}</strong>
+            <strong>${escapeHtml(ticket.seat || "Lugar livre")}</strong>
           </div>
           <div>
             <span class="mini-label">Tipo</span>
@@ -2706,6 +2846,7 @@ function orderDetailHtml(order) {
       ["Filme", `${movie?.posterUrl ? `<img class="inline-poster" src="${escapeHtml(movie.posterUrl)}" alt="">` : ""}${escapeHtml(order.movieTitle || movie?.title || "-")}`],
       ["Data e horário", [order.sessionDate, order.sessionTime].filter(Boolean).join(" • ") || order.sessionTime || "-"],
       ["Sala", order.sessionRoom || "Sala Cruzeiro"],
+      ["Poltronas", Array.isArray(order.selectedSeats) && order.selectedSeats.length ? order.selectedSeats.map((seat) => seat.label).join(", ") : "Lugar livre"],
       ["Formato", order.sessionFormat || "-"]
     ])}
     ${sectionHtml("Ingressos", [
@@ -6118,6 +6259,36 @@ function bindEvents() {
   $("cancelRoomCreateButton").addEventListener("click", () => cancelCreation("room"));
   $("roomForm").addEventListener("submit", saveRoom);
   $("deleteRoomButton").addEventListener("click", deleteRoom);
+  $("roomSeatSelectionEnabled").addEventListener("change", (event) => {
+    state.roomSeatDraft.enabled = event.target.checked;
+    renderRoomSeatEditor();
+  });
+  $("generateRoomSeatsButton").addEventListener("click", generateRoomSeatMap);
+  $("addRoomSeatTypeButton").addEventListener("click", addRoomSeatType);
+  $("roomSeatScreenLabel").addEventListener("input", (event) => {
+    state.roomSeatDraft.screenLabel = event.target.value;
+    $("roomSeatScreen").textContent = event.target.value || "TELA";
+  });
+  $("roomSeatTypes").addEventListener("input", (event) => {
+    const row = event.target.closest("[data-seat-type-id]");
+    const field = event.target.dataset.seatTypeField;
+    const type = state.roomSeatDraft.seatTypes.find((candidate) => candidate.id === row?.dataset.seatTypeId);
+    if (!type || !field) return;
+    type[field] = event.target.value;
+    renderRoomSeatMap();
+    if (field === "name") {
+      const option = $("roomSeatActiveType").querySelector(`option[value="${CSS.escape(type.id)}"]`);
+      if (option) option.textContent = type.name || "Tipo sem nome";
+    }
+  });
+  $("roomSeatTypes").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-seat-type]");
+    if (button) removeRoomSeatType(button.dataset.removeSeatType);
+  });
+  $("roomSeatMap").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-room-seat-id]");
+    if (button) editRoomSeat(button.dataset.roomSeatId);
+  });
 
   $("newTicketButton").addEventListener("click", newTicket);
   $("cancelTicketCreateButton").addEventListener("click", () => cancelCreation("ticket"));

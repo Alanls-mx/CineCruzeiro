@@ -1093,6 +1093,184 @@ h1 {
   gap: 14px;
 }
 
+.form-span-all {
+  grid-column: 1 / -1;
+}
+
+.room-seat-settings {
+  margin-top: 8px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.room-seat-settings-head,
+.room-seat-types-head {
+  align-items: center;
+  gap: 20px;
+}
+
+.room-seat-settings-head p,
+.room-seat-types-head p {
+  max-width: 64ch;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.compact-switch {
+  flex: 0 0 auto;
+  min-height: 40px;
+}
+
+.room-seat-editor {
+  margin-top: 22px;
+}
+
+.room-seat-builder,
+.room-seat-tools,
+.room-seat-types-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.room-seat-builder-fields {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 12px;
+}
+
+.room-seat-types-head {
+  margin-top: 24px;
+  align-items: center;
+}
+
+.room-seat-types {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.room-seat-type-row {
+  display: grid;
+  grid-template-columns: 44px minmax(120px, .8fr) minmax(160px, 1.2fr) 38px;
+  align-items: center;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.room-seat-type-row input[type="color"] {
+  width: 38px;
+  min-height: 38px;
+  padding: 3px;
+  cursor: pointer;
+}
+
+.room-seat-type-row .icon-button {
+  width: 36px;
+  min-height: 36px;
+}
+
+.room-seat-tools {
+  justify-content: flex-start;
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #0b1423;
+}
+
+.room-seat-tools label {
+  min-width: 190px;
+}
+
+.room-seat-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.room-seat-map-shell {
+  margin-top: 14px;
+  padding: 20px 16px 24px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #080f1b;
+}
+
+.room-seat-screen {
+  width: min(72%, 620px);
+  margin: 0 auto 28px;
+  padding: 8px 12px;
+  border-top: 3px solid var(--gold);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-align: center;
+}
+
+.room-seat-map {
+  display: grid;
+  justify-content: center;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.room-seat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.room-seat-row-label {
+  width: 24px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.room-seat-button {
+  width: 38px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--seat-color, #2563eb) 62%, #020617);
+  border-radius: 7px 7px 5px 5px;
+  background: var(--seat-color, #2563eb);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.room-seat-button.has-aisle {
+  margin-right: 24px;
+}
+
+.room-seat-button.is-blocked {
+  border: 1px dashed #64748b;
+  background: transparent;
+  color: #64748b;
+  opacity: .75;
+}
+
+.room-seat-button:hover,
+.room-seat-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
 .form-head {
   display: flex;
   align-items: start;
@@ -4297,6 +4475,23 @@ th {
   .movie-row-actions {
     grid-column: 1 / -1;
     justify-content: flex-start;
+  }
+
+  .room-seat-builder,
+  .room-seat-tools,
+  .room-seat-types-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .room-seat-builder-fields,
+  .room-seat-types {
+    grid-template-columns: 1fr;
+  }
+
+  .room-seat-count {
+    margin-left: 0;
+    text-align: left;
   }
 }
 
