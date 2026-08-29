@@ -1634,6 +1634,25 @@ function roomSeatSelectionEnabled(room) {
   return Boolean(room?.seatSelectionEnabled && roomSeats(room).some((seat) => seat.enabled !== false));
 }
 
+function roomSeatIdsInActiveUse(db, roomId) {
+  const used = new Set();
+  const now = Date.now();
+  (db.orders || []).forEach((order) => {
+    if (!["pending_payment", "paid"].includes(order.status)) return;
+    if (order.status === "pending_payment" && order.reservationExpiresAt && new Date(order.reservationExpiresAt).getTime() <= now) return;
+    const session = sessionForOrder(db, order);
+    if (!session || roomForSession(db, session)?.id !== roomId) return;
+    (order.selectedSeatIds || []).forEach((seatId) => used.add(String(seatId)));
+  });
+  (db.tickets || []).forEach((ticket) => {
+    if (!ticket.seatId || ["cancelled", "refunded", "expired"].includes(ticket.status)) return;
+    const session = sessionForTicket(db, ticket);
+    if (!session || roomForSession(db, session)?.id !== roomId) return;
+    used.add(String(ticket.seatId));
+  });
+  return used;
+}
+
 function occupiedSeatIds(db, sessionId, ignoredOrderId = "") {
   const occupied = new Set();
   (db.tickets || []).forEach((ticket) => {
@@ -4150,6 +4169,7 @@ function normalizeRoom(input, existing = {}) {
         id: String(seat.id || `${rowId}-${seatIndex + 1}`).trim(),
         label,
         typeId,
+        color: /^#[0-9a-f]{6}$/i.test(String(seat.color || "")) ? String(seat.color) : "",
         enabled: seat.enabled !== false,
         aisleAfter: Boolean(seat.aisleAfter)
       };
@@ -6675,6 +6695,7 @@ async function handleApi(req, res, pathname) {
           id: seat.id,
           label: seat.label,
           typeId: seat.typeId,
+          color: seat.color || "",
           enabled: seat.enabled !== false,
           aisleAfter: Boolean(seat.aisleAfter),
           status: seat.enabled === false ? "blocked" : occupied.has(String(seat.id)) ? "unavailable" : "available"
@@ -8513,7 +8534,22 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "PUT") {
-      const room = normalizeRoom(await readBody(req), db.rooms[index]);
+      const existingRoom = db.rooms[index];
+      const room = normalizeRoom(await readBody(req), existingRoom);
+      const nextSeatIds = new Set(roomSeats(room).map((seat) => String(seat.id)));
+      const removedSeatIds = roomSeats(existingRoom).map((seat) => String(seat.id)).filter((seatId) => !nextSeatIds.has(seatId));
+      const activeSeatIds = roomSeatIdsInActiveUse(db, existingRoom.id);
+      const protectedSeats = removedSeatIds.filter((seatId) => activeSeatIds.has(seatId));
+      if (protectedSeats.length) {
+        const labels = new Map(roomSeats(existingRoom).map((seat) => [String(seat.id), seat.label || seat.id]));
+        sendJson(res, 409, {
+          error: {
+            code: "ROOM_SEATS_IN_USE",
+            message: `Não é possível excluir ${protectedSeats.length === 1 ? "a cadeira" : "as cadeiras"} ${protectedSeats.map((seatId) => labels.get(seatId)).join(", ")} porque há ingressos ou reservas ativos. Bloqueie a cadeira ou aguarde o encerramento da sessão.`
+          }
+        });
+        return;
+      }
       db.rooms[index] = room;
       await writeDb(db);
       sendJson(res, 200, room);

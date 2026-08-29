@@ -108,7 +108,7 @@ async function run() {
       screenLabel: "TELA TESTE",
       rows: [
         { id: "row-a", label: "A", seats: [
-          { id: "a1", label: "A1", typeId: "standard", enabled: true },
+          { id: "a1", label: "A1", typeId: "standard", color: "#e11d48", enabled: true },
           { id: "a2", label: "A2", typeId: "standard", enabled: true, aisleAfter: true },
           { id: "a3", label: "A3", typeId: "premium", enabled: true }
         ] },
@@ -468,10 +468,20 @@ async function run() {
     assert.equal(adminMe.response.status, 200);
     assert.equal(adminMe.payload.user.role, "owner");
 
+    const seatRoomPayload = structuredClone(db.rooms.find((room) => room.id === "sala-poltronas-smoke"));
+    const savedSeatRoom = await request("/api/rooms/sala-poltronas-smoke", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify(seatRoomPayload)
+    });
+    assert.equal(savedSeatRoom.response.status, 200);
+    assert.equal(savedSeatRoom.payload.seatLayout.rows[0].seats[0].color, "#e11d48");
+
     const seatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
     assert.equal(seatMap.response.status, 200);
     assert.equal(seatMap.payload.enabled, true);
     assert.equal(seatMap.payload.capacity, 5);
+    assert.equal(seatMap.payload.rows[0].seats[0].color, "#e11d48");
     assert.equal(seatMap.payload.rows[0].seats[1].aisleAfter, true);
     assert.equal(seatMap.payload.rows[1].seats[1].status, "blocked");
 
@@ -506,6 +516,16 @@ async function run() {
     });
     assert.equal(firstSeat.response.status, 201);
     assert.deepEqual(firstSeat.payload.order.selectedSeats.map((seat) => seat.label), ["A1"]);
+
+    const roomWithoutReservedSeat = structuredClone(seatRoomPayload);
+    roomWithoutReservedSeat.seatLayout.rows[0].seats = roomWithoutReservedSeat.seatLayout.rows[0].seats.filter((seat) => seat.id !== "a1");
+    const protectedSeatDelete = await request("/api/rooms/sala-poltronas-smoke", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify(roomWithoutReservedSeat)
+    });
+    assert.equal(protectedSeatDelete.response.status, 409);
+    assert.equal(protectedSeatDelete.payload.error.code, "ROOM_SEATS_IN_USE");
 
     const occupiedSeatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
     assert.equal(occupiedSeatMap.payload.rows[0].seats[0].status, "unavailable");

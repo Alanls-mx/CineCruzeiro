@@ -586,19 +586,18 @@
                   </div>
                   <div id="roomSeatTypes" class="room-seat-types"></div>
 
-                  <div class="room-seat-tools" aria-label="Ferramentas do mapa">
-                    <label>
-                      Tipo para aplicar
-                      <select id="roomSeatActiveType"></select>
-                    </label>
-                    <label>
-                      Ação ao clicar
-                      <select id="roomSeatEditorMode">
-                        <option value="assign">Aplicar tipo</option>
-                        <option value="block">Bloquear ou liberar</option>
-                      </select>
-                    </label>
+                  <div class="room-seat-tools" aria-label="Resumo do mapa">
+                    <div>
+                      <strong>Edite diretamente no mapa</strong>
+                      <span>Clique em uma cadeira, no nome da fileira ou no número da coluna.</span>
+                    </div>
                     <div id="roomSeatCount" class="room-seat-count"></div>
+                  </div>
+                  <div id="roomSeatSelectionPanel" class="room-seat-selection-panel" aria-live="polite">
+                    <div class="room-seat-selection-empty">
+                      <strong>Nenhum elemento selecionado</strong>
+                      <span>Selecione uma cadeira, fileira ou coluna para editar, adicionar ou excluir.</span>
+                    </div>
                   </div>
                   <div class="room-seat-map-shell">
                     <div id="roomSeatScreen" class="room-seat-screen">TELA</div>

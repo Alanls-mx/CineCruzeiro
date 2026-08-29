@@ -124,6 +124,7 @@ export interface RoomRecord {
         id: string;
         label: string;
         typeId: string;
+        color?: string;
         enabled: boolean;
         aisleAfter?: boolean;
       }>;
@@ -155,6 +156,7 @@ export interface SessionSeatMap {
       id: string;
       label: string;
       typeId: string;
+      color?: string;
       enabled: boolean;
       status: "available" | "unavailable" | "blocked";
       aisleAfter?: boolean;

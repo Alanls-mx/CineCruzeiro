@@ -1179,15 +1179,116 @@ h1 {
 }
 
 .room-seat-tools {
-  justify-content: flex-start;
+  align-items: center;
   margin-top: 18px;
   padding: 14px;
   border-radius: 8px;
   background: #0b1423;
 }
 
-.room-seat-tools label {
-  min-width: 190px;
+.room-seat-tools strong,
+.room-seat-tools span {
+  display: block;
+}
+
+.room-seat-tools strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.room-seat-tools span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.room-seat-selection-panel {
+  margin-top: 10px;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(23, 34, 53, .42);
+}
+
+.room-seat-selection-empty {
+  display: grid;
+  min-height: 62px;
+  place-content: center;
+  text-align: center;
+}
+
+.room-seat-selection-empty strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.room-seat-selection-empty span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.room-seat-selection-head,
+.room-seat-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-seat-selection-head {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.room-seat-selection-title {
+  display: grid;
+  gap: 3px;
+}
+
+.room-seat-selection-title strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.room-seat-selection-title span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.room-seat-selection-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+
+.room-seat-selection-fields .check-field {
+  min-height: 42px;
+}
+
+.room-seat-selection-actions {
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.room-seat-color-field {
+  grid-template-columns: 42px minmax(110px, 1fr);
+  align-items: end;
+}
+
+.room-seat-color-field > span {
+  grid-column: 1 / -1;
+}
+
+.room-seat-color-field input[type="color"] {
+  width: 42px;
+  min-height: 42px;
+  padding: 3px;
+}
+
+.room-seat-color-field button {
+  min-height: 42px;
 }
 
 .room-seat-count {
@@ -1226,6 +1327,37 @@ h1 {
   min-width: max-content;
 }
 
+.room-seat-column-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.room-seat-column-spacer {
+  width: 30px;
+}
+
+.room-seat-column-button,
+.room-seat-row-label {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.room-seat-column-button {
+  width: 38px;
+  height: 25px;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.room-seat-column-button.has-aisle {
+  margin-right: 24px;
+}
+
 .room-seat-row {
   display: flex;
   align-items: center;
@@ -1234,9 +1366,9 @@ h1 {
 
 .room-seat-row-label {
   width: 24px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
+  height: 34px;
+  padding: 0;
+  border-radius: 5px;
   text-align: center;
 }
 
@@ -1266,9 +1398,26 @@ h1 {
 }
 
 .room-seat-button:hover,
-.room-seat-button:focus-visible {
+.room-seat-button:focus-visible,
+.room-seat-column-button:hover,
+.room-seat-column-button:focus-visible,
+.room-seat-row-label:hover,
+.room-seat-row-label:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
+}
+
+.room-seat-button.is-selected,
+.room-seat-column-button.is-selected,
+.room-seat-row-label.is-selected {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.room-seat-column-button.is-selected,
+.room-seat-row-label.is-selected {
+  background: rgba(245, 197, 24, .14);
+  color: var(--gold);
 }
 
 .form-head {
@@ -4485,7 +4634,8 @@ th {
   }
 
   .room-seat-builder-fields,
-  .room-seat-types {
+  .room-seat-types,
+  .room-seat-selection-fields {
     grid-template-columns: 1fr;
   }
 
@@ -4493,9 +4643,23 @@ th {
     margin-left: 0;
     text-align: left;
   }
+
+  .room-seat-selection-head {
+    align-items: flex-start;
+  }
 }
 
 @media (max-width: 680px) {
+  .room-seat-selection-head,
+  .room-seat-selection-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .room-seat-selection-actions button {
+    width: 100%;
+  }
+
   .logs-stats,
   .logs-filters,
   .log-details dl { grid-template-columns: 1fr; }

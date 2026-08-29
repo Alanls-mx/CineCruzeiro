@@ -698,7 +698,7 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
                           title={`${seat.label} • ${type?.name || "Padrão"}`}
                           className={`h-9 w-10 shrink-0 rounded-md border border-white/10 text-xs font-black text-white shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected ? "scale-105 border-gold-700 bg-gold-400 !text-slate-950" : unavailable ? "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60" : "bg-brand-700 hover:-translate-y-0.5"}`}
                           style={{
-                            ...(selected || unavailable || !type?.color ? {} : { backgroundColor: type.color }),
+                            ...(selected || unavailable || !(seat.color || type?.color) ? {} : { backgroundColor: seat.color || type?.color }),
                             marginRight: seat.aisleAfter ? 24 : 0,
                           }}
                         >
