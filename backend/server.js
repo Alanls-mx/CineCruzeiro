@@ -9335,7 +9335,7 @@ async function handleApi(req, res, pathname) {
           paymentMethod,
           status: paymentMethod === "card_terminal" ? "pending_payment" : "paid",
           paymentStatus: paymentMethod === "card_terminal" ? "pending" : "approved",
-          autoAssignSeats: true
+          autoAssignSeats: saleItem.autoAssignSeats !== false
         }));
         if (paymentMethod === "courtesy") {
           order.discountValue = Number(order.totalPrice || 0);

@@ -3128,6 +3128,215 @@ input[type="file"]::file-selector-button {
   gap: 10px;
 }
 
+.manual-seat-section {
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(6, 10, 18, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.1);
+}
+
+.manual-seat-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.manual-seat-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.manual-seat-heading span,
+.manual-seat-selection-summary {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.manual-seat-status:empty,
+.manual-seat-selection-summary:empty {
+  display: none;
+}
+
+.manual-seat-status .validation-result {
+  margin: 14px 16px 0;
+}
+
+.manual-seat-status .text-button {
+  margin-left: 6px;
+}
+
+.manual-seat-loading {
+  height: 92px;
+  margin: 14px 16px;
+  border-radius: 7px;
+  background: linear-gradient(100deg, rgba(148, 163, 184, 0.04) 20%, rgba(148, 163, 184, 0.1) 40%, rgba(148, 163, 184, 0.04) 60%);
+  background-size: 200% 100%;
+  animation: skeleton-shift 1.2s ease-in-out infinite;
+}
+
+.manual-seat-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 14px 16px 0;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.manual-seat-legend:empty {
+  display: none;
+}
+
+.manual-seat-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.manual-seat-legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--manual-seat-color, #2563eb);
+}
+
+.manual-seat-legend i.is-unavailable {
+  border: 1px solid #64748b;
+  background: transparent;
+}
+
+.manual-seat-legend svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.manual-seat-map-shell {
+  margin: 14px 16px 0;
+  padding: 20px 16px 24px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #080f1b;
+  scrollbar-color: #334155 #080f1b;
+}
+
+.manual-seat-screen {
+  width: min(72%, 620px);
+  margin: 0 auto 28px;
+  padding: 8px 12px;
+  border-top: 3px solid var(--gold);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-align: center;
+}
+
+.manual-seat-map {
+  display: grid;
+  justify-content: center;
+  width: max-content;
+  min-width: 100%;
+  gap: 8px;
+}
+
+.manual-seat-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 6px;
+}
+
+.manual-seat-row-seats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.manual-seat-row-label,
+.manual-seat-row-spacer {
+  width: 24px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.manual-seat-button {
+  position: relative;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px 7px 5px 5px;
+  background: var(--manual-seat-color, #2563eb);
+  box-shadow: inset 0 -3px 0 rgba(2, 6, 23, 0.42);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background-color .18s ease;
+}
+
+.manual-seat-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.manual-seat-button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.manual-seat-button.is-selected {
+  border-color: #fde68a;
+  background: var(--gold);
+  color: #07111f;
+  transform: translateY(-2px);
+}
+
+.manual-seat-button.is-unavailable {
+  border: 1px dashed #64748b;
+  background: transparent;
+  box-shadow: none;
+  color: #64748b;
+  cursor: not-allowed;
+  opacity: .68;
+}
+
+.manual-seat-button svg {
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, .72);
+  border-radius: 50%;
+  background: #07111f;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.manual-seat-selection-summary {
+  margin: 0;
+  padding: 12px 16px 14px;
+  font-weight: 800;
+}
+
 .logs-heading {
   align-items: flex-end;
 }

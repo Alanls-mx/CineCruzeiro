@@ -99,6 +99,11 @@ let state = {
   customerSearchResults: [],
   manualSaleItems: [],
   manualConcessionQuantities: {},
+  manualSeatMap: null,
+  manualSeatMapStatus: "idle",
+  manualSeatMapSessionId: "",
+  manualSelectedSeatIds: [],
+  manualSeatRequestToken: 0,
   pointPaymentId: "",
   pointPaymentTimer: null,
   pointPaymentSnapshot: null,
@@ -3503,6 +3508,7 @@ function renderManualSessionOptions() {
       : `Nenhuma sessão disponível em ${formattedDate}. Escolha outra data.`;
   }
   renderManualTicketTypes();
+  void loadManualSeatMap();
   updateManualTotal();
 }
 
@@ -3540,9 +3546,167 @@ function renderManualTicketTypes() {
       .find((candidate) => candidate.dataset.manualTicketQuantity === button.dataset.ticketTypeId);
     if (!input) return;
     input.value = Math.max(0, Number(input.value || 0) + Number(button.dataset.manualTicketStep || 0));
+    reconcileManualSeatSelection();
     updateManualTotal();
   }));
-  target.querySelectorAll("[data-manual-ticket-quantity]").forEach((input) => input.addEventListener("input", updateManualTotal));
+  target.querySelectorAll("[data-manual-ticket-quantity]").forEach((input) => input.addEventListener("input", () => {
+    input.value = Math.max(0, Number(input.value || 0));
+    reconcileManualSeatSelection();
+    updateManualTotal();
+  }));
+}
+
+function manualRequestedSeatCount() {
+  const ticketTypes = new Map(currentManualTicketTypes().map((ticketType) => [String(ticketType.id), ticketType]));
+  return manualTicketItems().reduce((sum, item) => {
+    const bundleQuantity = Math.max(1, Math.floor(Number(ticketTypes.get(String(item.id))?.bundleQuantity || 1)));
+    return sum + item.quantity * bundleQuantity;
+  }, 0);
+}
+
+function manualSeatById(seatId) {
+  return (state.manualSeatMap?.rows || []).flatMap((row) => row.seats || []).find((seat) => String(seat.id) === String(seatId));
+}
+
+function manualSeatColor(value, fallback = "#2563eb") {
+  const color = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+}
+
+function reconcileManualSeatSelection() {
+  const required = manualRequestedSeatCount();
+  const available = new Set((state.manualSeatMap?.rows || [])
+    .flatMap((row) => row.seats || [])
+    .filter((seat) => seat.status === "available")
+    .map((seat) => String(seat.id)));
+  state.manualSelectedSeatIds = state.manualSelectedSeatIds
+    .map(String)
+    .filter((seatId) => available.has(seatId))
+    .slice(0, required);
+  renderManualSeatMap();
+}
+
+async function loadManualSeatMap() {
+  const { session } = currentManualMovieSession();
+  const section = $("manualSeatSection");
+  const requestToken = ++state.manualSeatRequestToken;
+  state.manualSeatMapSessionId = session?.id || "";
+  state.manualSeatMap = null;
+  state.manualSelectedSeatIds = [];
+
+  if (!session?.id) {
+    state.manualSeatMapStatus = "idle";
+    if (section) section.hidden = true;
+    return;
+  }
+
+  state.manualSeatMapStatus = "loading";
+  if (section) section.hidden = false;
+  renderManualSeatMap();
+  try {
+    const seatMap = await api(`/api/sessions/${encodeURIComponent(session.id)}/seats`);
+    if (requestToken !== state.manualSeatRequestToken || state.manualSeatMapSessionId !== session.id) return;
+    state.manualSeatMap = seatMap;
+    state.manualSeatMapStatus = "ready";
+    const existingItem = state.manualSaleItems.find((item) => item.sessionId === session.id);
+    state.manualSelectedSeatIds = Array.isArray(existingItem?.selectedSeatIds) ? [...existingItem.selectedSeatIds] : [];
+    reconcileManualSeatSelection();
+  } catch (error) {
+    if (requestToken !== state.manualSeatRequestToken) return;
+    state.manualSeatMapStatus = "error";
+    state.manualSeatMap = null;
+    renderManualSeatMap(error.message);
+  }
+}
+
+function toggleManualSeat(seatId) {
+  const seat = manualSeatById(seatId);
+  if (!seat || seat.status !== "available") return;
+  const required = manualRequestedSeatCount();
+  if (!required) {
+    showToast("Selecione ao menos um ingresso antes de escolher as poltronas.", "error");
+    return;
+  }
+  const id = String(seatId);
+  if (state.manualSelectedSeatIds.includes(id)) {
+    state.manualSelectedSeatIds = state.manualSelectedSeatIds.filter((current) => current !== id);
+  } else if (state.manualSelectedSeatIds.length < required) {
+    state.manualSelectedSeatIds.push(id);
+  } else {
+    showToast(`A quantidade atual permite selecionar ${required} poltrona(s).`, "error");
+  }
+  renderManualSeatMap();
+}
+
+function renderManualSeatMap(errorMessage = "") {
+  const section = $("manualSeatSection");
+  if (!section) return;
+  const status = state.manualSeatMapStatus;
+  const seatMap = state.manualSeatMap;
+  const required = manualRequestedSeatCount();
+  const selected = state.manualSelectedSeatIds.length;
+  const statusTarget = $("manualSeatStatus");
+  const mapShell = $("manualSeatMapShell");
+
+  section.hidden = status === "idle" || (status === "ready" && !seatMap?.enabled);
+  if (section.hidden) return;
+  $("manualSeatCount").textContent = `${selected} de ${required}`;
+  $("manualSeatCount").className = `status-pill ${required > 0 && selected === required ? "success" : "muted"}`;
+  $("manualSeatDescription").textContent = required
+    ? `Selecione ${required} poltrona(s), uma para cada ingresso que será emitido.`
+    : "Escolha primeiro a quantidade e o tipo de ingresso.";
+  $("manualSeatSelectionSummary").textContent = selected
+    ? `Selecionadas: ${state.manualSelectedSeatIds.map((seatId) => manualSeatById(seatId)?.label || seatId).join(", ")}`
+    : "";
+
+  if (status === "loading") {
+    statusTarget.innerHTML = `<div class="manual-seat-loading" aria-label="Carregando mapa de poltronas"></div>`;
+    mapShell.hidden = true;
+    return;
+  }
+  if (status === "error") {
+    statusTarget.innerHTML = `<div class="validation-result error">${escapeHtml(errorMessage || "Não foi possível carregar as poltronas desta sessão.")} <button type="button" class="text-button" data-reload-manual-seats>Tentar novamente</button></div>`;
+    statusTarget.querySelector("[data-reload-manual-seats]")?.addEventListener("click", () => void loadManualSeatMap());
+    mapShell.hidden = true;
+    return;
+  }
+
+  statusTarget.innerHTML = "";
+  mapShell.hidden = false;
+  $("manualSeatScreen").textContent = seatMap?.screenLabel || "TELA";
+  const typeById = new Map((seatMap?.seatTypes || []).map((type) => [String(type.id), type]));
+  $("manualSeatLegend").innerHTML = [
+    ...(seatMap?.seatTypes || []).map((type) => `<span><i style="--manual-seat-color:${manualSeatColor(type.color)}"></i>${escapeHtml(type.name)}</span>`),
+    `<span><i class="is-unavailable"></i>Indisponível</span>`,
+    `<span>${accessibilityIcon}Cadeirante</span>`,
+    `<span>${obeseSeatIcon}Pessoa obesa</span>`
+  ].join("");
+  $("manualSeatMap").innerHTML = (seatMap?.rows || []).map((row) => `
+    <div class="manual-seat-row">
+      <span class="manual-seat-row-label">${escapeHtml(row.label)}</span>
+      <div class="manual-seat-row-seats">
+        ${(row.seats || []).map((seat) => {
+          const type = typeById.get(String(seat.typeId));
+          const isSelected = state.manualSelectedSeatIds.includes(String(seat.id));
+          const unavailable = seat.status !== "available";
+          const accessibility = seat.accessibility === "wheelchair" ? "Cadeirante" : seat.accessibility === "obese" ? "Pessoa obesa" : "";
+          return `<button
+            type="button"
+            class="manual-seat-button ${isSelected ? "is-selected" : ""} ${unavailable ? "is-unavailable" : ""} ${accessibility ? "has-accessibility" : ""}"
+            style="--manual-seat-color:${manualSeatColor(seat.color || type?.color)};${seat.aisleAfter ? "margin-right:24px" : ""}"
+            data-manual-seat-id="${escapeHtml(seat.id)}"
+            aria-label="${escapeHtml(`${seat.label}, ${type?.name || "Padrão"}${accessibility ? `, ${accessibility}` : ""}${unavailable ? ", indisponível" : isSelected ? ", selecionada" : ""}`)}"
+            aria-pressed="${isSelected}"
+            ${unavailable ? "disabled" : ""}
+          ><span>${escapeHtml(seat.label)}</span>${seat.accessibility === "wheelchair" ? accessibilityIcon : seat.accessibility === "obese" ? obeseSeatIcon : ""}</button>`;
+        }).join("")}
+      </div>
+      <span class="manual-seat-row-spacer" aria-hidden="true"></span>
+    </div>
+  `).join("");
+  $("manualSeatMap").querySelectorAll("[data-manual-seat-id]").forEach((button) => {
+    button.addEventListener("click", () => toggleManualSeat(button.dataset.manualSeatId));
+  });
 }
 
 function manualConcessionItems() {
@@ -3615,6 +3779,7 @@ function manualSaleDraft() {
   if (!movie || !session || !ticketItems.length) return null;
   const ticketTypes = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
   const subtotal = ticketItems.reduce((sum, item) => sum + item.quantity * Number(ticketTypes.get(item.id)?.price || 0), 0);
+  const selectedSeatIds = state.manualSeatMap?.enabled ? [...state.manualSelectedSeatIds] : [];
   return {
     movieId: movie.id,
     movieTitle: movie.title,
@@ -3626,16 +3791,30 @@ function manualSaleDraft() {
     ticketSummary: ticketItems.map((item) => ({
       ...item,
       name: ticketTypes.get(item.id)?.name || "Ingresso",
-      unitPrice: Number(ticketTypes.get(item.id)?.price || 0)
+      unitPrice: Number(ticketTypes.get(item.id)?.price || 0),
+      bundleQuantity: Math.max(1, Number(ticketTypes.get(item.id)?.bundleQuantity || 1))
     })),
+    seatSelectionEnabled: Boolean(state.manualSeatMap?.enabled),
+    selectedSeatIds,
+    selectedSeatLabels: selectedSeatIds.map((seatId) => manualSeatById(seatId)?.label || seatId),
     subtotal
   };
+}
+
+function manualDraftSeatSelectionComplete(draft) {
+  if (!draft?.seatSelectionEnabled) return true;
+  const required = draft.ticketSummary.reduce((sum, ticket) => sum + ticket.quantity * ticket.bundleQuantity, 0);
+  return required > 0 && draft.selectedSeatIds.length === required;
 }
 
 function addManualSaleItem() {
   const draft = manualSaleDraft();
   if (!draft) {
     showToast("Selecione ao menos um ingresso para adicionar este filme.", "error");
+    return;
+  }
+  if (!manualDraftSeatSelectionComplete(draft)) {
+    showToast(`Selecione ${manualRequestedSeatCount()} poltrona(s) antes de adicionar esta sessão.`, "error");
     return;
   }
   const existingIndex = state.manualSaleItems.findIndex((item) => item.sessionId === draft.sessionId);
@@ -3675,6 +3854,7 @@ function renderManualSaleItems() {
           <strong>${escapeHtml(item.movieTitle)}</strong>
           <span>${escapeHtml([item.sessionDate, item.sessionTime, item.sessionFormat].filter(Boolean).join(" • "))}</span>
           <small>${item.ticketSummary.map((ticket) => `${ticket.quantity}× ${escapeHtml(ticket.name)}`).join(" · ")}</small>
+          ${item.selectedSeatLabels?.length ? `<small>Poltronas: ${escapeHtml(item.selectedSeatLabels.join(", "))}</small>` : ""}
         </div>
         <strong class="manual-sale-item-price">${money(item.subtotal)}</strong>
         <button class="icon-button danger" type="button" data-remove-manual-session="${escapeHtml(item.sessionId)}" aria-label="Remover ${escapeHtml(item.movieTitle)} desta venda">
@@ -3704,6 +3884,11 @@ async function createManualTicket(event) {
     showToast("Adicione ao menos um filme com ingressos à venda.", "error");
     return;
   }
+  const incompleteSeatItem = saleItems.find((item) => !manualDraftSeatSelectionComplete(item));
+  if (incompleteSeatItem) {
+    showToast(`Complete a seleção de poltronas para ${incompleteSeatItem.movieTitle}.`, "error");
+    return;
+  }
   if (state.saleMode === "registered" && !$("manualCustomerUserId").value) {
     showToast("Selecione o usuário que receberá os ingressos.", "error");
     return;
@@ -3721,7 +3906,9 @@ async function createManualTicket(event) {
       saleItems: saleItems.map((item) => ({
         movieId: item.movieId,
         sessionId: item.sessionId,
-        ticketItems: item.ticketItems
+        ticketItems: item.ticketItems,
+        selectedSeatIds: item.selectedSeatIds || [],
+        autoAssignSeats: false
       })),
       concessionItems: manualConcessionItems(),
       saleMode,
@@ -3737,6 +3924,7 @@ async function createManualTicket(event) {
     const orders = result.orders || (result.order ? [result.order] : []);
     state.manualSaleItems = [];
     state.manualConcessionQuantities = {};
+    state.manualSelectedSeatIds = [];
     renderManualSaleItems();
     if (paymentMethod === "card_terminal") {
       startPointPaymentTracking(result);
@@ -3753,6 +3941,9 @@ async function createManualTicket(event) {
     );
   } catch (error) {
     showToast(error.message, "error");
+    if (["SEAT_UNAVAILABLE", "SEAT_LAYOUT_CHANGED", "SEAT_SELECTION_INCOMPLETE"].includes(error.payload?.error?.code)) {
+      void loadManualSeatMap();
+    }
   } finally {
     submitButton.disabled = false;
     renderManualSaleItems();
@@ -6636,7 +6827,10 @@ function bindEvents() {
   $("pointPaymentNewSaleButton")?.addEventListener("click", resetPointPaymentPanel);
   $("manualSessionDate").addEventListener("change", renderManualSaleOptions);
   $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
-  $("manualSessionSelect").addEventListener("change", renderManualTicketTypes);
+  $("manualSessionSelect").addEventListener("change", () => {
+    renderManualTicketTypes();
+    void loadManualSeatMap();
+  });
   $("manualAddMovieButton").addEventListener("click", addManualSaleItem);
   $("manualClearSaleButton").addEventListener("click", clearManualSaleItems);
   $("manualCustomerSearch").addEventListener("input", searchBoxOfficeCustomers);

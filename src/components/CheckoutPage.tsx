@@ -684,33 +684,36 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
               </div>
               <div className="mx-auto grid w-max gap-2">
                 {seatMap.rows.map((row) => (
-                  <div key={row.id} className="flex items-center gap-1.5">
+                  <div key={row.id} className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-1.5">
                     <span className="w-6 text-center text-[11px] font-black text-slate-500">{row.label}</span>
-                    {row.seats.map((seat) => {
-                      const selected = selectedSeatIds.includes(seat.id);
-                      const type = seatTypesById.get(seat.typeId);
-                      const unavailable = seat.status !== "available";
-                      return (
-                        <button
-                          key={seat.id}
-                          type="button"
-                          disabled={unavailable}
-                          onClick={() => toggleSeat(seat.id)}
-                          aria-pressed={selected}
-                          aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${unavailable ? ", indisponível" : selected ? ", selecionada" : ""}`}
-                          title={`${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
-                          className={`relative flex h-9 w-10 shrink-0 items-center justify-center rounded-md border border-white/10 text-xs font-black text-white shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected ? "scale-105 border-gold-700 bg-gold-400 !text-slate-950" : unavailable ? "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60" : "bg-brand-700 hover:-translate-y-0.5"}`}
-                          style={{
-                            ...(selected || unavailable || !(seat.color || type?.color) ? {} : { backgroundColor: seat.color || type?.color }),
-                            marginRight: seat.aisleAfter ? 24 : 0,
-                          }}
-                        >
-                          <span>{seat.label}</span>
-                          {seat.accessibility === "wheelchair" && <Accessibility className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-white/70 bg-slate-950 p-0.5 text-white" aria-hidden="true" />}
-                          {seat.accessibility === "obese" && <CircleUserRound className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-white/70 bg-slate-950 p-0.5 text-white" aria-hidden="true" />}
-                        </button>
-                      );
-                    })}
+                    <div className="flex items-center justify-center gap-1.5">
+                      {row.seats.map((seat) => {
+                        const selected = selectedSeatIds.includes(seat.id);
+                        const type = seatTypesById.get(seat.typeId);
+                        const unavailable = seat.status !== "available";
+                        return (
+                          <button
+                            key={seat.id}
+                            type="button"
+                            disabled={unavailable}
+                            onClick={() => toggleSeat(seat.id)}
+                            aria-pressed={selected}
+                            aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${unavailable ? ", indisponível" : selected ? ", selecionada" : ""}`}
+                            title={`${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
+                            className={`relative flex h-9 w-10 shrink-0 items-center justify-center rounded-md border border-white/10 text-xs font-black text-white shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected ? "scale-105 border-gold-700 bg-gold-400 !text-slate-950" : unavailable ? "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60" : "bg-brand-700 hover:-translate-y-0.5"}`}
+                            style={{
+                              ...(selected || unavailable || !(seat.color || type?.color) ? {} : { backgroundColor: seat.color || type?.color }),
+                              marginRight: seat.aisleAfter ? 24 : 0,
+                            }}
+                          >
+                            <span>{seat.label}</span>
+                            {seat.accessibility === "wheelchair" && <Accessibility className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-white/70 bg-slate-950 p-0.5 text-white" aria-hidden="true" />}
+                            {seat.accessibility === "obese" && <CircleUserRound className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-white/70 bg-slate-950 p-0.5 text-white" aria-hidden="true" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <span className="w-6" aria-hidden="true" />
                   </div>
                 ))}
               </div>

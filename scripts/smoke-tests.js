@@ -540,6 +540,22 @@ async function run() {
     assert.equal(duplicateSeat.response.status, 409);
     assert.equal(duplicateSeat.payload.error.code, "SEAT_UNAVAILABLE");
 
+    const boxOfficeMissingSeat = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_SEAT_MOVIE_ID,
+        sessionId: TEST_SEAT_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        selectedSeatIds: [],
+        autoAssignSeats: false,
+        paymentMethod: "courtesy",
+        saleMode: "quick"
+      })
+    });
+    assert.equal(boxOfficeMissingSeat.response.status, 422);
+    assert.equal(boxOfficeMissingSeat.payload.error.code, "SEAT_SELECTION_INCOMPLETE");
+
     const boxOfficeSeat = await request("/api/box-office/sales", {
       method: "POST",
       headers: jsonHeaders(adminCookie),
@@ -547,6 +563,8 @@ async function run() {
         movieId: TEST_SEAT_MOVIE_ID,
         sessionId: TEST_SEAT_SESSION_ID,
         ticketItems: [{ id: "promocional", quantity: 1 }],
+        selectedSeatIds: ["a2"],
+        autoAssignSeats: false,
         paymentMethod: "courtesy",
         saleMode: "quick"
       })
