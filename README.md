@@ -849,6 +849,8 @@ Coberturas relevantes incluem autenticação, e-mail, evento privado, pagamento,
 
 ## 29. Deploy na VPS
 
+O procedimento operacional completo, com comandos, dados persistentes, rollback, health checks e politica de exclusao de releases, esta em [`DEPLOY_VPS.md`](DEPLOY_VPS.md). Esse runbook e a referencia para publicacoes em producao.
+
 Estrutura atual:
 
 ```text
@@ -858,7 +860,8 @@ Estrutura atual:
 |-- shared/
 |   |-- backend.runtime.env
 |   |-- backend.env.local
-|   `-- uploads/
+|   |-- uploads/
+|   `-- data/
 `-- ecosystem.config.cjs
 ```
 
@@ -875,7 +878,7 @@ Fluxo recomendado:
 2. publicar no GitHub;
 3. criar release isolada na VPS;
 4. instalar dependências;
-5. configurar symlinks de env e uploads;
+5. carregar env e uploads persistentes de `shared/`;
 6. executar build;
 7. aplicar migrations;
 8. trocar o symlink `current` atomicamente;
