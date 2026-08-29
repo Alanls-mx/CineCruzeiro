@@ -1555,9 +1555,26 @@ async function run() {
     });
     assert.equal(download.status, 200);
     assert.match(download.headers.get("content-disposition") || "", /attachment/);
-    const downloadedPdf = await download.text();
+    const downloadedPdfBuffer = Buffer.from(await download.arrayBuffer());
+    const downloadedPdf = downloadedPdfBuffer.toString("latin1");
     assert.match(downloadedPdf, /Cine Cruzeiro/);
     assert.match(downloadedPdf, /\/ImLogo Do/);
+    assert.match(downloadedPdf, /31\/12\/2099 as 19:00/);
+    assert.doesNotMatch(downloadedPdf, /2099-12-31 as 19:00/);
+
+    const numberedSeatPdf = await fetch(`${BASE_URL}/api/admin/tickets/${encodeURIComponent(boxOfficeSeat.payload.tickets[0].id)}/print`, {
+      headers: { Cookie: adminCookie }
+    });
+    assert.equal(numberedSeatPdf.status, 200);
+    const numberedSeatPdfBuffer = Buffer.from(await numberedSeatPdf.arrayBuffer());
+    const numberedSeatPdfText = numberedSeatPdfBuffer.toString("latin1");
+    assert.match(numberedSeatPdfText, /31\/12\/2099 as 18:00/);
+    assert.match(numberedSeatPdfText, /POLTRONA/);
+    assert.match(numberedSeatPdfText, /A2/);
+    if (process.env.SMOKE_TICKET_PDF_OUTPUT) {
+      fs.mkdirSync(require("path").dirname(process.env.SMOKE_TICKET_PDF_OUTPUT), { recursive: true });
+      fs.writeFileSync(process.env.SMOKE_TICKET_PDF_OUTPUT, numberedSeatPdfBuffer);
+    }
 
     const walletMissing = await request(`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/google-wallet`, {
       method: "POST",

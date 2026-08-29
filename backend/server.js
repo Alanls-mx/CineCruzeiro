@@ -29,6 +29,7 @@ const {
   startMovieTagTransition,
   stopMovieTagTransition
 } = require("./utils/movieTagLifecycle");
+const { brazilianDate } = require("./utils/dateFormat");
 
 const requestContext = new AsyncLocalStorage();
 const adminTwoFactorChallenges = new Map();
@@ -2981,6 +2982,8 @@ function buildPdf(pages, options = {}) {
 
 async function ticketDownloadPdf(db, ticket) {
   const enriched = enrichTicket(db, ticket);
+  const sessionDate = brazilianDate(enriched.sessionDate);
+  const seatLabel = enriched.seat || "Lugar livre";
   const extras = (enriched.extras || []).map((item) => `${item.name} x${Number(item.quantity || 0)}`).join(" - ");
   const formatLine = [enriched.sessionRoom || "Cine Cruzeiro", enriched.sessionFormat || "Sessao"].filter(Boolean).join(" - ");
   const posterBuffer = await cachedPosterBufferForTicket(db, enriched);
@@ -3005,8 +3008,11 @@ async function ticketDownloadPdf(db, ticket) {
   else page1 += pdfWriteMultiline(enriched.movieTitle, 104, 550, 18, { bold: true, color: "#ffffff", maxChars: 13, maxLines: 5, lineHeight: 22 });
   page1 += pdfWriteText("FILME", 286, 650, 9, { bold: true, color: "#60a5fa" });
   page1 += pdfWriteMultiline(enriched.movieTitle, 286, 612, 22, { bold: true, color: "#ffffff", maxChars: 21, maxLines: 3, lineHeight: 26 });
-  page1 += pdfWriteText(`${enriched.sessionDate} as ${enriched.sessionTime}`, 286, 512, 16, { bold: true, color: "#facc15" });
+  page1 += pdfWriteText(`${sessionDate} as ${enriched.sessionTime}`, 286, 512, 16, { bold: true, color: "#facc15" });
   page1 += pdfWriteMultiline(formatLine, 286, 488, 10, { color: "#cbd5e1", maxChars: 38, maxLines: 2, lineHeight: 14 });
+  page1 += pdfRect(286, 406, 154, 54, "#facc15");
+  page1 += pdfWriteText("POLTRONA", 300, 444, 8, { bold: true, color: "#422006" });
+  page1 += pdfWriteText(seatLabel, 300, 420, 17, { bold: true, color: "#020617" });
   page1 += pdfLine(78, 354, 517, 354, "#334155", 1);
   page1 += pdfWriteText("QR Code de entrada", 214, 324, 10, { bold: true, color: "#bfdbfe" });
   page1 += pdfQr(enriched.qrPayload || enriched.code, 222, 134, 164);
@@ -3022,13 +3028,13 @@ async function ticketDownloadPdf(db, ticket) {
   else page2 += pdfWriteText("CINE CRUZEIRO", 78, 758, 15, { bold: true, color: "#facc15" });
   page2 += pdfWriteText("Detalhes do ingresso", logoImage ? 184 : 78, 744, 11, { color: "#bfdbfe" });
   page2 += pdfWriteMultiline(enriched.movieTitle, 78, 672, 20, { bold: true, color: "#ffffff", maxChars: 34, maxLines: 2, lineHeight: 24 });
-  page2 += pdfWriteText(`${enriched.sessionDate} as ${enriched.sessionTime}`, 78, 608, 14, { bold: true, color: "#facc15" });
+  page2 += pdfWriteText(`${sessionDate} as ${enriched.sessionTime}`, 78, 608, 14, { bold: true, color: "#facc15" });
   page2 += pdfLine(78, 574, 517, 574, "#334155", 1);
   page2 += pdfWriteValueBlock("CODIGO", enriched.code, 78, 538, { valueSize: 12, maxChars: 32, maxLines: 2 });
   page2 += pdfWriteValueBlock("PEDIDO", enriched.orderReference || enriched.orderId || "-", 78, 462, { valueSize: 10, maxChars: 48, maxLines: 3, boldValue: false });
   page2 += pdfWriteValueBlock("TIPO", enriched.ticketType || "Ingresso", 338, 538, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
-  page2 += pdfWriteValueBlock("ASSENTO", enriched.seat || "Lugar livre", 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
+  page2 += pdfWriteValueBlock("ASSENTO", seatLabel, 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("STATUS", ticketStatusLabel(enriched.status), 78, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfLine(78, 344, 517, 344, "#334155", 1);
   page2 += pdfWriteText("BOMBONIERE", 78, 306, 9, { bold: true, color: "#facc15" });

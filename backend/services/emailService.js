@@ -1,5 +1,6 @@
 const nodemailer = require("nodemailer");
 const integrationConfigService = require("./integrationConfigService");
+const { brazilianDate } = require("../utils/dateFormat");
 
 function htmlEscape(value) {
   return String(value ?? "")
@@ -175,6 +176,7 @@ function extrasSummary(items = []) {
 
 function ticketCard(ticket = {}, options = {}) {
   const posterUrl = absoluteUrl(ticket.posterUrl, options.siteUrl);
+  const sessionDate = brazilianDate(ticket.sessionDate);
   const poster = posterUrl
     ? `<td style="width:128px;padding:0 16px 0 0;vertical-align:top"><img src="${htmlEscape(posterUrl)}" width="120" alt="${htmlEscape(ticket.movieTitle || "Filme")}" style="display:block;width:120px;max-width:120px;height:auto;border-radius:8px;border:0;outline:0;text-decoration:none"></td>`
     : "";
@@ -189,7 +191,7 @@ function ticketCard(ticket = {}, options = {}) {
               <td style="vertical-align:top;min-width:0">
                 <p style="margin:0 0 6px;color:#60a5fa;font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase">Ingresso digital</p>
                 <h2 style="margin:0 0 10px;color:#fff;font-size:21px;line-height:1.18;word-break:break-word">${htmlEscape(ticket.movieTitle || "Cine Cruzeiro")}</h2>
-                <p style="margin:0 0 12px;color:#facc15;font-size:16px;font-weight:900;word-break:break-word">${htmlEscape(ticket.sessionDate || "")} às ${htmlEscape(ticket.sessionTime || "")}</p>
+                <p style="margin:0 0 12px;color:#facc15;font-size:16px;font-weight:900;word-break:break-word">${htmlEscape(sessionDate)} às ${htmlEscape(ticket.sessionTime || "")}</p>
                 <p style="margin:0;color:#cbd5e1;word-break:break-word">${htmlEscape(ticket.sessionRoom || "Sala Cruzeiro")}<br>${htmlEscape(ticket.sessionFormat || "Sessão")}<br>Poltrona: ${htmlEscape(ticket.seat || "Lugar livre")}</p>
               </td>
             </tr>
