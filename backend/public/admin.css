@@ -1263,6 +1263,57 @@ h1 {
   gap: 10px;
 }
 
+.room-seat-accessibility-field {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.room-seat-accessibility-field legend {
+  margin-bottom: 7px;
+  color: #e6edf8;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.room-seat-marker-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-seat-marker-options button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d1727;
+  color: var(--muted);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.room-seat-marker-options button.is-active {
+  border-color: var(--gold);
+  background: rgba(245, 197, 24, .12);
+  color: var(--text);
+}
+
+.room-seat-marker-options svg,
+.room-seat-button-marker svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .room-seat-selection-fields .check-field {
   min-height: 42px;
 }
@@ -1331,6 +1382,7 @@ h1 {
   display: flex;
   align-items: center;
   gap: 6px;
+  justify-content: center;
 }
 
 .room-seat-column-spacer {
@@ -1362,6 +1414,7 @@ h1 {
   display: flex;
   align-items: center;
   gap: 6px;
+  justify-content: center;
 }
 
 .room-seat-row-label {
@@ -1384,6 +1437,30 @@ h1 {
   font-size: 10px;
   font-weight: 900;
   cursor: pointer;
+  position: relative;
+}
+
+.room-seat-button.has-accessibility {
+  padding-right: 11px;
+}
+
+.room-seat-button-marker {
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .72);
+  border-radius: 50%;
+  background: #07111f;
+  color: #fff;
+}
+
+.room-seat-button-marker svg {
+  width: 12px;
+  height: 12px;
 }
 
 .room-seat-button.has-aisle {

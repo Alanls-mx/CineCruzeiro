@@ -125,6 +125,8 @@ export interface RoomRecord {
         label: string;
         typeId: string;
         color?: string;
+        accessibility?: "wheelchair" | "obese" | "";
+        customLabel?: boolean;
         enabled: boolean;
         aisleAfter?: boolean;
       }>;
@@ -157,6 +159,7 @@ export interface SessionSeatMap {
       label: string;
       typeId: string;
       color?: string;
+      accessibility?: "wheelchair" | "obese" | "";
       enabled: boolean;
       status: "available" | "unavailable" | "blocked";
       aisleAfter?: boolean;

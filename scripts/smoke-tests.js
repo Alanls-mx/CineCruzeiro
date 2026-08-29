@@ -108,9 +108,9 @@ async function run() {
       screenLabel: "TELA TESTE",
       rows: [
         { id: "row-a", label: "A", seats: [
-          { id: "a1", label: "A1", typeId: "standard", color: "#e11d48", enabled: true },
+          { id: "a1", label: "A1", typeId: "standard", color: "#e11d48", accessibility: "wheelchair", enabled: true },
           { id: "a2", label: "A2", typeId: "standard", enabled: true, aisleAfter: true },
-          { id: "a3", label: "A3", typeId: "premium", enabled: true }
+          { id: "a3", label: "A3", typeId: "premium", accessibility: "obese", enabled: true }
         ] },
         { id: "row-b", label: "B", seats: [
           { id: "b1", label: "B1", typeId: "standard", enabled: true },
@@ -476,12 +476,15 @@ async function run() {
     });
     assert.equal(savedSeatRoom.response.status, 200);
     assert.equal(savedSeatRoom.payload.seatLayout.rows[0].seats[0].color, "#e11d48");
+    assert.equal(savedSeatRoom.payload.seatLayout.rows[0].seats[0].accessibility, "wheelchair");
 
     const seatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
     assert.equal(seatMap.response.status, 200);
     assert.equal(seatMap.payload.enabled, true);
     assert.equal(seatMap.payload.capacity, 5);
     assert.equal(seatMap.payload.rows[0].seats[0].color, "#e11d48");
+    assert.equal(seatMap.payload.rows[0].seats[0].accessibility, "wheelchair");
+    assert.equal(seatMap.payload.rows[0].seats[2].accessibility, "obese");
     assert.equal(seatMap.payload.rows[0].seats[1].aisleAfter, true);
     assert.equal(seatMap.payload.rows[1].seats[1].status, "blocked");
 

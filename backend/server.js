@@ -1722,7 +1722,8 @@ function assignSeatsToOrder(db, order, session) {
       label: String(seat.label || seatId),
       rowLabel: String(seat.rowLabel || ""),
       typeId: String(seat.typeId || "standard"),
-      typeName: String(type?.name || "Padrão")
+      typeName: String(type?.name || "Padrão"),
+      accessibility: ["wheelchair", "obese"].includes(String(seat.accessibility || "")) ? String(seat.accessibility) : ""
     };
   });
   order.seatSelectionEnabled = true;
@@ -4170,6 +4171,8 @@ function normalizeRoom(input, existing = {}) {
         label,
         typeId,
         color: /^#[0-9a-f]{6}$/i.test(String(seat.color || "")) ? String(seat.color) : "",
+        accessibility: ["wheelchair", "obese"].includes(String(seat.accessibility || "")) ? String(seat.accessibility) : "",
+        customLabel: seat.customLabel === true,
         enabled: seat.enabled !== false,
         aisleAfter: Boolean(seat.aisleAfter)
       };
@@ -6696,6 +6699,7 @@ async function handleApi(req, res, pathname) {
           label: seat.label,
           typeId: seat.typeId,
           color: seat.color || "",
+          accessibility: seat.accessibility || "",
           enabled: seat.enabled !== false,
           aisleAfter: Boolean(seat.aisleAfter),
           status: seat.enabled === false ? "blocked" : occupied.has(String(seat.id)) ? "unavailable" : "available"

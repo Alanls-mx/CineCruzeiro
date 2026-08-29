@@ -133,6 +133,8 @@ const setDisabled = (id, disabled) => {
   if (element) element.disabled = disabled;
 };
 const trashIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></svg>`;
+const accessibilityIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="16" cy="4" r="1"/><path d="m18 19 1-7-6 1"/><path d="m5 8 3-3 5.5 3-2.36 3.5"/><path d="M4.24 14.5a5 5 0 0 0 6.88 6"/><path d="M13.76 17.5a5 5 0 0 0-6.88-6"/></svg>`;
+const obeseSeatIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>`;
 
 function money(value) {
   return Number(value || 0).toLocaleString("pt-BR", {
@@ -2191,8 +2193,27 @@ function defaultRoomSeatDraft(room = null) {
     enabled: Boolean(room?.seatSelectionEnabled),
     screenLabel: room?.seatLayout?.screenLabel || "TELA",
     seatTypes,
-    rows: Array.isArray(room?.seatLayout?.rows) ? structuredClone(room.seatLayout.rows) : []
+    rows: Array.isArray(room?.seatLayout?.rows) ? structuredClone(room.seatLayout.rows).map((row) => ({
+      ...row,
+      seats: (row.seats || []).map((seat) => ({
+        ...seat,
+        accessibility: ["wheelchair", "obese"].includes(seat.accessibility) ? seat.accessibility : "",
+        customLabel: seat.customLabel === true || !new RegExp(`^${String(row.label || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\d+$`, "i").test(String(seat.label || ""))
+      }))
+    })) : []
   };
+}
+
+function roomSeatAccessibilityLabel(value) {
+  if (value === "wheelchair") return "Cadeirante";
+  if (value === "obese") return "Pessoa obesa";
+  return "Sem marcador";
+}
+
+function roomSeatAccessibilityIcon(value) {
+  if (value === "wheelchair") return accessibilityIcon;
+  if (value === "obese") return obeseSeatIcon;
+  return "";
 }
 
 function roomSeatColor(seat) {
@@ -2235,20 +2256,20 @@ function nextRoomRowLabel() {
   return `F${labels.size + 1}`;
 }
 
-function nextRoomSeatLabel(row) {
-  const labels = new Set((row?.seats || []).map((seat) => String(seat.label || "")));
-  let number = (row?.seats || []).length + 1;
-  let label = `${row?.label || "P"}${number}`;
-  while (labels.has(label)) label = `${row?.label || "P"}${++number}`;
-  return label;
+function renumberRoomSeatRow(row) {
+  (row?.seats || []).forEach((seat, index) => {
+    if (seat.customLabel !== true) seat.label = `${row?.label || "P"}${index + 1}`;
+  });
 }
 
 function createRoomSeat(row, typeId) {
   return {
     id: uniqueRoomSeatId(`${row.id}-seat`),
-    label: nextRoomSeatLabel(row),
+    label: `${row?.label || "P"}${(row?.seats || []).length + 1}`,
+    customLabel: false,
     typeId: typeId || state.roomSeatDraft?.seatTypes?.[0]?.id || "standard",
     color: "",
+    accessibility: "",
     enabled: true,
     aisleAfter: false
   };
@@ -2288,6 +2309,9 @@ function renderRoomSeatSelectionPanel() {
   const color = targets.every((seat) => (seat.color || "") === (first.color || ""))
     ? roomSeatColor(first)
     : "#2563eb";
+  const accessibility = targets.every((seat) => (seat.accessibility || "") === (first.accessibility || ""))
+    ? first.accessibility || ""
+    : "mixed";
   const row = selection.kind === "row" ? selectedRoomSeatRow() : null;
   const seat = selection.kind === "seat" ? first : null;
   const title = selection.kind === "seat"
@@ -2320,7 +2344,8 @@ function renderRoomSeatSelectionPanel() {
     : selection.kind === "row" ? `
       <button class="ghost-button" type="button" data-seat-selection-action="row-before">Adicionar fileira acima</button>
       <button class="ghost-button" type="button" data-seat-selection-action="row-after">Adicionar fileira abaixo</button>
-      <button class="ghost-button" type="button" data-seat-selection-action="row-seat">Adicionar cadeira ao final</button>
+       <button class="ghost-button" type="button" data-seat-selection-action="row-seat-left">Adicionar cadeira à esquerda</button>
+       <button class="ghost-button" type="button" data-seat-selection-action="row-seat-right">Adicionar cadeira à direita</button>
       <button class="danger-button" type="button" data-seat-selection-action="row-delete">Excluir fileira</button>`
     : `
       <button class="ghost-button" type="button" data-seat-selection-action="column-before">Adicionar coluna à esquerda</button>
@@ -2345,6 +2370,14 @@ function renderRoomSeatSelectionPanel() {
         <input type="color" value="${escapeHtml(color)}" data-seat-selection-field="color" aria-label="Cor personalizada" />
         <button class="ghost-button" type="button" data-seat-selection-action="color-reset">Usar tipo</button>
       </label>
+      <fieldset class="room-seat-accessibility-field">
+        <legend>Marcador da cadeira</legend>
+        <div class="room-seat-marker-options">
+          <button type="button" class="${accessibility === "" ? "is-active" : ""}" data-seat-accessibility="" aria-pressed="${accessibility === ""}">Nenhum</button>
+          <button type="button" class="${accessibility === "wheelchair" ? "is-active" : ""}" data-seat-accessibility="wheelchair" aria-pressed="${accessibility === "wheelchair"}">${accessibilityIcon}<span>Cadeirante</span></button>
+          <button type="button" class="${accessibility === "obese" ? "is-active" : ""}" data-seat-accessibility="obese" aria-pressed="${accessibility === "obese"}">${obeseSeatIcon}<span>Pessoa obesa</span></button>
+        </div>
+      </fieldset>
       ${availabilityField}
       ${aisleField}
     </div>
@@ -2376,12 +2409,12 @@ function renderRoomSeatMap(renderSelectionPanel = true) {
       ${(row.seats || []).map((seat, columnIndex) => `
         <button
           type="button"
-          class="room-seat-button ${seat.enabled === false ? "is-blocked" : ""} ${seat.aisleAfter ? "has-aisle" : ""} ${(selected?.kind === "seat" && selected.seatId === seat.id) || (selected?.kind === "column" && selected.columnIndex === columnIndex) || (selected?.kind === "row" && selected.rowId === row.id) ? "is-selected" : ""}"
+          class="room-seat-button ${seat.enabled === false ? "is-blocked" : ""} ${seat.aisleAfter ? "has-aisle" : ""} ${seat.accessibility ? "has-accessibility" : ""} ${(selected?.kind === "seat" && selected.seatId === seat.id) || (selected?.kind === "column" && selected.columnIndex === columnIndex) || (selected?.kind === "row" && selected.rowId === row.id) ? "is-selected" : ""}"
           style="--seat-color:${escapeHtml(roomSeatColor(seat))}"
           data-room-seat-id="${escapeHtml(seat.id)}"
-          title="${escapeHtml(seat.label)} • ${escapeHtml(state.roomSeatDraft.seatTypes.find((type) => type.id === seat.typeId)?.name || "Padrão")}${seat.enabled === false ? " • bloqueada" : ""}"
-          aria-label="Editar poltrona ${escapeHtml(seat.label)}"
-        >${escapeHtml(seat.label)}</button>
+          title="${escapeHtml(seat.label)} • ${escapeHtml(state.roomSeatDraft.seatTypes.find((type) => type.id === seat.typeId)?.name || "Padrão")}${seat.accessibility ? ` • ${escapeHtml(roomSeatAccessibilityLabel(seat.accessibility))}` : ""}${seat.enabled === false ? " • bloqueada" : ""}"
+          aria-label="Editar poltrona ${escapeHtml(seat.label)}${seat.accessibility ? `, ${escapeHtml(roomSeatAccessibilityLabel(seat.accessibility))}` : ""}"
+        ><span class="room-seat-button-label">${escapeHtml(seat.label)}</span>${seat.accessibility ? `<span class="room-seat-button-marker">${roomSeatAccessibilityIcon(seat.accessibility)}</span>` : ""}</button>
       `).join("")}
     </div>
   `).join("") : `<div class="empty-state"><strong>Mapa ainda não gerado</strong><span>Defina filas, poltronas e corredor; depois clique em Gerar mapa.</span></div>`;
@@ -2422,6 +2455,8 @@ function generateRoomSeatMap() {
         label: `${label}${seatIndex + 1}`,
         typeId: defaultTypeId,
         color: "",
+        accessibility: "",
+        customLabel: false,
         enabled: true,
         aisleAfter: aisleAfter > 0 && seatIndex + 1 === aisleAfter
       }))
@@ -2460,7 +2495,10 @@ function updateRoomSeatSelectionField(field, value) {
   const targets = roomSeatTargets(selection);
   if (!selection || !targets.length) return;
   if (field === "label") {
-    if (selection.kind === "seat") targets[0].label = String(value || "").trim().slice(0, 16) || targets[0].label;
+    if (selection.kind === "seat") {
+      targets[0].label = String(value || "").trim().slice(0, 16) || targets[0].label;
+      targets[0].customLabel = true;
+    }
     if (selection.kind === "row") {
       const row = selectedRoomSeatRow();
       if (!row) return;
@@ -2472,6 +2510,7 @@ function updateRoomSeatSelectionField(field, value) {
           seat.label = `${next}${seat.label.slice(previous.length)}`;
         }
       });
+      renumberRoomSeatRow(row);
     }
   } else if (field === "typeId" && value) {
     targets.forEach((seat) => {
@@ -2484,13 +2523,16 @@ function updateRoomSeatSelectionField(field, value) {
     targets.forEach((seat) => { seat.enabled = Boolean(value); });
   } else if (field === "aisleAfter" && selection.kind === "seat") {
     targets[0].aisleAfter = Boolean(value);
+  } else if (field === "accessibility" && ["", "wheelchair", "obese"].includes(value)) {
+    targets.forEach((seat) => { seat.accessibility = value; });
   }
-  renderRoomSeatMap(field === "typeId");
+  renderRoomSeatMap(field === "typeId" || field === "accessibility");
 }
 
 function insertRoomSeatAt(row, index, typeId) {
   const seat = createRoomSeat(row, typeId);
   row.seats.splice(Math.max(0, Math.min(index, row.seats.length)), 0, seat);
+  renumberRoomSeatRow(row);
   return seat;
 }
 
@@ -2540,16 +2582,18 @@ function handleRoomSeatSelectionAction(action) {
       if (total <= 1) return showToast("A sala precisa manter pelo menos uma cadeira.", "error");
       if (!confirm(`Excluir a cadeira ${row.seats[seatIndex].label}? A alteração será confirmada ao salvar a sala.`)) return;
       row.seats.splice(seatIndex, 1);
+      renumberRoomSeatRow(row);
       state.roomSeatSelection = null;
     }
   } else if (selection.kind === "row") {
     const rowIndex = rows.findIndex((row) => row.id === selection.rowId);
     if (rowIndex < 0) return;
     if (action === "row-before" || action === "row-after") insertRoomSeatRow(rowIndex + (action === "row-after" ? 1 : 0));
-    if (action === "row-seat") {
+    if (action === "row-seat-left" || action === "row-seat-right") {
       const row = rows[rowIndex];
       if (row.seats.length >= 80) return showToast("Uma fileira permite no máximo 80 cadeiras.", "error");
-      const seat = insertRoomSeatAt(row, row.seats.length, row.seats.at(-1)?.typeId);
+      const addLeft = action === "row-seat-left";
+      const seat = insertRoomSeatAt(row, addLeft ? 0 : row.seats.length, (addLeft ? row.seats[0] : row.seats.at(-1))?.typeId);
       state.roomSeatSelection = { kind: "seat", seatId: seat.id };
     }
     if (action === "row-delete") {
@@ -2565,7 +2609,10 @@ function handleRoomSeatSelectionAction(action) {
       const maxColumns = Math.max(0, ...rows.map((row) => row.seats.length));
       if (maxColumns <= 1) return showToast("A sala precisa manter pelo menos uma coluna.", "error");
       if (!confirm(`Excluir a coluna ${columnIndex + 1} em todas as fileiras?`)) return;
-      rows.forEach((row) => { if (row.seats[columnIndex]) row.seats.splice(columnIndex, 1); });
+      rows.forEach((row) => {
+        if (row.seats[columnIndex]) row.seats.splice(columnIndex, 1);
+        renumberRoomSeatRow(row);
+      });
       state.roomSeatSelection = null;
     }
   }
@@ -6558,6 +6605,8 @@ function bindEvents() {
     updateRoomSeatSelectionField(field, event.target.type === "checkbox" ? event.target.checked : event.target.value);
   });
   $("roomSeatSelectionPanel").addEventListener("click", (event) => {
+    const accessibilityButton = event.target.closest("[data-seat-accessibility]");
+    if (accessibilityButton) return updateRoomSeatSelectionField("accessibility", accessibilityButton.dataset.seatAccessibility || "");
     const button = event.target.closest("[data-seat-selection-action]");
     if (button) handleRoomSeatSelectionAction(button.dataset.seatSelectionAction);
   });
