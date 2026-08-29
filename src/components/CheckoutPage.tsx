@@ -96,6 +96,19 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     [content?.ticketTypes, found?.session.ticketTypeIds]
   );
   const total = cartTotal(cart, found?.session, content?.concessions || [], content?.ticketTypes || []);
+  const requiredSeatCount = cart ? generatedTicketCount(cart, availableTicketTypes) : 0;
+  const selectedSeatIds = cart?.selectedSeatIds || [];
+  const availableSeatIds = new Set((seatMap?.rows || [])
+    .flatMap((row) => row.seats)
+    .filter((seat) => seat.status === "available")
+    .map((seat) => seat.id));
+  const ticketSelectionComplete = seatMapStatus === "ready"
+    && requiredSeatCount > 0
+    && (!seatMap?.enabled || (
+      selectedSeatIds.length === requiredSeatCount
+      && new Set(selectedSeatIds).size === requiredSeatCount
+      && selectedSeatIds.every((seatId) => availableSeatIds.has(seatId))
+    ));
   const checkoutPathFor = useCallback((targetStep: Step) => {
     if (!found) return "/filmes";
     const suffix: Record<Step, string> = {
@@ -126,13 +139,15 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     const persisted = readCheckoutCart();
     const source = persisted?.sessionId === found.session.id ? persisted : cart;
     const next = {
+      ...(source || {}),
       movieId: found.movie.id,
       sessionId: found.session.id,
       fullTickets: source?.fullTickets ?? 1,
       halfTickets: source?.halfTickets ?? 0,
       ticketQuantities: source?.ticketQuantities ?? initialTicketQuantities(availableTicketTypes, source?.fullTickets ?? 1, source?.halfTickets ?? 0),
+      selectedSeatIds: source?.selectedSeatIds || [],
       concessionQuantities: source?.concessionQuantities || {},
-      extrasVisited: source?.extrasVisited || false,
+      extrasVisited: source?.extrasVisited ?? false,
       paymentMethod: source?.paymentMethod || "credit_card",
       ...patch,
     };
@@ -158,11 +173,18 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [activeSessionId, refreshSeatMap]);
 
   useEffect(() => {
-    if (!cart || !seatMap?.enabled) return;
-    const required = generatedTicketCount(cart, availableTicketTypes);
-    const selected = cart.selectedSeatIds || [];
-    if (selected.length > required) updateCart({ selectedSeatIds: selected.slice(0, required) });
-  }, [availableTicketTypes, cart, seatMap?.enabled, updateCart]);
+    if (!cart || !seatMap?.enabled || seatMapStatus !== "ready" || isValidPaymentResult(cart.paymentResult)) return;
+    const validSeatIds = new Set(seatMap.rows
+      .flatMap((row) => row.seats)
+      .filter((seat) => seat.status === "available")
+      .map((seat) => seat.id));
+    const reconciled = [...new Set(cart.selectedSeatIds || [])]
+      .filter((seatId) => validSeatIds.has(seatId))
+      .slice(0, requiredSeatCount);
+    if (reconciled.join("|") !== (cart.selectedSeatIds || []).join("|")) {
+      updateCart({ selectedSeatIds: reconciled });
+    }
+  }, [cart, requiredSeatCount, seatMap, seatMapStatus, updateCart]);
 
   useEffect(() => {
     if (hydratedSessionId !== sessionId || !found || cart?.sessionId === found.session.id) return;
@@ -172,6 +194,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       fullTickets: 1,
       halfTickets: 0,
       ticketQuantities: initialTicketQuantities(availableTicketTypes),
+      selectedSeatIds: [],
       concessionQuantities: {},
       extrasVisited: false,
       paymentMethod: "credit_card" as const,
@@ -188,12 +211,16 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       cart.extrasVisited
       || (persistedCart?.sessionId === found.session.id && persistedCart.extrasVisited)
     );
+    if (["extras", "pagamento"].includes(step) && seatMapStatus === "ready" && !ticketSelectionComplete) {
+      router.replace(checkoutPathFor("ingressos"));
+      return;
+    }
     if (step === "extras" && !cart.extrasVisited) {
       updateCart({ extrasVisited: true });
       return;
     }
     if (step === "pagamento" && !hasVisitedExtras) {
-      updateCart({ extrasVisited: true });
+      router.replace(checkoutPathFor("extras"));
       return;
     }
     if (step === "confirmacao" && !hasPaymentResult) {
@@ -217,7 +244,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     if (step !== "confirmacao" && confirmationStatus !== "idle") {
       setConfirmationStatus("idle");
     }
-  }, [cart, checkoutPathFor, confirmationStatus, found, router, step, updateCart]);
+  }, [cart, checkoutPathFor, confirmationStatus, found, router, seatMapStatus, step, ticketSelectionComplete, updateCart]);
 
   const confirmationResult = cart?.paymentResult as CheckoutPaymentResult | undefined;
   const confirmationOrderId = String(confirmationResult?.order?.id || "");
@@ -296,6 +323,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   const continueToPayment = useCallback(() => {
     if (!found || !cart) return;
+    if (!ticketSelectionComplete) {
+      router.replace(checkoutPathFor("ingressos"));
+      return;
+    }
     const persisted = readCheckoutCart();
     const source = persisted?.sessionId === found.session.id ? persisted : cart;
     const next: StoredCheckoutCart = {
@@ -307,7 +338,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     writeCheckoutCart(next);
     setCart(next);
     router.push(checkoutPathFor("pagamento"));
-  }, [cart, checkoutPathFor, found, router]);
+  }, [cart, checkoutPathFor, found, router, ticketSelectionComplete]);
 
   const selectedConcessions = useMemo(() => {
     const quantities = cart?.concessionQuantities || {};
@@ -449,6 +480,12 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   if (status === "error") return <PageShell><p className="text-rose-200">{error}</p></PageShell>;
   if (hydratedSessionId !== sessionId) return <PageShell><div className="h-96 skeleton-soft" /></PageShell>;
   if (!found || !cart) return <PageShell><p className="text-slate-300">Sessão não encontrada. Volte para a programação.</p><Link className="mt-4 inline-flex text-gold-400" href="/filmes">Ver filmes</Link></PageShell>;
+  if (["extras", "pagamento"].includes(step) && (seatMapStatus !== "ready" || !ticketSelectionComplete)) {
+    return <PageShell><div className="h-96 skeleton-soft" aria-label="Validando ingressos e poltronas" /></PageShell>;
+  }
+  if (step === "pagamento" && !cart.extrasVisited) {
+    return <PageShell><div className="h-96 skeleton-soft" aria-label="Redirecionando para extras" /></PageShell>;
+  }
 
   return (
     <PageShell>
@@ -463,7 +500,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             sessionId={found.session.id}
             step={step}
             extrasVisited={Boolean(cart.extrasVisited)}
-            ticketsComplete={seatMapStatus === "ready" && (!seatMap?.enabled || (cart.selectedSeatIds || []).length === generatedTicketCount(cart, availableTicketTypes))}
+            ticketsComplete={ticketSelectionComplete}
             onContinueToPayment={continueToPayment}
           />
           {step === "ingressos" && (
@@ -519,7 +556,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         onSubmit={submitPayment}
         onContinueToPayment={continueToPayment}
         submitDisabled={cart.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments}
-        continueDisabled={step === "ingressos" && !(seatMapStatus === "ready" && (!seatMap?.enabled || (cart.selectedSeatIds || []).length === generatedTicketCount(cart, availableTicketTypes)))}
+        continueDisabled={step === "ingressos" && !ticketSelectionComplete}
       />
     </PageShell>
   );
@@ -555,8 +592,8 @@ function Steps({ sessionId, step, extrasVisited, ticketsComplete, onContinueToPa
         const isCurrent = id === step;
         const isDone = index < currentIndex;
         const locked = step === "confirmacao"
-          || (id === "extras" && step === "ingressos" && !ticketsComplete)
-          || (id === "pagamento" && !extrasVisited && step !== "extras")
+          || (id === "extras" && !ticketsComplete)
+          || (id === "pagamento" && (step === "ingressos" || !extrasVisited || !ticketsComplete))
           || id === "confirmacao";
         const numberClassName = isCurrent
           ? "bg-gold-400 text-slate-950"
@@ -615,11 +652,11 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
     const seat = seatsById.get(seatId);
     if (!seat || seat.status !== "available") return;
     if (selectedSeatIds.includes(seatId)) {
-      updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== seatId) });
+      updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== seatId), extrasVisited: false });
       return;
     }
     if (selectedSeatIds.length >= requiredSeats) return;
-    updateCart({ selectedSeatIds: [...selectedSeatIds, seatId] });
+    updateCart({ selectedSeatIds: [...selectedSeatIds, seatId], extrasVisited: false });
   };
 
   return (
@@ -631,7 +668,7 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
             value={Number(quantities[ticketType.id] || 0)}
             onChange={(value) => {
               const previous = Number(quantities[ticketType.id] || 0);
-              updateCart({ ticketQuantities: { ...quantities, [ticketType.id]: value } });
+              updateCart({ ticketQuantities: { ...quantities, [ticketType.id]: value }, extrasVisited: false });
               if (value > previous) {
                 trackMarketingEvent("add_to_cart", {
                   currency: "BRL",
