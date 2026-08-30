@@ -1196,6 +1196,80 @@ async function pruneSystemLogsFromPostgres(retentionDays = 90) {
   return Number(result.rowCount || 0);
 }
 
+function mapSeatHold(row) {
+  return {
+    sessionId: row.session_id,
+    seatId: row.seat_id,
+    ownerToken: row.owner_token,
+    connectionId: row.connection_id || "",
+    expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : ""
+  };
+}
+
+async function listActiveSeatHolds(sessionId) {
+  const existingClient = contextClient();
+  const client = existingClient || await getPool().connect();
+  try {
+    const result = await client.query(
+      "SELECT * FROM seat_holds WHERE session_id = $1 AND expires_at > now() ORDER BY seat_id",
+      [String(sessionId || "")]
+    );
+    return result.rows.map(mapSeatHold);
+  } finally {
+    if (!existingClient) client.release();
+  }
+}
+
+async function acquireSeatHold({ sessionId, seatId, ownerToken, connectionId = "", ttlMs = 120000 }) {
+  const existingClient = contextClient();
+  const client = existingClient || await getPool().connect();
+  try {
+    const expiresAt = new Date(Date.now() + Math.min(300000, Math.max(30000, Number(ttlMs || 120000))));
+    const result = await client.query(`
+      INSERT INTO seat_holds (session_id, seat_id, owner_token, connection_id, expires_at)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (session_id, seat_id) DO UPDATE SET
+        owner_token = EXCLUDED.owner_token,
+        connection_id = EXCLUDED.connection_id,
+        expires_at = EXCLUDED.expires_at,
+        updated_at = now()
+      WHERE seat_holds.expires_at <= now() OR seat_holds.owner_token = EXCLUDED.owner_token
+      RETURNING *
+    `, [String(sessionId || ""), String(seatId || ""), String(ownerToken || ""), String(connectionId || ""), expiresAt]);
+    return result.rows[0] ? mapSeatHold(result.rows[0]) : null;
+  } finally {
+    if (!existingClient) client.release();
+  }
+}
+
+async function releaseSeatHold({ sessionId, seatId, ownerToken }) {
+  const existingClient = contextClient();
+  const client = existingClient || await getPool().connect();
+  try {
+    const result = await client.query(
+      "DELETE FROM seat_holds WHERE session_id = $1 AND seat_id = $2 AND owner_token = $3 RETURNING *",
+      [String(sessionId || ""), String(seatId || ""), String(ownerToken || "")]
+    );
+    return result.rows[0] ? mapSeatHold(result.rows[0]) : null;
+  } finally {
+    if (!existingClient) client.release();
+  }
+}
+
+async function releaseSeatHoldsForOwner({ sessionId, ownerToken }) {
+  const existingClient = contextClient();
+  const client = existingClient || await getPool().connect();
+  try {
+    const result = await client.query(
+      "DELETE FROM seat_holds WHERE session_id = $1 AND owner_token = $2 RETURNING *",
+      [String(sessionId || ""), String(ownerToken || "")]
+    );
+    return result.rows.map(mapSeatHold);
+  } finally {
+    if (!existingClient) client.release();
+  }
+}
+
 module.exports = {
   postgresEnabled,
   readDbFromPostgres,
@@ -1205,5 +1279,9 @@ module.exports = {
   appendSystemLogToPostgres,
   listSystemLogsFromPostgres,
   pruneSystemLogsFromPostgres,
+  listActiveSeatHolds,
+  acquireSeatHold,
+  releaseSeatHold,
+  releaseSeatHoldsForOwner,
   cinemaIsoDate
 };

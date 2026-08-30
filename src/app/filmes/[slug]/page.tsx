@@ -7,6 +7,7 @@ import { Play, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
+import { MovieMetadata } from "@/components/MovieMetadata";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { TrailerModal } from "@/components/TrailerModal";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
@@ -83,11 +84,7 @@ export default function FilmeDetalhePage() {
                 <div className="self-end pb-4">
                   <MovieTagBadge tag={movie.tag} />
                   <h1 className="mt-4 font-display text-5xl font-black leading-none tracking-tight sm:text-6xl">{movie.title}</h1>
-                  <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-slate-300">
-                    <span>{movie.rating}</span>
-                    <span>{movie.duration}</span>
-                    <span>{movie.genre.join(" / ")}</span>
-                  </div>
+                  <MovieMetadata rating={movie.rating} duration={movie.duration} genres={movie.genre} className="mt-5" />
                   <p className="mt-6 max-w-3xl text-base leading-8 text-slate-200">{movie.synopsis}</p>
                   {movie.trailerYoutubeId && (
                     <button type="button" onClick={() => setTrailerOpen(true)} className="mt-8 inline-flex items-center gap-2 text-sm font-black text-gold-400 hover:text-gold-300">

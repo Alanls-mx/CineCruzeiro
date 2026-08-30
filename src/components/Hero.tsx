@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { Play, Ticket, Sparkles, Clock, ShieldCheck, Zap, Popcorn, Smartphone, Film } from "lucide-react";
 import { Movie, Session } from "@/types";
+import { AgeRatingBadge } from "@/components/AgeRatingBadge";
 import { isUploadedAsset } from "@/utils/cinema";
 
 interface HeroProps {
@@ -65,10 +66,7 @@ export function Hero({ movie, onOpenCheckout, onOpenTrailer }: HeroProps) {
 
             {/* Metadata (Age rating, Duration, Genres) */}
             <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-slate-200" aria-label={`Classificação ${movie.rating}, duração ${movie.duration}`}>
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-brand-600 text-xs font-black text-white shadow-md">
-                {movie.rating}
-              </span>
-              <span className="text-brand-400" aria-hidden="true">•</span>
+              <AgeRatingBadge rating={movie.rating} size="sm" />
               <span className="flex items-center gap-1 font-semibold text-white">
                 <Clock className="h-4 w-4 text-gold-400" />
                 {movie.duration}

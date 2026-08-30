@@ -13,7 +13,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
-    "test": "node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/fiscal-service-tests.js && node scripts/admin-two-factor-tests.js && node scripts/mercado-pago-point-tests.js && node scripts/ticket-document-tests.js && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
+    "test": "node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/fiscal-service-tests.js && node scripts/admin-two-factor-tests.js && node scripts/mercado-pago-point-tests.js && node scripts/ticket-document-tests.js && node scripts/seat-realtime-tests.js && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
   },
   "dependencies": {
     "@mercadopago/sdk-js": "^0.0.3",
@@ -27,7 +27,8 @@
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^2.5.4",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",

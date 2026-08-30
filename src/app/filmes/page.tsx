@@ -6,6 +6,7 @@ import { CalendarDays, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter, sessionsForCalendarDay } from "@/components/MovieSessionSelector";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
+import { MovieMetadata } from "@/components/MovieMetadata";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { calendarDayDate, calendarDayTitle, isUploadedAsset, movieSlug } from "@/utils/cinema";
@@ -157,7 +158,7 @@ function MovieSchedule({ movie, filter, selectedDay, days, priority = false }: {
           <div>
             <MovieTagBadge tag={movie.tag} className="mb-3" />
             <h2 className="font-display text-3xl font-black">{movie.title}</h2>
-            <p className="mt-2 text-sm font-semibold text-slate-400">{movie.rating} • {movie.duration}</p>
+            <MovieMetadata rating={movie.rating} duration={movie.duration} className="mt-3" />
           </div>
         </div>
         <div className="mt-6">

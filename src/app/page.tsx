@@ -4,6 +4,7 @@ import { unstable_cache } from "next/cache";
 import { Ticket } from "lucide-react";
 import { HomeTrailerButton } from "@/components/HomeTrailerButton";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
+import { MovieMetadata } from "@/components/MovieMetadata";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { CinemaContent, normalizeCinemaContent } from "@/services/cinemaApi";
 import { Movie } from "@/types";
@@ -74,10 +75,8 @@ export default async function HomePage() {
                   <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Cinema de bairro • Sala única laser 4K</p>
                   <h1 className="mt-5 font-display text-5xl font-black leading-none tracking-tight sm:text-6xl lg:text-7xl">{featured.title}</h1>
                   <p className="mt-5 max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">{featured.synopsis}</p>
-                  <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-slate-300">
-                    <span>{featured.rating}</span>
-                    <span>{featured.duration}</span>
-                    <span>{featured.genre.slice(0, 3).join(" / ")}</span>
+                  <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm font-semibold text-slate-300">
+                    <MovieMetadata rating={featured.rating} duration={featured.duration} genres={featured.genre} />
                     <span className="text-gold-400">Ingressos {money(firstSession?.priceFull || 10)}</span>
                   </div>
                   <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -143,7 +142,7 @@ function MovieStrip({ title, movies, muted = false }: { title: string; movies: M
               <MovieTagBadge tag={movie.tag} className="absolute left-3 top-3" />
             </div>
             <h3 className="mt-3 line-clamp-2 text-sm font-black text-white">{movie.title}</h3>
-            <p className="mt-1 text-xs font-semibold text-slate-400">{movie.duration} • {movie.rating}</p>
+            <MovieMetadata rating={movie.rating} duration={movie.duration} compact className="mt-2" />
           </Link>
         ))}
       </div>

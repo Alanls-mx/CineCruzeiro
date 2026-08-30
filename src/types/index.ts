@@ -84,6 +84,7 @@ export interface TicketOrder {
     unitPrice?: number;
   }>;
   selectedSeatIds?: string[];
+  seatHoldToken?: string;
   selectedSeats?: Array<{
     id: string;
     label: string;

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Play, Ticket, Clock, Film } from "lucide-react";
 import { Movie, Session } from "@/types";
 import { isUploadedAsset } from "@/utils/cinema";
+import { AgeRatingBadge } from "@/components/AgeRatingBadge";
 
 interface MovieCardProps {
   movie: Movie;
@@ -16,25 +17,6 @@ export function MovieCard({ movie, onOpenCheckout, onOpenTrailer }: MovieCardPro
   const [selectedSession, setSelectedSession] = useState<Session | null>(
     movie.sessions[0] || null
   );
-
-  const getRatingColor = (rating: string) => {
-    switch (rating) {
-      case "L":
-        return "bg-emerald-500 text-black";
-      case "10":
-        return "bg-blue-500 text-white";
-      case "12":
-        return "bg-yellow-500 text-black";
-      case "14":
-        return "bg-orange-500 text-white";
-      case "16":
-        return "bg-rose-600 text-white";
-      case "18":
-        return "bg-black text-white shadow-md shadow-rose-950/30";
-      default:
-        return "bg-slate-700 text-white";
-    }
-  };
 
   return (
     <div className="group relative flex h-full flex-col overflow-hidden rounded-lg bg-brand-900/85 shadow-2xl shadow-blue-950/20 transition duration-200 hover:-translate-y-1 hover:shadow-blue-950/40">
@@ -89,13 +71,7 @@ export function MovieCard({ movie, onOpenCheckout, onOpenTrailer }: MovieCardPro
 
         {/* Age rating */}
         <div className="absolute top-3 right-3">
-          <span
-            className={`inline-flex h-6 w-6 items-center justify-center rounded-lg text-xs font-black shadow-md ${getRatingColor(
-              movie.rating
-            )}`}
-          >
-            {movie.rating}
-          </span>
+          <AgeRatingBadge rating={movie.rating} size="sm" />
         </div>
 
         {/* Trailer play button overlay */}
@@ -113,12 +89,11 @@ export function MovieCard({ movie, onOpenCheckout, onOpenTrailer }: MovieCardPro
       {/* Movie Details */}
       <div className="flex flex-1 flex-col p-5 space-y-4">
         <div className="min-h-[82px]">
-          <div className="flex items-center gap-2 text-xs text-brand-300 font-medium">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-300 font-medium">
             <span className="flex items-center gap-1 text-slate-200">
               <Clock className="h-3.5 w-3.5 text-gold-400" />
               {movie.duration}
             </span>
-            <span>•</span>
             <span className="truncate text-slate-300">{movie.genre.join(", ")}</span>
           </div>
 

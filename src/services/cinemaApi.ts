@@ -161,7 +161,8 @@ export interface SessionSeatMap {
       color?: string;
       accessibility?: "wheelchair" | "obese" | "";
       enabled: boolean;
-      status: "available" | "unavailable" | "blocked";
+      status: "available" | "held" | "unavailable" | "blocked";
+      heldByMe?: boolean;
       aisleAfter?: boolean;
     }>;
   }>;
@@ -383,8 +384,9 @@ export async function fetchCinemaContent(force = false): Promise<CinemaContent> 
   }
 }
 
-export async function fetchSessionSeatMap(sessionId: string): Promise<SessionSeatMap> {
-  const response = await apiFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/seats`, {
+export async function fetchSessionSeatMap(sessionId: string, ownerToken = ""): Promise<SessionSeatMap> {
+  const query = ownerToken ? `?ownerToken=${encodeURIComponent(ownerToken)}` : "";
+  const response = await apiFetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/seats${query}`, {
     cache: "no-store",
     credentials: "include",
   });
@@ -545,6 +547,7 @@ export async function createClubCreditCheckout(data: {
   halfTicketsCount: number;
   ticketItems?: Array<{ id: string; quantity: number }>;
   selectedSeatIds?: string[];
+  seatHoldToken?: string;
   concessionItems?: Array<{ id: string; quantity: number }>;
   couponCode?: string;
 }) {

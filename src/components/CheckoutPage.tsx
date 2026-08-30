@@ -8,6 +8,7 @@ import QRCode from "qrcode";
 import { Accessibility, CircleUserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
+import { useSeatRealtime } from "@/hooks/useSeatRealtime";
 import { AccountSubscription, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap } from "@/services/cinemaApi";
 import { cartTotal, checkoutCartQueueRemaining, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, nextCheckoutCartInQueue, publicAssetPath, readCheckoutCart, removeCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
@@ -101,7 +102,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const selectedSeatIds = cart?.selectedSeatIds || [];
   const availableSeatIds = new Set((seatMap?.rows || [])
     .flatMap((row) => row.seats)
-    .filter((seat) => seat.status === "available")
+    .filter((seat) => seat.status === "available" || seat.heldByMe)
     .map((seat) => seat.id));
   const ticketSelectionComplete = seatMapStatus === "ready"
     && requiredSeatCount > 0
@@ -126,14 +127,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     if (!activeSessionId) return;
     setSeatMapStatus("loading");
     try {
-      const next = await fetchSessionSeatMap(activeSessionId);
+      const next = await fetchSessionSeatMap(activeSessionId, cart?.seatHoldToken || "");
       setSeatMap(next);
       setSeatMapStatus("ready");
     } catch {
       setSeatMap(null);
       setSeatMapStatus("error");
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, cart?.seatHoldToken]);
 
   const updateCart = useCallback((patch: Partial<StoredCheckoutCart>) => {
     if (!found) return;
@@ -147,6 +148,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       halfTickets: source?.halfTickets ?? 0,
       ticketQuantities: source?.ticketQuantities ?? initialTicketQuantities(availableTicketTypes, source?.fullTickets ?? 1, source?.halfTickets ?? 0),
       selectedSeatIds: source?.selectedSeatIds || [],
+      seatHoldToken: source?.seatHoldToken || crypto.randomUUID(),
       concessionQuantities: source?.concessionQuantities || {},
       extrasVisited: source?.extrasVisited ?? false,
       paymentMethod: source?.paymentMethod || "credit_card",
@@ -155,6 +157,45 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     writeCheckoutCart(next);
     setCart(next);
   }, [availableTicketTypes, cart, found]);
+
+  const applySeatChange = useCallback((change: { seatId: string; status: "available" | "held" | "unavailable"; heldByMe?: boolean }) => {
+    setSeatMap((current) => current ? {
+      ...current,
+      rows: current.rows.map((row) => ({
+        ...row,
+        seats: row.seats.map((seat) => seat.id === change.seatId ? { ...seat, status: change.status, heldByMe: Boolean(change.heldByMe) } : seat)
+      }))
+    } : current);
+    if ((change.status === "unavailable" || (change.status === "held" && !change.heldByMe)) && selectedSeatIds.includes(change.seatId)) {
+      updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== change.seatId), extrasVisited: false });
+      setPaymentError("Uma poltrona selecionada ficou indisponível. Escolha outro lugar.");
+    }
+  }, [selectedSeatIds, updateCart]);
+
+  const applySeatSessionState = useCallback((state: { occupiedSeatIds: string[]; heldSeats: Array<{ seatId: string; heldByMe: boolean }> }) => {
+    const occupied = new Set(state.occupiedSeatIds);
+    const held = new Map(state.heldSeats.map((item) => [item.seatId, item]));
+    setSeatMap((current) => current ? {
+      ...current,
+      rows: current.rows.map((row) => ({
+        ...row,
+        seats: row.seats.map((seat) => seat.enabled === false ? seat : occupied.has(seat.id)
+          ? { ...seat, status: "unavailable", heldByMe: false }
+          : held.has(seat.id)
+            ? { ...seat, status: "held", heldByMe: Boolean(held.get(seat.id)?.heldByMe) }
+            : { ...seat, status: "available", heldByMe: false })
+      }))
+    } : current);
+  }, []);
+
+  const seatRealtime = useSeatRealtime({
+    sessionId: activeSessionId,
+    ownerToken: cart?.seatHoldToken || "",
+    enabled: Boolean(seatMap?.enabled && !isValidPaymentResult(cart?.paymentResult)),
+    selectedSeatIds,
+    onSeatChange: applySeatChange,
+    onSessionState: applySeatSessionState
+  });
 
   useEffect(() => {
     const stored = readCheckoutCart();
@@ -168,6 +209,11 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [sessionId]);
 
   useEffect(() => {
+    if (!found || !cart || cart.seatHoldToken || isValidPaymentResult(cart.paymentResult)) return;
+    updateCart({ seatHoldToken: crypto.randomUUID() });
+  }, [cart, found, updateCart]);
+
+  useEffect(() => {
     if (status !== "ready" || sessionId === "carrinho" || step === "confirmacao" || sessionCanCheckout) return;
     removeCheckoutCart(sessionId);
     setCart(null);
@@ -175,16 +221,17 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [router, sessionCanCheckout, sessionId, status, step]);
 
   useEffect(() => {
-    if (!activeSessionId || loadedSeatSessionRef.current === activeSessionId) return;
-    loadedSeatSessionRef.current = activeSessionId;
+    const loadKey = `${activeSessionId}:${cart?.seatHoldToken || ""}`;
+    if (!activeSessionId || loadedSeatSessionRef.current === loadKey) return;
+    loadedSeatSessionRef.current = loadKey;
     void refreshSeatMap();
-  }, [activeSessionId, refreshSeatMap]);
+  }, [activeSessionId, cart?.seatHoldToken, refreshSeatMap]);
 
   useEffect(() => {
     if (!cart || !seatMap?.enabled || seatMapStatus !== "ready" || isValidPaymentResult(cart.paymentResult)) return;
     const validSeatIds = new Set(seatMap.rows
       .flatMap((row) => row.seats)
-      .filter((seat) => seat.status === "available")
+      .filter((seat) => seat.status === "available" || seat.heldByMe)
       .map((seat) => seat.id));
     const reconciled = [...new Set(cart.selectedSeatIds || [])]
       .filter((seatId) => validSeatIds.has(seatId))
@@ -203,6 +250,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       halfTickets: 0,
       ticketQuantities: initialTicketQuantities(availableTicketTypes),
       selectedSeatIds: [],
+      seatHoldToken: crypto.randomUUID(),
       concessionQuantities: {},
       extrasVisited: false,
       paymentMethod: "credit_card" as const,
@@ -383,6 +431,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           halfTicketsCount: Number(checkoutCart.halfTickets || 0),
           ticketItems: selectedTicketItems(checkoutCart, availableTicketTypes),
           selectedSeatIds: checkoutCart.selectedSeatIds || [],
+          seatHoldToken: checkoutCart.seatHoldToken,
           concessionItems: Object.entries(checkoutCart.concessionQuantities || {})
             .filter(([, qty]) => Number(qty) > 0)
             .map(([id, qty]) => ({ id, quantity: Number(qty) })),
@@ -432,6 +481,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         halfTicketsCount: Number(cart.halfTickets || 0),
         ticketItems: selectedTicketItems(cart, availableTicketTypes),
         selectedSeatIds: cart.selectedSeatIds || [],
+        seatHoldToken: cart.seatHoldToken,
         concessionItems: Object.entries(cart.concessionQuantities || {})
           .filter(([, qty]) => Number(qty) > 0)
           .map(([id, qty]) => ({ id, quantity: Number(qty) })),
@@ -518,6 +568,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               ticketTypes={availableTicketTypes}
               seatMap={seatMap}
               seatMapStatus={seatMapStatus}
+              realtimeStatus={seatRealtime.status}
+              onSelectSeat={seatRealtime.selectSeat}
+              onReleaseSeat={seatRealtime.releaseSeat}
               onRefreshSeatMap={refreshSeatMap}
             />
           )}
@@ -641,12 +694,15 @@ function Steps({ sessionId, step, extrasVisited, ticketsComplete, onContinueToPa
   );
 }
 
-function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, onRefreshSeatMap }: {
+function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, realtimeStatus, onSelectSeat, onReleaseSeat, onRefreshSeatMap }: {
   cart: StoredCheckoutCart;
   updateCart: (patch: Partial<StoredCheckoutCart>) => void;
   ticketTypes: TicketTypeRecord[];
   seatMap: SessionSeatMap | null;
   seatMapStatus: "idle" | "loading" | "ready" | "error";
+  realtimeStatus: "connecting" | "connected" | "disconnected";
+  onSelectSeat: (seatId: string) => Promise<{ ok: boolean; message?: string }>;
+  onReleaseSeat: (seatId: string) => Promise<{ ok: boolean; message?: string }>;
   onRefreshSeatMap: () => Promise<void>;
 }) {
   const quantities = cart.ticketQuantities || {};
@@ -656,15 +712,21 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
   const seatTypesById = new Map((seatMap?.seatTypes || []).map((type) => [type.id, type]));
   const seatSelectionComplete = seatMapStatus === "ready" && (!seatMap?.enabled || selectedSeatIds.length === requiredSeats);
 
-  const toggleSeat = (seatId: string) => {
+  const [seatActionError, setSeatActionError] = useState("");
+  const toggleSeat = async (seatId: string) => {
     const seat = seatsById.get(seatId);
-    if (!seat || seat.status !== "available") return;
+    if (!seat || (seat.status !== "available" && !seat.heldByMe) || realtimeStatus !== "connected") return;
+    setSeatActionError("");
     if (selectedSeatIds.includes(seatId)) {
-      updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== seatId), extrasVisited: false });
+      const result = await onReleaseSeat(seatId);
+      if (result.ok) updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== seatId), extrasVisited: false });
+      else setSeatActionError(result.message || "Não foi possível liberar a poltrona.");
       return;
     }
     if (selectedSeatIds.length >= requiredSeats) return;
-    updateCart({ selectedSeatIds: [...selectedSeatIds, seatId], extrasVisited: false });
+    const result = await onSelectSeat(seatId);
+    if (result.ok) updateCart({ selectedSeatIds: [...selectedSeatIds, seatId], extrasVisited: false });
+    else setSeatActionError(result.message || "Esta poltrona acabou de ser selecionada por outra pessoa.");
   };
 
   return (
@@ -720,6 +782,7 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
                 <span key={type.id} className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm" style={{ backgroundColor: type.color }} />{type.name}</span>
               ))}
               <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-slate-500" />Indisponível</span>
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-amber-500/60" />Em seleção</span>
               <span className="inline-flex items-center gap-2"><Accessibility className="h-4 w-4" />Cadeirante</span>
               <span className="inline-flex items-center gap-2"><CircleUserRound className="h-4 w-4" />Pessoa obesa</span>
             </div>
@@ -735,13 +798,13 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
                       {row.seats.map((seat) => {
                         const selected = selectedSeatIds.includes(seat.id);
                         const type = seatTypesById.get(seat.typeId);
-                        const unavailable = seat.status !== "available";
+                        const unavailable = (seat.status !== "available" && !seat.heldByMe) || realtimeStatus !== "connected";
                         return (
                           <button
                             key={seat.id}
                             type="button"
                             disabled={unavailable}
-                            onClick={() => toggleSeat(seat.id)}
+                            onClick={() => void toggleSeat(seat.id)}
                             aria-pressed={selected}
                             aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${unavailable ? ", indisponível" : selected ? ", selecionada" : ""}`}
                             title={`${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
@@ -768,6 +831,10 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, on
                 Selecionadas: {selectedSeatIds.map((id) => seatsById.get(id)?.label || id).join(", ")}
               </p>
             )}
+            <p className={`mt-3 text-xs font-bold ${realtimeStatus === "connected" ? "text-emerald-300" : "text-amber-200"}`} role="status">
+              {realtimeStatus === "connected" ? "Poltronas sincronizadas em tempo real." : realtimeStatus === "connecting" ? "Conectando à reserva de poltronas..." : "Reconectando à reserva de poltronas..."}
+            </p>
+            {seatActionError && <p className="mt-2 text-sm font-semibold text-rose-200" role="alert">{seatActionError}</p>}
           </div>
         )}
       </section>

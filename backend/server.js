@@ -15,7 +15,11 @@ const {
   appendAuditLogToPostgres,
   appendSystemLogToPostgres,
   listSystemLogsFromPostgres,
-  pruneSystemLogsFromPostgres
+  pruneSystemLogsFromPostgres,
+  listActiveSeatHolds: listActiveSeatHoldsFromPostgres,
+  acquireSeatHold: acquireSeatHoldInPostgres,
+  releaseSeatHold: releaseSeatHoldInPostgres,
+  releaseSeatHoldsForOwner: releaseSeatHoldsForOwnerInPostgres
 } = require("./db/postgresStore");
 const paymentService = require("./services/paymentService");
 const integrationConfigService = require("./services/integrationConfigService");
@@ -24,6 +28,7 @@ const fiscalService = require("./services/fiscalService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
+const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const {
   applyMovieTagTransition,
   startMovieTagTransition,
@@ -33,6 +38,8 @@ const { brazilianDate } = require("./utils/dateFormat");
 
 const requestContext = new AsyncLocalStorage();
 const adminTwoFactorChallenges = new Map();
+const memorySeatHolds = new Map();
+let seatRealtimeService = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
@@ -324,7 +331,7 @@ function securityHeaders(extra = {}) {
     "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://accounts.google.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
-    "connect-src 'self' https: http://localhost:3000 http://localhost:4000"
+    "connect-src 'self' https: wss: ws://localhost:3000 ws://localhost:4000 ws://localhost:4010"
   ].join("; ");
   return {
     "Content-Security-Policy": csp,
@@ -1453,6 +1460,58 @@ async function withCriticalMutation(callback) {
   return callback();
 }
 
+function pruneMemorySeatHolds() {
+  const now = Date.now();
+  for (const [key, hold] of memorySeatHolds.entries()) {
+    if (new Date(hold.expiresAt).getTime() <= now) memorySeatHolds.delete(key);
+  }
+}
+
+async function listActiveSeatHolds(sessionId) {
+  if (postgresEnabled()) return listActiveSeatHoldsFromPostgres(sessionId);
+  pruneMemorySeatHolds();
+  return [...memorySeatHolds.values()].filter((hold) => hold.sessionId === sessionId);
+}
+
+async function acquireSeatHold({ sessionId, seatId, ownerToken, connectionId = "", ttlMs = 120000 }) {
+  if (postgresEnabled()) return acquireSeatHoldInPostgres({ sessionId, seatId, ownerToken, connectionId, ttlMs });
+  pruneMemorySeatHolds();
+  const key = `${sessionId}:${seatId}`;
+  const current = memorySeatHolds.get(key);
+  if (current && current.ownerToken !== ownerToken) return null;
+  const hold = {
+    sessionId,
+    seatId,
+    ownerToken,
+    connectionId,
+    expiresAt: new Date(Date.now() + Math.min(300000, Math.max(30000, Number(ttlMs || 120000)))).toISOString()
+  };
+  memorySeatHolds.set(key, hold);
+  return hold;
+}
+
+async function releaseSeatHold({ sessionId, seatId, ownerToken }) {
+  if (postgresEnabled()) return releaseSeatHoldInPostgres({ sessionId, seatId, ownerToken });
+  pruneMemorySeatHolds();
+  const key = `${sessionId}:${seatId}`;
+  const current = memorySeatHolds.get(key);
+  if (!current || current.ownerToken !== ownerToken) return null;
+  memorySeatHolds.delete(key);
+  return current;
+}
+
+async function releaseSeatHoldsForOwner({ sessionId, ownerToken }) {
+  if (postgresEnabled()) return releaseSeatHoldsForOwnerInPostgres({ sessionId, ownerToken });
+  pruneMemorySeatHolds();
+  const released = [];
+  for (const [key, hold] of memorySeatHolds.entries()) {
+    if (hold.sessionId !== sessionId || hold.ownerToken !== ownerToken) continue;
+    released.push(hold);
+    memorySeatHolds.delete(key);
+  }
+  return released;
+}
+
 function getTrailerExtension(sourceUrl, contentType = "") {
   try {
     const pathname = new URL(sourceUrl).pathname;
@@ -1548,6 +1607,7 @@ function normalizePaymentOrder(input) {
     selectedSeatIds: Array.isArray(input.selectedSeatIds)
       ? input.selectedSeatIds.map((value) => String(value || "").trim()).filter(Boolean)
       : [],
+    seatHoldToken: String(input.seatHoldToken || "").trim(),
     autoAssignSeats: Boolean(input.autoAssignSeats),
     couponCode: String(input.couponCode || "").trim().toUpperCase(),
     customerUserId: String(input.customerUserId || input.userId || "").trim(),
@@ -1667,6 +1727,79 @@ function occupiedSeatIds(db, sessionId, ignoredOrderId = "") {
     (order.selectedSeatIds || []).forEach((seatId) => occupied.add(String(seatId)));
   });
   return occupied;
+}
+
+function findSessionWithMovie(db, sessionId) {
+  for (const movie of db.movies || []) {
+    const session = (movie.sessions || []).find((item) => item.id === sessionId);
+    if (session) return { movie, session };
+  }
+  return null;
+}
+
+async function realtimeSeatState(sessionId, ownerToken = "") {
+  const db = await readDb();
+  const found = findSessionWithMovie(db, sessionId);
+  if (!found) throw Object.assign(new Error("Sessão não encontrada."), { statusCode: 404, code: "SESSION_NOT_FOUND" });
+  const room = roomForSession(db, found.session);
+  const holds = roomSeatSelectionEnabled(room) ? await listActiveSeatHolds(sessionId) : [];
+  return {
+    sessionId,
+    occupiedSeatIds: [...occupiedSeatIds(db, sessionId)],
+    heldSeats: holds.map((hold) => ({
+      seatId: hold.seatId,
+      expiresAt: hold.expiresAt,
+      heldByMe: Boolean(ownerToken && hold.ownerToken === ownerToken)
+    }))
+  };
+}
+
+async function selectRealtimeSeat({ sessionId, seatId, ownerToken, connectionId }) {
+  return withCriticalMutation(async () => {
+    const db = await readDb();
+    const found = findSessionWithMovie(db, sessionId);
+    if (!found) throw Object.assign(new Error("Sessão não encontrada."), { statusCode: 404, code: "SESSION_NOT_FOUND" });
+    if (!isSessionSellable(found.session, found.session.date || todayIsoDate())) {
+      throw Object.assign(new Error("Esta sessão não está mais disponível para venda."), { statusCode: 409, code: "SESSION_UNAVAILABLE" });
+    }
+    const room = roomForSession(db, found.session);
+    const seat = roomSeats(room).find((item) => String(item.id) === String(seatId) && item.enabled !== false);
+    if (!roomSeatSelectionEnabled(room) || !seat) {
+      throw Object.assign(new Error("Esta poltrona não está disponível no mapa da sala."), { statusCode: 409, code: "SEAT_LAYOUT_CHANGED" });
+    }
+    if (occupiedSeatIds(db, sessionId).has(String(seatId))) {
+      throw Object.assign(new Error(`A poltrona ${seat.label || seatId} já está ocupada.`), { statusCode: 409, code: "SEAT_UNAVAILABLE" });
+    }
+    const hold = await acquireSeatHold({ sessionId, seatId, ownerToken, connectionId, ttlMs: 120000 });
+    if (!hold) {
+      throw Object.assign(new Error(`A poltrona ${seat.label || seatId} acabou de ser selecionada por outra pessoa.`), { statusCode: 409, code: "SEAT_ALREADY_HELD" });
+    }
+    return hold;
+  });
+}
+
+async function claimSeatHoldsForOrder(db, order) {
+  if (!order.seatSelectionEnabled || !(order.selectedSeatIds || []).length) return;
+  order.seatHoldToken = order.seatHoldToken || `checkout-${order.id || crypto.randomUUID()}`;
+  const holds = await listActiveSeatHolds(order.sessionId);
+  const bySeat = new Map(holds.map((hold) => [String(hold.seatId), hold]));
+  for (const seatId of order.selectedSeatIds) {
+    const current = bySeat.get(String(seatId));
+    if (current && current.ownerToken !== order.seatHoldToken) {
+      throw Object.assign(new Error(`A poltrona ${seatId} está em seleção por outra pessoa.`), { statusCode: 409, code: "SEAT_ALREADY_HELD" });
+    }
+    const acquired = await acquireSeatHold({ sessionId: order.sessionId, seatId, ownerToken: order.seatHoldToken, connectionId: "payment", ttlMs: 120000 });
+    if (!acquired) {
+      throw Object.assign(new Error(`A poltrona ${seatId} não está mais disponível.`), { statusCode: 409, code: "SEAT_ALREADY_HELD" });
+    }
+  }
+}
+
+async function releaseOrderSeatHolds(order) {
+  if (!order?.seatHoldToken || !order?.sessionId) return [];
+  const released = await releaseSeatHoldsForOwner({ sessionId: order.sessionId, ownerToken: order.seatHoldToken });
+  released.forEach((hold) => seatRealtimeService?.broadcastSeatStatus(order.sessionId, hold.seatId, "unavailable"));
+  return released;
 }
 
 function publicSessionStatus(db, session) {
@@ -6711,6 +6844,9 @@ async function handleApi(req, res, pathname) {
     const room = roomForSession(db, session);
     const enabled = roomSeatSelectionEnabled(room);
     const occupied = enabled ? occupiedSeatIds(db, sessionId) : new Set();
+    const ownerToken = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("ownerToken") || "").trim();
+    const holds = enabled ? await listActiveSeatHolds(sessionId) : [];
+    const holdsBySeat = new Map(holds.map((hold) => [String(hold.seatId), hold]));
     sendJson(res, 200, {
       sessionId,
       movieTitle: movie?.title || "",
@@ -6732,7 +6868,14 @@ async function handleApi(req, res, pathname) {
           accessibility: seat.accessibility || "",
           enabled: seat.enabled !== false,
           aisleAfter: Boolean(seat.aisleAfter),
-          status: seat.enabled === false ? "blocked" : occupied.has(String(seat.id)) ? "unavailable" : "available"
+          status: seat.enabled === false
+            ? "blocked"
+            : occupied.has(String(seat.id))
+              ? "unavailable"
+              : holdsBySeat.has(String(seat.id))
+                ? "held"
+                : "available",
+          heldByMe: Boolean(ownerToken && holdsBySeat.get(String(seat.id))?.ownerToken === ownerToken)
         }))
       }))
     }, { "Cache-Control": "no-store" });
@@ -8066,6 +8209,7 @@ async function handleApi(req, res, pathname) {
         paymentMethod: "CLUB_CREDIT",
         useClubBenefits: true
       }));
+      await claimSeatHoldsForOrder(lockedDb, pricedOrder);
       const requestedCredits = orderTicketCount(pricedOrder);
       if (Number(subscription.creditsAvailable || 0) < requestedCredits) {
         sendJson(res, 409, { error: { code: "CLUB_CREDITS_EXHAUSTED", message: "Creditos do Clube insuficientes para a quantidade de ingressos selecionada." } });
@@ -8112,6 +8256,7 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
+      await releaseOrderSeatHolds(savedOrder);
       sendJson(res, 201, { order: savedOrder, payment, tickets, subscription }, {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });
@@ -8854,6 +8999,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
+      await claimSeatHoldsForOrder(lockedDb, order);
       if (normalizedOrder.useClubCredits) {
         sendJson(res, 422, { error: { code: "CLUB_CREDIT_ROUTE_REQUIRED", message: "Use a ação exclusiva de créditos do Clube. O pagamento Pix nunca aprova créditos automaticamente." } });
         return;
@@ -8889,6 +9035,7 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
+      await releaseOrderSeatHolds(savedOrder);
       logEvent("info", "payment.created", { orderId: savedOrder.id, paymentId: payment.id, method: payment.method, provider: payment.provider, status: payment.status });
       sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
@@ -8928,6 +9075,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
+      await claimSeatHoldsForOrder(lockedDb, order);
       if (normalizedOrder.useClubCredits) {
         sendJson(res, 422, { error: { code: "CLUB_CREDIT_ROUTE_REQUIRED", message: "Use a ação exclusiva de créditos do Clube. O pagamento por cartão nunca aprova créditos automaticamente." } });
         return;
@@ -8970,6 +9118,7 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
+      await releaseOrderSeatHolds(savedOrder);
       logEvent("info", "payment.created", { orderId: savedOrder.id, paymentId: payment.id, method: payment.method, provider: payment.provider, status: payment.status });
       sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
@@ -10208,6 +10357,14 @@ const server = http.createServer(async (req, res) => {
       });
     }
     });
+});
+
+seatRealtimeService = createSeatRealtimeService(server, {
+  allowedOrigins: allowedCorsOrigins,
+  getSessionState: realtimeSeatState,
+  selectSeat: selectRealtimeSeat,
+  releaseSeat: ({ sessionId, seatId, ownerToken }) => releaseSeatHold({ sessionId, seatId, ownerToken }),
+  onError: (error) => logEvent("warn", "seat_realtime.connection_error", { message: error.message })
 });
 
 server.on("error", (error) => {
