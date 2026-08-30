@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Play, Ticket, Sparkles, Clock, ShieldCheck, Zap, Popcorn, Smartphone, Film } from "lucide-react";
 import { Movie, Session } from "@/types";
 import { AgeRatingBadge } from "@/components/AgeRatingBadge";
+import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { isUploadedAsset } from "@/utils/cinema";
 
 interface HeroProps {
@@ -38,10 +39,12 @@ export function Hero({ movie, onOpenCheckout, onOpenTrailer }: HeroProps) {
             
             {/* Top Badges */}
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-600/25 px-3.5 py-1 text-xs font-black uppercase tracking-wider text-brand-300 shadow-glow-blue">
-                <Sparkles className="h-3.5 w-3.5 text-gold-400" />
-                {movie.tag || "Destaque da Semana"}
-              </span>
+              {movie.tag && (
+                <span className="inline-flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-gold-400" aria-hidden="true" />
+                  <MovieTagBadge tag={movie.tag} />
+                </span>
+              )}
 
               <span className="inline-flex items-center gap-1 rounded-full bg-brand-900/80 px-3 py-1 text-xs font-bold text-white shadow-lg shadow-blue-950/10">
                 <Zap className="h-3.5 w-3.5 text-emerald-400" />

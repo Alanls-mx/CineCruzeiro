@@ -1,12 +1,14 @@
 const TAG_TRANSITION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-const TAG_STAGES = ["Pré-Estreia", "Estreia", "Destaque da Semana"];
+const TAG_STAGES = ["Pré-Estreia", "Estreia", "Normal"];
 
-function startMovieTagTransition(metadata = {}, now = new Date()) {
+function startMovieTagTransition(metadata = {}, now = new Date(), startingTag = TAG_STAGES[0]) {
+  const stageIndex = Math.max(0, TAG_STAGES.indexOf(startingTag));
+  const startedAt = new Date(now.getTime() - (stageIndex * TAG_TRANSITION_INTERVAL_MS));
   return {
     ...metadata,
     movieTagTransitionActive: true,
-    movieTagTransitionStartedAt: now.toISOString(),
+    movieTagTransitionStartedAt: startedAt.toISOString(),
     movieTagTransitionCompletedAt: ""
   };
 }

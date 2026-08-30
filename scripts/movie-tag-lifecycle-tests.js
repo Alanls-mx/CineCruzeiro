@@ -16,8 +16,16 @@ const baseMovie = {
 assert.equal(applyMovieTagTransition(baseMovie, new Date(startedAt.getTime() + TAG_TRANSITION_INTERVAL_MS - 1)).movie.tag, "Pré-Estreia");
 assert.equal(applyMovieTagTransition(baseMovie, new Date(startedAt.getTime() + TAG_TRANSITION_INTERVAL_MS)).movie.tag, "Estreia");
 
+const premiereMovie = {
+  ...baseMovie,
+  tag: "Estreia",
+  metadata: startMovieTagTransition({}, startedAt, "Estreia")
+};
+assert.equal(applyMovieTagTransition(premiereMovie, new Date(startedAt.getTime() + TAG_TRANSITION_INTERVAL_MS - 1)).movie.tag, "Estreia");
+assert.equal(applyMovieTagTransition(premiereMovie, new Date(startedAt.getTime() + TAG_TRANSITION_INTERVAL_MS)).movie.tag, "Normal");
+
 const completed = applyMovieTagTransition(baseMovie, new Date(startedAt.getTime() + (2 * TAG_TRANSITION_INTERVAL_MS)));
-assert.equal(completed.movie.tag, "Destaque da Semana");
+assert.equal(completed.movie.tag, "Normal");
 assert.equal(completed.movie.metadata.movieTagTransitionActive, false);
 assert.ok(completed.movie.metadata.movieTagTransitionCompletedAt);
 

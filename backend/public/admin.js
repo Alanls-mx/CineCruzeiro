@@ -1518,7 +1518,7 @@ function fillMovieForm(movie) {
   $("movieAutoPublish").checked = Boolean(movie?.autoPublish);
   $("movieDuration").value = movie?.duration || "";
   $("movieDirector").value = movie?.director || "";
-  $("movieTag").value = movie?.tag || "Em Breve";
+  $("movieTag").value = movie?.tag ?? "";
   $("movieGenre").value = (movie?.genre || []).join(", ");
   $("movieSynopsis").value = movie?.synopsis || "";
   $("movieTrailer").value = movie?.trailerYoutubeId || "";
@@ -5480,12 +5480,14 @@ function renderClub() {
   const subscriptions = state.content?.subscriptions || [];
   const credits = state.content?.subscriptionCredits || [];
   const usage = state.content?.subscriptionUsage || [];
+  const totalSavings = subscriptions.reduce((sum, subscription) => sum + Number(subscription.savings?.total || 0), 0);
   if ($("clubOverview")) {
     $("clubOverview").innerHTML = `
       <div class="mini-insight"><span>Planos ativos</span><strong>${plans.filter((plan) => plan.active !== false).length}</strong></div>
       <div class="mini-insight"><span>Assinaturas ativas</span><strong>${subscriptions.filter((item) => item.status === "active").length}</strong></div>
       <div class="mini-insight"><span>Créditos disponíveis</span><strong>${credits.reduce((sum, item) => sum + Number(item.remaining || 0), 0)}</strong></div>
       <div class="mini-insight"><span>Usos registrados</span><strong>${usage.length}</strong></div>
+      <div class="mini-insight club-savings-overview"><span>Economia entregue</span><strong>${money(totalSavings)}</strong></div>
     `;
   }
   if ($("clubPlansList")) {
@@ -5558,6 +5560,7 @@ function renderClub() {
               && !["cancelled", "canceled"].includes(String(subscription.providerStatus || "").toLowerCase())
               && String(subscription.provider || "") === "manual_admin"
               && String(subscription.status || "") === "paused";
+            const savings = subscription.savings || {};
             return `
               <div class="list-item static">
                 <span class="subscription-identity">
@@ -5565,6 +5568,10 @@ function renderClub() {
                   <span class="subscription-email">${escapeHtml(user.email || "E-mail não informado")}</span>
                   <span class="list-meta">${escapeHtml(plan.name || subscription.planId)} • ${clubStatusLabel(subscription.status)} • ${Number(credit?.remaining ?? subscription.creditsAvailable ?? 0)} de ${Number(credit?.total ?? plan.includedTickets ?? 0)} crédito(s)</span>
                   ${ending ? `<span class="subscription-ending-note">Cobrança encerrada; benefícios válidos até ${subscription.benefitsUntil ? new Date(subscription.benefitsUntil).toLocaleDateString("pt-BR") : "o fim do ciclo"}.</span>` : ""}
+                  <span class="subscription-savings" aria-label="Economia obtida com o Clube">
+                    <strong>${money(savings.total || 0)} economizados</strong>
+                    <span>Ingressos ${money(savings.tickets || 0)} • Bomboniere ${money(Number(savings.concessions || 0) + Number(savings.freeItems || 0))} • ${Number(savings.benefitedOrders || 0)} pedido(s)</span>
+                  </span>
                 </span>
                 <span class="table-actions">
                   ${canReactivate ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>` : ""}

@@ -737,10 +737,14 @@ function applyScheduledPremieres(db) {
   db.movies = db.movies.map((movie) => {
     if (movie.status === "upcoming" && movie.autoPublish && isPastOrToday(movie.releaseDate)) {
       changed = true;
+      const tag = movie.tag === "Em Breve" ? "Estreia" : movie.tag;
       return {
         ...movie,
         status: "now_playing",
-        tag: movie.tag === "Em Breve" ? "Estreia" : movie.tag || "Estreia",
+        tag,
+        metadata: tag === "Estreia"
+          ? startMovieTagTransition(movie.metadata, new Date(), "Estreia")
+          : movie.metadata,
         sessions: movie.sessions?.length ? movie.sessions : defaultPremiereSessions(movie, db),
         publishedAt: movie.publishedAt || new Date().toISOString()
       };
@@ -3677,6 +3681,42 @@ function ticketSubtotalForOrder(db, order) {
   return Number((full * Number(session.priceFull || 0) + half * Number(session.priceHalf || 0)).toFixed(2));
 }
 
+function clubSavingsSummary(db, subscription) {
+  const summary = {
+    total: 0,
+    tickets: 0,
+    concessions: 0,
+    freeItems: 0,
+    clubCredits: 0,
+    benefitedOrders: 0
+  };
+
+  (db.orders || [])
+    .filter((order) => order.status === "paid" && order.clubSubscriptionId === subscription.id)
+    .forEach((order) => {
+      const benefits = order.clubBenefits && typeof order.clubBenefits === "object" ? order.clubBenefits : {};
+      const ticketDiscount = Math.max(0, Number(benefits.ticketDiscount || 0));
+      const concessionDiscount = Math.max(0, Number(benefits.concessionDiscount || 0));
+      const freeItemsDiscount = Math.max(0, Number(benefits.freeConcessionDiscount || 0));
+      const creditValue = order.clubBenefit === "club_credit"
+        ? Math.max(0, ticketSubtotalForOrder(db, order) - ticketDiscount)
+        : 0;
+      const total = ticketDiscount + concessionDiscount + freeItemsDiscount + creditValue;
+      if (total <= 0) return;
+      summary.tickets += ticketDiscount + creditValue;
+      summary.concessions += concessionDiscount;
+      summary.freeItems += freeItemsDiscount;
+      summary.clubCredits += creditValue;
+      summary.total += total;
+      summary.benefitedOrders += 1;
+    });
+
+  Object.keys(summary).forEach((key) => {
+    if (key !== "benefitedOrders") summary[key] = Number(summary[key].toFixed(2));
+  });
+  return summary;
+}
+
 function applyClubCreditDiscount(db, order, user, idempotencyKey) {
   if (!user || !order?.useClubCredits) return { order, subscription: null, quantity: 0 };
   const quantity = orderTicketCount(order);
@@ -4069,13 +4109,20 @@ function normalizeMovie(input, existing = {}) {
         status: session.status || "available"
       }))
     : existing.sessions || [];
-  const tag = input.tag || existing.tag || "Em Breve";
+  const hasInputTag = Object.prototype.hasOwnProperty.call(input, "tag");
+  const tag = hasInputTag
+    ? String(input.tag || "").trim()
+    : String(existing.tag ?? "Em Breve").trim();
   const existingMetadata = existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {};
-  let metadata = input.metadata && typeof input.metadata === "object" ? input.metadata : existingMetadata;
-  if (tag !== existing.tag) {
-    metadata = tag === "Pré-Estreia"
-      ? startMovieTagTransition(metadata)
-      : stopMovieTagTransition(metadata);
+  const inputMetadata = input.metadata && typeof input.metadata === "object" ? input.metadata : {};
+  let metadata = { ...existingMetadata, ...inputMetadata };
+  const automatedTag = tag === "Pré-Estreia" || tag === "Estreia";
+  const hasValidTransition = metadata.movieTagTransitionActive
+    && Number.isFinite(new Date(metadata.movieTagTransitionStartedAt || "").getTime());
+  if (automatedTag && (tag !== existing.tag || !hasValidTransition)) {
+    metadata = startMovieTagTransition(metadata, new Date(), tag);
+  } else if (tag !== existing.tag && !automatedTag) {
+    metadata = stopMovieTagTransition(metadata);
   }
 
   return {
@@ -5439,7 +5486,10 @@ function getContent(db, options = {}) {
           tickets: (db.tickets || []).map((ticket) => enrichTicket(db, ticket)),
           auditLogs: db.auditLogs || [],
           subscriptionPlans: (db.subscriptionPlans || []).map((item) => assetRecord(item, ["imageUrl"])),
-          subscriptions: db.subscriptions || [],
+          subscriptions: (db.subscriptions || []).map((subscription) => ({
+            ...subscription,
+            savings: clubSavingsSummary(db, subscription)
+          })),
           subscriptionCredits: db.subscriptionCredits || [],
           subscriptionUsage: db.subscriptionUsage || []
         }
@@ -8361,6 +8411,7 @@ async function handleApi(req, res, pathname) {
       plans: db.subscriptionPlans || [],
       subscriptions: (db.subscriptions || []).map((subscription) => ({
         ...refreshSubscriptionCredits(db, subscription),
+        savings: clubSavingsSummary(db, subscription),
         statusLabel: subscriptionStatusLabel(subscription.status),
         credit: currentSubscriptionCredit(db, subscription),
         plan: (db.subscriptionPlans || []).find((plan) => plan.id === subscription.planId) || null,

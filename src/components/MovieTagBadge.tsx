@@ -6,12 +6,16 @@ type MovieTagBadgeProps = {
 };
 
 const tagStyles: Record<string, string> = {
+  normal: "bg-slate-200 text-slate-950",
   "pre-estreia": "bg-cyan-400 text-cyan-950",
   estreia: "bg-gold-400 text-slate-950",
   "ultimos dias": "bg-rose-500 text-white",
   "destaque da semana": "bg-brand-600 text-white",
   "em breve": "bg-sky-400 text-sky-950",
   "sessao familia": "bg-emerald-400 text-emerald-950",
+  "sessao especial": "bg-fuchsia-400 text-fuchsia-950",
+  classico: "bg-amber-300 text-amber-950",
+  reexibicao: "bg-teal-300 text-teal-950",
 };
 
 function normalizeTag(tag: string) {
