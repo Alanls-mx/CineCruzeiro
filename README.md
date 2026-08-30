@@ -2,7 +2,7 @@
 
 Documentação atualizada da plataforma pública, checkout, Clube Cine Cruzeiro e painel administrativo.
 
-Última revisão: 26 de agosto de 2026.
+Última revisão: 30 de agosto de 2026.
 
 ## 1. Visão geral
 
@@ -27,6 +27,7 @@ Produção:
 | Site público | Operacional e responsivo |
 | Programação e sessões | Integradas ao backend |
 | Tipos de ingresso por sessão | Catálogo central com seleção por sessão e pacotes múltiplos |
+| Poltronas | Mapa configurável por sala, reserva temporária e sincronização em tempo real |
 | Checkout | Ingressos, Extras, Pagamento e Confirmação |
 | Mercado Pago | Orders API para Pix e cartão de ingressos |
 | Clube | Assinatura recorrente por cartão de crédito Mercado Pago |
@@ -52,6 +53,7 @@ Não fazem parte da arquitetura ativa:
 Navegador
   |
   | HTTPS /projects/cinecruzeiro
+  | WSS   /projects/cinecruzeiro/api/realtime/seats
   v
 Nginx da VPS
   |-- Next.js :3100
@@ -187,6 +189,18 @@ Cada data é tratada como uma data civil do cinema no fuso `America/Sao_Paulo`. 
 
 O preço não é digitado diretamente na sessão: ele vem dos tipos de ingresso vinculados. Isso mantém catálogo, checkout, bilheteria e relatórios consistentes.
 
+### Salas e poltronas
+
+Cada sala pode operar com lugar livre ou com seleção de poltronas. Quando habilitado, o Admin permite configurar:
+
+- tipos e cores de poltrona;
+- fileiras, colunas, corredores e rótulos;
+- cadeiras habilitadas ou bloqueadas;
+- acessibilidade para cadeirante e pessoa obesa;
+- capacidade calculada pelas cadeiras ativas do mapa.
+
+O mapa da sala é a fonte de verdade para checkout e Bilheteria. Alterá-lo dispara `session_refresh_required` para as sessões vinculadas, inclusive quando a sala é renomeada. Uma cadeira com ingresso ou reserva ativa não pode ser removida silenciosamente.
+
 ### Exibição e recomendação
 
 - a programação destaca os primeiros seis dias que realmente possuem sessões disponíveis;
@@ -212,6 +226,9 @@ Regras:
 - `pending` e `processing` não são tratados como aprovação;
 - tickets só são liberados com pagamento `approved`;
 - preço, estoque e capacidade são recalculados pelo backend;
+- quando a sala possui mapa ativo, a quantidade de poltronas deve ser exatamente igual à quantidade efetiva de ingressos;
+- não é possível pular a seleção de poltronas nem avançar com a seleção incompleta;
+- as poltronas selecionadas permanecem no pedido ao avançar para Extras e Pagamento;
 - o checkout autenticado reutiliza os dados reais da conta;
 - o checkout convidado solicita apenas os dados necessários.
 
@@ -220,6 +237,33 @@ Regras:
 O cliente escolhe apenas os tipos habilitados para a sessão. O backend valida capacidade, preço, disponibilidade e quantidade efetiva de tickets.
 
 Um tipo pode definir `bundleQuantity` entre 1 e 20. Por exemplo, uma unidade de `Triple Ingresso` gera três tickets; duas unidades geram seis. O multiplicador é fixado no backend e não pode ser reduzido ou adulterado pelo frontend.
+
+### Reserva de poltronas em tempo real
+
+Checkout e Bilheteria participam do mesmo canal WebSocket por sessão. O primeiro cliente ou operador que selecionar uma cadeira recebe uma reserva temporária de dois minutos. Um `heartbeat` enviado a cada 35 segundos renova as cadeiras ainda selecionadas.
+
+O servidor executa a aquisição dentro de mutação crítica e, em PostgreSQL, usa a tabela de reservas temporárias para garantir exclusividade. Um segundo clique concorrente recebe `SEAT_ALREADY_HELD` imediatamente. No fechamento da venda, o backend valida e assume as reservas pelo `seatHoldToken`; portanto, alterar apenas o payload do frontend não permite comprar uma cadeira reservada por outra pessoa.
+
+Estados visuais padronizados:
+
+- azul: disponível;
+- dourado: selecionada pelo cliente ou operador atual;
+- rosa: reservada temporariamente por outra compra;
+- cinza: indisponível ou ocupada.
+
+Protocolo principal em `/api/realtime/seats`:
+
+| Direção | Evento | Finalidade |
+| --- | --- | --- |
+| Cliente -> servidor | `join_session` | Entra no canal com `sessionId` e `ownerToken` |
+| Cliente -> servidor | `select_seat` | Solicita a reserva atômica de uma cadeira |
+| Cliente -> servidor | `release_seat` | Libera uma cadeira pertencente ao mesmo token |
+| Cliente -> servidor | `heartbeat` | Renova as reservas ainda selecionadas |
+| Servidor -> cliente | `session_state` | Entrega ocupadas e reservas ativas ao conectar |
+| Servidor -> cliente | `select_seat_confirmed` | Confirma a seleção e informa a expiração |
+| Servidor -> cliente | `select_seat_rejected` | Rejeita conflito, sessão encerrada ou mapa inválido |
+| Servidor -> clientes | `seat_status_changed` | Atualiza disponibilidade para checkout e Bilheteria |
+| Servidor -> clientes | `session_refresh_required` | Solicita recarga quando o mapa da sala muda |
 
 ### Extras
 
@@ -448,6 +492,7 @@ Cada ingresso possui:
 - filme;
 - sessão;
 - sala;
+- poltrona e tipo de poltrona, quando aplicável;
 - data e horário;
 - formato e idioma;
 - tipo;
@@ -474,7 +519,7 @@ A transferência:
 
 ### PDF e Google Wallet
 
-O PDF usa dados sincronizados da sessão, possui até duas páginas, inclui a marca do Cine Cruzeiro sem fundo preto e pode incluir pôster armazenado localmente. Datas visíveis seguem o padrão brasileiro `dd/mm/aaaa às HH:mm`.
+O PDF usa dados sincronizados da sessão, possui até duas páginas, inclui a marca do Cine Cruzeiro sem fundo preto e pode incluir pôster armazenado localmente. A poltrona aparece em destaque na primeira página. Datas visíveis seguem o padrão brasileiro `dd/mm/aaaa às HH:mm`.
 
 O Google Wallet usa integração oficial. A opção só funciona em produção quando issuer, class e service account válidos estiverem configurados.
 
@@ -514,6 +559,8 @@ Módulos principais:
 - Logs.
 
 O Dashboard separa receitas de ingresso, bomboniere, assinaturas e outros meios, permitindo rastrear a origem do faturamento.
+
+Na Bilheteria, o operador seleciona ingressos, bomboniere e poltronas antes de concluir a venda manual. A tela usa os mesmos bloqueios WebSocket do checkout: uma seleção feita no site aparece no Admin, e uma seleção feita no Admin bloqueia imediatamente a cadeira no site. Vendas com várias sessões mantêm canais e tokens independentes por sessão.
 
 Perfis:
 
@@ -571,7 +618,7 @@ O Admin pesquisa um título e pode importar:
 - gêneros;
 - identificadores de mídia.
 
-O operador revisa os dados antes de publicar. A ordenação do catálogo é persistida no backend e os status possuem identificação visual.
+O operador revisa os dados antes de publicar. A duração vem do campo `runtime` dos detalhes oficiais do TMDB e guarda metadados de origem. O sistema não aplica duração fictícia: quando o TMDB não informa o valor, exibe `Duração não informada` e impede a publicação até a revisão. A ordenação do catálogo é persistida no backend e os status possuem identificação visual.
 
 Status de publicação incluem filmes em cartaz, estreia e em breve. Filmes agendados podem mudar de categoria conforme a data configurada.
 
@@ -643,11 +690,19 @@ Migrations atuais:
 016_ticket_type_bundle_quantity.sql
 017_fiscal_documents.sql
 018_admin_two_factor.sql
+019_session_revocation.sql
+020_ticket_expired_status.sql
+021_admin_permissions.sql
+022_room_seat_layout.sql
+023_realtime_seat_holds.sql
+024_club_content_polish.sql
 ```
 
 A migration 017 adiciona o controle fiscal persistente por pedido, com status, tentativas, dados do tomador, links PDF/XML, entrega por e-mail e histórico do provedor.
 
 A migration 018 adiciona autenticação em duas etapas às contas administrativas, com segredo TOTP criptografado, estado de configuração e códigos de recuperação armazenados somente como hash.
+
+As migrations 022 e 023 adicionam, respectivamente, o mapa configurável das salas e as reservas temporárias de poltronas usadas pelo WebSocket e pela validação concorrente do checkout e da Bilheteria.
 
 ## 23. APIs principais
 
@@ -674,6 +729,8 @@ POST /api/payments/pix
 POST /api/payments/card
 POST /api/webhooks/mercado-pago
 POST /api/webhooks/focus-nfe
+GET  /api/sessions/:sessionId/seats
+WSS  /api/realtime/seats
 ```
 
 ### Administrativas
@@ -845,7 +902,7 @@ O comando executa:
 - testes de assinatura do webhook Mercado Pago;
 - testes concorrentes PostgreSQL quando `TEST_DATABASE_URL` existe.
 
-Coberturas relevantes incluem autenticação, e-mail, evento privado, pagamento, cancelamento do Clube, crédito, webhook e criação de tickets.
+Coberturas relevantes incluem autenticação, e-mail, evento privado, pagamento, cancelamento do Clube, crédito, webhook, criação de tickets e concorrência de poltronas. Os testes de tempo real abrem clientes WebSocket concorrentes, confirmam o bloqueio do primeiro, a rejeição do segundo, o broadcast de mudança e a liberação da cadeira. O smoke test também verifica que a Bilheteria não conclui uma venda usando uma reserva pertencente a outro token.
 
 ## 29. Deploy na VPS
 
@@ -903,10 +960,11 @@ O deploy não deve alterar a aplicação principal da LumixEngine fora do caminh
 
 1. selecionar venda rápida, cliente avulso ou cadastrado;
 2. escolher filme e sessão;
-3. informar quantidades;
-4. registrar o meio de pagamento;
-5. emitir ticket;
-6. validar entrada por QR Code ou código manual.
+3. informar tipos, quantidades e itens da bomboniere;
+4. selecionar todas as poltronas quando a sala exigir mapa;
+5. registrar o meio de pagamento;
+6. emitir ticket;
+7. validar entrada por QR Code ou código manual.
 
 ### Clube
 
@@ -996,4 +1054,4 @@ Diretrizes atuais:
 - `PRODUCT.md`: posicionamento, usuários e princípios de produto;
 - `DOCUMENTACAO.md`: documentação histórica extensa, podendo conter decisões anteriores já substituídas por este README.
 
-Este `README.md` é a referência resumida e canônica para o estado atual do código em 27 de agosto de 2026.
+Este `README.md` é a referência resumida e canônica para o estado atual do código em 30 de agosto de 2026.
