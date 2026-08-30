@@ -290,7 +290,7 @@ function normalizeMovie(movie: Partial<Movie> & { status?: string }): Movie {
     title: String(movie.title || "Filme sem titulo"),
     originalTitle: movie.originalTitle || "",
     synopsis: movie.synopsis || "",
-    duration: movie.duration || "1h 40m",
+    duration: movie.duration || "Duração não informada",
     genre: Array.isArray(movie.genre) ? movie.genre : [],
     rating: movie.rating || "L",
     posterUrl: publicAssetPath(movie.posterUrl || ""),

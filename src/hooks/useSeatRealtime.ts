@@ -7,22 +7,23 @@ type SeatRealtimeStatus = "connecting" | "connected" | "disconnected";
 type SeatChange = { seatId: string; status: "available" | "held" | "unavailable"; heldByMe?: boolean; expiresAt?: string };
 type SeatResult = { ok: boolean; code?: string; message?: string };
 
-export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatIds, onSeatChange, onSessionState }: {
+export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatIds, onSeatChange, onSessionState, onSessionRefresh }: {
   sessionId: string;
   ownerToken: string;
   enabled: boolean;
   selectedSeatIds: string[];
   onSeatChange: (change: SeatChange) => void;
   onSessionState: (state: { occupiedSeatIds: string[]; heldSeats: Array<{ seatId: string; heldByMe: boolean; expiresAt?: string }> }) => void;
+  onSessionRefresh?: () => void;
 }) {
   const [status, setStatus] = useState<SeatRealtimeStatus>("disconnected");
   const socketRef = useRef<WebSocket | null>(null);
   const selectedRef = useRef(selectedSeatIds);
-  const callbacksRef = useRef({ onSeatChange, onSessionState });
+  const callbacksRef = useRef({ onSeatChange, onSessionState, onSessionRefresh });
   const pendingRef = useRef(new Map<string, (result: SeatResult) => void>());
 
   selectedRef.current = selectedSeatIds;
-  callbacksRef.current = { onSeatChange, onSessionState };
+  callbacksRef.current = { onSeatChange, onSessionState, onSessionRefresh };
 
   const sendRequest = useCallback((type: "select_seat" | "release_seat", seatId: string) => new Promise<SeatResult>((resolve) => {
     const socket = socketRef.current;
@@ -96,6 +97,9 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
             heldByMe: Boolean(message.heldByMe),
             expiresAt: message.expiresAt ? String(message.expiresAt) : undefined
           });
+        }
+        if (type === "session_refresh_required") {
+          callbacksRef.current.onSessionRefresh?.();
         }
       });
 

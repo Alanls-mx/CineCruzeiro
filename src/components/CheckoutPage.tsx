@@ -192,7 +192,8 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     enabled: Boolean(seatMap?.enabled && !isValidPaymentResult(draft?.paymentResult)),
     selectedSeatIds,
     onSeatChange: applySeatChange,
-    onSessionState: applySeatSessionState
+    onSessionState: applySeatSessionState,
+    onSessionRefresh: refreshSeatMap
   });
 
   useEffect(() => {

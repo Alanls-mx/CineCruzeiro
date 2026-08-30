@@ -55,6 +55,10 @@ async function main() {
   const first = await connect(url, "cliente-1");
   const second = await connect(url, "cliente-2");
 
+  const refreshEvent = nextMessage(first, (message) => message.type === "session_refresh_required");
+  realtime.broadcastSessionRefresh("session-1");
+  assert.equal((await refreshEvent).sessionId, "session-1");
+
   first.send(JSON.stringify({ type: "select_seat", requestId: "first-select", seatId: "A1" }));
   const firstAck = await nextMessage(first, (message) => message.requestId === "first-select");
   assert.equal(firstAck.type, "select_seat_confirmed");

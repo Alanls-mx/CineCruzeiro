@@ -4078,6 +4078,11 @@ function validateMovieForWorkflow(db, movie, existingId = "", strictPublish = fa
     error.statusCode = 422;
     throw error;
   }
+  if (!String(movie.duration || "").trim()) {
+    const error = new Error("Informe a duração do filme antes de publicar.");
+    error.statusCode = 422;
+    throw error;
+  }
   if (!movie.posterUrl) {
     const error = new Error("Adicione um pôster antes de publicar o filme.");
     error.statusCode = 422;
@@ -4134,7 +4139,7 @@ function normalizeMovie(input, existing = {}) {
     title,
     originalTitle: input.originalTitle || existing.originalTitle || "",
     synopsis: input.synopsis || existing.synopsis || "",
-    duration: input.duration || existing.duration || "1h 40m",
+    duration: input.duration !== undefined ? String(input.duration || "").trim() : existing.duration || "",
     director: input.director || existing.director || "",
     metadata,
     genre: Array.isArray(input.genre)
@@ -5362,6 +5367,9 @@ function tmdbCertification(details) {
 
 function tmdbMoviePayload(details) {
   const title = details.title || details.original_title || "";
+  const runtimeMinutes = Number.isFinite(Number(details.runtime)) && Number(details.runtime) > 0
+    ? Math.round(Number(details.runtime))
+    : 0;
   return {
     id: slugify(title || `tmdb-${details.id}`),
     slug: slugify(title || `tmdb-${details.id}`),
@@ -5371,10 +5379,13 @@ function tmdbMoviePayload(details) {
     title,
     originalTitle: details.original_title || "",
     synopsis: details.overview || "",
-    duration: minutesToDuration(details.runtime),
+    duration: minutesToDuration(runtimeMinutes),
     director: details.credits?.crew?.find((person) => person.job === "Director")?.name || "",
     metadata: {
       tmdbId: details.id,
+      runtimeMinutes,
+      durationSource: runtimeMinutes ? "tmdb" : "missing",
+      tmdbFetchedAt: new Date().toISOString(),
       originalLanguage: details.original_language || "",
       popularity: details.popularity || 0,
       voteAverage: details.vote_average || 0
@@ -8801,6 +8812,13 @@ async function handleApi(req, res, pathname) {
       }
       db.rooms[index] = room;
       await writeDb(db);
+      (db.movies || []).forEach((movie) => {
+        (movie.sessions || []).forEach((session) => {
+          if (roomForSession(db, session)?.id === room.id) {
+            seatRealtimeService?.broadcastSessionRefresh(session.id);
+          }
+        });
+      });
       sendJson(res, 200, room);
       return;
     }
