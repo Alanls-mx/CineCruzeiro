@@ -4928,6 +4928,7 @@ function fillSettingsForm() {
   const settings = state.content?.settings || {};
   $("settingAnnouncementEnabled").checked = settings.announcementEnabled !== false;
   $("settingAnnouncementText").value = settings.announcementText || "";
+  $("eventStartingPrice").value = Number(settings.eventStartingPrice || 0);
   $("eventTransparentImages").checked = settings.eventTransparentImages === true;
   $("clubTransparentImages").checked = settings.clubTransparentImages === true;
   fillImageFields(marketingImageFields, settings);
@@ -5006,6 +5007,7 @@ async function saveSettings(event) {
       {
         announcementEnabled: $("settingAnnouncementEnabled").checked,
         announcementText: $("settingAnnouncementText").value,
+        eventStartingPrice: Number($("eventStartingPrice").value || 0),
         eventTransparentImages: $("eventTransparentImages").checked,
         ...collectImageSettings(marketingImageFields)
       },

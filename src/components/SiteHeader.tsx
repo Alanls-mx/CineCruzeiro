@@ -18,9 +18,10 @@ const navItems = [
 type SiteHeaderProps = {
   settings?: CinemaContent["settings"];
   mutedPrimaryAction?: boolean;
+  textPrimaryAction?: boolean;
 };
 
-export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderProps = {}) {
+export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAction = false }: SiteHeaderProps = {}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -96,7 +97,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
             <ShoppingBag className="h-5 w-5" />
             {cartCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-gold-400" />}
           </button>
-          <Link href="/filmes" className={`${mutedPrimaryAction ? "bg-white/8 text-slate-100 hover:bg-white/12" : "bg-gold-400 text-slate-950 hover:bg-gold-300"} px-5 py-3 text-sm font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400`}>
+          <Link href="/filmes" className={`${textPrimaryAction ? "bg-transparent text-slate-300 hover:text-white" : mutedPrimaryAction ? "bg-white/8 text-slate-100 hover:bg-white/12" : "bg-gold-400 text-slate-950 hover:bg-gold-300"} px-5 py-3 text-sm font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400`}>
             Comprar ingresso
           </Link>
         </div>
@@ -125,7 +126,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false }: SiteHeaderP
             ))}
             <Link href="/conta" onClick={() => setOpen(false)}>Minha conta</Link>
             <button type="button" className="text-left" onClick={() => { setOpen(false); setCartOpen(true); }}>Carrinho</button>
-            <Link href="/filmes" onClick={() => setOpen(false)} className={`${mutedPrimaryAction ? "bg-white/8 text-white" : "bg-gold-400 text-slate-950"} mt-2 px-5 py-3 text-center text-sm font-black`}>
+            <Link href="/filmes" onClick={() => setOpen(false)} className={`${textPrimaryAction ? "bg-transparent text-slate-300" : mutedPrimaryAction ? "bg-white/8 text-white" : "bg-gold-400 text-slate-950"} mt-2 px-5 py-3 text-center text-sm font-black`}>
               Comprar ingresso
             </Link>
           </nav>

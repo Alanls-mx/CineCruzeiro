@@ -210,6 +210,7 @@ export interface CinemaContent {
     eventPartiesImageUrl?: string;
     eventCorporateImageUrl?: string;
     eventGalleryImageUrl?: string;
+    eventStartingPrice?: number;
     tracking?: {
       enabled?: boolean;
       googleMeasurementId?: string;

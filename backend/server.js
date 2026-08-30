@@ -1236,6 +1236,7 @@ function normalizeDb(db) {
     eventPartiesImageUrl: "",
     eventCorporateImageUrl: "",
     eventGalleryImageUrl: "",
+    eventStartingPrice: 450,
     adminTwoFactorRequired: true,
     ...db.settings
   };
@@ -3370,6 +3371,12 @@ function normalizeSubscriptionPlan(input, existing = {}) {
       quantityPerCycle: Math.min(20, Math.max(1, Math.floor(Number(item.quantityPerCycle || item.quantity || 1))))
     }))
     .filter((item, index, items) => item.concessionId && items.findIndex((candidate) => candidate.concessionId === item.concessionId) === index);
+  const rawBenefits = Array.isArray(input.benefits)
+    ? input.benefits
+    : String(input.benefits || existing.benefits || "").split(/\n|,/);
+  const benefits = rawBenefits
+    .map((item) => String(item).trim().replace(/\bgratis\b/gi, "grátis"))
+    .filter((item, index, items) => item && items.findIndex((candidate) => candidate.toLocaleLowerCase("pt-BR") === item.toLocaleLowerCase("pt-BR")) === index);
   return {
     id: String(input.id || existing.id || slugify(name) || `plano-${Date.now()}`),
     name,
@@ -3378,9 +3385,7 @@ function normalizeSubscriptionPlan(input, existing = {}) {
     includedTickets,
     ticketsPerCycle: includedTickets,
     billingCycle: input.billingCycle || input.billing_cycle || existing.billingCycle || "monthly",
-    benefits: Array.isArray(input.benefits)
-      ? input.benefits.map((item) => String(item).trim()).filter(Boolean)
-      : String(input.benefits || existing.benefits || "").split(/\n|,/).map((item) => item.trim()).filter(Boolean),
+    benefits,
     ticketDiscountPercent: normalizePercent(input.ticketDiscountPercent ?? existing.ticketDiscountPercent),
     concessionDiscountPercent: normalizePercent(input.concessionDiscountPercent ?? existing.concessionDiscountPercent),
     freeConcessionItems,
@@ -7420,6 +7425,9 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/settings" && method === "PUT") {
     const body = await readBody(req);
+    if (body.eventStartingPrice !== undefined) {
+      body.eventStartingPrice = Math.max(0, Number(body.eventStartingPrice || 0));
+    }
     ["clubTransparentImages", "eventTransparentImages"].forEach((key) => {
       if (body[key] !== undefined) body[key] = body[key] === true;
     });

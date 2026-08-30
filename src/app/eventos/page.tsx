@@ -3,14 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { AlertCircle, Building2, CalendarDays, CheckCircle2, Gamepad2, Mail, PartyPopper, Send, UsersRound } from "lucide-react";
+import { AlertCircle, Building2, CalendarDays, CheckCircle2, Gamepad2, Mail, PartyPopper, Send, Tag, UsersRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { fetchCinemaContent } from "@/services/cinemaApi";
 import type { CinemaContent } from "@/services/cinemaApi";
 import { sendPrivateEventWebhook } from "@/services/webhook";
 import type { PrivateEventRequest } from "@/types";
 import { trackMarketingEvent } from "@/utils/tracking";
-import { isUploadedAsset } from "@/utils/cinema";
+import { isUploadedAsset, money } from "@/utils/cinema";
 
 export default function EventosPage() {
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
@@ -68,7 +68,7 @@ export default function EventosPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
-      <SiteHeader />
+      <SiteHeader settings={settings} textPrimaryAction />
       <main className="flex-1 overflow-hidden">
         <section className="mx-auto grid max-w-[1320px] items-center gap-12 px-4 py-12 sm:px-6 lg:grid-cols-[.9fr_1.1fr] lg:px-8 lg:py-20">
           <div>
@@ -76,6 +76,12 @@ export default function EventosPage() {
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
               Aniversários, games, eventos privados e encontros corporativos em um cinema de rua com tela grande, som forte e atendimento próximo.
             </p>
+            <div className="mt-6 inline-flex items-center gap-3 border-l-2 border-gold-400 bg-white/[0.04] px-4 py-3 text-sm text-slate-200">
+              <Tag className="h-4 w-4 shrink-0 text-gold-400" aria-hidden="true" />
+              {Number(settings.eventStartingPrice || 0) > 0
+                ? <span>A partir de <strong className="text-white">{money(Number(settings.eventStartingPrice))}</strong> por sessão</span>
+                : <span>Valor por sessão definido conforme data, formato e tamanho do grupo.</span>}
+            </div>
             <a href="#orcamento" className="mt-8 inline-flex min-h-[52px] items-center justify-center bg-gold-400 px-7 text-sm font-black text-slate-950 transition hover:bg-gold-300">
               Solicitar orçamento
             </a>
@@ -94,7 +100,7 @@ export default function EventosPage() {
         <section className="mx-auto max-w-[1320px] px-4 py-10 sm:px-6 lg:px-8">
           <div className="grid gap-8 md:grid-cols-[1.08fr_.92fr]">
             <div className="grid gap-5">
-              <Experience image={settings.eventGamesImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<Gamepad2 />} title="Games" text="Console na tela grande, som da sala e clima de campeonato com os amigos." />
+              <Experience image={settings.eventGamesImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<Gamepad2 />} title="Games" text="Console na tela grande, som da sala e clima de final de torneio com os amigos." />
               <Experience image={settings.eventPartiesImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<PartyPopper />} title="Aniversários e festas" text="Sessão especial, bomboniere e registro fotográfico para transformar a data em estreia." />
               <Experience image={settings.eventCorporateImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<Building2 />} title="Corporativo" text="Treinamentos, apresentações e encontros fora da sala de reunião convencional." />
             </div>

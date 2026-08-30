@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarCheck, Check, ChevronLeft, ChevronRight, CircleHelp, Popcorn, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
+import { CalendarCheck, Check, ChevronDown, ChevronLeft, ChevronRight, Popcorn, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
@@ -310,10 +310,8 @@ function Plan({ plan, active, position, total, setRef, onSelect }: {
   onSelect: () => void;
 }) {
   const configuredBenefits = [
-    ...(Number(plan.ticketDiscountPercent || 0) > 0 ? [`${Number(plan.ticketDiscountPercent)}% de desconto em ingressos`] : []),
-    ...(Number(plan.concessionDiscountPercent || 0) > 0 ? [`${Number(plan.concessionDiscountPercent)}% de desconto na bomboniere`] : []),
     ...(plan.freeConcessionItems?.length ? [`${plan.freeConcessionItems.length} benefício(s) grátis na bomboniere por ciclo`] : []),
-    ...(plan.benefits || []),
+    ...(plan.benefits || []).map((item) => item.replace(/\bgratis\b/gi, "grátis")),
   ].filter((item, index, items) => items.indexOf(item) === index);
   return (
     <article
@@ -388,7 +386,7 @@ function Faq({ title, text }: { title: string; text: string }) {
     <details className="group bg-white/[0.04] p-5 shadow-xl shadow-blue-950/10">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-display text-xl font-black">
         {title}
-        <CircleHelp className="h-5 w-5 text-gold-400 transition group-open:rotate-45" />
+        <ChevronDown className="h-5 w-5 text-gold-400 transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
       </summary>
       <p className="mt-4 text-sm leading-6 text-slate-300">{text}</p>
     </details>
