@@ -4770,7 +4770,7 @@ function resolveOrderTicketItems(db, order, session) {
     return normalized;
   }
 
-  // Compatibilidade com carrinhos e pedidos criados antes dos tipos por sessão.
+  // Compatibilidade com pedidos antigos criados antes dos tipos por sessão.
   const fullType = availableTypes.find((ticketType) => /inteira|normal|adulto/i.test(ticketType.name))
     || availableTypes.find((ticketType) => !/meia/i.test(ticketType.name))
     || availableTypes[0];

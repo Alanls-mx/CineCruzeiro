@@ -10,7 +10,7 @@ import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { useSeatRealtime } from "@/hooks/useSeatRealtime";
 import { AccountSubscription, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap } from "@/services/cinemaApi";
-import { cartTotal, checkoutCartQueueRemaining, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, nextCheckoutCartInQueue, publicAssetPath, readCheckoutCart, removeCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
+import { checkoutDraftTotal, clearCheckoutDraft, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, publicAssetPath, readCheckoutDraft, StoredCheckoutDraft, writeCheckoutDraft } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
 type Step = "ingressos" | "extras" | "pagamento" | "confirmacao";
@@ -46,7 +46,6 @@ function ticketTypesForSession(ticketTypes: TicketTypeRecord[], ticketTypeIds?: 
   const allowedIds = new Set(ticketTypeIds || []);
   return ticketTypes.filter((ticketType) => ticketType.active !== false && (!allowedIds.size || allowedIds.has(ticketType.id)));
 }
-
 function initialTicketQuantities(ticketTypes: TicketTypeRecord[], fullTickets = 1, halfTickets = 0) {
   if (!ticketTypes.length) return {};
   const fullType = ticketTypes.find((ticketType) => /inteira|normal|adulto/i.test(ticketType.name))
@@ -59,17 +58,17 @@ function initialTicketQuantities(ticketTypes: TicketTypeRecord[], fullTickets = 
   return quantities;
 }
 
-function selectedTicketItems(cart: StoredCheckoutCart, ticketTypes: TicketTypeRecord[]) {
-  const quantities = cart.ticketQuantities ?? initialTicketQuantities(ticketTypes, cart.fullTickets ?? 1, cart.halfTickets ?? 0);
+function selectedTicketItems(draft: StoredCheckoutDraft, ticketTypes: TicketTypeRecord[]) {
+  const quantities = draft.ticketQuantities ?? initialTicketQuantities(ticketTypes, draft.fullTickets ?? 1, draft.halfTickets ?? 0);
   return Object.entries(quantities)
     .filter(([, quantity]) => Number(quantity) > 0)
     .map(([id, quantity]) => ({ id, quantity: Number(quantity) }))
     .filter((item) => ticketTypes.some((ticketType) => ticketType.id === item.id));
 }
 
-function generatedTicketCount(cart: StoredCheckoutCart, ticketTypes: TicketTypeRecord[]) {
+function generatedTicketCount(draft: StoredCheckoutDraft, ticketTypes: TicketTypeRecord[]) {
   const byId = new Map(ticketTypes.map((ticketType) => [ticketType.id, ticketType]));
-  return selectedTicketItems(cart, ticketTypes).reduce((sum, item) => {
+  return selectedTicketItems(draft, ticketTypes).reduce((sum, item) => {
     const bundleQuantity = Math.max(1, Number(byId.get(item.id)?.bundleQuantity || 1));
     return sum + item.quantity * bundleQuantity;
   }, 0);
@@ -78,7 +77,7 @@ function generatedTicketCount(cart: StoredCheckoutCart, ticketTypes: TicketTypeR
 export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Step }) {
   const router = useRouter();
   const { content, status, error } = useCinemaContent();
-  const [cart, setCart] = useState<StoredCheckoutCart | null>(null);
+  const [draft, setDraft] = useState<StoredCheckoutDraft | null>(null);
   const [hydratedSessionId, setHydratedSessionId] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
   const [confirmationStatus, setConfirmationStatus] = useState<"idle" | "checking" | "ready" | "invalid">("idle");
@@ -90,16 +89,15 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [seatMap, setSeatMap] = useState<SessionSeatMap | null>(null);
   const [seatMapStatus, setSeatMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const loadedSeatSessionRef = useRef("");
-  const effectiveSessionId = sessionId === "carrinho" ? cart?.sessionId || "" : sessionId;
-  const found = findSession(content, effectiveSessionId);
+  const found = findSession(content, sessionId);
   const sessionCanCheckout = isSessionCheckoutAvailable(found?.session);
   const availableTicketTypes = useMemo(
     () => ticketTypesForSession(content?.ticketTypes || [], found?.session.ticketTypeIds),
     [content?.ticketTypes, found?.session.ticketTypeIds]
   );
-  const total = cartTotal(cart, found?.session, content?.concessions || [], content?.ticketTypes || []);
-  const requiredSeatCount = cart ? generatedTicketCount(cart, availableTicketTypes) : 0;
-  const selectedSeatIds = cart?.selectedSeatIds || [];
+  const total = checkoutDraftTotal(draft, found?.session, content?.concessions || [], content?.ticketTypes || []);
+  const requiredSeatCount = draft ? generatedTicketCount(draft, availableTicketTypes) : 0;
+  const selectedSeatIds = draft?.selectedSeatIds || [];
   const availableSeatIds = new Set((seatMap?.rows || [])
     .flatMap((row) => row.seats)
     .filter((seat) => seat.status === "available" || seat.heldByMe)
@@ -127,19 +125,19 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     if (!activeSessionId) return;
     setSeatMapStatus("loading");
     try {
-      const next = await fetchSessionSeatMap(activeSessionId, cart?.seatHoldToken || "");
+      const next = await fetchSessionSeatMap(activeSessionId, draft?.seatHoldToken || "");
       setSeatMap(next);
       setSeatMapStatus("ready");
     } catch {
       setSeatMap(null);
       setSeatMapStatus("error");
     }
-  }, [activeSessionId, cart?.seatHoldToken]);
+  }, [activeSessionId, draft?.seatHoldToken]);
 
-  const updateCart = useCallback((patch: Partial<StoredCheckoutCart>) => {
+  const updateDraft = useCallback((patch: Partial<StoredCheckoutDraft>) => {
     if (!found) return;
-    const persisted = readCheckoutCart();
-    const source = persisted?.sessionId === found.session.id ? persisted : cart;
+    const persisted = readCheckoutDraft();
+    const source = persisted?.sessionId === found.session.id ? persisted : draft;
     const next = {
       ...(source || {}),
       movieId: found.movie.id,
@@ -154,9 +152,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       paymentMethod: source?.paymentMethod || "credit_card",
       ...patch,
     };
-    writeCheckoutCart(next);
-    setCart(next);
-  }, [availableTicketTypes, cart, found]);
+    writeCheckoutDraft(next);
+    setDraft(next);
+  }, [availableTicketTypes, draft, found]);
 
   const applySeatChange = useCallback((change: { seatId: string; status: "available" | "held" | "unavailable"; heldByMe?: boolean }) => {
     setSeatMap((current) => current ? {
@@ -167,10 +165,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       }))
     } : current);
     if ((change.status === "unavailable" || (change.status === "held" && !change.heldByMe)) && selectedSeatIds.includes(change.seatId)) {
-      updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== change.seatId), extrasVisited: false });
+      updateDraft({ selectedSeatIds: selectedSeatIds.filter((id) => id !== change.seatId), extrasVisited: false });
       setPaymentError("Uma poltrona selecionada ficou indisponível. Escolha outro lugar.");
     }
-  }, [selectedSeatIds, updateCart]);
+  }, [selectedSeatIds, updateDraft]);
 
   const applySeatSessionState = useCallback((state: { occupiedSeatIds: string[]; heldSeats: Array<{ seatId: string; heldByMe: boolean }> }) => {
     const occupied = new Set(state.occupiedSeatIds);
@@ -190,59 +188,54 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   const seatRealtime = useSeatRealtime({
     sessionId: activeSessionId,
-    ownerToken: cart?.seatHoldToken || "",
-    enabled: Boolean(seatMap?.enabled && !isValidPaymentResult(cart?.paymentResult)),
+    ownerToken: draft?.seatHoldToken || "",
+    enabled: Boolean(seatMap?.enabled && !isValidPaymentResult(draft?.paymentResult)),
     selectedSeatIds,
     onSeatChange: applySeatChange,
     onSessionState: applySeatSessionState
   });
 
   useEffect(() => {
-    const stored = readCheckoutCart();
-    if (sessionId === "carrinho") {
-      setCart(stored);
-      setHydratedSessionId(sessionId);
-      return;
-    }
-    setCart(stored?.sessionId === sessionId ? stored : null);
+    const stored = readCheckoutDraft();
+    setDraft(stored?.sessionId === sessionId ? stored : null);
     setHydratedSessionId(sessionId);
   }, [sessionId]);
 
   useEffect(() => {
-    if (!found || !cart || cart.seatHoldToken || isValidPaymentResult(cart.paymentResult)) return;
-    updateCart({ seatHoldToken: crypto.randomUUID() });
-  }, [cart, found, updateCart]);
+    if (!found || !draft || draft.seatHoldToken || isValidPaymentResult(draft.paymentResult)) return;
+    updateDraft({ seatHoldToken: crypto.randomUUID() });
+  }, [draft, found, updateDraft]);
 
   useEffect(() => {
-    if (status !== "ready" || sessionId === "carrinho" || step === "confirmacao" || sessionCanCheckout) return;
-    removeCheckoutCart(sessionId);
-    setCart(null);
+    if (status !== "ready" || step === "confirmacao" || sessionCanCheckout) return;
+    clearCheckoutDraft(sessionId);
+    setDraft(null);
     router.replace("/filmes");
   }, [router, sessionCanCheckout, sessionId, status, step]);
 
   useEffect(() => {
-    const loadKey = `${activeSessionId}:${cart?.seatHoldToken || ""}`;
+    const loadKey = `${activeSessionId}:${draft?.seatHoldToken || ""}`;
     if (!activeSessionId || loadedSeatSessionRef.current === loadKey) return;
     loadedSeatSessionRef.current = loadKey;
     void refreshSeatMap();
-  }, [activeSessionId, cart?.seatHoldToken, refreshSeatMap]);
+  }, [activeSessionId, draft?.seatHoldToken, refreshSeatMap]);
 
   useEffect(() => {
-    if (!cart || !seatMap?.enabled || seatMapStatus !== "ready" || isValidPaymentResult(cart.paymentResult)) return;
+    if (!draft || !seatMap?.enabled || seatMapStatus !== "ready" || isValidPaymentResult(draft.paymentResult)) return;
     const validSeatIds = new Set(seatMap.rows
       .flatMap((row) => row.seats)
       .filter((seat) => seat.status === "available" || seat.heldByMe)
       .map((seat) => seat.id));
-    const reconciled = [...new Set(cart.selectedSeatIds || [])]
+    const reconciled = [...new Set(draft.selectedSeatIds || [])]
       .filter((seatId) => validSeatIds.has(seatId))
       .slice(0, requiredSeatCount);
-    if (reconciled.join("|") !== (cart.selectedSeatIds || []).join("|")) {
-      updateCart({ selectedSeatIds: reconciled });
+    if (reconciled.join("|") !== (draft.selectedSeatIds || []).join("|")) {
+      updateDraft({ selectedSeatIds: reconciled });
     }
-  }, [cart, requiredSeatCount, seatMap, seatMapStatus, updateCart]);
+  }, [draft, requiredSeatCount, seatMap, seatMapStatus, updateDraft]);
 
   useEffect(() => {
-    if (hydratedSessionId !== sessionId || !found || !sessionCanCheckout || cart?.sessionId === found.session.id) return;
+    if (hydratedSessionId !== sessionId || !found || !sessionCanCheckout || draft?.sessionId === found.session.id) return;
     const next = {
       movieId: found.movie.id,
       sessionId: found.session.id,
@@ -255,24 +248,24 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       extrasVisited: false,
       paymentMethod: "credit_card" as const,
     };
-    writeCheckoutCart(next);
-    setCart(next);
-  }, [hydratedSessionId, sessionId, found, sessionCanCheckout, cart?.sessionId, availableTicketTypes]);
+    writeCheckoutDraft(next);
+    setDraft(next);
+  }, [hydratedSessionId, sessionId, found, sessionCanCheckout, draft?.sessionId, availableTicketTypes]);
 
   useEffect(() => {
-    if (!found || !cart) return;
-    const hasPaymentResult = isValidPaymentResult(cart.paymentResult);
-    const persistedCart = readCheckoutCart();
+    if (!found || !draft) return;
+    const hasPaymentResult = isValidPaymentResult(draft.paymentResult);
+    const persistedDraft = readCheckoutDraft();
     const hasVisitedExtras = Boolean(
-      cart.extrasVisited
-      || (persistedCart?.sessionId === found.session.id && persistedCart.extrasVisited)
+      draft.extrasVisited
+      || (persistedDraft?.sessionId === found.session.id && persistedDraft.extrasVisited)
     );
     if (["extras", "pagamento"].includes(step) && seatMapStatus === "ready" && !ticketSelectionComplete) {
       router.replace(checkoutPathFor("ingressos"));
       return;
     }
-    if (step === "extras" && !cart.extrasVisited) {
-      updateCart({ extrasVisited: true });
+    if (step === "extras" && !draft.extrasVisited) {
+      updateDraft({ extrasVisited: true });
       return;
     }
     if (step === "pagamento" && !hasVisitedExtras) {
@@ -280,15 +273,15 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       return;
     }
     if (step === "confirmacao" && !hasPaymentResult) {
-      router.replace(checkoutPathFor(cart.extrasVisited ? "pagamento" : "extras"));
+      router.replace(checkoutPathFor(draft.extrasVisited ? "pagamento" : "extras"));
       return;
     }
     if (step === "confirmacao" && hasPaymentResult && confirmationStatus === "idle") {
       setConfirmationStatus("checking");
-      const result = cart.paymentResult as CheckoutPaymentResult;
+      const result = draft.paymentResult as CheckoutPaymentResult;
       fetchCheckoutOrderStatus(result.order?.id || "")
         .then((fresh) => {
-          updateCart({ paymentResult: fresh });
+          updateDraft({ paymentResult: fresh });
           setConfirmationStatus("ready");
         })
         .catch(() => {
@@ -300,15 +293,15 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     if (step !== "confirmacao" && confirmationStatus !== "idle") {
       setConfirmationStatus("idle");
     }
-  }, [cart, checkoutPathFor, confirmationStatus, found, router, seatMapStatus, step, ticketSelectionComplete, updateCart]);
+  }, [draft, checkoutPathFor, confirmationStatus, found, router, seatMapStatus, step, ticketSelectionComplete, updateDraft]);
 
-  const confirmationResult = cart?.paymentResult as CheckoutPaymentResult | undefined;
+  const confirmationResult = draft?.paymentResult as CheckoutPaymentResult | undefined;
   const confirmationOrderId = String(confirmationResult?.order?.id || "");
   const confirmationPaymentStatus = String(confirmationResult?.payment?.status || "");
   const trackingItems = useMemo(() => {
-    if (!cart || !found) return [];
+    if (!draft || !found) return [];
     const ticketTypesById = new Map(availableTicketTypes.map((ticketType) => [ticketType.id, ticketType]));
-    const ticketItems = selectedTicketItems(cart, availableTicketTypes).map((item) => {
+    const ticketItems = selectedTicketItems(draft, availableTicketTypes).map((item) => {
       const ticketType = ticketTypesById.get(item.id);
       return {
         item_id: `ticket-${item.id}`,
@@ -319,28 +312,28 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         quantity: item.quantity,
       };
     });
-    const concessionItems = (content?.concessions || []).filter((item) => Number(cart.concessionQuantities?.[item.id] || 0) > 0).map((item) => ({
+    const concessionItems = (content?.concessions || []).filter((item) => Number(draft.concessionQuantities?.[item.id] || 0) > 0).map((item) => ({
       item_id: `concession-${item.id}`,
       item_name: item.name,
       item_category: "Bomboniere",
       price: Number(item.price || 0),
-      quantity: Number(cart.concessionQuantities?.[item.id] || 0),
+      quantity: Number(draft.concessionQuantities?.[item.id] || 0),
     }));
     return [...ticketItems, ...concessionItems];
-  }, [availableTicketTypes, cart, content?.concessions, found]);
+  }, [availableTicketTypes, draft, content?.concessions, found]);
 
   useEffect(() => {
-    if (!found || !cart) return;
+    if (!found || !draft) return;
     const key = `cine-tracked-checkout-${found.session.id}`;
     if (window.sessionStorage.getItem(key)) return;
     window.sessionStorage.setItem(key, "1");
     trackMarketingEvent("begin_checkout", {
       currency: "BRL",
       value: total,
-      num_items: selectedTicketItems(cart, availableTicketTypes).reduce((sum, item) => sum + item.quantity, 0),
+      num_items: selectedTicketItems(draft, availableTicketTypes).reduce((sum, item) => sum + item.quantity, 0),
       items: trackingItems,
     });
-  }, [availableTicketTypes, cart, found, total, trackingItems]);
+  }, [availableTicketTypes, draft, found, total, trackingItems]);
 
   useEffect(() => {
     if (confirmationPaymentStatus !== "approved" || !confirmationOrderId) return;
@@ -360,7 +353,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       try {
         const fresh = await fetchCheckoutOrderStatus(confirmationOrderId);
         if (cancelled) return;
-        updateCart({ paymentResult: fresh });
+        updateDraft({ paymentResult: fresh });
         setConfirmationStatus("ready");
         if (["pending", "processing"].includes(String(fresh.payment?.status || ""))) {
           timer = window.setTimeout(pollPayment, 3000);
@@ -375,49 +368,49 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [confirmationOrderId, confirmationPaymentStatus, step, updateCart]);
+  }, [confirmationOrderId, confirmationPaymentStatus, step, updateDraft]);
 
   const continueToPayment = useCallback(() => {
-    if (!found || !cart) return;
+    if (!found || !draft) return;
     if (!ticketSelectionComplete) {
       router.replace(checkoutPathFor("ingressos"));
       return;
     }
-    const persisted = readCheckoutCart();
-    const source = persisted?.sessionId === found.session.id ? persisted : cart;
-    const next: StoredCheckoutCart = {
+    const persisted = readCheckoutDraft();
+    const source = persisted?.sessionId === found.session.id ? persisted : draft;
+    const next: StoredCheckoutDraft = {
       ...source,
       movieId: found.movie.id,
       sessionId: found.session.id,
       extrasVisited: true,
     };
-    writeCheckoutCart(next);
-    setCart(next);
+    writeCheckoutDraft(next);
+    setDraft(next);
     router.push(checkoutPathFor("pagamento"));
-  }, [cart, checkoutPathFor, found, router, ticketSelectionComplete]);
+  }, [draft, checkoutPathFor, found, router, ticketSelectionComplete]);
 
   const selectedConcessions = useMemo(() => {
-    const quantities = cart?.concessionQuantities || {};
+    const quantities = draft?.concessionQuantities || {};
     return (content?.concessions || []).filter((item) => Number(quantities[item.id] || 0) > 0);
-  }, [content?.concessions, cart?.concessionQuantities]);
+  }, [content?.concessions, draft?.concessionQuantities]);
 
   const submitPayment = useCallback(async (cardData?: MercadoPagoCardPayload) => {
-    if (!found || !cart) return;
+    if (!found || !draft) return;
     setLoading(true);
     setPaymentError("");
     try {
-      const persisted = readCheckoutCart();
-      const checkoutCart = persisted?.sessionId === found.session.id ? persisted : cart;
+      const persisted = readCheckoutDraft();
+      const checkoutDraft = persisted?.sessionId === found.session.id ? persisted : draft;
       if (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments) {
         throw new Error("Pix real indisponível: configure o Mercado Pago no ambiente de produção.");
       }
-      if (checkoutCart.paymentMethod === "credit_card" && !cardData?.token) {
+      if (checkoutDraft.paymentMethod === "credit_card" && !cardData?.token) {
         throw new Error("Preencha os dados do cartão no formulário seguro do Mercado Pago.");
       }
       trackMarketingEvent("add_payment_info", {
         currency: "BRL",
         value: total,
-        payment_type: checkoutCart.paymentMethod === "credit_card" ? "credit_card" : "pix",
+        payment_type: checkoutDraft.paymentMethod === "credit_card" ? "credit_card" : "pix",
         items: trackingItems,
       });
       const idempotencyKey = `${found.session.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -427,25 +420,25 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           idempotencyKey,
           movieId: found.movie.id,
           sessionId: found.session.id,
-          fullTicketsCount: Number(checkoutCart.fullTickets || 0),
-          halfTicketsCount: Number(checkoutCart.halfTickets || 0),
-          ticketItems: selectedTicketItems(checkoutCart, availableTicketTypes),
-          selectedSeatIds: checkoutCart.selectedSeatIds || [],
-          seatHoldToken: checkoutCart.seatHoldToken,
-          concessionItems: Object.entries(checkoutCart.concessionQuantities || {})
+          fullTicketsCount: Number(checkoutDraft.fullTickets || 0),
+          halfTicketsCount: Number(checkoutDraft.halfTickets || 0),
+          ticketItems: selectedTicketItems(checkoutDraft, availableTicketTypes),
+          selectedSeatIds: checkoutDraft.selectedSeatIds || [],
+          seatHoldToken: checkoutDraft.seatHoldToken,
+          concessionItems: Object.entries(checkoutDraft.concessionQuantities || {})
             .filter(([, qty]) => Number(qty) > 0)
             .map(([id, qty]) => ({ id, quantity: Number(qty) })),
-          couponCode: checkoutCart.couponCode,
-          customerName: customerUser?.name || checkoutCart.customerName || "Cliente Cine Cruzeiro",
-          customerPhone: customerUser?.phone || checkoutCart.customerPhone || "",
-          customerEmail: customerUser?.email || checkoutCart.customerEmail || "",
-          customerCpf: customerUser?.cpf || checkoutCart.customerCpf || "",
+          couponCode: checkoutDraft.couponCode,
+          customerName: customerUser?.name || checkoutDraft.customerName || "Cliente Cine Cruzeiro",
+          customerPhone: customerUser?.phone || checkoutDraft.customerPhone || "",
+          customerEmail: customerUser?.email || checkoutDraft.customerEmail || "",
+          customerCpf: customerUser?.cpf || checkoutDraft.customerCpf || "",
           useClubCredits: false,
-          useClubBenefits: checkoutCart.useClubBenefits !== false && Boolean(activeClubSubscription(clubSubscriptions)),
-          paymentMethod: checkoutCart.paymentMethod === "credit_card" ? "CREDIT_CARD" : "PIX",
+          useClubBenefits: checkoutDraft.useClubBenefits !== false && Boolean(activeClubSubscription(clubSubscriptions)),
+          paymentMethod: checkoutDraft.paymentMethod === "credit_card" ? "CREDIT_CARD" : "PIX",
           createdAt: new Date().toISOString(),
         },
-        checkoutCart.paymentMethod || "pix",
+        checkoutDraft.paymentMethod || "pix",
         {
           idempotencyKey,
           ...(cardData
@@ -458,7 +451,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             : {}),
         }
       );
-      updateCart({ paymentResult: result });
+      updateDraft({ paymentResult: result });
       router.push(checkoutPathFor("confirmacao"));
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : "Nao foi possivel iniciar o pagamento.");
@@ -467,27 +460,27 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     } finally {
       setLoading(false);
     }
-  }, [availableTicketTypes, cart, checkoutPathFor, found, mercadoPagoConfig, router, updateCart, customerUser, clubSubscriptions, total, trackingItems, refreshSeatMap]);
+  }, [availableTicketTypes, draft, checkoutPathFor, found, mercadoPagoConfig, router, updateDraft, customerUser, clubSubscriptions, total, trackingItems, refreshSeatMap]);
 
   async function submitClubCredit() {
-    if (!found || !cart) return;
+    if (!found || !draft) return;
     setClubLoading(true);
     setPaymentError("");
     try {
       const result = await createClubCreditCheckout({
         movieId: found.movie.id,
         sessionId: found.session.id,
-        fullTicketsCount: Number(cart.fullTickets || 0),
-        halfTicketsCount: Number(cart.halfTickets || 0),
-        ticketItems: selectedTicketItems(cart, availableTicketTypes),
-        selectedSeatIds: cart.selectedSeatIds || [],
-        seatHoldToken: cart.seatHoldToken,
-        concessionItems: Object.entries(cart.concessionQuantities || {})
+        fullTicketsCount: Number(draft.fullTickets || 0),
+        halfTicketsCount: Number(draft.halfTickets || 0),
+        ticketItems: selectedTicketItems(draft, availableTicketTypes),
+        selectedSeatIds: draft.selectedSeatIds || [],
+        seatHoldToken: draft.seatHoldToken,
+        concessionItems: Object.entries(draft.concessionQuantities || {})
           .filter(([, qty]) => Number(qty) > 0)
           .map(([id, qty]) => ({ id, quantity: Number(qty) })),
-        couponCode: cart.couponCode,
+        couponCode: draft.couponCode,
       });
-      updateCart({ paymentResult: result });
+      updateDraft({ paymentResult: result });
       router.push(checkoutPathFor("confirmacao"));
     } catch (err) {
       setPaymentError(err instanceof Error ? err.message : "Nao foi possivel usar o beneficio do Clube.");
@@ -537,11 +530,11 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   if (status === "loading") return <PageShell><div className="h-96 skeleton-soft" /></PageShell>;
   if (status === "error") return <PageShell><p className="text-rose-200">{error}</p></PageShell>;
   if (hydratedSessionId !== sessionId) return <PageShell><div className="h-96 skeleton-soft" /></PageShell>;
-  if (!found || !cart) return <PageShell><p className="text-slate-300">Sessão não encontrada. Volte para a programação.</p><Link className="mt-4 inline-flex text-gold-400" href="/filmes">Ver filmes</Link></PageShell>;
+  if (!found || !draft) return <PageShell><p className="text-slate-300">Sessão não encontrada. Volte para a programação.</p><Link className="mt-4 inline-flex text-gold-400" href="/filmes">Ver filmes</Link></PageShell>;
   if (["extras", "pagamento"].includes(step) && (seatMapStatus !== "ready" || !ticketSelectionComplete)) {
     return <PageShell><div className="h-96 skeleton-soft" aria-label="Validando ingressos e poltronas" /></PageShell>;
   }
-  if (step === "pagamento" && !cart.extrasVisited) {
+  if (step === "pagamento" && !draft.extrasVisited) {
     return <PageShell><div className="h-96 skeleton-soft" aria-label="Redirecionando para extras" /></PageShell>;
   }
 
@@ -557,14 +550,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           <Steps
             sessionId={found.session.id}
             step={step}
-            extrasVisited={Boolean(cart.extrasVisited)}
+            extrasVisited={Boolean(draft.extrasVisited)}
             ticketsComplete={ticketSelectionComplete}
             onContinueToPayment={continueToPayment}
           />
           {step === "ingressos" && (
             <TicketsStep
-              cart={cart}
-              updateCart={updateCart}
+              draft={draft}
+              updateDraft={updateDraft}
               ticketTypes={availableTicketTypes}
               seatMap={seatMap}
               seatMapStatus={seatMapStatus}
@@ -576,16 +569,16 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           )}
           {step === "extras" && (
             <ExtrasStep
-              cart={cart}
-              updateCart={updateCart}
+              draft={draft}
+              updateDraft={updateDraft}
               concessions={content?.concessions || []}
               onContinue={continueToPayment}
             />
           )}
           {step === "pagamento" && (
             <PaymentStep
-              cart={cart}
-              updateCart={updateCart}
+              draft={draft}
+              updateDraft={updateDraft}
               total={total}
               mercadoPagoConfig={mercadoPagoConfig}
               paymentError={paymentError}
@@ -600,23 +593,23 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           )}
           {step === "confirmacao" && (
             <ConfirmationStep
-              cart={cart}
+              draft={draft}
               confirmationStatus={confirmationStatus}
               orderReference={`${found.movie.title} - ${found.session.time} • ${found.session.format}`}
             />
           )}
         </section>
-        <OrderSummary cart={cart} total={total} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
+        <OrderSummary draft={draft} total={total} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
       <MobileCheckoutBar
-        cart={cart}
+        draft={draft}
         step={step}
         total={total}
         loading={loading || clubLoading}
-        paymentMethod={cart.paymentMethod || "pix"}
+        paymentMethod={draft.paymentMethod || "pix"}
         onSubmit={submitPayment}
         onContinueToPayment={continueToPayment}
-        submitDisabled={cart.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments}
+        submitDisabled={draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments}
         continueDisabled={step === "ingressos" && !ticketSelectionComplete}
       />
     </PageShell>
@@ -694,9 +687,9 @@ function Steps({ sessionId, step, extrasVisited, ticketsComplete, onContinueToPa
   );
 }
 
-function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, realtimeStatus, onSelectSeat, onReleaseSeat, onRefreshSeatMap }: {
-  cart: StoredCheckoutCart;
-  updateCart: (patch: Partial<StoredCheckoutCart>) => void;
+function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, realtimeStatus, onSelectSeat, onReleaseSeat, onRefreshSeatMap }: {
+  draft: StoredCheckoutDraft;
+  updateDraft: (patch: Partial<StoredCheckoutDraft>) => void;
   ticketTypes: TicketTypeRecord[];
   seatMap: SessionSeatMap | null;
   seatMapStatus: "idle" | "loading" | "ready" | "error";
@@ -705,9 +698,9 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, re
   onReleaseSeat: (seatId: string) => Promise<{ ok: boolean; message?: string }>;
   onRefreshSeatMap: () => Promise<void>;
 }) {
-  const quantities = cart.ticketQuantities || {};
-  const requiredSeats = generatedTicketCount(cart, ticketTypes);
-  const selectedSeatIds = cart.selectedSeatIds || [];
+  const quantities = draft.ticketQuantities || {};
+  const requiredSeats = generatedTicketCount(draft, ticketTypes);
+  const selectedSeatIds = draft.selectedSeatIds || [];
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat]));
   const seatTypesById = new Map((seatMap?.seatTypes || []).map((type) => [type.id, type]));
   const seatSelectionComplete = seatMapStatus === "ready" && (!seatMap?.enabled || selectedSeatIds.length === requiredSeats);
@@ -719,13 +712,13 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, re
     setSeatActionError("");
     if (selectedSeatIds.includes(seatId)) {
       const result = await onReleaseSeat(seatId);
-      if (result.ok) updateCart({ selectedSeatIds: selectedSeatIds.filter((id) => id !== seatId), extrasVisited: false });
+      if (result.ok) updateDraft({ selectedSeatIds: selectedSeatIds.filter((id) => id !== seatId), extrasVisited: false });
       else setSeatActionError(result.message || "Não foi possível liberar a poltrona.");
       return;
     }
     if (selectedSeatIds.length >= requiredSeats) return;
     const result = await onSelectSeat(seatId);
-    if (result.ok) updateCart({ selectedSeatIds: [...selectedSeatIds, seatId], extrasVisited: false });
+    if (result.ok) updateDraft({ selectedSeatIds: [...selectedSeatIds, seatId], extrasVisited: false });
     else setSeatActionError(result.message || "Esta poltrona acabou de ser selecionada por outra pessoa.");
   };
 
@@ -737,15 +730,7 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, re
             label={`${ticketType.name} · ${money(ticketType.price)}${Number(ticketType.bundleQuantity || 1) > 1 ? ` · gera ${ticketType.bundleQuantity} ingressos` : ""}`}
             value={Number(quantities[ticketType.id] || 0)}
             onChange={(value) => {
-              const previous = Number(quantities[ticketType.id] || 0);
-              updateCart({ ticketQuantities: { ...quantities, [ticketType.id]: value }, extrasVisited: false });
-              if (value > previous) {
-                trackMarketingEvent("add_to_cart", {
-                  currency: "BRL",
-                  value: Number(ticketType.price || 0) * (value - previous),
-                  items: [{ item_id: `ticket-${ticketType.id}`, item_name: ticketType.name, item_category: "Ingresso", price: Number(ticketType.price || 0), quantity: value - previous }],
-                });
-              }
+              updateDraft({ ticketQuantities: { ...quantities, [ticketType.id]: value }, extrasVisited: false });
             }}
           />
           {ticketType.description && <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">{ticketType.description}</p>}
@@ -839,7 +824,7 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, re
         )}
       </section>
       {seatSelectionComplete && requiredSeats > 0 ? (
-        <Link href={`/checkout/${cart.sessionId}/extras`} className="inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300">Continuar para Extras</Link>
+        <Link href={`/checkout/${draft.sessionId}/extras`} className="inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300">Continuar para Extras</Link>
       ) : (
         <button type="button" disabled className="inline-flex bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 opacity-45">
           {requiredSeats <= 0 ? "Selecione um ingresso" : seatMap?.enabled ? "Selecione todas as poltronas" : "Carregando a sala..."}
@@ -849,23 +834,14 @@ function TicketsStep({ cart, updateCart, ticketTypes, seatMap, seatMapStatus, re
   );
 }
 
-function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: StoredCheckoutCart; updateCart: (patch: Partial<StoredCheckoutCart>) => void; concessions: Parameters<typeof cartTotal>[2]; onContinue: () => void }) {
-  const quantities = cart.concessionQuantities || {};
+function ExtrasStep({ draft, updateDraft, concessions, onContinue }: { draft: StoredCheckoutDraft; updateDraft: (patch: Partial<StoredCheckoutDraft>) => void; concessions: Parameters<typeof checkoutDraftTotal>[2]; onContinue: () => void }) {
+  const quantities = draft.concessionQuantities || {};
   const visibleConcessions = (concessions || []).filter((item) => item.active !== false);
   const [openDescriptions, setOpenDescriptions] = useState<Record<string, boolean>>({});
   const setQty = (id: string, qty: number) => {
-    const persisted = readCheckoutCart();
-    const baseQuantities = persisted?.sessionId === cart.sessionId ? persisted.concessionQuantities || {} : quantities;
-    updateCart({ concessionQuantities: { ...baseQuantities, [id]: Math.max(0, qty) } });
-    const previous = Number(baseQuantities[id] || 0);
-    if (qty > previous) {
-      const item = visibleConcessions.find((candidate) => candidate.id === id);
-      trackMarketingEvent("add_to_cart", {
-        currency: "BRL",
-        value: Number(item?.price || 0) * (qty - previous),
-        items: [{ item_id: `concession-${id}`, item_name: item?.name || "Produto", item_category: "Bomboniere", price: Number(item?.price || 0), quantity: qty - previous }],
-      });
-    }
+    const persisted = readCheckoutDraft();
+    const baseQuantities = persisted?.sessionId === draft.sessionId ? persisted.concessionQuantities || {} : quantities;
+    updateDraft({ concessionQuantities: { ...baseQuantities, [id]: Math.max(0, qty) } });
   };
   return (
     <div>
@@ -914,9 +890,9 @@ function ExtrasStep({ cart, updateCart, concessions, onContinue }: { cart: Store
   );
 }
 
-function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, onSubmit, onClubCredit, ticketTypes }: {
-  cart: StoredCheckoutCart;
-  updateCart: (patch: Partial<StoredCheckoutCart>) => void;
+function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, onSubmit, onClubCredit, ticketTypes }: {
+  draft: StoredCheckoutDraft;
+  updateDraft: (patch: Partial<StoredCheckoutDraft>) => void;
   total: number;
   mercadoPagoConfig: MercadoPagoCheckoutConfig | null;
   paymentError: string;
@@ -929,11 +905,11 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
   ticketTypes: TicketTypeRecord[];
 }) {
   const activeClub = activeClubSubscription(clubSubscriptions);
-  const requestedTickets = generatedTicketCount(cart, ticketTypes);
-  const selectedExtras = Object.values(cart.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
+  const requestedTickets = generatedTicketCount(draft, ticketTypes);
+  const selectedExtras = Object.values(draft.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
   const plan = activeClub?.plan;
-  const clubBenefitsEnabled = cart.useClubBenefits !== false;
+  const clubBenefitsEnabled = draft.useClubBenefits !== false;
   const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
@@ -955,10 +931,10 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
             <h2 className="font-display text-3xl font-black">Dados do visitante</h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">Pedir isso aqui só quando a compra for sem conta. Cliente logado usa os dados salvos automaticamente.</p>
             <div className="mt-6 space-y-4">
-              <Input label="Nome" value={cart.customerName || ""} onChange={(value) => updateCart({ customerName: value })} />
-              <Input label="WhatsApp" value={cart.customerPhone || ""} onChange={(value) => updateCart({ customerPhone: value })} />
-              <Input label="E-mail" type="email" value={cart.customerEmail || ""} onChange={(value) => updateCart({ customerEmail: value })} />
-              <Input label="CPF para nota fiscal, opcional" value={cart.customerCpf || ""} onChange={(value) => updateCart({ customerCpf: value.replace(/\D/g, "").slice(0, 11) })} />
+              <Input label="Nome" value={draft.customerName || ""} onChange={(value) => updateDraft({ customerName: value })} />
+              <Input label="WhatsApp" value={draft.customerPhone || ""} onChange={(value) => updateDraft({ customerPhone: value })} />
+              <Input label="E-mail" type="email" value={draft.customerEmail || ""} onChange={(value) => updateDraft({ customerEmail: value })} />
+              <Input label="CPF para nota fiscal, opcional" value={draft.customerCpf || ""} onChange={(value) => updateDraft({ customerCpf: value.replace(/\D/g, "").slice(0, 11) })} />
             </div>
           </>
         )}
@@ -966,10 +942,10 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
       <section>
         <h2 className="font-display text-3xl font-black">Pagamento</h2>
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <button type="button" onClick={() => updateCart({ paymentMethod: "pix" })} className={`py-4 text-sm font-black ${cart.paymentMethod !== "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Pix</button>
-          <button type="button" onClick={() => updateCart({ paymentMethod: "credit_card" })} className={`py-4 text-sm font-black ${cart.paymentMethod === "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Cartão</button>
+          <button type="button" onClick={() => updateDraft({ paymentMethod: "pix" })} className={`py-4 text-sm font-black ${draft.paymentMethod !== "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Pix</button>
+          <button type="button" onClick={() => updateDraft({ paymentMethod: "credit_card" })} className={`py-4 text-sm font-black ${draft.paymentMethod === "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Cartão</button>
         </div>
-        {cart.paymentMethod === "credit_card" && (
+        {draft.paymentMethod === "credit_card" && (
           <div className="mt-6 space-y-4">
             <div className="rounded-lg bg-brand-900/70 p-5 shadow-soft">
               <h3 className="text-base font-black text-white">Cartão transparente Mercado Pago</h3>
@@ -990,7 +966,7 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
             )}
           </div>
         )}
-        {cart.paymentMethod !== "credit_card" && (
+        {draft.paymentMethod !== "credit_card" && (
           <div className="mt-6 rounded-lg bg-brand-900/70 p-5 shadow-soft">
             <h3 className="text-base font-black text-white">Pix Mercado Pago</h3>
             <p className="mt-2 text-sm leading-6 text-slate-300">
@@ -1000,7 +976,7 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
           </div>
         )}
         {paymentError && <p className="mt-5 text-sm font-semibold text-rose-200">{paymentError}</p>}
-        {cart.paymentMethod !== "credit_card" && (
+        {draft.paymentMethod !== "credit_card" && (
           <button type="button" onClick={() => void onSubmit()} disabled={loading || mercadoPagoUnavailable} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
             {loading ? "Processando..." : "Gerar Pix"}
           </button>
@@ -1011,7 +987,7 @@ function PaymentStep({ cart, updateCart, total, mercadoPagoConfig, paymentError,
               <input
                 type="checkbox"
                 checked={clubBenefitsEnabled}
-                onChange={(event) => updateCart({ useClubBenefits: event.target.checked })}
+                onChange={(event) => updateDraft({ useClubBenefits: event.target.checked })}
                 className="mt-1 h-4 w-4 accent-yellow-400"
               />
               <span>
@@ -1108,13 +1084,11 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
   );
 }
 
-function ConfirmationStep({ cart, confirmationStatus, orderReference }: { cart: StoredCheckoutCart; confirmationStatus: "idle" | "checking" | "ready" | "invalid"; orderReference: string }) {
-  const router = useRouter();
+function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft: StoredCheckoutDraft; confirmationStatus: "idle" | "checking" | "ready" | "invalid"; orderReference: string }) {
   const [copied, setCopied] = useState(false);
-  const result = cart.paymentResult as CheckoutPaymentResult | undefined;
+  const result = draft.paymentResult as CheckoutPaymentResult | undefined;
   const approved = result?.payment?.status === "approved";
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
-  const remainingCartItems = approved ? checkoutCartQueueRemaining(cart.sessionId) : 0;
   const copyPix = async () => {
     if (!result?.payment?.qrCode) return;
     await navigator.clipboard?.writeText(result.payment.qrCode);
@@ -1183,18 +1157,6 @@ function ConfirmationStep({ cart, confirmationStatus, orderReference }: { cart: 
           )}
 
           <div className="mt-8 flex flex-wrap gap-3">
-            {approved && remainingCartItems > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const next = nextCheckoutCartInQueue(cart.sessionId);
-                  if (next) router.push(`/checkout/${next.sessionId}`);
-                }}
-                className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300"
-              >
-                Continuar compra · {remainingCartItems} {remainingCartItems === 1 ? "sessão restante" : "sessões restantes"}
-              </button>
-            )}
             <Link href="/conta/ingressos" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
               Ver meus ingressos
             </Link>
@@ -1275,28 +1237,28 @@ function activeClubSubscription(subscriptions: AccountSubscription[]) {
   }) || null;
 }
 
-function OrderSummary({ cart, total, selectedConcessions, ticketTypes, seatMap }: { cart: StoredCheckoutCart; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
+function OrderSummary({ draft, total, selectedConcessions, ticketTypes, seatMap }: { draft: StoredCheckoutDraft; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat.label]));
   return (
     <aside className="lg:sticky lg:top-28 lg:self-start">
       <div className="border-t border-white/12 pt-5 lg:border-t-0 lg:pt-0">
         <h2 className="font-display text-2xl font-black">Resumo</h2>
         <dl className="mt-5 space-y-3 text-sm text-slate-300">
-          {ticketTypes.filter((ticketType) => Number(cart.ticketQuantities?.[ticketType.id] || 0) > 0).map((ticketType) => (
+          {ticketTypes.filter((ticketType) => Number(draft.ticketQuantities?.[ticketType.id] || 0) > 0).map((ticketType) => (
             <div key={ticketType.id} className="flex justify-between gap-4">
               <dt>{ticketType.name}</dt>
               <dd>{Number(ticketType.bundleQuantity || 1) > 1
-                ? `${cart.ticketQuantities?.[ticketType.id] || 0} pacote(s) · ${Number(cart.ticketQuantities?.[ticketType.id] || 0) * Number(ticketType.bundleQuantity || 1)} ingressos`
-                : cart.ticketQuantities?.[ticketType.id] || 0}</dd>
+                ? `${draft.ticketQuantities?.[ticketType.id] || 0} pacote(s) · ${Number(draft.ticketQuantities?.[ticketType.id] || 0) * Number(ticketType.bundleQuantity || 1)} ingressos`
+                : draft.ticketQuantities?.[ticketType.id] || 0}</dd>
             </div>
           ))}
           {selectedConcessions.map((item) => (
-            <div key={item.id} className="flex justify-between gap-4"><dt>{item.name}</dt><dd>{cart.concessionQuantities?.[item.id] || 0}</dd></div>
+            <div key={item.id} className="flex justify-between gap-4"><dt>{item.name}</dt><dd>{draft.concessionQuantities?.[item.id] || 0}</dd></div>
           ))}
           <div className="flex justify-between gap-4">
             <dt>Poltronas</dt>
             <dd className="max-w-[55%] text-right">{seatMap?.enabled
-              ? (cart.selectedSeatIds || []).map((id) => seatsById.get(id) || id).join(", ") || "A selecionar"
+              ? (draft.selectedSeatIds || []).map((id) => seatsById.get(id) || id).join(", ") || "A selecionar"
               : "Lugar livre"}</dd>
           </div>
         </dl>
@@ -1310,10 +1272,10 @@ function OrderSummary({ cart, total, selectedConcessions, ticketTypes, seatMap }
   );
 }
 
-function MobileCheckoutBar({ cart, step, total, loading, paymentMethod, onSubmit, onContinueToPayment, submitDisabled = false, continueDisabled = false }: { cart: StoredCheckoutCart; step: Step; total: number; loading: boolean; paymentMethod: StoredCheckoutCart["paymentMethod"]; onSubmit: () => void; onContinueToPayment: () => void; submitDisabled?: boolean; continueDisabled?: boolean }) {
+function MobileCheckoutBar({ draft, step, total, loading, paymentMethod, onSubmit, onContinueToPayment, submitDisabled = false, continueDisabled = false }: { draft: StoredCheckoutDraft; step: Step; total: number; loading: boolean; paymentMethod: StoredCheckoutDraft["paymentMethod"]; onSubmit: () => void; onContinueToPayment: () => void; submitDisabled?: boolean; continueDisabled?: boolean }) {
   const hrefByStep: Partial<Record<Step, string>> = {
-    ingressos: `/checkout/${cart.sessionId}/extras`,
-    extras: `/checkout/${cart.sessionId}/pagamento`,
+    ingressos: `/checkout/${draft.sessionId}/extras`,
+    extras: `/checkout/${draft.sessionId}/pagamento`,
     confirmacao: "/conta/ingressos",
   };
   const labelByStep: Record<Step, string> = {

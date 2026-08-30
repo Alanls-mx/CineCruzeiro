@@ -1,9 +1,9 @@
 import type { CinemaContent, TicketTypeRecord } from "@/services/cinemaApi";
 import { Movie, Session } from "@/types";
 
-export const CART_STORAGE_KEY = "cine-cruzeiro-cart";
-export const CART_COLLECTION_STORAGE_KEY = "cine-cruzeiro-carts";
-export const CART_CHECKOUT_QUEUE_STORAGE_KEY = "cine-cruzeiro-cart-checkout-queue";
+export const CHECKOUT_DRAFT_STORAGE_KEY = "cine-cruzeiro-checkout-draft-v1";
+const OBSOLETE_CHECKOUT_STORAGE_KEYS = ["cine-cruzeiro-cart", "cine-cruzeiro-carts"];
+const OBSOLETE_CHECKOUT_QUEUE_STORAGE_KEY = "cine-cruzeiro-cart-checkout-queue";
 const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const UPLOAD_ASSET_VERSION = "2";
 export const PUBLIC_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
@@ -34,7 +34,7 @@ export function isUploadedAsset(value: string | undefined | null) {
   }
 }
 
-export type StoredCheckoutCart = {
+export type StoredCheckoutDraft = {
   movieId: string;
   sessionId: string;
   fullTickets?: number;
@@ -139,9 +139,16 @@ export function money(value: number | undefined) {
   return `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 }
 
-export function readCheckoutCart(): StoredCheckoutCart | null {
+export function clearObsoleteCheckoutStorage() {
+  if (typeof window === "undefined") return;
+  OBSOLETE_CHECKOUT_STORAGE_KEYS.forEach((key) => window.localStorage.removeItem(key));
+  window.sessionStorage.removeItem(OBSOLETE_CHECKOUT_QUEUE_STORAGE_KEY);
+}
+
+export function readCheckoutDraft(): StoredCheckoutDraft | null {
   if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(CART_STORAGE_KEY);
+  clearObsoleteCheckoutStorage();
+  const raw = window.localStorage.getItem(CHECKOUT_DRAFT_STORAGE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -150,149 +157,39 @@ export function readCheckoutCart(): StoredCheckoutCart | null {
   }
 }
 
-export function readCheckoutCarts(): StoredCheckoutCart[] {
-  if (typeof window === "undefined") return [];
-  let carts: StoredCheckoutCart[] = [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(CART_COLLECTION_STORAGE_KEY) || "[]");
-    if (Array.isArray(parsed)) carts = parsed;
-  } catch {
-    carts = [];
-  }
-  const active = readCheckoutCart();
-  if (active?.sessionId && !carts.some((cart) => cart.sessionId === active.sessionId)) carts.push(active);
-  return carts
-    .filter((cart) => cart?.sessionId && !cart.paymentResult && cartItemCount(cart) > 0)
-    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
-}
-
-export function writeCheckoutCart(cart: StoredCheckoutCart) {
+export function writeCheckoutDraft(draft: StoredCheckoutDraft) {
   if (typeof window === "undefined") return;
-  const next = { ...cart, updatedAt: new Date().toISOString() };
-  window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(next));
-  let carts: StoredCheckoutCart[] = [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(CART_COLLECTION_STORAGE_KEY) || "[]");
-    if (Array.isArray(parsed)) carts = parsed;
-  } catch {
-    carts = [];
-  }
-  carts = [next, ...carts.filter((item) => item.sessionId !== next.sessionId)].slice(0, 12);
-  window.localStorage.setItem(CART_COLLECTION_STORAGE_KEY, JSON.stringify(carts));
-  window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+  clearObsoleteCheckoutStorage();
+  window.localStorage.setItem(CHECKOUT_DRAFT_STORAGE_KEY, JSON.stringify({ ...draft, updatedAt: new Date().toISOString() }));
 }
 
-export function selectCheckoutCart(cart: StoredCheckoutCart) {
+export function clearCheckoutDraft(sessionId?: string) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
-  window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
-}
-
-export function removeCheckoutCart(sessionId: string) {
-  if (typeof window === "undefined") return;
-  const remaining = readCheckoutCarts().filter((cart) => cart.sessionId !== sessionId);
-  window.localStorage.setItem(CART_COLLECTION_STORAGE_KEY, JSON.stringify(remaining));
-  const active = readCheckoutCart();
-  if (active?.sessionId === sessionId) {
-    if (remaining[0]) window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(remaining[0]));
-    else window.localStorage.removeItem(CART_STORAGE_KEY);
+  if (!sessionId) {
+    window.localStorage.removeItem(CHECKOUT_DRAFT_STORAGE_KEY);
+  } else {
+    const draft = readCheckoutDraft();
+    if (draft?.sessionId === sessionId) window.localStorage.removeItem(CHECKOUT_DRAFT_STORAGE_KEY);
   }
-  window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+  clearObsoleteCheckoutStorage();
 }
 
-export function clearCheckoutCarts() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(CART_STORAGE_KEY);
-  window.localStorage.removeItem(CART_COLLECTION_STORAGE_KEY);
-  window.sessionStorage.removeItem(CART_CHECKOUT_QUEUE_STORAGE_KEY);
-  window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
-}
-
-export function pruneUnavailableCheckoutCarts(content: CinemaContent | null) {
-  if (typeof window === "undefined" || !content) return { carts: readCheckoutCarts(), removed: 0 };
-  const current = readCheckoutCarts();
-  const carts = current.filter((cart) => {
-    const found = findSession(content, cart.sessionId);
-    return Boolean(found && isSessionCheckoutAvailable(found.session));
-  });
-  const validIds = new Set(carts.map((cart) => cart.sessionId));
-  window.localStorage.setItem(CART_COLLECTION_STORAGE_KEY, JSON.stringify(carts));
-  const active = readCheckoutCart();
-  if (active?.sessionId && !validIds.has(active.sessionId)) {
-    if (carts[0]) window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(carts[0]));
-    else window.localStorage.removeItem(CART_STORAGE_KEY);
-  }
-  const removed = current.length - carts.length;
-  if (removed > 0) window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
-  return { carts, removed };
-}
-
-export function startCheckoutCartQueue(carts: StoredCheckoutCart[]) {
-  if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(CART_CHECKOUT_QUEUE_STORAGE_KEY, JSON.stringify(carts.map((cart) => cart.sessionId)));
-}
-
-export function nextCheckoutCartInQueue(currentSessionId: string) {
-  if (typeof window === "undefined") return null;
-  let ids: string[] = [];
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(CART_CHECKOUT_QUEUE_STORAGE_KEY) || "[]");
-    if (Array.isArray(parsed)) ids = parsed.map(String);
-  } catch {
-    ids = [];
-  }
-  const remainingIds = ids.filter((id) => id !== currentSessionId);
-  const carts = readCheckoutCarts();
-  const next = remainingIds.map((id) => carts.find((cart) => cart.sessionId === id)).find(Boolean) || null;
-  window.sessionStorage.setItem(
-    CART_CHECKOUT_QUEUE_STORAGE_KEY,
-    JSON.stringify(next ? remainingIds.slice(remainingIds.indexOf(next.sessionId)) : [])
-  );
-  if (next) selectCheckoutCart(next);
-  return next;
-}
-
-export function checkoutCartQueueRemaining(currentSessionId: string) {
-  if (typeof window === "undefined") return 0;
-  try {
-    const ids = JSON.parse(window.sessionStorage.getItem(CART_CHECKOUT_QUEUE_STORAGE_KEY) || "[]");
-    const available = new Set(readCheckoutCarts().map((cart) => cart.sessionId));
-    return Array.isArray(ids) ? ids.filter((id) => id !== currentSessionId && available.has(String(id))).length : 0;
-  } catch {
-    return 0;
-  }
-}
-
-export function checkoutCartsItemCount(carts = readCheckoutCarts()) {
-  return carts.reduce((sum, cart) => sum + cartItemCount(cart), 0);
-}
-
-export function cartItemCount(cart: StoredCheckoutCart | null) {
-  if (!cart) return 0;
-  const concessions = Object.values(cart.concessionQuantities || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-  const selectedTickets = Object.values(cart.ticketQuantities || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-  const tickets = cart.ticketQuantities !== undefined
-    ? selectedTickets
-    : Number(cart.fullTickets || 0) + Number(cart.halfTickets || 0);
-  return tickets + concessions;
-}
-
-export function cartTotal(
-  cart: StoredCheckoutCart | null,
+export function checkoutDraftTotal(
+  draft: StoredCheckoutDraft | null,
   session?: Session,
   concessions: CinemaContent["concessions"] = [],
   ticketTypes: TicketTypeRecord[] = []
 ) {
-  if (!cart || !session) return 0;
-  const selectedTickets = Object.entries(cart.ticketQuantities || {}).reduce((sum, [id, quantity]) => {
+  if (!draft || !session) return 0;
+  const selectedTickets = Object.entries(draft.ticketQuantities || {}).reduce((sum, [id, quantity]) => {
     const ticketType = ticketTypes.find((item) => item.id === id);
     return sum + Number(quantity || 0) * Number(ticketType?.price || 0);
   }, 0);
-  const tickets = cart.ticketQuantities !== undefined
+  const tickets = draft.ticketQuantities !== undefined
     ? selectedTickets
-    : Number(cart.fullTickets || 0) * Number(session.priceFull || 0) + Number(cart.halfTickets || 0) * Number(session.priceHalf || 0);
+    : Number(draft.fullTickets || 0) * Number(session.priceFull || 0) + Number(draft.halfTickets || 0) * Number(session.priceHalf || 0);
   const extras = concessions.reduce((sum, item) => {
-    const qty = Number(cart.concessionQuantities?.[item.id] || 0);
+    const qty = Number(draft.concessionQuantities?.[item.id] || 0);
     return sum + qty * Number(item.price || 0);
   }, 0);
   return tickets + extras;

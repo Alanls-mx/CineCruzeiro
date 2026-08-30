@@ -1,7 +1,6 @@
 export type TrackingEvent =
   | "view_content"
   | "begin_checkout"
-  | "add_to_cart"
   | "add_payment_info"
   | "purchase"
   | "lead"
@@ -48,7 +47,6 @@ export function trackMarketingEvent(event: TrackingEvent, parameters: Record<str
   const metaEvents: Partial<Record<TrackingEvent, string>> = {
     view_content: "ViewContent",
     begin_checkout: "InitiateCheckout",
-    add_to_cart: "AddToCart",
     add_payment_info: "AddPaymentInfo",
     purchase: "Purchase",
     lead: "Lead",

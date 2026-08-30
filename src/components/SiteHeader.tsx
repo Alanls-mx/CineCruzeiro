@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu, ShoppingBag, UserRound, X } from "lucide-react";
+import { Menu, UserRound, X } from "lucide-react";
 import { fetchCinemaContent } from "@/services/cinemaApi";
 import type { CinemaContent } from "@/services/cinemaApi";
-import { assetPath, checkoutCartsItemCount, readCheckoutCarts } from "@/utils/cinema";
-import { CartDrawer } from "@/components/CartDrawer";
+import { assetPath, clearObsoleteCheckoutStorage } from "@/utils/cinema";
 
 const navItems = [
   { href: "/filmes", label: "Filmes" },
@@ -24,8 +23,6 @@ type SiteHeaderProps = {
 export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAction = false }: SiteHeaderProps = {}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [cartOpen, setCartOpen] = useState(false);
-  const { cartCount } = useCartDestination();
   const [remoteContent, setRemoteContent] = useState<CinemaContent | null>(null);
 
   const effectiveSettings = settings || remoteContent?.settings;
@@ -33,6 +30,8 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
   const announcementText = effectiveSettings?.announcementText?.trim();
 
   useEffect(() => setOpen(false), [pathname]);
+
+  useEffect(() => clearObsoleteCheckoutStorage(), []);
 
   useEffect(() => {
     if (!open) return;
@@ -55,14 +54,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
     };
   }, []);
 
-  useEffect(() => {
-    const openCart = () => setCartOpen(true);
-    window.addEventListener("cine-cruzeiro-open-cart", openCart);
-    return () => window.removeEventListener("cine-cruzeiro-open-cart", openCart);
-  }, []);
-
   return (
-    <>
     <header className="sticky top-0 z-40 bg-[#060a12]/92 backdrop-blur-xl">
       {showAnnouncement && announcementText && (
         <div className="border-b border-white/8 bg-brand-700 px-4 py-1.5 text-center text-xs font-bold text-white">
@@ -93,10 +85,6 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
           <Link href="/conta" className="inline-flex h-11 w-11 items-center justify-center text-slate-200 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label="Minha conta">
             <UserRound className="h-5 w-5" />
           </Link>
-          <button type="button" onClick={() => setCartOpen(true)} className="relative inline-flex h-11 w-11 items-center justify-center text-slate-200 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label="Abrir carrinho">
-            <ShoppingBag className="h-5 w-5" />
-            {cartCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-gold-400" />}
-          </button>
           <Link href="/filmes" className={`${textPrimaryAction ? "bg-transparent text-slate-300 hover:text-white" : mutedPrimaryAction ? "bg-white/8 text-slate-100 hover:bg-white/12" : "bg-gold-400 text-slate-950 hover:bg-gold-300"} px-5 py-3 text-sm font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400`}>
             Comprar ingresso
           </Link>
@@ -106,10 +94,6 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
           <Link href="/conta" className="inline-flex h-11 w-11 items-center justify-center text-slate-100" aria-label="Minha conta">
             <UserRound className="h-5 w-5" />
           </Link>
-          <button type="button" onClick={() => setCartOpen(true)} className="relative inline-flex h-11 w-11 items-center justify-center text-slate-100" aria-label="Abrir carrinho">
-            <ShoppingBag className="h-5 w-5" />
-            {cartCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-gold-400" />}
-          </button>
           <button type="button" onClick={() => setOpen((value) => !value)} className="inline-flex h-11 w-11 items-center justify-center text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label={open ? "Fechar menu" : "Abrir menu"} aria-expanded={open} aria-controls="site-mobile-navigation">
             {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
@@ -125,7 +109,6 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
               </Link>
             ))}
             <Link href="/conta" onClick={() => setOpen(false)}>Minha conta</Link>
-            <button type="button" className="text-left" onClick={() => { setOpen(false); setCartOpen(true); }}>Carrinho</button>
             <Link href="/filmes" onClick={() => setOpen(false)} className={`${textPrimaryAction ? "bg-transparent text-slate-300" : mutedPrimaryAction ? "bg-white/8 text-white" : "bg-gold-400 text-slate-950"} mt-2 px-5 py-3 text-center text-sm font-black`}>
               Comprar ingresso
             </Link>
@@ -133,8 +116,6 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
         </div>
       )}
     </header>
-    <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} content={remoteContent} />
-    </>
   );
 }
 
@@ -167,7 +148,6 @@ export function SiteFooter() {
           <h3 className="font-bold text-white">Compra rápida</h3>
           <Link href="/filmes" className="block hover:text-white">Comprar ingresso</Link>
           <Link href="/conta/ingressos" className="block hover:text-white">Meus ingressos</Link>
-          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("cine-cruzeiro-open-cart"))} className="block cursor-pointer text-left hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">Meu carrinho</button>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Legal</h3>
@@ -196,24 +176,4 @@ export function SiteFooter() {
       </div>
     </footer>
   );
-}
-
-function useCartDestination() {
-  const [cartCount, setCartCount] = useState(0);
-
-  useEffect(() => {
-    const update = () => {
-      const carts = readCheckoutCarts();
-      setCartCount(checkoutCartsItemCount(carts));
-    };
-    update();
-    window.addEventListener("cine-cruzeiro-cart-updated", update);
-    window.addEventListener("storage", update);
-    return () => {
-      window.removeEventListener("cine-cruzeiro-cart-updated", update);
-      window.removeEventListener("storage", update);
-    };
-  }, []);
-
-  return { cartCount };
 }

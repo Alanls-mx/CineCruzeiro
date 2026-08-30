@@ -82,7 +82,7 @@ O sistema foi pensado para competir com redes de shopping sem copiar a experiên
 - Tailwind CSS
 - Lucide React
 - next/image
-- localStorage para carrinho e dados locais não sensíveis do cliente
+- localStorage para o rascunho temporário do checkout da sessão atual
 - MercadoPago.js via `@mercadopago/sdk-js` para tokenização de cartão
 - Cookie `HttpOnly` para sessão de conta
 
@@ -103,7 +103,7 @@ O sistema foi pensado para competir com redes de shopping sem copiar a experiên
 | Escolha | Motivo |
 | --- | --- |
 | Next.js | Entrega rápida, bom suporte a imagem, metadata, build otimizado e experiência moderna de React. |
-| React | Interface altamente interativa: checkout, carrinho, conta, modais, filtros e catálogo. |
+| React | Interface altamente interativa: checkout, conta, filtros e catálogo. |
 | TypeScript | Reduz erro em entidades importantes como `Movie`, `Session`, `TicketOrder` e `ConcessionItem`. |
 | Tailwind CSS | Velocidade para criar UI responsiva e manter consistência visual sem CSS muito espalhado. |
 | Lucide Icons | Ícones SVG limpos e profissionais no lugar de emojis. |
@@ -182,12 +182,11 @@ Cine Cruzeiro/
 │  │  └─ globals.css
 │  ├─ components/
 │  │  ├─ AccountModal.tsx
-│  │  ├─ CartDrawer.tsx
-│  │  ├─ CheckoutModal.tsx
+│  │  ├─ CheckoutPage.tsx
 │  │  ├─ ClubLeadForm.tsx
 │  │  ├─ DifferentiatorsSection.tsx
 │  │  ├─ Footer.tsx
-│  │  ├─ Header.tsx
+│  │  ├─ SiteHeader.tsx
 │  │  ├─ Hero.tsx
 │  │  ├─ MovieCard.tsx
 │  │  ├─ MoviesSection.tsx
@@ -289,21 +288,20 @@ Esse arquivo orquestra a landing:
 - Exibe skeleton durante carregamento.
 - Exibe erro amigável se o backend falhar.
 - Renderiza as seções principais.
-- Controla checkout, trailer, carrinho, minha conta e toast.
+- Coordena o conteúdo e as seções da página inicial.
 
 ### Seções principais
 
 | Componente | Função |
 | --- | --- |
-| `Header` | Navegação, chamada para compra, carrinho e minha conta. |
+| `SiteHeader` | Navegação, chamada para compra e acesso à conta. |
 | `Hero` | Filme em destaque, trailer de fundo opcional, sessões e CTA principal. |
 | `MoviesSection` | Filmes em cartaz e em breve, calendário real vindo do backend. |
 | `DifferentiatorsSection` | Argumento comercial contra redes de shopping. |
 | `TraditionSection` | Tradição, cultura e fotografia/placeholder da fachada ou sala. |
 | `ClubLeadForm` | Vitrine do Clube Cine Cruzeiro com planos mensais e CTA de interesse. |
 | `PrivateEventForm` | Fechamento de sala para festas, games e corporativo. |
-| `CheckoutModal` | Fluxo de compra por etapas. |
-| `CartDrawer` | Resumo do carrinho separado. |
+| `CheckoutPage` | Fluxo de compra direta por sessão e por etapas. |
 | `AccountModal` | Login, cadastro, conta e ingressos comprados. |
 | `TrailerModal` | Player de trailer sob demanda. |
 | `Toast` | Feedback de sucesso ou aviso. |
@@ -320,7 +318,7 @@ Esse arquivo orquestra a landing:
 
 ### Arquivo principal
 
-`src/components/CheckoutModal.tsx`
+`src/components/CheckoutPage.tsx`
 
 O checkout é dividido em etapas:
 
@@ -396,27 +394,9 @@ O frontend envia o pedido para `/api/payments/pix` ou `/api/payments/card`. O ba
 - Pedido salvo como `pending_payment`
 - Ingressos somente depois de confirmação `approved`
 
-## 9. Carrinho
+## 9. Rascunho do checkout
 
-O carrinho usa `localStorage` para persistir o estado local da compra antes do pagamento.
-
-Chave usada:
-
-```text
-cine-cruzeiro-cart
-```
-
-O carrinho armazena:
-
-- Filme
-- Sessão
-- Quantidade de ingressos
-- Produtos da bomboniere
-- Cupom
-- Provedor de pagamento
-- Promoção especial
-
-Essa escolha reduz fricção: se o cliente fecha o modal ou navega pela página, o carrinho continua disponível no mesmo dispositivo.
+Não existe carrinho global ou compra de várias sessões. Cada clique em uma sessão abre um checkout direto e isolado. O navegador persiste temporariamente apenas o rascunho da sessão atual para manter ingressos, poltronas, bomboniere e pagamento sincronizados entre as etapas. Ao iniciar outra sessão, o rascunho anterior é substituído.
 
 ## 10. Minha Conta
 
@@ -903,7 +883,7 @@ Tickets
 ### Ciclo do pedido
 
 ```text
-CART
+CHECKOUT
 ↓
 pending_payment
 ↓
@@ -1389,7 +1369,7 @@ Decisões mobile:
 - Cards horizontais na bomboniere.
 - Botões grandes e fáceis de tocar.
 - Header compacto.
-- Cart drawer.
+- Resumo do pedido dentro do próprio checkout.
 - Modal central com área rolável.
 - Texto curto e hierarquia clara.
 
@@ -1739,7 +1719,7 @@ Admin é ferramenta operacional. Deve ser mais denso, direto e previsível. O ob
 ### Estrutura
 
 1. Barra promocional.
-2. Header com logo, menu, carrinho, conta e CTA.
+2. Header com logo, menu, conta e CTA de compra.
 3. Hero com filme em destaque.
 4. Filmes em cartaz/em breve.
 5. Diferenciais.
@@ -1909,7 +1889,6 @@ npm run dev:stop
 - Canal de e-mail para recuperação de senha.
 - Tela detalhada de pedido.
 - Upload de imagens no admin.
-- Página dedicada de carrinho.
 - Página dedicada de bomboniere.
 - Página dedicada de promoções.
 - Relatório de vendas por período.
