@@ -107,6 +107,17 @@ function storedLocalUploadUrl(url) {
   return value.startsWith("/uploads/") ? value : "";
 }
 
+function storedEditorialImageUrl(url) {
+  const value = storedAssetUrl(url);
+  if (value.startsWith("/uploads/")) return value;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && parsed.hostname === "images.unsplash.com" ? value : "";
+  } catch {
+    return "";
+  }
+}
+
 function stripPublicAssetBase(pathname) {
   const value = String(pathname || "");
   const basePath = configuredAppBasePath();
@@ -1249,7 +1260,7 @@ function normalizeDb(db) {
     "eventCorporateImageUrl",
     "eventGalleryImageUrl"
   ].forEach((key) => {
-    db.settings[key] = storedLocalUploadUrl(db.settings[key]);
+    db.settings[key] = storedEditorialImageUrl(db.settings[key]);
   });
   db.movies ||= [];
   db.movies = db.movies.map((movie) => ({
@@ -7440,7 +7451,7 @@ async function handleApi(req, res, pathname) {
       "clubHeroImageUrl",
       "clubBannerImageUrl"
     ].forEach((key) => {
-      if (body[key] !== undefined) body[key] = storedLocalUploadUrl(body[key]);
+      if (body[key] !== undefined) body[key] = storedEditorialImageUrl(body[key]);
     });
     db.settings = { ...db.settings, ...body };
     await writeDb(db);
