@@ -8795,6 +8795,9 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const existingRoom = db.rooms[index];
+      const linkedSessionIds = (db.movies || []).flatMap((movie) => (movie.sessions || [])
+        .filter((session) => roomForSession(db, session)?.id === existingRoom.id)
+        .map((session) => session.id));
       const room = normalizeRoom(await readBody(req), existingRoom);
       const nextSeatIds = new Set(roomSeats(room).map((seat) => String(seat.id)));
       const removedSeatIds = roomSeats(existingRoom).map((seat) => String(seat.id)).filter((seatId) => !nextSeatIds.has(seatId));
@@ -8812,13 +8815,7 @@ async function handleApi(req, res, pathname) {
       }
       db.rooms[index] = room;
       await writeDb(db);
-      (db.movies || []).forEach((movie) => {
-        (movie.sessions || []).forEach((session) => {
-          if (roomForSession(db, session)?.id === room.id) {
-            seatRealtimeService?.broadcastSessionRefresh(session.id);
-          }
-        });
-      });
+      linkedSessionIds.forEach((sessionId) => seatRealtimeService?.broadcastSessionRefresh(sessionId));
       sendJson(res, 200, room);
       return;
     }
