@@ -9621,6 +9621,9 @@ async function handleApi(req, res, pathname) {
         if (!selectedCustomer && !body.customerEmail) order.customerEmail = "";
         return order;
       });
+      for (const order of preparedOrders) {
+        await claimSeatHoldsForOrder(lockedDb, order);
+      }
 
       if (pointPayment) {
         const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
@@ -9684,6 +9687,7 @@ async function handleApi(req, res, pathname) {
           if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
         }
         await writeDb(lockedDb);
+        for (const order of orders) await releaseOrderSeatHolds(order);
         logEvent("info", "box_office_point_sale.created", {
           paymentId: pointPaymentRecord.id,
           providerPaymentId: pointPaymentRecord.providerPaymentId,
@@ -9747,6 +9751,7 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(...payments);
       lockedDb.orders.unshift(...orders);
       await writeDb(lockedDb);
+      for (const order of orders) await releaseOrderSeatHolds(order);
       let pointPrint = {
         requested: false,
         status: "not_requested",

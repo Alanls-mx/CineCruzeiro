@@ -2,6 +2,7 @@ const fs = require("fs");
 const assert = require("assert/strict");
 const crypto = require("crypto");
 const http = require("http");
+const WebSocket = require("ws");
 const adminTwoFactorService = require("../backend/services/adminTwoFactorService");
 
 const DATA_FILE = "backend/data/db.json";
@@ -36,6 +37,34 @@ async function request(pathname, options = {}) {
   const response = await fetch(`${BASE_URL}${pathname}`, options);
   const payload = await response.json().catch(() => ({}));
   return { response, payload };
+}
+
+async function holdSeat(sessionId, seatId, ownerToken) {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://localhost:${PORT}/api/realtime/seats`);
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error("Tempo esgotado ao reservar poltrona no teste."));
+    }, 5000);
+    socket.on("open", () => socket.send(JSON.stringify({ type: "join_session", requestId: "join", sessionId, ownerToken })));
+    socket.on("message", (raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === "session_state") {
+        socket.send(JSON.stringify({ type: "select_seat", requestId: "select", seatId }));
+      }
+      if (message.type === "select_seat_confirmed") {
+        clearTimeout(timer);
+        socket.close();
+        resolve(message);
+      }
+      if (message.type === "select_seat_rejected" || message.type === "protocol_error") {
+        clearTimeout(timer);
+        socket.close();
+        reject(new Error(message.message));
+      }
+    });
+    socket.on("error", reject);
+  });
 }
 
 async function registerCustomer(email, password = "cliente-smoke-123") {
@@ -555,6 +584,41 @@ async function run() {
     });
     assert.equal(boxOfficeMissingSeat.response.status, 422);
     assert.equal(boxOfficeMissingSeat.payload.error.code, "SEAT_SELECTION_INCOMPLETE");
+
+    const adminSeatHoldToken = "smoke-admin-seat-hold";
+    await holdSeat(TEST_SEAT_SESSION_ID, "a3", adminSeatHoldToken);
+    const boxOfficeConflictingHold = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_SEAT_MOVIE_ID,
+        sessionId: TEST_SEAT_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        selectedSeatIds: ["a3"],
+        autoAssignSeats: false,
+        paymentMethod: "courtesy",
+        saleMode: "quick"
+      })
+    });
+    assert.equal(boxOfficeConflictingHold.response.status, 409);
+    assert.equal(boxOfficeConflictingHold.payload.error.code, "SEAT_ALREADY_HELD");
+
+    const boxOfficeOwnedHold = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_SEAT_MOVIE_ID,
+        sessionId: TEST_SEAT_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        selectedSeatIds: ["a3"],
+        seatHoldToken: adminSeatHoldToken,
+        autoAssignSeats: false,
+        paymentMethod: "courtesy",
+        saleMode: "quick"
+      })
+    });
+    assert.equal(boxOfficeOwnedHold.response.status, 201);
+    assert.equal(boxOfficeOwnedHold.payload.tickets[0].seat, "A3");
 
     const boxOfficeSeat = await request("/api/box-office/sales", {
       method: "POST",

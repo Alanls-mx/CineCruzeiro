@@ -768,7 +768,8 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                 <span key={type.id} className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm" style={{ backgroundColor: type.color }} />{type.name}</span>
               ))}
               <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-slate-500" />Indisponível</span>
-              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-amber-500/60" />Em seleção</span>
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-rose-300 bg-rose-700" />Reservada temporariamente</span>
+              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-gold-200 bg-gold-400" />Selecionada por você</span>
               <span className="inline-flex items-center gap-2"><Accessibility className="h-4 w-4" />Cadeirante</span>
               <span className="inline-flex items-center gap-2"><CircleUserRound className="h-4 w-4" />Pessoa obesa</span>
             </div>
@@ -784,7 +785,12 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                       {row.seats.map((seat) => {
                         const selected = selectedSeatIds.includes(seat.id);
                         const type = seatTypesById.get(seat.typeId);
+                        const temporarilyReserved = seat.status === "held" && !seat.heldByMe;
                         const unavailable = (seat.status !== "available" && !seat.heldByMe) || realtimeStatus !== "connected";
+                        let seatStateClass = "bg-brand-700 hover:-translate-y-0.5";
+                        if (unavailable) seatStateClass = "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60";
+                        if (temporarilyReserved) seatStateClass = "cursor-not-allowed border-rose-300 bg-rose-800 text-rose-50 opacity-90";
+                        if (selected) seatStateClass = "scale-105 border-gold-700 bg-gold-400 !text-slate-950";
                         return (
                           <button
                             key={seat.id}
@@ -792,11 +798,11 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                             disabled={unavailable}
                             onClick={() => void toggleSeat(seat.id)}
                             aria-pressed={selected}
-                            aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${unavailable ? ", indisponível" : selected ? ", selecionada" : ""}`}
-                            title={`${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
-                            className={`relative flex h-9 w-10 shrink-0 items-center justify-center rounded-md border border-white/10 text-xs font-black text-white shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected ? "scale-105 border-gold-700 bg-gold-400 !text-slate-950" : unavailable ? "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60" : "bg-brand-700 hover:-translate-y-0.5"}`}
+                            aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${temporarilyReserved ? ", reservada temporariamente por outra compra" : unavailable ? ", indisponível" : selected ? ", selecionada por você" : ""}`}
+                            title={temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : `${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
+                            className={`relative flex h-9 w-10 shrink-0 items-center justify-center rounded-md border border-white/10 text-xs font-black text-white shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${seatStateClass}`}
                             style={{
-                              ...(selected || unavailable || !(seat.color || type?.color) ? {} : { backgroundColor: seat.color || type?.color }),
+                              ...(selected || unavailable || temporarilyReserved || !(seat.color || type?.color) ? {} : { backgroundColor: seat.color || type?.color }),
                               marginRight: seat.aisleAfter ? 24 : 0,
                             }}
                           >

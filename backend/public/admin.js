@@ -105,10 +105,9 @@ let state = {
   manualSeatMapSessionId: "",
   manualSelectedSeatIds: [],
   manualSeatRequestToken: 0,
-  manualSeatRealtimeSocket: null,
+  manualSeatRealtimeChannels: new Map(),
   manualSeatRealtimeSessionId: "",
   manualSeatRealtimeOwnerToken: "",
-  manualSeatRealtimeReconnectTimer: null,
   pointPaymentId: "",
   pointPaymentTimer: null,
   pointPaymentSnapshot: null,
@@ -3621,34 +3620,58 @@ function reconcileManualSeatSelection() {
   const required = manualRequestedSeatCount();
   const available = new Set((state.manualSeatMap?.rows || [])
     .flatMap((row) => row.seats || [])
-    .filter((seat) => seat.status === "available")
+    .filter((seat) => seat.status === "available" || seat.heldByMe)
     .map((seat) => String(seat.id)));
+  const previous = [...state.manualSelectedSeatIds];
   state.manualSelectedSeatIds = state.manualSelectedSeatIds
     .map(String)
     .filter((seatId) => available.has(seatId))
     .slice(0, required);
+  const channel = state.manualSeatRealtimeChannels.get(state.manualSeatMapSessionId);
+  if (channel) channel.selectedSeatIds = [...state.manualSelectedSeatIds];
+  previous
+    .filter((seatId) => !state.manualSelectedSeatIds.includes(seatId) && manualSeatById(seatId)?.heldByMe)
+    .forEach((seatId) => void sendManualSeatRealtimeRequest("release_seat", seatId));
   renderManualSeatMap();
 }
 
-function closeManualSeatRealtime() {
-  window.clearTimeout(state.manualSeatRealtimeReconnectTimer);
-  state.manualSeatRealtimeReconnectTimer = null;
-  const socket = state.manualSeatRealtimeSocket;
-  state.manualSeatRealtimeSocket = null;
-  state.manualSeatRealtimeSessionId = "";
-  state.manualSeatRealtimeOwnerToken = "";
-  socket?.close();
+function closeManualSeatRealtime(sessionId = "", releaseSeats = false) {
+  const ids = sessionId ? [sessionId] : [...state.manualSeatRealtimeChannels.keys()];
+  ids.forEach((id) => {
+    const channel = state.manualSeatRealtimeChannels.get(id);
+    if (!channel) return;
+    channel.disposed = true;
+    window.clearTimeout(channel.reconnectTimer);
+    window.clearInterval(channel.heartbeatTimer);
+    if (releaseSeats && channel.socket?.readyState === WebSocket.OPEN) {
+      channel.selectedSeatIds.forEach((seatId) => channel.socket.send(JSON.stringify({
+        type: "release_seat",
+        requestId: crypto.randomUUID(),
+        seatId
+      })));
+    }
+    channel.pending.forEach((pending) => pending.resolve({ ok: false, message: "Conexão com as poltronas encerrada." }));
+    channel.pending.clear();
+    channel.socket?.close();
+    state.manualSeatRealtimeChannels.delete(id);
+  });
+  if (!sessionId || state.manualSeatRealtimeSessionId === sessionId) {
+    state.manualSeatRealtimeSessionId = "";
+    state.manualSeatRealtimeOwnerToken = "";
+  }
 }
 
 function applyManualSeatRealtimeState(occupiedSeatIds = [], heldSeats = []) {
   if (!state.manualSeatMap?.rows) return;
   const occupied = new Set(occupiedSeatIds.map(String));
-  const held = new Set(heldSeats.map((seat) => String(seat.seatId)));
+  const held = new Map(heldSeats.map((seat) => [String(seat.seatId), seat]));
   state.manualSeatMap.rows.forEach((row) => {
     (row.seats || []).forEach((seat) => {
+      const hold = held.get(String(seat.id));
+      seat.heldByMe = Boolean(hold?.heldByMe);
       if (seat.enabled === false) seat.status = "blocked";
       else if (occupied.has(String(seat.id))) seat.status = "unavailable";
-      else if (held.has(String(seat.id))) seat.status = "held";
+      else if (hold) seat.status = "held";
       else seat.status = "available";
     });
   });
@@ -3661,32 +3684,67 @@ function applyManualSeatRealtimeChange(message) {
   seat.status = ["available", "held", "unavailable"].includes(String(message.status))
     ? String(message.status)
     : seat.status;
+  seat.heldByMe = Boolean(message.heldByMe && seat.status === "held");
   reconcileManualSeatSelection();
 }
 
 function connectManualSeatRealtime(sessionId) {
-  if (!sessionId || state.manualSeatRealtimeSessionId === sessionId) return;
-  closeManualSeatRealtime();
+  if (!sessionId) return;
+  const previousSessionId = state.manualSeatRealtimeSessionId;
+  if (previousSessionId && previousSessionId !== sessionId && !state.manualSaleItems.some((item) => item.sessionId === previousSessionId)) {
+    closeManualSeatRealtime(previousSessionId, true);
+  }
   state.manualSeatRealtimeSessionId = sessionId;
-  state.manualSeatRealtimeOwnerToken = `admin-observer-${crypto.randomUUID()}`;
+  let channel = state.manualSeatRealtimeChannels.get(sessionId);
+  if (channel) {
+    state.manualSeatRealtimeOwnerToken = channel.ownerToken;
+    return;
+  }
+  channel = {
+    sessionId,
+    ownerToken: `admin-box-office-${crypto.randomUUID()}`,
+    socket: null,
+    reconnectTimer: null,
+    heartbeatTimer: null,
+    selectedSeatIds: [],
+    pendingSeatIds: new Set(),
+    pending: new Map(),
+    disposed: false
+  };
+  state.manualSeatRealtimeChannels.set(sessionId, channel);
+  state.manualSeatRealtimeOwnerToken = channel.ownerToken;
 
   const connect = () => {
-    if (state.manualSeatRealtimeSessionId !== sessionId) return;
+    if (channel.disposed) return;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(`${protocol}//${window.location.host}${API_BASE}/api/realtime/seats`);
-    state.manualSeatRealtimeSocket = socket;
+    channel.socket = socket;
     socket.addEventListener("open", () => {
       socket.send(JSON.stringify({
         type: "join_session",
         requestId: crypto.randomUUID(),
         sessionId,
-        ownerToken: state.manualSeatRealtimeOwnerToken
+        ownerToken: channel.ownerToken
       }));
+      window.clearInterval(channel.heartbeatTimer);
+      channel.heartbeatTimer = window.setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN && channel.selectedSeatIds.length) {
+          socket.send(JSON.stringify({ type: "heartbeat", requestId: crypto.randomUUID(), seatIds: channel.selectedSeatIds }));
+        }
+      }, 35000);
     });
     socket.addEventListener("message", (event) => {
-      if (state.manualSeatRealtimeSessionId !== sessionId) return;
       let message;
       try { message = JSON.parse(String(event.data)); } catch { return; }
+      const pending = channel.pending.get(String(message.requestId || ""));
+      if (pending) {
+        channel.pending.delete(String(message.requestId));
+        channel.pendingSeatIds.delete(pending.seatId);
+        window.clearTimeout(pending.timer);
+        if (["select_seat_confirmed", "release_seat_confirmed"].includes(message.type)) pending.resolve({ ok: true });
+        else pending.resolve({ ok: false, message: message.message || "Não foi possível atualizar a poltrona." });
+      }
+      if (state.manualSeatRealtimeSessionId !== sessionId) return;
       if (message.type === "session_state") {
         applyManualSeatRealtimeState(message.occupiedSeatIds || [], message.heldSeats || []);
       } else if (message.type === "seat_status_changed") {
@@ -3696,13 +3754,35 @@ function connectManualSeatRealtime(sessionId) {
       }
     });
     socket.addEventListener("close", () => {
-      if (state.manualSeatRealtimeSocket === socket) state.manualSeatRealtimeSocket = null;
-      if (state.manualSeatRealtimeSessionId !== sessionId) return;
-      state.manualSeatRealtimeReconnectTimer = window.setTimeout(connect, 1500);
+      window.clearInterval(channel.heartbeatTimer);
+      if (channel.socket === socket) channel.socket = null;
+      if (channel.disposed) return;
+      channel.reconnectTimer = window.setTimeout(connect, 1500);
     });
     socket.addEventListener("error", () => socket.close());
   };
   connect();
+}
+
+function sendManualSeatRealtimeRequest(type, seatId) {
+  const channel = state.manualSeatRealtimeChannels.get(state.manualSeatMapSessionId);
+  const socket = channel?.socket;
+  if (!channel || !socket || socket.readyState !== WebSocket.OPEN) {
+    return Promise.resolve({ ok: false, message: "A sincronização das poltronas está reconectando. Aguarde um instante." });
+  }
+  const requestId = crypto.randomUUID();
+  channel.pendingSeatIds.add(String(seatId));
+  renderManualSeatMap();
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      channel.pending.delete(requestId);
+      channel.pendingSeatIds.delete(String(seatId));
+      renderManualSeatMap();
+      resolve({ ok: false, message: "A reserva da poltrona demorou para responder. Tente novamente." });
+    }, 8000);
+    channel.pending.set(requestId, { resolve, timer, seatId: String(seatId) });
+    socket.send(JSON.stringify({ type, requestId, seatId }));
+  });
 }
 
 async function loadManualSeatMap({ preserveSelection = false } = {}) {
@@ -3718,7 +3798,9 @@ async function loadManualSeatMap({ preserveSelection = false } = {}) {
   state.manualSelectedSeatIds = previousSelection;
 
   if (!session?.id) {
-    closeManualSeatRealtime();
+    if (previousSessionId && !state.manualSaleItems.some((item) => item.sessionId === previousSessionId)) {
+      closeManualSeatRealtime(previousSessionId, true);
+    }
     state.manualSeatMapStatus = "idle";
     if (section) section.hidden = true;
     return;
@@ -3746,19 +3828,28 @@ async function loadManualSeatMap({ preserveSelection = false } = {}) {
   }
 }
 
-function toggleManualSeat(seatId) {
+async function toggleManualSeat(seatId) {
   const seat = manualSeatById(seatId);
-  if (!seat || seat.status !== "available") return;
+  const id = String(seatId);
+  const selected = state.manualSelectedSeatIds.includes(id);
+  if (!seat || (!selected && seat.status !== "available")) return;
   const required = manualRequestedSeatCount();
   if (!required) {
     showToast("Selecione ao menos um ingresso antes de escolher as poltronas.", "error");
     return;
   }
-  const id = String(seatId);
-  if (state.manualSelectedSeatIds.includes(id)) {
+  const channel = state.manualSeatRealtimeChannels.get(state.manualSeatMapSessionId);
+  if (channel?.pendingSeatIds.has(id)) return;
+  if (selected) {
+    const result = await sendManualSeatRealtimeRequest("release_seat", id);
+    if (!result.ok) return showToast(result.message, "error");
     state.manualSelectedSeatIds = state.manualSelectedSeatIds.filter((current) => current !== id);
+    if (channel) channel.selectedSeatIds = [...state.manualSelectedSeatIds];
   } else if (state.manualSelectedSeatIds.length < required) {
+    const result = await sendManualSeatRealtimeRequest("select_seat", id);
+    if (!result.ok) return showToast(result.message, "error");
     state.manualSelectedSeatIds.push(id);
+    if (channel) channel.selectedSeatIds = [...state.manualSelectedSeatIds];
   } else {
     showToast(`A quantidade atual permite selecionar ${required} poltrona(s).`, "error");
   }
@@ -3805,6 +3896,8 @@ function renderManualSeatMap(errorMessage = "") {
   $("manualSeatLegend").innerHTML = [
     ...(seatMap?.seatTypes || []).map((type) => `<span><i style="--manual-seat-color:${manualSeatColor(type.color)}"></i>${escapeHtml(type.name)}</span>`),
     `<span><i class="is-unavailable"></i>Indisponível</span>`,
+    `<span><i class="is-temporarily-reserved"></i>Reservada temporariamente</span>`,
+    `<span><i class="is-selected"></i>Selecionada nesta venda</span>`,
     `<span>${accessibilityIcon}Cadeirante</span>`,
     `<span>${obeseSeatIcon}Pessoa obesa</span>`
   ].join("");
@@ -3815,16 +3908,19 @@ function renderManualSeatMap(errorMessage = "") {
         ${(row.seats || []).map((seat) => {
           const type = typeById.get(String(seat.typeId));
           const isSelected = state.manualSelectedSeatIds.includes(String(seat.id));
-          const unavailable = seat.status !== "available";
+          const temporarilyReserved = seat.status === "held" && !seat.heldByMe;
+          const unavailable = (seat.status !== "available" && !seat.heldByMe) || temporarilyReserved;
+          const pending = state.manualSeatRealtimeChannels.get(state.manualSeatMapSessionId)?.pendingSeatIds.has(String(seat.id));
           const accessibility = seat.accessibility === "wheelchair" ? "Cadeirante" : seat.accessibility === "obese" ? "Pessoa obesa" : "";
           return `<button
             type="button"
-            class="manual-seat-button ${isSelected ? "is-selected" : ""} ${unavailable ? "is-unavailable" : ""} ${accessibility ? "has-accessibility" : ""}"
+            class="manual-seat-button ${isSelected ? "is-selected" : ""} ${temporarilyReserved ? "is-temporarily-reserved" : unavailable ? "is-unavailable" : ""} ${pending ? "is-pending" : ""} ${accessibility ? "has-accessibility" : ""}"
             style="--manual-seat-color:${manualSeatColor(seat.color || type?.color)};${seat.aisleAfter ? "margin-right:24px" : ""}"
             data-manual-seat-id="${escapeHtml(seat.id)}"
-            aria-label="${escapeHtml(`${seat.label}, ${type?.name || "Padrão"}${accessibility ? `, ${accessibility}` : ""}${unavailable ? ", indisponível" : isSelected ? ", selecionada" : ""}`)}"
+            aria-label="${escapeHtml(`${seat.label}, ${type?.name || "Padrão"}${accessibility ? `, ${accessibility}` : ""}${temporarilyReserved ? ", reservada temporariamente por outra compra" : unavailable ? ", indisponível" : isSelected ? ", selecionada nesta venda" : ""}`)}"
+            title="${escapeHtml(temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : `${seat.label} • ${type?.name || "Padrão"}`)}"
             aria-pressed="${isSelected}"
-            ${unavailable ? "disabled" : ""}
+            ${unavailable || pending ? "disabled" : ""}
           ><span>${escapeHtml(seat.label)}</span>${seat.accessibility === "wheelchair" ? accessibilityIcon : seat.accessibility === "obese" ? obeseSeatIcon : ""}</button>`;
         }).join("")}
       </div>
@@ -3832,7 +3928,7 @@ function renderManualSeatMap(errorMessage = "") {
     </div>
   `).join("");
   $("manualSeatMap").querySelectorAll("[data-manual-seat-id]").forEach((button) => {
-    button.addEventListener("click", () => toggleManualSeat(button.dataset.manualSeatId));
+    button.addEventListener("click", () => void toggleManualSeat(button.dataset.manualSeatId));
   });
 }
 
@@ -3907,6 +4003,7 @@ function manualSaleDraft() {
   const ticketTypes = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
   const subtotal = ticketItems.reduce((sum, item) => sum + item.quantity * Number(ticketTypes.get(item.id)?.price || 0), 0);
   const selectedSeatIds = state.manualSeatMap?.enabled ? [...state.manualSelectedSeatIds] : [];
+  const seatChannel = state.manualSeatRealtimeChannels.get(session.id);
   return {
     movieId: movie.id,
     movieTitle: movie.title,
@@ -3923,6 +4020,7 @@ function manualSaleDraft() {
     })),
     seatSelectionEnabled: Boolean(state.manualSeatMap?.enabled),
     selectedSeatIds,
+    seatHoldToken: seatChannel?.ownerToken || "",
     selectedSeatLabels: selectedSeatIds.map((seatId) => manualSeatById(seatId)?.label || seatId),
     subtotal
   };
@@ -3958,12 +4056,18 @@ function addManualSaleItem() {
 
 function removeManualSaleItem(sessionId) {
   state.manualSaleItems = state.manualSaleItems.filter((item) => item.sessionId !== sessionId);
+  const reopenCurrentSession = state.manualSeatMapSessionId === sessionId;
+  closeManualSeatRealtime(sessionId, true);
   renderManualSaleItems();
+  if (reopenCurrentSession) void loadManualSeatMap();
 }
 
 function clearManualSaleItems() {
   state.manualSaleItems = [];
+  const reopenCurrentSession = Boolean(state.manualSeatMapSessionId);
+  closeManualSeatRealtime("", true);
   renderManualSaleItems();
+  if (reopenCurrentSession) void loadManualSeatMap();
 }
 
 function renderManualSaleItems() {
@@ -4035,6 +4139,7 @@ async function createManualTicket(event) {
         sessionId: item.sessionId,
         ticketItems: item.ticketItems,
         selectedSeatIds: item.selectedSeatIds || [],
+        seatHoldToken: item.seatHoldToken || "",
         autoAssignSeats: false
       })),
       concessionItems: manualConcessionItems(),
@@ -4052,6 +4157,7 @@ async function createManualTicket(event) {
     state.manualSaleItems = [];
     state.manualConcessionQuantities = {};
     state.manualSelectedSeatIds = [];
+    closeManualSeatRealtime();
     renderManualSaleItems();
     if (["point_card", "point_qr"].includes(paymentMethod)) {
       startPointPaymentTracking(result);
