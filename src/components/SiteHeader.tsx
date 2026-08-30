@@ -178,10 +178,18 @@ export function SiteFooter() {
       <div className="border-t border-white/8">
         <div className="mx-auto flex max-w-[1320px] flex-col gap-2 px-4 py-3 text-xs text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <span>© Cine Cruzeiro. Plataforma de vendas, bilheteria e relacionamento.</span>
-          <span className="md:ml-auto md:text-right">
-            Desenvolvido por{" "}
-            <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="font-semibold text-slate-300 transition hover:text-gold-400">
-              LumixEngine
+          <span className="flex items-center gap-2 md:ml-auto md:justify-end md:text-right">
+            <span>Desenvolvido por</span>
+            <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="group inline-flex shrink-0 items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400" aria-label="Acessar o site da LumixEngine">
+              <img
+                src={assetPath("/images/lumixengine-wordmark.svg")}
+                alt="LumixEngine"
+                width={128}
+                height={43}
+                loading="lazy"
+                decoding="async"
+                className="h-6 w-auto opacity-80 transition-opacity group-hover:opacity-100"
+              />
             </a>
           </span>
         </div>
