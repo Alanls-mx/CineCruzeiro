@@ -293,7 +293,19 @@ async function run() {
     assert.equal(health.payload.status, "ok");
     assert.equal("envFilesLoaded" in health.payload, false);
     assert.equal("jwtConfigured" in health.payload, false);
-    const maintainedDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    const liveness = await request("/api/health/live");
+    assert.equal(liveness.response.status, 200);
+    assert.equal(liveness.payload.status, "alive");
+    const readiness = await request("/api/health/ready");
+    assert.equal(readiness.response.status, 200);
+    assert.equal(readiness.payload.status, "ready");
+    let maintainedDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const movie = maintainedDb.movies.find((item) => item.id === TEST_MOVIE_ID);
+      if (!movie?.sessions.some((session) => session.id === TEST_EXPIRED_SESSION_ID)) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      maintainedDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    }
     const maintainedMovie = maintainedDb.movies.find((movie) => movie.id === TEST_MOVIE_ID);
     const maintainedOrder = maintainedDb.orders.find((order) => order.id === "smoke-expired-history-order");
     const maintainedTicket = maintainedDb.tickets.find((ticket) => ticket.id === "smoke-expired-history-ticket");
@@ -442,6 +454,18 @@ async function run() {
     });
     assert.equal(csrfAttempt.response.status, 403);
     assert.equal(csrfAttempt.payload.error.code, "CUSTOMER_CSRF_BLOCKED");
+
+    const nodeEnvBeforeCsrfCheck = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    const missingOriginCsrfAttempt = await request("/api/me", {
+      method: "PATCH",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ name: "Ataque sem origem" })
+    });
+    if (nodeEnvBeforeCsrfCheck === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = nodeEnvBeforeCsrfCheck;
+    assert.equal(missingOriginCsrfAttempt.response.status, 403);
+    assert.equal(missingOriginCsrfAttempt.payload.error.code, "CUSTOMER_CSRF_BLOCKED");
 
     const privilegeEscalation = await request("/api/me", {
       method: "PATCH",
@@ -636,6 +660,21 @@ async function run() {
     assert.equal(boxOfficeSeat.response.status, 201);
     assert.equal(boxOfficeSeat.payload.tickets[0].seat, "A2");
     assert.equal(boxOfficeSeat.payload.orders[0].selectedSeats[0].label, "A2");
+
+    const protectedSessionRoomChange = await request(`/api/movies/${TEST_SEAT_MOVIE_ID}/sessions/${TEST_SEAT_SESSION_ID}`, {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        date: "2099-12-31",
+        time: "20:00",
+        format: "2D Dublado",
+        room: "Sala Cruzeiro (Laser 4K)",
+        ticketTypeIds: ["promocional"],
+        status: "available"
+      })
+    });
+    assert.equal(protectedSessionRoomChange.response.status, 409);
+    assert.equal(protectedSessionRoomChange.payload.error.code, "SESSION_ROOM_LOCKED_BY_SEATS");
 
     const dashboard = await request("/api/dashboard", { headers: jsonHeaders(adminCookie) });
     assert.equal(dashboard.response.status, 200);
@@ -1306,6 +1345,56 @@ async function run() {
       body: JSON.stringify({ status: "ended", reason: "Fim do ciclo no smoke" })
     });
     assert.equal(closeManualSubscription.response.status, 200);
+
+    const bundleCreditPlan = await request("/api/admin/subscription-plans", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        id: "smoke-clube-bundle",
+        name: "Plano Smoke Bundle",
+        monthlyPrice: 29.9,
+        includedTickets: 3,
+        benefits: ["3 ingressos smoke"],
+        active: true
+      })
+    });
+    assert.equal(bundleCreditPlan.response.status, 201);
+    const bundleSubscription = await request("/api/admin/subscriptions/assign", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ userId: registered.user.id, planId: bundleCreditPlan.payload.id })
+    });
+    assert.equal(bundleSubscription.response.status, 201);
+    const bundleCreditOrderId = `club-bundle-smoke-${Date.now()}`;
+    const bundleCreditOrder = await request("/api/checkout/club-credit", {
+      method: "POST",
+      headers: { ...jsonHeaders(cookie), "X-Idempotency-Key": bundleCreditOrderId },
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        ticketItems: [{ id: "triple-smoke", quantity: 1 }],
+        idempotencyKey: bundleCreditOrderId
+      })
+    });
+    assert.equal(bundleCreditOrder.response.status, 201);
+    assert.equal(bundleCreditOrder.payload.tickets.length, 3);
+    assert.equal(bundleCreditOrder.payload.subscription.creditsAvailable, 0);
+    const cancelledBundleCreditOrder = await request(`/api/orders/${encodeURIComponent(bundleCreditOrder.payload.order.id)}`, {
+      method: "DELETE",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ reason: "Teste de estorno integral do pacote" })
+    });
+    assert.equal(cancelledBundleCreditOrder.response.status, 200);
+    const subscriptionsAfterBundleRefund = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    const refundedBundleSubscription = subscriptionsAfterBundleRefund.payload.subscriptions.find((subscription) => subscription.id === bundleSubscription.payload.subscription.id);
+    assert.equal(refundedBundleSubscription.creditsRemaining, 3);
+    assert.equal(refundedBundleSubscription.usage.find((usage) => usage.orderId === bundleCreditOrder.payload.order.id).creditsUsed, 3);
+    const closeBundleSubscription = await request(`/api/admin/subscriptions/${encodeURIComponent(bundleSubscription.payload.subscription.id)}`, {
+      method: "PATCH",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ status: "ended", reason: "Fim do teste de pacote" })
+    });
+    assert.equal(closeBundleSubscription.response.status, 200);
 
     const renewedSubscription = await request("/api/admin/subscriptions/assign", {
       method: "POST",

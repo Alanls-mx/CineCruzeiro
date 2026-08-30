@@ -11,7 +11,7 @@ const nextConfig = {
   agentRules: false,
   poweredByHeader: false,
   skipTrailingSlashRedirect: true,
-  ...(process.env.NODE_ENV !== "production" ? { allowedDevOrigins: ["172.24.16.1"] } : {}),
+  ...(process.env.NODE_ENV !== "production" ? { allowedDevOrigins: ["127.0.0.1", "localhost", "172.24.16.1"] } : {}),
   ...(configuredDistDir ? { distDir: configuredDistDir } : {}),
   ...(configuredBasePath ? { basePath: configuredBasePath, assetPrefix: configuredBasePath } : {}),
   async rewrites() {

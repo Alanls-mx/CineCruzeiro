@@ -44,6 +44,8 @@ async function loginAdmin() {
 }
 
 function baseDb({ capacity = 1, stock = 1 } = {}) {
+  const now = new Date().toISOString();
+  const cycleEnd = new Date(Date.now() + 30 * 86400000).toISOString();
   return {
     settings: { defaultTicketPrice: 10, currency: "BRL" },
     ticketTypes: [{ id: "promocional", name: "Promocional", price: 10, active: true }],
@@ -94,9 +96,38 @@ function baseDb({ capacity = 1, stock = 1 } = {}) {
       displayOrder: 3,
       active: true
     }],
-    subscriptions: [],
-    subscriptionCredits: [],
-    subscriptionUsage: [],
+    subscriptions: [{
+      id: "assinatura-roundtrip",
+      userId: "cliente-roundtrip",
+      planId: "plano-midia-postgres",
+      status: "active",
+      provider: "manual_admin",
+      cycleStart: now,
+      cycleEnd,
+      creditsAvailable: 0,
+      creditsUsed: 3,
+      createdAt: now,
+      updatedAt: now
+    }],
+    subscriptionCredits: [{
+      id: "credito-roundtrip",
+      subscriptionId: "assinatura-roundtrip",
+      cycleStart: now,
+      cycleEnd,
+      total: 3,
+      used: 3,
+      remaining: 0,
+      createdAt: now,
+      updatedAt: now
+    }],
+    subscriptionUsage: [{
+      id: "uso-roundtrip",
+      subscriptionId: "assinatura-roundtrip",
+      creditId: "credito-roundtrip",
+      userId: "cliente-roundtrip",
+      creditsUsed: 3,
+      usedAt: now
+    }],
     users: [{
       id: "admin",
       name: "Admin",
@@ -105,7 +136,16 @@ function baseDb({ capacity = 1, stock = 1 } = {}) {
       active: true,
       passwordHash: "",
       authProvider: "email",
-      createdAt: new Date().toISOString()
+      createdAt: now
+    }, {
+      id: "cliente-roundtrip",
+      name: "Cliente Roundtrip",
+      email: "roundtrip@cine.local",
+      role: "customer",
+      active: true,
+      passwordHash: "",
+      authProvider: "email",
+      createdAt: now
     }],
     orders: [],
     payments: [],
@@ -158,14 +198,28 @@ async function run() {
     await new Promise((resolve) => setTimeout(resolve, 700));
     await loginAdmin();
 
+    const { acquireSeatHold, releaseSeatHoldsForOwner } = require("../backend/db/postgresStore");
+    const holdOwners = Array.from({ length: 20 }, (_, index) => `concorrente-${index + 1}`);
+    const seatHolds = await Promise.all(holdOwners.map((ownerToken) => acquireSeatHold({
+      sessionId: "sessao-concorrencia",
+      seatId: "A1",
+      ownerToken,
+      connectionId: ownerToken
+    })));
+    const winningHolds = seatHolds.filter(Boolean);
+    assert.equal(winningHolds.length, 1);
+    await releaseSeatHoldsForOwner({ sessionId: "sessao-concorrencia", ownerToken: winningHolds[0].ownerToken });
+
     const lastSeat = await concurrentCheckout(["ultimo-ingresso-a", "ultimo-ingresso-b"], false);
     const seatStatuses = lastSeat.map((item) => item.response.status).sort();
     assert.deepEqual(seatStatuses, [201, 409]);
 
-    await resetDb(baseDb({ capacity: 2, stock: 1 }));
-    const lastProduct = await concurrentCheckout(["ultimo-produto-a", "ultimo-produto-b"], true);
+    await resetDb(baseDb({ capacity: 10, stock: 1 }));
+    const productIds = Array.from({ length: 10 }, (_, index) => `ultimo-produto-${index + 1}`);
+    const lastProduct = await concurrentCheckout(productIds, true);
     const productStatuses = lastProduct.map((item) => item.response.status).sort();
-    assert.deepEqual(productStatuses, [201, 409]);
+    assert.equal(productStatuses.filter((status) => status === 201).length, 1);
+    assert.equal(productStatuses.filter((status) => status === 409).length, 9);
 
     await resetDb(baseDb({ capacity: 2, stock: 1 }));
     const pix = await request("/api/payments/pix", {
@@ -182,10 +236,9 @@ async function run() {
       orderId: pix.payload.order.id,
       status: "approved"
     };
-    const webhookResults = await Promise.all([
-      request("/api/webhooks/open-finance", { method: "POST", headers: jsonHeaders(), body: JSON.stringify(webhookBody) }),
+    const webhookResults = await Promise.all(Array.from({ length: 10 }, () =>
       request("/api/webhooks/open-finance", { method: "POST", headers: jsonHeaders(), body: JSON.stringify(webhookBody) })
-    ]);
+    ));
     assert.ok(webhookResults.every((item) => item.response.status === 200));
 
     const finalizationResults = await Promise.all([
@@ -214,14 +267,16 @@ async function run() {
     assert.equal(persistedPlan.imageUrl, "/uploads/club-plans/plano-teste.png");
     assert.equal(persistedPlan.isFeatured, true);
     assert.equal(persistedPlan.displayOrder, 3);
+    assert.equal(content.payload.subscriptionUsage.find((item) => item.id === "uso-roundtrip").creditsUsed, 3);
 
-    const validated = await request("/api/tickets/validate", {
+    const validationCookie = await loginAdmin();
+    const validations = await Promise.all(Array.from({ length: 2 }, () => request("/api/tickets/validate", {
       method: "POST",
-      headers: jsonHeaders(await loginAdmin()),
+      headers: jsonHeaders(validationCookie),
       body: JSON.stringify({ code: tickets[0].code })
-    });
-    assert.equal(validated.response.status, 200);
-    assert.equal(validated.payload.ticket.status, "used");
+    })));
+    assert.deepEqual(validations.map((item) => item.response.status).sort(), [200, 409]);
+    assert.equal(validations.find((item) => item.response.status === 200).payload.ticket.status, "used");
 
     console.log("PostgreSQL concurrency tests passed.");
   } finally {

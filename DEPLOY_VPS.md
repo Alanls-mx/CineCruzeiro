@@ -311,10 +311,10 @@ SWITCHED=1
 
 pm2 reload "$BASE/ecosystem.config.cjs" --only cinecruzeiro-backend --update-env
 for i in $(seq 1 30); do
-  curl -fsS http://127.0.0.1:4100/api/health >/dev/null && break
+  curl -fsS http://127.0.0.1:4100/api/health/ready >/dev/null && break
   sleep 1
 done
-curl -fsS http://127.0.0.1:4100/api/health >/dev/null
+curl -fsS http://127.0.0.1:4100/api/health/ready >/dev/null
 
 pm2 reload "$BASE/ecosystem.config.cjs" --only cinecruzeiro-frontend --update-env
 for i in $(seq 1 30); do
@@ -323,7 +323,7 @@ for i in $(seq 1 30); do
 done
 curl -fsS http://127.0.0.1:3100/projects/cinecruzeiro/filmes >/dev/null
 
-curl -fsS https://lumixengine.com/projects/cinecruzeiro/api/health >/dev/null
+curl -fsS https://lumixengine.com/projects/cinecruzeiro/api/health/ready >/dev/null
 curl -fsS https://lumixengine.com/projects/cinecruzeiro/filmes >/dev/null
 
 find "$RELEASES" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
@@ -400,21 +400,21 @@ Primeiro e criado `current.next`; depois `mv -Tf` substitui `current` de uma vez
 
 ### Reload PM2
 
-O backend e reiniciado primeiro. Depois que `/api/health` responde, o frontend e reiniciado. `--update-env` faz o PM2 reler o ambiente definido no arquivo persistente de ecosystem.
+O backend e reiniciado primeiro. Depois que `/api/health/ready` confirma PostgreSQL e migrations, o frontend e reiniciado. `--update-env` faz o PM2 reler o ambiente definido no arquivo persistente de ecosystem.
 
 ## 11. Health checks
 
 O deploy aguarda ate 30 tentativas, com intervalo de um segundo, para cada processo local:
 
 ```text
-http://127.0.0.1:4100/api/health
+http://127.0.0.1:4100/api/health/ready
 http://127.0.0.1:3100/projects/cinecruzeiro/filmes
 ```
 
 Depois verifica pelo Nginx e HTTPS:
 
 ```text
-https://lumixengine.com/projects/cinecruzeiro/api/health
+https://lumixengine.com/projects/cinecruzeiro/api/health/ready
 https://lumixengine.com/projects/cinecruzeiro/filmes
 ```
 
@@ -516,9 +516,10 @@ git -C "$BASE/current" rev-parse HEAD
 readlink -f "$BASE/current"
 find "$BASE/releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -r
 pm2 status cinecruzeiro-backend cinecruzeiro-frontend --no-color
-curl -fsS http://127.0.0.1:4100/api/health
+curl -fsS http://127.0.0.1:4100/api/health/live
+curl -fsS http://127.0.0.1:4100/api/health/ready
 curl -fsS http://127.0.0.1:3100/projects/cinecruzeiro/filmes >/dev/null
-curl -fsS https://lumixengine.com/projects/cinecruzeiro/api/health
+curl -fsS https://lumixengine.com/projects/cinecruzeiro/api/health/ready
 curl -fsS https://lumixengine.com/projects/cinecruzeiro/filmes >/dev/null
 ```
 

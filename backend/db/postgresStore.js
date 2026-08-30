@@ -496,6 +496,7 @@ async function loadDbFromPostgres() {
         movieId: row.movie_id || "",
         sessionId: row.session_id || "",
         monthKey: row.month_key || "",
+        creditsUsed: Math.max(1, Number(row.credits_used || row.metadata?.creditsUsed || 1)),
         idempotencyKey: row.idempotency_key || "",
         refundedAt: row.refunded_at ? new Date(row.refunded_at).toISOString() : "",
         refundedBy: row.refunded_by || "",
@@ -551,6 +552,7 @@ async function query(client, text, params = []) {
 }
 
 async function withPostgresMutationLock(callback) {
+  if (contextClient()) return callback();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -1013,8 +1015,8 @@ async function writeDbToPostgres(db) {
     const ticketIds = new Set(asArray(db.tickets).map((ticket) => ticket.id));
     for (const usage of asArray(db.subscriptionUsage)) {
       if (!persistedSubscriptionIds.has(usage.subscriptionId) || !userIds.has(usage.userId)) continue;
-      await query(client, `INSERT INTO subscription_usage (id, subscription_id, credit_id, user_id, order_id, ticket_id, movie_id, session_id, month_key, idempotency_key, refunded_at, refunded_by, refund_reason, metadata, used_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULLIF($10,''),NULLIF($11,'')::timestamptz,NULLIF($12,''),$13,$14,COALESCE(NULLIF($15,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscription_usage (id, subscription_id, credit_id, user_id, order_id, ticket_id, movie_id, session_id, month_key, credits_used, idempotency_key, refunded_at, refunded_by, refund_reason, metadata, used_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,'')::timestamptz,NULLIF($13,''),$14,$15,COALESCE(NULLIF($16,'')::timestamptz, now()))`, [
         usage.id,
         usage.subscriptionId,
         usage.creditId || null,
@@ -1024,6 +1026,7 @@ async function writeDbToPostgres(db) {
         movieIds.has(usage.movieId) ? usage.movieId : null,
         sessionIds.has(usage.sessionId) ? usage.sessionId : null,
         usage.monthKey || "",
+        Math.max(1, Number(usage.creditsUsed || usage.metadata?.creditsUsed || 1)),
         usage.idempotencyKey || "",
         usage.refundedAt || "",
         usage.refundedBy || "",
@@ -1196,6 +1199,25 @@ async function pruneSystemLogsFromPostgres(retentionDays = 90) {
   return Number(result.rowCount || 0);
 }
 
+async function checkPostgresReadiness(expectedMigration = "") {
+  if (!postgresEnabled()) return { ready: false, database: false, migrations: false };
+  const client = await getPool().connect();
+  try {
+    await client.query("SELECT 1");
+    if (!expectedMigration) return { ready: true, database: true, migrations: true };
+    const result = await client.query(
+      "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = $1) AS applied",
+      [String(expectedMigration)]
+    );
+    const migrations = Boolean(result.rows[0]?.applied);
+    return { ready: migrations, database: true, migrations };
+  } catch {
+    return { ready: false, database: false, migrations: false };
+  } finally {
+    client.release();
+  }
+}
+
 function mapSeatHold(row) {
   return {
     sessionId: row.session_id,
@@ -1279,6 +1301,7 @@ module.exports = {
   appendSystemLogToPostgres,
   listSystemLogsFromPostgres,
   pruneSystemLogsFromPostgres,
+  checkPostgresReadiness,
   listActiveSeatHolds,
   acquireSeatHold,
   releaseSeatHold,

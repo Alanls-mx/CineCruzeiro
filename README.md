@@ -87,7 +87,7 @@ O frontend nunca é fonte de verdade para preço, disponibilidade, pagamento, ti
 
 ### Backend
 
-- Node.js 18 ou superior;
+- Node.js `>=20.9.0 <25` (produção atualmente em Node 22);
 - servidor HTTP nativo em CommonJS;
 - PostgreSQL com migrations SQL;
 - `pg` para acesso ao banco;
@@ -696,6 +696,7 @@ Migrations atuais:
 022_room_seat_layout.sql
 023_realtime_seat_holds.sql
 024_club_content_polish.sql
+025_subscription_usage_quantity.sql
 ```
 
 A migration 017 adiciona o controle fiscal persistente por pedido, com status, tentativas, dados do tomador, links PDF/XML, entrega por e-mail e histórico do provedor.
@@ -704,12 +705,16 @@ A migration 018 adiciona autenticação em duas etapas às contas administrativa
 
 As migrations 022 e 023 adicionam, respectivamente, o mapa configurável das salas e as reservas temporárias de poltronas usadas pelo WebSocket e pela validação concorrente do checkout e da Bilheteria.
 
+A migration 025 persiste a quantidade efetiva de créditos consumidos em cada uso do Clube, permitindo estorno correto de pacotes com múltiplos ingressos.
+
 ## 23. APIs principais
 
 ### Públicas e cliente
 
 ```text
 GET  /api/health
+GET  /api/health/live
+GET  /api/health/ready
 GET  /api/content
 GET  /api/subscription-plans
 POST /api/events
@@ -894,19 +899,24 @@ Testes disponíveis:
 
 ```bash
 npm test
+npm run test:e2e
+TEST_DATABASE_URL=postgresql://... npm run test:postgres
 ```
 
 O comando executa:
 
 - smoke tests de API e fluxos essenciais;
 - testes de assinatura do webhook Mercado Pago;
-- testes concorrentes PostgreSQL quando `TEST_DATABASE_URL` existe.
+- testes concorrentes PostgreSQL quando `TEST_DATABASE_URL` existe;
+- E2E Playwright para navegação pública, 404, conta e autenticação administrativa.
 
 Coberturas relevantes incluem autenticação, e-mail, evento privado, pagamento, cancelamento do Clube, crédito, webhook, criação de tickets e concorrência de poltronas. Os testes de tempo real abrem clientes WebSocket concorrentes, confirmam o bloqueio do primeiro, a rejeição do segundo, o broadcast de mudança e a liberação da cadeira. O smoke test também verifica que a Bilheteria não conclui uma venda usando uma reserva pertencente a outro token.
 
 ## 29. Deploy na VPS
 
 O procedimento operacional completo, com comandos, dados persistentes, rollback, health checks e politica de exclusao de releases, esta em [`DEPLOY_VPS.md`](DEPLOY_VPS.md). Esse runbook e a referencia para publicacoes em producao.
+
+Monitoramento e resposta a incidentes estão em [`OPERATIONS.md`](OPERATIONS.md). Backup criptografado, restauração isolada, RPO e RTO estão em [`DISASTER_RECOVERY.md`](DISASTER_RECOVERY.md).
 
 Estrutura atual:
 

@@ -16,6 +16,7 @@ const {
   appendSystemLogToPostgres,
   listSystemLogsFromPostgres,
   pruneSystemLogsFromPostgres,
+  checkPostgresReadiness,
   listActiveSeatHolds: listActiveSeatHoldsFromPostgres,
   acquireSeatHold: acquireSeatHoldInPostgres,
   releaseSeatHold: releaseSeatHoldInPostgres,
@@ -37,12 +38,15 @@ const {
 const { brazilianDate } = require("./utils/dateFormat");
 
 const requestContext = new AsyncLocalStorage();
+const mutationContext = new AsyncLocalStorage();
 const adminTwoFactorChallenges = new Map();
 const memorySeatHolds = new Map();
 let seatRealtimeService = null;
+let jsonMutationQueue = Promise.resolve();
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
+const LATEST_SCHEMA_MIGRATION = "025_subscription_usage_quantity.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -1077,7 +1081,7 @@ function adminOriginAllowed(req) {
 
   if (origin) return allowedHosts.has(origin);
   if (referer) return allowedHosts.has(referer);
-  return true;
+  return !isProduction();
 }
 
 function customerMutationOriginAllowed(req) {
@@ -1473,7 +1477,18 @@ async function withCriticalMutation(callback) {
   if (postgresEnabled()) {
     return withPostgresMutationLock(callback);
   }
-  return callback();
+  if (mutationContext.getStore()?.active) return callback();
+  const previous = jsonMutationQueue;
+  let release;
+  jsonMutationQueue = new Promise((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await mutationContext.run({ active: true }, callback);
+  } finally {
+    release();
+  }
 }
 
 function pruneMemorySeatHolds() {
@@ -3852,8 +3867,9 @@ function refundSubscriptionCreditForUsage(db, usage, adminUser, reason) {
     || (db.subscriptionCredits || []).find((item) => item.subscriptionId === usage.subscriptionId && item.cycleStart === usage.cycleStart);
   const subscription = (db.subscriptions || []).find((item) => item.id === usage.subscriptionId);
   if (!credit || !subscription) return false;
-  credit.used = Math.max(0, Number(credit.used || 0) - 1);
-  credit.remaining = Math.min(Number(credit.total || 0), Number(credit.remaining || 0) + 1);
+  const creditsUsed = Math.max(1, Number(usage.creditsUsed || usage.metadata?.creditsUsed || 1));
+  credit.used = Math.max(0, Number(credit.used || 0) - creditsUsed);
+  credit.remaining = Math.min(Number(credit.total || 0), Number(credit.remaining || 0) + creditsUsed);
   credit.updatedAt = new Date().toISOString();
   usage.refundedAt = new Date().toISOString();
   usage.refundedBy = adminUser?.id || "";
@@ -4291,6 +4307,21 @@ function sessionHasAuditHistory(db, sessionId) {
     || (db.tickets || []).some((ticket) => ticket.sessionId === sessionId)
     || (db.payments || []).some((payment) => payment.sessionId === sessionId)
     || (db.subscriptionUsage || db.subscriptionUsages || []).some((usage) => usage.sessionId === sessionId);
+}
+
+function sessionHasActiveSeatAssignments(db, sessionId) {
+  const activeOrders = (db.orders || []).some((order) =>
+    order.sessionId === sessionId
+    && ["pending_payment", "paid"].includes(String(order.status || ""))
+    && Array.isArray(order.selectedSeatIds)
+    && order.selectedSeatIds.length > 0
+  );
+  const activeTickets = (db.tickets || []).some((ticket) =>
+    ticket.sessionId === sessionId
+    && ticket.seatId
+    && !["cancelled", "refunded", "expired"].includes(String(ticket.status || ""))
+  );
+  return activeOrders || activeTickets;
 }
 
 function movieDurationMinutes(movie = {}) {
@@ -6550,28 +6581,46 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const db = await readDb();
-  const scheduledChanged = applyScheduledPremieres(db);
-  const movieTagsChanged = applyAutomatedMovieTags(db);
-  const sessionMaintenance = archiveFinishedSessions(db);
-  const reservationsChanged = expireStaleReservations(db);
-  const subscriptionMaintenance = await expirePendingPaymentSubscriptions(db);
-  const subscriptionLifecycle = finalizeEndingSubscriptions(db);
-  if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || subscriptionMaintenance.changed || subscriptionLifecycle.changed) {
-    await writeDb(db);
-    if (sessionMaintenance.changed) {
-      sessionMaintenance.archived.forEach((session) => logEvent("info", "session.finished_archived", session));
-    }
+  if (pathname === "/api/health/live" && method === "GET") {
+    sendJson(res, 200, { status: "alive" }, { "Cache-Control": "no-store" });
+    return;
   }
 
-  const limited = rateLimit(req, pathname);
-  if (limited) {
-    sendJson(res, 429, { error: limited });
+  if (["/api/health", "/api/health/ready"].includes(pathname) && method === "GET") {
+    const readiness = postgresEnabled()
+      ? await checkPostgresReadiness(LATEST_SCHEMA_MIGRATION)
+      : { ready: !isProduction(), database: !isProduction(), migrations: !isProduction() };
+    sendJson(res, readiness.ready ? 200 : 503, {
+      status: readiness.ready ? (pathname === "/api/health" ? "ok" : "ready") : "not_ready",
+      checks: {
+        database: readiness.database ? "ok" : "unavailable",
+        migrations: readiness.migrations ? "current" : "pending"
+      }
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  const context = requestContext.getStore();
+  if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method) && !context?.adminMutationLocked) {
+    context.adminMutationLocked = true;
+    try {
+      await withCriticalMutation(() => handleApi(req, res, pathname));
+    } finally {
+      context.adminMutationLocked = false;
+    }
     return;
   }
 
   if (!customerMutationOriginAllowed(req)) {
     sendJson(res, 403, { error: { code: "CUSTOMER_CSRF_BLOCKED", message: "Origem da requisição não autorizada." } });
+    return;
+  }
+
+  const db = await readDb();
+
+  const limited = rateLimit(req, pathname);
+  if (limited) {
+    sendJson(res, 429, { error: limited });
     return;
   }
 
@@ -6884,13 +6933,6 @@ async function handleApi(req, res, pathname) {
     });
     sendJson(res, 200, { recoveryCodes, message: "Novos codigos gerados. Os anteriores deixaram de funcionar." });
     logEvent("info", "admin_two_factor.recovery_codes_regenerated", { actorUserId: req.adminUser.id });
-    return;
-  }
-
-  if (pathname === "/api/health" && method === "GET") {
-    sendJson(res, 200, {
-      status: "ok"
-    });
     return;
   }
 
@@ -8697,11 +8739,22 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const body = await readBody(req);
-      const session = normalizeMovieSession(body, movieId, movie.sessions[sessionIndex], db.ticketTypes);
+      const previousSession = movie.sessions[sessionIndex];
+      const session = normalizeMovieSession(body, movieId, previousSession, db.ticketTypes);
+      if (session.room !== previousSession.room && sessionHasActiveSeatAssignments(db, sessionId)) {
+        sendJson(res, 409, {
+          error: {
+            code: "SESSION_ROOM_LOCKED_BY_SEATS",
+            message: "Esta sessão possui poltronas reservadas ou emitidas. Cancele ou transfira os vínculos antes de trocar a sala."
+          }
+        });
+        return;
+      }
       movie.sessions[sessionIndex] = session;
       movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
       movie.updatedAt = new Date().toISOString();
       await writeDb(db);
+      seatRealtimeService?.broadcastSessionRefresh(session.id);
       sendJson(res, 200, session);
       return;
     }
@@ -10472,9 +10525,10 @@ async function runSubscriptionMaintenance() {
       const scheduledChanged = applyScheduledPremieres(db);
       const movieTagsChanged = applyAutomatedMovieTags(db);
       const sessionMaintenance = archiveFinishedSessions(db);
+      const reservationsChanged = expireStaleReservations(db);
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
-      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || result.changed || lifecycle.changed) {
+      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || result.changed || lifecycle.changed) {
         await writeDb(db);
         sessionMaintenance.archived.forEach((session) => logEvent("info", "session.finished_archived", session));
         logEvent("info", "subscription.pending_payment_maintenance", {
@@ -10482,7 +10536,8 @@ async function runSubscriptionMaintenance() {
           failed: result.failed,
           finalized: lifecycle.finalized,
           catalogUpdated: scheduledChanged || movieTagsChanged,
-          sessionsArchived: sessionMaintenance.archived.length
+          sessionsArchived: sessionMaintenance.archived.length,
+          reservationsExpired: reservationsChanged
         });
       }
     });

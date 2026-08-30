@@ -74,8 +74,32 @@ async function main() {
   const retry = await nextMessage(second, (message) => message.requestId === "second-retry");
   assert.equal(retry.type, "select_seat_confirmed");
 
+  const contenders = await Promise.all(Array.from({ length: 20 }, (_, index) => connect(url, `concorrente-${index}`)));
+  const outcomes = await Promise.all(contenders.map((socket, index) => {
+    const requestId = `many-select-${index}`;
+    socket.send(JSON.stringify({ type: "select_seat", requestId, seatId: "A2" }));
+    return nextMessage(socket, (message) => message.requestId === requestId);
+  }));
+  assert.equal(outcomes.filter((message) => message.type === "select_seat_confirmed").length, 1);
+  assert.equal(outcomes.filter((message) => message.type === "select_seat_rejected" && message.code === "SEAT_ALREADY_HELD").length, 19);
+
+  const winnerIndex = outcomes.findIndex((message) => message.type === "select_seat_confirmed");
+  const winnerToken = `concorrente-${winnerIndex}`;
+  contenders[winnerIndex].close();
+  const reconnectedWinner = new WebSocket(url);
+  await new Promise((resolve, reject) => {
+    reconnectedWinner.once("open", resolve);
+    reconnectedWinner.once("error", reject);
+  });
+  const recoveredStatePromise = nextMessage(reconnectedWinner, (message) => message.type === "session_state");
+  reconnectedWinner.send(JSON.stringify({ type: "join_session", requestId: "winner-reconnect", sessionId: "session-1", ownerToken: winnerToken }));
+  const recoveredState = await recoveredStatePromise;
+  assert.equal(recoveredState.heldSeats.some((seat) => seat.seatId === "A2" && seat.heldByMe), true);
+
   first.close();
   second.close();
+  contenders.forEach((socket) => socket.close());
+  reconnectedWinner.close();
   realtime.close();
   await new Promise((resolve) => server.close(resolve));
   console.log("seat realtime tests: ok");
