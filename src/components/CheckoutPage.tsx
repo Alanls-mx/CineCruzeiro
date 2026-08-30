@@ -9,7 +9,7 @@ import { Accessibility, CircleUserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { AccountSubscription, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap } from "@/services/cinemaApi";
-import { cartTotal, findSession, isUploadedAsset, money, publicAssetPath, readCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
+import { cartTotal, checkoutCartQueueRemaining, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, nextCheckoutCartInQueue, publicAssetPath, readCheckoutCart, removeCheckoutCart, StoredCheckoutCart, writeCheckoutCart } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
 type Step = "ingressos" | "extras" | "pagamento" | "confirmacao";
@@ -91,6 +91,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const loadedSeatSessionRef = useRef("");
   const effectiveSessionId = sessionId === "carrinho" ? cart?.sessionId || "" : sessionId;
   const found = findSession(content, effectiveSessionId);
+  const sessionCanCheckout = isSessionCheckoutAvailable(found?.session);
   const availableTicketTypes = useMemo(
     () => ticketTypesForSession(content?.ticketTypes || [], found?.session.ticketTypeIds),
     [content?.ticketTypes, found?.session.ticketTypeIds]
@@ -167,6 +168,13 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [sessionId]);
 
   useEffect(() => {
+    if (status !== "ready" || sessionId === "carrinho" || step === "confirmacao" || sessionCanCheckout) return;
+    removeCheckoutCart(sessionId);
+    setCart(null);
+    router.replace("/filmes");
+  }, [router, sessionCanCheckout, sessionId, status, step]);
+
+  useEffect(() => {
     if (!activeSessionId || loadedSeatSessionRef.current === activeSessionId) return;
     loadedSeatSessionRef.current = activeSessionId;
     void refreshSeatMap();
@@ -187,7 +195,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [cart, requiredSeatCount, seatMap, seatMapStatus, updateCart]);
 
   useEffect(() => {
-    if (hydratedSessionId !== sessionId || !found || cart?.sessionId === found.session.id) return;
+    if (hydratedSessionId !== sessionId || !found || !sessionCanCheckout || cart?.sessionId === found.session.id) return;
     const next = {
       movieId: found.movie.id,
       sessionId: found.session.id,
@@ -201,7 +209,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     };
     writeCheckoutCart(next);
     setCart(next);
-  }, [hydratedSessionId, sessionId, found, cart?.sessionId, availableTicketTypes]);
+  }, [hydratedSessionId, sessionId, found, sessionCanCheckout, cart?.sessionId, availableTicketTypes]);
 
   useEffect(() => {
     if (!found || !cart) return;
@@ -1034,10 +1042,12 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
 }
 
 function ConfirmationStep({ cart, confirmationStatus, orderReference }: { cart: StoredCheckoutCart; confirmationStatus: "idle" | "checking" | "ready" | "invalid"; orderReference: string }) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
   const result = cart.paymentResult as CheckoutPaymentResult | undefined;
   const approved = result?.payment?.status === "approved";
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
+  const remainingCartItems = approved ? checkoutCartQueueRemaining(cart.sessionId) : 0;
   const copyPix = async () => {
     if (!result?.payment?.qrCode) return;
     await navigator.clipboard?.writeText(result.payment.qrCode);
@@ -1106,6 +1116,18 @@ function ConfirmationStep({ cart, confirmationStatus, orderReference }: { cart: 
           )}
 
           <div className="mt-8 flex flex-wrap gap-3">
+            {approved && remainingCartItems > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = nextCheckoutCartInQueue(cart.sessionId);
+                  if (next) router.push(`/checkout/${next.sessionId}`);
+                }}
+                className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300"
+              >
+                Continuar compra · {remainingCartItems} {remainingCartItems === 1 ? "sessão restante" : "sessões restantes"}
+              </button>
+            )}
             <Link href="/conta/ingressos" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
               Ver meus ingressos
             </Link>
@@ -1212,7 +1234,7 @@ function OrderSummary({ cart, total, selectedConcessions, ticketTypes, seatMap }
           </div>
         </dl>
         <div className="mt-6 flex items-end justify-between border-t border-white/8 pt-5">
-          <span className="text-sm font-bold text-slate-400">Total estimado</span>
+          <span className="text-sm font-bold text-slate-400">Total</span>
           <span className="text-3xl font-black text-gold-400">{money(total)}</span>
         </div>
         <p className="mt-3 text-xs leading-5 text-slate-500">O valor final é recalculado pelo backend antes do pagamento.</p>

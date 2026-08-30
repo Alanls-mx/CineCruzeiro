@@ -166,7 +166,7 @@ export function SiteFooter() {
           <h3 className="font-bold text-white">Compra rápida</h3>
           <Link href="/filmes" className="block hover:text-white">Comprar ingresso</Link>
           <Link href="/conta/ingressos" className="block hover:text-white">Meus ingressos</Link>
-          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("cine-cruzeiro-open-cart"))} className="block hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">Meu carrinho</button>
+          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("cine-cruzeiro-open-cart"))} className="block cursor-pointer text-left hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">Meu carrinho</button>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Legal</h3>

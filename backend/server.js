@@ -1669,6 +1669,26 @@ function occupiedSeatIds(db, sessionId, ignoredOrderId = "") {
   return occupied;
 }
 
+function publicSessionStatus(db, session) {
+  if (!session || session.status === "sold_out") return "sold_out";
+  const room = roomForSession(db, session);
+  const capacity = roomSeatSelectionEnabled(room)
+    ? roomSeats(room).filter((seat) => seat.enabled !== false).length
+    : Number(room?.capacity || session.capacity || 120);
+  const issued = (db.tickets || []).filter((ticket) =>
+    ticket.sessionId === session.id && !["cancelled", "refunded", "expired"].includes(String(ticket.status || ""))
+  ).length;
+  const reserved = (db.orders || []).filter((order) =>
+    order.sessionId === session.id
+    && order.status === "pending_payment"
+    && (!order.reservationExpiresAt || new Date(order.reservationExpiresAt).getTime() > Date.now())
+  ).reduce((sum, order) => sum + orderTicketCount(order), 0);
+  const occupied = issued + reserved;
+  if (capacity > 0 && occupied >= capacity) return "sold_out";
+  if (capacity > 0 && occupied / capacity >= 0.7) return "filling_fast";
+  return session.status === "filling_fast" ? "filling_fast" : "available";
+}
+
 function assignSeatsToOrder(db, order, session) {
   const room = roomForSession(db, session);
   if (!roomSeatSelectionEnabled(room)) {
@@ -2391,13 +2411,13 @@ function createBoxOfficePaymentRecord(order, method, adminUser) {
   };
 }
 
-function createPointPaymentRecord(orders, providerPayment, adminUser, batchId) {
+function createPointPaymentRecord(orders, providerPayment, adminUser, batchId, method = "card_terminal") {
   const now = new Date().toISOString();
   const relatedOrderIds = orders.map((order) => order.id);
   return {
     id: `pagamento-point-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
     orderId: relatedOrderIds[0],
-    method: "card_terminal",
+    method,
     provider: "mercado_pago",
     providerPaymentId: providerPayment.id,
     providerReference: providerPayment.externalReference,
@@ -5216,7 +5236,10 @@ function getContent(db, options = {}) {
     .map(assetMovie);
   const visibleMovies = movies
     .filter((movie) => movie.status !== "hidden")
-    .map((movie) => ({ ...movie, sessions: sellableSessions(movie, now) }));
+    .map((movie) => ({
+      ...movie,
+      sessions: sellableSessions(movie, now).map((session) => ({ ...session, status: publicSessionStatus(db, session) }))
+    }));
   const nowPlaying = visibleMovies.filter((movie) => movie.status === "now_playing");
   const upcoming = visibleMovies.filter((movie) => movie.status === "upcoming");
   const featuredMovie = visibleMovies.find((movie) => movie.isHighlight) || nowPlaying[0] || visibleMovies[0] || null;
@@ -5343,11 +5366,12 @@ function methodLabel(method = "") {
   return {
     pix: "Pix",
     external_pix: "Pix",
+    point_qr: "Pix na Point",
     PIX: "Pix",
     credit_card: "Cartão",
     CREDIT_CARD: "Cartão",
     cash: "Dinheiro",
-    card_terminal: "Cartão na maquininha",
+    card_terminal: "Débito/crédito na Point",
     courtesy: "Cortesia",
     club_credit: "Crédito do Clube",
     CLUB_CREDIT: "Crédito do Clube"
@@ -8567,6 +8591,16 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "DELETE") {
+      const linkedSessions = (db.movies || []).flatMap((movie) => (movie.sessions || []).filter((session) => roomForSession(db, session)?.id === id));
+      if (linkedSessions.length) {
+        sendJson(res, 409, {
+          error: {
+            code: "ROOM_HAS_SESSIONS",
+            message: `Esta sala está vinculada a ${linkedSessions.length} sessão(ões). Remova ou altere essas sessões antes de excluir a sala.`
+          }
+        });
+        return;
+      }
       const [removed] = db.rooms.splice(index, 1);
       await writeDb(db);
       sendJson(res, 200, removed);
@@ -9295,12 +9329,15 @@ async function handleApi(req, res, pathname) {
         money: "cash",
         card_terminal: "card_terminal",
         terminal: "card_terminal",
+        point_card: "card_terminal",
+        point_qr: "point_qr",
         external_pix: "external_pix",
         pix_counter: "external_pix",
         courtesy: "courtesy",
         cortesia: "courtesy"
       };
       const paymentMethod = methodMap[String(body.paymentMethod || "cash").trim()] || "cash";
+      const pointPayment = ["card_terminal", "point_qr"].includes(paymentMethod);
       const selectedCustomer = body.customerUserId
         ? (lockedDb.users || []).find((user) => user.id === body.customerUserId && user.active !== false && ["customer", ...adminRoles()].includes(user.role))
         : null;
@@ -9339,8 +9376,8 @@ async function handleApi(req, res, pathname) {
           id: saleItem.id || `pedido-bilheteria-${Date.now()}-${index}-${crypto.randomBytes(4).toString("hex")}`,
           ...customerData,
           paymentMethod,
-          status: paymentMethod === "card_terminal" ? "pending_payment" : "paid",
-          paymentStatus: paymentMethod === "card_terminal" ? "pending" : "approved",
+          status: pointPayment ? "pending_payment" : "paid",
+          paymentStatus: pointPayment ? "pending" : "approved",
           autoAssignSeats: saleItem.autoAssignSeats !== false
         }));
         if (paymentMethod === "courtesy") {
@@ -9351,13 +9388,13 @@ async function handleApi(req, res, pathname) {
         return order;
       });
 
-      if (paymentMethod === "card_terminal") {
+      if (pointPayment) {
         const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
         if (!cardTerminalProvider.configured(mercadoPagoConfig)) {
           sendJson(res, 412, {
             error: {
               code: "POINT_NOT_CONFIGURED",
-              message: "Habilite o Mercado Pago Point e informe o Terminal ID em Integrações antes de vender pela maquininha."
+              message: "Habilite o Mercado Pago Point e informe o Terminal ID em Integrações antes de vender pelo terminal."
             }
           });
           return;
@@ -9375,11 +9412,12 @@ async function handleApi(req, res, pathname) {
           externalReference,
           idempotencyKey: `point-${batchId}`,
           ticketNumber: batchId,
+          defaultPaymentType: paymentMethod === "point_qr" ? "qr" : "debit_card",
           description: preparedOrders.length === 1
             ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
             : `Venda de ${preparedOrders.length} filmes - Cine Cruzeiro`
         });
-        const pointPayment = createPointPaymentRecord(preparedOrders, providerPayment, adminUser, batchId);
+        const pointPaymentRecord = createPointPaymentRecord(preparedOrders, providerPayment, adminUser, batchId, paymentMethod);
         const timestamp = new Date().toISOString();
         const orders = preparedOrders.map((order) => ({
           ...order,
@@ -9388,13 +9426,13 @@ async function handleApi(req, res, pathname) {
           origin: "box_office",
           saleMode,
           paymentMethod,
-          paymentProvider: pointPayment.provider,
-          paymentId: pointPayment.id,
-          paymentStatus: pointPayment.status,
+          paymentProvider: pointPaymentRecord.provider,
+          paymentId: pointPaymentRecord.id,
+          paymentStatus: pointPaymentRecord.status,
           createdBy: adminUser.id,
           createdByEmail: adminUser.email,
           createdAt: order.createdAt || timestamp,
-          reservationExpiresAt: pointPayment.status === "approved" ? "" : pointReservationExpiresAt(mercadoPagoConfig),
+          reservationExpiresAt: pointPaymentRecord.status === "approved" ? "" : pointReservationExpiresAt(mercadoPagoConfig),
           audit: {
             origin: "box_office",
             batchId,
@@ -9405,35 +9443,35 @@ async function handleApi(req, res, pathname) {
           }
         }));
         lockedDb.orders.unshift(...orders);
-        lockedDb.payments.unshift(pointPayment);
-        const pointResult = applyPointPaymentStatus(lockedDb, pointPayment, providerPayment);
+        lockedDb.payments.unshift(pointPaymentRecord);
+        const pointResult = applyPointPaymentStatus(lockedDb, pointPaymentRecord, providerPayment);
         for (const paidOrder of pointResult.newlyPaidOrders) {
           const paidTickets = pointResult.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
           if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
         }
         await writeDb(lockedDb);
         logEvent("info", "box_office_point_sale.created", {
-          paymentId: pointPayment.id,
-          providerPaymentId: pointPayment.providerPaymentId,
+          paymentId: pointPaymentRecord.id,
+          providerPaymentId: pointPaymentRecord.providerPaymentId,
           orderIds: orders.map((order) => order.id),
           batchId,
           amount: totalPrice,
-          status: pointPayment.status,
-          terminalId: pointPayment.metadata.terminalId,
+          status: pointPaymentRecord.status,
+          terminalId: pointPaymentRecord.metadata.terminalId,
           createdBy: adminUser.id
         });
-        sendJson(res, pointPayment.status === "approved" ? 201 : 202, {
+        sendJson(res, pointPaymentRecord.status === "approved" ? 201 : 202, {
           order: orders[0],
-          payment: pointPayment,
+          payment: pointPaymentRecord,
           orders,
-          payments: [pointPayment],
+          payments: [pointPaymentRecord],
           tickets: pointResult.tickets,
           batchId,
           totalPrice,
           point: {
-            status: pointPayment.status,
-            providerOrderId: pointPayment.providerPaymentId,
-            terminalId: pointPayment.metadata.terminalId
+            status: pointPaymentRecord.status,
+            providerOrderId: pointPaymentRecord.providerPaymentId,
+            terminalId: pointPaymentRecord.metadata.terminalId
           }
         });
         return;

@@ -3,6 +3,7 @@ import { Movie, Session } from "@/types";
 
 export const CART_STORAGE_KEY = "cine-cruzeiro-cart";
 export const CART_COLLECTION_STORAGE_KEY = "cine-cruzeiro-carts";
+export const CART_CHECKOUT_QUEUE_STORAGE_KEY = "cine-cruzeiro-cart-checkout-queue";
 const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const UPLOAD_ASSET_VERSION = "2";
 export const PUBLIC_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
@@ -119,6 +120,20 @@ export function findSession(content: CinemaContent | null, sessionId: string): {
   return null;
 }
 
+export function sessionStartsAt(session?: Pick<Session, "date" | "time"> | null) {
+  const date = String(session?.date || "").slice(0, 10);
+  const time = /^\d{2}:\d{2}$/.test(String(session?.time || "")) ? session?.time : "00:00";
+  if (!date) return null;
+  const parsed = new Date(`${date}T${time}:00-03:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function isSessionCheckoutAvailable(session?: Session | null, now = new Date()) {
+  if (!session || session.status === "sold_out") return false;
+  const startsAt = sessionStartsAt(session);
+  return startsAt ? startsAt.getTime() + 10 * 60 * 1000 > now.getTime() : false;
+}
+
 export function money(value: number | undefined) {
   return `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 }
@@ -188,7 +203,63 @@ export function clearCheckoutCarts() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(CART_STORAGE_KEY);
   window.localStorage.removeItem(CART_COLLECTION_STORAGE_KEY);
+  window.sessionStorage.removeItem(CART_CHECKOUT_QUEUE_STORAGE_KEY);
   window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+}
+
+export function pruneUnavailableCheckoutCarts(content: CinemaContent | null) {
+  if (typeof window === "undefined" || !content) return { carts: readCheckoutCarts(), removed: 0 };
+  const current = readCheckoutCarts();
+  const carts = current.filter((cart) => {
+    const found = findSession(content, cart.sessionId);
+    return Boolean(found && isSessionCheckoutAvailable(found.session));
+  });
+  const validIds = new Set(carts.map((cart) => cart.sessionId));
+  window.localStorage.setItem(CART_COLLECTION_STORAGE_KEY, JSON.stringify(carts));
+  const active = readCheckoutCart();
+  if (active?.sessionId && !validIds.has(active.sessionId)) {
+    if (carts[0]) window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(carts[0]));
+    else window.localStorage.removeItem(CART_STORAGE_KEY);
+  }
+  const removed = current.length - carts.length;
+  if (removed > 0) window.dispatchEvent(new CustomEvent("cine-cruzeiro-cart-updated"));
+  return { carts, removed };
+}
+
+export function startCheckoutCartQueue(carts: StoredCheckoutCart[]) {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(CART_CHECKOUT_QUEUE_STORAGE_KEY, JSON.stringify(carts.map((cart) => cart.sessionId)));
+}
+
+export function nextCheckoutCartInQueue(currentSessionId: string) {
+  if (typeof window === "undefined") return null;
+  let ids: string[] = [];
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(CART_CHECKOUT_QUEUE_STORAGE_KEY) || "[]");
+    if (Array.isArray(parsed)) ids = parsed.map(String);
+  } catch {
+    ids = [];
+  }
+  const remainingIds = ids.filter((id) => id !== currentSessionId);
+  const carts = readCheckoutCarts();
+  const next = remainingIds.map((id) => carts.find((cart) => cart.sessionId === id)).find(Boolean) || null;
+  window.sessionStorage.setItem(
+    CART_CHECKOUT_QUEUE_STORAGE_KEY,
+    JSON.stringify(next ? remainingIds.slice(remainingIds.indexOf(next.sessionId)) : [])
+  );
+  if (next) selectCheckoutCart(next);
+  return next;
+}
+
+export function checkoutCartQueueRemaining(currentSessionId: string) {
+  if (typeof window === "undefined") return 0;
+  try {
+    const ids = JSON.parse(window.sessionStorage.getItem(CART_CHECKOUT_QUEUE_STORAGE_KEY) || "[]");
+    const available = new Set(readCheckoutCarts().map((cart) => cart.sessionId));
+    return Array.isArray(ids) ? ids.filter((id) => id !== currentSessionId && available.has(String(id))).length : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function checkoutCartsItemCount(carts = readCheckoutCarts()) {

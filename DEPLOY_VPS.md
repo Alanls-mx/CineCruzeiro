@@ -576,4 +576,3 @@ Nao executar como parte do deploy comum:
 - [ ] Health e pagina publica aprovados.
 - [ ] Somente duas releases mantidas.
 - [ ] Commit ativo na VPS igual ao GitHub.
-

@@ -9,9 +9,12 @@ import {
   allMovies,
   cartItemCount,
   clearCheckoutCarts,
+  isSessionCheckoutAvailable,
+  pruneUnavailableCheckoutCarts,
   readCheckoutCarts,
   removeCheckoutCart,
   selectCheckoutCart,
+  startCheckoutCartQueue,
   type StoredCheckoutCart,
 } from "@/utils/cinema";
 
@@ -31,10 +34,15 @@ function sessionDateLabel(value = "") {
 export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
   const router = useRouter();
   const [carts, setCarts] = useState<StoredCheckoutCart[]>([]);
+  const [removedCount, setRemovedCount] = useState(0);
 
   useEffect(() => {
     if (!isOpen) return;
-    const update = () => setCarts(readCheckoutCarts());
+    const update = () => {
+      const result = pruneUnavailableCheckoutCarts(content);
+      setCarts(result.carts);
+      if (result.removed) setRemovedCount((count) => count + result.removed);
+    };
     update();
     window.addEventListener("cine-cruzeiro-cart-updated", update);
     window.addEventListener("storage", update);
@@ -47,7 +55,7 @@ export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
       window.removeEventListener("storage", update);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [content, isOpen, onClose]);
 
   const entries = useMemo(() => {
     const movies = allMovies(content);
@@ -87,6 +95,15 @@ export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
     router.push(`/checkout/${cart.sessionId}/extras`);
   };
 
+  const buyAll = () => {
+    const available = entries
+      .filter(({ cart, movie, session }) => movie && isSessionCheckoutAvailable(session) && cartItemCount(cart) > 0)
+      .map(({ cart }) => cart);
+    if (!available.length) return;
+    startCheckoutCartQueue(available);
+    openCart(available[0]);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -109,6 +126,11 @@ export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+          {removedCount > 0 && (
+            <p className="mb-4 rounded-lg bg-amber-300/10 px-4 py-3 text-sm font-semibold leading-5 text-amber-100" role="status">
+              {removedCount === 1 ? "Uma sessão encerrada ou esgotada foi removida" : `${removedCount} sessões encerradas ou esgotadas foram removidas`} antes do pagamento.
+            </p>
+          )}
           {!entries.length ? (
             <div className="flex min-h-[56vh] flex-col items-center justify-center text-center">
               <ShoppingBag className="h-11 w-11 text-slate-600" />
@@ -179,7 +201,12 @@ export function CartDrawer({ isOpen, onClose, content }: CartDrawerProps) {
         </div>
 
         {entries.length > 0 && (
-          <div className="border-t border-white/8 px-5 py-4 sm:px-6">
+          <div className="space-y-2 border-t border-white/8 px-5 py-4 sm:px-6">
+            <button type="button" onClick={buyAll} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
+              <ShoppingBag className="h-4 w-4" />
+              Comprar todos os itens
+            </button>
+            {entries.length > 1 && <p className="text-center text-xs leading-5 text-slate-400">Cada sessão será revisada e paga em sequência para preservar poltronas e disponibilidade.</p>}
             <button type="button" onClick={() => { clearCheckoutCarts(); setCarts([]); }} className="flex min-h-11 w-full items-center justify-center gap-2 text-sm font-bold text-slate-400 transition hover:text-rose-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400">
               <Trash2 className="h-4 w-4" />
               Limpar carrinho

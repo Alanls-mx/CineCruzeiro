@@ -670,7 +670,9 @@ function logPaymentMethod(value = "") {
     credit_card: "Cartão de crédito",
     card: "Cartão",
     courtesy: "Cortesia",
-    external_pix: "Pix no balcão",
+    external_pix: "Pix registrado no balcão",
+    point_qr: "Pix na Point",
+    card_terminal: "Débito/crédito na Point",
     club_credit: "Crédito do Clube"
   }[String(value || "").toLowerCase()] || value;
 }
@@ -724,11 +726,11 @@ function logPresentation(log = {}) {
     "ticket_email.failed": { title: "E-mail do ingresso não enviado", description: "O ingresso foi emitido, mas o e-mail não pôde ser entregue." },
     "ticket_email.pdf_failed": { title: "PDF do ingresso não gerado", description: "O sistema não conseguiu preparar o PDF anexado ao e-mail." },
     "box_office_sale.created": { title: "Venda concluída na bilheteria", description: method ? `A venda presencial foi registrada com pagamento em ${method}.` : "A venda presencial foi registrada com sucesso." },
-    "box_office_point_sale.created": { title: "Pagamento enviado à maquininha", description: "A cobrança presencial foi enviada para a Point selecionada." },
-    "box_office_point_sale.synced": { title: "Pagamento da maquininha atualizado", description: "O status da venda presencial foi atualizado pelo Mercado Pago." },
-    "box_office_point_sale.cancelled": { title: "Cobrança da maquininha cancelada", description: "A cobrança presencial foi cancelada no Mercado Pago." },
-    "box_office_ticket_print.queued": { title: "Ingresso enviado para impressão", description: "A impressão física foi enviada para a maquininha Point." },
-    "box_office_ticket_print.failed": { title: "Ingresso não impresso", description: "A venda foi concluída, mas a maquininha não recebeu a impressão." },
+    "box_office_point_sale.created": { title: "Pagamento enviado à Point", description: "A cobrança presencial foi enviada para o terminal selecionado." },
+    "box_office_point_sale.synced": { title: "Pagamento da Point atualizado", description: "O status da venda presencial foi atualizado pelo Mercado Pago." },
+    "box_office_point_sale.cancelled": { title: "Cobrança da Point cancelada", description: "A cobrança presencial foi cancelada no Mercado Pago." },
+    "box_office_ticket_print.queued": { title: "Ingresso enviado para impressão", description: "A impressão física foi enviada para o terminal Point." },
+    "box_office_ticket_print.failed": { title: "Ingresso não impresso", description: "A venda foi concluída, mas o terminal Point não recebeu a impressão." },
     "webhook.processed": { title: "Pagamento atualizado automaticamente", description: "O Mercado Pago confirmou uma mudança no pagamento do pedido." },
     "webhook.subscription.processed": { title: "Assinatura do Clube atualizada", description: "O Mercado Pago confirmou uma mudança na assinatura do cliente." },
     "webhook.payment.not_found": { title: "Pagamento sem pedido correspondente", description: "O provedor confirmou uma cobrança, mas o sistema não encontrou o pedido relacionado." },
@@ -986,7 +988,7 @@ function renderDashboard() {
     const capacity = data.capacity || {};
     $("dashCapacity").innerHTML = `
       <div class="metric-row"><span>Lugares ocupados</span><strong>${Number(capacity.occupied || 0)}</strong></div>
-      <div class="metric-row"><span>Capacidade cadastrada</span><strong>${Number(capacity.roomCapacity || 0)}</strong></div>
+      <div class="metric-row"><span>Lugares ofertados nas sessões</span><strong>${Number(capacity.roomCapacity || 0)}</strong></div>
       <div class="metric-row"><span>Ocupação estimada</span><strong>${Number(capacity.occupancyRate || 0)}%</strong></div>
     `;
   }
@@ -1275,8 +1277,9 @@ function paymentMethodLabel(method = "") {
     credit_card: "Cartão online",
     CREDIT_CARD: "Cartão online",
     cash: "Dinheiro",
-    card_terminal: "Cartão na maquininha",
-    external_pix: "Pix no balcão",
+    card_terminal: "Débito/crédito na Point",
+    point_qr: "Pix na Point",
+    external_pix: "Pix registrado no balcão",
     manual_sale: "Venda manual",
     courtesy: "Cortesia",
     club_credit: "Crédito do Clube"
@@ -3401,8 +3404,8 @@ function renderPaymentsCenter() {
   const data = state.payments || {};
   if ($("paymentProviderStatus")) {
     $("paymentProviderStatus").textContent = data.cardTerminal?.configured
-      ? `Maquininha integrada: ${data.cardTerminal.provider}.`
-      : "Maquininha automática não configurada. Cartões de balcão são registrados manualmente.";
+      ? `Terminal Point integrado: ${data.cardTerminal.provider}.`
+      : "Terminal Point não configurado. Ative a integração para receber Pix, débito ou crédito na Bilheteria.";
   }
   const rows = data.payments || [];
   if (!rows.length) {
@@ -3448,6 +3451,31 @@ function manualSessionStartsAt(session = {}) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function manualSessionDateIso(value = "") {
+  const text = String(value || "").trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const parts = iso ? [iso[1], iso[2], iso[3]] : br ? [br[3], br[2], br[1]] : null;
+  if (!parts) return "";
+  const [year, month, day] = parts.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+    ? `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+    : "";
+}
+
+function manualSessionDateDisplay(value = "") {
+  const iso = manualSessionDateIso(value);
+  if (!iso) return String(value || "");
+  const [year, month, day] = iso.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function maskManualSessionDate(value = "") {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join("/");
+}
+
 function isManualSessionSellable(session = {}, now = new Date()) {
   if (!session || session.status === "sold_out") return false;
   const startsAt = manualSessionStartsAt(session);
@@ -3469,10 +3497,10 @@ function renderManualSaleOptions() {
   const sellableSessions = movies.flatMap((movie) => (movie.sessions || []).filter((session) => isManualSessionSellable(session)));
   const availableDates = [...new Set(sellableSessions.map((session) => session.date).filter(Boolean))].sort();
   const today = state.content?.calendar?.today || new Date().toISOString().slice(0, 10);
-  dateInput.min = today;
-  if (!dateInput.value) dateInput.value = availableDates[0] || today;
+  if (!dateInput.value) dateInput.value = manualSessionDateDisplay(availableDates[0] || today);
+  const selectedDate = manualSessionDateIso(dateInput.value);
 
-  const moviesForDate = movies.filter((movie) => manualSessionsForDate(movie, dateInput.value).length);
+  const moviesForDate = movies.filter((movie) => manualSessionsForDate(movie, selectedDate).length);
   const selectedMovieId = moviesForDate.some((movie) => movie.id === movieSelect.value)
     ? movieSelect.value
     : moviesForDate[0]?.id || "";
@@ -3489,7 +3517,7 @@ function renderManualSaleOptions() {
 function renderManualSessionOptions() {
   const movieId = $("manualMovieSelect")?.value;
   const movie = (state.content?.movies || []).find((item) => item.id === movieId);
-  const selectedDate = $("manualSessionDate")?.value || "";
+  const selectedDate = manualSessionDateIso($("manualSessionDate")?.value || "");
   const sessions = manualSessionsForDate(movie, selectedDate);
   const selectedSessionId = sessions.some((session) => session.id === $("manualSessionSelect")?.value)
     ? $("manualSessionSelect").value
@@ -3514,7 +3542,7 @@ function renderManualSessionOptions() {
 
 function currentManualMovieSession() {
   const movie = (state.content?.movies || []).find((item) => item.id === $("manualMovieSelect").value);
-  const session = manualSessionsForDate(movie, $("manualSessionDate")?.value || "")
+  const session = manualSessionsForDate(movie, manualSessionDateIso($("manualSessionDate")?.value || ""))
     .find((item) => item.id === $("manualSessionSelect").value);
   return { movie, session };
 }
@@ -3926,7 +3954,7 @@ async function createManualTicket(event) {
     state.manualConcessionQuantities = {};
     state.manualSelectedSeatIds = [];
     renderManualSaleItems();
-    if (paymentMethod === "card_terminal") {
+    if (["point_card", "point_qr"].includes(paymentMethod)) {
       startPointPaymentTracking(result);
       return;
     }
@@ -3992,7 +4020,7 @@ function renderPointPayment(data = {}) {
     cancelled: ["Cobrança cancelada", "A ordem foi cancelada no terminal e nenhum ingresso foi emitido."],
     expired: ["Tempo de pagamento encerrado", "A cobrança expirou sem aprovação e os ingressos não foram emitidos."],
     refunded: ["Pagamento estornado", "O Mercado Pago informou o estorno desta cobrança."]
-  }[status] || ["Aguardando pagamento na maquininha", "A cobrança foi enviada. Oriente o cliente a concluir o pagamento no terminal."];
+  }[status] || ["Aguardando pagamento na Point", "A cobrança foi enviada. Oriente o cliente a concluir o pagamento no terminal."];
   $("pointPaymentTitle").textContent = copy[0];
   $("pointPaymentMessage").textContent = copy[1];
 
@@ -4001,9 +4029,9 @@ function renderPointPayment(data = {}) {
     printActions.hidden = false;
     printActions.innerHTML = `
       <strong>Ingressos físicos disponíveis</strong>
-      <p>${tickets.length} ingresso(s) emitido(s). Abra o PDF individual para imprimir o ingresso físico.</p>
+      <p>${tickets.length} ingresso(s) emitido(s). O PDF usa a impressão do sistema operacional e reconhece impressoras térmicas e PDVs instalados neste computador.</p>
       <div class="button-row">
-        ${tickets.map((ticket, index) => `<button class="ghost-button" type="button" onclick="printPhysicalTicket('${escapeHtml(ticket.id)}')">Imprimir ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
+        ${tickets.map((ticket, index) => `<button class="ghost-button" type="button" onclick="printPhysicalTicket('${escapeHtml(ticket.id)}')">Abrir no PDV · ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
       </div>
     `;
   } else {
@@ -4057,7 +4085,7 @@ function startPointPaymentTracking(result) {
 }
 
 async function cancelPointPayment() {
-  if (!state.pointPaymentId || !confirm("Cancelar a cobrança enviada à maquininha? Nenhum ingresso será emitido.")) return;
+  if (!state.pointPaymentId || !confirm("Cancelar a cobrança enviada à Point? Nenhum ingresso será emitido.")) return;
   const button = $("pointPaymentCancelButton");
   button.disabled = true;
   try {
@@ -6825,7 +6853,14 @@ function bindEvents() {
   $("pointPaymentRetryButton")?.addEventListener("click", () => pollPointPayment({ manual: true }));
   $("pointPaymentCancelButton")?.addEventListener("click", cancelPointPayment);
   $("pointPaymentNewSaleButton")?.addEventListener("click", resetPointPaymentPanel);
-  $("manualSessionDate").addEventListener("change", renderManualSaleOptions);
+  $("manualSessionDate").addEventListener("input", (event) => {
+    const rawValue = event.target.value;
+    event.target.value = /^\d{4}-\d{2}-\d{2}$/.test(rawValue)
+      ? manualSessionDateDisplay(rawValue)
+      : maskManualSessionDate(rawValue);
+    if (manualSessionDateIso(event.target.value)) renderManualSaleOptions();
+  });
+  $("manualSessionDate").addEventListener("blur", renderManualSaleOptions);
   $("manualMovieSelect").addEventListener("change", renderManualSessionOptions);
   $("manualSessionSelect").addEventListener("change", () => {
     renderManualTicketTypes();

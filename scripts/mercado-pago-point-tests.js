@@ -60,7 +60,8 @@ async function run() {
     externalReference: "point-venda-1",
     idempotencyKey: "idem-point-venda-1",
     ticketNumber: "bilheteria-1",
-    description: "Dois ingressos Cine Cruzeiro"
+    description: "Dois ingressos Cine Cruzeiro",
+    defaultPaymentType: "qr"
   });
   assert.equal(created.status, "pending");
   assert.equal(created.id, "ORD_POINT_1");
@@ -72,6 +73,7 @@ async function run() {
   assert.equal(createCall.body.transactions.payments[0].amount, "35.00");
   assert.equal(createCall.body.config.point.terminal_id, "PAX_A910__123");
   assert.equal(createCall.body.config.point.print_on_terminal, "seller_ticket");
+  assert.equal(createCall.body.config.payment_method.default_type, "qr");
   assert.equal(createCall.body.expiration_time, "PT15M");
   assert.equal(createCall.options.headers.Authorization, "Bearer TEST_TOKEN_SECRET");
   assert.equal(JSON.stringify(createCall.body).includes("TEST_TOKEN_SECRET"), false);

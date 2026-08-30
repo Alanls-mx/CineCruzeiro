@@ -119,7 +119,7 @@ function normalizeOrder(order = {}) {
     paymentId: String(payment.id || ""),
     paymentMethod: String(payment.payment_method?.id || payment.payment_method?.type || ""),
     createdAt: order.date_created || order.created_date || "",
-    updatedAt: order.last_updated || order.date_last_updated || "",
+    updatedAt: order.last_updated_date || order.last_updated || order.date_last_updated || "",
     raw: order
   };
 }
@@ -170,6 +170,9 @@ async function createPayment(order = {}, config = {}, options = {}) {
   const externalReference = safeReference(options.externalReference || order.externalReference || order.id);
   const idempotencyKey = String(options.idempotencyKey || crypto.randomUUID());
   const ticketNumber = safeReference(options.ticketNumber || externalReference);
+  const defaultPaymentType = ["credit_card", "debit_card", "voucher_card", "qr"].includes(String(options.defaultPaymentType || ""))
+    ? String(options.defaultPaymentType)
+    : "";
   const payload = await request("/v1/orders", config, {
     method: "POST",
     headers: { "X-Idempotency-Key": idempotencyKey },
@@ -184,7 +187,8 @@ async function createPayment(order = {}, config = {}, options = {}) {
           terminal_id: terminalId(config),
           print_on_terminal: config.pointPrintOnTerminal === "no_ticket" ? "no_ticket" : "seller_ticket",
           ticket_number: ticketNumber
-        }
+        },
+        ...(defaultPaymentType ? { payment_method: { default_type: defaultPaymentType } } : {})
       }
     }
   });

@@ -64,10 +64,11 @@ export function Hero({ movie, onOpenCheckout, onOpenTrailer }: HeroProps) {
             </div>
 
             {/* Metadata (Age rating, Duration, Genres) */}
-            <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-slate-200">
+            <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm text-slate-200" aria-label={`Classificação ${movie.rating}, duração ${movie.duration}`}>
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-brand-600 text-xs font-black text-white shadow-md">
                 {movie.rating}
               </span>
+              <span className="text-brand-400" aria-hidden="true">•</span>
               <span className="flex items-center gap-1 font-semibold text-white">
                 <Clock className="h-4 w-4 text-gold-400" />
                 {movie.duration}
