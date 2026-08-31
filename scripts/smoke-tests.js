@@ -215,6 +215,7 @@ async function run() {
     status: "paid",
     customerName: "Histórico Smoke",
     customerEmail: "historico@smoke.local",
+    customerUserId: "historico-smoke-local",
     totalPrice: 10,
     concessionItems: [],
     createdAt: "2000-01-01T20:00:00.000Z"
@@ -230,6 +231,7 @@ async function run() {
     status: "active",
     customerName: "Histórico Smoke",
     customerEmail: "historico@smoke.local",
+    customerUserId: "historico-smoke-local",
     createdAt: "2000-01-01T20:00:00.000Z"
   });
   db.movies.push({
@@ -341,7 +343,7 @@ async function run() {
     assert.equal(oversizedPayload.response.status, 413);
     assert.equal(oversizedPayload.payload.error.code, "PAYLOAD_TOO_LARGE");
 
-    const email = `smoke-${Date.now()}@cine.local`;
+    const email = "historico@smoke.local";
     const registered = await registerCustomer(email);
     const target = await registerCustomer(`target-${Date.now()}@cine.local`);
     let cookie = registered.cookie;
@@ -1702,6 +1704,8 @@ async function run() {
     assert.ok(accountTickets.payload.tickets.some((ticket) => ticket.orderId === boxOfficeSale.payload.order.id));
     assert.ok(Array.isArray(accountTickets.payload.upcoming));
     assert.ok(Array.isArray(accountTickets.payload.archived));
+    assert.equal(accountTickets.payload.upcoming.some((ticket) => ticket.id === "smoke-expired-history-ticket"), false);
+    assert.equal(accountTickets.payload.archived.some((ticket) => ticket.id === "smoke-expired-history-ticket"), true);
 
     const manualTicket = accountTickets.payload.tickets.find((ticket) => ticket.orderId === boxOfficeSale.payload.order.id);
     const download = await fetch(`${BASE_URL}/api/me/tickets/${encodeURIComponent(manualTicket.id)}/download`, {

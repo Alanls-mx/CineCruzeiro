@@ -2015,7 +2015,7 @@ function enrichTicket(db, ticket) {
     orderTicketIndex,
     orderTicketCount,
     status,
-    archived: status === "archived" || status === "used",
+    archived: ["archived", "used", "expired"].includes(status),
     archiveAt: archiveAt?.toISOString() || "",
     canTransfer: canTransferTicket(db, ticket).ok
   };
