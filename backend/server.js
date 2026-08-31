@@ -10740,6 +10740,11 @@ async function runMovieImageMaintenance() {
         });
       }
     }
+    const currentDb = await readDb();
+    for (const movie of currentDb.movies || []) {
+      const removed = await movieImageService.pruneLocalizedAssets(movie);
+      if (removed) logEvent("info", "movie.images_obsolete_pruned", { movieId: movie.id, removed });
+    }
   } finally {
     movieImageMaintenanceRunning = false;
   }

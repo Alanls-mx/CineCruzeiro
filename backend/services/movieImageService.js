@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs/promises");
 const sharp = require("sharp");
 
 const TMDB_IMAGE_HOST = "image.tmdb.org";
@@ -95,7 +96,24 @@ function createMovieImageService({ storageService, fetchImpl = global.fetch, tim
     await Promise.all(assets.map((asset) => storageService.deleteByPublicUrl(asset.localUrl || asset)));
   }
 
-  return { isTmdbImageUrl, needsLocalization, localizeMovie, cleanupAssets };
+  async function pruneLocalizedAssets(movie) {
+    const folder = safeMovieFolder(movie?.id);
+    const folderPath = path.join(storageService.rootDir, folder);
+    const activeFiles = new Set(IMAGE_FIELDS.map((field) => {
+      const value = String(movie?.[field] || "");
+      return value.startsWith(`/uploads/${folder}/`) ? path.basename(value) : "";
+    }).filter(Boolean));
+    const entries = await fs.readdir(folderPath, { withFileTypes: true }).catch(() => []);
+    const obsolete = entries.filter((entry) => (
+      entry.isFile()
+      && /^(poster|backdrop)-/i.test(entry.name)
+      && !activeFiles.has(entry.name)
+    ));
+    await Promise.all(obsolete.map((entry) => fs.unlink(path.join(folderPath, entry.name)).catch(() => false)));
+    return obsolete.length;
+  }
+
+  return { isTmdbImageUrl, needsLocalization, localizeMovie, cleanupAssets, pruneLocalizedAssets };
 }
 
 module.exports = { createMovieImageService, isTmdbImageUrl, needsLocalization, IMAGE_FIELDS };

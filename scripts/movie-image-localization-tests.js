@@ -64,11 +64,17 @@ async function run() {
       backdropUrl: "/uploads/movies-filme-legado/backdrop-filme-legado.webp",
       metadata: { tmdbPosterSourceUrl: posterSource, tmdbBackdropSourceUrl: backdropSource }
     };
+    const legacyFolder = path.join(rootDir, "movies-filme-legado");
+    await fs.mkdir(legacyFolder, { recursive: true });
+    await fs.writeFile(path.join(legacyFolder, "poster-filme-legado.webp"), PNG);
+    await fs.writeFile(path.join(legacyFolder, "backdrop-filme-legado.webp"), PNG);
     assert.equal(needsLocalization(legacyMovie), true);
     const upgraded = await service.localizeMovie(legacyMovie);
     assert.equal(upgraded.assets.every((asset) => asset.previousUrl.endsWith(".webp")), true);
     assert.equal(upgraded.assets.every((asset) => asset.localUrl.endsWith(".jpg")), true);
     assert.equal(needsLocalization(upgraded.movie), false);
+    assert.equal(await service.pruneLocalizedAssets(upgraded.movie), 2);
+    assert.equal((await filesBelow(legacyFolder)).length, 2);
     await service.cleanupAssets(upgraded.assets);
 
     const partialFailure = createMovieImageService({
