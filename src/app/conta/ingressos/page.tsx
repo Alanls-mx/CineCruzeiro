@@ -257,7 +257,7 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
               <Info label="Pedido" value={ticketHumanReference(ticket)} title={ticket.orderReference || ticket.orderId || ticketHumanReference(ticket)} />
               <Info label="Código" value={ticket.code} mono />
             </dl>
-            <div className="rounded-lg bg-white p-4 text-center text-xs font-black text-slate-950">
+            <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-xs font-black text-slate-950">
               {qrDataUrl ? <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.code}`} className="mx-auto h-44 w-44 max-w-full" /> : ticket.code}
             </div>
           </div>
