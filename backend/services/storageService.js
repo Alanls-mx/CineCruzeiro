@@ -53,8 +53,13 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
 
   async function uploadImage({ data, filename = "", contentType = "", folder = "general" }) {
     const parsed = parseBase64Image(data);
-    const declaredType = String(contentType || parsed.contentType || "").toLowerCase().replace("image/jpg", "image/jpeg");
-    const detectedType = detectedImageType(parsed.buffer);
+    return uploadImageBuffer({ buffer: parsed.buffer, filename, contentType: contentType || parsed.contentType, folder });
+  }
+
+  async function uploadImageBuffer({ buffer, filename = "", contentType = "", folder = "general" }) {
+    const imageBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || "");
+    const declaredType = String(contentType || "").toLowerCase().split(";")[0].trim().replace("image/jpg", "image/jpeg");
+    const detectedType = detectedImageType(imageBuffer);
     const extension = SUPPORTED_IMAGE_TYPES.get(detectedType);
     if (!extension) {
       const error = new Error("Formato de imagem não permitido. Use JPG, PNG ou WebP.");
@@ -66,12 +71,12 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
       error.statusCode = 415;
       throw error;
     }
-    if (!parsed.buffer.length) {
+    if (!imageBuffer.length) {
       const error = new Error("Arquivo de imagem vazio.");
       error.statusCode = 400;
       throw error;
     }
-    if (parsed.buffer.length > maxBytes) {
+    if (imageBuffer.length > maxBytes) {
       const error = new Error(`Imagem muito grande. Envie um arquivo de até ${Math.round(maxBytes / 1024 / 1024)} MB.`);
       error.statusCode = 413;
       throw error;
@@ -85,13 +90,13 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
 
     const fileName = `${safeName}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${extension}`;
     const filePath = path.join(targetDir, fileName);
-    await fs.writeFile(filePath, parsed.buffer);
+    await fs.writeFile(filePath, imageBuffer);
 
     return {
       path: filePath,
       url: `${publicBasePath}/${targetFolder}/${fileName}`,
       contentType: detectedType,
-      size: parsed.buffer.length
+      size: imageBuffer.length
     };
   }
 
@@ -114,6 +119,7 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
   return {
     rootDir,
     uploadImage,
+    uploadImageBuffer,
     deleteByPublicUrl,
     getPublicUrl(filePath) {
       const normalized = path.normalize(filePath);

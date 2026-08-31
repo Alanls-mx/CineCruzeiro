@@ -601,7 +601,7 @@ O Admin controla:
 
 As imagens persistem em diretório compartilhado da VPS e usam `object-fit: contain` no checkout. Produtos transparentes são integrados ao fundo navy sem container claro.
 
-URLs externas de imagem não são usadas na Bomboniere ou nos planos. Filmes continuam podendo importar mídia externa pelo fluxo TMDB.
+URLs externas de imagem não são usadas na Bomboniere, nos planos ou em filmes publicados. O TMDB continua disponível como origem de importação no painel.
 
 Uploads salvos em produtos e planos são persistidos antes da atualização visual do formulário. A interface sempre reconcilia a prévia com a URL local retornada pelo backend, evitando que a imagem desapareça ao salvar ou recarregar.
 
@@ -619,6 +619,8 @@ O Admin pesquisa um título e pode importar:
 - identificadores de mídia.
 
 O operador revisa os dados antes de publicar. A duração vem do campo `runtime` dos detalhes oficiais do TMDB e guarda metadados de origem. O sistema não aplica duração fictícia: quando o TMDB não informa o valor, exibe `Duração não informada` e impede a publicação até a revisão. A ordenação do catálogo é persistida no backend e os status possuem identificação visual.
+
+Ao publicar um filme importado, o backend baixa o pôster e o banner do domínio oficial do TMDB, valida o conteúdo como JPG, PNG ou WebP e grava os arquivos no armazenamento persistente local. O banco passa a guardar URLs em `/uploads/`; as URLs originais ficam apenas nos metadados de rastreabilidade. Uma manutenção também converte filmes publicados anteriormente que ainda apontem diretamente para o TMDB. Na exclusão definitiva do filme, os arquivos locais sem outras referências são removidos para evitar acúmulo no disco; filmes apenas arquivados preservam a mídia necessária ao histórico de pedidos e ingressos.
 
 Status de publicação incluem filmes em cartaz, estreia e em breve. Filmes agendados podem mudar de categoria conforme a data configurada.
 

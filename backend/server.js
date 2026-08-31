@@ -28,6 +28,7 @@ const emailService = require("./services/emailService");
 const fiscalService = require("./services/fiscalService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
+const { createMovieImageService } = require("./services/movieImageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const {
@@ -43,6 +44,7 @@ const adminTwoFactorChallenges = new Map();
 const memorySeatHolds = new Map();
 let seatRealtimeService = null;
 let jsonMutationQueue = Promise.resolve();
+let movieImageMaintenanceRunning = false;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
@@ -58,6 +60,7 @@ const storageService = createStorageService({
   publicDir: PUBLIC_DIR,
   rootDir: process.env.CINE_UPLOADS_DIR || ""
 });
+const movieImageService = createMovieImageService({ storageService });
 const PROJECT_ROOT = path.resolve(ROOT, "..");
 const MAX_TRAILER_BYTES = Number(process.env.MAX_TRAILER_BYTES || 120 * 1024 * 1024);
 const MAX_JSON_BODY_BYTES = Number(process.env.MAX_JSON_BODY_BYTES || 8 * 1024 * 1024);
@@ -4104,6 +4107,19 @@ function validateMovieForWorkflow(db, movie, existingId = "", strictPublish = fa
     error.statusCode = 422;
     throw error;
   }
+}
+
+function valueReferencesAsset(value, assetUrl, seen = new Set()) {
+  if (typeof value === "string") return value === assetUrl;
+  if (!value || typeof value !== "object" || seen.has(value)) return false;
+  seen.add(value);
+  if (Array.isArray(value)) return value.some((item) => valueReferencesAsset(item, assetUrl, seen));
+  return Object.values(value).some((item) => valueReferencesAsset(item, assetUrl, seen));
+}
+
+async function deleteUnreferencedAssets(db, urls = []) {
+  const uniqueUrls = [...new Set(urls.map((url) => String(url || "")).filter(Boolean))];
+  await Promise.all(uniqueUrls.map((url) => valueReferencesAsset(db, url) ? false : storageService.deleteByPublicUrl(url)));
 }
 
 function movieHasAuditHistory(db, movieId) {
@@ -8664,16 +8680,25 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/movies" && method === "POST") {
     const previousMovies = db.movies.map((item) => ({ ...item }));
     const body = await readBody(req);
-    const movie = normalizeMovie(body);
+    let movie = normalizeMovie(body);
     if (db.movies.some((item) => item.id === movie.id)) {
       sendJson(res, 409, { error: { code: "MOVIE_EXISTS", message: "Já existe um filme com este identificador. Abra o filme existente para editá-lo." } });
       return;
     }
     validateMovieForWorkflow(db, movie, "", body.workflowStatus === "published" || body.workflow_status === "published");
+    const localized = movie.workflowStatus === "published"
+      ? await movieImageService.localizeMovie(movie)
+      : { movie, assets: [], changed: false };
+    movie = localized.movie;
     if (movie.isHighlight) db.movies = db.movies.map((item) => ({ ...item, isHighlight: false }));
     db.movies.push(movie);
-    await syncHighlightTrailerCache(db, previousMovies);
-    await writeDb(db);
+    try {
+      await syncHighlightTrailerCache(db, previousMovies);
+      await writeDb(db);
+    } catch (error) {
+      await movieImageService.cleanupAssets(localized.assets);
+      throw error;
+    }
     sendJson(res, 201, db.movies.find((item) => item.id === movie.id) || movie);
     return;
   }
@@ -8788,15 +8813,26 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const previousMovies = db.movies.map((item) => ({ ...item }));
+      const previousMovie = db.movies[index];
       const body = await readBody(req);
-      const movie = normalizeMovie({ ...body, id }, db.movies[index]);
+      let movie = normalizeMovie({ ...body, id }, previousMovie);
       const publishingNow = (body.workflowStatus === "published" || body.workflow_status === "published")
         && db.movies[index].workflowStatus !== "published";
       validateMovieForWorkflow(db, movie, id, publishingNow);
+      const localized = movie.workflowStatus === "published"
+        ? await movieImageService.localizeMovie(movie)
+        : { movie, assets: [], changed: false };
+      movie = localized.movie;
       if (movie.isHighlight) db.movies = db.movies.map((item) => ({ ...item, isHighlight: false }));
       db.movies[index] = movie;
-      await syncHighlightTrailerCache(db, previousMovies);
-      await writeDb(db);
+      try {
+        await syncHighlightTrailerCache(db, previousMovies);
+        await writeDb(db);
+      } catch (error) {
+        await movieImageService.cleanupAssets(localized.assets);
+        throw error;
+      }
+      await deleteUnreferencedAssets(db, [previousMovie.posterUrl, previousMovie.backdropUrl].filter((url) => url && url !== movie.posterUrl && url !== movie.backdropUrl));
       sendJson(res, 200, db.movies.find((item) => item.id === movie.id) || movie);
       return;
     }
@@ -8817,12 +8853,11 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const [removed] = db.movies.splice(index, 1);
+      await writeDb(db);
       await Promise.all([
         deleteLocalTrailer(removed.localTrailerUrl),
-        storageService.deleteByPublicUrl(removed.posterUrl),
-        storageService.deleteByPublicUrl(removed.backdropUrl)
+        deleteUnreferencedAssets(db, [removed.posterUrl, removed.backdropUrl])
       ]);
-      await writeDb(db);
       sendJson(res, 200, removed);
       return;
     }
@@ -10549,6 +10584,58 @@ async function runSubscriptionMaintenance() {
   }
 }
 
+async function runMovieImageMaintenance() {
+  if (String(process.env.MOVIE_IMAGE_MAINTENANCE_ENABLED || "true").toLowerCase() === "false") return;
+  if (movieImageMaintenanceRunning) return;
+  movieImageMaintenanceRunning = true;
+  try {
+    const snapshot = await readDb();
+    const candidates = (snapshot.movies || []).filter((movie) => {
+      const workflowStatus = movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published");
+      return workflowStatus === "published"
+        && (movieImageService.isTmdbImageUrl(movie.posterUrl) || movieImageService.isTmdbImageUrl(movie.backdropUrl));
+    });
+    for (const candidate of candidates) {
+      let localized;
+      try {
+        localized = await movieImageService.localizeMovie(candidate);
+        if (!localized.changed) continue;
+        const appliedAssets = [];
+        await withCriticalMutation(async () => {
+          const db = await readDb();
+          const current = (db.movies || []).find((movie) => movie.id === candidate.id);
+          if (!current) return;
+          for (const asset of localized.assets) {
+            if (current[asset.field] !== asset.sourceUrl) continue;
+            current[asset.field] = asset.localUrl;
+            current.metadata = { ...(current.metadata || {}) };
+            current.metadata[asset.field === "posterUrl" ? "tmdbPosterSourceUrl" : "tmdbBackdropSourceUrl"] = asset.sourceUrl;
+            appliedAssets.push(asset);
+          }
+          if (!appliedAssets.length) return;
+          current.metadata.imagesLocalizedAt = new Date().toISOString();
+          current.updatedAt = new Date().toISOString();
+          await writeDb(db);
+        });
+        const appliedUrls = new Set(appliedAssets.map((asset) => asset.localUrl));
+        await movieImageService.cleanupAssets(localized.assets.filter((asset) => !appliedUrls.has(asset.localUrl)));
+        if (appliedAssets.length) {
+          logEvent("info", "movie.images_localized", { movieId: candidate.id, assets: appliedAssets.map((asset) => asset.field) });
+        }
+      } catch (error) {
+        if (localized?.assets?.length) await movieImageService.cleanupAssets(localized.assets);
+        logEvent("warn", "movie.images_localization_failed", {
+          movieId: candidate.id,
+          code: error.code || "TMDB_IMAGE_DOWNLOAD_FAILED",
+          message: error.message
+        });
+      }
+    }
+  } finally {
+    movieImageMaintenanceRunning = false;
+  }
+}
+
 async function runFiscalMaintenance() {
   const pendingIds = [];
   try {
@@ -10595,6 +10682,7 @@ loadEnvFiles().then(() => {
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
     void runSubscriptionMaintenance();
     void runFiscalMaintenance();
+    void runMovieImageMaintenance();
     if (postgresEnabled()) {
       void pruneSystemLogsFromPostgres(process.env.SYSTEM_LOG_RETENTION_DAYS || 90).catch((error) => {
         logEvent("warn", "logs.retention_failed", { message: error.message });
@@ -10608,6 +10696,10 @@ loadEnvFiles().then(() => {
       void runFiscalMaintenance();
     }, 30000);
     fiscalMaintenanceTimer.unref?.();
+    const movieImageMaintenanceTimer = setInterval(() => {
+      void runMovieImageMaintenance();
+    }, 6 * 60 * 60 * 1000);
+    movieImageMaintenanceTimer.unref?.();
   });
 }).catch((error) => {
   console.error(error);
