@@ -131,8 +131,17 @@ function absoluteUrl(value, siteUrl = "") {
   const raw = String(value || "").trim();
   if (!raw) return "";
   if (/^https?:\/\//i.test(raw)) return raw;
-  const base = String(siteUrl || "").replace(/\/+$/, "");
-  return base ? `${base}${raw.startsWith("/") ? raw : `/${raw}`}` : raw;
+  try {
+    const base = new URL(String(siteUrl || ""));
+    const basePath = base.pathname.replace(/\/+$/, "");
+    const relative = raw.startsWith("/") ? raw : `/${raw}`;
+    if (basePath && (relative === basePath || relative.startsWith(`${basePath}/`))) {
+      return `${base.origin}${relative}`;
+    }
+    return `${base.origin}${basePath}${relative}`;
+  } catch {
+    return raw;
+  }
 }
 
 function baseLayout(title, body, options = {}) {
@@ -443,6 +452,7 @@ module.exports = {
   sendPromotionCampaign,
   _test: {
     baseLayout,
-    ticketCard
+    ticketCard,
+    absoluteUrl
   }
 };

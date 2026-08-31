@@ -752,7 +752,15 @@ export async function fetchAccountTickets() {
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar seus ingressos."));
   }
-  return (payload.tickets || []) as TicketRecord[];
+  return (payload.tickets || []).map(normalizeTicketAssets) as TicketRecord[];
+}
+
+function normalizeTicketAssets(ticket: TicketRecord): TicketRecord {
+  return {
+    ...ticket,
+    posterUrl: publicAssetPath(ticket.posterUrl),
+    backdropUrl: publicAssetPath(ticket.backdropUrl),
+  };
 }
 
 export async function fetchAccountTicketsGrouped(): Promise<AccountTicketsResponse> {
@@ -766,9 +774,9 @@ export async function fetchAccountTicketsGrouped(): Promise<AccountTicketsRespon
     throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar seus ingressos."));
   }
   return {
-    tickets: (payload.tickets || []) as TicketRecord[],
-    upcoming: (payload.upcoming || []) as TicketRecord[],
-    archived: (payload.archived || []) as TicketRecord[],
+    tickets: (payload.tickets || []).map(normalizeTicketAssets) as TicketRecord[],
+    upcoming: (payload.upcoming || []).map(normalizeTicketAssets) as TicketRecord[],
+    archived: (payload.archived || []).map(normalizeTicketAssets) as TicketRecord[],
   };
 }
 
@@ -782,7 +790,7 @@ export async function fetchAccountTicket(ticketId: string) {
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar o ingresso."));
   }
-  return payload.ticket as TicketRecord;
+  return normalizeTicketAssets(payload.ticket as TicketRecord);
 }
 
 export function ticketDownloadUrl(ticketId: string, options: { view?: boolean } = {}) {

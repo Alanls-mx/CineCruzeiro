@@ -3,7 +3,7 @@ const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const { createStorageService } = require("../backend/services/storageService");
-const { createMovieImageService, isTmdbImageUrl } = require("../backend/services/movieImageService");
+const { createMovieImageService, isTmdbImageUrl, needsLocalization } = require("../backend/services/movieImageService");
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
@@ -48,6 +48,8 @@ async function run() {
     assert.equal(requested.length, 2);
     assert.match(localized.movie.posterUrl, /^\/uploads\/movies-filme-teste\/poster-filme-teste-/);
     assert.match(localized.movie.backdropUrl, /^\/uploads\/movies-filme-teste\/backdrop-filme-teste-/);
+    assert.match(localized.movie.posterUrl, /\.jpg$/);
+    assert.match(localized.movie.backdropUrl, /\.jpg$/);
     assert.equal(localized.movie.metadata.tmdbPosterSourceUrl, posterSource);
     assert.equal(localized.movie.metadata.tmdbBackdropSourceUrl, backdropSource);
     assert.ok(localized.movie.metadata.imagesLocalizedAt);
@@ -55,6 +57,19 @@ async function run() {
 
     await service.cleanupAssets(localized.assets);
     assert.equal((await filesBelow(rootDir)).length, 0);
+
+    const legacyMovie = {
+      id: "filme-legado",
+      posterUrl: "/uploads/movies-filme-legado/poster-filme-legado.webp",
+      backdropUrl: "/uploads/movies-filme-legado/backdrop-filme-legado.webp",
+      metadata: { tmdbPosterSourceUrl: posterSource, tmdbBackdropSourceUrl: backdropSource }
+    };
+    assert.equal(needsLocalization(legacyMovie), true);
+    const upgraded = await service.localizeMovie(legacyMovie);
+    assert.equal(upgraded.assets.every((asset) => asset.previousUrl.endsWith(".webp")), true);
+    assert.equal(upgraded.assets.every((asset) => asset.localUrl.endsWith(".jpg")), true);
+    assert.equal(needsLocalization(upgraded.movie), false);
+    await service.cleanupAssets(upgraded.assets);
 
     const partialFailure = createMovieImageService({
       storageService,

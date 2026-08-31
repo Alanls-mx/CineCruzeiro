@@ -7,6 +7,7 @@ const { AsyncLocalStorage } = require("async_hooks");
 const { Readable, Transform } = require("stream");
 const { pipeline } = require("stream/promises");
 const QRCode = require("qrcode");
+const sharp = require("sharp");
 const {
   postgresEnabled,
   readDbFromPostgres,
@@ -3054,7 +3055,9 @@ async function readLocalPosterBuffer(posterUrl) {
   const filePath = path.normalize(path.join(storageService.rootDir, uploadPath.replace(/^\/uploads\//, "")));
   if (!filePath.startsWith(storageService.rootDir)) return null;
   const buffer = await fs.readFile(filePath).catch(() => null);
-  return buffer && jpegDimensions(buffer) ? buffer : null;
+  if (!buffer) return null;
+  if (jpegDimensions(buffer)) return buffer;
+  return sharp(buffer).rotate().jpeg({ quality: 88, progressive: true }).toBuffer().catch(() => null);
 }
 
 async function cachedPosterBufferForTicket(db, enriched) {
@@ -3080,12 +3083,13 @@ async function cachedPosterBufferForTicket(db, enriched) {
   try {
     const response = await fetch(posterUrl, { signal: controller.signal, headers: { Accept: "image/jpeg,image/*;q=0.8" } }).catch(() => null);
     if (!response?.ok) return null;
-    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
     const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    if (buffer.length > 6 * 1024 * 1024) return null;
-    if (!contentType.includes("jpeg") && !contentType.includes("jpg") && !jpegDimensions(buffer)) return null;
-    if (!jpegDimensions(buffer)) return null;
+    const sourceBuffer = Buffer.from(arrayBuffer);
+    if (sourceBuffer.length > 6 * 1024 * 1024) return null;
+    const buffer = jpegDimensions(sourceBuffer)
+      ? sourceBuffer
+      : await sharp(sourceBuffer).rotate().jpeg({ quality: 88, progressive: true }).toBuffer().catch(() => null);
+    if (!buffer || !jpegDimensions(buffer)) return null;
     await fs.mkdir(cacheDir, { recursive: true });
     await fs.writeFile(cachePath, buffer).catch(() => null);
     return buffer;
@@ -10696,8 +10700,7 @@ async function runMovieImageMaintenance() {
     const snapshot = await readDb();
     const candidates = (snapshot.movies || []).filter((movie) => {
       const workflowStatus = movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published");
-      return workflowStatus === "published"
-        && (movieImageService.isTmdbImageUrl(movie.posterUrl) || movieImageService.isTmdbImageUrl(movie.backdropUrl));
+      return workflowStatus === "published" && movieImageService.needsLocalization(movie);
     });
     for (const candidate of candidates) {
       let localized;
@@ -10710,7 +10713,7 @@ async function runMovieImageMaintenance() {
           const current = (db.movies || []).find((movie) => movie.id === candidate.id);
           if (!current) return;
           for (const asset of localized.assets) {
-            if (current[asset.field] !== asset.sourceUrl) continue;
+            if (current[asset.field] !== asset.previousUrl) continue;
             current[asset.field] = asset.localUrl;
             current.metadata = { ...(current.metadata || {}) };
             current.metadata[asset.field === "posterUrl" ? "tmdbPosterSourceUrl" : "tmdbBackdropSourceUrl"] = asset.sourceUrl;
@@ -10724,6 +10727,8 @@ async function runMovieImageMaintenance() {
         const appliedUrls = new Set(appliedAssets.map((asset) => asset.localUrl));
         await movieImageService.cleanupAssets(localized.assets.filter((asset) => !appliedUrls.has(asset.localUrl)));
         if (appliedAssets.length) {
+          const currentDb = await readDb();
+          await deleteUnreferencedAssets(currentDb, appliedAssets.map((asset) => asset.previousUrl));
           logEvent("info", "movie.images_localized", { movieId: candidate.id, assets: appliedAssets.map((asset) => asset.field) });
         }
       } catch (error) {

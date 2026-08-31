@@ -978,7 +978,7 @@ function renderDashboard() {
     $("dashUpcomingSessions").innerHTML = sessions.length
       ? sessions.map((item) => `
           <div class="session-metric-row clickable-row" onclick="openSessionDashboardDetail('${escapeHtml(item.movie?.id || "")}', '${escapeHtml(item.session?.id || "")}')">
-            <div class="session-poster">${item.movie?.posterUrl ? `<img src="${escapeHtml(item.movie.posterUrl)}" alt="">` : `<span>${escapeHtml(item.movie?.rating || "L")}</span>`}</div>
+            <div class="session-poster">${item.movie?.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(item.movie.posterUrl))}" alt="">` : `<span>${escapeHtml(item.movie?.rating || "L")}</span>`}</div>
             <div>
               <strong>${escapeHtml(item.movie?.title || "Filme")} • ${escapeHtml(item.session?.time || "-")}</strong>
               <span>${escapeHtml(item.session?.format || "")}</span>
@@ -1487,7 +1487,7 @@ function renderMovies() {
       return `
         <div class="movie-row ${active}" draggable="true" data-movie-id="${escapeHtml(movie.id)}" ondragstart="handleMovieDragStart(event, '${escapeHtml(movie.id)}')" ondragover="handleMovieDragOver(event)" ondragleave="handleMovieDragLeave(event)" ondragend="handleMovieDragEnd()" ondrop="handleMovieDrop(event, '${escapeHtml(movie.id)}')" onclick="selectMovie('${escapeHtml(movie.id)}')">
           <button class="drag-handle" type="button" draggable="true" aria-label="Arrastar para mudar prioridade" title="Arrastar para mudar prioridade" ondragstart="handleMovieDragStart(event, '${escapeHtml(movie.id)}')" ondragend="handleMovieDragEnd()" onclick="event.stopPropagation()">↕</button>
-          <div class="movie-thumb">${movie.posterUrl ? `<img src="${escapeHtml(movie.posterUrl)}" alt="">` : `<span>${escapeHtml(movie.rating || "L")}</span>`}</div>
+          <div class="movie-thumb">${movie.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : `<span>${escapeHtml(movie.rating || "L")}</span>`}</div>
           <div>
             <span class="list-title">${escapeHtml(movie.title)}</span>
             <span class="movie-status-pill ${escapeHtml(priorityState.className)}"><span></span>${escapeHtml(priorityState.label)}</span>
@@ -1570,7 +1570,7 @@ async function searchTmdb() {
         (movie) => `
           <button class="tmdb-result" type="button" onclick="importTmdbMovie('${movie.tmdbId}')">
             <span class="tmdb-thumb">
-              ${movie.posterUrl ? `<img src="${movie.posterUrl}" alt="">` : ""}
+              ${movie.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : ""}
             </span>
             <span>
               <strong>${escapeHtml(movie.title)}</strong>
@@ -3191,7 +3191,7 @@ function orderDetailHtml(order) {
       ["Contato", [order.customerPhone, order.customerEmail].filter(Boolean).join(" • ") || "-"]
     ])}
     ${sectionHtml("Sessão", [
-      ["Filme", `${movie?.posterUrl ? `<img class="inline-poster" src="${escapeHtml(movie.posterUrl)}" alt="">` : ""}${escapeHtml(order.movieTitle || movie?.title || "-")}`],
+      ["Filme", `${movie?.posterUrl ? `<img class="inline-poster" src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : ""}${escapeHtml(order.movieTitle || movie?.title || "-")}`],
       ["Data e horário", [order.sessionDate, order.sessionTime].filter(Boolean).join(" • ") || order.sessionTime || "-"],
       ["Sala", order.sessionRoom || "Sala Cruzeiro"],
       ["Poltronas", Array.isArray(order.selectedSeats) && order.selectedSeats.length ? order.selectedSeats.map((seat) => seat.label).join(", ") : "Lugar livre"],
