@@ -481,7 +481,7 @@ function ContaPageContent() {
               <div className="grid gap-4 md:grid-cols-2">
                 <Input label="Nome" value={profile.name} onChange={(value) => setProfile({ ...profile, name: value })} />
                 <Input label="WhatsApp" value={profile.phone} onChange={(value) => setProfile({ ...profile, phone: value })} />
-                <Input label="CPF para nota fiscal" value={profile.cpf} onChange={(value) => setProfile({ ...profile, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
+                <Input label="CPF (opcional)" value={profile.cpf} onChange={(value) => setProfile({ ...profile, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
                 <Input label="Senha atual" type="password" value={profile.currentPassword} onChange={(value) => setProfile({ ...profile, currentPassword: value })} />
                 <Input label="Nova senha" type="password" value={profile.newPassword} onChange={(value) => setProfile({ ...profile, newPassword: value })} />
                 <Input label="Confirmar nova senha" type="password" value={profile.confirmPassword} onChange={(value) => setProfile({ ...profile, confirmPassword: value })} />
@@ -518,7 +518,7 @@ function ContaPageContent() {
                 {mode === "register" && (
                   <>
                     <Input label="WhatsApp" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />
-                    <Input label="CPF para nota fiscal, opcional" value={form.cpf} onChange={(value) => setForm({ ...form, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
+                    <Input label="CPF (opcional)" value={form.cpf} onChange={(value) => setForm({ ...form, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
                   </>
                 )}
                 {message && <p className="text-sm font-semibold text-amber-200">{message}</p>}

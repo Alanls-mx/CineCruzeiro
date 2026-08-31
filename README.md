@@ -662,7 +662,6 @@ O frontend usa uma versão compacta para header e metadados; e-mail e PDF usam v
 | Google Wallet | Passe oficial de ingresso |
 | TMDB | Catálogo e mídia de filmes |
 | E-mail | SMTP ou webhook de entrega |
-| Nota fiscal | Emissão de NFS-e Nacional, consulta, PDF/XML e webhook via Focus NFe |
 | CRM | Leads, eventos e automações |
 
 Campos sensíveis são criptografados no backend e retornam mascarados ao painel.
@@ -701,7 +700,7 @@ Migrations atuais:
 025_subscription_usage_quantity.sql
 ```
 
-A migration 017 adiciona o controle fiscal persistente por pedido, com status, tentativas, dados do tomador, links PDF/XML, entrega por e-mail e histórico do provedor.
+A migration 017 pertence ao histórico do banco e é mantida para compatibilidade com ambientes já migrados. O módulo fiscal correspondente foi retirado da aplicação e seus registros antigos não são expostos nem processados.
 
 A migration 018 adiciona autenticação em duas etapas às contas administrativas, com segredo TOTP criptografado, estado de configuração e códigos de recuperação armazenados somente como hash.
 
@@ -735,7 +734,6 @@ POST /api/subscriptions/subscribe
 POST /api/payments/pix
 POST /api/payments/card
 POST /api/webhooks/mercado-pago
-POST /api/webhooks/focus-nfe
 GET  /api/sessions/:sessionId/seats
 WSS  /api/realtime/seats
 ```
@@ -756,13 +754,6 @@ GET  /api/admin/dashboard
 GET  /api/admin/content
 GET  /api/admin/integrations
 POST /api/admin/email/promotions
-GET  /api/admin/fiscal-documents
-POST /api/admin/fiscal-documents
-POST /api/admin/fiscal-documents/:id/issue
-POST /api/admin/fiscal-documents/:id/sync
-POST /api/admin/fiscal-documents/:id/send-email
-GET  /api/admin/fiscal-documents/:id/download
-GET  /api/admin/fiscal-reports.csv
 GET  /api/admin/reports/dashboard.csv
 GET  /api/admin/subscription-plans
 POST /api/admin/subscription-plans
@@ -826,12 +817,6 @@ Variáveis centrais:
 | `NEXT_PUBLIC_BASE_PATH` | Base path público |
 | `CINE_BACKEND_URL` | Backend usado pelo Next.js |
 | `MERCADO_PAGO_WEBHOOK_SECRET` | Validação HMAC |
-| `FOCUS_NFE_API_TOKEN` | Token da API fiscal |
-| `FOCUS_NFE_WEBHOOK_AUTHORIZATION` | Autorização privada do webhook fiscal |
-| `FISCAL_NATIONAL_TAX_CODE` | Código nacional do ISS com 6 dígitos |
-| `FISCAL_CNPJ` | CNPJ do prestador usado na NFS-e |
-| `FISCAL_MUNICIPAL_REGISTRATION` | Inscrição municipal do prestador |
-| `FISCAL_MUNICIPALITY_CODE` | Código IBGE do município de prestação |
 | `ADMIN_EMAIL` | Conta administrativa inicial |
 | `ADMIN_PASSWORD` | Senha administrativa inicial |
 | `WEBHOOK_TESTER_ENABLED` | Simulador interno de webhooks |
@@ -995,33 +980,6 @@ O deploy não deve alterar a aplicação principal da LumixEngine fora do caminh
 4. ativar somente após teste válido;
 5. acompanhar logs e webhooks sem expor secrets.
 
-### Notas fiscais
-
-1. configurar a integração **Nota fiscal** em sandbox no painel;
-2. cadastrar CNPJ, inscrição municipal, município, item da lista, código tributário e alíquota conforme orientação contábil;
-3. testar a conexão e ativar emissão automática somente após a homologação;
-4. acompanhar documentos em **Notas fiscais**, corrigindo CPF/CNPJ ausente antes da emissão;
-5. emitir ou sincronizar manualmente quando necessário;
-6. baixar PDF/XML, reenviar por e-mail e exportar o relatório fiscal em CSV;
-7. usar o relatório consolidado do Dashboard para conciliar ingressos, bomboniere, Clube e documentos fiscais.
-
-O controle nasce apenas para pedidos pagos. A referência fiscal é idempotente por pedido, evitando duplicidade em reprocessamentos. Por padrão, itens de bomboniere ficam fora da base de serviço da NFS-e; essa regra pode ser alterada na integração somente após validação contábil.
-
-Para Cruzeiro/SP, emissão e consulta usam o padrão nacional da Focus NFe (`/v2/nfsen`). No cadastro da empresa na Focus NFe, é obrigatório habilitar **Ambiente da NFS-e Nacional** no ambiente utilizado e desabilitar a NFS-e municipal; essa habilitação pertence à conta externa da Focus e não é alterada silenciosamente pelo Cine Cruzeiro.
-
-Status operacionais principais:
-
-```text
-Pronta -> Em fila -> Processando -> Autorizada
-                  -> Rejeitada
-Pendente de configuração
-Pendente de dados do cliente
-Não aplicável
-Cancelada
-```
-
-O e-mail fiscal é transacional, usa o layout do Cine Cruzeiro e anexa os arquivos disponíveis. Secrets, tokens e autorizações nunca são retornados sem máscara no painel nem gravados completos nos logs.
-
 ## 31. Dependências externas e pendências reais
 
 Recursos que dependem de configuração externa:
@@ -1031,7 +989,6 @@ Recursos que dependem de configuração externa:
 - Google Login requer OAuth e redirect URI válidos;
 - TMDB requer API key ou bearer token;
 - SMTP requer host, porta, usuário, senha e remetente válidos;
-- NFS-e requer credenciais Focus NFe, cadastro municipal habilitado e parâmetros tributários homologados pelo contador;
 - câmera requer HTTPS, permissão do navegador e dispositivo compatível.
 
 Antes de uma nova liberação, homologar pelo menos:

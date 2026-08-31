@@ -22,9 +22,6 @@ let state = {
   selectedOrderId: "",
   dashboard: null,
   integrations: null,
-  fiscal: null,
-  fiscalPage: 1,
-  fiscalFilters: { search: "", status: "", from: "", to: "" },
   logs: null,
   logsPage: 1,
   logsPageSize: 40,
@@ -130,7 +127,6 @@ let state = {
   toastTimer: null,
   refreshStatusTimer: null,
   logsSearchTimer: null,
-  fiscalSearchTimer: null,
   twoFactorStatus: null,
   twoFactorSetup: null,
   twoFactorRecoveryCodes: []
@@ -610,7 +606,6 @@ function renderAll() {
   renderCustomerUsers();
   renderClub();
   renderIntegrations();
-  if (state.fiscal) renderFiscalDocuments();
   if (state.logs) renderLogs();
   fillSettingsForm();
   renderRoomOptions();
@@ -622,7 +617,7 @@ function renderAll() {
 }
 
 function renderLoading() {
-  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "customerUsersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList", "logsList", "fiscalDocumentsList"].forEach((id) => {
+  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "customerUsersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList", "logsList"].forEach((id) => {
     if ($(id)) {
       $(id).innerHTML = Array.from({ length: 4 }, () => `<div class="skeleton-card"></div>`).join("");
     }
@@ -644,7 +639,6 @@ function logCategoryLabel(category = "") {
     box_office: "Bilheteria",
     ticket: "Ingressos",
     subscription: "Clube",
-    fiscal: "Notas fiscais",
     email: "E-mails",
     password_reset: "Acesso de clientes",
     email_verification: "Verificação de e-mail",
@@ -661,7 +655,6 @@ function logCategoryLabel(category = "") {
   if (normalized.startsWith("box_office")) return "Bilheteria";
   if (normalized.startsWith("ticket")) return "Ingressos";
   if (normalized.startsWith("subscription")) return "Clube";
-  if (normalized.startsWith("fiscal")) return "Notas fiscais";
   if (normalized.includes("email")) return "E-mails";
   if (normalized.startsWith("google_wallet")) return "Carteira digital";
   return "Sistema";
@@ -709,7 +702,6 @@ function logAdminAction(log) {
     [/\/club/, "Clube"],
     [/\/concessions/, "Produto da bomboniere"],
     [/\/integrations/, "Integração"],
-    [/\/fiscal/, "Nota fiscal"],
     [/\/marketing/, "Campanha"]
   ];
   const resource = resources.find(([pattern]) => pattern.test(path))?.[1] || "Configuração";
@@ -742,10 +734,6 @@ function logPresentation(log = {}) {
     "webhook.mercado_pago.rejected": { title: "Confirmação do Mercado Pago recusada", description: "A notificação recebida não passou pela verificação de segurança." },
     "subscription.pending_payment_expiration_failed": { title: "Plano pendente não cancelado", description: "O sistema não conseguiu cancelar automaticamente um plano sem pagamento." },
     "subscription.pending_payment_maintenance_failed": { title: "Revisão de planos pendentes falhou", description: "A rotina automática de assinaturas precisa ser conferida." },
-    "fiscal.email_failed": { title: "Nota fiscal não enviada por e-mail", description: "A nota foi processada, mas não pôde ser entregue ao cliente." },
-    "fiscal.email_attachment_failed": { title: "Anexo da nota fiscal não preparado", description: "O sistema não conseguiu anexar o arquivo da nota ao e-mail do cliente." },
-    "fiscal.webhook_sync_failed": { title: "Nota fiscal não atualizada", description: "A resposta do emissor fiscal não pôde ser sincronizada." },
-    "fiscal.maintenance_failed": { title: "Rotina de notas fiscais falhou", description: "Existem notas fiscais que podem precisar de revisão manual." },
     "email_verification.delivery_failed": { title: "E-mail de verificação não entregue", description: "A mensagem de confirmação do cadastro não pôde ser enviada." },
     "email_verification.delivery_missing_channel": { title: "Envio de verificação não configurado", description: "Não há um serviço de e-mail disponível para confirmar o cadastro do cliente." },
     "password_reset.delivery_failed": { title: "E-mail de recuperação não entregue", description: "A mensagem para redefinir a senha não pôde ser enviada." },
@@ -778,7 +766,6 @@ function logReferenceItems(log = {}) {
     ["Pagamento", metadata.paymentId || metadata.providerPaymentId],
     ["Ingresso", metadata.ticketId],
     ["Assinatura", metadata.subscriptionId],
-    ["Nota fiscal", metadata.fiscalDocumentId],
     ["Sessão", metadata.sessionId],
     ["Cliente", metadata.customerEmail || metadata.email]
   ];
@@ -927,12 +914,6 @@ function renderDashboard() {
   if ($("dashSubscriptions")) $("dashSubscriptions").textContent = Number(data.activeSubscriptions || 0);
   if ($("dashPendingPayments")) $("dashPendingPayments").textContent = Number(data.problematicPayments ?? data.pendingPayments ?? 0);
   if ($("dashConcessionRevenue")) $("dashConcessionRevenue").textContent = money(data.concessionRevenue || 0);
-  if ($("dashFiscalSummary")) {
-    const fiscal = data.fiscal || {};
-    $("dashFiscalSummary").textContent = fiscal.total
-      ? `${Number(fiscal.authorized || 0)} autorizada(s), ${Number(fiscal.processing || 0)} em processamento e ${Number(fiscal.errors || 0)} com erro no período. ${money(fiscal.authorizedAmount || 0)} em serviços autorizados.`
-      : "Nenhuma nota fiscal criada no período selecionado.";
-  }
   if ($("dashRevenueCompare")) $("dashRevenueCompare").textContent = comparisonText(data.comparison?.revenue);
   if ($("dashSalesCompare")) $("dashSalesCompare").textContent = comparisonText(data.comparison?.sales);
   if ($("dashTicketsCompare")) $("dashTicketsCompare").textContent = comparisonText(data.comparison?.tickets);
@@ -5461,8 +5442,8 @@ async function deleteAd() {
 }
 
 const ADMIN_PERMISSION_PRESETS = {
-  owner: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "fiscal.manage", "integrations.manage", "logs.view", "settings.manage", "media.manage"],
-  manager: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "fiscal.manage", "logs.view", "media.manage"],
+  owner: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "integrations.manage", "logs.view", "settings.manage", "media.manage"],
+  manager: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "logs.view", "media.manage"],
   operator: ["dashboard.view", "box_office.manage", "tickets.validate", "orders.manage"]
 };
 
@@ -6080,131 +6061,6 @@ async function adjustClubCredit(id) {
   }
 }
 
-function fiscalStatusLabel(status = "") {
-  return {
-    ready: "Pronta para emitir",
-    queued: "Na fila",
-    processing: "Processando",
-    authorized: "Autorizada",
-    pending_configuration: "Configuração pendente",
-    pending_customer_data: "Dados do cliente pendentes",
-    not_applicable: "Não aplicável",
-    error: "Com erro",
-    cancelled: "Cancelada"
-  }[status] || status || "Pendente";
-}
-
-function fiscalDate(value = "") {
-  if (!value) return "-";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-}
-
-async function loadFiscalDocuments(options = {}) {
-  state.fiscalPage = Math.max(1, Number(options.page || state.fiscalPage || 1));
-  const params = new URLSearchParams({ page: String(state.fiscalPage), pageSize: "25" });
-  Object.entries(state.fiscalFilters || {}).forEach(([key, value]) => value && params.set(key, value));
-  if ($("fiscalDocumentsList")) $("fiscalDocumentsList").innerHTML = `<tr><td colspan="6"><div class="skeleton-card compact"></div></td></tr>`;
-  try {
-    state.fiscal = await api(`/api/admin/fiscal-documents?${params.toString()}`);
-    renderFiscalDocuments();
-  } catch (error) {
-    if ($("fiscalDocumentsList")) $("fiscalDocumentsList").innerHTML = `<tr><td colspan="6"><div class="empty-state"><strong>Não foi possível carregar as notas</strong><span>${escapeHtml(error.message)}</span></div></td></tr>`;
-    showToast(error.message, "error");
-  }
-}
-
-function renderFiscalDocuments() {
-  const data = state.fiscal || {};
-  const summary = data.summary || {};
-  if ($("fiscalStats")) {
-    $("fiscalStats").innerHTML = [
-      ["Autorizadas", summary.authorized || 0, money(summary.authorizedAmount || 0)],
-      ["Processando", summary.processing || 0, "Emissão ou consulta"],
-      ["Pendentes", summary.pending || 0, "Configuração ou dados"],
-      ["Com erro", summary.errors || 0, "Exigem revisão"],
-      ["E-mails pendentes", summary.emailPending || 0, "Notas autorizadas"]
-    ].map(([label, value, hint]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(hint)}</small></div>`).join("");
-  }
-  if ($("fiscalOrderSelect")) {
-    const current = $("fiscalOrderSelect").value;
-    $("fiscalOrderSelect").innerHTML = `<option value="">Selecione um pedido</option>${(data.availableOrders || []).map((order) => `<option value="${escapeHtml(order.id)}">${escapeHtml(order.reference)} • ${escapeHtml(order.customerName)} • ${money(order.totalPrice)}</option>`).join("")}`;
-    if ([...$("fiscalOrderSelect").options].some((option) => option.value === current)) $("fiscalOrderSelect").value = current;
-  }
-  const config = data.configuration || {};
-  if ($("fiscalConfigurationNotice")) {
-    const ready = Boolean(config.enabled && config.configured);
-    $("fiscalConfigurationNotice").hidden = ready;
-    $("fiscalConfigurationNotice").innerHTML = ready ? "" : `<strong>Emissão ainda não configurada</strong><span>Cadastre Focus NFe, CNPJ, inscrição municipal e códigos tributários em Integrações. Os pedidos continuam registrados para emissão posterior.</span>${isOwnerAdmin() ? `<button class="ghost-button" type="button" onclick="openFiscalIntegration()">Abrir Integrações</button>` : ""}`;
-  }
-  const documents = data.documents || [];
-  if ($("fiscalDocumentsList")) {
-    $("fiscalDocumentsList").innerHTML = documents.length ? documents.map((document) => {
-      const canIssue = ["ready", "queued", "pending_configuration", "pending_customer_data", "error"].includes(document.status);
-      const authorized = document.status === "authorized";
-      return `<tr>
-        <td><strong>${escapeHtml(document.invoiceNumber || document.reference)}</strong><span>${escapeHtml(document.orderId)}<br>${fiscalDate(document.createdAt)}</span></td>
-        <td><strong>${escapeHtml(document.customerName || "Cliente")}</strong><span>${escapeHtml(document.customerEmail || "Sem e-mail")}<br>${escapeHtml(document.customerTaxId || "CPF/CNPJ pendente")}</span></td>
-        <td><strong>${money(document.serviceAmount || 0)}</strong><span>Pedido ${money(document.amount || 0)}${Number(document.concessionAmount || 0) ? ` • Bomboniere ${money(document.concessionAmount)}` : ""}</span></td>
-        <td><span class="fiscal-status ${escapeHtml(document.status)}">${escapeHtml(fiscalStatusLabel(document.status))}</span>${document.lastError ? `<small title="${escapeHtml(document.lastError)}">${escapeHtml(document.lastError)}</small>` : `<small>${escapeHtml(document.providerStatus || "")}</small>`}</td>
-        <td><strong>${document.emailStatus === "sent" ? "Enviada" : document.emailStatus === "error" ? "Falhou" : "Pendente"}</strong><span>${fiscalDate(document.emailSentAt)}</span></td>
-        <td><div class="fiscal-actions">
-          ${canIssue ? `<button class="primary-button" type="button" onclick="fiscalAction('${escapeHtml(document.id)}','issue')">Emitir</button>` : ""}
-          ${["processing", "authorized", "error"].includes(document.status) ? `<button class="ghost-button" type="button" onclick="fiscalAction('${escapeHtml(document.id)}','sync')">Sincronizar</button>` : ""}
-          ${authorized ? `<button class="ghost-button" type="button" onclick="downloadFiscal('${escapeHtml(document.id)}','pdf')">PDF</button><button class="ghost-button" type="button" onclick="downloadFiscal('${escapeHtml(document.id)}','xml')">XML</button><button class="ghost-button" type="button" onclick="fiscalAction('${escapeHtml(document.id)}','send-email')">Enviar e-mail</button>` : ""}
-        </div></td>
-      </tr>`;
-    }).join("") : `<tr><td colspan="6"><div class="empty-state"><strong>Nenhuma nota fiscal encontrada</strong><span>Prepare uma nota a partir de um pedido pago ou ajuste os filtros.</span></div></td></tr>`;
-  }
-  if ($("fiscalPagination")) {
-    $("fiscalPagination").innerHTML = `<button class="ghost-button" type="button" data-fiscal-page="${Math.max(1, Number(data.page || 1) - 1)}" ${Number(data.page || 1) <= 1 ? "disabled" : ""}>Anterior</button><span>Página ${Number(data.page || 1)} de ${Number(data.pages || 1)}</span><button class="ghost-button" type="button" data-fiscal-page="${Math.min(Number(data.pages || 1), Number(data.page || 1) + 1)}" ${Number(data.page || 1) >= Number(data.pages || 1) ? "disabled" : ""}>Próxima</button>`;
-    $("fiscalPagination").querySelectorAll("[data-fiscal-page]").forEach((button) => button.addEventListener("click", () => loadFiscalDocuments({ page: Number(button.dataset.fiscalPage) })));
-  }
-}
-
-async function createFiscalDocument() {
-  const orderId = $("fiscalOrderSelect")?.value || "";
-  if (!orderId) return showToast("Selecione um pedido pago.", "error");
-  setDisabled("fiscalCreateButton", true);
-  try {
-    await api("/api/admin/fiscal-documents", { method: "POST", body: JSON.stringify({ orderId }) });
-    await loadFiscalDocuments({ page: 1 });
-    showSuccess("Nota preparada", "O pedido foi vinculado ao controle fiscal. Revise os dados e emita quando estiver pronto.");
-  } catch (error) {
-    showToast(error.message, "error");
-  } finally {
-    setDisabled("fiscalCreateButton", false);
-  }
-}
-
-async function fiscalAction(id, action) {
-  try {
-    const result = await api(`/api/admin/fiscal-documents/${encodeURIComponent(id)}/${action}`, { method: "POST" });
-    await loadFiscalDocuments();
-    showSuccess(action === "send-email" ? "Nota enviada" : action === "sync" ? "Nota sincronizada" : "Emissão atualizada", result.message || (result.document ? fiscalStatusLabel(result.document.status) : "A ação fiscal foi concluída."));
-  } catch (error) {
-    showToast(error.message, "error");
-    await loadFiscalDocuments();
-  }
-}
-
-function downloadFiscal(id, format) {
-  window.open(`${API_BASE}/api/admin/fiscal-documents/${encodeURIComponent(id)}/download?format=${encodeURIComponent(format)}`, "_blank", "noopener");
-}
-
-function fiscalReportQuery() {
-  const params = new URLSearchParams();
-  if (state.fiscalFilters.from || state.fiscalFilters.to) params.set("period", "custom");
-  if (state.fiscalFilters.from) params.set("from", state.fiscalFilters.from);
-  if (state.fiscalFilters.to) params.set("to", state.fiscalFilters.to);
-  return params.toString();
-}
-
-function openFiscalIntegration() {
-  activatePanel("integrationsPanel", { scroll: true });
-  setTimeout(() => openIntegrationConfig("fiscal"), 80);
-}
-
 function renderIntegrations() {
   if (!$("integrationsList")) return;
   const entries = Object.entries(state.integrations?.integrations || {});
@@ -6240,7 +6096,6 @@ function integrationCategory(key) {
     googleWallet: "Carteira digital",
     tmdb: "Catálogo",
     email: "E-mail",
-    fiscal: "Fiscal",
     analytics: "Medição",
     crm: "CRM"
   }[key] || "Integração";
@@ -6659,7 +6514,6 @@ function applyRbacVisibility() {
     has("rooms.manage") && "roomsPanel",
     (has("ticket_types.manage") || has("orders.manage")) && "ticketsPanel",
     (has("box_office.manage") || has("orders.manage") || has("tickets.validate") || has("dashboard.view")) && "ordersPanel",
-    has("fiscal.manage") && "fiscalPanel",
     has("concessions.manage") && "concessionsPanel",
     has("marketing.manage") && "marketingPanel",
     has("club.manage") && "clubPanel",
@@ -6703,25 +6557,7 @@ function bindEvents() {
   document.body.classList.remove("admin-booting");
   setupResponsiveSelects();
 
-  $("fiscalRefreshButton")?.addEventListener("click", () => loadFiscalDocuments());
-  $("fiscalCreateButton")?.addEventListener("click", createFiscalDocument);
-  $("fiscalExportButton")?.addEventListener("click", () => window.open(`${API_BASE}/api/admin/fiscal-reports.csv?${fiscalReportQuery()}`, "_blank", "noopener"));
   $("dashboardReportButton")?.addEventListener("click", () => window.open(`${API_BASE}/api/admin/reports/dashboard.csv?${dashboardQuery()}`, "_blank", "noopener"));
-  [["fiscalStatusFilter", "status"], ["fiscalFrom", "from"], ["fiscalTo", "to"]].forEach(([id, key]) => {
-    $(id)?.addEventListener("change", () => {
-      state.fiscalFilters[key] = $(id).value;
-      state.fiscalPage = 1;
-      void loadFiscalDocuments({ page: 1 });
-    });
-  });
-  $("fiscalSearch")?.addEventListener("input", () => {
-    clearTimeout(state.fiscalSearchTimer);
-    state.fiscalSearchTimer = setTimeout(() => {
-      state.fiscalFilters.search = $("fiscalSearch").value.trim();
-      state.fiscalPage = 1;
-      void loadFiscalDocuments({ page: 1 });
-    }, 280);
-  });
 
   document.addEventListener("click", (event) => {
     const floating = $("floatingActionMenu");
@@ -7337,7 +7173,6 @@ function activatePanel(panelId, options = {}) {
   }
   if (options.scroll) window.scrollTo({ top: 0, behavior: "smooth" });
   if (target === "logsPanel" && !state.logs) void loadLogs({ page: 1 });
-  if (target === "fiscalPanel" && !state.fiscal) void loadFiscalDocuments({ page: 1 });
 }
 
 window.selectMovie = selectMovie;
@@ -7385,9 +7220,6 @@ window.updateClubSubscription = updateClubSubscription;
 window.deleteClubPlan = deleteClubPlan;
 window.adjustClubCredit = adjustClubCredit;
 window.openIntegrationConfig = openIntegrationConfig;
-window.openFiscalIntegration = openFiscalIntegration;
-window.fiscalAction = fiscalAction;
-window.downloadFiscal = downloadFiscal;
 window.testIntegration = testIntegration;
 window.showWebhookRun = showWebhookRun;
 window.resendWebhookRun = resendWebhookRun;

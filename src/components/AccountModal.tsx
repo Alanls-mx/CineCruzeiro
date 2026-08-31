@@ -233,7 +233,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
             </div>
             <div>
               <h3 className="text-lg font-black">Minha Conta</h3>
-              <p className="text-xs font-semibold text-slate-400">Cadastro rápido para checkout e nota fiscal.</p>
+              <p className="text-xs font-semibold text-slate-400">Cadastro rápido para compras e acesso aos ingressos.</p>
             </div>
           </div>
           <button
@@ -311,7 +311,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
               <input
                 value={cpf}
                 onChange={(event) => setCpf(formatCpf(event.target.value))}
-                placeholder="CPF para emissão de nota fiscal"
+                placeholder="CPF (opcional)"
                 className="w-full rounded-xl bg-brand-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
               />
             </>
@@ -403,7 +403,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
               <div className="flex items-start gap-3 rounded-2xl bg-emerald-500/10 p-4 text-emerald-200">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
                 <p className="text-xs font-semibold leading-relaxed">
-                  Conta conectada. Seus dados serão usados para autopreencher o checkout e apoiar a emissão fiscal quando habilitada.
+                  Conta conectada. Seus dados serão usados para preencher suas compras e centralizar seus ingressos.
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-3 pt-2">

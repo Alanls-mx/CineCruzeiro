@@ -26,7 +26,6 @@ const {
 const paymentService = require("./services/paymentService");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
-const fiscalService = require("./services/fiscalService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
@@ -490,10 +489,6 @@ const BUSINESS_LOG_EVENTS = new Set([
   "webhook.mercado_pago.rejected",
   "subscription.pending_payment_expiration_failed",
   "subscription.pending_payment_maintenance_failed",
-  "fiscal.email_failed",
-  "fiscal.email_attachment_failed",
-  "fiscal.webhook_sync_failed",
-  "fiscal.maintenance_failed",
   "email_verification.delivery_failed",
   "email_verification.delivery_missing_channel",
   "password_reset.delivery_failed",
@@ -983,7 +978,6 @@ const ADMIN_PERMISSION_KEYS = [
   "concessions.manage",
   "marketing.manage",
   "club.manage",
-  "fiscal.manage",
   "integrations.manage",
   "logs.view",
   "settings.manage",
@@ -1099,7 +1093,7 @@ function requiredAdminRoles(pathname, method) {
   if (pathname.startsWith("/api/admin/logs")) return method === "DELETE" ? ["owner"] : ["owner", "manager"];
   if (pathname.startsWith("/api/admin/integrations")) return ["owner"];
   if (pathname.startsWith("/api/admin/email")) return ["owner", "manager"];
-  if (pathname.startsWith("/api/admin/fiscal") || pathname.startsWith("/api/admin/reports")) return ["owner", "manager"];
+  if (pathname.startsWith("/api/admin/reports")) return ["owner", "manager"];
   if (pathname.startsWith("/api/admin/payments")) return ["owner", "manager"];
   if (/^\/api\/orders\/[^/]+\/permanent$/.test(pathname)) return ["owner", "master"];
   if (pathname.startsWith("/api/dashboard")) return ["owner", "manager", "operator"];
@@ -1123,7 +1117,7 @@ function requiredAdminPermission(pathname, method) {
   if (pathname.startsWith("/api/admin/logs")) return "logs.view";
   if (pathname.startsWith("/api/admin/integrations") || pathname.startsWith("/api/integrations")) return "integrations.manage";
   if (pathname.startsWith("/api/admin/email") || /^\/api\/(promotions|ads)(\/|$)/.test(pathname)) return "marketing.manage";
-  if (pathname.startsWith("/api/admin/fiscal") || pathname.startsWith("/api/admin/reports")) return "fiscal.manage";
+  if (pathname.startsWith("/api/admin/reports")) return "dashboard.view";
   if (pathname.startsWith("/api/admin/payments") || pathname.startsWith("/api/dashboard")) return "dashboard.view";
   if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return "club.manage";
   if (pathname.startsWith("/api/box-office/") || pathname === "/api/tickets/manual") return "box_office.manage";
@@ -1302,7 +1296,6 @@ function normalizeDb(db) {
   }));
   db.orders ||= [];
   db.payments ||= [];
-  db.fiscalDocuments ||= [];
   db.subscriptionPlans ||= db.settings.subscriptionPlans || [
     {
       id: "individual",
@@ -3268,37 +3261,7 @@ function finalizePaidOrder(db, order, payment, source = "online") {
   order.ticketCodes = tickets.map((ticket) => ticket.code);
   confirmConcessionStock(db, order);
   db.tickets.unshift(...tickets);
-  ensureFiscalDocumentForPaidOrder(db, order, { autoIssued: true, actor: source });
   return tickets;
-}
-
-function ensureFiscalDocumentForPaidOrder(db, order, options = {}) {
-  db.fiscalDocuments ||= [];
-  if (!order || order.status !== "paid") return null;
-  const existing = db.fiscalDocuments.find((item) => item.orderId === order.id);
-  if (existing) return existing;
-  const config = fiscalService.configFor(db);
-  const document = fiscalService.createDocument(order, config, options);
-  if (!config.autoIssue && document.status === "queued") {
-    document.status = "ready";
-    document.history.push({ status: "ready", actor: options.actor || "system", detail: "Aguardando emissão manual.", at: new Date().toISOString() });
-  }
-  db.fiscalDocuments.unshift(document);
-  return document;
-}
-
-function fiscalDocumentSummary(documents = []) {
-  const amount = (status) => documents.filter((item) => item.status === status).reduce((sum, item) => sum + Number(item.serviceAmount || 0), 0);
-  return {
-    total: documents.length,
-    authorized: documents.filter((item) => item.status === "authorized").length,
-    processing: documents.filter((item) => ["queued", "processing"].includes(item.status)).length,
-    pending: documents.filter((item) => ["ready", "pending_configuration", "pending_customer_data"].includes(item.status)).length,
-    errors: documents.filter((item) => item.status === "error").length,
-    cancelled: documents.filter((item) => item.status === "cancelled").length,
-    emailPending: documents.filter((item) => item.status === "authorized" && item.emailStatus !== "sent").length,
-    authorizedAmount: amount("authorized")
-  };
 }
 
 function csvCell(value) {
@@ -3318,76 +3281,6 @@ function csvResponse(res, filename, headers, rows) {
     Vary: "Origin"
   });
   res.end(csv);
-}
-
-async function deliverFiscalDocumentByEmail(documentId) {
-  const snapshot = await readDb();
-  const document = (snapshot.fiscalDocuments || []).find((item) => item.id === documentId);
-  const order = (snapshot.orders || []).find((item) => item.id === document?.orderId);
-  if (!document || !order || document.status !== "authorized") return false;
-  const config = fiscalService.configFor(snapshot);
-  const attachments = [];
-  for (const format of ["pdf", "xml"]) {
-    try {
-      const file = await fiscalService.download(document, format, config);
-      attachments.push({ filename: file.filename, content: file.buffer, contentType: file.contentType });
-    } catch (error) {
-      logEvent("warn", "fiscal.email_attachment_failed", { fiscalDocumentId: document.id, format, message: error.message });
-    }
-  }
-  const sent = await emailService.sendFiscalDocument(snapshot, document, order, {
-    attachments,
-    logoUrl: `${appFrontendUrl()}/images/favicon-email.png`
-  }).catch((error) => {
-    logEvent("warn", "fiscal.email_failed", { fiscalDocumentId: document.id, orderId: order.id, message: error.message });
-    return false;
-  });
-  await withCriticalMutation(async () => {
-    const db = await readDb();
-    const current = (db.fiscalDocuments || []).find((item) => item.id === document.id);
-    if (!current) return;
-    current.emailStatus = sent ? "sent" : "error";
-    current.emailSentAt = sent ? new Date().toISOString() : current.emailSentAt || "";
-    current.updatedAt = new Date().toISOString();
-    current.history ||= [];
-    current.history.push({ status: current.status, actor: "email", detail: sent ? "Nota fiscal enviada ao cliente." : "Falha ao enviar a nota fiscal.", at: current.updatedAt });
-    await writeDb(db);
-  });
-  return sent;
-}
-
-async function processFiscalDocumentById(documentId, options = {}) {
-  const snapshot = await readDb();
-  const source = (snapshot.fiscalDocuments || []).find((item) => item.id === documentId);
-  const order = (snapshot.orders || []).find((item) => item.id === source?.orderId);
-  if (!source || !order) throw Object.assign(new Error("Nota fiscal ou pedido não encontrado."), { statusCode: 404 });
-  const config = fiscalService.configFor(snapshot);
-  if (!fiscalService.configured(config)) {
-    throw Object.assign(new Error(`Configuração fiscal incompleta: ${fiscalService.missingConfiguration(config).join(", ")}.`), { statusCode: 412 });
-  }
-  if (order.status !== "paid") throw Object.assign(new Error("A nota só pode ser emitida para pedido pago."), { statusCode: 409 });
-  const document = structuredCloneSafe(source);
-  try {
-    if (options.sync || ["processing", "authorized"].includes(document.status)) await fiscalService.consult(document, config);
-    else await fiscalService.issue(document, order, config);
-  } catch (error) {
-    document.status = "error";
-    document.lastError = error.message;
-    document.updatedAt = new Date().toISOString();
-    document.history ||= [];
-    document.history.push({ status: "error", actor: "focus_nfe", detail: error.message, at: document.updatedAt });
-  }
-  await withCriticalMutation(async () => {
-    const db = await readDb();
-    const index = (db.fiscalDocuments || []).findIndex((item) => item.id === document.id);
-    if (index === -1) return;
-    db.fiscalDocuments[index] = document;
-    await writeDb(db);
-  });
-  if (document.status === "authorized" && config.autoEmail && document.emailStatus !== "sent") {
-    void deliverFiscalDocumentByEmail(document.id);
-  }
-  return document;
 }
 
 function monthKey(date = new Date()) {
@@ -4843,19 +4736,12 @@ function permanentlyDeleteOrder(db, orderId, body = {}, adminUser = {}) {
   const order = db.orders[index];
   const payment = orderPayment(db, order.id);
   const tickets = orderTickets(db, order.id);
-  const fiscalDocuments = (db.fiscalDocuments || []).filter((item) => item.orderId === order.id);
-  if (fiscalDocuments.some((item) => ["authorized", "cancelled"].includes(item.status))) {
-    const error = new Error("Pedido com nota fiscal autorizada ou cancelada não pode ser excluído permanentemente. Arquive o pedido para preservar a escrituração.");
-    error.statusCode = 409;
-    throw error;
-  }
   const snapshot = structuredCloneSafe({
     order,
     payment,
     tickets,
     subscriptionUsage: (db.subscriptionUsage || []).filter((usage) => usage.orderId === order.id),
-    webhookEvents: (db.webhookEvents || []).filter((event) => event.orderId === order.id),
-    fiscalDocuments
+    webhookEvents: (db.webhookEvents || []).filter((event) => event.orderId === order.id)
   });
   reverseConcessionStockForDeletion(db, order);
   db.auditLogs ||= [];
@@ -4879,7 +4765,6 @@ function permanentlyDeleteOrder(db, orderId, body = {}, adminUser = {}) {
   db.tickets = (db.tickets || []).filter((item) => item.orderId !== order.id);
   db.subscriptionUsage = (db.subscriptionUsage || []).filter((item) => item.orderId !== order.id);
   db.webhookEvents = (db.webhookEvents || []).filter((item) => item.orderId !== order.id);
-  db.fiscalDocuments = (db.fiscalDocuments || []).filter((item) => item.orderId !== order.id);
   db.orders.splice(index, 1);
   return { deleted: true, orderId, orderReference: shortOrderReference(order), externalFinancialProvider: payment && !["box_office", "admin", "external_manual", "manual_external", "internal_club"].includes(payment.provider) };
 }
@@ -5926,7 +5811,6 @@ function adminDashboard(db, options = {}) {
     return total + Number(plan?.monthlyPrice || plan?.price || 0);
   }, 0);
   const periodUsers = (db.users || []).filter((user) => user.role === "customer" && inDateRange(user.createdAt, period.start, period.end));
-  const periodFiscalDocuments = (db.fiscalDocuments || []).filter((document) => inDateRange(document.createdAt, period.start, period.end));
   const problematicStatuses = ["pending", "processing", "rejected", "cancelled", "refunded"];
   return {
     period,
@@ -5990,19 +5874,6 @@ function adminDashboard(db, options = {}) {
       creditsIssued: (db.subscriptionCredits || []).filter((item) => inDateRange(item.cycleStart || item.createdAt, period.start, period.end)).reduce((total, item) => total + Number(item.total || 0), 0),
       creditsUsed: (db.subscriptionUsage || []).filter((item) => inDateRange(item.usedAt, period.start, period.end)).length
     },
-    fiscal: {
-      ...fiscalDocumentSummary(periodFiscalDocuments),
-      latest: periodFiscalDocuments.slice(0, 6).map((document) => ({
-        id: document.id,
-        orderId: document.orderId,
-        reference: document.reference,
-        invoiceNumber: document.invoiceNumber || "",
-        customerName: document.customerName || "",
-        status: document.status,
-        serviceAmount: Number(document.serviceAmount || 0),
-        createdAt: document.createdAt || ""
-      }))
-    },
     cardTerminal: {
       configured: cardTerminalProvider.configured(integrationConfigService.resolvedConfig(db, "mercadoPago") || {}),
       provider: providerLabel(cardTerminalProvider.providerName())
@@ -6021,7 +5892,6 @@ function adminIntegrationsStatus(req, db) {
   integrations.googleWallet.configured = Boolean(wallet.configured);
   integrations.tmdb.configured = Boolean(tmdb.configured);
   integrations.email.configured = Boolean(integrationConfigService.resolvedConfig(db, "email")?.configured || getEmailVerificationWebhookUrl(db) || getPasswordResetEmailWebhookUrl(db));
-  integrations.fiscal.configured = fiscalService.configured(fiscalService.configFor(db));
   integrations.crm.configured = Boolean(getCrmWebhookUrl(db));
   return integrations;
 }
@@ -6213,9 +6083,6 @@ async function testIntegrationProvider(db, provider, req) {
     }
     if (!config.webhookUrl) return { ok: false, message: "Informe SMTP ou webhook do provedor de e-mail." };
     return emailService.sendIntegrationTest(db, req.adminUser?.email || config.fromEmail);
-  }
-  if (key === "fiscal") {
-    return fiscalService.testConnection(config);
   }
   if (key === "analytics") {
     const googleValid = !config.googleMeasurementId || /^G-[A-Z0-9]+$/i.test(config.googleMeasurementId);
@@ -6835,40 +6702,6 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/webhooks/focus-nfe" && method === "POST") {
-    const config = fiscalService.configFor(db);
-    const expected = String(config.webhookAuthorization || "").trim();
-    const received = String(req.headers.authorization || "").trim();
-    const valid = expected && received && expected.length === received.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));
-    if (!expected) {
-      sendJson(res, 412, { error: { code: "FISCAL_WEBHOOK_NOT_CONFIGURED", message: "Configure a autorização do webhook fiscal." } });
-      return;
-    }
-    if (!valid) {
-      sendJson(res, 401, { error: { code: "FISCAL_WEBHOOK_UNAUTHORIZED", message: "Webhook fiscal não autorizado." } });
-      return;
-    }
-    const body = await readBody(req);
-    const reference = String(body.ref || body.referencia || body.reference || body.data?.ref || "").trim();
-    let updatedId = "";
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      const document = (lockedDb.fiscalDocuments || []).find((item) => item.reference === reference);
-      if (!document) return;
-      fiscalService.applyProviderResult(document, body, fiscalService.configFor(lockedDb));
-      updatedId = document.id;
-      lockedDb.webhookEvents ||= [];
-      const eventId = `focus-${reference}-${String(body.status || "event")}`;
-      if (!lockedDb.webhookEvents.some((item) => item.eventId === eventId)) {
-        lockedDb.webhookEvents.push({ provider: "focus_nfe", eventId, orderId: document.orderId, status: document.status, reference, createdAt: new Date().toISOString() });
-      }
-      await writeDb(lockedDb);
-    });
-    sendJson(res, 200, { received: true });
-    if (updatedId) void processFiscalDocumentById(updatedId, { sync: true }).catch((error) => logEvent("warn", "fiscal.webhook_sync_failed", { fiscalDocumentId: updatedId, message: error.message }));
-    return;
-  }
-
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
@@ -7097,100 +6930,6 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/admin/fiscal-documents" && method === "GET") {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const status = String(url.searchParams.get("status") || "").trim();
-    const search = String(url.searchParams.get("search") || "").trim().toLowerCase();
-    const from = String(url.searchParams.get("from") || "").trim();
-    const to = String(url.searchParams.get("to") || "").trim();
-    const page = Math.max(1, Number(url.searchParams.get("page") || 1));
-    const pageSize = Math.min(100, Math.max(10, Number(url.searchParams.get("pageSize") || 25)));
-    let documents = (db.fiscalDocuments || []).slice();
-    if (status) documents = documents.filter((item) => item.status === status);
-    if (from) documents = documents.filter((item) => String(item.createdAt || "").slice(0, 10) >= from);
-    if (to) documents = documents.filter((item) => String(item.createdAt || "").slice(0, 10) <= to);
-    if (search) documents = documents.filter((item) => JSON.stringify([item.reference, item.invoiceNumber, item.customerName, item.customerEmail, item.customerTaxId, item.orderId]).toLowerCase().includes(search));
-    const total = documents.length;
-    const start = (page - 1) * pageSize;
-    const availableOrders = (db.orders || [])
-      .filter((order) => order.status === "paid" && !(db.fiscalDocuments || []).some((document) => document.orderId === order.id))
-      .slice(0, 100)
-      .map((order) => ({ id: order.id, reference: order.reference || order.id, customerName: order.customerName || "Cliente", customerCpf: order.customerCpf || "", totalPrice: Number(order.totalPrice || 0), createdAt: order.createdAt || "" }));
-    sendJson(res, 200, {
-      documents: documents.slice(start, start + pageSize),
-      summary: fiscalDocumentSummary(db.fiscalDocuments || []),
-      availableOrders,
-      page,
-      pageSize,
-      total,
-      pages: Math.max(1, Math.ceil(total / pageSize)),
-      configuration: integrationConfigService.sanitizeConfig(db, "fiscal")
-    });
-    return;
-  }
-
-  if (pathname === "/api/admin/fiscal-documents" && method === "POST") {
-    const body = await readBody(req);
-    let created = null;
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      const order = (lockedDb.orders || []).find((item) => item.id === String(body.orderId || ""));
-      if (!order) throw Object.assign(new Error("Pedido não encontrado."), { statusCode: 404 });
-      if (order.status !== "paid") throw Object.assign(new Error("A nota só pode ser preparada para um pedido pago."), { statusCode: 409 });
-      const existed = (lockedDb.fiscalDocuments || []).some((item) => item.orderId === order.id);
-      created = ensureFiscalDocumentForPaidOrder(lockedDb, order, { actor: req.adminUser?.email || req.adminUser?.id || "admin" });
-      if (!existed) await writeDb(lockedDb);
-    });
-    sendJson(res, 201, { document: created });
-    return;
-  }
-
-  const fiscalActionMatch = pathname.match(/^\/api\/admin\/fiscal-documents\/([^/]+)\/(issue|sync|send-email)$/);
-  if (fiscalActionMatch && method === "POST") {
-    const documentId = decodeURIComponent(fiscalActionMatch[1]);
-    const action = fiscalActionMatch[2];
-    if (action === "send-email") {
-      const document = (db.fiscalDocuments || []).find((item) => item.id === documentId);
-      if (!document) throw Object.assign(new Error("Nota fiscal não encontrada."), { statusCode: 404 });
-      if (document.status !== "authorized") throw Object.assign(new Error("A nota precisa estar autorizada antes do envio."), { statusCode: 409 });
-      const sent = await deliverFiscalDocumentByEmail(documentId);
-      sendJson(res, sent ? 200 : 502, { sent, message: sent ? "Nota fiscal enviada ao cliente." : "O serviço de e-mail não confirmou a entrega." });
-      return;
-    }
-    const document = await processFiscalDocumentById(documentId, { sync: action === "sync" });
-    sendJson(res, document.status === "error" ? 422 : 200, { document });
-    return;
-  }
-
-  const fiscalDownloadMatch = pathname.match(/^\/api\/admin\/fiscal-documents\/([^/]+)\/download$/);
-  if (fiscalDownloadMatch && method === "GET") {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const format = url.searchParams.get("format") === "xml" ? "xml" : "pdf";
-    const document = (db.fiscalDocuments || []).find((item) => item.id === decodeURIComponent(fiscalDownloadMatch[1]));
-    if (!document) throw Object.assign(new Error("Nota fiscal não encontrada."), { statusCode: 404 });
-    if (document.status !== "authorized") throw Object.assign(new Error("A nota ainda não foi autorizada."), { statusCode: 409 });
-    const file = await fiscalService.download(document, format, fiscalService.configFor(db));
-    res.writeHead(200, {
-      ...securityHeaders(),
-      "Content-Type": file.contentType,
-      "Content-Disposition": `attachment; filename="${file.filename}"`,
-      "Content-Length": file.buffer.length
-    });
-    res.end(file.buffer);
-    return;
-  }
-
-  if (pathname === "/api/admin/fiscal-reports.csv" && method === "GET") {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    const period = parseAdminPeriod(url);
-    const documents = (db.fiscalDocuments || []).filter((item) => inDateRange(item.createdAt, period.start, period.end));
-    csvResponse(res, `notas-fiscais-${period.start}-${period.end}.csv`,
-      ["Referência", "Pedido", "Número", "Cliente", "CPF/CNPJ", "E-mail", "Status", "Valor do pedido", "Valor de serviço", "Bomboniere", "Emissão", "Autorização", "E-mail", "Erro"],
-      documents.map((item) => [item.reference, item.orderId, item.invoiceNumber, item.customerName, item.customerTaxId, item.customerEmail, item.status, Number(item.amount || 0).toFixed(2), Number(item.serviceAmount || 0).toFixed(2), Number(item.concessionAmount || 0).toFixed(2), item.issuedAt, item.authorizedAt, item.emailStatus, item.lastError])
-    );
-    return;
-  }
-
   if (pathname === "/api/admin/reports/dashboard.csv" && method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const period = parseAdminPeriod(url);
@@ -7203,10 +6942,7 @@ async function handleApi(req, res, pathname) {
         ["Receita de bomboniere", Number(dashboard.concessionRevenue || 0).toFixed(2), period.start, period.end],
         ["Receita do Clube", Number(dashboard.clubRevenue || 0).toFixed(2), period.start, period.end],
         ["Pedidos pagos", dashboard.salesPeriod || 0, period.start, period.end],
-        ["Ingressos vendidos", dashboard.ticketsSold || 0, period.start, period.end],
-        ["NFS-e autorizadas", dashboard.fiscal?.authorized || 0, period.start, period.end],
-        ["Valor fiscal autorizado", Number(dashboard.fiscal?.authorizedAmount || 0).toFixed(2), period.start, period.end],
-        ["Erros fiscais", dashboard.fiscal?.errors || 0, period.start, period.end]
+        ["Ingressos vendidos", dashboard.ticketsSold || 0, period.start, period.end]
       ]
     );
     return;
@@ -10750,40 +10486,6 @@ async function runMovieImageMaintenance() {
   }
 }
 
-async function runFiscalMaintenance() {
-  const pendingIds = [];
-  try {
-    await withCriticalMutation(async () => {
-      const db = await readDb();
-      const before = (db.fiscalDocuments || []).length;
-      (db.orders || []).filter((order) => order.status === "paid").forEach((order) => ensureFiscalDocumentForPaidOrder(db, order, { autoIssued: true, actor: "fiscal_maintenance" }));
-      const config = fiscalService.configFor(db);
-      if (fiscalService.configured(config) && config.autoIssue) {
-        (db.fiscalDocuments || []).forEach((document) => {
-          if (["pending_configuration", "ready"].includes(document.status)) {
-            const order = (db.orders || []).find((item) => item.id === document.orderId);
-            if (order && !fiscalService.customerValidation(order) && Number(document.serviceAmount || 0) > 0) {
-              document.status = "queued";
-              document.lastError = "";
-              document.updatedAt = new Date().toISOString();
-            }
-          }
-        });
-      }
-      (db.fiscalDocuments || [])
-        .filter((document) => document.status === "queued" || (document.status === "processing" && Date.now() - new Date(document.updatedAt || 0).getTime() > 30000))
-        .slice(0, 5)
-        .forEach((document) => pendingIds.push(document.id));
-      if ((db.fiscalDocuments || []).length !== before || pendingIds.length) await writeDb(db);
-    });
-    for (const id of pendingIds) {
-      await processFiscalDocumentById(id, { sync: false });
-    }
-  } catch (error) {
-    logEvent("warn", "fiscal.maintenance_failed", { message: error.message, code: error.code || "FISCAL_MAINTENANCE_FAILED" });
-  }
-}
-
 loadEnvFiles().then(() => {
   if (isProduction() && !postgresEnabled()) {
     console.error("POSTGRES_REQUIRED_IN_PRODUCTION: configure DATABASE_URL ou POSTGRES_URL antes de iniciar em producao.");
@@ -10795,7 +10497,6 @@ loadEnvFiles().then(() => {
     console.log(`Painel admin: http://${HOST}:${PORT}/admin`);
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
     void runSubscriptionMaintenance();
-    void runFiscalMaintenance();
     void runMovieImageMaintenance();
     if (postgresEnabled()) {
       void pruneSystemLogsFromPostgres(process.env.SYSTEM_LOG_RETENTION_DAYS || 90).catch((error) => {
@@ -10806,10 +10507,6 @@ loadEnvFiles().then(() => {
       void runSubscriptionMaintenance();
     }, SUBSCRIPTION_MAINTENANCE_INTERVAL_MS);
     subscriptionMaintenanceTimer.unref?.();
-    const fiscalMaintenanceTimer = setInterval(() => {
-      void runFiscalMaintenance();
-    }, 30000);
-    fiscalMaintenanceTimer.unref?.();
     const movieImageMaintenanceTimer = setInterval(() => {
       void runMovieImageMaintenance();
     }, 6 * 60 * 60 * 1000);

@@ -1,6 +1,6 @@
 # Auditoria tecnica, hardening e correcoes
 
-Revisao realizada em 30 de agosto de 2026 sobre frontend Next.js, backend Node.js, Admin, PostgreSQL, pagamentos, Clube, poltronas, fiscal, e-mail, deploy e operacao.
+Revisao realizada em 30 de agosto de 2026 sobre frontend Next.js, backend Node.js, Admin, PostgreSQL, pagamentos, Clube, poltronas, e-mail, deploy e operacao.
 
 ## Problemas encontrados
 
@@ -74,7 +74,6 @@ Revisao realizada em 30 de agosto de 2026 sobre frontend Next.js, backend Node.j
 ## Pendencias externas
 
 - Pagamento real Mercado Pago/Point exige homologacao com credenciais e terminal de producao.
-- Focus NFe exige certificado, cadastro municipal e ambiente nacional configurados pelo emissor.
 - SMTP, Google OAuth, Google Wallet, TMDB e webhooks de terceiros exigem credenciais reais e teste controlado.
 - O teste PostgreSQL concorrente requer `TEST_DATABASE_URL`; nunca usa o banco de producao.
 
@@ -134,12 +133,10 @@ O cancelamento **não** executa reembolso financeiro automático. Pedido e pagam
 | Evento | Persistência e falha após commit | Retry/reconciliação atual | Idempotência/reprocessamento |
 | --- | --- | --- | --- |
 | E-mail de ingresso | Pedido/ticket são duráveis; não há evento pendente durável para o envio | botão/rota `resend-ticket-email` | reenvio não cobra nem recria ticket; entrega SMTP não foi homologada nesta rodada |
-| E-mail fiscal | Documento fiscal é persistido antes do envio | ação `send-email`; falha fica no histórico | reprocessável por documento |
-| Emissão NFS-e | Documento/referência determinística persistidos | manutenção, consulta por referência e webhook Focus | referência evita nova emissão lógica; homologação externa pendente |
 | CRM de eventos | chamada HTTP direta após registro da solicitação | sem fila durável específica | pode perder entrega se o processo cair; reenvio operacional não está modelado |
 | Google Wallet | JWT é gerado sob demanda; criação/consulta externa ocorre quando solicitada | cliente pode solicitar novamente | objeto usa identificador determinístico; produção não homologada |
 
-Plano incremental futuro, sem refatoração nesta rodada: tabela `outbox_events(id, event_type, aggregate_id, payload, status, attempt_count, next_attempt_at, created_at, processed_at, last_error)`, gravação na mesma transação do agregado, worker de uma instância com `FOR UPDATE SKIP LOCKED`, chaves idempotentes por efeito, backoff e tela de reprocessamento. Prioridade: e-mail de ingresso, CRM, e-mail fiscal e Wallet. NFS-e deve continuar respeitando a referência fiscal existente.
+Plano incremental futuro, sem refatoração nesta rodada: tabela `outbox_events(id, event_type, aggregate_id, payload, status, attempt_count, next_attempt_at, created_at, processed_at, last_error)`, gravação na mesma transação do agregado, worker de uma instância com `FOR UPDATE SKIP LOCKED`, chaves idempotentes por efeito, backoff e tela de reprocessamento. Prioridade: e-mail de ingresso, CRM e Wallet.
 
 ## Evidência de testes
 
@@ -158,14 +155,14 @@ Plano incremental futuro, sem refatoração nesta rodada: tabela `outbox_events(
 | Safari iPhone físico | NÃO | MANUAL HOMOLOGATION REQUIRED | dispositivo real |
 | Chrome Android físico | NÃO | MANUAL HOMOLOGATION REQUIRED | dispositivo real |
 | Mercado Pago Point real | NÃO | EXTERNAL | requer terminal/credenciais |
-| SMTP, Focus NFe e Wallet reais | NÃO | EXTERNAL | requer credenciais/ambientes externos |
+| SMTP e Wallet reais | NÃO | EXTERNAL | requer credenciais/ambientes externos |
 
 Checklist físico restante: no Safari iPhone e Chrome Android, selecionar poltrona, bloquear tela por mais de 35 segundos, alternar Wi-Fi/4G, retornar ao app, confirmar ressincronização, tentar a mesma poltrona em outro aparelho e concluir/abandonar a compra.
 
 ## Pendências anteriores ainda abertas
 
 - Instalar timer de backup na VPS depois de configurar destinatário GPG recuperável e destino offsite. Sem isso não há RPO de 6 horas real.
-- Homologar SMTP, Point, Focus NFe, Wallet, Google OAuth e Mercado Pago com contas/terminais próprios.
+- Homologar SMTP, Point, Wallet, Google OAuth e Mercado Pago com contas/terminais próprios.
 - Implementar outbox incremental para eliminar a janela entre commit e efeitos externos.
 - Homologar suspensão profunda em Safari iOS e Chrome Android físicos.
 - Broadcast WebSocket continua em memória; PM2 deve permanecer em uma instância até existir broadcast compartilhado.

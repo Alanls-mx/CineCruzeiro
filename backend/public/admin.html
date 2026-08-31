@@ -65,10 +65,6 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h12l1 20-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
           Bilheteria
         </button>
-        <button class="nav-button" type="button" data-panel="fiscalPanel">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h12l1 20-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h3"/></svg>
-          Notas fiscais
-        </button>
         <button class="nav-button" type="button" data-panel="concessionsPanel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h10l-1 13H8z"/><path d="M9 8V5a3 3 0 0 1 6 0v3"/><path d="M7 12h10"/></svg>
           Bomboniere
@@ -161,15 +157,8 @@
               <div id="dashPaymentMethods" class="metric-list"></div>
             </div>
           </div>
-          <div class="surface dashboard-fiscal-strip">
-            <div class="dashboard-fiscal-copy">
-              <div class="section-title">Controle fiscal</div>
-              <p id="dashFiscalSummary">Nenhuma nota fiscal no período.</p>
-            </div>
-            <div class="dashboard-fiscal-actions">
-              <button id="dashboardReportButton" class="ghost-button" type="button">Baixar relatório do dashboard</button>
-              <button class="primary-button" type="button" data-goto-panel="fiscalPanel">Gerenciar notas</button>
-            </div>
+          <div class="button-row">
+            <button id="dashboardReportButton" class="ghost-button" type="button">Baixar relatório do dashboard</button>
           </div>
           <div class="split-grid compact">
             <div class="surface">
@@ -1461,7 +1450,6 @@
                   <label><input type="checkbox" value="concessions.manage" /><span><strong>Bomboniere</strong><small>Gerencia produtos, preços, imagens, estoque e disponibilidade.</small></span></label>
                   <label><input type="checkbox" value="marketing.manage" /><span><strong>Marketing e e-mails</strong><small>Gerencia anúncios, promoções, campanhas e modelos de e-mail.</small></span></label>
                   <label><input type="checkbox" value="club.manage" /><span><strong>Clube e assinaturas</strong><small>Configura planos, acompanha assinaturas e ajusta créditos.</small></span></label>
-                  <label><input type="checkbox" value="fiscal.manage" /><span><strong>Notas fiscais e relatórios</strong><small>Emite, consulta e baixa documentos e relatórios fiscais.</small></span></label>
                   <label><input type="checkbox" value="integrations.manage" /><span><strong>Integrações</strong><small>Visualiza e altera credenciais e serviços externos do cinema.</small></span></label>
                   <label><input type="checkbox" value="logs.view" /><span><strong>Logs do sistema</strong><small>Consulta o histórico simplificado de ações e ocorrências.</small></span></label>
                   <label><input type="checkbox" value="settings.manage" /><span><strong>Configurações gerais e contas</strong><small>Altera configurações globais e gerencia contas do sistema.</small></span></label>
@@ -1769,61 +1757,6 @@
           </div>
         </section>
 
-        <section id="fiscalPanel" class="panel">
-          <div class="panel-heading fiscal-heading">
-            <div>
-              <h1>Notas fiscais</h1>
-              <p>Emita, acompanhe e entregue NFS-e vinculadas aos pedidos pagos.</p>
-            </div>
-            <div class="button-row">
-              <button id="fiscalExportButton" class="ghost-button" type="button">Baixar relatório fiscal</button>
-              <button id="fiscalRefreshButton" class="primary-button" type="button">Atualizar</button>
-            </div>
-          </div>
-
-          <div id="fiscalStats" class="fiscal-stats" aria-live="polite"></div>
-
-          <div class="fiscal-command-bar">
-            <div>
-              <strong>Preparar nota de um pedido pago</strong>
-              <span>O valor e os dados do cliente são lidos do backend.</span>
-            </div>
-            <select id="fiscalOrderSelect" aria-label="Pedido pago sem nota fiscal">
-              <option value="">Selecione um pedido</option>
-            </select>
-            <button id="fiscalCreateButton" class="primary-button" type="button">Preparar nota</button>
-          </div>
-
-          <div class="surface fiscal-workspace">
-            <div class="fiscal-filters" aria-label="Filtros de notas fiscais">
-              <label>Buscar<input id="fiscalSearch" type="search" placeholder="Número, cliente, CPF/CNPJ ou pedido" /></label>
-              <label>Status
-                <select id="fiscalStatusFilter">
-                  <option value="">Todos</option>
-                  <option value="ready">Pronta para emitir</option>
-                  <option value="queued">Na fila</option>
-                  <option value="processing">Processando</option>
-                  <option value="authorized">Autorizada</option>
-                  <option value="pending_configuration">Configuração pendente</option>
-                  <option value="pending_customer_data">Dados do cliente pendentes</option>
-                  <option value="error">Com erro</option>
-                  <option value="cancelled">Cancelada</option>
-                </select>
-              </label>
-              <label>De<input id="fiscalFrom" type="date" /></label>
-              <label>Até<input id="fiscalTo" type="date" /></label>
-            </div>
-            <div id="fiscalConfigurationNotice" class="fiscal-configuration-notice" hidden></div>
-            <div class="fiscal-table-wrap">
-              <table class="fiscal-table">
-                <thead><tr><th>Nota / pedido</th><th>Cliente</th><th>Valor de serviço</th><th>Status</th><th>Entrega</th><th>Ações</th></tr></thead>
-                <tbody id="fiscalDocumentsList"></tbody>
-              </table>
-            </div>
-            <div id="fiscalPagination" class="pagination"></div>
-          </div>
-        </section>
-
         <section id="integrationsPanel" class="panel">
           <div class="panel-heading">
             <div>
@@ -1856,7 +1789,7 @@
             <div class="logs-filters" aria-label="Filtros de logs">
               <label class="logs-search-field">Buscar<input id="logsSearch" type="search" placeholder="Pedido, cliente, operador ou ação" /></label>
               <label>Importância<select id="logsLevel"><option value="">Todas</option><option value="error">Precisa de ação</option><option value="warn">Atenção</option><option value="info">Operação normal</option><option value="debug">Diagnóstico</option></select></label>
-              <label>Assunto<select id="logsCategory"><option value="">Todos os assuntos</option><option value="payment">Pagamentos</option><option value="box_office">Bilheteria</option><option value="ticket">Ingressos</option><option value="subscription">Clube</option><option value="fiscal">Notas fiscais</option><option value="email">E-mails</option><option value="admin">Painel administrativo</option><option value="admin_two_factor">Segurança e 2FA</option><option value="integration">Integrações</option><option value="webhook">Confirmações automáticas</option><option value="request">Erros de operação</option><option value="logs">Histórico</option></select></label>
+              <label>Assunto<select id="logsCategory"><option value="">Todos os assuntos</option><option value="payment">Pagamentos</option><option value="box_office">Bilheteria</option><option value="ticket">Ingressos</option><option value="subscription">Clube</option><option value="email">E-mails</option><option value="admin">Painel administrativo</option><option value="admin_two_factor">Segurança e 2FA</option><option value="integration">Integrações</option><option value="webhook">Confirmações automáticas</option><option value="request">Erros de operação</option><option value="logs">Histórico</option></select></label>
               <label>Período inicial<input id="logsFrom" type="datetime-local" /></label>
               <label>Período final<input id="logsTo" type="datetime-local" /></label>
             </div>

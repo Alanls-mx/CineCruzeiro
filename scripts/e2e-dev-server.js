@@ -152,8 +152,7 @@ function fixture() {
     promotions: [],
     ads: [],
     webhookEvents: [],
-    auditLogs: [],
-    fiscalDocuments: []
+    auditLogs: []
   };
 }
 

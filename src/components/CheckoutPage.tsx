@@ -941,7 +941,7 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
               <Input label="Nome" value={draft.customerName || ""} onChange={(value) => updateDraft({ customerName: value })} />
               <Input label="WhatsApp" value={draft.customerPhone || ""} onChange={(value) => updateDraft({ customerPhone: value })} />
               <Input label="E-mail" type="email" value={draft.customerEmail || ""} onChange={(value) => updateDraft({ customerEmail: value })} />
-              <Input label="CPF para nota fiscal, opcional" value={draft.customerCpf || ""} onChange={(value) => updateDraft({ customerCpf: value.replace(/\D/g, "").slice(0, 11) })} />
+              <Input label="CPF, opcional" value={draft.customerCpf || ""} onChange={(value) => updateDraft({ customerCpf: value.replace(/\D/g, "").slice(0, 11) })} />
             </div>
           </>
         )}

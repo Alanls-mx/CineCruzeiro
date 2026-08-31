@@ -6,7 +6,7 @@
 - `/api/health/ready`: confirma PostgreSQL acessivel e migration mais recente aplicada.
 - `/api/health`: alias publico de readiness, sem secrets.
 
-TMDB, SMTP, Google Wallet, Mercado Pago e Focus NFe nao derrubam readiness, pois sao dependencias externas recuperaveis.
+TMDB, SMTP, Google Wallet e Mercado Pago nao derrubam readiness, pois sao dependencias externas recuperaveis.
 
 ## Monitoramento simples
 
@@ -19,7 +19,6 @@ Alertas recomendados no agregador de logs:
 | HTTP 5xx | 5 em 5 minutos |
 | `webhook.mercado_pago.rejected` | qualquer ocorrencia repetida |
 | `email.*failed` | 3 em 15 minutos |
-| `fiscal.maintenance_failed` | 2 consecutivos |
 | `subscription.pending_payment_maintenance_failed` | qualquer ocorrencia |
 | PM2 reiniciando | mais de 3 reinicios instaveis |
 | Disco | 85% aviso, 92% critico |
@@ -39,6 +38,6 @@ O backend opera em uma unica instancia PM2. A reserva atomica mora no PostgreSQL
 
 ## Jobs externos
 
-E-mail e fiscal nao podem desfazer pagamento ou ticket. Falhas ficam registradas para reenvio/reconciliacao. A evolucao recomendada, antes de escalar horizontalmente, e uma outbox PostgreSQL incremental com `status`, `attempt_count`, `next_attempt_at` e erro sanitizado.
+E-mail nao pode desfazer pagamento ou ticket. Falhas ficam registradas para reenvio/reconciliacao. A evolucao recomendada, antes de escalar horizontalmente, e uma outbox PostgreSQL incremental com `status`, `attempt_count`, `next_attempt_at` e erro sanitizado.
 
 Consulte [DISASTER_RECOVERY.md](./DISASTER_RECOVERY.md) para backup e restauracao e [DEPLOY_VPS.md](./DEPLOY_VPS.md) para release e rollback.

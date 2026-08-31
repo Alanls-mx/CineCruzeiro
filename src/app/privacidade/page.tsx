@@ -17,7 +17,7 @@ const sections = [
   {
     title: "2. Dados que podem ser coletados",
     body: [
-      "Podemos coletar nome, e-mail, telefone/WhatsApp, CPF quando necessário para nota fiscal, senha criptografada, histórico de compras, ingressos, QR Codes, sessão escolhida, produtos de bomboniere, dados de assinatura do Clube, preferências de comunicação, registros de validação de entrada e informações técnicas como IP, dispositivo, navegador e cookies/localStorage.",
+      "Podemos coletar nome, e-mail, telefone/WhatsApp, CPF quando informado pelo usuário, senha criptografada, histórico de compras, ingressos, QR Codes, sessão escolhida, produtos de bomboniere, dados de assinatura do Clube, preferências de comunicação, registros de validação de entrada e informações técnicas como IP, dispositivo, navegador e cookies/localStorage.",
       "Google Analytics e Meta Pixel são carregados somente após consentimento. Esses serviços recebem eventos de navegação, visualização de filmes, início de checkout, itens adicionados, compra, assinatura e solicitação de eventos, sem envio de nome, e-mail, telefone ou CPF pelo Cine Cruzeiro.",
       "Dados de cartão e Pix são processados pelo Mercado Pago. O Cine Cruzeiro não deve armazenar número completo de cartão, CVV ou credenciais bancárias.",
     ],
