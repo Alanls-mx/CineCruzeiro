@@ -222,7 +222,7 @@ async function createMercadoPagoSubscriptionPlan(plan, integrationConfig = {}, o
     throw paymentError("SUBSCRIPTION_PLAN_AMOUNT_INVALID", "O plano precisa ter valor mensal maior que zero.", 422);
   }
 
-  if (!getMercadoPagoAccessToken(integrationConfig) && isTestPaymentsMode()) {
+  if (isTestPaymentsMode() && !isProduction()) {
     const id = `PPLAN_TEST_${String(plan.id || crypto.randomUUID()).replace(/[^A-Za-z0-9_-]/g, "_")}`;
     return normalizeMercadoPagoSubscriptionPlan({
       id,
@@ -256,7 +256,7 @@ async function createMercadoPagoSubscription(subscription, plan, user, integrati
     throw paymentError("PAYER_EMAIL_REQUIRED", "Informe um e-mail para iniciar a assinatura recorrente.", 422);
   }
 
-  if (!getMercadoPagoAccessToken(integrationConfig) && isTestPaymentsMode()) {
+  if (isTestPaymentsMode() && !isProduction()) {
     const id = `PREAPPROVAL_TEST_${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
     return normalizeMercadoPagoSubscription({
       id,
@@ -302,7 +302,7 @@ async function createMercadoPagoSubscription(subscription, plan, user, integrati
 
 async function fetchMercadoPagoSubscription(providerSubscriptionId, integrationConfig = {}) {
   if (!providerSubscriptionId) return null;
-  if (!getMercadoPagoAccessToken(integrationConfig) && isTestPaymentsMode()) {
+  if (isTestPaymentsMode() && !isProduction()) {
     return normalizeMercadoPagoSubscription({
       id: providerSubscriptionId,
       status: process.env.TEST_SUBSCRIPTIONS_AUTO_APPROVE === "true" ? "authorized" : "pending",
@@ -315,7 +315,7 @@ async function fetchMercadoPagoSubscription(providerSubscriptionId, integrationC
 
 async function fetchMercadoPagoAuthorizedPayment(authorizedPaymentId, integrationConfig = {}) {
   if (!authorizedPaymentId) return null;
-  if (!getMercadoPagoAccessToken(integrationConfig) && isTestPaymentsMode()) {
+  if (isTestPaymentsMode() && !isProduction()) {
     return normalizeMercadoPagoAuthorizedPayment({
       id: authorizedPaymentId,
       preapproval_id: "",
@@ -335,7 +335,7 @@ async function fetchMercadoPagoAuthorizedPayment(authorizedPaymentId, integratio
 
 async function cancelMercadoPagoSubscription(providerSubscriptionId, integrationConfig = {}) {
   if (!providerSubscriptionId) return null;
-  if (!getMercadoPagoAccessToken(integrationConfig) && isTestPaymentsMode()) {
+  if (isTestPaymentsMode() && !isProduction()) {
     return normalizeMercadoPagoSubscription({ id: providerSubscriptionId, status: "cancelled", testMode: true });
   }
   const data = await mercadoPagoRequest(`/preapproval/${encodeURIComponent(providerSubscriptionId)}`, {
@@ -462,7 +462,7 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
   const amount = moneyString(order.totalPrice);
   const idempotencyKey = options.idempotencyKey || order.idempotencyKey || order.id || crypto.randomUUID();
 
-  if (!accessToken && isTestPaymentsMode() && !isProduction()) {
+  if (isTestPaymentsMode() && !isProduction()) {
     const id = `ORD_TEST_${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
     const transactionId = `PAY_TEST_${crypto.randomBytes(8).toString("hex").toUpperCase()}`;
     return {
@@ -736,6 +736,7 @@ function verifyWebhookRequest(provider, req, url, body, config = {}) {
 }
 
 async function fetchMercadoPagoOrder(providerPaymentId, integrationConfig = {}) {
+  if (isTestPaymentsMode() && !isProduction()) return null;
   const accessToken = getMercadoPagoAccessToken(integrationConfig);
   if (!accessToken || !providerPaymentId) return null;
 

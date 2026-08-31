@@ -1471,9 +1471,13 @@ async function writeDb(db) {
     await writeDbToPostgres(normalizeDb(db));
     return;
   }
-  const tempFile = `${DATA_FILE}.tmp`;
-  await fs.writeFile(tempFile, `${JSON.stringify(db, null, 2)}\n`, "utf8");
-  await fs.rename(tempFile, DATA_FILE);
+  const tempFile = `${DATA_FILE}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await fs.writeFile(tempFile, `${JSON.stringify(db, null, 2)}\n`, "utf8");
+    await fs.rename(tempFile, DATA_FILE);
+  } finally {
+    await fs.unlink(tempFile).catch(() => null);
+  }
 }
 
 async function withCriticalMutation(callback) {
@@ -2616,6 +2620,17 @@ function pointPaymentOrders(db, payment) {
   return ids.map((id) => (db.orders || []).find((order) => order.id === id)).filter(Boolean);
 }
 
+function paymentStatusAfterWebhook(currentStatus, incomingStatus) {
+  const current = String(currentStatus || "pending").toLowerCase();
+  const incoming = String(incomingStatus || "pending").toLowerCase();
+  if (current === "refunded") return "refunded";
+  if (current === "approved" && incoming !== "refunded") return "approved";
+  if (["cancelled", "expired", "rejected"].includes(current) && ["pending", "processing"].includes(incoming)) {
+    return current;
+  }
+  return incoming === "pending" ? current : incoming;
+}
+
 function pointReservationExpiresAt(config = {}) {
   const match = String(config.pointExpirationTime || "PT15M").match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
   const requested = match
@@ -2627,7 +2642,7 @@ function pointReservationExpiresAt(config = {}) {
 
 function applyPointPaymentStatus(db, payment, providerPayment = {}) {
   const now = new Date().toISOString();
-  const nextStatus = providerPayment.status || payment.status || "pending";
+  const nextStatus = paymentStatusAfterWebhook(payment.status, providerPayment.status || payment.status || "pending");
   payment.status = nextStatus;
   payment.updatedAt = now;
   if (providerPayment.externalReference) payment.providerReference = providerPayment.externalReference;
@@ -4257,7 +4272,7 @@ function normalizeMovieSession(input, movieId, existing = {}, ticketTypes = []) 
     ticketTypeIds,
     priceFull,
     priceHalf,
-    status: ["available", "filling_fast", "sold_out"].includes(input.status || existing.status)
+    status: ["available", "filling_fast", "sold_out", "cancelled"].includes(input.status || existing.status)
       ? input.status || existing.status
       : "available"
   };
@@ -4338,6 +4353,56 @@ function sessionHasActiveSeatAssignments(db, sessionId) {
     && !["cancelled", "refunded", "expired"].includes(String(ticket.status || ""))
   );
   return activeOrders || activeTickets;
+}
+
+function sessionCommercialChanges(previous = {}, next = {}) {
+  return ["date", "time", "room", "format"]
+    .filter((field) => String(previous[field] || "") !== String(next[field] || ""));
+}
+
+function syncSessionSnapshotRecords(db, movie, session, options = {}) {
+  const timestamp = new Date().toISOString();
+  let ordersUpdated = 0;
+  let ticketsUpdated = 0;
+  (db.orders || []).forEach((order) => {
+    if (String(order.sessionId || "") !== String(session.id || "")) return;
+    order.movieId = movie.id;
+    order.movieTitle = movie.title || order.movieTitle || "";
+    order.sessionDate = session.date;
+    order.sessionTime = session.time;
+    order.sessionRoom = session.room;
+    order.sessionFormat = session.format;
+    order.sessionStatus = session.status;
+    order.sessionUpdatedAt = timestamp;
+    if (session.status === "cancelled") {
+      order.sessionCancelledAt = timestamp;
+      order.sessionCancellationReason = options.reason || "Sessão cancelada pelo cinema";
+      const payment = orderPayment(db, order.id);
+      if (order.status === "paid" && payment?.status === "approved") {
+        order.refundStatus = order.refundStatus || "required";
+        payment.refundStatus = payment.refundStatus || "required";
+        payment.metadata = { ...(payment.metadata || {}), sessionCancellationReason: order.sessionCancellationReason };
+      }
+    }
+    ordersUpdated += 1;
+  });
+  (db.tickets || []).forEach((ticket) => {
+    if (String(ticket.sessionId || "") !== String(session.id || "")) return;
+    ticket.movieId = movie.id;
+    ticket.movieTitle = movie.title || ticket.movieTitle || "";
+    ticket.sessionDate = session.date;
+    ticket.sessionTime = session.time;
+    ticket.sessionRoom = session.room;
+    ticket.sessionFormat = session.format;
+    ticket.sessionStatus = session.status;
+    ticket.sessionUpdatedAt = timestamp;
+    if (session.status === "cancelled") {
+      ticket.sessionCancelledAt = timestamp;
+      ticket.sessionCancellationReason = options.reason || "Sessão cancelada pelo cinema";
+    }
+    ticketsUpdated += 1;
+  });
+  return { ordersUpdated, ticketsUpdated, timestamp };
 }
 
 function movieDurationMinutes(movie = {}) {
@@ -8766,6 +8831,8 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const previousSession = movie.sessions[sessionIndex];
       const session = normalizeMovieSession(body, movieId, previousSession, db.ticketTypes);
+      const commercialChanges = sessionCommercialChanges(previousSession, session);
+      const hasHistory = sessionHasAuditHistory(db, sessionId);
       if (session.room !== previousSession.room && sessionHasActiveSeatAssignments(db, sessionId)) {
         sendJson(res, 409, {
           error: {
@@ -8775,7 +8842,44 @@ async function handleApi(req, res, pathname) {
         });
         return;
       }
+      if (hasHistory && (commercialChanges.length || session.status === "cancelled") && body.confirmSalesImpact !== true) {
+        sendJson(res, 409, {
+          error: {
+            code: "SESSION_CHANGE_CONFIRMATION_REQUIRED",
+            message: "Esta sessão possui vendas. Confirme o impacto e informe o motivo para alterar data, horário, sala, formato ou cancelar.",
+            changes: commercialChanges,
+            cancellation: session.status === "cancelled"
+          }
+        });
+        return;
+      }
+      const changeReason = String(body.changeReason || "").trim();
+      if (hasHistory && (commercialChanges.length || session.status === "cancelled") && changeReason.length < 6) {
+        sendJson(res, 422, {
+          error: {
+            code: "SESSION_CHANGE_REASON_REQUIRED",
+            message: "Informe um motivo com pelo menos 6 caracteres para registrar a alteração desta sessão."
+          }
+        });
+        return;
+      }
       movie.sessions[sessionIndex] = session;
+      const synchronized = syncSessionSnapshotRecords(db, movie, session, { reason: changeReason });
+      if (commercialChanges.length || previousSession.status !== session.status) {
+        db.auditLogs ||= [];
+        db.auditLogs.unshift({
+          id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+          userId: req.adminUser?.id || "",
+          userEmail: req.adminUser?.email || "",
+          action: session.status === "cancelled" ? "session.cancelled" : "session.updated",
+          entityType: "session",
+          entityId: session.id,
+          before: previousSession,
+          after: session,
+          metadata: { reason: changeReason, changes: commercialChanges, ...synchronized },
+          createdAt: synchronized.timestamp
+        });
+      }
       movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
       movie.updatedAt = new Date().toISOString();
       await writeDb(db);
@@ -10284,7 +10388,7 @@ async function handleApi(req, res, pathname) {
 
       const nextStatus = providerStatus?.status || normalizeProviderPaymentStatus(body.status || body.action || body.type);
       payment.metadata = { ...(payment.metadata || {}), lastWebhook: body, verification, providerStatus: providerStatus?.raw || null };
-      payment.status = nextStatus === "pending" ? payment.status : nextStatus;
+      payment.status = paymentStatusAfterWebhook(payment.status, nextStatus);
       payment.updatedAt = new Date().toISOString();
       if (payment.status === "approved") payment.approvedAt = payment.approvedAt || new Date().toISOString();
       if (payment.status === "expired") payment.expiredAt = payment.expiredAt || new Date().toISOString();

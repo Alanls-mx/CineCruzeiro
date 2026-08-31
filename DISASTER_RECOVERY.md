@@ -16,11 +16,14 @@ Instale a chave publica GPG do destino, carregue `DATABASE_URL` sem imprimi-la e
 ```bash
 export BACKUP_DESTINATION=/mnt/backup-offsite/cinecruzeiro
 export BACKUP_GPG_RECIPIENT=backup@cinecruzeiro
-export BACKUP_RETENTION_DAYS=35
+export BACKUP_KEEP_RECENT_HOURS=48
+export BACKUP_KEEP_DAILY=14
+export BACKUP_KEEP_WEEKLY=8
+export BACKUP_KEEP_MONTHLY=12
 bash scripts/backup-production.sh
 ```
 
-Agende a cada seis horas com systemd timer ou cron. O destino local deve ser sincronizado para outra conta/regiao. O script inclui PostgreSQL, `shared/uploads` e os arquivos de configuracao, sempre dentro de um pacote criptografado. Secrets nunca entram no Git.
+Agende a cada seis horas com systemd timer ou cron. O destino local deve ser sincronizado para outra conta/regiao. O script inclui PostgreSQL, `shared/uploads` e os arquivos de configuracao, sempre dentro de um pacote criptografado. Secrets nunca entram no Git. A retenção é executada pelo próprio script: todos os pontos das últimas 48 horas, mais o backup mais recente de 14 dias distintos, 8 semanas e 12 meses. O storage offsite deve manter versionamento/lifecycle próprio como segunda barreira; `BACKUP_RETENTION_DAYS` foi removido por conflitar com esta política.
 
 ## Teste de restauracao
 

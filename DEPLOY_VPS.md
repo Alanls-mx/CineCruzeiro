@@ -161,6 +161,8 @@ Tambem nao sao substituidos ou apagados no deploy normal:
 
 O arquivo persistente `ecosystem.config.cjs` aponta os dois processos para o symlink `current`.
 
+> **WebSocket:** mantenha `cinecruzeiro-backend` em **uma única instância** e em modo `fork`. NÃO habilite cluster/múltiplas instâncias antes de implementar broadcast compartilhado (por exemplo, Redis). O broadcast de poltronas atual vive na memória do processo.
+
 ### Backend
 
 ```text

@@ -12,6 +12,7 @@ require BACKUP_GPG_RECIPIENT
 command -v pg_dump >/dev/null
 command -v gpg >/dev/null
 command -v sha256sum >/dev/null
+command -v node >/dev/null
 
 BASE="${CINE_BASE:-/home/ubuntu/projects/cinecruzeiro}"
 SHARED="$(readlink -f "${CINE_SHARED_DIR:-$BASE/shared}")"
@@ -46,6 +47,16 @@ gpg --batch --yes --trust-model always --recipient "$BACKUP_GPG_RECIPIENT" \
   --output "$DESTINATION/$NAME.tar.gz.gpg" --encrypt "$WORK/$NAME.tar.gz"
 sha256sum "$DESTINATION/$NAME.tar.gz.gpg" > "$DESTINATION/$NAME.tar.gz.gpg.sha256"
 
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-35}"
-find "$DESTINATION" -maxdepth 1 -type f -name 'cinecruzeiro-*.tar.gz.gpg*' -mtime "+$RETENTION_DAYS" -delete
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+node "$SCRIPT_DIR/prune-backups.js" "$DESTINATION"
+BACKUP_SIZE="$(stat -c %s "$DESTINATION/$NAME.tar.gz.gpg")"
+BACKUP_HASH="$(cut -d ' ' -f1 "$DESTINATION/$NAME.tar.gz.gpg.sha256")"
+MARKER_TEMP="$DESTINATION/.last-success.$$"
+cat > "$MARKER_TEMP" <<EOF
+created_at=$STAMP
+file=$NAME.tar.gz.gpg
+size=$BACKUP_SIZE
+sha256=$BACKUP_HASH
+EOF
+mv "$MARKER_TEMP" "$DESTINATION/.last-success"
 echo "BACKUP_OK=$DESTINATION/$NAME.tar.gz.gpg"

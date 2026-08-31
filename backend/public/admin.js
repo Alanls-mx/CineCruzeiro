@@ -1998,6 +1998,21 @@ async function saveSession() {
     status: $("sessionStatus").value
   };
 
+  if (sessionId) {
+    const previous = (state.movieDraftSessions || []).find((item) => item.id === sessionId) || {};
+    const sensitiveChange = ["date", "time", "room", "format"].some((field) => String(previous[field] || "") !== String(payload[field] || ""))
+      || payload.status === "cancelled";
+    const hasHistory = (state.content?.tickets || []).some((ticket) => ticket.sessionId === sessionId)
+      || (state.content?.orders || []).some((order) => order.sessionId === sessionId);
+    if (sensitiveChange && hasHistory) {
+      if (!confirm("Esta sessão possui vendas. Confirmar a alteração pode mudar os dados dos ingressos já emitidos e, em caso de cancelamento, exigir reembolso.")) return;
+      const reason = prompt("Informe o motivo da alteração:", "Ajuste operacional da sessão");
+      if (reason === null) return;
+      payload.confirmSalesImpact = true;
+      payload.changeReason = reason.trim();
+    }
+  }
+
   try {
     setDisabled("saveSessionButton", true);
     const result = await api(`/api/movies/${encodeURIComponent(movieId)}/sessions${sessionId ? `/${encodeURIComponent(sessionId)}` : ""}`, {

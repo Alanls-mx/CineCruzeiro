@@ -17,6 +17,7 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "test:e2e": "playwright test",
+    "test:operations": "node scripts/backup-retention-tests.js",
     "test:postgres": "node scripts/postgres-concurrency-tests.js",
     "test": "node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/movie-image-localization-tests.js && node scripts/fiscal-service-tests.js && node scripts/admin-two-factor-tests.js && node scripts/mercado-pago-point-tests.js && node scripts/ticket-document-tests.js && node scripts/seat-realtime-tests.js && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
   },

@@ -26,7 +26,9 @@ trap cleanup EXIT
 
 gpg --batch --output "$WORK/backup.tar.gz" --decrypt "$BACKUP_FILE"
 tar -C "$WORK" -xzf "$WORK/backup.tar.gz"
-(cd "$WORK" && sha256sum --check manifest.txt)
+grep -E '^[0-9a-fA-F]{64}  ' "$WORK/manifest.txt" > "$WORK/checksums.txt"
+[ -s "$WORK/checksums.txt" ] || { echo "Manifesto sem checksums validos." >&2; exit 2; }
+(cd "$WORK" && sha256sum --check checksums.txt)
 pg_restore --dbname="$RESTORE_DATABASE_URL" --clean --if-exists --no-owner --no-privileges "$WORK/database.dump"
 
 if [ -n "${RESTORE_UPLOADS_DIR:-}" ] && [ -f "$WORK/shared/uploads.tar.gz" ]; then

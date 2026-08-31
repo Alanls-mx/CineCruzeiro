@@ -74,6 +74,12 @@ async function main() {
   const retry = await nextMessage(second, (message) => message.requestId === "second-retry");
   assert.equal(retry.type, "select_seat_confirmed");
 
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  second.send(JSON.stringify({ type: "heartbeat", requestId: "delayed-heartbeat", seatIds: ["A1"] }));
+  const heartbeat = await nextMessage(second, (message) => message.requestId === "delayed-heartbeat");
+  assert.equal(heartbeat.type, "heartbeat_ack");
+  assert.equal(holds.get("A1"), "cliente-2");
+
   const contenders = await Promise.all(Array.from({ length: 20 }, (_, index) => connect(url, `concorrente-${index}`)));
   const outcomes = await Promise.all(contenders.map((socket, index) => {
     const requestId = `many-select-${index}`;

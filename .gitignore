@@ -5,6 +5,7 @@ build/
 coverage/
 playwright-report/
 test-results/
+.e2e-data/
 *.log
 *.tsbuildinfo
 .agents/

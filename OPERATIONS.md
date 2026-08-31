@@ -10,7 +10,7 @@ TMDB, SMTP, Google Wallet, Mercado Pago e Focus NFe nao derrubam readiness, pois
 
 ## Monitoramento simples
 
-Execute `scripts/production-health-check.sh` a cada cinco minutos. Configure `ALERT_WEBHOOK_URL` apenas no ambiente da VPS quando desejar entrega de alertas. O script verifica health publico, pagina de filmes, PM2, reinicios instaveis e disco acima de 85%.
+Execute `scripts/production-health-check.sh` a cada cinco minutos. Configure `CINE_BACKUP_DIR` para o mesmo diretório de `BACKUP_DESTINATION` e `ALERT_WEBHOOK_URL` apenas no ambiente da VPS quando desejar entrega de alertas. O script verifica health público, página de filmes, PM2, reinícios instáveis, disco acima de 85%, checksum/tamanho do backup e idade do último backup. Com RPO de 6 horas, mais de 8 horas gera aviso e mais de 12 horas gera falha/alerta.
 
 Alertas recomendados no agregador de logs:
 

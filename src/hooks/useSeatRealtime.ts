@@ -56,7 +56,10 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
       if (disposed) return;
       setStatus("connecting");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const socket = new WebSocket(`${protocol}//${window.location.host}${PUBLIC_BASE_PATH}/api/realtime/seats`);
+      const configuredUrl = String(process.env.NEXT_PUBLIC_CINE_WS_URL || "").replace(/\/+$/, "");
+      const socket = new WebSocket(configuredUrl
+        ? `${configuredUrl}/api/realtime/seats`
+        : `${protocol}//${window.location.host}${PUBLIC_BASE_PATH}/api/realtime/seats`);
       socketRef.current = socket;
 
       socket.addEventListener("open", () => {
