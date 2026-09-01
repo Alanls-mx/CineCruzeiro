@@ -6,6 +6,8 @@ import { Play, Ticket, Clock, Film } from "lucide-react";
 import { Movie, Session } from "@/types";
 import { isUploadedAsset } from "@/utils/cinema";
 import { AgeRatingBadge } from "@/components/AgeRatingBadge";
+import { MovieTagBadge } from "@/components/MovieTagBadge";
+import { isVisibleMovieTag } from "@/utils/movieTags";
 
 interface MovieCardProps {
   movie: Movie;
@@ -61,11 +63,9 @@ export function MovieCard({ movie, onOpenCheckout, onOpenTrailer }: MovieCardPro
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-brand-950/95 to-transparent" />
 
         {/* Tag / Badge */}
-        {movie.tag && (
+        {isVisibleMovieTag(movie.tag) && (
           <div className="absolute top-3 left-3">
-            <span className="inline-flex items-center gap-1 rounded-lg bg-brand-600/90 backdrop-blur-md px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-white shadow-md">
-              {movie.tag}
-            </span>
+            <MovieTagBadge tag={movie.tag} />
           </div>
         )}
 

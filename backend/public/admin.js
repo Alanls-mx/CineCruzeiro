@@ -5967,7 +5967,10 @@ function renderClubPlanExcludedItems(plan) {
   const excluded = new Set(plan?.excludedConcessionIds || []);
   const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
   target.innerHTML = concessions.length
-    ? concessions.map((item) => `<label class="benefit-product-row"><input type="checkbox" data-club-excluded-item="${escapeHtml(item.id)}" ${excluded.has(String(item.id)) ? "checked" : ""} /><span>${escapeHtml(item.name)}</span></label>`).join("")
+    ? concessions.map((item) => `
+        <div class="benefit-product-row benefit-product-row-toggle">
+          <label><input type="checkbox" data-club-excluded-item="${escapeHtml(item.id)}" ${excluded.has(String(item.id)) ? "checked" : ""} /><span>${escapeHtml(item.name)}</span></label>
+        </div>`).join("")
     : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre a bomboniere antes de configurar exclusões.</span></div>`;
 }
 

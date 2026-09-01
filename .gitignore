@@ -12,6 +12,9 @@ test-results/
 .claude/
 .continue/
 .impeccable/
+.codex-tmp/
+.next-codex/
+artifacts/
 
 .env
 .env.*

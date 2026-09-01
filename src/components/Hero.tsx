@@ -6,6 +6,7 @@ import { Play, Ticket, Sparkles, Clock, ShieldCheck, Zap, Popcorn, Smartphone, F
 import { Movie, Session } from "@/types";
 import { AgeRatingBadge } from "@/components/AgeRatingBadge";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
+import { isVisibleMovieTag } from "@/utils/movieTags";
 import { isUploadedAsset } from "@/utils/cinema";
 
 interface HeroProps {
@@ -39,7 +40,7 @@ export function Hero({ movie, onOpenCheckout, onOpenTrailer }: HeroProps) {
             
             {/* Top Badges */}
             <div className="flex flex-wrap items-center gap-2.5">
-              {movie.tag && (
+              {isVisibleMovieTag(movie.tag) && (
                 <span className="inline-flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5 text-gold-400" aria-hidden="true" />
                   <MovieTagBadge tag={movie.tag} />

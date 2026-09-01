@@ -1,4 +1,5 @@
 import { Movie } from "@/types";
+import { isVisibleMovieTag, normalizeMovieTag } from "@/utils/movieTags";
 
 type MovieTagBadgeProps = {
   tag?: Movie["tag"];
@@ -6,7 +7,6 @@ type MovieTagBadgeProps = {
 };
 
 const tagStyles: Record<string, string> = {
-  normal: "bg-slate-200 text-slate-950",
   "pre-estreia": "bg-cyan-400 text-cyan-950",
   estreia: "bg-gold-400 text-slate-950",
   "ultimos dias": "bg-rose-500 text-white",
@@ -18,17 +18,10 @@ const tagStyles: Record<string, string> = {
   reexibicao: "bg-teal-300 text-teal-950",
 };
 
-function normalizeTag(tag: string) {
-  return tag
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR");
-}
-
 export function MovieTagBadge({ tag, className = "" }: MovieTagBadgeProps) {
-  if (!tag) return null;
+  if (!isVisibleMovieTag(tag)) return null;
 
-  const color = tagStyles[normalizeTag(tag)] || "bg-slate-200 text-slate-950";
+  const color = tagStyles[normalizeMovieTag(tag)] || "bg-slate-200 text-slate-950";
 
   return (
     <span
