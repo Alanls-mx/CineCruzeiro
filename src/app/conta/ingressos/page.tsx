@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { ArrowLeft, Check, Download, Eye, Send, Ticket as TicketIcon, WalletCards } from "lucide-react";
+import { ArrowLeft, Check, Download, Eye, Lock, Mail, Send, Ticket as TicketIcon, WalletCards, X } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import {
   createGoogleWalletPass,
@@ -97,35 +97,37 @@ export default function IngressosPage() {
 
         {transferSuccessInfo && (
           <div
-            className="mt-8 overflow-hidden rounded-2xl border border-emerald-500/40 bg-gradient-to-br from-emerald-950/90 via-slate-900 to-[#0b132b] p-6 text-emerald-100 shadow-[0_20px_50px_rgba(16,185,129,.22)] animate-in fade-in slide-in-from-top-4"
+            className="mt-8 rounded-2xl border border-gold-400/30 bg-[#0c162d] p-6 text-white shadow-2xl shadow-blue-950/40 backdrop-blur-sm animate-in fade-in slide-in-from-top-3"
             role="status"
             aria-live="polite"
           >
             <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
               <div className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/30 font-black text-xl">
-                  ✓
-                </span>
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gold-400 text-slate-950 shadow-glow-gold">
+                  <Check className="h-5 w-5 stroke-[2.5]" />
+                </div>
                 <div className="space-y-2">
                   <div>
-                    <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400">
-                      Transferência Concluída
+                    <span className="text-xs font-black uppercase tracking-[.18em] text-gold-400">
+                      Transferência de ingresso
                     </span>
-                    <h2 className="text-xl font-black text-white">
-                      Ingresso para &quot;{transferSuccessInfo.movieTitle}&quot; transferido com sucesso!
+                    <h2 className="mt-1 font-display text-2xl font-black text-white sm:text-3xl">
+                      Ingresso para &quot;{transferSuccessInfo.movieTitle}&quot; transferido com sucesso
                     </h2>
                   </div>
-                  <p className="text-sm text-emerald-100/90 leading-relaxed max-w-2xl">
+                  <p className="text-sm text-slate-300 leading-relaxed max-w-2xl">
                     O ingresso foi transferido para o e-mail{" "}
                     <strong className="text-white font-bold underline">{transferSuccessInfo.recipientEmail}</strong> e
                     já está disponível na conta do destinatário.
                   </p>
-                  <div className="flex flex-wrap gap-2 pt-1 text-xs">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-950/80 px-3 py-1.5 border border-emerald-500/30 text-emerald-200 font-medium">
-                      🔒 QR Code anterior invalidado
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 border border-white/10">
+                      <Lock className="h-3.5 w-3.5 text-gold-400" />
+                      QR Code anterior invalidado
                     </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-950/80 px-3 py-1.5 border border-emerald-500/30 text-emerald-200 font-medium">
-                      ✉️ E-mail com PDF enviado ao destinatário
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 border border-white/10">
+                      <Mail className="h-3.5 w-3.5 text-gold-400" />
+                      E-mail com PDF enviado ao destinatário
                     </span>
                   </div>
                 </div>
@@ -134,9 +136,10 @@ export default function IngressosPage() {
               <button
                 type="button"
                 onClick={() => setTransferSuccessInfo(null)}
-                className="self-start rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/20 hover:text-white transition"
+                className="self-start inline-flex items-center gap-1.5 rounded-xl bg-white/8 px-3.5 py-2 text-xs font-black text-slate-300 hover:bg-white/15 hover:text-white transition"
               >
-                ✕ Dispensar
+                <X className="h-3.5 w-3.5" />
+                Dispensar
               </button>
             </div>
           </div>
@@ -384,29 +387,31 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
 
             {transferSuccess && (
               <div
-                className="mt-4 rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-950/90 to-slate-900 p-5 text-emerald-100 shadow-[0_18px_44px_rgba(16,185,129,.18)] animate-in fade-in slide-in-from-top-2"
+                className="mt-4 rounded-xl border border-gold-400/30 bg-[#0c162d] p-5 text-white shadow-xl shadow-blue-950/40 animate-in fade-in slide-in-from-top-2"
                 role="status"
                 aria-live="polite"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400 text-sm font-black text-slate-950 shadow-md shadow-emerald-400/30">
-                      ✓
-                    </span>
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold-400 text-slate-950 font-black shadow-glow-gold">
+                      <Check className="h-4 w-4 stroke-[2.5]" />
+                    </div>
                     <div className="space-y-1.5">
-                      <strong className="block text-base font-black text-emerald-300">
-                        Ingresso transferido com sucesso!
+                      <strong className="block text-sm font-black text-gold-400">
+                        Transferência concluída com sucesso
                       </strong>
-                      <p className="text-xs text-emerald-100/90 leading-relaxed">
+                      <p className="text-xs text-slate-300 leading-relaxed">
                         O ingresso foi transferido para{" "}
                         <span className="font-bold text-white underline">{transferredToEmail}</span> e já está disponível na conta do destinatário.
                       </p>
-                      <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-medium text-emerald-300/90">
-                        <span className="inline-flex items-center gap-1 rounded bg-emerald-950/90 px-2.5 py-1 border border-emerald-500/30">
-                          🔒 QR Code anterior invalidado
+                      <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-bold text-slate-300">
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 border border-white/10">
+                          <Lock className="h-3 w-3 text-gold-400" />
+                          QR Code anterior invalidado
                         </span>
-                        <span className="inline-flex items-center gap-1 rounded bg-emerald-950/90 px-2.5 py-1 border border-emerald-500/30">
-                          ✉️ E-mail com PDF enviado ao novo titular
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 border border-white/10">
+                          <Mail className="h-3 w-3 text-gold-400" />
+                          E-mail com PDF enviado ao destinatário
                         </span>
                       </div>
                     </div>
@@ -414,10 +419,10 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
                   <button
                     type="button"
                     onClick={() => setTransferSuccess(false)}
-                    className="rounded p-1 text-slate-400 hover:text-white transition text-xs font-bold"
+                    className="inline-flex items-center gap-1 rounded-lg bg-white/8 p-1.5 text-xs text-slate-400 hover:text-white transition"
                     aria-label="Fechar mensagem de sucesso"
                   >
-                    ✕
+                    <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
