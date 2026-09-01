@@ -4,9 +4,6 @@ const API_BASE = (() => {
   return adminIndex > 0 ? pathname.slice(0, adminIndex) : "";
 })();
 const QR_SCAN_DURATION_MS = 30000;
-const OFFLINE_TICKET_MANIFEST_KEY = "cine_admin_offline_ticket_manifest_v1";
-const OFFLINE_TICKET_QUEUE_KEY = "cine_admin_offline_ticket_queue_v1";
-const OFFLINE_TICKET_DEVICE_KEY = "cine_admin_offline_ticket_device_v1";
 
 let state = {
   content: null,
@@ -127,11 +124,6 @@ let state = {
   validationSessionLock: false,
   validationSessionId: "",
   validationMode: "entry",
-  offlineTicketManifest: null,
-  offlineTicketQueue: [],
-  offlineTicketDeviceId: "",
-  offlineTicketKey: null,
-  offlineManifestTimer: null,
   toastTimer: null,
   refreshStatusTimer: null,
   logsSearchTimer: null,
@@ -4471,151 +4463,10 @@ function setBoxOfficeTab(tab) {
     if (panel) panel.classList.toggle("active", key === tab);
   });
   if (tab === "validateTicket") {
-    void prepareOfflineTicketValidation();
-    clearInterval(state.offlineManifestTimer);
-    state.offlineManifestTimer = setInterval(() => {
-      if (navigator.onLine && state.boxOfficeTab === "validateTicket") void prepareOfflineTicketValidation();
-    }, 60000);
     startQrReader();
   } else {
-    clearInterval(state.offlineManifestTimer);
-    state.offlineManifestTimer = null;
     stopQrReader();
   }
-}
-
-function offlineStorageJson(key, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(key) || "") || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function offlineDeviceId() {
-  if (state.offlineTicketDeviceId) return state.offlineTicketDeviceId;
-  state.offlineTicketDeviceId = localStorage.getItem(OFFLINE_TICKET_DEVICE_KEY)
-    || (crypto.randomUUID?.() || `device-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-  localStorage.setItem(OFFLINE_TICKET_DEVICE_KEY, state.offlineTicketDeviceId);
-  return state.offlineTicketDeviceId;
-}
-
-function updateOfflineValidationStatus(message, type = "") {
-  const target = $("offlineValidationStatus");
-  if (!target) return;
-  target.textContent = message;
-  target.dataset.status = type;
-}
-
-function offlineManifestScope() {
-  const selected = validationSessionOptions().find((session) => session.id === state.validationSessionId);
-  return {
-    date: state.validationSessionLock && selected?.date
-      ? selected.date
-      : state.content?.calendar?.today || new Date().toLocaleDateString("sv-SE"),
-    sessionId: state.validationSessionLock ? state.validationSessionId : ""
-  };
-}
-
-async function flushOfflineTicketQueue() {
-  state.offlineTicketQueue = offlineStorageJson(OFFLINE_TICKET_QUEUE_KEY, []);
-  if (!navigator.onLine || !state.offlineTicketQueue.length) return;
-  try {
-    const response = await api("/api/admin/tickets/offline-sync", {
-      method: "POST",
-      body: JSON.stringify({ events: state.offlineTicketQueue })
-    });
-    const completed = new Set((response.results || []).filter((item) => ["synced", "rejected"].includes(item.status)).map((item) => item.id));
-    state.offlineTicketQueue = state.offlineTicketQueue.filter((event) => !completed.has(event.id));
-    localStorage.setItem(OFFLINE_TICKET_QUEUE_KEY, JSON.stringify(state.offlineTicketQueue));
-  } catch {
-    // A fila permanece no aparelho para a próxima tentativa.
-  }
-}
-
-async function prepareOfflineTicketValidation() {
-  state.offlineTicketQueue = offlineStorageJson(OFFLINE_TICKET_QUEUE_KEY, []);
-  state.offlineTicketManifest = offlineStorageJson(OFFLINE_TICKET_MANIFEST_KEY, null);
-  offlineDeviceId();
-  await flushOfflineTicketQueue();
-  if (!navigator.onLine) {
-    updateOfflineValidationStatus(
-      state.offlineTicketManifest ? `Modo offline disponível • ${state.offlineTicketManifest.tickets?.length || 0} ingresso(s) em cache` : "Sem cache offline. Conecte este aparelho antes de abrir a portaria.",
-      state.offlineTicketManifest ? "ready" : "error"
-    );
-    return;
-  }
-  const scope = offlineManifestScope();
-  try {
-    const query = new URLSearchParams({ date: scope.date, ...(scope.sessionId ? { sessionId: scope.sessionId } : {}) });
-    const manifest = await api(`/api/admin/tickets/offline-manifest?${query}`);
-    state.offlineTicketManifest = manifest;
-    state.offlineTicketKey = null;
-    localStorage.setItem(OFFLINE_TICKET_MANIFEST_KEY, JSON.stringify(manifest));
-    updateOfflineValidationStatus(`Cache protegido atualizado • ${manifest.tickets?.length || 0} ingresso(s) • funciona sem internet`, "ready");
-  } catch {
-    updateOfflineValidationStatus(state.offlineTicketManifest ? "Usando o último cache protegido disponível." : "Não foi possível preparar o modo offline.", state.offlineTicketManifest ? "warning" : "error");
-  }
-}
-
-function base64urlBytes(value) {
-  const base64 = String(value || "").replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(String(value || "").length / 4) * 4, "=");
-  return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
-}
-
-async function verifyOfflineQrPayload(qrPayload) {
-  const manifest = state.offlineTicketManifest || offlineStorageJson(OFFLINE_TICKET_MANIFEST_KEY, null);
-  const parts = String(qrPayload || "").split(".");
-  if (!manifest || parts.length !== 3 || parts[0] !== "CC2") return null;
-  let signed;
-  try {
-    signed = JSON.parse(new TextDecoder().decode(base64urlBytes(parts[1])));
-    if (signed.k !== manifest.verification?.kid) return null;
-    state.offlineTicketKey ||= await crypto.subtle.importKey(
-      "jwk",
-      manifest.verification.jwk,
-      { name: "ECDSA", namedCurve: "P-256" },
-      false,
-      ["verify"]
-    );
-    const valid = await crypto.subtle.verify(
-      { name: "ECDSA", hash: "SHA-256" },
-      state.offlineTicketKey,
-      base64urlBytes(parts[2]),
-      new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
-    );
-    return valid ? signed : null;
-  } catch {
-    return null;
-  }
-}
-
-async function validateSignedTicketLocally(qrPayload, expectedSessionId) {
-  if (!String(qrPayload || "").startsWith("CC2.")) return { handled: false };
-  const signed = await verifyOfflineQrPayload(qrPayload);
-  if (!signed) return { handled: true, type: "invalid", message: "Assinatura criptográfica inválida ou chave pública indisponível neste aparelho." };
-  const manifest = state.offlineTicketManifest;
-  const ticket = (manifest?.tickets || []).find((item) => item.id === signed.t && item.code === signed.c && item.sessionId === signed.s && item.qrPayload === qrPayload);
-  if (!ticket) return { handled: true, type: "invalid", message: "Este ingresso assinado não pertence ao cache preparado para a portaria." };
-  if (expectedSessionId && ticket.sessionId !== expectedSessionId) return { handled: true, type: "wrongSession", ticket, message: "Este ingresso pertence a outra sessão e não foi utilizado." };
-  if (Number(signed.e || 0) * 1000 <= Date.now()) return { handled: true, type: "expired", ticket, message: "A janela de validade deste ingresso terminou." };
-  const pendingForTicket = offlineStorageJson(OFFLINE_TICKET_QUEUE_KEY, []).find((event) => event.ticketId === ticket.id);
-  if (ticket.status !== "active" || pendingForTicket) return { handled: true, type: "used", ticket: { ...ticket, usedAt: pendingForTicket?.scannedAt || ticket.usedAt } };
-  const event = {
-    id: crypto.randomUUID?.() || `offline-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    ticketId: ticket.id,
-    qrPayload,
-    sessionId: expectedSessionId || ticket.sessionId,
-    scannedAt: new Date().toISOString(),
-    deviceId: offlineDeviceId()
-  };
-  state.offlineTicketQueue = [...offlineStorageJson(OFFLINE_TICKET_QUEUE_KEY, []), event];
-  localStorage.setItem(OFFLINE_TICKET_QUEUE_KEY, JSON.stringify(state.offlineTicketQueue));
-  ticket.status = "used";
-  ticket.usedAt = event.scannedAt;
-  localStorage.setItem(OFFLINE_TICKET_MANIFEST_KEY, JSON.stringify(manifest));
-  void flushOfflineTicketQueue();
-  return { handled: true, type: "offlineOk", ticket, message: navigator.onLine ? "Assinatura conferida localmente. Sincronizando registro." : "Assinatura conferida localmente. Registro salvo para sincronização." };
 }
 
 function validationSessionOptions() {
@@ -4678,7 +4529,6 @@ function updateValidationSessionLock() {
   $("ticketValidationResult").textContent = state.validationSessionLock
     ? "Filtro de sessão ativado. Ingressos de outras sessões serão recusados sem serem utilizados."
     : "Filtro removido. O leitor aceita qualquer sessão válida.";
-  void prepareOfflineTicketValidation();
 }
 
 function setTicketValidationMode(mode) {
@@ -4746,13 +4596,8 @@ function renderTicketValidationResult(type, payload = {}) {
     },
     offline: {
       title: "Sem conexão",
-      copy: "Não há um cache criptográfico válido para conferir este ingresso.",
+      copy: "Não foi possível validar este ingresso com segurança.",
       action: "Tentar novamente"
-    },
-    offlineOk: {
-      title: "Ingresso válido",
-      copy: message || "Assinatura conferida no aparelho. Entrada liberada.",
-      action: "Escanear próximo"
     },
     concessionsOk: {
       title: "Itens liberados",
@@ -4791,21 +4636,13 @@ async function validateTicketByCode(code, options = {}) {
   if (state.qrValidationLocked) return;
   state.qrValidationLocked = true;
   clearTimeout(state.qrAutoRestartTimer);
-  setQrReaderActive(false, "Conferindo assinatura...");
+  setQrReaderActive(false, "Validando no servidor...");
 
   try {
     const sessionId = state.validationMode === "entry" && state.validationSessionLock ? state.validationSessionId : "";
     if (state.validationMode === "entry" && state.validationSessionLock && !sessionId) {
       showToast("Escolha a sessão permitida antes de validar.", "error");
       return;
-    }
-    if (state.validationMode === "entry") {
-      const local = await validateSignedTicketLocally(cleanCode, sessionId);
-      if (local.handled) {
-        renderTicketValidationResult(local.type, { ticket: local.ticket, message: local.message });
-        if (local.type === "offlineOk") navigator.vibrate?.(80);
-        return;
-      }
     }
     const result = await api("/api/tickets/validate", {
       method: "POST",
@@ -7260,7 +7097,6 @@ function bindEvents() {
   $("ticketValidationSessionSelect").addEventListener("change", (event) => {
     state.validationSessionId = event.target.value;
     renderValidationSessionScope();
-    void prepareOfflineTicketValidation();
   });
   $("validateTicketButton").addEventListener("click", () => validateTicketByCode());
   $("ticketValidationCode").addEventListener("keydown", (event) => {
@@ -7523,7 +7359,6 @@ async function initAdmin() {
     return;
   }
   await loadContent();
-  window.addEventListener("online", () => void prepareOfflineTicketValidation());
 }
 
 initAdmin();

@@ -915,13 +915,7 @@ O comando executa:
 
 Coberturas relevantes incluem autenticação, e-mail, evento privado, pagamento, cancelamento do Clube, crédito, webhook, criação de tickets e concorrência de poltronas. Os testes de tempo real abrem clientes WebSocket concorrentes, confirmam o bloqueio do primeiro, a rejeição do segundo, o broadcast de mudança e a liberação da cadeira. O smoke test também verifica que a Bilheteria não conclui uma venda usando uma reserva pertencente a outro token.
 
-## 29. Validação criptográfica offline de ingressos
-
-Ingressos novos usam QR `CC2` assinado com ECDSA P-256. A chave privada permanece no backend e deve ser persistida fora das releases por `TICKET_QR_PRIVATE_KEY_FILE`; o painel recebe apenas a chave pública e um manifesto operacional sem CPF, e-mail ou telefone. O leitor confere assinatura, sessão, validade e uso local no aparelho, bloqueia releitura no mesmo dispositivo e sincroniza a fila pela rota administrativa idempotente quando a rede retorna. QR legados continuam aceitos somente pela validação online.
-
-O modo offline reduz a dependência de rede, mas dois aparelhos simultaneamente desconectados não conseguem compartilhar estado. A primeira sincronização é aceita pelo servidor e uma duplicidade de outro aparelho é registrada como conflito operacional.
-
-## 30. Deploy na VPS
+## 29. Deploy na VPS
 
 O procedimento operacional completo, com comandos, dados persistentes, rollback, health checks e politica de exclusao de releases, esta em [`DEPLOY_VPS.md`](DEPLOY_VPS.md). Esse runbook e a referencia para publicacoes em producao.
 
