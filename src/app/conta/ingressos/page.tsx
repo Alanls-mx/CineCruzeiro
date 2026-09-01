@@ -175,6 +175,7 @@ function TicketEmptyState({ tab }: { tab: "upcoming" | "archived" }) {
 function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: TicketRecord; justValidated: boolean; onTransferred: (ticket: TicketRecord) => void }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [transferEmail, setTransferEmail] = useState("");
+  const [transferredToEmail, setTransferredToEmail] = useState("");
   const [message, setMessage] = useState("");
   const [transferSuccess, setTransferSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -205,14 +206,16 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
     setLoading(true);
     setMessage("");
     try {
-      const result = await transferTicket(ticket.id, transferEmail);
+      const recipient = transferEmail.trim();
+      const result = await transferTicket(ticket.id, recipient);
       setTransferEmail("");
-      setMessage("Ingresso transferido. O QR Code anterior foi invalidado.");
+      setTransferredToEmail(recipient);
       setTransferSuccess(true);
-      window.setTimeout(() => setTransferSuccess(false), 5200);
+      setMessage("");
       onTransferred(result.ticket);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível transferir.");
+      setTransferSuccess(false);
+      setMessage(error instanceof Error ? error.message : "Desculpe, não foi possível transferir o ingresso. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -302,25 +305,89 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
             </a>
           </div>
 
-          <form id="transferir-ingresso" onSubmit={submitTransfer} className="mt-6 rounded-lg bg-brand-950/70 p-4">
+          <form id="transferir-ingresso" onSubmit={submitTransfer} className="mt-6 rounded-2xl border border-white/10 bg-brand-950/80 p-5 backdrop-blur-sm sm:p-6">
+            <h4 className="text-sm font-black uppercase tracking-[.16em] text-gold-400 flex items-center gap-2">
+              <Send className="h-4 w-4" />
+              Transferência de Ingresso
+            </h4>
+            <p className="mt-1 text-xs text-slate-400">
+              Transfira a titularidade deste ingresso para outro usuário cadastrado no Cine Cruzeiro.
+            </p>
+
             {transferSuccess && (
-              <div className="mb-4 flex items-start gap-3 rounded-lg bg-emerald-400/12 p-4 text-emerald-100 shadow-[0_18px_44px_rgba(16,185,129,.12)] motion-safe:animate-pulse">
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-300 text-sm font-black text-[#022c22]">✓</span>
-                <div>
-                  <strong className="block text-sm font-black">Transferência concluída</strong>
-                  <span className="mt-1 block text-sm text-emerald-100/85">O destinatário receberá o ingresso na conta e o QR Code anterior foi invalidado.</span>
+              <div
+                className="mt-4 rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-950/90 to-slate-900 p-5 text-emerald-100 shadow-[0_18px_44px_rgba(16,185,129,.18)] animate-in fade-in slide-in-from-top-2"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400 text-sm font-black text-slate-950 shadow-md shadow-emerald-400/30">
+                      ✓
+                    </span>
+                    <div className="space-y-1.5">
+                      <strong className="block text-base font-black text-emerald-300">
+                        Ingresso transferido com sucesso!
+                      </strong>
+                      <p className="text-xs text-emerald-100/90 leading-relaxed">
+                        O ingresso foi transferido para{" "}
+                        <span className="font-bold text-white underline">{transferredToEmail}</span> e já está disponível na conta do destinatário.
+                      </p>
+                      <div className="flex flex-wrap gap-2 pt-1 text-[11px] font-medium text-emerald-300/90">
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-950/90 px-2.5 py-1 border border-emerald-500/30">
+                          🔒 QR Code anterior invalidado
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded bg-emerald-950/90 px-2.5 py-1 border border-emerald-500/30">
+                          ✉️ E-mail com PDF enviado ao novo titular
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTransferSuccess(false)}
+                    className="rounded p-1 text-slate-400 hover:text-white transition text-xs font-bold"
+                    aria-label="Fechar mensagem de sucesso"
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             )}
-            <label className="block">
-              <span className="text-xs font-black uppercase tracking-[.16em] text-slate-400">E-mail do destinatário cadastrado</span>
-              <input type="email" value={transferEmail} onChange={(event) => setTransferEmail(event.target.value)} disabled={!ticket.canTransfer} className="mt-2 w-full" placeholder="cliente@email.com" />
+
+            <label className="mt-4 block">
+              <span className="text-xs font-black uppercase tracking-[.16em] text-slate-300">E-mail do destinatário cadastrado</span>
+              <input
+                type="email"
+                required
+                value={transferEmail}
+                onChange={(event) => setTransferEmail(event.target.value)}
+                disabled={!ticket.canTransfer}
+                className="mt-2 w-full rounded-xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:border-gold-400 focus:outline-none disabled:opacity-50"
+                placeholder="cliente@email.com"
+              />
             </label>
-            <button type="submit" disabled={!ticket.canTransfer || loading} className="mt-4 bg-gold-400 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-45">
-              {loading ? "Transferindo..." : "Confirmar transferência"}
-            </button>
-            {!ticket.canTransfer && <p className="mt-3 text-sm text-slate-500">Este ingresso não pode ser transferido.</p>}
-            {message && <p className="mt-3 text-sm font-semibold text-amber-200">{message}</p>}
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={!ticket.canTransfer || loading}
+                className="rounded-xl bg-gold-400 px-6 py-3 text-sm font-black text-slate-950 shadow-lg shadow-gold-400/20 transition hover:bg-gold-300 disabled:opacity-45 active:scale-95"
+              >
+                {loading ? "Transferindo ingresso..." : "Confirmar transferência"}
+              </button>
+            </div>
+
+            {!ticket.canTransfer && (
+              <p className="mt-3 text-xs font-medium text-slate-400">
+                Este ingresso não pode ser transferido (já foi utilizado, cancelado ou a sessão já ocorreu).
+              </p>
+            )}
+            {message && (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-950/50 p-3 text-xs font-semibold text-amber-200">
+                {message}
+              </div>
+            )}
           </form>
         </div>
       </div>
