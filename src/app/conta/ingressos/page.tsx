@@ -20,6 +20,15 @@ function formatSessionDate(value: string) {
   return value || "Data não informada";
 }
 
+type TransferSuccessInfo = {
+  movieTitle: string;
+  recipientEmail: string;
+  sessionDate?: string;
+  sessionTime?: string;
+  seat?: string;
+  ticketCode?: string;
+};
+
 export default function IngressosPage() {
   const [upcoming, setUpcoming] = useState<TicketRecord[]>([]);
   const [archived, setArchived] = useState<TicketRecord[]>([]);
@@ -27,6 +36,7 @@ export default function IngressosPage() {
   const [tab, setTab] = useState<"upcoming" | "archived">("upcoming");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [validatedTicketId, setValidatedTicketId] = useState("");
+  const [transferSuccessInfo, setTransferSuccessInfo] = useState<TransferSuccessInfo | null>(null);
   const ticketStatusesRef = useRef(new Map<string, TicketRecord["status"]>());
   const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -85,6 +95,53 @@ export default function IngressosPage() {
         <p className="mt-6 text-sm font-black uppercase tracking-[.22em] text-brand-300">Minha Conta</p>
         <h1 className="mt-4 font-display text-4xl font-black sm:text-5xl">Meus ingressos</h1>
 
+        {transferSuccessInfo && (
+          <div
+            className="mt-8 overflow-hidden rounded-2xl border border-emerald-500/40 bg-gradient-to-br from-emerald-950/90 via-slate-900 to-[#0b132b] p-6 text-emerald-100 shadow-[0_20px_50px_rgba(16,185,129,.22)] animate-in fade-in slide-in-from-top-4"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/30 font-black text-xl">
+                  ✓
+                </span>
+                <div className="space-y-2">
+                  <div>
+                    <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                      Transferência Concluída
+                    </span>
+                    <h2 className="text-xl font-black text-white">
+                      Ingresso para &quot;{transferSuccessInfo.movieTitle}&quot; transferido com sucesso!
+                    </h2>
+                  </div>
+                  <p className="text-sm text-emerald-100/90 leading-relaxed max-w-2xl">
+                    O ingresso foi transferido para o e-mail{" "}
+                    <strong className="text-white font-bold underline">{transferSuccessInfo.recipientEmail}</strong> e
+                    já está disponível na conta do destinatário.
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1 text-xs">
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-950/80 px-3 py-1.5 border border-emerald-500/30 text-emerald-200 font-medium">
+                      🔒 QR Code anterior invalidado
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-950/80 px-3 py-1.5 border border-emerald-500/30 text-emerald-200 font-medium">
+                      ✉️ E-mail com PDF enviado ao destinatário
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setTransferSuccessInfo(null)}
+                className="self-start rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/20 hover:text-white transition"
+              >
+                ✕ Dispensar
+              </button>
+            </div>
+          </div>
+        )}
+
         {status === "loading" && <div className="mt-10 h-64 skeleton-soft" />}
         {status === "error" && (
           <div className="mt-10">
@@ -113,10 +170,21 @@ export default function IngressosPage() {
             </aside>
 
             {selectedTicket ? (
-              <TicketDetails ticket={selectedTicket} justValidated={selectedTicket.id === validatedTicketId} onTransferred={(ticket) => {
-                setSelectedId(ticket.id);
-                reloadTickets();
-              }} />
+              <TicketDetails
+                ticket={selectedTicket}
+                justValidated={selectedTicket.id === validatedTicketId}
+                onTransferred={(transferredTicket, recipientEmail) => {
+                  setTransferSuccessInfo({
+                    movieTitle: transferredTicket.movieTitle,
+                    recipientEmail,
+                    sessionDate: transferredTicket.sessionDate,
+                    sessionTime: transferredTicket.sessionTime,
+                    seat: transferredTicket.seat || transferredTicket.seatLabel || "Lugar livre",
+                    ticketCode: transferredTicket.code,
+                  });
+                  reloadTickets(true);
+                }}
+              />
             ) : (
               <TicketEmptyState tab={tab} />
             )}
@@ -172,7 +240,7 @@ function TicketEmptyState({ tab }: { tab: "upcoming" | "archived" }) {
   );
 }
 
-function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: TicketRecord; justValidated: boolean; onTransferred: (ticket: TicketRecord) => void }) {
+function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: TicketRecord; justValidated: boolean; onTransferred: (ticket: TicketRecord, recipientEmail: string) => void }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [transferEmail, setTransferEmail] = useState("");
   const [transferredToEmail, setTransferredToEmail] = useState("");
@@ -207,12 +275,12 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
     setMessage("");
     try {
       const recipient = transferEmail.trim();
-      const result = await transferTicket(ticket.id, recipient);
+      await transferTicket(ticket.id, recipient);
       setTransferEmail("");
       setTransferredToEmail(recipient);
       setTransferSuccess(true);
       setMessage("");
-      onTransferred(result.ticket);
+      onTransferred(ticket, recipient);
     } catch (error) {
       setTransferSuccess(false);
       setMessage(error instanceof Error ? error.message : "Desculpe, não foi possível transferir o ingresso. Tente novamente.");
