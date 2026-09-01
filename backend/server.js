@@ -472,6 +472,7 @@ const BUSINESS_LOG_EVENTS = new Set([
   "admin_two_factor.policy_updated",
   "admin_two_factor.recovery_codes_regenerated",
   "payment.created",
+  "coupon.order_completed",
   "payment.reconciled",
   "payment.reconciliation_reference_mismatch",
   "payment.reconciliation_amount_mismatch",
@@ -3739,6 +3740,12 @@ function assertClubPlanEligibility(plan, order) {
 
 function reserveClubCreditsForOrder(db, order, user, idempotencyKey) {
   if (!user || !order?.useClubCredits) return { subscription: null, plan: null, redemptions: [] };
+  if (order.couponId && !order.couponAllowsClubStacking) {
+    const error = new Error("Este cupom não pode ser combinado com créditos do Clube.");
+    error.statusCode = 409;
+    error.code = "COUPON_CLUB_NOT_COMBINABLE";
+    throw error;
+  }
   const subscription = activeSubscriptionForUser(db, user.id);
   const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription?.planId && item.active !== false);
   if (!subscription || !plan || !subscriptionCanUseCredit(subscription)) {
@@ -3868,6 +3875,10 @@ function reservedFreeConcessionQuantity(db, subscription, concessionId, currentO
 
 function applyClubPlanBenefits(db, order, user) {
   if (!order?.useClubBenefits) return { order, subscription: null, plan: null };
+  if (order.couponId && !order.couponAllowsClubStacking) {
+    order.clubBenefitsSkippedReason = "coupon_not_combinable";
+    return { order, subscription: null, plan: null };
+  }
   if (!user) {
     const error = new Error("Entre na sua conta para aplicar os benefícios do Clube.");
     error.statusCode = 401;
@@ -5049,7 +5060,128 @@ function resolveOrderTicketItems(db, order, session) {
   return normalized;
 }
 
-function repriceOrderFromCatalog(db, order) {
+function couponCustomerKey(order) {
+  if (order.customerUserId) return `user:${order.customerUserId}`;
+  const cpf = String(order.customerCpf || "").replace(/\D/g, "");
+  if (cpf) return `cpf:${cpf}`;
+  const email = String(order.customerEmail || "").trim().toLowerCase();
+  return email ? `email:${email}` : "";
+}
+
+function couponOrderCounts(db, coupon, order) {
+  const customerKey = couponCustomerKey(order);
+  const countedStatuses = new Set(["paid", "pending_payment", "processing"]);
+  const now = Date.now();
+  const matching = (db.orders || []).filter((existing) => {
+    if (existing.id === order.id || !countedStatuses.has(existing.status)) return false;
+    if (existing.status === "pending_payment" && existing.reservationExpiresAt) {
+      const expiresAt = new Date(existing.reservationExpiresAt).getTime();
+      if (Number.isFinite(expiresAt) && expiresAt <= now) return false;
+    }
+    return existing.couponId === coupon.id || String(existing.couponCode || "").toUpperCase() === coupon.couponCode;
+  });
+  return {
+    total: matching.length,
+    customer: customerKey ? matching.filter((existing) => couponCustomerKey(existing) === customerKey).length : 0
+  };
+}
+
+async function finalizeOrderWithoutCharge(db, order, customerUser) {
+  const savedOrder = {
+    ...order,
+    status: "paid",
+    origin: "online",
+    paymentMethod: order.clubCreditsApplied > 0 ? "CLUB_CREDIT_COUPON" : "COUPON",
+    paymentProvider: "internal_coupon",
+    paymentId: "",
+    paymentStatus: "not_required",
+    reservationExpiresAt: "",
+    paidAt: new Date().toISOString()
+  };
+  reserveConcessionStock(db, savedOrder);
+  const tickets = finalizePaidOrder(db, savedOrder, null, "promotional");
+  if (tickets.length) consumePendingClubCredit(db, savedOrder, tickets, customerUser?.id);
+  if (tickets.length) await deliverTicketsByEmail(db, savedOrder, tickets);
+  db.orders.unshift(savedOrder);
+  logEvent("info", "coupon.order_completed", {
+    orderId: savedOrder.id,
+    couponCode: savedOrder.couponCode,
+    couponDiscount: savedOrder.couponDiscount,
+    customerEmail: savedOrder.customerEmail,
+    tickets: tickets.length
+  });
+  return { order: savedOrder, tickets };
+}
+
+function couponUsageSummary(db, coupon) {
+  const orders = (db.orders || []).filter((order) =>
+    order.status === "paid" &&
+    (order.couponId === coupon.id || String(order.couponCode || "").toUpperCase() === coupon.couponCode)
+  );
+  return {
+    usageCount: orders.length,
+    discountGranted: Number(orders.reduce((sum, order) => sum + Number(order.couponDiscount || 0), 0).toFixed(2))
+  };
+}
+
+function applyCouponPricing(db, order, ticketTotal, concessionTotal) {
+  const code = String(order.couponCode || "").trim().toUpperCase();
+  if (!code) return { discountValue: 0, coupon: null };
+  const coupon = (db.promotions || []).find((item) => item.couponCode === code);
+  if (!coupon) throw Object.assign(new Error("Cupom não encontrado. Confira o código e tente novamente."), { statusCode: 422, code: "COUPON_NOT_FOUND" });
+  if (coupon.active === false) throw Object.assign(new Error("Este cupom está desativado."), { statusCode: 409, code: "COUPON_INACTIVE" });
+
+  const now = Date.now();
+  const startsAt = coupon.startsAt ? new Date(coupon.startsAt).getTime() : 0;
+  const endsAt = coupon.endsAt ? new Date(coupon.endsAt).getTime() : 0;
+  if (startsAt && startsAt > now) throw Object.assign(new Error("Este cupom ainda não está disponível."), { statusCode: 409, code: "COUPON_NOT_STARTED" });
+  if (endsAt && endsAt < now) throw Object.assign(new Error("Este cupom expirou."), { statusCode: 409, code: "COUPON_EXPIRED" });
+
+  const allowedMovieIds = Array.isArray(coupon.allowedMovieIds) ? coupon.allowedMovieIds : [];
+  if (allowedMovieIds.length && !allowedMovieIds.includes(order.movieId)) {
+    throw Object.assign(new Error("Este cupom não é válido para o filme selecionado."), { statusCode: 409, code: "COUPON_MOVIE_NOT_ELIGIBLE" });
+  }
+  const subtotal = Number((ticketTotal + concessionTotal).toFixed(2));
+  if (subtotal < Number(coupon.minimumOrderValue || 0)) {
+    const minimum = Number(coupon.minimumOrderValue || 0).toFixed(2).replace(".", ",");
+    throw Object.assign(new Error(`Este cupom exige um pedido mínimo de R$ ${minimum}.`), { statusCode: 409, code: "COUPON_MINIMUM_NOT_REACHED" });
+  }
+
+  const counts = couponOrderCounts(db, coupon, order);
+  if (Number(coupon.usageLimit || 0) > 0 && counts.total >= Number(coupon.usageLimit)) {
+    throw Object.assign(new Error("O limite de utilizações deste cupom foi atingido."), { statusCode: 409, code: "COUPON_USAGE_LIMIT_REACHED" });
+  }
+  if (Number(coupon.perCustomerLimit || 0) > 0) {
+    if (!couponCustomerKey(order)) {
+      throw Object.assign(new Error("Informe seu e-mail ou entre na conta para usar este cupom."), { statusCode: 422, code: "COUPON_CUSTOMER_REQUIRED" });
+    }
+    if (counts.customer >= Number(coupon.perCustomerLimit)) {
+      throw Object.assign(new Error("Você já utilizou este cupom o máximo de vezes permitido."), { statusCode: 409, code: "COUPON_CUSTOMER_LIMIT_REACHED" });
+    }
+  }
+  if (coupon.firstPurchaseOnly) {
+    const customerKey = couponCustomerKey(order);
+    if (!customerKey) throw Object.assign(new Error("Entre na conta ou informe seu e-mail para usar este cupom de primeira compra."), { statusCode: 422, code: "COUPON_CUSTOMER_REQUIRED" });
+    const hasPaidOrder = (db.orders || []).some((existing) => existing.status === "paid" && couponCustomerKey(existing) === customerKey);
+    if (hasPaidOrder) throw Object.assign(new Error("Este cupom é exclusivo para a primeira compra."), { statusCode: 409, code: "COUPON_FIRST_PURCHASE_ONLY" });
+  }
+
+  const appliesTo = ["tickets", "concessions"].includes(coupon.appliesTo) ? coupon.appliesTo : "all";
+  const eligibleSubtotal = appliesTo === "tickets" ? ticketTotal : appliesTo === "concessions" ? concessionTotal : subtotal;
+  if (eligibleSubtotal <= 0) throw Object.assign(new Error("O pedido não possui itens elegíveis para este cupom."), { statusCode: 409, code: "COUPON_NO_ELIGIBLE_ITEMS" });
+  const value = Math.max(0, Number(coupon.value || 0));
+  let discountValue = coupon.discountType === "percent"
+    ? eligibleSubtotal * Math.min(100, value) / 100
+    : coupon.discountType === "fixed_price"
+      ? Math.max(0, eligibleSubtotal - value)
+      : Math.min(eligibleSubtotal, value);
+  if (Number(coupon.maximumDiscount || 0) > 0) discountValue = Math.min(discountValue, Number(coupon.maximumDiscount));
+  discountValue = Number(Math.min(eligibleSubtotal, Math.max(0, discountValue)).toFixed(2));
+  if (discountValue <= 0) throw Object.assign(new Error("Este cupom não gera desconto para o pedido atual."), { statusCode: 409, code: "COUPON_NO_DISCOUNT" });
+  return { discountValue, coupon };
+}
+
+function repriceOrderFromCatalog(db, order, options = {}) {
   const movie = db.movies.find((item) => item.id === order.movieId);
   if (!movie) {
     const error = new Error("Filme nao encontrado para este pedido.");
@@ -5124,8 +5256,8 @@ function repriceOrderFromCatalog(db, order) {
 
   const pricedItems = concessionItems;
   const concessionTotal = pricedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const couponCode = String(order.couponCode || "").trim().toUpperCase();
-  const discountValue = couponCode === "CINE10" ? (ticketTotal + concessionTotal) * 0.1 : 0;
+  const couponPricing = applyCouponPricing(db, order, ticketTotal, concessionTotal);
+  const discountValue = couponPricing.discountValue;
   const totalPrice = Math.max(0, Number((ticketTotal + concessionTotal - discountValue).toFixed(2)));
 
   const pricedOrder = {
@@ -5142,24 +5274,59 @@ function repriceOrderFromCatalog(db, order) {
     includeComboUpsell: pricedItems.length > 0,
     comboUpsellQuantity: pricedItems.reduce((sum, item) => sum + item.quantity, 0),
     discountValue,
+    couponId: couponPricing.coupon?.id || "",
+    couponCode: couponPricing.coupon?.couponCode || "",
+    couponTitle: couponPricing.coupon?.title || "",
+    couponDiscount: discountValue,
+    couponAllowsClubStacking: couponPricing.coupon?.allowClubStacking === true,
     totalPrice
   };
-  return assignSeatsToOrder(db, pricedOrder, session);
+  return options.assignSeats === false ? pricedOrder : assignSeatsToOrder(db, pricedOrder, session);
 }
 
 function normalizePromotion(input, existing = {}) {
   const title = String(input.title || existing.title || "Promocao").trim();
+  const couponCode = String(input.couponCode ?? existing.couponCode ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
+  const discountType = ["fixed_price", "percent", "amount"].includes(input.discountType) ? input.discountType : existing.discountType || "amount";
   return {
     id: String(input.id || existing.id || slugify(title) || `promocao-${Date.now()}`),
     title,
     description: input.description || existing.description || "",
-    discountType: input.discountType || existing.discountType || "fixed_price",
-    value: Number(input.value ?? existing.value ?? 0),
-    couponCode: String(input.couponCode || existing.couponCode || "").trim().toUpperCase(),
+    discountType,
+    value: Math.max(0, Number(input.value ?? existing.value ?? 0)),
+    couponCode,
     startsAt: input.startsAt || existing.startsAt || "",
     endsAt: input.endsAt || existing.endsAt || "",
+    appliesTo: ["all", "tickets", "concessions"].includes(input.appliesTo) ? input.appliesTo : existing.appliesTo || "all",
+    minimumOrderValue: Math.max(0, Number(input.minimumOrderValue ?? existing.minimumOrderValue ?? 0)),
+    maximumDiscount: Math.max(0, Number(input.maximumDiscount ?? existing.maximumDiscount ?? 0)),
+    usageLimit: Math.max(0, Math.floor(Number(input.usageLimit ?? existing.usageLimit ?? 0))),
+    perCustomerLimit: Math.max(0, Math.floor(Number(input.perCustomerLimit ?? existing.perCustomerLimit ?? 0))),
+    firstPurchaseOnly: input.firstPurchaseOnly !== undefined ? Boolean(input.firstPurchaseOnly) : Boolean(existing.firstPurchaseOnly),
+    allowClubStacking: input.allowClubStacking !== undefined ? Boolean(input.allowClubStacking) : Boolean(existing.allowClubStacking),
+    allowedMovieIds: Array.isArray(input.allowedMovieIds)
+      ? input.allowedMovieIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : Array.isArray(existing.allowedMovieIds) ? existing.allowedMovieIds : [],
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false
   };
+}
+
+function assertPromotionRules(db, promotion, currentId = "") {
+  if (promotion.value <= 0) throw Object.assign(new Error("Informe um valor de desconto maior que zero."), { statusCode: 422, code: "COUPON_VALUE_REQUIRED" });
+  if (promotion.discountType === "percent" && promotion.value > 100) {
+    throw Object.assign(new Error("O desconto percentual não pode ultrapassar 100%."), { statusCode: 422, code: "COUPON_PERCENT_INVALID" });
+  }
+  const startsAt = promotion.startsAt ? new Date(promotion.startsAt).getTime() : 0;
+  const endsAt = promotion.endsAt ? new Date(promotion.endsAt).getTime() : 0;
+  if ((promotion.startsAt && !Number.isFinite(startsAt)) || (promotion.endsAt && !Number.isFinite(endsAt))) {
+    throw Object.assign(new Error("Informe datas válidas para o período do cupom."), { statusCode: 422, code: "COUPON_PERIOD_INVALID" });
+  }
+  if (startsAt && endsAt && startsAt >= endsAt) {
+    throw Object.assign(new Error("A data final deve ser posterior à data inicial."), { statusCode: 422, code: "COUPON_PERIOD_INVALID" });
+  }
+  if (promotion.couponCode && (db.promotions || []).some((item) => item.id !== currentId && item.couponCode === promotion.couponCode)) {
+    throw Object.assign(new Error("Já existe um cupom com este código."), { statusCode: 409, code: "COUPON_CODE_DUPLICATE" });
+  }
 }
 
 function normalizeAd(input, existing = {}) {
@@ -5695,7 +5862,9 @@ function getContent(db, options = {}) {
     rooms: db.rooms,
     ticketTypes: db.ticketTypes,
     concessions: (db.concessions || []).map((item) => assetRecord(item, ["imageUrl"])),
-    promotions: (db.promotions || []).map((item) => assetRecord(item, ["imageUrl"])),
+    promotions: includePrivate
+      ? (db.promotions || []).map((item) => ({ ...assetRecord(item, ["imageUrl"]), ...couponUsageSummary(db, item) }))
+      : (db.promotions || []).filter((item) => !item.couponCode).map(({ couponCode, usageLimit, perCustomerLimit, ...item }) => assetRecord(item, ["imageUrl"])),
     ads: (db.ads || []).map((item) => assetRecord(item, ["imageUrl"])),
     movies: includePrivate ? movies : visibleMovies,
     nowPlaying,
@@ -9158,6 +9327,7 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/promotions" && method === "POST") {
     const item = normalizePromotion(await readBody(req));
+    assertPromotionRules(db, item);
     db.promotions = db.promotions.filter((existing) => existing.id !== item.id);
     db.promotions.push(item);
     await writeDb(db);
@@ -9176,6 +9346,7 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const item = normalizePromotion(await readBody(req), db.promotions[index]);
+      assertPromotionRules(db, item, id);
       db.promotions[index] = item;
       await writeDb(db);
       sendJson(res, 200, item);
@@ -9305,6 +9476,37 @@ async function handleApi(req, res, pathname) {
     }
   }
 
+  if (pathname === "/api/coupons/preview" && method === "POST") {
+    const body = await readBody(req);
+    const input = body.order || body;
+    const normalizedOrder = normalizePaymentOrder(input);
+    const customerUser = getCustomerUser(req, db);
+    if (customerUser) {
+      normalizedOrder.customerUserId = customerUser.id;
+      normalizedOrder.customerEmail = customerUser.email || "";
+      normalizedOrder.customerCpf = customerUser.cpf || "";
+    } else {
+      normalizedOrder.customerUserId = "";
+      normalizedOrder.customerEmail = String(input.customerEmail || "").trim().toLowerCase();
+      normalizedOrder.customerCpf = String(input.customerCpf || "").replace(/\D/g, "");
+    }
+    const pricedOrder = repriceOrderFromCatalog(db, normalizedOrder, { assignSeats: false });
+    const subtotal = Number((Number(pricedOrder.totalPrice || 0) + Number(pricedOrder.couponDiscount || 0)).toFixed(2));
+    sendJson(res, 200, {
+      valid: true,
+      coupon: {
+        id: pricedOrder.couponId,
+        code: pricedOrder.couponCode,
+        title: pricedOrder.couponTitle,
+        discountValue: pricedOrder.couponDiscount,
+        allowsClubStacking: pricedOrder.couponAllowsClubStacking
+      },
+      subtotal,
+      total: pricedOrder.totalPrice
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
+
   if (pathname === "/api/payments/pix" && method === "POST") {
     const body = await readBody(req);
     await withCriticalMutation(async () => {
@@ -9338,7 +9540,16 @@ async function handleApi(req, res, pathname) {
       if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
       materializeOrderAccounting(lockedDb, order);
       if (order.totalPrice <= 0) {
-        sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de gerar o Pix." } });
+        if (!order.couponId) {
+          sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de gerar o Pix." } });
+          return;
+        }
+        const completed = await finalizeOrderWithoutCharge(lockedDb, order, customerUser);
+        await writeDb(lockedDb);
+        await releaseOrderSeatHolds(completed.order);
+        sendJson(res, 201, checkoutResponse(lockedDb, completed.order, null, completed.tickets), {
+          "Set-Cookie": checkoutAccessCookie(req, completed.order.id)
+        });
         return;
       }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
@@ -9368,7 +9579,15 @@ async function handleApi(req, res, pathname) {
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
       await releaseOrderSeatHolds(savedOrder);
-      logEvent("info", "payment.created", { orderId: savedOrder.id, paymentId: payment.id, method: payment.method, provider: payment.provider, status: payment.status });
+      logEvent("info", "payment.created", {
+        orderId: savedOrder.id,
+        paymentId: payment.id,
+        method: payment.method,
+        provider: payment.provider,
+        status: payment.status,
+        couponCode: savedOrder.couponCode || "",
+        couponDiscount: savedOrder.couponDiscount || 0
+      });
       sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });
@@ -9413,7 +9632,16 @@ async function handleApi(req, res, pathname) {
       if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
       materializeOrderAccounting(lockedDb, order);
       if (order.totalPrice <= 0) {
-        sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de pagar." } });
+        if (!order.couponId) {
+          sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de pagar." } });
+          return;
+        }
+        const completed = await finalizeOrderWithoutCharge(lockedDb, order, customerUser);
+        await writeDb(lockedDb);
+        await releaseOrderSeatHolds(completed.order);
+        sendJson(res, 201, checkoutResponse(lockedDb, completed.order, null, completed.tickets), {
+          "Set-Cookie": checkoutAccessCookie(req, completed.order.id)
+        });
         return;
       }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
@@ -9450,7 +9678,15 @@ async function handleApi(req, res, pathname) {
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
       await releaseOrderSeatHolds(savedOrder);
-      logEvent("info", "payment.created", { orderId: savedOrder.id, paymentId: payment.id, method: payment.method, provider: payment.provider, status: payment.status });
+      logEvent("info", "payment.created", {
+        orderId: savedOrder.id,
+        paymentId: payment.id,
+        method: payment.method,
+        provider: payment.provider,
+        status: payment.status,
+        couponCode: savedOrder.couponCode || "",
+        couponDiscount: savedOrder.couponDiscount || 0
+      });
       sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });

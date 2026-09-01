@@ -121,6 +121,36 @@ async function run() {
   );
   db.ticketTypes = (db.ticketTypes || []).filter((item) => item.id !== "triple-smoke");
   db.ticketTypes.push({ id: "triple-smoke", name: "Triple Ingresso", price: 25, description: "Pacote de teste", bundleQuantity: 3, active: true });
+  db.promotions = (db.promotions || []).filter((item) => !["cupom-smoke-20", "cupom-smoke-gratis"].includes(item.id));
+  db.promotions.push(
+    {
+      id: "cupom-smoke-20",
+      title: "Cupom Smoke 20%",
+      description: "Teste de cálculo e elegibilidade",
+      discountType: "percent",
+      value: 20,
+      couponCode: "SMOKE20",
+      appliesTo: "all",
+      minimumOrderValue: 5,
+      maximumDiscount: 50,
+      usageLimit: 10,
+      perCustomerLimit: 2,
+      allowedMovieIds: [TEST_MOVIE_ID],
+      active: true
+    },
+    {
+      id: "cupom-smoke-gratis",
+      title: "Cupom Smoke Gratuito",
+      description: "Teste de pedido sem cobrança",
+      discountType: "percent",
+      value: 100,
+      couponCode: "SMOKEFREE",
+      appliesTo: "tickets",
+      perCustomerLimit: 1,
+      allowedMovieIds: [TEST_MOVIE_ID],
+      active: true
+    }
+  );
   db.movies = (db.movies || []).filter((movie) => ![TEST_MOVIE_ID, TEST_SECOND_MOVIE_ID, TEST_SEAT_MOVIE_ID, "smoke-filme-edicao", "smoke-rascunho-admin"].includes(movie.id));
   db.rooms = (db.rooms || []).filter((room) => room.id !== "sala-poltronas-smoke");
   db.rooms.push({
@@ -349,6 +379,77 @@ async function run() {
     let cookie = registered.cookie;
     const targetCookie = target.cookie;
     let adminCookie = await loginAdmin();
+
+    const couponOrder = {
+      movieId: TEST_MOVIE_ID,
+      sessionId: TEST_SESSION_ID,
+      ticketItems: [{ id: "promocional", quantity: 1 }],
+      concessionItems: [],
+      couponCode: "SMOKE20"
+    };
+    const couponPreview = await request("/api/coupons/preview", {
+      method: "POST",
+      headers: jsonHeaders(targetCookie),
+      body: JSON.stringify({ order: couponOrder })
+    });
+    assert.equal(couponPreview.response.status, 200);
+    assert.equal(couponPreview.payload.valid, true);
+    assert.equal(couponPreview.payload.coupon.code, "SMOKE20");
+    assert.equal(couponPreview.payload.coupon.discountValue, Number((couponPreview.payload.subtotal * 0.2).toFixed(2)));
+    assert.equal(couponPreview.payload.total, Number((couponPreview.payload.subtotal * 0.8).toFixed(2)));
+
+    const invalidCoupon = await request("/api/coupons/preview", {
+      method: "POST",
+      headers: jsonHeaders(targetCookie),
+      body: JSON.stringify({ order: { ...couponOrder, couponCode: "NAOEXISTE" } })
+    });
+    assert.equal(invalidCoupon.response.status, 422);
+    assert.equal(invalidCoupon.payload.error.code, "COUPON_NOT_FOUND");
+
+    const wrongMovieCoupon = await request("/api/coupons/preview", {
+      method: "POST",
+      headers: jsonHeaders(targetCookie),
+      body: JSON.stringify({ order: { ...couponOrder, movieId: TEST_SECOND_MOVIE_ID, sessionId: TEST_SECOND_SESSION_ID } })
+    });
+    assert.equal(wrongMovieCoupon.response.status, 409);
+    assert.equal(wrongMovieCoupon.payload.error.code, "COUPON_MOVIE_NOT_ELIGIBLE");
+
+    const freeCouponOrderId = `smoke-coupon-free-${Date.now()}`;
+    const freeCouponCheckout = await request("/api/payments/pix", {
+      method: "POST",
+      headers: jsonHeaders(targetCookie),
+      body: JSON.stringify({
+        idempotencyKey: freeCouponOrderId,
+        order: { ...couponOrder, id: freeCouponOrderId, idempotencyKey: freeCouponOrderId, couponCode: "SMOKEFREE" }
+      })
+    });
+    assert.equal(freeCouponCheckout.response.status, 201);
+    assert.equal(freeCouponCheckout.payload.order.status, "paid");
+    assert.equal(freeCouponCheckout.payload.order.totalPrice, 0);
+    assert.equal(freeCouponCheckout.payload.payment, null);
+    assert.equal(freeCouponCheckout.payload.tickets.length, 1);
+
+    const repeatedFreeCoupon = await request("/api/coupons/preview", {
+      method: "POST",
+      headers: jsonHeaders(targetCookie),
+      body: JSON.stringify({ order: { ...couponOrder, couponCode: "SMOKEFREE" } })
+    });
+    assert.equal(repeatedFreeCoupon.response.status, 409);
+    assert.equal(repeatedFreeCoupon.payload.error.code, "COUPON_CUSTOMER_LIMIT_REACHED");
+
+    const couponAdminContent = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(couponAdminContent.response.status, 200);
+    const freeCouponStats = couponAdminContent.payload.promotions.find((item) => item.id === "cupom-smoke-gratis");
+    assert.equal(freeCouponStats.usageCount, 1);
+    assert.equal(freeCouponStats.discountGranted, couponPreview.payload.subtotal);
+
+    const duplicateCoupon = await request("/api/promotions", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ title: "Código duplicado", couponCode: "SMOKE20", discountType: "percent", value: 5, active: true })
+    });
+    assert.equal(duplicateCoupon.response.status, 409);
+    assert.equal(duplicateCoupon.payload.error.code, "COUPON_CODE_DUPLICATE");
 
     const twoFactorSetup = await request("/api/admin/2fa/setup", {
       method: "POST",

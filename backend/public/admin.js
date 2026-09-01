@@ -148,6 +148,19 @@ function money(value) {
   });
 }
 
+function datetimeLocalValue(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function datetimeIsoValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 function normalizedSearchText(value = "") {
   return String(value || "")
     .normalize("NFD")
@@ -717,6 +730,7 @@ function logPresentation(log = {}) {
   const method = logPaymentMethod(metadata.method || metadata.paymentMethod || "");
   const entries = {
     "payment.created": { title: "Pagamento iniciado", description: method ? `Uma cobrança por ${method} foi criada e aguarda confirmação.` : "Uma cobrança foi criada e aguarda confirmação." },
+    "coupon.order_completed": { title: "Pedido concluído com cupom", description: "O desconto cobriu todo o pedido e os ingressos foram emitidos sem cobrança." },
     "payment.reconciled": { title: "Pagamento confirmado", description: "O pagamento foi localizado e conciliado com o pedido." },
     "payment.reconciliation_reference_mismatch": { title: "Pagamento não localizado no pedido", description: "A referência recebida não corresponde ao pedido e precisa ser conferida." },
     "payment.reconciliation_amount_mismatch": { title: "Valor do pagamento diferente", description: "O valor confirmado pelo provedor não corresponde ao total do pedido." },
@@ -5308,7 +5322,7 @@ function syncEmailCampaignMode() {
 function renderPromotions() {
   const items = state.content?.promotions || [];
   if (state.creating.promotion) {
-    $("promotionsList").innerHTML = creationPlaceholder("Nova promoção", "Crie a regra comercial no quadro à direita.");
+    $("promotionsList").innerHTML = creationPlaceholder("Novo cupom", "Configure a regra comercial no quadro à direita.");
     fillPromotionForm(null);
     return;
   }
@@ -5317,13 +5331,28 @@ function renderPromotions() {
         <button class="list-item ${item.id === state.selectedPromotionId ? "active" : ""}" type="button" onclick="selectPromotion('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.title)}</span>
-            <span class="list-meta">${item.couponCode ? `cupom ${escapeHtml(item.couponCode)} • ` : ""}${item.active ? "ativa" : "inativa"}</span>
+            <span class="list-meta">${item.couponCode ? `${escapeHtml(item.couponCode)} • ${couponRuleLabel(item)} • ` : "promoção sem código • "}${couponStatusLabel(item)}</span>
           </span>
-          <span class="badge">${Number(item.value || 0)}</span>
+          <span class="badge">${Number(item.usageCount || 0)} uso(s)</span>
         </button>
       `).join("")
-    : `<div class="empty-state"><strong>Nenhuma promocao</strong><span>Crie chamadas comerciais ou cupons.</span></div>`;
+    : `<div class="empty-state"><strong>Nenhum cupom</strong><span>Crie códigos de desconto com período e limites de uso.</span></div>`;
   fillPromotionForm(currentPromotion());
+}
+
+function couponRuleLabel(item) {
+  if (item.discountType === "percent") return `${Number(item.value || 0)}%`;
+  if (item.discountType === "fixed_price") return `preço final ${money(item.value)}`;
+  return `${money(item.value)} de desconto`;
+}
+
+function couponStatusLabel(item) {
+  if (item.active === false) return "inativo";
+  const now = Date.now();
+  if (item.startsAt && new Date(item.startsAt).getTime() > now) return "agendado";
+  if (item.endsAt && new Date(item.endsAt).getTime() < now) return "expirado";
+  if (Number(item.usageLimit || 0) > 0 && Number(item.usageCount || 0) >= Number(item.usageLimit)) return "limite atingido";
+  return "disponível";
 }
 
 function selectPromotion(id) {
@@ -5336,7 +5365,7 @@ function newPromotion() {
   setAdminSubtab("marketing", "promotions");
   state.creating.promotion = true;
   state.selectedPromotionId = "";
-  $("promotionsList").innerHTML = creationPlaceholder("Nova promoção", "Crie a regra comercial no quadro à direita.");
+  $("promotionsList").innerHTML = creationPlaceholder("Novo cupom", "Configure a regra comercial no quadro à direita.");
   fillPromotionForm(null);
 }
 
@@ -5346,10 +5375,28 @@ function fillPromotionForm(item) {
   $("promotionId").value = item?.id || "";
   $("promotionTitle").value = item?.title || "";
   $("promotionDescription").value = item?.description || "";
-  $("promotionDiscountType").value = item?.discountType || "fixed_price";
+  $("promotionDiscountType").value = item?.discountType || "percent";
   $("promotionValue").value = item?.value ?? 10;
   $("promotionCouponCode").value = item?.couponCode || "";
+  $("promotionAppliesTo").value = item?.appliesTo || "all";
+  $("promotionMinimumOrderValue").value = Number(item?.minimumOrderValue || 0) || "";
+  $("promotionMaximumDiscount").value = Number(item?.maximumDiscount || 0) || "";
+  $("promotionUsageLimit").value = Number(item?.usageLimit || 0) || "";
+  $("promotionPerCustomerLimit").value = Number(item?.perCustomerLimit || 0) || "";
+  $("promotionStartsAt").value = datetimeLocalValue(item?.startsAt);
+  $("promotionEndsAt").value = datetimeLocalValue(item?.endsAt);
+  $("promotionFirstPurchaseOnly").checked = Boolean(item?.firstPurchaseOnly);
+  $("promotionAllowClubStacking").checked = Boolean(item?.allowClubStacking);
   $("promotionActive").checked = item?.active !== false;
+  const selectedMovies = new Set(item?.allowedMovieIds || []);
+  $("promotionAllowedMovieIds").innerHTML = (state.content?.movies || [])
+    .map((movie) => `<option value="${escapeHtml(movie.id)}" ${selectedMovies.has(movie.id) ? "selected" : ""}>${escapeHtml(movie.title)}</option>`)
+    .join("");
+  $("promotionUsageStats").innerHTML = item ? `
+    <div class="coupon-usage-stat"><span>Status</span><strong>${couponStatusLabel(item)}</strong></div>
+    <div class="coupon-usage-stat"><span>Utilizações pagas</span><strong>${Number(item.usageCount || 0)}</strong></div>
+    <div class="coupon-usage-stat"><span>Desconto concedido</span><strong>${money(item.discountGranted)}</strong></div>
+  ` : "";
 }
 
 async function savePromotion(event) {
@@ -5362,6 +5409,16 @@ async function savePromotion(event) {
       discountType: $("promotionDiscountType").value,
       value: Number($("promotionValue").value || 0),
       couponCode: $("promotionCouponCode").value,
+      appliesTo: $("promotionAppliesTo").value,
+      minimumOrderValue: Number($("promotionMinimumOrderValue").value || 0),
+      maximumDiscount: Number($("promotionMaximumDiscount").value || 0),
+      usageLimit: Number($("promotionUsageLimit").value || 0),
+      perCustomerLimit: Number($("promotionPerCustomerLimit").value || 0),
+      startsAt: datetimeIsoValue($("promotionStartsAt").value),
+      endsAt: datetimeIsoValue($("promotionEndsAt").value),
+      firstPurchaseOnly: $("promotionFirstPurchaseOnly").checked,
+      allowClubStacking: $("promotionAllowClubStacking").checked,
+      allowedMovieIds: Array.from($("promotionAllowedMovieIds").selectedOptions).map((option) => option.value),
       active: $("promotionActive").checked
     };
     const existingId = $("promotionId").value;
@@ -5371,7 +5428,7 @@ async function savePromotion(event) {
     state.creating.promotion = false;
     state.selectedPromotionId = saved.id;
     await loadContent({ silent: true });
-    showSuccess("Promocao salva", `${saved.title} foi atualizada.`);
+    showSuccess("Cupom salvo", `${saved.title} foi atualizado.`);
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -7141,6 +7198,9 @@ function bindEvents() {
   $("newPromotionButton").addEventListener("click", newPromotion);
   $("cancelPromotionCreateButton").addEventListener("click", () => cancelCreation("promotion"));
   $("promotionForm").addEventListener("submit", savePromotion);
+  $("promotionCouponCode").addEventListener("input", (event) => {
+    event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+  });
   $("deletePromotionButton").addEventListener("click", deletePromotion);
   $("newAdButton").addEventListener("click", newAd);
   $("cancelAdCreateButton").addEventListener("click", () => cancelCreation("ad"));

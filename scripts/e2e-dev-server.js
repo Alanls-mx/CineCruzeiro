@@ -149,7 +149,18 @@ function fixture() {
     orders: [],
     payments: [],
     tickets: [],
-    promotions: [],
+    promotions: [{
+      id: "cupom-e2e-20",
+      title: "Cupom E2E 20%",
+      description: "Cupom de teste do checkout",
+      discountType: "percent",
+      value: 20,
+      couponCode: "E2E20",
+      appliesTo: "all",
+      usageLimit: 20,
+      perCustomerLimit: 1,
+      active: true
+    }],
     ads: [],
     webhookEvents: [],
     auditLogs: []

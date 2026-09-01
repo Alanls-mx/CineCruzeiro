@@ -1125,7 +1125,7 @@
             <button class="active" type="button" data-admin-tab="overview">Visão geral</button>
             <button type="button" data-admin-tab="home">Home</button>
             <button type="button" data-admin-tab="campaigns">Campanhas</button>
-            <button type="button" data-admin-tab="promotions">Promoções</button>
+            <button type="button" data-admin-tab="promotions">Cupons</button>
             <button type="button" data-admin-tab="ads">Anúncios</button>
           </nav>
 
@@ -1285,46 +1285,106 @@
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:promotions" hidden>
           <div class="split-grid compact marketing-grid">
             <div class="surface">
-              <div class="section-title">Promoções</div>
+              <div class="section-title">Cupons de desconto</div>
               <div id="promotionsList" class="list"></div>
-              <button id="newPromotionButton" class="ghost-button full" type="button">Nova promoção</button>
+              <button id="newPromotionButton" class="ghost-button full" type="button">Novo cupom</button>
             </div>
-            <form id="promotionForm" class="surface form-grid long-form" data-dirty-track>
+            <form id="promotionForm" class="surface form-grid long-form coupon-form" data-dirty-track>
               <input type="hidden" id="promotionId" />
-              <label>
-                  Título
-                <input id="promotionTitle" required />
-              </label>
-              <label>
-                Descrição
-                <input id="promotionDescription" />
-              </label>
-              <div class="field-row">
+              <div id="promotionUsageStats" class="coupon-usage-stats" aria-live="polite"></div>
+              <section class="coupon-form-section">
+                <div class="section-title">Identificação</div>
                 <label>
-                  Tipo
-                  <select id="promotionDiscountType">
-                    <option value="fixed_price">Preço fixo</option>
-                    <option value="percent">Percentual</option>
-                    <option value="amount">Valor</option>
-                  </select>
+                  Título interno
+                  <input id="promotionTitle" required placeholder="Ex.: Aniversário do Cine Cruzeiro" />
                 </label>
                 <label>
-                  Valor
-                  <input id="promotionValue" type="number" min="0" step="0.01" />
+                  Descrição
+                  <input id="promotionDescription" placeholder="Explique quando e para quem a oferta é válida" />
                 </label>
-              </div>
-              <label>
-                Cupom
-                <input id="promotionCouponCode" />
-              </label>
-              <label class="check-field">
-                <input id="promotionActive" type="checkbox" />
-                Promoção ativa
-              </label>
+                <div class="field-row">
+                  <label>
+                    Código do cupom
+                    <input id="promotionCouponCode" maxlength="32" autocomplete="off" placeholder="Ex.: CRUZEIRO20" />
+                    <span class="helper-text">Use letras, números, hífen ou sublinhado. Deixe vazio para uma promoção sem código.</span>
+                  </label>
+                  <label class="check-field coupon-active-field">
+                    <input id="promotionActive" type="checkbox" />
+                    Disponível para uso
+                  </label>
+                </div>
+              </section>
+
+              <section class="coupon-form-section">
+                <div class="section-title">Regra de desconto</div>
+                <div class="field-row three-fields">
+                  <label>
+                    Tipo
+                    <select id="promotionDiscountType">
+                      <option value="percent">Percentual</option>
+                      <option value="amount">Valor em reais</option>
+                      <option value="fixed_price">Preço final dos itens</option>
+                    </select>
+                  </label>
+                  <label>
+                    Valor
+                    <input id="promotionValue" type="number" min="0.01" step="0.01" placeholder="10,00" />
+                  </label>
+                  <label>
+                    Aplicar em
+                    <select id="promotionAppliesTo">
+                      <option value="all">Ingressos e bomboniere</option>
+                      <option value="tickets">Somente ingressos</option>
+                      <option value="concessions">Somente bomboniere</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label>
+                    Pedido mínimo
+                    <input id="promotionMinimumOrderValue" type="number" min="0" step="0.01" placeholder="Sem mínimo" />
+                  </label>
+                  <label>
+                    Desconto máximo
+                    <input id="promotionMaximumDiscount" type="number" min="0" step="0.01" placeholder="Sem teto" />
+                  </label>
+                </div>
+              </section>
+
+              <section class="coupon-form-section">
+                <div class="section-title">Disponibilidade e limites</div>
+                <div class="field-row">
+                  <label>Início<input id="promotionStartsAt" type="datetime-local" /></label>
+                  <label>Fim<input id="promotionEndsAt" type="datetime-local" /></label>
+                </div>
+                <div class="field-row">
+                  <label>
+                    Limite total de usos
+                    <input id="promotionUsageLimit" type="number" min="0" step="1" placeholder="Ilimitado" />
+                  </label>
+                  <label>
+                    Limite por cliente
+                    <input id="promotionPerCustomerLimit" type="number" min="0" step="1" placeholder="Ilimitado" />
+                  </label>
+                </div>
+                <div class="coupon-checks">
+                  <label class="check-field"><input id="promotionFirstPurchaseOnly" type="checkbox" />Somente primeira compra</label>
+                  <label class="check-field"><input id="promotionAllowClubStacking" type="checkbox" />Permitir combinar com benefícios e créditos do Clube</label>
+                </div>
+              </section>
+
+              <section class="coupon-form-section">
+                <div class="section-title">Filmes elegíveis</div>
+                <label>
+                  Restrição por filme
+                  <select id="promotionAllowedMovieIds" multiple size="5" aria-describedby="promotionMoviesHelp"></select>
+                  <span id="promotionMoviesHelp" class="helper-text">Sem seleção, o cupom vale para qualquer filme. Use Ctrl ou Command para selecionar vários.</span>
+                </label>
+              </section>
               <div class="button-row">
                 <button id="deletePromotionButton" class="danger-button" type="button">Excluir</button>
                 <button id="cancelPromotionCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
-                <button class="primary-button" type="submit">Salvar promoção</button>
+                <button class="primary-button" type="submit">Salvar cupom</button>
               </div>
             </form>
           </div>

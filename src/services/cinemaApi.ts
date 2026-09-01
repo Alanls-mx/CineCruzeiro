@@ -472,6 +472,33 @@ export async function createPixPayment(order: TicketOrder) {
   return createCheckoutPayment(order, "pix");
 }
 
+export type CouponPreviewResult = {
+  valid: true;
+  coupon: {
+    id: string;
+    code: string;
+    title: string;
+    discountValue: number;
+    allowsClubStacking: boolean;
+  };
+  subtotal: number;
+  total: number;
+};
+
+export async function previewCheckoutCoupon(order: Partial<TicketOrder> & { couponCode: string }) {
+  const response = await apiFetch(`${API_BASE}/api/coupons/preview`, {
+    method: "POST",
+    credentials: "include",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ order }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(apiErrorMessage(payload, "Não foi possível aplicar este cupom."));
+  }
+  return payload as CouponPreviewResult;
+}
+
 export async function fetchMercadoPagoCheckoutConfig() {
   const response = await apiFetch(`${API_BASE}/api/payments/config/mercado-pago`, {
     cache: "no-store",

@@ -94,6 +94,29 @@ async function startPixCheckout(page, email, { concession = false } = {}) {
   await expect(page.getByAltText("QR Code para pagamento via Pix")).toBeVisible({ timeout: 10000 });
 }
 
+test("cliente aplica cupom e o backend mantém o desconto no pedido", async ({ page, request }) => {
+  const email = "checkout-cupom@e2e.local";
+  await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
+  await page.goto("/checkout/sessao-e2e");
+  await page.getByRole("link", { name: "Continuar para Extras" }).click();
+  await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
+  await page.getByLabel("Nome").fill("Cliente Cupom E2E");
+  await page.getByLabel("WhatsApp").fill("11999999999");
+  await page.getByLabel("E-mail").fill(email);
+  await page.getByLabel("Código do cupom").fill("e2e20");
+  await page.getByRole("button", { name: "Aplicar", exact: true }).click();
+  await expect(page.getByText("E2E20 aplicado")).toBeVisible();
+  await expect(page.getByText("você economizou R$ 3,00")).toBeVisible();
+  await expect(page.getByText("R$ 12,00", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Pix", exact: true }).click();
+  await page.getByRole("button", { name: "Gerar Pix", exact: true }).click();
+  await expect(page.getByText("Aguardando confirmação")).toBeVisible({ timeout: 10000 });
+  const pending = await latestOrderFor(request, email);
+  expect(pending.order.couponCode).toBe("E2E20");
+  expect(pending.order.couponDiscount).toBe(3);
+  expect(pending.order.totalPrice).toBe(12);
+});
+
 test("checkout Pix permanece pendente, preserva bomboniere e entrega ingresso apenas após webhook aprovado", async ({ page, request }) => {
   const email = "checkout-aprovado@e2e.local";
   await startPixCheckout(page, email, { concession: true });

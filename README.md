@@ -745,6 +745,7 @@ POST /api/me/email-verification/request
 GET  /api/me/tickets
 GET  /api/me/subscriptions
 POST /api/subscriptions/subscribe
+POST /api/coupons/preview
 POST /api/payments/pix
 POST /api/payments/card
 POST /api/webhooks/mercado-pago
@@ -781,6 +782,12 @@ POST /api/tickets/validate
 ```
 
 Existem rotas parametrizadas adicionais para edição, cancelamento, exclusão, transferência, pedidos, sessões e recursos administrativos.
+
+### Cupons de desconto
+
+Cupons são administrados em `Marketing > Cupons`. Cada regra pode definir percentual, valor em reais ou preço final; aplicação em ingressos, bomboniere ou ambos; pedido mínimo; teto de desconto; período; filmes elegíveis; limite total e por cliente; primeira compra e combinação opcional com o Clube. O código é único e não é exposto por `/api/content`.
+
+O endpoint de prévia usa o mesmo cálculo autoritativo da cobrança. A regra é conferida novamente dentro da mutação crítica antes da criação do pedido, incluindo limites de uso. Pedidos integralmente cobertos pelo cupom são concluídos internamente sem criar uma cobrança no Mercado Pago. O pedido persiste código, identificação e economia concedida para auditoria e estatísticas no painel.
 
 ## 24. Segurança
 
@@ -987,6 +994,15 @@ O deploy não deve alterar a aplicação principal da LumixEngine fora do caminh
 4. cancelar renovação quando solicitado;
 5. evitar reativação sem nova autorização;
 6. consultar assinaturas finalizadas no histórico.
+
+### Cupons
+
+1. criar o código em `Marketing > Cupons`;
+2. definir escopo, valor, período e limites;
+3. selecionar filmes específicos somente quando necessário;
+4. decidir explicitamente se pode combinar com o Clube;
+5. acompanhar utilizações pagas e desconto concedido;
+6. desativar o cupom para interromper novos usos sem apagar o histórico dos pedidos.
 
 ### Integrações
 

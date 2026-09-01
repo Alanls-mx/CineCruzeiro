@@ -9,13 +9,13 @@ import { Accessibility, CircleUserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { useSeatRealtime } from "@/hooks/useSeatRealtime";
-import { AccountSubscription, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap } from "@/services/cinemaApi";
+import { AccountSubscription, CouponPreviewResult, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap, previewCheckoutCoupon } from "@/services/cinemaApi";
 import { checkoutDraftTotal, clearCheckoutDraft, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, publicAssetPath, readCheckoutDraft, StoredCheckoutDraft, writeCheckoutDraft } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
 type Step = "ingressos" | "extras" | "pagamento" | "confirmacao";
 type CheckoutPaymentResult = {
-  order?: { id?: string; status?: string };
+  order?: { id?: string; status?: string; totalPrice?: number; couponCode?: string };
   payment?: { id?: string; status?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string } | null;
   tickets?: Array<{ code: string }>;
 };
@@ -86,6 +86,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [clubSubscriptions, setClubSubscriptions] = useState<AccountSubscription[]>([]);
   const [customerUser, setCustomerUser] = useState<CustomerUser | null>(null);
   const [mercadoPagoConfig, setMercadoPagoConfig] = useState<MercadoPagoCheckoutConfig | null>(null);
+  const [couponPreview, setCouponPreview] = useState<CouponPreviewResult | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
+  const couponBasisRef = useRef("");
   const [seatMap, setSeatMap] = useState<SessionSeatMap | null>(null);
   const [seatMapStatus, setSeatMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const loadedSeatSessionRef = useRef("");
@@ -96,6 +100,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     [content?.ticketTypes, found?.session.ticketTypeIds]
   );
   const total = checkoutDraftTotal(draft, found?.session, content?.concessions || [], content?.ticketTypes || []);
+  const checkoutTotal = couponPreview?.total ?? total;
+  const couponBasis = JSON.stringify({
+    sessionId: found?.session.id || "",
+    tickets: draft?.ticketQuantities || {},
+    concessions: draft?.concessionQuantities || {},
+    customerId: customerUser?.id || "",
+    customerEmail: customerUser?.email || draft?.customerEmail || "",
+  });
   const requiredSeatCount = draft ? generatedTicketCount(draft, availableTicketTypes) : 0;
   const selectedSeatIds = draft?.selectedSeatIds || [];
   const availableSeatIds = new Set((seatMap?.rows || [])
@@ -341,8 +353,8 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     const key = `cine-tracked-purchase-${confirmationOrderId}`;
     if (window.localStorage.getItem(key)) return;
     window.localStorage.setItem(key, "1");
-    trackMarketingEvent("purchase", { currency: "BRL", value: total, transaction_id: confirmationOrderId, affiliation: "Cine Cruzeiro Online", items: trackingItems });
-  }, [confirmationOrderId, confirmationPaymentStatus, total, trackingItems]);
+    trackMarketingEvent("purchase", { currency: "BRL", value: Number(confirmationResult?.order?.totalPrice ?? checkoutTotal), transaction_id: confirmationOrderId, affiliation: "Cine Cruzeiro Online", coupon: confirmationResult?.order?.couponCode || couponPreview?.coupon.code || "", items: trackingItems });
+  }, [checkoutTotal, confirmationOrderId, confirmationPaymentStatus, confirmationResult?.order?.couponCode, confirmationResult?.order?.totalPrice, couponPreview?.coupon.code, trackingItems]);
 
   useEffect(() => {
     if (step !== "confirmacao" || !confirmationOrderId || !["pending", "processing"].includes(confirmationPaymentStatus)) return;
@@ -395,6 +407,65 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     return (content?.concessions || []).filter((item) => Number(quantities[item.id] || 0) > 0);
   }, [content?.concessions, draft?.concessionQuantities]);
 
+  const applyCoupon = useCallback(async (rawCode: string) => {
+    if (!found || !draft) return;
+    const code = rawCode.trim().toUpperCase();
+    if (!code) {
+      setCouponPreview(null);
+      setCouponError("");
+      updateDraft({ couponCode: "" });
+      return;
+    }
+    setCouponLoading(true);
+    setCouponError("");
+    try {
+      const preview = await previewCheckoutCoupon({
+        movieId: found.movie.id,
+        sessionId: found.session.id,
+        fullTicketsCount: Number(draft.fullTickets || 0),
+        halfTicketsCount: Number(draft.halfTickets || 0),
+        ticketItems: selectedTicketItems(draft, availableTicketTypes),
+        concessionItems: Object.entries(draft.concessionQuantities || {})
+          .filter(([, quantity]) => Number(quantity) > 0)
+          .map(([id, quantity]) => ({ id, quantity: Number(quantity) })),
+        couponCode: code,
+        customerName: customerUser?.name || draft.customerName || "Cliente Cine Cruzeiro",
+        customerEmail: customerUser?.email || draft.customerEmail || "",
+        customerPhone: customerUser?.phone || draft.customerPhone || "",
+        customerCpf: customerUser?.cpf || draft.customerCpf || "",
+      });
+      setCouponPreview(preview);
+      updateDraft({
+        couponCode: preview.coupon.code,
+        ...(!preview.coupon.allowsClubStacking ? { useClubBenefits: false, useClubCredits: false } : {}),
+      });
+    } catch (error) {
+      setCouponPreview(null);
+      setCouponError(error instanceof Error ? error.message : "Não foi possível aplicar este cupom.");
+      updateDraft({ couponCode: "" });
+    } finally {
+      setCouponLoading(false);
+    }
+  }, [availableTicketTypes, customerUser, draft, found, updateDraft]);
+
+  const removeCoupon = useCallback(() => {
+    setCouponPreview(null);
+    setCouponError("");
+    updateDraft({ couponCode: "" });
+  }, [updateDraft]);
+
+  useEffect(() => {
+    if (step !== "pagamento" || !draft?.couponCode || couponPreview || couponLoading) return;
+    void applyCoupon(draft.couponCode);
+  }, [applyCoupon, couponLoading, couponPreview, draft?.couponCode, step]);
+
+  useEffect(() => {
+    if (couponBasisRef.current && couponBasisRef.current !== couponBasis && couponPreview) {
+      setCouponPreview(null);
+    }
+    couponBasisRef.current = couponBasis;
+  }, [couponBasis, couponPreview]);
+
   const submitPayment = useCallback(async (cardData?: MercadoPagoCardPayload) => {
     if (!found || !draft) return;
     setLoading(true);
@@ -402,15 +473,15 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     try {
       const persisted = readCheckoutDraft();
       const checkoutDraft = persisted?.sessionId === found.session.id ? persisted : draft;
-      if (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments) {
+      if (checkoutTotal > 0 && (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments)) {
         throw new Error("Pix real indisponível: configure o Mercado Pago no ambiente de produção.");
       }
-      if (checkoutDraft.paymentMethod === "credit_card" && !cardData?.token) {
+      if (checkoutTotal > 0 && checkoutDraft.paymentMethod === "credit_card" && !cardData?.token) {
         throw new Error("Preencha os dados do cartão no formulário seguro do Mercado Pago.");
       }
       trackMarketingEvent("add_payment_info", {
         currency: "BRL",
-        value: total,
+        value: checkoutTotal,
         payment_type: checkoutDraft.paymentMethod === "credit_card" ? "credit_card" : "pix",
         items: trackingItems,
       });
@@ -429,7 +500,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           concessionItems: Object.entries(checkoutDraft.concessionQuantities || {})
             .filter(([, qty]) => Number(qty) > 0)
             .map(([id, qty]) => ({ id, quantity: Number(qty) })),
-          couponCode: checkoutDraft.couponCode,
+          couponCode: couponPreview?.coupon.code || "",
           customerName: customerUser?.name || checkoutDraft.customerName || "Cliente Cine Cruzeiro",
           customerPhone: customerUser?.phone || checkoutDraft.customerPhone || "",
           customerEmail: customerUser?.email || checkoutDraft.customerEmail || "",
@@ -461,7 +532,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     } finally {
       setLoading(false);
     }
-  }, [availableTicketTypes, draft, checkoutPathFor, found, mercadoPagoConfig, router, updateDraft, customerUser, clubSubscriptions, total, trackingItems, refreshSeatMap]);
+  }, [availableTicketTypes, draft, checkoutPathFor, found, mercadoPagoConfig, router, updateDraft, customerUser, clubSubscriptions, checkoutTotal, trackingItems, refreshSeatMap, couponPreview]);
 
   async function submitClubCredit() {
     if (!found || !draft) return;
@@ -479,7 +550,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         concessionItems: Object.entries(draft.concessionQuantities || {})
           .filter(([, qty]) => Number(qty) > 0)
           .map(([id, qty]) => ({ id, quantity: Number(qty) })),
-        couponCode: draft.couponCode,
+        couponCode: couponPreview?.coupon.code || "",
       });
       updateDraft({ paymentResult: result });
       router.push(checkoutPathFor("confirmacao"));
@@ -580,7 +651,13 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             <PaymentStep
               draft={draft}
               updateDraft={updateDraft}
-              total={total}
+              total={checkoutTotal}
+              baseTotal={total}
+              couponPreview={couponPreview}
+              couponLoading={couponLoading}
+              couponError={couponError}
+              onApplyCoupon={applyCoupon}
+              onRemoveCoupon={removeCoupon}
               mercadoPagoConfig={mercadoPagoConfig}
               paymentError={paymentError}
               loading={loading}
@@ -600,17 +677,17 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             />
           )}
         </section>
-        <OrderSummary draft={draft} total={total} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
+        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
       <MobileCheckoutBar
         draft={draft}
         step={step}
-        total={total}
+        total={checkoutTotal}
         loading={loading || clubLoading}
         paymentMethod={draft.paymentMethod || "pix"}
         onSubmit={submitPayment}
         onContinueToPayment={continueToPayment}
-        submitDisabled={draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments}
+        submitDisabled={checkoutTotal > 0 && (draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments)}
         continueDisabled={step === "ingressos" && !ticketSelectionComplete}
       />
     </PageShell>
@@ -833,11 +910,16 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                 Selecionadas: {selectedSeatIds.map((id) => seatsById.get(id)?.label || id).join(", ")}
               </p>
             )}
-            {realtimeStatus !== "connected" && (
-              <p className="mt-3 text-xs font-bold text-amber-200" role="status">
-                {realtimeStatus === "connecting" ? "Conectando à reserva de poltronas..." : "Reconectando à reserva de poltronas..."}
-              </p>
-            )}
+            <p
+              className={`mt-3 text-xs font-bold ${realtimeStatus === "connected" ? "text-emerald-300" : "text-amber-200"}`}
+              role="status"
+            >
+              {realtimeStatus === "connected"
+                ? "Poltronas sincronizadas em tempo real."
+                : realtimeStatus === "connecting"
+                  ? "Conectando à reserva de poltronas..."
+                  : "Reconectando à reserva de poltronas..."}
+            </p>
             {seatActionError && <p className="mt-2 text-sm font-semibold text-rose-200" role="alert">{seatActionError}</p>}
           </div>
         )}
@@ -909,10 +991,16 @@ function ExtrasStep({ draft, updateDraft, concessions, onContinue }: { draft: St
   );
 }
 
-function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, onSubmit, onClubCredit, ticketTypes }: {
+function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, couponLoading, couponError, onApplyCoupon, onRemoveCoupon, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, onSubmit, onClubCredit, ticketTypes }: {
   draft: StoredCheckoutDraft;
   updateDraft: (patch: Partial<StoredCheckoutDraft>) => void;
   total: number;
+  baseTotal: number;
+  couponPreview: CouponPreviewResult | null;
+  couponLoading: boolean;
+  couponError: string;
+  onApplyCoupon: (code: string) => Promise<void>;
+  onRemoveCoupon: () => void;
   mercadoPagoConfig: MercadoPagoCheckoutConfig | null;
   paymentError: string;
   loading: boolean;
@@ -923,13 +1011,18 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
   onClubCredit: () => void;
   ticketTypes: TicketTypeRecord[];
 }) {
+  const [couponInput, setCouponInput] = useState(draft.couponCode || "");
+  useEffect(() => {
+    if (draft.couponCode) setCouponInput(draft.couponCode);
+  }, [draft.couponCode]);
   const activeClub = activeClubSubscription(clubSubscriptions);
   const requestedTickets = generatedTicketCount(draft, ticketTypes);
   const selectedExtras = Object.values(draft.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
   const plan = activeClub?.plan;
-  const clubBenefitsEnabled = draft.useClubBenefits !== false;
-  const clubCreditsEnabled = draft.useClubCredits === true;
+  const couponCanStack = !couponPreview || couponPreview.coupon.allowsClubStacking;
+  const clubBenefitsEnabled = couponCanStack && draft.useClubBenefits !== false;
+  const clubCreditsEnabled = couponCanStack && draft.useClubCredits === true;
   const selectedTicketPurchases = selectedTicketItems(draft, ticketTypes);
   const ticketSubtotal = selectedTicketPurchases.reduce((sum, item) => sum + Number(ticketTypes.find((type) => type.id === item.id)?.price || 0) * item.quantity, 0);
   const estimatedTicketDiscount = clubBenefitsEnabled ? ticketSubtotal * (Number(plan?.ticketDiscountPercent || 0) / 100) : 0;
@@ -970,6 +1063,41 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
       </section>
       <section>
         <h2 className="font-display text-3xl font-black">Pagamento</h2>
+        <div className="mt-6 border-y border-white/10 py-5">
+          <h3 className="text-sm font-black text-white">Cupom de desconto</h3>
+          {couponPreview ? (
+            <div className="mt-3 flex items-start justify-between gap-4 rounded-lg bg-emerald-400/10 p-4" role="status">
+              <div>
+                <strong className="block text-sm text-emerald-200">{couponPreview.coupon.code} aplicado</strong>
+                <span className="mt-1 block text-xs leading-5 text-slate-300">{couponPreview.coupon.title} · você economizou {money(couponPreview.coupon.discountValue)}</span>
+                {!couponPreview.coupon.allowsClubStacking && activeClub && (
+                  <span className="mt-1 block text-xs text-slate-400">Este cupom substitui os benefícios e créditos do Clube nesta compra.</span>
+                )}
+              </div>
+              <button type="button" onClick={() => { setCouponInput(""); onRemoveCoupon(); }} className="shrink-0 text-xs font-black text-slate-200 underline decoration-white/30 underline-offset-4 hover:text-white">Remover</button>
+            </div>
+          ) : (
+            <form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); void onApplyCoupon(couponInput); }}>
+              <label className="min-w-0 flex-1">
+                <span className="sr-only">Código do cupom</span>
+                <input
+                  value={couponInput}
+                  onChange={(event) => setCouponInput(event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
+                  maxLength={32}
+                  autoComplete="off"
+                  placeholder="Digite o código"
+                  className="h-12 w-full rounded-lg border border-white/15 bg-brand-950/80 px-4 text-sm font-bold uppercase text-white outline-none placeholder:normal-case placeholder:text-slate-500 focus:border-brand-400 focus:ring-4 focus:ring-brand-400/10"
+                />
+              </label>
+              <button type="submit" disabled={couponLoading || !couponInput.trim()} className="h-12 rounded-lg bg-brand-700 px-5 text-sm font-black text-white transition hover:bg-brand-600 disabled:opacity-50">
+                {couponLoading ? "Validando" : "Aplicar"}
+              </button>
+            </form>
+          )}
+          {couponError && <p className="mt-3 text-sm font-semibold text-rose-200" role="alert">{couponError}</p>}
+        </div>
+        {total > 0 ? (
+          <>
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button type="button" onClick={() => updateDraft({ paymentMethod: "pix" })} className={`py-4 text-sm font-black ${draft.paymentMethod !== "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Pix</button>
           <button type="button" onClick={() => updateDraft({ paymentMethod: "credit_card" })} className={`py-4 text-sm font-black ${draft.paymentMethod === "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Cartão</button>
@@ -1010,7 +1138,19 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
             {loading ? "Processando..." : "Gerar Pix"}
           </button>
         )}
-        {activeClub && (
+          </>
+        ) : (
+          <div className="mt-6">
+            <div className="rounded-lg bg-emerald-400/10 p-5">
+              <h3 className="text-base font-black text-emerald-200">Pedido integralmente coberto</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-300">O cupom reduziu o total de {money(baseTotal)} para zero. Confirme para emitir os ingressos sem abrir uma cobrança.</p>
+            </div>
+            <button type="button" onClick={() => void onSubmit()} disabled={loading} className="mt-4 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
+              {loading ? "Confirmando..." : "Finalizar pedido"}
+            </button>
+          </div>
+        )}
+        {activeClub && couponCanStack && (
           <div className="mt-5 border-t border-white/10 pt-5">
             <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-brand-900/70 p-4">
               <input
@@ -1284,7 +1424,7 @@ function activeClubSubscription(subscriptions: AccountSubscription[]) {
   }) || null;
 }
 
-function OrderSummary({ draft, total, selectedConcessions, ticketTypes, seatMap }: { draft: StoredCheckoutDraft; total: number; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
+function OrderSummary({ draft, total, baseTotal, couponPreview, selectedConcessions, ticketTypes, seatMap }: { draft: StoredCheckoutDraft; total: number; baseTotal: number; couponPreview: CouponPreviewResult | null; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat.label]));
   return (
     <aside className="lg:sticky lg:top-28 lg:self-start">
@@ -1308,7 +1448,14 @@ function OrderSummary({ draft, total, selectedConcessions, ticketTypes, seatMap 
               ? (draft.selectedSeatIds || []).map((id) => seatsById.get(id) || id).join(", ") || "A selecionar"
               : "Lugar livre"}</dd>
           </div>
+          {couponPreview && (
+            <div className="flex justify-between gap-4 border-t border-white/8 pt-3 text-emerald-300">
+              <dt>Cupom {couponPreview.coupon.code}</dt>
+              <dd>-{money(couponPreview.coupon.discountValue)}</dd>
+            </div>
+          )}
         </dl>
+        {couponPreview && <p className="mt-5 text-xs text-slate-500 line-through">Subtotal {money(baseTotal)}</p>}
         <div className="mt-6 flex items-end justify-between border-t border-white/8 pt-5">
           <span className="text-sm font-bold text-slate-400">Total</span>
           <span className="text-3xl font-black text-gold-400">{money(total)}</span>
@@ -1328,7 +1475,7 @@ function MobileCheckoutBar({ draft, step, total, loading, paymentMethod, onSubmi
   const labelByStep: Record<Step, string> = {
     ingressos: "Continuar",
     extras: "Pagamento",
-    pagamento: paymentMethod === "credit_card" ? "Use o formulário" : "Gerar Pix",
+    pagamento: total <= 0 ? "Finalizar pedido" : paymentMethod === "credit_card" ? "Use o formulário" : "Gerar Pix",
     confirmacao: "Meus ingressos",
   };
 

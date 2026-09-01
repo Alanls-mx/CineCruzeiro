@@ -331,6 +331,86 @@ svg {
   margin-top: 18px;
 }
 
+.coupon-form {
+  align-content: start;
+}
+
+.coupon-form-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.coupon-form-section .section-title {
+  margin: 0 0 2px;
+}
+
+.coupon-form .three-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.coupon-form select[multiple] {
+  min-height: 132px;
+  padding: 6px;
+}
+
+.coupon-form select[multiple] option {
+  padding: 8px;
+  border-radius: 5px;
+}
+
+.coupon-active-field {
+  align-self: end;
+}
+
+.coupon-checks {
+  display: grid;
+  gap: 8px;
+}
+
+.coupon-checks .check-field {
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: rgba(8, 15, 27, 0.72);
+}
+
+.coupon-usage-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.coupon-usage-stats:empty {
+  display: none;
+}
+
+.coupon-usage-stat {
+  padding: 11px 12px;
+  border-radius: 7px;
+  background: #0d1727;
+}
+
+.coupon-usage-stat span,
+.coupon-usage-stat strong {
+  display: block;
+}
+
+.coupon-usage-stat span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.coupon-usage-stat strong {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 16px;
+}
+
 .panel-heading {
   display: flex;
   justify-content: space-between;
@@ -4970,6 +5050,11 @@ th {
   .image-setting-grid,
   .payment-options,
   .quantity-line {
+    grid-template-columns: 1fr;
+  }
+
+  .coupon-form .three-fields,
+  .coupon-usage-stats {
     grid-template-columns: 1fr;
   }
 
