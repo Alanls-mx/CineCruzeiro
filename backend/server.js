@@ -24,6 +24,7 @@ const {
   releaseSeatHoldsForOwner: releaseSeatHoldsForOwnerInPostgres
 } = require("./db/postgresStore");
 const paymentService = require("./services/paymentService");
+const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
@@ -31,6 +32,8 @@ const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
+const clubDomainService = require("./services/clubDomainService");
+const { GoodsFiscalService } = require("./services/goodsFiscalService");
 const {
   applyMovieTagTransition,
   startMovieTagTransition,
@@ -48,7 +51,7 @@ let movieImageMaintenanceRunning = false;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "025_subscription_usage_quantity.sql";
+const LATEST_SCHEMA_MIGRATION = "026_hybrid_club_accounting.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -61,6 +64,8 @@ const storageService = createStorageService({
   rootDir: process.env.CINE_UPLOADS_DIR || ""
 });
 const movieImageService = createMovieImageService({ storageService });
+const goodsFiscalService = new GoodsFiscalService();
+const subscriptionPaymentProvider = new MercadoPagoSubscriptionProvider(paymentService);
 const PROJECT_ROOT = path.resolve(ROOT, "..");
 const MAX_TRAILER_BYTES = Number(process.env.MAX_TRAILER_BYTES || 120 * 1024 * 1024);
 const MAX_JSON_BODY_BYTES = Number(process.env.MAX_JSON_BODY_BYTES || 8 * 1024 * 1024);
@@ -1296,41 +1301,19 @@ function normalizeDb(db) {
   }));
   db.orders ||= [];
   db.payments ||= [];
-  db.subscriptionPlans ||= db.settings.subscriptionPlans || [
-    {
-      id: "individual",
-      name: "Plano Individual",
-      monthlyPrice: 24.9,
-      price: 24.9,
-      includedTickets: 3,
-      ticketsPerCycle: 3,
-      billingCycle: "monthly",
-      imageUrl: "",
-      isFeatured: false,
-      displayOrder: 1,
-      benefits: ["3 ingressos por mês", "Fila expressa na bomboniere", "Descontos em combos"],
-      active: true,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: "duplo",
-      name: "Plano Duplo",
-      monthlyPrice: 44.9,
-      price: 44.9,
-      includedTickets: 6,
-      ticketsPerCycle: 6,
-      billingCycle: "monthly",
-      imageUrl: "",
-      isFeatured: true,
-      displayOrder: 2,
-      benefits: ["6 ingressos por mês", "Fila expressa na bomboniere", "1 pipoca grátis no mês", "Descontos em combos"],
-      active: true,
-      createdAt: new Date().toISOString()
-    }
-  ];
+  db.subscriptionPlans ||= db.settings.subscriptionPlans || [];
   db.subscriptions ||= db.settings.subscriptions || [];
   db.subscriptionCredits ||= db.settings.subscriptionCredits || [];
   db.subscriptionUsage ||= db.settings.subscriptionUsage || [];
+  db.subscriptionCycles ||= [];
+  db.subscriptionPayments ||= [];
+  db.subscriptionCreditUnits ||= [];
+  db.subscriptionCreditRedemptions ||= [];
+  db.subscriptionAccountingRules ||= [];
+  db.orderServiceItems ||= [];
+  db.orderGoodsItems ||= [];
+  db.goodsFiscalDocuments ||= [];
+  clubDomainService.releaseExpiredReservations(db);
   db.subscriptionPlans = (db.subscriptionPlans || []).map((plan, index) => ({
     ...plan,
     imageUrl: storedLocalUploadUrl(plan.imageUrl || plan.heroImageUrl || ""),
@@ -2066,6 +2049,12 @@ function buildTicketsForOrder(order, db, source = "online") {
       code,
       qrPayload: ticketQrPayload(code),
       ticketType,
+      ticketNumber: Math.max(0, ...(db.tickets || []).map((item) => Number(item.ticketNumber || 0)), ...tickets.map((item) => Number(item.ticketNumber || 0))) + 1,
+      basePrice: 0,
+      subscriptionCreditAmount: 0,
+      additionalPaymentAmount: 0,
+      paymentSource: source === "courtesy" ? "courtesy" : /promoc/i.test(ticketType) ? "promotional" : "standard",
+      subscriptionCreditId: "",
       seatId: selectedSeat?.id || "",
       seat: selectedSeat?.label || "Lugar livre",
       seatLabel: selectedSeat?.label || "Lugar livre",
@@ -2318,7 +2307,7 @@ function applyMercadoPagoSubscriptionStatus(db, subscription, providerSubscripti
     subscription.startedAt ||= now;
     if (!currentSubscriptionCredit(db, subscription)) {
       const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
-      if (plan) createSubscriptionCreditCycle(db, subscription, plan, new Date());
+      if (plan) createSubscriptionCreditCycle(db, subscription, plan, new Date(), options.payment || null);
     }
   } else if (nextStatus === "active") {
     subscription.status = "pending_payment";
@@ -2370,7 +2359,7 @@ async function cancelMercadoPagoSubscriptionSafely(subscription, integrationConf
     return { id: subscription.providerSubscriptionId, status: "cancelled", localStatus: "cancelled", alreadyCancelled: true };
   }
   try {
-    return await paymentService.cancelMercadoPagoSubscription(subscription.providerSubscriptionId, integrationConfig || {});
+    return await subscriptionPaymentProvider.cancelSubscription(subscription.providerSubscriptionId, integrationConfig || {});
   } catch (error) {
     if (!isMercadoPagoAlreadyCancelledError(error)) throw error;
     return { id: subscription.providerSubscriptionId, status: "cancelled", localStatus: "cancelled", alreadyCancelled: true };
@@ -2498,7 +2487,7 @@ async function expirePendingPaymentSubscriptions(db, options = {}) {
     let providerSubscription = null;
     try {
       if (subscription.provider === "mercado_pago" && subscription.providerSubscriptionId) {
-        providerSubscription = await paymentService.fetchMercadoPagoSubscription(
+        providerSubscription = await subscriptionPaymentProvider.getSubscription(
           subscription.providerSubscriptionId,
           mercadoPagoConfig || {}
         );
@@ -2679,28 +2668,6 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
   return { orders, tickets, newlyPaidOrders };
 }
 
-function createClubCreditPaymentRecord(order, subscription) {
-  const now = new Date().toISOString();
-  return {
-    id: `pagamento-clube-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
-    orderId: order.id,
-    method: "club_credit",
-    provider: "internal_club",
-    providerPaymentId: `club-credit-${order.id}`,
-    providerReference: order.id,
-    status: "approved",
-    amount: 0,
-    currency: "BRL",
-    createdAt: now,
-    updatedAt: now,
-    approvedAt: now,
-    metadata: {
-      subscriptionId: subscription.id,
-      benefit: "club_credit"
-    }
-  };
-}
-
 function findSubscriptionPayment(db, subscriptionId, method = "") {
   return (db.payments || []).find((payment) =>
     payment.metadata?.kind === "club_subscription" &&
@@ -2724,7 +2691,7 @@ function activateSubscriptionFromPayment(db, subscription, payment, actor = "mer
   subscription.updatedAt = new Date().toISOString();
   if (!currentSubscriptionCredit(db, subscription)) {
     const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
-    if (plan) createSubscriptionCreditCycle(db, subscription, plan, new Date());
+    if (plan) createSubscriptionCreditCycle(db, subscription, plan, new Date(), payment);
   }
   subscription.history ||= [];
   subscription.history.push({
@@ -3011,6 +2978,10 @@ function pdfWriteValueBlock(label, value, x, y, options = {}) {
   ].join("");
 }
 
+function brl(value) {
+  return `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
+}
+
 function pdfDrawImage(name, x, y, width, height) {
   return `q ${width.toFixed(2)} 0 0 ${height.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /${name} Do Q\n`;
 }
@@ -3212,8 +3183,14 @@ async function ticketDownloadPdf(db, ticket) {
   page1 += pdfRect(286, 406, 154, 54, "#facc15");
   page1 += pdfWriteText("POLTRONA", 300, 444, 8, { bold: true, color: "#422006" });
   page1 += pdfWriteText(seatLabel, 300, 420, 17, { bold: true, color: "#020617" });
-  page1 += pdfLine(78, 354, 517, 354, "#334155", 1);
-  page1 += pdfWriteText("QR Code de entrada", 214, 324, 10, { bold: true, color: "#bfdbfe" });
+  if (enriched.paymentSource === "subscription_credit") {
+    page1 += pdfWriteText(`INGRESSO No ${enriched.ticketNumber || "-"}`, 452, 420, 8, { bold: true, color: "#93c5fd" });
+    page1 += pdfWriteText(`Valor: ${brl(enriched.basePrice)}`, 286, 382, 9, { color: "#ffffff" });
+    page1 += pdfWriteText(`Credito Clube: -${brl(enriched.subscriptionCreditAmount)}`, 286, 366, 9, { bold: true, color: "#45d6a1" });
+    page1 += pdfWriteText(`Complemento: ${brl(enriched.additionalPaymentAmount)}`, 286, 350, 9, { color: "#facc15" });
+  }
+  page1 += pdfLine(78, enriched.paymentSource === "subscription_credit" ? 330 : 354, 517, enriched.paymentSource === "subscription_credit" ? 330 : 354, "#334155", 1);
+  page1 += pdfWriteText("QR Code de entrada", 214, enriched.paymentSource === "subscription_credit" ? 306 : 324, 10, { bold: true, color: "#bfdbfe" });
   page1 += pdfQr(enriched.qrPayload || enriched.code, 222, 134, 164);
   page1 += pdfWriteText("Apresente este codigo na entrada.", 202, 104, 11, { bold: true, color: "#ffffff" });
   page1 += pdfWriteText("Pagina 1 de 2", 462, 86, 9, { color: "#94a3b8" });
@@ -3235,6 +3212,9 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
   page2 += pdfWriteValueBlock("ASSENTO", seatLabel, 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("STATUS", ticketStatusLabel(enriched.status), 78, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
+  if (enriched.paymentSource === "subscription_credit") {
+    page2 += pdfWriteValueBlock("ORIGEM", "Credito Clube", 338, 326, { valueSize: 11, maxChars: 24, maxLines: 1 });
+  }
   page2 += pdfLine(78, 344, 517, 344, "#334155", 1);
   page2 += pdfWriteText("BOMBONIERE", 78, 306, 9, { bold: true, color: "#facc15" });
   page2 += pdfWriteMultiline(extras || "Sem extras comprados neste pedido.", 78, 282, 11, { color: "#cbd5e1", maxChars: 72, maxLines: 5, lineHeight: 15 });
@@ -3251,13 +3231,39 @@ function finalizePaidOrder(db, order, payment, source = "online") {
   if (!order || (order.status === "paid" && existingTickets.length > 0)) {
     return existingTickets;
   }
-  payment.status = "approved";
-  payment.approvedAt = payment.approvedAt || new Date().toISOString();
-  payment.updatedAt = new Date().toISOString();
+  if (payment) {
+    payment.status = "approved";
+    payment.approvedAt = payment.approvedAt || new Date().toISOString();
+    payment.updatedAt = new Date().toISOString();
+  }
   order.status = "paid";
-  order.paymentStatus = "approved";
+  order.paymentStatus = payment ? "approved" : "not_required";
   order.paidAt = order.paidAt || new Date().toISOString();
   const tickets = buildTicketsForOrder(order, db, source);
+  if (!order.clubCreditPending) {
+    const unitPrices = ticketUnitPricesForOrder(order);
+    const serviceItems = tickets.map((ticket, index) => {
+      const basePrice = Number(unitPrices[index] || 0);
+      ticket.basePrice = basePrice;
+      ticket.additionalPaymentAmount = source === "courtesy" ? 0 : basePrice;
+      return {
+        id: `servico-${order.id}-${index + 1}`,
+        orderId: order.id,
+        ticketId: ticket.id,
+        itemId: ticket.id,
+        name: ticket.ticketType || "Ingresso",
+        quantity: 1,
+        unitPrice: basePrice,
+        basePrice,
+        subscriptionCreditAmount: 0,
+        additionalPaymentAmount: ticket.additionalPaymentAmount,
+        paymentSource: ticket.paymentSource,
+        subscriptionCreditId: "",
+        createdAt: new Date().toISOString()
+      };
+    });
+    db.orderServiceItems = (db.orderServiceItems || []).filter((item) => item.orderId !== order.id).concat(serviceItems);
+  }
   order.ticketCodes = tickets.map((ticket) => ticket.code);
   confirmConcessionStock(db, order);
   db.tickets.unshift(...tickets);
@@ -3322,6 +3328,16 @@ function normalizeSubscriptionPlan(input, existing = {}) {
   const benefits = rawBenefits
     .map((item) => String(item).trim().replace(/\bgratis\b/gi, "grátis"))
     .filter((item, index, items) => item && items.findIndex((candidate) => candidate.toLocaleLowerCase("pt-BR") === item.toLocaleLowerCase("pt-BR")) === index);
+  const uniqueIds = (value, fallback = []) => [...new Set((Array.isArray(value) ? value : fallback).map((item) => String(item || "").trim()).filter(Boolean))];
+  const nullableNonNegative = (value, fallback = null) => {
+    if (value === "" || value === null) return null;
+    if (value === undefined) return fallback;
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, number) : fallback;
+  };
+  const accountingInput = input.accounting && typeof input.accounting === "object" ? input.accounting : existing.accounting || {};
+  const accountingEffectiveFrom = String(accountingInput.effectiveFrom || existing.accounting?.effectiveFrom || "").trim();
+  const accountingEffectiveDate = accountingEffectiveFrom ? new Date(accountingEffectiveFrom) : null;
   return {
     id: String(input.id || existing.id || slugify(name) || `plano-${Date.now()}`),
     name,
@@ -3334,6 +3350,22 @@ function normalizeSubscriptionPlan(input, existing = {}) {
     ticketDiscountPercent: normalizePercent(input.ticketDiscountPercent ?? existing.ticketDiscountPercent),
     concessionDiscountPercent: normalizePercent(input.concessionDiscountPercent ?? existing.concessionDiscountPercent),
     freeConcessionItems,
+    creditReferenceValue: nullableNonNegative(input.creditReferenceValue, existing.creditReferenceValue ?? null),
+    creditValidityDays: nullableNonNegative(input.creditValidityDays, existing.creditValidityDays ?? null),
+    allowCreditRollover: input.allowCreditRollover !== undefined ? Boolean(input.allowCreditRollover) : Boolean(existing.allowCreditRollover),
+    maxAccumulatedCredits: nullableNonNegative(input.maxAccumulatedCredits, existing.maxAccumulatedCredits ?? null),
+    gracePeriodDays: Math.floor(nullableNonNegative(input.gracePeriodDays, existing.gracePeriodDays ?? 0) || 0),
+    allowPriceDifference: input.allowPriceDifference !== undefined ? Boolean(input.allowPriceDifference) : existing.allowPriceDifference !== false,
+    excludedConcessionIds: uniqueIds(input.excludedConcessionIds, existing.excludedConcessionIds || []),
+    eligibleFormats: uniqueIds(input.eligibleFormats, existing.eligibleFormats || []),
+    eligibleSessionIds: uniqueIds(input.eligibleSessionIds, existing.eligibleSessionIds || []),
+    cancellationRules: input.cancellationRules && typeof input.cancellationRules === "object" ? input.cancellationRules : existing.cancellationRules || {},
+    accounting: {
+      ticketComponentValue: nullableNonNegative(accountingInput.ticketComponentValue, existing.accounting?.ticketComponentValue ?? null),
+      benefitsComponentValue: nullableNonNegative(accountingInput.benefitsComponentValue, existing.accounting?.benefitsComponentValue ?? null),
+      ruleVersion: String(accountingInput.ruleVersion || existing.accounting?.ruleVersion || "").trim(),
+      effectiveFrom: accountingEffectiveDate && Number.isFinite(accountingEffectiveDate.getTime()) ? accountingEffectiveDate.toISOString() : ""
+    },
     imageUrl: input.imageUrl !== undefined ? storedLocalUploadUrl(input.imageUrl) : storedLocalUploadUrl(existing.imageUrl || ""),
     isFeatured: input.isFeatured !== undefined ? Boolean(input.isFeatured) : Boolean(existing.isFeatured || existing.featured),
     displayOrder: Math.min(999, Math.max(0, Math.floor(Number(input.displayOrder ?? input.sortOrder ?? existing.displayOrder ?? existing.sortOrder ?? 100) || 0))),
@@ -3343,6 +3375,45 @@ function normalizeSubscriptionPlan(input, existing = {}) {
     createdAt: existing.createdAt || input.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+}
+
+function persistPlanAccountingRule(db, plan, previous, adminUser) {
+  const next = plan.accounting || {};
+  const before = previous?.accounting || {};
+  if (JSON.stringify(next) === JSON.stringify(before)) return;
+  if (roleAlias(adminUser?.role) !== "owner") {
+    const error = new Error("Somente o proprietário pode alterar regras contábeis do Clube.");
+    error.statusCode = 403;
+    error.code = "OWNER_REQUIRED";
+    throw error;
+  }
+  const hasValues = next.ticketComponentValue !== null || next.benefitsComponentValue !== null;
+  if (!hasValues && !next.ruleVersion && !next.effectiveFrom) return;
+  if (!next.ruleVersion || !next.effectiveFrom || Number.isNaN(new Date(next.effectiveFrom).getTime())) {
+    const error = new Error("Informe a versão e a vigência da regra contábil orientada pelo contador.");
+    error.statusCode = 400;
+    error.code = "ACCOUNTING_RULE_VERSION_REQUIRED";
+    throw error;
+  }
+  db.subscriptionAccountingRules ||= [];
+  const duplicate = db.subscriptionAccountingRules.find((item) => item.planId === plan.id && item.ruleVersion === next.ruleVersion);
+  if (duplicate) {
+    const error = new Error("Esta versão contábil já existe e não pode ser sobrescrita.");
+    error.statusCode = 409;
+    error.code = "ACCOUNTING_RULE_VERSION_EXISTS";
+    throw error;
+  }
+  db.subscriptionAccountingRules.unshift({
+    id: `regra-contabil-${plan.id}-${slugify(next.ruleVersion) || Date.now()}`,
+    planId: plan.id,
+    ruleVersion: next.ruleVersion,
+    effectiveFrom: new Date(next.effectiveFrom).toISOString(),
+    ticketComponentValue: next.ticketComponentValue,
+    benefitsComponentValue: next.benefitsComponentValue,
+    configuration: { source: "owner_panel", reviewedByAccountant: false },
+    createdBy: adminUser?.id || "",
+    createdAt: new Date().toISOString()
+  });
 }
 
 function subscriptionStatusLabel(status = "") {
@@ -3379,7 +3450,7 @@ function syncSubscriptionCreditMirror(subscription, credit) {
   return subscription;
 }
 
-function createSubscriptionCreditCycle(db, subscription, plan, now = new Date()) {
+function createSubscriptionCreditCycle(db, subscription, plan, now = new Date(), payment = null) {
   db.subscriptionCredits ||= [];
   const cycleStart = billingCycleStart(now);
   const cycleEnd = billingCycleEnd(now);
@@ -3398,6 +3469,15 @@ function createSubscriptionCreditCycle(db, subscription, plan, now = new Date())
     updatedAt: new Date().toISOString()
   };
   db.subscriptionCredits.unshift(credit);
+  clubDomainService.issueCycle(db, {
+    subscription,
+    plan,
+    payment,
+    cycleStart,
+    cycleEnd,
+    idempotencyKey: `subscription-cycle:${subscription.id}:${payment?.providerPaymentId || payment?.id || cycleStart}`,
+    now
+  });
   subscription.startedAt ||= new Date().toISOString();
   subscription.cycleStart = cycleStart;
   subscription.cycleEnd = cycleEnd;
@@ -3410,16 +3490,31 @@ function createSubscriptionCreditCycle(db, subscription, plan, now = new Date())
   return credit;
 }
 
+function ensureDetailedSubscriptionCycle(db, subscription, plan, credit) {
+  if (!credit || !plan) return null;
+  const existing = (db.subscriptionCycles || []).find((cycle) => cycle.subscriptionId === subscription.id && cycle.cycleStart === credit.cycleStart);
+  if (existing) return existing;
+  return clubDomainService.issueCycle(db, {
+    subscription,
+    plan,
+    cycleStart: credit.cycleStart,
+    cycleEnd: credit.cycleEnd,
+    idempotencyKey: `legacy-credit-cycle:${credit.id}`,
+    now: new Date(credit.createdAt || credit.cycleStart)
+  });
+}
+
 function refreshSubscriptionCredits(db, subscription, now = new Date()) {
   const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
   if (!plan) return subscription;
   let credit = currentSubscriptionCredit(db, subscription, now);
   const status = String(subscription.status || "");
-  const shouldRenew = status === "active" && (!subscription.cycleEnd || new Date(subscription.cycleEnd).getTime() <= now.getTime());
+  const manuallyManaged = ["manual_admin", "migration"].includes(String(subscription.provider || ""));
+  const shouldRenew = status === "active" && manuallyManaged && (!subscription.cycleEnd || new Date(subscription.cycleEnd).getTime() <= now.getTime());
   if (!credit && shouldRenew) {
     credit = createSubscriptionCreditCycle(db, subscription, plan, now);
   }
-  if (!credit && !db.subscriptionCredits?.some((item) => item.subscriptionId === subscription.id) && status === "active") {
+  if (!credit && !db.subscriptionCredits?.some((item) => item.subscriptionId === subscription.id) && status === "active" && manuallyManaged) {
     credit = createSubscriptionCreditCycle(db, subscription, plan, now);
   }
   if (!credit && subscription.status === "ending") {
@@ -3429,6 +3524,7 @@ function refreshSubscriptionCredits(db, subscription, now = new Date()) {
     subscription.nextBillingAt = "";
     return subscription;
   }
+  if (credit) ensureDetailedSubscriptionCycle(db, subscription, plan, credit);
   return syncSubscriptionCreditMirror(subscription, credit);
 }
 
@@ -3473,6 +3569,8 @@ function subscriptionSummary(db, userId) {
       const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
       const credit = currentSubscriptionCredit(db, subscription);
       const usage = (db.subscriptionUsage || []).filter((item) => item.subscriptionId === subscription.id);
+      const detailedCredits = (db.subscriptionCreditUnits || []).filter((item) => item.subscriptionId === subscription.id);
+      const counts = detailedCredits.length ? clubDomainService.creditCounts(db, subscription.id) : null;
       return {
         ...subscription,
         plan,
@@ -3482,9 +3580,12 @@ function subscriptionSummary(db, userId) {
         cycleStart: subscription.cycleStart || subscription.currentPeriodStart || credit?.cycleStart || "",
         cycleEnd: subscription.cycleEnd || subscription.currentPeriodEnd || credit?.cycleEnd || "",
         nextBillingAt: subscription.nextBillingAt || subscription.cycleEnd || "",
-        creditsTotal: subscriptionCanUseCredit(subscription) ? Number(credit?.total || 0) : 0,
-        creditsRemaining: subscriptionCanUseCredit(subscription) ? Math.max(0, Number(subscription.creditsAvailable || 0)) : 0,
-        creditsUsed: subscriptionCanUseCredit(subscription) ? Number(subscription.creditsUsed || 0) : 0
+        creditCounts: counts,
+        creditsTotal: subscriptionCanUseCredit(subscription) ? (detailedCredits.length || Number(credit?.total || 0)) : 0,
+        creditsRemaining: subscriptionCanUseCredit(subscription) ? (counts ? Number(counts.available || 0) : Math.max(0, Number(subscription.creditsAvailable || 0))) : 0,
+        creditsReserved: counts ? Number(counts.reserved || 0) : 0,
+        creditsUsed: subscriptionCanUseCredit(subscription) ? (counts ? Number(counts.redeemed || 0) : Number(subscription.creditsUsed || 0)) : 0,
+        creditsExpired: counts ? Number(counts.expired || 0) : 0
       };
     });
 }
@@ -3611,6 +3712,101 @@ function ticketSubtotalForOrder(db, order) {
   return Number((full * Number(session.priceFull || 0) + half * Number(session.priceHalf || 0)).toFixed(2));
 }
 
+function ticketUnitPricesForOrder(order) {
+  return (order.ticketItems || []).flatMap((item) => {
+    const issuedQuantity = Math.max(1, Number(item.ticketQuantity || Number(item.quantity || 0) * Number(item.bundleQuantity || 1)));
+    const totalCents = Math.round(Number(item.quantity || 0) * Number(item.unitPrice || 0) * 100);
+    const unitCents = Math.floor(totalCents / issuedQuantity);
+    const remainder = totalCents - unitCents * issuedQuantity;
+    return Array.from({ length: issuedQuantity }, (_, index) => (unitCents + (index < remainder ? 1 : 0)) / 100);
+  });
+}
+
+function assertClubPlanEligibility(plan, order) {
+  if ((plan.eligibleFormats || []).length && !plan.eligibleFormats.includes(order.sessionFormat)) {
+    const error = new Error("Este formato de sessão não aceita créditos deste plano.");
+    error.statusCode = 409;
+    error.code = "CLUB_SESSION_FORMAT_NOT_ELIGIBLE";
+    throw error;
+  }
+  if ((plan.eligibleSessionIds || []).length && !plan.eligibleSessionIds.includes(order.sessionId)) {
+    const error = new Error("Esta sessão não aceita créditos deste plano.");
+    error.statusCode = 409;
+    error.code = "CLUB_SESSION_NOT_ELIGIBLE";
+    throw error;
+  }
+}
+
+function reserveClubCreditsForOrder(db, order, user, idempotencyKey) {
+  if (!user || !order?.useClubCredits) return { subscription: null, plan: null, redemptions: [] };
+  const subscription = activeSubscriptionForUser(db, user.id);
+  const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription?.planId && item.active !== false);
+  if (!subscription || !plan || !subscriptionCanUseCredit(subscription)) {
+    const error = new Error("Você não possui assinatura ativa com créditos disponíveis.");
+    error.statusCode = 409;
+    error.code = "NO_ACTIVE_SUBSCRIPTION";
+    throw error;
+  }
+  assertClubPlanEligibility(plan, order);
+  const rawPrices = ticketUnitPricesForOrder(order);
+  const discountRate = Math.min(90, Math.max(0, Number(plan.ticketDiscountPercent || 0))) / 100;
+  const effectivePrices = rawPrices.map((price) => Number((price * (1 - discountRate)).toFixed(2)));
+  const redemptions = clubDomainService.reserveCredits(db, {
+    subscription,
+    order,
+    ticketPrices: effectivePrices,
+    reservationExpiresAt: order.reservationExpiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    idempotencyKey: idempotencyKey || order.id
+  });
+  const creditAmount = Number(redemptions.reduce((sum, item) => sum + Number(item.creditAmount || 0), 0).toFixed(2));
+  const additionalPayment = Number(redemptions.reduce((sum, item) => sum + Number(item.additionalPaymentAmount || 0), 0).toFixed(2));
+  if (!plan.allowPriceDifference && additionalPayment > 0) {
+    clubDomainService.releaseOrderCredits(db, order.id);
+    const error = new Error("Este plano não permite pagar diferença em sessões mais caras.");
+    error.statusCode = 409;
+    error.code = "CLUB_PRICE_DIFFERENCE_NOT_ALLOWED";
+    throw error;
+  }
+  order.clubSubscriptionId = subscription.id;
+  order.clubBenefit = "subscription_credit";
+  order.clubCreditQuantity = redemptions.length;
+  order.clubCreditsApplied = creditAmount;
+  order.additionalPayment = additionalPayment;
+  order.clubCreditPending = true;
+  order.clubCreditIdempotencyKey = `${idempotencyKey || order.id}:club-credit`;
+  order.discountValue = Number((Number(order.discountValue || 0) + creditAmount).toFixed(2));
+  order.totalPrice = Math.max(0, Number((Number(order.totalPrice || 0) - creditAmount).toFixed(2)));
+  return { subscription, plan, redemptions };
+}
+
+function materializeOrderAccounting(db, order) {
+  const serviceSubtotal = Number(ticketSubtotalForOrder(db, order).toFixed(2));
+  const goodsSubtotal = Number((order.concessionItems || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.originalPrice ?? item.unitPrice ?? 0), 0).toFixed(2));
+  const goodsDiscount = Number((order.concessionItems || []).reduce((sum, item) => sum + Number(item.clubDiscount || 0), 0).toFixed(2));
+  order.serviceSubtotal = serviceSubtotal;
+  order.goodsSubtotal = goodsSubtotal;
+  order.clubCreditsApplied = Number(order.clubCreditsApplied || 0);
+  order.clubDiscount = Number((Number(order.clubBenefits?.ticketDiscount || 0) + goodsDiscount + Number(order.clubBenefits?.freeConcessionDiscount || 0)).toFixed(2));
+  order.additionalPayment = Number(order.totalPrice || 0);
+  order.serviceFiscalStatus = order.serviceFiscalStatus || "pending_accounting_rule";
+  order.goodsFiscalTrigger = order.goodsFiscalTrigger || db.settings?.nfceTrigger || "goods_delivered";
+  order.goodsItems = (order.concessionItems || []).map((item) => ({
+    id: `mercadoria-${order.id}-${item.id}`,
+    orderId: order.id,
+    concessionId: item.id,
+    sku: item.sku || "",
+    name: item.name,
+    quantity: Number(item.quantity || 0),
+    originalUnitPrice: Number(item.originalPrice ?? item.unitPrice ?? 0),
+    clubDiscount: Number(item.clubDiscount || 0),
+    finalUnitPrice: Number(item.finalPrice ?? item.unitPrice ?? 0),
+    createdAt: order.createdAt || new Date().toISOString()
+  }));
+  db.orderGoodsItems = (db.orderGoodsItems || []).filter((item) => item.orderId !== order.id).concat(order.goodsItems);
+  goodsFiscalService.prepare(db, order, order.goodsFiscalTrigger);
+  return order;
+}
+
 function clubSavingsSummary(db, subscription) {
   const summary = {
     total: 0,
@@ -3628,9 +3824,7 @@ function clubSavingsSummary(db, subscription) {
       const ticketDiscount = Math.max(0, Number(benefits.ticketDiscount || 0));
       const concessionDiscount = Math.max(0, Number(benefits.concessionDiscount || 0));
       const freeItemsDiscount = Math.max(0, Number(benefits.freeConcessionDiscount || 0));
-      const creditValue = order.clubBenefit === "club_credit"
-        ? Math.max(0, ticketSubtotalForOrder(db, order) - ticketDiscount)
-        : 0;
+      const creditValue = Math.max(0, Number(order.clubCreditsApplied || 0));
       const total = ticketDiscount + concessionDiscount + freeItemsDiscount + creditValue;
       if (total <= 0) return;
       summary.tickets += ticketDiscount + creditValue;
@@ -3645,35 +3839,6 @@ function clubSavingsSummary(db, subscription) {
     if (key !== "benefitedOrders") summary[key] = Number(summary[key].toFixed(2));
   });
   return summary;
-}
-
-function applyClubCreditDiscount(db, order, user, idempotencyKey) {
-  if (!user || !order?.useClubCredits) return { order, subscription: null, quantity: 0 };
-  const quantity = orderTicketCount(order);
-  if (!quantity) return { order, subscription: null, quantity: 0 };
-  const subscription = activeSubscriptionForUser(db, user.id);
-  if (!subscription || !subscriptionCanUseCredit(subscription)) {
-    const error = new Error("Voce nao possui assinatura ativa com creditos disponiveis.");
-    error.statusCode = 409;
-    error.code = "NO_ACTIVE_SUBSCRIPTION";
-    throw error;
-  }
-  if (Number(subscription.creditsAvailable || 0) < quantity) {
-    const error = new Error(`Seu Clube tem ${Number(subscription.creditsAvailable || 0)} credito(s) disponivel(is), mas este pedido usa ${quantity} ingresso(s).`);
-    error.statusCode = 409;
-    error.code = "CLUB_CREDITS_INSUFFICIENT";
-    throw error;
-  }
-  const ticketDiscount = Math.min(ticketSubtotalForOrder(db, order), Number(order.totalPrice || 0));
-  if (ticketDiscount <= 0) return { order, subscription: null, quantity: 0 };
-  order.discountValue = Number((Number(order.discountValue || 0) + ticketDiscount).toFixed(2));
-  order.totalPrice = Math.max(0, Number((Number(order.totalPrice || 0) - ticketDiscount).toFixed(2)));
-  order.clubSubscriptionId = subscription.id;
-  order.clubBenefit = "club_credit";
-  order.clubCreditQuantity = quantity;
-  order.clubCreditPending = true;
-  order.clubCreditIdempotencyKey = `${idempotencyKey || order.id}:club-credit`;
-  return { order, subscription, quantity };
 }
 
 function activeClubPlanForBenefits(db, userId) {
@@ -3737,8 +3902,16 @@ function applyClubPlanBenefits(db, order, user) {
 
   const concessionSubtotal = (order.concessionItems || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
   const ticketDiscount = ticketSubtotal * (ticketDiscountPercent / 100);
-  const concessionDiscountBase = Math.max(0, concessionSubtotal - freeConcessionDiscount);
-  const concessionDiscount = concessionDiscountBase * (concessionDiscountPercent / 100);
+  const excludedConcessionIds = new Set(plan.excludedConcessionIds || []);
+  let concessionDiscount = 0;
+  order.concessionItems = clubDomainService.calculateGoodsDiscount((order.concessionItems || []).map((item) => {
+    const freeQuantity = Number(freeConcessionItems.find((entry) => entry.concessionId === item.id)?.quantity || 0);
+    return { ...item, discountableQuantity: Math.max(0, Number(item.quantity || 0) - freeQuantity) };
+  }), { ...plan, concessionDiscountPercent, excludedConcessionIds: [...excludedConcessionIds] }).map((item) => {
+    const fullDiscount = item.clubDiscountExcluded ? 0 : Number((Number(item.discountableQuantity || 0) * Number(item.unitPrice || 0) * (concessionDiscountPercent / 100)).toFixed(2));
+    concessionDiscount += fullDiscount;
+    return { ...item, clubDiscount: fullDiscount, finalPrice: Number(Math.max(0, Number(item.unitPrice || 0) - fullDiscount / Math.max(1, Number(item.quantity || 1))).toFixed(2)) };
+  });
   const clubDiscount = Math.min(Number(order.totalPrice || 0), Number((ticketDiscount + freeConcessionDiscount + concessionDiscount).toFixed(2)));
 
   order.discountValue = Number((Number(order.discountValue || 0) + clubDiscount).toFixed(2));
@@ -3761,6 +3934,7 @@ function consumePendingClubCredit(db, order, tickets, userId) {
   if (!order?.clubCreditPending || order.clubCreditUsageId) return null;
   const subscription = (db.subscriptions || []).find((item) => item.id === order.clubSubscriptionId);
   if (!subscription) return null;
+  const redemptions = clubDomainService.redeemReservedCredits(db, order, tickets);
   const usage = consumeSubscriptionCredit(db, subscription, {
     userId: userId || order.customerUserId,
     orderId: order.id,
@@ -3773,6 +3947,26 @@ function consumePendingClubCredit(db, order, tickets, userId) {
   order.clubCreditUsageId = usage.id;
   order.clubCreditPending = false;
   subscription.updatedAt = new Date().toISOString();
+  const ticketItemsByIndex = tickets.map((ticket, index) => {
+    const redemption = redemptions[index];
+    const fallbackPrice = ticketUnitPricesForOrder(order)[index] || 0;
+    return {
+      id: `servico-${order.id}-${index + 1}`,
+      orderId: order.id,
+      ticketId: ticket.id,
+      itemId: ticket.id,
+      name: ticket.ticketType || "Ingresso",
+      quantity: 1,
+      unitPrice: Number(redemption?.basePrice ?? fallbackPrice),
+      basePrice: Number(redemption?.basePrice ?? fallbackPrice),
+      subscriptionCreditAmount: Number(redemption?.creditAmount || 0),
+      additionalPaymentAmount: Number(redemption?.additionalPaymentAmount ?? fallbackPrice),
+      paymentSource: redemption ? "subscription_credit" : ticket.paymentSource || "standard",
+      subscriptionCreditId: redemption?.subscriptionCreditId || "",
+      createdAt: new Date().toISOString()
+    };
+  });
+  db.orderServiceItems = (db.orderServiceItems || []).filter((item) => item.orderId !== order.id).concat(ticketItemsByIndex);
   return usage;
 }
 
@@ -3789,6 +3983,20 @@ function refundSubscriptionCreditForUsage(db, usage, adminUser, reason) {
   usage.refundedAt = new Date().toISOString();
   usage.refundedBy = adminUser?.id || "";
   usage.refundReason = String(reason || "Credito devolvido por cancelamento").trim();
+  const redemptions = (db.subscriptionCreditRedemptions || []).filter((item) => item.orderId === usage.orderId && item.subscriptionId === usage.subscriptionId && item.status === "redeemed");
+  redemptions.forEach((redemption) => {
+    const unit = (db.subscriptionCreditUnits || []).find((item) => item.id === redemption.subscriptionCreditId);
+    if (unit && unit.status === "redeemed") {
+      unit.status = new Date(unit.expiresAt).getTime() > Date.now() ? "available" : "expired";
+      unit.redeemedAt = "";
+      unit.reservedAt = "";
+      unit.reservedOrderId = "";
+      unit.updatedAt = usage.refundedAt;
+    }
+    redemption.status = "refunded";
+    redemption.releasedAt = usage.refundedAt;
+    redemption.updatedAt = usage.refundedAt;
+  });
   syncSubscriptionCreditMirror(subscription, credit);
   subscription.history ||= [];
   subscription.history.push({ action: "credit_refund", usageId: usage.id, by: adminUser?.id || "", reason: usage.refundReason, at: usage.refundedAt });
@@ -4559,7 +4767,13 @@ function confirmConcessionStock(db, order) {
 }
 
 function releaseConcessionReservation(db, order) {
-  if (order.stockReservationStatus !== "reserved") return false;
+  let changed = false;
+  if (order?.id && (db.subscriptionCreditRedemptions || []).some((item) => item.orderId === order.id && item.status === "reserved")) {
+    clubDomainService.releaseOrderCredits(db, order.id);
+    order.clubCreditPending = false;
+    changed = true;
+  }
+  if (order.stockReservationStatus !== "reserved") return changed;
 
   eachStockedOrderItem(db, order, (item, quantity) => {
     item.stock = Number(item.stock || 0) + quantity;
@@ -5503,7 +5717,15 @@ function getContent(db, options = {}) {
             savings: clubSavingsSummary(db, subscription)
           })),
           subscriptionCredits: db.subscriptionCredits || [],
-          subscriptionUsage: db.subscriptionUsage || []
+          subscriptionUsage: db.subscriptionUsage || [],
+          subscriptionCycles: db.subscriptionCycles || [],
+          subscriptionPayments: db.subscriptionPayments || [],
+          subscriptionCreditUnits: db.subscriptionCreditUnits || [],
+          subscriptionCreditRedemptions: db.subscriptionCreditRedemptions || [],
+          subscriptionAccountingRules: db.subscriptionAccountingRules || [],
+          orderServiceItems: db.orderServiceItems || [],
+          orderGoodsItems: db.orderGoodsItems || [],
+          goodsFiscalDocuments: db.goodsFiscalDocuments || []
         }
       : {})
   };
@@ -5515,6 +5737,8 @@ function getAdminContent(db, adminUser) {
 
   if (!isOwner) {
     content.users = [];
+    content.subscriptionAccountingRules = [];
+    content.subscriptionPlans = (content.subscriptionPlans || []).map(({ accounting, ...plan }) => plan);
   }
   if (!adminHasPermission(adminUser, "orders.manage")) {
     content.orders = [];
@@ -5529,6 +5753,10 @@ function getAdminContent(db, adminUser) {
     content.subscriptions = [];
     content.subscriptionCredits = [];
     content.subscriptionUsage = [];
+    content.subscriptionCycles = [];
+    content.subscriptionPayments = [];
+    content.subscriptionCreditUnits = [];
+    content.subscriptionCreditRedemptions = [];
   }
 
   return content;
@@ -5773,6 +6001,18 @@ function adminDashboard(db, options = {}) {
   const clubRevenue = paymentsInPeriod
     .filter((payment) => approvedPaymentStatuses.has(String(payment.status || "").toLowerCase()) && payment.metadata?.kind === "club_subscription")
     .reduce((total, payment) => total + Number(payment.amount || 0), 0);
+  const detailedClubPayments = (db.subscriptionPayments || [])
+    .filter((payment) => payment.status === "approved" && inDateRange(payment.approvedAt || payment.createdAt, period.start, period.end));
+  const detailedClubRevenue = detailedClubPayments.reduce((total, payment) => total + Number(payment.amount || 0), 0);
+  const clubRedemptions = (db.subscriptionCreditRedemptions || []).filter((item) => inDateRange(item.redeemedAt || item.createdAt, period.start, period.end));
+  const clubTopUps = clubRedemptions.reduce((total, item) => total + Number(item.additionalPaymentAmount || 0), 0);
+  const courtesies = (db.tickets || []).filter((ticket) => ticket.paymentSource === "courtesy" && inDateRange(ticket.createdAt, period.start, period.end)).length;
+  const clubTickets = (db.tickets || []).filter((ticket) => ticket.paymentSource === "subscription_credit" && inDateRange(ticket.createdAt, period.start, period.end)).length;
+  const clubGoodsDiscount = (db.orderGoodsItems || []).filter((item) => inDateRange(item.createdAt, period.start, period.end)).reduce((total, item) => total + Number(item.clubDiscount || 0), 0);
+  const fiscalCounts = (db.goodsFiscalDocuments || []).filter((item) => inDateRange(item.createdAt, period.start, period.end)).reduce((counts, item) => ({
+    ...counts,
+    [item.status]: Number(counts[item.status] || 0) + 1
+  }), {});
   const ticketRevenue = Math.max(0, sum(periodPaidOrders) - concessionRevenue);
   const revenueComposition = [
     { key: "tickets", label: "Ingressos", amount: ticketRevenue, hint: `${ticketsSold} ingresso(s) vendidos` },
@@ -5835,7 +6075,7 @@ function adminDashboard(db, options = {}) {
     problematicPayments: (db.payments || []).filter((payment) => problematicStatuses.includes(String(payment.status || "").toLowerCase())).length,
     concessionRevenue,
     ticketRevenue,
-    clubRevenue,
+    clubRevenue: detailedClubRevenue || clubRevenue,
     revenueComposition,
     revenueByMovie: Object.entries(revenueByMovie)
       .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
@@ -5871,8 +6111,17 @@ function adminDashboard(db, options = {}) {
       newSubscribers,
       cancellations: cancelledSubscriptions,
       recurringRevenueEstimate,
-      creditsIssued: (db.subscriptionCredits || []).filter((item) => inDateRange(item.cycleStart || item.createdAt, period.start, period.end)).reduce((total, item) => total + Number(item.total || 0), 0),
-      creditsUsed: (db.subscriptionUsage || []).filter((item) => inDateRange(item.usedAt, period.start, period.end)).length
+      revenue: detailedClubRevenue || clubRevenue,
+      creditsIssued: (db.subscriptionCreditUnits || []).length
+        ? (db.subscriptionCreditUnits || []).filter((item) => inDateRange(item.issuedAt, period.start, period.end)).length
+        : (db.subscriptionCredits || []).filter((item) => inDateRange(item.cycleStart || item.createdAt, period.start, period.end)).reduce((total, item) => total + Number(item.total || 0), 0),
+      creditsUsed: clubRedemptions.filter((item) => item.status === "redeemed").length,
+      creditsExpired: (db.subscriptionCreditUnits || []).filter((item) => item.status === "expired" && inDateRange(item.updatedAt || item.expiresAt, period.start, period.end)).length,
+      clubTickets,
+      topUps: Number(clubTopUps.toFixed(2)),
+      courtesies,
+      goodsDiscount: Number(clubGoodsDiscount.toFixed(2)),
+      goodsFiscal: fiscalCounts
     },
     cardTerminal: {
       configured: cardTerminalProvider.configured(integrationConfigService.resolvedConfig(db, "mercadoPago") || {}),
@@ -6941,6 +7190,15 @@ async function handleApi(req, res, pathname) {
         ["Receita de ingressos", Number(dashboard.ticketRevenue || 0).toFixed(2), period.start, period.end],
         ["Receita de bomboniere", Number(dashboard.concessionRevenue || 0).toFixed(2), period.start, period.end],
         ["Receita do Clube", Number(dashboard.clubRevenue || 0).toFixed(2), period.start, period.end],
+        ["Créditos do Clube emitidos", dashboard.club?.creditsIssued || 0, period.start, period.end],
+        ["Créditos do Clube utilizados", dashboard.club?.creditsUsed || 0, period.start, period.end],
+        ["Créditos do Clube expirados", dashboard.club?.creditsExpired || 0, period.start, period.end],
+        ["Ingressos resgatados pelo Clube", dashboard.club?.clubTickets || 0, period.start, period.end],
+        ["Complementos pagos", Number(dashboard.club?.topUps || 0).toFixed(2), period.start, period.end],
+        ["Cortesias", dashboard.club?.courtesies || 0, period.start, period.end],
+        ["Descontos do Clube na bomboniere", Number(dashboard.club?.goodsDiscount || 0).toFixed(2), period.start, period.end],
+        ["NFC-e autorizadas", dashboard.club?.goodsFiscal?.authorized || 0, period.start, period.end],
+        ["NFC-e pendentes ou com erro", Number(dashboard.club?.goodsFiscal?.pending || 0) + Number(dashboard.club?.goodsFiscal?.waiting_trigger || 0) + Number(dashboard.club?.goodsFiscal?.error || 0), period.start, period.end],
         ["Pedidos pagos", dashboard.salesPeriod || 0, period.start, period.end],
         ["Ingressos vendidos", dashboard.ticketsSold || 0, period.start, period.end]
       ]
@@ -7975,6 +8233,17 @@ async function handleApi(req, res, pathname) {
       }
       const now = new Date().toISOString();
       const cancelImmediately = Boolean(body.cancelImmediately || body.immediate);
+      const plan = (lockedDb.subscriptionPlans || []).find((item) => item.id === subscription.planId);
+      const cancellationRules = plan?.cancellationRules || {};
+      if ((!cancelImmediately && cancellationRules.allowPeriodEnd === false) || (cancelImmediately && cancellationRules.allowImmediateBillingEnd === false)) {
+        sendJson(res, 409, {
+          error: {
+            code: "SUBSCRIPTION_CANCELLATION_MODE_NOT_ALLOWED",
+            message: "Este plano não permite a modalidade de cancelamento selecionada. Entre em contato com o cinema."
+          }
+        });
+        return;
+      }
       let providerSubscription = null;
       if (subscription.provider === "mercado_pago" && subscription.providerSubscriptionId) {
         const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
@@ -8066,7 +8335,7 @@ async function handleApi(req, res, pathname) {
         subscription.paymentStatus = "pending";
         subscription.preferredPaymentMethod = normalizedPaymentMethod;
 
-        const providerSubscription = await paymentService.createMercadoPagoSubscription(subscription, plan, lockedUser, mercadoPagoConfig || {}, {
+        const providerSubscription = await subscriptionPaymentProvider.createSubscription(subscription, plan, lockedUser, mercadoPagoConfig || {}, {
           // Checkout hospedado: assinatura pendente sem plano associado. O
           // Mercado Pago recebe a recorrencia em auto_recurring e coleta o
           // meio de pagamento no proprio checkout.
@@ -8150,57 +8419,51 @@ async function handleApi(req, res, pathname) {
         customerPhone: lockedUser.phone || "",
         customerCpf: lockedUser.cpf || "",
         paymentMethod: "CLUB_CREDIT",
+        useClubCredits: true,
         useClubBenefits: true
       }));
       await claimSeatHoldsForOrder(lockedDb, pricedOrder);
-      const requestedCredits = orderTicketCount(pricedOrder);
-      if (Number(subscription.creditsAvailable || 0) < requestedCredits) {
-        sendJson(res, 409, { error: { code: "CLUB_CREDITS_EXHAUSTED", message: "Creditos do Clube insuficientes para a quantidade de ingressos selecionada." } });
-        return;
-      }
+      pricedOrder.reservationExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       applyClubPlanBenefits(lockedDb, pricedOrder, lockedUser);
-      const ticketValueAfterPlanDiscount = Math.max(0, ticketSubtotalForOrder(lockedDb, pricedOrder) - Number(pricedOrder.clubBenefits?.ticketDiscount || 0));
-      const ticketDiscount = Math.min(ticketValueAfterPlanDiscount, Number(pricedOrder.totalPrice || 0));
-      pricedOrder.discountValue = Number((Number(pricedOrder.discountValue || 0) + ticketDiscount).toFixed(2));
-      pricedOrder.totalPrice = Math.max(0, Number((Number(pricedOrder.totalPrice || 0) - ticketDiscount).toFixed(2)));
+      reserveClubCreditsForOrder(lockedDb, pricedOrder, lockedUser, idempotencyKey);
+      materializeOrderAccounting(lockedDb, pricedOrder);
       if (pricedOrder.totalPrice > 0) {
-        sendJson(res, 409, { error: { code: "CLUB_REMAINING_PAYMENT_REQUIRED", message: "Seu crédito cobre os ingressos. Finalize por Pix ou cartão para pagar os extras selecionados." } });
+        clubDomainService.releaseOrderCredits(lockedDb, pricedOrder.id);
+        sendJson(res, 409, {
+          error: {
+            code: "CLUB_REMAINING_PAYMENT_REQUIRED",
+            message: `Crédito aplicado. Pague o complemento de R$ ${Number(pricedOrder.totalPrice).toFixed(2).replace(".", ",")} por Pix ou cartão.`
+          },
+          pricing: {
+            serviceSubtotal: pricedOrder.serviceSubtotal,
+            goodsSubtotal: pricedOrder.goodsSubtotal,
+            clubCreditsApplied: pricedOrder.clubCreditsApplied,
+            clubDiscount: pricedOrder.clubDiscount,
+            additionalPayment: pricedOrder.totalPrice,
+            orderTotal: pricedOrder.totalPrice
+          }
+        });
         return;
       }
-      pricedOrder.clubSubscriptionId = subscription.id;
-      pricedOrder.clubBenefit = "club_credit";
-      pricedOrder.clubCreditQuantity = requestedCredits;
       pricedOrder.idempotencyKey = idempotencyKey;
 
-      const payment = createClubCreditPaymentRecord(pricedOrder, subscription);
       const savedOrder = {
         ...pricedOrder,
         status: "paid",
         origin: "club",
         paymentMethod: "CLUB_CREDIT",
-        paymentProvider: "internal_club",
-        paymentId: payment.id,
-        paymentStatus: "approved",
+        paymentProvider: "",
+        paymentId: "",
+        paymentStatus: "not_required",
         paidAt: new Date().toISOString()
       };
-      const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, "club_credit");
-      const usage = consumeSubscriptionCredit(lockedDb, subscription, {
-        userId: lockedUser.id,
-        orderId: savedOrder.id,
-        ticketId: tickets[0]?.id || "",
-        movieId: savedOrder.movieId,
-        sessionId: savedOrder.sessionId,
-        quantity: requestedCredits,
-        idempotencyKey
-      });
-      savedOrder.clubCreditUsageId = usage.id;
-      subscription.updatedAt = new Date().toISOString();
+      const tickets = finalizePaidOrder(lockedDb, savedOrder, null, "club_credit");
+      consumePendingClubCredit(lockedDb, savedOrder, tickets, lockedUser.id);
       if (tickets.length) await deliverTicketsByEmail(lockedDb, savedOrder, tickets);
-      lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
       await releaseOrderSeatHolds(savedOrder);
-      sendJson(res, 201, { order: savedOrder, payment, tickets, subscription }, {
+      sendJson(res, 201, { order: savedOrder, payment: null, tickets, subscription, creditsRemaining: clubDomainService.creditCounts(lockedDb, subscription.id).available }, {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });
       });
@@ -8215,9 +8478,26 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/goods-fiscal-settings" && method === "PUT") {
+    if (roleAlias(req.adminUser?.role) !== "owner") {
+      sendJson(res, 403, { error: { code: "OWNER_REQUIRED", message: "Somente o proprietário pode alterar a regra fiscal da bomboniere." } });
+      return;
+    }
+    const body = await readBody(req);
+    db.settings.nfceTrigger = body.nfceTrigger === "payment_approved" ? "payment_approved" : "goods_delivered";
+    await writeDb(db);
+    sendJson(res, 200, { nfceTrigger: db.settings.nfceTrigger });
+    return;
+  }
+
   if (pathname === "/api/admin/subscription-plans" && method === "POST") {
     const body = await readBody(req);
+    if (body.accounting !== undefined && roleAlias(req.adminUser?.role) !== "owner") {
+      sendJson(res, 403, { error: { code: "OWNER_REQUIRED", message: "Somente o proprietário pode alterar regras contábeis do Clube." } });
+      return;
+    }
     const plan = normalizeSubscriptionPlan(body);
+    persistPlanAccountingRule(db, plan, null, req.adminUser);
     db.subscriptionPlans = (db.subscriptionPlans || []).filter((item) => item.id !== plan.id);
     if (plan.isFeatured) {
       db.subscriptionPlans = db.subscriptionPlans.map((item) => ({ ...item, isFeatured: false }));
@@ -8236,7 +8516,14 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 404, { error: { code: "PLAN_NOT_FOUND", message: "Plano nao encontrado." } });
       return;
     }
-    const plan = normalizeSubscriptionPlan({ ...(await readBody(req)), id }, db.subscriptionPlans[index]);
+    const body = await readBody(req);
+    if (body.accounting !== undefined && roleAlias(req.adminUser?.role) !== "owner") {
+      sendJson(res, 403, { error: { code: "OWNER_REQUIRED", message: "Somente o proprietário pode alterar regras contábeis do Clube." } });
+      return;
+    }
+    const previousPlan = db.subscriptionPlans[index];
+    const plan = normalizeSubscriptionPlan({ ...body, id }, previousPlan);
+    persistPlanAccountingRule(db, plan, previousPlan, req.adminUser);
     if (plan.isFeatured) {
       db.subscriptionPlans = db.subscriptionPlans.map((item) => item.id === id ? item : ({ ...item, isFeatured: false }));
     }
@@ -8292,7 +8579,11 @@ async function handleApi(req, res, pathname) {
         user: sanitizeUser((db.users || []).find((user) => user.id === subscription.userId) || {})
       })),
       credits: db.subscriptionCredits || [],
-      usage: db.subscriptionUsage || []
+      usage: db.subscriptionUsage || [],
+      cycles: db.subscriptionCycles || [],
+      payments: db.subscriptionPayments || [],
+      creditUnits: db.subscriptionCreditUnits || [],
+      redemptions: db.subscriptionCreditRedemptions || []
     });
     return;
   }
@@ -8326,6 +8617,29 @@ async function handleApi(req, res, pathname) {
   }
 
   const adminSubscriptionMatch = pathname.match(/^\/api\/admin\/subscriptions\/([^/]+)$/);
+  if (adminSubscriptionMatch && method === "GET") {
+    const id = decodeURIComponent(adminSubscriptionMatch[1]);
+    const subscription = (db.subscriptions || []).find((item) => item.id === id);
+    if (!subscription) {
+      sendJson(res, 404, { error: { code: "SUBSCRIPTION_NOT_FOUND", message: "Assinatura não encontrada." } });
+      return;
+    }
+    const orderIds = new Set((db.subscriptionCreditRedemptions || []).filter((item) => item.subscriptionId === id).map((item) => item.orderId));
+    sendJson(res, 200, {
+      subscription: subscriptionSummary(db, subscription.userId).find((item) => item.id === id),
+      cycles: (db.subscriptionCycles || []).filter((item) => item.subscriptionId === id).map((cycle) => ({
+        ...cycle,
+        creditsIssued: (db.subscriptionCreditUnits || []).filter((credit) => credit.cycleId === cycle.id).length
+      })),
+      payments: (db.subscriptionPayments || []).filter((item) => item.subscriptionId === id),
+      credits: (db.subscriptionCreditUnits || []).filter((item) => item.subscriptionId === id),
+      redemptions: (db.subscriptionCreditRedemptions || []).filter((item) => item.subscriptionId === id),
+      tickets: (db.tickets || []).filter((item) => orderIds.has(item.orderId)).map((item) => enrichTicket(db, item)),
+      orders: (db.orders || []).filter((item) => orderIds.has(item.id)),
+      history: subscription.history || []
+    });
+    return;
+  }
   if (adminSubscriptionMatch && method === "PATCH") {
     const id = decodeURIComponent(adminSubscriptionMatch[1]);
     const body = await readBody(req);
@@ -8395,23 +8709,25 @@ async function handleApi(req, res, pathname) {
       const providerSubscription = await cancelMercadoPagoSubscriptionSafely(subscription, mercadoPagoConfig || {});
       subscription.providerStatus = providerSubscription?.status || "cancelled";
     }
-    db.subscriptions.splice(index, 1);
-    db.subscriptionCredits = (db.subscriptionCredits || []).filter((credit) => credit.subscriptionId !== id);
-    db.subscriptionUsage = (db.subscriptionUsage || []).filter((usage) => usage.subscriptionId !== id);
+    subscription.archivedAt = new Date().toISOString();
+    subscription.archivedBy = req.adminUser?.id || "";
+    subscription.updatedAt = subscription.archivedAt;
+    subscription.history ||= [];
+    subscription.history.push({ action: "archive", by: subscription.archivedBy, at: subscription.archivedAt });
     db.auditLogs ||= [];
     db.auditLogs.push({
       id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
       userId: req.adminUser?.id || "",
       userEmail: req.adminUser?.email || "",
-      action: "subscription.deleted",
+      action: "subscription.archived",
       entityType: "subscription",
       entityId: id,
       before: sanitizeAuditValue(before),
-      after: null,
+      after: sanitizeAuditValue(subscription),
       createdAt: new Date().toISOString()
     });
     await writeDb(db);
-    sendJson(res, 200, { deleted: true, subscriptionId: id });
+    sendJson(res, 200, { archived: true, subscriptionId: id });
     return;
   }
 
@@ -9017,11 +9333,10 @@ async function handleApi(req, res, pathname) {
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
       await claimSeatHoldsForOrder(lockedDb, order);
-      if (normalizedOrder.useClubCredits) {
-        sendJson(res, 422, { error: { code: "CLUB_CREDIT_ROUTE_REQUIRED", message: "Use a ação exclusiva de créditos do Clube. O pagamento Pix nunca aprova créditos automaticamente." } });
-        return;
-      }
+      order.reservationExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       applyClubPlanBenefits(lockedDb, order, customerUser);
+      if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
+      materializeOrderAccounting(lockedDb, order);
       if (order.totalPrice <= 0) {
         sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de gerar o Pix." } });
         return;
@@ -9093,11 +9408,10 @@ async function handleApi(req, res, pathname) {
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
       await claimSeatHoldsForOrder(lockedDb, order);
-      if (normalizedOrder.useClubCredits) {
-        sendJson(res, 422, { error: { code: "CLUB_CREDIT_ROUTE_REQUIRED", message: "Use a ação exclusiva de créditos do Clube. O pagamento por cartão nunca aprova créditos automaticamente." } });
-        return;
-      }
+      order.reservationExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       applyClubPlanBenefits(lockedDb, order, customerUser);
+      if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
+      materializeOrderAccounting(lockedDb, order);
       if (order.totalPrice <= 0) {
         sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de pagar." } });
         return;
@@ -9165,11 +9479,11 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const payment = (currentDb.payments || []).find((item) => item.orderId === order.id) || null;
-    if (!payment) {
+    if (!payment && order.status !== "paid") {
       sendJson(res, 404, { error: { code: "PAYMENT_NOT_FOUND", message: "Pagamento nao encontrado para este pedido." } });
       return;
     }
-    const tickets = payment.status === "approved"
+    const tickets = (payment?.status === "approved" || (!payment && order.status === "paid"))
       ? (currentDb.tickets || []).filter((ticket) => ticket.orderId === order.id).map((ticket) => enrichTicket(currentDb, ticket))
       : [];
     sendJson(res, 200, checkoutResponse(currentDb, order, payment, tickets));
@@ -9972,7 +10286,7 @@ async function handleApi(req, res, pathname) {
         : null;
       const effectiveProviderSubscriptionId = authorizedPayment?.preapprovalId || providerPaymentId;
       const providerSubscription = effectiveProviderSubscriptionId
-        ? await paymentService.fetchMercadoPagoSubscription(effectiveProviderSubscriptionId, providerConfig || {})
+        ? await subscriptionPaymentProvider.getSubscription(effectiveProviderSubscriptionId, providerConfig || {})
         : null;
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
@@ -10013,7 +10327,17 @@ async function handleApi(req, res, pathname) {
               id: effectiveProviderSubscriptionId,
               status: "authorized",
               localStatus: "active"
-            }, "mercado_pago_authorized_payment_webhook", { paymentApproved: true });
+            }, "mercado_pago_authorized_payment_webhook", {
+              paymentApproved: true,
+              payment: {
+                provider: "mercado_pago",
+                providerPaymentId: authorizedPayment?.paymentId || authorizedPayment?.id || providerPaymentId,
+                amount: authorizedPayment?.amount || (lockedDb.subscriptionPlans || []).find((item) => item.id === subscription.planId)?.monthlyPrice || 0,
+                currency: "BRL",
+                approvedAt: new Date().toISOString(),
+                metadata: { authorizedPaymentId: authorizedPayment?.id || providerPaymentId }
+              }
+            });
           } else if (["rejected", "cancelled", "refunded", "expired"].includes(authorizedPayment?.paymentStatus || "")) {
             applyMercadoPagoSubscriptionStatus(lockedDb, subscription, {
               ...(providerSubscription || {}),

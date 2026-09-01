@@ -1689,6 +1689,103 @@
                 </fieldset>
               </section>
 
+              <section class="club-plan-form-section">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Regras dos créditos</h3>
+                    <p>Defina valor, validade, acúmulo e uso em sessões mais caras.</p>
+                  </div>
+                </div>
+                <div class="club-plan-fields club-plan-fields-four">
+                  <label>Valor máximo por crédito
+                    <span class="input-prefix"><span>R$</span><input id="clubPlanCreditReferenceValue" type="number" min="0" step="0.01" placeholder="Sem limite" /></span>
+                    <small class="field-help">Vazio preserva o valor integral do ingresso.</small>
+                  </label>
+                  <label>Validade em dias
+                    <input id="clubPlanCreditValidityDays" type="number" min="1" max="730" step="1" placeholder="Até o fim do ciclo" />
+                  </label>
+                  <label>Limite acumulado
+                    <input id="clubPlanMaxAccumulatedCredits" type="number" min="1" max="999" step="1" placeholder="Sem limite" />
+                  </label>
+                  <label>Carência após o ciclo
+                    <input id="clubPlanGracePeriodDays" type="number" min="0" max="90" step="1" value="0" />
+                  </label>
+                </div>
+                <div class="club-plan-switches club-plan-rule-switches">
+                  <label class="check-field"><input id="clubPlanAllowRollover" type="checkbox" /> Permitir acúmulo de créditos</label>
+                  <label class="check-field"><input id="clubPlanAllowPriceDifference" type="checkbox" checked /> Permitir pagar diferença</label>
+                </div>
+              </section>
+
+              <section class="club-plan-form-section">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Elegibilidade</h3>
+                    <p>Sem seleção, o benefício vale para todas as sessões e formatos ativos.</p>
+                  </div>
+                </div>
+                <fieldset class="benefit-products-fieldset">
+                  <legend>Formatos permitidos</legend>
+                  <div class="benefit-product-list compact-options" id="clubPlanEligibleFormats">
+                    <label><input type="checkbox" value="2D Dublado" /> 2D Dublado</label>
+                    <label><input type="checkbox" value="2D Legendado" /> 2D Legendado</label>
+                    <label><input type="checkbox" value="3D Dublado" /> 3D Dublado</label>
+                    <label><input type="checkbox" value="3D Legendado" /> 3D Legendado</label>
+                  </div>
+                </fieldset>
+                <label>Sessões específicas
+                  <textarea id="clubPlanEligibleSessions" rows="2" placeholder="IDs separados por vírgula; vazio permite todas"></textarea>
+                </label>
+                <fieldset class="benefit-products-fieldset club-plan-products">
+                  <legend>Produtos sem desconto percentual</legend>
+                  <div id="clubPlanExcludedItems" class="benefit-product-list"></div>
+                </fieldset>
+              </section>
+
+              <section class="club-plan-form-section owner-only-accounting" id="clubPlanAccountingSection">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Configuração contábil</h3>
+                    <p>Área restrita ao proprietário. Preencha somente com orientação do contador; cada alteração cria uma versão imutável.</p>
+                  </div>
+                  <span class="badge">Owner</span>
+                </div>
+                <div class="club-plan-fields club-plan-fields-four">
+                  <label>Componente de ingressos
+                    <span class="input-prefix"><span>R$</span><input id="clubPlanAccountingTickets" type="number" min="0" step="0.01" placeholder="Não definido" /></span>
+                  </label>
+                  <label>Componente de benefícios
+                    <span class="input-prefix"><span>R$</span><input id="clubPlanAccountingBenefits" type="number" min="0" step="0.01" placeholder="Não definido" /></span>
+                  </label>
+                  <label>Versão da regra
+                    <input id="clubPlanAccountingVersion" maxlength="40" placeholder="Ex.: CONT-2026-01" />
+                  </label>
+                  <label>Vigência
+                    <input id="clubPlanAccountingEffectiveFrom" type="date" />
+                  </label>
+                  <label>Momento da NFC-e da bomboniere
+                    <select id="clubNfceTrigger">
+                      <option value="goods_delivered">Na entrega/retirada do produto</option>
+                      <option value="payment_approved">No pagamento aprovado</option>
+                    </select>
+                  </label>
+                </div>
+                <p class="helper-text">Esta regra é global e apenas prepara o disparo para um provider futuro. Nenhum fornecedor fiscal é habilitado automaticamente.</p>
+              </section>
+
+              <section class="club-plan-form-section">
+                <div class="club-plan-section-head">
+                  <div>
+                    <h3>Cancelamento</h3>
+                    <p>Defina quais solicitações o titular pode fazer. Créditos já pagos permanecem válidos até o fim do ciclo.</p>
+                  </div>
+                </div>
+                <div class="club-plan-switches">
+                  <label class="switch-row"><span><strong>Cancelar renovação no fim do ciclo</strong><small>Interrompe cobranças futuras e mantém o ciclo atual.</small></span><input id="clubPlanCancelAtPeriodEnd" type="checkbox" checked /></label>
+                  <label class="switch-row"><span><strong>Encerrar cobrança imediatamente</strong><small>Cancela a autorização agora, sem apagar os benefícios já pagos.</small></span><input id="clubPlanCancelImmediately" type="checkbox" checked /></label>
+                </div>
+              </section>
+
               <section class="club-plan-form-section club-plan-media-section">
                 <div class="club-plan-section-head">
                   <div>
@@ -1746,6 +1843,7 @@
                 </label>
               </div>
               <div id="clubSubscriptionsList" class="list"></div>
+              <div id="clubSubscriptionDetail" class="subscription-detail" hidden></div>
             </div>
           </div>
           </div>

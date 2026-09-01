@@ -16,7 +16,7 @@ import { trackMarketingEvent } from "@/utils/tracking";
 type Step = "ingressos" | "extras" | "pagamento" | "confirmacao";
 type CheckoutPaymentResult = {
   order?: { id?: string; status?: string };
-  payment?: { id?: string; status?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string };
+  payment?: { id?: string; status?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string } | null;
   tickets?: Array<{ code: string }>;
 };
 type MercadoPagoCheckoutConfig = {
@@ -434,7 +434,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           customerPhone: customerUser?.phone || checkoutDraft.customerPhone || "",
           customerEmail: customerUser?.email || checkoutDraft.customerEmail || "",
           customerCpf: customerUser?.cpf || checkoutDraft.customerCpf || "",
-          useClubCredits: false,
+          useClubCredits: checkoutDraft.useClubCredits === true,
           useClubBenefits: checkoutDraft.useClubBenefits !== false && Boolean(activeClubSubscription(clubSubscriptions)),
           paymentMethod: checkoutDraft.paymentMethod === "credit_card" ? "CREDIT_CARD" : "PIX",
           createdAt: new Date().toISOString(),
@@ -917,6 +917,16 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
   const plan = activeClub?.plan;
   const clubBenefitsEnabled = draft.useClubBenefits !== false;
+  const clubCreditsEnabled = draft.useClubCredits === true;
+  const selectedTicketPurchases = selectedTicketItems(draft, ticketTypes);
+  const ticketSubtotal = selectedTicketPurchases.reduce((sum, item) => sum + Number(ticketTypes.find((type) => type.id === item.id)?.price || 0) * item.quantity, 0);
+  const estimatedTicketDiscount = clubBenefitsEnabled ? ticketSubtotal * (Number(plan?.ticketDiscountPercent || 0) / 100) : 0;
+  const estimatedCreditBase = Math.max(0, ticketSubtotal - estimatedTicketDiscount);
+  const referenceValue = Number(plan?.creditReferenceValue || 0);
+  const estimatedCredit = clubCreditsEnabled
+    ? Math.min(estimatedCreditBase, referenceValue > 0 ? referenceValue * requestedTickets : estimatedCreditBase)
+    : 0;
+  const estimatedPayable = Math.max(0, total - estimatedTicketDiscount - estimatedCredit);
   const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
@@ -1004,14 +1014,30 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
                 </span>
               </span>
             </label>
-            <p className="mt-4 text-sm leading-6 text-slate-300">
-              Você tem {clubCredits} crédito(s) de ingresso. Este pedido usa {requestedTickets} ingresso(s).
-            </p>
-            {selectedExtras > 0 ? (
-              <p className="mt-3 text-xs font-bold text-brand-200">Créditos de ingresso são usados em compra exclusiva; nesta compra, Pix/cartão receberá somente os descontos e itens grátis elegíveis.</p>
-            ) : (
+            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg bg-brand-900/70 p-4">
+              <input
+                type="checkbox"
+                checked={clubCreditsEnabled}
+                disabled={clubCredits < requestedTickets}
+                onChange={(event) => updateDraft({ useClubCredits: event.target.checked })}
+                className="mt-1 h-4 w-4 accent-yellow-400"
+              />
+              <span>
+                <strong className="block text-sm text-white">Usar {requestedTickets} crédito(s) do Clube</strong>
+                <span className="mt-1 block text-xs leading-5 text-slate-300">Você possui {clubCredits}. O valor e a elegibilidade serão confirmados pelo servidor antes da cobrança.</span>
+              </span>
+            </label>
+            {clubCreditsEnabled && (
+              <div className="mt-3 space-y-2 bg-slate-950/60 p-4 text-sm tabular-nums">
+                <div className="flex justify-between gap-4"><span>Ingresso(s)</span><strong>{money(ticketSubtotal)}</strong></div>
+                <div className="flex justify-between gap-4 text-emerald-300"><span>Crédito Clube</span><strong>-{money(estimatedCredit)}</strong></div>
+                <div className="flex justify-between gap-4 border-t border-white/10 pt-2"><span>{estimatedPayable > 0 ? "Complemento estimado" : "A pagar"}</span><strong>{money(estimatedPayable)}</strong></div>
+                <p className="pt-1 text-xs text-slate-400">Créditos restantes após confirmação: {Math.max(0, clubCredits - requestedTickets)}.</p>
+              </div>
+            )}
+            {clubCreditsEnabled && estimatedPayable <= 0 && selectedExtras === 0 && (
               <button type="button" onClick={onClubCredit} disabled={clubLoading || loading || clubCredits < requestedTickets} className="mt-3 w-full bg-brand-700 px-7 py-4 text-sm font-black text-white transition hover:bg-brand-600 disabled:opacity-50">
-                {clubLoading ? "Emitindo benefício..." : `Usar ${requestedTickets} crédito(s) do Clube`}
+                {clubLoading ? "Confirmando créditos..." : "Confirmar com créditos do Clube"}
               </button>
             )}
           </div>
@@ -1094,7 +1120,7 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
 function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft: StoredCheckoutDraft; confirmationStatus: "idle" | "checking" | "ready" | "invalid"; orderReference: string }) {
   const [copied, setCopied] = useState(false);
   const result = draft.paymentResult as CheckoutPaymentResult | undefined;
-  const approved = result?.payment?.status === "approved";
+  const approved = result?.payment?.status === "approved" || (result?.order?.status === "paid" && Boolean(result?.tickets?.length));
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
   const copyPix = async () => {
     if (!result?.payment?.qrCode) return;
@@ -1231,7 +1257,9 @@ function PixQrCode({ code, base64 }: { code: string; base64?: string }) {
 function isValidPaymentResult(value: unknown) {
   const result = value as CheckoutPaymentResult | null;
   const paymentStatus = result?.payment?.status;
-  return Boolean(result?.order?.id && result?.payment?.id && ["pending", "processing", "approved"].includes(String(paymentStatus || "")));
+  const confirmedWithoutCharge = result?.order?.status === "paid" && Boolean(result?.tickets?.length);
+  const providerPayment = result?.payment?.id && ["pending", "processing", "approved"].includes(String(paymentStatus || ""));
+  return Boolean(result?.order?.id && (confirmedWithoutCharge || providerPayment));
 }
 
 function activeClubSubscription(subscriptions: AccountSubscription[]) {

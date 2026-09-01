@@ -1303,8 +1303,9 @@ async function run() {
     });
     assert.equal(clubCredit.response.status, 201);
     assert.equal(clubCredit.payload.order.origin, "club");
-    assert.equal(clubCredit.payload.payment.method, "club_credit");
-    assert.equal(clubCredit.payload.payment.status, "approved");
+    assert.equal(clubCredit.payload.payment, null, "resgate integral nao deve criar pagamento ficticio de R$ 0");
+    assert.equal(clubCredit.payload.order.paymentStatus, "not_required");
+    assert.equal(clubCredit.payload.tickets[0].paymentSource, "subscription_credit");
     assert.equal(clubCredit.payload.tickets.length, 1);
 
     const duplicateClubCredit = await request("/api/checkout/club-credit", {
@@ -1366,6 +1367,7 @@ async function run() {
         name: "Plano Smoke Bundle",
         monthlyPrice: 29.9,
         includedTickets: 3,
+        creditReferenceValue: 10,
         benefits: ["3 ingressos smoke"],
         active: true
       })
@@ -1388,7 +1390,7 @@ async function run() {
         idempotencyKey: bundleCreditOrderId
       })
     });
-    assert.equal(bundleCreditOrder.response.status, 201);
+    assert.equal(bundleCreditOrder.response.status, 201, JSON.stringify(bundleCreditOrder.payload));
     assert.equal(bundleCreditOrder.payload.tickets.length, 3);
     assert.equal(bundleCreditOrder.payload.subscription.creditsAvailable, 0);
     const cancelledBundleCreditOrder = await request(`/api/orders/${encodeURIComponent(bundleCreditOrder.payload.order.id)}`, {

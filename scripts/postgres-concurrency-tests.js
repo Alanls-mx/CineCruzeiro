@@ -48,6 +48,7 @@ async function loginAdmin() {
 function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity = 1 } = {}) {
   const now = new Date().toISOString();
   const cycleEnd = new Date(Date.now() + 30 * 86400000).toISOString();
+  const futureSessionDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   return {
     settings: { defaultTicketPrice: 10, currency: "BRL", adminTwoFactorRequired: false },
     ticketTypes: [{ id: "promocional", name: "Promocional", price: 10, bundleQuantity, active: true }],
@@ -64,6 +65,7 @@ function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity =
       backdropUrl: "",
       sessions: [{
         id: "sessao-concorrencia",
+        date: futureSessionDate,
         time: "19:00",
         format: "2D Dublado",
         room: "Sala Teste",

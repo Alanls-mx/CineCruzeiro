@@ -23,13 +23,20 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
   });
   expect(assignment.status()).toBe(201);
   const assigned = (await assignment.json()).subscription;
+  await expect.poll(async () => page.evaluate(async () => {
+    const response = await fetch("/api/me/subscriptions", { credentials: "include", cache: "no-store" });
+    const payload = await response.json();
+    return payload.subscriptions?.[0]?.creditsRemaining;
+  })).toBe(2);
 
   await page.goto("/checkout/sessao-e2e");
   await page.getByRole("link", { name: "Continuar para Extras" }).click();
   await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
   await expect(page.getByRole("heading", { name: "Conta identificada" })).toBeVisible();
-  await expect(page.getByText("Você tem 2 crédito(s) de ingresso. Este pedido usa 1 ingresso(s).")).toBeVisible();
-  await page.getByRole("button", { name: "Usar 1 crédito(s) do Clube" }).click();
+  await expect(page.getByText("Você possui 2. O valor e a elegibilidade serão confirmados pelo servidor antes da cobrança.")).toBeVisible();
+  await page.getByLabel("Usar 1 crédito(s) do Clube").check();
+  await expect(page.getByText("Créditos restantes após confirmação: 1.")).toBeVisible();
+  await page.getByRole("button", { name: "Confirmar com créditos do Clube" }).click();
   await expect(page.getByText("Tudo certo com sua compra")).toBeVisible({ timeout: 10000 });
   await expect(page.getByText("Pagamento aprovado")).toBeVisible();
 

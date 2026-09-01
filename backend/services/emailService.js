@@ -190,6 +190,9 @@ function ticketCard(ticket = {}, options = {}) {
     ? `<td style="width:128px;padding:0 16px 0 0;vertical-align:top"><img src="${htmlEscape(posterUrl)}" width="120" alt="${htmlEscape(ticket.movieTitle || "Filme")}" style="display:block;width:120px;max-width:120px;height:auto;border-radius:8px;border:0;outline:0;text-decoration:none"></td>`
     : "";
   const wallet = ticket.googleWalletUrl ? button("Adicionar ao Google Wallet", ticket.googleWalletUrl, true) : "";
+  const clubValues = ticket.paymentSource === "subscription_credit"
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;background:#111827;border-radius:8px"><tr><td style="padding:10px;color:#cbd5e1;font-size:12px">Ingresso nº <strong style="color:#fff">${htmlEscape(ticket.ticketNumber || "-")}</strong><br>Valor do ingresso: <strong style="color:#fff">${money(ticket.basePrice)}</strong><br>Crédito Clube utilizado: <strong style="color:#45d6a1">-${money(ticket.subscriptionCreditAmount)}</strong><br>Complemento pago: <strong style="color:#facc15">${money(ticket.additionalPaymentAmount)}</strong></td></tr></table>`
+    : "";
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;background:#09111f;border-radius:10px;table-layout:fixed;overflow:hidden">
       <tr>
@@ -212,6 +215,7 @@ function ticketCard(ticket = {}, options = {}) {
               <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px;vertical-align:top">Código<br><strong style="color:#fff;font-size:14px;word-break:break-all">${htmlEscape(ticket.code || "-")}</strong></td>
             </tr>
           </table>
+          ${clubValues}
           <div style="margin-top:12px">${button("Ver meus ingressos", options.accountUrl)}${wallet}</div>
         </td>
       </tr>

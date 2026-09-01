@@ -47,6 +47,7 @@ export type StoredCheckoutDraft = {
   extrasVisited?: boolean;
   paymentMethod?: "pix" | "credit_card";
   useClubBenefits?: boolean;
+  useClubCredits?: boolean;
   customerName?: string;
   customerPhone?: string;
   customerEmail?: string;

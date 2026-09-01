@@ -237,6 +237,15 @@ export interface SubscriptionPlan {
   ticketDiscountPercent?: number;
   concessionDiscountPercent?: number;
   freeConcessionItems?: Array<{ concessionId: string; quantityPerCycle: number }>;
+  creditReferenceValue?: number | null;
+  creditValidityDays?: number | null;
+  allowCreditRollover?: boolean;
+  maxAccumulatedCredits?: number | null;
+  gracePeriodDays?: number;
+  allowPriceDifference?: boolean;
+  excludedConcessionIds?: string[];
+  eligibleFormats?: string[];
+  eligibleSessionIds?: string[];
   imageUrl?: string;
   isFeatured?: boolean;
   displayOrder?: number;
@@ -252,6 +261,8 @@ export interface AccountSubscription {
   creditsAvailable: number;
   creditsRemaining: number;
   creditsUsed: number;
+  creditsReserved?: number;
+  creditsExpired?: number;
   creditsTotal?: number;
   cycleStart?: string;
   cycleEnd?: string;
@@ -564,9 +575,10 @@ export async function createClubCreditCheckout(data: {
   }
   return payload as {
     order: TicketOrder & { status?: string };
-    payment: { id: string; status: string; method: "club_credit" };
+    payment: { id: string; status: string; method: "club_credit" } | null;
     tickets: Array<{ code: string }>;
     subscription: AccountSubscription;
+    creditsRemaining?: number;
   };
 }
 
@@ -582,7 +594,7 @@ export async function fetchCheckoutOrderStatus(orderId: string) {
   }
   return payload as {
     order: TicketOrder & { status?: string };
-    payment: { id: string; status: string; qrCode?: string; ticketUrl?: string };
+    payment: { id: string; status: string; qrCode?: string; ticketUrl?: string } | null;
     tickets: Array<{ code: string }>;
   };
 }

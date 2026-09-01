@@ -1002,7 +1002,13 @@ function renderDashboard() {
       <div class="metric-row"><span>Novos assinantes no período</span><strong>${Number(club.newSubscribers || 0)}</strong></div>
       <div class="metric-row"><span>Cancelamentos no período</span><strong>${Number(club.cancellations || 0)}</strong></div>
       <div class="metric-row"><span>Receita recorrente estimada</span><strong>${money(club.recurringRevenueEstimate || 0)}</strong></div>
+      <div class="metric-row"><span>Créditos emitidos</span><strong>${Number(club.creditsIssued || 0)}</strong></div>
       <div class="metric-row"><span>Créditos usados</span><strong>${Number(club.creditsUsed || 0)}</strong></div>
+      <div class="metric-row"><span>Créditos expirados</span><strong>${Number(club.creditsExpired || 0)}</strong></div>
+      <div class="metric-row"><span>Ingressos via Clube</span><strong>${Number(club.clubTickets || 0)}</strong></div>
+      <div class="metric-row"><span>Complementos pagos</span><strong>${money(club.topUps || 0)}</strong></div>
+      <div class="metric-row"><span>Descontos na bomboniere</span><strong>${money(club.goodsDiscount || 0)}</strong></div>
+      <div class="metric-row"><span>NFC-e aguardando/erro</span><strong>${Number(club.goodsFiscal?.waiting_trigger || 0) + Number(club.goodsFiscal?.pending || 0) + Number(club.goodsFiscal?.error || 0)}</strong></div>
     `;
   }
   if ($("dashOperationalAlerts")) {
@@ -3158,6 +3164,20 @@ function orderDetailHtml(order) {
   `).join("<br>") || "-";
   const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name || item.id)} x${Number(item.quantity || 0)}`).join("<br>") || "-";
   const history = (order.auditTrail || []).map((entry) => `${escapeHtml(entry.action || "alteração")} • ${new Date(entry.at || order.createdAt).toLocaleString("pt-BR")}`).join("<br>") || `Criação • ${new Date(order.createdAt).toLocaleString("pt-BR")}`;
+  const serviceItems = (state.content?.orderServiceItems || []).filter((item) => item.orderId === order.id);
+  const goodsItems = (state.content?.orderGoodsItems || []).filter((item) => item.orderId === order.id);
+  const fiscalDocument = (state.content?.goodsFiscalDocuments || []).find((item) => item.orderId === order.id);
+  const goodsFiscalLabel = {
+    not_required: "Não necessária",
+    waiting_trigger: "Aguardando entrega ou gatilho configurado",
+    pending: "Em processamento",
+    authorized: "Autorizada",
+    contingency: "Em contingência",
+    cancelled: "Cancelada",
+    error: "Erro no provider fiscal"
+  }[fiscalDocument?.status || order.goodsFiscalStatus] || "Não configurada";
+  const serviceRows = serviceItems.map((item) => `${escapeHtml(item.name || "Ingresso")} • base ${money(item.basePrice)} • crédito ${money(item.subscriptionCreditAmount)} • complemento ${money(item.additionalPaymentAmount)}`).join("<br>") || "-";
+  const goodsRows = goodsItems.map((item) => `${escapeHtml(item.name || item.sku || "Produto")} x${Number(item.quantity || 0)} • desconto ${money(item.clubDiscount)} • final ${money(Number(item.finalUnitPrice || 0) * Number(item.quantity || 0))}`).join("<br>") || "-";
   return `
     ${sectionHtml("Pedido", [
       ["Referência", orderReference(order)],
@@ -3182,11 +3202,22 @@ function orderDetailHtml(order) {
       ["Quantidade", `${orderTicketCount(order)} ingresso(s)`],
       ["Códigos", tickets]
     ])}
-    ${sectionHtml("Bomboniere", [["Produtos", extras]])}
+    ${sectionHtml("Serviços de cinema", [
+      ["Ingressos", serviceRows],
+      ["Subtotal", money(order.serviceSubtotal || 0)],
+      ["Créditos do Clube", money(order.clubCreditsApplied || 0)],
+      ["Tratamento fiscal", "Conforme regra contábil vigente do Clube"]
+    ])}
+    ${sectionHtml("Mercadorias da bomboniere", [
+      ["Produtos", goodsRows === "-" ? extras : goodsRows],
+      ["Subtotal", money(order.goodsSubtotal || 0)],
+      ["Status NFC-e", goodsFiscalLabel]
+    ])}
     ${sectionHtml("Pagamento", [
       ["Método", paymentMethodLabel(payment?.method || order.paymentMethod)],
       ["Provider", providerLabel(payment?.provider || order.paymentProvider)],
       ["Valor", money(payment?.amount ?? order.totalPrice)],
+      ["Complemento pago", money(order.additionalPayment || 0)],
       ["Status", paymentStatusLabel(payment?.status || order.paymentStatus)],
       ["Referência externa", payment?.providerPaymentId || payment?.providerReference || "-"]
     ])}
@@ -5775,6 +5806,7 @@ function renderClub() {
                   </span>
                 </span>
                 <span class="table-actions">
+                  <button class="ghost-button" type="button" onclick="viewClubSubscription('${escapeHtml(subscription.id)}')">Detalhes</button>
                   ${canReactivate ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>` : ""}
                   ${!terminal && !ending && subscription.status === "active" ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','paused')">Pausar</button>` : ""}
                   <button class="ghost-button" type="button" onclick="adjustClubCredit('${escapeHtml(subscription.id)}')">Ajustar crédito</button>
@@ -5827,6 +5859,32 @@ function renderClub() {
   }
 }
 
+async function viewClubSubscription(subscriptionId) {
+  const target = $("clubSubscriptionDetail");
+  if (!target) return;
+  target.hidden = false;
+  target.innerHTML = `<div class="loading-state">Carregando histórico da assinatura...</div>`;
+  try {
+    const detail = await api(`/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}`);
+    const subscription = detail.subscription || {};
+    const rows = (items, render, empty) => items?.length ? items.map(render).join("") : `<p class="helper-text">${escapeHtml(empty)}</p>`;
+    target.innerHTML = `
+      <div class="subscription-detail-heading">
+        <div><div class="section-title">Histórico da assinatura</div><p class="helper-text">${escapeHtml(subscription.user?.name || subscription.user?.email || subscription.id || "Assinatura")}</p></div>
+        <button class="icon-button" type="button" title="Fechar detalhes" aria-label="Fechar detalhes" onclick="this.closest('.subscription-detail').hidden=true">×</button>
+      </div>
+      <div class="subscription-detail-grid">
+        <section><h3>Mensalidades</h3>${rows(detail.payments, (item) => `<p><strong>${money(item.amount)}</strong><span>${new Date(item.approvedAt || item.createdAt).toLocaleString("pt-BR")} • ${escapeHtml(item.provider || "manual")}</span></p>`, "Nenhuma mensalidade registrada.")}</section>
+        <section><h3>Créditos individuais</h3>${rows(detail.credits, (item) => `<p><strong>${escapeHtml(item.status === "available" ? "Disponível" : item.status === "reserved" ? "Reservado" : item.status === "redeemed" ? "Utilizado" : item.status === "expired" ? "Expirado" : item.status)}</strong><span>${money(item.referenceValue)} • validade ${new Date(item.expiresAt).toLocaleDateString("pt-BR")}</span></p>`, "Nenhum crédito emitido.")}</section>
+        <section><h3>Resgates</h3>${rows(detail.redemptions, (item) => `<p><strong>${money(item.creditAmount)} em crédito</strong><span>Base ${money(item.basePrice)} • complemento ${money(item.additionalPaymentAmount)} • ${escapeHtml(item.status)}</span></p>`, "Nenhum resgate registrado.")}</section>
+        <section><h3>Ciclos</h3>${rows(detail.cycles, (item) => `<p><strong>${new Date(item.cycleStart).toLocaleDateString("pt-BR")} a ${new Date(item.cycleEnd).toLocaleDateString("pt-BR")}</strong><span>${Number(item.creditsIssued || 0)} crédito(s) emitido(s)</span></p>`, "Nenhum ciclo registrado.")}</section>
+      </div>`;
+    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state"><strong>Não foi possível abrir o histórico</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
+}
+
 function changeClubSubscriptionsPage(delta) {
   const subscriptions = state.content?.subscriptions || [];
   const search = String(state.clubSubscriptionsSearch || "").trim().toLocaleLowerCase("pt-BR");
@@ -5864,6 +5922,25 @@ function fillClubPlanForm(plan) {
   $("clubPlanTickets").value = plan?.includedTickets ?? 3;
   $("clubPlanTicketDiscount").value = Number(plan?.ticketDiscountPercent || 0);
   $("clubPlanConcessionDiscount").value = Number(plan?.concessionDiscountPercent || 0);
+  $("clubPlanCreditReferenceValue").value = plan?.creditReferenceValue ?? "";
+  $("clubPlanCreditValidityDays").value = plan?.creditValidityDays ?? "";
+  $("clubPlanMaxAccumulatedCredits").value = plan?.maxAccumulatedCredits ?? "";
+  $("clubPlanGracePeriodDays").value = Number(plan?.gracePeriodDays || 0);
+  $("clubPlanAllowRollover").checked = Boolean(plan?.allowCreditRollover);
+  $("clubPlanAllowPriceDifference").checked = plan?.allowPriceDifference !== false;
+  const eligibleFormats = new Set(plan?.eligibleFormats || []);
+  document.querySelectorAll("#clubPlanEligibleFormats input").forEach((input) => {
+    input.checked = eligibleFormats.has(input.value);
+  });
+  $("clubPlanEligibleSessions").value = (plan?.eligibleSessionIds || []).join(", ");
+  if ($("clubPlanAccountingTickets")) $("clubPlanAccountingTickets").value = plan?.accounting?.ticketComponentValue ?? "";
+  if ($("clubPlanAccountingBenefits")) $("clubPlanAccountingBenefits").value = plan?.accounting?.benefitsComponentValue ?? "";
+  if ($("clubPlanAccountingVersion")) $("clubPlanAccountingVersion").value = plan?.accounting?.ruleVersion || "";
+  if ($("clubPlanAccountingEffectiveFrom")) $("clubPlanAccountingEffectiveFrom").value = String(plan?.accounting?.effectiveFrom || "").slice(0, 10);
+  if ($("clubNfceTrigger")) $("clubNfceTrigger").value = state.content?.settings?.nfceTrigger === "payment_approved" ? "payment_approved" : "goods_delivered";
+  if ($("clubPlanCancelAtPeriodEnd")) $("clubPlanCancelAtPeriodEnd").checked = plan?.cancellationRules?.allowPeriodEnd !== false;
+  if ($("clubPlanCancelImmediately")) $("clubPlanCancelImmediately").checked = plan?.cancellationRules?.allowImmediateBillingEnd !== false;
+  if ($("clubPlanAccountingSection")) $("clubPlanAccountingSection").hidden = !isOwnerAdmin();
   $("clubPlanImageUrl").value = Object.prototype.hasOwnProperty.call(state.pendingImages, "clubPlanImageUrl")
     ? state.pendingImages.clubPlanImageUrl
     : plan?.imageUrl || "";
@@ -5880,7 +5957,18 @@ function fillClubPlanForm(plan) {
   if ($("clubPlanEditorStatusText")) $("clubPlanEditorStatusText").textContent = plan?.active === false ? "Inativo" : "Ativo";
   $("clubPlanForm")?.classList.toggle("is-inactive", plan?.active === false);
   renderClubPlanFreeItems(plan);
+  renderClubPlanExcludedItems(plan);
   renderAdminImagePreview("clubPlanImageUrl", "clubPlanImagePreview", "Prévia do plano");
+}
+
+function renderClubPlanExcludedItems(plan) {
+  const target = $("clubPlanExcludedItems");
+  if (!target) return;
+  const excluded = new Set(plan?.excludedConcessionIds || []);
+  const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
+  target.innerHTML = concessions.length
+    ? concessions.map((item) => `<label class="benefit-product-row"><input type="checkbox" data-club-excluded-item="${escapeHtml(item.id)}" ${excluded.has(String(item.id)) ? "checked" : ""} /><span>${escapeHtml(item.name)}</span></label>`).join("")
+    : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre a bomboniere antes de configurar exclusões.</span></div>`;
 }
 
 function renderClubPlanFreeItems(plan) {
@@ -5944,6 +6032,15 @@ async function saveClubPlan(event) {
     includedTickets: Number($("clubPlanTickets").value || 0),
     ticketDiscountPercent: Number($("clubPlanTicketDiscount").value || 0),
     concessionDiscountPercent: Number($("clubPlanConcessionDiscount").value || 0),
+    creditReferenceValue: $("clubPlanCreditReferenceValue").value === "" ? null : Number($("clubPlanCreditReferenceValue").value),
+    creditValidityDays: $("clubPlanCreditValidityDays").value === "" ? null : Number($("clubPlanCreditValidityDays").value),
+    allowCreditRollover: $("clubPlanAllowRollover").checked,
+    maxAccumulatedCredits: $("clubPlanMaxAccumulatedCredits").value === "" ? null : Number($("clubPlanMaxAccumulatedCredits").value),
+    gracePeriodDays: Number($("clubPlanGracePeriodDays").value || 0),
+    allowPriceDifference: $("clubPlanAllowPriceDifference").checked,
+    eligibleFormats: [...document.querySelectorAll("#clubPlanEligibleFormats input:checked")].map((input) => input.value),
+    eligibleSessionIds: $("clubPlanEligibleSessions").value.split(",").map((item) => item.trim()).filter(Boolean),
+    excludedConcessionIds: [...document.querySelectorAll("[data-club-excluded-item]:checked")].map((input) => input.dataset.clubExcludedItem),
     freeConcessionItems: [...document.querySelectorAll("[data-club-free-item]:checked")].map((input) => ({
       concessionId: input.dataset.clubFreeItem,
       quantityPerCycle: Number(document.querySelector(`[data-club-free-quantity="${CSS.escape(input.dataset.clubFreeItem)}"]`)?.value || 1)
@@ -5954,10 +6051,29 @@ async function saveClubPlan(event) {
     benefits: $("clubPlanBenefits").value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
     active: $("clubPlanActive").checked
   };
+  payload.cancellationRules = {
+    allowPeriodEnd: $("clubPlanCancelAtPeriodEnd").checked,
+    allowImmediateBillingEnd: $("clubPlanCancelImmediately").checked,
+    preservePaidCreditsUntilCycleEnd: true
+  };
+  if (isOwnerAdmin()) {
+    payload.accounting = {
+      ticketComponentValue: $("clubPlanAccountingTickets").value === "" ? null : Number($("clubPlanAccountingTickets").value),
+      benefitsComponentValue: $("clubPlanAccountingBenefits").value === "" ? null : Number($("clubPlanAccountingBenefits").value),
+      ruleVersion: $("clubPlanAccountingVersion").value.trim(),
+      effectiveFrom: $("clubPlanAccountingEffectiveFrom").value
+    };
+  }
   try {
     const saved = existingId
       ? await api(`/api/admin/subscription-plans/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
       : await api("/api/admin/subscription-plans", { method: "POST", body: JSON.stringify(payload) });
+    if (isOwnerAdmin() && $("clubNfceTrigger")) {
+      await api("/api/admin/goods-fiscal-settings", {
+        method: "PUT",
+        body: JSON.stringify({ nfceTrigger: $("clubNfceTrigger").value })
+      });
+    }
     state.creating.clubPlan = false;
     state.selectedClubPlanId = saved.id;
     if (requestedImageUrl && cleanAdminAssetUrl(saved.imageUrl) !== requestedImageUrl) {

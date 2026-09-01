@@ -2,7 +2,7 @@
 
 Documentação atualizada da plataforma pública, checkout, Clube Cine Cruzeiro e painel administrativo.
 
-Última revisão: 30 de agosto de 2026.
+Última revisão: 31 de agosto de 2026.
 
 ## 1. Visão geral
 
@@ -30,7 +30,8 @@ Produção:
 | Poltronas | Mapa configurável por sala, reserva temporária e sincronização em tempo real |
 | Checkout | Ingressos, Extras, Pagamento e Confirmação |
 | Mercado Pago | Orders API para Pix e cartão de ingressos |
-| Clube | Assinatura recorrente por cartão de crédito Mercado Pago |
+| Clube | Modelo híbrido: mensalidades, ciclos, créditos individuais, resgates e complementos |
+| Fiscal | Serviços separados de mercadorias; NFC-e preparada por provider desacoplado |
 | PostgreSQL | Persistência obrigatória em produção |
 | Ingressos digitais | Código, QR Code, PDF e histórico |
 | Google Wallet | Implementação oficial, dependente de credenciais externas |
@@ -342,7 +343,7 @@ Nunca usar `req.body.data.id` como substituto do `data.id` da query na montagem 
 
 ## 10. Clube Cine Cruzeiro
 
-Os planos são carregados do backend e podem ser administrados com nome, mensalidade, créditos, benefícios, imagem local, ordem, recomendação e status.
+Os planos são carregados do backend e podem ser administrados com nome, mensalidade, créditos, valor de referência, validade, acúmulo, limite, carência, elegibilidade, benefícios, imagem local, ordem, recomendação e status. Não existem planos de fallback hardcoded.
 
 Benefícios configuráveis incluem:
 
@@ -351,6 +352,9 @@ Benefícios configuráveis incluem:
 - desconto percentual na bomboniere;
 - produtos específicos da bomboniere que podem ser resgatados gratuitamente;
 - lista textual de benefícios exibida na página pública.
+- formatos e sessões elegíveis;
+- produtos excluídos do desconto;
+- pagamento de diferença em sessões mais caras.
 
 Descontos e itens gratuitos são recalculados no backend a partir do plano, assinatura, ciclo e produtos reais. O frontend não informa o valor final do benefício e não consegue transformar um item não elegível em gratuito.
 
@@ -363,6 +367,8 @@ Pix recorrente e cartão de débito não são oferecidos nas assinaturas.
 ### Ativação
 
 Uma assinatura nasce como `pending_payment`. O plano e os créditos só são atribuídos após aprovação confirmada pelo Mercado Pago.
+
+O domínio financeiro é separado em `subscription -> subscription_payment -> subscription_cycle -> subscription_credit_unit -> subscription_credit_redemption -> ticket`. Um resgate integral não cria pagamento fictício de R$ 0,00. Quando existe complemento, o crédito fica reservado e a diferença segue pelo fluxo normal de Pix/cartão até o webhook confirmar a operação.
 
 Assinaturas pendentes sem pagamento identificado expiram após 15 minutos.
 
@@ -398,10 +404,15 @@ O painel permite:
 - buscar por nome, e-mail ou plano;
 - visualizar titular e e-mail;
 - consultar créditos e status;
+- abrir histórico de mensalidades, ciclos, créditos individuais e resgates;
 - ajustar créditos com permissão;
 - cancelar renovação;
 - excluir registros terminais quando a regra de auditoria permitir;
 - atribuir assinatura manual para venda presencial, cortesia ou migração.
+
+Configurações contábeis por plano são restritas ao owner e versionadas. Nenhuma divisão entre componente de ingresso e benefícios é calculada automaticamente: esses valores dependem de orientação contábil.
+
+Pedidos mistos guardam serviços e mercadorias separadamente. Ingressos usam controle contábil configurável, sem botão ou emissão automática de NFS-e. Mercadorias ficam preparadas para futura NFC-e através de uma interface de provider neutra; certificado A1 e credenciais de SEFAZ não são armazenados pela aplicação.
 
 ## 11. Conta do cliente
 
@@ -698,6 +709,7 @@ Migrations atuais:
 023_realtime_seat_holds.sql
 024_club_content_polish.sql
 025_subscription_usage_quantity.sql
+026_hybrid_club_accounting.sql
 ```
 
 A migration 017 pertence ao histórico do banco e é mantida para compatibilidade com ambientes já migrados. O módulo fiscal correspondente foi retirado da aplicação e seus registros antigos não são expostos nem processados.
@@ -707,6 +719,8 @@ A migration 018 adiciona autenticação em duas etapas às contas administrativa
 As migrations 022 e 023 adicionam, respectivamente, o mapa configurável das salas e as reservas temporárias de poltronas usadas pelo WebSocket e pela validação concorrente do checkout e da Bilheteria.
 
 A migration 025 persiste a quantidade efetiva de créditos consumidos em cada uso do Clube, permitindo estorno correto de pacotes com múltiplos ingressos.
+
+A migration 026 adiciona ciclos e mensalidades separados, créditos individuais, resgates, composição de pedidos em serviços/mercadorias, snapshots contábeis versionados, campos financeiros do ingresso e preparação idempotente de NFC-e para mercadorias.
 
 ## 23. APIs principais
 
@@ -758,7 +772,9 @@ GET  /api/admin/reports/dashboard.csv
 GET  /api/admin/subscription-plans
 POST /api/admin/subscription-plans
 GET  /api/admin/subscriptions
+GET  /api/admin/subscriptions/:id
 POST /api/admin/subscriptions/assign
+PUT  /api/admin/goods-fiscal-settings
 POST /api/uploads/images
 POST /api/tickets/manual
 POST /api/tickets/validate
@@ -1020,7 +1036,7 @@ Diretrizes atuais:
 ## 33. Referências complementares
 
 - `DESIGN.md`: sistema visual e decisões de interface;
-- `PRODUCT.md`: posicionamento, usuários e princípios de produto;
+- `CLUBE_HIBRIDO_E_FISCAL.md`: domínio híbrido, fluxos, estados e limites fiscais;
 - `DOCUMENTACAO.md`: documentação histórica extensa, podendo conter decisões anteriores já substituídas por este README.
 
-Este `README.md` é a referência resumida e canônica para o estado atual do código em 30 de agosto de 2026.
+Este `README.md` é a referência resumida e canônica para o estado atual do código em 31 de agosto de 2026.

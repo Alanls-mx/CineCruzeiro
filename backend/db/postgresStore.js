@@ -158,6 +158,14 @@ async function loadDbFromPostgres() {
     const subscriptionCredits = await client.query("SELECT * FROM subscription_credits ORDER BY cycle_start DESC").catch(() => ({ rows: [] }));
     const subscriptions = await client.query("SELECT * FROM subscriptions ORDER BY created_at DESC").catch(() => ({ rows: [] }));
     const subscriptionUsage = await client.query("SELECT * FROM subscription_usage ORDER BY used_at DESC").catch(() => ({ rows: [] }));
+    const subscriptionCycles = await client.query("SELECT * FROM subscription_cycles ORDER BY cycle_start DESC").catch(() => ({ rows: [] }));
+    const subscriptionPayments = await client.query("SELECT * FROM subscription_payments ORDER BY created_at DESC").catch(() => ({ rows: [] }));
+    const subscriptionCreditUnits = await client.query("SELECT * FROM subscription_credit_units ORDER BY issued_at DESC").catch(() => ({ rows: [] }));
+    const subscriptionCreditRedemptions = await client.query("SELECT * FROM subscription_credit_redemptions ORDER BY created_at DESC").catch(() => ({ rows: [] }));
+    const subscriptionAccountingRules = await client.query("SELECT * FROM subscription_accounting_rule_versions ORDER BY effective_from DESC").catch(() => ({ rows: [] }));
+    const orderServiceItems = await client.query("SELECT * FROM order_service_items ORDER BY created_at").catch(() => ({ rows: [] }));
+    const orderGoodsItems = await client.query("SELECT * FROM order_goods_items ORDER BY created_at").catch(() => ({ rows: [] }));
+    const goodsFiscalDocuments = await client.query("SELECT * FROM goods_fiscal_documents ORDER BY created_at DESC").catch(() => ({ rows: [] }));
 
     const inventoryById = new Map(inventory.rows.map((item) => [item.concession_id, item]));
     const sessionsByMovie = new Map();
@@ -296,6 +304,14 @@ async function loadDbFromPostgres() {
           status: row.status,
           discountValue: num(row.discount_total),
           totalPrice: num(row.total),
+          serviceSubtotal: num(row.service_subtotal ?? metadata.serviceSubtotal),
+          goodsSubtotal: num(row.goods_subtotal ?? metadata.goodsSubtotal),
+          clubCreditsApplied: num(row.club_credits_applied ?? metadata.clubCreditsApplied),
+          clubDiscount: num(row.club_discount ?? metadata.clubDiscount),
+          additionalPayment: num(row.additional_payment ?? metadata.additionalPayment),
+          serviceFiscalStatus: row.service_fiscal_status || metadata.serviceFiscalStatus || "not_applicable",
+          goodsFiscalStatus: row.goods_fiscal_status || metadata.goodsFiscalStatus || "not_required",
+          goodsFiscalTrigger: row.goods_fiscal_trigger || metadata.goodsFiscalTrigger || "goods_delivered",
           reservationExpiresAt: row.reservation_expires_at ? new Date(row.reservation_expires_at).toISOString() : "",
           createdAt: row.created_at ? new Date(row.created_at).toISOString() : metadata.createdAt || "",
           concessionItems: items
@@ -351,6 +367,12 @@ async function loadDbFromPostgres() {
         customerPhone: row.customer_phone || "",
         customerCpf: row.customer_cpf || "",
         source: row.source,
+        ticketNumber: Number(row.ticket_number || 0),
+        basePrice: num(row.base_price),
+        subscriptionCreditAmount: num(row.subscription_credit_amount),
+        additionalPaymentAmount: num(row.additional_payment_amount),
+        paymentSource: row.payment_source || "standard",
+        subscriptionCreditId: row.subscription_credit_id || row.metadata?.subscriptionCreditId || "",
         usedAt: row.used_at ? new Date(row.used_at).toISOString() : "",
         usedBy: row.used_by || "",
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : ""
@@ -387,6 +409,17 @@ async function loadDbFromPostgres() {
         ticketDiscountPercent: num(row.ticket_discount_percent),
         concessionDiscountPercent: num(row.concession_discount_percent),
         freeConcessionItems: asArray(row.free_concession_items),
+        creditReferenceValue: row.credit_reference_value === null ? null : num(row.credit_reference_value),
+        creditValidityDays: row.credit_validity_days === null ? null : Number(row.credit_validity_days),
+        allowCreditRollover: Boolean(row.allow_credit_rollover),
+        maxAccumulatedCredits: row.max_accumulated_credits === null ? null : Number(row.max_accumulated_credits),
+        gracePeriodDays: Number(row.grace_period_days || 0),
+        allowPriceDifference: row.allow_price_difference !== false,
+        excludedConcessionIds: asArray(row.excluded_concession_ids),
+        eligibleFormats: asArray(row.eligible_formats),
+        eligibleSessionIds: asArray(row.eligible_session_ids),
+        cancellationRules: row.cancellation_rules || {},
+        accounting: row.accounting_config || {},
         imageUrl: row.image_url || "",
         isFeatured: Boolean(row.is_featured),
         displayOrder: Number(row.display_order || 100),
@@ -435,6 +468,8 @@ async function loadDbFromPostgres() {
         cancellationMode: row.cancellation_mode || "",
         reactivationBlocked: Boolean(row.reactivation_blocked),
         endedAt: row.ended_at ? new Date(row.ended_at).toISOString() : "",
+        archivedAt: row.archived_at ? new Date(row.archived_at).toISOString() : "",
+        archivedBy: row.archived_by || "",
         history: asArray(row.history),
         createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
         updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : ""
@@ -469,6 +504,64 @@ async function loadDbFromPostgres() {
         refundReason: row.refund_reason || "",
         metadata: row.metadata || {},
         usedAt: row.used_at ? new Date(row.used_at).toISOString() : ""
+      })),
+      subscriptionCycles: subscriptionCycles.rows.map((row) => ({
+        id: row.id, subscriptionId: row.subscription_id, customerId: row.customer_id, planId: row.plan_id,
+        cycleStart: row.cycle_start?.toISOString?.() || "", cycleEnd: row.cycle_end?.toISOString?.() || "",
+        status: row.status, sourcePaymentId: row.source_payment_id || "", idempotencyKey: row.idempotency_key,
+        planSnapshot: row.plan_snapshot || {}, accountingSnapshot: row.accounting_snapshot || {},
+        createdAt: row.created_at?.toISOString?.() || "", updatedAt: row.updated_at?.toISOString?.() || ""
+      })),
+      subscriptionPayments: subscriptionPayments.rows.map((row) => ({
+        id: row.id, subscriptionId: row.subscription_id, cycleId: row.cycle_id || "", customerId: row.customer_id,
+        provider: row.provider, providerPaymentId: row.provider_payment_id || "", amount: num(row.amount), currency: row.currency,
+        status: row.status, idempotencyKey: row.idempotency_key,
+        approvedAt: row.approved_at?.toISOString?.() || "", failedAt: row.failed_at?.toISOString?.() || "",
+        cancelledAt: row.cancelled_at?.toISOString?.() || "", refundedAt: row.refunded_at?.toISOString?.() || "",
+        metadata: row.metadata || {}, createdAt: row.created_at?.toISOString?.() || "", updatedAt: row.updated_at?.toISOString?.() || ""
+      })),
+      subscriptionCreditUnits: subscriptionCreditUnits.rows.map((row) => ({
+        id: row.id, subscriptionId: row.subscription_id, customerId: row.customer_id, cycleId: row.cycle_id,
+        referenceValue: num(row.reference_value), status: row.status,
+        issuedAt: row.issued_at?.toISOString?.() || "", expiresAt: row.expires_at?.toISOString?.() || "",
+        reservedAt: row.reserved_at?.toISOString?.() || "", reservationExpiresAt: row.reservation_expires_at?.toISOString?.() || "",
+        reservedOrderId: row.reserved_order_id || "", redeemedAt: row.redeemed_at?.toISOString?.() || "",
+        cancelledAt: row.cancelled_at?.toISOString?.() || "", rolloverFromId: row.rollover_from_id || "",
+        metadata: row.metadata || {}, createdAt: row.created_at?.toISOString?.() || "", updatedAt: row.updated_at?.toISOString?.() || ""
+      })),
+      subscriptionCreditRedemptions: subscriptionCreditRedemptions.rows.map((row) => ({
+        id: row.id, subscriptionCreditId: row.subscription_credit_id, subscriptionId: row.subscription_id,
+        orderId: row.order_id, ticketId: row.ticket_id || "", sessionId: row.session_id || "", status: row.status,
+        basePrice: num(row.base_price), creditAmount: num(row.credit_amount), additionalPaymentAmount: num(row.additional_payment_amount),
+        idempotencyKey: row.idempotency_key, reservedAt: row.reserved_at?.toISOString?.() || "",
+        redeemedAt: row.redeemed_at?.toISOString?.() || "", releasedAt: row.released_at?.toISOString?.() || "",
+        metadata: row.metadata || {}, createdAt: row.created_at?.toISOString?.() || "", updatedAt: row.updated_at?.toISOString?.() || ""
+      })),
+      subscriptionAccountingRules: subscriptionAccountingRules.rows.map((row) => ({
+        id: row.id, planId: row.plan_id, ruleVersion: row.rule_version, effectiveFrom: row.effective_from?.toISOString?.() || "",
+        ticketComponentValue: row.ticket_component_value === null ? null : num(row.ticket_component_value),
+        benefitsComponentValue: row.benefits_component_value === null ? null : num(row.benefits_component_value),
+        configuration: row.configuration || {}, createdBy: row.created_by || "", createdAt: row.created_at?.toISOString?.() || ""
+      })),
+      orderServiceItems: orderServiceItems.rows.map((row) => ({
+        id: row.id, orderId: row.order_id, ticketId: row.ticket_id || "", itemId: row.item_id, name: row.name,
+        quantity: Number(row.quantity), unitPrice: num(row.unit_price), basePrice: num(row.base_price),
+        subscriptionCreditAmount: num(row.subscription_credit_amount), additionalPaymentAmount: num(row.additional_payment_amount),
+        paymentSource: row.payment_source, subscriptionCreditId: row.subscription_credit_id || "", metadata: row.metadata || {},
+        createdAt: row.created_at?.toISOString?.() || ""
+      })),
+      orderGoodsItems: orderGoodsItems.rows.map((row) => ({
+        id: row.id, orderId: row.order_id, concessionId: row.concession_id || "", sku: row.sku || "", name: row.name,
+        quantity: Number(row.quantity), originalUnitPrice: num(row.original_unit_price), clubDiscount: num(row.club_discount),
+        finalUnitPrice: num(row.final_unit_price), metadata: row.metadata || {}, createdAt: row.created_at?.toISOString?.() || ""
+      })),
+      goodsFiscalDocuments: goodsFiscalDocuments.rows.map((row) => ({
+        id: row.id, orderId: row.order_id, status: row.status, trigger: row.trigger, provider: row.provider || "",
+        providerDocumentId: row.provider_document_id || "", documentNumber: row.document_number || "", series: row.series || "",
+        accessKey: row.access_key || "", protocol: row.protocol || "", xmlReference: row.xml_reference || "", danfeReference: row.danfe_reference || "",
+        idempotencyKey: row.idempotency_key, issuedAt: row.issued_at?.toISOString?.() || "", cancelledAt: row.cancelled_at?.toISOString?.() || "",
+        errorCode: row.error_code || "", errorMessage: row.error_message || "", metadata: row.metadata || {},
+        createdAt: row.created_at?.toISOString?.() || "", updatedAt: row.updated_at?.toISOString?.() || ""
       }))
     };
   } finally {
@@ -547,6 +640,14 @@ async function writeDbToPostgres(db) {
     };
     await query(client, "INSERT INTO settings (key, value, updated_at) VALUES ('app', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", [settingsPayload]);
 
+    await query(client, "DELETE FROM subscription_credit_redemptions").catch(() => null);
+    await query(client, "DELETE FROM subscription_credit_units").catch(() => null);
+    await query(client, "DELETE FROM subscription_payments").catch(() => null);
+    await query(client, "DELETE FROM subscription_cycles").catch(() => null);
+    await query(client, "DELETE FROM subscription_accounting_rule_versions").catch(() => null);
+    await query(client, "DELETE FROM goods_fiscal_documents").catch(() => null);
+    await query(client, "DELETE FROM order_service_items").catch(() => null);
+    await query(client, "DELETE FROM order_goods_items").catch(() => null);
     await query(client, "DELETE FROM subscription_usage").catch(() => null);
     await query(client, "DELETE FROM subscription_credits").catch(() => null);
     await query(client, "DELETE FROM subscriptions").catch(() => null);
@@ -753,8 +854,8 @@ async function writeDbToPostgres(db) {
     const sessionIds = new Set(asArray(db.movies).flatMap((movie) => asArray(movie.sessions).map((session) => session.id)));
     const userIds = new Set(asArray(db.users).map((user) => user.id));
     for (const order of asArray(db.orders)) {
-      await query(client, `INSERT INTO orders (id, customer_user_id, customer_name, customer_email, customer_phone, customer_cpf, movie_id, session_id, status, subtotal, discount_total, total, currency, reservation_expires_at, idempotency_key, metadata, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'BRL',NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,COALESCE(NULLIF($16,'')::timestamptz, now()),now())`, [
+      await query(client, `INSERT INTO orders (id, customer_user_id, customer_name, customer_email, customer_phone, customer_cpf, movie_id, session_id, status, subtotal, discount_total, total, currency, reservation_expires_at, idempotency_key, service_subtotal, goods_subtotal, club_credits_applied, club_discount, additional_payment, service_fiscal_status, goods_fiscal_status, goods_fiscal_trigger, metadata, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'BRL',NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,$16,$17,$18,$19,$20,$21,$22,$23,COALESCE(NULLIF($24,'')::timestamptz, now()),now())`, [
         order.id,
         userIds.has(order.customerUserId) ? order.customerUserId : null,
         order.customerName || "Cliente Cine Cruzeiro",
@@ -769,6 +870,14 @@ async function writeDbToPostgres(db) {
         num(order.totalPrice),
         order.reservationExpiresAt || "",
         order.idempotencyKey || "",
+        num(order.serviceSubtotal ?? asArray(order.ticketItems).reduce((sum, item) => sum + Number(item.quantity || 0) * num(item.unitPrice), 0)),
+        num(order.goodsSubtotal),
+        num(order.clubCreditsApplied),
+        num(order.clubDiscount),
+        num(order.additionalPayment ?? order.totalPrice),
+        order.serviceFiscalStatus || "not_applicable",
+        order.goodsFiscalStatus || "not_required",
+        order.goodsFiscalTrigger || "goods_delivered",
         order,
         order.createdAt || ""
       ]);
@@ -823,8 +932,8 @@ async function writeDbToPostgres(db) {
 
     for (const ticket of asArray(db.tickets)) {
       if (!asArray(db.orders).some((order) => order.id === ticket.orderId)) continue;
-      await query(client, `INSERT INTO tickets (id, order_id, movie_id, session_id, code, qr_payload, ticket_type, status, customer_name, customer_email, customer_phone, customer_cpf, source, used_at, used_by, metadata, created_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULLIF($14,'')::timestamptz,$15,$16,COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO tickets (id, order_id, movie_id, session_id, code, qr_payload, ticket_type, status, customer_name, customer_email, customer_phone, customer_cpf, source, used_at, used_by, ticket_number, base_price, subscription_credit_amount, additional_payment_amount, payment_source, subscription_credit_id, metadata, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULLIF($14,'')::timestamptz,$15,$16,$17,$18,$19,$20,$21,$22,COALESCE(NULLIF($23,'')::timestamptz, now()))`, [
         ticket.id,
         ticket.orderId,
         movieIds.has(ticket.movieId) ? ticket.movieId : null,
@@ -840,14 +949,20 @@ async function writeDbToPostgres(db) {
         ticket.source || "online",
         ticket.usedAt || "",
         ticket.usedBy || "",
+        Number(ticket.ticketNumber || (asArray(db.tickets).indexOf(ticket) + 1)),
+        num(ticket.basePrice),
+        num(ticket.subscriptionCreditAmount),
+        num(ticket.additionalPaymentAmount),
+        ticket.paymentSource || "standard",
+        null,
         ticket,
         ticket.createdAt || ""
       ]);
     }
 
     for (const plan of asArray(db.subscriptionPlans)) {
-      await query(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, ticket_discount_percent, concession_discount_percent, free_concession_items, image_url, is_featured, display_order, provider_plan_id, mercado_pago_plan_id, active, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, ticket_discount_percent, concession_discount_percent, free_concession_items, image_url, is_featured, display_order, provider_plan_id, mercado_pago_plan_id, active, credit_reference_value, credit_validity_days, allow_credit_rollover, max_accumulated_credits, grace_period_days, allow_price_difference, excluded_concession_ids, eligible_formats, eligible_session_ids, cancellation_rules, accounting_config, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17,0),$18,NULLIF($19,0),$20,$21,$22,$23,$24,$25,$26,COALESCE(NULLIF($27,'')::timestamptz, now()),COALESCE(NULLIF($28,'')::timestamptz, now()))`, [
         plan.id,
         plan.name,
         num(plan.monthlyPrice ?? plan.price),
@@ -863,6 +978,17 @@ async function writeDbToPostgres(db) {
         plan.providerPlanId || plan.mercadoPagoPlanId || "",
         plan.mercadoPagoPlanId || plan.providerPlanId || "",
         plan.active !== false,
+        plan.creditReferenceValue === null || plan.creditReferenceValue === undefined ? null : num(plan.creditReferenceValue),
+        Number(plan.creditValidityDays || 0),
+        Boolean(plan.allowCreditRollover),
+        Number(plan.maxAccumulatedCredits || 0),
+        Number(plan.gracePeriodDays || 0),
+        plan.allowPriceDifference !== false,
+        JSON.stringify(asArray(plan.excludedConcessionIds)),
+        JSON.stringify(asArray(plan.eligibleFormats)),
+        JSON.stringify(asArray(plan.eligibleSessionIds)),
+        JSON.stringify(plan.cancellationRules || {}),
+        JSON.stringify(plan.accounting || plan.accountingConfig || {}),
         plan.createdAt || "",
         plan.updatedAt || ""
       ]);
@@ -872,8 +998,8 @@ async function writeDbToPostgres(db) {
     const persistedSubscriptionIds = new Set();
     for (const subscription of asArray(db.subscriptions)) {
       if (!userIds.has(subscription.userId) || !planIds.has(subscription.planId)) continue;
-      await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, cancel_at_period_end, cancellation_requested_at, billing_cancelled_at, benefits_until, cancellation_mode, reactivation_blocked, ended_at, history, created_at, updated_at)
-        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,'')::timestamptz,NULLIF($20,'')::timestamptz,NULLIF($21,'')::timestamptz,NULLIF($22,'')::timestamptz,$23,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,$28,NULLIF($29,'')::timestamptz,NULLIF($30,'')::timestamptz,NULLIF($31,'')::timestamptz,$32,NULLIF($33,'')::timestamptz,NULLIF($34,'')::timestamptz,NULLIF($35,'')::timestamptz,NULLIF($36,''),$37,NULLIF($38,'')::timestamptz,$39,COALESCE(NULLIF($40,'')::timestamptz, now()),COALESCE(NULLIF($41,'')::timestamptz, now()))`, [
+      await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, cancel_at_period_end, cancellation_requested_at, billing_cancelled_at, benefits_until, cancellation_mode, reactivation_blocked, ended_at, archived_at, archived_by, history, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,'')::timestamptz,NULLIF($20,'')::timestamptz,NULLIF($21,'')::timestamptz,NULLIF($22,'')::timestamptz,$23,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,$28,NULLIF($29,'')::timestamptz,NULLIF($30,'')::timestamptz,NULLIF($31,'')::timestamptz,$32,NULLIF($33,'')::timestamptz,NULLIF($34,'')::timestamptz,NULLIF($35,'')::timestamptz,NULLIF($36,''),$37,NULLIF($38,'')::timestamptz,NULLIF($39,'')::timestamptz,$40,$41,COALESCE(NULLIF($42,'')::timestamptz, now()),COALESCE(NULLIF($43,'')::timestamptz, now()))`, [
         subscription.id,
         subscription.userId,
         subscription.planId,
@@ -912,6 +1038,8 @@ async function writeDbToPostgres(db) {
         subscription.cancellationMode || "",
         Boolean(subscription.reactivationBlocked),
         subscription.endedAt || "",
+        subscription.archivedAt || "",
+        userIds.has(subscription.archivedBy) ? subscription.archivedBy : null,
         JSON.stringify(asArray(subscription.history)),
         subscription.createdAt || "",
         subscription.updatedAt || ""
@@ -959,6 +1087,110 @@ async function writeDbToPostgres(db) {
         usage.refundReason || "",
         JSON.stringify(usage.metadata || {}),
         usage.usedAt || ""
+      ]);
+    }
+
+    for (const rule of asArray(db.subscriptionAccountingRules)) {
+      if (!planIds.has(rule.planId)) continue;
+      await query(client, `INSERT INTO subscription_accounting_rule_versions
+        (id, plan_id, rule_version, effective_from, ticket_component_value, benefits_component_value, configuration, created_by, created_at)
+        VALUES ($1,$2,$3,NULLIF($4,'')::timestamptz,$5,$6,$7,$8,COALESCE(NULLIF($9,'')::timestamptz, now()))`, [
+        rule.id, rule.planId, rule.ruleVersion, rule.effectiveFrom || rule.createdAt || new Date().toISOString(),
+        rule.ticketComponentValue === null || rule.ticketComponentValue === undefined ? null : num(rule.ticketComponentValue),
+        rule.benefitsComponentValue === null || rule.benefitsComponentValue === undefined ? null : num(rule.benefitsComponentValue),
+        JSON.stringify(rule.configuration || {}), userIds.has(rule.createdBy) ? rule.createdBy : null, rule.createdAt || ""
+      ]);
+    }
+
+    const persistedCycleIds = new Set();
+    for (const cycle of asArray(db.subscriptionCycles)) {
+      if (!persistedSubscriptionIds.has(cycle.subscriptionId) || !userIds.has(cycle.customerId) || !planIds.has(cycle.planId)) continue;
+      await query(client, `INSERT INTO subscription_cycles
+        (id, subscription_id, customer_id, plan_id, cycle_start, cycle_end, status, source_payment_id, idempotency_key, plan_snapshot, accounting_snapshot, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,NULLIF($5,'')::timestamptz,NULLIF($6,'')::timestamptz,$7,NULLIF($8,''),$9,$10,$11,COALESCE(NULLIF($12,'')::timestamptz, now()),COALESCE(NULLIF($13,'')::timestamptz, now()))`, [
+        cycle.id, cycle.subscriptionId, cycle.customerId, cycle.planId, cycle.cycleStart, cycle.cycleEnd, cycle.status || "active",
+        cycle.sourcePaymentId || "", cycle.idempotencyKey, JSON.stringify(cycle.planSnapshot || {}), JSON.stringify(cycle.accountingSnapshot || {}),
+        cycle.createdAt || "", cycle.updatedAt || ""
+      ]);
+      persistedCycleIds.add(cycle.id);
+    }
+
+    for (const payment of asArray(db.subscriptionPayments)) {
+      if (!persistedSubscriptionIds.has(payment.subscriptionId) || !userIds.has(payment.customerId)) continue;
+      await query(client, `INSERT INTO subscription_payments
+        (id, subscription_id, cycle_id, customer_id, provider, provider_payment_id, amount, currency, status, idempotency_key, approved_at, failed_at, cancelled_at, refunded_at, metadata, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
+        payment.id, payment.subscriptionId, persistedCycleIds.has(payment.cycleId) ? payment.cycleId : null, payment.customerId,
+        payment.provider || "unknown", payment.providerPaymentId || "", num(payment.amount), payment.currency || "BRL", payment.status || "pending",
+        payment.idempotencyKey, payment.approvedAt || "", payment.failedAt || "", payment.cancelledAt || "", payment.refundedAt || "",
+        JSON.stringify(payment.metadata || {}), payment.createdAt || "", payment.updatedAt || ""
+      ]);
+    }
+
+    const persistedCreditUnitIds = new Set();
+    for (const credit of asArray(db.subscriptionCreditUnits)) {
+      if (!persistedSubscriptionIds.has(credit.subscriptionId) || !persistedCycleIds.has(credit.cycleId) || !userIds.has(credit.customerId)) continue;
+      await query(client, `INSERT INTO subscription_credit_units
+        (id, subscription_id, customer_id, cycle_id, reference_value, status, issued_at, expires_at, reserved_at, reservation_expires_at, reserved_order_id, redeemed_at, cancelled_at, rollover_from_id, metadata, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::timestamptz,NULLIF($8,'')::timestamptz,NULLIF($9,'')::timestamptz,NULLIF($10,'')::timestamptz,$11,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,$14,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
+        credit.id, credit.subscriptionId, credit.customerId, credit.cycleId, num(credit.referenceValue), credit.status || "available",
+        credit.issuedAt, credit.expiresAt, credit.reservedAt || "", credit.reservationExpiresAt || "",
+        orderIds.has(credit.reservedOrderId) ? credit.reservedOrderId : null, credit.redeemedAt || "", credit.cancelledAt || "", null,
+        JSON.stringify(credit.metadata || {}), credit.createdAt || "", credit.updatedAt || ""
+      ]);
+      persistedCreditUnitIds.add(credit.id);
+    }
+
+    for (const ticket of asArray(db.tickets)) {
+      if (persistedCreditUnitIds.has(ticket.subscriptionCreditId)) {
+        await query(client, "UPDATE tickets SET subscription_credit_id = $2 WHERE id = $1", [ticket.id, ticket.subscriptionCreditId]);
+      }
+    }
+
+    for (const redemption of asArray(db.subscriptionCreditRedemptions)) {
+      if (!persistedCreditUnitIds.has(redemption.subscriptionCreditId) || !orderIds.has(redemption.orderId)) continue;
+      await query(client, `INSERT INTO subscription_credit_redemptions
+        (id, subscription_credit_id, subscription_id, order_id, ticket_id, session_id, status, base_price, credit_amount, additional_payment_amount, idempotency_key, reserved_at, redeemed_at, released_at, metadata, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
+        redemption.id, redemption.subscriptionCreditId, redemption.subscriptionId, redemption.orderId,
+        ticketIds.has(redemption.ticketId) ? redemption.ticketId : null, sessionIds.has(redemption.sessionId) ? redemption.sessionId : null,
+        redemption.status || "reserved", num(redemption.basePrice), num(redemption.creditAmount), num(redemption.additionalPaymentAmount),
+        redemption.idempotencyKey, redemption.reservedAt, redemption.redeemedAt || "", redemption.releasedAt || "",
+        JSON.stringify(redemption.metadata || {}), redemption.createdAt || "", redemption.updatedAt || ""
+      ]);
+    }
+
+    for (const item of asArray(db.orderServiceItems)) {
+      if (!orderIds.has(item.orderId)) continue;
+      await query(client, `INSERT INTO order_service_items
+        (id, order_id, ticket_id, item_id, name, quantity, unit_price, base_price, subscription_credit_amount, additional_payment_amount, payment_source, subscription_credit_id, metadata, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE(NULLIF($14,'')::timestamptz, now()))`, [
+        item.id, item.orderId, ticketIds.has(item.ticketId) ? item.ticketId : null, item.itemId, item.name, Number(item.quantity || 1),
+        num(item.unitPrice), num(item.basePrice), num(item.subscriptionCreditAmount), num(item.additionalPaymentAmount), item.paymentSource || "standard",
+        persistedCreditUnitIds.has(item.subscriptionCreditId) ? item.subscriptionCreditId : null, JSON.stringify(item.metadata || {}), item.createdAt || ""
+      ]);
+    }
+
+    for (const item of asArray(db.orderGoodsItems)) {
+      if (!orderIds.has(item.orderId)) continue;
+      await query(client, `INSERT INTO order_goods_items
+        (id, order_id, concession_id, sku, name, quantity, original_unit_price, club_discount, final_unit_price, metadata, created_at)
+        VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,$9,$10,COALESCE(NULLIF($11,'')::timestamptz, now()))`, [
+        item.id, item.orderId, asArray(db.concessions).some((entry) => entry.id === item.concessionId) ? item.concessionId : null,
+        item.sku || "", item.name, Number(item.quantity || 1), num(item.originalUnitPrice), num(item.clubDiscount), num(item.finalUnitPrice),
+        JSON.stringify(item.metadata || {}), item.createdAt || ""
+      ]);
+    }
+
+    for (const document of asArray(db.goodsFiscalDocuments)) {
+      if (!orderIds.has(document.orderId)) continue;
+      await query(client, `INSERT INTO goods_fiscal_documents
+        (id, order_id, status, trigger, provider, provider_document_id, document_number, series, access_key, protocol, xml_reference, danfe_reference, idempotency_key, issued_at, cancelled_at, error_code, error_message, metadata, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,NULLIF($14,'')::timestamptz,NULLIF($15,'')::timestamptz,NULLIF($16,''),NULLIF($17,''),$18,COALESCE(NULLIF($19,'')::timestamptz, now()),COALESCE(NULLIF($20,'')::timestamptz, now()))`, [
+        document.id, document.orderId, document.status || "not_required", document.trigger || "goods_delivered", document.provider || "",
+        document.providerDocumentId || "", document.documentNumber || "", document.series || "", document.accessKey || "", document.protocol || "",
+        document.xmlReference || "", document.danfeReference || "", document.idempotencyKey, document.issuedAt || "", document.cancelledAt || "",
+        document.errorCode || "", document.errorMessage || "", JSON.stringify(document.metadata || {}), document.createdAt || "", document.updatedAt || ""
       ]);
     }
 
