@@ -426,8 +426,11 @@ function escapeHtml(value = "") {
 function adminAssetUrl(value = "") {
   const url = String(value || "").trim();
   if (!url || /^(data:|https?:|blob:)/i.test(url)) return url;
-  if (API_BASE && url.startsWith("/uploads/")) return `${API_BASE}${url}`;
-  return url;
+  const cleanPath = url.startsWith("/") ? url : `/${url}`;
+  if (API_BASE && (cleanPath.startsWith("/uploads/") || cleanPath.startsWith("/images/") || cleanPath.startsWith("/trailers/"))) {
+    return `${API_BASE}${cleanPath}`;
+  }
+  return cleanPath;
 }
 
 function cleanAdminAssetUrl(value = "") {
@@ -7344,6 +7347,8 @@ window.resendWebhookRun = resendWebhookRun;
 window.toggleIntegration = toggleIntegration;
 
 async function initAdmin() {
+  const logo = $("adminLogoImg");
+  if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp`;
   bindEvents();
   setBoxOfficeTab("newSale");
   const user = await loadAdminUser();

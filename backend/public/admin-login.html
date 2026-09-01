@@ -81,7 +81,7 @@
   </head>
   <body>
     <main>
-      <img src="images/logo-display.webp" alt="Cine Cruzeiro" width="320" height="183" />
+      <img id="adminLoginLogo" src="images/logo-display.webp" alt="Cine Cruzeiro" width="320" height="183" />
       <h1>Painel Cine Cruzeiro</h1>
       <p>Entre com uma conta autorizada para gerenciar programação, vendas, bomboniere e validação de ingressos.</p>
       <form id="loginForm">
@@ -118,6 +118,8 @@
         const adminIndex = pathname.indexOf("/admin");
         return adminIndex > 0 ? pathname.slice(0, adminIndex) : "";
       })();
+      const logo = document.getElementById("adminLoginLogo");
+      if (logo && ADMIN_BASE) logo.src = `${ADMIN_BASE}/images/logo-display.webp`;
       const form = document.getElementById("loginForm");
       const button = document.getElementById("submitButton");
       const verifyButton = document.getElementById("verifyButton");
