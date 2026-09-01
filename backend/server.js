@@ -10697,7 +10697,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, status, {
         error: {
           code: status >= 500 ? "INTERNAL_ERROR" : error.code || "REQUEST_ERROR",
-          message: status >= 500 ? "Erro interno do backend" : error.message
+          message: status >= 500 ? "Desculpe, erro interno no servidor." : error.message
         },
         ...(isProduction() ? {} : { detail: error.message })
       });

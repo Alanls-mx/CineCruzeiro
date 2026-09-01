@@ -225,7 +225,7 @@ async function api(path, options = {}) {
       window.location.href = `${API_BASE}/admin`;
       return {};
     }
-    const error = new Error(data.error?.message || data.error || "Erro ao falar com o backend");
+    const error = new Error(data.error?.message || data.error || "Desculpe, erro interno no servidor");
     error.status = response.status;
     error.payload = data;
     throw error;
@@ -580,8 +580,8 @@ async function loadContent(options = {}) {
   } catch (error) {
     console.error(error);
     setStatus("Erro", "error");
-    showError(`Não foi possível sincronizar com o backend. ${error.message}`);
-    showToast("Falha ao carregar dados do painel.", "error");
+    showError(`Desculpe, erro interno no servidor ao sincronizar os dados. ${error.message}`);
+    showToast("Falha ao atualizar dados do painel.", "error");
   } finally {
     if (silent) {
       state.refreshStatusTimer = setTimeout(() => setDisabled("refreshButton", false), 220);

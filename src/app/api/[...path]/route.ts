@@ -50,8 +50,8 @@ async function proxy(request: NextRequest, context: RouteContext) {
         error: {
           code: timedOut ? "BACKEND_TIMEOUT" : "BACKEND_UNAVAILABLE",
           message: timedOut
-            ? "O servidor demorou para responder. Tente novamente."
-            : "Não foi possível falar com o servidor agora. Tente novamente.",
+            ? "Desculpe, o servidor demorou para responder. Tente novamente."
+            : "Desculpe, erro interno no servidor. Tente novamente em instantes.",
         },
       },
       { status: timedOut ? 504 : 502 }

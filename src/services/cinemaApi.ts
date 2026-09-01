@@ -377,7 +377,7 @@ export async function fetchCinemaContent(force = false): Promise<CinemaContent> 
   cinemaContentRequest = apiFetch(`${API_BASE}/api/content`)
     .then(async (response) => {
       if (!response.ok) {
-        throw new Error("Nao foi possivel carregar a programacao do backend.");
+        throw new Error("Desculpe, erro interno no servidor ao carregar a programação. Tente novamente.");
       }
       return normalizeCinemaContent(await response.json());
     })
@@ -404,7 +404,7 @@ export async function fetchSessionSeatMap(sessionId: string, ownerToken = ""): P
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Não foi possível carregar as poltronas desta sessão."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, erro interno no servidor ao carregar as poltronas desta sessão."));
   }
   return payload as SessionSeatMap;
 }
@@ -421,7 +421,7 @@ export async function recordTicketOrder(order: TicketOrder) {
   });
 
   if (!response.ok) {
-    throw new Error("Nao foi possivel registrar o pedido no backend.");
+    throw new Error("Desculpe, erro interno no servidor ao registrar o pedido. Tente novamente.");
   }
 
   return response.json();
@@ -451,7 +451,7 @@ export async function createCheckoutPayment(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(data, data.detail || "Nao foi possivel gerar o pagamento."));
+    throw new Error(apiErrorMessage(data, data.detail || "Desculpe, não foi possível gerar o pagamento. Tente novamente."));
   }
 
   return data as {
@@ -479,7 +479,7 @@ export async function fetchMercadoPagoCheckoutConfig() {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel consultar Mercado Pago."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível consultar a configuração de pagamento."));
   }
   return payload as {
     provider: "mercado_pago";
@@ -495,7 +495,7 @@ export async function fetchSubscriptionPlans() {
   const response = await apiFetch(`${API_BASE}/api/subscription-plans`);
   const payload = await response.json().catch(() => []);
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar os planos do Clube."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível carregar os planos do Clube agora."));
   }
   return (Array.isArray(payload) ? payload : []).map((plan: SubscriptionPlan) => ({
     ...plan,
@@ -511,7 +511,7 @@ export async function fetchMySubscriptions() {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Entre na sua conta para consultar o Clube."));
+    throw new Error(apiErrorMessage(payload, "Entre na sua conta para consultar os benefícios do Clube."));
   }
   return (payload.subscriptions || []) as AccountSubscription[];
 }
@@ -525,7 +525,7 @@ export async function subscribeToPlan(planId: string, paymentMethod: "credit_car
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel iniciar a assinatura."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível iniciar a assinatura. Tente novamente."));
   }
   return payload as {
     subscription: AccountSubscription;
@@ -547,7 +547,7 @@ export async function cancelMySubscription(subscriptionId: string, reason = "Can
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel cancelar a assinatura."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível cancelar a assinatura no momento."));
   }
   return payload as { subscription: AccountSubscription; message?: string };
 }
@@ -571,7 +571,7 @@ export async function createClubCreditCheckout(data: {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel usar o beneficio do Clube."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível aplicar o benefício do Clube agora."));
   }
   return payload as {
     order: TicketOrder & { status?: string };
@@ -590,7 +590,7 @@ export async function fetchCheckoutOrderStatus(orderId: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel confirmar o pedido."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível confirmar o pedido no momento."));
   }
   return payload as {
     order: TicketOrder & { status?: string };
@@ -614,7 +614,7 @@ export async function registerCustomer(data: {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel criar a conta."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível criar a conta. Confira seus dados e tente novamente."));
   }
   return payload as { user: CustomerUser; verificationEmailSent?: boolean; message?: string };
 }
@@ -628,7 +628,7 @@ export async function loginCustomer(data: { email: string; password: string }) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel entrar."));
+    throw new Error(apiErrorMessage(payload, "E-mail ou senha inválidos. Tente novamente."));
   }
   return payload as { user: CustomerUser; message?: string };
 }
@@ -667,7 +667,7 @@ export async function updateCurrentCustomer(data: { name?: string; phone?: strin
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel atualizar sua conta."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível atualizar sua conta no momento."));
   }
   return payload as { user: CustomerUser };
 }
@@ -685,7 +685,7 @@ export async function requestEmailChange(email: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel solicitar verificacao do e-mail."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível solicitar verificação do e-mail."));
   }
   return payload as { ok: boolean; message: string; user: CustomerUser };
 }
@@ -698,7 +698,7 @@ export async function requestAccountEmailVerification() {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel enviar a confirmacao do e-mail."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível enviar a confirmação de e-mail."));
   }
   return payload as { ok: boolean; message: string; user: CustomerUser };
 }
@@ -712,7 +712,7 @@ export async function confirmEmailChange(token: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel confirmar o e-mail."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível confirmar o e-mail. O link pode ter expirado."));
   }
   return payload as { ok: boolean; user: CustomerUser };
 }
@@ -735,7 +735,7 @@ export async function requestPasswordReset(email: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel solicitar recuperacao de senha."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível solicitar a recuperação de senha."));
   }
   return payload as { ok: boolean; message: string };
 }
@@ -749,7 +749,7 @@ export async function resetPassword(data: { token: string; password: string }) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel redefinir a senha."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível redefinir a senha. O link pode ter expirado."));
   }
   return payload as { ok: boolean; user: CustomerUser };
 }
@@ -762,7 +762,7 @@ export async function fetchAccountTickets() {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar seus ingressos."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, erro interno no servidor ao carregar seus ingressos."));
   }
   return (payload.tickets || []).map(normalizeTicketAssets) as TicketRecord[];
 }
@@ -783,7 +783,7 @@ export async function fetchAccountTicketsGrouped(): Promise<AccountTicketsRespon
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar seus ingressos."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, erro interno no servidor ao carregar seus ingressos."));
   }
   return {
     tickets: (payload.tickets || []).map(normalizeTicketAssets) as TicketRecord[],
@@ -800,7 +800,7 @@ export async function fetchAccountTicket(ticketId: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel carregar o ingresso."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível carregar as informações do ingresso."));
   }
   return normalizeTicketAssets(payload.ticket as TicketRecord);
 }
@@ -818,7 +818,7 @@ export async function createGoogleWalletPass(ticketId: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Google Wallet indisponivel para este ingresso."));
+    throw new Error(apiErrorMessage(payload, "Google Wallet indisponível para este ingresso."));
   }
   return payload as { url: string };
 }
@@ -832,7 +832,7 @@ export async function transferTicket(ticketId: string, email: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel transferir o ingresso."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível transferir o ingresso. Tente novamente."));
   }
   return payload as { ok: boolean; ticket: TicketRecord };
 }
@@ -846,7 +846,7 @@ export async function validateTicket(code: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(payload, "Nao foi possivel validar o ingresso."));
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível validar o ingresso."));
   }
   return payload.ticket as TicketRecord;
 }

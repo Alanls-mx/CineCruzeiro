@@ -25,7 +25,7 @@ const loadHomeContent = unstable_cache(
       cache: "no-store",
       signal: AbortSignal.timeout(15_000),
     });
-    if (!response.ok) throw new Error("Não foi possível carregar a programação do backend.");
+    if (!response.ok) throw new Error("Desculpe, erro interno no servidor ao carregar a programação.");
     return normalizeCinemaContent(await response.json());
   },
   ["cine-cruzeiro-home-content"],

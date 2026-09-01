@@ -833,9 +833,11 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                 Selecionadas: {selectedSeatIds.map((id) => seatsById.get(id)?.label || id).join(", ")}
               </p>
             )}
-            <p className={`mt-3 text-xs font-bold ${realtimeStatus === "connected" ? "text-emerald-300" : "text-amber-200"}`} role="status">
-              {realtimeStatus === "connected" ? "Poltronas sincronizadas em tempo real." : realtimeStatus === "connecting" ? "Conectando à reserva de poltronas..." : "Reconectando à reserva de poltronas..."}
-            </p>
+            {realtimeStatus !== "connected" && (
+              <p className="mt-3 text-xs font-bold text-amber-200" role="status">
+                {realtimeStatus === "connecting" ? "Conectando à reserva de poltronas..." : "Reconectando à reserva de poltronas..."}
+              </p>
+            )}
             {seatActionError && <p className="mt-2 text-sm font-semibold text-rose-200" role="alert">{seatActionError}</p>}
           </div>
         )}
@@ -980,7 +982,7 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
                 O formulário seguro do Mercado Pago gera um token para processar a compra. O Cine Cruzeiro não recebe número, validade ou CVV do cartão.
               </p>
               <p className="mt-3 text-xs font-bold text-slate-500">
-                Total recalculado pelo backend: {money(total)}. Ingressos liberados somente após pagamento aprovado.
+                Total confirmado: {money(total)}. Ingressos liberados após aprovação do pagamento.
               </p>
             </div>
             {mercadoPagoUnavailable && (
@@ -999,7 +1001,7 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
             <p className="mt-2 text-sm leading-6 text-slate-300">
               Gere o QR Code e o Pix copia-e-cola sem sair do checkout. O ingresso só é liberado após a confirmação do Mercado Pago.
             </p>
-            <p className="mt-3 text-xs font-bold text-slate-500">Total recalculado pelo backend: {money(total)}.</p>
+            <p className="mt-3 text-xs font-bold text-slate-500">Total confirmado: {money(total)}.</p>
           </div>
         )}
         {paymentError && <p className="mt-5 text-sm font-semibold text-rose-200">{paymentError}</p>}
@@ -1020,7 +1022,7 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
               <span>
                 <strong className="block text-sm text-white">Aplicar benefícios do {plan?.name || "Clube"}</strong>
                 <span className="mt-1 block text-xs leading-5 text-slate-300">
-                  {Number(plan?.ticketDiscountPercent || 0)}% nos ingressos, {Number(plan?.concessionDiscountPercent || 0)}% na bomboniere e itens grátis elegíveis. O servidor valida o saldo do ciclo.
+                  {Number(plan?.ticketDiscountPercent || 0)}% nos ingressos, {Number(plan?.concessionDiscountPercent || 0)}% na bomboniere e itens grátis elegíveis.
                 </span>
               </span>
             </label>
@@ -1034,7 +1036,7 @@ function PaymentStep({ draft, updateDraft, total, mercadoPagoConfig, paymentErro
               />
               <span>
                 <strong className="block text-sm text-white">Usar {requestedTickets} crédito(s) do Clube</strong>
-                <span className="mt-1 block text-xs leading-5 text-slate-300">Você possui {clubCredits}. O valor e a elegibilidade serão confirmados pelo servidor antes da cobrança.</span>
+                <span className="mt-1 block text-xs leading-5 text-slate-300">Você possui {clubCredits}. O benefício será aplicado na finalização.</span>
               </span>
             </label>
             {clubCreditsEnabled && (
@@ -1311,7 +1313,7 @@ function OrderSummary({ draft, total, selectedConcessions, ticketTypes, seatMap 
           <span className="text-sm font-bold text-slate-400">Total</span>
           <span className="text-3xl font-black text-gold-400">{money(total)}</span>
         </div>
-        <p className="mt-3 text-xs leading-5 text-slate-500">O valor final é recalculado pelo backend antes do pagamento.</p>
+        <p className="mt-3 text-xs leading-5 text-slate-500">O valor final é confirmado antes da conclusão do pagamento.</p>
       </div>
     </aside>
   );
