@@ -1679,7 +1679,7 @@ async function run() {
       method: "POST",
       headers: jsonHeaders(adminCookie),
       body: JSON.stringify({
-        code: allowedTicketTypeSale.payload.tickets[0].code,
+        code: `CC2.${Buffer.from(JSON.stringify({ v: 2, c: allowedTicketTypeSale.payload.tickets[0].code }), "utf8").toString("base64url")}.assinatura-legada`,
         sessionId: TEST_SESSION_ID
       })
     });

@@ -2010,6 +2010,20 @@ function canTransferTicket(db, ticket) {
 
 function extractTicketCode(value) {
   const raw = String(value || "").trim();
+  // Compatibilidade somente online para ingressos CC2 já emitidos. O código
+  // continua sendo validado contra o banco; nenhuma assinatura ou cache offline é usado.
+  if (raw.startsWith("CC2.") && raw.length <= 2048) {
+    const parts = raw.split(".");
+    if (parts.length === 3 && /^[A-Za-z0-9_-]+$/.test(parts[1]) && /^[A-Za-z0-9_-]+$/.test(parts[2])) {
+      try {
+        const legacy = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+        const legacyCode = String(legacy?.c || "").toUpperCase();
+        if (legacy?.v === 2 && /^CC-[A-F0-9]{8,32}$/.test(legacyCode)) return legacyCode;
+      } catch {
+        // Segue para a validação normal e será recusado como ingresso inexistente.
+      }
+    }
+  }
   const match = raw.match(/(?:CINECRUZEIRO:TICKET:)?(CC-[A-F0-9]{8,32})/i);
   return match ? match[1].toUpperCase() : raw.toUpperCase();
 }
