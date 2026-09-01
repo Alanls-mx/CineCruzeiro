@@ -34,6 +34,7 @@ const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const clubDomainService = require("./services/clubDomainService");
 const { GoodsFiscalService } = require("./services/goodsFiscalService");
+const ticketQrSignatureService = require("./services/ticketQrSignatureService");
 const {
   applyMovieTagTransition,
   startMovieTagTransition,
@@ -1057,7 +1058,7 @@ function adminAuthRequired(pathname, method) {
   if (/^\/api\/(movies|rooms|ticket-types|concessions|promotions|ads|users)(\/|$)/.test(pathname)) return true;
   if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return true;
   if (/^\/api\/orders(\/|$)/.test(pathname) && ["GET", "PATCH", "DELETE"].includes(method)) return true;
-  if (pathname === "/api/tickets/manual" || pathname === "/api/tickets/validate") return true;
+  if (pathname === "/api/tickets/manual" || pathname === "/api/tickets/validate" || pathname.startsWith("/api/admin/tickets/offline-")) return true;
   return false;
 }
 
@@ -1112,7 +1113,7 @@ function requiredAdminRoles(pathname, method) {
   if (/^\/api\/(movies|rooms|ticket-types|concessions|promotions|ads)(\/|$)/.test(pathname)) return ["owner", "manager"];
   if (/^\/api\/orders(\/|$)/.test(pathname) && method === "GET") return ["owner", "manager", "operator"];
   if (/^\/api\/orders\/[^/]+$/.test(pathname) && ["PATCH", "DELETE"].includes(method)) return ["owner", "manager"];
-  if (pathname === "/api/tickets/manual" || pathname === "/api/tickets/validate") return ["owner", "manager", "operator"];
+  if (pathname === "/api/tickets/manual" || pathname === "/api/tickets/validate" || pathname.startsWith("/api/admin/tickets/offline-")) return ["owner", "manager", "operator"];
   return ["owner", "manager", "operator"];
 }
 
@@ -1126,7 +1127,7 @@ function requiredAdminPermission(pathname, method) {
   if (pathname.startsWith("/api/admin/payments") || pathname.startsWith("/api/dashboard")) return "dashboard.view";
   if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return "club.manage";
   if (pathname.startsWith("/api/box-office/") || pathname === "/api/tickets/manual") return "box_office.manage";
-  if (pathname === "/api/tickets/validate") return "tickets.validate";
+  if (pathname === "/api/tickets/validate" || pathname.startsWith("/api/admin/tickets/offline-")) return "tickets.validate";
   if (pathname.startsWith("/api/uploads/")) return "media.manage";
   if (pathname === "/api/content" && method === "PUT" || pathname === "/api/settings") return "settings.manage";
   if (/^\/api\/movies(\/|$)/.test(pathname)) return "movies.manage";
@@ -1328,6 +1329,12 @@ function normalizeDb(db) {
   db.settings.emailCampaigns = db.emailCampaigns;
   db.auditLogs ||= [];
   db.tickets ||= [];
+  db.tickets = db.tickets.map((ticket) => ({
+    ...ticket,
+    qrPayload: ticketQrSignatureService.verify(ticket.qrPayload)
+      ? ticket.qrPayload
+      : ticketQrPayload(ticket)
+  }));
   db.concessions ||= [
     {
       id: "combo-classico",
@@ -1648,8 +1655,8 @@ function createTicketCode(existingTickets = []) {
   return code;
 }
 
-function ticketQrPayload(code) {
-  return `CINECRUZEIRO:TICKET:${code}`;
+function ticketQrPayload(ticket) {
+  return ticketQrSignatureService.signTicket(ticket);
 }
 
 function ticketSessionStartsAt(ticket, db = null) {
@@ -2009,6 +2016,16 @@ function canTransferTicket(db, ticket) {
 
 function extractTicketCode(value) {
   const raw = String(value || "").trim();
+  if (raw.startsWith(`${ticketQrSignatureService.PREFIX}.`)) {
+    const signed = ticketQrSignatureService.verify(raw);
+    if (!signed) {
+      const error = new Error("A assinatura criptográfica deste ingresso é inválida.");
+      error.statusCode = 400;
+      error.code = "TICKET_QR_SIGNATURE_INVALID";
+      throw error;
+    }
+    return String(signed.c).toUpperCase();
+  }
   const match = raw.match(/(?:CINECRUZEIRO:TICKET:)?(CC-[A-F0-9]{8,32})/i);
   return match ? match[1].toUpperCase() : raw.toUpperCase();
 }
@@ -2043,11 +2060,11 @@ function buildTicketsForOrder(order, db, source = "online") {
   const pushTicket = (ticketType, index) => {
     const code = createTicketCode([...(db.tickets || []), ...tickets]);
     const selectedSeat = Array.isArray(order.selectedSeats) ? order.selectedSeats[index - 1] : null;
-    tickets.push({
+    const ticket = {
       ...base,
       id: `ticket-${Date.now()}-${index}-${crypto.randomBytes(2).toString("hex")}`,
       code,
-      qrPayload: ticketQrPayload(code),
+      qrPayload: "",
       ticketType,
       ticketNumber: Math.max(0, ...(db.tickets || []).map((item) => Number(item.ticketNumber || 0)), ...tickets.map((item) => Number(item.ticketNumber || 0))) + 1,
       basePrice: 0,
@@ -2061,7 +2078,9 @@ function buildTicketsForOrder(order, db, source = "online") {
       seatType: selectedSeat?.typeName || "",
       usedAt: "",
       usedBy: ""
-    });
+    };
+    ticket.qrPayload = ticketQrPayload(ticket);
+    tickets.push(ticket);
   };
 
   let ticketIndex = 0;
@@ -2178,6 +2197,93 @@ function validateTicket(db, code, adminUser, expectedSessionId = "") {
   ticket.usedAt = new Date().toISOString();
   ticket.usedBy = adminUser?.id || "";
   return ticket;
+}
+
+function offlineTicketManifest(db, { date = todayIsoDate(), sessionId = "" } = {}) {
+  const manifestDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date) : todayIsoDate();
+  const requestedSessionId = String(sessionId || "").trim();
+  const tickets = (db.tickets || []).flatMap((ticket) => {
+    const session = sessionForTicket(db, ticket);
+    const order = orderForTicket(db, ticket);
+    if (!session || session.date !== manifestDate || (requestedSessionId && session.id !== requestedSessionId) || order?.status !== "paid") return [];
+    const signed = ticketQrSignatureService.verify(ticket.qrPayload);
+    if (!signed) return [];
+    return [{
+      id: ticket.id,
+      code: ticket.code,
+      qrPayload: ticket.qrPayload,
+      sessionId: ticket.sessionId,
+      movieId: ticket.movieId,
+      movieTitle: movieForTicket(db, ticket)?.title || ticket.movieTitle || "Filme",
+      sessionDate: session.date,
+      sessionTime: session.time,
+      sessionRoom: session.room,
+      sessionFormat: session.format,
+      ticketType: ticket.ticketType,
+      seat: ticket.seatLabel || ticket.seat || "Lugar livre",
+      status: effectiveTicketStatus(ticket, order, session, db),
+      usedAt: ticket.usedAt || "",
+      expiresAt: new Date(Number(signed.e) * 1000).toISOString()
+    }];
+  });
+  return {
+    version: 1,
+    date: manifestDate,
+    sessionId: requestedSessionId,
+    generatedAt: new Date().toISOString(),
+    expiresAt: new Date(`${manifestDate}T23:59:59-03:00`).toISOString(),
+    verification: ticketQrSignatureService.publicConfig(),
+    tickets
+  };
+}
+
+function previousOfflineValidation(db, eventId) {
+  return (db.auditLogs || []).find((entry) => entry.after?.offlineValidationId === eventId);
+}
+
+function syncOfflineTicketValidation(db, event, adminUser) {
+  const eventId = String(event?.id || "").trim().slice(0, 120);
+  if (!eventId) return { id: "", status: "rejected", code: "OFFLINE_EVENT_ID_REQUIRED", message: "Evento offline sem identificador." };
+  const previous = previousOfflineValidation(db, eventId);
+  if (previous) return { id: eventId, status: previous.after?.result === "validated" ? "synced" : "rejected", code: previous.after?.code || "", duplicate: true };
+  const signed = ticketQrSignatureService.verify(event.qrPayload);
+  if (!signed) return { id: eventId, status: "rejected", code: "TICKET_QR_SIGNATURE_INVALID", message: "Assinatura criptográfica inválida." };
+  const ticket = (db.tickets || []).find((item) => item.id === signed.t && item.code === signed.c && item.sessionId === signed.s);
+  if (!ticket) return { id: eventId, status: "rejected", code: "TICKET_NOT_FOUND", message: "Ingresso assinado não encontrado." };
+  let result = "validated";
+  let code = "";
+  let message = "";
+  try {
+    validateTicket(db, event.qrPayload, adminUser, event.sessionId || "");
+  } catch (error) {
+    result = "rejected";
+    code = error.code || "TICKET_VALIDATION_FAILED";
+    message = error.message;
+  }
+  db.auditLogs ||= [];
+  db.auditLogs.push({
+    id: `audit-offline-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    entityType: "ticket_validation",
+    entityId: ticket.id,
+    action: result === "validated" ? "ticket.validated_offline" : "ticket.offline_sync_denied",
+    updatedBy: adminUser?.id || "",
+    updatedByEmail: adminUser?.email || "",
+    at: new Date().toISOString(),
+    before: null,
+    after: {
+      ticketId: ticket.id,
+      orderId: ticket.orderId,
+      operatorId: adminUser?.id || "",
+      offlineValidationId: eventId,
+      deviceId: String(event.deviceId || "").slice(0, 120),
+      scannedAt: String(event.scannedAt || "").slice(0, 40),
+      synchronizedAt: new Date().toISOString(),
+      result,
+      code,
+      message
+    }
+  });
+  return { id: eventId, status: result === "validated" ? "synced" : "rejected", code, message, ticketId: ticket.id };
 }
 
 function validateTicketConcessions(db, code, adminUser) {
@@ -9603,7 +9709,7 @@ async function handleApi(req, res, pathname) {
         ticket.customerPhone = targetUser.phone || "";
         ticket.customerCpf = targetUser.cpf || "";
         ticket.code = newCode;
-        ticket.qrPayload = ticketQrPayload(newCode);
+        ticket.qrPayload = ticketQrPayload(ticket);
         ticket.transferredAt = new Date().toISOString();
         ticket.transferredFromUserId = freshUser.id;
         ticket.updatedAt = new Date().toISOString();
@@ -10088,6 +10194,28 @@ async function handleApi(req, res, pathname) {
         pointPrint,
         totalPrice: orders.reduce((sum, order) => sum + Number(order.totalPrice || 0), 0)
       });
+    });
+    return;
+  }
+
+  if (pathname === "/api/admin/tickets/offline-manifest" && method === "GET") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    sendJson(res, 200, offlineTicketManifest(db, {
+      date: url.searchParams.get("date") || todayIsoDate(),
+      sessionId: url.searchParams.get("sessionId") || ""
+    }), { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/tickets/offline-sync" && method === "POST") {
+    const body = await readBody(req);
+    const events = Array.isArray(body.events) ? body.events.slice(0, 200) : [];
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const adminUser = getAdminUser(req, lockedDb);
+      const results = events.map((event) => syncOfflineTicketValidation(lockedDb, event, adminUser));
+      if (events.length) await writeDb(lockedDb);
+      sendJson(res, 200, { synchronizedAt: new Date().toISOString(), results });
     });
     return;
   }

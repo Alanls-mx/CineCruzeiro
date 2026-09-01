@@ -33,7 +33,7 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
   await page.getByRole("link", { name: "Continuar para Extras" }).click();
   await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
   await expect(page.getByRole("heading", { name: "Conta identificada" })).toBeVisible();
-  await expect(page.getByText("Você possui 2. O valor e a elegibilidade serão confirmados pelo servidor antes da cobrança.")).toBeVisible();
+  await expect(page.getByText("Você possui 2. O benefício será aplicado na finalização.")).toBeVisible();
   await page.getByLabel("Usar 1 crédito(s) do Clube").check();
   await expect(page.getByText("Créditos restantes após confirmação: 1.")).toBeVisible();
   await page.getByRole("button", { name: "Confirmar com créditos do Clube" }).click();

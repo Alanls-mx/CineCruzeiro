@@ -833,11 +833,16 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                 Selecionadas: {selectedSeatIds.map((id) => seatsById.get(id)?.label || id).join(", ")}
               </p>
             )}
-            {realtimeStatus !== "connected" && (
-              <p className="mt-3 text-xs font-bold text-amber-200" role="status">
-                {realtimeStatus === "connecting" ? "Conectando à reserva de poltronas..." : "Reconectando à reserva de poltronas..."}
-              </p>
-            )}
+            <p
+              className={`mt-3 text-xs font-bold ${realtimeStatus === "connected" ? "text-emerald-300" : "text-amber-200"}`}
+              role="status"
+            >
+              {realtimeStatus === "connected"
+                ? "Poltronas sincronizadas em tempo real."
+                : realtimeStatus === "connecting"
+                  ? "Conectando à reserva de poltronas..."
+                  : "Reconectando à reserva de poltronas..."}
+            </p>
             {seatActionError && <p className="mt-2 text-sm font-semibold text-rose-200" role="alert">{seatActionError}</p>}
           </div>
         )}

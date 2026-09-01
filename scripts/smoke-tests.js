@@ -1574,6 +1574,36 @@ async function run() {
     assert.equal(wrongSessionValidation.payload.error.code, "TICKET_SESSION_MISMATCH");
     assert.notEqual(wrongSessionValidation.payload.ticket.status, "used");
 
+    assert.match(allowedTicketTypeSale.payload.tickets[0].qrPayload, /^CC2\./);
+    const offlineManifest = await request(`/api/admin/tickets/offline-manifest?date=${encodeURIComponent(allowedTicketTypeSale.payload.order.sessionDate)}&sessionId=${encodeURIComponent(TEST_SESSION_ID)}`, {
+      headers: jsonHeaders(adminCookie)
+    });
+    assert.equal(offlineManifest.response.status, 200);
+    assert.equal(offlineManifest.payload.verification.algorithm, "ECDSA_P256_SHA256");
+    assert.ok(offlineManifest.payload.tickets.some((ticket) => ticket.id === allowedTicketTypeSale.payload.tickets[1].id));
+    const offlineEvent = {
+      id: "offline-smoke-validation-1",
+      ticketId: allowedTicketTypeSale.payload.tickets[1].id,
+      qrPayload: allowedTicketTypeSale.payload.tickets[1].qrPayload,
+      sessionId: TEST_SESSION_ID,
+      deviceId: "smoke-device",
+      scannedAt: new Date().toISOString()
+    };
+    const offlineSync = await request("/api/admin/tickets/offline-sync", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ events: [offlineEvent] })
+    });
+    assert.equal(offlineSync.response.status, 200);
+    assert.equal(offlineSync.payload.results[0].status, "synced");
+    const duplicateOfflineSync = await request("/api/admin/tickets/offline-sync", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ events: [offlineEvent] })
+    });
+    assert.equal(duplicateOfflineSync.payload.results[0].status, "synced");
+    assert.equal(duplicateOfflineSync.payload.results[0].duplicate, true);
+
     const correctSessionValidation = await request("/api/tickets/validate", {
       method: "POST",
       headers: jsonHeaders(adminCookie),

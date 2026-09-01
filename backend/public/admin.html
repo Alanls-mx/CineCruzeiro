@@ -870,6 +870,7 @@
                   <select id="ticketValidationSessionSelect" aria-describedby="ticketValidationSessionHint"></select>
                 </label>
                 <p id="ticketValidationSessionHint" class="validation-scope-status" aria-live="polite">O leitor aceitará ingressos de qualquer sessão válida.</p>
+                <p id="offlineValidationStatus" class="validation-scope-status" data-status="">Preparando cache criptográfico da portaria...</p>
               </section>
 
               <div id="qrReaderFrame" class="qr-reader" aria-label="Leitor de QR Code">
@@ -888,7 +889,7 @@
                 </div>
               </div>
 
-              <p class="scanner-instruction">Aponte a câmera para o QR Code do ingresso. A validação acontece no servidor.</p>
+              <p class="scanner-instruction">Aponte a câmera para o QR Code. A assinatura é conferida neste aparelho e o uso é sincronizado automaticamente.</p>
 
               <div class="scanner-actions">
                 <button id="startQrButton" class="primary-button" type="button">Abrir câmera</button>
