@@ -1441,26 +1441,34 @@ h1 {
 }
 
 .room-seat-button.has-accessibility {
-  padding-right: 11px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 1px 0;
+}
+
+.room-seat-button.has-accessibility .room-seat-button-label {
+  font-size: 8.5px;
+  line-height: 1;
 }
 
 .room-seat-button-marker {
-  position: absolute;
-  top: -6px;
-  right: -5px;
-  display: grid;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, .72);
-  border-radius: 50%;
-  background: #07111f;
-  color: #fff;
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
 }
 
 .room-seat-button-marker svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
 }
 
 .room-seat-button.has-aisle {
@@ -3367,16 +3375,28 @@ input[type="file"]::file-selector-button {
   opacity: .68;
 }
 
+.manual-seat-button.has-accessibility {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 1px 0;
+}
+
+.manual-seat-button.has-accessibility span {
+  font-size: 8.5px;
+  line-height: 1;
+}
+
 .manual-seat-button svg {
-  position: absolute;
-  top: -6px;
-  right: -5px;
-  width: 18px;
-  height: 18px;
-  padding: 2px;
-  border: 1px solid rgba(255, 255, 255, .72);
-  border-radius: 50%;
-  background: #07111f;
+  position: static;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;

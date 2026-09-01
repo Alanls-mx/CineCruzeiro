@@ -2438,8 +2438,7 @@ function renderRoomSeatMap(renderSelectionPanel = true) {
           style="--seat-color:${escapeHtml(roomSeatColor(seat))}"
           data-room-seat-id="${escapeHtml(seat.id)}"
           title="${escapeHtml(seat.label)} • ${escapeHtml(state.roomSeatDraft.seatTypes.find((type) => type.id === seat.typeId)?.name || "Padrão")}${seat.accessibility ? ` • ${escapeHtml(roomSeatAccessibilityLabel(seat.accessibility))}` : ""}${seat.enabled === false ? " • bloqueada" : ""}"
-          aria-label="Editar poltrona ${escapeHtml(seat.label)}${seat.accessibility ? `, ${escapeHtml(roomSeatAccessibilityLabel(seat.accessibility))}` : ""}"
-        ><span class="room-seat-button-label">${escapeHtml(seat.label)}</span>${seat.accessibility ? `<span class="room-seat-button-marker">${roomSeatAccessibilityIcon(seat.accessibility)}</span>` : ""}</button>
+        >${seat.accessibility ? `<span class="room-seat-button-marker">${roomSeatAccessibilityIcon(seat.accessibility)}</span>` : ""}<span class="room-seat-button-label">${escapeHtml(seat.label)}</span></button>
       `).join("")}
     </div>
   `).join("") : `<div class="empty-state"><strong>Mapa ainda não gerado</strong><span>Defina filas, poltronas e corredor; depois clique em Gerar mapa.</span></div>`;
@@ -3948,7 +3947,7 @@ function renderManualSeatMap(errorMessage = "") {
             title="${escapeHtml(temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : `${seat.label} • ${type?.name || "Padrão"}`)}"
             aria-pressed="${isSelected}"
             ${unavailable || pending ? "disabled" : ""}
-          ><span>${escapeHtml(seat.label)}</span>${seat.accessibility === "wheelchair" ? accessibilityIcon : seat.accessibility === "obese" ? obeseSeatIcon : ""}</button>`;
+          >${seat.accessibility === "wheelchair" ? accessibilityIcon : seat.accessibility === "obese" ? obeseSeatIcon : ""}<span>${escapeHtml(seat.label)}</span></button>`;
         }).join("")}
       </div>
       <span class="manual-seat-row-spacer" aria-hidden="true"></span>

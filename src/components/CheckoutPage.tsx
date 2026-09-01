@@ -806,9 +806,19 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                               marginRight: seat.aisleAfter ? 24 : 0,
                             }}
                           >
-                            <span>{seat.label}</span>
-                            {seat.accessibility === "wheelchair" && <Accessibility className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-white/70 bg-slate-950 p-0.5 text-white" aria-hidden="true" />}
-                            {seat.accessibility === "obese" && <CircleUserRound className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-white/70 bg-slate-950 p-0.5 text-white" aria-hidden="true" />}
+                            {seat.accessibility === "wheelchair" ? (
+                              <span className="flex flex-col items-center justify-center gap-0.5 leading-none">
+                                <Accessibility className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                <span className="text-[9px] font-black leading-none">{seat.label}</span>
+                              </span>
+                            ) : seat.accessibility === "obese" ? (
+                              <span className="flex flex-col items-center justify-center gap-0.5 leading-none">
+                                <CircleUserRound className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                <span className="text-[9px] font-black leading-none">{seat.label}</span>
+                              </span>
+                            ) : (
+                              <span>{seat.label}</span>
+                            )}
                           </button>
                         );
                       })}
