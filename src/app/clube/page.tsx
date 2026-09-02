@@ -324,7 +324,7 @@ function Plan({ plan, active, position, total, setRef, onSelect }: {
       onFocusCapture={() => { if (!active) onSelect(); }}
     >
       <div className="grid items-start md:grid-cols-[minmax(190px,.78fr)_minmax(0,1.22fr)]">
-      <div className="relative aspect-[4/5] w-full self-start bg-[#050914] md:aspect-[3/4]">
+      <div className="relative aspect-[4/5] w-full self-start bg-transparent md:aspect-[3/4]">
         {plan.imageUrl ? (
           <Image
             src={publicAssetPath(plan.imageUrl)}
@@ -333,7 +333,7 @@ function Plan({ plan, active, position, total, setRef, onSelect }: {
             unoptimized={isUploadedAsset(plan.imageUrl)}
             quality={74}
             sizes="(max-width: 767px) 78vw, (max-width: 1280px) 32vw, 300px"
-            className="object-contain p-3 sm:p-4"
+            className="object-contain"
           />
         ) : (
           <div className="flex h-full min-h-[240px] items-center justify-center bg-brand-950 text-gold-400"><Sparkles className="h-12 w-12" /></div>
