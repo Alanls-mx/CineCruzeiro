@@ -33,14 +33,14 @@
 html {
   scroll-behavior: smooth;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
   background:
     linear-gradient(180deg, rgba(13, 25, 45, 0.92), rgba(5, 9, 20, 1) 360px),
     var(--bg);
@@ -321,6 +321,10 @@ svg {
 .panel.active {
   display: block;
   animation: panelIn 0.28s ease both;
+}
+
+#ordersPanel.panel.active {
+  animation-name: panelFadeIn;
 }
 
 .marketing-settings {
@@ -2838,9 +2842,9 @@ input[type="file"]::file-selector-button {
 
   .manual-sale-summary {
     position: sticky;
-    top: 24px;
+    top: 102px;
     display: grid;
-    max-height: calc(100vh - 48px);
+    max-height: calc(100vh - 126px);
     min-width: 0;
     gap: 0;
     overflow-y: auto;
@@ -4946,6 +4950,11 @@ th {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes panelFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @keyframes shimmer {

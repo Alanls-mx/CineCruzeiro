@@ -42,6 +42,12 @@ test("operador conclui venda rápida com ingresso e bomboniere pela interface do
   await expect(summary).toContainText("1× Pipoca E2E");
   await expect(summary).toContainText("R$ 23,00");
   await expect(summary).toHaveCSS("position", "sticky");
+  expect(await page.locator(".manual-sale-basket").evaluate((basket) => (
+    Boolean(basket.compareDocumentPosition(document.querySelector("#manualSeatSection")) & Node.DOCUMENT_POSITION_FOLLOWING)
+  ))).toBeTruthy();
+  await page.evaluate(() => window.scrollTo({ top: 700, behavior: "instant" }));
+  await expect.poll(async () => Math.round((await summary.boundingBox())?.y || 0)).toBe(102);
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.getByRole("button", { name: "Adicionar filme à venda" }).click();
   await expect(page.locator("#manualSaleItems")).toContainText("Filme E2E");
   await expect(page.locator("#manualSaleItems")).toContainText("1× Ingresso Inteiro");
