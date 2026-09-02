@@ -23,6 +23,7 @@ async function loginAdmin(page) {
 }
 
 test("operador conclui venda rápida com ingresso e bomboniere pela interface do painel", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
   await loginAdmin(page);
   await page.getByRole("button", { name: "Bilheteria", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Bilheteria" })).toBeVisible();
@@ -35,6 +36,12 @@ test("operador conclui venda rápida com ingresso e bomboniere pela interface do
   await expect(page.getByLabel("Quantidade de Ingresso Inteiro")).toHaveValue("1");
   await page.getByRole("button", { name: "Adicionar Pipoca E2E" }).click();
   await expect(page.getByLabel("Quantidade de Pipoca E2E")).toHaveValue("1");
+  const summary = page.locator("#manualSaleSummary");
+  await expect(summary).toContainText("Filme E2E");
+  await expect(summary).toContainText("1× Ingresso Inteiro");
+  await expect(summary).toContainText("1× Pipoca E2E");
+  await expect(summary).toContainText("R$ 23,00");
+  await expect(summary).toHaveCSS("position", "sticky");
   await page.getByRole("button", { name: "Adicionar filme à venda" }).click();
   await expect(page.locator("#manualSaleItems")).toContainText("Filme E2E");
   await expect(page.locator("#manualSaleItems")).toContainText("1× Ingresso Inteiro");

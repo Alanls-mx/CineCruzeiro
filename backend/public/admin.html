@@ -713,7 +713,8 @@
           </div>
 
           <div id="boxOfficeNewSale" class="box-office-tab-panel active">
-            <form id="manualTicketForm" class="surface form-grid box-office-form">
+            <div class="box-office-sale-workspace">
+              <form id="manualTicketForm" class="surface form-grid box-office-form">
               <div class="section-title">Nova venda</div>
               <input type="hidden" id="manualCustomerUserId" />
 
@@ -833,8 +834,23 @@
                 <span>Total calculado</span>
                 <strong id="manualTotalDisplay">R$ 10,00</strong>
               </div>
-              <button id="manualSaleSubmitButton" class="primary-button full" type="submit">Finalizar venda</button>
-            </form>
+                <button id="manualSaleSubmitButton" class="primary-button full" type="submit">Finalizar venda</button>
+              </form>
+
+              <aside id="manualSaleSummary" class="surface manual-sale-summary" aria-labelledby="manualSaleSummaryTitle" aria-live="polite">
+                <div class="manual-sale-summary-heading">
+                  <div>
+                    <span>Venda em andamento</span>
+                    <h2 id="manualSaleSummaryTitle">Resumo da venda</h2>
+                  </div>
+                  <span class="manual-sale-summary-mode">Cliente cadastrado</span>
+                </div>
+                <div class="manual-sale-summary-empty">
+                  <strong>Nenhum item selecionado</strong>
+                  <span>Os ingressos, poltronas e produtos escolhidos aparecerão aqui.</span>
+                </div>
+              </aside>
+            </div>
           </div>
 
           <div id="boxOfficeValidateTicket" class="box-office-tab-panel">
