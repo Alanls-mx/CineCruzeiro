@@ -3124,6 +3124,13 @@ input[type="file"]::file-selector-button {
   border-radius: 7px;
   background: rgba(2, 6, 23, 0.34);
   cursor: pointer;
+  overflow: hidden;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.guest-ticket-delivery label:hover {
+  border-color: rgba(203, 213, 225, 0.28);
+  background: rgba(15, 23, 42, 0.72);
 }
 
 .guest-ticket-delivery label:has(input:checked) {
@@ -3131,14 +3138,29 @@ input[type="file"]::file-selector-button {
   background: rgba(250, 204, 21, 0.1);
 }
 
-.guest-ticket-delivery input {
+.guest-ticket-delivery input[type="radio"] {
   flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
   margin-top: 3px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  accent-color: var(--gold);
+}
+
+.guest-ticket-delivery input[type="radio"]:hover,
+.guest-ticket-delivery input[type="radio"]:focus {
+  background: transparent;
+  box-shadow: none;
 }
 
 .guest-ticket-delivery span {
   display: grid;
+  flex: 1 1 auto;
   gap: 3px;
+  min-width: 0;
 }
 
 .guest-ticket-delivery strong {
@@ -3150,6 +3172,7 @@ input[type="file"]::file-selector-button {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .manual-session-fields {
