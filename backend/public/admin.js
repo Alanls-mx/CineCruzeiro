@@ -3949,7 +3949,14 @@ function renderManualSeatMap(errorMessage = "") {
     `<span>${accessibilityIcon}Cadeirante</span>`,
     `<span>${obeseSeatIcon}Pessoa obesa</span>`
   ].join("");
-  $("manualSeatMap").innerHTML = (seatMap?.rows || []).map((row) => `
+  const seatRows = seatMap?.rows || [];
+  const columnGuideRow = seatRows.reduce((widest, row) => (
+    (row.seats || []).length > (widest?.seats || []).length ? row : widest
+  ), null);
+  const columnAisles = (columnGuideRow?.seats || []).map((_, columnIndex) => (
+    seatRows.some((row) => row.seats?.[columnIndex]?.aisleAfter)
+  ));
+  const seatRowsMarkup = seatRows.map((row) => `
     <div class="manual-seat-row">
       <span class="manual-seat-row-label">${escapeHtml(row.label)}</span>
       <div class="manual-seat-row-seats">
@@ -3975,6 +3982,18 @@ function renderManualSeatMap(errorMessage = "") {
       <span class="manual-seat-row-spacer" aria-hidden="true"></span>
     </div>
   `).join("");
+  const columnGuideMarkup = columnGuideRow ? `
+    <div class="manual-seat-column-footer" aria-label="Números das colunas">
+      <span class="manual-seat-row-spacer" aria-hidden="true"></span>
+      <div class="manual-seat-column-labels">
+        ${(columnGuideRow.seats || []).map((_, columnIndex) => `
+          <span style="${columnAisles[columnIndex] ? "margin-right:24px" : ""}">${columnIndex + 1}</span>
+        `).join("")}
+      </div>
+      <span class="manual-seat-row-spacer" aria-hidden="true"></span>
+    </div>
+  ` : "";
+  $("manualSeatMap").innerHTML = seatRowsMarkup + columnGuideMarkup;
   $("manualSeatMap").querySelectorAll("[data-manual-seat-id]").forEach((button) => {
     button.addEventListener("click", () => void toggleManualSeat(button.dataset.manualSeatId));
   });

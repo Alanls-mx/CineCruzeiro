@@ -781,6 +781,12 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
   const selectedSeatIds = draft.selectedSeatIds || [];
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat]));
   const seatTypesById = new Map((seatMap?.seatTypes || []).map((type) => [type.id, type]));
+  const seatColumnGuideRow = (seatMap?.rows || []).reduce<SessionSeatMap["rows"][number] | null>((widest, row) => (
+    row.seats.length > (widest?.seats.length || 0) ? row : widest
+  ), null);
+  const seatColumnAisles = (seatColumnGuideRow?.seats || []).map((_, columnIndex) => (
+    (seatMap?.rows || []).some((row) => row.seats[columnIndex]?.aisleAfter)
+  ));
   const seatSelectionComplete = seatMapStatus === "ready" && (!seatMap?.enabled || selectedSeatIds.length === requiredSeats);
 
   const [seatActionError, setSeatActionError] = useState("");
@@ -903,6 +909,23 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                     <span className="w-6" aria-hidden="true" />
                   </div>
                 ))}
+                {seatColumnGuideRow && (
+                  <div className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-1.5" aria-label="Números das colunas">
+                    <span className="w-6" aria-hidden="true" />
+                    <div className="flex items-center justify-center gap-1.5">
+                      {seatColumnGuideRow.seats.map((_, columnIndex) => (
+                        <span
+                          key={`${seatColumnGuideRow.id}-column-${columnIndex + 1}`}
+                          className="w-10 shrink-0 text-center text-[11px] font-black leading-5 text-slate-500"
+                          style={{ marginRight: seatColumnAisles[columnIndex] ? 24 : 0 }}
+                        >
+                          {columnIndex + 1}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="w-6" aria-hidden="true" />
+                  </div>
+                )}
               </div>
             </div>
             {selectedSeatIds.length > 0 && (
