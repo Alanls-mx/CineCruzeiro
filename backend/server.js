@@ -2700,6 +2700,88 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
   return { orders, tickets, newlyPaidOrders };
 }
 
+function boxOfficeOrdersForAutomaticPrint(orders = []) {
+  return (Array.isArray(orders) ? orders : []).filter((order) => ["guest", "quick"].includes(order?.saleMode));
+}
+
+async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {}) {
+  const printableOrders = boxOfficeOrdersForAutomaticPrint(orders);
+  const printableOrderIds = new Set(printableOrders.map((order) => order.id));
+  const printableTickets = (Array.isArray(tickets) ? tickets : []).filter((ticket) => printableOrderIds.has(ticket.orderId));
+  const existingPrint = printableOrders.find((order) => order.pointPrint?.status === "queued")?.pointPrint;
+  if (existingPrint && printableOrders.every((order) => order.pointPrint?.status === "queued")) {
+    return { requested: true, ...existingPrint, message: "A impressão desta venda já foi enviada para a Point." };
+  }
+  if (!printableOrders.length || !printableTickets.length) {
+    return { requested: false, status: "not_requested", terminalId: "", actionId: "", message: "" };
+  }
+  if (!cardTerminalProvider.configured(config)) {
+    return {
+      requested: false,
+      status: "not_configured",
+      terminalId: "",
+      actionId: "",
+      message: "A venda foi concluída, mas o Mercado Pago Point não está habilitado para impressão automática."
+    };
+  }
+
+  const batchId = String(context.batchId || printableOrders[0]?.batchId || Date.now());
+  const paymentMethod = String(context.paymentMethod || printableOrders[0]?.paymentMethod || "");
+  try {
+    const printAction = await cardTerminalProvider.createTicketPrint(
+      printableTickets.map((ticket) => enrichTicket(db, ticket)),
+      config,
+      {
+        orders: printableOrders,
+        externalReference: `print-${batchId}`,
+        idempotencyKey: `print-${batchId}`
+      }
+    );
+    const pointPrint = {
+      requested: true,
+      status: "queued",
+      terminalId: printAction.terminalId,
+      actionId: printAction.id,
+      requestedAt: new Date().toISOString(),
+      ticketCount: printableTickets.length,
+      concessionItemCount: printableOrders.reduce((sum, order) => sum + (order.concessionItems || []).reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0), 0),
+      message: "Ingressos e itens da bomboniere foram enviados para impressão na Point."
+    };
+    printableOrders.forEach((order) => { order.pointPrint = { ...pointPrint }; });
+    logEvent("info", "box_office_ticket_print.queued", {
+      actionId: printAction.id,
+      terminalId: printAction.terminalId,
+      orderIds: printableOrders.map((order) => order.id),
+      ticketIds: printableTickets.map((ticket) => ticket.id),
+      concessionItemCount: pointPrint.concessionItemCount,
+      paymentMethod,
+      createdBy: context.adminUser?.id || ""
+    });
+    return pointPrint;
+  } catch (error) {
+    const pointPrint = {
+      requested: true,
+      status: "failed",
+      terminalId: String(config?.pointTerminalId || config?.pointDeviceId || ""),
+      actionId: "",
+      requestedAt: new Date().toISOString(),
+      code: error.code || "POINT_PRINT_FAILED",
+      message: `A venda foi concluída, mas a Point não recebeu a impressão: ${error.message}`
+    };
+    printableOrders.forEach((order) => { order.pointPrint = { ...pointPrint }; });
+    logEvent("warn", "box_office_ticket_print.failed", {
+      code: pointPrint.code,
+      message: error.message,
+      terminalId: pointPrint.terminalId,
+      orderIds: printableOrders.map((order) => order.id),
+      ticketIds: printableTickets.map((ticket) => ticket.id),
+      paymentMethod,
+      createdBy: context.adminUser?.id || ""
+    });
+    return pointPrint;
+  }
+}
+
 function findSubscriptionPayment(db, subscriptionId, method = "") {
   return (db.payments || []).find((payment) =>
     payment.metadata?.kind === "club_subscription" &&
@@ -6037,6 +6119,8 @@ function methodLabel(method = "") {
     CREDIT_CARD: "Cartão",
     cash: "Dinheiro",
     card_terminal: "Débito/crédito na Point",
+    point_debit: "Débito na Point",
+    point_credit: "Crédito na Point",
     courtesy: "Cortesia",
     club_credit: "Crédito do Clube",
     CLUB_CREDIT: "Crédito do Clube"
@@ -10042,6 +10126,13 @@ async function handleApi(req, res, pathname) {
         const paidTickets = result.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
         if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
       }
+      const pointPrint = payment.status === "approved"
+        ? await queueBoxOfficePointPrint(lockedDb, result.orders, result.tickets, config, {
+          batchId: payment.metadata?.batchId,
+          paymentMethod: payment.method,
+          adminUser
+        })
+        : { requested: false, status: "not_requested", message: "" };
       await writeDb(lockedDb);
       logEvent("info", "box_office_point_sale.synced", {
         paymentId: payment.id,
@@ -10054,6 +10145,7 @@ async function handleApi(req, res, pathname) {
         payment,
         orders: result.orders,
         tickets: result.tickets,
+        pointPrint,
         completed: payment.status === "approved",
         terminal: { id: payment.metadata?.terminalId || "", providerStatus: payment.metadata?.providerStatus || "" }
       });
@@ -10108,6 +10200,8 @@ async function handleApi(req, res, pathname) {
         card_terminal: "card_terminal",
         terminal: "card_terminal",
         point_card: "card_terminal",
+        point_debit: "point_debit",
+        point_credit: "point_credit",
         point_qr: "point_qr",
         external_pix: "external_pix",
         pix_counter: "external_pix",
@@ -10115,7 +10209,7 @@ async function handleApi(req, res, pathname) {
         cortesia: "courtesy"
       };
       const paymentMethod = methodMap[String(body.paymentMethod || "cash").trim()] || "cash";
-      const pointPayment = ["card_terminal", "point_qr"].includes(paymentMethod);
+      const pointPayment = ["card_terminal", "point_debit", "point_credit", "point_qr"].includes(paymentMethod);
       const selectedCustomer = body.customerUserId
         ? (lockedDb.users || []).find((user) => user.id === body.customerUserId && user.active !== false && ["customer", ...adminRoles()].includes(user.role))
         : null;
@@ -10193,7 +10287,12 @@ async function handleApi(req, res, pathname) {
           externalReference,
           idempotencyKey: `point-${batchId}`,
           ticketNumber: batchId,
-          defaultPaymentType: paymentMethod === "point_qr" ? "qr" : "debit_card",
+          defaultPaymentType: {
+            point_qr: "qr",
+            point_credit: "credit_card",
+            point_debit: "debit_card",
+            card_terminal: "debit_card"
+          }[paymentMethod],
           description: preparedOrders.length === 1
             ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
             : `Venda de ${preparedOrders.length} filmes - Cine Cruzeiro`
@@ -10230,6 +10329,13 @@ async function handleApi(req, res, pathname) {
           const paidTickets = pointResult.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
           if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
         }
+        const pointPrint = pointPaymentRecord.status === "approved"
+          ? await queueBoxOfficePointPrint(lockedDb, orders, pointResult.tickets, mercadoPagoConfig, {
+            batchId,
+            paymentMethod,
+            adminUser
+          })
+          : { requested: false, status: "not_requested", message: "" };
         await writeDb(lockedDb);
         for (const order of orders) await releaseOrderSeatHolds(order);
         logEvent("info", "box_office_point_sale.created", {
@@ -10248,6 +10354,7 @@ async function handleApi(req, res, pathname) {
           orders,
           payments: [pointPaymentRecord],
           tickets: pointResult.tickets,
+          pointPrint,
           batchId,
           totalPrice,
           point: {
@@ -10294,78 +10401,14 @@ async function handleApi(req, res, pathname) {
       const tickets = sales.flatMap((sale) => sale.tickets);
       lockedDb.payments.unshift(...payments);
       lockedDb.orders.unshift(...orders);
+      const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
+      const pointPrint = await queueBoxOfficePointPrint(lockedDb, orders, tickets, mercadoPagoConfig, {
+        batchId,
+        paymentMethod,
+        adminUser
+      });
       await writeDb(lockedDb);
       for (const order of orders) await releaseOrderSeatHolds(order);
-      let pointPrint = {
-        requested: false,
-        status: "not_requested",
-        terminalId: "",
-        actionId: "",
-        message: ""
-      };
-      if (saleMode === "quick" && ["cash", "external_pix", "courtesy"].includes(paymentMethod)) {
-        const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
-        if (!cardTerminalProvider.configured(mercadoPagoConfig)) {
-          pointPrint = {
-            ...pointPrint,
-            status: "not_configured",
-            message: "A venda foi concluída, mas o Mercado Pago Point não está habilitado para imprimir o ingresso."
-          };
-        } else {
-          try {
-            const printAction = await cardTerminalProvider.createTicketPrint(
-              tickets.map((ticket) => enrichTicket(lockedDb, ticket)),
-              mercadoPagoConfig,
-              {
-                externalReference: `print-${batchId}`,
-                idempotencyKey: `print-${batchId}`
-              }
-            );
-            pointPrint = {
-              requested: true,
-              status: "queued",
-              terminalId: printAction.terminalId,
-              actionId: printAction.id,
-              message: "Os ingressos foram enviados para impressão na Point."
-            };
-            orders.forEach((order) => {
-              order.pointPrint = {
-                status: pointPrint.status,
-                actionId: pointPrint.actionId,
-                terminalId: pointPrint.terminalId,
-                requestedAt: new Date().toISOString()
-              };
-            });
-            await writeDb(lockedDb);
-            logEvent("info", "box_office_ticket_print.queued", {
-              actionId: printAction.id,
-              terminalId: printAction.terminalId,
-              orderIds: orders.map((order) => order.id),
-              ticketIds: tickets.map((ticket) => ticket.id),
-              paymentMethod,
-              createdBy: adminUser.id
-            });
-          } catch (error) {
-            pointPrint = {
-              requested: true,
-              status: "failed",
-              terminalId: String(mercadoPagoConfig.pointDeviceId || ""),
-              actionId: "",
-              code: error.code || "POINT_PRINT_FAILED",
-              message: `A venda foi concluída, mas a Point não recebeu a impressão: ${error.message}`
-            };
-            logEvent("warn", "box_office_ticket_print.failed", {
-              code: pointPrint.code,
-              message: error.message,
-              terminalId: pointPrint.terminalId,
-              orderIds: orders.map((order) => order.id),
-              ticketIds: tickets.map((ticket) => ticket.id),
-              paymentMethod,
-              createdBy: adminUser.id
-            });
-          }
-        }
-      }
       logEvent("info", "box_office_sale.created", {
         orderId: orders[0].id,
         orderIds: orders.map((order) => order.id),
@@ -10774,6 +10817,13 @@ async function handleApi(req, res, pathname) {
         for (const paidOrder of pointResult.newlyPaidOrders) {
           const paidTickets = tickets.filter((ticket) => ticket.orderId === paidOrder.id);
           if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
+        }
+        if (payment.status === "approved") {
+          const pointConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
+          await queueBoxOfficePointPrint(lockedDb, pointResult.orders, tickets, pointConfig, {
+            batchId: payment.metadata?.batchId,
+            paymentMethod: payment.method
+          });
         }
       } else if (payment.status === "approved") {
         const wasAlreadyPaid = order?.status === "paid";

@@ -686,6 +686,8 @@ function logPaymentMethod(value = "") {
     external_pix: "Pix registrado no balcão",
     point_qr: "Pix na Point",
     card_terminal: "Débito/crédito na Point",
+    point_debit: "Débito na Point",
+    point_credit: "Crédito na Point",
     club_credit: "Crédito do Clube"
   }[String(value || "").toLowerCase()] || value;
 }
@@ -1286,6 +1288,8 @@ function paymentMethodLabel(method = "") {
     CREDIT_CARD: "Cartão online",
     cash: "Dinheiro",
     card_terminal: "Débito/crédito na Point",
+    point_debit: "Débito na Point",
+    point_credit: "Crédito na Point",
     point_qr: "Pix na Point",
     external_pix: "Pix registrado no balcão",
     manual_sale: "Venda manual",
@@ -4170,7 +4174,9 @@ function manualSaleSummaryPayment() {
   const method = document.querySelector("input[name='manualPaymentMethod']:checked")?.value || "cash";
   return {
     cash: "Dinheiro",
-    point_card: "Débito/crédito",
+    point_debit: "Débito na Point",
+    point_credit: "Crédito na Point",
+    point_card: "Cartão na Point",
     point_qr: "Pix na Point",
     courtesy: "Cortesia"
   }[method] || "Pagamento";
@@ -4324,7 +4330,7 @@ async function createManualTicket(event) {
     state.manualSelectedSeatIds = [];
     closeManualSeatRealtime();
     renderManualSaleItems();
-    if (["point_card", "point_qr"].includes(paymentMethod)) {
+    if (["point_debit", "point_credit", "point_card", "point_qr"].includes(paymentMethod)) {
       startPointPaymentTracking(result);
       return;
     }
@@ -4368,9 +4374,10 @@ function renderPointPayment(data = {}) {
   const payment = data.payment || state.pointPaymentSnapshot?.payment || {};
   const orders = data.orders || state.pointPaymentSnapshot?.orders || [];
   const tickets = data.tickets || state.pointPaymentSnapshot?.tickets || [];
+  const pointPrint = data.pointPrint || state.pointPaymentSnapshot?.pointPrint || {};
   const status = payment.status || "pending";
   const finalStatus = ["approved", "rejected", "cancelled", "expired", "refunded"].includes(status);
-  state.pointPaymentSnapshot = { payment, orders, tickets };
+  state.pointPaymentSnapshot = { payment, orders, tickets, pointPrint };
 
   const panel = $("pointPaymentPanel");
   panel.hidden = false;
@@ -4385,7 +4392,12 @@ function renderPointPayment(data = {}) {
   $("pointPaymentNewSaleButton").hidden = !finalStatus;
 
   const copy = {
-    approved: ["Pagamento aprovado e ingressos emitidos", "A venda foi confirmada pelo Mercado Pago. Imprima os ingressos físicos abaixo."],
+    approved: [
+      "Pagamento aprovado e ingressos emitidos",
+      pointPrint.status === "queued"
+        ? "A impressão com ingressos e bomboniere foi enviada automaticamente para a Point."
+        : pointPrint.message || "A venda foi confirmada pelo Mercado Pago. Use as opções abaixo para imprimir novamente."
+    ],
     rejected: ["Pagamento recusado", "Nenhum ingresso foi emitido. Inicie uma nova venda para tentar outra forma de pagamento."],
     cancelled: ["Cobrança cancelada", "A ordem foi cancelada no terminal e nenhum ingresso foi emitido."],
     expired: ["Tempo de pagamento encerrado", "A cobrança expirou sem aprovação e os ingressos não foram emitidos."],
@@ -4398,8 +4410,8 @@ function renderPointPayment(data = {}) {
   if (status === "approved" && orders.length) {
     printActions.hidden = false;
     printActions.innerHTML = `
-      <strong>Ingressos físicos disponíveis</strong>
-      <p>${tickets.length} ingresso(s) emitido(s). O PDF usa a impressão do sistema operacional e reconhece impressoras térmicas e PDVs instalados neste computador.</p>
+      <strong>Impressão da venda</strong>
+      <p>${pointPrint.status === "queued" ? "A via de balcão já foi enviada à Point. " : ""}${tickets.length} ingresso(s) emitido(s). Os botões abaixo permitem reimprimir pelo PDV ou impressora instalada neste computador.</p>
       <div class="button-row">
         ${tickets.map((ticket, index) => `<button class="ghost-button" type="button" onclick="printPhysicalTicket('${escapeHtml(ticket.id)}')">Abrir no PDV · ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
       </div>

@@ -78,6 +78,21 @@ async function run() {
   assert.equal(createCall.options.headers.Authorization, "Bearer TEST_TOKEN_SECRET");
   assert.equal(JSON.stringify(createCall.body).includes("TEST_TOKEN_SECRET"), false);
 
+  await point.createPayment({ id: "venda-debito", totalPrice: 20 }, config, {
+    externalReference: "point-venda-debito",
+    idempotencyKey: "idem-point-debito",
+    defaultPaymentType: "debit_card"
+  });
+  await point.createPayment({ id: "venda-credito", totalPrice: 20 }, config, {
+    externalReference: "point-venda-credito",
+    idempotencyKey: "idem-point-credito",
+    defaultPaymentType: "credit_card"
+  });
+  const debitCall = calls.find((call) => call.options.headers?.["X-Idempotency-Key"] === "idem-point-debito");
+  const creditCall = calls.find((call) => call.options.headers?.["X-Idempotency-Key"] === "idem-point-credito");
+  assert.equal(debitCall.body.config.payment_method.default_type, "debit_card");
+  assert.equal(creditCall.body.config.payment_method.default_type, "credit_card");
+
   const approved = await point.getStatus("ORD_POINT_1", config);
   assert.equal(approved.status, "approved");
   assert.equal(approved.paymentId, "PAY_POINT_1");
@@ -88,6 +103,12 @@ async function run() {
   assert.deepEqual(terminals.map((terminal) => terminal.id), ["PAX_A910__123"]);
   assert.equal(terminals[0].operatingMode, "PDV");
 
+  const printOrders = [{
+    concessionItems: [
+      { id: "pipoca", name: "Pipoca Grande", quantity: 2, unitPrice: 18 },
+      { id: "refrigerante", name: "Coca-Cola 500ML", quantity: 1, unitPrice: 9 }
+    ]
+  }];
   const printContent = point.ticketPrintContent([{
     movieTitle: "Filme de Teste",
     sessionDate: "2026-08-27",
@@ -97,9 +118,12 @@ async function run() {
     ticketType: "Inteira",
     code: "CC-ABCDEF123456",
     qrPayload: "CINECRUZEIRO:TICKET:CC-ABCDEF123456"
-  }]);
+  }], printOrders);
   assert.ok(printContent.includes("27/08/2026 19:00"));
   assert.ok(printContent.includes("{qr}CINECRUZEIRO:TICKET:CC-ABCDEF123456{/qr}"));
+  assert.ok(printContent.includes("BOMBONIERE"));
+  assert.ok(printContent.includes("2x Pipoca Grande - R$ 36,00"));
+  assert.ok(printContent.includes("1x Coca-Cola 500ML - R$ 9,00"));
 
   const printed = await point.createTicketPrint([{
     movieTitle: "Filme de Teste",
@@ -112,7 +136,8 @@ async function run() {
     qrPayload: "CINECRUZEIRO:TICKET:CC-ABCDEF123456"
   }], config, {
     externalReference: "print-venda-1",
-    idempotencyKey: "idem-print-venda-1"
+    idempotencyKey: "idem-print-venda-1",
+    orders: printOrders
   });
   assert.equal(printed.id, "PRINT_ACTION_1");
   assert.equal(printed.status, "created");
@@ -122,6 +147,7 @@ async function run() {
   assert.equal(printCall.body.config.point.terminal_id, "PAX_A910__123");
   assert.equal(printCall.body.config.point.subtype, "custom");
   assert.ok(printCall.body.content.includes("Filme de Teste"));
+  assert.ok(printCall.body.content.includes("Pipoca Grande"));
 
   const cancelled = await point.cancelPayment("ORD_POINT_1", config, { idempotencyKey: "cancel-1" });
   assert.equal(cancelled.status, "cancelled");

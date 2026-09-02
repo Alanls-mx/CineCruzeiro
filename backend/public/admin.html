@@ -825,7 +825,8 @@
 
               <div class="payment-options" role="radiogroup" aria-label="Forma de pagamento">
                 <label><input name="manualPaymentMethod" type="radio" value="cash" checked /> Dinheiro</label>
-                <label><input name="manualPaymentMethod" type="radio" value="point_card" /> Débito/crédito</label>
+                <label><input name="manualPaymentMethod" type="radio" value="point_debit" /> Débito na Point</label>
+                <label><input name="manualPaymentMethod" type="radio" value="point_credit" /> Crédito na Point</label>
                 <label><input name="manualPaymentMethod" type="radio" value="point_qr" /> Pix na Point</label>
                 <label><input name="manualPaymentMethod" type="radio" value="courtesy" /> Cortesia</label>
               </div>
@@ -987,7 +988,9 @@
                     <option value="pix">Pix online</option>
                     <option value="credit_card">Cartão online</option>
                     <option value="cash">Dinheiro</option>
-                    <option value="card_terminal">Débito/crédito na Point</option>
+                    <option value="point_debit">Débito na Point</option>
+                    <option value="point_credit">Crédito na Point</option>
+                    <option value="card_terminal">Cartão na Point (vendas anteriores)</option>
                     <option value="point_qr">Pix na Point</option>
                     <option value="external_pix">Pix registrado no balcão (histórico)</option>
                     <option value="courtesy">Cortesia</option>

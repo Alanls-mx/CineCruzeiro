@@ -3173,7 +3173,7 @@ input[type="file"]::file-selector-button {
 .payment-options {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .payment-options label {
@@ -3189,6 +3189,22 @@ input[type="file"]::file-selector-button {
 .payment-options input {
   accent-color: var(--gold);
   width: 16px;
+}
+
+.box-office-form .payment-options label {
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.34);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.box-office-form .payment-options label:has(input:checked) {
+  border-color: rgba(250, 204, 21, 0.58);
+  background: rgba(250, 204, 21, 0.1);
+  color: #fff4ba;
 }
 
 .responsive-select {

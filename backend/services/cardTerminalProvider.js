@@ -58,7 +58,28 @@ function brazilianDate(value) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : printText(value, 10);
 }
 
-function ticketPrintContent(tickets = []) {
+function brazilianMoney(value) {
+  return `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
+}
+
+function concessionPrintItems(orders = []) {
+  const items = new Map();
+  (Array.isArray(orders) ? orders : []).forEach((order) => {
+    (Array.isArray(order?.concessionItems) ? order.concessionItems : []).forEach((item) => {
+      const id = String(item.id || item.name || "produto");
+      const quantity = Math.max(0, Number(item.quantity || 0));
+      if (!quantity) return;
+      const unitPrice = Number(item.unitPrice ?? item.originalPrice ?? item.price ?? 0);
+      const current = items.get(id) || { name: item.name || "Produto", quantity: 0, total: 0 };
+      current.quantity += quantity;
+      current.total += Number(item.totalPrice ?? quantity * unitPrice);
+      items.set(id, current);
+    });
+  });
+  return [...items.values()];
+}
+
+function ticketPrintContent(tickets = [], orders = []) {
   const normalized = (Array.isArray(tickets) ? tickets : []).filter(Boolean);
   if (!normalized.length) {
     throw providerError("Nenhum ingresso foi informado para impressão.", 400, "POINT_PRINT_TICKETS_MISSING");
@@ -79,6 +100,15 @@ function ticketPrintContent(tickets = []) {
     content += `${room}{br}${type}{br}{s}${code}{/s}{br}`;
     content += `{qr}${qrPayload}{/qr}{br}--------------------------------{/center}{br}`;
   });
+  const concessions = concessionPrintItems(orders);
+  if (concessions.length) {
+    content += "{center}{b}BOMBONIERE{/b}{/center}{br}";
+    concessions.forEach((item) => {
+      content += `${item.quantity}x ${printText(item.name, 34)} - ${brazilianMoney(item.total)}{br}`;
+    });
+    const total = concessions.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    content += `{b}Total bomboniere: ${brazilianMoney(total)}{/b}{br}--------------------------------{br}`;
+  }
   content += "{center}{s}Apresente o QR Code na entrada.{/s}{/center}{br}";
 
   if (content.length > 4096) {
@@ -201,7 +231,7 @@ async function createTicketPrint(tickets = [], config = {}, options = {}) {
   }
   const externalReference = safeReference(options.externalReference || `ticket-print-${Date.now()}`);
   const idempotencyKey = String(options.idempotencyKey || crypto.randomUUID());
-  const content = ticketPrintContent(tickets);
+  const content = ticketPrintContent(tickets, options.orders);
   const payload = await request("/terminals/v1/actions", config, {
     method: "POST",
     headers: { "X-Idempotency-Key": idempotencyKey },
