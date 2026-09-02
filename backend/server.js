@@ -2701,7 +2701,37 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
 }
 
 function boxOfficeOrdersForAutomaticPrint(orders = []) {
-  return (Array.isArray(orders) ? orders : []).filter((order) => ["guest", "quick"].includes(order?.saleMode));
+  return (Array.isArray(orders) ? orders : []).filter((order) => (
+    order?.saleMode === "quick" ||
+    (order?.saleMode === "guest" && String(order.ticketDeliveryMethod || "physical") === "physical")
+  ));
+}
+
+function boxOfficeTicketDeliveryMethod(saleMode, requestedMethod) {
+  if (saleMode === "registered") return "online";
+  if (saleMode === "quick") return "physical";
+  return requestedMethod === "online" ? "online" : "physical";
+}
+
+function shouldDeliverBoxOfficeTicketsByEmail(order) {
+  return Boolean(order?.customerEmail) && boxOfficeTicketDeliveryMethod(order?.saleMode, order?.ticketDeliveryMethod) === "online";
+}
+
+async function deliverBoxOfficeTicketsBySelectedMethod(db, order, tickets) {
+  if (!shouldDeliverBoxOfficeTicketsByEmail(order) || !tickets?.length) {
+    return { method: order?.ticketDeliveryMethod || "physical", status: "not_requested", message: "" };
+  }
+  if (order.ticketDelivery?.status === "delivered") return order.ticketDelivery;
+  const delivered = await deliverTicketsByEmail(db, order, tickets);
+  order.ticketDelivery = {
+    method: "online",
+    status: delivered ? "delivered" : "failed",
+    processedAt: new Date().toISOString(),
+    message: delivered
+      ? "Os ingressos digitais e PDFs foram enviados por e-mail."
+      : "Os ingressos foram emitidos, mas o e-mail não pôde ser entregue."
+  };
+  return order.ticketDelivery;
 }
 
 async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {}) {
@@ -10124,7 +10154,7 @@ async function handleApi(req, res, pathname) {
       const result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
       for (const paidOrder of result.newlyPaidOrders) {
         const paidTickets = result.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
-        if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
+        if (paidTickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, paidOrder, paidTickets);
       }
       const pointPrint = payment.status === "approved"
         ? await queueBoxOfficePointPrint(lockedDb, result.orders, result.tickets, config, {
@@ -10218,6 +10248,12 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const saleMode = body.saleMode || (selectedCustomer ? "registered" : body.customerName ? "guest" : "quick");
+      const ticketDeliveryMethod = boxOfficeTicketDeliveryMethod(saleMode, body.ticketDeliveryMethod);
+      const guestDeliveryEmail = String(body.customerEmail || "").trim().toLowerCase();
+      if (saleMode === "guest" && ticketDeliveryMethod === "online" && (guestDeliveryEmail.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDeliveryEmail))) {
+        sendJson(res, 422, { error: { code: "BOX_OFFICE_DELIVERY_EMAIL_INVALID", message: "Informe um e-mail válido para entregar o ingresso online." } });
+        return;
+      }
       const requestedSales = Array.isArray(body.saleItems) && body.saleItems.length ? body.saleItems : [body];
       if (requestedSales.length > 20) {
         sendJson(res, 400, { error: { code: "BOX_OFFICE_BATCH_LIMIT", message: "Finalize no máximo 20 filmes por venda." } });
@@ -10248,6 +10284,7 @@ async function handleApi(req, res, pathname) {
           id: saleItem.id || `pedido-bilheteria-${Date.now()}-${index}-${crypto.randomBytes(4).toString("hex")}`,
           ...customerData,
           paymentMethod,
+          ticketDeliveryMethod,
           status: pointPayment ? "pending_payment" : "paid",
           paymentStatus: pointPayment ? "pending" : "approved",
           autoAssignSeats: saleItem.autoAssignSeats !== false
@@ -10305,6 +10342,7 @@ async function handleApi(req, res, pathname) {
           status: "pending_payment",
           origin: "box_office",
           saleMode,
+          ticketDeliveryMethod,
           paymentMethod,
           paymentProvider: pointPaymentRecord.provider,
           paymentId: pointPaymentRecord.id,
@@ -10317,6 +10355,7 @@ async function handleApi(req, res, pathname) {
             origin: "box_office",
             batchId,
             paymentMethod,
+            ticketDeliveryMethod,
             createdBy: adminUser.id,
             createdAt: timestamp,
             customerId: selectedCustomer?.id || ""
@@ -10327,7 +10366,7 @@ async function handleApi(req, res, pathname) {
         const pointResult = applyPointPaymentStatus(lockedDb, pointPaymentRecord, providerPayment);
         for (const paidOrder of pointResult.newlyPaidOrders) {
           const paidTickets = pointResult.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
-          if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
+          if (paidTickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, paidOrder, paidTickets);
         }
         const pointPrint = pointPaymentRecord.status === "approved"
           ? await queueBoxOfficePointPrint(lockedDb, orders, pointResult.tickets, mercadoPagoConfig, {
@@ -10376,6 +10415,7 @@ async function handleApi(req, res, pathname) {
           status: "paid",
           origin: "box_office",
           saleMode,
+          ticketDeliveryMethod,
           paymentMethod,
           paymentProvider: payment.provider,
           paymentId: payment.id,
@@ -10388,6 +10428,7 @@ async function handleApi(req, res, pathname) {
             origin: "box_office",
             batchId,
             paymentMethod,
+            ticketDeliveryMethod,
             createdBy: adminUser.id,
             createdAt: timestamp,
             customerId: selectedCustomer?.id || ""
@@ -10401,6 +10442,9 @@ async function handleApi(req, res, pathname) {
       const tickets = sales.flatMap((sale) => sale.tickets);
       lockedDb.payments.unshift(...payments);
       lockedDb.orders.unshift(...orders);
+      for (const sale of sales) {
+        if (sale.tickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, sale.order, sale.tickets);
+      }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
       const pointPrint = await queueBoxOfficePointPrint(lockedDb, orders, tickets, mercadoPagoConfig, {
         batchId,
@@ -10816,7 +10860,7 @@ async function handleApi(req, res, pathname) {
         tickets = pointResult.tickets;
         for (const paidOrder of pointResult.newlyPaidOrders) {
           const paidTickets = tickets.filter((ticket) => ticket.orderId === paidOrder.id);
-          if (paidTickets.length && paidOrder.customerEmail) await deliverTicketsByEmail(lockedDb, paidOrder, paidTickets);
+          if (paidTickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, paidOrder, paidTickets);
         }
         if (payment.status === "approved") {
           const pointConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};

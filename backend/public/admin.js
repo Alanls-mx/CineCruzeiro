@@ -4182,6 +4182,18 @@ function manualSaleSummaryPayment() {
   }[method] || "Pagamento";
 }
 
+function manualTicketDeliveryMethod() {
+  if (state.saleMode === "quick") return "physical";
+  if (state.saleMode === "registered") return "online";
+  return document.querySelector("input[name='guestTicketDeliveryMethod']:checked")?.value === "online"
+    ? "online"
+    : "physical";
+}
+
+function manualTicketDeliveryLabel() {
+  return manualTicketDeliveryMethod() === "online" ? "Ingresso online" : "Impressão física";
+}
+
 function renderManualSaleSummary() {
   const target = $("manualSaleSummary");
   if (!target) return;
@@ -4260,6 +4272,7 @@ function renderManualSaleSummary() {
     <div class="manual-sale-summary-customer">
       <span>Cliente</span>
       <strong>${escapeHtml(manualSaleSummaryCustomer())}</strong>
+      <small>${escapeHtml(manualTicketDeliveryLabel())}</small>
     </div>
     <section class="manual-sale-summary-section">
       <div class="manual-sale-summary-section-title">
@@ -4302,6 +4315,13 @@ async function createManualTicket(event) {
     submitButton.textContent = "Finalizando venda...";
     const paymentMethod = document.querySelector("input[name='manualPaymentMethod']:checked")?.value || "cash";
     const saleMode = state.saleMode;
+    const ticketDeliveryMethod = manualTicketDeliveryMethod();
+    const guestEmail = $("manualCustomerEmail").value.trim();
+    if (saleMode === "guest" && ticketDeliveryMethod === "online" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+      showToast("Informe um e-mail válido para entregar o ingresso online.", "error");
+      $("manualCustomerEmail").focus();
+      return;
+    }
     const payload = {
       fullTicketsCount: 0,
       halfTicketsCount: 0,
@@ -4315,6 +4335,7 @@ async function createManualTicket(event) {
       })),
       concessionItems: manualConcessionItems(),
       saleMode,
+      ticketDeliveryMethod,
       paymentMethod,
       customerUserId: saleMode === "registered" ? $("manualCustomerUserId").value : "",
       customerName: saleMode === "quick" ? "" : $("manualCustomerName").value,
@@ -4336,12 +4357,15 @@ async function createManualTicket(event) {
     }
     await loadContent({ silent: true });
     const pointPrint = result.pointPrint || {};
-    const printMessage = pointPrint.status === "queued"
-      ? " Os ingressos foram enviados para impressão na Point."
-      : pointPrint.message ? ` ${pointPrint.message}` : "";
+    const ticketDelivery = orders[0]?.ticketDelivery || {};
+    const deliveryMessage = ticketDelivery.message
+      ? ` ${ticketDelivery.message}`
+      : pointPrint.status === "queued"
+        ? " Os ingressos foram enviados para impressão na Point."
+        : pointPrint.message ? ` ${pointPrint.message}` : "";
     showSuccess(
       "Venda finalizada",
-      `${orders.length} ${orders.length === 1 ? "pedido criado" : "pedidos criados"} e ${(result.tickets || []).length} ingresso(s) emitido(s).${printMessage}`
+      `${orders.length} ${orders.length === 1 ? "pedido criado" : "pedidos criados"} e ${(result.tickets || []).length} ingresso(s) emitido(s).${deliveryMessage}`
     );
   } catch (error) {
     showToast(error.message, "error");
@@ -4375,6 +4399,8 @@ function renderPointPayment(data = {}) {
   const orders = data.orders || state.pointPaymentSnapshot?.orders || [];
   const tickets = data.tickets || state.pointPaymentSnapshot?.tickets || [];
   const pointPrint = data.pointPrint || state.pointPaymentSnapshot?.pointPrint || {};
+  const ticketDelivery = orders[0]?.ticketDelivery || {};
+  const onlineDelivery = orders.some((order) => order.ticketDeliveryMethod === "online");
   const status = payment.status || "pending";
   const finalStatus = ["approved", "rejected", "cancelled", "expired", "refunded"].includes(status);
   state.pointPaymentSnapshot = { payment, orders, tickets, pointPrint };
@@ -4394,7 +4420,9 @@ function renderPointPayment(data = {}) {
   const copy = {
     approved: [
       "Pagamento aprovado e ingressos emitidos",
-      pointPrint.status === "queued"
+      onlineDelivery
+        ? ticketDelivery.message || "Os ingressos digitais estão sendo enviados ao e-mail informado."
+        : pointPrint.status === "queued"
         ? "A impressão com ingressos e bomboniere foi enviada automaticamente para a Point."
         : pointPrint.message || "A venda foi confirmada pelo Mercado Pago. Use as opções abaixo para imprimir novamente."
     ],
@@ -4407,7 +4435,7 @@ function renderPointPayment(data = {}) {
   $("pointPaymentMessage").textContent = copy[1];
 
   const printActions = $("pointPaymentPrintActions");
-  if (status === "approved" && orders.length) {
+  if (status === "approved" && orders.length && !onlineDelivery) {
     printActions.hidden = false;
     printActions.innerHTML = `
       <strong>Impressão da venda</strong>
@@ -4515,6 +4543,14 @@ function renderSaleMode() {
   if (registered) registered.hidden = state.saleMode !== "registered";
   if (guest) guest.hidden = state.saleMode !== "guest";
   if (quick) quick.hidden = state.saleMode !== "quick";
+  const ticketDeliveryMethod = manualTicketDeliveryMethod();
+  const emailInput = $("manualCustomerEmail");
+  const emailLabel = $("manualCustomerEmailLabel");
+  if (emailInput) {
+    emailInput.required = state.saleMode === "guest" && ticketDeliveryMethod === "online";
+    emailInput.placeholder = emailInput.required ? "cliente@exemplo.com" : "cliente@exemplo.com (opcional)";
+  }
+  if (emailLabel) emailLabel.textContent = emailInput?.required ? "E-mail para entrega" : "E-mail opcional";
   if ($("manualSaleSubmitButton")) {
     $("manualSaleSubmitButton").textContent = state.saleMode === "quick" ? "Finalizar venda rápida" : "Finalizar venda";
   }
@@ -7256,6 +7292,9 @@ function bindEvents() {
   $("manualCustomerSearch").addEventListener("focus", searchBoxOfficeCustomers);
   document.querySelectorAll("[data-sale-mode]").forEach((button) => {
     button.addEventListener("click", () => setSaleMode(button.dataset.saleMode));
+  });
+  document.querySelectorAll("input[name='guestTicketDeliveryMethod']").forEach((input) => {
+    input.addEventListener("change", renderSaleMode);
   });
   document.querySelectorAll("[data-box-office-tab]").forEach((button) => {
     button.addEventListener("click", () => setBoxOfficeTab(button.dataset.boxOfficeTab));

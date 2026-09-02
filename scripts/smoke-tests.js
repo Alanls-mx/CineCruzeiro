@@ -1654,6 +1654,56 @@ async function run() {
     assert.equal(allowedTicketTypeSale.payload.tickets.length, 2);
     assert.ok(allowedTicketTypeSale.payload.tickets.every((ticket) => ticket.ticketType === "Ingresso Promocional"));
 
+    const guestOnlineWithoutEmail = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        customerName: "Cliente Online",
+        saleMode: "guest",
+        ticketDeliveryMethod: "online",
+        paymentMethod: "cash"
+      })
+    });
+    assert.equal(guestOnlineWithoutEmail.response.status, 422);
+    assert.equal(guestOnlineWithoutEmail.payload.error.code, "BOX_OFFICE_DELIVERY_EMAIL_INVALID");
+
+    const guestOnlineSale = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        customerName: "Cliente Online",
+        customerEmail: "cliente-online@cine.local",
+        saleMode: "guest",
+        ticketDeliveryMethod: "online",
+        paymentMethod: "cash"
+      })
+    });
+    assert.equal(guestOnlineSale.response.status, 201);
+    assert.equal(guestOnlineSale.payload.order.ticketDeliveryMethod, "online");
+    assert.equal(guestOnlineSale.payload.pointPrint.status, "not_requested");
+
+    const guestPhysicalSale = await request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }],
+        customerName: "Cliente Balcão",
+        saleMode: "guest",
+        ticketDeliveryMethod: "physical",
+        paymentMethod: "cash"
+      })
+    });
+    assert.equal(guestPhysicalSale.response.status, 201);
+    assert.equal(guestPhysicalSale.payload.order.ticketDeliveryMethod, "physical");
+
     const concessionValidation = await request("/api/tickets/validate", {
       method: "POST",
       headers: jsonHeaders(adminCookie),

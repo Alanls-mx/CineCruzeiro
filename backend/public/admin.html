@@ -743,13 +743,24 @@
                   <input id="manualCustomerPhone" />
                 </label>
                 <label>
-                  E-mail opcional
+                  <span id="manualCustomerEmailLabel">E-mail opcional</span>
                   <input id="manualCustomerEmail" type="email" />
                 </label>
                 <label>
                   CPF somente se necessário
                   <input id="manualCustomerCpf" />
                 </label>
+                <fieldset id="guestTicketDelivery" class="guest-ticket-delivery">
+                  <legend>Entrega do ingresso</legend>
+                  <label>
+                    <input name="guestTicketDeliveryMethod" type="radio" value="physical" checked />
+                    <span><strong>Impressão física</strong><small>Imprimir ingressos e itens da bomboniere no balcão.</small></span>
+                  </label>
+                  <label>
+                    <input name="guestTicketDeliveryMethod" type="radio" value="online" />
+                    <span><strong>Online por e-mail</strong><small>Enviar os ingressos digitais e PDFs ao endereço informado.</small></span>
+                  </label>
+                </fieldset>
               </div>
 
               <div id="quickSaleBox" class="quick-sale-box" hidden>
