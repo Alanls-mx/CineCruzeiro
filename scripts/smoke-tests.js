@@ -626,6 +626,7 @@ async function run() {
     assert.equal(adminMe.payload.user.role, "owner");
 
     const seatRoomPayload = structuredClone(db.rooms.find((room) => room.id === "sala-poltronas-smoke"));
+    seatRoomPayload.technology = "Laser Smoke Atualizado";
     const savedSeatRoom = await request("/api/rooms/sala-poltronas-smoke", {
       method: "PUT",
       headers: jsonHeaders(adminCookie),
@@ -634,6 +635,14 @@ async function run() {
     assert.equal(savedSeatRoom.response.status, 200);
     assert.equal(savedSeatRoom.payload.seatLayout.rows[0].seats[0].color, "#e11d48");
     assert.equal(savedSeatRoom.payload.seatLayout.rows[0].seats[0].accessibility, "wheelchair");
+    assert.equal(savedSeatRoom.payload.synchronized.sessionsUpdated, 1);
+
+    const contentAfterRoomUpdate = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    const synchronizedSession = contentAfterRoomUpdate.payload.movies
+      .find((movie) => movie.id === TEST_SEAT_MOVIE_ID)?.sessions
+      .find((session) => session.id === TEST_SEAT_SESSION_ID);
+    assert.equal(synchronizedSession.roomId, "sala-poltronas-smoke");
+    assert.equal(synchronizedSession.room, "Sala Poltronas Smoke (Laser Smoke Atualizado)");
 
     const seatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
     assert.equal(seatMap.response.status, 200);

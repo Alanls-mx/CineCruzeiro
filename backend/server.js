@@ -725,7 +725,7 @@ function isPastOrToday(date) {
 
 function defaultPremiereSessions(movie, db) {
   const room = db.rooms?.find((item) => item.status === "active") || db.rooms?.[0];
-  const roomName = room ? `${room.name} (${room.technology || "Sala"})` : "Sala Cruzeiro (Laser 4K)";
+  const roomName = room ? roomDisplayLabel(room) : "Sala Cruzeiro (Laser 4K)";
   const price = Number(db.settings?.defaultTicketPrice ?? db.ticketTypes?.[0]?.price ?? 10);
   return [
     {
@@ -733,6 +733,7 @@ function defaultPremiereSessions(movie, db) {
       time: "19:00",
       format: "2D Dublado",
       room: roomName,
+      roomId: room?.id || "",
       ticketTypeIds: (db.ticketTypes || []).filter((ticketType) => ticketType.active !== false).map((ticketType) => ticketType.id),
       priceFull: price,
       priceHalf: price,
@@ -1687,11 +1688,27 @@ function sessionForTicket(db, ticket) {
 
 function roomForSession(db, session) {
   if (!session) return null;
+  const rooms = db.rooms || [];
+  const roomId = String(session.roomId || "").trim();
+  const roomById = roomId ? rooms.find((room) => String(room.id) === roomId) : null;
   const roomName = String(session.room || "").split("(")[0].trim().toLowerCase();
-  return (db.rooms || []).find((room) => {
+  const roomByLabel = rooms.find((room) => {
     const candidate = String(room.name || "").trim().toLowerCase();
     return candidate && (roomName === candidate || String(session.room || "").toLowerCase().includes(candidate));
-  }) || null;
+  });
+  // Legacy PostgreSQL writes could point roomId at the first room while keeping
+  // the correct room name. Prefer that label when the two references disagree.
+  return roomByLabel || roomById || null;
+}
+
+function roomDisplayLabel(room) {
+  if (!room) return "";
+  return `${String(room.name || "Sala").trim()} (${String(room.technology || "Sala").trim()})`;
+}
+
+function sessionWithCurrentRoom(db, session) {
+  const room = roomForSession(db, session);
+  return room ? { ...session, roomId: room.id, room: roomDisplayLabel(room) } : session;
 }
 
 function roomSeatTypes(room) {
@@ -1955,7 +1972,7 @@ function enrichTicket(db, ticket) {
   const stats = session ? sessionTicketStats(db, session.id) : null;
   const sessionDate = session?.date || order?.sessionDate || ticket.sessionDate || todayIsoDate();
   const sessionTime = session?.time || order?.sessionTime || ticket.sessionTime || "";
-  const sessionRoom = session?.room || order?.sessionRoom || ticket.sessionRoom || "Sala Cruzeiro";
+  const sessionRoom = roomDisplayLabel(room) || session?.room || order?.sessionRoom || ticket.sessionRoom || "Sala Cruzeiro";
   const sessionFormat = session?.format || order?.sessionFormat || ticket.sessionFormat || "";
   const capacity = Number(session?.capacity || room?.capacity || 0);
   const orderTickets = (db.tickets || [])
@@ -4285,6 +4302,7 @@ function normalizeMovie(input, existing = {}) {
         time: String(session.time || "19:00"),
         format: session.format || "2D Dublado",
         room: String(session.room || "Sala Cruzeiro (Laser 4K)"),
+        roomId: String(session.roomId || ""),
         ticketTypeIds: Array.isArray(session.ticketTypeIds) ? session.ticketTypeIds.map(String) : [],
         priceFull: Number(session.priceFull ?? 10),
         priceHalf: Number(session.priceHalf ?? 10),
@@ -4353,6 +4371,8 @@ function normalizeMovieSession(input, movieId, existing = {}, ticketTypes = []) 
   const date = String(preserveExistingDate ? existing.date : input.date ?? input.sessionDate ?? existing.date ?? "").trim();
   const time = String(input.time ?? existing.time ?? "").trim();
   const room = String(input.room ?? existing.room ?? "").trim();
+  const roomChangedByInput = input.room !== undefined && room !== String(existing.room || "").trim();
+  const roomId = String(input.roomId !== undefined ? input.roomId : roomChangedByInput ? "" : existing.roomId || "").trim();
   const format = String(input.format ?? existing.format ?? "").trim();
   const knownTicketTypes = (ticketTypes || []).filter((ticketType) => ticketType.active !== false);
   const requestedTicketTypeIds = Array.isArray(input.ticketTypeIds)
@@ -4399,6 +4419,7 @@ function normalizeMovieSession(input, movieId, existing = {}, ticketTypes = []) 
     time,
     format,
     room,
+    roomId,
     ticketTypeIds,
     priceFull,
     priceHalf,
@@ -5082,6 +5103,25 @@ function couponCustomerKey(order) {
   return email ? `email:${email}` : "";
 }
 
+function syncRoomSessionReferences(db, room, linkedSessions = []) {
+  const roomLabel = roomDisplayLabel(room);
+  let sessionsUpdated = 0;
+  let ordersUpdated = 0;
+  let ticketsUpdated = 0;
+  linkedSessions.forEach(({ movie, session }) => {
+    if (!movie || !session) return;
+    const changed = session.roomId !== room.id || session.room !== roomLabel;
+    session.roomId = room.id;
+    session.room = roomLabel;
+    if (!changed) return;
+    const synchronized = syncSessionSnapshotRecords(db, movie, session, { reason: "Cadastro da sala atualizado" });
+    sessionsUpdated += 1;
+    ordersUpdated += synchronized.ordersUpdated;
+    ticketsUpdated += synchronized.ticketsUpdated;
+  });
+  return { sessionsUpdated, ordersUpdated, ticketsUpdated };
+}
+
 function couponOrderCounts(db, coupon, order) {
   const customerKey = couponCustomerKey(order);
   const countedStatuses = new Set(["paid", "pending_payment", "processing"]);
@@ -5280,7 +5320,7 @@ function repriceOrderFromCatalog(db, order, options = {}) {
     sessionTime: session.time,
     sessionDate: session.date || order.sessionDate || todayIsoDate(),
     sessionFormat: session.format,
-    sessionRoom: session.room || "Sala Cruzeiro",
+    sessionRoom: roomDisplayLabel(sessionRoom) || session.room || "Sala Cruzeiro",
     fullTicketsCount: Math.max(0, Number(order.fullTicketsCount || 0)),
     halfTicketsCount: Math.max(0, Number(order.halfTicketsCount || 0)),
     ticketItems,
@@ -5836,7 +5876,10 @@ function getContent(db, options = {}) {
   };
   const movies = [...(db.movies || [])]
     .sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")))
-    .map(assetMovie);
+    .map((movie) => assetMovie({
+      ...movie,
+      sessions: (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session))
+    }));
   const visibleMovies = movies
     .filter((movie) => movie.status !== "hidden")
     .map((movie) => ({
@@ -6087,8 +6130,7 @@ function orderTicketCount(order) {
 }
 
 function sessionCapacity(db, session) {
-  const roomName = String(session?.room || "").split(" (")[0];
-  const room = (db.rooms || []).find((item) => item.name === roomName || session?.room?.includes(item.name));
+  const room = roomForSession(db, session);
   return Number(room?.capacity || 120);
 }
 
@@ -6117,8 +6159,9 @@ function adminDashboard(db, options = {}) {
   const ticketsSold = ticketCountForOrders(periodPaidOrders);
   const todaySessions = (db.movies || [])
     .flatMap((movie) => (movie.sessions || []).filter((session) => session.date === today).map((session) => {
+      const currentSession = sessionWithCurrentRoom(db, session);
       const sold = (db.tickets || []).filter((ticket) => ticket.sessionId === session.id && !["cancelled", "refunded"].includes(ticket.status)).length;
-      const capacity = sessionCapacity(db, session);
+      const capacity = sessionCapacity(db, currentSession);
       return {
         movie: {
           id: movie.id,
@@ -6127,11 +6170,11 @@ function adminDashboard(db, options = {}) {
           posterUrl: movie.posterUrl || "",
           rating: movie.rating || "L"
         },
-        session,
+        session: currentSession,
         sold,
         capacity,
         occupancyRate: capacity ? Math.round((sold / capacity) * 100) : 0,
-        status: sessionAvailabilityStatus(session, sold, capacity)
+        status: sessionAvailabilityStatus(currentSession, sold, capacity)
       };
     }))
     .sort((a, b) => String(a.session.time).localeCompare(String(b.session.time)));
@@ -8985,6 +9028,7 @@ async function handleApi(req, res, pathname) {
     const previousMovies = db.movies.map((item) => ({ ...item }));
     const body = await readBody(req);
     let movie = normalizeMovie(body);
+    movie.sessions = (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session));
     if (db.movies.some((item) => item.id === movie.id)) {
       sendJson(res, 409, { error: { code: "MOVIE_EXISTS", message: "Já existe um filme com este identificador. Abra o filme existente para editá-lo." } });
       return;
@@ -9041,14 +9085,15 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       if (body.dateTo || body.dateEnd || Array.isArray(body.times)) {
         const batch = createMovieSessionBatch(body, movieId, movie.sessions, db.ticketTypes);
-        movie.sessions.push(...batch.created);
+        const created = batch.created.map((session) => sessionWithCurrentRoom(db, session));
+        movie.sessions.push(...created);
         movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
         movie.updatedAt = new Date().toISOString();
         await writeDb(db);
-        sendJson(res, 201, { ...batch, totalCreated: batch.created.length, totalSkipped: batch.skipped.length });
+        sendJson(res, 201, { ...batch, created, totalCreated: created.length, totalSkipped: batch.skipped.length });
         return;
       }
-      const session = normalizeMovieSession(body, movieId, {}, db.ticketTypes);
+      const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movieId, {}, db.ticketTypes));
       if (movie.sessions.some((item) => item.id === session.id)) {
         sendJson(res, 409, { error: { code: "SESSION_EXISTS", message: "Já existe uma sessão com este identificador." } });
         return;
@@ -9069,7 +9114,7 @@ async function handleApi(req, res, pathname) {
     if (method === "PUT") {
       const body = await readBody(req);
       const previousSession = movie.sessions[sessionIndex];
-      const session = normalizeMovieSession(body, movieId, previousSession, db.ticketTypes);
+      const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movieId, previousSession, db.ticketTypes));
       const commercialChanges = sessionCommercialChanges(previousSession, session);
       const hasHistory = sessionHasAuditHistory(db, sessionId);
       if (session.room !== previousSession.room && sessionHasActiveSeatAssignments(db, sessionId)) {
@@ -9159,6 +9204,7 @@ async function handleApi(req, res, pathname) {
       const previousMovie = db.movies[index];
       const body = await readBody(req);
       let movie = normalizeMovie({ ...body, id }, previousMovie);
+      movie.sessions = (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session));
       const publishingNow = (body.workflowStatus === "published" || body.workflow_status === "published")
         && db.movies[index].workflowStatus !== "published";
       validateMovieForWorkflow(db, movie, id, publishingNow);
@@ -9226,9 +9272,10 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const existingRoom = db.rooms[index];
-      const linkedSessionIds = (db.movies || []).flatMap((movie) => (movie.sessions || [])
+      const linkedSessions = (db.movies || []).flatMap((movie) => (movie.sessions || [])
         .filter((session) => roomForSession(db, session)?.id === existingRoom.id)
-        .map((session) => session.id));
+        .map((session) => ({ movie, session })));
+      const linkedSessionIds = linkedSessions.map(({ session }) => session.id);
       const room = normalizeRoom(await readBody(req), existingRoom);
       const nextSeatIds = new Set(roomSeats(room).map((seat) => String(seat.id)));
       const removedSeatIds = roomSeats(existingRoom).map((seat) => String(seat.id)).filter((seatId) => !nextSeatIds.has(seatId));
@@ -9245,9 +9292,10 @@ async function handleApi(req, res, pathname) {
         return;
       }
       db.rooms[index] = room;
+      const synchronized = syncRoomSessionReferences(db, room, linkedSessions);
       await writeDb(db);
       linkedSessionIds.forEach((sessionId) => seatRealtimeService?.broadcastSessionRefresh(sessionId));
-      sendJson(res, 200, room);
+      sendJson(res, 200, { ...room, synchronized });
       return;
     }
 

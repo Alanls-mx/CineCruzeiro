@@ -113,6 +113,7 @@ function mapMovie(row, sessions) {
       time: session.time_label,
       format: session.format,
       room: session.room_label || session.room_id || "",
+      roomId: session.room_id || "",
       ticketTypeIds: asArray(session.ticket_type_ids),
       priceFull: num(session.price_full, 10),
       priceHalf: num(session.price_half, 10),
@@ -719,6 +720,7 @@ async function writeDbToPostgres(db) {
         JSON.stringify(room.seatLayout && typeof room.seatLayout === "object" ? room.seatLayout : { screenLabel: "TELA", rows: [] })
       ]);
     }
+    const roomsById = new Map(asArray(db.rooms).map((room) => [String(room.id), room]));
     const firstRoomId = asArray(db.rooms)[0]?.id || "sala-cruzeiro";
 
     for (const ticket of asArray(db.ticketTypes)) {
@@ -768,11 +770,15 @@ async function writeDbToPostgres(db) {
       const sessionDate = pgDate(session.date);
       const sessionTime = String(session.time || "00:00").trim();
       const startsAt = sessionDate && /^\d{2}:\d{2}$/.test(sessionTime) ? `${sessionDate} ${sessionTime}:00-03` : "";
+      const roomName = String(session.room || "").split("(")[0].trim().toLowerCase();
+      const matchedRoom = asArray(db.rooms).find((room) => String(room.name || "").trim().toLowerCase() === roomName)
+        || roomsById.get(String(session.roomId || ""));
+      const sessionRoomId = matchedRoom?.id || firstRoomId;
       await query(client, `INSERT INTO sessions (id, movie_id, room_id, starts_at, time_label, room_label, format, price_full, price_half, status)
           VALUES ($1,$2,$3,NULLIF($4,'')::timestamptz,$5,$6,$7,$8,$9,$10)`, [
           session.id,
           movie.id,
-          firstRoomId,
+          sessionRoomId,
           startsAt,
           session.time,
           session.room || "",
