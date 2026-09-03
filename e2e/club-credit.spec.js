@@ -56,3 +56,39 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
   expect(credit.remaining).toBe(1);
   expect(content.tickets.filter((ticket) => ticket.orderId === order.id)).toHaveLength(1);
 });
+
+test("mantém benefícios e total do Clube no resumo após gerar o Pix", async ({ page, request }) => {
+  const email = "cliente-clube-pix-e2e@cine.local";
+  await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
+  await page.goto("/conta");
+  await page.getByRole("button", { name: "Criar conta", exact: true }).click();
+  await page.getByLabel("Nome").fill("Cliente Clube Pix E2E");
+  await page.getByLabel("E-mail").fill(email);
+  await page.getByLabel("Senha").fill("Clube-pix-e2e-2026!");
+  await page.getByLabel("WhatsApp").fill("11977776666");
+  await page.locator("form").getByRole("button", { name: "Criar conta", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Olá, Cliente Clube Pix E2E" })).toBeVisible({ timeout: 10000 });
+
+  const adminLogin = await request.post(`${BACKEND}/api/admin/login`, {
+    data: { email: "admin-e2e@cine.local", password: "Admin-e2e-2026!" }
+  });
+  expect(adminLogin.ok()).toBeTruthy();
+  const assignment = await request.post(`${BACKEND}/api/admin/subscriptions/assign`, {
+    data: { email, planId: "plano-e2e", status: "active" }
+  });
+  expect(assignment.status()).toBe(201);
+
+  await page.goto("/checkout/sessao-e2e");
+  await page.getByRole("link", { name: "Continuar para Extras" }).click();
+  await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
+  const summary = page.getByRole("complementary");
+  await expect(summary.getByText("Clube · ingressos (10%)")).toBeVisible();
+  await expect(summary.getByText("R$ 13,50", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Pix", exact: true }).click();
+  await page.getByRole("button", { name: "Gerar Pix", exact: true }).click();
+
+  await expect(page.getByText("Aguardando confirmação")).toBeVisible({ timeout: 10000 });
+  await expect(summary.getByText("Clube · ingressos (10%)")).toBeVisible();
+  await expect(summary.getByText("Subtotal R$ 15,00")).toBeVisible();
+  await expect(summary.getByText("R$ 13,50", { exact: true })).toBeVisible();
+});
