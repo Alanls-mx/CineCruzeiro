@@ -388,7 +388,11 @@ const MIME_TYPES = {
   ".ico": "image/x-icon",
   ".mp4": "video/mp4",
   ".webm": "video/webm",
-  ".mov": "video/quicktime"
+  ".mov": "video/quicktime",
+  ".ini": "text/plain; charset=utf-8",
+  ".exe": "application/vnd.microsoft.portable-executable",
+  ".dll": "application/octet-stream",
+  ".zip": "application/zip"
 };
 
 function normalizeApiPayload(data, status) {

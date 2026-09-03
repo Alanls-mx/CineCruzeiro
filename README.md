@@ -111,8 +111,11 @@ O Admin utiliza HTML, CSS e JavaScript próprios servidos pelo backend. Essa dec
 - mesma autenticação, 2FA, RBAC e interface do painel web;
 - câmera, uploads, downloads, impressão e WebSockets;
 - servidor de produção configurável por argumento ou variável de ambiente.
+- tela cheia com `F11` e restauração com `Esc`;
+- inventário local de impressoras, câmeras/leitores, portas COM/PDV e monitores;
+- atualização nativa automática com manifesto HTTPS, verificação SHA-256 e reinício confirmado pelo operador.
 
-O código e as instruções de compilação ficam em [`desktop/windows`](desktop/windows/README.md). O aplicativo usa o painel publicado como fonte única da interface e das regras, portanto recebe as atualizações do Admin sem exigir uma nova compilação.
+O código, a publicação de versões e as instruções de compilação ficam em [`desktop/windows`](desktop/windows/README.md). O aplicativo usa o painel publicado como fonte única da interface e das regras; alterações nativas são entregues pelo atualizador automático versionado.
 
 ## 5. Estrutura principal
 
