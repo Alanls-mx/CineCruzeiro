@@ -9,7 +9,7 @@ import { Accessibility, CircleUserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { useSeatRealtime } from "@/hooks/useSeatRealtime";
-import { AccountSubscription, CouponPreviewResult, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap, previewCheckoutCoupon } from "@/services/cinemaApi";
+import { AccountSubscription, ClubBenefitsPreviewResult, CouponPreviewResult, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap, previewCheckoutClubBenefits, previewCheckoutCoupon } from "@/services/cinemaApi";
 import { checkoutDraftTotal, clearCheckoutDraft, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, publicAssetPath, readCheckoutDraft, StoredCheckoutDraft, writeCheckoutDraft } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
@@ -90,6 +90,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState("");
   const couponBasisRef = useRef("");
+  const [clubBenefitsPreview, setClubBenefitsPreview] = useState<ClubBenefitsPreviewResult | null>(null);
+  const [clubBenefitsLoading, setClubBenefitsLoading] = useState(false);
+  const [clubBenefitsError, setClubBenefitsError] = useState("");
   const [seatMap, setSeatMap] = useState<SessionSeatMap | null>(null);
   const [seatMapStatus, setSeatMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const loadedSeatSessionRef = useRef("");
@@ -101,13 +104,26 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     [content?.ticketTypes, found?.session.ticketTypeIds]
   );
   const total = checkoutDraftTotal(draft, found?.session, content?.concessions || [], content?.ticketTypes || []);
-  const checkoutTotal = couponPreview?.total ?? total;
+  const activeClub = activeClubSubscription(clubSubscriptions);
+  const couponCanStackWithClub = !couponPreview || couponPreview.coupon.allowsClubStacking;
+  const clubBenefitsRequested = Boolean(customerUser && activeClub && couponCanStackWithClub && draft?.useClubBenefits !== false);
+  const appliedClubBenefitsPreview = clubBenefitsRequested ? clubBenefitsPreview : null;
+  const checkoutTotal = appliedClubBenefitsPreview?.total ?? couponPreview?.total ?? total;
   const couponBasis = JSON.stringify({
     sessionId: found?.session.id || "",
     tickets: draft?.ticketQuantities || {},
     concessions: draft?.concessionQuantities || {},
     customerId: customerUser?.id || "",
     customerEmail: customerUser?.email || draft?.customerEmail || "",
+  });
+  const clubBenefitsBasis = JSON.stringify({
+    step,
+    movieId: found?.movie.id || "",
+    sessionId: found?.session.id || "",
+    tickets: draft?.ticketQuantities || {},
+    concessions: draft?.concessionQuantities || {},
+    couponCode: couponPreview?.coupon.code || "",
+    requested: clubBenefitsRequested,
   });
   const requiredSeatCount = draft ? generatedTicketCount(draft, availableTicketTypes) : 0;
   const selectedSeatIds = draft?.selectedSeatIds || [];
@@ -476,6 +492,42 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     couponBasisRef.current = couponBasis;
   }, [couponBasis, couponPreview]);
 
+  useEffect(() => {
+    if (step !== "pagamento" || !found || !draft || !clubBenefitsRequested) {
+      setClubBenefitsPreview(null);
+      setClubBenefitsLoading(false);
+      setClubBenefitsError("");
+      return;
+    }
+    let cancelled = false;
+    setClubBenefitsPreview(null);
+    setClubBenefitsLoading(true);
+    setClubBenefitsError("");
+    previewCheckoutClubBenefits({
+      movieId: found.movie.id,
+      sessionId: found.session.id,
+      fullTicketsCount: Number(draft.fullTickets || 0),
+      halfTicketsCount: Number(draft.halfTickets || 0),
+      ticketItems: selectedTicketItems(draft, availableTicketTypes),
+      concessionItems: Object.entries(draft.concessionQuantities || {})
+        .filter(([, quantity]) => Number(quantity) > 0)
+        .map(([id, quantity]) => ({ id, quantity: Number(quantity) })),
+      couponCode: couponPreview?.coupon.code || "",
+    })
+      .then((preview) => {
+        if (!cancelled) setClubBenefitsPreview(preview);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setClubBenefitsPreview(null);
+        setClubBenefitsError(error instanceof Error ? error.message : "Não foi possível calcular os benefícios do Clube.");
+      })
+      .finally(() => {
+        if (!cancelled) setClubBenefitsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [clubBenefitsBasis]);
+
   const submitPayment = useCallback(async (cardData?: MercadoPagoCardPayload) => {
     if (!found || !draft) return;
     setLoading(true);
@@ -674,6 +726,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               clubLoading={clubLoading}
               clubSubscriptions={clubSubscriptions}
               customerUser={customerUser}
+              clubBenefitsPreview={appliedClubBenefitsPreview}
+              clubBenefitsLoading={clubBenefitsRequested && clubBenefitsLoading}
+              clubBenefitsError={clubBenefitsError}
               onSubmit={submitPayment}
               onClubCredit={submitClubCredit}
               ticketTypes={availableTicketTypes}
@@ -687,7 +742,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             />
           )}
         </section>
-        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
+        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} clubBenefitsPreview={appliedClubBenefitsPreview} clubBenefitsLoading={clubBenefitsRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
       <MobileCheckoutBar
         draft={draft}
@@ -797,6 +852,14 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
   const seatColumnAisles = (seatColumnGuideRow?.seats || []).map((_, columnIndex) => (
     (seatMap?.rows || []).some((row) => row.seats[columnIndex]?.aisleAfter)
   ));
+  const seatColumnLabels = (seatColumnGuideRow?.seats || []).map((seat) => {
+    const rowLabel = String(seatColumnGuideRow?.label || "").trim();
+    const seatLabel = String(seat.label || "").trim();
+    const withoutRow = rowLabel && seatLabel.toLocaleUpperCase("pt-BR").startsWith(rowLabel.toLocaleUpperCase("pt-BR"))
+      ? seatLabel.slice(rowLabel.length).trim()
+      : seatLabel;
+    return withoutRow || seatLabel;
+  });
   const seatSelectionComplete = seatMapStatus === "ready" && (!seatMap?.enabled || selectedSeatIds.length === requiredSeats);
 
   const [seatActionError, setSeatActionError] = useState("");
@@ -902,12 +965,12 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                             {seat.accessibility === "wheelchair" ? (
                               <span className="flex flex-col items-center justify-center gap-0.5 leading-none">
                                 <Accessibility className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                                <span className="text-[9px] font-black leading-none">{seat.label}</span>
+                                <span className="font-black leading-none">{seat.label}</span>
                               </span>
                             ) : seat.accessibility === "obese" ? (
                               <span className="flex flex-col items-center justify-center gap-0.5 leading-none">
                                 <CircleUserRound className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                                <span className="text-[9px] font-black leading-none">{seat.label}</span>
+                                <span className="font-black leading-none">{seat.label}</span>
                               </span>
                             ) : (
                               <span>{seat.label}</span>
@@ -929,7 +992,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                           className="w-10 shrink-0 text-center text-[11px] font-black leading-5 text-slate-500"
                           style={{ marginRight: seatColumnAisles[columnIndex] ? 24 : 0 }}
                         >
-                          {columnIndex + 1}
+                          {seatColumnLabels[columnIndex]}
                         </span>
                       ))}
                     </div>
@@ -1019,7 +1082,7 @@ function ExtrasStep({ draft, updateDraft, concessions, onContinue }: { draft: St
   );
 }
 
-function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, couponLoading, couponError, onApplyCoupon, onRemoveCoupon, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, onSubmit, onClubCredit, ticketTypes }: {
+function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, couponLoading, couponError, onApplyCoupon, onRemoveCoupon, mercadoPagoConfig, paymentError, loading, clubLoading, clubSubscriptions, customerUser, clubBenefitsPreview, clubBenefitsLoading, clubBenefitsError, onSubmit, onClubCredit, ticketTypes }: {
   draft: StoredCheckoutDraft;
   updateDraft: (patch: Partial<StoredCheckoutDraft>) => void;
   total: number;
@@ -1035,6 +1098,9 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   clubLoading: boolean;
   clubSubscriptions: AccountSubscription[];
   customerUser: CustomerUser | null;
+  clubBenefitsPreview: ClubBenefitsPreviewResult | null;
+  clubBenefitsLoading: boolean;
+  clubBenefitsError: string;
   onSubmit: (cardData?: MercadoPagoCardPayload) => Promise<void>;
   onClubCredit: () => void;
   ticketTypes: TicketTypeRecord[];
@@ -1053,13 +1119,13 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   const clubCreditsEnabled = couponCanStack && draft.useClubCredits === true;
   const selectedTicketPurchases = selectedTicketItems(draft, ticketTypes);
   const ticketSubtotal = selectedTicketPurchases.reduce((sum, item) => sum + Number(ticketTypes.find((type) => type.id === item.id)?.price || 0) * item.quantity, 0);
-  const estimatedTicketDiscount = clubBenefitsEnabled ? ticketSubtotal * (Number(plan?.ticketDiscountPercent || 0) / 100) : 0;
+  const estimatedTicketDiscount = Number(clubBenefitsPreview?.benefits.ticketDiscount || 0);
   const estimatedCreditBase = Math.max(0, ticketSubtotal - estimatedTicketDiscount);
   const referenceValue = Number(plan?.creditReferenceValue || 0);
   const estimatedCredit = clubCreditsEnabled
     ? Math.min(estimatedCreditBase, referenceValue > 0 ? referenceValue * requestedTickets : estimatedCreditBase)
     : 0;
-  const estimatedPayable = Math.max(0, total - estimatedTicketDiscount - estimatedCredit);
+  const estimatedPayable = Math.max(0, total - estimatedCredit);
   const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
@@ -1194,6 +1260,8 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
                 </span>
               </span>
             </label>
+            {clubBenefitsLoading && <p className="mt-3 text-sm font-semibold text-brand-200" role="status">Calculando seus benefícios...</p>}
+            {clubBenefitsError && <p className="mt-3 text-sm font-semibold text-rose-200" role="alert">{clubBenefitsError}</p>}
             <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg bg-brand-900/70 p-4">
               <input
                 type="checkbox"
@@ -1452,7 +1520,7 @@ function activeClubSubscription(subscriptions: AccountSubscription[]) {
   }) || null;
 }
 
-function OrderSummary({ draft, total, baseTotal, couponPreview, selectedConcessions, ticketTypes, seatMap }: { draft: StoredCheckoutDraft; total: number; baseTotal: number; couponPreview: CouponPreviewResult | null; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
+function OrderSummary({ draft, total, baseTotal, couponPreview, clubBenefitsPreview, clubBenefitsLoading, selectedConcessions, ticketTypes, seatMap }: { draft: StoredCheckoutDraft; total: number; baseTotal: number; couponPreview: CouponPreviewResult | null; clubBenefitsPreview: ClubBenefitsPreviewResult | null; clubBenefitsLoading: boolean; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat.label]));
   return (
     <aside className="lg:sticky lg:top-28 lg:self-start">
@@ -1482,8 +1550,35 @@ function OrderSummary({ draft, total, baseTotal, couponPreview, selectedConcessi
               <dd>-{money(couponPreview.coupon.discountValue)}</dd>
             </div>
           )}
+          {clubBenefitsPreview && (
+            <>
+              {clubBenefitsPreview.benefits.ticketDiscount > 0 && (
+                <div className="flex justify-between gap-4 border-t border-white/8 pt-3 text-emerald-300">
+                  <dt>Clube · ingressos ({clubBenefitsPreview.benefits.ticketDiscountPercent}%)</dt>
+                  <dd>-{money(clubBenefitsPreview.benefits.ticketDiscount)}</dd>
+                </div>
+              )}
+              {clubBenefitsPreview.benefits.concessionDiscount > 0 && (
+                <div className="flex justify-between gap-4 text-emerald-300">
+                  <dt>Clube · bomboniere ({clubBenefitsPreview.benefits.concessionDiscountPercent}%)</dt>
+                  <dd>-{money(clubBenefitsPreview.benefits.concessionDiscount)}</dd>
+                </div>
+              )}
+              {clubBenefitsPreview.benefits.freeConcessionItems.map((item) => (
+                <div key={item.concessionId} className="flex justify-between gap-4 text-emerald-300">
+                  <dt>{item.quantity}× {item.name} grátis pelo Clube</dt>
+                  <dd>-{money(item.quantity * item.unitPrice)}</dd>
+                </div>
+              ))}
+            </>
+          )}
+          {clubBenefitsLoading && (
+            <div className="flex justify-between gap-4 border-t border-white/8 pt-3 text-brand-200" role="status">
+              <dt>Benefícios do Clube</dt><dd>Calculando...</dd>
+            </div>
+          )}
         </dl>
-        {couponPreview && <p className="mt-5 text-xs text-slate-500 line-through">Subtotal {money(baseTotal)}</p>}
+        {(couponPreview || clubBenefitsPreview) && <p className="mt-5 text-xs text-slate-500 line-through">Subtotal {money(baseTotal)}</p>}
         <div className="mt-6 flex items-end justify-between border-t border-white/8 pt-5">
           <span className="text-sm font-bold text-slate-400">Total</span>
           <span className="text-3xl font-black text-gold-400">{money(total)}</span>

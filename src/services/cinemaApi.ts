@@ -293,6 +293,22 @@ export interface AccountSubscription {
   }>;
 }
 
+export interface ClubBenefitsPreviewResult {
+  valid: boolean;
+  plan: { id: string; name: string };
+  benefits: {
+    ticketDiscountPercent: number;
+    concessionDiscountPercent: number;
+    ticketDiscount: number;
+    concessionDiscount: number;
+    freeConcessionDiscount: number;
+    totalDiscount: number;
+    freeConcessionItems: Array<{ concessionId: string; name: string; quantity: number; unitPrice: number }>;
+  };
+  subtotal: number;
+  total: number;
+}
+
 function normalizeMovie(movie: Partial<Movie> & { status?: string }): Movie {
   return {
     id: String(movie.id || `filme-${Date.now()}`),
@@ -407,6 +423,29 @@ export async function fetchSessionSeatMap(sessionId: string, ownerToken = ""): P
     throw new Error(apiErrorMessage(payload, "Desculpe, erro interno no servidor ao carregar as poltronas desta sessão."));
   }
   return payload as SessionSeatMap;
+}
+
+export async function previewCheckoutClubBenefits(order: {
+  movieId: string;
+  sessionId: string;
+  fullTicketsCount: number;
+  halfTicketsCount: number;
+  ticketItems?: Array<{ id: string; quantity: number }>;
+  concessionItems?: Array<{ id: string; quantity: number }>;
+  couponCode?: string;
+}) {
+  const response = await apiFetch(`${API_BASE}/api/checkout/club-benefits/preview`, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "include",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(order),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível calcular os benefícios do Clube."));
+  }
+  return payload as ClubBenefitsPreviewResult;
 }
 
 export async function recordTicketOrder(order: TicketOrder) {

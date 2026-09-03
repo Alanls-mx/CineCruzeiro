@@ -3986,9 +3986,14 @@ function renderManualSeatMap(errorMessage = "") {
     <div class="manual-seat-column-footer" aria-label="Números das colunas">
       <span class="manual-seat-row-spacer" aria-hidden="true"></span>
       <div class="manual-seat-column-labels">
-        ${(columnGuideRow.seats || []).map((_, columnIndex) => `
-          <span style="${columnAisles[columnIndex] ? "margin-right:24px" : ""}">${columnIndex + 1}</span>
-        `).join("")}
+        ${(columnGuideRow.seats || []).map((seat, columnIndex) => {
+          const rowLabel = String(columnGuideRow.label || "").trim();
+          const seatLabel = String(seat.label || "").trim();
+          const columnLabel = rowLabel && seatLabel.toLocaleUpperCase("pt-BR").startsWith(rowLabel.toLocaleUpperCase("pt-BR"))
+            ? seatLabel.slice(rowLabel.length).trim()
+            : seatLabel;
+          return `<span style="${columnAisles[columnIndex] ? "margin-right:24px" : ""}">${escapeHtml(columnLabel || seatLabel)}</span>`;
+        }).join("")}
       </div>
       <span class="manual-seat-row-spacer" aria-hidden="true"></span>
     </div>

@@ -9683,6 +9683,36 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/checkout/club-benefits/preview" && method === "POST") {
+    const customerUser = getCustomerUser(req, db);
+    if (!customerUser) {
+      sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para consultar os benefícios do Clube." } });
+      return;
+    }
+    const body = await readBody(req);
+    const input = body.order || body;
+    const normalizedOrder = normalizePaymentOrder({
+      ...input,
+      customerUserId: customerUser.id,
+      customerName: customerUser.name || "Cliente Cine Cruzeiro",
+      customerEmail: customerUser.email || "",
+      customerPhone: customerUser.phone || "",
+      customerCpf: customerUser.cpf || "",
+      useClubBenefits: true
+    });
+    const pricedOrder = repriceOrderFromCatalog(db, normalizedOrder, { assignSeats: false });
+    const subtotal = Number(pricedOrder.totalPrice || 0);
+    const { plan } = applyClubPlanBenefits(db, pricedOrder, customerUser);
+    sendJson(res, 200, {
+      valid: true,
+      plan: { id: plan.id, name: plan.name || "Clube Cine Cruzeiro" },
+      benefits: pricedOrder.clubBenefits,
+      subtotal,
+      total: pricedOrder.totalPrice
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
+
   if (pathname === "/api/payments/pix" && method === "POST") {
     const body = await readBody(req);
     await withCriticalMutation(async () => {
