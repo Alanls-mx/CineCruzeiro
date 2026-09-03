@@ -1828,10 +1828,10 @@ async function claimSeatHoldsForOrder(db, order) {
   }
 }
 
-async function releaseOrderSeatHolds(order) {
+async function releaseOrderSeatHolds(order, broadcastStatus = "unavailable") {
   if (!order?.seatHoldToken || !order?.sessionId) return [];
   const released = await releaseSeatHoldsForOwner({ sessionId: order.sessionId, ownerToken: order.seatHoldToken });
-  released.forEach((hold) => seatRealtimeService?.broadcastSeatStatus(order.sessionId, hold.seatId, "unavailable"));
+  released.forEach((hold) => seatRealtimeService?.broadcastSeatStatus(order.sessionId, hold.seatId, broadcastStatus));
   return released;
 }
 
@@ -4252,7 +4252,7 @@ function checkoutResponse(db, order, payment, tickets = []) {
   };
 }
 
-function expireStaleReservations(db) {
+function expireStaleReservations(db, expiredOrders = []) {
   const now = Date.now();
   let changed = false;
   (db.orders || []).forEach((order) => {
@@ -4267,6 +4267,9 @@ function expireStaleReservations(db) {
     order.status = "expired";
     order.paymentStatus = order.paymentStatus === "approved" ? "approved" : "expired";
     order.expiredAt = order.expiredAt || new Date().toISOString();
+    order.expirationCleanupPending = true;
+    order.clubCreditPending = false;
+    clubDomainService.releaseOrderCredits(db, order.id);
     changed = releaseConcessionReservation(db, order) || changed;
     changed = true;
 
@@ -4276,9 +4279,65 @@ function expireStaleReservations(db) {
         payment.status = "expired";
         payment.expiredAt = payment.expiredAt || new Date().toISOString();
         payment.updatedAt = new Date().toISOString();
+        payment.qrCode = "";
+        payment.qrCodeBase64 = "";
+        payment.ticketUrl = "";
+        payment.checkoutUrl = "";
       });
   });
+  (db.orders || []).filter((order) => order.expirationCleanupPending || (
+    order.status === "expired"
+    && (db.payments || []).some((payment) => payment.orderId === order.id && payment.provider === "mercado_pago" && payment.qrCode)
+  )).forEach((order) => {
+    changed = true;
+    const payment = (db.payments || []).find((item) => item.orderId === order.id) || null;
+    if (payment) {
+      payment.qrCode = "";
+      payment.qrCodeBase64 = "";
+      payment.ticketUrl = "";
+      payment.checkoutUrl = "";
+    }
+    if (!expiredOrders.some((item) => item.orderId === order.id)) {
+      expiredOrders.push({
+        orderId: order.id,
+        sessionId: order.sessionId,
+        seatHoldToken: order.seatHoldToken,
+        selectedSeatIds: [...(order.selectedSeatIds || [])],
+        provider: payment?.provider || "",
+        providerPaymentId: payment?.providerPaymentId || ""
+      });
+    }
+  });
   return changed;
+}
+
+async function cleanupExpiredCheckoutOrders(expiredOrders) {
+  for (const expired of expiredOrders) {
+    await releaseOrderSeatHolds(expired, "available");
+    (expired.selectedSeatIds || []).forEach((seatId) => seatRealtimeService?.broadcastSeatStatus(expired.sessionId, seatId, "available"));
+    if (expired.provider === "mercado_pago" && expired.providerPaymentId) {
+      try {
+        const currentDb = await readDb();
+        const config = integrationConfigService.resolvedConfig(currentDb, "mercadoPago");
+        await paymentService.cancelMercadoPagoOrder(expired.providerPaymentId, config || {}, `expire-${expired.orderId}`);
+      } catch (error) {
+        logEvent("warn", "payment.expired_cancellation_failed", {
+          orderId: expired.orderId,
+          providerPaymentId: expired.providerPaymentId,
+          message: error.message
+        });
+      }
+    }
+  }
+  if (!expiredOrders.length) return;
+  await withCriticalMutation(async () => {
+    const db = await readDb();
+    const completedIds = new Set(expiredOrders.map((item) => item.orderId));
+    (db.orders || []).forEach((order) => {
+      if (completedIds.has(order.id)) order.expirationCleanupPending = false;
+    });
+    await writeDb(db);
+  });
 }
 
 async function downloadTrailerForMovie(movie) {
@@ -9795,7 +9854,8 @@ async function handleApi(req, res, pathname) {
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
       await claimSeatHoldsForOrder(lockedDb, order);
-      order.reservationExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const pixReservationTtlMs = paymentService.mercadoPagoPixExpirationMs();
+      order.reservationExpiresAt = new Date(Date.now() + pixReservationTtlMs).toISOString();
       applyClubPlanBenefits(lockedDb, order, customerUser);
       if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
       materializeOrderAccounting(lockedDb, order);
@@ -9829,7 +9889,7 @@ async function handleApi(req, res, pathname) {
         paymentId: payment.providerPaymentId,
         paymentStatus: payment.status,
         status: payment.status === "approved" ? "paid" : "pending_payment",
-        reservationExpiresAt: payment.status === "approved" ? "" : new Date(Date.now() + 30 * 60 * 1000).toISOString()
+        reservationExpiresAt: payment.status === "approved" ? "" : order.reservationExpiresAt
       };
       reserveConcessionStock(lockedDb, savedOrder);
       const tickets = payment.status === "approved" ? finalizePaidOrder(lockedDb, savedOrder, payment, "online") : [];
@@ -9962,12 +10022,23 @@ async function handleApi(req, res, pathname) {
   const checkoutOrderMatch = pathname.match(/^\/api\/checkout\/orders\/([^/]+)$/);
   if (checkoutOrderMatch && method === "GET") {
     const orderId = decodeURIComponent(checkoutOrderMatch[1]);
-    const snapshotOrder = (db.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
+    let snapshotDb = db;
+    let snapshotOrder = (snapshotDb.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
     if (!snapshotOrder || !checkoutAccessAllowed(req, db, snapshotOrder)) {
       sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
       return;
     }
-    await reconcileMercadoPagoCheckoutOrder(snapshotOrder.id, db);
+    if (snapshotOrder.status === "pending_payment" && snapshotOrder.reservationExpiresAt && new Date(snapshotOrder.reservationExpiresAt).getTime() <= Date.now()) {
+      const expiredOrders = [];
+      await withCriticalMutation(async () => {
+        const lockedDb = await readDb();
+        if (expireStaleReservations(lockedDb, expiredOrders)) await writeDb(lockedDb);
+      });
+      await cleanupExpiredCheckoutOrders(expiredOrders);
+      snapshotDb = await readDb();
+      snapshotOrder = (snapshotDb.orders || []).find((item) => item.id === snapshotOrder.id);
+    }
+    await reconcileMercadoPagoCheckoutOrder(snapshotOrder.id, snapshotDb);
     const currentDb = await readDb();
     const order = (currentDb.orders || []).find((item) => item.id === snapshotOrder.id);
     if (!order) {
@@ -11198,13 +11269,14 @@ server.on("error", (error) => {
 });
 
 async function runSubscriptionMaintenance() {
+  const expiredCheckoutOrders = [];
   try {
     await withCriticalMutation(async () => {
       const db = await readDb();
       const scheduledChanged = applyScheduledPremieres(db);
       const movieTagsChanged = applyAutomatedMovieTags(db);
       const sessionMaintenance = archiveFinishedSessions(db);
-      const reservationsChanged = expireStaleReservations(db);
+      const reservationsChanged = expireStaleReservations(db, expiredCheckoutOrders);
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
       if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || result.changed || lifecycle.changed) {
@@ -11220,6 +11292,7 @@ async function runSubscriptionMaintenance() {
         });
       }
     });
+    await cleanupExpiredCheckoutOrders(expiredCheckoutOrders);
   } catch (error) {
     logEvent("warn", "subscription.pending_payment_maintenance_failed", {
       code: error?.code || "SUBSCRIPTION_MAINTENANCE_FAILED",

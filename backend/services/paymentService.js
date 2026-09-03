@@ -45,6 +45,22 @@ function getMercadoPagoAccessToken(config = {}) {
   return config.accessToken || getFirstEnv(MERCADO_PAGO_TOKEN_ENV_KEYS)?.value || "";
 }
 
+function mercadoPagoPixExpirationTime() {
+  const value = String(getFirstEnv(MERCADO_PAGO_PIX_EXPIRATION_ENV_KEYS)?.value || "PT30M").trim() || "PT30M";
+  const milliseconds = parseIsoDurationMs(value);
+  return milliseconds >= 30 * 60 * 1000 && milliseconds <= 30 * 24 * 60 * 60 * 1000 ? value : "PT30M";
+}
+
+function parseIsoDurationMs(value) {
+  const match = value.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/i);
+  if (!match) return 0;
+  return (((Number(match[1] || 0) * 24 + Number(match[2] || 0)) * 60 + Number(match[3] || 0)) * 60 + Number(match[4] || 0)) * 1000;
+}
+
+function mercadoPagoPixExpirationMs() {
+  return parseIsoDurationMs(mercadoPagoPixExpirationTime());
+}
+
 function getMercadoPagoWebhookSecret(config = {}) {
   return getMercadoPagoWebhookSecrets(config)[0] || "";
 }
@@ -506,7 +522,7 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     throw paymentError("CARD_TOKEN_REQUIRED", "Token do cartao e bandeira sao obrigatorios para Checkout Transparente.", 422);
   }
 
-  const pixExpiration = getFirstEnv(MERCADO_PAGO_PIX_EXPIRATION_ENV_KEYS)?.value || "";
+  const pixExpiration = mercadoPagoPixExpirationTime();
   const body = {
     type: "online",
     processing_mode: "automatic",
@@ -519,9 +535,7 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
         {
           amount,
           payment_method: paymentMethod,
-          ...(method === "pix" && pixExpiration
-            ? { expiration_time: pixExpiration }
-            : {})
+          ...(method === "pix" ? { expiration_time: pixExpiration } : {})
         }
       ]
     }
@@ -749,6 +763,26 @@ async function fetchMercadoPagoOrder(providerPaymentId, integrationConfig = {}) 
   return normalizeMercadoPagoOrder(data);
 }
 
+async function cancelMercadoPagoOrder(providerPaymentId, integrationConfig = {}, idempotencyKey = "") {
+  if (!providerPaymentId) return null;
+  if (isTestPaymentsMode() && !isProduction()) return { id: providerPaymentId, status: "cancelled", testMode: true };
+  const accessToken = getMercadoPagoAccessToken(integrationConfig);
+  if (!accessToken) return null;
+  const response = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(providerPaymentId)}/cancel`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Idempotency-Key": idempotencyKey || `expire-${providerPaymentId}`
+    }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok && response.status !== 409) {
+    throw paymentError("MERCADO_PAGO_ORDER_CANCEL_FAILED", data.message || data.error || "Não foi possível cancelar a cobrança Pix expirada.", response.status);
+  }
+  return data;
+}
+
 async function fetchOpenFinancePayment(providerPaymentId, integrationConfig = {}) {
   const config = getOpenFinancePixConfig(integrationConfig);
   if (!config.statusEndpoint || !providerPaymentId) return null;
@@ -782,12 +816,14 @@ module.exports = {
   createMercadoPagoSubscriptionPlan,
   createMercadoPagoWebhookSignature,
   createPaymentRecord,
+  cancelMercadoPagoOrder,
   cancelMercadoPagoSubscription,
   fetchMercadoPagoAuthorizedPayment,
   fetchMercadoPagoSubscription,
   fetchProviderPaymentStatus,
   getMercadoPagoAccessToken,
   getMercadoPagoWebhookSecret,
+  mercadoPagoPixExpirationMs,
   normalizeMercadoPagoAuthorizedPayment,
   normalizeMercadoPagoSubscriptionStatus,
   normalizeMercadoPagoWebhookOrder,

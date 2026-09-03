@@ -706,6 +706,21 @@ async function run() {
     assert.equal(duplicateSeat.response.status, 409);
     assert.equal(duplicateSeat.payload.error.code, "SEAT_UNAVAILABLE");
 
+    const firstSeatCheckoutCookie = (firstSeat.response.headers.get("set-cookie") || "").split(";")[0];
+    const expirationDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    const expiringSeatOrder = expirationDb.orders.find((order) => order.id === "smoke-seat-a1");
+    expiringSeatOrder.reservationExpiresAt = new Date(Date.now() - 1000).toISOString();
+    fs.writeFileSync(DATA_FILE, JSON.stringify(expirationDb, null, 2));
+    const expiredSeatOrder = await request("/api/checkout/orders/smoke-seat-a1", {
+      headers: jsonHeaders(firstSeatCheckoutCookie)
+    });
+    assert.equal(expiredSeatOrder.response.status, 200);
+    assert.equal(expiredSeatOrder.payload.order.status, "expired");
+    assert.equal(expiredSeatOrder.payload.payment.status, "expired");
+    assert.equal(expiredSeatOrder.payload.payment.qrCode, "");
+    const releasedSeatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
+    assert.equal(releasedSeatMap.payload.rows[0].seats[0].status, "available");
+
     const boxOfficeMissingSeat = await request("/api/box-office/sales", {
       method: "POST",
       headers: jsonHeaders(adminCookie),

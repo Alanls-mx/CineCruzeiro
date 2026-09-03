@@ -23,6 +23,7 @@ type CheckoutPaymentResult = {
     couponDiscount?: number;
     clubBenefits?: ClubBenefitsPreviewResult["benefits"];
     clubCreditSummary?: NonNullable<ClubBenefitsPreviewResult["creditSummary"]>;
+    reservationExpiresAt?: string;
   };
   payment?: { id?: string; status?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string } | null;
   tickets?: Array<{ code: string }>;
@@ -1384,6 +1385,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
   const result = draft.paymentResult as CheckoutPaymentResult | undefined;
   const approved = result?.payment?.status === "approved" || (result?.order?.status === "paid" && Boolean(result?.tickets?.length));
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
+  const expired = result?.payment?.status === "expired" || result?.order?.status === "expired";
   const copyPix = async () => {
     if (!result?.payment?.qrCode) return;
     await navigator.clipboard?.writeText(result.payment.qrCode);
@@ -1408,6 +1410,8 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
                   ? "Estamos conferindo seu pedido"
                   : approved
                   ? "Tudo certo com sua compra"
+                  : expired
+                  ? "O prazo deste Pix terminou"
                   : "Pedido criado com segurança"}
               </h2>
             </div>
@@ -1416,6 +1420,8 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
           <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300">
             {approved
               ? "Seus ingressos digitais foram liberados na sua conta. Lá você encontra QR Code, download, transferência e histórico da compra."
+              : expired
+              ? "A cobrança foi cancelada e as poltronas voltaram a ficar disponíveis. Gere um novo Pix para refazer a reserva."
               : "Finalize o pagamento para liberar os ingressos. Assim que o provedor confirmar, eles aparecem automaticamente em Minha Conta."}
           </p>
 
@@ -1427,7 +1433,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
             <div className="rounded-lg bg-brand-950/70 p-4" aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
               <strong className="mt-2 block text-white">
-                {approved ? "Pagamento aprovado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
+                {approved ? "Pagamento aprovado" : expired ? "Pix expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
               </strong>
               {pending && (
                 <span className="mt-2 flex items-center gap-2 text-xs font-semibold text-brand-300">
@@ -1452,6 +1458,11 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
           )}
 
           <div className="mt-8 flex flex-wrap gap-3">
+            {expired && (
+              <Link href={`/checkout/${draft.sessionId}/pagamento`} className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
+                Gerar novo Pix
+              </Link>
+            )}
             <Link href="/conta/ingressos" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
               Ver meus ingressos
             </Link>

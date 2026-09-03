@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const paymentService = require("../backend/services/paymentService");
 
 const secret = "webhook-test-secret";
+assert.equal(paymentService.mercadoPagoPixExpirationMs(), 30 * 60 * 1000);
 const requestId = "2066ca19-c6f1-498a-be75-1923005edd06";
 const timestamp = "1787607418";
 const dataId = "ORDTST01M0TV8Z1ZVPCCF62Q01BVRNZX";
