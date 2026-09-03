@@ -15,6 +15,7 @@ test-results/
 .codex-tmp/
 .next-codex/
 artifacts/
+desktop/windows/packages/
 
 .env
 .env.*

@@ -2,16 +2,17 @@
 
 Documentação atualizada da plataforma pública, checkout, Clube Cine Cruzeiro e painel administrativo.
 
-Última revisão: 31 de agosto de 2026.
+Última revisão: 3 de setembro de 2026.
 
 ## 1. Visão geral
 
 O Cine Cruzeiro é uma plataforma full-stack para venda de ingressos, operação de bilheteria, programação de filmes, bomboniere, assinaturas recorrentes e relacionamento com clientes de um cinema de rua.
 
-O produto possui duas experiências integradas:
+O produto possui três experiências integradas:
 
 - site público responsivo, voltado principalmente para compras pelo celular;
-- painel administrativo para programação, vendas, validação, catálogo, usuários, marketing e integrações.
+- painel administrativo para programação, vendas, validação, catálogo, usuários, marketing e integrações;
+- aplicativo Windows em C++ para operar o mesmo painel, com sessão persistente, câmera, impressão e atualizações em tempo real.
 
 Produção:
 
@@ -40,6 +41,7 @@ Produção:
 | Eventos privados | Formulário envia solicitação e confirmação automática |
 | TMDB | Importação assistida de dados de filmes |
 | Admin | RBAC, auditoria e módulos operacionais |
+| Desktop Windows | Aplicativo C++20/Win32 com WebView2 conectado ao painel de produção |
 
 Não fazem parte da arquitetura ativa:
 
@@ -51,7 +53,7 @@ Não fazem parte da arquitetura ativa:
 ## 3. Arquitetura
 
 ```text
-Navegador
+Navegador ou aplicativo desktop C++/WebView2
   |
   | HTTPS /projects/cinecruzeiro
   | WSS   /projects/cinecruzeiro/api/realtime/seats
@@ -101,6 +103,17 @@ O frontend nunca é fonte de verdade para preço, disponibilidade, pagamento, ti
 
 O Admin utiliza HTML, CSS e JavaScript próprios servidos pelo backend. Essa decisão mantém o painel operacional independente do bundle público e permite interfaces densas para uso diário.
 
+### Aplicativo desktop Windows
+
+- C++20 e API Win32;
+- Microsoft Edge WebView2;
+- perfil local persistente e isolado;
+- mesma autenticação, 2FA, RBAC e interface do painel web;
+- câmera, uploads, downloads, impressão e WebSockets;
+- servidor de produção configurável por argumento ou variável de ambiente.
+
+O código e as instruções de compilação ficam em [`desktop/windows`](desktop/windows/README.md). O aplicativo usa o painel publicado como fonte única da interface e das regras, portanto recebe as atualizações do Admin sem exigir uma nova compilação.
+
 ## 5. Estrutura principal
 
 ```text
@@ -118,6 +131,12 @@ O Admin utiliza HTML, CSS e JavaScript próprios servidos pelo backend. Essa dec
 |   |   |-- integrationConfigService.js
 |   |   `-- paymentService.js
 |   `-- server.js
+|-- desktop/
+|   `-- windows/
+|       |-- src/
+|       |-- CineCruzeiroDesktop.sln
+|       |-- CineCruzeiroDesktop.vcxproj
+|       `-- build.ps1
 |-- public/
 |   `-- images/
 |-- scripts/
