@@ -6,6 +6,8 @@ const root = path.resolve(__dirname, "..");
 const main = fs.readFileSync(path.join(root, "desktop/windows/src/main.cpp"), "utf8");
 const project = fs.readFileSync(path.join(root, "desktop/windows/CineCruzeiroDesktop.vcxproj"), "utf8");
 const packages = fs.readFileSync(path.join(root, "desktop/windows/packages.config"), "utf8");
+const server = fs.readFileSync(path.join(root, "backend/server.js"), "utf8");
+const updateManifest = fs.readFileSync(path.join(root, "backend/public/downloads/desktop/latest.ini"), "utf8");
 
 assert.match(main, /CreateCoreWebView2EnvironmentWithOptions/);
 assert.match(main, /CINE_CRUZEIRO_ADMIN_URL/);
@@ -23,5 +25,9 @@ assert.match(project, /Microsoft\.Web\.WebView2\.targets/);
 assert.match(project, /setupapi\.lib/);
 assert.match(project, /bcrypt\.lib/);
 assert.match(packages, /Microsoft\.Web\.WebView2/);
+assert.match(server, /serveDesktopUpdate/);
+assert.match(server, /\/api\/desktop\/update\//);
+assert.match(updateManifest, /version=1\.1\.0/);
+assert.match(updateManifest, /api\/desktop\/update\/1\.1\.0\/CineCruzeiroDesktop\.exe/);
 
 console.log("Desktop shell structure tests passed.");

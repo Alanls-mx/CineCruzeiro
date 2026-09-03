@@ -70,7 +70,7 @@ O diagnóstico técnico de inicialização e conexão fica em `%LOCALAPPDATA%\Ci
 
 ## Atualizações
 
-O aplicativo consulta `downloads/desktop/latest.ini` ao iniciar e a cada seis horas. Quando existe uma versão mais recente, baixa o executável e o `WebView2Loader.dll` para o perfil local, confere os hashes SHA-256 do manifesto e avisa o operador. A instalação só começa após confirmação; o aplicativo fecha, troca os dois arquivos e reabre na nova versão.
+O aplicativo consulta `/api/desktop/update/latest.ini` ao iniciar e a cada seis horas. Quando existe uma versão mais recente, baixa o executável e o `WebView2Loader.dll` para o perfil local, confere os hashes SHA-256 do manifesto e avisa o operador. A instalação só começa após confirmação; o aplicativo fecha, troca os dois arquivos e reabre na nova versão.
 
 Para compilar e publicar os arquivos de uma versão no diretório público do backend:
 

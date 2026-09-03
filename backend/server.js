@@ -7143,6 +7143,29 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
+async function serveDesktopUpdate(res, pathname) {
+  const updateRoot = path.join(PUBLIC_DIR, "downloads", "desktop");
+  const relativePath = pathname.replace(/^\/api\/desktop\/update\/?/, "");
+  const filePath = path.normalize(path.join(updateRoot, relativePath));
+  if (!relativePath || !filePath.startsWith(updateRoot)) {
+    sendJson(res, 404, { error: "Atualização não encontrada" });
+    return;
+  }
+
+  try {
+    const file = await fs.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, {
+      ...securityHeaders(),
+      "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
+      "Cache-Control": relativePath === "latest.ini" ? "no-store" : "public, max-age=31536000, immutable"
+    });
+    res.end(file);
+  } catch {
+    sendJson(res, 404, { error: "Atualização não encontrada" });
+  }
+}
+
 function mercadoPagoReferenceMatches(payment, externalReference) {
   const received = String(externalReference || "");
   if (!received) return true;
@@ -7231,6 +7254,11 @@ async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
     sendNoContent(res);
+    return;
+  }
+
+  if (pathname.startsWith("/api/desktop/update/") && method === "GET") {
+    await serveDesktopUpdate(res, pathname);
     return;
   }
 
