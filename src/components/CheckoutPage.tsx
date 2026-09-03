@@ -93,6 +93,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [seatMap, setSeatMap] = useState<SessionSeatMap | null>(null);
   const [seatMapStatus, setSeatMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const loadedSeatSessionRef = useRef("");
+  const seatMapRequestRef = useRef(0);
   const found = findSession(content, sessionId);
   const sessionCanCheckout = isSessionCheckoutAvailable(found?.session);
   const availableTicketTypes = useMemo(
@@ -134,17 +135,26 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   const activeSessionId = found?.session.id || "";
   const refreshSeatMap = useCallback(async () => {
-    if (!activeSessionId) return;
+    const ownerToken = draft?.seatHoldToken || "";
+    if (
+      !activeSessionId
+      || hydratedSessionId !== activeSessionId
+      || draft?.sessionId !== activeSessionId
+      || (!ownerToken && !isValidPaymentResult(draft.paymentResult))
+    ) return;
+    const requestId = ++seatMapRequestRef.current;
     setSeatMapStatus("loading");
     try {
-      const next = await fetchSessionSeatMap(activeSessionId, draft?.seatHoldToken || "");
+      const next = await fetchSessionSeatMap(activeSessionId, ownerToken);
+      if (requestId !== seatMapRequestRef.current) return;
       setSeatMap(next);
       setSeatMapStatus("ready");
     } catch {
+      if (requestId !== seatMapRequestRef.current) return;
       setSeatMap(null);
       setSeatMapStatus("error");
     }
-  }, [activeSessionId, draft?.seatHoldToken]);
+  }, [activeSessionId, draft, hydratedSessionId]);
 
   const updateDraft = useCallback((patch: Partial<StoredCheckoutDraft>) => {
     if (!found) return;

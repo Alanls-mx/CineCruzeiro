@@ -94,6 +94,30 @@ async function startPixCheckout(page, email, { concession = false } = {}) {
   await expect(page.getByAltText("QR Code para pagamento via Pix")).toBeVisible({ timeout: 10000 });
 }
 
+test("mantém as poltronas reservadas ao avançar até o pagamento", async ({ page }) => {
+  const seatMapRequests = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/sessions/sessao-poltronas-e2e/seats")) {
+      seatMapRequests.push(request.url());
+    }
+  });
+
+  await page.goto("/checkout/sessao-poltronas-e2e");
+  await expect(page.getByRole("heading", { name: "Filme Poltronas E2E" })).toBeVisible();
+  const seat = page.getByRole("button", { name: /^A4,/ });
+  await seat.click();
+  await expect(seat).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("link", { name: "Continuar para Extras" }).click();
+  await expect(page.getByRole("heading", { name: "Bomboniere" })).toBeVisible();
+  await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
+
+  await expect(page).toHaveURL(/\/checkout\/sessao-poltronas-e2e\/pagamento$/);
+  await expect(page.getByRole("heading", { name: "Dados do visitante" })).toBeVisible();
+  await expect(page.getByText("A4", { exact: true })).toBeVisible();
+  expect(seatMapRequests.length).toBeGreaterThan(0);
+  expect(seatMapRequests.every((url) => new URL(url).searchParams.has("ownerToken"))).toBeTruthy();
+});
+
 test("cliente aplica cupom e o backend mantém o desconto no pedido", async ({ page, request }) => {
   const email = "checkout-cupom@e2e.local";
   await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
