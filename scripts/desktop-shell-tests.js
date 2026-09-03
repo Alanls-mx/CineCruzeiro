@@ -27,7 +27,7 @@ assert.match(project, /bcrypt\.lib/);
 assert.match(packages, /Microsoft\.Web\.WebView2/);
 assert.match(server, /serveDesktopUpdate/);
 assert.match(server, /\/api\/desktop\/update\//);
-assert.match(updateManifest, /version=1\.1\.0/);
-assert.match(updateManifest, /api\/desktop\/update\/1\.1\.0\/CineCruzeiroDesktop\.exe/);
+assert.match(updateManifest, /version=1\.1\.1/);
+assert.match(updateManifest, /api\/desktop\/update\/1\.1\.1\/CineCruzeiroDesktop\.exe/);
 
 console.log("Desktop shell structure tests passed.");

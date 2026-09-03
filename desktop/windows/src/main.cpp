@@ -30,7 +30,7 @@ namespace {
 
 constexpr wchar_t kWindowClass[] = L"CineCruzeiroDesktopWindow";
 constexpr wchar_t kWindowTitle[] = L"Painel Cine Cruzeiro";
-constexpr wchar_t kAppVersion[] = L"1.1.0";
+constexpr wchar_t kAppVersion[] = L"1.1.1";
 constexpr wchar_t kDefaultAdminUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/admin";
 constexpr wchar_t kUpdateManifestUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/api/desktop/update/latest.ini";
 constexpr UINT_PTR kReconnectTimer = 1;
@@ -281,8 +281,14 @@ constexpr wchar_t kDesktopBridgeScript[] = LR"JS(
     if (document.getElementById('cine-desktop-tools')) return;
     const style = document.createElement('style');
     style.textContent = `
-      #cine-desktop-tools{position:fixed;right:14px;top:12px;z-index:2147483646;display:flex;gap:7px;font-family:"Segoe UI",sans-serif}
-      .cine-desktop-button{height:34px;padding:0 12px;border:1px solid #2b3a53;border-radius:7px;background:#172235;color:#f3f6fb;font:650 12px "Segoe UI",sans-serif;cursor:pointer;box-shadow:0 6px 20px #0005}
+      #cine-desktop-tools{position:relative;z-index:2147483646;display:block;font-family:"Segoe UI",sans-serif;flex:0 0 auto}
+      #cine-desktop-tools.cine-desktop-floating{position:fixed;right:14px;bottom:14px}
+      .cine-desktop-trigger{display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid #2b3a53;border-radius:7px;background:#172235;color:#f3f6fb;cursor:pointer;box-shadow:0 6px 20px #0005}
+      .cine-desktop-trigger svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .cine-desktop-menu{position:absolute;right:0;top:calc(100% + 8px);display:grid;min-width:190px;padding:6px;border:1px solid #2b3a53;border-radius:7px;background:#0d1420;box-shadow:0 16px 45px #000a}
+      #cine-desktop-tools.cine-desktop-floating .cine-desktop-menu{top:auto;bottom:calc(100% + 8px)}
+      .cine-desktop-menu[hidden]{display:none!important}.cine-desktop-menu .cine-desktop-button{width:100%;justify-content:flex-start;box-shadow:none;border-color:transparent;background:transparent}
+      .cine-desktop-button{display:flex;align-items:center;height:34px;padding:0 12px;border:1px solid #2b3a53;border-radius:7px;background:#172235;color:#f3f6fb;font:650 12px "Segoe UI",sans-serif;cursor:pointer;box-shadow:0 6px 20px #0005}
       .cine-desktop-button:hover{border-color:#4d8dff;background:#1d2c43}.cine-desktop-button:focus-visible{outline:2px solid #f5c518;outline-offset:2px}
       #cine-desktop-update-ready{background:#f5c518;color:#050914;border-color:#f5c518;display:none}
       #cine-device-backdrop{position:fixed;inset:0;z-index:2147483647;display:none;place-items:center;background:#03060dcc;padding:24px;font-family:"Segoe UI",sans-serif}
@@ -290,14 +296,23 @@ constexpr wchar_t kDesktopBridgeScript[] = LR"JS(
       .cine-device-head{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;padding:20px 22px;background:#0d1420;border-bottom:1px solid #233047}.cine-device-head h2{font-size:20px;margin:0}
       .cine-device-content{padding:22px;display:grid;gap:18px}.cine-device-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.cine-device-stat{padding:12px;background:#172235;border-radius:7px}.cine-device-stat b{display:block;font-size:18px;color:#f5c518}.cine-device-stat span{font-size:11px;color:#9aa8bd}
       .cine-device-group{padding-top:14px;border-top:1px solid #233047}.cine-device-group h3{font-size:12px;text-transform:uppercase;color:#9aa8bd;margin:0 0 8px}.cine-device-group ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}.cine-device-group li{padding:9px 11px;background:#101a29;border-radius:6px;font-size:13px}.cine-device-empty{color:#9aa8bd;font-size:13px}
-      @media(max-width:700px){#cine-desktop-tools{right:8px;top:8px}.cine-desktop-button{padding:0 9px}.cine-device-summary{grid-template-columns:1fr}}
+      @media(max-width:700px){#cine-desktop-tools.cine-desktop-floating{right:8px;bottom:8px}.cine-device-summary{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
+)JS";
+
+constexpr wchar_t kDesktopBridgeScriptActions[] = LR"JS(
     const tools = document.createElement('div'); tools.id = 'cine-desktop-tools';
+    const trigger = document.createElement('button'); trigger.className='cine-desktop-trigger'; trigger.type='button'; trigger.title='Opções do aplicativo'; trigger.setAttribute('aria-label','Abrir opções do aplicativo'); trigger.setAttribute('aria-expanded','false'); trigger.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>';
+    const menu = document.createElement('div'); menu.className='cine-desktop-menu'; menu.hidden=true;
     const devices = document.createElement('button'); devices.className='cine-desktop-button'; devices.textContent='Dispositivos'; devices.title='Identificar impressoras, câmeras e portas conectadas'; devices.onclick=()=>chrome.webview.postMessage('discover_components');
     const fullscreen = document.createElement('button'); fullscreen.className='cine-desktop-button'; fullscreen.textContent='Tela cheia'; fullscreen.title='Alternar tela cheia (F11)'; fullscreen.onclick=()=>chrome.webview.postMessage('toggle_fullscreen');
     const update = document.createElement('button'); update.id='cine-desktop-update-ready'; update.className='cine-desktop-button'; update.textContent='Atualização pronta'; update.onclick=()=>chrome.webview.postMessage('install_update');
-    tools.append(devices, fullscreen, update); document.body.appendChild(tools);
+    menu.append(devices, fullscreen, update); tools.append(trigger, menu);
+    const topbarActions=document.querySelector('.topbar-actions');
+    if(topbarActions)topbarActions.insertBefore(tools,document.getElementById('logoutButton'));else{tools.classList.add('cine-desktop-floating');document.body.appendChild(tools)}
+    trigger.onclick=()=>{menu.hidden=!menu.hidden;trigger.setAttribute('aria-expanded',String(!menu.hidden))};
+    document.addEventListener('click',event=>{if(!tools.contains(event.target)){menu.hidden=true;trigger.setAttribute('aria-expanded','false')}});
     const backdrop=document.createElement('div'); backdrop.id='cine-device-backdrop'; backdrop.setAttribute('role','dialog'); backdrop.setAttribute('aria-modal','true'); backdrop.setAttribute('aria-label','Dispositivos deste computador');
     backdrop.innerHTML='<section id="cine-device-dialog"><header class="cine-device-head"><h2>Dispositivos deste computador</h2><button class="cine-desktop-button" type="button">Fechar</button></header><div class="cine-device-content"><p class="cine-device-empty">Identificando componentes...</p></div></section>';
     backdrop.querySelector('button').onclick=()=>backdrop.style.display='none'; backdrop.onclick=e=>{if(e.target===backdrop)backdrop.style.display='none'}; document.body.appendChild(backdrop);
@@ -305,7 +320,7 @@ constexpr wchar_t kDesktopBridgeScript[] = LR"JS(
   const list=(title,values)=>{const section=document.createElement('section');section.className='cine-device-group';const h=document.createElement('h3');h.textContent=title;section.appendChild(h);if(!values.length){const p=document.createElement('p');p.className='cine-device-empty';p.textContent='Nenhum dispositivo identificado';section.appendChild(p);return section}const ul=document.createElement('ul');values.forEach(value=>{const li=document.createElement('li');li.textContent=value;ul.appendChild(li)});section.appendChild(ul);return section};
   chrome.webview.addEventListener('message',({data})=>{
     ensure();
-    if(data?.type==='desktop.fullscreen') document.querySelector('#cine-desktop-tools button:nth-child(2)').textContent=data.active?'Sair da tela cheia':'Tela cheia';
+    if(data?.type==='desktop.fullscreen') document.querySelector('#cine-desktop-tools .cine-desktop-menu button:nth-child(2)').textContent=data.active?'Sair da tela cheia':'Tela cheia';
     if(data?.type==='desktop.update'&&data.ready){const button=document.getElementById('cine-desktop-update-ready');button.style.display='block';button.textContent=`Atualizar para ${data.version}`}
     if(data?.type==='desktop.components'){
       const p=data.payload, backdrop=document.getElementById('cine-device-backdrop'), content=backdrop.querySelector('.cine-device-content');content.replaceChildren();
@@ -396,7 +411,8 @@ class DesktopWindow {
             (key == VK_F11 || (key == VK_ESCAPE && fullscreen_))) { args->put_Handled(TRUE); ToggleFullscreen(); }
         return S_OK;
       }).Get(), &acceleratorToken_);
-    webView_->AddScriptToExecuteOnDocumentCreated(kDesktopBridgeScript, nullptr);
+    const std::wstring desktopBridgeScript = std::wstring(kDesktopBridgeScript) + kDesktopBridgeScriptActions;
+    webView_->AddScriptToExecuteOnDocumentCreated(desktopBridgeScript.c_str(), nullptr);
 
     webView_->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
       [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args)->HRESULT {

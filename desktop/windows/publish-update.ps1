@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "1.1.0",
+  [string]$Version = "1.1.1",
   [string]$Notes = "Tela cheia, atualização automática e identificação de dispositivos locais."
 )
 
