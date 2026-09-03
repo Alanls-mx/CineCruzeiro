@@ -22,6 +22,7 @@ type CheckoutPaymentResult = {
     couponCode?: string;
     couponDiscount?: number;
     clubBenefits?: ClubBenefitsPreviewResult["benefits"];
+    clubCreditSummary?: NonNullable<ClubBenefitsPreviewResult["creditSummary"]>;
   };
   payment?: { id?: string; status?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string } | null;
   tickets?: Array<{ code: string }>;
@@ -122,6 +123,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     ? confirmedTotal
     : appliedClubBenefitsPreview?.total ?? couponPreview?.total ?? total;
   const summaryClubBenefits = confirmationOrder?.clubBenefits || appliedClubBenefitsPreview?.benefits || null;
+  const summaryClubCredits = confirmationOrder?.clubCreditSummary
+    || (draft?.useClubCredits ? appliedClubBenefitsPreview?.creditSummary : null)
+    || null;
   const couponBasis = JSON.stringify({
     sessionId: found?.session.id || "",
     tickets: draft?.ticketQuantities || {},
@@ -137,6 +141,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     concessions: draft?.concessionQuantities || {},
     couponCode: couponPreview?.coupon.code || "",
     requested: clubBenefitsRequested,
+    useClubCredits: draft?.useClubCredits === true,
   });
   const requiredSeatCount = draft ? generatedTicketCount(draft, availableTicketTypes) : 0;
   const selectedSeatIds = draft?.selectedSeatIds || [];
@@ -525,6 +530,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         .filter(([, quantity]) => Number(quantity) > 0)
         .map(([id, quantity]) => ({ id, quantity: Number(quantity) })),
       couponCode: couponPreview?.coupon.code || "",
+      useClubCredits: draft.useClubCredits === true,
     })
       .then((preview) => {
         if (!cancelled) setClubBenefitsPreview(preview);
@@ -754,7 +760,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             />
           )}
         </section>
-        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} clubBenefits={summaryClubBenefits} clubBenefitsLoading={step === "pagamento" && clubBenefitsRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
+        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} clubBenefits={summaryClubBenefits} clubCreditSummary={summaryClubCredits} clubBenefitsLoading={step === "pagamento" && clubBenefitsRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
       <MobileCheckoutBar
         draft={draft}
@@ -1123,7 +1129,6 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   }, [draft.couponCode]);
   const activeClub = activeClubSubscription(clubSubscriptions);
   const requestedTickets = generatedTicketCount(draft, ticketTypes);
-  const selectedExtras = Object.values(draft.concessionQuantities || {}).reduce((sum, qty) => sum + Number(qty || 0), 0);
   const clubCredits = Number(activeClub?.creditsRemaining || activeClub?.creditsAvailable || 0);
   const plan = activeClub?.plan;
   const couponCanStack = !couponPreview || couponPreview.coupon.allowsClubStacking;
@@ -1131,13 +1136,9 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   const clubCreditsEnabled = couponCanStack && draft.useClubCredits === true;
   const selectedTicketPurchases = selectedTicketItems(draft, ticketTypes);
   const ticketSubtotal = selectedTicketPurchases.reduce((sum, item) => sum + Number(ticketTypes.find((type) => type.id === item.id)?.price || 0) * item.quantity, 0);
-  const estimatedTicketDiscount = Number(clubBenefitsPreview?.benefits.ticketDiscount || 0);
-  const estimatedCreditBase = Math.max(0, ticketSubtotal - estimatedTicketDiscount);
-  const referenceValue = Number(plan?.creditReferenceValue || 0);
-  const estimatedCredit = clubCreditsEnabled
-    ? Math.min(estimatedCreditBase, referenceValue > 0 ? referenceValue * requestedTickets : estimatedCreditBase)
-    : 0;
-  const estimatedPayable = Math.max(0, total - estimatedCredit);
+  const creditSummary = clubCreditsEnabled ? clubBenefitsPreview?.creditSummary : null;
+  const estimatedCredit = Number(creditSummary?.totalAmount || 0);
+  const estimatedPayable = total;
   const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
@@ -1249,10 +1250,10 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
           <div className="mt-6">
             <div className="rounded-lg bg-emerald-400/10 p-5">
               <h3 className="text-base font-black text-emerald-200">Pedido integralmente coberto</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-300">O cupom reduziu o total de {money(baseTotal)} para zero. Confirme para emitir os ingressos sem abrir uma cobrança.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{clubCreditsEnabled ? "Os créditos do Clube cobriram integralmente os ingressos selecionados." : `O cupom reduziu o total de ${money(baseTotal)} para zero.`} Confirme para emitir os ingressos sem abrir uma cobrança.</p>
             </div>
-            <button type="button" onClick={() => void onSubmit()} disabled={loading} className="mt-4 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
-              {loading ? "Confirmando..." : "Finalizar pedido"}
+            <button type="button" onClick={() => void (clubCreditsEnabled ? onClubCredit() : onSubmit())} disabled={loading || clubLoading} className="mt-4 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
+              {loading || clubLoading ? "Confirmando..." : clubCreditsEnabled ? "Confirmar com créditos do Clube" : "Finalizar pedido"}
             </button>
           </div>
         )}
@@ -1290,15 +1291,16 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
             {clubCreditsEnabled && (
               <div className="mt-3 space-y-2 bg-slate-950/60 p-4 text-sm tabular-nums">
                 <div className="flex justify-between gap-4"><span>Ingresso(s)</span><strong>{money(ticketSubtotal)}</strong></div>
+                {creditSummary?.items.map((item) => (
+                  <div key={item.ticketTypeId} className="flex justify-between gap-4 text-slate-300">
+                    <span>{item.quantity}× {item.ticketTypeName} · {money(item.discountedTotalPrice)} no total</span>
+                    <strong>{money(item.creditAmount)}</strong>
+                  </div>
+                ))}
                 <div className="flex justify-between gap-4 text-emerald-300"><span>Crédito Clube</span><strong>-{money(estimatedCredit)}</strong></div>
                 <div className="flex justify-between gap-4 border-t border-white/10 pt-2"><span>{estimatedPayable > 0 ? "Complemento estimado" : "A pagar"}</span><strong>{money(estimatedPayable)}</strong></div>
                 <p className="pt-1 text-xs text-slate-400">Créditos restantes após confirmação: {Math.max(0, clubCredits - requestedTickets)}.</p>
               </div>
-            )}
-            {clubCreditsEnabled && estimatedPayable <= 0 && selectedExtras === 0 && (
-              <button type="button" onClick={onClubCredit} disabled={clubLoading || loading || clubCredits < requestedTickets} className="mt-3 w-full bg-brand-700 px-7 py-4 text-sm font-black text-white transition hover:bg-brand-600 disabled:opacity-50">
-                {clubLoading ? "Confirmando créditos..." : "Confirmar com créditos do Clube"}
-              </button>
             )}
           </div>
         )}
@@ -1532,7 +1534,7 @@ function activeClubSubscription(subscriptions: AccountSubscription[]) {
   }) || null;
 }
 
-function OrderSummary({ draft, total, baseTotal, couponPreview, clubBenefits, clubBenefitsLoading, selectedConcessions, ticketTypes, seatMap }: { draft: StoredCheckoutDraft; total: number; baseTotal: number; couponPreview: CouponPreviewResult | null; clubBenefits: ClubBenefitsPreviewResult["benefits"] | null; clubBenefitsLoading: boolean; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
+function OrderSummary({ draft, total, baseTotal, couponPreview, clubBenefits, clubCreditSummary, clubBenefitsLoading, selectedConcessions, ticketTypes, seatMap }: { draft: StoredCheckoutDraft; total: number; baseTotal: number; couponPreview: CouponPreviewResult | null; clubBenefits: ClubBenefitsPreviewResult["benefits"] | null; clubCreditSummary: ClubBenefitsPreviewResult["creditSummary"]; clubBenefitsLoading: boolean; selectedConcessions: Array<{ id: string; name: string; price: number }>; ticketTypes: TicketTypeRecord[]; seatMap: SessionSeatMap | null }) {
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat.label]));
   return (
     <aside className="lg:sticky lg:top-28 lg:self-start">
@@ -1584,13 +1586,27 @@ function OrderSummary({ draft, total, baseTotal, couponPreview, clubBenefits, cl
               ))}
             </>
           )}
+          {clubCreditSummary && clubCreditSummary.quantity > 0 && (
+            <div className="space-y-2 border-t border-white/8 pt-3 text-emerald-300">
+              <div className="flex justify-between gap-4 font-bold">
+                <dt>Créditos do Clube</dt>
+                <dd>{clubCreditSummary.quantity} {clubCreditSummary.quantity === 1 ? "crédito" : "créditos"}</dd>
+              </div>
+              {clubCreditSummary.items.map((item) => (
+                <div key={item.ticketTypeId} className="flex justify-between gap-4 pl-3 text-xs leading-5">
+                  <dt>{item.quantity}× {item.ticketTypeName}<span className="block text-slate-400">{money(item.discountedTotalPrice)} neste tipo de ingresso</span></dt>
+                  <dd className="shrink-0">-{money(item.creditAmount)}</dd>
+                </div>
+              ))}
+            </div>
+          )}
           {clubBenefitsLoading && (
             <div className="flex justify-between gap-4 border-t border-white/8 pt-3 text-brand-200" role="status">
               <dt>Benefícios do Clube</dt><dd>Calculando...</dd>
             </div>
           )}
         </dl>
-        {(couponPreview || clubBenefits) && <p className="mt-5 text-xs text-slate-500 line-through">Subtotal {money(baseTotal)}</p>}
+        {(couponPreview || clubBenefits || clubCreditSummary) && <p className="mt-5 text-xs text-slate-500 line-through">Subtotal {money(baseTotal)}</p>}
         <div className="mt-6 flex items-end justify-between border-t border-white/8 pt-5">
           <span className="text-sm font-bold text-slate-400">Total</span>
           <span className="text-3xl font-black text-gold-400">{money(total)}</span>

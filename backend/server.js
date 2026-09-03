@@ -3856,14 +3856,62 @@ function ticketSubtotalForOrder(db, order) {
   return Number((full * Number(session.priceFull || 0) + half * Number(session.priceHalf || 0)).toFixed(2));
 }
 
-function ticketUnitPricesForOrder(order) {
+function ticketUnitsForOrder(order) {
   return (order.ticketItems || []).flatMap((item) => {
     const issuedQuantity = Math.max(1, Number(item.ticketQuantity || Number(item.quantity || 0) * Number(item.bundleQuantity || 1)));
     const totalCents = Math.round(Number(item.quantity || 0) * Number(item.unitPrice || 0) * 100);
     const unitCents = Math.floor(totalCents / issuedQuantity);
     const remainder = totalCents - unitCents * issuedQuantity;
-    return Array.from({ length: issuedQuantity }, (_, index) => (unitCents + (index < remainder ? 1 : 0)) / 100);
+    return Array.from({ length: issuedQuantity }, (_, index) => ({
+      ticketTypeId: String(item.id || ""),
+      ticketTypeName: String(item.name || "Ingresso"),
+      unitPrice: (unitCents + (index < remainder ? 1 : 0)) / 100
+    }));
   });
+}
+
+function ticketUnitPricesForOrder(order) {
+  return ticketUnitsForOrder(order).map((item) => item.unitPrice);
+}
+
+function summarizeClubCreditItems(order, plan, redemptions = null) {
+  const units = ticketUnitsForOrder(order);
+  const discountRate = Math.min(90, Math.max(0, Number(plan?.ticketDiscountPercent || 0))) / 100;
+  const referenceValue = Math.max(0, Number(plan?.creditReferenceValue || 0));
+  const applied = units.map((unit, index) => {
+    const discountedPrice = Number((unit.unitPrice * (1 - discountRate)).toFixed(2));
+    const redemption = redemptions?.[index];
+    const creditAmount = Number(redemption?.creditAmount ?? Math.min(discountedPrice, referenceValue > 0 ? referenceValue : discountedPrice));
+    return {
+      ...unit,
+      discountedPrice,
+      creditAmount: Number(creditAmount.toFixed(2)),
+      additionalPaymentAmount: Number((redemption?.additionalPaymentAmount ?? Math.max(0, discountedPrice - creditAmount)).toFixed(2))
+    };
+  });
+  const grouped = new Map();
+  applied.forEach((item) => {
+    const key = `${item.ticketTypeId}:${item.ticketTypeName}`;
+    const current = grouped.get(key) || {
+      ticketTypeId: item.ticketTypeId,
+      ticketTypeName: item.ticketTypeName,
+      quantity: 0,
+      discountedUnitPrice: item.discountedPrice,
+      discountedTotalPrice: 0,
+      creditAmount: 0,
+      additionalPaymentAmount: 0
+    };
+    current.quantity += 1;
+    current.discountedTotalPrice = Number((current.discountedTotalPrice + item.discountedPrice).toFixed(2));
+    current.creditAmount = Number((current.creditAmount + item.creditAmount).toFixed(2));
+    current.additionalPaymentAmount = Number((current.additionalPaymentAmount + item.additionalPaymentAmount).toFixed(2));
+    grouped.set(key, current);
+  });
+  return {
+    quantity: applied.length,
+    totalAmount: Number(applied.reduce((sum, item) => sum + item.creditAmount, 0).toFixed(2)),
+    items: [...grouped.values()]
+  };
 }
 
 function assertClubPlanEligibility(plan, order) {
@@ -3921,6 +3969,7 @@ function reserveClubCreditsForOrder(db, order, user, idempotencyKey) {
   order.clubBenefit = "subscription_credit";
   order.clubCreditQuantity = redemptions.length;
   order.clubCreditsApplied = creditAmount;
+  order.clubCreditSummary = summarizeClubCreditItems(order, plan, redemptions);
   order.additionalPayment = additionalPayment;
   order.clubCreditPending = true;
   order.clubCreditIdempotencyKey = `${idempotencyKey || order.id}:club-credit`;
@@ -9703,10 +9752,15 @@ async function handleApi(req, res, pathname) {
     const pricedOrder = repriceOrderFromCatalog(db, normalizedOrder, { assignSeats: false });
     const subtotal = Number(pricedOrder.totalPrice || 0);
     const { plan } = applyClubPlanBenefits(db, pricedOrder, customerUser);
+    const creditSummary = normalizedOrder.useClubCredits ? summarizeClubCreditItems(pricedOrder, plan) : null;
+    if (creditSummary) {
+      pricedOrder.totalPrice = Math.max(0, Number((Number(pricedOrder.totalPrice || 0) - creditSummary.totalAmount).toFixed(2)));
+    }
     sendJson(res, 200, {
       valid: true,
       plan: { id: plan.id, name: plan.name || "Clube Cine Cruzeiro" },
       benefits: pricedOrder.clubBenefits,
+      creditSummary,
       subtotal,
       total: pricedOrder.totalPrice
     }, { "Cache-Control": "no-store" });

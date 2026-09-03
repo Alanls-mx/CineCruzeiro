@@ -38,10 +38,19 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
   await expect(page.getByText("Subtotal R$ 15,00")).toBeVisible();
   await expect(page.getByRole("complementary").getByText("R$ 13,50", { exact: true })).toBeVisible();
   await page.getByLabel("Usar 1 crédito(s) do Clube").check();
+  const summary = page.getByRole("complementary");
+  await expect(summary.getByText("Créditos do Clube")).toBeVisible();
+  await expect(summary.getByText("1 crédito", { exact: true })).toBeVisible();
+  await expect(summary.getByText("1× Ingresso Inteiro")).toBeVisible();
+  await expect(summary.getByText("R$ 13,50 neste tipo de ingresso")).toBeVisible();
+  await expect(summary.getByText("-R$ 13,50")).toBeVisible();
+  await expect(summary.getByText("R$ 0,00", { exact: true })).toBeVisible();
   await expect(page.getByText("Créditos restantes após confirmação: 1.")).toBeVisible();
   await page.getByRole("button", { name: "Confirmar com créditos do Clube" }).click();
   await expect(page.getByText("Tudo certo com sua compra")).toBeVisible({ timeout: 10000 });
   await expect(page.getByText("Pagamento aprovado")).toBeVisible();
+  await expect(summary.getByText("Créditos do Clube")).toBeVisible();
+  await expect(summary.getByText("1× Ingresso Inteiro")).toBeVisible();
 
   const contentResponse = await request.get(`${BACKEND}/api/admin/content`);
   expect(contentResponse.ok()).toBeTruthy();
@@ -80,15 +89,23 @@ test("mantém benefícios e total do Clube no resumo após gerar o Pix", async (
 
   await page.goto("/checkout/sessao-e2e");
   await page.getByRole("link", { name: "Continuar para Extras" }).click();
+  await page.locator("article").filter({ hasText: "Pipoca E2E" }).getByRole("button", { name: "+" }).click();
   await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
   const summary = page.getByRole("complementary");
   await expect(summary.getByText("Clube · ingressos (10%)")).toBeVisible();
-  await expect(summary.getByText("R$ 13,50", { exact: true })).toBeVisible();
+  await expect(summary.getByText("R$ 21,10", { exact: true })).toBeVisible();
+  await page.getByLabel("Usar 1 crédito(s) do Clube").check();
+  await expect(summary.getByText("Créditos do Clube")).toBeVisible();
+  await expect(summary.getByText("1× Ingresso Inteiro")).toBeVisible();
+  await expect(summary.getByText("R$ 13,50 neste tipo de ingresso")).toBeVisible();
+  await expect(summary.getByText("R$ 7,60", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Pix", exact: true }).click();
   await page.getByRole("button", { name: "Gerar Pix", exact: true }).click();
 
   await expect(page.getByText("Aguardando confirmação")).toBeVisible({ timeout: 10000 });
   await expect(summary.getByText("Clube · ingressos (10%)")).toBeVisible();
-  await expect(summary.getByText("Subtotal R$ 15,00")).toBeVisible();
-  await expect(summary.getByText("R$ 13,50", { exact: true })).toBeVisible();
+  await expect(summary.getByText("Créditos do Clube")).toBeVisible();
+  await expect(summary.getByText("1× Ingresso Inteiro")).toBeVisible();
+  await expect(summary.getByText("Subtotal R$ 23,00")).toBeVisible();
+  await expect(summary.getByText("R$ 7,60", { exact: true })).toBeVisible();
 });
