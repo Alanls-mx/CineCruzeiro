@@ -16,12 +16,14 @@ const outfit = Outfit({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.NODE_ENV === "production" ? "https://lumixengine.com" : "http://localhost:3000");
+const siteOrigin = new URL(siteUrl).origin;
 const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
+const publicUrl = `${siteOrigin}${basePath}`;
 const logoUrl = `${basePath}/images/logo-display.webp`;
 const iconUrl = `${basePath}/images/favicon-64.png`;
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL(siteOrigin),
   title: "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
   description:
     "Compre seus ingressos para o Cine Cruzeiro em 30 segundos via Pix. Sala única com projeção Laser 4K, som Dolby 7.1, pipoca quentinha artesanal e zero filas.",
@@ -38,7 +40,7 @@ export const metadata: Metadata = {
     apple: iconUrl,
   },
   alternates: {
-    canonical: `${basePath || ""}/`,
+    canonical: `${publicUrl}/`,
   },
   robots: {
     index: true,
@@ -47,7 +49,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Cine Cruzeiro | O Cinema do Seu Bairro",
     description: "Sem filas de shopping, pipoca crocante na manteiga e ingressos sem taxas no Pix.",
-    url: `${basePath || ""}/`,
+    url: `${publicUrl}/`,
     type: "website",
     images: [logoUrl],
   },

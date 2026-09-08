@@ -938,7 +938,7 @@ TEST_DATABASE_URL=postgresql://... npm run test:postgres
 
 ### Auditoria defensiva de produção
 
-`npm run audit:security` aponta, por padrão, para `https://lumixengine.com/projects/cinecruzeiro`. A suíte executa somente leituras públicas e simulações anônimas de baixo impacto: autorização de pagamentos, adulteração de preço, acesso indevido a ingressos e pedidos, CORS, headers, cache, exposição de dados, JSON inválido e travessia de caminho. O alvo é limitado ao domínio oficial e a localhost, as requisições são sequenciais e há timeout, intervalo e limite de volume.
+`npm run audit:security` aponta, por padrão, para `https://lumixengine.com/projects/cinecruzeiro`. Em produção, a suíte executa somente leituras públicas e simulações anônimas de baixo impacto: acesso indevido a ingressos e pedidos, CORS, CSP e demais headers, cache, canonical, robots, exposição de dados, JSON inválido e travessia de caminho. Endpoints de Pix e cartão e o teste ativo de rate limit são ignorados no domínio de produção. O alvo é limitado ao domínio oficial e a localhost, as requisições são sequenciais e há timeout, intervalo e limite de volume.
 
 Para auditar a instalação local:
 
@@ -946,7 +946,9 @@ Para auditar a instalação local:
 BASE_URL=http://127.0.0.1:3000 npm run audit:security
 ```
 
-O comando não faz login, não cria conta, não gera pagamento real e não altera registros. Uma falha encerra o processo com código diferente de zero e identifica a proteção que precisa de revisão.
+O comando de produção não faz login, não cria conta, não chama o Mercado Pago, não gera pagamento real e não altera registros. Em localhost, os smoke tests usam contas, sessões e pagamentos falsos isolados para validar adulteração de preço e autorização entre duas contas. Uma falha encerra o processo com código diferente de zero e identifica a proteção que precisa de revisão.
+
+Na troca para um domínio próprio, atualize em conjunto `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_BASE_PATH`, `FRONTEND_URL`, `CORS_ORIGIN`, os redirect URIs do Google e Mercado Pago e as origens do Google Wallet. Cookies e CORS são derivados dessas variáveis; não mantenha o domínio antigo na allowlist depois da virada.
 
 O comando executa:
 

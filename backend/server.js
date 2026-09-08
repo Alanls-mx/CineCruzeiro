@@ -51,7 +51,7 @@ let movieImageMaintenanceRunning = false;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "027_remove_legacy_fiscal_documents.sql";
+const LATEST_SCHEMA_MIGRATION = "028_restore_combo_familia_price.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -362,7 +362,7 @@ function securityHeaders(extra = {}) {
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
-    ...(isProduction() ? { "Strict-Transport-Security": "max-age=15552000; includeSubDomains" } : {}),
+    ...(isProduction() ? { "Strict-Transport-Security": "max-age=31536000; includeSubDomains" } : {}),
     ...extra
   };
 }
@@ -844,7 +844,7 @@ function rateLimit(req, pathname) {
   bucket.count += 1;
   rateBuckets.set(key, bucket);
   return bucket.count > limit
-    ? { code: "RATE_LIMITED", message: "Muitas tentativas em pouco tempo. Aguarde um minuto e tente novamente." }
+    ? { code: "RATE_LIMITED", message: "Muitas tentativas em pouco tempo. Aguarde um minuto e tente novamente.", retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)) }
     : null;
 }
 
@@ -5562,6 +5562,41 @@ function repriceOrderFromCatalog(db, order, options = {}) {
   return options.assignSeats === false ? pricedOrder : assignSeatsToOrder(db, pricedOrder, session);
 }
 
+function assertClientPricingMatches(input, pricedOrder) {
+  const mismatch = (received, expected) => Number.isFinite(received) && Math.abs(received - expected) > 0.009;
+  const providedMoney = (record, keys) => {
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(record || {}, key) || record[key] === "" || record[key] == null) continue;
+      const value = Number(record[key]);
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  };
+  const fail = () => {
+    const error = new Error("Os valores enviados não correspondem ao catálogo atual. Atualize o checkout e tente novamente.");
+    error.statusCode = 409;
+    error.code = "CLIENT_PRICE_MISMATCH";
+    throw error;
+  };
+
+  const totalHint = providedMoney(input, ["total", "totalPrice", "amount"]);
+  if (totalHint !== null && mismatch(totalHint, Number(pricedOrder.totalPrice || 0))) fail();
+
+  const ticketPrices = new Map((pricedOrder.ticketItems || []).map((item) => [String(item.id), Number(item.unitPrice || 0)]));
+  for (const item of Array.isArray(input?.ticketItems) ? input.ticketItems : []) {
+    const id = String(item.id || item.ticketTypeId || "");
+    const priceHint = providedMoney(item, ["unitPrice", "price"]);
+    if (priceHint !== null && (!ticketPrices.has(id) || mismatch(priceHint, ticketPrices.get(id)))) fail();
+  }
+
+  const concessionPrices = new Map((pricedOrder.concessionItems || []).map((item) => [String(item.id), Number(item.unitPrice || 0)]));
+  for (const item of Array.isArray(input?.concessionItems) ? input.concessionItems : []) {
+    const id = String(item.id || "");
+    const priceHint = providedMoney(item, ["unitPrice", "price"]);
+    if (priceHint !== null && (!concessionPrices.has(id) || mismatch(priceHint, concessionPrices.get(id)))) fail();
+  }
+}
+
 function normalizePromotion(input, existing = {}) {
   const title = String(input.title || existing.title || "Promocao").trim();
   const couponCode = String(input.couponCode ?? existing.couponCode ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
@@ -7277,11 +7312,7 @@ async function handleApi(req, res, pathname) {
       ? await checkPostgresReadiness(LATEST_SCHEMA_MIGRATION)
       : { ready: !isProduction(), database: !isProduction(), migrations: !isProduction() };
     sendJson(res, readiness.ready ? 200 : 503, {
-      status: readiness.ready ? (pathname === "/api/health" ? "ok" : "ready") : "not_ready",
-      checks: {
-        database: readiness.database ? "ok" : "unavailable",
-        migrations: readiness.migrations ? "current" : "pending"
-      }
+      status: readiness.ready ? (pathname === "/api/health" ? "ok" : "ready") : "not_ready"
     }, { "Cache-Control": "no-store" });
     return;
   }
@@ -7306,7 +7337,10 @@ async function handleApi(req, res, pathname) {
 
   const limited = rateLimit(req, pathname);
   if (limited) {
-    sendJson(res, 429, { error: limited });
+    sendJson(res, 429, { error: limited }, {
+      "Retry-After": String(limited.retryAfter),
+      "RateLimit-Policy": "30;w=60"
+    });
     return;
   }
 
@@ -9871,7 +9905,8 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para gerar o pagamento por Pix." } });
         return;
       }
-      const normalizedOrder = normalizePaymentOrder(body.order || body);
+      const rawOrder = body.order || body;
+      const normalizedOrder = normalizePaymentOrder(rawOrder);
       normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
       normalizedOrder.customerUserId = customerUser.id;
       normalizedOrder.customerEmail = customerUser.email || "";
@@ -9888,12 +9923,13 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
-      await claimSeatHoldsForOrder(lockedDb, order);
       const pixReservationTtlMs = paymentService.mercadoPagoPixExpirationMs();
       order.reservationExpiresAt = new Date(Date.now() + pixReservationTtlMs).toISOString();
       applyClubPlanBenefits(lockedDb, order, customerUser);
       if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
+      assertClientPricingMatches(rawOrder, order);
       materializeOrderAccounting(lockedDb, order);
+      await claimSeatHoldsForOrder(lockedDb, order);
       if (order.totalPrice <= 0) {
         if (!order.couponId) {
           sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de gerar o Pix." } });
@@ -9964,7 +10000,8 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para pagar com cartão." } });
         return;
       }
-      const normalizedOrder = normalizePaymentOrder(body.order || body);
+      const rawOrder = body.order || body;
+      const normalizedOrder = normalizePaymentOrder(rawOrder);
       normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
       normalizedOrder.customerUserId = customerUser.id;
       normalizedOrder.customerEmail = customerUser.email || "";
@@ -9981,11 +10018,12 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
-      await claimSeatHoldsForOrder(lockedDb, order);
       order.reservationExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
       applyClubPlanBenefits(lockedDb, order, customerUser);
       if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
+      assertClientPricingMatches(rawOrder, order);
       materializeOrderAccounting(lockedDb, order);
+      await claimSeatHoldsForOrder(lockedDb, order);
       if (order.totalPrice <= 0) {
         if (!order.couponId) {
           sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de pagar." } });

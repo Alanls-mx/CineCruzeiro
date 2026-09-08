@@ -108,6 +108,8 @@ console.log(`Modo: ${IS_PRODUCTION ? "produção, leitura e abuso simulado de ba
 test("páginas públicas usam headers defensivos e cache adequado", async () => {
   const home = await request("/");
   assert.equal(home.status, 200);
+  assert.match(header(home, "content-security-policy"), /default-src 'self'/i);
+  assert.match(header(home, "content-security-policy"), /object-src 'none'/i);
   if (IS_PRODUCTION) {
     assert.match(header(home, "x-content-type-options"), /nosniff/i);
     assert.match(header(home, "x-frame-options"), /deny|sameorigin/i);
@@ -116,12 +118,23 @@ test("páginas públicas usam headers defensivos e cache adequado", async () => 
     assert.match(header(home, "cache-control"), /no-store|private/i);
     const hsts = header(home, "strict-transport-security");
     const maxAge = Number(hsts.match(/max-age=(\d+)/i)?.[1] || 0);
-    assert.ok(maxAge >= 15_552_000, `HSTS fraco: ${hsts || "ausente"}`);
+    assert.ok(maxAge >= 31_536_000, `HSTS fraco: ${hsts || "ausente"}`);
+    assert.match(hsts, /includeSubDomains/i);
+    assert.match(home.text, /<link[^>]+rel="canonical"[^>]+href="https:\/\/lumixengine\.com\/projects\/cinecruzeiro\/"/i);
   }
 
   const account = await request("/conta");
   assert.equal(account.status, 200);
+  assert.match(header(account, "cache-control"), /no-store|private|no-cache/i);
+  assert.doesNotMatch(header(account, "cache-control"), /s-maxage/i);
+  assert.doesNotMatch(header(account, "x-nextjs-cache"), /^HIT$/i);
   assert.doesNotMatch(account.text, /passwordHash|twoFactorSecret|customerCpf|customerEmail/i);
+});
+
+test("health público não revela banco ou estado de migrations", async () => {
+  const response = await request("/api/health");
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.json, { status: "ok" });
 });
 
 test("CORS não reflete origem arbitrária com credenciais", async () => {
@@ -146,9 +159,19 @@ test("catálogo público não expõe estoque, contas, pedidos ou segredos", asyn
     assert.equal("reserved" in item, false, `${item.name} expõe reserved`);
     assert.equal("sold" in item, false, `${item.name} expõe sold`);
   }
+  const familyCombo = (response.json?.concessions || []).find((item) => item.id === "combo-familia");
+  if (familyCombo) assert.equal(Number(familyCombo.price), 42, "Combo Família ainda está com preço de teste");
 });
 
-test("pagamento anônimo com preço adulterado não cria cobrança", async () => {
+test("robots exclui áreas privadas da indexação", async () => {
+  const response = await request("/robots.txt");
+  assert.equal(response.status, 200);
+  assert.match(response.text, /Disallow:\s*\/projects\/cinecruzeiro\/admin/i);
+  assert.match(response.text, /Disallow:\s*\/projects\/cinecruzeiro\/api/i);
+  assert.match(response.text, /Disallow:\s*\/projects\/cinecruzeiro\/conta/i);
+});
+
+test("pagamento anônimo com preço adulterado não cria cobrança", { skip: IS_PRODUCTION ? "pagamentos live não são auditados" : false }, async () => {
   const response = await post("/api/payments/pix", {
     method: "pix",
     order: {
@@ -166,7 +189,7 @@ test("pagamento anônimo com preço adulterado não cria cobrança", async () =>
   assert.equal(exposesPaymentArtifact(response.json), false);
 });
 
-test("cartão anônimo não inicia pedido nem devolve dados do provedor", async () => {
+test("cartão anônimo não inicia pedido nem devolve dados do provedor", { skip: IS_PRODUCTION ? "pagamentos live não são auditados" : false }, async () => {
   const response = await post("/api/payments/card", {
     order: { id: `audit-card-${FAKE_ID}`, sessionId: "sessao-inexistente-auditoria", totalPrice: 0.01 },
     cardToken: "token-falso-auditoria",
@@ -210,7 +233,7 @@ test("login usa erro genérico e não expõe stack ou cookies", async () => {
 });
 
 test("origem externa não pode executar mutação autenticável", async () => {
-  const response = await post("/api/payments/pix", { order: { id: "audit-cross-origin" } }, {
+  const response = await post("/api/coupons/preview", { order: { couponCode: "AUDIT" } }, {
     Origin: "https://evil.example",
     "Sec-Fetch-Site": "cross-site",
   });
@@ -219,7 +242,7 @@ test("origem externa não pode executar mutação autenticável", async () => {
 });
 
 test("JSON inválido e rota inexistente não devolvem detalhes internos", async () => {
-  const malformed = await request("/api/payments/pix", {
+  const malformed = await request("/api/auth/login", {
     method: "POST",
     headers: { Origin: TARGET.origin, "Content-Type": "application/json" },
     body: "{json-invalido",
@@ -231,6 +254,16 @@ test("JSON inválido e rota inexistente não devolvem detalhes internos", async 
   const missing = await request(`/api/recurso-inexistente-${FAKE_ID}`);
   assert.equal(missing.status, 404);
   assert.doesNotMatch(missing.text, /node_modules|backend[\\/]server\.js|postgresql:\/\//i);
+});
+
+test("login aplica bloqueio progressivo com Retry-After", { skip: IS_PRODUCTION ? "não provoca rate limit em produção" : false }, async () => {
+  const email = `rate-limit-${Date.now()}@example.invalid`;
+  let response;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    response = await post("/api/auth/login", { email, password: "Senha-invalida-auditoria-2026!" });
+  }
+  assert.equal(response.status, 429);
+  assert.match(header(response, "retry-after"), /^\d+$/);
 });
 
 test("tentativa simples de travessia de caminho não lê arquivos", async () => {

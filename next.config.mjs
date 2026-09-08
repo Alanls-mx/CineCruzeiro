@@ -5,6 +5,33 @@ const configuredBasePath = (
   productionBasePath
 ).replace(/\/+$/, "");
 const configuredDistDir = process.env.NEXT_DIST_DIR || "";
+const publicContentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self' https://accounts.google.com",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' blob: https:",
+  "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://accounts.google.com https://www.googletagmanager.com https://connect.facebook.net",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "connect-src 'self' https: wss:",
+  "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://*.mercadopago.com https://*.mercadolibre.com",
+  "worker-src 'self' blob:",
+  ...(process.env.NODE_ENV === "production" ? ["upgrade-insecure-requests"] : []),
+].join("; ");
+
+const publicSecurityHeaders = [
+  { key: "Content-Security-Policy", value: publicContentSecurityPolicy },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  ...(process.env.NODE_ENV === "production"
+    ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+    : []),
+];
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -28,6 +55,16 @@ const nextConfig = {
   },
   async headers() {
     return [
+      {
+        source: "/:path*",
+        headers: publicSecurityHeaders,
+      },
+      {
+        source: "/conta/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-cache, no-store, max-age=0, must-revalidate" },
+        ],
+      },
       {
         source: "/images/:path*",
         headers: [

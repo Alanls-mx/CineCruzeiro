@@ -25,6 +25,9 @@ async function proxy(request: NextRequest, context: RouteContext) {
     "x-idempotency-key",
     "x-signature",
     "x-request-id",
+    "origin",
+    "sec-fetch-site",
+    "user-agent",
   ].forEach((name) => {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
@@ -60,7 +63,15 @@ async function proxy(request: NextRequest, context: RouteContext) {
 
   const responseHeaders = new Headers();
   const contentType = backendResponse.headers.get("content-type");
-  ["content-type", "location", "content-disposition", "cache-control"].forEach((name) => {
+  [
+    "content-type",
+    "location",
+    "content-disposition",
+    "cache-control",
+    "retry-after",
+    "ratelimit-policy",
+    "x-request-id",
+  ].forEach((name) => {
     const value = backendResponse.headers.get(name);
     if (value) responseHeaders.set(name, value);
   });

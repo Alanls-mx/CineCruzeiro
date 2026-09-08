@@ -324,6 +324,7 @@ async function run() {
     const health = await request("/api/health");
     assert.equal(health.response.status, 200);
     assert.equal(health.payload.status, "ok");
+    assert.equal("checks" in health.payload, false);
     assert.equal("envFilesLoaded" in health.payload, false);
     assert.equal("jwtConfigured" in health.payload, false);
     const liveness = await request("/api/health/live");
@@ -332,6 +333,7 @@ async function run() {
     const readiness = await request("/api/health/ready");
     assert.equal(readiness.response.status, 200);
     assert.equal(readiness.payload.status, "ready");
+    assert.equal("checks" in readiness.payload, false);
     const publicContent = await request("/api/content");
     assert.equal(publicContent.response.status, 200);
     assert.ok((publicContent.payload.concessions || []).every((item) => !("stock" in item) && !("reserved" in item) && !("sold" in item)));
@@ -413,6 +415,24 @@ async function run() {
     });
     assert.equal(anonymousCard.response.status, 401);
     assert.equal(anonymousCard.payload.error.code, "AUTH_REQUIRED");
+
+    for (const [path, extraBody] of [["/api/payments/pix", {}], ["/api/payments/card", { cardToken: "token-teste" }]]) {
+      const tamperedId = `smoke-price-tampering-${path.endsWith("pix") ? "pix" : "card"}-${Date.now()}`;
+      const tampered = await request(path, {
+        method: "POST",
+        headers: jsonHeaders(targetCookie),
+        body: JSON.stringify({
+          ...extraBody,
+          idempotencyKey: tamperedId,
+          order: { ...couponOrder, id: tamperedId, idempotencyKey: tamperedId, total: 0.01, totalPrice: 0.01 }
+        })
+      });
+      assert.equal(tampered.response.status, 409);
+      assert.equal(tampered.payload.error.code, "CLIENT_PRICE_MISMATCH");
+      assert.equal(tampered.payload.qrCode, undefined);
+      assert.equal(tampered.payload.preference_id, undefined);
+      assert.equal(tampered.payload.payment, undefined);
+    }
 
     const couponPreview = await request("/api/coupons/preview", {
       method: "POST",
@@ -1902,6 +1922,15 @@ async function run() {
     assert.equal(accountTickets.payload.archived.some((ticket) => ticket.id === "smoke-expired-history-ticket"), true);
 
     const manualTicket = accountTickets.payload.tickets.find((ticket) => ticket.orderId === boxOfficeSale.payload.order.id);
+    for (const [path, options] of [
+      [`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/download`, { headers: { Cookie: targetCookie } }],
+      [`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/google-wallet`, { method: "POST", headers: jsonHeaders(targetCookie) }],
+      [`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/transfer`, { method: "POST", headers: jsonHeaders(targetCookie), body: JSON.stringify({ email }) }]
+    ]) {
+      const forbiddenTicketAccess = await request(path, options);
+      assert.equal(forbiddenTicketAccess.response.status, 404);
+      assert.equal(forbiddenTicketAccess.payload.error.code, "TICKET_NOT_FOUND");
+    }
     const download = await fetch(`${BASE_URL}/api/me/tickets/${encodeURIComponent(manualTicket.id)}/download`, {
       headers: { Cookie: cookie }
     });
