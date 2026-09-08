@@ -5587,7 +5587,11 @@ function insertCampaignVariable(key) {
 function campaignSafeUrl(value) {
   const raw = String(value || "").trim();
   if (!raw || /^(javascript|data|vbscript):/i.test(raw)) return "";
-  return /^(https?:\/\/|\/)/i.test(raw) ? raw : "";
+  if (/^\/\//.test(raw)) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (!raw.startsWith("/")) return "";
+  const basePath = String(API_BASE || "").replace(/\/$/, "");
+  return basePath && raw !== basePath && !raw.startsWith(`${basePath}/`) ? `${basePath}${raw}` : raw;
 }
 
 function campaignColor(value, fallback) {
