@@ -73,7 +73,9 @@ if [ -f "$NGINX_SITE" ] && ! sudo grep -Fq 'max-age=31536000; includeSubDomains'
   sudo sed -i '/add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;/a\    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;' "$NGINX_SITE"
 fi
 sudo nginx -t
-sudo nginx -s reload
+NGINX_MASTER="$(pgrep -o -x nginx)"
+test -n "$NGINX_MASTER"
+sudo kill -HUP "$NGINX_MASTER"
 
 curl -fsS https://lumixengine.com/projects/cinecruzeiro/api/health/ready >/dev/null
 curl -fsS https://lumixengine.com/projects/cinecruzeiro/filmes >/dev/null
