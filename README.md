@@ -494,9 +494,10 @@ O módulo de Marketing possui uma central de campanhas com fluxo em três etapas
 - usar editor visual, blocos de texto/botão/cupom/divisor ou manter o HTML personalizado existente;
 - personalizar `{{nome}}`, `{{email}}`, `{{codigo_cupom}}`, `{{validade_cupom}}` e `{{link_cupom}}`;
 - selecionar cupons já existentes sem duplicar suas regras de desconto;
+- anexar até cinco arquivos privados por campanha, com validação de tipo e tamanho;
 - configurar nome, logo e rodapé da identidade do cinema para cada envio ou globalmente.
 
-O envio é processado em fila por lotes, com atualização persistida e retomada de campanhas agendadas após reinício do backend. O HTML é sanitizado no backend, os links perigosos são removidos e o layout final usa CSS inline e estrutura compatível com clientes de e-mail. A base permanece em `settings.emailCampaigns` para preservar instalações JSON e PostgreSQL existentes, sem migração destrutiva.
+O envio é processado em fila por lotes, com até duas tentativas controladas por destinatário, atualização persistida, idempotência de criação e retomada de campanhas agendadas após reinício do backend. O HTML é sanitizado no backend, os links perigosos são removidos e o layout final usa CSS inline e estrutura compatível com clientes de e-mail. A base permanece em `settings.emailCampaigns` para preservar instalações JSON e PostgreSQL existentes, sem migração destrutiva.
 
 Regras:
 
