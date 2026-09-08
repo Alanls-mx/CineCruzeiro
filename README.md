@@ -932,8 +932,21 @@ Testes disponíveis:
 ```bash
 npm test
 npm run test:e2e
+npm run audit:security
 TEST_DATABASE_URL=postgresql://... npm run test:postgres
 ```
+
+### Auditoria defensiva de produção
+
+`npm run audit:security` aponta, por padrão, para `https://lumixengine.com/projects/cinecruzeiro`. A suíte executa somente leituras públicas e simulações anônimas de baixo impacto: autorização de pagamentos, adulteração de preço, acesso indevido a ingressos e pedidos, CORS, headers, cache, exposição de dados, JSON inválido e travessia de caminho. O alvo é limitado ao domínio oficial e a localhost, as requisições são sequenciais e há timeout, intervalo e limite de volume.
+
+Para auditar a instalação local:
+
+```bash
+BASE_URL=http://127.0.0.1:3000 npm run audit:security
+```
+
+O comando não faz login, não cria conta, não gera pagamento real e não altera registros. Uma falha encerra o processo com código diferente de zero e identifica a proteção que precisa de revisão.
 
 O comando executa:
 

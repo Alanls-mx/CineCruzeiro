@@ -332,6 +332,9 @@ async function run() {
     const readiness = await request("/api/health/ready");
     assert.equal(readiness.response.status, 200);
     assert.equal(readiness.payload.status, "ready");
+    const publicContent = await request("/api/content");
+    assert.equal(publicContent.response.status, 200);
+    assert.ok((publicContent.payload.concessions || []).every((item) => !("stock" in item) && !("reserved" in item) && !("sold" in item)));
     let maintainedDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const movie = maintainedDb.movies.find((item) => item.id === TEST_MOVIE_ID);

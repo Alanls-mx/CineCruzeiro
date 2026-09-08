@@ -6142,7 +6142,12 @@ function getContent(db, options = {}) {
     },
     rooms: db.rooms,
     ticketTypes: db.ticketTypes,
-    concessions: (db.concessions || []).map((item) => assetRecord(item, ["imageUrl"])),
+    concessions: (db.concessions || []).map((item) => {
+      const withAsset = assetRecord(item, ["imageUrl"]);
+      if (includePrivate) return withAsset;
+      const { stock, reserved, sold, ...publicItem } = withAsset;
+      return publicItem;
+    }),
     promotions: includePrivate
       ? (db.promotions || []).map((item) => ({ ...assetRecord(item, ["imageUrl"]), ...couponUsageSummary(db, item) }))
       : (db.promotions || []).filter((item) => !item.couponCode).map(({ couponCode, usageLimit, perCustomerLimit, ...item }) => assetRecord(item, ["imageUrl"])),
