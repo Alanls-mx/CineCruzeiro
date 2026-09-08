@@ -1,4 +1,5 @@
 const nodemailer = require("nodemailer");
+const fs = require("fs/promises");
 const integrationConfigService = require("./integrationConfigService");
 const { brazilianDate } = require("../utils/dateFormat");
 
@@ -54,13 +55,18 @@ async function sendSmtp(db, message) {
   return true;
 }
 
-function webhookAttachments(message = {}) {
-  return (message.attachments || []).map((attachment) => ({
-    filename: attachment.filename,
-    contentType: attachment.contentType || "application/octet-stream",
-    contentBase64: Buffer.isBuffer(attachment.content)
-      ? attachment.content.toString("base64")
-      : Buffer.from(String(attachment.content || ""), "utf8").toString("base64")
+async function webhookAttachments(message = {}) {
+  return Promise.all((message.attachments || []).map(async (attachment) => {
+    const content = attachment.path
+      ? await fs.readFile(attachment.path).catch(() => Buffer.alloc(0))
+      : Buffer.isBuffer(attachment.content)
+        ? attachment.content
+        : Buffer.from(String(attachment.content || ""), "utf8");
+    return {
+      filename: attachment.filename,
+      contentType: attachment.contentType || "application/octet-stream",
+      contentBase64: content.toString("base64")
+    };
   }));
 }
 
@@ -87,7 +93,7 @@ async function sendWebhook(db, message, event = "email.transactional", data = {}
         subject: message.subject,
         html: message.html,
         text: message.text,
-        attachments: webhookAttachments(message),
+        attachments: await webhookAttachments(message),
         data
       })
     }).catch(() => null);
@@ -123,8 +129,15 @@ async function verifySmtp(db) {
 }
 
 function button(label, url, secondary = false) {
-  if (!url) return "";
-  return `<a href="${htmlEscape(url)}" style="display:inline-block;max-width:100%;box-sizing:border-box;background:${secondary ? "#172554" : "#facc15"};color:${secondary ? "#eff6ff" : "#020617"};padding:13px 16px;border-radius:8px;text-decoration:none;font-weight:900;line-height:1.2;margin:6px 8px 6px 0;word-break:break-word">${htmlEscape(label)}</a>`;
+  const safeUrl = safeLink(url);
+  if (!safeUrl) return "";
+  return `<a href="${htmlEscape(safeUrl)}" style="display:inline-block;max-width:100%;box-sizing:border-box;background:${secondary ? "#172554" : "#facc15"};color:${secondary ? "#eff6ff" : "#020617"};padding:13px 16px;border-radius:8px;text-decoration:none;font-weight:900;line-height:1.2;margin:6px 8px 6px 0;word-break:break-word">${htmlEscape(label)}</a>`;
+}
+
+function safeLink(value) {
+  const raw = String(value || "").trim();
+  if (!raw || /^(javascript|data|vbscript):/i.test(raw)) return "";
+  return /^(https?:|mailto:|tel:|\/)/i.test(raw) ? raw : "";
 }
 
 function absoluteUrl(value, siteUrl = "") {
@@ -149,23 +162,32 @@ function baseLayout(title, body, options = {}) {
   const unsubscribeFooter = isMarketing && options.unsubscribeUrl
     ? `<br><a href="${htmlEscape(options.unsubscribeUrl)}" style="color:#facc15;text-decoration:underline;text-underline-offset:3px">Não desejo receber mais emails</a>`
     : "";
-  const logo = options.logoUrl
-    ? `<img src="${htmlEscape(options.logoUrl)}" width="126" alt="Cine Cruzeiro" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px">`
-    : `<strong style="display:block;color:#facc15;font-size:12px;letter-spacing:.18em;text-transform:uppercase">Cine Cruzeiro</strong>`;
+  const brand = options.brand || {};
+  const brandName = String(brand.name || "Cine Cruzeiro").trim().slice(0, 80);
+  const tagline = String(brand.tagline || "Cinema de rua, ingresso digital e atendimento de bairro.").trim().slice(0, 180);
+  const logoUrl = options.logoUrl || brand.logoUrl;
+  const logo = logoUrl
+    ? `<img src="${htmlEscape(logoUrl)}" width="126" alt="${htmlEscape(brandName)}" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px">`
+    : `<strong style="display:block;color:#facc15;font-size:12px;letter-spacing:.18em;text-transform:uppercase">${htmlEscape(brandName)}</strong>`;
+  const footer = String(brand.footer || "Mensagem automática do Cine Cruzeiro. Se você não reconhece esta ação, entre em contato com o cinema.").trim().slice(0, 400);
+  const socialLinks = Array.isArray(brand.socialLinks) ? brand.socialLinks.filter((link) => safeLink(link?.url)).slice(0, 5) : [];
+  const socialFooter = socialLinks.length
+    ? `<br><span style="display:inline-block;margin-top:6px">${socialLinks.map((link) => `<a href="${htmlEscape(safeLink(link.url))}" style="color:#93c5fd;text-decoration:underline;margin-right:10px">${htmlEscape(link.label || "Rede social")}</a>`).join("")}</span>`
+    : "";
   return `
     ${options.preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${htmlEscape(options.preheader)}</div>` : ""}
     <div style="margin:0;background:#060a12;padding:18px;font-family:'Segoe UI',Helvetica,sans-serif;color:#f8fafc;box-sizing:border-box;width:100%">
       <div style="max-width:680px;width:100%;margin:0 auto;box-sizing:border-box">
         <div style="padding:8px 0 18px">
           ${logo}
-          <span style="display:block;margin-top:6px;color:#93c5fd;font-size:13px">Cinema de rua, ingresso digital e atendimento de bairro.</span>
+          <span style="display:block;margin-top:6px;color:#93c5fd;font-size:13px">${htmlEscape(tagline)}</span>
         </div>
         <div style="background:#0d1728;padding:22px;border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.34);box-sizing:border-box;overflow-wrap:break-word">
           ${options.kicker ? `<p style="margin:0 0 10px;color:#60a5fa;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase">${htmlEscape(options.kicker)}</p>` : ""}
           <h1 style="margin:0 0 16px;font-size:26px;line-height:1.15;color:#fff;word-break:break-word">${htmlEscape(title)}</h1>
           <div style="font-size:15px;line-height:1.65;color:#dbeafe;overflow-wrap:break-word">${body}</div>
         </div>
-        <p style="margin:18px 0 0;color:#93a4bd;font-size:12px;line-height:1.6">Mensagem automática do Cine Cruzeiro. Se você não reconhece esta ação, entre em contato com o cinema.${unsubscribeFooter}</p>
+        <p style="margin:18px 0 0;color:#93a4bd;font-size:12px;line-height:1.6">${htmlEscape(footer)}${socialFooter}${unsubscribeFooter}</p>
       </div>
     </div>`;
 }
@@ -175,7 +197,18 @@ function sanitizeCampaignHtml(value) {
     .replace(/<(script|iframe|object|embed|form)[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
     .replace(/<(script|iframe|object|embed|form)[^>]*\/?>/gi, "")
     .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/(href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\2/gi, '$1="#"');
+    .replace(/(href|src)\s*=\s*(["'])\s*(javascript|data|vbscript):[\s\S]*?\2/gi, '$1="#"');
+}
+
+function interpolateCampaign(value, recipient = {}) {
+  const variables = {
+    nome: recipient.name || "cliente",
+    email: recipient.email || "",
+    codigo_cupom: recipient.couponCode || "",
+    validade_cupom: recipient.couponExpiresAt || "",
+    link_cupom: recipient.couponUrl || ""
+  };
+  return String(value || "").replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, key) => htmlEscape(variables[String(key).toLowerCase()] ?? ""));
 }
 
 function extrasSummary(items = []) {
@@ -369,9 +402,13 @@ async function sendPromotionCampaign(db, input = {}) {
   if (!recipients.length) return { sent: 0, failed: 0 };
   let sent = 0;
   let failed = 0;
-  for (const recipient of recipients) {
+  const batchSize = Math.max(1, Math.min(25, Number(input.batchSize || 10)));
+  const delayMs = Math.max(0, Math.min(5000, Number(input.delayMs || 80)));
+  const retryAttempts = Math.max(1, Math.min(3, Number(input.retryAttempts || 2)));
+  for (let index = 0; index < recipients.length; index += 1) {
+    const recipient = recipients[index];
     try {
-      const personalizedHtml = String(input.html || "").replace(/\{\{\s*nome\s*\}\}/gi, htmlEscape(recipient.name || "cliente"));
+      const personalizedHtml = interpolateCampaign(input.html || "", recipient);
       const campaignBody = input.mode === "html"
         ? sanitizeCampaignHtml(personalizedHtml)
         : `
@@ -379,19 +416,46 @@ async function sendPromotionCampaign(db, input = {}) {
           <p>${htmlEscape(input.message).replace(/\n/g, "<br>")}</p>
           ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl)}</p>` : ""}
         `;
-      const ok = await sendTransactional(db, {
+      const message = {
         to: recipient.email,
         subject: input.subject,
-        html: baseLayout(input.headline || input.subject, campaignBody, { kicker: "Promoção", preheader: input.preheader, unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl }),
-        text: `${input.message}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`
-      }, "email.promotion", { campaignSubject: input.subject });
+        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand }),
+        text: interpolateCampaign(`${input.message}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient),
+        attachments: input.attachments || []
+      };
+      let ok = false;
+      for (let attempt = 0; attempt < retryAttempts && !ok; attempt += 1) {
+        ok = await sendTransactional(db, message, "email.promotion", { campaignSubject: input.subject });
+        if (!ok && attempt + 1 < retryAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(2000, 150 * (attempt + 1))));
+        }
+      }
       sent += ok ? 1 : 0;
       failed += ok ? 0 : 1;
+      input.onProgress?.({ index: index + 1, total: recipients.length, sent, failed });
     } catch {
       failed += 1;
+      input.onProgress?.({ index: index + 1, total: recipients.length, sent, failed });
+    }
+    if ((index + 1) % batchSize === 0 && index + 1 < recipients.length && delayMs) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
   return { sent, failed };
+}
+
+async function sendPromotionTest(db, input = {}) {
+  return sendPromotionCampaign(db, {
+    ...input,
+    recipients: [{
+      email: input.to,
+      name: input.name || "administrador",
+      unsubscribeUrl: "",
+      couponCode: input.couponCode || "",
+      couponExpiresAt: input.couponExpiresAt || "",
+      couponUrl: input.couponUrl || ""
+    }]
+  });
 }
 
 async function sendIntegrationTest(db, to) {
@@ -419,9 +483,13 @@ module.exports = {
   sendTicketTransfer,
   sendTicketDelivery,
   sendPromotionCampaign,
+  sendPromotionTest,
   _test: {
     baseLayout,
     ticketCard,
-    absoluteUrl
+    absoluteUrl,
+    sanitizeCampaignHtml,
+    interpolateCampaign,
+    safeLink
   }
 };

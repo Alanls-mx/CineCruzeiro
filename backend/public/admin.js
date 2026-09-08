@@ -129,7 +129,14 @@ let state = {
   logsSearchTimer: null,
   twoFactorStatus: null,
   twoFactorSetup: null,
-  twoFactorRecoveryCodes: []
+  twoFactorRecoveryCodes: [],
+  emailCampaignStep: "audience",
+  emailCampaignRecipients: [],
+  emailCampaignSelectedIds: new Set(),
+  emailCampaignAttachments: [],
+  emailCampaignPreviewMode: "desktop",
+  emailCampaignDraftId: "",
+  emailCampaignIdempotencyKey: `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`
 };
 
 const $ = (id) => document.getElementById(id);
@@ -615,8 +622,10 @@ function renderAll() {
   renderOrders();
   renderPaymentsCenter();
   renderConcessions();
-  renderMarketingOverview();
-  renderPromotions();
+    renderMarketingOverview();
+    renderEmailCampaignControls();
+    renderEmailCampaigns();
+    renderPromotions();
   renderAds();
   renderUsers();
   renderCustomerUsers();
@@ -5482,32 +5491,66 @@ async function saveClubVisualSettings(event) {
   }
 }
 
-async function sendEmailCampaign(event) {
-  event.preventDefault();
-  const resultNode = $("emailCampaignResult");
-  if (resultNode) resultNode.textContent = "Enviando...";
-  try {
-    const result = await api("/api/admin/email/promotions", {
-      method: "POST",
-      body: JSON.stringify({
-        subject: $("emailCampaignSubject").value,
-        mode: $("emailCampaignMode").value,
-        preheader: $("emailCampaignPreheader").value,
-        headline: $("emailCampaignHeadline").value,
-        message: $("emailCampaignMessage").value,
-        html: $("emailCampaignHtml").value,
-        ctaLabel: $("emailCampaignCtaLabel").value,
-        ctaUrl: $("emailCampaignCtaUrl").value
-      })
-    });
-    if (resultNode) resultNode.textContent = `${result.sent || 0} enviados, ${result.failed || 0} falharam.`;
-    $("emailCampaignForm").reset();
-    syncEmailCampaignMode();
-    showSuccess("Campanha enviada", `${result.sent || 0} cliente(s) receberam o e-mail.`);
-  } catch (error) {
-    if (resultNode) resultNode.textContent = "";
-    showToast(error.message, "error");
+function emailCampaignPayload(action = "draft") {
+  const brand = {
+    name: $("emailBrandName")?.value.trim() || "Cine Cruzeiro",
+    logoUrl: $("emailBrandLogoUrl")?.value.trim() || "",
+    footer: $("emailBrandFooter")?.value.trim() || ""
+  };
+  return {
+    id: state.emailCampaignDraftId || undefined,
+    idempotencyKey: state.emailCampaignIdempotencyKey,
+    action,
+    subject: $("emailCampaignSubject")?.value.trim() || "",
+    mode: $("emailCampaignMode")?.value || "visual",
+    preheader: $("emailCampaignPreheader")?.value.trim() || "",
+    headline: $("emailCampaignHeadline")?.value.trim() || "",
+    message: $("emailCampaignMessage")?.value || "",
+    html: $("emailCampaignHtml")?.value || "",
+    ctaLabel: $("emailCampaignCtaLabel")?.value.trim() || "",
+    ctaUrl: $("emailCampaignCtaUrl")?.value.trim() || "",
+    recipientMode: $("emailCampaignAudience")?.value || "all",
+    customerIds: [...state.emailCampaignSelectedIds],
+    recipientSearch: $("emailCampaignRecipientSearch")?.value.trim() || "",
+    couponId: $("emailCampaignCoupon")?.value || "",
+    attachments: state.emailCampaignAttachments,
+    scheduleAt: $("emailCampaignScheduleAt")?.value ? new Date($("emailCampaignScheduleAt").value).toISOString() : "",
+    brand
+  };
+}
+
+async function refreshEmailCampaignRecipients() {
+  const payload = emailCampaignPayload();
+  const result = await api("/api/admin/email/campaigns/preview", { method: "POST", body: JSON.stringify(payload) });
+  state.emailCampaignRecipients = state.content?.emailCustomers || [];
+  $("emailCampaignRecipientCount").textContent = `${result.count || 0} destinatário(s) elegível(is)`;
+  $("emailCampaignReviewRecipients").textContent = String(result.count || 0);
+  const list = $("emailCampaignRecipients");
+  const manual = payload.recipientMode === "selected";
+  list.hidden = !manual;
+  if (manual) {
+    const term = normalizedSearchText(payload.recipientSearch);
+    const customers = state.emailCampaignRecipients.filter((item) => !term || normalizedSearchText(`${item.name} ${item.email}`).includes(term));
+    list.innerHTML = customers.length ? customers.map((item) => `
+      <label class="campaign-recipient-row"><input type="checkbox" data-campaign-recipient="${escapeHtml(item.id)}" ${state.emailCampaignSelectedIds.has(item.id) ? "checked" : ""} /><span><strong>${escapeHtml(item.name || "Cliente")}</strong><small>${escapeHtml(item.email)}</small></span></label>
+    `).join("") : `<div class="empty-state"><strong>Nenhum cliente encontrado</strong><span>Clientes descadastrados ficam fora da seleção.</span></div>`;
   }
+  renderEmailCampaignPreview();
+}
+
+function renderEmailCampaignPreview() {
+  const preview = $("emailCampaignPreview");
+  if (!preview) return;
+  const payload = emailCampaignPayload();
+  const title = escapeHtml(payload.headline || payload.subject || "Prévia da campanha");
+  const message = payload.mode === "html"
+    ? payload.html.replace(/<script[\s\S]*?<\/script>/gi, "")
+    : `<p>Olá, <strong>cliente</strong>.</p><p>${escapeHtml(payload.message || "Sua mensagem aparecerá aqui.").replace(/\n/g, "<br>")}</p>${payload.ctaUrl ? `<button class="campaign-preview-cta">${escapeHtml(payload.ctaLabel || "Ver promoção")}</button>` : ""}`;
+  preview.innerHTML = `<div class="campaign-email-mock ${state.emailCampaignPreviewMode === "mobile" ? "mobile" : ""}"><div class="campaign-email-brand">${payload.brand.logoUrl ? `<img src="${escapeHtml(payload.brand.logoUrl)}" alt="" />` : `<strong>${escapeHtml(payload.brand.name)}</strong>`}<small>${escapeHtml(payload.brand.footer || "Cinema de rua, ingresso digital e atendimento de bairro.")}</small></div><div class="campaign-email-body"><span>PROGRAMAÇÃO</span><h2>${title}</h2><div>${message}</div></div><small class="campaign-email-unsubscribe">Não desejo receber mais emails</small></div>`;
+  $("emailCampaignReviewSubject").textContent = payload.subject || "Ainda não definido";
+  $("emailCampaignReviewSchedule").textContent = payload.scheduleAt ? new Date(payload.scheduleAt).toLocaleString("pt-BR") : "Enviar agora";
+  const attachments = $("emailCampaignAttachments");
+  if (attachments) attachments.innerHTML = state.emailCampaignAttachments.length ? state.emailCampaignAttachments.map((item) => `<span class="campaign-attachment-chip">${escapeHtml(item.filename)} <button type="button" data-campaign-remove-attachment="${escapeHtml(item.id)}" aria-label="Remover anexo">×</button></span>`).join("") : `<span class="helper-text">Nenhum anexo adicionado.</span>`;
 }
 
 function syncEmailCampaignMode() {
@@ -5516,6 +5559,78 @@ function syncEmailCampaignMode() {
   document.querySelectorAll("[data-email-campaign-html]").forEach((node) => { node.hidden = !htmlMode; });
   if ($("emailCampaignMessage")) $("emailCampaignMessage").required = !htmlMode;
   if ($("emailCampaignHtml")) $("emailCampaignHtml").required = htmlMode;
+  renderEmailCampaignPreview();
+}
+
+function setEmailCampaignStep(step) {
+  state.emailCampaignStep = step;
+  document.querySelectorAll("[data-campaign-step]").forEach((button) => button.classList.toggle("active", button.dataset.campaignStep === step));
+  document.querySelectorAll("[data-campaign-step-panel]").forEach((panel) => {
+    const active = panel.dataset.campaignStepPanel === step;
+    panel.hidden = !active;
+    panel.classList.toggle("active", active);
+  });
+  $("emailCampaignBackButton").hidden = step === "audience";
+  $("emailCampaignNextButton").hidden = step === "review";
+  $("emailCampaignSubmitButton").hidden = step !== "review";
+  if (step === "review") void refreshEmailCampaignRecipients();
+}
+
+async function saveEmailCampaign(event, action = "draft") {
+  event?.preventDefault?.();
+  const resultNode = $("emailCampaignResult");
+  try {
+    const payload = emailCampaignPayload(action);
+    const path = state.emailCampaignDraftId ? `/api/admin/email/campaigns/${encodeURIComponent(state.emailCampaignDraftId)}` : "/api/admin/email/campaigns";
+    const result = await api(path, { method: state.emailCampaignDraftId ? "PUT" : "POST", body: JSON.stringify(payload) });
+    state.emailCampaignDraftId = result.campaign?.id || state.emailCampaignDraftId;
+    if (action === "send") {
+      state.emailCampaignDraftId = "";
+      state.emailCampaignIdempotencyKey = `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+    if (resultNode) resultNode.textContent = action === "send" ? "Campanha colocada na fila de envio." : "Rascunho salvo.";
+    await loadContent({ silent: true });
+    showToast(action === "send" ? "Campanha enfileirada" : "Rascunho salvo");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function sendEmailCampaign(event) {
+  event.preventDefault();
+  await saveEmailCampaign(event, "send");
+}
+
+async function sendEmailCampaignTest() {
+  try {
+    const to = $("emailCampaignTestEmail").value.trim();
+    if (!to) throw new Error("Informe o endereço que receberá o teste.");
+    await api("/api/admin/email/campaigns/test", { method: "POST", body: JSON.stringify({ ...emailCampaignPayload(), to }) });
+    showToast("E-mail de teste enviado");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+function renderEmailCampaigns() {
+  const history = $("emailCampaignHistory");
+  if (!history) return;
+  const campaigns = state.content?.emailCampaigns || [];
+  history.innerHTML = campaigns.length ? campaigns.map((item) => `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(item.status === "sent" ? `${item.sent || 0} enviados` : `${item.customerCount || 0} destinatários`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button type="button" class="ghost-button" data-campaign-duplicate="${escapeHtml(item.id)}">Duplicar</button></div></div>`).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
+}
+
+function renderEmailCampaignControls() {
+  const coupon = $("emailCampaignCoupon");
+  if (coupon) {
+    const current = coupon.value;
+    coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.couponCode)} · ${escapeHtml(item.title)}</option>`).join("")}`;
+    coupon.value = current;
+  }
+  const branding = state.content?.settings?.emailBranding || {};
+  if ($("emailBrandName") && !$("emailBrandName").value) $("emailBrandName").value = branding.name || "Cine Cruzeiro";
+  if ($("emailBrandLogoUrl") && !$('emailBrandLogoUrl').value) $("emailBrandLogoUrl").value = branding.logoUrl || `${API_BASE}/images/favicon-email.png`;
+  if ($("emailBrandFooter") && !$('emailBrandFooter').value) $("emailBrandFooter").value = branding.footer || "Mensagem automática do Cine Cruzeiro.";
+  void refreshEmailCampaignRecipients().catch(() => null);
 }
 
 function renderPromotions() {
@@ -7381,6 +7496,72 @@ function bindEvents() {
   $("clubTransparentImages")?.addEventListener("change", syncTransparentImagePreviews);
   $("emailCampaignForm")?.addEventListener("submit", sendEmailCampaign);
   $("emailCampaignMode")?.addEventListener("change", syncEmailCampaignMode);
+  $("emailCampaignAudience")?.addEventListener("change", () => void refreshEmailCampaignRecipients());
+  $("emailCampaignRecipientSearch")?.addEventListener("input", () => void refreshEmailCampaignRecipients());
+  $("emailCampaignRecipients")?.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-campaign-recipient]");
+    if (!input) return;
+    if (input.checked) state.emailCampaignSelectedIds.add(input.dataset.campaignRecipient);
+    else state.emailCampaignSelectedIds.delete(input.dataset.campaignRecipient);
+    void refreshEmailCampaignRecipients();
+  });
+  $("emailCampaignDraftButton")?.addEventListener("click", () => void saveEmailCampaign(null, "draft"));
+  $("emailCampaignTestButton")?.addEventListener("click", sendEmailCampaignTest);
+  $("emailCampaignNextButton")?.addEventListener("click", () => setEmailCampaignStep(state.emailCampaignStep === "audience" ? "content" : "review"));
+  $("emailCampaignBackButton")?.addEventListener("click", () => setEmailCampaignStep(state.emailCampaignStep === "review" ? "content" : "audience"));
+  document.querySelectorAll("[data-campaign-step]").forEach((button) => button.addEventListener("click", () => setEmailCampaignStep(button.dataset.campaignStep)));
+  document.querySelectorAll("[data-campaign-preview]").forEach((button) => button.addEventListener("click", () => {
+    state.emailCampaignPreviewMode = button.dataset.campaignPreview;
+    document.querySelectorAll("[data-campaign-preview]").forEach((item) => item.classList.toggle("active", item === button));
+    renderEmailCampaignPreview();
+  }));
+  document.querySelectorAll("[data-campaign-block]").forEach((button) => button.addEventListener("click", () => {
+    const snippets = {
+      paragraph: "\n\n{{nome}}, escreva aqui a mensagem principal da campanha.",
+      button: "\n\n[CTA] Ver programação: https://lumixengine.com/projects/cinecruzeiro",
+      coupon: "\n\nCupom: {{codigo_cupom}} · válido até {{validade_cupom}}",
+      divider: "\n\n────────────\n"
+    };
+    const message = $("emailCampaignMessage");
+    if (message) { message.value += snippets[button.dataset.campaignBlock] || ""; message.dispatchEvent(new Event("input", { bubbles: true })); }
+  }));
+  ["emailCampaignSubject", "emailCampaignPreheader", "emailCampaignHeadline", "emailCampaignMessage", "emailCampaignHtml", "emailCampaignCtaLabel", "emailCampaignCtaUrl", "emailCampaignScheduleAt", "emailBrandName", "emailBrandLogoUrl", "emailBrandFooter"].forEach((id) => $(id)?.addEventListener("input", renderEmailCampaignPreview));
+  $("emailCampaignCoupon")?.addEventListener("change", renderEmailCampaignPreview);
+  $("emailCampaignAttachmentUpload")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (state.emailCampaignAttachments.length >= 5) { showToast("Limite de 5 anexos por campanha.", "error"); return; }
+    try {
+      const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+      const result = await api("/api/admin/email/attachments", { method: "POST", body: JSON.stringify({ filename: file.name, contentType: file.type, data }) });
+      state.emailCampaignAttachments.push(result.attachment);
+      renderEmailCampaignPreview();
+    } catch (error) { showToast(error.message, "error"); }
+  });
+  $("emailCampaignAttachments")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-campaign-remove-attachment]");
+    if (!button) return;
+    state.emailCampaignAttachments = state.emailCampaignAttachments.filter((item) => item.id !== button.dataset.campaignRemoveAttachment);
+    renderEmailCampaignPreview();
+  });
+  $("emailCampaignHistory")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-campaign-duplicate]");
+    if (!button) return;
+    try {
+      await api(`/api/admin/email/campaigns/${encodeURIComponent(button.dataset.campaignDuplicate)}/duplicate`, { method: "POST" });
+      await loadContent({ silent: true });
+      showToast("Campanha duplicada como rascunho");
+    } catch (error) { showToast(error.message, "error"); }
+  });
+  $("emailBrandSaveButton")?.addEventListener("click", async () => {
+    try {
+      const saved = await api("/api/admin/email/branding", { method: "PUT", body: JSON.stringify({ name: $("emailBrandName").value.trim(), logoUrl: $("emailBrandLogoUrl").value.trim(), footer: $("emailBrandFooter").value.trim() }) });
+      state.content.settings.emailBranding = saved.branding || {};
+      showSuccess("Identidade salva", "A identidade ficará disponível para os próximos envios.");
+      showToast("Alterações salvas.");
+    } catch (error) { showToast(error.message, "error"); }
+  });
   syncEmailCampaignMode();
   [
     ["eventHeroImageUpload", "eventHeroImageUrl", "eventHeroImagePreview", "events/hero", "Prévia da imagem principal", "eventHeroImageClear"],

@@ -1,0 +1,32 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const emailService = require("../backend/services/emailService.js");
+
+test("campanha personaliza variáveis sem permitir HTML no nome", () => {
+  const result = emailService._test.interpolateCampaign("Olá {{nome}} · {{codigo_cupom}}", {
+    name: "<Alan>",
+    couponCode: "CINE20"
+  });
+  assert.equal(result, "Olá &lt;Alan&gt; · CINE20");
+});
+
+test("HTML de campanha remove scripts, eventos e esquemas perigosos", () => {
+  const result = emailService._test.sanitizeCampaignHtml('<script>alert(1)</script><a href="javascript:alert(1)" onclick="x()">Abrir</a>');
+  assert.equal(result.includes("<script"), false);
+  assert.equal(result.includes("onclick"), false);
+  assert.equal(result.includes("javascript:"), false);
+});
+
+test("layout de marketing preserva identidade e descadastro", () => {
+  const result = emailService._test.baseLayout("Oferta", "<p>Conteúdo</p>", {
+    kind: "marketing",
+    unsubscribeUrl: "https://example.com/unsubscribe",
+    brand: { name: "Cine Cruzeiro", footer: "Fale com o cinema." }
+  });
+  assert.match(result, /Fale com o cinema/);
+  assert.match(result, /Não desejo receber mais emails/);
+  assert.match(result, /unsubscribe/);
+});

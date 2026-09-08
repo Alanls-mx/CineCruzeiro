@@ -485,7 +485,18 @@ E-mails transacionais incluem, conforme o evento:
 
 Os layouts transacionais utilizam a identidade do cinema, logo compatível com fundo de e-mail, pôster, dados sincronizados da sessão, resumo do pedido e ações disponíveis. O PDF real do ingresso pode seguir anexado à mensagem.
 
-O módulo de Marketing permite campanhas por template estruturado ou HTML5 personalizado. No modo HTML, o conteúdo é sanitizado e envolvido pelo layout base do Cine Cruzeiro; o placeholder `{{nome}}` personaliza o destinatário. A prévia, assunto, audiência e resultado do envio permanecem no fluxo administrativo.
+O módulo de Marketing possui uma central de campanhas com fluxo em três etapas: destinatários, conteúdo e revisão/envio. É possível:
+
+- criar rascunhos, duplicar o conteúdo no editor e revisar a prévia desktop/mobile;
+- segmentar clientes ativos, clientes com compra aprovada, seleção manual ou toda a base elegível;
+- ver a contagem antes do envio, pesquisar clientes e enviar mensagem de teste;
+- agendar, enfileirar, cancelar e acompanhar campanhas com estados de rascunho, agendada, na fila, enviando, concluída e falha;
+- usar editor visual, blocos de texto/botão/cupom/divisor ou manter o HTML personalizado existente;
+- personalizar `{{nome}}`, `{{email}}`, `{{codigo_cupom}}`, `{{validade_cupom}}` e `{{link_cupom}}`;
+- selecionar cupons já existentes sem duplicar suas regras de desconto;
+- configurar nome, logo e rodapé da identidade do cinema para cada envio ou globalmente.
+
+O envio é processado em fila por lotes, com atualização persistida e retomada de campanhas agendadas após reinício do backend. O HTML é sanitizado no backend, os links perigosos são removidos e o layout final usa CSS inline e estrutura compatível com clientes de e-mail. A base permanece em `settings.emailCampaigns` para preservar instalações JSON e PostgreSQL existentes, sem migração destrutiva.
 
 Regras:
 
@@ -790,7 +801,17 @@ POST /api/admin/2fa/recovery-codes
 GET  /api/admin/dashboard
 GET  /api/admin/content
 GET  /api/admin/integrations
-POST /api/admin/email/promotions
+GET  /api/admin/email/campaigns
+POST /api/admin/email/campaigns
+PUT  /api/admin/email/campaigns/:id
+POST /api/admin/email/campaigns/:id/send
+POST /api/admin/email/campaigns/:id/cancel
+POST /api/admin/email/campaigns/:id/duplicate
+POST /api/admin/email/campaigns/preview
+POST /api/admin/email/campaigns/test
+GET  /api/admin/email/branding
+PUT  /api/admin/email/branding
+POST /api/admin/email/promotions   (compatibilidade, agora enfileira)
 GET  /api/admin/reports/dashboard.csv
 GET  /api/admin/subscription-plans
 POST /api/admin/subscription-plans

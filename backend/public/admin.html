@@ -1258,58 +1258,130 @@
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
-          <form id="emailCampaignForm" class="surface form-grid email-campaign-surface">
-            <div class="form-head">
-              <div>
-                <div class="section-title">Campanha por e-mail</div>
-                <p>Envie promoções para clientes cadastrados com e-mail válido. Configure SMTP em Integrações antes do disparo.</p>
+          <div class="campaign-workspace">
+            <form id="emailCampaignForm" class="surface form-grid email-campaign-surface">
+              <div class="form-head campaign-form-head">
+                <div>
+                  <div class="section-title">Central de campanhas</div>
+                  <p>Crie, revise e envie comunicações respeitando o consentimento de marketing. O SMTP é validado antes do disparo.</p>
+                </div>
+                <span id="emailCampaignStatus" class="campaign-status">Rascunho</span>
               </div>
-            </div>
-            <label>
-              Assunto
-              <input id="emailCampaignSubject" placeholder="Ex.: Semana da pipoca em dobro" required />
-            </label>
-            <div class="field-row">
-              <label>
-                Formato do conteúdo
-                <select id="emailCampaignMode">
-                  <option value="visual">Editor visual</option>
-                  <option value="html">HTML5 personalizado</option>
-                </select>
-              </label>
-              <label>
-                Pré-cabeçalho
-                <input id="emailCampaignPreheader" maxlength="140" placeholder="Ex.: Ingressos promocionais até domingo" />
-              </label>
-            </div>
-            <label>
-              Título em destaque
-              <input id="emailCampaignHeadline" placeholder="Ex.: Cinema em dobro nesta semana" />
-            </label>
-            <label class="full" data-email-campaign-visual>
-              Mensagem
-              <textarea id="emailCampaignMessage" rows="4" placeholder="Escreva uma chamada curta, com benefício claro e prazo da promoção." required></textarea>
-            </label>
-            <label class="full" data-email-campaign-html hidden>
-              HTML5 personalizado
-              <textarea id="emailCampaignHtml" rows="14" spellcheck="false" placeholder="<section style=&quot;padding:24px&quot;>...</section>"></textarea>
-              <span class="helper-text">Crie o conteúdo do zero com HTML5. Logo, estrutura responsiva e cancelamento de marketing são acrescentados automaticamente.</span>
-            </label>
-            <div class="field-row" data-email-campaign-visual>
-              <label>
-                Texto do botão
-                <input id="emailCampaignCtaLabel" placeholder="Ex.: Ver programação" />
-              </label>
-              <label>
-                Link do botão
-                <input id="emailCampaignCtaUrl" placeholder="https://lumixengine.com/projects/cinecruzeiro" />
-              </label>
-            </div>
-            <div class="button-row">
-              <button class="primary-button" type="submit">Enviar campanha</button>
-              <span id="emailCampaignResult" class="helper-text"></span>
-            </div>
-          </form>
+              <div class="campaign-steps" aria-label="Etapas da campanha">
+                <button type="button" class="active" data-campaign-step="audience">1. Destinatários</button>
+                <button type="button" data-campaign-step="content">2. Conteúdo</button>
+                <button type="button" data-campaign-step="review">3. Revisão e envio</button>
+              </div>
+              <section class="campaign-step-panel active" data-campaign-step-panel="audience">
+                <div class="section-title">Para quem esta mensagem vai?</div>
+                <div class="field-row">
+                  <label>Segmento
+                    <select id="emailCampaignAudience">
+                      <option value="all">Todos os clientes com marketing ativo</option>
+                      <option value="active">Clientes ativos</option>
+                      <option value="purchased">Clientes com compras aprovadas</option>
+                      <option value="selected">Seleção manual</option>
+                    </select>
+                  </label>
+                  <label>Buscar cliente
+                    <input id="emailCampaignRecipientSearch" placeholder="Nome ou e-mail" autocomplete="off" />
+                  </label>
+                </div>
+                <div class="campaign-recipient-toolbar">
+                  <strong id="emailCampaignRecipientCount">0 destinatários</strong>
+                  <span class="helper-text">Descadastros são excluídos automaticamente.</span>
+                </div>
+                <div id="emailCampaignRecipients" class="campaign-recipient-list" hidden></div>
+              </section>
+              <section class="campaign-step-panel" data-campaign-step-panel="content" hidden>
+                <div class="field-row">
+                  <label>Assunto
+                    <input id="emailCampaignSubject" placeholder="Ex.: Semana da pipoca em dobro" required />
+                  </label>
+                  <label>Pré-cabeçalho
+                    <input id="emailCampaignPreheader" maxlength="140" placeholder="Ex.: Ingressos promocionais até domingo" />
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label>Formato do conteúdo
+                    <select id="emailCampaignMode">
+                      <option value="visual">Editor visual</option>
+                      <option value="html">HTML personalizado</option>
+                    </select>
+                  </label>
+                  <label>Título em destaque
+                    <input id="emailCampaignHeadline" placeholder="Ex.: Cinema em dobro nesta semana" />
+                  </label>
+                </div>
+                <div class="campaign-block-toolbar" data-email-campaign-visual>
+                  <span>Adicionar bloco</span>
+                  <button type="button" data-campaign-block="paragraph">Texto</button>
+                  <button type="button" data-campaign-block="button">Botão</button>
+                  <button type="button" data-campaign-block="coupon">Cupom</button>
+                  <button type="button" data-campaign-block="divider">Divisor</button>
+                </div>
+                <label class="full" data-email-campaign-visual>Mensagem
+                  <textarea id="emailCampaignMessage" rows="7" placeholder="Escreva uma chamada clara, com benefício e prazo. Use {{nome}} para personalizar." required></textarea>
+                </label>
+                <label class="full" data-email-campaign-html hidden>HTML personalizado
+                  <textarea id="emailCampaignHtml" rows="15" spellcheck="false" placeholder="<section style=&quot;padding:24px;background:#0d1728&quot;>...</section>"></textarea>
+                  <span class="helper-text">O HTML é sanitizado no backend e recebe estrutura de e-mail, identidade e descadastro automaticamente. Variáveis: {{nome}}, {{email}}, {{codigo_cupom}}, {{validade_cupom}}, {{link_cupom}}.</span>
+                </label>
+                <div class="field-row" data-email-campaign-visual>
+                  <label>Texto do botão
+                    <input id="emailCampaignCtaLabel" placeholder="Ex.: Ver programação" />
+                  </label>
+                  <label>Link do botão
+                    <input id="emailCampaignCtaUrl" placeholder="https://lumixengine.com/projects/cinecruzeiro" />
+                  </label>
+                </div>
+                <div class="field-row">
+                  <label>Cupom no e-mail
+                    <select id="emailCampaignCoupon"><option value="">Nenhum cupom</option></select>
+                  </label>
+                  <label>Agendar envio
+                    <input id="emailCampaignScheduleAt" type="datetime-local" />
+                  </label>
+                </div>
+                <label>Anexos opcionais
+                  <input id="emailCampaignAttachmentUpload" type="file" accept="application/pdf,text/plain,text/csv,image/jpeg,image/png,image/webp" />
+                  <span class="helper-text">Até 5 MB por arquivo, 5 anexos por campanha. Os arquivos ficam privados e só são enviados por e-mail.</span>
+                </label>
+                <div id="emailCampaignAttachments" class="campaign-attachments"></div>
+              </section>
+              <section class="campaign-step-panel" data-campaign-step-panel="review" hidden>
+                <div class="campaign-review-grid">
+                  <div><span>Destinatários</span><strong id="emailCampaignReviewRecipients">0</strong></div>
+                  <div><span>Assunto</span><strong id="emailCampaignReviewSubject">Ainda não definido</strong></div>
+                  <div><span>Entrega</span><strong id="emailCampaignReviewSchedule">Enviar agora</strong></div>
+                </div>
+                <label>Enviar mensagem de teste para
+                  <div class="inline-field"><input id="emailCampaignTestEmail" type="email" placeholder="teste@exemplo.com" /><button id="emailCampaignTestButton" class="ghost-button" type="button">Enviar teste</button></div>
+                </label>
+                <div id="emailCampaignResult" class="campaign-result" aria-live="polite"></div>
+              </section>
+              <div class="button-row campaign-actions">
+                <button id="emailCampaignDraftButton" class="ghost-button" type="button">Salvar rascunho</button>
+                <button id="emailCampaignBackButton" class="ghost-button" type="button" hidden>Voltar</button>
+                <button id="emailCampaignNextButton" class="ghost-button" type="button">Continuar</button>
+                <button id="emailCampaignSubmitButton" class="primary-button" type="submit" hidden>Enviar campanha</button>
+              </div>
+            </form>
+            <aside class="surface campaign-preview-surface">
+              <div class="campaign-preview-head"><div class="section-title">Prévia do e-mail</div><div class="preview-switch"><button type="button" class="active" data-campaign-preview="desktop">Desktop</button><button type="button" data-campaign-preview="mobile">Mobile</button></div></div>
+              <div id="emailCampaignPreview" class="campaign-preview-frame"></div>
+              <div class="campaign-brand-settings">
+                <div class="section-title">Identidade deste envio</div>
+                <div class="field-row"><label>Nome exibido<input id="emailBrandName" placeholder="Cine Cruzeiro" /></label><label>Logo URL<input id="emailBrandLogoUrl" placeholder="/images/logo-display.webp" /></label></div>
+                <label>Rodapé<input id="emailBrandFooter" placeholder="Mensagem automática do Cine Cruzeiro." /></label>
+                <button id="emailBrandSaveButton" class="ghost-button" type="button">Salvar identidade</button>
+              </div>
+            </aside>
+          </div>
+          <div class="surface campaign-history-surface">
+            <div class="section-title">Histórico e rascunhos</div>
+            <div id="emailCampaignHistory" class="campaign-history-list"></div>
+          </div>
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:promotions" hidden>

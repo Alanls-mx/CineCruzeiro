@@ -300,6 +300,70 @@ textarea:focus-visible,
   margin-top: var(--sp-14);
 }
 
+.campaign-workspace { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: var(--sp-14); align-items: start; }
+.campaign-workspace .email-campaign-surface { max-width: none; margin: 0; }
+.campaign-form-head { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.campaign-status { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: rgba(96,165,250,.14); color: #bfdbfe; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.campaign-status.sent { color: #6ee7b7; background: rgba(52,211,153,.13); }
+.campaign-status.failed { color: #fda4af; background: rgba(251,113,133,.13); }
+.campaign-status.scheduled { color: #fde68a; background: rgba(250,204,21,.13); }
+.campaign-steps { display: flex; gap: 6px; padding: 4px; margin: 0 0 var(--sp-14); background: #09111f; border-radius: 10px; overflow-x: auto; }
+.campaign-steps button, .preview-switch button { border: 0; background: transparent; color: var(--muted); padding: 9px 12px; border-radius: 7px; font-weight: 800; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.campaign-steps button.active, .preview-switch button.active { color: #f8fafc; background: #1d3354; }
+.campaign-step-panel { display: grid; gap: var(--sp-12); }
+.campaign-recipient-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; background: #09111f; border-radius: 9px; }
+.campaign-recipient-list { max-height: 260px; overflow: auto; border: 1px solid rgba(148,163,184,.15); border-radius: 9px; }
+.campaign-recipient-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid rgba(148,163,184,.1); cursor: pointer; }
+.campaign-recipient-row:last-child { border-bottom: 0; }
+.campaign-recipient-row span { display: grid; gap: 2px; }
+.campaign-recipient-row small { color: var(--muted); }
+.campaign-block-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.campaign-block-toolbar span { color: var(--muted); font-size: 11px; font-weight: 800; margin-right: 4px; }
+.campaign-block-toolbar button { border: 1px solid rgba(148,163,184,.18); color: #cbd5e1; background: #111c2e; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-weight: 700; }
+.campaign-review-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+.campaign-review-grid > div { display: grid; gap: 5px; padding: 12px; background: #09111f; border-radius: 9px; min-width: 0; }
+.campaign-review-grid span { color: var(--muted); font-size: 11px; }
+.campaign-review-grid strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inline-field { display: flex; gap: 8px; }
+.inline-field input { flex: 1; min-width: 0; }
+.campaign-result { color: #93c5fd; font-size: 12px; min-height: 20px; }
+.campaign-attachments { display: flex; flex-wrap: wrap; gap: 7px; min-height: 24px; }
+.campaign-attachment-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 6px 9px; border-radius: 7px; background: #172554; color: #dbeafe; font-size: 11px; }
+.campaign-attachment-chip button { border: 0; background: transparent; color: #fda4af; cursor: pointer; font-size: 16px; line-height: 1; }
+.campaign-preview-surface { position: sticky; top: 18px; min-width: 0; }
+.campaign-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.preview-switch { display: flex; gap: 3px; padding: 3px; background: #09111f; border-radius: 8px; }
+.campaign-preview-frame { min-height: 410px; display: grid; place-items: center; padding: 14px; background: #060a12; border-radius: 10px; overflow: hidden; }
+.campaign-email-mock { width: 100%; max-width: 520px; min-height: 360px; background: #0d1728; border: 1px solid rgba(148,163,184,.14); border-radius: 10px; overflow: hidden; transition: width .2s ease; }
+.campaign-email-mock.mobile { max-width: 300px; }
+.campaign-email-brand { padding: 16px 18px; background: #060a12; display: grid; gap: 7px; }
+.campaign-email-brand img { width: 104px; max-height: 46px; object-fit: contain; object-position: left; }
+.campaign-email-brand strong { color: #facc15; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
+.campaign-email-brand small, .campaign-email-unsubscribe { color: #93a4bd; font-size: 10px; line-height: 1.4; }
+.campaign-email-body { padding: 24px 20px; color: #dbeafe; font-size: 13px; line-height: 1.6; }
+.campaign-email-body > span { color: #60a5fa; font-size: 10px; font-weight: 900; letter-spacing: .14em; }
+.campaign-email-body h2 { color: #fff; font-size: 22px; line-height: 1.15; margin: 8px 0 14px; }
+.campaign-preview-cta { border: 0; background: #facc15; color: #020617; padding: 10px 13px; border-radius: 7px; font-weight: 900; }
+.campaign-email-unsubscribe { display: block; padding: 0 20px 18px; color: #facc15; text-decoration: underline; }
+.campaign-brand-settings { display: grid; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(148,163,184,.13); }
+.campaign-history-surface { margin-top: var(--sp-14); }
+.campaign-history-list { display: grid; gap: 7px; }
+.campaign-history-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; background: #09111f; border-radius: 9px; }
+.campaign-history-row > div { min-width: 0; display: grid; gap: 4px; }
+.campaign-history-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.campaign-history-row small { color: var(--muted); }
+.campaign-history-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+@media (max-width: 940px) {
+  .campaign-workspace { grid-template-columns: 1fr; }
+  .campaign-preview-surface { position: static; }
+}
+@media (max-width: 620px) {
+  .campaign-form-head, .campaign-recipient-toolbar, .campaign-history-row { align-items: flex-start; flex-direction: column; }
+  .campaign-review-grid { grid-template-columns: 1fr; }
+  .inline-field { flex-direction: column; }
+}
+
 .field-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

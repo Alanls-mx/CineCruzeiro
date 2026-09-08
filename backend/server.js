@@ -48,6 +48,7 @@ const memorySeatHolds = new Map();
 let seatRealtimeService = null;
 let jsonMutationQueue = Promise.resolve();
 let movieImageMaintenanceRunning = false;
+const emailCampaignTimers = new Map();
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
@@ -63,6 +64,16 @@ const storageService = createStorageService({
   publicDir: PUBLIC_DIR,
   rootDir: process.env.CINE_UPLOADS_DIR || ""
 });
+const EMAIL_ATTACHMENT_ROOT = path.resolve(process.env.CINE_EMAIL_ATTACHMENTS_DIR || path.join(ROOT, "data", "email-attachments"));
+const EMAIL_ATTACHMENT_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "image/jpeg",
+  "image/png",
+  "image/webp"
+]);
+const EMAIL_ATTACHMENT_MAX_BYTES = Number(process.env.EMAIL_ATTACHMENT_MAX_BYTES || 5 * 1024 * 1024);
 const movieImageService = createMovieImageService({ storageService });
 const goodsFiscalService = new GoodsFiscalService();
 const subscriptionPaymentProvider = new MercadoPagoSubscriptionProvider(paymentService);
@@ -6225,6 +6236,13 @@ function getAdminContent(db, adminUser) {
   const content = getContent(db, { includePrivate: true });
   const isOwner = roleAlias(adminUser?.role) === "owner";
 
+  content.emailCustomers = adminHasPermission(adminUser, "marketing.manage")
+    ? campaignCustomerPool(db).map(({ emailUnsubscribeToken, ...customer }) => customer)
+    : [];
+  content.emailCampaigns = adminHasPermission(adminUser, "marketing.manage")
+    ? (db.emailCampaigns || []).map(publicCampaign)
+    : [];
+
   if (!isOwner) {
     content.users = [];
     content.subscriptionAccountingRules = [];
@@ -6398,6 +6416,195 @@ function orderTicketCount(order) {
 function sessionCapacity(db, session) {
   const room = roomForSession(db, session);
   return Number(room?.capacity || 120);
+}
+
+function campaignStatusLabel(status = "") {
+  return {
+    draft: "Rascunho",
+    scheduled: "Agendada",
+    queued: "Na fila",
+    sending: "Enviando",
+    sent: "Concluída",
+    cancelled: "Cancelada",
+    failed: "Falhou"
+  }[String(status || "")] || "Rascunho";
+}
+
+function campaignCustomerPool(db) {
+  return (db.users || [])
+    .filter((user) => user.role === "customer" && user.active !== false && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(user.email || "")))
+    .map((user) => ({
+      id: user.id,
+      name: user.name || "",
+      email: String(user.email || "").toLowerCase(),
+      emailUnsubscribedAt: user.emailUnsubscribedAt || "",
+      emailUnsubscribeToken: user.emailUnsubscribeToken || "",
+      hasPurchased: (db.orders || []).some((order) => order.customerUserId === user.id && ["paid", "approved"].includes(order.status))
+    }));
+}
+
+function campaignRecipients(db, campaign = {}) {
+  const pool = campaignCustomerPool(db);
+  const mode = campaign.recipientMode || campaign.audience || "all";
+  const selected = new Set((campaign.customerIds || campaign.selectedUserIds || []).map(String));
+  const term = String(campaign.recipientSearch || campaign.search || "").trim().toLowerCase();
+  return pool.filter((user) => {
+    if (user.emailUnsubscribedAt) return false;
+    if (mode === "selected" && !selected.has(String(user.id))) return false;
+    if (mode === "purchased" && !user.hasPurchased) return false;
+    if (mode === "active" && user.emailUnsubscribedAt) return false;
+    if (term && !`${user.name} ${user.email}`.toLowerCase().includes(term)) return false;
+    return true;
+  }).map((user) => ({
+    ...user,
+    unsubscribeUrl: emailUnsubscribeUrlForUser(user)
+  }));
+}
+
+async function storeEmailAttachment(input = {}) {
+  const contentType = String(input.contentType || "").toLowerCase().split(";")[0].trim();
+  if (!EMAIL_ATTACHMENT_TYPES.has(contentType)) {
+    const error = new Error("Tipo de anexo não permitido. Use PDF, TXT, CSV, JPG, PNG ou WebP.");
+    error.statusCode = 415;
+    throw error;
+  }
+  const raw = String(input.data || "");
+  const encoded = raw.includes(",") ? raw.slice(raw.indexOf(",") + 1) : raw;
+  const buffer = Buffer.from(encoded, "base64");
+  if (!buffer.length || buffer.length > EMAIL_ATTACHMENT_MAX_BYTES) {
+    const error = new Error(`O anexo deve ter entre 1 byte e ${Math.round(EMAIL_ATTACHMENT_MAX_BYTES / 1024 / 1024)} MB.`);
+    error.statusCode = 413;
+    throw error;
+  }
+  const safeName = path.basename(String(input.filename || "anexo"))
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .slice(0, 90) || "anexo";
+  await fs.mkdir(EMAIL_ATTACHMENT_ROOT, { recursive: true });
+  const id = `email-anexo-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;
+  const filePath = path.join(EMAIL_ATTACHMENT_ROOT, `${id}-${safeName}`);
+  await fs.writeFile(filePath, buffer, { flag: "wx" });
+  return { id, filename: safeName, contentType, size: buffer.length, path: filePath };
+}
+
+function normalizeCampaignInput(input = {}, existing = {}) {
+  const mode = input.mode === "html" ? "html" : "visual";
+  const status = input.status || existing.status || "draft";
+  return {
+    ...existing,
+    id: existing.id || String(input.id || `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`),
+    idempotencyKey: String(input.idempotencyKey ?? existing.idempotencyKey ?? "").trim().slice(0, 160),
+    subject: String(input.subject ?? existing.subject ?? "").trim().slice(0, 180),
+    mode,
+    preheader: String(input.preheader ?? existing.preheader ?? "").trim().slice(0, 140),
+    headline: String(input.headline ?? existing.headline ?? "").trim().slice(0, 180),
+    message: String(input.message ?? existing.message ?? "").slice(0, 12000),
+    html: String(input.html ?? existing.html ?? "").slice(0, 100000),
+    ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "Ver programação").trim().slice(0, 80),
+    ctaUrl: String(input.ctaUrl ?? existing.ctaUrl ?? "").trim().slice(0, 1000),
+    recipientMode: ["all", "selected", "purchased", "active"].includes(input.recipientMode || existing.recipientMode) ? (input.recipientMode || existing.recipientMode) : "all",
+    customerIds: Array.isArray(input.customerIds) ? input.customerIds.map(String).slice(0, 5000) : (existing.customerIds || []),
+    recipientSearch: String(input.recipientSearch ?? existing.recipientSearch ?? "").trim().slice(0, 160),
+    couponId: String(input.couponId ?? existing.couponId ?? "").trim(),
+    attachments: Array.isArray(input.attachments) ? input.attachments.slice(0, 5).map((item) => ({ id: String(item.id || ""), filename: String(item.filename || "anexo").slice(0, 100), contentType: String(item.contentType || "application/octet-stream"), size: Number(item.size || 0), path: String(item.path || "") })).filter((item) => item.id && item.path) : (existing.attachments || []),
+    scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
+    status,
+    brand: input.brand ?? existing.brand ?? {},
+    createdBy: existing.createdBy || input.createdBy || "",
+    createdAt: existing.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    sent: Number(existing.sent || 0),
+    failed: Number(existing.failed || 0),
+    delivered: Number(existing.delivered || 0),
+    opened: Number(existing.opened || 0),
+    clicked: Number(existing.clicked || 0)
+  };
+}
+
+function publicCampaign(campaign = {}) {
+  const { customerIds, html, message, attachments, ...safe } = campaign;
+  return { ...safe, attachments: (attachments || []).map(({ path, ...item }) => item), customerCount: Number(campaign.recipientCount || campaign.recipients || 0), hasHtml: Boolean(html), hasMessage: Boolean(message) };
+}
+
+function resolveCampaignAttachments(db, attachments = []) {
+  const library = new Map((db.settings?.emailAttachments || []).map((item) => [String(item.id), item]));
+  return (Array.isArray(attachments) ? attachments : []).slice(0, 5).map((item) => {
+    const stored = library.get(String(item.id || ""));
+    return stored ? { ...stored } : item;
+  }).filter((item) => item?.id && item?.path);
+}
+
+async function processEmailCampaign(campaignId) {
+  emailCampaignTimers.delete(campaignId);
+  let campaign;
+  await withCriticalMutation(async () => {
+    const db = await readDb();
+    const item = (db.emailCampaigns || []).find((entry) => entry.id === campaignId);
+    if (!item || !["queued", "scheduled"].includes(item.status) || item.status === "cancelled") return;
+    item.status = "sending";
+    item.startedAt = new Date().toISOString();
+    item.updatedAt = new Date().toISOString();
+    campaign = { ...item };
+    await writeDb(db);
+  });
+  if (!campaign) return;
+
+  const db = await readDb();
+  const recipients = campaignRecipients(db, campaign);
+  if (!recipients.length) {
+    await withCriticalMutation(async () => {
+      const current = await readDb();
+      const item = (current.emailCampaigns || []).find((entry) => entry.id === campaignId);
+      if (!item) return;
+      item.status = "failed";
+      item.error = "Nenhum destinatário elegível com consentimento de marketing.";
+      item.recipientCount = 0;
+      item.updatedAt = new Date().toISOString();
+      await writeDb(current);
+    });
+    return;
+  }
+  const coupon = (db.promotions || []).find((item) => item.id === campaign.couponId);
+  const result = await emailService.sendPromotionCampaign(db, {
+    ...campaign,
+    recipients: recipients.map((recipient) => ({
+      ...recipient,
+      couponCode: coupon?.couponCode || "",
+      couponExpiresAt: coupon?.endsAt ? brazilianDate(coupon.endsAt) : "",
+      couponUrl: campaign.ctaUrl || appFrontendUrl()
+    })),
+    logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
+    brand: campaign.brand || db.settings?.emailBranding || {},
+    attachments: campaign.attachments || [],
+    batchSize: 10,
+    delayMs: 80
+  });
+  await withCriticalMutation(async () => {
+    const current = await readDb();
+    const item = (current.emailCampaigns || []).find((entry) => entry.id === campaignId);
+    if (!item) return;
+    item.status = result.failed ? (result.sent ? "sent" : "failed") : "sent";
+    item.recipientCount = recipients.length;
+    item.sent = result.sent;
+    item.failed = result.failed;
+    item.completedAt = new Date().toISOString();
+    item.updatedAt = new Date().toISOString();
+    await writeDb(current);
+  });
+}
+
+function scheduleEmailCampaign(campaign) {
+  if (!campaign?.id || campaign.status === "cancelled") return;
+  if (emailCampaignTimers.has(campaign.id)) clearTimeout(emailCampaignTimers.get(campaign.id));
+  const delay = campaign.status === "scheduled" && campaign.scheduleAt
+    ? Math.max(0, new Date(campaign.scheduleAt).getTime() - Date.now())
+    : 0;
+  const timer = setTimeout(() => { void processEmailCampaign(campaign.id); }, Math.min(delay, 2147483647));
+  timer.unref?.();
+  emailCampaignTimers.set(campaign.id, timer);
+}
+
+function restoreEmailCampaignSchedules(db) {
+  (db.emailCampaigns || []).filter((campaign) => ["scheduled", "queued"].includes(campaign.status)).forEach(scheduleEmailCampaign);
 }
 
 function sessionAvailabilityStatus(session, sold, capacity) {
@@ -7974,68 +8181,207 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/admin/email/promotions" && method === "POST") {
+  const emailCampaignMatch = pathname.match(/^\/api\/admin\/email\/campaigns\/([^/]+)(?:\/(send|cancel|duplicate))?$/);
+  if (pathname === "/api/admin/email/branding" && method === "GET") {
+    sendJson(res, 200, { branding: db.settings?.emailBranding || {} });
+    return;
+  }
+  if (pathname === "/api/admin/email/branding" && method === "PUT") {
     const body = await readBody(req);
-    const subject = String(body.subject || "").trim();
-    const message = String(body.message || "").trim();
-    const mode = body.mode === "html" ? "html" : "visual";
-    const customHtml = String(body.html || "").trim();
-    if (!subject || (mode === "html" ? !customHtml : !message)) {
-      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: mode === "html" ? "Informe assunto e conteúdo HTML5 da campanha." : "Informe assunto e mensagem da campanha." } });
+    db.settings.emailBranding = {
+      ...(db.settings.emailBranding || {}),
+      name: String(body.name || "Cine Cruzeiro").trim().slice(0, 80),
+      logoUrl: String(body.logoUrl || "").trim().slice(0, 1000),
+      tagline: String(body.tagline || "").trim().slice(0, 180),
+      footer: String(body.footer || "").trim().slice(0, 400),
+      socialLinks: Array.isArray(body.socialLinks) ? body.socialLinks.slice(0, 5).map((item) => ({ label: String(item.label || "").trim().slice(0, 30), url: String(item.url || "").trim().slice(0, 500) })) : (db.settings.emailBranding.socialLinks || [])
+    };
+    await writeDb(db);
+    sendJson(res, 200, { branding: db.settings.emailBranding });
+    return;
+  }
+  if (pathname === "/api/admin/email/attachments" && method === "POST") {
+    const body = await readBody(req);
+    const attachment = await storeEmailAttachment(body);
+    db.settings.emailAttachments ||= [];
+    db.settings.emailAttachments.unshift(attachment);
+    db.settings.emailAttachments = db.settings.emailAttachments.slice(0, 100);
+    await writeDb(db);
+    const { path: privatePath, ...safeAttachment } = attachment;
+    sendJson(res, 201, { attachment: safeAttachment });
+    return;
+  }
+  if (pathname === "/api/admin/email/campaigns" && method === "GET") {
+    sendJson(res, 200, { campaigns: (db.emailCampaigns || []).map(publicCampaign) });
+    return;
+  }
+
+  if (pathname === "/api/admin/email/campaigns/preview" && method === "POST") {
+    const body = await readBody(req);
+    const recipients = campaignRecipients(db, body);
+    sendJson(res, 200, {
+      count: recipients.length,
+      sample: recipients.slice(0, 8).map(({ id, name, email, hasPurchased }) => ({ id, name, email, hasPurchased })),
+      suppressed: campaignCustomerPool(db).length - recipients.length
+    });
+    return;
+  }
+
+  if (pathname === "/api/admin/email/campaigns/test" && method === "POST") {
+    const body = await readBody(req);
+    const to = String(body.to || "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      sendJson(res, 400, { error: { code: "EMAIL_TEST_INVALID", message: "Informe um endereço válido para o teste." } });
       return;
     }
     const emailConfig = integrationConfigService.resolvedConfig(db, "email");
     if (!(emailConfig?.enabled && emailConfig?.configured)) {
-      sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes de enviar campanhas." } });
+      sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes do teste." } });
       return;
     }
-    const recipients = (db.users || [])
-      .filter((user) =>
-        user.active !== false &&
-        user.role === "customer" &&
-        !user.emailUnsubscribedAt &&
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(user.email || ""))
-      )
-      .map((user) => ({
-        email: user.email,
-        name: user.name || "",
-        unsubscribeUrl: emailUnsubscribeUrlForUser(user)
-      }));
-    if (!recipients.length) {
-      sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum cliente com e-mail válido foi encontrado." } });
-      return;
-    }
-    const result = await emailService.sendPromotionCampaign(db, {
-      recipients,
-      subject,
-      mode,
-      preheader: String(body.preheader || "").trim().slice(0, 140),
-      headline: String(body.headline || "").trim(),
-      message,
-      html: customHtml,
-      ctaLabel: String(body.ctaLabel || "Ver promoção").trim(),
-      ctaUrl: String(body.ctaUrl || "").trim(),
-      logoUrl: `${appFrontendUrl()}/images/favicon-email.png`
+    const campaign = normalizeCampaignInput(body, { brand: db.settings?.emailBranding || {} });
+    const result = await emailService.sendPromotionTest(db, {
+      ...campaign,
+      to,
+      logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
+      brand: campaign.brand || db.settings?.emailBranding || {}
     });
+    sendJson(res, result.sent ? 200 : 502, { ok: result.sent > 0, ...result });
+    return;
+  }
+
+  if (pathname === "/api/admin/email/campaigns" && method === "POST") {
+    const body = await readBody(req);
+    body.attachments = resolveCampaignAttachments(db, body.attachments);
+    const campaign = normalizeCampaignInput(body, { brand: body.brand || db.settings?.emailBranding || {} });
+    if (!campaign.subject || (campaign.mode === "html" ? !campaign.html : !campaign.message)) {
+      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: campaign.mode === "html" ? "Informe assunto e conteúdo HTML personalizado." : "Informe assunto e mensagem da campanha." } });
+      return;
+    }
+    const shouldSend = body.action === "send" || body.sendNow === true;
+    const shouldSchedule = Boolean(campaign.scheduleAt);
+    campaign.status = shouldSend ? "queued" : shouldSchedule ? "scheduled" : "draft";
+    campaign.createdBy = req.adminUser?.id || "";
+    campaign.recipientCount = campaignRecipients(db, campaign).length;
+    let persistedCampaign = campaign;
+    let alreadyCreated = false;
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      lockedDb.emailCampaigns ||= [];
+      if (campaign.idempotencyKey) {
+        const duplicate = lockedDb.emailCampaigns.find((item) => item.idempotencyKey === campaign.idempotencyKey);
+        if (duplicate) {
+          persistedCampaign = duplicate;
+          alreadyCreated = true;
+          return;
+        }
+      }
+      lockedDb.emailCampaigns.unshift(campaign);
+      await writeDb(lockedDb);
+    });
+    if (!alreadyCreated && (campaign.status === "queued" || campaign.status === "scheduled")) scheduleEmailCampaign(campaign);
+    sendJson(res, alreadyCreated ? 200 : 201, { campaign: publicCampaign(persistedCampaign), queued: persistedCampaign.status === "queued", idempotent: alreadyCreated });
+    return;
+  }
+
+  if (emailCampaignMatch && emailCampaignMatch[1]) {
+    const campaignId = decodeURIComponent(emailCampaignMatch[1]);
+    const action = emailCampaignMatch[2] || "";
+    const existing = (db.emailCampaigns || []).find((item) => item.id === campaignId);
+    if (!existing) {
+      sendJson(res, 404, { error: { code: "EMAIL_CAMPAIGN_NOT_FOUND", message: "Campanha não encontrada." } });
+      return;
+    }
+    if (action === "cancel" && method === "POST") {
+      existing.status = "cancelled";
+      existing.updatedAt = new Date().toISOString();
+      if (emailCampaignTimers.has(campaignId)) clearTimeout(emailCampaignTimers.get(campaignId));
+      emailCampaignTimers.delete(campaignId);
+      await writeDb(db);
+      sendJson(res, 200, { campaign: publicCampaign(existing) });
+      return;
+    }
+    if (action === "send" && method === "POST") {
+      if (!["draft", "failed"].includes(existing.status)) {
+        sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_STATE", message: "Só campanhas em rascunho ou com falha podem ser enviadas." } });
+        return;
+      }
+      const emailConfig = integrationConfigService.resolvedConfig(db, "email");
+      if (!(emailConfig?.enabled && emailConfig?.configured)) {
+        sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes do disparo." } });
+        return;
+      }
+      existing.status = "queued";
+      existing.error = "";
+      existing.updatedAt = new Date().toISOString();
+      existing.recipientCount = campaignRecipients(db, existing).length;
+      await writeDb(db);
+      scheduleEmailCampaign(existing);
+      sendJson(res, 202, { campaign: publicCampaign(existing) });
+      return;
+    }
+    if (action === "duplicate" && method === "POST") {
+      const duplicate = normalizeCampaignInput(existing, {
+        id: `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+        subject: `${existing.subject || "Campanha"} - cópia`,
+        status: "draft",
+        createdBy: req.adminUser?.id || "",
+        createdAt: new Date().toISOString(),
+        sent: 0,
+        failed: 0,
+        recipientCount: 0
+      });
+      duplicate.status = "draft";
+      duplicate.recipientCount = campaignRecipients(db, duplicate).length;
+      db.emailCampaigns.unshift(duplicate);
+      await writeDb(db);
+      sendJson(res, 201, { campaign: publicCampaign(duplicate) });
+      return;
+    }
+    if (method === "PUT") {
+      if (!["draft", "failed"].includes(existing.status)) {
+        sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_LOCKED", message: "Campanhas enviadas ou em processamento não podem ser editadas." } });
+        return;
+      }
+      const body = await readBody(req);
+      body.attachments = resolveCampaignAttachments(db, body.attachments);
+      const updated = normalizeCampaignInput(body, existing);
+      updated.status = "draft";
+      updated.recipientCount = campaignRecipients(db, updated).length;
+      Object.assign(existing, updated);
+      await writeDb(db);
+      sendJson(res, 200, { campaign: publicCampaign(existing) });
+      return;
+    }
+  }
+
+  // Compatibilidade com a rota anterior: cria e enfileira uma campanha.
+  if (pathname === "/api/admin/email/promotions" && method === "POST") {
+    const body = await readBody(req);
+    body.attachments = resolveCampaignAttachments(db, body.attachments);
+    body.action = "send";
+    const campaign = normalizeCampaignInput(body, { brand: db.settings?.emailBranding || {} });
+    if (!campaign.subject || (campaign.mode === "html" ? !campaign.html : !campaign.message)) {
+      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: "Informe assunto e conteúdo da campanha." } });
+      return;
+    }
+    const emailConfig = integrationConfigService.resolvedConfig(db, "email");
+    if (!(emailConfig?.enabled && emailConfig?.configured)) {
+      sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes do disparo." } });
+      return;
+    }
+    campaign.status = "queued";
+    campaign.createdBy = req.adminUser?.id || "";
+    campaign.recipientCount = campaignRecipients(db, campaign).length;
+    if (!campaign.recipientCount) {
+      sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum cliente elegível com e-mail e consentimento de marketing." } });
+      return;
+    }
     db.emailCampaigns ||= [];
-    db.emailCampaigns.unshift({
-      id: `campanha-email-${Date.now()}`,
-      subject,
-      mode,
-      preheader: String(body.preheader || "").trim().slice(0, 140),
-      headline: String(body.headline || "").trim(),
-      message,
-      html: customHtml,
-      ctaLabel: String(body.ctaLabel || "").trim(),
-      ctaUrl: String(body.ctaUrl || "").trim(),
-      recipients: recipients.length,
-      sent: result.sent,
-      failed: result.failed,
-      createdBy: req.adminUser?.id || "",
-      createdAt: new Date().toISOString()
-    });
+    db.emailCampaigns.unshift(campaign);
     await writeDb(db);
-    sendJson(res, 200, { ...result, recipients: recipients.length });
+    scheduleEmailCampaign(campaign);
+    sendJson(res, 202, { queued: true, recipients: campaign.recipientCount, campaign: publicCampaign(campaign) });
     return;
   }
 
@@ -11444,6 +11790,9 @@ loadEnvFiles().then(() => {
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
     void runSubscriptionMaintenance();
     void runMovieImageMaintenance();
+    void readDb().then(restoreEmailCampaignSchedules).catch((error) => {
+      logEvent("warn", "email_campaign.schedule_restore_failed", { message: error.message });
+    });
     if (postgresEnabled()) {
       void pruneSystemLogsFromPostgres(process.env.SYSTEM_LOG_RETENTION_DAYS || 90).catch((error) => {
         logEvent("warn", "logs.retention_failed", { message: error.message });
