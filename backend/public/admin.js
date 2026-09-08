@@ -5673,8 +5673,18 @@ function setCampaignField(id, value) {
   if (field) field.value = value || "";
 }
 
+function setCampaignOpenLoading(id, loading) {
+  const button = [...document.querySelectorAll("[data-campaign-edit]")].find((item) => item.dataset.campaignEdit === id);
+  if (!button) return;
+  button.disabled = loading;
+  button.setAttribute("aria-busy", loading ? "true" : "false");
+  button.textContent = loading ? "Abrindo..." : "Abrir";
+}
+
 async function editEmailCampaign(id) {
   try {
+    setCampaignOpenLoading(id, true);
+    showToast("Abrindo rascunho...");
     const result = await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}`);
     const campaign = result.campaign || {};
     state.emailCampaignDraftId = campaign.id || id;
@@ -5682,7 +5692,6 @@ async function editEmailCampaign(id) {
     state.emailCampaignSelectedIds = new Set((campaign.customerIds || []).map(String));
     state.emailCampaignAttachments = campaign.attachments || [];
     state.emailCampaignVariables = campaign.variables || {};
-    await loadContent({ silent: true });
     setCampaignField("emailCampaignSubject", campaign.subject);
     setCampaignField("emailCampaignPreheader", campaign.preheader);
     setCampaignField("emailCampaignHeadline", campaign.headline);
@@ -5699,9 +5708,14 @@ async function editEmailCampaign(id) {
     setCampaignField("emailBrandFooter", campaign.brand?.footer);
     syncEmailCampaignMode();
     setEmailCampaignStep("audience");
-    await refreshEmailCampaignRecipients();
+    void refreshEmailCampaignRecipients().catch(() => null);
+    $("emailCampaignStatus").textContent = "Editando rascunho";
     showToast("Rascunho aberto");
-  } catch (error) { showToast(error.message, "error"); }
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    setCampaignOpenLoading(id, false);
+  }
 }
 
 async function deleteEmailCampaign(id) {

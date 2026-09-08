@@ -355,6 +355,7 @@ textarea:focus-visible,
 .campaign-history-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .campaign-history-row small { color: var(--muted); }
 .campaign-history-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.campaign-history-actions button[aria-busy="true"] { min-width: 76px; cursor: wait; opacity: .72; }
 .campaign-variables-panel { display: grid; gap: 10px; padding: 13px 14px; border: 1px solid rgba(148,163,184,.14); border-radius: 9px; background: #09111f; }
 .campaign-variables-head { display: grid; gap: 3px; }
 .campaign-variables-head strong { color: #f8fafc; font-size: 12px; }
