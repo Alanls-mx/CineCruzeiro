@@ -13,6 +13,21 @@ test("campanha personaliza variáveis sem permitir HTML no nome", () => {
   assert.equal(result, "Olá &lt;Alan&gt; · CINE20");
 });
 
+test("campanha resolve cupom selecionado e placeholders personalizados", () => {
+  const result = emailService._test.interpolateCampaign("{{nome}} · {{codigo_cupom}} · {{link_programacao}}", {
+    name: "Alan",
+    couponCode: "CINE20"
+  }, {
+    link_programacao: "https://example.com/programacao"
+  });
+  assert.equal(result, "Alan · CINE20 · https://example.com/programacao");
+});
+
+test("dados do destinatário e do cupom prevalecem sobre variáveis reservadas", () => {
+  const result = emailService._test.interpolateCampaign("{{nome}} · {{codigo_cupom}}", { name: "Alan", couponCode: "CINE20" }, { nome: "Outro", codigo_cupom: "FALSO" });
+  assert.equal(result, "Alan · CINE20");
+});
+
 test("HTML de campanha remove scripts, eventos e esquemas perigosos", () => {
   const result = emailService._test.sanitizeCampaignHtml('<script>alert(1)</script><a href="javascript:alert(1)" onclick="x()">Abrir</a>');
   assert.equal(result.includes("<script"), false);

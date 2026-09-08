@@ -134,6 +134,7 @@ let state = {
   emailCampaignRecipients: [],
   emailCampaignSelectedIds: new Set(),
   emailCampaignAttachments: [],
+  emailCampaignVariables: {},
   emailCampaignPreviewMode: "desktop",
   emailCampaignDraftId: "",
   emailCampaignIdempotencyKey: `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -5514,6 +5515,7 @@ function emailCampaignPayload(action = "draft") {
     recipientSearch: $("emailCampaignRecipientSearch")?.value.trim() || "",
     couponId: $("emailCampaignCoupon")?.value || "",
     attachments: state.emailCampaignAttachments,
+    variables: state.emailCampaignVariables,
     scheduleAt: $("emailCampaignScheduleAt")?.value ? new Date($("emailCampaignScheduleAt").value).toISOString() : "",
     brand
   };
@@ -5538,19 +5540,58 @@ async function refreshEmailCampaignRecipients() {
   renderEmailCampaignPreview();
 }
 
+function campaignPreviewVariables() {
+  const coupon = (state.content?.promotions || []).find((item) => item.id === $("emailCampaignCoupon")?.value);
+  return {
+    ...state.emailCampaignVariables,
+    nome: "Cliente de teste",
+    email: "cliente@exemplo.com",
+    codigo_cupom: coupon?.couponCode || "SELECIONE_UM_CUPOM",
+    validade_cupom: coupon?.endsAt ? new Date(coupon.endsAt).toLocaleDateString("pt-BR") : "defina um cupom",
+    link_cupom: $("emailCampaignCtaUrl")?.value || `${API_BASE}/filmes`
+  };
+}
+
+function interpolateCampaignPreview(value) {
+  const variables = campaignPreviewVariables();
+  return String(value || "").replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, key) => escapeHtml(variables[String(key).toLowerCase()] ?? ""));
+}
+
+function renderEmailCampaignVariables() {
+  const target = $("emailCampaignVariables");
+  if (!target) return;
+  const entries = Object.entries(state.emailCampaignVariables || {});
+  target.innerHTML = entries.length
+    ? entries.map(([key, value]) => `<span class="campaign-custom-variable-chip"><span>{{${escapeHtml(key)}}} = ${escapeHtml(value)}</span><button type="button" data-campaign-variable-remove="${escapeHtml(key)}" aria-label="Remover ${escapeHtml(key)}">×</button></span>`).join("")
+    : `<span class="helper-text">Nenhuma variável personalizada configurada.</span>`;
+}
+
+function insertCampaignVariable(key) {
+  const token = `{{${key}}}`;
+  const target = state.emailCampaignStep === "content" && $("emailCampaignMode")?.value === "html" ? $("emailCampaignHtml") : $("emailCampaignMessage");
+  if (!target) return;
+  const start = Number.isInteger(target.selectionStart) ? target.selectionStart : target.value.length;
+  const end = Number.isInteger(target.selectionEnd) ? target.selectionEnd : target.value.length;
+  target.value = `${target.value.slice(0, start)}${token}${target.value.slice(end)}`;
+  target.focus();
+  target.selectionStart = target.selectionEnd = start + token.length;
+  target.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function renderEmailCampaignPreview() {
   const preview = $("emailCampaignPreview");
   if (!preview) return;
   const payload = emailCampaignPayload();
-  const title = escapeHtml(payload.headline || payload.subject || "Prévia da campanha");
+  const title = interpolateCampaignPreview(payload.headline || payload.subject || "Prévia da campanha");
   const message = payload.mode === "html"
-    ? payload.html.replace(/<script[\s\S]*?<\/script>/gi, "")
-    : `<p>Olá, <strong>cliente</strong>.</p><p>${escapeHtml(payload.message || "Sua mensagem aparecerá aqui.").replace(/\n/g, "<br>")}</p>${payload.ctaUrl ? `<button class="campaign-preview-cta">${escapeHtml(payload.ctaLabel || "Ver promoção")}</button>` : ""}`;
+    ? interpolateCampaignPreview(payload.html).replace(/<script[\s\S]*?<\/script>/gi, "")
+    : `<p>Olá, <strong>${interpolateCampaignPreview("{{nome}}")}</strong>.</p><p>${interpolateCampaignPreview(payload.message || "Sua mensagem aparecerá aqui.").replace(/\n/g, "<br>")}</p>${payload.ctaUrl ? `<button class="campaign-preview-cta">${escapeHtml(payload.ctaLabel || "Ver promoção")}</button>` : ""}`;
   preview.innerHTML = `<div class="campaign-email-mock ${state.emailCampaignPreviewMode === "mobile" ? "mobile" : ""}"><div class="campaign-email-brand">${payload.brand.logoUrl ? `<img src="${escapeHtml(payload.brand.logoUrl)}" alt="" />` : `<strong>${escapeHtml(payload.brand.name)}</strong>`}<small>${escapeHtml(payload.brand.footer || "Cinema de rua, ingresso digital e atendimento de bairro.")}</small></div><div class="campaign-email-body"><span>PROGRAMAÇÃO</span><h2>${title}</h2><div>${message}</div></div><small class="campaign-email-unsubscribe">Não desejo receber mais emails</small></div>`;
-  $("emailCampaignReviewSubject").textContent = payload.subject || "Ainda não definido";
+  $("emailCampaignReviewSubject").textContent = interpolateCampaignPreview(payload.subject || "Ainda não definido");
   $("emailCampaignReviewSchedule").textContent = payload.scheduleAt ? new Date(payload.scheduleAt).toLocaleString("pt-BR") : "Enviar agora";
   const attachments = $("emailCampaignAttachments");
   if (attachments) attachments.innerHTML = state.emailCampaignAttachments.length ? state.emailCampaignAttachments.map((item) => `<span class="campaign-attachment-chip">${escapeHtml(item.filename)} <button type="button" data-campaign-remove-attachment="${escapeHtml(item.id)}" aria-label="Remover anexo">×</button></span>`).join("") : `<span class="helper-text">Nenhum anexo adicionado.</span>`;
+  renderEmailCampaignVariables();
 }
 
 function syncEmailCampaignMode() {
@@ -5621,8 +5662,61 @@ function renderEmailCampaigns() {
       ? `${item.sent || 0} enviados · ${item.failed || 0} falhas`
       : `${item.customerCount || 0} destinatários`;
     const unsupported = item.metricsSupported?.opened || item.metricsSupported?.clicked ? "" : " · aberturas/cliques não rastreados pelo provedor";
-    return `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(`${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button type="button" class="ghost-button" data-campaign-duplicate="${escapeHtml(item.id)}">Duplicar</button></div></div>`;
+    const editable = ["draft", "failed"].includes(item.status);
+    const actions = `${editable ? `<button type="button" class="ghost-button" data-campaign-edit="${escapeHtml(item.id)}">Abrir</button><button type="button" class="ghost-button danger-button" data-campaign-delete="${escapeHtml(item.id)}">Excluir</button>` : ""}<button type="button" class="ghost-button" data-campaign-duplicate="${escapeHtml(item.id)}">Duplicar</button>`;
+    return `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(`${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span>${actions}</div></div>`;
   }).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
+}
+
+function setCampaignField(id, value) {
+  const field = $(id);
+  if (field) field.value = value || "";
+}
+
+async function editEmailCampaign(id) {
+  try {
+    const result = await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}`);
+    const campaign = result.campaign || {};
+    state.emailCampaignDraftId = campaign.id || id;
+    state.emailCampaignIdempotencyKey = campaign.idempotencyKey || `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    state.emailCampaignSelectedIds = new Set((campaign.customerIds || []).map(String));
+    state.emailCampaignAttachments = campaign.attachments || [];
+    state.emailCampaignVariables = campaign.variables || {};
+    await loadContent({ silent: true });
+    setCampaignField("emailCampaignSubject", campaign.subject);
+    setCampaignField("emailCampaignPreheader", campaign.preheader);
+    setCampaignField("emailCampaignHeadline", campaign.headline);
+    setCampaignField("emailCampaignMessage", campaign.message);
+    setCampaignField("emailCampaignHtml", campaign.html);
+    setCampaignField("emailCampaignCtaLabel", campaign.ctaLabel);
+    setCampaignField("emailCampaignCtaUrl", campaign.ctaUrl);
+    setCampaignField("emailCampaignAudience", campaign.recipientMode || "all");
+    setCampaignField("emailCampaignRecipientSearch", campaign.recipientSearch);
+    setCampaignField("emailCampaignScheduleAt", campaign.scheduleAt ? new Date(campaign.scheduleAt).toISOString().slice(0, 16) : "");
+    setCampaignField("emailCampaignCoupon", campaign.couponId);
+    setCampaignField("emailBrandName", campaign.brand?.name);
+    setCampaignField("emailBrandLogoUrl", campaign.brand?.logoUrl);
+    setCampaignField("emailBrandFooter", campaign.brand?.footer);
+    syncEmailCampaignMode();
+    setEmailCampaignStep("audience");
+    await refreshEmailCampaignRecipients();
+    showToast("Rascunho aberto");
+  } catch (error) { showToast(error.message, "error"); }
+}
+
+async function deleteEmailCampaign(id) {
+  if (!window.confirm("Excluir este rascunho? Esta ação não pode ser desfeita.")) return;
+  try {
+    await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/delete`, { method: "DELETE" });
+    if (state.emailCampaignDraftId === id) {
+      state.emailCampaignDraftId = "";
+      state.emailCampaignIdempotencyKey = `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      state.emailCampaignVariables = {};
+      state.emailCampaignAttachments = [];
+    }
+    await loadContent({ silent: true });
+    showToast("Rascunho excluído");
+  } catch (error) { showToast(error.message, "error"); }
 }
 
 function renderEmailCampaignControls() {
@@ -7531,6 +7625,25 @@ function bindEvents() {
     const message = $("emailCampaignMessage");
     if (message) { message.value += snippets[button.dataset.campaignBlock] || ""; message.dispatchEvent(new Event("input", { bubbles: true })); }
   }));
+  document.querySelectorAll("[data-campaign-variable]").forEach((button) => button.addEventListener("click", () => insertCampaignVariable(button.dataset.campaignVariable)));
+  $("emailCampaignVariableAdd")?.addEventListener("click", () => {
+    const key = $("emailCampaignVariableKey")?.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const value = $("emailCampaignVariableValue")?.value.trim();
+    if (!/^[a-z][a-z0-9_]{0,39}$/.test(key || "")) { showToast("Use um nome iniciado por letra, sem espaços.", "error"); return; }
+    if (!value) { showToast("Informe o valor ou URL do placeholder.", "error"); return; }
+    state.emailCampaignVariables = { ...state.emailCampaignVariables, [key]: value };
+    $("emailCampaignVariableKey").value = "";
+    $("emailCampaignVariableValue").value = "";
+    renderEmailCampaignPreview();
+  });
+  $("emailCampaignVariables")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-campaign-variable-remove]");
+    if (!button) return;
+    const next = { ...state.emailCampaignVariables };
+    delete next[button.dataset.campaignVariableRemove];
+    state.emailCampaignVariables = next;
+    renderEmailCampaignPreview();
+  });
   ["emailCampaignSubject", "emailCampaignPreheader", "emailCampaignHeadline", "emailCampaignMessage", "emailCampaignHtml", "emailCampaignCtaLabel", "emailCampaignCtaUrl", "emailCampaignScheduleAt", "emailBrandName", "emailBrandLogoUrl", "emailBrandFooter"].forEach((id) => $(id)?.addEventListener("input", renderEmailCampaignPreview));
   $("emailCampaignCoupon")?.addEventListener("change", renderEmailCampaignPreview);
   $("emailCampaignAttachmentUpload")?.addEventListener("change", async (event) => {
@@ -7552,6 +7665,10 @@ function bindEvents() {
     renderEmailCampaignPreview();
   });
   $("emailCampaignHistory")?.addEventListener("click", async (event) => {
+    const editButton = event.target.closest("[data-campaign-edit]");
+    if (editButton) { await editEmailCampaign(editButton.dataset.campaignEdit); return; }
+    const deleteButton = event.target.closest("[data-campaign-delete]");
+    if (deleteButton) { await deleteEmailCampaign(deleteButton.dataset.campaignDelete); return; }
     const button = event.target.closest("[data-campaign-duplicate]");
     if (!button) return;
     try {

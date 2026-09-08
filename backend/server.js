@@ -6489,6 +6489,7 @@ async function storeEmailAttachment(input = {}) {
 function normalizeCampaignInput(input = {}, existing = {}) {
   const mode = input.mode === "html" ? "html" : "visual";
   const status = input.status || existing.status || "draft";
+  const reservedVariables = new Set(["nome", "email", "codigo_cupom", "validade_cupom", "link_cupom"]);
   return {
     ...existing,
     id: existing.id || String(input.id || `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`),
@@ -6499,6 +6500,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     headline: String(input.headline ?? existing.headline ?? "").trim().slice(0, 180),
     message: String(input.message ?? existing.message ?? "").slice(0, 12000),
     html: String(input.html ?? existing.html ?? "").slice(0, 100000),
+    variables: Object.fromEntries(Object.entries(input.variables ?? existing.variables ?? {}).filter(([key, value]) => /^[a-z][a-z0-9_]{0,39}$/i.test(key) && !reservedVariables.has(String(key).toLowerCase()) && String(value ?? "").trim()).slice(0, 12).map(([key, value]) => [key.toLowerCase(), String(value).trim().slice(0, 1000)])),
     ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "Ver programação").trim().slice(0, 80),
     ctaUrl: String(input.ctaUrl ?? existing.ctaUrl ?? "").trim().slice(0, 1000),
     recipientMode: ["all", "selected", "purchased", "active"].includes(input.recipientMode || existing.recipientMode) ? (input.recipientMode || existing.recipientMode) : "all",
@@ -6529,6 +6531,18 @@ function publicCampaign(campaign = {}) {
     hasHtml: Boolean(html),
     hasMessage: Boolean(message),
     metricsSupported: { sent: true, failed: true, delivered: false, opened: false, clicked: false }
+  };
+}
+
+function campaignDetails(campaign = {}) {
+  return {
+    ...publicCampaign(campaign),
+    message: String(campaign.message || ""),
+    html: String(campaign.html || ""),
+    customerIds: Array.isArray(campaign.customerIds) ? campaign.customerIds : [],
+    variables: campaign.variables || {},
+    brand: campaign.brand || {},
+    recipientSearch: campaign.recipientSearch || ""
   };
 }
 
@@ -8188,7 +8202,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const emailCampaignMatch = pathname.match(/^\/api\/admin\/email\/campaigns\/([^/]+)(?:\/(send|cancel|duplicate))?$/);
+  const emailCampaignMatch = pathname.match(/^\/api\/admin\/email\/campaigns\/([^/]+)(?:\/(send|cancel|duplicate|delete))?$/);
   if (pathname === "/api/admin/email/branding" && method === "GET") {
     sendJson(res, 200, { branding: db.settings?.emailBranding || {} });
     return;
@@ -8297,6 +8311,25 @@ async function handleApi(req, res, pathname) {
     const existing = (db.emailCampaigns || []).find((item) => item.id === campaignId);
     if (!existing) {
       sendJson(res, 404, { error: { code: "EMAIL_CAMPAIGN_NOT_FOUND", message: "Campanha não encontrada." } });
+      return;
+    }
+    if (!action && method === "GET") {
+      sendJson(res, 200, { campaign: campaignDetails(existing) });
+      return;
+    }
+    if (action === "delete" && method === "DELETE") {
+      if (!["draft", "failed", "cancelled"].includes(existing.status)) {
+        sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_DELETE_LOCKED", message: "Só rascunhos, campanhas com falha ou canceladas podem ser excluídos." } });
+        return;
+      }
+      if (emailCampaignTimers.has(campaignId)) clearTimeout(emailCampaignTimers.get(campaignId));
+      emailCampaignTimers.delete(campaignId);
+      await withCriticalMutation(async () => {
+        const lockedDb = await readDb();
+        lockedDb.emailCampaigns = (lockedDb.emailCampaigns || []).filter((item) => item.id !== campaignId);
+        await writeDb(lockedDb);
+      });
+      sendJson(res, 200, { deleted: true, id: campaignId });
       return;
     }
     if (action === "cancel" && method === "POST") {

@@ -315,7 +315,9 @@ textarea:focus-visible,
 .campaign-recipient-list { max-height: 260px; overflow: auto; border: 1px solid rgba(148,163,184,.15); border-radius: 9px; }
 .campaign-recipient-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid rgba(148,163,184,.1); cursor: pointer; }
 .campaign-recipient-row:last-child { border-bottom: 0; }
-.campaign-recipient-row span { display: grid; gap: 2px; }
+.campaign-recipient-row input[type="checkbox"] { flex: 0 0 18px; width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 4px; box-shadow: none; accent-color: var(--gold); }
+.campaign-recipient-row span { display: grid; min-width: 0; gap: 2px; }
+.campaign-recipient-row strong, .campaign-recipient-row small { overflow-wrap: anywhere; }
 .campaign-recipient-row small { color: var(--muted); }
 .campaign-block-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .campaign-block-toolbar span { color: var(--muted); font-size: 11px; font-weight: 800; margin-right: 4px; }
@@ -334,7 +336,7 @@ textarea:focus-visible,
 .campaign-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .preview-switch { display: flex; gap: 3px; padding: 3px; background: #09111f; border-radius: 8px; }
 .campaign-preview-frame { min-height: 410px; display: grid; place-items: center; padding: 14px; background: #060a12; border-radius: 10px; overflow: hidden; }
-.campaign-email-mock { width: 100%; max-width: 520px; min-height: 360px; background: #0d1728; border: 1px solid rgba(148,163,184,.14); border-radius: 10px; overflow: hidden; transition: width .2s ease; }
+.campaign-email-mock { width: 100%; max-width: 520px; min-height: 360px; background: #0d1728; border: 1px solid rgba(148,163,184,.14); border-radius: 10px; overflow: hidden; }
 .campaign-email-mock.mobile { max-width: 300px; }
 .campaign-email-brand { padding: 16px 18px; background: #060a12; display: grid; gap: 7px; }
 .campaign-email-brand img { width: 104px; max-height: 46px; object-fit: contain; object-position: left; }
@@ -353,6 +355,17 @@ textarea:focus-visible,
 .campaign-history-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .campaign-history-row small { color: var(--muted); }
 .campaign-history-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.campaign-variables-panel { display: grid; gap: 10px; padding: 13px 14px; border: 1px solid rgba(148,163,184,.14); border-radius: 9px; background: #09111f; }
+.campaign-variables-head { display: grid; gap: 3px; }
+.campaign-variables-head strong { color: #f8fafc; font-size: 12px; }
+.campaign-variables-head span { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.campaign-variable-tokens, .campaign-custom-variable-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.campaign-variable-tokens button, .campaign-custom-variable-chip { border: 1px solid rgba(96,165,250,.28); border-radius: 7px; background: rgba(37,99,235,.14); color: #bfdbfe; padding: 7px 9px; font-size: 11px; font-weight: 800; cursor: pointer; }
+.campaign-custom-variable-form { display: grid; grid-template-columns: minmax(120px, .75fr) minmax(180px, 1.25fr) auto; gap: 8px; align-items: center; }
+.campaign-custom-variable-form input { min-width: 0; }
+.campaign-custom-variable-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; }
+.campaign-custom-variable-chip span { overflow-wrap: anywhere; }
+.campaign-custom-variable-chip button { border: 0; background: transparent; color: #fda4af; cursor: pointer; font-size: 15px; line-height: 1; }
 
 @media (max-width: 940px) {
   .campaign-workspace { grid-template-columns: 1fr; }
@@ -360,6 +373,7 @@ textarea:focus-visible,
 }
 @media (max-width: 620px) {
   .campaign-form-head, .campaign-recipient-toolbar, .campaign-history-row { align-items: flex-start; flex-direction: column; }
+  .campaign-custom-variable-form { grid-template-columns: 1fr; }
   .campaign-review-grid { grid-template-columns: 1fr; }
   .inline-field { flex-direction: column; }
 }

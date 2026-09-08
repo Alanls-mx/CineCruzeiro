@@ -200,8 +200,9 @@ function sanitizeCampaignHtml(value) {
     .replace(/(href|src)\s*=\s*(["'])\s*(javascript|data|vbscript):[\s\S]*?\2/gi, '$1="#"');
 }
 
-function interpolateCampaign(value, recipient = {}) {
+function interpolateCampaign(value, recipient = {}, customVariables = {}) {
   const variables = {
+    ...customVariables,
     nome: recipient.name || "cliente",
     email: recipient.email || "",
     codigo_cupom: recipient.couponCode || "",
@@ -408,19 +409,20 @@ async function sendPromotionCampaign(db, input = {}) {
   for (let index = 0; index < recipients.length; index += 1) {
     const recipient = recipients[index];
     try {
-      const personalizedHtml = interpolateCampaign(input.html || "", recipient);
+      const personalizedHtml = interpolateCampaign(input.html || "", recipient, input.variables);
+      const personalizedMessage = interpolateCampaign(input.message || "", recipient, input.variables);
       const campaignBody = input.mode === "html"
         ? sanitizeCampaignHtml(personalizedHtml)
         : `
           <p>Olá${recipient.name ? `, ${htmlEscape(recipient.name)}` : ""}.</p>
-          <p>${htmlEscape(input.message).replace(/\n/g, "<br>")}</p>
+          <p>${htmlEscape(personalizedMessage).replace(/\n/g, "<br>")}</p>
           ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl)}</p>` : ""}
         `;
       const message = {
         to: recipient.email,
-        subject: input.subject,
-        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand }),
-        text: interpolateCampaign(`${input.message}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient),
+        subject: interpolateCampaign(input.subject, recipient, input.variables),
+        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand }),
+        text: interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
         attachments: input.attachments || []
       };
       let ok = false;

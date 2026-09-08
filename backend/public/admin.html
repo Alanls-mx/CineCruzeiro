@@ -1327,6 +1327,23 @@
                   <textarea id="emailCampaignHtml" rows="15" spellcheck="false" placeholder="<section style=&quot;padding:24px;background:#0d1728&quot;>...</section>"></textarea>
                   <span class="helper-text">O HTML é sanitizado no backend e recebe estrutura de e-mail, identidade e descadastro automaticamente. Variáveis: {{nome}}, {{email}}, {{codigo_cupom}}, {{validade_cupom}}, {{link_cupom}}.</span>
                 </label>
+                <div class="campaign-variables-panel">
+                  <div class="campaign-variables-head"><div><strong>Placeholders e links</strong><span>Insira variáveis no texto. O cupom selecionado preenche automaticamente código, validade e link no envio.</span></div></div>
+                  <div class="campaign-variable-tokens" aria-label="Placeholders disponíveis">
+                    <button type="button" data-campaign-variable="nome">{{nome}}</button>
+                    <button type="button" data-campaign-variable="email">{{email}}</button>
+                    <button type="button" data-campaign-variable="codigo_cupom">{{codigo_cupom}}</button>
+                    <button type="button" data-campaign-variable="validade_cupom">{{validade_cupom}}</button>
+                    <button type="button" data-campaign-variable="link_cupom">{{link_cupom}}</button>
+                  </div>
+                  <div class="campaign-custom-variable-form">
+                    <input id="emailCampaignVariableKey" placeholder="Nome, ex.: link_programacao" aria-label="Nome do placeholder personalizado" />
+                    <input id="emailCampaignVariableValue" placeholder="Valor ou URL de destino" aria-label="Valor do placeholder personalizado" />
+                    <button id="emailCampaignVariableAdd" class="ghost-button" type="button">Adicionar variável</button>
+                  </div>
+                  <div id="emailCampaignVariables" class="campaign-custom-variable-list"></div>
+                  <small class="helper-text">Placeholders personalizados apontam para o valor configurado nesta campanha e são escapados no HTML. Use links HTTPS para destinos externos.</small>
+                </div>
                 <div class="field-row" data-email-campaign-visual>
                   <label>Texto do botão
                     <input id="emailCampaignCtaLabel" placeholder="Ex.: Ver programação" />
