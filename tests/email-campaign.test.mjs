@@ -45,3 +45,26 @@ test("layout de marketing preserva identidade e descadastro", () => {
   assert.match(result, /Não desejo receber mais emails/);
   assert.match(result, /unsubscribe/);
 });
+
+test("campanha renderiza imagem local com link e texto alternativo", () => {
+  const result = emailService._test.campaignImageBlock({
+    imageUrl: "/uploads/email-campaign/poster.webp",
+    imageAlt: "Pôster do filme",
+    imageLink: "/filmes/homem-aranha",
+    siteUrl: "https://example.com/projects/cinecruzeiro"
+  });
+  assert.match(result, /https:\/\/example\.com\/projects\/cinecruzeiro\/uploads\/email-campaign\/poster\.webp/);
+  assert.match(result, /Pôster do filme/);
+  assert.match(result, /https:\/\/example\.com\/projects\/cinecruzeiro\/filmes\/homem-aranha/);
+  assert.equal(emailService._test.campaignImageBlock({ imageUrl: "javascript:alert(1)", siteUrl: "https://example.com" }), "");
+});
+
+test("layout de campanha aplica cores válidas sem aceitar CSS arbitrário", () => {
+  const result = emailService._test.baseLayout("Oferta", "<p>Conteúdo</p>", {
+    headlineColor: "#ffcc00",
+    textColor: "#dbeafe"
+  });
+  assert.match(result, /color:#ffcc00/);
+  assert.match(result, /color:#dbeafe/);
+  assert.doesNotMatch(result, /javascript:/i);
+});

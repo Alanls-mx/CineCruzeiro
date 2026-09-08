@@ -1320,6 +1320,51 @@
                   <button type="button" data-campaign-block="coupon">Cupom</button>
                   <button type="button" data-campaign-block="divider">Divisor</button>
                 </div>
+                <div class="campaign-editor-panel">
+                  <div class="campaign-editor-panel-head">
+                    <strong>Imagem da campanha</strong>
+                    <span>Use o pôster local de um filme ou uma imagem própria hospedada no site.</span>
+                  </div>
+                  <div class="field-row">
+                    <label>Imagem do catálogo
+                      <select id="emailCampaignImageMovie">
+                        <option value="">Nenhum pôster selecionado</option>
+                      </select>
+                    </label>
+                    <label>URL da imagem
+                      <input id="emailCampaignImageUrl" placeholder="https://... ou /uploads/..." />
+                    </label>
+                    <label>Enviar imagem
+                      <input id="emailCampaignImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+                    </label>
+                  </div>
+                  <div class="field-row">
+                    <label>Texto alternativo
+                      <input id="emailCampaignImageAlt" maxlength="140" placeholder="Ex.: Pôster de Homem-Aranha: Um Novo Dia" />
+                    </label>
+                    <label>Link ao clicar na imagem
+                      <input id="emailCampaignImageLink" placeholder="https://... (opcional)" />
+                    </label>
+                  </div>
+                  <span class="helper-text">A imagem aparece no corpo do e-mail e é enviada com URL segura. Prefira imagens locais ou HTTPS.</span>
+                </div>
+                <div class="campaign-editor-panel">
+                  <div class="campaign-editor-panel-head">
+                    <strong>Cores do conteúdo</strong>
+                    <span>Ajuste a leitura do título, da mensagem e do botão sem editar HTML.</span>
+                  </div>
+                  <div class="campaign-color-grid">
+                    <label>Cor do título
+                      <span class="campaign-color-control"><input id="emailCampaignHeadlineColor" type="color" value="#ffffff" /><input id="emailCampaignHeadlineColorValue" inputmode="text" maxlength="7" value="#ffffff" aria-label="Código da cor do título" /></span>
+                    </label>
+                    <label>Cor do texto
+                      <span class="campaign-color-control"><input id="emailCampaignTextColor" type="color" value="#dbeafe" /><input id="emailCampaignTextColorValue" inputmode="text" maxlength="7" value="#dbeafe" aria-label="Código da cor do texto" /></span>
+                    </label>
+                    <label>Cor do botão
+                      <span class="campaign-color-control"><input id="emailCampaignButtonColor" type="color" value="#facc15" /><input id="emailCampaignButtonColorValue" inputmode="text" maxlength="7" value="#facc15" aria-label="Código da cor do botão" /></span>
+                    </label>
+                  </div>
+                </div>
                 <label class="full" data-email-campaign-visual>Mensagem
                   <textarea id="emailCampaignMessage" rows="7" placeholder="Escreva uma chamada clara, com benefício e prazo. Use {{nome}} para personalizar." required></textarea>
                 </label>

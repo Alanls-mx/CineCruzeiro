@@ -5516,6 +5516,12 @@ function emailCampaignPayload(action = "draft") {
     couponId: $("emailCampaignCoupon")?.value || "",
     attachments: state.emailCampaignAttachments,
     variables: state.emailCampaignVariables,
+    imageUrl: $("emailCampaignImageUrl")?.value.trim() || "",
+    imageAlt: $("emailCampaignImageAlt")?.value.trim() || "",
+    imageLink: $("emailCampaignImageLink")?.value.trim() || "",
+    headlineColor: $("emailCampaignHeadlineColor")?.value || "#ffffff",
+    textColor: $("emailCampaignTextColor")?.value || "#dbeafe",
+    buttonColor: $("emailCampaignButtonColor")?.value || "#facc15",
     scheduleAt: $("emailCampaignScheduleAt")?.value ? new Date($("emailCampaignScheduleAt").value).toISOString() : "",
     brand
   };
@@ -5578,20 +5584,75 @@ function insertCampaignVariable(key) {
   target.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function campaignSafeUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || /^(javascript|data|vbscript):/i.test(raw)) return "";
+  return /^(https?:\/\/|\/)/i.test(raw) ? raw : "";
+}
+
+function campaignColor(value, fallback) {
+  const normalized = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
+}
+
+function campaignPreviewImage(payload) {
+  const imageUrl = campaignSafeUrl(interpolateCampaignPreview(payload.imageUrl));
+  if (!imageUrl) return "";
+  const image = `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(interpolateCampaignPreview(payload.imageAlt || "Imagem da campanha"))}" />`;
+  const link = campaignSafeUrl(interpolateCampaignPreview(payload.imageLink));
+  return `<div class="campaign-email-hero-image">${link ? `<a href="${escapeHtml(link)}">${image}</a>` : image}</div>`;
+}
+
 function renderEmailCampaignPreview() {
   const preview = $("emailCampaignPreview");
   if (!preview) return;
   const payload = emailCampaignPayload();
   const title = interpolateCampaignPreview(payload.headline || payload.subject || "Prévia da campanha");
+  const headlineColor = campaignColor(payload.headlineColor, "#ffffff");
+  const textColor = campaignColor(payload.textColor, "#dbeafe");
+  const buttonColor = campaignColor(payload.buttonColor, "#facc15");
   const message = payload.mode === "html"
     ? interpolateCampaignPreview(payload.html).replace(/<script[\s\S]*?<\/script>/gi, "")
-    : `<p>Olá, <strong>${interpolateCampaignPreview("{{nome}}")}</strong>.</p><p>${interpolateCampaignPreview(payload.message || "Sua mensagem aparecerá aqui.").replace(/\n/g, "<br>")}</p>${payload.ctaUrl ? `<button class="campaign-preview-cta">${escapeHtml(payload.ctaLabel || "Ver promoção")}</button>` : ""}`;
-  preview.innerHTML = `<div class="campaign-email-mock ${state.emailCampaignPreviewMode === "mobile" ? "mobile" : ""}"><div class="campaign-email-brand">${payload.brand.logoUrl ? `<img src="${escapeHtml(payload.brand.logoUrl)}" alt="" />` : `<strong>${escapeHtml(payload.brand.name)}</strong>`}<small>${escapeHtml(payload.brand.footer || "Cinema de rua, ingresso digital e atendimento de bairro.")}</small></div><div class="campaign-email-body"><span>PROGRAMAÇÃO</span><h2>${title}</h2><div>${message}</div></div><small class="campaign-email-unsubscribe">Não desejo receber mais emails</small></div>`;
+    : `<p>Olá, <strong>${interpolateCampaignPreview("{{nome}}")}</strong>.</p><p>${interpolateCampaignPreview(payload.message || "Sua mensagem aparecerá aqui.").replace(/\n/g, "<br>")}</p>${payload.ctaUrl ? `<button class="campaign-preview-cta" style="background:${buttonColor}">${escapeHtml(payload.ctaLabel || "Ver promoção")}</button>` : ""}`;
+  const logoUrl = campaignSafeUrl(payload.brand.logoUrl);
+  preview.innerHTML = `<div class="campaign-email-mock ${state.emailCampaignPreviewMode === "mobile" ? "mobile" : ""}"><div class="campaign-email-brand">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" />` : `<strong>${escapeHtml(payload.brand.name)}</strong>`}<small>${escapeHtml(payload.brand.footer || "Cinema de rua, ingresso digital e atendimento de bairro.")}</small></div><div class="campaign-email-body" style="color:${textColor}"><span>PROGRAMAÇÃO</span><h2 style="color:${headlineColor}">${title}</h2>${campaignPreviewImage(payload)}<div>${message}</div></div><small class="campaign-email-unsubscribe">Não desejo receber mais emails</small></div>`;
   $("emailCampaignReviewSubject").textContent = interpolateCampaignPreview(payload.subject || "Ainda não definido");
   $("emailCampaignReviewSchedule").textContent = payload.scheduleAt ? new Date(payload.scheduleAt).toLocaleString("pt-BR") : "Enviar agora";
   const attachments = $("emailCampaignAttachments");
   if (attachments) attachments.innerHTML = state.emailCampaignAttachments.length ? state.emailCampaignAttachments.map((item) => `<span class="campaign-attachment-chip">${escapeHtml(item.filename)} <button type="button" data-campaign-remove-attachment="${escapeHtml(item.id)}" aria-label="Remover anexo">×</button></span>`).join("") : `<span class="helper-text">Nenhum anexo adicionado.</span>`;
   renderEmailCampaignVariables();
+}
+
+function syncCampaignColorControls() {
+  [["emailCampaignHeadlineColor", "emailCampaignHeadlineColorValue", "#ffffff"], ["emailCampaignTextColor", "emailCampaignTextColorValue", "#dbeafe"], ["emailCampaignButtonColor", "emailCampaignButtonColorValue", "#facc15"]].forEach(([colorId, valueId, fallback]) => {
+    const color = $(colorId);
+    const value = $(valueId);
+    if (!color || !value) return;
+    const normalized = campaignColor(value.value || color.value, fallback);
+    color.value = normalized;
+    value.value = normalized;
+  });
+}
+
+function bindCampaignColorControls() {
+  [["emailCampaignHeadlineColor", "emailCampaignHeadlineColorValue", "#ffffff"], ["emailCampaignTextColor", "emailCampaignTextColorValue", "#dbeafe"], ["emailCampaignButtonColor", "emailCampaignButtonColorValue", "#facc15"]].forEach(([colorId, valueId, fallback]) => {
+    const color = $(colorId);
+    const value = $(valueId);
+    if (!color || !value) return;
+    color.addEventListener("input", () => { value.value = color.value; renderEmailCampaignPreview(); });
+    value.addEventListener("input", () => {
+      const normalized = campaignColor(value.value, "");
+      if (!normalized) return;
+      color.value = normalized;
+      renderEmailCampaignPreview();
+    });
+    value.addEventListener("blur", () => {
+      value.value = campaignColor(value.value, color.value || fallback);
+      color.value = value.value;
+      renderEmailCampaignPreview();
+    });
+  });
+  syncCampaignColorControls();
 }
 
 function syncEmailCampaignMode() {
@@ -5703,6 +5764,17 @@ async function editEmailCampaign(id) {
     setCampaignField("emailCampaignRecipientSearch", campaign.recipientSearch);
     setCampaignField("emailCampaignScheduleAt", campaign.scheduleAt ? new Date(campaign.scheduleAt).toISOString().slice(0, 16) : "");
     setCampaignField("emailCampaignCoupon", campaign.couponId);
+    setCampaignField("emailCampaignImageUrl", campaign.imageUrl);
+    setCampaignField("emailCampaignImageAlt", campaign.imageAlt);
+    setCampaignField("emailCampaignImageLink", campaign.imageLink);
+    setCampaignField("emailCampaignHeadlineColor", campaign.headlineColor || "#ffffff");
+    setCampaignField("emailCampaignHeadlineColorValue", campaign.headlineColor || "#ffffff");
+    setCampaignField("emailCampaignTextColor", campaign.textColor || "#dbeafe");
+    setCampaignField("emailCampaignTextColorValue", campaign.textColor || "#dbeafe");
+    setCampaignField("emailCampaignButtonColor", campaign.buttonColor || "#facc15");
+    setCampaignField("emailCampaignButtonColorValue", campaign.buttonColor || "#facc15");
+    syncCampaignColorControls();
+    syncCampaignImageMovieSelect();
     setCampaignField("emailBrandName", campaign.brand?.name);
     setCampaignField("emailBrandLogoUrl", campaign.brand?.logoUrl);
     setCampaignField("emailBrandFooter", campaign.brand?.footer);
@@ -5740,11 +5812,34 @@ function renderEmailCampaignControls() {
     coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.couponCode)} · ${escapeHtml(item.title)}</option>`).join("")}`;
     coupon.value = current;
   }
+  const movieSelect = $("emailCampaignImageMovie");
+  if (movieSelect) {
+    const currentUrl = $("emailCampaignImageUrl")?.value || "";
+    const currentMovie = movieSelect.value;
+    movieSelect.innerHTML = `<option value="">Nenhum pôster selecionado</option>${(state.content?.movies || []).filter((movie) => movie.posterUrl).map((movie) => `<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title || "Filme sem título")}</option>`).join("")}`;
+    movieSelect.value = currentMovie;
+    if (!movieSelect.value && currentUrl) {
+      const match = (state.content?.movies || []).find((movie) => movie.posterUrl === currentUrl);
+      if (match) movieSelect.value = match.id;
+    }
+  }
+  syncCampaignColorControls();
   const branding = state.content?.settings?.emailBranding || {};
   if ($("emailBrandName") && !$("emailBrandName").value) $("emailBrandName").value = branding.name || "Cine Cruzeiro";
   if ($("emailBrandLogoUrl") && !$('emailBrandLogoUrl').value) $("emailBrandLogoUrl").value = branding.logoUrl || `${API_BASE}/images/favicon-email.png`;
   if ($("emailBrandFooter") && !$('emailBrandFooter').value) $("emailBrandFooter").value = branding.footer || "Mensagem automática do Cine Cruzeiro.";
   void refreshEmailCampaignRecipients().catch(() => null);
+}
+
+function syncCampaignImageMovieSelect() {
+  const select = $("emailCampaignImageMovie");
+  if (!select) return;
+  const selectedMovie = (state.content?.movies || []).find((movie) => movie.id === select.value);
+  if (!selectedMovie) {
+    const imageUrl = $("emailCampaignImageUrl")?.value || "";
+    const match = (state.content?.movies || []).find((movie) => movie.posterUrl && movie.posterUrl === imageUrl);
+    if (match) select.value = match.id;
+  }
 }
 
 function renderPromotions() {
@@ -7658,7 +7753,23 @@ function bindEvents() {
     state.emailCampaignVariables = next;
     renderEmailCampaignPreview();
   });
-  ["emailCampaignSubject", "emailCampaignPreheader", "emailCampaignHeadline", "emailCampaignMessage", "emailCampaignHtml", "emailCampaignCtaLabel", "emailCampaignCtaUrl", "emailCampaignScheduleAt", "emailBrandName", "emailBrandLogoUrl", "emailBrandFooter"].forEach((id) => $(id)?.addEventListener("input", renderEmailCampaignPreview));
+  $("emailCampaignImageMovie")?.addEventListener("change", () => {
+    const movie = (state.content?.movies || []).find((item) => item.id === $("emailCampaignImageMovie")?.value);
+    if (!movie) {
+      $("emailCampaignImageUrl").value = "";
+      $("emailCampaignImageAlt").value = "";
+    } else {
+      $("emailCampaignImageUrl").value = movie.posterUrl || "";
+      $("emailCampaignImageAlt").value = `Pôster de ${movie.title || "filme"}`;
+    }
+    renderEmailCampaignPreview();
+  });
+  $("emailCampaignImageUpload")?.addEventListener("change", () => uploadAdminImage("emailCampaignImageUpload", "emailCampaignImageUrl", "", "email-campaign", () => {
+    $("emailCampaignImageMovie").value = "";
+    if (!$('emailCampaignImageAlt').value) $('emailCampaignImageAlt').value = "Imagem da campanha";
+    renderEmailCampaignPreview();
+  }));
+  ["emailCampaignSubject", "emailCampaignPreheader", "emailCampaignHeadline", "emailCampaignMessage", "emailCampaignHtml", "emailCampaignCtaLabel", "emailCampaignCtaUrl", "emailCampaignImageUrl", "emailCampaignImageAlt", "emailCampaignImageLink", "emailCampaignScheduleAt", "emailBrandName", "emailBrandLogoUrl", "emailBrandFooter"].forEach((id) => $(id)?.addEventListener("input", renderEmailCampaignPreview));
   $("emailCampaignCoupon")?.addEventListener("change", renderEmailCampaignPreview);
   $("emailCampaignAttachmentUpload")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
@@ -7672,6 +7783,7 @@ function bindEvents() {
       renderEmailCampaignPreview();
     } catch (error) { showToast(error.message, "error"); }
   });
+  bindCampaignColorControls();
   $("emailCampaignAttachments")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-campaign-remove-attachment]");
     if (!button) return;

@@ -6490,6 +6490,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
   const mode = input.mode === "html" ? "html" : "visual";
   const status = input.status || existing.status || "draft";
   const reservedVariables = new Set(["nome", "email", "codigo_cupom", "validade_cupom", "link_cupom"]);
+  const campaignColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "").trim()) ? String(value).trim().toLowerCase() : fallback;
   return {
     ...existing,
     id: existing.id || String(input.id || `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`),
@@ -6508,6 +6509,12 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     recipientSearch: String(input.recipientSearch ?? existing.recipientSearch ?? "").trim().slice(0, 160),
     couponId: String(input.couponId ?? existing.couponId ?? "").trim(),
     attachments: Array.isArray(input.attachments) ? input.attachments.slice(0, 5).map((item) => ({ id: String(item.id || ""), filename: String(item.filename || "anexo").slice(0, 100), contentType: String(item.contentType || "application/octet-stream"), size: Number(item.size || 0), path: String(item.path || "") })).filter((item) => item.id && item.path) : (existing.attachments || []),
+    imageUrl: String(input.imageUrl ?? existing.imageUrl ?? "").trim().slice(0, 2000),
+    imageAlt: String(input.imageAlt ?? existing.imageAlt ?? "").trim().slice(0, 140),
+    imageLink: String(input.imageLink ?? existing.imageLink ?? "").trim().slice(0, 1000),
+    headlineColor: campaignColor(input.headlineColor ?? existing.headlineColor, "#ffffff"),
+    textColor: campaignColor(input.textColor ?? existing.textColor, "#dbeafe"),
+    buttonColor: campaignColor(input.buttonColor ?? existing.buttonColor, "#facc15"),
     scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
     status,
     brand: input.brand ?? existing.brand ?? {},
@@ -6595,6 +6602,7 @@ async function processEmailCampaign(campaignId) {
     })),
     logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
     brand: campaign.brand || db.settings?.emailBranding || {},
+    siteUrl: appFrontendUrl(),
     attachments: campaign.attachments || [],
     batchSize: 10,
     delayMs: 80
@@ -8265,7 +8273,8 @@ async function handleApi(req, res, pathname) {
       ...campaign,
       to,
       logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
-      brand: campaign.brand || db.settings?.emailBranding || {}
+      brand: campaign.brand || db.settings?.emailBranding || {},
+      siteUrl: appFrontendUrl()
     });
     sendJson(res, result.sent ? 200 : 502, { ok: result.sent > 0, ...result });
     return;

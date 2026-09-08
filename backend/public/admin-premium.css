@@ -322,6 +322,15 @@ textarea:focus-visible,
 .campaign-block-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .campaign-block-toolbar span { color: var(--muted); font-size: 11px; font-weight: 800; margin-right: 4px; }
 .campaign-block-toolbar button { border: 1px solid rgba(148,163,184,.18); color: #cbd5e1; background: #111c2e; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-weight: 700; }
+.campaign-editor-panel { display: grid; gap: 11px; padding: 14px; border: 1px solid rgba(148,163,184,.14); border-radius: 9px; background: #09111f; }
+.campaign-editor-panel-head { display: grid; gap: 3px; }
+.campaign-editor-panel-head strong { color: #f8fafc; font-size: 12px; }
+.campaign-editor-panel-head span { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.campaign-color-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.campaign-color-control { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+.campaign-color-control input[type="color"] { flex: 0 0 34px; width: 34px; height: 34px; min-height: 34px; padding: 3px; cursor: pointer; }
+.campaign-color-control input[type="text"], .campaign-color-control input:not([type]) { min-width: 0; }
+.campaign-color-control input[aria-label] { width: 100%; min-width: 0; }
 .campaign-review-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
 .campaign-review-grid > div { display: grid; gap: 5px; padding: 12px; background: #09111f; border-radius: 9px; min-width: 0; }
 .campaign-review-grid span { color: var(--muted); font-size: 11px; }
@@ -345,6 +354,9 @@ textarea:focus-visible,
 .campaign-email-body { padding: 24px 20px; color: #dbeafe; font-size: 13px; line-height: 1.6; }
 .campaign-email-body > span { color: #60a5fa; font-size: 10px; font-weight: 900; letter-spacing: .14em; }
 .campaign-email-body h2 { color: #fff; font-size: 22px; line-height: 1.15; margin: 8px 0 14px; }
+.campaign-email-hero-image { margin: 0 0 16px; text-align: center; }
+.campaign-email-hero-image img { display: block; width: 100%; max-height: 280px; object-fit: contain; border-radius: 8px; margin: 0 auto; }
+.campaign-email-hero-image a { display: block; text-decoration: none; }
 .campaign-preview-cta { border: 0; background: #facc15; color: #020617; padding: 10px 13px; border-radius: 7px; font-weight: 900; }
 .campaign-email-unsubscribe { display: block; padding: 0 20px 18px; color: #facc15; text-decoration: underline; }
 .campaign-brand-settings { display: grid; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(148,163,184,.13); }
@@ -376,6 +388,7 @@ textarea:focus-visible,
   .campaign-form-head, .campaign-recipient-toolbar, .campaign-history-row { align-items: flex-start; flex-direction: column; }
   .campaign-custom-variable-form { grid-template-columns: 1fr; }
   .campaign-review-grid { grid-template-columns: 1fr; }
+  .campaign-color-grid { grid-template-columns: 1fr; }
   .inline-field { flex-direction: column; }
 }
 

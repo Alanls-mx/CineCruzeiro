@@ -128,10 +128,16 @@ async function verifySmtp(db) {
   }
 }
 
-function button(label, url, secondary = false) {
+function safeColor(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || "").trim()) ? String(value).trim().toLowerCase() : fallback;
+}
+
+function button(label, url, secondary = false, options = {}) {
   const safeUrl = safeLink(url);
   if (!safeUrl) return "";
-  return `<a href="${htmlEscape(safeUrl)}" style="display:inline-block;max-width:100%;box-sizing:border-box;background:${secondary ? "#172554" : "#facc15"};color:${secondary ? "#eff6ff" : "#020617"};padding:13px 16px;border-radius:8px;text-decoration:none;font-weight:900;line-height:1.2;margin:6px 8px 6px 0;word-break:break-word">${htmlEscape(label)}</a>`;
+  const background = safeColor(options.background, secondary ? "#172554" : "#facc15");
+  const foreground = secondary ? "#eff6ff" : (background === "#facc15" ? "#020617" : "#ffffff");
+  return `<a href="${htmlEscape(safeUrl)}" style="display:inline-block;max-width:100%;box-sizing:border-box;background:${background};color:${foreground};padding:13px 16px;border-radius:8px;text-decoration:none;font-weight:900;line-height:1.2;margin:6px 8px 6px 0;word-break:break-word">${htmlEscape(label)}</a>`;
 }
 
 function safeLink(value) {
@@ -157,6 +163,19 @@ function absoluteUrl(value, siteUrl = "") {
   }
 }
 
+function campaignImageBlock(input = {}, recipient = {}) {
+  const rawImageUrl = interpolateCampaign(input.imageUrl || "", recipient, input.variables);
+  if (!safeLink(rawImageUrl)) return "";
+  const imageUrl = absoluteUrl(rawImageUrl, input.siteUrl || "");
+  if (!/^https?:\/\//i.test(imageUrl)) return "";
+  const alt = interpolateCampaign(input.imageAlt || "Imagem da campanha", recipient, input.variables).slice(0, 140);
+  const rawLink = interpolateCampaign(input.imageLink || "", recipient, input.variables);
+  const image = `<img src="${htmlEscape(imageUrl)}" width="640" alt="${htmlEscape(alt)}" style="display:block;width:100%;max-width:640px;height:auto;border:0;border-radius:8px;outline:0;text-decoration:none;margin:0 auto">`;
+  const link = absoluteUrl(rawLink, input.siteUrl || "");
+  const safeImageLink = rawLink && safeLink(rawLink) && /^https?:\/\//i.test(link) ? link : "";
+  return `<div style="margin:0 0 18px;text-align:center">${safeImageLink ? `<a href="${htmlEscape(safeImageLink)}" style="display:block;text-decoration:none">${image}</a>` : image}</div>`;
+}
+
 function baseLayout(title, body, options = {}) {
   const isMarketing = options.kind === "marketing";
   const unsubscribeFooter = isMarketing && options.unsubscribeUrl
@@ -166,6 +185,8 @@ function baseLayout(title, body, options = {}) {
   const brandName = String(brand.name || "Cine Cruzeiro").trim().slice(0, 80);
   const tagline = String(brand.tagline || "Cinema de rua, ingresso digital e atendimento de bairro.").trim().slice(0, 180);
   const logoUrl = options.logoUrl || brand.logoUrl;
+  const textColor = safeColor(options.textColor, "#dbeafe");
+  const headlineColor = safeColor(options.headlineColor, "#ffffff");
   const logo = logoUrl
     ? `<img src="${htmlEscape(logoUrl)}" width="126" alt="${htmlEscape(brandName)}" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px">`
     : `<strong style="display:block;color:#facc15;font-size:12px;letter-spacing:.18em;text-transform:uppercase">${htmlEscape(brandName)}</strong>`;
@@ -184,8 +205,9 @@ function baseLayout(title, body, options = {}) {
         </div>
         <div style="background:#0d1728;padding:22px;border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.34);box-sizing:border-box;overflow-wrap:break-word">
           ${options.kicker ? `<p style="margin:0 0 10px;color:#60a5fa;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase">${htmlEscape(options.kicker)}</p>` : ""}
-          <h1 style="margin:0 0 16px;font-size:26px;line-height:1.15;color:#fff;word-break:break-word">${htmlEscape(title)}</h1>
-          <div style="font-size:15px;line-height:1.65;color:#dbeafe;overflow-wrap:break-word">${body}</div>
+          <h1 style="margin:0 0 16px;font-size:26px;line-height:1.15;color:${headlineColor};word-break:break-word">${htmlEscape(title)}</h1>
+          ${options.heroImageHtml || ""}
+          <div style="font-size:15px;line-height:1.65;color:${textColor};overflow-wrap:break-word">${body}</div>
         </div>
         <p style="margin:18px 0 0;color:#93a4bd;font-size:12px;line-height:1.6">${htmlEscape(footer)}${socialFooter}${unsubscribeFooter}</p>
       </div>
@@ -416,12 +438,12 @@ async function sendPromotionCampaign(db, input = {}) {
         : `
           <p>Olá${recipient.name ? `, ${htmlEscape(recipient.name)}` : ""}.</p>
           <p>${htmlEscape(personalizedMessage).replace(/\n/g, "<br>")}</p>
-          ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl)}</p>` : ""}
+          ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl, false, { background: input.buttonColor })}</p>` : ""}
         `;
       const message = {
         to: recipient.email,
         subject: interpolateCampaign(input.subject, recipient, input.variables),
-        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand }),
+        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand, heroImageHtml: campaignImageBlock(input, recipient), headlineColor: input.headlineColor, textColor: input.textColor }),
         text: interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
         attachments: input.attachments || []
       };
@@ -492,6 +514,7 @@ module.exports = {
     absoluteUrl,
     sanitizeCampaignHtml,
     interpolateCampaign,
-    safeLink
+    safeLink,
+    campaignImageBlock
   }
 };
