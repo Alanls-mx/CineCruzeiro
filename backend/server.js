@@ -9793,19 +9793,17 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/coupons/preview" && method === "POST") {
+    const customerUser = getCustomerUser(req, db);
+    if (!customerUser) {
+      sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para aplicar um cupom." } });
+      return;
+    }
     const body = await readBody(req);
     const input = body.order || body;
     const normalizedOrder = normalizePaymentOrder(input);
-    const customerUser = getCustomerUser(req, db);
-    if (customerUser) {
-      normalizedOrder.customerUserId = customerUser.id;
-      normalizedOrder.customerEmail = customerUser.email || "";
-      normalizedOrder.customerCpf = customerUser.cpf || "";
-    } else {
-      normalizedOrder.customerUserId = "";
-      normalizedOrder.customerEmail = String(input.customerEmail || "").trim().toLowerCase();
-      normalizedOrder.customerCpf = String(input.customerCpf || "").replace(/\D/g, "");
-    }
+    normalizedOrder.customerUserId = customerUser.id;
+    normalizedOrder.customerEmail = customerUser.email || "";
+    normalizedOrder.customerCpf = customerUser.cpf || "";
     const pricedOrder = repriceOrderFromCatalog(db, normalizedOrder, { assignSeats: false });
     const subtotal = Number((Number(pricedOrder.totalPrice || 0) + Number(pricedOrder.couponDiscount || 0)).toFixed(2));
     sendJson(res, 200, {
@@ -9863,16 +9861,16 @@ async function handleApi(req, res, pathname) {
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       expireStaleReservations(lockedDb);
+      const customerUser = getCustomerUser(req, lockedDb);
+      if (!customerUser) {
+        sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para gerar o pagamento por Pix." } });
+        return;
+      }
       const normalizedOrder = normalizePaymentOrder(body.order || body);
       normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
-      const customerUser = getCustomerUser(req, lockedDb);
-      if (customerUser) {
-        normalizedOrder.customerUserId = customerUser.id;
-        normalizedOrder.customerEmail = customerUser.email || normalizedOrder.customerEmail;
-        normalizedOrder.customerCpf = customerUser.cpf || normalizedOrder.customerCpf;
-      } else {
-        normalizedOrder.customerUserId = "";
-      }
+      normalizedOrder.customerUserId = customerUser.id;
+      normalizedOrder.customerEmail = customerUser.email || "";
+      normalizedOrder.customerCpf = customerUser.cpf || "";
       const existing = findExistingCheckout(lockedDb, normalizedOrder, "pix");
       if (existing) {
         if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {
@@ -9956,16 +9954,16 @@ async function handleApi(req, res, pathname) {
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       expireStaleReservations(lockedDb);
+      const customerUser = getCustomerUser(req, lockedDb);
+      if (!customerUser) {
+        sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para pagar com cartão." } });
+        return;
+      }
       const normalizedOrder = normalizePaymentOrder(body.order || body);
       normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
-      const customerUser = getCustomerUser(req, lockedDb);
-      if (customerUser) {
-        normalizedOrder.customerUserId = customerUser.id;
-        normalizedOrder.customerEmail = customerUser.email || normalizedOrder.customerEmail;
-        normalizedOrder.customerCpf = customerUser.cpf || normalizedOrder.customerCpf;
-      } else {
-        normalizedOrder.customerUserId = "";
-      }
+      normalizedOrder.customerUserId = customerUser.id;
+      normalizedOrder.customerEmail = customerUser.email || "";
+      normalizedOrder.customerCpf = customerUser.cpf || "";
       const existing = findExistingCheckout(lockedDb, normalizedOrder, "credit_card");
       if (existing) {
         if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {

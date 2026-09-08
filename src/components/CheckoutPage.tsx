@@ -94,6 +94,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [clubLoading, setClubLoading] = useState(false);
   const [clubSubscriptions, setClubSubscriptions] = useState<AccountSubscription[]>([]);
   const [customerUser, setCustomerUser] = useState<CustomerUser | null>(null);
+  const [authStatus, setAuthStatus] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [mercadoPagoConfig, setMercadoPagoConfig] = useState<MercadoPagoCheckoutConfig | null>(null);
   const [couponPreview, setCouponPreview] = useState<CouponPreviewResult | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
@@ -132,7 +133,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     tickets: draft?.ticketQuantities || {},
     concessions: draft?.concessionQuantities || {},
     customerId: customerUser?.id || "",
-    customerEmail: customerUser?.email || draft?.customerEmail || "",
+    customerEmail: customerUser?.email || "",
   });
   const clubBenefitsBasis = JSON.stringify({
     step,
@@ -246,7 +247,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const seatRealtime = useSeatRealtime({
     sessionId: activeSessionId,
     ownerToken: draft?.seatHoldToken || "",
-    enabled: Boolean(seatMap?.enabled && !isValidPaymentResult(draft?.paymentResult)),
+    enabled: Boolean(authStatus === "authenticated" && seatMap?.enabled && !isValidPaymentResult(draft?.paymentResult)),
     selectedSeatIds,
     onSeatChange: applySeatChange,
     onSessionState: applySeatSessionState,
@@ -260,9 +261,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [sessionId]);
 
   useEffect(() => {
-    if (!found || !draft || draft.seatHoldToken || isValidPaymentResult(draft.paymentResult)) return;
+    if (authStatus !== "authenticated" || !found || !draft || draft.seatHoldToken || isValidPaymentResult(draft.paymentResult)) return;
     updateDraft({ seatHoldToken: crypto.randomUUID() });
-  }, [draft, found, updateDraft]);
+  }, [authStatus, draft, found, updateDraft]);
 
   useEffect(() => {
     if (status !== "ready" || step === "confirmacao" || sessionCanCheckout) return;
@@ -273,10 +274,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   useEffect(() => {
     const loadKey = `${activeSessionId}:${draft?.seatHoldToken || ""}`;
-    if (!activeSessionId || loadedSeatSessionRef.current === loadKey) return;
+    if (authStatus !== "authenticated" || !activeSessionId || loadedSeatSessionRef.current === loadKey) return;
     loadedSeatSessionRef.current = loadKey;
     void refreshSeatMap();
-  }, [activeSessionId, draft?.seatHoldToken, refreshSeatMap]);
+  }, [activeSessionId, authStatus, draft?.seatHoldToken, refreshSeatMap]);
 
   useEffect(() => {
     if (!draft || !seatMap?.enabled || seatMapStatus !== "ready" || isValidPaymentResult(draft.paymentResult)) return;
@@ -293,7 +294,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [draft, requiredSeatCount, seatMap, seatMapStatus, updateDraft]);
 
   useEffect(() => {
-    if (hydratedSessionId !== sessionId || !found || !sessionCanCheckout || draft?.sessionId === found.session.id) return;
+    if (authStatus !== "authenticated" || hydratedSessionId !== sessionId || !found || !sessionCanCheckout || draft?.sessionId === found.session.id) return;
     const next = {
       movieId: found.movie.id,
       sessionId: found.session.id,
@@ -308,10 +309,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     };
     writeCheckoutDraft(next);
     setDraft(next);
-  }, [hydratedSessionId, sessionId, found, sessionCanCheckout, draft?.sessionId, availableTicketTypes]);
+  }, [authStatus, hydratedSessionId, sessionId, found, sessionCanCheckout, draft?.sessionId, availableTicketTypes]);
 
   useEffect(() => {
-    if (!found || !draft) return;
+    if (authStatus !== "authenticated" || !found || !draft) return;
     const hasPaymentResult = isValidPaymentResult(draft.paymentResult);
     const persistedDraft = readCheckoutDraft();
     const hasVisitedExtras = Boolean(
@@ -351,7 +352,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     if (step !== "confirmacao" && confirmationStatus !== "idle") {
       setConfirmationStatus("idle");
     }
-  }, [draft, checkoutPathFor, confirmationStatus, found, router, seatMapStatus, step, ticketSelectionComplete, updateDraft]);
+  }, [authStatus, draft, checkoutPathFor, confirmationStatus, found, router, seatMapStatus, step, ticketSelectionComplete, updateDraft]);
 
   const confirmationOrderId = String(confirmationResult?.order?.id || "");
   const confirmationPaymentStatus = String(confirmationResult?.payment?.status || "");
@@ -380,7 +381,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [availableTicketTypes, draft, content?.concessions, found]);
 
   useEffect(() => {
-    if (!found || !draft) return;
+    if (authStatus !== "authenticated" || !found || !draft) return;
     const key = `cine-tracked-checkout-${found.session.id}`;
     if (window.sessionStorage.getItem(key)) return;
     window.sessionStorage.setItem(key, "1");
@@ -390,7 +391,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       num_items: selectedTicketItems(draft, availableTicketTypes).reduce((sum, item) => sum + item.quantity, 0),
       items: trackingItems,
     });
-  }, [availableTicketTypes, draft, found, total, trackingItems]);
+  }, [authStatus, availableTicketTypes, draft, found, total, trackingItems]);
 
   useEffect(() => {
     if (confirmationPaymentStatus !== "approved" || !confirmationOrderId) return;
@@ -452,7 +453,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [content?.concessions, draft?.concessionQuantities]);
 
   const applyCoupon = useCallback(async (rawCode: string) => {
-    if (!found || !draft) return;
+    if (!customerUser || !found || !draft) return;
     const code = rawCode.trim().toUpperCase();
     if (!code) {
       setCouponPreview(null);
@@ -473,10 +474,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           .filter(([, quantity]) => Number(quantity) > 0)
           .map(([id, quantity]) => ({ id, quantity: Number(quantity) })),
         couponCode: code,
-        customerName: customerUser?.name || draft.customerName || "Cliente Cine Cruzeiro",
-        customerEmail: customerUser?.email || draft.customerEmail || "",
-        customerPhone: customerUser?.phone || draft.customerPhone || "",
-        customerCpf: customerUser?.cpf || draft.customerCpf || "",
+        customerName: customerUser.name || "Cliente Cine Cruzeiro",
+        customerEmail: customerUser.email,
+        customerPhone: customerUser.phone || "",
+        customerCpf: customerUser.cpf || "",
       });
       setCouponPreview(preview);
       updateDraft({
@@ -548,7 +549,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [clubBenefitsBasis]);
 
   const submitPayment = useCallback(async (cardData?: MercadoPagoCardPayload) => {
-    if (!found || !draft) return;
+    if (!customerUser || !found || !draft) {
+      setPaymentError("Entre na sua conta para continuar a compra.");
+      return;
+    }
     setLoading(true);
     setPaymentError("");
     try {
@@ -582,10 +586,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             .filter(([, qty]) => Number(qty) > 0)
             .map(([id, qty]) => ({ id, quantity: Number(qty) })),
           couponCode: couponPreview?.coupon.code || "",
-          customerName: customerUser?.name || checkoutDraft.customerName || "Cliente Cine Cruzeiro",
-          customerPhone: customerUser?.phone || checkoutDraft.customerPhone || "",
-          customerEmail: customerUser?.email || checkoutDraft.customerEmail || "",
-          customerCpf: customerUser?.cpf || checkoutDraft.customerCpf || "",
+          customerName: customerUser.name || "Cliente Cine Cruzeiro",
+          customerPhone: customerUser.phone || "",
+          customerEmail: customerUser.email,
+          customerCpf: customerUser.cpf || "",
           useClubCredits: checkoutDraft.useClubCredits === true,
           useClubBenefits: checkoutDraft.useClubBenefits !== false && Boolean(activeClubSubscription(clubSubscriptions)),
           paymentMethod: checkoutDraft.paymentMethod === "credit_card" ? "CREDIT_CARD" : "PIX",
@@ -616,7 +620,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [availableTicketTypes, draft, checkoutPathFor, found, mercadoPagoConfig, router, updateDraft, customerUser, clubSubscriptions, checkoutTotal, trackingItems, refreshSeatMap, couponPreview]);
 
   async function submitClubCredit() {
-    if (!found || !draft) return;
+    if (!customerUser || !found || !draft) return;
     setClubLoading(true);
     setPaymentError("");
     try {
@@ -644,15 +648,27 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }
 
   useEffect(() => {
-    if (step !== "pagamento") return;
     let mounted = true;
+    setAuthStatus("checking");
     fetchCurrentCustomer()
       .then((result) => {
-        if (mounted) setCustomerUser(result.user);
+        if (!mounted) return;
+        setCustomerUser(result.user);
+        setAuthStatus("authenticated");
       })
       .catch(() => {
-        if (mounted) setCustomerUser(null);
+        if (!mounted) return;
+        setCustomerUser(null);
+        setAuthStatus("anonymous");
       });
+    return () => {
+      mounted = false;
+    };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (step !== "pagamento" || authStatus !== "authenticated") return;
+    let mounted = true;
     fetchMySubscriptions()
       .then((subscriptions) => {
         if (mounted) setClubSubscriptions(subscriptions);
@@ -663,10 +679,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     return () => {
       mounted = false;
     };
-  }, [step]);
+  }, [authStatus, step]);
 
   useEffect(() => {
-    if (step !== "pagamento") return;
+    if (step !== "pagamento" || authStatus !== "authenticated") return;
     let mounted = true;
     fetchMercadoPagoCheckoutConfig()
       .then((config) => {
@@ -678,11 +694,16 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     return () => {
       mounted = false;
     };
-  }, [step]);
+  }, [authStatus, step]);
 
   if (status === "loading") return <PageShell><div className="h-96 skeleton-soft" /></PageShell>;
   if (status === "error") return <PageShell><p className="text-rose-200">{error}</p></PageShell>;
   if (hydratedSessionId !== sessionId) return <PageShell><div className="h-96 skeleton-soft" /></PageShell>;
+  if (authStatus === "checking") return <PageShell><div className="h-96 skeleton-soft" aria-label="Verificando sua conta" /></PageShell>;
+  if (authStatus === "anonymous") {
+    const returnTo = found ? checkoutPathFor(step) : `/checkout/${sessionId}`;
+    return <PageShell><CheckoutAuthRequired returnTo={returnTo} movieTitle={found?.movie.title} /></PageShell>;
+  }
   if (!found || !draft) return <PageShell><p className="text-slate-300">Sessão não encontrada. Volte para a programação.</p><Link className="mt-4 inline-flex text-gold-400" href="/filmes">Ver filmes</Link></PageShell>;
   if (["extras", "pagamento"].includes(step) && (seatMapStatus !== "ready" || !ticketSelectionComplete)) {
     return <PageShell><div className="h-96 skeleton-soft" aria-label="Validando ingressos e poltronas" /></PageShell>;
@@ -744,7 +765,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               loading={loading}
               clubLoading={clubLoading}
               clubSubscriptions={clubSubscriptions}
-              customerUser={customerUser}
+              customerUser={customerUser!}
               clubBenefitsPreview={appliedClubBenefitsPreview}
               clubBenefitsLoading={clubBenefitsRequested && clubBenefitsLoading}
               clubBenefitsError={clubBenefitsError}
@@ -785,6 +806,30 @@ function PageShell({ children }: { children: React.ReactNode }) {
       <main className="mx-auto max-w-[1320px] px-4 py-10 pb-28 sm:px-6 lg:px-8 lg:pb-10">{children}</main>
       <SiteFooter />
     </div>
+  );
+}
+
+function CheckoutAuthRequired({ returnTo, movieTitle }: { returnTo: string; movieTitle?: string }) {
+  return (
+    <section className="mx-auto max-w-2xl py-10 sm:py-16" aria-labelledby="checkout-auth-title">
+      <div className="border border-white/10 bg-brand-900/70 px-6 py-8 shadow-soft sm:px-10 sm:py-10">
+        <CircleUserRound className="h-10 w-10 text-gold-400" aria-hidden="true" />
+        <p className="mt-6 text-sm font-black uppercase tracking-[.18em] text-brand-300">Compra protegida</p>
+        <h1 id="checkout-auth-title" className="mt-3 font-display text-3xl font-black sm:text-4xl">Entre para comprar seu ingresso</h1>
+        <p className="mt-4 max-w-xl text-base leading-7 text-slate-300">
+          {movieTitle ? `A sessão de ${movieTitle} continuará esperando por você. ` : ""}
+          Use sua conta do Cine Cruzeiro ou crie uma gratuitamente para continuar e guardar seus ingressos em Minha conta.
+        </p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Link href={`/conta?returnTo=${encodeURIComponent(returnTo)}`} className="inline-flex min-h-12 items-center justify-center bg-gold-400 px-6 text-sm font-black text-slate-950 transition hover:bg-gold-300">
+            Entrar ou criar conta
+          </Link>
+          <Link href="/filmes" className="inline-flex min-h-12 items-center justify-center border border-white/15 px-6 text-sm font-black text-white transition hover:border-white/30 hover:bg-white/5">
+            Voltar aos filmes
+          </Link>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1116,7 +1161,7 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   loading: boolean;
   clubLoading: boolean;
   clubSubscriptions: AccountSubscription[];
-  customerUser: CustomerUser | null;
+  customerUser: CustomerUser;
   clubBenefitsPreview: ClubBenefitsPreviewResult | null;
   clubBenefitsLoading: boolean;
   clubBenefitsError: string;
@@ -1144,30 +1189,15 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   return (
     <div className="grid gap-10 xl:grid-cols-2">
       <section>
-        {customerUser ? (
-          <>
-            <h2 className="font-display text-3xl font-black">Conta identificada</h2>
-            <div className="mt-6 bg-brand-900/70 p-5 shadow-soft">
-              <p className="text-lg font-black text-white">{customerUser.name || "Cliente Cine Cruzeiro"}</p>
-              <p className="mt-2 text-sm text-slate-300">{customerUser.email}</p>
-              <p className="mt-1 text-sm text-slate-400">{customerUser.phone || "WhatsApp nao informado"}</p>
-              <Link href="/conta" className="mt-4 inline-flex text-sm font-black text-gold-400 hover:text-gold-300">
-                Editar dados da conta
-              </Link>
-            </div>
-          </>
-        ) : (
-          <>
-            <h2 className="font-display text-3xl font-black">Dados do visitante</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">Pedir isso aqui só quando a compra for sem conta. Cliente logado usa os dados salvos automaticamente.</p>
-            <div className="mt-6 space-y-4">
-              <Input label="Nome" value={draft.customerName || ""} onChange={(value) => updateDraft({ customerName: value })} />
-              <Input label="WhatsApp" value={draft.customerPhone || ""} onChange={(value) => updateDraft({ customerPhone: value })} />
-              <Input label="E-mail" type="email" value={draft.customerEmail || ""} onChange={(value) => updateDraft({ customerEmail: value })} />
-              <Input label="CPF, opcional" value={draft.customerCpf || ""} onChange={(value) => updateDraft({ customerCpf: value.replace(/\D/g, "").slice(0, 11) })} />
-            </div>
-          </>
-        )}
+        <h2 className="font-display text-3xl font-black">Conta identificada</h2>
+        <div className="mt-6 bg-brand-900/70 p-5 shadow-soft">
+          <p className="text-lg font-black text-white">{customerUser.name || "Cliente Cine Cruzeiro"}</p>
+          <p className="mt-2 text-sm text-slate-300">{customerUser.email}</p>
+          <p className="mt-1 text-sm text-slate-400">{customerUser.phone || "WhatsApp não informado"}</p>
+          <Link href="/conta" className="mt-4 inline-flex text-sm font-black text-gold-400 hover:text-gold-300">
+            Editar dados da conta
+          </Link>
+        </div>
       </section>
       <section>
         <h2 className="font-display text-3xl font-black">Pagamento</h2>
@@ -1686,19 +1716,5 @@ function QuantityControls({ value, onChange }: { value: number; onChange: (value
       <span className="w-8 text-center text-lg font-black">{value}</span>
       <button type="button" onClick={() => onChange(value + 1)} className="h-10 w-10 bg-brand-700 text-xl">+</button>
     </div>
-  );
-}
-
-function Input({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-black uppercase tracking-[.16em] text-slate-400">{label}</span>
-      <input
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-lg border border-white/15 bg-brand-950/80 px-4 py-3 text-base text-white outline-none transition placeholder:text-slate-500 focus:border-gold-400 focus:ring-4 focus:ring-gold-400/10"
-      />
-    </label>
   );
 }

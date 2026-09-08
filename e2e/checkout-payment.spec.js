@@ -73,7 +73,21 @@ async function sendMercadoPagoOrderEvent(request, { order, payment, status, vers
   return response.json();
 }
 
+async function authenticateCustomer(page, email) {
+  const password = "Checkout-e2e-2026!";
+  const registration = await page.request.post(`${BACKEND}/api/auth/register`, {
+    data: { name: "Cliente E2E", email, password, phone: "11999999999" }
+  });
+  if (registration.status() === 409) {
+    const login = await page.request.post(`${BACKEND}/api/auth/login`, { data: { email, password } });
+    expect(login.ok()).toBeTruthy();
+    return;
+  }
+  expect(registration.ok()).toBeTruthy();
+}
+
 async function startPixCheckout(page, email, { concession = false } = {}) {
+  await authenticateCustomer(page, email);
   await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
   await page.goto("/checkout/sessao-e2e");
   await expect(page.getByRole("heading", { name: "Filme E2E" })).toBeVisible();
@@ -84,17 +98,23 @@ async function startPixCheckout(page, email, { concession = false } = {}) {
     await page.locator("article").filter({ hasText: "Pipoca E2E" }).getByRole("button", { name: "+" }).click();
   }
   await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
-  await expect(page.getByRole("heading", { name: "Dados do visitante" })).toBeVisible();
-  await page.getByLabel("Nome").fill("Cliente E2E");
-  await page.getByLabel("WhatsApp").fill("11999999999");
-  await page.getByLabel("E-mail").fill(email);
+  await expect(page.getByRole("heading", { name: "Conta identificada" })).toBeVisible();
   await page.getByRole("button", { name: "Pix", exact: true }).click();
   await page.getByRole("button", { name: "Gerar Pix", exact: true }).click();
   await expect(page.getByText("Aguardando confirmação")).toBeVisible({ timeout: 10000 });
   await expect(page.getByAltText("QR Code para pagamento via Pix")).toBeVisible({ timeout: 10000 });
 }
 
+test("visitante precisa entrar ou criar uma conta antes de comprar", async ({ page }) => {
+  await page.goto("/checkout/sessao-e2e");
+  await expect(page.getByRole("heading", { name: "Entre para comprar seu ingresso" })).toBeVisible();
+  const accountLink = page.getByRole("link", { name: "Entrar ou criar conta" });
+  await expect(accountLink).toHaveAttribute("href", "/conta?returnTo=%2Fcheckout%2Fsessao-e2e");
+  await expect(page.getByRole("heading", { name: "Ingressos" })).toHaveCount(0);
+});
+
 test("mantém as poltronas reservadas ao avançar até o pagamento", async ({ page }) => {
+  await authenticateCustomer(page, "checkout-poltronas@e2e.local");
   const seatMapRequests = [];
   page.on("request", (request) => {
     if (request.url().includes("/api/sessions/sessao-poltronas-e2e/seats")) {
@@ -112,7 +132,7 @@ test("mantém as poltronas reservadas ao avançar até o pagamento", async ({ pa
   await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
 
   await expect(page).toHaveURL(/\/checkout\/sessao-poltronas-e2e\/pagamento$/);
-  await expect(page.getByRole("heading", { name: "Dados do visitante" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Conta identificada" })).toBeVisible();
   await expect(page.getByText("A4", { exact: true })).toBeVisible();
   expect(seatMapRequests.length).toBeGreaterThan(0);
   expect(seatMapRequests.every((url) => new URL(url).searchParams.has("ownerToken"))).toBeTruthy();
@@ -120,13 +140,12 @@ test("mantém as poltronas reservadas ao avançar até o pagamento", async ({ pa
 
 test("cliente aplica cupom e o backend mantém o desconto no pedido", async ({ page, request }) => {
   const email = "checkout-cupom@e2e.local";
+  await authenticateCustomer(page, email);
   await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
   await page.goto("/checkout/sessao-e2e");
   await page.getByRole("link", { name: "Continuar para Extras" }).click();
   await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
-  await page.getByLabel("Nome").fill("Cliente Cupom E2E");
-  await page.getByLabel("WhatsApp").fill("11999999999");
-  await page.getByLabel("E-mail").fill(email);
+  await expect(page.getByRole("heading", { name: "Conta identificada" })).toBeVisible();
   await page.getByLabel("Código do cupom").fill("e2e20");
   await page.getByRole("button", { name: "Aplicar", exact: true }).click();
   await expect(page.getByText("E2E20 aplicado")).toBeVisible();

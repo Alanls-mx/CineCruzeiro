@@ -387,6 +387,30 @@ async function run() {
       concessionItems: [],
       couponCode: "SMOKE20"
     };
+    const anonymousCouponPreview = await request("/api/coupons/preview", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ order: couponOrder })
+    });
+    assert.equal(anonymousCouponPreview.response.status, 401);
+    assert.equal(anonymousCouponPreview.payload.error.code, "AUTH_REQUIRED");
+
+    const anonymousPix = await request("/api/payments/pix", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ order: { ...couponOrder, id: "smoke-anonymous-pix", idempotencyKey: "smoke-anonymous-pix" } })
+    });
+    assert.equal(anonymousPix.response.status, 401);
+    assert.equal(anonymousPix.payload.error.code, "AUTH_REQUIRED");
+
+    const anonymousCard = await request("/api/payments/card", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ order: { ...couponOrder, id: "smoke-anonymous-card", idempotencyKey: "smoke-anonymous-card" } })
+    });
+    assert.equal(anonymousCard.response.status, 401);
+    assert.equal(anonymousCard.payload.error.code, "AUTH_REQUIRED");
+
     const couponPreview = await request("/api/coupons/preview", {
       method: "POST",
       headers: jsonHeaders(targetCookie),
@@ -672,7 +696,7 @@ async function run() {
     });
     const missingSeat = await request("/api/payments/pix", {
       method: "POST",
-      headers: jsonHeaders(),
+      headers: jsonHeaders(targetCookie),
       body: JSON.stringify(seatCheckoutOrder("smoke-seat-missing", []))
     });
     assert.equal(missingSeat.response.status, 422);
@@ -680,7 +704,7 @@ async function run() {
 
     const firstSeat = await request("/api/payments/pix", {
       method: "POST",
-      headers: jsonHeaders(),
+      headers: jsonHeaders(targetCookie),
       body: JSON.stringify(seatCheckoutOrder("smoke-seat-a1", ["a1"]))
     });
     assert.equal(firstSeat.response.status, 201);
@@ -700,7 +724,7 @@ async function run() {
     assert.equal(occupiedSeatMap.payload.rows[0].seats[0].status, "unavailable");
     const duplicateSeat = await request("/api/payments/pix", {
       method: "POST",
-      headers: jsonHeaders(),
+      headers: jsonHeaders(targetCookie),
       body: JSON.stringify(seatCheckoutOrder("smoke-seat-a1-duplicate", ["a1"]))
     });
     assert.equal(duplicateSeat.response.status, 409);

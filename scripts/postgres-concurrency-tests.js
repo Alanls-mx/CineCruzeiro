@@ -181,10 +181,10 @@ function checkoutBody(id, includeProduct = false) {
   };
 }
 
-async function concurrentCheckout(ids, includeProduct) {
+async function concurrentCheckout(ids, includeProduct, cookie) {
   return Promise.all(ids.map((id) => request("/api/payments/pix", {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: jsonHeaders(cookie),
     body: JSON.stringify(checkoutBody(id, includeProduct))
   })));
 }
@@ -289,6 +289,7 @@ async function run() {
   try {
     await new Promise((resolve) => setTimeout(resolve, 700));
     await loginAdmin();
+    let checkoutCookie = await registerCustomer("checkout-seat@postgres.local");
 
     const { acquireSeatHold, releaseSeatHoldsForOwner } = require("../backend/db/postgresStore");
     const holdOwners = Array.from({ length: 20 }, (_, index) => `concorrente-${index + 1}`);
@@ -302,21 +303,23 @@ async function run() {
     assert.equal(winningHolds.length, 1);
     await releaseSeatHoldsForOwner({ sessionId: "sessao-concorrencia", ownerToken: winningHolds[0].ownerToken });
 
-    const lastSeat = await concurrentCheckout(["ultimo-ingresso-a", "ultimo-ingresso-b"], false);
+    const lastSeat = await concurrentCheckout(["ultimo-ingresso-a", "ultimo-ingresso-b"], false, checkoutCookie);
     const seatStatuses = lastSeat.map((item) => item.response.status).sort();
     assert.deepEqual(seatStatuses, [201, 409]);
 
     await resetDb(baseDb({ capacity: 10, stock: 1 }));
+    checkoutCookie = await registerCustomer("checkout-product@postgres.local");
     const productIds = Array.from({ length: 10 }, (_, index) => `ultimo-produto-${index + 1}`);
-    const lastProduct = await concurrentCheckout(productIds, true);
+    const lastProduct = await concurrentCheckout(productIds, true, checkoutCookie);
     const productStatuses = lastProduct.map((item) => item.response.status).sort();
     assert.equal(productStatuses.filter((status) => status === 201).length, 1);
     assert.equal(productStatuses.filter((status) => status === 409).length, 9);
 
     await resetDb(baseDb({ capacity: 2, stock: 1 }));
+    checkoutCookie = await registerCustomer("checkout-webhook@postgres.local");
     const pix = await request("/api/payments/pix", {
       method: "POST",
-      headers: jsonHeaders(),
+      headers: jsonHeaders(checkoutCookie),
       body: JSON.stringify(checkoutBody("webhook-concorrente", true))
     });
     assert.equal(pix.response.status, 201);
