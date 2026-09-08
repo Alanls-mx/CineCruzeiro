@@ -6522,7 +6522,14 @@ function normalizeCampaignInput(input = {}, existing = {}) {
 
 function publicCampaign(campaign = {}) {
   const { customerIds, html, message, attachments, ...safe } = campaign;
-  return { ...safe, attachments: (attachments || []).map(({ path, ...item }) => item), customerCount: Number(campaign.recipientCount || campaign.recipients || 0), hasHtml: Boolean(html), hasMessage: Boolean(message) };
+  return {
+    ...safe,
+    attachments: (attachments || []).map(({ path, ...item }) => item),
+    customerCount: Number(campaign.recipientCount || campaign.recipients || 0),
+    hasHtml: Boolean(html),
+    hasMessage: Boolean(message),
+    metricsSupported: { sent: true, failed: true, delivered: false, opened: false, clicked: false }
+  };
 }
 
 function resolveCampaignAttachments(db, attachments = []) {

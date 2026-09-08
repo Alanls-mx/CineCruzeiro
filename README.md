@@ -499,6 +499,8 @@ O módulo de Marketing possui uma central de campanhas com fluxo em três etapas
 
 O envio é processado em fila por lotes, com até duas tentativas controladas por destinatário, atualização persistida, idempotência de criação e retomada de campanhas agendadas após reinício do backend. O HTML é sanitizado no backend, os links perigosos são removidos e o layout final usa CSS inline e estrutura compatível com clientes de e-mail. A base permanece em `settings.emailCampaigns` para preservar instalações JSON e PostgreSQL existentes, sem migração destrutiva.
 
+O histórico informa enviados e falhas. Aberturas e cliques ficam identificados como não rastreados enquanto o provedor configurado não oferecer tracking ou webhook compatível; o painel não apresenta zeros de tracking como se fossem métricas reais.
+
 Regras:
 
 - e-mails transacionais não exibem unsubscribe;

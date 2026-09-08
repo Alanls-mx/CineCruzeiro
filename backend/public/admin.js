@@ -5616,7 +5616,13 @@ function renderEmailCampaigns() {
   const history = $("emailCampaignHistory");
   if (!history) return;
   const campaigns = state.content?.emailCampaigns || [];
-  history.innerHTML = campaigns.length ? campaigns.map((item) => `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(item.status === "sent" ? `${item.sent || 0} enviados` : `${item.customerCount || 0} destinatários`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button type="button" class="ghost-button" data-campaign-duplicate="${escapeHtml(item.id)}">Duplicar</button></div></div>`).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
+  history.innerHTML = campaigns.length ? campaigns.map((item) => {
+    const delivery = item.status === "sent" || item.status === "failed"
+      ? `${item.sent || 0} enviados · ${item.failed || 0} falhas`
+      : `${item.customerCount || 0} destinatários`;
+    const unsupported = item.metricsSupported?.opened || item.metricsSupported?.clicked ? "" : " · aberturas/cliques não rastreados pelo provedor";
+    return `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(`${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button type="button" class="ghost-button" data-campaign-duplicate="${escapeHtml(item.id)}">Duplicar</button></div></div>`;
+  }).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
 }
 
 function renderEmailCampaignControls() {
