@@ -22,6 +22,19 @@ async function loginAdmin(page) {
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: 10000 });
 }
 
+async function authenticateCustomer(page, email) {
+  const password = "Checkout-e2e-2026!";
+  const registration = await page.request.post(`${BACKEND}/api/auth/register`, {
+    data: { name: "Cliente E2E", email, password, phone: "11999999999" }
+  });
+  if (registration.status() === 409) {
+    const login = await page.request.post(`${BACKEND}/api/auth/login`, { data: { email, password } });
+    expect(login.ok()).toBeTruthy();
+    return;
+  }
+  expect(registration.ok()).toBeTruthy();
+}
+
 test("operador conclui venda rápida com ingresso e bomboniere pela interface do painel", async ({ page, request }) => {
   await page.setViewportSize({ width: 1800, height: 1000 });
   await loginAdmin(page);
@@ -125,6 +138,7 @@ test("primeiro operador bloqueia a poltrona e o concorrente recebe rejeição im
 });
 
 test("cliente móvel reconecta após rede temporariamente offline e recupera estado após refresh", async ({ page, context }) => {
+  await authenticateCustomer(page, "realtime-mobile@e2e.local");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     const NativeWebSocket = window.WebSocket;

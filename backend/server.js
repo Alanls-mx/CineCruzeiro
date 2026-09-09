@@ -40,6 +40,7 @@ const {
   stopMovieTagTransition
 } = require("./utils/movieTagLifecycle");
 const { brazilianDate } = require("./utils/dateFormat");
+const { requireRuntimeSecret } = require("./services/runtimeSecretService");
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
@@ -229,14 +230,11 @@ function getTmdbCredentials(db) {
 }
 
 function getJwtSecret() {
-  const configured = getFirstEnv(JWT_SECRET_ENV_KEYS);
-  if (configured?.value) return configured.value;
-  if (isProduction()) {
-    throw Object.assign(new Error("Configure JWT_SECRET no ambiente de produção."), {
-      code: "JWT_SECRET_REQUIRED"
-    });
-  }
-  return "cine-cruzeiro-local-dev-secret";
+  return requireRuntimeSecret({
+    envKeys: JWT_SECRET_ENV_KEYS,
+    errorCode: "JWT_SECRET_REQUIRED",
+    errorMessage: "Configure JWT_SECRET no ambiente de produção."
+  });
 }
 
 function getCrmWebhookUrl(db) {
@@ -354,7 +352,7 @@ function isProduction() {
 
 function cookieSameSite() {
   if (!isProduction()) return "SameSite=Lax";
-  const frontendHost = originHost(corsOrigin());
+  const frontendHost = originHost(allowedCorsOrigins()[0]);
   const backendHost = originHost(publicBackendUrl());
   return frontendHost && backendHost && frontendHost !== backendHost ? "SameSite=None" : "SameSite=Lax";
 }
@@ -1102,7 +1100,11 @@ function adminOriginAllowed(req) {
   const requestHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
   const origin = originHost(req.headers.origin);
   const referer = originHost(req.headers.referer);
-  const allowedHosts = new Set([requestHost, originHost(corsOrigin()), originHost(publicBackendUrl())].filter(Boolean));
+  const allowedHosts = new Set([
+    requestHost,
+    ...allowedCorsOrigins().map(originHost),
+    originHost(publicBackendUrl())
+  ].filter(Boolean));
 
   if (origin) return allowedHosts.has(origin);
   if (referer) return allowedHosts.has(referer);

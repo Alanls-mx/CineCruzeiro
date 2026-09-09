@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { requireRuntimeSecret, runtimeSecretConfigured } = require("./runtimeSecretService");
 
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const DEFAULT_ISSUER = "Cine Cruzeiro Admin";
@@ -73,17 +74,16 @@ function verifyTotp(secret, code, options = {}) {
 }
 
 function encryptionKey() {
-  const source = process.env.TWO_FACTOR_SECRET_KEY || process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "cine-cruzeiro-local-dev-secret");
-  if (!source) {
-    const error = new Error("Configure TWO_FACTOR_SECRET_KEY para usar autenticação em duas etapas.");
-    error.code = "ADMIN_2FA_SECRET_KEY_REQUIRED";
-    throw error;
-  }
+  const source = requireRuntimeSecret({
+    envKeys: ["TWO_FACTOR_SECRET_KEY", "INTEGRATION_SECRET_KEY", "JWT_SECRET"],
+    errorCode: "ADMIN_2FA_SECRET_KEY_REQUIRED",
+    errorMessage: "Configure TWO_FACTOR_SECRET_KEY para usar autenticação em duas etapas."
+  });
   return crypto.createHash("sha256").update(source).digest();
 }
 
 function encryptionConfigured() {
-  return Boolean(process.env.TWO_FACTOR_SECRET_KEY || process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || process.env.NODE_ENV !== "production");
+  return runtimeSecretConfigured(["TWO_FACTOR_SECRET_KEY", "INTEGRATION_SECRET_KEY", "JWT_SECRET"]);
 }
 
 function encryptSecret(value) {
@@ -113,7 +113,11 @@ function normalizeRecoveryCode(value) {
 }
 
 function hashRecoveryCode(value) {
-  const pepper = process.env.TWO_FACTOR_RECOVERY_PEPPER || process.env.JWT_SECRET || "cine-cruzeiro-local-dev-secret";
+  const pepper = requireRuntimeSecret({
+    envKeys: ["TWO_FACTOR_RECOVERY_PEPPER", "TWO_FACTOR_SECRET_KEY", "INTEGRATION_SECRET_KEY", "JWT_SECRET"],
+    errorCode: "ADMIN_2FA_RECOVERY_PEPPER_REQUIRED",
+    errorMessage: "Configure TWO_FACTOR_RECOVERY_PEPPER para proteger os códigos de recuperação."
+  });
   return crypto.createHmac("sha256", pepper).update(normalizeRecoveryCode(value)).digest("base64url");
 }
 

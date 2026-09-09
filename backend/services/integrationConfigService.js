@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { requireRuntimeSecret } = require("./runtimeSecretService");
 
 const SECRET_MASK = "••••••••";
 const GCM_AUTH_TAG_BYTES = 16;
@@ -157,12 +158,11 @@ function firstEnv(keys = []) {
 }
 
 function secretKey() {
-  const source = process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "cine-cruzeiro-local-dev-secret");
-  if (!source) {
-    const error = new Error("INTEGRATION_SECRET_KEY ou JWT_SECRET deve estar configurada em produção.");
-    error.code = "INTEGRATION_SECRET_KEY_REQUIRED";
-    throw error;
-  }
+  const source = requireRuntimeSecret({
+    envKeys: ["INTEGRATION_SECRET_KEY", "JWT_SECRET"],
+    errorCode: "INTEGRATION_SECRET_KEY_REQUIRED",
+    errorMessage: "INTEGRATION_SECRET_KEY ou JWT_SECRET deve estar configurada em produção."
+  });
   return crypto.createHash("sha256").update(source).digest();
 }
 
