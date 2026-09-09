@@ -6537,7 +6537,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     headline: String(input.headline ?? existing.headline ?? "").trim().slice(0, 180),
     message: String(input.message ?? existing.message ?? "").slice(0, 12000),
     html: String(input.html ?? existing.html ?? "").slice(0, 100000),
-    variables: Object.fromEntries(Object.entries(input.variables ?? existing.variables ?? {}).filter(([key, value]) => /^[a-z][a-z0-9_]{0,39}$/i.test(key) && !reservedVariables.has(String(key).toLowerCase()) && String(value ?? "").trim()).slice(0, 12).map(([key, value]) => [key.toLowerCase(), String(value).trim().slice(0, 1000)])),
+    variables: Object.fromEntries(Object.entries(input.variables ?? existing.variables ?? {}).filter(([key, value]) => /^[a-z][a-z0-9_]{0,39}$/i.test(key) && !reservedVariables.has(String(key).toLowerCase()) && String(value ?? "").trim()).slice(0, 48).map(([key, value]) => [key.toLowerCase(), String(value).trim().slice(0, 1000)])),
     ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "Ver programação").trim().slice(0, 80),
     ctaUrl: String(input.ctaUrl ?? existing.ctaUrl ?? "").trim().slice(0, 1000),
     recipientMode: ["all", "selected", "purchased", "active"].includes(input.recipientMode || existing.recipientMode) ? (input.recipientMode || existing.recipientMode) : "all",
@@ -6545,8 +6545,12 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     recipientSearch: String(input.recipientSearch ?? existing.recipientSearch ?? "").trim().slice(0, 160),
     couponId: String(input.couponId ?? existing.couponId ?? "").trim(),
     movieId: String(input.movieId ?? existing.movieId ?? "").trim().slice(0, 180),
-    concessionId: String(input.concessionId ?? existing.concessionId ?? "").trim().slice(0, 180),
+    concessionId: String(input.concessionId ?? existing.concessionId ?? (Array.isArray(input.concessionIds) ? input.concessionIds[0] : "") ?? "").trim().slice(0, 180),
+    concessionIds: Array.isArray(input.concessionIds)
+      ? [...new Set(input.concessionIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20)
+      : Array.isArray(existing.concessionIds) ? existing.concessionIds.map(String).slice(0, 20) : (existing.concessionId ? [String(existing.concessionId)] : []),
     clubPlanId: String(input.clubPlanId ?? existing.clubPlanId ?? "").trim().slice(0, 180),
+    clubOffer: String(input.clubOffer ?? existing.clubOffer ?? "").trim().slice(0, 500),
     attachments: Array.isArray(input.attachments) ? input.attachments.slice(0, 5).map((item) => ({ id: String(item.id || ""), filename: String(item.filename || "anexo").slice(0, 100), contentType: String(item.contentType || "application/octet-stream"), size: Number(item.size || 0), path: String(item.path || "") })).filter((item) => item.id && item.path) : (existing.attachments || []),
     imageUrl: String(input.imageUrl ?? existing.imageUrl ?? "").trim().slice(0, 2000),
     imageAlt: String(input.imageAlt ?? existing.imageAlt ?? "").trim().slice(0, 140),

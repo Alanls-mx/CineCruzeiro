@@ -316,6 +316,8 @@ textarea:focus-visible,
 .campaign-template-option strong { grid-column: 2; font-size: 12px; }
 .campaign-template-option > span:not(.campaign-template-swatch) { grid-column: 2; color: var(--muted); font-size: 10px; line-height: 1.35; }
 .campaign-template-option.active span { color: #dbeafe; }
+.campaign-template-option .campaign-template-capability { grid-column: 2; color: #6ee7b7; font-size: 9px; font-weight: 850; line-height: 1.3; }
+.campaign-template-option.active .campaign-template-capability { color: #fde68a; }
 .campaign-template-swatch { grid-row: 1 / span 2; width: 5px; height: 100%; min-height: 42px; border-radius: 4px; background: var(--template-accent, #4d8dff); }
 .campaign-template-option[data-template-accent="gold"] { --template-accent: #f5c518; }
 .campaign-template-option[data-template-accent="cyan"] { --template-accent: #22d3ee; }
@@ -331,6 +333,11 @@ textarea:focus-visible,
 .campaign-catalog-summary span { display: grid; gap: 2px; min-width: 0; }
 .campaign-catalog-summary strong { overflow: hidden; color: #f3f6fb; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .campaign-catalog-summary small { color: #9aa8bd; }
+.campaign-audience-lead { margin: -5px 0 2px; max-width: 68ch; }
+.campaign-editor-panel select[multiple] { min-height: 112px; padding: 6px; background: #060a12; }
+.campaign-editor-panel select[multiple] option { padding: 7px 8px; border-radius: 4px; }
+.campaign-editor-panel select[multiple] option:checked { background: #1d3354 linear-gradient(0deg, #1d3354, #1d3354); color: #f8fafc; }
+.campaign-media-capability { display: inline-flex; align-items: center; width: fit-content; padding: 5px 8px; border-radius: 6px; background: rgba(69,214,161,.1); color: #6ee7b7; font-size: 10px; font-weight: 850; }
 .campaign-brand-settings-inline { padding: 0; overflow: hidden; }
 .campaign-brand-settings-inline > summary { padding: 12px 14px; color: #dbeafe; font-size: 12px; font-weight: 800; cursor: pointer; }
 .campaign-brand-settings-inline[open] > summary { border-bottom: 1px solid rgba(148,163,184,.14); }

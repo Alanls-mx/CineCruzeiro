@@ -141,6 +141,8 @@ let state = {
   emailCampaignSelectedIds: new Set(),
   emailCampaignAttachments: [],
   emailCampaignVariables: {},
+  emailCampaignConcessionIds: [],
+  emailCampaignClubOffer: "",
   emailCampaignBlocks: [],
   emailCampaignBlocksInitialized: false,
   emailCampaignSelectedBlockId: "",
@@ -5611,9 +5613,11 @@ function emailCampaignPayload(action = "draft") {
     couponId: $("emailCampaignCoupon")?.value || "",
     movieId: $("emailCampaignMovie")?.value || "",
     concessionId: $("emailCampaignConcession")?.value || "",
+    concessionIds: [...new Set([...(Array.from($("emailCampaignConcessions")?.selectedOptions || []).map((option) => option.value)), $("emailCampaignConcession")?.value || ""].filter(Boolean))],
     clubPlanId: $("emailCampaignClubPlan")?.value || "",
+    clubOffer: $("emailCampaignClubOffer")?.value.trim() || "",
     attachments: state.emailCampaignAttachments,
-    variables: state.emailCampaignVariables,
+    variables: { ...campaignPreviewVariables(), ...state.emailCampaignVariables },
     contentBlocks: [],
     imageUrl: $("emailCampaignImageUrl")?.value.trim() || "",
     imageAlt: $("emailCampaignImageAlt")?.value.trim() || "",
@@ -5647,13 +5651,68 @@ async function refreshEmailCampaignRecipients() {
 
 function campaignPreviewVariables() {
   const coupon = (state.content?.promotions || []).find((item) => item.id === $("emailCampaignCoupon")?.value);
+  const movie = selectedCampaignMovie();
+  const concessions = selectedCampaignConcessions();
+  const plan = selectedCampaignClubPlan();
+  const audience = campaignAudienceLabel($("emailCampaignAudience")?.value);
+  const brandName = $("emailBrandName")?.value.trim() || "Cine Cruzeiro";
+  const movieLink = movie ? campaignTemplateAbsoluteUrl(`/filmes/${movie.slug || movie.id}`) : "";
+  const planLink = plan ? campaignTemplateAbsoluteUrl(`/clube/assinar/${plan.id}`) : "";
+  const firstConcession = concessions[0];
+  const benefits = Array.isArray(plan?.benefits) ? plan.benefits.filter(Boolean).slice(0, 8).join(" · ") : "";
   return {
+    ...campaignBuiltInVariables({ coupon, movie, concessions, plan, audience, brandName, movieLink, planLink, benefits }),
     ...state.emailCampaignVariables,
     nome: "Cliente de teste",
     email: "cliente@exemplo.com",
     codigo_cupom: coupon?.couponCode || "SELECIONE_UM_CUPOM",
     validade_cupom: coupon?.endsAt ? new Date(coupon.endsAt).toLocaleDateString("pt-BR") : "defina um cupom",
-    link_cupom: $("emailCampaignCtaUrl")?.value || `${API_BASE}/filmes`
+    link_cupom: $("emailCampaignCtaUrl")?.value || `${API_BASE}/filmes`,
+    nome_item: firstConcession?.name || "item selecionado",
+    preco_item: firstConcession ? money(firstConcession.price || 0) : "",
+    imagem_item: firstConcession?.imageUrl || ""
+  };
+}
+
+function campaignAudienceLabel(value = "all") {
+  return {
+    all: "Todos os clientes com marketing ativo",
+    active: "Clientes ativos",
+    purchased: "Clientes com compras aprovadas",
+    selected: "Clientes selecionados manualmente"
+  }[String(value || "all")] || "Todos os clientes com marketing ativo";
+}
+
+function campaignBuiltInVariables({ coupon, movie, concessions = [], plan, audience, brandName, movieLink, planLink, benefits } = {}) {
+  const firstConcession = concessions[0];
+  const concessionItems = concessions.map((item) => `${item.name || "Item"} (${money(item.price || 0)})`).join(" · ");
+  const movieSessions = (movie?.sessions || []).filter((session) => session.date && session.time).slice(0, 6).map((session) => `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} às ${session.time}`).join(" · ");
+  const movieGenre = Array.isArray(movie?.genres) ? movie.genres[0] : movie?.genre || "";
+  return {
+    nome_cinema: brandName || "Cine Cruzeiro",
+    primeiro_nome: "Cliente",
+    data_envio: new Date().toLocaleDateString("pt-BR"),
+    publico_oferta: audience || "Todos os clientes com marketing ativo",
+    nome_filme: movie?.title || "",
+    link_filme: movieLink || "",
+    sessoes_filme: movieSessions,
+    duracao_filme: movie?.duration || "",
+    classificacao_filme: movie?.rating || movie?.classification || "",
+    genero_filme: movieGenre,
+    nome_item: firstConcession?.name || "",
+    descricao_item: firstConcession?.description || "",
+    preco_item: firstConcession ? money(firstConcession.price || 0) : "",
+    itens_bomboniere: concessionItems,
+    link_bomboniere: campaignTemplateAbsoluteUrl("/filmes"),
+    nome_plano: plan?.name || "",
+    preco_plano: plan ? `${money(plan.monthlyPrice || 0)}/mês` : "",
+    creditos_clube: plan ? String(plan.includedTickets || 0) : "",
+    beneficios_clube: benefits || "",
+    imagem_plano: plan?.imageUrl || "",
+    link_plano: planLink || "",
+    titulo_cupom: coupon?.title || "",
+    desconto_cupom: coupon ? couponRuleLabel(coupon) : "",
+    validade_oferta: coupon?.endsAt ? new Date(coupon.endsAt).toLocaleDateString("pt-BR") : ""
   };
 }
 
@@ -5668,7 +5727,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Olá, {{nome}}. Preparamos uma novidade para você.",
     ctaLabel: "Ver programação",
     ctaUrl: "/filmes",
-    media: false
+    media: true,
+    mediaLabel: "Imagem opcional"
   },
   weekly: {
     label: "Programação da semana",
@@ -5680,7 +5740,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Olá, {{nome}}. A programação da semana já está pronta.",
     ctaLabel: "Ver programação completa",
     ctaUrl: "/filmes",
-    media: false,
+    media: true,
+    mediaLabel: "Pôsteres da programação + imagem opcional",
     catalog: "movie"
   },
   premiere: {
@@ -5694,6 +5755,7 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     ctaLabel: "Ver sessões",
     ctaUrl: "/filmes",
     media: false,
+    mediaLabel: "Pôster automático do filme selecionado",
     catalog: "movie"
   },
   last_chance: {
@@ -5707,6 +5769,7 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     ctaLabel: "Garantir meu ingresso",
     ctaUrl: "/filmes",
     media: false,
+    mediaLabel: "Pôster automático do filme selecionado",
     catalog: "movie"
   },
   promotion: {
@@ -5719,7 +5782,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Olá, {{nome}}. Aproveite esta condição por tempo limitado.",
     ctaLabel: "Aproveitar promoção",
     ctaUrl: "/filmes",
-    media: true
+    media: true,
+    mediaLabel: "Imagem opcional"
   },
   coupon: {
     label: "Cupom",
@@ -5732,6 +5796,7 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     ctaLabel: "Usar meu cupom",
     ctaUrl: "/filmes",
     media: false,
+    mediaLabel: "Sem imagem adicional; código em destaque",
     coupon: true
   },
   concession: {
@@ -5745,7 +5810,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     ctaLabel: "Ver na bomboniere",
     ctaUrl: "/filmes",
     media: false,
-    catalog: "concession"
+    mediaLabel: "Imagem automática do item selecionado",
+    catalog: "concessions"
   },
   combo: {
     label: "Combo em destaque",
@@ -5758,7 +5824,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     ctaLabel: "Escolher uma sessão",
     ctaUrl: "/filmes",
     media: false,
-    catalog: "concession"
+    mediaLabel: "Imagens automáticas dos itens selecionados",
+    catalog: "concessions"
   },
   club_plan: {
     label: "Plano do Clube",
@@ -5771,6 +5838,7 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     ctaLabel: "Assinar este plano",
     ctaUrl: "/clube",
     media: false,
+    mediaLabel: "Imagem automática do plano selecionado",
     catalog: "clubPlan"
   },
   club: {
@@ -5783,7 +5851,9 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Olá, {{nome}}. Conheça os benefícios preparados para membros do Clube.",
     ctaLabel: "Conhecer o Clube",
     ctaUrl: "/clube",
-    media: true
+    media: true,
+    mediaLabel: "Imagem do plano ou imagem opcional",
+    catalog: "clubPlan"
   },
   birthday: {
     label: "Aniversário",
@@ -5795,7 +5865,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Parabéns, {{nome}}! Desejamos um ano cheio de histórias inesquecíveis.",
     ctaLabel: "Escolher um filme",
     ctaUrl: "/filmes",
-    media: false
+    media: false,
+    mediaLabel: "Sem imagem adicional"
   },
   event: {
     label: "Evento especial",
@@ -5807,7 +5878,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Olá, {{nome}}. Você está convidado para uma experiência especial no cinema.",
     ctaLabel: "Ver detalhes",
     ctaUrl: "/eventos",
-    media: true
+    media: true,
+    mediaLabel: "Imagem opcional"
   },
   ticket: {
     label: "Ingressos",
@@ -5819,7 +5891,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Olá, {{nome}}. Seus ingressos ficam disponíveis na sua conta. Chegue com antecedência e apresente o QR Code na entrada.",
     ctaLabel: "Ver meus ingressos",
     ctaUrl: "/conta/ingressos",
-    media: false
+    media: false,
+    mediaLabel: "Sem imagem adicional"
   },
   reactivation: {
     label: "Sentimos sua falta",
@@ -5831,7 +5904,8 @@ const EMAIL_CAMPAIGN_TEMPLATES = {
     message: "Olá, {{nome}}. Faz um tempo desde sua última visita. Venha conferir o que está em cartaz.",
     ctaLabel: "Voltar ao cinema",
     ctaUrl: "/filmes",
-    media: true
+    media: true,
+    mediaLabel: "Imagem opcional"
   }
 };
 
@@ -5850,7 +5924,14 @@ function selectedCampaignMovie() {
 }
 
 function selectedCampaignConcession() {
-  return (state.content?.concessions || []).find((item) => item.id === $("emailCampaignConcession")?.value) || null;
+  return selectedCampaignConcessions()[0] || null;
+}
+
+function selectedCampaignConcessions() {
+  const ids = Array.from($("emailCampaignConcessions")?.selectedOptions || []).map((option) => option.value);
+  const fallback = $("emailCampaignConcession")?.value;
+  if (fallback && !ids.includes(fallback)) ids.unshift(fallback);
+  return ids.map((id) => (state.content?.concessions || []).find((item) => String(item.id) === String(id))).filter(Boolean);
 }
 
 function selectedCampaignClubPlan() {
@@ -5859,7 +5940,7 @@ function selectedCampaignClubPlan() {
 
 function selectedCampaignCatalogItem() {
   const type = campaignTemplateDefinition().catalog;
-  return type === "movie" ? selectedCampaignMovie() : type === "concession" ? selectedCampaignConcession() : type === "clubPlan" ? selectedCampaignClubPlan() : null;
+  return type === "movie" ? selectedCampaignMovie() : type === "concessions" ? selectedCampaignConcessions() : type === "clubPlan" ? selectedCampaignClubPlan() : null;
 }
 
 function campaignTemplateLogo(logoUrl, brandName, align = "left") {
@@ -5902,9 +5983,10 @@ function campaignTemplateHtml() {
   const headline = $("emailCampaignHeadline")?.value.trim() || template.headline;
   const message = $("emailCampaignMessage")?.value.trim() || template.message;
   const movie = selectedCampaignMovie();
-  const concession = selectedCampaignConcession();
+  const concessions = selectedCampaignConcessions();
+  const concession = concessions[0];
   const plan = selectedCampaignClubPlan();
-  const catalogImage = template.catalog === "movie" ? movie?.posterUrl : template.catalog === "concession" ? concession?.imageUrl : template.catalog === "clubPlan" ? plan?.imageUrl : "";
+  const catalogImage = template.catalog === "movie" ? movie?.posterUrl : template.catalog === "concessions" ? concession?.imageUrl : template.catalog === "clubPlan" ? plan?.imageUrl : "";
   const imageUrl = campaignTemplateAbsoluteUrl(catalogImage || (template.media ? $("emailCampaignImageUrl")?.value : ""));
   const imageAlt = $("emailCampaignImageAlt")?.value.trim() || headline;
   const imageLink = campaignTemplateAbsoluteUrl($("emailCampaignImageLink")?.value);
@@ -5929,13 +6011,15 @@ function campaignTemplateHtml() {
   if (template.layout === "weekly") {
     const films = (state.content?.movies || []).filter((item) => item.status !== "hidden").slice(0, 4);
     const rows = films.map((item) => `<tr><td style="padding:12px 0;border-bottom:1px solid #233047"><strong style="display:block;color:#f3f6fb;font-size:14px">${escapeHtml(item.title || "Filme")}</strong><div style="margin-top:4px">${campaignMovieSessions(item)}</div></td></tr>`).join("") || `<tr><td style="padding:14px 0;color:#93a4bd">Cadastre filmes e sessões para preencher esta agenda.</td></tr>`;
-    return campaignTemplateShell(`${logo()}${kicker("#67e8f9")}${title()}${campaignTemplateMessage(message)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin-top:20px;background:#09111f;border-radius:8px"><tbody>${rows}</tbody></table>${campaignTemplateButton(ctaLabel, ctaUrl, "#67e8f9")}`, footer, { background: "#07111d", topBorder: "4px solid #22d3ee" });
+    return campaignTemplateShell(`${logo()}${linkedImage ? `<div style="margin:0 0 20px">${linkedImage}</div>` : ""}${kicker("#67e8f9")}${title()}${campaignTemplateMessage(message)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin-top:20px;background:#09111f;border-radius:8px"><tbody>${rows}</tbody></table>${campaignTemplateButton(ctaLabel, ctaUrl, "#67e8f9")}`, footer, { background: "#07111d", topBorder: "4px solid #22d3ee" });
   }
   if (template.layout === "lastChance") {
     return campaignTemplateShell(`${logo("center")}${kicker("#fb7185", "center")}${linkedImage ? `<div style="margin:0 auto 20px;max-width:280px">${linkedImage}</div>` : ""}${title("#ffffff", 32, "center")}${campaignTemplateMessage(message, "#dbeafe", "center")}<div style="margin:20px 0;padding:13px;background:#2a1019;color:#fecdd3;text-align:center;border-radius:6px;font-size:13px;font-weight:800">Últimas sessões disponíveis</div><div style="text-align:center">${campaignMovieSessions(movie)}</div>${campaignTemplateButton(ctaLabel, ctaUrl, "#fb7185", "center")}`, footer, { background: "#120a11", divider: "#42202b", topBorder: "4px solid #fb7185" });
   }
   if (template.layout === "promotion") {
-    return campaignTemplateShell(`${logo()}<div style="padding:24px;background:#facc15;border-radius:8px;color:#050912">${kicker("#4a3700")}${title("#050912", 34)}${campaignTemplateMessage(message, "#241b00")}${campaignTemplateButton(ctaLabel, ctaUrl, "#050912")}</div>${linkedImage ? `<div style="margin-top:20px">${linkedImage}</div>` : ""}`, footer, { background: "#111827" });
+    const coupon = (state.content?.promotions || []).find((item) => item.id === $("emailCampaignCoupon")?.value);
+    const audience = campaignAudienceLabel($("emailCampaignAudience")?.value);
+    return campaignTemplateShell(`${logo()}<div style="padding:24px;background:#facc15;border-radius:8px;color:#050912">${kicker("#4a3700")}${title("#050912", 34)}${campaignTemplateMessage(message, "#241b00")}${coupon ? `<p style="margin:18px 0 0;padding-top:14px;border-top:1px solid rgba(5,9,18,.28);font-size:13px;font-weight:800">${escapeHtml(coupon.title || "Oferta selecionada")} · ${escapeHtml(couponRuleLabel(coupon))}</p>` : ""}<p style="margin:10px 0 0;font-size:11px;font-weight:700;opacity:.75">Aplicável a: ${escapeHtml(audience)}</p>${campaignTemplateButton(ctaLabel, ctaUrl, "#050912")}</div>${linkedImage ? `<div style="margin-top:20px">${linkedImage}</div>` : ""}`, footer, { background: "#111827" });
   }
   if (template.layout === "coupon") {
     return campaignTemplateShell(`${logo("center")}${kicker("#45d6a1", "center")}${title("#ffffff", 30, "center")}${campaignTemplateMessage(message, "#dbeafe", "center")}<div style="margin:24px 0;padding:24px 18px;background:#f3f6fb;border:2px dashed #45d6a1;border-radius:8px;text-align:center"><span style="display:block;color:#475569;font-size:11px;text-transform:uppercase">Seu código exclusivo</span><strong style="display:block;margin:8px 0;color:#07111d;font-size:30px;letter-spacing:.08em">{{codigo_cupom}}</strong><span style="color:#475569;font-size:13px">Válido até {{validade_cupom}}</span></div>${campaignTemplateButton(ctaLabel, ctaUrl, "#45d6a1", "center")}`, footer, { background: "#071710", divider: "#1d4938" });
@@ -5946,7 +6030,8 @@ function campaignTemplateHtml() {
     const compareAt = Number(concession?.compareAt || 0);
     const price = Number(concession?.price || 0);
     const accent = template.layout === "combo" ? "#fb7185" : "#f59e0b";
-    return campaignTemplateShell(`${logo()}${kicker(accent)}${linkedImage ? `<div style="margin:0 0 20px;background:#050912;padding:18px;border-radius:8px">${linkedImage}</div>` : ""}<p style="margin:0 0 5px;color:#93a4bd;font-size:12px">${escapeHtml(concession?.badge || (template.layout === "combo" ? "Combo em destaque" : "Destaque da bomboniere"))}</p><h1 style="margin:0;color:#fff;font-size:28px">${escapeHtml(productName)}</h1>${price ? `<p style="margin:10px 0 18px;color:${accent};font-size:28px;font-weight:900">${compareAt > price ? `<span style="margin-right:8px;color:#64748b;font-size:14px;text-decoration:line-through">${escapeHtml(money(compareAt))}</span>` : ""}${escapeHtml(money(price))}</p>` : ""}${items ? `<p style="margin:0 0 16px;padding:12px;background:#172235;color:#dbeafe;border-radius:6px;font-size:13px">${escapeHtml(items)}</p>` : ""}${campaignTemplateMessage(message)}${campaignTemplateButton(ctaLabel, ctaUrl, accent)}`, footer, { background: template.layout === "combo" ? "#160b12" : "#141008", topBorder: `4px solid ${accent}` });
+    const products = concessions.length > 1 ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:18px 0;border-collapse:separate;border-spacing:0 8px">${concessions.map((item) => `<tr><td style="padding:11px;background:#172235;color:#f3f6fb;font-size:13px;border-radius:6px 0 0 6px"><strong>${escapeHtml(item.name || "Produto")}</strong>${item.description ? `<br><span style="color:#93a4bd;font-size:11px">${escapeHtml(item.description)}</span>` : ""}</td><td style="padding:11px;background:#172235;color:${accent};font-size:13px;font-weight:900;text-align:right;border-radius:0 6px 6px 0">${escapeHtml(money(item.price || 0))}</td></tr>`).join("")}</table>` : "";
+    return campaignTemplateShell(`${logo()}${kicker(accent)}${linkedImage ? `<div style="margin:0 0 20px;background:#050912;padding:18px;border-radius:8px">${linkedImage}</div>` : ""}${products}<p style="margin:0 0 5px;color:#93a4bd;font-size:12px">${escapeHtml(concession?.badge || (template.layout === "combo" ? "Combo em destaque" : "Destaque da bomboniere"))}</p><h1 style="margin:0;color:#fff;font-size:28px">${escapeHtml(concessions.length > 1 ? `${concessions.length} itens da bomboniere` : productName)}</h1>${concessions.length <= 1 && price ? `<p style="margin:10px 0 18px;color:${accent};font-size:28px;font-weight:900">${compareAt > price ? `<span style="margin-right:8px;color:#64748b;font-size:14px;text-decoration:line-through">${escapeHtml(money(compareAt))}</span>` : ""}${escapeHtml(money(price))}</p>` : ""}${items ? `<p style="margin:0 0 16px;padding:12px;background:#172235;color:#dbeafe;border-radius:6px;font-size:13px">${escapeHtml(items)}</p>` : ""}${campaignTemplateMessage(message)}${campaignTemplateButton(ctaLabel, ctaUrl, accent)}`, footer, { background: template.layout === "combo" ? "#160b12" : "#141008", topBorder: `4px solid ${accent}` });
   }
   if (template.layout === "clubPlan") {
     const benefits = (plan?.benefits || []).slice(0, 6).map((benefit) => `<tr><td width="22" valign="top" style="width:22px;padding:5px 0;color:#45d6a1;font-weight:900">✓</td><td style="padding:5px 0;color:#dbeafe;font-size:14px">${escapeHtml(benefit)}</td></tr>`).join("");
@@ -5965,7 +6050,9 @@ function campaignTemplateHtml() {
     return campaignTemplateShell(`${logo()}${linkedImage ? `<div style="margin:0 0 22px">${linkedImage}</div>` : ""}${kicker("#60a5fa")}${title("#fff", 31)}${campaignTemplateMessage(message)}${campaignTemplateButton(ctaLabel, ctaUrl, "#60a5fa")}`, footer, { background: "#0a1220", topBorder: "4px solid #4d8dff" });
   }
   if (template.layout === "clubNews") {
-    return campaignTemplateShell(`${logo("center")}${kicker("#facc15", "center")}${title("#fff", 30, "center")}${linkedImage ? `<div style="margin:0 auto 20px;max-width:430px">${linkedImage}</div>` : ""}${campaignTemplateMessage(message, "#dbeafe", "center")}${campaignTemplateButton(ctaLabel, ctaUrl, "#facc15", "center")}`, footer, { background: "#081425", topBorder: "4px solid #facc15" });
+    const clubOffer = $("emailCampaignClubOffer")?.value.trim();
+    const planDetails = plan ? `<div style="margin:18px auto;padding:14px;background:#172235;border-radius:7px;color:#dbeafe;text-align:center;font-size:13px"><strong style="display:block;color:#fff;font-size:16px">${escapeHtml(plan.name || "Plano do Clube")}</strong><span style="display:block;margin-top:5px;color:#facc15;font-size:20px;font-weight:900">${escapeHtml(money(plan.monthlyPrice || 0))}/mês</span><span style="display:block;margin-top:6px">${Number(plan.includedTickets || 0)} ingresso(s) por mês${Number(plan.ticketDiscountPercent || 0) ? ` · ${Number(plan.ticketDiscountPercent)}% de desconto` : ""}</span></div>` : "";
+    return campaignTemplateShell(`${logo("center")}${kicker("#facc15", "center")}${title("#fff", 30, "center")}${linkedImage ? `<div style="margin:0 auto 20px;max-width:430px">${linkedImage}</div>` : ""}${planDetails}${clubOffer ? `<p style="margin:0 0 16px;padding:13px;background:#0d1728;border-top:3px solid #45d6a1;color:#dbeafe;font-size:14px">${escapeHtml(clubOffer).replace(/\n/g, "<br>")}</p>` : ""}${campaignTemplateMessage(message, "#dbeafe", "center")}${campaignTemplateButton(ctaLabel, ctaUrl, "#facc15", "center")}`, footer, { background: "#081425", topBorder: "4px solid #facc15" });
   }
   return campaignTemplateShell(`${logo()}${kicker()}${title()}${linkedImage ? `<div style="margin:0 0 22px">${linkedImage}</div>` : ""}${campaignTemplateMessage(message)}${campaignTemplateButton(ctaLabel, ctaUrl)}`, footer, { topBorder: "4px solid #4d8dff" });
 }
@@ -5982,12 +6069,14 @@ function applyEmailCampaignTemplate(templateId, { fillDefaults = true } = {}) {
     button.setAttribute("aria-checked", String(active));
   });
   document.querySelectorAll('[data-campaign-template-panel="media"]').forEach((panel) => { panel.hidden = !template.media; });
+  if ($("emailCampaignMediaHint")) $("emailCampaignMediaHint").textContent = template.mediaLabel || "Imagem controlada pelo modelo";
   if ($("emailCampaignCouponField")) $("emailCampaignCouponField").hidden = !["coupon", "promotion"].includes(state.emailCampaignTemplate);
   const catalogPanel = $("emailCampaignCatalogPanel");
   if (catalogPanel) catalogPanel.hidden = !template.catalog;
   if ($("emailCampaignMovieField")) $("emailCampaignMovieField").hidden = template.catalog !== "movie";
-  if ($("emailCampaignConcessionField")) $("emailCampaignConcessionField").hidden = template.catalog !== "concession";
+  if ($("emailCampaignConcessionField")) $("emailCampaignConcessionField").hidden = template.catalog !== "concessions";
   if ($("emailCampaignClubPlanField")) $("emailCampaignClubPlanField").hidden = template.catalog !== "clubPlan";
+  if ($("emailCampaignClubOfferField")) $("emailCampaignClubOfferField").hidden = template.layout !== "clubNews";
   if (fillDefaults) {
     if (previous.catalog !== template.catalog) {
       if ($("emailCampaignCtaUrl")) $("emailCampaignCtaUrl").value = template.ctaUrl;
@@ -6010,22 +6099,23 @@ function renderEmailCampaignCatalogSummary() {
   const target = $("emailCampaignCatalogSummary");
   if (!target) return;
   const template = campaignTemplateDefinition();
-  const item = template.catalog === "movie" ? selectedCampaignMovie() : template.catalog === "concession" ? selectedCampaignConcession() : template.catalog === "clubPlan" ? selectedCampaignClubPlan() : null;
+  const item = template.catalog === "movie" ? selectedCampaignMovie() : template.catalog === "concessions" ? selectedCampaignConcessions() : template.catalog === "clubPlan" ? selectedCampaignClubPlan() : null;
   if (!template.catalog) {
     target.innerHTML = "";
     return;
   }
-  if (!item) {
+  if (!item || (Array.isArray(item) && !item.length)) {
     target.innerHTML = `<span>Selecione um item para usar os dados reais do catálogo neste e-mail.</span>`;
     return;
   }
-  const imageUrl = item.posterUrl || item.imageUrl || "";
+  const imageUrl = Array.isArray(item) ? (item[0]?.imageUrl || "") : item.posterUrl || item.imageUrl || "";
   const meta = template.catalog === "movie"
     ? `${(item.sessions || []).length} sessão(ões) cadastrada(s)${item.duration ? ` · ${String(item.duration)}` : ""}`
-    : template.catalog === "concession"
-      ? `${money(item.price || 0)}${item.stock === "" || item.stock == null ? "" : ` · estoque ${Number(item.stock || 0)}`}`
+    : template.catalog === "concessions"
+      ? `${item.length} item(ns) selecionado(s) · ${money(item.reduce((sum, entry) => sum + Number(entry.price || 0), 0))}`
       : `${money(item.monthlyPrice || 0)}/mês · ${Number(item.includedTickets || 0)} ingresso(s)`;
-  target.innerHTML = `${imageUrl ? `<img src="${escapeHtml(campaignTemplateAbsoluteUrl(imageUrl))}" alt="" />` : ""}<span><strong>${escapeHtml(item.title || item.name || "Item selecionado")}</strong><small>${escapeHtml(meta)}</small></span>`;
+  const itemName = Array.isArray(item) ? item.map((entry) => entry.name || "Produto").join(", ") : item.title || item.name || "Item selecionado";
+  target.innerHTML = `${imageUrl ? `<img src="${escapeHtml(campaignTemplateAbsoluteUrl(imageUrl))}" alt="" />` : ""}<span><strong>${escapeHtml(itemName)}</strong><small>${escapeHtml(meta)}</small></span>`;
 }
 
 function interpolateCampaignPreview(value) {
@@ -6294,6 +6384,15 @@ function renderEmailCampaignPreview(options = {}) {
   $("emailCampaignReviewSubject").textContent = interpolateCampaignPreview(payload.subject || "Ainda não definido");
   if ($("emailCampaignReviewTemplate")) $("emailCampaignReviewTemplate").textContent = campaignTemplateDefinition().label;
   $("emailCampaignReviewSchedule").textContent = payload.scheduleAt ? new Date(payload.scheduleAt).toLocaleString("pt-BR") : "Enviar agora";
+  if ($("emailCampaignReviewOffer")) {
+    const template = campaignTemplateDefinition();
+    const movie = selectedCampaignMovie();
+    const concessions = selectedCampaignConcessions();
+    const plan = selectedCampaignClubPlan();
+    const coupon = (state.content?.promotions || []).find((item) => item.id === $("emailCampaignCoupon")?.value);
+    const linked = movie?.title || plan?.name || (concessions.length ? `${concessions.length} item(ns) da bomboniere` : coupon?.title) || "Sem item de catálogo";
+    $("emailCampaignReviewOffer").textContent = `${linked} · ${campaignAudienceLabel($("emailCampaignAudience")?.value)} · ${template.mediaLabel || "Sem imagem adicional"}`;
+  }
   const attachments = $("emailCampaignAttachments");
   if (attachments) attachments.innerHTML = state.emailCampaignAttachments.length ? state.emailCampaignAttachments.map((item) => `<span class="campaign-attachment-chip">${escapeHtml(item.filename)} <button type="button" data-campaign-remove-attachment="${escapeHtml(item.id)}" aria-label="Remover anexo">×</button></span>`).join("") : `<span class="helper-text">Nenhum anexo adicionado.</span>`;
   renderEmailCampaignVariables();
@@ -6575,6 +6674,7 @@ async function editEmailCampaign(id) {
     state.emailCampaignSelectedIds = new Set((campaign.customerIds || []).map(String));
     state.emailCampaignAttachments = campaign.attachments || [];
     state.emailCampaignVariables = campaign.variables || {};
+    state.emailCampaignConcessionIds = (campaign.concessionIds || (campaign.concessionId ? [campaign.concessionId] : [])).map(String);
     state.emailCampaignBlocks = Array.isArray(campaign.contentBlocks) ? structuredClone(campaign.contentBlocks) : [];
     state.emailCampaignBlocksInitialized = state.emailCampaignBlocks.length > 0;
     state.emailCampaignSelectedBlockId = state.emailCampaignBlocks[0]?.id || "";
@@ -6593,6 +6693,7 @@ async function editEmailCampaign(id) {
     setCampaignField("emailCampaignMovie", campaign.movieId);
     setCampaignField("emailCampaignConcession", campaign.concessionId);
     setCampaignField("emailCampaignClubPlan", campaign.clubPlanId);
+    setCampaignField("emailCampaignClubOffer", campaign.clubOffer);
     setCampaignField("emailCampaignImageUrl", campaign.imageUrl);
     setCampaignField("emailCampaignImageAlt", campaign.imageAlt);
     setCampaignField("emailCampaignImageLink", campaign.imageLink);
@@ -6602,6 +6703,7 @@ async function editEmailCampaign(id) {
     setCampaignField("emailBrandFooter", campaign.brand?.footer);
     setEmailCampaignStep("content");
     applyEmailCampaignTemplate(campaign.templateId || "announcement", { fillDefaults: false });
+    renderEmailCampaignControls();
     void refreshEmailCampaignRecipients().catch(() => null);
     $("emailCampaignStatus").textContent = "Editando rascunho";
     $("emailCampaignForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -6646,7 +6748,6 @@ function renderEmailCampaignControls() {
   }
   const catalogSelects = [
     ["emailCampaignMovie", state.content?.movies || [], "Selecione um filme", (item) => item.title || "Filme sem título"],
-    ["emailCampaignConcession", (state.content?.concessions || []).filter((item) => item.active !== false), "Selecione um produto", (item) => `${item.name || "Produto"} · ${money(item.price || 0)}`],
     ["emailCampaignClubPlan", (state.content?.subscriptionPlans || []).filter((item) => item.active !== false), "Selecione um plano", (item) => `${item.name || "Plano"} · ${money(item.monthlyPrice || 0)}/mês`]
   ];
   catalogSelects.forEach(([id, items, placeholder, label]) => {
@@ -6656,6 +6757,18 @@ function renderEmailCampaignControls() {
     select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>${items.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(label(item))}</option>`).join("")}`;
     select.value = items.some((item) => String(item.id) === current) ? current : "";
   });
+  const concessionSelect = $("emailCampaignConcessions");
+  if (concessionSelect) {
+    const selectedIds = new Set([
+      ...state.emailCampaignConcessionIds,
+      $("emailCampaignConcession")?.value || ""
+    ].filter(Boolean).map(String));
+    concessionSelect.innerHTML = (state.content?.concessions || [])
+      .filter((item) => item.active !== false)
+      .map((item) => `<option value="${escapeHtml(item.id)}" ${selectedIds.has(String(item.id)) ? "selected" : ""}>${escapeHtml(item.name || "Produto")} · ${escapeHtml(money(item.price || 0))}</option>`)
+      .join("");
+    state.emailCampaignConcessionIds = Array.from(concessionSelect.selectedOptions).map((option) => option.value);
+  }
   const movieSelect = $("emailCampaignImageMovie");
   if (movieSelect) {
     const currentUrl = $("emailCampaignImageUrl")?.value || "";
@@ -8646,9 +8759,9 @@ function bindEvents() {
     }
     renderEmailCampaignPreview();
   });
-  ["emailCampaignMovie", "emailCampaignConcession", "emailCampaignClubPlan"].forEach((id) => $(id)?.addEventListener("change", () => {
+  ["emailCampaignMovie", "emailCampaignClubPlan"].forEach((id) => $(id)?.addEventListener("change", () => {
     const template = campaignTemplateDefinition();
-    const item = template.catalog === "movie" ? selectedCampaignMovie() : template.catalog === "concession" ? selectedCampaignConcession() : template.catalog === "clubPlan" ? selectedCampaignClubPlan() : null;
+    const item = template.catalog === "movie" ? selectedCampaignMovie() : template.catalog === "clubPlan" ? selectedCampaignClubPlan() : null;
     if (item) {
       const imageUrl = item.posterUrl || item.imageUrl || "";
       $("emailCampaignImageUrl").value = imageUrl;
@@ -8660,6 +8773,19 @@ function bindEvents() {
     renderEmailCampaignCatalogSummary();
     renderEmailCampaignPreview();
   }));
+  $("emailCampaignConcessions")?.addEventListener("change", () => {
+    state.emailCampaignConcessionIds = Array.from($("emailCampaignConcessions").selectedOptions).map((option) => option.value);
+    const first = selectedCampaignConcession();
+    if (first) {
+      $("emailCampaignImageUrl").value = first.imageUrl || "";
+      $("emailCampaignImageAlt").value = `Imagem de ${first.name || "item"}`;
+      $("emailCampaignImageLink").value = "/filmes";
+      $("emailCampaignCtaUrl").value = "/filmes";
+    }
+    renderEmailCampaignCatalogSummary();
+    renderEmailCampaignPreview();
+  });
+  $("emailCampaignClubOffer")?.addEventListener("input", renderEmailCampaignPreview);
   $("emailCampaignImageUpload")?.addEventListener("change", () => uploadAdminImage("emailCampaignImageUpload", "emailCampaignImageUrl", "", "email-campaign", () => {
     $("emailCampaignImageMovie").value = "";
     if (!$('emailCampaignImageAlt').value) $('emailCampaignImageAlt').value = "Imagem da campanha";

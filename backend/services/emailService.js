@@ -302,9 +302,11 @@ function sanitizeCampaignHtml(value) {
 }
 
 function campaignVariableValues(recipient = {}, customVariables = {}) {
+  const fullName = String(recipient.name || "cliente").trim();
   return {
     ...customVariables,
-    nome: recipient.name || "cliente",
+    nome: fullName,
+    primeiro_nome: fullName.split(/\s+/)[0] || "cliente",
     email: recipient.email || "",
     codigo_cupom: recipient.couponCode || "",
     validade_cupom: recipient.couponExpiresAt || "",

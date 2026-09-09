@@ -1274,6 +1274,7 @@
               </div>
               <section class="campaign-step-panel active" data-campaign-step-panel="audience">
                 <div class="section-title">Para quem esta mensagem vai?</div>
+                <p class="helper-text campaign-audience-lead">O segmento escolhido define quem receberá a oferta. Clientes descadastrados são sempre excluídos.</p>
                 <div class="field-row">
                   <label>Segmento
                     <select id="emailCampaignAudience">
@@ -1303,35 +1304,35 @@
                     <section class="campaign-template-family" aria-labelledby="campaignTemplateProgramming">
                       <h3 id="campaignTemplateProgramming">Programação</h3>
                       <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option active" role="radio" aria-checked="true" data-campaign-template="announcement" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Comunicado</strong><span>Mensagem institucional objetiva</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="weekly" data-template-accent="cyan"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Programação da semana</strong><span>Filmes e horários em formato de agenda</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="premiere" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Grande estreia</strong><span>Pôster, detalhes e sessões do filme</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="last_chance" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Últimos dias</strong><span>Urgência para as últimas sessões</span></button>
+                        <button type="button" class="campaign-template-option active" role="radio" aria-checked="true" data-campaign-template="announcement" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Comunicado</strong><span>Mensagem institucional objetiva</span><small class="campaign-template-capability">Imagem opcional</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="weekly" data-template-accent="cyan"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Programação da semana</strong><span>Filmes e horários em formato de agenda</span><small class="campaign-template-capability">Pôsteres + imagem opcional</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="premiere" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Grande estreia</strong><span>Pôster, detalhes e sessões do filme</span><small class="campaign-template-capability">Pôster automático</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="last_chance" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Últimos dias</strong><span>Urgência para as últimas sessões</span><small class="campaign-template-capability">Pôster automático</small></button>
                       </div>
                     </section>
                     <section class="campaign-template-family" aria-labelledby="campaignTemplateOffers">
                       <h3 id="campaignTemplateOffers">Ofertas e bomboniere</h3>
                       <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="promotion" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Promoção</strong><span>Oferta visual com prazo e chamada</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="coupon" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Cupom</strong><span>Código e validade automáticos</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="concession" data-template-accent="orange"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Produto da bomboniere</strong><span>Imagem, preço e descrição do item</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="combo" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Combo em destaque</strong><span>Composição e valor do combo</span></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="promotion" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Promoção</strong><span>Oferta visual com prazo e chamada</span><small class="campaign-template-capability">Imagem opcional</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="coupon" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Cupom</strong><span>Código e validade automáticos</span><small class="campaign-template-capability">Sem imagem</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="concession" data-template-accent="orange"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Produto da bomboniere</strong><span>Imagem, preço e descrição do item</span><small class="campaign-template-capability">Imagem automática</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="combo" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Combo em destaque</strong><span>Composição e valor do combo</span><small class="campaign-template-capability">Imagens automáticas</small></button>
                       </div>
                     </section>
                     <section class="campaign-template-family" aria-labelledby="campaignTemplateClub">
                       <h3 id="campaignTemplateClub">Clube Cine Cruzeiro</h3>
                       <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="club_plan" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Plano do Clube</strong><span>Preço, créditos e benefícios reais</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="club" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Novidades do Clube</strong><span>Relacionamento com assinantes</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="birthday" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Aniversário</strong><span>Mensagem pessoal com benefício</span></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="club_plan" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Plano do Clube</strong><span>Preço, créditos e benefícios reais</span><small class="campaign-template-capability">Imagem automática</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="club" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Novidades do Clube</strong><span>Plano, novidade e relacionamento</span><small class="campaign-template-capability">Imagem do plano ou opcional</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="birthday" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Aniversário</strong><span>Mensagem pessoal com benefício</span><small class="campaign-template-capability">Sem imagem</small></button>
                       </div>
                     </section>
                     <section class="campaign-template-family" aria-labelledby="campaignTemplateService">
                       <h3 id="campaignTemplateService">Relacionamento e serviço</h3>
                       <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="event" data-template-accent="cyan"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Evento especial</strong><span>Convite com imagem e destaque</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="ticket" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Ingressos</strong><span>Entrega ou lembrete ao cliente</span></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="reactivation" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Sentimos sua falta</strong><span>Reativação de clientes inativos</span></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="event" data-template-accent="cyan"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Evento especial</strong><span>Convite com imagem e destaque</span><small class="campaign-template-capability">Imagem opcional</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="ticket" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Ingressos</strong><span>Entrega ou lembrete ao cliente</span><small class="campaign-template-capability">Sem imagem</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="reactivation" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Sentimos sua falta</strong><span>Reativação de clientes inativos</span><small class="campaign-template-capability">Imagem opcional</small></button>
                       </div>
                     </section>
                   </div>
@@ -1361,11 +1362,17 @@
                   <label id="emailCampaignMovieField" hidden>Filme
                     <select id="emailCampaignMovie"><option value="">Selecione um filme</option></select>
                   </label>
-                  <label id="emailCampaignConcessionField" hidden>Item da bomboniere
-                    <select id="emailCampaignConcession"><option value="">Selecione um produto</option></select>
+                  <label id="emailCampaignConcessionField" hidden>Itens da bomboniere
+                    <select id="emailCampaignConcessions" multiple size="4" aria-describedby="emailCampaignConcessionHint"></select>
+                    <span id="emailCampaignConcessionHint" class="helper-text">Selecione um ou mais itens. A imagem, descrição e preço entram automaticamente na prévia.</span>
+                    <select id="emailCampaignConcession" hidden aria-hidden="true"><option value="">Compatibilidade</option></select>
                   </label>
                   <label id="emailCampaignClubPlanField" hidden>Plano do Clube
                     <select id="emailCampaignClubPlan"><option value="">Selecione um plano</option></select>
+                  </label>
+                  <label id="emailCampaignClubOfferField" hidden>Novidade ou benefício em destaque
+                    <textarea id="emailCampaignClubOffer" rows="3" maxlength="500" placeholder="Ex.: novos benefícios, créditos liberados ou condição especial para membros"></textarea>
+                    <span class="helper-text">Use este campo para explicar exatamente o que está sendo oferecido no envio.</span>
                   </label>
                   <div id="emailCampaignCatalogSummary" class="campaign-catalog-summary"></div>
                 </div>
@@ -1395,6 +1402,7 @@
                       <input id="emailCampaignImageLink" placeholder="https://... (opcional)" />
                     </label>
                   </div>
+                  <span id="emailCampaignMediaHint" class="campaign-media-capability">Imagem controlada pelo modelo</span>
                   <span class="helper-text">A imagem aparece no corpo do e-mail e é enviada com URL segura. Prefira imagens locais ou HTTPS.</span>
                 </div>
                 <textarea id="emailCampaignHtml" hidden aria-hidden="true"></textarea>
@@ -1403,9 +1411,34 @@
                   <div class="campaign-variables-head"><div><strong>Placeholders e links</strong><span>Insira variáveis no texto. O cupom selecionado preenche automaticamente código, validade e link no envio.</span></div></div>
                   <div class="campaign-variable-tokens" aria-label="Placeholders disponíveis">
                     <button type="button" data-campaign-variable="nome">{{nome}}</button>
+                    <button type="button" data-campaign-variable="primeiro_nome">{{primeiro_nome}}</button>
                     <button type="button" data-campaign-variable="email">{{email}}</button>
+                    <button type="button" data-campaign-variable="nome_cinema">{{nome_cinema}}</button>
+                    <button type="button" data-campaign-variable="nome_filme">{{nome_filme}}</button>
+                    <button type="button" data-campaign-variable="link_filme">{{link_filme}}</button>
+                    <button type="button" data-campaign-variable="sessoes_filme">{{sessoes_filme}}</button>
+                    <button type="button" data-campaign-variable="duracao_filme">{{duracao_filme}}</button>
+                    <button type="button" data-campaign-variable="classificacao_filme">{{classificacao_filme}}</button>
+                    <button type="button" data-campaign-variable="genero_filme">{{genero_filme}}</button>
+                    <button type="button" data-campaign-variable="nome_item">{{nome_item}}</button>
+                    <button type="button" data-campaign-variable="descricao_item">{{descricao_item}}</button>
+                    <button type="button" data-campaign-variable="preco_item">{{preco_item}}</button>
+                    <button type="button" data-campaign-variable="imagem_item">{{imagem_item}}</button>
+                    <button type="button" data-campaign-variable="itens_bomboniere">{{itens_bomboniere}}</button>
+                    <button type="button" data-campaign-variable="link_bomboniere">{{link_bomboniere}}</button>
+                    <button type="button" data-campaign-variable="nome_plano">{{nome_plano}}</button>
+                    <button type="button" data-campaign-variable="preco_plano">{{preco_plano}}</button>
+                    <button type="button" data-campaign-variable="creditos_clube">{{creditos_clube}}</button>
+                    <button type="button" data-campaign-variable="beneficios_clube">{{beneficios_clube}}</button>
+                    <button type="button" data-campaign-variable="imagem_plano">{{imagem_plano}}</button>
+                    <button type="button" data-campaign-variable="link_plano">{{link_plano}}</button>
                     <button type="button" data-campaign-variable="codigo_cupom">{{codigo_cupom}}</button>
+                    <button type="button" data-campaign-variable="titulo_cupom">{{titulo_cupom}}</button>
+                    <button type="button" data-campaign-variable="desconto_cupom">{{desconto_cupom}}</button>
                     <button type="button" data-campaign-variable="validade_cupom">{{validade_cupom}}</button>
+                    <button type="button" data-campaign-variable="validade_oferta">{{validade_oferta}}</button>
+                    <button type="button" data-campaign-variable="publico_oferta">{{publico_oferta}}</button>
+                    <button type="button" data-campaign-variable="data_envio">{{data_envio}}</button>
                     <button type="button" data-campaign-variable="link_cupom">{{link_cupom}}</button>
                   </div>
                   <div class="campaign-custom-variable-form">
@@ -1451,6 +1484,7 @@
                   <div><span>Modelo</span><strong id="emailCampaignReviewTemplate">Comunicado</strong></div>
                   <div><span>Assunto</span><strong id="emailCampaignReviewSubject">Ainda não definido</strong></div>
                   <div><span>Entrega</span><strong id="emailCampaignReviewSchedule">Enviar agora</strong></div>
+                  <div><span>Oferta e público</span><strong id="emailCampaignReviewOffer">Nenhuma vinculação</strong></div>
                 </div>
                 <label>Enviar mensagem de teste para
                   <div class="inline-field"><input id="emailCampaignTestEmail" type="email" placeholder="teste@exemplo.com" /><button id="emailCampaignTestButton" class="ghost-button" type="button">Enviar teste</button></div>

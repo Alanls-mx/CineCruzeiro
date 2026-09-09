@@ -60,6 +60,15 @@ test("dados do destinatário e do cupom prevalecem sobre variáveis reservadas",
   assert.equal(result, "Alan · CINE20");
 });
 
+test("placeholders de conteúdo combinam dados do cliente e da oferta", () => {
+  const result = emailService._test.interpolateCampaign(
+    "Oi {{primeiro_nome}} · {{nome_filme}} · {{preco_plano}} · {{publico_oferta}}",
+    { name: "Alan Luiz da Silva", email: "alan@example.com" },
+    { nome_filme: "Toy Story 5", preco_plano: "R$ 39,90/mês", publico_oferta: "Clientes ativos" }
+  );
+  assert.equal(result, "Oi Alan · Toy Story 5 · R$ 39,90/mês · Clientes ativos");
+});
+
 test("HTML de campanha remove scripts, eventos e esquemas perigosos", () => {
   const result = emailService._test.sanitizeCampaignHtml('<script>alert(1)</script><a href="javascript:alert(1)" onclick="x()">Abrir</a>');
   assert.equal(result.includes("<script"), false);
