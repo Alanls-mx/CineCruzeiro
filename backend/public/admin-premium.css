@@ -326,6 +326,29 @@ textarea:focus-visible,
 .campaign-editor-panel-head { display: grid; gap: 3px; }
 .campaign-editor-panel-head strong { color: #f8fafc; font-size: 12px; }
 .campaign-editor-panel-head span { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.campaign-html-editor { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px solid rgba(96,165,250,.28); border-radius: 8px; background: #070d17; }
+.campaign-html-editor[hidden] { display: none; }
+.campaign-html-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.campaign-html-editor-head > div:first-child { display: grid; gap: 3px; min-width: 0; }
+.campaign-html-editor-head strong { color: #f8fafc; font-size: 13px; }
+.campaign-html-editor-head span { color: var(--muted); font-size: 11px; }
+.campaign-html-editor-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.campaign-html-editor-actions button { min-height: 32px; padding: 6px 9px; }
+.campaign-html-snippets { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.campaign-html-snippets > span { margin-right: 3px; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.campaign-html-snippets button { min-height: 30px; padding: 5px 8px; border: 1px solid rgba(148,163,184,.2); border-radius: 6px; background: #111b2b; color: #cbd5e1; font-size: 10px; font-weight: 800; cursor: pointer; }
+.campaign-html-snippets button:hover { border-color: rgba(96,165,250,.5); color: #eff6ff; }
+.campaign-html-code-shell { display: grid; grid-template-columns: 46px minmax(0,1fr); min-height: 430px; overflow: hidden; border: 1px solid rgba(148,163,184,.2); border-radius: 7px; background: #050912; }
+.campaign-html-lines { min-height: 100%; margin: 0; padding: 14px 9px; overflow: hidden; border-right: 1px solid rgba(148,163,184,.14); color: #52627a; background: #080e19; text-align: right; font: 12px/1.65 ui-monospace,"Cascadia Code",Consolas,monospace; user-select: none; }
+.campaign-html-code-shell textarea { width: 100%; min-height: 430px; margin: 0; padding: 14px; resize: vertical; border: 0; border-radius: 0; outline: 0; background: transparent; color: #dbeafe; tab-size: 2; white-space: pre; overflow: auto; font: 12px/1.65 ui-monospace,"Cascadia Code",Consolas,monospace; }
+.campaign-html-code-shell:focus-within { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(37,99,235,.14); }
+.campaign-html-editor-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 10px; }
+.campaign-html-editor-foot #emailCampaignHtmlStatus { color: #6ee7b7; font-weight: 800; }
+.campaign-html-editor-foot #emailCampaignHtmlStatus.warning { color: #fbbf24; }
+.campaign-html-editor-foot kbd { padding: 2px 5px; border: 1px solid rgba(148,163,184,.25); border-radius: 4px; background: #111827; color: #cbd5e1; font: inherit; }
+.campaign-html-editor.fullscreen { position: fixed; inset: 12px; z-index: 1200; grid-template-rows: auto auto minmax(0,1fr) auto auto; margin: 0; border-color: rgba(96,165,250,.48); box-shadow: 0 24px 80px rgba(0,0,0,.6); }
+.campaign-html-editor.fullscreen .campaign-html-code-shell,
+.campaign-html-editor.fullscreen .campaign-html-code-shell textarea { min-height: 0; height: 100%; }
 .campaign-color-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .campaign-color-control { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
 .campaign-color-control input[type="color"] { flex: 0 0 34px; width: 34px; height: 34px; min-height: 34px; padding: 3px; cursor: pointer; }
@@ -2614,6 +2637,11 @@ body:has(.success-overlay:not([hidden])) { overflow: hidden; }
   .campaign-inspector-head { align-items: stretch; flex-direction: column; }
   .campaign-inspector-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
   .campaign-inspector-grid { grid-template-columns: 1fr; }
+  .campaign-html-editor-head { align-items: stretch; flex-direction: column; }
+  .campaign-html-editor-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .campaign-html-code-shell { grid-template-columns: 36px minmax(0,1fr); min-height: 360px; }
+  .campaign-html-code-shell textarea { min-height: 360px; }
+  .campaign-html-editor-foot { align-items: flex-start; flex-direction: column; }
 
   .button-row,
   .form-head-actions { display: grid; grid-template-columns: 1fr; width: 100%; }

@@ -5911,7 +5911,7 @@ function renderEmailCampaignPreview(options = {}) {
   const textColor = campaignColor(payload.textColor, "#dbeafe");
   const visualBlocks = payload.mode === "visual" ? state.emailCampaignBlocks.map(renderCampaignComposeBlock).join("") : "";
   const message = payload.mode === "html"
-    ? interpolateCampaignPreview(payload.html).replace(/<script[\s\S]*?<\/script>/gi, "")
+    ? sanitizeCampaignHtmlPreview(interpolateCampaignPreview(payload.html))
     : visualBlocks;
   const logoUrl = campaignSafeUrl(payload.brand.logoUrl);
   preview.innerHTML = payload.mode === "visual"
@@ -5959,12 +5959,92 @@ function bindCampaignColorControls() {
   syncCampaignColorControls();
 }
 
+function campaignHtmlTemplate() {
+  return `<section style="padding:24px;background:#0d1728;color:#dbeafe;text-align:left">
+  <p style="margin:0 0 10px;color:#60a5fa;font-size:12px;font-weight:700;text-transform:uppercase">PROGRAMAÇÃO</p>
+  <h2 style="margin:0 0 16px;color:#ffffff;font-size:28px;line-height:1.2">Olá, {{nome}}</h2>
+  <p style="margin:0 0 18px;font-size:15px;line-height:1.6">Escreva aqui a mensagem da campanha.</p>
+  <a href="{{link_cupom}}" style="display:inline-block;padding:13px 18px;background:#facc15;color:#020617;text-decoration:none;font-weight:700">Ver programação</a>
+</section>`;
+}
+
+function campaignHtmlSnippet(type) {
+  return {
+    section: `<section style="padding:24px;background:#0d1728;color:#dbeafe">\n  Conteúdo da seção\n</section>`,
+    heading: `<h2 style="margin:0 0 16px;color:#ffffff;font-size:28px;line-height:1.2">Título da campanha</h2>`,
+    text: `<p style="margin:0 0 16px;color:#dbeafe;font-size:15px;line-height:1.6">Escreva seu texto aqui.</p>`,
+    image: `<img src="https://" alt="Descrição da imagem" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0">`,
+    button: `<a href="https://" style="display:inline-block;padding:13px 18px;background:#facc15;color:#020617;text-decoration:none;font-weight:700">Abrir</a>`,
+    columns: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">\n  <tr>\n    <td width="50%" style="padding:8px;vertical-align:top">Coluna 1</td>\n    <td width="50%" style="padding:8px;vertical-align:top">Coluna 2</td>\n  </tr>\n</table>`,
+    divider: `<hr style="margin:20px 0;border:0;border-top:1px solid #334155">`
+  }[type] || "";
+}
+
+function updateCampaignHtmlEditor() {
+  const editor = $("emailCampaignHtml");
+  const lines = $("emailCampaignHtmlLines");
+  const status = $("emailCampaignHtmlStatus");
+  if (!editor) return;
+  const lineCount = Math.max(1, editor.value.split("\n").length);
+  if (lines) {
+    lines.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
+    lines.scrollTop = editor.scrollTop;
+  }
+  if (!status) return;
+  const hasBlockedTags = /<(script|iframe|object|embed|form)\b/i.test(editor.value);
+  const hasUnsafeAttrs = /\son[a-z]+\s*=|(?:href|src)\s*=\s*["']\s*(?:javascript|data|vbscript):/i.test(editor.value);
+  status.textContent = !editor.value.trim() ? "HTML vazio" : hasBlockedTags || hasUnsafeAttrs ? "Há conteúdo que será removido por segurança" : `${lineCount} linha${lineCount === 1 ? "" : "s"} · pronto para prévia`;
+  status.classList.toggle("warning", hasBlockedTags || hasUnsafeAttrs);
+}
+
+function insertCampaignHtml(value) {
+  const editor = $("emailCampaignHtml");
+  if (!editor || !value) return;
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  const separator = start && !editor.value.slice(0, start).endsWith("\n") ? "\n" : "";
+  editor.setRangeText(`${separator}${value}`, start, end, "end");
+  editor.dispatchEvent(new Event("input", { bubbles: true }));
+  editor.focus();
+}
+
+function formatCampaignHtml(value) {
+  const tokens = String(value || "").replace(/>\s*</g, ">\n<").split("\n").map((item) => item.trim()).filter(Boolean);
+  let depth = 0;
+  const voidTag = /^<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b/i;
+  return tokens.map((token) => {
+    if (/^<\//.test(token)) depth = Math.max(0, depth - 1);
+    const line = `${"  ".repeat(depth)}${token}`;
+    if (/^<[^!/][^>]*>$/.test(token) && !/^<\//.test(token) && !/\/>$/.test(token) && !voidTag.test(token) && !/<\/[^>]+>$/.test(token)) depth += 1;
+    return line;
+  }).join("\n");
+}
+
+function sanitizeCampaignHtmlPreview(value) {
+  const documentPreview = new DOMParser().parseFromString(`<body>${String(value || "")}</body>`, "text/html");
+  documentPreview.querySelectorAll("script,iframe,object,embed,form,base,meta,link").forEach((node) => node.remove());
+  documentPreview.body.querySelectorAll("*").forEach((node) => {
+    [...node.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      if (/^on/.test(name) || name === "srcdoc") node.removeAttribute(attribute.name);
+      if (["href", "src", "action", "formaction"].includes(name) && /^(javascript|data|vbscript):/i.test(attribute.value.trim())) node.removeAttribute(attribute.name);
+    });
+  });
+  return documentPreview.body.innerHTML;
+}
+
 function syncEmailCampaignMode() {
   const htmlMode = $("emailCampaignMode")?.value === "html";
   document.querySelectorAll("[data-email-campaign-visual]").forEach((node) => { node.hidden = htmlMode; });
   document.querySelectorAll("[data-email-campaign-html]").forEach((node) => { node.hidden = !htmlMode; });
   if ($("emailCampaignMessage")) $("emailCampaignMessage").required = !htmlMode;
   if ($("emailCampaignHtml")) $("emailCampaignHtml").required = htmlMode;
+  if ($("emailCampaignBlockInspector")) $("emailCampaignBlockInspector").hidden = htmlMode;
+  const previewTitle = document.querySelector(".campaign-preview-head .section-title");
+  const previewHelp = document.querySelector(".campaign-preview-head .helper-text");
+  if (previewTitle) previewTitle.textContent = htmlMode ? "Prévia do HTML" : "Editar na prévia";
+  if (previewHelp) previewHelp.textContent = htmlMode ? "A visualização é atualizada enquanto você edita o código." : "Clique em um bloco para editar. Arraste para mudar a ordem.";
+  updateCampaignHtmlEditor();
   renderEmailCampaignPreview();
 }
 
@@ -6046,6 +6126,14 @@ function setCampaignOpenLoading(id, loading) {
   button.textContent = loading ? "Abrindo..." : "Abrir";
 }
 
+function setCampaignDeleteLoading(id, loading) {
+  const button = [...document.querySelectorAll("[data-campaign-delete]")].find((item) => item.dataset.campaignDelete === id);
+  if (!button) return;
+  button.disabled = loading;
+  button.setAttribute("aria-busy", loading ? "true" : "false");
+  button.textContent = loading ? "Excluindo..." : "Excluir";
+}
+
 async function editEmailCampaign(id) {
   try {
     setCampaignOpenLoading(id, true);
@@ -6061,6 +6149,7 @@ async function editEmailCampaign(id) {
     state.emailCampaignBlocksInitialized = state.emailCampaignBlocks.length > 0;
     state.emailCampaignSelectedBlockId = state.emailCampaignBlocks[0]?.id || "";
     setCampaignField("emailCampaignSubject", campaign.subject);
+    setCampaignField("emailCampaignMode", campaign.mode || "visual");
     setCampaignField("emailCampaignPreheader", campaign.preheader);
     setCampaignField("emailCampaignHeadline", campaign.headline);
     setCampaignField("emailCampaignMessage", campaign.message);
@@ -6086,9 +6175,10 @@ async function editEmailCampaign(id) {
     setCampaignField("emailBrandLogoUrl", campaign.brand?.logoUrl);
     setCampaignField("emailBrandFooter", campaign.brand?.footer);
     syncEmailCampaignMode();
-    setEmailCampaignStep("audience");
+    setEmailCampaignStep("content");
     void refreshEmailCampaignRecipients().catch(() => null);
     $("emailCampaignStatus").textContent = "Editando rascunho";
+    $("emailCampaignForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
     showToast("Rascunho aberto");
   } catch (error) {
     showToast(error.message, "error");
@@ -6100,7 +6190,10 @@ async function editEmailCampaign(id) {
 async function deleteEmailCampaign(id) {
   if (!window.confirm("Excluir este rascunho? Esta ação não pode ser desfeita.")) return;
   try {
-    await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/delete`, { method: "DELETE" });
+    setCampaignDeleteLoading(id, true);
+    await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (state.content?.emailCampaigns) state.content.emailCampaigns = state.content.emailCampaigns.filter((item) => item.id !== id);
+    renderEmailCampaigns();
     if (state.emailCampaignDraftId === id) {
       state.emailCampaignDraftId = "";
       state.emailCampaignIdempotencyKey = `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -6112,7 +6205,10 @@ async function deleteEmailCampaign(id) {
     }
     await loadContent({ silent: true });
     showToast("Rascunho excluído");
-  } catch (error) { showToast(error.message, "error"); }
+  } catch (error) {
+    setCampaignDeleteLoading(id, false);
+    showToast(error.message, "error");
+  }
 }
 
 function renderEmailCampaignControls() {
@@ -8015,6 +8111,47 @@ function bindEvents() {
   $("clubTransparentImages")?.addEventListener("change", syncTransparentImagePreviews);
   $("emailCampaignForm")?.addEventListener("submit", sendEmailCampaign);
   $("emailCampaignMode")?.addEventListener("change", syncEmailCampaignMode);
+  $("emailCampaignHtml")?.addEventListener("input", updateCampaignHtmlEditor);
+  $("emailCampaignHtml")?.addEventListener("scroll", updateCampaignHtmlEditor);
+  $("emailCampaignHtml")?.addEventListener("keydown", (event) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      event.target.setRangeText("  ", event.target.selectionStart, event.target.selectionEnd, "end");
+      event.target.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      void saveEmailCampaign(null, "draft");
+    }
+  });
+  $("emailCampaignHtmlEditor")?.addEventListener("click", (event) => {
+    const snippet = event.target.closest("[data-campaign-html-snippet]");
+    if (snippet) { insertCampaignHtml(campaignHtmlSnippet(snippet.dataset.campaignHtmlSnippet)); return; }
+    const action = event.target.closest("[data-campaign-html-action]");
+    if (!action) return;
+    const editor = $("emailCampaignHtml");
+    if (action.dataset.campaignHtmlAction === "template") {
+      if (!editor.value.trim() || window.confirm("Substituir o HTML atual pelo modelo inicial?")) {
+        editor.value = campaignHtmlTemplate();
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+    if (action.dataset.campaignHtmlAction === "undo" || action.dataset.campaignHtmlAction === "redo") {
+      editor.focus();
+      document.execCommand(action.dataset.campaignHtmlAction);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (action.dataset.campaignHtmlAction === "format") {
+      editor.value = formatCampaignHtml(editor.value);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (action.dataset.campaignHtmlAction === "fullscreen") {
+      $("emailCampaignHtmlEditor").classList.toggle("fullscreen");
+      action.textContent = $("emailCampaignHtmlEditor").classList.contains("fullscreen") ? "Sair da tela cheia" : "Tela cheia";
+      editor.focus();
+    }
+  });
   $("emailCampaignAudience")?.addEventListener("change", () => void refreshEmailCampaignRecipients());
   $("emailCampaignRecipientSearch")?.addEventListener("input", () => void refreshEmailCampaignRecipients());
   $("emailCampaignRecipients")?.addEventListener("change", (event) => {

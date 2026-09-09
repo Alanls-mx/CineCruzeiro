@@ -8355,7 +8355,7 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 200, { campaign: campaignDetails(existing) });
       return;
     }
-    if (action === "delete" && method === "DELETE") {
+    if ((!action || action === "delete") && method === "DELETE") {
       if (!["draft", "failed", "cancelled"].includes(existing.status)) {
         sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_DELETE_LOCKED", message: "Só rascunhos, campanhas com falha ou canceladas podem ser excluídos." } });
         return;

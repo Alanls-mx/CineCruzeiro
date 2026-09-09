@@ -1327,7 +1327,7 @@
                   <button type="button" data-campaign-block="signature">Assinatura</button>
                   <button type="button" data-campaign-block="spacer">Espaço</button>
                 </div>
-                <div class="campaign-editor-panel">
+                <div class="campaign-editor-panel" data-email-campaign-visual>
                   <div class="campaign-editor-panel-head">
                     <strong>Imagem da campanha</strong>
                     <span>Use o pôster local de um filme ou uma imagem própria hospedada no site.</span>
@@ -1355,7 +1355,7 @@
                   </div>
                   <span class="helper-text">A imagem aparece no corpo do e-mail e é enviada com URL segura. Prefira imagens locais ou HTTPS.</span>
                 </div>
-                <div class="campaign-editor-panel">
+                <div class="campaign-editor-panel" data-email-campaign-visual>
                   <div class="campaign-editor-panel-head">
                     <strong>Cores do conteúdo</strong>
                     <span>Ajuste a leitura do título, da mensagem e do botão sem editar HTML.</span>
@@ -1375,10 +1375,34 @@
                 <label class="full" data-email-campaign-visual>Mensagem
                   <textarea id="emailCampaignMessage" rows="7" placeholder="Escreva uma chamada clara, com benefício e prazo. Use {{nome}} para personalizar." required></textarea>
                 </label>
-                <label class="full" data-email-campaign-html hidden>HTML personalizado
-                  <textarea id="emailCampaignHtml" rows="15" spellcheck="false" placeholder="<section style=&quot;padding:24px;background:#0d1728&quot;>...</section>"></textarea>
-                  <span class="helper-text">O HTML é sanitizado no backend e recebe estrutura de e-mail, identidade e descadastro automaticamente. Variáveis: {{nome}}, {{email}}, {{codigo_cupom}}, {{validade_cupom}}, {{link_cupom}}.</span>
-                </label>
+                <div id="emailCampaignHtmlEditor" class="campaign-html-editor full" data-email-campaign-html hidden>
+                  <div class="campaign-html-editor-head">
+                    <div><strong>Editor HTML5</strong><span>Crie o conteúdo completo do e-mail e acompanhe a prévia ao lado.</span></div>
+                    <div class="campaign-html-editor-actions">
+                      <button type="button" class="ghost-button" data-campaign-html-action="template">Modelo HTML</button>
+                      <button type="button" class="ghost-button" data-campaign-html-action="undo" aria-label="Desfazer">↶</button>
+                      <button type="button" class="ghost-button" data-campaign-html-action="redo" aria-label="Refazer">↷</button>
+                      <button type="button" class="ghost-button" data-campaign-html-action="format">Formatar</button>
+                      <button type="button" class="ghost-button" data-campaign-html-action="fullscreen">Tela cheia</button>
+                    </div>
+                  </div>
+                  <div class="campaign-html-snippets" aria-label="Inserir elemento HTML">
+                    <span>Inserir</span>
+                    <button type="button" data-campaign-html-snippet="section">Seção</button>
+                    <button type="button" data-campaign-html-snippet="heading">Título</button>
+                    <button type="button" data-campaign-html-snippet="text">Texto</button>
+                    <button type="button" data-campaign-html-snippet="image">Imagem</button>
+                    <button type="button" data-campaign-html-snippet="button">Botão</button>
+                    <button type="button" data-campaign-html-snippet="columns">Colunas</button>
+                    <button type="button" data-campaign-html-snippet="divider">Divisor</button>
+                  </div>
+                  <div class="campaign-html-code-shell">
+                    <pre id="emailCampaignHtmlLines" class="campaign-html-lines" aria-hidden="true">1</pre>
+                    <textarea id="emailCampaignHtml" rows="24" spellcheck="false" wrap="off" aria-label="Código HTML personalizado" placeholder="<section style=&quot;padding:24px;background:#0d1728&quot;>...</section>"></textarea>
+                  </div>
+                  <div class="campaign-html-editor-foot"><span id="emailCampaignHtmlStatus" role="status">HTML vazio</span><span><kbd>Tab</kbd> indenta · <kbd>Ctrl</kbd> + <kbd>S</kbd> salva o rascunho</span></div>
+                  <span class="helper-text">O HTML é sanitizado no backend e recebe identidade e descadastro automaticamente. Variáveis: {{nome}}, {{email}}, {{codigo_cupom}}, {{validade_cupom}}, {{link_cupom}}.</span>
+                </div>
                 <div class="campaign-variables-panel">
                   <div class="campaign-variables-head"><div><strong>Placeholders e links</strong><span>Insira variáveis no texto. O cupom selecionado preenche automaticamente código, validade e link no envio.</span></div></div>
                   <div class="campaign-variable-tokens" aria-label="Placeholders disponíveis">
