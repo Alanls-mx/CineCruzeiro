@@ -6514,7 +6514,7 @@ function normalizeCampaignBlocks(value, existing = []) {
 
 function normalizeCampaignInput(input = {}, existing = {}) {
   const mode = ["template", "html", "visual"].includes(input.mode) ? input.mode : (existing.mode || "template");
-  const allowedTemplates = new Set(["announcement", "premiere", "promotion", "coupon", "club", "event", "ticket"]);
+  const allowedTemplates = new Set(["announcement", "weekly", "premiere", "last_chance", "promotion", "coupon", "concession", "combo", "club_plan", "club", "birthday", "event", "ticket", "reactivation"]);
   const templateId = allowedTemplates.has(input.templateId) ? input.templateId : (allowedTemplates.has(existing.templateId) ? existing.templateId : "announcement");
   const status = input.status || existing.status || "draft";
   const reservedVariables = new Set(["nome", "email", "codigo_cupom", "validade_cupom", "link_cupom"]);
@@ -6537,6 +6537,9 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     customerIds: Array.isArray(input.customerIds) ? input.customerIds.map(String).slice(0, 5000) : (existing.customerIds || []),
     recipientSearch: String(input.recipientSearch ?? existing.recipientSearch ?? "").trim().slice(0, 160),
     couponId: String(input.couponId ?? existing.couponId ?? "").trim(),
+    movieId: String(input.movieId ?? existing.movieId ?? "").trim().slice(0, 180),
+    concessionId: String(input.concessionId ?? existing.concessionId ?? "").trim().slice(0, 180),
+    clubPlanId: String(input.clubPlanId ?? existing.clubPlanId ?? "").trim().slice(0, 180),
     attachments: Array.isArray(input.attachments) ? input.attachments.slice(0, 5).map((item) => ({ id: String(item.id || ""), filename: String(item.filename || "anexo").slice(0, 100), contentType: String(item.contentType || "application/octet-stream"), size: Number(item.size || 0), path: String(item.path || "") })).filter((item) => item.id && item.path) : (existing.attachments || []),
     imageUrl: String(input.imageUrl ?? existing.imageUrl ?? "").trim().slice(0, 2000),
     imageAlt: String(input.imageAlt ?? existing.imageAlt ?? "").trim().slice(0, 140),
