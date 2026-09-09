@@ -16,7 +16,7 @@ const publicContentSecurityPolicy = [
   "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://accounts.google.com https://www.googletagmanager.com https://connect.facebook.net",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' https: wss:",
+  `connect-src 'self' https: wss:${process.env.NODE_ENV === "production" ? "" : " ws:"}`,
   "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://*.mercadopago.com https://*.mercadolibre.com",
   "worker-src 'self' blob:",
   ...(process.env.NODE_ENV === "production" ? ["upgrade-insecure-requests"] : []),

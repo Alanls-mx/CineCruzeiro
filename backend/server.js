@@ -368,7 +368,7 @@ function securityHeaders(extra = {}) {
     "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://accounts.google.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
-    "connect-src 'self' https: wss: ws://localhost:3000 ws://localhost:4000 ws://localhost:4010"
+    `connect-src 'self' https: wss:${isProduction() ? "" : " ws://localhost:3000 ws://localhost:4000 ws://localhost:4010 ws://127.0.0.1:3000 ws://127.0.0.1:4000 ws://127.0.0.1:4010"}`
   ].join("; ");
   return {
     "Content-Security-Policy": csp,
