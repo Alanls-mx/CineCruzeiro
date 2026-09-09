@@ -1,7 +1,37 @@
 const nodemailer = require("nodemailer");
 const fs = require("fs/promises");
+const path = require("path");
 const integrationConfigService = require("./integrationConfigService");
 const { brazilianDate } = require("../utils/dateFormat");
+
+function emailAttachmentRoot() {
+  return path.resolve(process.env.CINE_EMAIL_ATTACHMENTS_DIR || path.join(__dirname, "..", "data", "email-attachments"));
+}
+
+function safeAttachmentPath(value) {
+  if (!value || String(value).includes("\0")) return "";
+  const root = emailAttachmentRoot();
+  const target = path.resolve(String(value));
+  const relative = path.relative(root, target);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return "";
+  return target;
+}
+
+async function prepareAttachments(attachments = []) {
+  const prepared = await Promise.all((Array.isArray(attachments) ? attachments : []).slice(0, 10).map(async (attachment = {}) => {
+    if (!attachment.path) {
+      const content = Buffer.isBuffer(attachment.content)
+        ? attachment.content
+        : Buffer.from(String(attachment.content || ""), "utf8");
+      return { ...attachment, content, path: undefined };
+    }
+    const filePath = safeAttachmentPath(attachment.path);
+    if (!filePath) return null;
+    const content = await fs.readFile(filePath).catch(() => null);
+    return content ? { ...attachment, content, path: undefined } : null;
+  }));
+  return prepared.filter(Boolean);
+}
 
 function htmlEscape(value) {
   return String(value ?? "")
@@ -56,18 +86,15 @@ async function sendSmtp(db, message) {
 }
 
 async function webhookAttachments(message = {}) {
-  return Promise.all((message.attachments || []).map(async (attachment) => {
-    const content = attachment.path
-      ? await fs.readFile(attachment.path).catch(() => Buffer.alloc(0))
-      : Buffer.isBuffer(attachment.content)
-        ? attachment.content
-        : Buffer.from(String(attachment.content || ""), "utf8");
+  const attachments = await prepareAttachments(message.attachments);
+  return attachments.map((attachment) => {
+    const content = attachment.content;
     return {
       filename: attachment.filename,
       contentType: attachment.contentType || "application/octet-stream",
       contentBase64: content.toString("base64")
     };
-  }));
+  });
 }
 
 async function sendWebhook(db, message, event = "email.transactional", data = {}) {
@@ -104,12 +131,13 @@ async function sendWebhook(db, message, event = "email.transactional", data = {}
 }
 
 async function sendTransactional(db, message, event, data = {}) {
-  const sentBySmtp = await sendSmtp(db, message).catch((error) => {
+  const safeMessage = { ...message, attachments: await prepareAttachments(message.attachments) };
+  const sentBySmtp = await sendSmtp(db, safeMessage).catch((error) => {
     console.warn("[email] SMTP delivery failed", { event, to: message.to, message: error.message });
     return false;
   });
   if (sentBySmtp) return true;
-  return sendWebhook(db, message, event, data).catch((error) => {
+  return sendWebhook(db, safeMessage, event, data).catch((error) => {
     console.warn("[email] webhook delivery failed", { event, to: message.to, message: error.message });
     return false;
   });
@@ -581,6 +609,9 @@ module.exports = {
     safeLink,
     campaignImageBlock,
     renderCampaignContentBlocks,
-    campaignBlocksText
+    campaignBlocksText,
+    prepareAttachments,
+    safeAttachmentPath,
+    webhookAttachments
   }
 };

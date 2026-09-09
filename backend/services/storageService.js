@@ -49,7 +49,7 @@ function insideRoot(rootDir, filePath) {
 function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir: configuredRootDir = "", maxBytes = DEFAULT_MAX_BYTES }) {
   const rootDir = configuredRootDir
     ? path.resolve(configuredRootDir)
-    : path.join(publicDir, publicBasePath.replace(/^\//, ""));
+    : path.resolve(publicDir, publicBasePath.replace(/^\//, ""));
 
   async function uploadImage({ data, filename = "", contentType = "", folder = "general" }) {
     const parsed = parseBase64Image(data);
@@ -85,11 +85,21 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
     const baseName = path.basename(String(filename || "imagem"), path.extname(String(filename || "")));
     const safeName = baseName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "imagem";
     const targetFolder = sanitizeFolder(folder);
-    const targetDir = path.join(rootDir, targetFolder);
+    const targetDir = path.resolve(rootDir, targetFolder);
+    if (!insideRoot(rootDir, targetDir)) {
+      const error = new Error("Operação de armazenamento não permitida.");
+      error.statusCode = 400;
+      throw error;
+    }
     await fs.mkdir(targetDir, { recursive: true });
 
     const fileName = `${safeName}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${extension}`;
-    const filePath = path.join(targetDir, fileName);
+    const filePath = path.resolve(targetDir, fileName);
+    if (!insideRoot(rootDir, filePath)) {
+      const error = new Error("Operação de armazenamento não permitida.");
+      error.statusCode = 400;
+      throw error;
+    }
     await fs.writeFile(filePath, imageBuffer);
 
     return {

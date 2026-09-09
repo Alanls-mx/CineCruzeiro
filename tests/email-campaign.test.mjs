@@ -1,9 +1,41 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const emailService = require("../backend/services/emailService.js");
+
+test("anexos aceitam apenas arquivos armazenados na raiz privada", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "cine-email-attachments-"));
+  const allowed = path.join(root, "email-anexo-seguro.txt");
+  const outside = path.join(path.dirname(root), "cine-email-fora-da-raiz.txt");
+  const previousRoot = process.env.CINE_EMAIL_ATTACHMENTS_DIR;
+  try {
+    await fs.writeFile(allowed, "conteudo permitido");
+    await fs.writeFile(outside, "conteudo privado");
+    process.env.CINE_EMAIL_ATTACHMENTS_DIR = root;
+
+    const attachments = await emailService._test.prepareAttachments([
+      { path: allowed, filename: "permitido.txt" },
+      { path: outside, filename: "bloqueado.txt" },
+      { path: path.join(root, "..", path.basename(outside)), filename: "travessia.txt" },
+      { content: Buffer.from("conteudo direto"), filename: "direto.txt" }
+    ]);
+
+    assert.deepEqual(attachments.map((item) => item.filename), ["permitido.txt", "direto.txt"]);
+    assert.equal(attachments[0].content.toString("utf8"), "conteudo permitido");
+    assert.equal(attachments[1].content.toString("utf8"), "conteudo direto");
+    assert.equal(attachments.every((item) => item.path === undefined), true);
+  } finally {
+    if (previousRoot === undefined) delete process.env.CINE_EMAIL_ATTACHMENTS_DIR;
+    else process.env.CINE_EMAIL_ATTACHMENTS_DIR = previousRoot;
+    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(outside, { force: true });
+  }
+});
 
 test("campanha personaliza variáveis sem permitir HTML no nome", () => {
   const result = emailService._test.interpolateCampaign("Olá {{nome}} · {{codigo_cupom}}", {
