@@ -186,8 +186,8 @@ const env = {
   MOVIE_IMAGE_MAINTENANCE_ENABLED: "false"
 };
 
-function run(label, command) {
-  const child = spawn(command, { cwd: root, env, shell: true, stdio: "pipe" });
+function run(label, executable, args) {
+  const child = spawn(executable, args, { cwd: root, env, shell: false, stdio: "pipe" });
   processes.push(child);
   child.stdout.on("data", (data) => process.stdout.write(`[${label}] ${data}`));
   child.stderr.on("data", (data) => process.stderr.write(`[${label}] ${data}`));
@@ -206,5 +206,5 @@ function shutdown(code = 0) {
 
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
-run("backend-e2e", "node backend/server.js");
-run("frontend-e2e", "next dev");
+run("backend-e2e", process.execPath, ["backend/server.js"]);
+run("frontend-e2e", process.execPath, [require.resolve("next/dist/bin/next"), "dev"]);

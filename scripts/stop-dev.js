@@ -1,9 +1,9 @@
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 
 const PORTS = new Set(["3000", "4000"]);
 
 function stopWindowsPorts() {
-  const output = execSync("netstat -ano -p tcp", { encoding: "utf8" });
+  const output = execFileSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8" });
   const pids = new Set();
 
   output.split(/\r?\n/).forEach((line) => {
@@ -25,7 +25,7 @@ function stopWindowsPorts() {
 
   pids.forEach((pid) => {
     try {
-      execSync(`taskkill /PID ${pid} /F`, { stdio: "ignore" });
+      execFileSync("taskkill", ["/PID", pid, "/F"], { stdio: "ignore" });
       console.log(`Processo ${pid} finalizado.`);
     } catch {
       console.log(`Nao foi possivel finalizar o processo ${pid}.`);
@@ -36,7 +36,8 @@ function stopWindowsPorts() {
 function stopUnixPorts() {
   for (const port of PORTS) {
     try {
-      execSync(`lsof -ti tcp:${port} | xargs kill -9`, { stdio: "ignore", shell: "/bin/sh" });
+      const output = execFileSync("lsof", ["-ti", `tcp:${port}`], { encoding: "utf8" });
+      output.split(/\s+/).filter((pid) => /^\d+$/.test(pid)).forEach((pid) => process.kill(Number(pid), "SIGTERM"));
       console.log(`Porta ${port} liberada.`);
     } catch {
       // Port was already free.

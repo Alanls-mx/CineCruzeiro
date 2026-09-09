@@ -105,6 +105,11 @@ const GOOGLE_WALLET_ORIGINS_ENV_KEYS = ["GOOGLE_WALLET_ORIGINS", "FRONTEND_URL",
 
 let loadedEnvFiles = [];
 
+function pathIsInside(rootDir, candidatePath) {
+  const relative = path.relative(path.resolve(rootDir), path.resolve(candidatePath));
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 function configuredAppBasePath() {
   const raw = String(process.env.NEXT_PUBLIC_BASE_PATH || process.env.NEXT_BASE_PATH || process.env.APP_BASE_PATH || "").trim();
   if (!raw || raw === "/") return "";
@@ -3176,7 +3181,7 @@ async function readLocalPosterBuffer(posterUrl) {
   const uploadPath = stripPublicAssetBase(pathname);
   if (!uploadPath.startsWith("/uploads/")) return null;
   const filePath = path.normalize(path.join(storageService.rootDir, uploadPath.replace(/^\/uploads\//, "")));
-  if (!filePath.startsWith(storageService.rootDir)) return null;
+  if (!pathIsInside(storageService.rootDir, filePath)) return null;
   const buffer = await fs.readFile(filePath).catch(() => null);
   if (!buffer) return null;
   if (jpegDimensions(buffer)) return buffer;
@@ -7353,7 +7358,7 @@ async function serveStatic(req, res, pathname) {
   const uploadPublicPath = stripPublicAssetBase(pathname);
   if (uploadPublicPath.startsWith("/uploads/")) {
     const uploadPath = path.normalize(path.join(storageService.rootDir, uploadPublicPath.replace(/^\/uploads\//, "")));
-    if (!uploadPath.startsWith(storageService.rootDir)) {
+    if (!pathIsInside(storageService.rootDir, uploadPath)) {
       sendJson(res, 403, { error: "Acesso negado" });
       return;
     }
@@ -7376,7 +7381,7 @@ async function serveStatic(req, res, pathname) {
 
   if (pathname.startsWith("/trailers/")) {
     const trailerPath = path.normalize(path.join(TRAILERS_DIR, pathname.replace(/^\/trailers\//, "")));
-    if (!trailerPath.startsWith(TRAILERS_DIR)) {
+    if (!pathIsInside(TRAILERS_DIR, trailerPath)) {
       sendJson(res, 403, { error: "Acesso negado" });
       return;
     }
@@ -7401,7 +7406,7 @@ async function serveStatic(req, res, pathname) {
 
   if (pathname.startsWith("/images/")) {
     const imagePath = path.normalize(path.join(FRONTEND_PUBLIC_DIR, pathname));
-    if (!imagePath.startsWith(FRONTEND_PUBLIC_DIR)) {
+    if (!pathIsInside(FRONTEND_PUBLIC_DIR, imagePath)) {
       sendJson(res, 403, { error: "Acesso negado" });
       return;
     }
@@ -7435,7 +7440,7 @@ async function serveStatic(req, res, pathname) {
     ? (authenticatedAdmin ? "admin.html" : "admin-login.html")
     : pathname.replace(/^\/admin\//, "");
   const filePath = path.normalize(path.join(PUBLIC_DIR, relativePath));
-  if (!filePath.startsWith(PUBLIC_DIR)) {
+  if (!pathIsInside(PUBLIC_DIR, filePath)) {
     sendJson(res, 403, { error: "Acesso negado" });
     return;
   }
@@ -7458,7 +7463,7 @@ async function serveDesktopUpdate(res, pathname) {
   const updateRoot = path.join(PUBLIC_DIR, "downloads", "desktop");
   const relativePath = pathname.replace(/^\/api\/desktop\/update\/?/, "");
   const filePath = path.normalize(path.join(updateRoot, relativePath));
-  if (!relativePath || !filePath.startsWith(updateRoot)) {
+  if (!relativePath || !pathIsInside(updateRoot, filePath)) {
     sendJson(res, 404, { error: "Atualização não encontrada" });
     return;
   }

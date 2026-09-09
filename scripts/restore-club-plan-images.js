@@ -27,9 +27,15 @@ async function run() {
   if (!connectionString) throw new Error("Conexao PostgreSQL indisponivel no processo do backend.");
 
   const { Pool } = require("pg");
+  const ssl = process.env.PGSSL === "disable"
+    ? false
+    : {
+        rejectUnauthorized: true,
+        ...(process.env.PGSSL_CA ? { ca: process.env.PGSSL_CA.replace(/\\n/g, "\n") } : {})
+      };
   const pool = new Pool({
     connectionString,
-    ssl: process.env.PGSSL === "disable" ? false : { rejectUnauthorized: false }
+    ssl
   });
   try {
     const uploadsRoot = path.resolve(__dirname, "../backend/public/uploads/club-plans");

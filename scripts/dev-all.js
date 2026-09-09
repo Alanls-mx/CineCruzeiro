@@ -15,9 +15,9 @@ function isPortFree(port) {
   });
 }
 
-function run(label, commandLine) {
-  const child = spawn(commandLine, {
-    shell: true,
+function run(label, executable, args) {
+  const child = spawn(executable, args, {
+    shell: false,
     stdio: "pipe",
     env: process.env,
   });
@@ -60,8 +60,8 @@ async function main() {
     process.exit(1);
   }
 
-  run("backend", "node backend/server.js");
-  run("frontend", "next dev");
+  run("backend", process.execPath, ["backend/server.js"]);
+  run("frontend", process.execPath, [require.resolve("next/dist/bin/next"), "dev"]);
 
   console.log("Cine Cruzeiro local:");
   console.log("Landing: http://localhost:3000");

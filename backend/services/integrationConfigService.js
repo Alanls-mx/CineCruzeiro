@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 
 const SECRET_MASK = "••••••••";
+const GCM_AUTH_TAG_BYTES = 16;
 
 const DEFINITIONS = {
   mercadoPago: {
@@ -167,7 +168,7 @@ function secretKey() {
 
 function encryptSecret(value) {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", secretKey(), iv);
+  const cipher = crypto.createCipheriv("aes-256-gcm", secretKey(), iv, { authTagLength: GCM_AUTH_TAG_BYTES });
   const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
   return { encrypted: true, value: `${iv.toString("base64")}:${cipher.getAuthTag().toString("base64")}:${encrypted.toString("base64")}` };
 }
@@ -178,8 +179,10 @@ function decryptSecret(record) {
   if (!record.encrypted || !record.value) return "";
   try {
     const [ivRaw, tagRaw, encryptedRaw] = String(record.value).split(":");
-    const decipher = crypto.createDecipheriv("aes-256-gcm", secretKey(), Buffer.from(ivRaw, "base64"));
-    decipher.setAuthTag(Buffer.from(tagRaw, "base64"));
+    const tag = Buffer.from(tagRaw, "base64");
+    if (tag.length !== GCM_AUTH_TAG_BYTES) return "";
+    const decipher = crypto.createDecipheriv("aes-256-gcm", secretKey(), Buffer.from(ivRaw, "base64"), { authTagLength: GCM_AUTH_TAG_BYTES });
+    decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(Buffer.from(encryptedRaw, "base64")), decipher.final()]).toString("utf8");
   } catch {
     return "";

@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { Client } = require("pg");
+const GCM_AUTH_TAG_BYTES = 16;
 
 function keyFrom(value, name) {
   if (!value) throw new Error(`Configure ${name}.`);
@@ -9,14 +10,16 @@ function keyFrom(value, name) {
 function decrypt(record, key) {
   const [ivRaw, tagRaw, encryptedRaw] = String(record.value || "").split(":");
   if (!ivRaw || !tagRaw || !encryptedRaw) throw new Error("Registro criptografado invalido.");
-  const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivRaw, "base64"));
-  decipher.setAuthTag(Buffer.from(tagRaw, "base64"));
+  const tag = Buffer.from(tagRaw, "base64");
+  if (tag.length !== GCM_AUTH_TAG_BYTES) throw new Error("Tag de autenticacao GCM invalida.");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivRaw, "base64"), { authTagLength: GCM_AUTH_TAG_BYTES });
+  decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(Buffer.from(encryptedRaw, "base64")), decipher.final()]).toString("utf8");
 }
 
 function encrypt(value, key) {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_AUTH_TAG_BYTES });
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   return {
     encrypted: true,

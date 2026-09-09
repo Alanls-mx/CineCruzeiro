@@ -2,6 +2,7 @@ const crypto = require("crypto");
 
 const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const DEFAULT_ISSUER = "Cine Cruzeiro Admin";
+const GCM_AUTH_TAG_BYTES = 16;
 
 function base32Encode(value) {
   const buffer = Buffer.isBuffer(value) ? value : Buffer.from(value);
@@ -88,7 +89,7 @@ function encryptionConfigured() {
 function encryptSecret(value) {
   if (!value) return "";
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv, { authTagLength: GCM_AUTH_TAG_BYTES });
   const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
   return `v1:${iv.toString("base64url")}:${cipher.getAuthTag().toString("base64url")}:${encrypted.toString("base64url")}`;
 }
@@ -97,8 +98,10 @@ function decryptSecret(value) {
   const [version, ivRaw, tagRaw, encryptedRaw] = String(value || "").split(":");
   if (version !== "v1" || !ivRaw || !tagRaw || !encryptedRaw) return "";
   try {
-    const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(ivRaw, "base64url"));
-    decipher.setAuthTag(Buffer.from(tagRaw, "base64url"));
+    const tag = Buffer.from(tagRaw, "base64url");
+    if (tag.length !== GCM_AUTH_TAG_BYTES) return "";
+    const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(ivRaw, "base64url"), { authTagLength: GCM_AUTH_TAG_BYTES });
+    decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(Buffer.from(encryptedRaw, "base64url")), decipher.final()]).toString("utf8");
   } catch {
     return "";

@@ -5,6 +5,12 @@ const API_BASE = (() => {
 })();
 const QR_SCAN_DURATION_MS = 30000;
 
+function randomClientId(prefix) {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return `${prefix}-${Date.now()}-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 let state = {
   content: null,
   adminUser: null,
@@ -142,7 +148,7 @@ let state = {
   emailCampaignPreviewMode: "desktop",
   emailCampaignTemplate: "announcement",
   emailCampaignDraftId: "",
-  emailCampaignIdempotencyKey: `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  emailCampaignIdempotencyKey: randomClientId("campanha")
 };
 
 const $ = (id) => document.getElementById(id);
@@ -5498,7 +5504,7 @@ async function saveClubVisualSettings(event) {
 }
 
 function campaignBlockId() {
-  return `bloco-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  return randomClientId("bloco");
 }
 
 function campaignBlockDefaults(type, role = "") {
@@ -6494,7 +6500,7 @@ async function saveEmailCampaign(event, action = "draft") {
     state.emailCampaignDraftId = result.campaign?.id || state.emailCampaignDraftId;
     if (action === "send") {
       state.emailCampaignDraftId = "";
-      state.emailCampaignIdempotencyKey = `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      state.emailCampaignIdempotencyKey = randomClientId("campanha");
     }
     if (resultNode) resultNode.textContent = action === "send" ? "Campanha colocada na fila de envio." : "Rascunho salvo.";
     await loadContent({ silent: true });
@@ -6565,7 +6571,7 @@ async function editEmailCampaign(id) {
     const result = await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}`);
     const campaign = result.campaign || {};
     state.emailCampaignDraftId = campaign.id || id;
-    state.emailCampaignIdempotencyKey = campaign.idempotencyKey || `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    state.emailCampaignIdempotencyKey = campaign.idempotencyKey || randomClientId("campanha");
     state.emailCampaignSelectedIds = new Set((campaign.customerIds || []).map(String));
     state.emailCampaignAttachments = campaign.attachments || [];
     state.emailCampaignVariables = campaign.variables || {};
@@ -6616,7 +6622,7 @@ async function deleteEmailCampaign(id) {
     renderEmailCampaigns();
     if (state.emailCampaignDraftId === id) {
       state.emailCampaignDraftId = "";
-      state.emailCampaignIdempotencyKey = `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      state.emailCampaignIdempotencyKey = randomClientId("campanha");
       state.emailCampaignVariables = {};
       state.emailCampaignAttachments = [];
       state.emailCampaignBlocks = [];

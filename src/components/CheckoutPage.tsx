@@ -51,6 +51,13 @@ type MercadoPagoConstructor = new (
   };
 };
 
+function paymentIdempotencyKey(sessionId: string) {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  const nonce = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${sessionId}-${Date.now()}-${nonce}`;
+}
+
 function ticketTypesForSession(ticketTypes: TicketTypeRecord[], ticketTypeIds?: string[]) {
   const allowedIds = new Set(ticketTypeIds || []);
   return ticketTypes.filter((ticketType) => ticketType.active !== false && (!allowedIds.size || allowedIds.has(ticketType.id)));
@@ -570,7 +577,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         payment_type: checkoutDraft.paymentMethod === "credit_card" ? "credit_card" : "pix",
         items: trackingItems,
       });
-      const idempotencyKey = `${found.session.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const idempotencyKey = paymentIdempotencyKey(found.session.id);
       const result = await createCheckoutPayment(
         {
           id: idempotencyKey,
