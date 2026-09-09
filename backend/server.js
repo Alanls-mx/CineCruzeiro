@@ -60,11 +60,6 @@ const DATA_FILE = process.env.CINE_DATA_FILE ? path.resolve(process.env.CINE_DAT
 const PUBLIC_DIR = path.join(ROOT, "public");
 const TRAILERS_DIR = path.join(PUBLIC_DIR, "trailers");
 const FRONTEND_PUBLIC_DIR = path.join(ROOT, "..", "public");
-const ADMIN_VENDOR_FILES = new Map([
-  ["/admin/vendor/grapes.min.js", path.join(ROOT, "..", "node_modules", "grapesjs", "dist", "grapes.min.js")],
-  ["/admin/vendor/grapes.min.css", path.join(ROOT, "..", "node_modules", "grapesjs", "dist", "css", "grapes.min.css")],
-  ["/admin/vendor/grapesjs-preset-newsletter.min.js", path.join(ROOT, "..", "node_modules", "grapesjs-preset-newsletter", "dist", "index.js")]
-]);
 const storageService = createStorageService({
   publicDir: PUBLIC_DIR,
   rootDir: process.env.CINE_UPLOADS_DIR || ""
@@ -6518,7 +6513,9 @@ function normalizeCampaignBlocks(value, existing = []) {
 }
 
 function normalizeCampaignInput(input = {}, existing = {}) {
-  const mode = input.mode === "html" ? "html" : "visual";
+  const mode = ["template", "html", "visual"].includes(input.mode) ? input.mode : (existing.mode || "template");
+  const allowedTemplates = new Set(["announcement", "premiere", "promotion", "coupon", "club", "event", "ticket"]);
+  const templateId = allowedTemplates.has(input.templateId) ? input.templateId : (allowedTemplates.has(existing.templateId) ? existing.templateId : "announcement");
   const status = input.status || existing.status || "draft";
   const reservedVariables = new Set(["nome", "email", "codigo_cupom", "validade_cupom", "link_cupom"]);
   const campaignColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "").trim()) ? String(value).trim().toLowerCase() : fallback;
@@ -6528,6 +6525,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     idempotencyKey: String(input.idempotencyKey ?? existing.idempotencyKey ?? "").trim().slice(0, 160),
     subject: String(input.subject ?? existing.subject ?? "").trim().slice(0, 180),
     mode,
+    templateId,
     preheader: String(input.preheader ?? existing.preheader ?? "").trim().slice(0, 140),
     headline: String(input.headline ?? existing.headline ?? "").trim().slice(0, 180),
     message: String(input.message ?? existing.message ?? "").slice(0, 12000),
@@ -7349,23 +7347,6 @@ async function runMercadoPagoWebhookSimulation(input = {}, options = {}) {
 }
 
 async function serveStatic(req, res, pathname) {
-  const vendorPath = ADMIN_VENDOR_FILES.get(pathname);
-  if (vendorPath) {
-    try {
-      const file = await fs.readFile(vendorPath);
-      res.writeHead(200, {
-        ...securityHeaders(),
-        "Content-Type": pathname.endsWith(".css") ? "text/css; charset=utf-8" : "application/javascript; charset=utf-8",
-        "Cache-Control": "public, max-age=86400"
-      });
-      res.end(file);
-      return;
-    } catch {
-      sendJson(res, 404, { error: "Editor visual não encontrado" });
-      return;
-    }
-  }
-
   const uploadPublicPath = stripPublicAssetBase(pathname);
   if (uploadPublicPath.startsWith("/uploads/")) {
     const uploadPath = path.normalize(path.join(storageService.rootDir, uploadPublicPath.replace(/^\/uploads\//, "")));
@@ -8336,7 +8317,7 @@ async function handleApi(req, res, pathname) {
     body.attachments = resolveCampaignAttachments(db, body.attachments);
     const campaign = normalizeCampaignInput(body, { brand: body.brand || db.settings?.emailBranding || {} });
     if (!campaign.subject || !String(campaign.html || campaign.message || "").trim()) {
-      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: campaign.mode === "html" ? "Informe assunto e conteúdo HTML personalizado." : "Informe assunto e mensagem da campanha." } });
+      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: "Informe o assunto e o conteúdo da campanha." } });
       return;
     }
     const shouldSend = body.action === "send" || body.sendNow === true;

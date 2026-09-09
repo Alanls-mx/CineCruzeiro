@@ -6,8 +6,7 @@
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
     <link rel="stylesheet" href="admin/admin.css?v=20260831-plans-fix" />
-    <link rel="stylesheet" href="admin/vendor/grapes.min.css?v=0.23.6" />
-    <link rel="stylesheet" href="admin/admin-premium.css?v=20260909-email-polish" />
+    <link rel="stylesheet" href="admin/admin-premium.css?v=20260909-email-templates" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -1295,6 +1294,24 @@
                 <div id="emailCampaignRecipients" class="campaign-recipient-list" hidden></div>
               </section>
               <section class="campaign-step-panel" data-campaign-step-panel="content" hidden>
+                <div class="campaign-template-picker">
+                  <div class="campaign-template-picker-head">
+                    <div class="section-title">Escolha um modelo</div>
+                    <p>O layout, a identidade e os espaçamentos já estão preparados para cada situação.</p>
+                  </div>
+                  <div class="campaign-template-grid" role="radiogroup" aria-label="Modelo do e-mail">
+                    <button type="button" class="campaign-template-option active" role="radio" aria-checked="true" data-campaign-template="announcement"><strong>Comunicado</strong><span>Mensagem geral para clientes</span></button>
+                    <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="premiere"><strong>Estreia</strong><span>Filme, pôster e programação</span></button>
+                    <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="promotion"><strong>Promoção</strong><span>Oferta com prazo e chamada</span></button>
+                    <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="coupon"><strong>Cupom</strong><span>Código e validade automáticos</span></button>
+                    <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="club"><strong>Clube</strong><span>Planos e benefícios do clube</span></button>
+                    <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="event"><strong>Evento</strong><span>Convites e sessões especiais</span></button>
+                    <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="ticket"><strong>Ingressos</strong><span>Entrega ou lembrete ao cliente</span></button>
+                  </div>
+                  <select id="emailCampaignTemplate" class="sr-only" tabindex="-1" aria-hidden="true">
+                    <option value="announcement">Comunicado</option><option value="premiere">Estreia</option><option value="promotion">Promoção</option><option value="coupon">Cupom</option><option value="club">Clube</option><option value="event">Evento</option><option value="ticket">Ingressos</option>
+                  </select>
+                </div>
                 <div class="field-row">
                   <label>Assunto
                     <input id="emailCampaignSubject" placeholder="Ex.: Semana da pipoca em dobro" required />
@@ -1306,51 +1323,13 @@
                 <label>Título em destaque
                   <input id="emailCampaignHeadline" placeholder="Ex.: Cinema em dobro nesta semana" />
                 </label>
-                <div class="campaign-editor-commandbar">
-                  <div class="campaign-editor-commandbar-copy"><strong>Conteúdo do e-mail</strong><span>Edite visualmente ou trabalhe no HTML. Os dois modos compartilham o mesmo conteúdo.</span></div>
-                  <div class="campaign-mode-switch" role="tablist" aria-label="Formato do conteúdo">
-                    <button type="button" class="active" role="tab" aria-selected="true" data-email-campaign-mode="visual">Editor visual</button>
-                    <button type="button" role="tab" aria-selected="false" data-email-campaign-mode="html">HTML personalizado</button>
-                  </div>
-                  <label class="sr-only">Formato do conteúdo
-                    <select id="emailCampaignMode" tabindex="-1" aria-hidden="true">
-                      <option value="visual">Editor visual</option>
-                      <option value="html">HTML personalizado</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="campaign-visual-designer" data-email-campaign-visual>
-                  <div class="campaign-visual-designer-head">
-                    <div><strong>Monte o e-mail no canvas</strong><span>Arraste blocos da lateral. Clique em qualquer elemento para editar conteúdo, medidas, cores e espaçamento.</span></div>
-                    <div class="campaign-designer-actions">
-                      <button class="ghost-button" type="button" data-campaign-designer-action="undo">Desfazer</button>
-                      <button class="ghost-button" type="button" data-campaign-designer-action="redo">Refazer</button>
-                      <button id="emailCampaignDesignerTemplate" class="ghost-button" type="button">Usar modelo do cinema</button>
-                      <button id="emailCampaignDesignerFullscreen" class="ghost-button" type="button">Tela cheia</button>
-                    </div>
-                  </div>
-                  <div class="campaign-designer-meta"><span id="emailCampaignDesignerStatus" role="status">Carregando editor...</span><span id="emailCampaignDesignerSelection">Nenhum elemento selecionado</span></div>
-                  <div id="emailCampaignDesigner" class="campaign-designer-canvas" aria-label="Editor visual completo do e-mail"></div>
-                  <small class="helper-text">Use o painel Estilos para digitar medidas exatas. Imagens locais, logo e pôsteres do catálogo ficam disponíveis na biblioteca de mídia.</small>
-                </div>
-                <div class="campaign-block-toolbar" data-email-campaign-visual-legacy>
-                  <span>Adicionar bloco</span>
-                  <button type="button" data-campaign-block="heading">Título</button>
-                  <button type="button" data-campaign-block="text">Texto</button>
-                  <button type="button" data-campaign-block="image">Imagem</button>
-                  <button type="button" data-campaign-block="logo">Logo</button>
-                  <button type="button" data-campaign-block="button">Botão</button>
-                  <button type="button" data-campaign-block="coupon">Cupom</button>
-                  <button type="button" data-campaign-block="divider">Divisor</button>
-                  <button type="button" data-campaign-block="icon">Ícone</button>
-                  <button type="button" data-campaign-block="social">Redes</button>
-                  <button type="button" data-campaign-block="signature">Assinatura</button>
-                  <button type="button" data-campaign-block="spacer">Espaço</button>
-                </div>
-                <div class="campaign-editor-panel" data-email-campaign-visual-legacy>
+                <label class="full">Mensagem
+                  <textarea id="emailCampaignMessage" rows="7" placeholder="Explique a novidade de forma clara. Use {{nome}} para personalizar." required></textarea>
+                </label>
+                <div class="campaign-editor-panel" data-campaign-template-panel="media">
                   <div class="campaign-editor-panel-head">
-                    <strong>Imagem da campanha</strong>
-                    <span>Use o pôster local de um filme ou uma imagem própria hospedada no site.</span>
+                    <strong>Imagem principal</strong>
+                    <span>Escolha um pôster do catálogo ou envie uma imagem para este modelo.</span>
                   </div>
                   <div class="field-row">
                     <label>Imagem do catálogo
@@ -1375,55 +1354,9 @@
                   </div>
                   <span class="helper-text">A imagem aparece no corpo do e-mail e é enviada com URL segura. Prefira imagens locais ou HTTPS.</span>
                 </div>
-                <div class="campaign-editor-panel" data-email-campaign-visual-legacy>
-                  <div class="campaign-editor-panel-head">
-                    <strong>Cores do conteúdo</strong>
-                    <span>Ajuste a leitura do título, da mensagem e do botão sem editar HTML.</span>
-                  </div>
-                  <div class="campaign-color-grid">
-                    <label>Cor do título
-                      <span class="campaign-color-control"><input id="emailCampaignHeadlineColor" type="color" value="#ffffff" /><input id="emailCampaignHeadlineColorValue" inputmode="text" maxlength="7" value="#ffffff" aria-label="Código da cor do título" /></span>
-                    </label>
-                    <label>Cor do texto
-                      <span class="campaign-color-control"><input id="emailCampaignTextColor" type="color" value="#dbeafe" /><input id="emailCampaignTextColorValue" inputmode="text" maxlength="7" value="#dbeafe" aria-label="Código da cor do texto" /></span>
-                    </label>
-                    <label>Cor do botão
-                      <span class="campaign-color-control"><input id="emailCampaignButtonColor" type="color" value="#facc15" /><input id="emailCampaignButtonColorValue" inputmode="text" maxlength="7" value="#facc15" aria-label="Código da cor do botão" /></span>
-                    </label>
-                  </div>
-                </div>
-                <label class="full" data-email-campaign-visual-legacy>Mensagem
-                  <textarea id="emailCampaignMessage" rows="7" placeholder="Escreva uma chamada clara, com benefício e prazo. Use {{nome}} para personalizar." required></textarea>
-                </label>
-                <div id="emailCampaignHtmlEditor" class="campaign-html-editor full" data-email-campaign-html hidden>
-                  <div class="campaign-html-editor-head">
-                    <div><strong>Editor HTML5</strong><span>Crie o conteúdo completo do e-mail e acompanhe a prévia ao lado.</span></div>
-                    <div class="campaign-html-editor-actions">
-                      <button type="button" class="ghost-button" data-campaign-html-action="template">Modelo HTML</button>
-                      <button type="button" class="ghost-button" data-campaign-html-action="undo" aria-label="Desfazer">↶</button>
-                      <button type="button" class="ghost-button" data-campaign-html-action="redo" aria-label="Refazer">↷</button>
-                      <button type="button" class="ghost-button" data-campaign-html-action="format">Formatar</button>
-                      <button type="button" class="ghost-button" data-campaign-html-action="fullscreen">Tela cheia</button>
-                    </div>
-                  </div>
-                  <div class="campaign-html-snippets" aria-label="Inserir elemento HTML">
-                    <span>Inserir</span>
-                    <button type="button" data-campaign-html-snippet="section">Seção</button>
-                    <button type="button" data-campaign-html-snippet="heading">Título</button>
-                    <button type="button" data-campaign-html-snippet="text">Texto</button>
-                    <button type="button" data-campaign-html-snippet="image">Imagem</button>
-                    <button type="button" data-campaign-html-snippet="button">Botão</button>
-                    <button type="button" data-campaign-html-snippet="columns">Colunas</button>
-                    <button type="button" data-campaign-html-snippet="divider">Divisor</button>
-                  </div>
-                  <div class="campaign-html-code-shell">
-                    <pre id="emailCampaignHtmlLines" class="campaign-html-lines" aria-hidden="true">1</pre>
-                    <textarea id="emailCampaignHtml" rows="24" spellcheck="false" wrap="off" aria-label="Código HTML personalizado" placeholder="<section style=&quot;padding:24px;background:#0d1728&quot;>...</section>"></textarea>
-                  </div>
-                  <div class="campaign-html-editor-foot"><span id="emailCampaignHtmlStatus" role="status">HTML vazio</span><span><kbd>Tab</kbd> indenta · <kbd>Ctrl</kbd> + <kbd>S</kbd> salva o rascunho</span></div>
-                  <span class="helper-text">O HTML é sanitizado no backend e recebe identidade e descadastro automaticamente. Variáveis: {{nome}}, {{email}}, {{codigo_cupom}}, {{validade_cupom}}, {{link_cupom}}.</span>
-                </div>
-                <div class="campaign-variables-panel">
+                <textarea id="emailCampaignHtml" hidden aria-hidden="true"></textarea>
+                <details class="campaign-variables-panel" data-campaign-template-panel="variables">
+                  <summary>Personalização avançada</summary>
                   <div class="campaign-variables-head"><div><strong>Placeholders e links</strong><span>Insira variáveis no texto. O cupom selecionado preenche automaticamente código, validade e link no envio.</span></div></div>
                   <div class="campaign-variable-tokens" aria-label="Placeholders disponíveis">
                     <button type="button" data-campaign-variable="nome">{{nome}}</button>
@@ -1439,14 +1372,15 @@
                   </div>
                   <div id="emailCampaignVariables" class="campaign-custom-variable-list"></div>
                   <small class="helper-text">Placeholders personalizados apontam para o valor configurado nesta campanha e são escapados no HTML. Use links HTTPS para destinos externos.</small>
-                </div>
-                <div class="campaign-brand-settings campaign-brand-settings-inline">
-                  <div class="campaign-brand-settings-head"><div><strong>Identidade do e-mail</strong><span>Estas informações aparecem no cabeçalho, no modelo visual e no envio final.</span></div><div id="emailBrandLogoPreview" class="campaign-brand-logo-preview" aria-label="Prévia da logo"></div></div>
+                </details>
+                <details class="campaign-brand-settings campaign-brand-settings-inline">
+                  <summary>Identidade do remetente</summary>
+                  <div class="campaign-brand-settings-head"><div><strong>Identidade do e-mail</strong><span>Aplicada automaticamente a todos os modelos.</span></div><div id="emailBrandLogoPreview" class="campaign-brand-logo-preview" aria-label="Prévia da logo"></div></div>
                   <div class="field-row"><label>Nome exibido<input id="emailBrandName" placeholder="Cine Cruzeiro" /></label><label>Logo URL<input id="emailBrandLogoUrl" placeholder="/images/logo-display.webp" /></label></div>
                   <label>Rodapé<input id="emailBrandFooter" placeholder="Mensagem automática do Cine Cruzeiro." /></label>
                   <button id="emailBrandSaveButton" class="ghost-button" type="button">Salvar identidade</button>
-                </div>
-                <div class="field-row" data-email-campaign-visual-legacy>
+                </details>
+                <div class="field-row">
                   <label>Texto do botão
                     <input id="emailCampaignCtaLabel" placeholder="Ex.: Ver programação" />
                   </label>
@@ -1455,7 +1389,7 @@
                   </label>
                 </div>
                 <div class="field-row">
-                  <label>Cupom no e-mail
+                  <label id="emailCampaignCouponField">Cupom no e-mail
                     <select id="emailCampaignCoupon"><option value="">Nenhum cupom</option></select>
                   </label>
                   <label>Agendar envio
@@ -1471,6 +1405,7 @@
               <section class="campaign-step-panel" data-campaign-step-panel="review" hidden>
                 <div class="campaign-review-grid">
                   <div><span>Destinatários</span><strong id="emailCampaignReviewRecipients">0</strong></div>
+                  <div><span>Modelo</span><strong id="emailCampaignReviewTemplate">Comunicado</strong></div>
                   <div><span>Assunto</span><strong id="emailCampaignReviewSubject">Ainda não definido</strong></div>
                   <div><span>Entrega</span><strong id="emailCampaignReviewSchedule">Enviar agora</strong></div>
                 </div>
@@ -1487,9 +1422,8 @@
               </div>
             </form>
             <aside class="surface campaign-preview-surface">
-              <div class="campaign-preview-head"><div><div class="section-title">Editar na prévia</div><span class="helper-text">Clique em um bloco para editar. Arraste para mudar a ordem.</span></div><div class="preview-switch"><button type="button" class="active" data-campaign-preview="desktop">Desktop</button><button type="button" data-campaign-preview="mobile">Mobile</button></div></div>
-              <div id="emailCampaignPreview" class="campaign-preview-frame" aria-label="Editor visual do e-mail"></div>
-              <div id="emailCampaignBlockInspector" class="campaign-block-inspector" aria-live="polite"></div>
+              <div class="campaign-preview-head"><div><div class="section-title">Prévia do envio</div><span class="helper-text">Esta é a mensagem que o cliente receberá.</span></div><div class="preview-switch"><button type="button" class="active" data-campaign-preview="desktop">Desktop</button><button type="button" data-campaign-preview="mobile">Celular</button></div></div>
+              <div id="emailCampaignPreview" class="campaign-preview-frame" aria-label="Prévia do e-mail"></div>
             </aside>
           </div>
           <div class="surface campaign-history-surface">
@@ -2379,9 +2313,7 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
-    <script src="admin/vendor/grapes.min.js?v=0.23.6"></script>
-    <script src="admin/vendor/grapesjs-preset-newsletter.min.js?v=1.0.2"></script>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260909-email-polish"></script>
+    <script src="admin/admin.js?v=20260909-email-templates"></script>
   </body>
 </html>
