@@ -1315,10 +1315,17 @@
                 </div>
                 <div class="campaign-block-toolbar" data-email-campaign-visual>
                   <span>Adicionar bloco</span>
-                  <button type="button" data-campaign-block="paragraph">Texto</button>
+                  <button type="button" data-campaign-block="heading">Título</button>
+                  <button type="button" data-campaign-block="text">Texto</button>
+                  <button type="button" data-campaign-block="image">Imagem</button>
+                  <button type="button" data-campaign-block="logo">Logo</button>
                   <button type="button" data-campaign-block="button">Botão</button>
                   <button type="button" data-campaign-block="coupon">Cupom</button>
                   <button type="button" data-campaign-block="divider">Divisor</button>
+                  <button type="button" data-campaign-block="icon">Ícone</button>
+                  <button type="button" data-campaign-block="social">Redes</button>
+                  <button type="button" data-campaign-block="signature">Assinatura</button>
+                  <button type="button" data-campaign-block="spacer">Espaço</button>
                 </div>
                 <div class="campaign-editor-panel">
                   <div class="campaign-editor-panel-head">
@@ -1430,8 +1437,9 @@
               </div>
             </form>
             <aside class="surface campaign-preview-surface">
-              <div class="campaign-preview-head"><div class="section-title">Prévia do e-mail</div><div class="preview-switch"><button type="button" class="active" data-campaign-preview="desktop">Desktop</button><button type="button" data-campaign-preview="mobile">Mobile</button></div></div>
-              <div id="emailCampaignPreview" class="campaign-preview-frame"></div>
+              <div class="campaign-preview-head"><div><div class="section-title">Editar na prévia</div><span class="helper-text">Clique em um bloco para editar. Arraste para mudar a ordem.</span></div><div class="preview-switch"><button type="button" class="active" data-campaign-preview="desktop">Desktop</button><button type="button" data-campaign-preview="mobile">Mobile</button></div></div>
+              <div id="emailCampaignPreview" class="campaign-preview-frame" aria-label="Editor visual do e-mail"></div>
+              <div id="emailCampaignBlockInspector" class="campaign-block-inspector" aria-live="polite"></div>
               <div class="campaign-brand-settings">
                 <div class="section-title">Identidade deste envio</div>
                 <div class="field-row"><label>Nome exibido<input id="emailBrandName" placeholder="Cine Cruzeiro" /></label><label>Logo URL<input id="emailBrandLogoUrl" placeholder="/images/logo-display.webp" /></label></div>

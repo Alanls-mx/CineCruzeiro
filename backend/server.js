@@ -6486,6 +6486,32 @@ async function storeEmailAttachment(input = {}) {
   return { id, filename: safeName, contentType, size: buffer.length, path: filePath };
 }
 
+function normalizeCampaignBlocks(value, existing = []) {
+  const allowedTypes = new Set(["logo", "kicker", "heading", "text", "image", "button", "divider", "icon", "social", "signature", "spacer"]);
+  const blocks = Array.isArray(value) ? value : Array.isArray(existing) ? existing : [];
+  const color = (candidate, fallback) => /^#[0-9a-f]{6}$/i.test(String(candidate || "").trim()) ? String(candidate).trim().toLowerCase() : fallback;
+  const number = (candidate, min, max, fallback) => Number.isFinite(Number(candidate)) ? Math.max(min, Math.min(max, Number(candidate))) : fallback;
+  return blocks.slice(0, 50).map((item = {}) => {
+    const type = allowedTypes.has(item.type) ? item.type : "text";
+    return {
+      id: String(item.id || `bloco-${crypto.randomUUID()}`).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 100),
+      type,
+      role: String(item.role || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 50),
+      content: String(item.content || "").slice(0, 12000),
+      url: String(item.url || "").trim().slice(0, 2000),
+      alt: String(item.alt || "").trim().slice(0, 180),
+      link: String(item.link || "").trim().slice(0, 1000),
+      align: ["left", "center", "right"].includes(item.align) ? item.align : "left",
+      color: color(item.color, type === "heading" ? "#ffffff" : "#dbeafe"),
+      backgroundColor: color(item.backgroundColor, "#facc15"),
+      width: number(item.width, 4, 100, type === "icon" ? 12 : 70),
+      fontSize: number(item.fontSize, 9, 42, type === "heading" ? 28 : 15),
+      height: number(item.height, 8, 80, 24),
+      links: Array.isArray(item.links) ? item.links.slice(0, 6).map((link) => ({ label: String(link?.label || "").trim().slice(0, 40), url: String(link?.url || "").trim().slice(0, 1000) })) : []
+    };
+  });
+}
+
 function normalizeCampaignInput(input = {}, existing = {}) {
   const mode = input.mode === "html" ? "html" : "visual";
   const status = input.status || existing.status || "draft";
@@ -6515,6 +6541,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     headlineColor: campaignColor(input.headlineColor ?? existing.headlineColor, "#ffffff"),
     textColor: campaignColor(input.textColor ?? existing.textColor, "#dbeafe"),
     buttonColor: campaignColor(input.buttonColor ?? existing.buttonColor, "#facc15"),
+    contentBlocks: normalizeCampaignBlocks(input.contentBlocks, existing.contentBlocks),
     scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
     status,
     brand: input.brand ?? existing.brand ?? {},
@@ -6530,13 +6557,14 @@ function normalizeCampaignInput(input = {}, existing = {}) {
 }
 
 function publicCampaign(campaign = {}) {
-  const { customerIds, html, message, attachments, ...safe } = campaign;
+  const { customerIds, html, message, contentBlocks, attachments, ...safe } = campaign;
   return {
     ...safe,
     attachments: (attachments || []).map(({ path, ...item }) => item),
     customerCount: Number(campaign.recipientCount || campaign.recipients || 0),
     hasHtml: Boolean(html),
     hasMessage: Boolean(message),
+    hasBlocks: Boolean(contentBlocks?.length),
     metricsSupported: { sent: true, failed: true, delivered: false, opened: false, clicked: false }
   };
 }
@@ -6546,6 +6574,7 @@ function campaignDetails(campaign = {}) {
     ...publicCampaign(campaign),
     message: String(campaign.message || ""),
     html: String(campaign.html || ""),
+    contentBlocks: Array.isArray(campaign.contentBlocks) ? campaign.contentBlocks : [],
     customerIds: Array.isArray(campaign.customerIds) ? campaign.customerIds : [],
     variables: campaign.variables || {},
     brand: campaign.brand || {},

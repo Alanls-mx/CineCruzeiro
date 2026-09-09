@@ -68,3 +68,39 @@ test("layout de campanha aplica cores válidas sem aceitar CSS arbitrário", () 
   assert.match(result, /color:#dbeafe/);
   assert.doesNotMatch(result, /javascript:/i);
 });
+
+test("editor visual preserva a ordem e personalização dos blocos no e-mail enviado", () => {
+  const result = emailService._test.renderCampaignContentBlocks([
+    { id: "title", type: "heading", content: "Olá {{nome}}", align: "center", color: "#ffcc00", fontSize: 30 },
+    { id: "poster", type: "image", url: "/uploads/email-campaign/poster.webp", alt: "Pôster", width: 55 },
+    { id: "copy", type: "text", content: "Cupom {{codigo_cupom}}", align: "left", color: "#dbeafe" },
+    { id: "cta", type: "button", content: "Comprar", url: "/filmes", backgroundColor: "#facc15", color: "#020617" }
+  ], { siteUrl: "https://example.com/projects/cinecruzeiro", variables: {} }, { name: "Alan", couponCode: "CINE20" });
+
+  assert.ok(result.indexOf("Olá Alan") < result.indexOf("poster.webp"));
+  assert.ok(result.indexOf("poster.webp") < result.indexOf("Cupom CINE20"));
+  assert.match(result, /width:55%/);
+  assert.match(result, /background:#facc15/);
+  assert.match(result, /projects\/cinecruzeiro\/filmes/);
+});
+
+test("blocos visuais escapam conteúdo e rejeitam links perigosos", () => {
+  const result = emailService._test.renderCampaignContentBlocks([
+    { type: "text", content: "<script>alert(1)</script>" },
+    { type: "button", content: "Abrir", url: "javascript:alert(1)" },
+    { type: "social", links: [{ label: "Rede", url: "javascript:alert(1)" }] }
+  ], { siteUrl: "https://example.com" }, {});
+
+  assert.doesNotMatch(result, /<script/i);
+  assert.doesNotMatch(result, /javascript:/i);
+  assert.doesNotMatch(result, />Abrir</);
+});
+
+test("texto alternativo do editor acompanha a composição visual", () => {
+  const result = emailService._test.campaignBlocksText([
+    { type: "heading", content: "Oferta para {{nome}}" },
+    { type: "button", content: "Ver programação", url: "/filmes" }
+  ], { name: "Alan" }, {});
+  assert.match(result, /Oferta para Alan/);
+  assert.match(result, /Ver programação: \/filmes/);
+});

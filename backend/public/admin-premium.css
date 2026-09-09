@@ -343,6 +343,7 @@ textarea:focus-visible,
 .campaign-attachment-chip button { border: 0; background: transparent; color: #fda4af; cursor: pointer; font-size: 16px; line-height: 1; }
 .campaign-preview-surface { position: sticky; top: 18px; min-width: 0; }
 .campaign-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.campaign-preview-head > div:first-child { display: grid; gap: 3px; }
 .preview-switch { display: flex; gap: 3px; padding: 3px; background: #09111f; border-radius: 8px; }
 .campaign-preview-frame { min-height: 410px; display: grid; place-items: center; padding: 14px; background: #060a12; border-radius: 10px; overflow: hidden; }
 .campaign-email-mock { width: 100%; max-width: 520px; min-height: 360px; background: #0d1728; border: 1px solid rgba(148,163,184,.14); border-radius: 10px; overflow: hidden; }
@@ -359,6 +360,53 @@ textarea:focus-visible,
 .campaign-email-hero-image a { display: block; text-decoration: none; }
 .campaign-preview-cta { border: 0; background: #facc15; color: #020617; padding: 10px 13px; border-radius: 7px; font-weight: 900; }
 .campaign-email-unsubscribe { display: block; padding: 0 20px 18px; color: #facc15; text-decoration: underline; }
+.campaign-compose-mode .campaign-email-body { padding: 16px; }
+.campaign-compose-block { position: relative; min-height: 34px; margin: 0 0 3px; padding: 9px; border: 1px solid transparent; border-radius: 7px; cursor: grab; transition: border-color 140ms ease, background-color 140ms ease, opacity 140ms ease; }
+.campaign-compose-block:hover,
+.campaign-compose-block:focus-visible { border-color: rgba(96,165,250,.48); background: rgba(37,99,235,.08); outline: 0; }
+.campaign-compose-block.selected { border-color: #facc15; background: rgba(250,204,21,.06); }
+.campaign-compose-block.dragging { opacity: .42; }
+.campaign-compose-block.drag-target { border-top-color: #facc15; }
+.campaign-compose-block-label { position: absolute; top: 5px; right: 6px; z-index: 2; display: none; padding: 3px 6px; border-radius: 5px; background: #172554; color: #dbeafe; font-size: 9px; font-weight: 800; line-height: 1; }
+.campaign-compose-block:hover .campaign-compose-block-label,
+.campaign-compose-block:focus-visible .campaign-compose-block-label,
+.campaign-compose-block.selected .campaign-compose-block-label { display: block; }
+.campaign-compose-block h2,
+.campaign-compose-block p { margin: 0; overflow-wrap: anywhere; }
+.campaign-compose-block hr { margin: 8px auto; border: 0; border-top: 1px solid #dbeafe; }
+.campaign-compose-logo,
+.campaign-compose-image,
+.campaign-compose-icon { display: inline-block; max-width: 100%; height: auto; object-fit: contain; vertical-align: middle; }
+.campaign-compose-logo { max-height: 82px; }
+.campaign-compose-image { max-height: 300px; }
+.campaign-compose-icon { max-height: 72px; }
+.campaign-compose-missing,
+.campaign-compose-empty { display: grid; min-height: 76px; place-items: center; border: 1px dashed rgba(148,163,184,.3); border-radius: 7px; color: #93a4bd; font-size: 11px; }
+.campaign-compose-kicker { font-weight: 900; text-transform: uppercase; }
+.campaign-compose-signature { font-weight: 800; }
+.campaign-compose-social a { display: inline-block; margin: 4px 10px 4px 0; font-weight: 800; text-decoration: underline; }
+.campaign-compose-spacer { position: relative; min-height: 8px; border-block: 1px dashed rgba(148,163,184,.18); }
+.campaign-compose-spacer span { position: absolute; inset: 50% auto auto 50%; padding: 2px 5px; transform: translate(-50%,-50%); background: #0d1728; color: #64748b; font-size: 9px; }
+.campaign-block-inspector { display: grid; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(148,163,184,.14); }
+.campaign-inspector-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.campaign-inspector-head > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.campaign-inspector-head span,
+.campaign-inspector-group > span { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.campaign-inspector-head strong { color: var(--text); font-size: 14px; }
+.campaign-inspector-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.campaign-inspector-actions button { min-height: 32px; padding: 6px 9px; }
+.campaign-inspector-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.campaign-inspector-grid label { min-width: 0; }
+.campaign-inspector-grid label output { float: right; color: var(--muted); font-size: 10px; }
+.campaign-inspector-grid input[type="color"] { width: 100%; min-height: 40px; padding: 4px; }
+.campaign-inspector-group { display: grid; gap: 7px; }
+.campaign-align-switch { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 4px; padding: 3px; border-radius: 7px; background: #09111f; }
+.campaign-align-switch button { min-height: 34px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted-strong); font-weight: 800; cursor: pointer; }
+.campaign-align-switch button.active { border-color: rgba(96,165,250,.42); background: #172554; color: #eff6ff; }
+.campaign-social-editor { display: grid; gap: 8px; }
+.campaign-inspector-empty { display: grid; gap: 4px; padding: 14px; border: 1px dashed rgba(148,163,184,.24); border-radius: 7px; }
+.campaign-inspector-empty strong { color: var(--text); }
+.campaign-inspector-empty span { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .campaign-brand-settings { display: grid; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(148,163,184,.13); }
 .campaign-history-surface { margin-top: var(--sp-14); }
 .campaign-history-list { display: grid; gap: 7px; }
@@ -2562,6 +2610,10 @@ body:has(.success-overlay:not([hidden])) { overflow: hidden; }
   .field-row,
   .session-editor,
   .session-row { grid-template-columns: 1fr; }
+
+  .campaign-inspector-head { align-items: stretch; flex-direction: column; }
+  .campaign-inspector-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .campaign-inspector-grid { grid-template-columns: 1fr; }
 
   .button-row,
   .form-head-actions { display: grid; grid-template-columns: 1fr; width: 100%; }

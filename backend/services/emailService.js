@@ -136,7 +136,7 @@ function button(label, url, secondary = false, options = {}) {
   const safeUrl = safeLink(url);
   if (!safeUrl) return "";
   const background = safeColor(options.background, secondary ? "#172554" : "#facc15");
-  const foreground = secondary ? "#eff6ff" : (background === "#facc15" ? "#020617" : "#ffffff");
+  const foreground = safeColor(options.color, secondary ? "#eff6ff" : (background === "#facc15" ? "#020617" : "#ffffff"));
   return `<a href="${htmlEscape(safeUrl)}" style="display:inline-block;max-width:100%;box-sizing:border-box;background:${background};color:${foreground};padding:13px 16px;border-radius:8px;text-decoration:none;font-weight:900;line-height:1.2;margin:6px 8px 6px 0;word-break:break-word">${htmlEscape(label)}</a>`;
 }
 
@@ -176,6 +176,58 @@ function campaignImageBlock(input = {}, recipient = {}) {
   return `<div style="margin:0 0 18px;text-align:center">${safeImageLink ? `<a href="${htmlEscape(safeImageLink)}" style="display:block;text-decoration:none">${image}</a>` : image}</div>`;
 }
 
+function campaignBlockMedia(block, input, recipient) {
+  const rawUrl = interpolateCampaignPlain(block.url || "", recipient, input.variables);
+  if (!safeLink(rawUrl)) return "";
+  const url = absoluteUrl(rawUrl, input.siteUrl || "");
+  if (!/^https?:\/\//i.test(url)) return "";
+  const rawLink = interpolateCampaignPlain(block.link || "", recipient, input.variables);
+  const link = rawLink && safeLink(rawLink) ? absoluteUrl(rawLink, input.siteUrl || "") : "";
+  const width = Math.max(4, Math.min(100, Number(block.width || (block.type === "icon" ? 12 : 70))));
+  const alt = htmlEscape(interpolateCampaignPlain(block.alt || "Imagem", recipient, input.variables));
+  const image = `<img src="${htmlEscape(url)}" width="${Math.round(640 * width / 100)}" alt="${alt}" style="display:inline-block;width:${width}%;max-width:100%;height:auto;border:0;border-radius:${block.type === "icon" ? 4 : 8}px;outline:0;text-decoration:none">`;
+  return /^https?:\/\//i.test(link) ? `<a href="${htmlEscape(link)}" style="display:inline-block;text-decoration:none">${image}</a>` : image;
+}
+
+function renderCampaignContentBlocks(blocks = [], input = {}, recipient = {}) {
+  return (blocks || []).map((block = {}) => {
+    const align = ["left", "center", "right"].includes(block.align) ? block.align : "left";
+    const color = safeColor(block.color, block.type === "heading" ? "#ffffff" : "#dbeafe");
+    const content = htmlEscape(interpolateCampaignPlain(block.content || "", recipient, input.variables)).replace(/\n/g, "<br>");
+    if (["logo", "image", "icon"].includes(block.type)) {
+      const media = campaignBlockMedia(block, input, recipient);
+      return media ? `<div style="margin:0 0 16px;text-align:${align}">${media}</div>` : "";
+    }
+    if (block.type === "heading") return `<h2 style="margin:0 0 16px;color:${color};font-size:${Math.max(18, Math.min(42, Number(block.fontSize || 28)))}px;line-height:1.18;text-align:${align};word-break:break-word">${content}</h2>`;
+    if (block.type === "kicker") return `<p style="margin:0 0 10px;color:${color};font-size:${Math.max(9, Math.min(16, Number(block.fontSize || 12)))}px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;text-align:${align}">${content}</p>`;
+    if (block.type === "text") return `<p style="margin:0 0 16px;color:${color};font-size:${Math.max(11, Math.min(24, Number(block.fontSize || 15)))}px;line-height:1.65;text-align:${align};overflow-wrap:break-word">${content}</p>`;
+    if (block.type === "signature") return `<p style="margin:4px 0 16px;color:${color};font-size:${Math.max(11, Math.min(24, Number(block.fontSize || 14)))}px;line-height:1.55;text-align:${align};font-weight:700;overflow-wrap:break-word">${content}</p>`;
+    if (block.type === "button") {
+      const rawUrl = interpolateCampaignPlain(block.url || "", recipient, input.variables);
+      return rawUrl && safeLink(rawUrl) ? `<div style="margin:0 0 16px;text-align:${align}">${button(interpolateCampaignPlain(block.content || "Abrir", recipient, input.variables), absoluteUrl(rawUrl, input.siteUrl || ""), false, { background: block.backgroundColor, color: block.color })}</div>` : "";
+    }
+    if (block.type === "divider") return `<div style="margin:8px 0 20px;text-align:center"><div style="display:inline-block;width:${Math.max(10, Math.min(100, Number(block.width || 100)))}%;border-top:1px solid ${color};font-size:0;line-height:0">&nbsp;</div></div>`;
+    if (block.type === "social") {
+      const links = (block.links || []).map((item) => {
+        const rawUrl = interpolateCampaignPlain(item.url || "", recipient, input.variables);
+        const url = rawUrl && safeLink(rawUrl) ? absoluteUrl(rawUrl, input.siteUrl || "") : "";
+        return /^https?:\/\//i.test(url) ? `<a href="${htmlEscape(url)}" style="display:inline-block;margin:4px 10px 4px 0;color:${color};font-weight:700;text-decoration:underline">${htmlEscape(item.label || "Rede social")}</a>` : "";
+      }).join("");
+      return links ? `<div style="margin:0 0 16px;text-align:${align}">${links}</div>` : "";
+    }
+    if (block.type === "spacer") return `<div style="height:${Math.max(8, Math.min(80, Number(block.height || 24)))}px;line-height:0;font-size:0">&nbsp;</div>`;
+    return "";
+  }).join("");
+}
+
+function campaignBlocksText(blocks = [], recipient = {}, variables = {}) {
+  return (blocks || []).flatMap((block) => {
+    if (["heading", "kicker", "text", "signature"].includes(block.type)) return [interpolateCampaignPlain(block.content || "", recipient, variables)];
+    if (block.type === "button") return [`${interpolateCampaignPlain(block.content || "Abrir", recipient, variables)}: ${interpolateCampaignPlain(block.url || "", recipient, variables)}`];
+    return [];
+  }).filter(Boolean).join("\n\n");
+}
+
 function baseLayout(title, body, options = {}) {
   const isMarketing = options.kind === "marketing";
   const unsubscribeFooter = isMarketing && options.unsubscribeUrl
@@ -199,17 +251,16 @@ function baseLayout(title, body, options = {}) {
     ${options.preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent">${htmlEscape(options.preheader)}</div>` : ""}
     <div style="margin:0;background:#060a12;padding:18px;font-family:'Segoe UI',Helvetica,sans-serif;color:#f8fafc;box-sizing:border-box;width:100%">
       <div style="max-width:680px;width:100%;margin:0 auto;box-sizing:border-box">
-        <div style="padding:8px 0 18px">
+        ${options.hideBrand ? "" : `<div style="padding:8px 0 18px">
           ${logo}
           <span style="display:block;margin-top:6px;color:#93c5fd;font-size:13px">${htmlEscape(tagline)}</span>
-        </div>
+        </div>`}
         <div style="background:#0d1728;padding:22px;border-radius:12px;box-shadow:0 22px 70px rgba(0,0,0,.34);box-sizing:border-box;overflow-wrap:break-word">
-          ${options.kicker ? `<p style="margin:0 0 10px;color:#60a5fa;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase">${htmlEscape(options.kicker)}</p>` : ""}
-          <h1 style="margin:0 0 16px;font-size:26px;line-height:1.15;color:${headlineColor};word-break:break-word">${htmlEscape(title)}</h1>
+          ${options.hideTitle ? "" : `${options.kicker ? `<p style="margin:0 0 10px;color:#60a5fa;font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase">${htmlEscape(options.kicker)}</p>` : ""}<h1 style="margin:0 0 16px;font-size:26px;line-height:1.15;color:${headlineColor};word-break:break-word">${htmlEscape(title)}</h1>`}
           ${options.heroImageHtml || ""}
           <div style="font-size:15px;line-height:1.65;color:${textColor};overflow-wrap:break-word">${body}</div>
         </div>
-        <p style="margin:18px 0 0;color:#93a4bd;font-size:12px;line-height:1.6">${htmlEscape(footer)}${socialFooter}${unsubscribeFooter}</p>
+        <p style="margin:18px 0 0;color:#93a4bd;font-size:12px;line-height:1.6">${options.hideFooterText ? "" : `${htmlEscape(footer)}${socialFooter}`}${unsubscribeFooter}</p>
       </div>
     </div>`;
 }
@@ -222,8 +273,8 @@ function sanitizeCampaignHtml(value) {
     .replace(/(href|src)\s*=\s*(["'])\s*(javascript|data|vbscript):[\s\S]*?\2/gi, '$1="#"');
 }
 
-function interpolateCampaign(value, recipient = {}, customVariables = {}) {
-  const variables = {
+function campaignVariableValues(recipient = {}, customVariables = {}) {
+  return {
     ...customVariables,
     nome: recipient.name || "cliente",
     email: recipient.email || "",
@@ -231,6 +282,15 @@ function interpolateCampaign(value, recipient = {}, customVariables = {}) {
     validade_cupom: recipient.couponExpiresAt || "",
     link_cupom: recipient.couponUrl || ""
   };
+}
+
+function interpolateCampaignPlain(value, recipient = {}, customVariables = {}) {
+  const variables = campaignVariableValues(recipient, customVariables);
+  return String(value || "").replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, key) => String(variables[String(key).toLowerCase()] ?? ""));
+}
+
+function interpolateCampaign(value, recipient = {}, customVariables = {}) {
+  const variables = campaignVariableValues(recipient, customVariables);
   return String(value || "").replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, key) => htmlEscape(variables[String(key).toLowerCase()] ?? ""));
 }
 
@@ -433,8 +493,11 @@ async function sendPromotionCampaign(db, input = {}) {
     try {
       const personalizedHtml = interpolateCampaign(input.html || "", recipient, input.variables);
       const personalizedMessage = interpolateCampaign(input.message || "", recipient, input.variables);
+      const hasContentBlocks = input.mode === "visual" && Array.isArray(input.contentBlocks) && input.contentBlocks.length > 0;
       const campaignBody = input.mode === "html"
         ? sanitizeCampaignHtml(personalizedHtml)
+        : hasContentBlocks
+          ? renderCampaignContentBlocks(input.contentBlocks, input, recipient)
         : `
           <p>Olá${recipient.name ? `, ${htmlEscape(recipient.name)}` : ""}.</p>
           <p>${htmlEscape(personalizedMessage).replace(/\n/g, "<br>")}</p>
@@ -443,8 +506,8 @@ async function sendPromotionCampaign(db, input = {}) {
       const message = {
         to: recipient.email,
         subject: interpolateCampaign(input.subject, recipient, input.variables),
-        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand, heroImageHtml: campaignImageBlock(input, recipient), headlineColor: input.headlineColor, textColor: input.textColor }),
-        text: interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
+        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand, heroImageHtml: hasContentBlocks ? "" : campaignImageBlock(input, recipient), headlineColor: input.headlineColor, textColor: input.textColor, hideBrand: hasContentBlocks, hideTitle: hasContentBlocks, hideFooterText: hasContentBlocks }),
+        text: hasContentBlocks ? campaignBlocksText(input.contentBlocks, recipient, input.variables) : interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
         attachments: input.attachments || []
       };
       let ok = false;
@@ -515,6 +578,8 @@ module.exports = {
     sanitizeCampaignHtml,
     interpolateCampaign,
     safeLink,
-    campaignImageBlock
+    campaignImageBlock,
+    renderCampaignContentBlocks,
+    campaignBlocksText
   }
 };

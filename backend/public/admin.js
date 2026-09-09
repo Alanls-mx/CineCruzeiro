@@ -135,6 +135,10 @@ let state = {
   emailCampaignSelectedIds: new Set(),
   emailCampaignAttachments: [],
   emailCampaignVariables: {},
+  emailCampaignBlocks: [],
+  emailCampaignBlocksInitialized: false,
+  emailCampaignSelectedBlockId: "",
+  emailCampaignDraggedBlockId: "",
   emailCampaignPreviewMode: "desktop",
   emailCampaignDraftId: "",
   emailCampaignIdempotencyKey: `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -5492,7 +5496,91 @@ async function saveClubVisualSettings(event) {
   }
 }
 
+function campaignBlockId() {
+  return `bloco-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function campaignBlockDefaults(type, role = "") {
+  const headlineColor = $("emailCampaignHeadlineColor")?.value || "#ffffff";
+  const textColor = $("emailCampaignTextColor")?.value || "#dbeafe";
+  const buttonColor = $("emailCampaignButtonColor")?.value || "#facc15";
+  const common = { id: campaignBlockId(), type, role, align: "left" };
+  if (type === "logo") return { ...common, url: $("emailBrandLogoUrl")?.value || "", alt: $("emailBrandName")?.value || "Cine Cruzeiro", link: "", width: 28 };
+  if (type === "kicker") return { ...common, content: "PROGRAMAÇÃO", color: "#60a5fa", fontSize: 12 };
+  if (type === "heading") return { ...common, content: $("emailCampaignHeadline")?.value || $("emailCampaignSubject")?.value || "Título da campanha", color: headlineColor, fontSize: 28 };
+  if (type === "image") return { ...common, url: $("emailCampaignImageUrl")?.value || "", alt: $("emailCampaignImageAlt")?.value || "Imagem da campanha", link: $("emailCampaignImageLink")?.value || "", width: 70, align: "center" };
+  if (type === "button") return { ...common, content: $("emailCampaignCtaLabel")?.value || "Ver programação", url: $("emailCampaignCtaUrl")?.value || "", color: "#020617", backgroundColor: buttonColor, align: "center" };
+  if (type === "divider") return { ...common, color: "#334155", width: 100 };
+  if (type === "icon") return { ...common, url: "", alt: "Ícone", link: "", width: 12, align: "center" };
+  if (type === "social") return { ...common, align: "center", color: "#93c5fd", links: [{ label: "Instagram", url: "" }, { label: "Facebook", url: "" }, { label: "WhatsApp", url: "" }] };
+  if (type === "signature") return { ...common, content: "Equipe Cine Cruzeiro", color: textColor, fontSize: 14 };
+  if (type === "spacer") return { ...common, height: 24 };
+  return { ...common, type: "text", content: $("emailCampaignMessage")?.value || "Escreva sua mensagem.", color: textColor, fontSize: 15 };
+}
+
+function legacyCampaignBlocks() {
+  const blocks = [];
+  const logo = campaignBlockDefaults("logo", "brand-logo");
+  if (logo.url) blocks.push(logo);
+  blocks.push(campaignBlockDefaults("kicker", "kicker"));
+  blocks.push(campaignBlockDefaults("heading", "headline"));
+  const image = campaignBlockDefaults("image", "hero-image");
+  if (image.url) blocks.push(image);
+  blocks.push(campaignBlockDefaults("text", "message"));
+  const button = campaignBlockDefaults("button", "cta");
+  if (button.url || $("emailCampaignCtaLabel")?.value) blocks.push(button);
+  const footer = String($("emailBrandFooter")?.value || "").trim();
+  if (footer) blocks.push({ ...campaignBlockDefaults("signature", "signature"), content: footer });
+  return blocks;
+}
+
+function ensureEmailCampaignBlocks() {
+  if (state.emailCampaignBlocksInitialized) return;
+  state.emailCampaignBlocks = legacyCampaignBlocks();
+  state.emailCampaignBlocksInitialized = true;
+  state.emailCampaignSelectedBlockId = state.emailCampaignBlocks.find((block) => block.role === "headline")?.id || state.emailCampaignBlocks[0]?.id || "";
+}
+
+function addEmailCampaignBlock(type) {
+  ensureEmailCampaignBlocks();
+  const block = type === "coupon"
+    ? { ...campaignBlockDefaults("text"), content: "Cupom: {{codigo_cupom}} · válido até {{validade_cupom}}", color: "#facc15" }
+    : campaignBlockDefaults(type);
+  const selectedIndex = state.emailCampaignBlocks.findIndex((item) => item.id === state.emailCampaignSelectedBlockId);
+  const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : state.emailCampaignBlocks.length;
+  state.emailCampaignBlocks.splice(insertAt, 0, block);
+  state.emailCampaignSelectedBlockId = block.id;
+  renderEmailCampaignPreview();
+}
+
+function moveEmailCampaignBlock(id, direction) {
+  const index = state.emailCampaignBlocks.findIndex((block) => block.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= state.emailCampaignBlocks.length) return;
+  const [block] = state.emailCampaignBlocks.splice(index, 1);
+  state.emailCampaignBlocks.splice(target, 0, block);
+  renderEmailCampaignPreview();
+}
+
+function duplicateEmailCampaignBlock(id) {
+  const index = state.emailCampaignBlocks.findIndex((block) => block.id === id);
+  if (index < 0) return;
+  const block = { ...structuredClone(state.emailCampaignBlocks[index]), id: campaignBlockId(), role: "" };
+  state.emailCampaignBlocks.splice(index + 1, 0, block);
+  state.emailCampaignSelectedBlockId = block.id;
+  renderEmailCampaignPreview();
+}
+
+function removeEmailCampaignBlock(id) {
+  const index = state.emailCampaignBlocks.findIndex((block) => block.id === id);
+  if (index < 0) return;
+  state.emailCampaignBlocks.splice(index, 1);
+  state.emailCampaignSelectedBlockId = state.emailCampaignBlocks[Math.min(index, state.emailCampaignBlocks.length - 1)]?.id || "";
+  renderEmailCampaignPreview();
+}
+
 function emailCampaignPayload(action = "draft") {
+  ensureEmailCampaignBlocks();
   const brand = {
     name: $("emailBrandName")?.value.trim() || "Cine Cruzeiro",
     logoUrl: $("emailBrandLogoUrl")?.value.trim() || "",
@@ -5516,6 +5604,7 @@ function emailCampaignPayload(action = "draft") {
     couponId: $("emailCampaignCoupon")?.value || "",
     attachments: state.emailCampaignAttachments,
     variables: state.emailCampaignVariables,
+    contentBlocks: state.emailCampaignBlocks,
     imageUrl: $("emailCampaignImageUrl")?.value.trim() || "",
     imageAlt: $("emailCampaignImageAlt")?.value.trim() || "",
     imageLink: $("emailCampaignImageLink")?.value.trim() || "",
@@ -5607,24 +5696,233 @@ function campaignPreviewImage(payload) {
   return `<div class="campaign-email-hero-image">${link ? `<a href="${escapeHtml(link)}">${image}</a>` : image}</div>`;
 }
 
-function renderEmailCampaignPreview() {
+function campaignBlockTypeLabel(type) {
+  return { logo: "Logo", kicker: "Marcador", heading: "Título", text: "Texto", image: "Imagem", button: "Botão", divider: "Divisor", icon: "Ícone", social: "Redes sociais", signature: "Assinatura", spacer: "Espaço" }[type] || "Bloco";
+}
+
+function campaignBlockAlign(value) {
+  return ["left", "center", "right"].includes(value) ? value : "left";
+}
+
+function campaignBlockNumber(value, min, max, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+}
+
+function renderCampaignComposeBlock(block) {
+  const selected = block.id === state.emailCampaignSelectedBlockId;
+  const align = campaignBlockAlign(block.align);
+  const color = campaignColor(block.color, block.type === "heading" ? "#ffffff" : "#dbeafe");
+  const content = interpolateCampaignPreview(block.content || "");
+  let inner = "";
+  if (block.type === "logo" || block.type === "image" || block.type === "icon") {
+    const src = campaignSafeUrl(interpolateCampaignPreview(block.url));
+    const link = campaignSafeUrl(interpolateCampaignPreview(block.link));
+    const width = campaignBlockNumber(block.width, block.type === "icon" ? 4 : 10, 100, block.type === "logo" ? 28 : block.type === "icon" ? 12 : 70);
+    const image = src ? `<img class="campaign-compose-${block.type}" src="${escapeHtml(src)}" alt="${escapeHtml(interpolateCampaignPreview(block.alt || campaignBlockTypeLabel(block.type)))}" style="width:${width}%" />` : `<span class="campaign-compose-missing">Selecione uma imagem</span>`;
+    inner = `<div style="text-align:${align}">${link ? `<a href="${escapeHtml(link)}">${image}</a>` : image}</div>`;
+  } else if (block.type === "heading") {
+    inner = `<h2 style="text-align:${align};color:${color};font-size:${campaignBlockNumber(block.fontSize, 18, 42, 28)}px">${content || "Título da campanha"}</h2>`;
+  } else if (block.type === "kicker") {
+    inner = `<p class="campaign-compose-kicker" style="text-align:${align};color:${color};font-size:${campaignBlockNumber(block.fontSize, 9, 16, 12)}px">${content || "PROGRAMAÇÃO"}</p>`;
+  } else if (block.type === "text" || block.type === "signature") {
+    inner = `<p class="${block.type === "signature" ? "campaign-compose-signature" : ""}" style="text-align:${align};color:${color};font-size:${campaignBlockNumber(block.fontSize, 11, 24, block.type === "signature" ? 14 : 15)}px">${(content || "Escreva seu texto.").replace(/\n/g, "<br>")}</p>`;
+  } else if (block.type === "button") {
+    const url = campaignSafeUrl(interpolateCampaignPreview(block.url));
+    const background = campaignColor(block.backgroundColor, "#facc15");
+    inner = `<div style="text-align:${align}"><a class="campaign-preview-cta" href="${escapeHtml(url || "#")}" style="background:${background};color:${color}">${content || "Abrir"}</a></div>`;
+  } else if (block.type === "divider") {
+    inner = `<hr style="width:${campaignBlockNumber(block.width, 10, 100, 100)}%;border-color:${color}" />`;
+  } else if (block.type === "social") {
+    const links = (block.links || []).filter((item) => item.label || item.url).map((item) => {
+      const url = campaignSafeUrl(interpolateCampaignPreview(item.url));
+      return `<a href="${escapeHtml(url || "#")}" style="color:${color}">${escapeHtml(item.label || "Rede social")}</a>`;
+    }).join("");
+    inner = `<div class="campaign-compose-social" style="text-align:${align}">${links || "Configure os links sociais"}</div>`;
+  } else if (block.type === "spacer") {
+    inner = `<div class="campaign-compose-spacer" style="height:${campaignBlockNumber(block.height, 8, 80, 24)}px"><span>Espaço</span></div>`;
+  }
+  return `<div class="campaign-compose-block ${selected ? "selected" : ""}" data-campaign-compose-block="${escapeHtml(block.id)}" data-block-type="${escapeHtml(campaignBlockTypeLabel(block.type))}" draggable="true" tabindex="0" role="button" aria-label="Editar bloco ${escapeHtml(campaignBlockTypeLabel(block.type))}"><span class="campaign-compose-block-label">${escapeHtml(campaignBlockTypeLabel(block.type))}</span>${inner}</div>`;
+}
+
+function campaignInspectorContent(block) {
+  if (["heading", "kicker", "button"].includes(block.type)) return `<label>Conteúdo<input data-campaign-block-field="content" value="${escapeHtml(block.content || "")}" /></label>`;
+  if (["text", "signature"].includes(block.type)) return `<label>Conteúdo<textarea data-campaign-block-field="content" rows="4">${escapeHtml(block.content || "")}</textarea></label>`;
+  return "";
+}
+
+function campaignInspectorMedia(block) {
+  if (!["logo", "image", "icon"].includes(block.type)) return "";
+  const movies = (state.content?.movies || []).filter((movie) => movie.posterUrl);
+  const selectedMovie = movies.find((movie) => movie.posterUrl === block.url)?.id || "";
+  return `<div class="field-row"><label>Imagem do catálogo<select data-campaign-block-movie><option value="">Imagem personalizada</option>${movies.map((movie) => `<option value="${escapeHtml(movie.id)}" ${movie.id === selectedMovie ? "selected" : ""}>${escapeHtml(movie.title)}</option>`).join("")}</select></label><label>Enviar imagem<input data-campaign-block-upload type="file" accept="image/jpeg,image/png,image/webp" /></label></div><label>URL da imagem<input data-campaign-block-field="url" value="${escapeHtml(block.url || "")}" placeholder="https://... ou /uploads/..." /></label><div class="field-row"><label>Texto alternativo<input data-campaign-block-field="alt" value="${escapeHtml(block.alt || "")}" /></label><label>Link ao clicar<input data-campaign-block-field="link" value="${escapeHtml(block.link || "")}" placeholder="https://... (opcional)" /></label></div>`;
+}
+
+function campaignInspectorSocial(block) {
+  if (block.type !== "social") return "";
+  return `<div class="campaign-social-editor">${(block.links || []).map((item, index) => `<div class="field-row"><label>Nome<input data-campaign-social-field="label" data-campaign-social-index="${index}" value="${escapeHtml(item.label || "")}" /></label><label>Link<input data-campaign-social-field="url" data-campaign-social-index="${index}" value="${escapeHtml(item.url || "")}" placeholder="https://..." /></label></div>`).join("")}</div>`;
+}
+
+function renderEmailCampaignBlockInspector() {
+  const inspector = $("emailCampaignBlockInspector");
+  if (!inspector) return;
+  const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
+  if (!block) {
+    inspector.innerHTML = `<div class="campaign-inspector-empty"><strong>Selecione um bloco</strong><span>Clique no conteúdo da prévia para ajustar posição, estilo e conteúdo.</span></div>`;
+    return;
+  }
+  const index = state.emailCampaignBlocks.indexOf(block);
+  const hasColor = ["heading", "kicker", "text", "button", "divider", "social", "signature"].includes(block.type);
+  const hasFontSize = ["heading", "kicker", "text", "signature"].includes(block.type);
+  const hasWidth = ["logo", "image", "icon", "divider"].includes(block.type);
+  const hasAlignment = block.type !== "divider" && block.type !== "spacer";
+  inspector.innerHTML = `<div class="campaign-inspector-head"><div><span>Bloco selecionado</span><strong>${escapeHtml(campaignBlockTypeLabel(block.type))}</strong></div><div class="campaign-inspector-actions"><button type="button" class="ghost-button" data-campaign-block-move="-1" ${index === 0 ? "disabled" : ""}>Subir</button><button type="button" class="ghost-button" data-campaign-block-move="1" ${index === state.emailCampaignBlocks.length - 1 ? "disabled" : ""}>Descer</button><button type="button" class="ghost-button" data-campaign-block-duplicate>Duplicar</button><button type="button" class="ghost-button danger-button" data-campaign-block-remove>Excluir</button></div></div>${campaignInspectorContent(block)}${campaignInspectorMedia(block)}${campaignInspectorSocial(block)}${block.type === "button" ? `<label>Link do botão<input data-campaign-block-field="url" value="${escapeHtml(block.url || "")}" placeholder="https://..." /></label>` : ""}${hasAlignment ? `<div class="campaign-inspector-group"><span>Alinhamento</span><div class="campaign-align-switch"><button type="button" data-campaign-block-align="left" class="${campaignBlockAlign(block.align) === "left" ? "active" : ""}">Esquerda</button><button type="button" data-campaign-block-align="center" class="${campaignBlockAlign(block.align) === "center" ? "active" : ""}">Centro</button><button type="button" data-campaign-block-align="right" class="${campaignBlockAlign(block.align) === "right" ? "active" : ""}">Direita</button></div></div>` : ""}<div class="campaign-inspector-grid">${hasColor ? `<label>Cor<input data-campaign-block-field="color" type="color" value="${campaignColor(block.color, block.type === "button" ? "#020617" : "#dbeafe")}" /></label>` : ""}${block.type === "button" ? `<label>Fundo do botão<input data-campaign-block-field="backgroundColor" type="color" value="${campaignColor(block.backgroundColor, "#facc15")}" /></label>` : ""}${hasFontSize ? `<label>Tamanho <output>${campaignBlockNumber(block.fontSize, 9, 42, 15)} px</output><input data-campaign-block-field="fontSize" type="range" min="${block.type === "kicker" ? 9 : 11}" max="${block.type === "heading" ? 42 : 24}" value="${campaignBlockNumber(block.fontSize, 9, 42, 15)}" /></label>` : ""}${hasWidth ? `<label>Largura <output>${campaignBlockNumber(block.width, 4, 100, 70)}%</output><input data-campaign-block-field="width" type="range" min="${block.type === "icon" ? 4 : 10}" max="100" value="${campaignBlockNumber(block.width, 4, 100, 70)}" /></label>` : ""}${block.type === "spacer" ? `<label>Altura <output>${campaignBlockNumber(block.height, 8, 80, 24)} px</output><input data-campaign-block-field="height" type="range" min="8" max="80" value="${campaignBlockNumber(block.height, 8, 80, 24)}" /></label>` : ""}</div>`;
+}
+
+function campaignBlockForRole(role, type, create = false) {
+  let block = state.emailCampaignBlocks.find((item) => item.role === role);
+  if (!block && create) {
+    block = campaignBlockDefaults(type, role);
+    state.emailCampaignBlocks.push(block);
+  }
+  return block;
+}
+
+function syncCampaignBlockFromFormField(id) {
+  if (!state.emailCampaignBlocksInitialized) return;
+  const value = $(id)?.value || "";
+  const update = (role, type, field, nextValue = value) => {
+    const block = campaignBlockForRole(role, type, Boolean(nextValue));
+    if (block) block[field] = nextValue;
+  };
+  if (id === "emailCampaignHeadline") update("headline", "heading", "content");
+  if (id === "emailCampaignSubject" && !$("emailCampaignHeadline")?.value) update("headline", "heading", "content");
+  if (id === "emailCampaignMessage") update("message", "text", "content");
+  if (id === "emailCampaignImageUrl") update("hero-image", "image", "url");
+  if (id === "emailCampaignImageAlt") update("hero-image", "image", "alt");
+  if (id === "emailCampaignImageLink") update("hero-image", "image", "link");
+  if (id === "emailCampaignCtaLabel") update("cta", "button", "content");
+  if (id === "emailCampaignCtaUrl") update("cta", "button", "url");
+  if (id === "emailBrandLogoUrl") update("brand-logo", "logo", "url");
+  if (id === "emailBrandName") update("brand-logo", "logo", "alt");
+  if (id === "emailBrandFooter") update("signature", "signature", "content");
+  if (id === "emailCampaignHeadlineColor") update("headline", "heading", "color");
+  if (id === "emailCampaignTextColor") update("message", "text", "color");
+  if (id === "emailCampaignButtonColor") update("cta", "button", "backgroundColor");
+}
+
+function syncCampaignFormFromBlock(block) {
+  const set = (id, value) => { if ($(id)) $(id).value = value || ""; };
+  if (block.role === "headline") {
+    set("emailCampaignHeadline", block.content);
+    set("emailCampaignHeadlineColor", block.color);
+    set("emailCampaignHeadlineColorValue", block.color);
+  }
+  if (block.role === "message") {
+    set("emailCampaignMessage", block.content);
+    set("emailCampaignTextColor", block.color);
+    set("emailCampaignTextColorValue", block.color);
+  }
+  if (block.role === "hero-image") {
+    set("emailCampaignImageUrl", block.url);
+    set("emailCampaignImageAlt", block.alt);
+    set("emailCampaignImageLink", block.link);
+  }
+  if (block.role === "cta") {
+    set("emailCampaignCtaLabel", block.content);
+    set("emailCampaignCtaUrl", block.url);
+    set("emailCampaignButtonColor", block.backgroundColor);
+    set("emailCampaignButtonColorValue", block.backgroundColor);
+  }
+  if (block.role === "brand-logo") {
+    set("emailBrandLogoUrl", block.url);
+    set("emailBrandName", block.alt);
+  }
+  if (block.role === "signature") set("emailBrandFooter", block.content);
+}
+
+function updateSelectedCampaignBlock(field, value) {
+  const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
+  if (!block) return;
+  if (["fontSize", "width", "height"].includes(field)) block[field] = Number(value);
+  else block[field] = value;
+  syncCampaignFormFromBlock(block);
+  renderEmailCampaignPreview({ inspector: false });
+}
+
+async function uploadSelectedCampaignBlockImage(input) {
+  const file = input?.files?.[0];
+  const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
+  if (!file || !block) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    showToast("Use JPG, PNG ou WebP.", "error");
+    input.value = "";
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast("Imagem muito grande. Limite de 5 MB.", "error");
+    input.value = "";
+    return;
+  }
+  try {
+    input.disabled = true;
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const result = await api("/api/uploads/images", {
+      method: "POST",
+      body: JSON.stringify({ data, filename: file.name, contentType: file.type, folder: "email-campaign" })
+    });
+    block.url = cleanAdminAssetUrl(result.url || result.publicUrl || "");
+    if (!block.alt) block.alt = file.name.replace(/\.[^.]+$/, "");
+    syncCampaignFormFromBlock(block);
+    renderEmailCampaignPreview();
+    showToast("Imagem adicionada ao e-mail.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    input.disabled = false;
+    input.value = "";
+  }
+}
+
+function reorderEmailCampaignBlock(sourceId, targetId, after) {
+  if (!sourceId || !targetId || sourceId === targetId) return;
+  const source = state.emailCampaignBlocks.find((block) => block.id === sourceId);
+  if (!source) return;
+  const remaining = state.emailCampaignBlocks.filter((block) => block.id !== sourceId);
+  const targetIndex = remaining.findIndex((block) => block.id === targetId);
+  if (targetIndex < 0) return;
+  remaining.splice(targetIndex + (after ? 1 : 0), 0, source);
+  state.emailCampaignBlocks = remaining;
+  state.emailCampaignSelectedBlockId = sourceId;
+  renderEmailCampaignPreview();
+}
+
+function renderEmailCampaignPreview(options = {}) {
   const preview = $("emailCampaignPreview");
   if (!preview) return;
   const payload = emailCampaignPayload();
   const title = interpolateCampaignPreview(payload.headline || payload.subject || "Prévia da campanha");
   const headlineColor = campaignColor(payload.headlineColor, "#ffffff");
   const textColor = campaignColor(payload.textColor, "#dbeafe");
-  const buttonColor = campaignColor(payload.buttonColor, "#facc15");
+  const visualBlocks = payload.mode === "visual" ? state.emailCampaignBlocks.map(renderCampaignComposeBlock).join("") : "";
   const message = payload.mode === "html"
     ? interpolateCampaignPreview(payload.html).replace(/<script[\s\S]*?<\/script>/gi, "")
-    : `<p>Olá, <strong>${interpolateCampaignPreview("{{nome}}")}</strong>.</p><p>${interpolateCampaignPreview(payload.message || "Sua mensagem aparecerá aqui.").replace(/\n/g, "<br>")}</p>${payload.ctaUrl ? `<button class="campaign-preview-cta" style="background:${buttonColor}">${escapeHtml(payload.ctaLabel || "Ver promoção")}</button>` : ""}`;
+    : visualBlocks;
   const logoUrl = campaignSafeUrl(payload.brand.logoUrl);
-  preview.innerHTML = `<div class="campaign-email-mock ${state.emailCampaignPreviewMode === "mobile" ? "mobile" : ""}"><div class="campaign-email-brand">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" />` : `<strong>${escapeHtml(payload.brand.name)}</strong>`}<small>${escapeHtml(payload.brand.footer || "Cinema de rua, ingresso digital e atendimento de bairro.")}</small></div><div class="campaign-email-body" style="color:${textColor}"><span>PROGRAMAÇÃO</span><h2 style="color:${headlineColor}">${title}</h2>${campaignPreviewImage(payload)}<div>${message}</div></div><small class="campaign-email-unsubscribe">Não desejo receber mais emails</small></div>`;
+  preview.innerHTML = payload.mode === "visual"
+    ? `<div class="campaign-email-mock campaign-compose-mode ${state.emailCampaignPreviewMode === "mobile" ? "mobile" : ""}"><div class="campaign-email-body" style="color:${textColor}">${message || `<div class="campaign-compose-empty">Adicione um bloco para começar.</div>`}</div><small class="campaign-email-unsubscribe" title="Obrigatório em campanhas de marketing">Não desejo receber mais emails</small></div>`
+    : `<div class="campaign-email-mock ${state.emailCampaignPreviewMode === "mobile" ? "mobile" : ""}"><div class="campaign-email-brand">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="" />` : `<strong>${escapeHtml(payload.brand.name)}</strong>`}<small>${escapeHtml(payload.brand.footer || "Cinema de rua, ingresso digital e atendimento de bairro.")}</small></div><div class="campaign-email-body" style="color:${textColor}"><span>PROGRAMAÇÃO</span><h2 style="color:${headlineColor}">${title}</h2>${campaignPreviewImage(payload)}<div>${message}</div></div><small class="campaign-email-unsubscribe">Não desejo receber mais emails</small></div>`;
   $("emailCampaignReviewSubject").textContent = interpolateCampaignPreview(payload.subject || "Ainda não definido");
   $("emailCampaignReviewSchedule").textContent = payload.scheduleAt ? new Date(payload.scheduleAt).toLocaleString("pt-BR") : "Enviar agora";
   const attachments = $("emailCampaignAttachments");
   if (attachments) attachments.innerHTML = state.emailCampaignAttachments.length ? state.emailCampaignAttachments.map((item) => `<span class="campaign-attachment-chip">${escapeHtml(item.filename)} <button type="button" data-campaign-remove-attachment="${escapeHtml(item.id)}" aria-label="Remover anexo">×</button></span>`).join("") : `<span class="helper-text">Nenhum anexo adicionado.</span>`;
   renderEmailCampaignVariables();
+  if (options.inspector !== false) renderEmailCampaignBlockInspector();
 }
 
 function syncCampaignColorControls() {
@@ -5643,16 +5941,18 @@ function bindCampaignColorControls() {
     const color = $(colorId);
     const value = $(valueId);
     if (!color || !value) return;
-    color.addEventListener("input", () => { value.value = color.value; renderEmailCampaignPreview(); });
+    color.addEventListener("input", () => { value.value = color.value; syncCampaignBlockFromFormField(colorId); renderEmailCampaignPreview(); });
     value.addEventListener("input", () => {
       const normalized = campaignColor(value.value, "");
       if (!normalized) return;
       color.value = normalized;
+      syncCampaignBlockFromFormField(colorId);
       renderEmailCampaignPreview();
     });
     value.addEventListener("blur", () => {
       value.value = campaignColor(value.value, color.value || fallback);
       color.value = value.value;
+      syncCampaignBlockFromFormField(colorId);
       renderEmailCampaignPreview();
     });
   });
@@ -5757,6 +6057,9 @@ async function editEmailCampaign(id) {
     state.emailCampaignSelectedIds = new Set((campaign.customerIds || []).map(String));
     state.emailCampaignAttachments = campaign.attachments || [];
     state.emailCampaignVariables = campaign.variables || {};
+    state.emailCampaignBlocks = Array.isArray(campaign.contentBlocks) ? structuredClone(campaign.contentBlocks) : [];
+    state.emailCampaignBlocksInitialized = state.emailCampaignBlocks.length > 0;
+    state.emailCampaignSelectedBlockId = state.emailCampaignBlocks[0]?.id || "";
     setCampaignField("emailCampaignSubject", campaign.subject);
     setCampaignField("emailCampaignPreheader", campaign.preheader);
     setCampaignField("emailCampaignHeadline", campaign.headline);
@@ -5803,6 +6106,9 @@ async function deleteEmailCampaign(id) {
       state.emailCampaignIdempotencyKey = `campanha-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       state.emailCampaignVariables = {};
       state.emailCampaignAttachments = [];
+      state.emailCampaignBlocks = [];
+      state.emailCampaignBlocksInitialized = false;
+      state.emailCampaignSelectedBlockId = "";
     }
     await loadContent({ silent: true });
     showToast("Rascunho excluído");
@@ -7728,16 +8034,92 @@ function bindEvents() {
     document.querySelectorAll("[data-campaign-preview]").forEach((item) => item.classList.toggle("active", item === button));
     renderEmailCampaignPreview();
   }));
-  document.querySelectorAll("[data-campaign-block]").forEach((button) => button.addEventListener("click", () => {
-    const snippets = {
-      paragraph: "\n\n{{nome}}, escreva aqui a mensagem principal da campanha.",
-      button: "\n\n[CTA] Ver programação: https://lumixengine.com/projects/cinecruzeiro",
-      coupon: "\n\nCupom: {{codigo_cupom}} · válido até {{validade_cupom}}",
-      divider: "\n\n────────────\n"
-    };
-    const message = $("emailCampaignMessage");
-    if (message) { message.value += snippets[button.dataset.campaignBlock] || ""; message.dispatchEvent(new Event("input", { bubbles: true })); }
-  }));
+  document.querySelectorAll("[data-campaign-block]").forEach((button) => button.addEventListener("click", () => addEmailCampaignBlock(button.dataset.campaignBlock)));
+  $("emailCampaignPreview")?.addEventListener("click", (event) => {
+    const block = event.target.closest("[data-campaign-compose-block]");
+    if (!block) return;
+    event.preventDefault();
+    state.emailCampaignSelectedBlockId = block.dataset.campaignComposeBlock;
+    renderEmailCampaignPreview();
+  });
+  $("emailCampaignPreview")?.addEventListener("keydown", (event) => {
+    const block = event.target.closest("[data-campaign-compose-block]");
+    if (!block || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    state.emailCampaignSelectedBlockId = block.dataset.campaignComposeBlock;
+    renderEmailCampaignPreview();
+  });
+  $("emailCampaignPreview")?.addEventListener("dragstart", (event) => {
+    const block = event.target.closest("[data-campaign-compose-block]");
+    if (!block) return;
+    state.emailCampaignDraggedBlockId = block.dataset.campaignComposeBlock;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", state.emailCampaignDraggedBlockId);
+    block.classList.add("dragging");
+  });
+  $("emailCampaignPreview")?.addEventListener("dragover", (event) => {
+    const block = event.target.closest("[data-campaign-compose-block]");
+    if (!block || block.dataset.campaignComposeBlock === state.emailCampaignDraggedBlockId) return;
+    event.preventDefault();
+    $("emailCampaignPreview").querySelectorAll(".drag-target").forEach((item) => item.classList.remove("drag-target"));
+    block.classList.add("drag-target");
+  });
+  $("emailCampaignPreview")?.addEventListener("drop", (event) => {
+    const block = event.target.closest("[data-campaign-compose-block]");
+    if (!block) return;
+    event.preventDefault();
+    const after = event.clientY > block.getBoundingClientRect().top + block.getBoundingClientRect().height / 2;
+    reorderEmailCampaignBlock(state.emailCampaignDraggedBlockId || event.dataTransfer.getData("text/plain"), block.dataset.campaignComposeBlock, after);
+    state.emailCampaignDraggedBlockId = "";
+  });
+  $("emailCampaignPreview")?.addEventListener("dragend", () => {
+    state.emailCampaignDraggedBlockId = "";
+    $("emailCampaignPreview").querySelectorAll(".dragging,.drag-target").forEach((item) => item.classList.remove("dragging", "drag-target"));
+  });
+  $("emailCampaignBlockInspector")?.addEventListener("click", (event) => {
+    const align = event.target.closest("[data-campaign-block-align]");
+    if (align) { updateSelectedCampaignBlock("align", align.dataset.campaignBlockAlign); renderEmailCampaignBlockInspector(); return; }
+    const move = event.target.closest("[data-campaign-block-move]");
+    if (move) { moveEmailCampaignBlock(state.emailCampaignSelectedBlockId, Number(move.dataset.campaignBlockMove)); return; }
+    if (event.target.closest("[data-campaign-block-duplicate]")) { duplicateEmailCampaignBlock(state.emailCampaignSelectedBlockId); return; }
+    if (event.target.closest("[data-campaign-block-remove]")) removeEmailCampaignBlock(state.emailCampaignSelectedBlockId);
+  });
+  const updateCampaignInspector = (event) => {
+    const upload = event.target.closest("[data-campaign-block-upload]");
+    if (upload) {
+      void uploadSelectedCampaignBlockImage(upload);
+      return;
+    }
+    const field = event.target.closest("[data-campaign-block-field]");
+    if (field) {
+      updateSelectedCampaignBlock(field.dataset.campaignBlockField, field.value);
+      const output = field.closest("label")?.querySelector("output");
+      if (output) output.textContent = `${field.value}${field.dataset.campaignBlockField === "width" ? "%" : " px"}`;
+      return;
+    }
+    const social = event.target.closest("[data-campaign-social-field]");
+    if (social) {
+      const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
+      const index = Number(social.dataset.campaignSocialIndex);
+      if (!block?.links?.[index]) return;
+      block.links[index][social.dataset.campaignSocialField] = social.value;
+      renderEmailCampaignPreview({ inspector: false });
+      return;
+    }
+    const movieSelect = event.target.closest("[data-campaign-block-movie]");
+    if (movieSelect) {
+      const movie = (state.content?.movies || []).find((item) => item.id === movieSelect.value);
+      if (!movie) return;
+      const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
+      if (!block) return;
+      block.url = movie.posterUrl || "";
+      block.alt = `Pôster de ${movie.title || "filme"}`;
+      syncCampaignFormFromBlock(block);
+      renderEmailCampaignPreview();
+    }
+  };
+  $("emailCampaignBlockInspector")?.addEventListener("input", updateCampaignInspector);
+  $("emailCampaignBlockInspector")?.addEventListener("change", updateCampaignInspector);
   document.querySelectorAll("[data-campaign-variable]").forEach((button) => button.addEventListener("click", () => insertCampaignVariable(button.dataset.campaignVariable)));
   $("emailCampaignVariableAdd")?.addEventListener("click", () => {
     const key = $("emailCampaignVariableKey")?.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
@@ -7766,6 +8148,8 @@ function bindEvents() {
       $("emailCampaignImageUrl").value = movie.posterUrl || "";
       $("emailCampaignImageAlt").value = `Pôster de ${movie.title || "filme"}`;
     }
+    syncCampaignBlockFromFormField("emailCampaignImageUrl");
+    syncCampaignBlockFromFormField("emailCampaignImageAlt");
     renderEmailCampaignPreview();
   });
   $("emailCampaignImageUpload")?.addEventListener("change", () => uploadAdminImage("emailCampaignImageUpload", "emailCampaignImageUrl", "", "email-campaign", () => {
@@ -7773,7 +8157,7 @@ function bindEvents() {
     if (!$('emailCampaignImageAlt').value) $('emailCampaignImageAlt').value = "Imagem da campanha";
     renderEmailCampaignPreview();
   }));
-  ["emailCampaignSubject", "emailCampaignPreheader", "emailCampaignHeadline", "emailCampaignMessage", "emailCampaignHtml", "emailCampaignCtaLabel", "emailCampaignCtaUrl", "emailCampaignImageUrl", "emailCampaignImageAlt", "emailCampaignImageLink", "emailCampaignScheduleAt", "emailBrandName", "emailBrandLogoUrl", "emailBrandFooter"].forEach((id) => $(id)?.addEventListener("input", renderEmailCampaignPreview));
+  ["emailCampaignSubject", "emailCampaignPreheader", "emailCampaignHeadline", "emailCampaignMessage", "emailCampaignHtml", "emailCampaignCtaLabel", "emailCampaignCtaUrl", "emailCampaignImageUrl", "emailCampaignImageAlt", "emailCampaignImageLink", "emailCampaignScheduleAt", "emailBrandName", "emailBrandLogoUrl", "emailBrandFooter"].forEach((id) => $(id)?.addEventListener("input", () => { syncCampaignBlockFromFormField(id); renderEmailCampaignPreview(); }));
   $("emailCampaignCoupon")?.addEventListener("change", renderEmailCampaignPreview);
   $("emailCampaignAttachmentUpload")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
