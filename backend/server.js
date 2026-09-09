@@ -60,6 +60,11 @@ const DATA_FILE = process.env.CINE_DATA_FILE ? path.resolve(process.env.CINE_DAT
 const PUBLIC_DIR = path.join(ROOT, "public");
 const TRAILERS_DIR = path.join(PUBLIC_DIR, "trailers");
 const FRONTEND_PUBLIC_DIR = path.join(ROOT, "..", "public");
+const ADMIN_VENDOR_FILES = new Map([
+  ["/admin/vendor/grapes.min.js", path.join(ROOT, "..", "node_modules", "grapesjs", "dist", "grapes.min.js")],
+  ["/admin/vendor/grapes.min.css", path.join(ROOT, "..", "node_modules", "grapesjs", "dist", "css", "grapes.min.css")],
+  ["/admin/vendor/grapesjs-preset-newsletter.min.js", path.join(ROOT, "..", "node_modules", "grapesjs-preset-newsletter", "dist", "index.js")]
+]);
 const storageService = createStorageService({
   publicDir: PUBLIC_DIR,
   rootDir: process.env.CINE_UPLOADS_DIR || ""
@@ -7344,6 +7349,23 @@ async function runMercadoPagoWebhookSimulation(input = {}, options = {}) {
 }
 
 async function serveStatic(req, res, pathname) {
+  const vendorPath = ADMIN_VENDOR_FILES.get(pathname);
+  if (vendorPath) {
+    try {
+      const file = await fs.readFile(vendorPath);
+      res.writeHead(200, {
+        ...securityHeaders(),
+        "Content-Type": pathname.endsWith(".css") ? "text/css; charset=utf-8" : "application/javascript; charset=utf-8",
+        "Cache-Control": "public, max-age=86400"
+      });
+      res.end(file);
+      return;
+    } catch {
+      sendJson(res, 404, { error: "Editor visual não encontrado" });
+      return;
+    }
+  }
+
   const uploadPublicPath = stripPublicAssetBase(pathname);
   if (uploadPublicPath.startsWith("/uploads/")) {
     const uploadPath = path.normalize(path.join(storageService.rootDir, uploadPublicPath.replace(/^\/uploads\//, "")));
@@ -8313,7 +8335,7 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     body.attachments = resolveCampaignAttachments(db, body.attachments);
     const campaign = normalizeCampaignInput(body, { brand: body.brand || db.settings?.emailBranding || {} });
-    if (!campaign.subject || (campaign.mode === "html" ? !campaign.html : !campaign.message)) {
+    if (!campaign.subject || !String(campaign.html || campaign.message || "").trim()) {
       sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: campaign.mode === "html" ? "Informe assunto e conteúdo HTML personalizado." : "Informe assunto e mensagem da campanha." } });
       return;
     }
@@ -8439,7 +8461,7 @@ async function handleApi(req, res, pathname) {
     body.attachments = resolveCampaignAttachments(db, body.attachments);
     body.action = "send";
     const campaign = normalizeCampaignInput(body, { brand: db.settings?.emailBranding || {} });
-    if (!campaign.subject || (campaign.mode === "html" ? !campaign.html : !campaign.message)) {
+    if (!campaign.subject || !String(campaign.html || campaign.message || "").trim()) {
       sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: "Informe assunto e conteúdo da campanha." } });
       return;
     }

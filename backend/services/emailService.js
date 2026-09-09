@@ -493,9 +493,12 @@ async function sendPromotionCampaign(db, input = {}) {
     try {
       const personalizedHtml = interpolateCampaign(input.html || "", recipient, input.variables);
       const personalizedMessage = interpolateCampaign(input.message || "", recipient, input.variables);
+      const hasDesignerHtml = input.mode === "visual" && Boolean(String(input.html || "").trim());
       const hasContentBlocks = input.mode === "visual" && Array.isArray(input.contentBlocks) && input.contentBlocks.length > 0;
       const campaignBody = input.mode === "html"
         ? sanitizeCampaignHtml(personalizedHtml)
+        : hasDesignerHtml
+          ? sanitizeCampaignHtml(personalizedHtml)
         : hasContentBlocks
           ? renderCampaignContentBlocks(input.contentBlocks, input, recipient)
         : `
@@ -506,8 +509,8 @@ async function sendPromotionCampaign(db, input = {}) {
       const message = {
         to: recipient.email,
         subject: interpolateCampaign(input.subject, recipient, input.variables),
-        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand, heroImageHtml: hasContentBlocks ? "" : campaignImageBlock(input, recipient), headlineColor: input.headlineColor, textColor: input.textColor, hideBrand: hasContentBlocks, hideTitle: hasContentBlocks, hideFooterText: hasContentBlocks }),
-        text: hasContentBlocks ? campaignBlocksText(input.contentBlocks, recipient, input.variables) : interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
+        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand, heroImageHtml: hasDesignerHtml || hasContentBlocks ? "" : campaignImageBlock(input, recipient), headlineColor: input.headlineColor, textColor: input.textColor, hideBrand: hasDesignerHtml || hasContentBlocks, hideTitle: hasDesignerHtml || hasContentBlocks, hideFooterText: hasDesignerHtml || hasContentBlocks }),
+        text: hasDesignerHtml || input.mode === "html" ? String(personalizedHtml).replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : hasContentBlocks ? campaignBlocksText(input.contentBlocks, recipient, input.variables) : interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
         attachments: input.attachments || []
       };
       let ok = false;
