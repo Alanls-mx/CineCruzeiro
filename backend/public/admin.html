@@ -1258,6 +1258,67 @@
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
+          <section class="surface campaign-ai-assistant" aria-labelledby="emailCampaignAiTitle">
+            <div class="campaign-ai-head">
+              <div>
+                <div class="section-title" id="emailCampaignAiTitle">Agente de campanhas</div>
+                <p>Use um template e um rascunho como referência para criar uma nova campanha com dados reais do catálogo. O resultado fica salvo como rascunho para sua revisão.</p>
+              </div>
+              <span class="campaign-ai-badge">IA · revisão antes do envio</span>
+            </div>
+            <div class="campaign-ai-grid">
+              <label>Objetivo
+                <select id="emailCampaignAiScenario">
+                  <option value="premiere">Novo filme / grande estreia</option>
+                  <option value="now_playing">Filme em cartaz</option>
+                  <option value="last_chance">Últimos dias de um filme</option>
+                  <option value="promotion">Promoção</option>
+                  <option value="coupon">Cupom de desconto</option>
+                  <option value="club">Clube Cine Cruzeiro</option>
+                  <option value="concession">Bomboniere</option>
+                  <option value="event">Evento especial</option>
+                  <option value="reactivation">Reativação de clientes</option>
+                </select>
+              </label>
+              <label>Filme de referência
+                <select id="emailCampaignAiMovie"><option value="">Escolha conforme o objetivo</option></select>
+              </label>
+              <label>Cupom (opcional)
+                <select id="emailCampaignAiCoupon"><option value="">Nenhum cupom</option></select>
+              </label>
+              <label>Plano do Clube (opcional)
+                <select id="emailCampaignAiClubPlan"><option value="">Nenhum plano</option></select>
+              </label>
+              <label>Itens da bomboniere (opcional)
+                <select id="emailCampaignAiConcessions" multiple size="3" aria-label="Itens da bomboniere para a campanha"></select>
+              </label>
+              <label>Template visual
+                <select id="emailCampaignAiTemplate"><option value="">Escolha pelo objetivo</option></select>
+              </label>
+              <label>Rascunho de referência
+                <select id="emailCampaignAiCampaign"><option value="">Nenhum rascunho</option></select>
+              </label>
+              <label class="full">Para quem
+                <select id="emailCampaignAiAudience">
+                  <option value="all">Todos os clientes com marketing ativo</option>
+                  <option value="active">Clientes ativos</option>
+                  <option value="purchased">Clientes com compras aprovadas</option>
+                  <option value="selected">Seleção manual no editor</option>
+                </select>
+              </label>
+              <label class="full">Briefing da campanha (opcional)
+                <textarea id="emailCampaignAiBrief" rows="3" maxlength="1000" placeholder="Ex.: destaque a pré-venda, use um tom cinematográfico e convide o cliente a escolher a sessão de sexta-feira."></textarea>
+              </label>
+            </div>
+            <div class="campaign-ai-actions">
+              <button id="emailCampaignAiGenerate" class="primary-button" type="button">Gerar rascunho com IA</button>
+              <span id="emailCampaignAiStatus" class="campaign-ai-status" role="status" aria-live="polite">Selecione referências para começar.</span>
+            </div>
+            <div id="emailCampaignAiResult" class="campaign-ai-result" hidden>
+              <span><strong>Rascunho criado.</strong> Confira a prévia e ajuste o conteúdo antes de enviar.</span>
+              <button id="emailCampaignAiOpen" class="ghost-button" type="button">Abrir rascunho</button>
+            </div>
+          </section>
           <div id="emailCampaignWorkspace" class="campaign-workspace">
             <form id="emailCampaignForm" class="surface form-grid email-campaign-surface">
               <div class="form-head campaign-form-head">

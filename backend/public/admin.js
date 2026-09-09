@@ -150,6 +150,7 @@ let state = {
   emailCampaignPreviewMode: "desktop",
   emailCampaignTemplate: "announcement",
   emailCampaignDraftId: "",
+  emailCampaignAiDraftId: "",
   emailCampaignIdempotencyKey: randomClientId("campanha")
 };
 
@@ -6638,7 +6639,7 @@ function renderEmailCampaigns() {
     const unsupported = item.metricsSupported?.opened || item.metricsSupported?.clicked ? "" : " · aberturas/cliques não rastreados pelo provedor";
     const editable = ["draft", "failed"].includes(item.status);
     const actions = `${editable ? `<button type="button" class="ghost-button" data-campaign-edit="${escapeHtml(item.id)}">Abrir</button><button type="button" class="ghost-button danger-button" data-campaign-delete="${escapeHtml(item.id)}">Excluir</button>` : ""}<button type="button" class="ghost-button" data-campaign-duplicate="${escapeHtml(item.id)}">Duplicar</button>`;
-    return `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(`${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span>${actions}</div></div>`;
+    return `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(`${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions">${item.aiGenerated ? `<span class="campaign-history-ai">IA</span>` : ""}<span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span>${actions}</div></div>`;
   }).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
 }
 
@@ -6787,7 +6788,103 @@ function renderEmailCampaignControls() {
   if ($("emailBrandFooter") && !$('emailBrandFooter').value) $("emailBrandFooter").value = branding.footer || "Mensagem automática do Cine Cruzeiro.";
   renderEmailBrandLogoPreview();
   applyEmailCampaignTemplate($("emailCampaignTemplate")?.value || "announcement", { fillDefaults: true });
+  renderEmailCampaignAiControls();
   void refreshEmailCampaignRecipients().catch(() => null);
+}
+
+const EMAIL_CAMPAIGN_AI_SCENARIOS = [
+  ["premiere", "Novo filme / grande estreia"],
+  ["now_playing", "Filme em cartaz"],
+  ["last_chance", "Últimos dias de um filme"],
+  ["promotion", "Promoção"],
+  ["coupon", "Cupom de desconto"],
+  ["club", "Clube Cine Cruzeiro"],
+  ["concession", "Bomboniere"],
+  ["event", "Evento especial"],
+  ["reactivation", "Reativação de clientes"]
+];
+
+function renderEmailCampaignAiControls() {
+  const scenario = $("emailCampaignAiScenario");
+  const movie = $("emailCampaignAiMovie");
+  const coupon = $("emailCampaignAiCoupon");
+  const plan = $("emailCampaignAiClubPlan");
+  const concessions = $("emailCampaignAiConcessions");
+  const template = $("emailCampaignAiTemplate");
+  const reference = $("emailCampaignAiCampaign");
+  if (!scenario || !movie || !coupon || !plan || !concessions || !template || !reference) return;
+
+  const currentScenario = scenario.value || "premiere";
+  scenario.innerHTML = EMAIL_CAMPAIGN_AI_SCENARIOS.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+  scenario.value = EMAIL_CAMPAIGN_AI_SCENARIOS.some(([value]) => value === currentScenario) ? currentScenario : "premiere";
+
+  const currentMovie = movie.value;
+  movie.innerHTML = `<option value="">Escolha conforme o objetivo</option>${(state.content?.movies || []).filter((item) => item.status !== "hidden").map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title || "Filme sem título")}</option>`).join("")}`;
+  movie.value = (state.content?.movies || []).some((item) => item.id === currentMovie && item.status !== "hidden") ? currentMovie : "";
+
+  const currentCoupon = coupon.value;
+  coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.couponCode)} · ${escapeHtml(item.title || "Cupom")}</option>`).join("")}`;
+  coupon.value = (state.content?.promotions || []).some((item) => item.id === currentCoupon && item.couponCode && item.active !== false) ? currentCoupon : "";
+
+  const currentPlan = plan.value;
+  plan.innerHTML = `<option value="">Nenhum plano</option>${(state.content?.subscriptionPlans || []).filter((item) => item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || "Plano")} · ${escapeHtml(money(item.monthlyPrice || item.price || 0))}/mês</option>`).join("")}`;
+  plan.value = (state.content?.subscriptionPlans || []).some((item) => item.id === currentPlan && item.active !== false) ? currentPlan : "";
+
+  const selectedConcessions = new Set(Array.from(concessions.selectedOptions).map((option) => option.value));
+  concessions.innerHTML = (state.content?.concessions || []).filter((item) => item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}" ${selectedConcessions.has(String(item.id)) ? "selected" : ""}>${escapeHtml(item.name || "Produto")} · ${escapeHtml(money(item.price || 0))}</option>`).join("");
+
+  const currentTemplate = template.value;
+  template.innerHTML = `<option value="">Escolha pelo objetivo</option>${Object.entries(EMAIL_CAMPAIGN_TEMPLATES).map(([id, item]) => `<option value="${id}">${escapeHtml(item.label || id)} · ${escapeHtml(item.family || "Campanha")}</option>`).join("")}`;
+  template.value = Object.prototype.hasOwnProperty.call(EMAIL_CAMPAIGN_TEMPLATES, currentTemplate) ? currentTemplate : "";
+
+  const currentReference = reference.value;
+  const drafts = (state.content?.emailCampaigns || []).filter((item) => !item.status || ["draft", "failed"].includes(item.status));
+  reference.innerHTML = `<option value="">Nenhum rascunho</option>${drafts.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.subject || "Campanha sem assunto")} · ${escapeHtml(item.templateId || "comunicado")}</option>`).join("")}`;
+  reference.value = drafts.some((item) => item.id === currentReference) ? currentReference : "";
+}
+
+function setEmailCampaignAiStatus(message, kind = "") {
+  const status = $("emailCampaignAiStatus");
+  if (!status) return;
+  status.textContent = message;
+  status.className = `campaign-ai-status${kind ? ` ${kind}` : ""}`;
+}
+
+async function generateEmailCampaignAiDraft() {
+  const button = $("emailCampaignAiGenerate");
+  if (!button || button.disabled) return;
+  const payload = {
+    scenario: $("emailCampaignAiScenario")?.value || "premiere",
+    movieId: $("emailCampaignAiMovie")?.value || "",
+    couponId: $("emailCampaignAiCoupon")?.value || "",
+    clubPlanId: $("emailCampaignAiClubPlan")?.value || "",
+    concessionIds: Array.from($("emailCampaignAiConcessions")?.selectedOptions || []).map((option) => option.value),
+    referenceTemplateId: $("emailCampaignAiTemplate")?.value || "",
+    referenceCampaignId: $("emailCampaignAiCampaign")?.value || "",
+    recipientMode: $("emailCampaignAiAudience")?.value || "all",
+    brief: $("emailCampaignAiBrief")?.value.trim() || ""
+  };
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  setEmailCampaignAiStatus("Analisando catálogo e referências...", "loading");
+  const resultBox = $("emailCampaignAiResult");
+  if (resultBox) resultBox.hidden = true;
+  try {
+    const result = await api("/api/admin/email/campaigns/ai-draft", { method: "POST", body: JSON.stringify(payload) });
+    const campaign = result.campaign || {};
+    state.emailCampaignAiDraftId = campaign.id || "";
+    if (state.content) state.content.emailCampaigns = [campaign, ...(state.content.emailCampaigns || []).filter((item) => item.id !== campaign.id)];
+    renderEmailCampaigns();
+    setEmailCampaignAiStatus(`Rascunho criado com ${result.ai?.referenceTemplateId || "o modelo selecionado"} e pronto para revisão.`, "success");
+    if (resultBox) resultBox.hidden = false;
+    showToast("Rascunho criado pelo agente de campanhas");
+  } catch (error) {
+    setEmailCampaignAiStatus(error.message || "Não foi possível criar o rascunho.", "error");
+    showToast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+  }
 }
 
 function syncCampaignImageMovieSelect() {
@@ -8663,6 +8760,10 @@ function bindEvents() {
   $("eventTransparentImages")?.addEventListener("change", syncTransparentImagePreviews);
   $("clubTransparentImages")?.addEventListener("change", syncTransparentImagePreviews);
   $("emailCampaignForm")?.addEventListener("submit", sendEmailCampaign);
+  $("emailCampaignAiGenerate")?.addEventListener("click", () => void generateEmailCampaignAiDraft());
+  $("emailCampaignAiOpen")?.addEventListener("click", () => {
+    if (state.emailCampaignAiDraftId) void editEmailCampaign(state.emailCampaignAiDraftId);
+  });
   document.querySelectorAll("[data-campaign-template]").forEach((button) => button.addEventListener("click", () => {
     applyEmailCampaignTemplate(button.dataset.campaignTemplate, { fillDefaults: true });
   }));

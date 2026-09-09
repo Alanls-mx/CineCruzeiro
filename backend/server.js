@@ -27,6 +27,7 @@ const paymentService = require("./services/paymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
+const { buildCampaignDraft } = require("./services/emailCampaignAiService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
@@ -8288,6 +8289,76 @@ async function handleApi(req, res, pathname) {
   }
   if (pathname === "/api/admin/email/campaigns" && method === "GET") {
     sendJson(res, 200, { campaigns: (db.emailCampaigns || []).map(publicCampaign) });
+    return;
+  }
+
+  if (pathname === "/api/admin/email/campaigns/ai-draft" && method === "POST") {
+    const body = await readBody(req);
+    const scenario = String(body.scenario || "promotion").trim().slice(0, 40);
+    const requestedMovieId = String(body.movieId || "").trim();
+    const requestedCouponId = String(body.couponId || "").trim();
+    const requestedPlanId = String(body.clubPlanId || "").trim();
+    const requestedConcessionIds = Array.isArray(body.concessionIds)
+      ? [...new Set(body.concessionIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20)
+      : [];
+    const movieScenario = /premiere|estreia|launch|now_playing|cartaz|last_chance|últimos|ultimos/i.test(scenario);
+    const scenarioMovie = movieScenario && /premiere|estreia|launch/i.test(scenario)
+      ? (db.movies || []).find((movie) => movie.status === "upcoming" && movie.workflowStatus !== "archived")
+      : movieScenario
+        ? (db.movies || []).find((movie) => movie.status === "now_playing" && movie.workflowStatus !== "archived")
+        : null;
+    const movie = (db.movies || []).find((item) => item.id === requestedMovieId) || (scenarioMovie || null);
+    const coupon = (db.promotions || []).find((item) => item.id === requestedCouponId && item.active !== false) || null;
+    const plan = (db.subscriptionPlans || []).find((item) => item.id === requestedPlanId && item.active !== false) || null;
+    const concessions = (db.concessions || []).filter((item) => requestedConcessionIds.includes(String(item.id)) && item.active !== false);
+    const referenceCampaign = (db.emailCampaigns || []).find((item) => item.id === String(body.referenceCampaignId || "").trim()) || null;
+    const generated = buildCampaignDraft({
+      scenario,
+      movie,
+      coupon,
+      plan,
+      concessions,
+      referenceCampaign,
+      referenceTemplateId: String(body.referenceTemplateId || "").trim(),
+      recipientMode: body.recipientMode,
+      brief: String(body.brief || "").trim().slice(0, 1000),
+      brand: db.settings?.emailBranding || {},
+      siteUrl: appFrontendUrl()
+    });
+    const campaign = normalizeCampaignInput(generated, { brand: db.settings?.emailBranding || {} });
+    Object.assign(campaign, {
+      status: "draft",
+      createdBy: req.adminUser?.id || "",
+      recipientCount: campaignRecipients(db, campaign).length,
+      aiGenerated: true,
+      aiProvider: generated.aiProvider,
+      aiScenario: generated.aiScenario,
+      aiReferenceCampaignId: generated.aiReferenceCampaignId,
+      aiReferenceTemplateId: generated.aiReferenceTemplateId,
+      aiBrief: generated.aiBrief
+    });
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      lockedDb.emailCampaigns ||= [];
+      lockedDb.emailCampaigns.unshift(campaign);
+      await writeDb(lockedDb);
+    });
+    logEvent("info", "email_campaign.ai_draft_created", {
+      actorUserId: req.adminUser?.id || "",
+      campaignId: campaign.id,
+      scenario: generated.aiScenario,
+      referenceCampaignId: generated.aiReferenceCampaignId,
+      referenceTemplateId: generated.aiReferenceTemplateId
+    });
+    sendJson(res, 201, {
+      campaign: publicCampaign(campaign),
+      ai: {
+        provider: generated.aiProvider,
+        scenario: generated.aiScenario,
+        referenceCampaignId: generated.aiReferenceCampaignId,
+        referenceTemplateId: generated.aiReferenceTemplateId
+      }
+    });
     return;
   }
 
