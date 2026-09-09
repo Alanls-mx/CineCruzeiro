@@ -3385,8 +3385,16 @@ async function restoreOrderAdmin(orderId = state.selectedOrderId) {
 function closeFloatingActionMenu() {
   const menu = $("floatingActionMenu");
   if (!menu) return;
+  document.querySelectorAll('[data-floating-menu-trigger][aria-expanded="true"]').forEach((button) => {
+    button.setAttribute("aria-expanded", "false");
+  });
   menu.hidden = true;
   menu.innerHTML = "";
+  menu.classList.remove("campaign-history-popover");
+  menu.removeAttribute("role");
+  menu.removeAttribute("aria-label");
+  delete menu.dataset.campaignId;
+  delete menu.dataset.orderId;
 }
 
 function positionFloatingMenu(anchor, menu) {
@@ -3410,6 +3418,10 @@ function toggleOrderMenu(orderId, event) {
   const floating = $("floatingActionMenu");
   const anchor = event?.currentTarget;
   if (!floating || !anchor) return;
+  floating.classList.remove("campaign-history-popover");
+  floating.removeAttribute("role");
+  floating.removeAttribute("aria-label");
+  delete floating.dataset.campaignId;
   const order = (state.content?.orders || []).find((item) => item.id === orderId);
   if (!order) return;
   if (!floating.hidden && floating.dataset.orderId === orderId) {
@@ -3429,6 +3441,34 @@ function toggleOrderMenu(orderId, event) {
     <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>
   `;
   positionFloatingMenu(anchor, floating);
+}
+
+function toggleEmailCampaignMenu(campaignId, event) {
+  event?.stopPropagation();
+  const floating = $("floatingActionMenu");
+  const anchor = event?.currentTarget;
+  if (!floating || !anchor) return;
+  if (!floating.hidden && floating.dataset.campaignId === campaignId) {
+    closeFloatingActionMenu();
+    return;
+  }
+  const campaign = (state.content?.emailCampaigns || []).find((item) => String(item.id) === String(campaignId));
+  if (!campaign) return;
+  closeFloatingActionMenu();
+  const editable = ["draft", "failed"].includes(campaign.status);
+  const safeId = escapeHtml(campaignId);
+  floating.dataset.campaignId = campaignId;
+  floating.classList.add("campaign-history-popover");
+  floating.setAttribute("role", "menu");
+  floating.setAttribute("aria-label", "Ações da campanha");
+  floating.innerHTML = `
+    ${editable ? `<button type="button" role="menuitem" data-campaign-edit="${safeId}" onclick="void editEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Abrir</button>` : ""}
+    <button type="button" role="menuitem" data-campaign-duplicate="${safeId}" onclick="void duplicateEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Duplicar</button>
+    ${editable ? `<button class="danger-text" type="button" role="menuitem" data-campaign-delete="${safeId}" onclick="void deleteEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Excluir</button>` : ""}
+  `;
+  anchor.setAttribute("aria-expanded", "true");
+  positionFloatingMenu(anchor, floating);
+  floating.querySelector("button")?.focus({ preventScroll: true });
 }
 
 async function copyTicketCode(code) {
@@ -6656,12 +6696,11 @@ function renderEmailCampaigns() {
       ? `${item.sent || 0} enviados · ${item.failed || 0} falhas`
       : `${item.customerCount || 0} destinatários`;
     const unsupported = item.metricsSupported?.opened || item.metricsSupported?.clicked ? "" : " · aberturas/cliques não rastreados pelo provedor";
-    const editable = ["draft", "failed"].includes(item.status);
-    const actions = `${editable ? `<button type="button" class="ghost-button" data-campaign-edit="${escapeHtml(item.id)}">Abrir</button><button type="button" class="ghost-button danger-button" data-campaign-delete="${escapeHtml(item.id)}">Excluir</button>` : ""}<button type="button" class="ghost-button" data-campaign-duplicate="${escapeHtml(item.id)}">Duplicar</button>`;
     const linked = emailCampaignHistoryLinkedLabel(item);
     const template = emailCampaignTemplateLabel(item.templateId || "announcement");
     const context = [template, linked].filter(Boolean).join(" · ");
-    return `<div class="campaign-history-row"><div><strong>${escapeHtml(item.subject || "Sem assunto")}</strong><small>${escapeHtml(context ? `${context} · ${delivery}${unsupported}` : `${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions">${item.aiGenerated ? `<span class="campaign-history-ai">IA</span>` : ""}<span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span>${actions}</div></div>`;
+    const subject = item.subject || "Sem assunto";
+    return `<div class="campaign-history-row"><div class="campaign-history-main"><strong>${escapeHtml(subject)}</strong><small>${escapeHtml(context ? `${context} · ${delivery}${unsupported}` : `${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions">${item.aiGenerated ? `<span class="campaign-history-ai">IA</span>` : ""}<span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button class="icon-button campaign-history-menu-button" type="button" data-floating-menu-trigger onclick="toggleEmailCampaignMenu('${escapeHtml(item.id)}', event)" aria-label="Ações de ${escapeHtml(subject)}" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button></div></div>`;
   }).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
   if (pager) {
     const start = campaigns.length ? (page - 1) * pageSize + 1 : 0;
@@ -6763,6 +6802,16 @@ async function deleteEmailCampaign(id) {
     showToast("Rascunho excluído");
   } catch (error) {
     setCampaignDeleteLoading(id, false);
+    showToast(error.message, "error");
+  }
+}
+
+async function duplicateEmailCampaign(id) {
+  try {
+    await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/duplicate`, { method: "POST" });
+    await loadContent({ silent: true });
+    showToast("Campanha duplicada como rascunho");
+  } catch (error) {
     showToast(error.message, "error");
   }
 }
@@ -9014,19 +9063,6 @@ function bindEvents() {
     if (!button) return;
     state.emailCampaignAttachments = state.emailCampaignAttachments.filter((item) => item.id !== button.dataset.campaignRemoveAttachment);
     renderEmailCampaignPreview();
-  });
-  $("emailCampaignHistory")?.addEventListener("click", async (event) => {
-    const editButton = event.target.closest("[data-campaign-edit]");
-    if (editButton) { await editEmailCampaign(editButton.dataset.campaignEdit); return; }
-    const deleteButton = event.target.closest("[data-campaign-delete]");
-    if (deleteButton) { await deleteEmailCampaign(deleteButton.dataset.campaignDelete); return; }
-    const button = event.target.closest("[data-campaign-duplicate]");
-    if (!button) return;
-    try {
-      await api(`/api/admin/email/campaigns/${encodeURIComponent(button.dataset.campaignDuplicate)}/duplicate`, { method: "POST" });
-      await loadContent({ silent: true });
-      showToast("Campanha duplicada como rascunho");
-    } catch (error) { showToast(error.message, "error"); }
   });
   $("emailCampaignHistoryControls")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-campaign-history-filter]");
