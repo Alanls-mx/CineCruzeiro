@@ -17,14 +17,45 @@ const TEMPLATE_IDS = new Set([
 
 const SCENARIO_DEFAULTS = {
   premiere: { templateId: "premiere", kicker: "Grande estreia", accent: "#facc15", headline: "Uma nova história começa aqui", ctaLabel: "Ver sessões" },
-  now_playing: { templateId: "announcement", kicker: "Em cartaz no Cine Cruzeiro", accent: "#22d3ee", headline: "Seu próximo filme está na tela", ctaLabel: "Ver programação" },
+  now_playing: { templateId: "weekly", kicker: "Em cartaz no Cine Cruzeiro", accent: "#22d3ee", headline: "Seu próximo filme está na tela", ctaLabel: "Ver programação" },
   last_chance: { templateId: "last_chance", kicker: "Últimos dias", accent: "#ff7185", headline: "Não deixe para depois", ctaLabel: "Garantir ingresso" },
   promotion: { templateId: "promotion", kicker: "Oferta especial", accent: "#facc15", headline: "Uma condição especial para você", ctaLabel: "Aproveitar oferta" },
   coupon: { templateId: "coupon", kicker: "Cupom exclusivo", accent: "#45d6a1", headline: "Seu desconto está aqui", ctaLabel: "Usar meu cupom" },
   club: { templateId: "club_plan", kicker: "Clube Cine Cruzeiro", accent: "#facc15", headline: "Mais cinema, mais vantagens", ctaLabel: "Conhecer o Clube" },
   concession: { templateId: "concession", kicker: "Sabor de cinema", accent: "#f59e0b", headline: "Seu filme combina com este momento", ctaLabel: "Ver bomboniere" },
   event: { templateId: "event", kicker: "Um convite do Cine Cruzeiro", accent: "#22d3ee", headline: "Tem um encontro especial esperando por você", ctaLabel: "Saiba mais" },
+  ticket: { templateId: "ticket", kicker: "Ingressos Cine Cruzeiro", accent: "#45d6a1", headline: "Tudo pronto para sua sessão", ctaLabel: "Ver meus ingressos" },
   reactivation: { templateId: "reactivation", kicker: "Sentimos sua falta", accent: "#4d8dff", headline: "Que tal voltar ao cinema?", ctaLabel: "Ver programação" }
+};
+
+const SCENARIO_COMPATIBLE_TEMPLATES = {
+  premiere: ["premiere", "weekly"],
+  now_playing: ["weekly", "announcement"],
+  last_chance: ["last_chance", "weekly"],
+  promotion: ["promotion", "coupon"],
+  coupon: ["coupon", "promotion"],
+  club: ["club_plan", "club"],
+  concession: ["concession", "combo"],
+  event: ["event", "announcement"],
+  ticket: ["ticket"],
+  reactivation: ["reactivation", "announcement"]
+};
+
+const TEMPLATE_CONTEXTS = {
+  announcement: "relationship",
+  weekly: "movie",
+  premiere: "movie",
+  last_chance: "movie",
+  promotion: "offer",
+  coupon: "offer",
+  concession: "concession",
+  combo: "concession",
+  club_plan: "club",
+  club: "club",
+  birthday: "relationship",
+  event: "event",
+  ticket: "ticket",
+  reactivation: "relationship"
 };
 
 const SCENARIO_ALIASES = {
@@ -44,6 +75,9 @@ const SCENARIO_ALIASES = {
   concession: "concession",
   evento: "event",
   event: "event",
+  ingresso: "ticket",
+  ingressos: "ticket",
+  ticket: "ticket",
   reactivation: "reactivation"
 };
 
@@ -87,6 +121,19 @@ function normalizeScenario(value) {
 
 function validTemplate(value, fallback) {
   return TEMPLATE_IDS.has(String(value || "")) ? String(value) : fallback;
+}
+
+function compatibleTemplatesForScenario(scenario) {
+  const normalized = normalizeScenario(scenario);
+  return SCENARIO_COMPATIBLE_TEMPLATES[normalized] || [SCENARIO_DEFAULTS[normalized]?.templateId || "promotion"];
+}
+
+function isTemplateCompatibleWithScenario(scenario, templateId) {
+  return compatibleTemplatesForScenario(scenario).includes(String(templateId || ""));
+}
+
+function templateContext(templateId) {
+  return TEMPLATE_CONTEXTS[String(templateId || "")] || "relationship";
 }
 
 function audienceLabel(value) {
@@ -164,8 +211,10 @@ function buildCampaignDraft(input = {}) {
   const plan = input.plan || null;
   const concessions = Array.isArray(input.concessions) ? input.concessions.filter(Boolean) : [];
   const reference = input.referenceCampaign || {};
-  const templateId = validTemplate(input.referenceTemplateId || reference.templateId, defaults.templateId);
-  const referenceColors = reference.headlineColor || reference.textColor || reference.buttonColor ? reference : {};
+  const requestedTemplate = validTemplate(input.referenceTemplateId || reference.templateId, defaults.templateId);
+  const templateId = isTemplateCompatibleWithScenario(scenario, requestedTemplate) ? requestedTemplate : defaults.templateId;
+  const usableReference = reference.id && reference.templateId === templateId ? reference : {};
+  const referenceColors = usableReference.headlineColor || usableReference.textColor || usableReference.buttonColor ? usableReference : {};
   const colors = {
     accent: safeColor(input.accentColor, defaults.accent),
     headline: safeColor(referenceColors.headlineColor, "#ffffff"),
@@ -188,6 +237,7 @@ function buildCampaignDraft(input = {}) {
     club: plan ? `${plan.name || "Clube Cine Cruzeiro"}: mais vantagens para você` : "Conheça as vantagens do Clube Cine Cruzeiro",
     concession: concessions[0]?.name ? `${concessions[0].name} para deixar sua sessão melhor` : "Novidades na bomboniere",
     event: "Um evento especial está chegando ao Cine Cruzeiro",
+    ticket: movie ? `Informações dos ingressos para ${movie.title}` : "Informações sobre seus ingressos",
     reactivation: "Sentimos sua falta no Cine Cruzeiro"
   }[scenario];
   const headline = movie?.title && ["premiere", "now_playing", "last_chance"].includes(scenario)
@@ -207,7 +257,9 @@ function buildCampaignDraft(input = {}) {
               ? `Olá, {{nome}}. O ${plan.name || "Clube Cine Cruzeiro"} reúne benefícios para você aproveitar mais sessões, bomboniere e momentos especiais.`
               : scenario === "concession" && concessions.length
                 ? `Olá, {{nome}}. Conheça ${concessions[0].name || "as novidades da bomboniere"} e complete sua próxima sessão.`
-                : `Olá, {{nome}}. ${defaults.headline}. Preparamos esta novidade pensando em você.`;
+                : scenario === "ticket"
+                  ? `Olá, {{nome}}. Seus ingressos ficam disponíveis na sua conta. Confira QR Code, sessão e poltrona antes de chegar ao Cine Cruzeiro.`
+                  : `Olá, {{nome}}. ${defaults.headline}. Preparamos esta novidade pensando em você.`;
   const imageUrl = movie?.posterUrl || plan?.imageUrl || concessions[0]?.imageUrl || input.imageUrl || "";
   const imageAlt = movie ? `Pôster de ${movie.title}` : plan ? `Imagem do ${plan.name}` : concessions[0] ? `Imagem de ${concessions[0].name}` : "Imagem da campanha";
   const imageLink = movieLink(movie, siteUrl) || (plan ? safeUrl(`/clube/assinar/${plan.id}`, siteUrl) : safeUrl("/filmes", siteUrl));
@@ -265,10 +317,21 @@ function buildCampaignDraft(input = {}) {
     aiGenerated: true,
     aiProvider: "local-reference-agent",
     aiScenario: scenario,
-    aiReferenceCampaignId: reference.id || "",
+    aiContext: templateContext(templateId),
+    aiCompatibleTemplates: compatibleTemplatesForScenario(scenario),
+    aiReferenceCampaignId: usableReference.id || "",
     aiReferenceTemplateId: templateId,
     aiBrief: String(input.brief || "").trim().slice(0, 1000)
   };
 }
 
-module.exports = { buildCampaignDraft, _test: { buildCampaignDraft, escapeHtml, normalizeScenario } };
+module.exports = {
+  buildCampaignDraft,
+  _test: {
+    buildCampaignDraft,
+    compatibleTemplatesForScenario,
+    escapeHtml,
+    normalizeScenario,
+    templateContext
+  }
+};

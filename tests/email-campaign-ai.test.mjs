@@ -74,3 +74,56 @@ test("briefing e links não permitem HTML ou esquemas perigosos", () => {
   assert.doesNotMatch(result.html, /javascript:/i);
   assert.match(result.html, /&lt;script&gt;/i);
 });
+
+test("agente rejeita rascunho de referência de outro template", () => {
+  const result = buildCampaignDraft({
+    scenario: "concession",
+    siteUrl,
+    concessions: [{ id: "combo", name: "Combo Família", price: 42 }],
+    referenceCampaign: {
+      id: "vingadores-grande-estreia",
+      templateId: "premiere",
+      headlineColor: "#ff0000",
+      buttonColor: "#00ff00"
+    }
+  });
+
+  assert.equal(result.templateId, "concession");
+  assert.equal(result.aiReferenceCampaignId, "");
+  assert.equal(result.aiContext, "concession");
+  assert.equal(result.headlineColor, "#ffffff");
+  assert.equal(result.buttonColor, "#f59e0b");
+});
+
+test("agente mantém referência quando o template visual é o mesmo", () => {
+  const result = buildCampaignDraft({
+    scenario: "premiere",
+    siteUrl,
+    movie: { id: "doomsday", title: "Vingadores: Doomsday" },
+    referenceCampaign: {
+      id: "vingadores-grande-estreia",
+      templateId: "premiere",
+      headlineColor: "#ffcc00",
+      textColor: "#fef3c7",
+      buttonColor: "#ef4444"
+    }
+  });
+
+  assert.equal(result.templateId, "premiere");
+  assert.equal(result.aiReferenceCampaignId, "vingadores-grande-estreia");
+  assert.equal(result.headlineColor, "#ffcc00");
+  assert.equal(result.buttonColor, "#ef4444");
+});
+
+test("agente gera rascunho coerente para template de ingressos", () => {
+  const result = buildCampaignDraft({
+    scenario: "ticket",
+    siteUrl,
+    movie: { id: "filme-2", slug: "filme-2", title: "Sessão Especial" }
+  });
+
+  assert.equal(result.templateId, "ticket");
+  assert.equal(result.aiContext, "ticket");
+  assert.match(result.subject, /Sessão Especial/);
+  assert.match(result.message, /QR Code/);
+});

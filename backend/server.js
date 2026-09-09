@@ -8333,6 +8333,7 @@ async function handleApi(req, res, pathname) {
       aiGenerated: true,
       aiProvider: generated.aiProvider,
       aiScenario: generated.aiScenario,
+      aiContext: generated.aiContext,
       aiReferenceCampaignId: generated.aiReferenceCampaignId,
       aiReferenceTemplateId: generated.aiReferenceTemplateId,
       aiBrief: generated.aiBrief
@@ -8347,6 +8348,7 @@ async function handleApi(req, res, pathname) {
       actorUserId: req.adminUser?.id || "",
       campaignId: campaign.id,
       scenario: generated.aiScenario,
+      context: generated.aiContext,
       referenceCampaignId: generated.aiReferenceCampaignId,
       referenceTemplateId: generated.aiReferenceTemplateId
     });
@@ -8355,6 +8357,7 @@ async function handleApi(req, res, pathname) {
       ai: {
         provider: generated.aiProvider,
         scenario: generated.aiScenario,
+        context: generated.aiContext,
         referenceCampaignId: generated.aiReferenceCampaignId,
         referenceTemplateId: generated.aiReferenceTemplateId
       }

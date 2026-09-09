@@ -1277,6 +1277,7 @@
                   <option value="club">Clube Cine Cruzeiro</option>
                   <option value="concession">Bomboniere</option>
                   <option value="event">Evento especial</option>
+                  <option value="ticket">Ingressos</option>
                   <option value="reactivation">Reativação de clientes</option>
                 </select>
               </label>
@@ -1565,8 +1566,15 @@
             </aside>
           </div>
           <div class="surface campaign-history-surface">
-            <div class="section-title">Histórico e rascunhos</div>
+            <div class="campaign-history-head">
+              <div>
+                <div class="section-title">Histórico e rascunhos</div>
+                <p>Consulte por página e filtre pelo tipo de envio sem alongar o painel.</p>
+              </div>
+              <div id="emailCampaignHistoryControls" class="campaign-history-tabs" aria-label="Filtrar histórico de campanhas"></div>
+            </div>
             <div id="emailCampaignHistory" class="campaign-history-list"></div>
+            <div id="emailCampaignHistoryPager" class="campaign-history-pager" aria-label="Paginação do histórico de campanhas"></div>
           </div>
           </div>
 
