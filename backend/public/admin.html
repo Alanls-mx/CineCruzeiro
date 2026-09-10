@@ -1308,8 +1308,10 @@
               <label class="full">Para quem
                 <select id="emailCampaignAiAudience">
                   <option value="all">Todos os clientes com marketing ativo</option>
-                  <option value="active">Clientes ativos</option>
+                  <option value="recent">Clientes ativos recentemente (compra nos últimos 180 dias)</option>
                   <option value="purchased">Clientes com compras aprovadas</option>
+                  <option value="reactivation">Clientes sem comprar há pelo menos 90 dias</option>
+                  <option value="birthday_manual">Aniversário: seleção manual no editor</option>
                   <option value="selected">Seleção manual no editor</option>
                 </select>
               </label>
@@ -1332,7 +1334,7 @@
               <div class="form-head campaign-form-head">
                 <div>
                   <div class="section-title">Central de campanhas</div>
-                  <p>Crie, revise e envie comunicações respeitando o consentimento de marketing. O SMTP é validado antes do disparo.</p>
+                  <p>Crie, revise e envie comunicações respeitando o consentimento de marketing. O canal de entrega é validado antes do disparo.</p>
                 </div>
                 <span id="emailCampaignStatus" class="campaign-status">Rascunho</span>
               </div>
@@ -1348,8 +1350,10 @@
                   <label>Segmento
                     <select id="emailCampaignAudience">
                       <option value="all">Todos os clientes com marketing ativo</option>
-                      <option value="active">Clientes ativos</option>
+                      <option value="recent">Clientes ativos recentemente (compra nos últimos 180 dias)</option>
                       <option value="purchased">Clientes com compras aprovadas</option>
+                      <option value="reactivation">Reativação: sem comprar há pelo menos 90 dias</option>
+                      <option value="birthday_manual">Aniversário: seleção manual</option>
                       <option value="selected">Seleção manual</option>
                     </select>
                   </label>
@@ -1357,6 +1361,10 @@
                     <input id="emailCampaignRecipientSearch" placeholder="Nome ou e-mail" autocomplete="off" />
                   </label>
                 </div>
+                <label id="emailCampaignReactivationField" hidden>Período sem compra
+                  <select id="emailCampaignReactivationDays"><option value="60">60 dias</option><option value="90" selected>90 dias</option><option value="180">180 dias</option><option value="365">1 ano</option></select>
+                </label>
+                <p id="emailCampaignBirthdayNotice" class="helper-text" hidden>O cadastro ainda não possui data de nascimento confiável. Este modelo aceita somente clientes escolhidos manualmente.</p>
                 <div class="campaign-recipient-toolbar">
                   <strong id="emailCampaignRecipientCount">0 destinatários</strong>
                   <span class="helper-text">Descadastros são excluídos automaticamente.</span>
@@ -1400,13 +1408,13 @@
                       <h3 id="campaignTemplateService">Relacionamento e serviço</h3>
                       <div class="campaign-template-grid">
                         <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="event" data-template-accent="cyan"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Evento especial</strong><span>Convite com imagem e destaque</span><small class="campaign-template-capability">Imagem opcional</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="ticket" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Ingressos</strong><span>Entrega ou lembrete ao cliente</span><small class="campaign-template-capability">Sem imagem</small></button>
+                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="ticket" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Como acessar seu ingresso</strong><span>Orientação ou lembrete de uso</span><small class="campaign-template-capability">Campanha educativa</small></button>
                         <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="reactivation" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Sentimos sua falta</strong><span>Reativação de clientes inativos</span><small class="campaign-template-capability">Imagem opcional</small></button>
                       </div>
                     </section>
                   </div>
                   <select id="emailCampaignTemplate" class="sr-only" tabindex="-1" aria-hidden="true">
-                    <option value="announcement">Comunicado</option><option value="weekly">Programação da semana</option><option value="premiere">Grande estreia</option><option value="last_chance">Últimos dias</option><option value="promotion">Promoção</option><option value="coupon">Cupom</option><option value="concession">Produto da bomboniere</option><option value="combo">Combo em destaque</option><option value="club_plan">Plano do Clube</option><option value="club">Novidades do Clube</option><option value="birthday">Aniversário</option><option value="event">Evento especial</option><option value="ticket">Ingressos</option><option value="reactivation">Sentimos sua falta</option>
+                    <option value="announcement">Comunicado</option><option value="weekly">Programação da semana</option><option value="premiere">Grande estreia</option><option value="last_chance">Últimos dias</option><option value="promotion">Promoção</option><option value="coupon">Cupom</option><option value="concession">Produto da bomboniere</option><option value="combo">Combo em destaque</option><option value="club_plan">Plano do Clube</option><option value="club">Novidades do Clube</option><option value="birthday">Aniversário</option><option value="event">Evento especial</option><option value="ticket">Como acessar seu ingresso</option><option value="reactivation">Sentimos sua falta</option>
                   </select>
                 </div>
                 <div class="field-row">
@@ -1580,8 +1588,20 @@
               </div>
               <div id="emailCampaignHistoryControls" class="campaign-history-tabs" aria-label="Filtrar histórico de campanhas"></div>
             </div>
+            <div class="campaign-history-query">
+              <label>Origem
+                <select id="emailCampaignHistoryOrigin"><option value="">Manual e IA</option><option value="manual">Manual</option><option value="ai">IA</option></select>
+              </label>
+              <label>Buscar
+                <input id="emailCampaignHistorySearch" type="search" placeholder="Assunto, filme ou cupom" autocomplete="off" />
+              </label>
+              <label>Por página
+                <select id="emailCampaignHistoryPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select>
+              </label>
+            </div>
             <div id="emailCampaignHistory" class="campaign-history-list"></div>
             <div id="emailCampaignHistoryPager" class="campaign-history-pager" aria-label="Paginação do histórico de campanhas"></div>
+            <section id="emailCampaignReport" class="campaign-report" hidden aria-live="polite"></section>
           </div>
           </div>
 

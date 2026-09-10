@@ -1,4 +1,5 @@
 const nodemailer = require("nodemailer");
+const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
 const integrationConfigService = require("./integrationConfigService");
@@ -72,17 +73,44 @@ function emailConfig(db) {
   return integrationConfigService.resolvedConfig(db, "email") || {};
 }
 
-async function sendSmtp(db, message) {
+function recipientFingerprint(value) {
+  return crypto.createHash("sha256").update(String(value || "").trim().toLowerCase()).digest("hex").slice(0, 16);
+}
+
+function smtpFailure(error = {}) {
+  const code = String(error.code || "SMTP_ERROR");
+  const command = String(error.command || "").toUpperCase();
+  const responseCode = Number(error.responseCode || 0);
+  const definitelyBeforeDelivery = ["CONN", "AUTH", "EHLO", "HELO"].includes(command) || code === "EAUTH" || code === "ECONNECTION";
+  if (definitelyBeforeDelivery) {
+    return { status: "retryable_failed", retryable: true, safeToFallback: true, errorCode: code, errorMessage: error.message || "Falha SMTP antes do envio." };
+  }
+  if (responseCode >= 500) {
+    return { status: "failed", retryable: false, safeToFallback: true, errorCode: code, errorMessage: error.message || "Mensagem rejeitada pelo SMTP." };
+  }
+  if (responseCode >= 400) {
+    return { status: "retryable_failed", retryable: true, safeToFallback: true, errorCode: code, errorMessage: error.message || "SMTP indisponível temporariamente." };
+  }
+  return { status: "unknown", retryable: false, safeToFallback: false, errorCode: code, errorMessage: error.message || "O SMTP não confirmou se aceitou a mensagem." };
+}
+
+async function sendSmtpDetailed(db, message) {
   const config = emailConfig(db);
-  if (!smtpConfigured(config)) return false;
+  if (!smtpConfigured(config)) return { status: "unavailable", provider: "smtp", safeToFallback: true, errorCode: "SMTP_NOT_CONFIGURED", errorMessage: "SMTP não configurado." };
   const fromName = config.fromName || "Cine Cruzeiro";
-  const mailer = transporter(config);
-  await mailer.sendMail({
-    from: `"${fromName.replace(/"/g, "")}" <${config.fromEmail}>`,
-    replyTo: config.replyTo || config.fromEmail,
-    ...message
-  });
-  return true;
+  try {
+    const info = await transporter(config).sendMail({
+      from: `"${fromName.replace(/"/g, "")}" <${config.fromEmail}>`,
+      replyTo: config.replyTo || config.fromEmail,
+      ...message
+    });
+    if (Array.isArray(info.rejected) && info.rejected.length && !(info.accepted || []).length) {
+      return { status: "failed", provider: "smtp", retryable: false, safeToFallback: true, providerMessageId: info.messageId || "", errorCode: "SMTP_RECIPIENT_REJECTED", errorMessage: "O servidor SMTP rejeitou o destinatário." };
+    }
+    return { status: "sent", provider: "smtp", retryable: false, safeToFallback: false, providerMessageId: info.messageId || "", metadata: { accepted: (info.accepted || []).length, rejected: (info.rejected || []).length, response: String(info.response || "").slice(0, 300) } };
+  } catch (error) {
+    return { provider: "smtp", ...smtpFailure(error) };
+  }
 }
 
 async function webhookAttachments(message = {}) {
@@ -97,9 +125,9 @@ async function webhookAttachments(message = {}) {
   });
 }
 
-async function sendWebhook(db, message, event = "email.transactional", data = {}) {
+async function sendWebhookDetailed(db, message, event, data = {}, correlation = {}) {
   const config = emailConfig(db);
-  if (!webhookConfigured(config)) return false;
+  if (!webhookConfigured(config)) return { status: "unavailable", provider: "webhook", retryable: false, errorCode: "WEBHOOK_NOT_CONFIGURED", errorMessage: "Webhook não configurado." };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Number(config.timeout || 10000));
   try {
@@ -109,13 +137,23 @@ async function sendWebhook(db, message, event = "email.transactional", data = {}
       headers: {
         "Content-Type": "application/json",
         "X-Origin-Client": "CineCruzeiro-Backend",
+        "X-Idempotency-Key": correlation.deliveryId || correlation.attemptId || "",
+        ...(correlation.campaignId ? { "X-Campaign-Id": correlation.campaignId } : {}),
+        ...(correlation.attemptId ? { "X-Attempt-Id": correlation.attemptId } : {}),
         ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
         ...(config.webhookSecret ? { "X-Cine-Cruzeiro-Email-Secret": config.webhookSecret } : {})
       },
       body: JSON.stringify({
+        version: 2,
         event,
         timestamp: new Date().toISOString(),
         source: "cine-cruzeiro",
+        campaignId: correlation.campaignId || "",
+        deliveryId: correlation.deliveryId || "",
+        attemptId: correlation.attemptId || "",
+        templateId: correlation.templateId || "",
+        recipientKey: correlation.recipientKey || "",
+        emailType: correlation.emailType || "marketing",
         to: message.to,
         subject: message.subject,
         html: message.html,
@@ -123,8 +161,13 @@ async function sendWebhook(db, message, event = "email.transactional", data = {}
         attachments: await webhookAttachments(message),
         data
       })
-    }).catch(() => null);
-    return Boolean(response?.ok);
+    });
+    const providerMessageId = response.headers.get("x-message-id") || response.headers.get("x-request-id") || "";
+    if (response.ok) return { status: "sent", provider: "webhook", providerMessageId, retryable: false, metadata: { httpStatus: response.status } };
+    if (response.status >= 500 || response.status === 429) return { status: "retryable_failed", provider: "webhook", retryable: true, errorCode: `WEBHOOK_HTTP_${response.status}`, errorMessage: "O webhook recusou temporariamente a entrega.", metadata: { httpStatus: response.status } };
+    return { status: "failed", provider: "webhook", retryable: false, errorCode: `WEBHOOK_HTTP_${response.status}`, errorMessage: "O webhook rejeitou a entrega.", metadata: { httpStatus: response.status } };
+  } catch (error) {
+    return { status: "unknown", provider: "webhook", retryable: false, errorCode: error?.name === "AbortError" ? "WEBHOOK_TIMEOUT" : String(error?.code || "WEBHOOK_NETWORK_ERROR"), errorMessage: "O webhook não confirmou se recebeu a mensagem." };
   } finally {
     clearTimeout(timer);
   }
@@ -132,15 +175,23 @@ async function sendWebhook(db, message, event = "email.transactional", data = {}
 
 async function sendTransactional(db, message, event, data = {}) {
   const safeMessage = { ...message, attachments: await prepareAttachments(message.attachments) };
-  const sentBySmtp = await sendSmtp(db, safeMessage).catch((error) => {
-    console.warn("[email] SMTP delivery failed", { event, to: message.to, message: error.message });
+  const smtpResult = await sendSmtpDetailed(db, safeMessage);
+  if (smtpResult.status === "sent") return true;
+  if (!smtpResult.safeToFallback) {
+    console.warn("[email] delivery result is uncertain; webhook fallback skipped", { event, recipient: recipientFingerprint(message.to), code: smtpResult.errorCode });
     return false;
+  }
+  const deliveryId = crypto.randomUUID();
+  const webhookResult = await sendWebhookDetailed(db, safeMessage, event, data, {
+    deliveryId,
+    attemptId: crypto.randomUUID(),
+    emailType: "transactional",
+    recipientKey: recipientFingerprint(message.to)
   });
-  if (sentBySmtp) return true;
-  return sendWebhook(db, safeMessage, event, data).catch((error) => {
-    console.warn("[email] webhook delivery failed", { event, to: message.to, message: error.message });
-    return false;
-  });
+  if (webhookResult.status !== "sent") {
+    console.warn("[email] webhook delivery failed", { event, recipient: recipientFingerprint(message.to), code: webhookResult.errorCode });
+  }
+  return webhookResult.status === "sent";
 }
 
 async function verifySmtp(db) {
@@ -510,54 +561,92 @@ async function sendTicketTransfer(db, input = {}) {
   return Boolean(toSent || fromSent);
 }
 
+function promotionMessage(input = {}, recipient = {}) {
+  const personalizedHtml = interpolateCampaign(input.html || "", recipient, input.variables);
+  const personalizedMessage = interpolateCampaign(input.message || "", recipient, input.variables);
+  const hasCanonicalHtml = Boolean(String(input.html || "").trim());
+  const hasLegacyBlocks = input.mode === "legacy_visual" && Array.isArray(input.contentBlocks) && input.contentBlocks.length > 0;
+  const campaignBody = hasCanonicalHtml
+    ? sanitizeCampaignHtml(personalizedHtml)
+    : hasLegacyBlocks
+      ? renderCampaignContentBlocks(input.contentBlocks, input, recipient)
+      : `
+        <p>Olá${recipient.name ? `, ${htmlEscape(recipient.name)}` : ""}.</p>
+        <p>${htmlEscape(personalizedMessage).replace(/\n/g, "<br>")}</p>
+        ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl, false, { background: input.buttonColor })}</p>` : ""}
+      `;
+  const unsubscribeUrl = recipient.unsubscribeUrl || "";
+  return {
+    to: recipient.email,
+    subject: interpolateCampaign(input.subject, recipient, input.variables),
+    html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, {
+      kicker: "Promoção",
+      preheader: interpolateCampaign(input.preheader, recipient, input.variables),
+      unsubscribeUrl,
+      kind: "marketing",
+      logoUrl: input.logoUrl,
+      brand: input.brand,
+      heroImageHtml: hasCanonicalHtml || hasLegacyBlocks ? "" : campaignImageBlock(input, recipient),
+      headlineColor: input.headlineColor,
+      textColor: input.textColor,
+      hideBrand: hasCanonicalHtml || hasLegacyBlocks,
+      hideTitle: hasCanonicalHtml || hasLegacyBlocks,
+      hideFooterText: hasCanonicalHtml || hasLegacyBlocks
+    }),
+    text: hasCanonicalHtml
+      ? String(personalizedHtml).replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+      : hasLegacyBlocks
+        ? campaignBlocksText(input.contentBlocks, recipient, input.variables)
+        : interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
+    attachments: input.attachments || [],
+    headers: unsubscribeUrl ? {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+    } : {}
+  };
+}
+
+async function sendMarketingDelivery(db, input = {}, recipient = {}, correlation = {}) {
+  const message = promotionMessage(input, recipient);
+  const config = emailConfig(db);
+  const domain = String(config.fromEmail || "cinecruzeiro.local").split("@").pop().replace(/[^a-z0-9.-]/gi, "") || "cinecruzeiro.local";
+  message.messageId = `<${correlation.deliveryId || correlation.attemptId}@${domain}>`;
+  message.headers = {
+    ...message.headers,
+    "X-Cine-Campaign-Id": correlation.campaignId || "",
+    "X-Cine-Delivery-Id": correlation.deliveryId || "",
+    "X-Cine-Attempt-Id": correlation.attemptId || ""
+  };
+  const smtpResult = await sendSmtpDetailed(db, message);
+  if (smtpResult.status === "sent" || smtpResult.status === "unknown" || !smtpResult.safeToFallback) return smtpResult;
+  if (!webhookConfigured(config)) return smtpResult.status === "unavailable"
+    ? { ...smtpResult, status: "failed", errorCode: "EMAIL_CHANNEL_NOT_CONFIGURED", errorMessage: "Nenhum canal de e-mail está configurado." }
+    : smtpResult;
+  const webhookResult = await sendWebhookDetailed(db, message, "email.campaign.delivery", {
+    campaignSubject: input.subject,
+    previousProvider: "smtp",
+    previousOutcome: smtpResult.status
+  }, { ...correlation, emailType: "marketing" });
+  return { ...webhookResult, metadata: { ...(webhookResult.metadata || {}), smtpFallbackReason: smtpResult.errorCode || smtpResult.status } };
+}
+
 async function sendPromotionCampaign(db, input = {}) {
   const recipients = input.recipients || [];
   if (!recipients.length) return { sent: 0, failed: 0 };
   let sent = 0;
   let failed = 0;
-  const batchSize = Math.max(1, Math.min(25, Number(input.batchSize || 10)));
-  const delayMs = Math.max(0, Math.min(5000, Number(input.delayMs || 80)));
-  const retryAttempts = Math.max(1, Math.min(3, Number(input.retryAttempts || 2)));
   for (let index = 0; index < recipients.length; index += 1) {
     const recipient = recipients[index];
-    try {
-      const personalizedHtml = interpolateCampaign(input.html || "", recipient, input.variables);
-      const personalizedMessage = interpolateCampaign(input.message || "", recipient, input.variables);
-      const hasCanonicalHtml = Boolean(String(input.html || "").trim());
-      const hasContentBlocks = input.mode === "visual" && Array.isArray(input.contentBlocks) && input.contentBlocks.length > 0;
-      const campaignBody = hasCanonicalHtml
-        ? sanitizeCampaignHtml(personalizedHtml)
-        : hasContentBlocks
-          ? renderCampaignContentBlocks(input.contentBlocks, input, recipient)
-        : `
-          <p>Olá${recipient.name ? `, ${htmlEscape(recipient.name)}` : ""}.</p>
-          <p>${htmlEscape(personalizedMessage).replace(/\n/g, "<br>")}</p>
-          ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl, false, { background: input.buttonColor })}</p>` : ""}
-        `;
-      const message = {
-        to: recipient.email,
-        subject: interpolateCampaign(input.subject, recipient, input.variables),
-        html: baseLayout(interpolateCampaign(input.headline || input.subject, recipient, input.variables), campaignBody, { kicker: "Promoção", preheader: interpolateCampaign(input.preheader, recipient, input.variables), unsubscribeUrl: recipient.unsubscribeUrl, kind: "marketing", logoUrl: input.logoUrl, brand: input.brand, heroImageHtml: hasCanonicalHtml || hasContentBlocks ? "" : campaignImageBlock(input, recipient), headlineColor: input.headlineColor, textColor: input.textColor, hideBrand: hasCanonicalHtml || hasContentBlocks, hideTitle: hasCanonicalHtml || hasContentBlocks, hideFooterText: hasCanonicalHtml || hasContentBlocks }),
-        text: hasCanonicalHtml ? String(personalizedHtml).replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : hasContentBlocks ? campaignBlocksText(input.contentBlocks, recipient, input.variables) : interpolateCampaign(`${input.message || ""}${input.ctaUrl ? `\n${input.ctaUrl}` : ""}`, recipient, input.variables),
-        attachments: input.attachments || []
-      };
-      let ok = false;
-      for (let attempt = 0; attempt < retryAttempts && !ok; attempt += 1) {
-        ok = await sendTransactional(db, message, "email.promotion", { campaignSubject: input.subject });
-        if (!ok && attempt + 1 < retryAttempts) {
-          await new Promise((resolve) => setTimeout(resolve, Math.min(2000, 150 * (attempt + 1))));
-        }
-      }
-      sent += ok ? 1 : 0;
-      failed += ok ? 0 : 1;
-      input.onProgress?.({ index: index + 1, total: recipients.length, sent, failed });
-    } catch {
-      failed += 1;
-      input.onProgress?.({ index: index + 1, total: recipients.length, sent, failed });
-    }
-    if ((index + 1) % batchSize === 0 && index + 1 < recipients.length && delayMs) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
+    const result = await sendMarketingDelivery(db, input, recipient, {
+      campaignId: input.id || "test",
+      deliveryId: recipient.deliveryId || crypto.randomUUID(),
+      attemptId: crypto.randomUUID(),
+      templateId: input.templateId || "announcement",
+      recipientKey: recipient.id ? `user:${recipient.id}` : "test"
+    });
+    sent += result.status === "sent" ? 1 : 0;
+    failed += result.status === "sent" ? 0 : 1;
+    input.onProgress?.({ index: index + 1, total: recipients.length, sent, failed });
   }
   return { sent, failed };
 }
@@ -600,6 +689,7 @@ module.exports = {
   sendPrivateEventInquiry,
   sendTicketTransfer,
   sendTicketDelivery,
+  sendMarketingDelivery,
   sendPromotionCampaign,
   sendPromotionTest,
   _test: {
@@ -614,6 +704,8 @@ module.exports = {
     campaignBlocksText,
     prepareAttachments,
     safeAttachmentPath,
-    webhookAttachments
+    webhookAttachments,
+    promotionMessage,
+    smtpFailure
   }
 };

@@ -145,8 +145,11 @@ function templateContext(templateId) {
 function audienceLabel(value) {
   return {
     all: "clientes com marketing ativo",
-    active: "clientes ativos",
+    active: "clientes ativos recentemente",
+    recent: "clientes ativos recentemente",
     purchased: "clientes com compras aprovadas",
+    reactivation: "clientes sem compra recente",
+    birthday_manual: "clientes selecionados manualmente para aniversário",
     selected: "clientes selecionados manualmente"
   }[String(value || "all")] || "clientes com marketing ativo";
 }
@@ -320,7 +323,7 @@ function buildCampaignDraft(input = {}) {
     templateId,
     ctaLabel,
     ctaUrl,
-    recipientMode: ["all", "active", "purchased", "selected"].includes(audience) ? audience : "all",
+    recipientMode: audience === "active" ? "recent" : ["all", "recent", "purchased", "reactivation", "birthday_manual", "selected"].includes(audience) ? audience : "all",
     couponId: coupon?.id || "",
     movieId: movie?.id || "",
     clubPlanId: plan?.id || "",

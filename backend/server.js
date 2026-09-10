@@ -28,9 +28,12 @@ const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaym
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const { normalizeScenario } = require("./services/emailCampaignAiService");
-const { generateOpenAiCampaignDraft, testOpenAiConnection } = require("./services/openAiEmailAgentService");
-const { generateGeminiCampaignDraft, testGeminiConnection } = require("./services/geminiEmailAgentService");
+const { testOpenAiConnection } = require("./services/openAiEmailAgentService");
+const { testGeminiConnection } = require("./services/geminiEmailAgentService");
+const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
 const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
+const emailCampaignRepository = require("./services/emailCampaignRepository");
+const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
@@ -53,11 +56,12 @@ const memorySeatHolds = new Map();
 let seatRealtimeService = null;
 let jsonMutationQueue = Promise.resolve();
 let movieImageMaintenanceRunning = false;
-const emailCampaignTimers = new Map();
+let emailAttachmentMaintenanceRunning = false;
+let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "028_restore_combo_familia_price.sql";
+const LATEST_SCHEMA_MIGRATION = "029_email_campaign_reliability.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -79,6 +83,7 @@ const EMAIL_ATTACHMENT_TYPES = new Set([
   "image/webp"
 ]);
 const EMAIL_ATTACHMENT_MAX_BYTES = Number(process.env.EMAIL_ATTACHMENT_MAX_BYTES || 5 * 1024 * 1024);
+const EMAIL_ATTACHMENT_TOTAL_MAX_BYTES = Number(process.env.EMAIL_ATTACHMENT_TOTAL_MAX_BYTES || 12 * 1024 * 1024);
 const movieImageService = createMovieImageService({ storageService });
 const goodsFiscalService = new GoodsFiscalService();
 const subscriptionPaymentProvider = new MercadoPagoSubscriptionProvider(paymentService);
@@ -1352,8 +1357,8 @@ function normalizeDb(db) {
   db.integrations ||= db.settings.integrations || {};
   db.settings.integrations = db.integrations;
   db.settings.mercadoPagoSubscriptionPlans ||= db.settings.mercadoPagoSubscriptionPlans || {};
-  db.emailCampaigns ||= db.settings.emailCampaigns || [];
-  db.settings.emailCampaigns = db.emailCampaigns;
+  db.emailCampaigns ||= postgresEnabled() ? [] : (db.settings.emailCampaigns || []);
+  if (!postgresEnabled()) db.settings.emailCampaigns = db.emailCampaigns;
   db.auditLogs ||= [];
   db.tickets ||= [];
   db.concessions ||= [
@@ -6436,6 +6441,8 @@ function campaignStatusLabel(status = "") {
     queued: "Na fila",
     sending: "Enviando",
     sent: "Concluída",
+    completed: "Concluída",
+    completed_with_errors: "Concluída com falhas",
     cancelled: "Cancelada",
     failed: "Falhou"
   }[String(status || "")] || "Rascunho";
@@ -6450,7 +6457,13 @@ function campaignCustomerPool(db) {
       email: String(user.email || "").toLowerCase(),
       emailUnsubscribedAt: user.emailUnsubscribedAt || "",
       emailUnsubscribeToken: user.emailUnsubscribeToken || "",
-      hasPurchased: (db.orders || []).some((order) => order.customerUserId === user.id && ["paid", "approved"].includes(order.status))
+      hasPurchased: (db.orders || []).some((order) => order.customerUserId === user.id && ["paid", "approved"].includes(order.status)),
+      lastPurchaseAt: (db.orders || [])
+        .filter((order) => order.customerUserId === user.id && ["paid", "approved"].includes(order.status))
+        .map((order) => order.paidAt || order.updatedAt || order.createdAt || "")
+        .filter(Boolean)
+        .sort()
+        .at(-1) || ""
     }));
 }
 
@@ -6459,11 +6472,21 @@ function campaignRecipients(db, campaign = {}) {
   const mode = campaign.recipientMode || campaign.audience || "all";
   const selected = new Set((campaign.customerIds || campaign.selectedUserIds || []).map(String));
   const term = String(campaign.recipientSearch || campaign.search || "").trim().toLowerCase();
+  const now = Date.now();
+  const reactivationDays = Math.max(30, Math.min(730, Number(campaign.reactivationDays || 90)));
   return pool.filter((user) => {
     if (user.emailUnsubscribedAt) return false;
     if (mode === "selected" && !selected.has(String(user.id))) return false;
     if (mode === "purchased" && !user.hasPurchased) return false;
-    if (mode === "active" && user.emailUnsubscribedAt) return false;
+    if (["active", "recent"].includes(mode)) {
+      const lastPurchase = new Date(user.lastPurchaseAt || 0).getTime();
+      if (!Number.isFinite(lastPurchase) || now - lastPurchase > 180 * 86400000) return false;
+    }
+    if (mode === "reactivation") {
+      const lastPurchase = new Date(user.lastPurchaseAt || 0).getTime();
+      if (!user.hasPurchased || !Number.isFinite(lastPurchase) || now - lastPurchase < reactivationDays * 86400000) return false;
+    }
+    if (mode === "birthday_manual" && !selected.has(String(user.id))) return false;
     if (term && !`${user.name} ${user.email}`.toLowerCase().includes(term)) return false;
     return true;
   }).map((user) => ({
@@ -6509,6 +6532,17 @@ async function storeEmailAttachment(input = {}) {
     error.statusCode = 413;
     throw error;
   }
+  const signatures = {
+    "application/pdf": buffer.subarray(0, 5).toString("ascii") === "%PDF-",
+    "image/png": buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    "image/jpeg": buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9,
+    "image/webp": buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  };
+  if (contentType in signatures && !signatures[contentType]) {
+    const error = new Error("O conteúdo real do arquivo não corresponde ao tipo informado.");
+    error.statusCode = 415;
+    throw error;
+  }
   const safeName = path.basename(String(input.filename || "anexo"))
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .slice(0, 90) || "anexo";
@@ -6516,7 +6550,16 @@ async function storeEmailAttachment(input = {}) {
   const id = `email-anexo-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;
   const filePath = path.join(EMAIL_ATTACHMENT_ROOT, `${id}-${safeName}`);
   await fs.writeFile(filePath, buffer, { flag: "wx" });
-  return { id, filename: safeName, contentType, size: buffer.length, path: filePath };
+  return { id, filename: safeName, contentType, size: buffer.length, path: filePath, createdAt: new Date().toISOString() };
+}
+
+function validateCampaignAttachmentTotal(attachments = []) {
+  const total = (attachments || []).reduce((sum, item) => sum + Math.max(0, Number(item.size || 0)), 0);
+  if (total > EMAIL_ATTACHMENT_TOTAL_MAX_BYTES) {
+    const error = new Error(`Os anexos da campanha não podem ultrapassar ${Math.round(EMAIL_ATTACHMENT_TOTAL_MAX_BYTES / 1024 / 1024)} MB no total.`);
+    error.statusCode = 413;
+    throw error;
+  }
 }
 
 function normalizeCampaignBlocks(value, existing = []) {
@@ -6546,7 +6589,7 @@ function normalizeCampaignBlocks(value, existing = []) {
 }
 
 function normalizeCampaignInput(input = {}, existing = {}) {
-  const mode = ["template", "html", "visual"].includes(input.mode) ? input.mode : (existing.mode || "template");
+  const mode = ["template", "html"].includes(input.mode) ? input.mode : (existing.mode === "legacy_visual" ? "legacy_visual" : "template");
   const allowedTemplates = new Set(["announcement", "weekly", "premiere", "last_chance", "promotion", "coupon", "concession", "combo", "club_plan", "club", "birthday", "event", "ticket", "reactivation"]);
   const templateId = allowedTemplates.has(input.templateId) ? input.templateId : (allowedTemplates.has(existing.templateId) ? existing.templateId : "announcement");
   const status = input.status || existing.status || "draft";
@@ -6566,7 +6609,8 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     variables: Object.fromEntries(Object.entries(input.variables ?? existing.variables ?? {}).filter(([key, value]) => /^[a-z][a-z0-9_]{0,39}$/i.test(key) && !reservedVariables.has(String(key).toLowerCase()) && String(value ?? "").trim()).slice(0, 48).map(([key, value]) => [key.toLowerCase(), String(value).trim().slice(0, 1000)])),
     ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "Ver programação").trim().slice(0, 80),
     ctaUrl: String(input.ctaUrl ?? existing.ctaUrl ?? "").trim().slice(0, 1000),
-    recipientMode: ["all", "selected", "purchased", "active"].includes(input.recipientMode || existing.recipientMode) ? (input.recipientMode || existing.recipientMode) : "all",
+    recipientMode: ["all", "selected", "purchased", "recent", "reactivation", "birthday_manual"].includes(input.recipientMode || existing.recipientMode) ? (input.recipientMode || existing.recipientMode) : "all",
+    reactivationDays: Math.max(30, Math.min(730, Number(input.reactivationDays ?? existing.reactivationDays ?? 90))),
     customerIds: Array.isArray(input.customerIds) ? input.customerIds.map(String).slice(0, 5000) : (existing.customerIds || []),
     recipientSearch: String(input.recipientSearch ?? existing.recipientSearch ?? "").trim().slice(0, 160),
     couponId: String(input.couponId ?? existing.couponId ?? "").trim(),
@@ -6584,7 +6628,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     headlineColor: campaignColor(input.headlineColor ?? existing.headlineColor, "#ffffff"),
     textColor: campaignColor(input.textColor ?? existing.textColor, "#dbeafe"),
     buttonColor: campaignColor(input.buttonColor ?? existing.buttonColor, "#facc15"),
-    contentBlocks: normalizeCampaignBlocks(input.contentBlocks, existing.contentBlocks),
+    contentBlocks: existing.mode === "legacy_visual" ? normalizeCampaignBlocks(existing.contentBlocks) : [],
     scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
     status,
     brand: input.brand ?? existing.brand ?? {},
@@ -6593,9 +6637,10 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     updatedAt: new Date().toISOString(),
     sent: Number(existing.sent || 0),
     failed: Number(existing.failed || 0),
-    delivered: Number(existing.delivered || 0),
-    opened: Number(existing.opened || 0),
-    clicked: Number(existing.clicked || 0)
+    delivered: existing.delivered ?? null,
+    bounced: existing.bounced ?? null,
+    opened: existing.opened ?? null,
+    clicked: existing.clicked ?? null
   };
 }
 
@@ -6605,10 +6650,10 @@ function publicCampaign(campaign = {}) {
     ...safe,
     attachments: (attachments || []).map(({ path, ...item }) => item),
     customerCount: Number(campaign.recipientCount || campaign.recipients || 0),
-    hasHtml: Boolean(html),
-    hasMessage: Boolean(message),
-    hasBlocks: Boolean(contentBlocks?.length),
-    metricsSupported: { sent: true, failed: true, delivered: false, opened: false, clicked: false }
+    hasHtml: campaign.hasHtml ?? Boolean(html),
+    hasMessage: campaign.hasMessage ?? Boolean(message),
+    hasBlocks: campaign.hasBlocks ?? Boolean(contentBlocks?.length),
+    metricsSupported: { sent: true, failed: true, delivered: campaign.delivered !== null, bounced: campaign.bounced !== null, opened: campaign.opened !== null, clicked: campaign.clicked !== null }
   };
 }
 
@@ -6625,6 +6670,68 @@ function campaignDetails(campaign = {}) {
   };
 }
 
+async function listPersistedCampaigns(filters = {}) {
+  if (postgresEnabled()) return emailCampaignRepository.listCampaigns(filters);
+  const db = await readDb();
+  const page = Math.max(1, Number(filters.page || 1));
+  const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize || 25)));
+  let campaigns = (db.emailCampaigns || []).map((item) => item.status === "sent" ? { ...item, status: item.failed ? "completed_with_errors" : "completed" } : item);
+  if (filters.statuses?.length) campaigns = campaigns.filter((item) => filters.statuses.includes(item.status));
+  if (filters.templateId) campaigns = campaigns.filter((item) => item.templateId === filters.templateId);
+  if (filters.origin === "ai") campaigns = campaigns.filter((item) => item.aiGenerated);
+  if (filters.origin === "manual") campaigns = campaigns.filter((item) => !item.aiGenerated);
+  if (filters.search) campaigns = campaigns.filter((item) => `${item.subject || ""} ${item.headline || ""}`.toLowerCase().includes(String(filters.search).toLowerCase()));
+  const total = campaigns.length;
+  return { campaigns: campaigns.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total, pages: Math.max(1, Math.ceil(total / pageSize)), totals: {} };
+}
+
+async function findPersistedCampaign(id) {
+  if (postgresEnabled()) return emailCampaignRepository.getCampaign(id);
+  const db = await readDb();
+  return (db.emailCampaigns || []).find((item) => item.id === id) || null;
+}
+
+async function createPersistedCampaign(campaign) {
+  if (postgresEnabled()) return emailCampaignRepository.createCampaign(campaign);
+  let result = { campaign, created: true };
+  await withCriticalMutation(async () => {
+    const db = await readDb();
+    db.emailCampaigns ||= [];
+    const duplicate = campaign.idempotencyKey ? db.emailCampaigns.find((item) => item.idempotencyKey === campaign.idempotencyKey) : null;
+    if (duplicate) result = { campaign: duplicate, created: false };
+    else { db.emailCampaigns.unshift(campaign); await writeDb(db); }
+  });
+  return result;
+}
+
+async function updatePersistedCampaign(id, campaign, allowedStates = ["draft", "failed"]) {
+  if (postgresEnabled()) return emailCampaignRepository.updateCampaign(id, campaign);
+  let updated = null;
+  await withCriticalMutation(async () => {
+    const db = await readDb();
+    const existing = (db.emailCampaigns || []).find((item) => item.id === id);
+    if (!existing || !allowedStates.includes(existing.status)) return;
+    Object.assign(existing, campaign, { updatedAt: new Date().toISOString() });
+    updated = existing;
+    await writeDb(db);
+  });
+  return updated;
+}
+
+async function deletePersistedCampaign(id) {
+  if (postgresEnabled()) return emailCampaignRepository.deleteCampaign(id);
+  let deleted = false;
+  await withCriticalMutation(async () => {
+    const db = await readDb();
+    const existing = (db.emailCampaigns || []).find((item) => item.id === id);
+    if (!existing || !["draft", "failed", "cancelled"].includes(existing.status)) return;
+    db.emailCampaigns = db.emailCampaigns.filter((item) => item.id !== id);
+    deleted = true;
+    await writeDb(db);
+  });
+  return deleted;
+}
+
 function resolveCampaignAttachments(db, attachments = []) {
   const library = new Map((db.settings?.emailAttachments || []).map((item) => [String(item.id), item]));
   return (Array.isArray(attachments) ? attachments : []).slice(0, 5).map((item) => {
@@ -6633,94 +6740,32 @@ function resolveCampaignAttachments(db, attachments = []) {
   }).filter((item) => item?.id && item?.path);
 }
 
-async function processEmailCampaign(campaignId) {
-  emailCampaignTimers.delete(campaignId);
-  let campaign;
-  await withCriticalMutation(async () => {
-    const db = await readDb();
-    const item = (db.emailCampaigns || []).find((entry) => entry.id === campaignId);
-    if (!item || !["queued", "scheduled"].includes(item.status) || item.status === "cancelled") return;
-    item.status = "sending";
-    item.startedAt = new Date().toISOString();
-    item.updatedAt = new Date().toISOString();
-    campaign = { ...item };
-    await writeDb(db);
+function buildEmailCampaignWorker() {
+  if (!postgresEnabled()) return null;
+  return createEmailCampaignWorker({
+    repository: emailCampaignRepository,
+    readDb,
+    resolveAudience: eligibleCampaignRecipients,
+    decorateRecipient: async (db, campaign, recipient) => {
+      const token = recipient.customerId ? await emailCampaignRepository.issueUnsubscribeToken(recipient.customerId) : "";
+      const coupon = (db.promotions || []).find((item) => String(item.id) === String(campaign.couponId || ""));
+      return {
+        ...recipient,
+        unsubscribeUrl: token ? `${appFrontendUrl()}/api/email/unsubscribe?token=${encodeURIComponent(token)}` : "",
+        couponCode: coupon?.couponCode || "",
+        couponExpiresAt: coupon?.endsAt ? brazilianDate(coupon.endsAt) : "",
+        couponUrl: campaign.ctaUrl || appFrontendUrl()
+      };
+    },
+    deliver: (db, campaign, recipient, correlation) => emailService.sendMarketingDelivery(db, {
+      ...campaign,
+      logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
+      brand: campaign.brand || db.settings?.emailBranding || {},
+      siteUrl: appFrontendUrl(),
+      attachments: campaign.attachments || []
+    }, recipient, correlation),
+    log: logEvent
   });
-  if (!campaign) return;
-
-  const db = await readDb();
-  let eligibility;
-  try {
-    eligibility = eligibleCampaignRecipients(db, campaign);
-  } catch (error) {
-    await withCriticalMutation(async () => {
-      const current = await readDb();
-      const item = (current.emailCampaigns || []).find((entry) => entry.id === campaignId);
-      if (!item) return;
-      item.status = "failed";
-      item.error = error.message || "A oferta desta campanha não está mais disponível.";
-      item.updatedAt = new Date().toISOString();
-      await writeDb(current);
-    });
-    return;
-  }
-  const recipients = eligibility.recipients;
-  if (!recipients.length) {
-    await withCriticalMutation(async () => {
-      const current = await readDb();
-      const item = (current.emailCampaigns || []).find((entry) => entry.id === campaignId);
-      if (!item) return;
-      item.status = "failed";
-      item.error = "Nenhum destinatário elegível com consentimento de marketing.";
-      item.recipientCount = 0;
-      item.updatedAt = new Date().toISOString();
-      await writeDb(current);
-    });
-    return;
-  }
-  const coupon = eligibility.coupon;
-  const result = await emailService.sendPromotionCampaign(db, {
-    ...campaign,
-    recipients: recipients.map((recipient) => ({
-      ...recipient,
-      couponCode: coupon?.couponCode || "",
-      couponExpiresAt: coupon?.endsAt ? brazilianDate(coupon.endsAt) : "",
-      couponUrl: campaign.ctaUrl || appFrontendUrl()
-    })),
-    logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
-    brand: campaign.brand || db.settings?.emailBranding || {},
-    siteUrl: appFrontendUrl(),
-    attachments: campaign.attachments || [],
-    batchSize: 10,
-    delayMs: 80
-  });
-  await withCriticalMutation(async () => {
-    const current = await readDb();
-    const item = (current.emailCampaigns || []).find((entry) => entry.id === campaignId);
-    if (!item) return;
-    item.status = result.failed ? (result.sent ? "sent" : "failed") : "sent";
-    item.recipientCount = recipients.length;
-    item.sent = result.sent;
-    item.failed = result.failed;
-    item.completedAt = new Date().toISOString();
-    item.updatedAt = new Date().toISOString();
-    await writeDb(current);
-  });
-}
-
-function scheduleEmailCampaign(campaign) {
-  if (!campaign?.id || campaign.status === "cancelled") return;
-  if (emailCampaignTimers.has(campaign.id)) clearTimeout(emailCampaignTimers.get(campaign.id));
-  const delay = campaign.status === "scheduled" && campaign.scheduleAt
-    ? Math.max(0, new Date(campaign.scheduleAt).getTime() - Date.now())
-    : 0;
-  const timer = setTimeout(() => { void processEmailCampaign(campaign.id); }, Math.min(delay, 2147483647));
-  timer.unref?.();
-  emailCampaignTimers.set(campaign.id, timer);
-}
-
-function restoreEmailCampaignSchedules(db) {
-  (db.emailCampaigns || []).filter((campaign) => ["scheduled", "queued"].includes(campaign.status)).forEach(scheduleEmailCampaign);
 }
 
 function sessionAvailabilityStatus(session, sold, capacity) {
@@ -8017,7 +8062,13 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/content" && method === "GET") {
-    sendJson(res, 200, getAdminContent(db, req.adminUser));
+    const content = getAdminContent(db, req.adminUser);
+    if (postgresEnabled() && adminHasPermission(req.adminUser, "marketing.manage")) {
+      const history = await emailCampaignRepository.listCampaigns({ page: 1, pageSize: 25 });
+      content.emailCampaigns = history.campaigns.map(publicCampaign);
+      content.emailCampaignPagination = { page: history.page, pages: history.pages, pageSize: history.pageSize, total: history.total, totals: history.totals };
+    }
+    sendJson(res, 200, content);
     return;
   }
 
@@ -8306,7 +8357,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const emailCampaignMatch = pathname.match(/^\/api\/admin\/email\/campaigns\/([^/]+)(?:\/(send|cancel|duplicate|delete))?$/);
+  const emailCampaignMatch = pathname.match(/^\/api\/admin\/email\/campaigns\/([^/]+)(?:\/(send|cancel|duplicate|delete|recipients|retry-failures))?$/);
   if (pathname === "/api/admin/email/branding" && method === "GET") {
     sendJson(res, 200, { branding: db.settings?.emailBranding || {} });
     return;
@@ -8337,7 +8388,21 @@ async function handleApi(req, res, pathname) {
     return;
   }
   if (pathname === "/api/admin/email/campaigns" && method === "GET") {
-    sendJson(res, 200, { campaigns: (db.emailCampaigns || []).map(publicCampaign) });
+    const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
+    const statusGroups = {
+      drafts: ["draft"], scheduled: ["scheduled"], processing: ["queued", "sending"],
+      completed: ["completed"], errors: ["completed_with_errors", "failed"], cancelled: ["cancelled"]
+    };
+    const status = params.get("status") || "";
+    const result = await listPersistedCampaigns({
+      page: params.get("page"), pageSize: params.get("pageSize"),
+      statuses: statusGroups[status] || (status ? [status] : []),
+      templateId: params.get("template") || "", origin: params.get("origin") || "",
+      creator: params.get("creator") || "", from: params.get("from") || "", to: params.get("to") || "",
+      item: String(params.get("item") || "").slice(0, 180), order: params.get("order") || "desc",
+      search: String(params.get("search") || "").slice(0, 160)
+    });
+    sendJson(res, 200, { ...result, campaigns: result.campaigns.map(publicCampaign) });
     return;
   }
 
@@ -8352,7 +8417,7 @@ async function handleApi(req, res, pathname) {
       concessionIds: body.concessionIds
     }, { allowAutoMovie: true });
     const referenceCampaignId = String(body.referenceCampaignId || "").trim();
-    const referenceCampaign = referenceCampaignId ? (db.emailCampaigns || []).find((item) => item.id === referenceCampaignId) : null;
+    const referenceCampaign = referenceCampaignId ? await findPersistedCampaign(referenceCampaignId) : null;
     if (referenceCampaignId && !referenceCampaign) {
       throw Object.assign(new Error("O rascunho de referência não existe mais."), { statusCode: 409, code: "EMAIL_CAMPAIGN_REFERENCE_NOT_FOUND" });
     }
@@ -8361,8 +8426,7 @@ async function handleApi(req, res, pathname) {
       throw Object.assign(new Error("Selecione OpenAI ou Gemini como motor da campanha."), { statusCode: 422, code: "EMAIL_CAMPAIGN_AI_PROVIDER_INVALID" });
     }
     const aiConfig = integrationConfigService.resolvedConfig(db, requestedAiProvider);
-    const generateCampaignDraft = requestedAiProvider === "gemini" ? generateGeminiCampaignDraft : generateOpenAiCampaignDraft;
-    const generated = await generateCampaignDraft({
+    const generated = await generateEmailDraft(requestedAiProvider, {
       scenario,
       movie: context.movie,
       coupon: context.coupon,
@@ -8398,6 +8462,8 @@ async function handleApi(req, res, pathname) {
       aiProvider: generated.aiProvider,
       aiProviderRequested: requestedAiProvider,
       aiModel: generated.aiModel || "",
+      aiConfiguredModel: aiConfig.model || "",
+      aiModelResolutionReason: generated.aiModelResolved ? "O modelo configurado não estava disponível; foi usado um compatível apenas nesta execução." : "",
       aiFallbackReason: generated.aiFallbackReason || "",
       aiFallbackMessage: generated.aiFallbackMessage || "",
       aiScenario: generated.aiScenario,
@@ -8407,15 +8473,7 @@ async function handleApi(req, res, pathname) {
       aiBrief: generated.aiBrief,
       aiEligibility: eligibility
     });
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      if (requestedAiProvider === "gemini" && generated.aiProvider === "gemini" && generated.aiModelResolved && generated.aiModel) {
-        integrationConfigService.save(lockedDb, "gemini", { model: generated.aiModel }, req.adminUser);
-      }
-      lockedDb.emailCampaigns ||= [];
-      lockedDb.emailCampaigns.unshift(campaign);
-      await writeDb(lockedDb);
-    });
+    await createPersistedCampaign(campaign);
     logEvent("info", "email_campaign.ai_draft_created", {
       actorUserId: req.adminUser?.id || "",
       campaignId: campaign.id,
@@ -8434,6 +8492,8 @@ async function handleApi(req, res, pathname) {
         provider: generated.aiProvider,
         requestedProvider: requestedAiProvider,
         model: generated.aiModel || "",
+        configuredModel: aiConfig.model || "",
+        modelResolutionReason: campaign.aiModelResolutionReason || "",
         fallbackReason: generated.aiFallbackReason || "",
         fallbackMessage: generated.aiFallbackMessage || "",
         scenario: generated.aiScenario,
@@ -8461,6 +8521,8 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/email/campaigns/test" && method === "POST") {
     const body = await readBody(req);
+    body.attachments = resolveCampaignAttachments(db, body.attachments);
+    validateCampaignAttachmentTotal(body.attachments);
     const to = String(body.to || "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
       sendJson(res, 400, { error: { code: "EMAIL_TEST_INVALID", message: "Informe um endereço válido para o teste." } });
@@ -8468,7 +8530,7 @@ async function handleApi(req, res, pathname) {
     }
     const emailConfig = integrationConfigService.resolvedConfig(db, "email");
     if (!(emailConfig?.enabled && emailConfig?.configured)) {
-      sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes do teste." } });
+      sendJson(res, 412, { error: { code: "EMAIL_CHANNEL_NOT_CONFIGURED", message: "Configure e ative o SMTP ou webhook de e-mail em Integrações antes do teste." } });
       return;
     }
     const campaign = normalizeCampaignInput(body, { brand: db.settings?.emailBranding || {} });
@@ -8487,6 +8549,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/email/campaigns" && method === "POST") {
     const body = await readBody(req);
     body.attachments = resolveCampaignAttachments(db, body.attachments);
+    validateCampaignAttachmentTotal(body.attachments);
     const campaign = normalizeCampaignInput(body, { brand: body.brand || db.settings?.emailBranding || {} });
     if (!campaign.subject || !String(campaign.html || campaign.message || "").trim()) {
       sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: "Informe o assunto e o conteúdo da campanha." } });
@@ -8499,33 +8562,43 @@ async function handleApi(req, res, pathname) {
     campaign.createdBy = req.adminUser?.id || "";
     campaign.recipientCount = eligibility.recipients.length;
     campaign.eligibility = eligibility.report;
-    let persistedCampaign = campaign;
-    let alreadyCreated = false;
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      lockedDb.emailCampaigns ||= [];
-      if (campaign.idempotencyKey) {
-        const duplicate = lockedDb.emailCampaigns.find((item) => item.idempotencyKey === campaign.idempotencyKey);
-        if (duplicate) {
-          persistedCampaign = duplicate;
-          alreadyCreated = true;
-          return;
-        }
+    if (["queued", "scheduled"].includes(campaign.status)) {
+      campaign.queuedAt = new Date().toISOString();
+      if (!eligibility.recipients.length) {
+        sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum destinatário pode usar a oferta desta campanha." } });
+        return;
       }
-      lockedDb.emailCampaigns.unshift(campaign);
-      await writeDb(lockedDb);
-    });
-    if (!alreadyCreated && (campaign.status === "queued" || campaign.status === "scheduled")) scheduleEmailCampaign(campaign);
-    sendJson(res, alreadyCreated ? 200 : 201, { campaign: publicCampaign(persistedCampaign), queued: persistedCampaign.status === "queued", idempotent: alreadyCreated });
+    }
+    const persisted = await createPersistedCampaign(campaign);
+    if (persisted.created && postgresEnabled() && ["queued", "scheduled"].includes(campaign.status)) {
+      await emailCampaignRepository.snapshotRecipients(campaign.id, eligibility.recipients);
+    }
+    logEvent("info", "email_campaign.created", { campaignId: persisted.campaign.id, actorUserId: req.adminUser?.id || "", status: persisted.campaign.status, idempotent: !persisted.created });
+    if (persisted.created && persisted.campaign.status === "scheduled") {
+      logEvent("info", "email_campaign.scheduled", { campaignId: persisted.campaign.id, actorUserId: req.adminUser?.id || "", scheduleAt: persisted.campaign.scheduleAt });
+    }
+    if (persisted.created && persisted.campaign.status === "queued") {
+      logEvent("info", "email_campaign.queued", { campaignId: persisted.campaign.id, actorUserId: req.adminUser?.id || "", recipients: eligibility.recipients.length });
+    }
+    sendJson(res, persisted.created ? 201 : 200, { campaign: publicCampaign(persisted.campaign), queued: persisted.campaign.status === "queued", idempotent: !persisted.created });
     return;
   }
 
   if (emailCampaignMatch && emailCampaignMatch[1]) {
     const campaignId = decodeURIComponent(emailCampaignMatch[1]);
     const action = emailCampaignMatch[2] || "";
-    const existing = (db.emailCampaigns || []).find((item) => item.id === campaignId);
+    const existing = await findPersistedCampaign(campaignId);
     if (!existing) {
       sendJson(res, 404, { error: { code: "EMAIL_CAMPAIGN_NOT_FOUND", message: "Campanha não encontrada." } });
+      return;
+    }
+    if (action === "recipients" && method === "GET") {
+      if (!postgresEnabled()) {
+        sendJson(res, 200, { recipients: [], page: 1, pages: 1, pageSize: 25, total: 0 });
+        return;
+      }
+      const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
+      sendJson(res, 200, await emailCampaignRepository.listRecipients(campaignId, { page: params.get("page"), pageSize: params.get("pageSize"), status: params.get("status") || "" }));
       return;
     }
     if (!action && method === "GET") {
@@ -8537,23 +8610,28 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_DELETE_LOCKED", message: "Só rascunhos, campanhas com falha ou canceladas podem ser excluídos." } });
         return;
       }
-      if (emailCampaignTimers.has(campaignId)) clearTimeout(emailCampaignTimers.get(campaignId));
-      emailCampaignTimers.delete(campaignId);
-      await withCriticalMutation(async () => {
-        const lockedDb = await readDb();
-        lockedDb.emailCampaigns = (lockedDb.emailCampaigns || []).filter((item) => item.id !== campaignId);
-        await writeDb(lockedDb);
-      });
+      if (!(await deletePersistedCampaign(campaignId))) {
+        sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_DELETE_LOCKED", message: "A campanha mudou de estado e não pode mais ser excluída." } });
+        return;
+      }
+      logEvent("info", "email_campaign.deleted", { campaignId, actorUserId: req.adminUser?.id || "" });
       sendJson(res, 200, { deleted: true, id: campaignId });
       return;
     }
     if (action === "cancel" && method === "POST") {
-      existing.status = "cancelled";
-      existing.updatedAt = new Date().toISOString();
-      if (emailCampaignTimers.has(campaignId)) clearTimeout(emailCampaignTimers.get(campaignId));
-      emailCampaignTimers.delete(campaignId);
-      await writeDb(db);
-      sendJson(res, 200, { campaign: publicCampaign(existing) });
+      let cancelled;
+      if (postgresEnabled()) cancelled = await emailCampaignRepository.transitionCampaign(campaignId, "cancelled", { from: ["scheduled", "queued", "sending"] });
+      else {
+        existing.status = "cancelled";
+        existing.cancelledAt = new Date().toISOString();
+        cancelled = await updatePersistedCampaign(campaignId, existing, ["scheduled", "queued", "sending"]);
+      }
+      if (!cancelled) {
+        sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_STATE", message: "Esta campanha não pode ser cancelada no estado atual." } });
+        return;
+      }
+      logEvent("info", "email_campaign.cancelled", { campaignId, actorUserId: req.adminUser?.id || "" });
+      sendJson(res, 200, { campaign: publicCampaign(cancelled) });
       return;
     }
     if (action === "send" && method === "POST") {
@@ -8563,7 +8641,7 @@ async function handleApi(req, res, pathname) {
       }
       const emailConfig = integrationConfigService.resolvedConfig(db, "email");
       if (!(emailConfig?.enabled && emailConfig?.configured)) {
-        sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes do disparo." } });
+        sendJson(res, 412, { error: { code: "EMAIL_CHANNEL_NOT_CONFIGURED", message: "Configure e ative o SMTP ou webhook de e-mail em Integrações antes do disparo." } });
         return;
       }
       const eligibility = eligibleCampaignRecipients(db, existing);
@@ -8571,32 +8649,57 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum destinatário pode usar a oferta desta campanha." } });
         return;
       }
-      existing.status = "queued";
-      existing.error = "";
-      existing.updatedAt = new Date().toISOString();
-      existing.recipientCount = eligibility.recipients.length;
-      existing.eligibility = eligibility.report;
-      await writeDb(db);
-      scheduleEmailCampaign(existing);
-      sendJson(res, 202, { campaign: publicCampaign(existing) });
+      let queued;
+      if (postgresEnabled()) {
+        await emailCampaignRepository.snapshotRecipients(campaignId, eligibility.recipients);
+        queued = await emailCampaignRepository.transitionCampaign(campaignId, "queued", { from: ["draft", "failed"] });
+      } else {
+        existing.status = "queued";
+        existing.error = "";
+        existing.recipientCount = eligibility.recipients.length;
+        existing.eligibility = eligibility.report;
+        queued = await updatePersistedCampaign(campaignId, existing);
+      }
+      logEvent("info", "email_campaign.queued", { campaignId, actorUserId: req.adminUser?.id || "", recipients: eligibility.recipients.length });
+      sendJson(res, 202, { campaign: publicCampaign(queued || existing) });
+      return;
+    }
+    if (action === "retry-failures" && method === "POST") {
+      if (!postgresEnabled()) {
+        sendJson(res, 409, { error: { code: "POSTGRES_REQUIRED", message: "O reenvio seletivo requer o armazenamento PostgreSQL." } });
+        return;
+      }
+      const retry = await emailCampaignRepository.retryFailures(campaignId);
+      if (!retry || !retry.retried) {
+        sendJson(res, 409, { error: { code: "NO_RETRYABLE_RECIPIENTS", message: "Não há falhas confirmadas e seguras para reenviar. Resultados incertos exigem revisão manual." } });
+        return;
+      }
+      logEvent("info", "email_campaign.failures_requeued", { campaignId, actorUserId: req.adminUser?.id || "", recipients: retry.retried });
+      sendJson(res, 202, { campaign: publicCampaign(retry.campaign), retried: retry.retried });
       return;
     }
     if (action === "duplicate" && method === "POST") {
-      const duplicate = normalizeCampaignInput(existing, {
+      const legacyMessage = existing.legacyReadOnly && !String(existing.message || "").trim()
+        ? (existing.contentBlocks || [])
+          .filter((block) => ["heading", "text", "kicker", "signature"].includes(block.type))
+          .map((block) => String(block.content || "").trim())
+          .filter(Boolean)
+          .join("\n\n")
+        : existing.message;
+      const duplicate = normalizeCampaignInput({
+        ...existing,
+        mode: existing.legacyReadOnly ? "template" : existing.mode,
+        message: legacyMessage,
         id: `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+        idempotencyKey: "",
         subject: `${existing.subject || "Campanha"} - cópia`,
-        status: "draft",
-        createdBy: req.adminUser?.id || "",
-        createdAt: new Date().toISOString(),
-        sent: 0,
-        failed: 0,
-        recipientCount: 0
-      });
-      duplicate.status = "draft";
+        scheduleAt: ""
+      }, {});
+      Object.assign(duplicate, { status: "draft", createdBy: req.adminUser?.id || "", createdAt: new Date().toISOString(), sent: 0, failed: 0, processed: 0, recipientCount: 0, completedAt: "", startedAt: "" });
       duplicate.recipientCount = campaignRecipients(db, duplicate).length;
-      db.emailCampaigns.unshift(duplicate);
-      await writeDb(db);
-      sendJson(res, 201, { campaign: publicCampaign(duplicate) });
+      const persisted = await createPersistedCampaign(duplicate);
+      logEvent("info", "email_campaign.duplicated", { campaignId: persisted.campaign.id, sourceCampaignId: campaignId, actorUserId: req.adminUser?.id || "" });
+      sendJson(res, 201, { campaign: publicCampaign(persisted.campaign) });
       return;
     }
     if (method === "PUT") {
@@ -8604,50 +8707,32 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_LOCKED", message: "Campanhas enviadas ou em processamento não podem ser editadas." } });
         return;
       }
+      if (existing.legacyReadOnly) {
+        sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_LEGACY_READ_ONLY", message: "Este rascunho usa o editor visual antigo. Duplique-o para converter ao modelo atual sem perder o conteúdo original." } });
+        return;
+      }
       const body = await readBody(req);
       body.attachments = resolveCampaignAttachments(db, body.attachments);
+      validateCampaignAttachmentTotal(body.attachments);
       const updated = normalizeCampaignInput(body, existing);
       const eligibility = eligibleCampaignRecipients(db, updated);
       updated.status = "draft";
       updated.recipientCount = eligibility.recipients.length;
       updated.eligibility = eligibility.report;
-      Object.assign(existing, updated);
-      await writeDb(db);
-      sendJson(res, 200, { campaign: publicCampaign(existing) });
+      const persisted = await updatePersistedCampaign(campaignId, updated);
+      if (!persisted) {
+        sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_LOCKED", message: "A campanha mudou de estado e não pode mais ser editada." } });
+        return;
+      }
+      logEvent("info", "email_campaign.updated", {
+        campaignId,
+        actorUserId: req.adminUser?.id || "",
+        changed: ["subject", "templateId", "recipientMode", "couponId", "movieId", "concessionIds", "clubPlanId", "scheduleAt"]
+          .filter((key) => JSON.stringify(existing[key] ?? null) !== JSON.stringify(updated[key] ?? null))
+      });
+      sendJson(res, 200, { campaign: publicCampaign(persisted) });
       return;
     }
-  }
-
-  // Compatibilidade com a rota anterior: cria e enfileira uma campanha.
-  if (pathname === "/api/admin/email/promotions" && method === "POST") {
-    const body = await readBody(req);
-    body.attachments = resolveCampaignAttachments(db, body.attachments);
-    body.action = "send";
-    const campaign = normalizeCampaignInput(body, { brand: db.settings?.emailBranding || {} });
-    if (!campaign.subject || !String(campaign.html || campaign.message || "").trim()) {
-      sendJson(res, 400, { error: { code: "EMAIL_CAMPAIGN_INVALID", message: "Informe assunto e conteúdo da campanha." } });
-      return;
-    }
-    const emailConfig = integrationConfigService.resolvedConfig(db, "email");
-    if (!(emailConfig?.enabled && emailConfig?.configured)) {
-      sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes do disparo." } });
-      return;
-    }
-    campaign.status = "queued";
-    campaign.createdBy = req.adminUser?.id || "";
-    const eligibility = eligibleCampaignRecipients(db, campaign);
-    campaign.recipientCount = eligibility.recipients.length;
-    campaign.eligibility = eligibility.report;
-    if (!campaign.recipientCount) {
-      sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum cliente elegível com e-mail e consentimento de marketing." } });
-      return;
-    }
-    db.emailCampaigns ||= [];
-    db.emailCampaigns.unshift(campaign);
-    await writeDb(db);
-    scheduleEmailCampaign(campaign);
-    sendJson(res, 202, { queued: true, recipients: campaign.recipientCount, campaign: publicCampaign(campaign) });
-    return;
   }
 
   if (pathname === "/api/admin/customers" && method === "GET") {
@@ -8779,21 +8864,38 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/email/unsubscribe" && method === "GET") {
+  if (pathname === "/api/email/unsubscribe" && ["GET", "POST"].includes(method)) {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const token = String(url.searchParams.get("token") || "").trim();
-    const user = token ? (db.users || []).find((item) => item.emailUnsubscribeToken === token && item.active !== false) : null;
-    if (user) {
-      user.emailUnsubscribedAt ||= new Date().toISOString();
-      user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+    let user = null;
+    if (token && postgresEnabled()) {
+      user = method === "POST"
+        ? await emailCampaignRepository.unsubscribeByToken(token)
+        : await emailCampaignRepository.findUnsubscribeUser(token);
+    } else if (token) {
+      user = (db.users || []).find((item) => {
+        const expected = Buffer.from(hashResetToken(item.emailUnsubscribeToken || ""));
+        const provided = Buffer.from(hashResetToken(token));
+        return expected.length === provided.length && crypto.timingSafeEqual(expected, provided) && item.active !== false;
+      }) || null;
+      if (user && method === "POST") {
+        user.emailUnsubscribedAt ||= new Date().toISOString();
+        user.updatedAt = new Date().toISOString();
+        await writeDb(db);
+      }
     }
-    const title = user ? "Descadastro confirmado" : "Link indisponível";
-    const message = user
-      ? "Você não receberá mais e-mails promocionais do Cine Cruzeiro. Mensagens essenciais de conta e compra ainda podem ser enviadas quando necessário."
-      : "Este link de descadastro não existe ou já não está disponível.";
+    const confirmed = Boolean(user && method === "POST");
+    const title = !user ? "Link indisponível" : confirmed ? "Descadastro confirmado" : "Confirmar descadastro";
+    const message = !user
+      ? "Este link de descadastro não existe ou já não está disponível."
+      : confirmed
+        ? "Você não receberá mais e-mails promocionais do Cine Cruzeiro. Mensagens essenciais de conta e compra ainda podem ser enviadas quando necessário."
+        : "Confirme abaixo que deseja parar de receber campanhas promocionais. Seus ingressos, recibos e mensagens essenciais de conta continuarão chegando.";
+    const confirmButton = user && !confirmed
+      ? `<form method="post" action="/api/email/unsubscribe?token=${encodeURIComponent(token)}"><button type="submit" style="border:0;margin-top:24px;background:#facc15;color:#020617;padding:14px 18px;border-radius:8px;font-weight:900;cursor:pointer">Confirmar descadastro</button></form>`
+      : "";
     res.writeHead(200, securityHeaders({ "Content-Type": "text/html; charset=utf-8" }));
-    res.end(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(title)} - Cine Cruzeiro</title></head><body style="margin:0;background:#060a12;color:#f8fafc;font-family:Inter,Arial,sans-serif"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:560px;background:#0d1728;padding:32px;border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.34)"><p style="margin:0 0 10px;color:#facc15;font-size:12px;font-weight:900;letter-spacing:.16em;text-transform:uppercase">Cine Cruzeiro</p><h1 style="margin:0 0 14px;font-size:34px;line-height:1.05">${htmlEscape(title)}</h1><p style="margin:0;color:#cbd5e1;line-height:1.7">${htmlEscape(message)}</p><a href="${htmlEscape(appFrontendUrl())}" style="display:inline-block;margin-top:24px;background:#facc15;color:#020617;padding:14px 18px;border-radius:8px;text-decoration:none;font-weight:900">Voltar ao site</a></section></main></body></html>`);
+    res.end(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(title)} - Cine Cruzeiro</title></head><body style="margin:0;background:#060a12;color:#f8fafc;font-family:Inter,Arial,sans-serif"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:560px;background:#0d1728;padding:32px;border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.34)"><p style="margin:0 0 10px;color:#facc15;font-size:12px;font-weight:900;letter-spacing:.16em;text-transform:uppercase">Cine Cruzeiro</p><h1 style="margin:0 0 14px;font-size:34px;line-height:1.05">${htmlEscape(title)}</h1><p style="margin:0;color:#cbd5e1;line-height:1.7">${htmlEscape(message)}</p>${confirmButton}<a href="${htmlEscape(appFrontendUrl())}" style="display:inline-block;margin-top:24px;color:#bfdbfe;text-decoration:none;font-weight:800">Voltar ao site</a></section></main></body></html>`);
     return;
   }
 
@@ -12043,6 +12145,37 @@ async function runMovieImageMaintenance() {
   }
 }
 
+async function runEmailAttachmentMaintenance() {
+  if (emailAttachmentMaintenanceRunning) return;
+  emailAttachmentMaintenanceRunning = true;
+  try {
+    const db = await readDb();
+    const referenced = new Set(postgresEnabled()
+      ? await emailCampaignRepository.listReferencedAttachmentIds()
+      : (db.emailCampaigns || []).flatMap((campaign) => (campaign.attachments || []).map((item) => item.id)));
+    const retentionDays = Math.max(7, Math.min(365, Number(process.env.EMAIL_ATTACHMENT_RETENTION_DAYS || 30)));
+    const cutoff = Date.now() - retentionDays * 86400000;
+    const kept = [];
+    for (const attachment of db.settings?.emailAttachments || []) {
+      if (referenced.has(attachment.id)) { kept.push(attachment); continue; }
+      const safePath = path.resolve(String(attachment.path || ""));
+      const relative = path.relative(EMAIL_ATTACHMENT_ROOT, safePath);
+      if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) { kept.push(attachment); continue; }
+      const stat = await fs.stat(safePath).catch(() => null);
+      const createdAt = new Date(attachment.createdAt || stat?.mtime || 0).getTime();
+      if (!Number.isFinite(createdAt) || createdAt > cutoff) { kept.push(attachment); continue; }
+      await fs.unlink(safePath).catch(() => null);
+      logEvent("info", "email_campaign.attachment_pruned", { attachmentId: attachment.id, retentionDays });
+    }
+    if (kept.length !== (db.settings?.emailAttachments || []).length) {
+      db.settings.emailAttachments = kept;
+      await writeDb(db);
+    }
+  } finally {
+    emailAttachmentMaintenanceRunning = false;
+  }
+}
+
 loadEnvFiles().then(() => {
   if (isProduction() && !postgresEnabled()) {
     console.error("POSTGRES_REQUIRED_IN_PRODUCTION: configure DATABASE_URL ou POSTGRES_URL antes de iniciar em producao.");
@@ -12055,10 +12188,11 @@ loadEnvFiles().then(() => {
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
     void runSubscriptionMaintenance();
     void runMovieImageMaintenance();
-    void readDb().then(restoreEmailCampaignSchedules).catch((error) => {
-      logEvent("warn", "email_campaign.schedule_restore_failed", { message: error.message });
-    });
+    void runEmailAttachmentMaintenance();
     if (postgresEnabled()) {
+      emailCampaignWorker = buildEmailCampaignWorker();
+      emailCampaignWorker?.start();
+      logEvent("info", "email_campaign.worker_started", { workerId: emailCampaignWorker?.workerId || "", config: emailCampaignWorker?.config || {} });
       void pruneSystemLogsFromPostgres(process.env.SYSTEM_LOG_RETENTION_DAYS || 90).catch((error) => {
         logEvent("warn", "logs.retention_failed", { message: error.message });
       });
@@ -12071,10 +12205,22 @@ loadEnvFiles().then(() => {
       void runMovieImageMaintenance();
     }, 6 * 60 * 60 * 1000);
     movieImageMaintenanceTimer.unref?.();
+    const emailAttachmentMaintenanceTimer = setInterval(() => {
+      void runEmailAttachmentMaintenance();
+    }, 24 * 60 * 60 * 1000);
+    emailAttachmentMaintenanceTimer.unref?.();
   });
 }).catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.once(signal, () => {
+    emailCampaignWorker?.stop();
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10000).unref?.();
+  });
+}
 
 module.exports = server;

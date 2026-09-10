@@ -174,7 +174,7 @@ async function generateOpenAiCampaignDraft(input = {}, options = {}) {
         model: String(config.model || "gpt-5.6-terra"),
         reasoning: { effort: "none" },
         store: false,
-        max_output_tokens: Math.max(600, Math.min(4000, Number(config.maxOutputTokens || 1800))),
+        max_output_tokens: Math.max(500, Math.min(1600, Number(config.maxOutputTokens || 900))),
         safety_identifier: crypto.createHash("sha256").update(String(options.safetyIdentifier || "cine-cruzeiro-admin")).digest("hex"),
         prompt_cache_key: "cinecruzeiro-email-agent-v1",
         instructions: SYSTEM_INSTRUCTIONS,

@@ -24,6 +24,28 @@ function contextClient() {
   return transactionContext.getStore()?.client || null;
 }
 
+async function queryPostgres(text, values = []) {
+  const client = contextClient();
+  return (client || getPool()).query(text, values);
+}
+
+async function withPostgresTransaction(callback) {
+  const activeClient = contextClient();
+  if (activeClient) return callback(activeClient);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await transactionContext.run({ client }, () => callback(client));
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function num(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -187,7 +209,7 @@ async function loadDbFromPostgres() {
     return {
       settings: appSettings,
       integrations: appSettings.integrations || {},
-      emailCampaigns: appSettings.emailCampaigns || [],
+      emailCampaigns: [],
       rooms: rooms.rows.map((row) => ({
         id: row.id,
         name: row.name,
@@ -636,9 +658,9 @@ async function writeDbToPostgres(db) {
     if (!existingClient) await client.query("BEGIN");
     const settingsPayload = {
       ...(db.settings || {}),
-      integrations: db.integrations || db.settings?.integrations || {},
-      emailCampaigns: db.emailCampaigns || db.settings?.emailCampaigns || []
+      integrations: db.integrations || db.settings?.integrations || {}
     };
+    delete settingsPayload.emailCampaigns;
     await query(client, "INSERT INTO settings (key, value, updated_at) VALUES ('app', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", [settingsPayload]);
 
     await query(client, "DELETE FROM subscription_credit_redemptions").catch(() => null);
@@ -1458,6 +1480,8 @@ async function releaseSeatHoldsForOwner({ sessionId, ownerToken }) {
 
 module.exports = {
   postgresEnabled,
+  queryPostgres,
+  withPostgresTransaction,
   readDbFromPostgres,
   writeDbToPostgres,
   withPostgresMutationLock,

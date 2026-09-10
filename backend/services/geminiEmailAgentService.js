@@ -206,7 +206,7 @@ async function generateGeminiCampaignDraft(input = {}, options = {}) {
       system_instruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] },
       contents: [{ role: "user", parts: [{ text: JSON.stringify(providerInput) }] }],
       generationConfig: {
-        maxOutputTokens: Math.max(600, Math.min(4000, Number(config.maxOutputTokens || 1800))),
+        maxOutputTokens: Math.max(500, Math.min(1600, Number(config.maxOutputTokens || 900))),
         responseMimeType: "application/json",
         responseSchema: GEMINI_RESPONSE_SCHEMA
       }

@@ -143,17 +143,19 @@ let state = {
   emailCampaignVariables: {},
   emailCampaignConcessionIds: [],
   emailCampaignClubOffer: "",
-  emailCampaignBlocks: [],
-  emailCampaignBlocksInitialized: false,
-  emailCampaignSelectedBlockId: "",
-  emailCampaignDraggedBlockId: "",
   emailCampaignPreviewMode: "desktop",
   emailCampaignTemplate: "announcement",
   emailCampaignDraftId: "",
   emailCampaignAiDraftId: "",
   emailCampaignHistoryFilter: "all",
+  emailCampaignHistoryOrigin: "",
+  emailCampaignHistorySearch: "",
   emailCampaignHistoryPage: 1,
-  emailCampaignHistoryPageSize: 6,
+  emailCampaignHistoryPageSize: 25,
+  emailCampaignHistoryMeta: null,
+  emailCampaignHistoryTimer: null,
+  emailCampaignHistorySearchTimer: null,
+  emailCampaignReportId: "",
   emailCampaignIdempotencyKey: randomClientId("campanha")
 };
 
@@ -596,6 +598,7 @@ async function loadContent(options = {}) {
       isOwnerAdmin() ? api("/api/integrations").catch(() => null) : Promise.resolve(null)
     ]);
     state.content = cleanAdminContentAssets(content);
+    state.emailCampaignHistoryMeta = content.emailCampaignPagination || state.emailCampaignHistoryMeta;
     state.dashboard = dashboard;
     state.payments = payments;
     state.integrations = integrations;
@@ -782,6 +785,17 @@ function logPresentation(log = {}) {
     "subscription.pending_payment_maintenance_failed": { title: "Revisão de planos pendentes falhou", description: "A rotina automática de assinaturas precisa ser conferida." },
     "email_verification.delivery_failed": { title: "E-mail de verificação não entregue", description: "A mensagem de confirmação do cadastro não pôde ser enviada." },
     "email_verification.delivery_missing_channel": { title: "Envio de verificação não configurado", description: "Não há um serviço de e-mail disponível para confirmar o cadastro do cliente." },
+    "email_campaign.created": { title: "Campanha criada", description: "Uma campanha de e-mail foi salva no painel." },
+    "email_campaign.updated": { title: "Campanha editada", description: "O conteúdo ou o público de uma campanha foi atualizado." },
+    "email_campaign.duplicated": { title: "Campanha duplicada", description: "Uma cópia foi criada como novo rascunho." },
+    "email_campaign.deleted": { title: "Campanha removida", description: "A campanha foi retirada do histórico visível; envios anteriores continuam auditáveis." },
+    "email_campaign.scheduled": { title: "Campanha agendada", description: "O envio foi programado para a data definida no painel." },
+    "email_campaign.queued": { title: "Campanha colocada na fila", description: "O envio aguarda processamento pelo serviço de e-mails." },
+    "email_campaign.cancelled": { title: "Campanha cancelada", description: "Os destinatários ainda pendentes não receberão a campanha." },
+    "email_campaign.completed": { title: "Campanha concluída", description: "Todos os destinatários elegíveis foram processados sem falhas confirmadas." },
+    "email_campaign.completed_with_errors": { title: "Campanha concluída com falhas", description: "Parte dos e-mails foi enviada e parte precisa de atenção." },
+    "email_campaign.failed": { title: "Campanha não enviada", description: "O processamento terminou sem entregas confirmadas." },
+    "email_campaign.failures_requeued": { title: "Falhas recolocadas na fila", description: "Somente entregas com falha segura para nova tentativa serão processadas." },
     "password_reset.delivery_failed": { title: "E-mail de recuperação não entregue", description: "A mensagem para redefinir a senha não pôde ser enviada." },
     "password_reset.delivery_missing_channel": { title: "Recuperação de senha não configurada", description: "Não há um serviço de e-mail disponível para enviar a recuperação de senha." },
     "password_reset.delivery_not_configured": { title: "Recuperação de senha indisponível", description: "As configurações necessárias para enviar a recuperação de senha estão incompletas." },
@@ -3456,6 +3470,9 @@ function toggleEmailCampaignMenu(campaignId, event) {
   if (!campaign) return;
   closeFloatingActionMenu();
   const editable = ["draft", "failed"].includes(campaign.status);
+  const cancellable = ["scheduled", "queued", "sending"].includes(campaign.status);
+  const reportable = ["queued", "sending", "completed", "completed_with_errors", "failed", "sent", "cancelled"].includes(campaign.status);
+  const retryable = ["completed_with_errors", "failed"].includes(campaign.status);
   const safeId = escapeHtml(campaignId);
   floating.dataset.campaignId = campaignId;
   floating.classList.add("campaign-history-popover");
@@ -3463,8 +3480,12 @@ function toggleEmailCampaignMenu(campaignId, event) {
   floating.setAttribute("aria-label", "Ações da campanha");
   floating.innerHTML = `
     ${editable ? `<button type="button" role="menuitem" data-campaign-edit="${safeId}" onclick="void editEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Abrir</button>` : ""}
+    ${campaign.status === "draft" ? `<button type="button" role="menuitem" onclick="void sendExistingEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Enviar agora</button>` : ""}
+    ${reportable ? `<button type="button" role="menuitem" onclick="void viewEmailCampaignReport('${safeId}').finally(closeFloatingActionMenu)">${["queued", "sending"].includes(campaign.status) ? "Ver progresso" : "Ver relatório"}</button>` : ""}
+    ${retryable ? `<button type="button" role="menuitem" onclick="void retryEmailCampaignFailures('${safeId}').finally(closeFloatingActionMenu)">Reenviar falhas</button>` : ""}
+    ${cancellable ? `<button class="danger-text" type="button" role="menuitem" onclick="void cancelEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Cancelar</button>` : ""}
     <button type="button" role="menuitem" data-campaign-duplicate="${safeId}" onclick="void duplicateEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Duplicar</button>
-    ${editable ? `<button class="danger-text" type="button" role="menuitem" data-campaign-delete="${safeId}" onclick="void deleteEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Excluir</button>` : ""}
+    ${["draft", "failed", "cancelled"].includes(campaign.status) ? `<button class="danger-text" type="button" role="menuitem" data-campaign-delete="${safeId}" onclick="void deleteEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Excluir</button>` : ""}
   `;
   anchor.setAttribute("aria-expanded", "true");
   positionFloatingMenu(anchor, floating);
@@ -5549,89 +5570,6 @@ async function saveClubVisualSettings(event) {
   }
 }
 
-function campaignBlockId() {
-  return randomClientId("bloco");
-}
-
-function campaignBlockDefaults(type, role = "") {
-  const headlineColor = $("emailCampaignHeadlineColor")?.value || "#ffffff";
-  const textColor = $("emailCampaignTextColor")?.value || "#dbeafe";
-  const buttonColor = $("emailCampaignButtonColor")?.value || "#facc15";
-  const common = { id: campaignBlockId(), type, role, align: "left" };
-  if (type === "logo") return { ...common, url: $("emailBrandLogoUrl")?.value || "", alt: $("emailBrandName")?.value || "Cine Cruzeiro", link: "", width: 28 };
-  if (type === "kicker") return { ...common, content: "PROGRAMAÇÃO", color: "#60a5fa", fontSize: 12 };
-  if (type === "heading") return { ...common, content: $("emailCampaignHeadline")?.value || $("emailCampaignSubject")?.value || "Título da campanha", color: headlineColor, fontSize: 28 };
-  if (type === "image") return { ...common, url: $("emailCampaignImageUrl")?.value || "", alt: $("emailCampaignImageAlt")?.value || "Imagem da campanha", link: $("emailCampaignImageLink")?.value || "", width: 70, align: "center" };
-  if (type === "button") return { ...common, content: $("emailCampaignCtaLabel")?.value || "Ver programação", url: $("emailCampaignCtaUrl")?.value || "", color: "#020617", backgroundColor: buttonColor, align: "center" };
-  if (type === "divider") return { ...common, color: "#334155", width: 100 };
-  if (type === "icon") return { ...common, url: "", alt: "Ícone", link: "", width: 12, align: "center" };
-  if (type === "social") return { ...common, align: "center", color: "#93c5fd", links: [{ label: "Instagram", url: "" }, { label: "Facebook", url: "" }, { label: "WhatsApp", url: "" }] };
-  if (type === "signature") return { ...common, content: "Equipe Cine Cruzeiro", color: textColor, fontSize: 14 };
-  if (type === "spacer") return { ...common, height: 24 };
-  return { ...common, type: "text", content: $("emailCampaignMessage")?.value || "Escreva sua mensagem.", color: textColor, fontSize: 15 };
-}
-
-function legacyCampaignBlocks() {
-  const blocks = [];
-  const logo = campaignBlockDefaults("logo", "brand-logo");
-  if (logo.url) blocks.push(logo);
-  blocks.push(campaignBlockDefaults("kicker", "kicker"));
-  blocks.push(campaignBlockDefaults("heading", "headline"));
-  const image = campaignBlockDefaults("image", "hero-image");
-  if (image.url) blocks.push(image);
-  blocks.push(campaignBlockDefaults("text", "message"));
-  const button = campaignBlockDefaults("button", "cta");
-  if (button.url || $("emailCampaignCtaLabel")?.value) blocks.push(button);
-  const footer = String($("emailBrandFooter")?.value || "").trim();
-  if (footer) blocks.push({ ...campaignBlockDefaults("signature", "signature"), content: footer });
-  return blocks;
-}
-
-function ensureEmailCampaignBlocks() {
-  if (state.emailCampaignBlocksInitialized) return;
-  state.emailCampaignBlocks = legacyCampaignBlocks();
-  state.emailCampaignBlocksInitialized = true;
-  state.emailCampaignSelectedBlockId = state.emailCampaignBlocks.find((block) => block.role === "headline")?.id || state.emailCampaignBlocks[0]?.id || "";
-}
-
-function addEmailCampaignBlock(type) {
-  ensureEmailCampaignBlocks();
-  const block = type === "coupon"
-    ? { ...campaignBlockDefaults("text"), content: "Cupom: {{codigo_cupom}} · válido até {{validade_cupom}}", color: "#facc15" }
-    : campaignBlockDefaults(type);
-  const selectedIndex = state.emailCampaignBlocks.findIndex((item) => item.id === state.emailCampaignSelectedBlockId);
-  const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : state.emailCampaignBlocks.length;
-  state.emailCampaignBlocks.splice(insertAt, 0, block);
-  state.emailCampaignSelectedBlockId = block.id;
-  renderEmailCampaignPreview();
-}
-
-function moveEmailCampaignBlock(id, direction) {
-  const index = state.emailCampaignBlocks.findIndex((block) => block.id === id);
-  const target = index + direction;
-  if (index < 0 || target < 0 || target >= state.emailCampaignBlocks.length) return;
-  const [block] = state.emailCampaignBlocks.splice(index, 1);
-  state.emailCampaignBlocks.splice(target, 0, block);
-  renderEmailCampaignPreview();
-}
-
-function duplicateEmailCampaignBlock(id) {
-  const index = state.emailCampaignBlocks.findIndex((block) => block.id === id);
-  if (index < 0) return;
-  const block = { ...structuredClone(state.emailCampaignBlocks[index]), id: campaignBlockId(), role: "" };
-  state.emailCampaignBlocks.splice(index + 1, 0, block);
-  state.emailCampaignSelectedBlockId = block.id;
-  renderEmailCampaignPreview();
-}
-
-function removeEmailCampaignBlock(id) {
-  const index = state.emailCampaignBlocks.findIndex((block) => block.id === id);
-  if (index < 0) return;
-  state.emailCampaignBlocks.splice(index, 1);
-  state.emailCampaignSelectedBlockId = state.emailCampaignBlocks[Math.min(index, state.emailCampaignBlocks.length - 1)]?.id || "";
-  renderEmailCampaignPreview();
-}
-
 function emailCampaignPayload(action = "draft") {
   const brand = {
     name: $("emailBrandName")?.value.trim() || "Cine Cruzeiro",
@@ -5652,6 +5590,7 @@ function emailCampaignPayload(action = "draft") {
     ctaLabel: $("emailCampaignCtaLabel")?.value.trim() || "",
     ctaUrl: campaignTemplateAbsoluteUrl($("emailCampaignCtaUrl")?.value) || "",
     recipientMode: $("emailCampaignAudience")?.value || "all",
+    reactivationDays: Number($("emailCampaignReactivationDays")?.value || 90),
     customerIds: [...state.emailCampaignSelectedIds],
     recipientSearch: $("emailCampaignRecipientSearch")?.value.trim() || "",
     couponId: $("emailCampaignCoupon")?.value || "",
@@ -5681,7 +5620,9 @@ async function refreshEmailCampaignRecipients() {
   $("emailCampaignRecipientCount").textContent = `${result.count || 0} destinatário(s) elegível(is)`;
   $("emailCampaignReviewRecipients").textContent = String(result.count || 0);
   const list = $("emailCampaignRecipients");
-  const manual = payload.recipientMode === "selected";
+  const manual = ["selected", "birthday_manual"].includes(payload.recipientMode);
+  if ($("emailCampaignReactivationField")) $("emailCampaignReactivationField").hidden = payload.recipientMode !== "reactivation";
+  if ($("emailCampaignBirthdayNotice")) $("emailCampaignBirthdayNotice").hidden = payload.recipientMode !== "birthday_manual";
   list.hidden = !manual;
   if (manual) {
     const term = normalizedSearchText(payload.recipientSearch);
@@ -5721,8 +5662,11 @@ function campaignPreviewVariables() {
 function campaignAudienceLabel(value = "all") {
   return {
     all: "Todos os clientes com marketing ativo",
-    active: "Clientes ativos",
+    active: "Clientes ativos recentemente",
+    recent: "Clientes ativos recentemente",
     purchased: "Clientes com compras aprovadas",
+    reactivation: "Clientes sem comprar no período escolhido",
+    birthday_manual: "Aniversariantes selecionados manualmente",
     selected: "Clientes selecionados manualmente"
   }[String(value || "all")] || "Todos os clientes com marketing ativo";
 }
@@ -6213,212 +6157,6 @@ function campaignColor(value, fallback) {
   return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
 }
 
-function campaignBlockTypeLabel(type) {
-  return { logo: "Logo", kicker: "Marcador", heading: "Título", text: "Texto", image: "Imagem", button: "Botão", divider: "Divisor", icon: "Ícone", social: "Redes sociais", signature: "Assinatura", spacer: "Espaço" }[type] || "Bloco";
-}
-
-function campaignBlockAlign(value) {
-  return ["left", "center", "right"].includes(value) ? value : "left";
-}
-
-function campaignBlockNumber(value, min, max, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
-}
-
-function renderCampaignComposeBlock(block) {
-  const selected = block.id === state.emailCampaignSelectedBlockId;
-  const align = campaignBlockAlign(block.align);
-  const color = campaignColor(block.color, block.type === "heading" ? "#ffffff" : "#dbeafe");
-  const content = interpolateCampaignPreview(block.content || "");
-  let inner = "";
-  if (block.type === "logo" || block.type === "image" || block.type === "icon") {
-    const src = campaignSafeUrl(interpolateCampaignPreview(block.url));
-    const link = campaignSafeUrl(interpolateCampaignPreview(block.link));
-    const width = campaignBlockNumber(block.width, block.type === "icon" ? 4 : 10, 100, block.type === "logo" ? 28 : block.type === "icon" ? 12 : 70);
-    const image = src ? `<img class="campaign-compose-${block.type}" src="${escapeHtml(src)}" alt="${escapeHtml(interpolateCampaignPreview(block.alt || campaignBlockTypeLabel(block.type)))}" style="width:${width}%" />` : `<span class="campaign-compose-missing">Selecione uma imagem</span>`;
-    inner = `<div style="text-align:${align}">${link ? `<a href="${escapeHtml(link)}">${image}</a>` : image}</div>`;
-  } else if (block.type === "heading") {
-    inner = `<h2 style="text-align:${align};color:${color};font-size:${campaignBlockNumber(block.fontSize, 18, 42, 28)}px">${content || "Título da campanha"}</h2>`;
-  } else if (block.type === "kicker") {
-    inner = `<p class="campaign-compose-kicker" style="text-align:${align};color:${color};font-size:${campaignBlockNumber(block.fontSize, 9, 16, 12)}px">${content || "PROGRAMAÇÃO"}</p>`;
-  } else if (block.type === "text" || block.type === "signature") {
-    inner = `<p class="${block.type === "signature" ? "campaign-compose-signature" : ""}" style="text-align:${align};color:${color};font-size:${campaignBlockNumber(block.fontSize, 11, 24, block.type === "signature" ? 14 : 15)}px">${(content || "Escreva seu texto.").replace(/\n/g, "<br>")}</p>`;
-  } else if (block.type === "button") {
-    const url = campaignSafeUrl(interpolateCampaignPreview(block.url));
-    const background = campaignColor(block.backgroundColor, "#facc15");
-    inner = `<div style="text-align:${align}"><a class="campaign-preview-cta" href="${escapeHtml(url || "#")}" style="background:${background};color:${color}">${content || "Abrir"}</a></div>`;
-  } else if (block.type === "divider") {
-    inner = `<hr style="width:${campaignBlockNumber(block.width, 10, 100, 100)}%;border-color:${color}" />`;
-  } else if (block.type === "social") {
-    const links = (block.links || []).filter((item) => item.label || item.url).map((item) => {
-      const url = campaignSafeUrl(interpolateCampaignPreview(item.url));
-      return `<a href="${escapeHtml(url || "#")}" style="color:${color}">${escapeHtml(item.label || "Rede social")}</a>`;
-    }).join("");
-    inner = `<div class="campaign-compose-social" style="text-align:${align}">${links || "Configure os links sociais"}</div>`;
-  } else if (block.type === "spacer") {
-    inner = `<div class="campaign-compose-spacer" style="height:${campaignBlockNumber(block.height, 8, 80, 24)}px"><span>Espaço</span></div>`;
-  }
-  return `<div class="campaign-compose-block ${selected ? "selected" : ""}" data-campaign-compose-block="${escapeHtml(block.id)}" data-block-type="${escapeHtml(campaignBlockTypeLabel(block.type))}" draggable="true" tabindex="0" role="button" aria-label="Editar bloco ${escapeHtml(campaignBlockTypeLabel(block.type))}"><span class="campaign-compose-block-label">${escapeHtml(campaignBlockTypeLabel(block.type))}</span>${inner}</div>`;
-}
-
-function campaignInspectorContent(block) {
-  if (["heading", "kicker", "button"].includes(block.type)) return `<label>Conteúdo<input data-campaign-block-field="content" value="${escapeHtml(block.content || "")}" /></label>`;
-  if (["text", "signature"].includes(block.type)) return `<label>Conteúdo<textarea data-campaign-block-field="content" rows="4">${escapeHtml(block.content || "")}</textarea></label>`;
-  return "";
-}
-
-function campaignInspectorMedia(block) {
-  if (!["logo", "image", "icon"].includes(block.type)) return "";
-  const movies = (state.content?.movies || []).filter((movie) => movie.posterUrl);
-  const selectedMovie = movies.find((movie) => movie.posterUrl === block.url)?.id || "";
-  return `<div class="field-row"><label>Imagem do catálogo<select data-campaign-block-movie><option value="">Imagem personalizada</option>${movies.map((movie) => `<option value="${escapeHtml(movie.id)}" ${movie.id === selectedMovie ? "selected" : ""}>${escapeHtml(movie.title)}</option>`).join("")}</select></label><label>Enviar imagem<input data-campaign-block-upload type="file" accept="image/jpeg,image/png,image/webp" /></label></div><label>URL da imagem<input data-campaign-block-field="url" value="${escapeHtml(block.url || "")}" placeholder="https://... ou /uploads/..." /></label><div class="field-row"><label>Texto alternativo<input data-campaign-block-field="alt" value="${escapeHtml(block.alt || "")}" /></label><label>Link ao clicar<input data-campaign-block-field="link" value="${escapeHtml(block.link || "")}" placeholder="https://... (opcional)" /></label></div>`;
-}
-
-function campaignInspectorSocial(block) {
-  if (block.type !== "social") return "";
-  return `<div class="campaign-social-editor">${(block.links || []).map((item, index) => `<div class="field-row"><label>Nome<input data-campaign-social-field="label" data-campaign-social-index="${index}" value="${escapeHtml(item.label || "")}" /></label><label>Link<input data-campaign-social-field="url" data-campaign-social-index="${index}" value="${escapeHtml(item.url || "")}" placeholder="https://..." /></label></div>`).join("")}</div>`;
-}
-
-function renderEmailCampaignBlockInspector() {
-  const inspector = $("emailCampaignBlockInspector");
-  if (!inspector) return;
-  const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
-  if (!block) {
-    inspector.innerHTML = `<div class="campaign-inspector-empty"><strong>Selecione um bloco</strong><span>Clique no conteúdo da prévia para ajustar posição, estilo e conteúdo.</span></div>`;
-    return;
-  }
-  const index = state.emailCampaignBlocks.indexOf(block);
-  const hasColor = ["heading", "kicker", "text", "button", "divider", "social", "signature"].includes(block.type);
-  const hasFontSize = ["heading", "kicker", "text", "signature"].includes(block.type);
-  const hasWidth = ["logo", "image", "icon", "divider"].includes(block.type);
-  const hasAlignment = block.type !== "divider" && block.type !== "spacer";
-  inspector.innerHTML = `<div class="campaign-inspector-head"><div><span>Bloco selecionado</span><strong>${escapeHtml(campaignBlockTypeLabel(block.type))}</strong></div><div class="campaign-inspector-actions"><button type="button" class="ghost-button" data-campaign-block-move="-1" ${index === 0 ? "disabled" : ""}>Subir</button><button type="button" class="ghost-button" data-campaign-block-move="1" ${index === state.emailCampaignBlocks.length - 1 ? "disabled" : ""}>Descer</button><button type="button" class="ghost-button" data-campaign-block-duplicate>Duplicar</button><button type="button" class="ghost-button danger-button" data-campaign-block-remove>Excluir</button></div></div>${campaignInspectorContent(block)}${campaignInspectorMedia(block)}${campaignInspectorSocial(block)}${block.type === "button" ? `<label>Link do botão<input data-campaign-block-field="url" value="${escapeHtml(block.url || "")}" placeholder="https://..." /></label>` : ""}${hasAlignment ? `<div class="campaign-inspector-group"><span>Alinhamento</span><div class="campaign-align-switch"><button type="button" data-campaign-block-align="left" class="${campaignBlockAlign(block.align) === "left" ? "active" : ""}">Esquerda</button><button type="button" data-campaign-block-align="center" class="${campaignBlockAlign(block.align) === "center" ? "active" : ""}">Centro</button><button type="button" data-campaign-block-align="right" class="${campaignBlockAlign(block.align) === "right" ? "active" : ""}">Direita</button></div></div>` : ""}<div class="campaign-inspector-grid">${hasColor ? `<label>Cor<input data-campaign-block-field="color" type="color" value="${campaignColor(block.color, block.type === "button" ? "#020617" : "#dbeafe")}" /></label>` : ""}${block.type === "button" ? `<label>Fundo do botão<input data-campaign-block-field="backgroundColor" type="color" value="${campaignColor(block.backgroundColor, "#facc15")}" /></label>` : ""}${hasFontSize ? `<label>Tamanho <output>${campaignBlockNumber(block.fontSize, 9, 42, 15)} px</output><input data-campaign-block-field="fontSize" type="range" min="${block.type === "kicker" ? 9 : 11}" max="${block.type === "heading" ? 42 : 24}" value="${campaignBlockNumber(block.fontSize, 9, 42, 15)}" /></label>` : ""}${hasWidth ? `<label>Largura <output>${campaignBlockNumber(block.width, 4, 100, 70)}%</output><input data-campaign-block-field="width" type="range" min="${block.type === "icon" ? 4 : 10}" max="100" value="${campaignBlockNumber(block.width, 4, 100, 70)}" /></label>` : ""}${block.type === "spacer" ? `<label>Altura <output>${campaignBlockNumber(block.height, 8, 80, 24)} px</output><input data-campaign-block-field="height" type="range" min="8" max="80" value="${campaignBlockNumber(block.height, 8, 80, 24)}" /></label>` : ""}</div>`;
-}
-
-function campaignBlockForRole(role, type, create = false) {
-  let block = state.emailCampaignBlocks.find((item) => item.role === role);
-  if (!block && create) {
-    block = campaignBlockDefaults(type, role);
-    state.emailCampaignBlocks.push(block);
-  }
-  return block;
-}
-
-function syncCampaignBlockFromFormField(id) {
-  if (!state.emailCampaignBlocksInitialized) return;
-  const value = $(id)?.value || "";
-  const update = (role, type, field, nextValue = value) => {
-    const block = campaignBlockForRole(role, type, Boolean(nextValue));
-    if (block) block[field] = nextValue;
-  };
-  if (id === "emailCampaignHeadline") update("headline", "heading", "content");
-  if (id === "emailCampaignSubject" && !$("emailCampaignHeadline")?.value) update("headline", "heading", "content");
-  if (id === "emailCampaignMessage") update("message", "text", "content");
-  if (id === "emailCampaignImageUrl") update("hero-image", "image", "url");
-  if (id === "emailCampaignImageAlt") update("hero-image", "image", "alt");
-  if (id === "emailCampaignImageLink") update("hero-image", "image", "link");
-  if (id === "emailCampaignCtaLabel") update("cta", "button", "content");
-  if (id === "emailCampaignCtaUrl") update("cta", "button", "url");
-  if (id === "emailBrandLogoUrl") update("brand-logo", "logo", "url");
-  if (id === "emailBrandName") update("brand-logo", "logo", "alt");
-  if (id === "emailBrandFooter") update("signature", "signature", "content");
-  if (id === "emailCampaignHeadlineColor") update("headline", "heading", "color");
-  if (id === "emailCampaignTextColor") update("message", "text", "color");
-  if (id === "emailCampaignButtonColor") update("cta", "button", "backgroundColor");
-}
-
-function syncCampaignFormFromBlock(block) {
-  const set = (id, value) => { if ($(id)) $(id).value = value || ""; };
-  if (block.role === "headline") {
-    set("emailCampaignHeadline", block.content);
-    set("emailCampaignHeadlineColor", block.color);
-    set("emailCampaignHeadlineColorValue", block.color);
-  }
-  if (block.role === "message") {
-    set("emailCampaignMessage", block.content);
-    set("emailCampaignTextColor", block.color);
-    set("emailCampaignTextColorValue", block.color);
-  }
-  if (block.role === "hero-image") {
-    set("emailCampaignImageUrl", block.url);
-    set("emailCampaignImageAlt", block.alt);
-    set("emailCampaignImageLink", block.link);
-  }
-  if (block.role === "cta") {
-    set("emailCampaignCtaLabel", block.content);
-    set("emailCampaignCtaUrl", block.url);
-    set("emailCampaignButtonColor", block.backgroundColor);
-    set("emailCampaignButtonColorValue", block.backgroundColor);
-  }
-  if (block.role === "brand-logo") {
-    set("emailBrandLogoUrl", block.url);
-    set("emailBrandName", block.alt);
-  }
-  if (block.role === "signature") set("emailBrandFooter", block.content);
-}
-
-function updateSelectedCampaignBlock(field, value) {
-  const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
-  if (!block) return;
-  if (["fontSize", "width", "height"].includes(field)) block[field] = Number(value);
-  else block[field] = value;
-  syncCampaignFormFromBlock(block);
-  renderEmailCampaignPreview({ inspector: false });
-}
-
-async function uploadSelectedCampaignBlockImage(input) {
-  const file = input?.files?.[0];
-  const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
-  if (!file || !block) return;
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-    showToast("Use JPG, PNG ou WebP.", "error");
-    input.value = "";
-    return;
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    showToast("Imagem muito grande. Limite de 5 MB.", "error");
-    input.value = "";
-    return;
-  }
-  try {
-    input.disabled = true;
-    const data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    const result = await api("/api/uploads/images", {
-      method: "POST",
-      body: JSON.stringify({ data, filename: file.name, contentType: file.type, folder: "email-campaign" })
-    });
-    block.url = cleanAdminAssetUrl(result.url || result.publicUrl || "");
-    if (!block.alt) block.alt = file.name.replace(/\.[^.]+$/, "");
-    syncCampaignFormFromBlock(block);
-    renderEmailCampaignPreview();
-    showToast("Imagem adicionada ao e-mail.");
-  } catch (error) {
-    showToast(error.message, "error");
-  } finally {
-    input.disabled = false;
-    input.value = "";
-  }
-}
-
-function reorderEmailCampaignBlock(sourceId, targetId, after) {
-  if (!sourceId || !targetId || sourceId === targetId) return;
-  const source = state.emailCampaignBlocks.find((block) => block.id === sourceId);
-  if (!source) return;
-  const remaining = state.emailCampaignBlocks.filter((block) => block.id !== sourceId);
-  const targetIndex = remaining.findIndex((block) => block.id === targetId);
-  if (targetIndex < 0) return;
-  remaining.splice(targetIndex + (after ? 1 : 0), 0, source);
-  state.emailCampaignBlocks = remaining;
-  state.emailCampaignSelectedBlockId = sourceId;
-  renderEmailCampaignPreview();
-}
-
 function renderEmailCampaignPreview(options = {}) {
   const preview = $("emailCampaignPreview");
   if (!preview) return;
@@ -6458,82 +6196,19 @@ function bindCampaignColorControls() {
     const color = $(colorId);
     const value = $(valueId);
     if (!color || !value) return;
-    color.addEventListener("input", () => { value.value = color.value; syncCampaignBlockFromFormField(colorId); renderEmailCampaignPreview(); });
+    color.addEventListener("input", () => { value.value = color.value; renderEmailCampaignPreview(); });
     value.addEventListener("input", () => {
       const normalized = campaignColor(value.value, "");
       if (!normalized) return;
       color.value = normalized;
-      syncCampaignBlockFromFormField(colorId);
       renderEmailCampaignPreview();
     });
     value.addEventListener("blur", () => {
       value.value = campaignColor(value.value, color.value || fallback);
       color.value = value.value;
-      syncCampaignBlockFromFormField(colorId);
       renderEmailCampaignPreview();
     });
   });
-}
-
-function campaignHtmlTemplate() {
-  return `<section style="padding:24px;background:#0d1728;color:#dbeafe;text-align:left">
-  <p style="margin:0 0 10px;color:#60a5fa;font-size:12px;font-weight:700;text-transform:uppercase">PROGRAMAÇÃO</p>
-  <h2 style="margin:0 0 16px;color:#ffffff;font-size:28px;line-height:1.2">Olá, {{nome}}</h2>
-  <p style="margin:0 0 18px;font-size:15px;line-height:1.6">Escreva aqui a mensagem da campanha.</p>
-  <a href="{{link_cupom}}" style="display:inline-block;padding:13px 18px;background:#facc15;color:#020617;text-decoration:none;font-weight:700">Ver programação</a>
-</section>`;
-}
-
-function campaignHtmlSnippet(type) {
-  return {
-    section: `<section style="padding:24px;background:#0d1728;color:#dbeafe">\n  Conteúdo da seção\n</section>`,
-    heading: `<h2 style="margin:0 0 16px;color:#ffffff;font-size:28px;line-height:1.2">Título da campanha</h2>`,
-    text: `<p style="margin:0 0 16px;color:#dbeafe;font-size:15px;line-height:1.6">Escreva seu texto aqui.</p>`,
-    image: `<img src="https://" alt="Descrição da imagem" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0">`,
-    button: `<a href="https://" style="display:inline-block;padding:13px 18px;background:#facc15;color:#020617;text-decoration:none;font-weight:700">Abrir</a>`,
-    columns: `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">\n  <tr>\n    <td width="50%" style="padding:8px;vertical-align:top">Coluna 1</td>\n    <td width="50%" style="padding:8px;vertical-align:top">Coluna 2</td>\n  </tr>\n</table>`,
-    divider: `<hr style="margin:20px 0;border:0;border-top:1px solid #334155">`
-  }[type] || "";
-}
-
-function updateCampaignHtmlEditor() {
-  const editor = $("emailCampaignHtml");
-  const lines = $("emailCampaignHtmlLines");
-  const status = $("emailCampaignHtmlStatus");
-  if (!editor) return;
-  const lineCount = Math.max(1, editor.value.split("\n").length);
-  if (lines) {
-    lines.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
-    lines.scrollTop = editor.scrollTop;
-  }
-  if (!status) return;
-  const hasBlockedTags = /<(script|iframe|object|embed|form)\b/i.test(editor.value);
-  const hasUnsafeAttrs = /\son[a-z]+\s*=|(?:href|src)\s*=\s*["']\s*(?:javascript|data|vbscript):/i.test(editor.value);
-  status.textContent = !editor.value.trim() ? "HTML vazio" : hasBlockedTags || hasUnsafeAttrs ? "Há conteúdo que será removido por segurança" : `${lineCount} linha${lineCount === 1 ? "" : "s"} · pronto para prévia`;
-  status.classList.toggle("warning", hasBlockedTags || hasUnsafeAttrs);
-}
-
-function insertCampaignHtml(value) {
-  const editor = $("emailCampaignHtml");
-  if (!editor || !value) return;
-  const start = editor.selectionStart;
-  const end = editor.selectionEnd;
-  const separator = start && !editor.value.slice(0, start).endsWith("\n") ? "\n" : "";
-  editor.setRangeText(`${separator}${value}`, start, end, "end");
-  editor.dispatchEvent(new Event("input", { bubbles: true }));
-  editor.focus();
-}
-
-function formatCampaignHtml(value) {
-  const tokens = String(value || "").replace(/>\s*</g, ">\n<").split("\n").map((item) => item.trim()).filter(Boolean);
-  let depth = 0;
-  const voidTag = /^<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b/i;
-  return tokens.map((token) => {
-    if (/^<\//.test(token)) depth = Math.max(0, depth - 1);
-    const line = `${"  ".repeat(depth)}${token}`;
-    if (/^<[^!/][^>]*>$/.test(token) && !/^<\//.test(token) && !/\/>$/.test(token) && !voidTag.test(token) && !/<\/[^>]+>$/.test(token)) depth += 1;
-    return line;
-  }).join("\n");
 }
 
 function sanitizeCampaignHtmlPreview(value) {
@@ -6547,54 +6222,6 @@ function sanitizeCampaignHtmlPreview(value) {
     });
   });
   return documentPreview.body.innerHTML;
-}
-
-function campaignLegacyBlockHtml(block = {}) {
-  const align = campaignBlockAlign(block.align);
-  const color = campaignColor(block.color, block.type === "heading" ? "#ffffff" : "#dbeafe");
-  const content = escapeHtml(block.content || "").replace(/\n/g, "<br>");
-  const role = block.role ? ` data-cc-role="${escapeHtml(block.role)}"` : "";
-  if (["logo", "image", "icon"].includes(block.type)) {
-    const width = campaignBlockNumber(block.width, 4, 100, block.type === "icon" ? 12 : 70);
-    const src = campaignEditorAssetUrl(block.url);
-    if (!src) return "";
-    const image = `<img${role} src="${escapeHtml(src)}" alt="${escapeHtml(block.alt || "Imagem")}" style="display:inline-block;width:${width}%;max-width:100%;height:auto;border:0">`;
-    const link = campaignSafeUrl(block.link);
-    return `<div style="margin:0 0 16px;text-align:${align}">${link ? `<a href="${escapeHtml(link)}">${image}</a>` : image}</div>`;
-  }
-  if (block.type === "heading") return `<h2${role} style="margin:0 0 16px;color:${color};font-size:${campaignBlockNumber(block.fontSize, 18, 42, 28)}px;line-height:1.2;text-align:${align}">${content}</h2>`;
-  if (block.type === "kicker") return `<p${role} style="margin:0 0 10px;color:${color};font-size:${campaignBlockNumber(block.fontSize, 9, 16, 12)}px;font-weight:800;text-align:${align}">${content}</p>`;
-  if (["text", "signature"].includes(block.type)) return `<p${role} style="margin:0 0 16px;color:${color};font-size:${campaignBlockNumber(block.fontSize, 11, 24, 15)}px;line-height:1.6;text-align:${align}">${content}</p>`;
-  if (block.type === "button") return `<div style="margin:0 0 16px;text-align:${align}"><a href="${escapeHtml(block.url || "#")}" style="display:inline-block;padding:13px 18px;background:${campaignColor(block.backgroundColor, "#facc15")};color:${color};text-decoration:none;font-weight:800">${content || "Abrir"}</a></div>`;
-  if (block.type === "divider") return `<div style="margin:8px 0 20px;border-top:1px solid ${color};width:${campaignBlockNumber(block.width, 10, 100, 100)}%"></div>`;
-  if (block.type === "spacer") return `<div style="height:${campaignBlockNumber(block.height, 8, 80, 24)}px;line-height:0">&nbsp;</div>`;
-  if (block.type === "social") return `<p style="margin:0 0 16px;text-align:${align}">${(block.links || []).map((item) => `<a href="${escapeHtml(item.url || "#")}" style="margin-right:12px;color:${color}">${escapeHtml(item.label || "Rede social")}</a>`).join("")}</p>`;
-  return "";
-}
-
-function campaignLegacyBlocksHtml() {
-  ensureEmailCampaignBlocks();
-  if ($("emailBrandLogoUrl")?.value && !state.emailCampaignBlocks.some((block) => block.role === "brand-logo")) {
-    state.emailCampaignBlocks.unshift(campaignBlockDefaults("logo", "brand-logo"));
-  }
-  const body = state.emailCampaignBlocks.map(campaignLegacyBlockHtml).join("");
-  return body || campaignHtmlTemplate();
-}
-
-function campaignCinemaTemplateHtml() {
-  const blocks = [];
-  const logo = campaignBlockDefaults("logo", "brand-logo");
-  if (logo.url) blocks.push(logo);
-  blocks.push(campaignBlockDefaults("kicker", "kicker"));
-  blocks.push(campaignBlockDefaults("heading", "headline"));
-  const image = campaignBlockDefaults("image", "hero-image");
-  if (image.url) blocks.push(image);
-  blocks.push(campaignBlockDefaults("text", "message"));
-  const button = campaignBlockDefaults("button", "cta");
-  if (button.url || $("emailCampaignCtaLabel")?.value) blocks.push(button);
-  const footer = String($("emailBrandFooter")?.value || "").trim();
-  if (footer) blocks.push({ ...campaignBlockDefaults("signature", "signature"), content: footer });
-  return `<table role="presentation" style="width:100%;max-width:620px;margin:0 auto;background:#0d1728"><tbody><tr><td style="padding:28px 26px">${blocks.map(campaignLegacyBlockHtml).join("")}</td></tr></tbody></table>`;
 }
 
 function renderEmailBrandLogoPreview() {
@@ -6638,15 +6265,26 @@ async function saveEmailCampaign(event, action = "draft") {
     if (action === "send" && campaignTemplateDefinition().coupon && !$("emailCampaignCoupon")?.value) throw new Error("Selecione o cupom que será aplicado neste modelo.");
     if (action === "send" && campaignTemplateDefinition().catalog && !selectedCampaignCatalogItem()) throw new Error("Selecione o conteúdo do catálogo que será apresentado neste modelo.");
     const payload = emailCampaignPayload(action);
+    if (action === "send") {
+      const estimate = await api("/api/admin/email/campaigns/preview", { method: "POST", body: JSON.stringify(payload) });
+      const count = Number(estimate.count || 0);
+      if (count >= 500) {
+        const confirmation = window.prompt(`Esta campanha será enviada para aproximadamente ${count.toLocaleString("pt-BR")} clientes. Mensagens já enviadas não poderão ser interrompidas. Digite ENVIAR para confirmar.`);
+        if (confirmation !== "ENVIAR") return;
+      }
+    }
     const path = state.emailCampaignDraftId ? `/api/admin/email/campaigns/${encodeURIComponent(state.emailCampaignDraftId)}` : "/api/admin/email/campaigns";
-    const result = await api(path, { method: state.emailCampaignDraftId ? "PUT" : "POST", body: JSON.stringify(payload) });
+    let result = await api(path, { method: state.emailCampaignDraftId ? "PUT" : "POST", body: JSON.stringify(payload) });
+    if (action === "send" && state.emailCampaignDraftId) {
+      result = await api(`/api/admin/email/campaigns/${encodeURIComponent(state.emailCampaignDraftId)}/send`, { method: "POST" });
+    }
     state.emailCampaignDraftId = result.campaign?.id || state.emailCampaignDraftId;
     if (action === "send") {
       state.emailCampaignDraftId = "";
       state.emailCampaignIdempotencyKey = randomClientId("campanha");
     }
     if (resultNode) resultNode.textContent = action === "send" ? "Campanha colocada na fila de envio." : "Rascunho salvo.";
-    await loadContent({ silent: true });
+    await loadEmailCampaignHistory({ silent: true });
     showToast(action === "send" ? "Campanha enfileirada" : "Rascunho salvo");
   } catch (error) {
     showToast(error.message, "error");
@@ -6671,42 +6309,73 @@ async function sendEmailCampaignTest() {
   }
 }
 
+async function loadEmailCampaignHistory(options = {}) {
+  const params = new URLSearchParams({
+    page: String(state.emailCampaignHistoryPage || 1),
+    pageSize: String(state.emailCampaignHistoryPageSize || 25)
+  });
+  if (state.emailCampaignHistoryFilter && state.emailCampaignHistoryFilter !== "all") params.set("status", state.emailCampaignHistoryFilter);
+  if (state.emailCampaignHistoryOrigin) params.set("origin", state.emailCampaignHistoryOrigin);
+  if (state.emailCampaignHistorySearch) params.set("search", state.emailCampaignHistorySearch);
+  if (!options.silent && $("emailCampaignHistory")) $("emailCampaignHistory").innerHTML = `<div class="skeleton-card compact"></div>`;
+  const result = await api(`/api/admin/email/campaigns?${params.toString()}`);
+  state.content ||= {};
+  state.content.emailCampaigns = result.campaigns || [];
+  state.emailCampaignHistoryMeta = result;
+  renderEmailCampaigns();
+}
+
+function campaignHistoryCount(filter, totals = {}) {
+  if (filter === "drafts") return Number(totals.draft || 0);
+  if (filter === "scheduled") return Number(totals.scheduled || 0);
+  if (filter === "processing") return Number(totals.queued || 0) + Number(totals.sending || 0);
+  if (filter === "completed") return Number(totals.completed || 0) + Number(totals.sent || 0);
+  if (filter === "errors") return Number(totals.completed_with_errors || 0) + Number(totals.failed || 0);
+  if (filter === "cancelled") return Number(totals.cancelled || 0);
+  return Object.values(totals).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
 function renderEmailCampaigns() {
   const history = $("emailCampaignHistory");
   if (!history) return;
   const controls = $("emailCampaignHistoryControls");
   const pager = $("emailCampaignHistoryPager");
   const filter = state.emailCampaignHistoryFilter || "all";
-  const allCampaigns = state.content?.emailCampaigns || [];
-  const campaigns = allCampaigns.filter((item) => emailCampaignHistoryMatchesFilter(item, filter));
-  const pageSize = state.emailCampaignHistoryPageSize || 6;
-  const totalPages = Math.max(1, Math.ceil(campaigns.length / pageSize));
-  state.emailCampaignHistoryPage = Math.min(Math.max(1, state.emailCampaignHistoryPage || 1), totalPages);
-  const page = state.emailCampaignHistoryPage;
-  const visibleCampaigns = campaigns.slice((page - 1) * pageSize, page * pageSize);
+  const campaigns = state.content?.emailCampaigns || [];
+  const meta = state.emailCampaignHistoryMeta || { page: 1, pages: 1, pageSize: state.emailCampaignHistoryPageSize, total: campaigns.length, totals: {} };
+  const page = Number(meta.page || 1);
+  const pageSize = Number(meta.pageSize || state.emailCampaignHistoryPageSize || 25);
+  const totalPages = Number(meta.pages || 1);
   if (controls) {
     controls.innerHTML = EMAIL_CAMPAIGN_HISTORY_FILTERS.map(([value, label]) => {
-      const count = allCampaigns.filter((item) => emailCampaignHistoryMatchesFilter(item, value)).length;
+      const count = campaignHistoryCount(value, meta.totals || {});
       const active = value === filter;
       return `<button type="button" class="${active ? "active" : ""}" data-campaign-history-filter="${value}" aria-pressed="${active}"><span>${escapeHtml(label)}</span><strong>${count}</strong></button>`;
     }).join("");
   }
-  history.innerHTML = visibleCampaigns.length ? visibleCampaigns.map((item) => {
-    const delivery = item.status === "sent" || item.status === "failed"
-      ? `${item.sent || 0} enviados · ${item.failed || 0} falhas`
-      : `${item.customerCount || 0} destinatários`;
-    const unsupported = item.metricsSupported?.opened || item.metricsSupported?.clicked ? "" : " · aberturas/cliques não rastreados pelo provedor";
+  history.innerHTML = campaigns.length ? campaigns.map((item) => {
+    const processing = ["queued", "sending"].includes(item.status);
+    const delivery = processing
+      ? `${item.processed || 0} / ${item.customerCount || 0} processados · ${item.sent || 0} enviados · ${item.failed || 0} falhas`
+      : ["completed", "completed_with_errors", "failed", "sent"].includes(item.status)
+        ? `${item.sent || 0} enviados · ${item.failed || 0} falhas`
+        : `${item.customerCount || 0} destinatários`;
+    const unsupported = item.metricsSupported?.opened || item.metricsSupported?.clicked ? "" : " · abertura e clique indisponíveis";
     const linked = emailCampaignHistoryLinkedLabel(item);
     const template = emailCampaignTemplateLabel(item.templateId || "announcement");
     const context = [template, linked].filter(Boolean).join(" · ");
     const subject = item.subject || "Sem assunto";
-    return `<div class="campaign-history-row"><div class="campaign-history-main"><strong>${escapeHtml(subject)}</strong><small>${escapeHtml(context ? `${context} · ${delivery}${unsupported}` : `${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions">${item.aiGenerated ? `<span class="campaign-history-ai">IA</span>` : ""}<span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button class="icon-button campaign-history-menu-button" type="button" data-floating-menu-trigger onclick="toggleEmailCampaignMenu('${escapeHtml(item.id)}', event)" aria-label="Ações de ${escapeHtml(subject)}" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button></div></div>`;
+    return `<div class="campaign-history-row"><div class="campaign-history-main"><strong>${escapeHtml(subject)}</strong><small>${escapeHtml(context ? `${context} · ${delivery}${unsupported}` : `${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions">${item.aiGenerated ? `<span class="campaign-history-ai">IA</span>` : ""}<span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", completed: "Concluída", completed_with_errors: "Concluída com falhas", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button class="icon-button campaign-history-menu-button" type="button" data-floating-menu-trigger onclick="toggleEmailCampaignMenu('${escapeHtml(item.id)}', event)" aria-label="Ações de ${escapeHtml(subject)}" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button></div></div>`;
   }).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
   if (pager) {
-    const start = campaigns.length ? (page - 1) * pageSize + 1 : 0;
-    const end = Math.min(page * pageSize, campaigns.length);
-    pager.innerHTML = `<span>${start}-${end} de ${campaigns.length}</span><div><button type="button" class="ghost-button" data-campaign-history-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>Anterior</button><button type="button" class="ghost-button" data-campaign-history-page="${page + 1}" ${page >= totalPages ? "disabled" : ""}>Próxima</button></div>`;
+    const start = Number(meta.total || 0) ? (page - 1) * pageSize + 1 : 0;
+    const end = Math.min(page * pageSize, Number(meta.total || 0));
+    pager.innerHTML = `<span>${start}-${end} de ${Number(meta.total || 0)}</span><div><button type="button" class="ghost-button" data-campaign-history-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>Anterior</button><button type="button" class="ghost-button" data-campaign-history-page="${page + 1}" ${page >= totalPages ? "disabled" : ""}>Próxima</button></div>`;
   }
+  clearTimeout(state.emailCampaignHistoryTimer);
+  state.emailCampaignHistoryTimer = campaigns.some((item) => ["queued", "sending"].includes(item.status))
+    ? setTimeout(() => void loadEmailCampaignHistory({ silent: true }).catch(() => null), 5000)
+    : null;
 }
 
 function setCampaignField(id, value) {
@@ -6742,9 +6411,6 @@ async function editEmailCampaign(id) {
     state.emailCampaignAttachments = campaign.attachments || [];
     state.emailCampaignVariables = campaign.variables || {};
     state.emailCampaignConcessionIds = (campaign.concessionIds || (campaign.concessionId ? [campaign.concessionId] : [])).map(String);
-    state.emailCampaignBlocks = Array.isArray(campaign.contentBlocks) ? structuredClone(campaign.contentBlocks) : [];
-    state.emailCampaignBlocksInitialized = state.emailCampaignBlocks.length > 0;
-    state.emailCampaignSelectedBlockId = state.emailCampaignBlocks[0]?.id || "";
     setCampaignField("emailCampaignSubject", campaign.subject);
     setCampaignField("emailCampaignTemplate", campaign.templateId || "announcement");
     setCampaignField("emailCampaignPreheader", campaign.preheader);
@@ -6754,6 +6420,7 @@ async function editEmailCampaign(id) {
     setCampaignField("emailCampaignCtaLabel", campaign.ctaLabel);
     setCampaignField("emailCampaignCtaUrl", campaign.ctaUrl);
     setCampaignField("emailCampaignAudience", campaign.recipientMode || "all");
+    setCampaignField("emailCampaignReactivationDays", String(campaign.reactivationDays || 90));
     setCampaignField("emailCampaignRecipientSearch", campaign.recipientSearch);
     setCampaignField("emailCampaignScheduleAt", campaign.scheduleAt ? new Date(campaign.scheduleAt).toISOString().slice(0, 16) : "");
     setCampaignField("emailCampaignCoupon", campaign.couponId);
@@ -6794,11 +6461,8 @@ async function deleteEmailCampaign(id) {
       state.emailCampaignIdempotencyKey = randomClientId("campanha");
       state.emailCampaignVariables = {};
       state.emailCampaignAttachments = [];
-      state.emailCampaignBlocks = [];
-      state.emailCampaignBlocksInitialized = false;
-      state.emailCampaignSelectedBlockId = "";
     }
-    await loadContent({ silent: true });
+    await loadEmailCampaignHistory({ silent: true });
     showToast("Rascunho excluído");
   } catch (error) {
     setCampaignDeleteLoading(id, false);
@@ -6809,10 +6473,74 @@ async function deleteEmailCampaign(id) {
 async function duplicateEmailCampaign(id) {
   try {
     await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/duplicate`, { method: "POST" });
-    await loadContent({ silent: true });
+    await loadEmailCampaignHistory({ silent: true });
     showToast("Campanha duplicada como rascunho");
   } catch (error) {
     showToast(error.message, "error");
+  }
+}
+
+async function sendExistingEmailCampaign(id) {
+  if (!window.confirm("Colocar esta campanha na fila de envio agora?")) return;
+  try {
+    await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/send`, { method: "POST" });
+    await loadEmailCampaignHistory({ silent: true });
+    showToast("Campanha colocada na fila");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function cancelEmailCampaign(id) {
+  if (!window.confirm("Cancelar esta campanha? Destinatários ainda pendentes não receberão a mensagem.")) return;
+  try {
+    await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+    await loadEmailCampaignHistory({ silent: true });
+    showToast("Campanha cancelada");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function retryEmailCampaignFailures(id) {
+  if (!window.confirm("Reenviar somente falhas confirmadas e elegíveis? Resultados incertos não serão reenviados.")) return;
+  try {
+    const result = await api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/retry-failures`, { method: "POST" });
+    await loadEmailCampaignHistory({ silent: true });
+    showToast(`${result.retried || 0} destinatário(s) recolocado(s) na fila`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function viewEmailCampaignReport(id) {
+  const target = $("emailCampaignReport");
+  if (!target) return;
+  state.emailCampaignReportId = id;
+  target.hidden = false;
+  target.innerHTML = `<div class="skeleton-card compact"></div>`;
+  target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  try {
+    const [{ campaign }, failed, retryable, unknown] = await Promise.all([
+      api(`/api/admin/email/campaigns/${encodeURIComponent(id)}`),
+      api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/recipients?status=failed&pageSize=100`),
+      api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/recipients?status=retryable_failed&pageSize=100`),
+      api(`/api/admin/email/campaigns/${encodeURIComponent(id)}/recipients?status=unknown&pageSize=100`)
+    ]);
+    if (state.emailCampaignReportId !== id) return;
+    const failures = [...(failed.recipients || []), ...(retryable.recipients || []), ...(unknown.recipients || [])];
+    target.innerHTML = `
+      <div class="campaign-report-head"><div><strong>${escapeHtml(campaign.subject || "Relatório da campanha")}</strong><small>${escapeHtml(campaign.error || "Resultados consolidados a partir dos destinatários persistidos.")}</small></div><button type="button" class="icon-button" aria-label="Fechar relatório" onclick="this.closest('.campaign-report').hidden=true">×</button></div>
+      <div class="campaign-report-grid">
+        <div class="campaign-report-metric"><span>Elegíveis</span><strong>${Number(campaign.customerCount || 0)}</strong></div>
+        <div class="campaign-report-metric"><span>Processados</span><strong>${Number(campaign.processed || 0)}</strong></div>
+        <div class="campaign-report-metric"><span>Enviados</span><strong>${Number(campaign.sent || 0)}</strong></div>
+        <div class="campaign-report-metric"><span>Falhas</span><strong>${Number(campaign.failed || 0)}</strong></div>
+      </div>
+      ${failures.length ? `<div class="campaign-recipient-failures"><strong>Entregas que exigem atenção</strong>${failures.map((item) => `<div class="campaign-recipient-failure"><span>${escapeHtml(item.name || item.email)}</span><span>${escapeHtml(item.provider || "Sem provedor")}</span><span>${escapeHtml(item.lastError || "Falha sem detalhe")}</span><span>${Number(item.attemptCount || 0)} tentativa(s)</span><time>${item.updatedAt ? new Date(item.updatedAt).toLocaleString("pt-BR") : "Sem horário"}</time></div>`).join("")}</div>` : `<div class="empty-state compact"><strong>Nenhuma falha registrada</strong><span>Não há destinatários com erro confirmado ou resultado incerto.</span></div>`}
+    `;
+  } catch (error) {
+    target.innerHTML = `<div class="validation-result error">${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -6911,8 +6639,10 @@ const EMAIL_CAMPAIGN_HISTORY_FILTERS = [
   ["all", "Todos"],
   ["drafts", "Rascunhos"],
   ["scheduled", "Agendadas"],
-  ["sent", "Enviadas"],
-  ["ai", "Criadas por IA"]
+  ["processing", "Em processamento"],
+  ["completed", "Concluídas"],
+  ["errors", "Com falhas"],
+  ["cancelled", "Canceladas"]
 ];
 
 function emailCampaignAiCompatibleTemplates(scenario) {
@@ -6938,10 +6668,12 @@ function emailCampaignHistoryLinkedLabel(item = {}) {
 }
 
 function emailCampaignHistoryMatchesFilter(item, filter) {
-  if (filter === "drafts") return !item.status || ["draft", "failed"].includes(item.status);
-  if (filter === "scheduled") return ["scheduled", "queued", "sending"].includes(item.status);
-  if (filter === "sent") return item.status === "sent";
-  if (filter === "ai") return Boolean(item.aiGenerated);
+  if (filter === "drafts") return !item.status || item.status === "draft";
+  if (filter === "scheduled") return item.status === "scheduled";
+  if (filter === "processing") return ["queued", "sending"].includes(item.status);
+  if (filter === "completed") return ["completed", "sent"].includes(item.status);
+  if (filter === "errors") return ["completed_with_errors", "failed"].includes(item.status);
+  if (filter === "cancelled") return item.status === "cancelled";
   return true;
 }
 
@@ -8951,12 +8683,17 @@ function bindEvents() {
   $("emailCampaignAiOpen")?.addEventListener("click", () => {
     if (state.emailCampaignAiDraftId) void editEmailCampaign(state.emailCampaignAiDraftId);
   });
-  $("emailCampaignAiScenario")?.addEventListener("change", renderEmailCampaignAiControls);
+  $("emailCampaignAiScenario")?.addEventListener("change", () => {
+    const audience = $("emailCampaignAiAudience");
+    if (audience && $("emailCampaignAiScenario")?.value === "reactivation") audience.value = "reactivation";
+    renderEmailCampaignAiControls();
+  });
   $("emailCampaignAiTemplate")?.addEventListener("change", renderEmailCampaignAiControls);
   document.querySelectorAll("[data-campaign-template]").forEach((button) => button.addEventListener("click", () => {
     applyEmailCampaignTemplate(button.dataset.campaignTemplate, { fillDefaults: true });
   }));
   $("emailCampaignAudience")?.addEventListener("change", () => void refreshEmailCampaignRecipients());
+  $("emailCampaignReactivationDays")?.addEventListener("change", () => void refreshEmailCampaignRecipients());
   $("emailCampaignRecipientSearch")?.addEventListener("input", () => void refreshEmailCampaignRecipients());
   $("emailCampaignRecipients")?.addEventListener("change", (event) => {
     const input = event.target.closest("[data-campaign-recipient]");
@@ -8975,50 +8712,6 @@ function bindEvents() {
     document.querySelectorAll("[data-campaign-preview]").forEach((item) => item.classList.toggle("active", item === button));
     renderEmailCampaignPreview();
   }));
-  $("emailCampaignBlockInspector")?.addEventListener("click", (event) => {
-    const align = event.target.closest("[data-campaign-block-align]");
-    if (align) { updateSelectedCampaignBlock("align", align.dataset.campaignBlockAlign); renderEmailCampaignBlockInspector(); return; }
-    const move = event.target.closest("[data-campaign-block-move]");
-    if (move) { moveEmailCampaignBlock(state.emailCampaignSelectedBlockId, Number(move.dataset.campaignBlockMove)); return; }
-    if (event.target.closest("[data-campaign-block-duplicate]")) { duplicateEmailCampaignBlock(state.emailCampaignSelectedBlockId); return; }
-    if (event.target.closest("[data-campaign-block-remove]")) removeEmailCampaignBlock(state.emailCampaignSelectedBlockId);
-  });
-  const updateCampaignInspector = (event) => {
-    const upload = event.target.closest("[data-campaign-block-upload]");
-    if (upload) {
-      void uploadSelectedCampaignBlockImage(upload);
-      return;
-    }
-    const field = event.target.closest("[data-campaign-block-field]");
-    if (field) {
-      updateSelectedCampaignBlock(field.dataset.campaignBlockField, field.value);
-      const output = field.closest("label")?.querySelector("output");
-      if (output) output.textContent = `${field.value}${field.dataset.campaignBlockField === "width" ? "%" : " px"}`;
-      return;
-    }
-    const social = event.target.closest("[data-campaign-social-field]");
-    if (social) {
-      const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
-      const index = Number(social.dataset.campaignSocialIndex);
-      if (!block?.links?.[index]) return;
-      block.links[index][social.dataset.campaignSocialField] = social.value;
-      renderEmailCampaignPreview({ inspector: false });
-      return;
-    }
-    const movieSelect = event.target.closest("[data-campaign-block-movie]");
-    if (movieSelect) {
-      const movie = (state.content?.movies || []).find((item) => item.id === movieSelect.value);
-      if (!movie) return;
-      const block = state.emailCampaignBlocks.find((item) => item.id === state.emailCampaignSelectedBlockId);
-      if (!block) return;
-      block.url = movie.posterUrl || "";
-      block.alt = `Pôster de ${movie.title || "filme"}`;
-      syncCampaignFormFromBlock(block);
-      renderEmailCampaignPreview();
-    }
-  };
-  $("emailCampaignBlockInspector")?.addEventListener("input", updateCampaignInspector);
-  $("emailCampaignBlockInspector")?.addEventListener("change", updateCampaignInspector);
   document.querySelectorAll("[data-campaign-variable]").forEach((button) => button.addEventListener("click", () => insertCampaignVariable(button.dataset.campaignVariable)));
   $("emailCampaignVariableAdd")?.addEventListener("click", () => {
     const key = $("emailCampaignVariableKey")?.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
@@ -9109,13 +8802,29 @@ function bindEvents() {
     if (!button) return;
     state.emailCampaignHistoryFilter = button.dataset.campaignHistoryFilter || "all";
     state.emailCampaignHistoryPage = 1;
-    renderEmailCampaigns();
+    void loadEmailCampaignHistory();
   });
   $("emailCampaignHistoryPager")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-campaign-history-page]");
     if (!button || button.disabled) return;
     state.emailCampaignHistoryPage = Number(button.dataset.campaignHistoryPage || 1);
-    renderEmailCampaigns();
+    void loadEmailCampaignHistory();
+  });
+  $("emailCampaignHistoryOrigin")?.addEventListener("change", (event) => {
+    state.emailCampaignHistoryOrigin = event.target.value;
+    state.emailCampaignHistoryPage = 1;
+    void loadEmailCampaignHistory();
+  });
+  $("emailCampaignHistoryPageSize")?.addEventListener("change", (event) => {
+    state.emailCampaignHistoryPageSize = Number(event.target.value || 25);
+    state.emailCampaignHistoryPage = 1;
+    void loadEmailCampaignHistory();
+  });
+  $("emailCampaignHistorySearch")?.addEventListener("input", (event) => {
+    state.emailCampaignHistorySearch = event.target.value.trim();
+    state.emailCampaignHistoryPage = 1;
+    clearTimeout(state.emailCampaignHistorySearchTimer);
+    state.emailCampaignHistorySearchTimer = setTimeout(() => void loadEmailCampaignHistory(), 350);
   });
   $("emailBrandSaveButton")?.addEventListener("click", async () => {
     try {

@@ -110,7 +110,7 @@ test("layout de campanha aplica cores válidas sem aceitar CSS arbitrário", () 
   assert.doesNotMatch(result, /javascript:/i);
 });
 
-test("editor visual preserva a ordem e personalização dos blocos no e-mail enviado", () => {
+test("compatibilidade legada preserva a ordem dos blocos no e-mail enviado", () => {
   const result = emailService._test.renderCampaignContentBlocks([
     { id: "title", type: "heading", content: "Olá {{nome}}", align: "center", color: "#ffcc00", fontSize: 30 },
     { id: "poster", type: "image", url: "/uploads/email-campaign/poster.webp", alt: "Pôster", width: 55 },
@@ -125,7 +125,7 @@ test("editor visual preserva a ordem e personalização dos blocos no e-mail env
   assert.match(result, /projects\/cinecruzeiro\/filmes/);
 });
 
-test("blocos visuais escapam conteúdo e rejeitam links perigosos", () => {
+test("blocos legados escapam conteúdo e rejeitam links perigosos", () => {
   const result = emailService._test.renderCampaignContentBlocks([
     { type: "text", content: "<script>alert(1)</script>" },
     { type: "button", content: "Abrir", url: "javascript:alert(1)" },
@@ -137,7 +137,7 @@ test("blocos visuais escapam conteúdo e rejeitam links perigosos", () => {
   assert.doesNotMatch(result, />Abrir</);
 });
 
-test("texto alternativo do editor acompanha a composição visual", () => {
+test("texto alternativo legado acompanha a composição dos blocos", () => {
   const result = emailService._test.campaignBlocksText([
     { type: "heading", content: "Oferta para {{nome}}" },
     { type: "button", content: "Ver programação", url: "/filmes" }

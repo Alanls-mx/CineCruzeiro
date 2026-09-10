@@ -21,9 +21,9 @@
     "test:postgres": "node scripts/postgres-concurrency-tests.js",
     "test:desktop": "node scripts/desktop-shell-tests.js",
     "test:security": "node --test tests/security/abuse.test.mjs",
-    "test:email-campaign": "node --test tests/email-campaign.test.mjs tests/email-campaign-ai.test.mjs",
+    "test:email-campaign": "node --test tests/email-campaign.test.mjs tests/email-campaign-ai.test.mjs tests/email-campaign-reliability.test.mjs tests/email-campaign-postgres.test.mjs",
     "audit:security": "node --test tests/security/abuse.test.mjs",
-    "test": "node scripts/club-hybrid-tests.js && node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/movie-image-localization-tests.js && node scripts/admin-two-factor-tests.js && node scripts/mercado-pago-point-tests.js && node scripts/ticket-document-tests.js && node scripts/seat-realtime-tests.js && node scripts/desktop-shell-tests.js && node --test tests/email-campaign.test.mjs tests/email-campaign-ai.test.mjs && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
+    "test": "node scripts/club-hybrid-tests.js && node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/movie-image-localization-tests.js && node scripts/admin-two-factor-tests.js && node scripts/mercado-pago-point-tests.js && node scripts/ticket-document-tests.js && node scripts/seat-realtime-tests.js && node scripts/desktop-shell-tests.js && npm run test:email-campaign && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
   },
   "dependencies": {
     "@mercadopago/sdk-js": "^0.0.3",
