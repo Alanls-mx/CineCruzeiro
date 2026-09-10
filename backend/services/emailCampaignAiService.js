@@ -94,6 +94,12 @@ function safeColor(value, fallback) {
   return /^#[0-9a-f]{6}$/i.test(String(value || "").trim()) ? String(value).trim().toLowerCase() : fallback;
 }
 
+function safeText(value, fallback, maxLength, multiline = false) {
+  const text = String(value || "").trim();
+  const normalized = multiline ? (text || fallback) : String(text || fallback).replace(/\s+/g, " ");
+  return normalized.slice(0, maxLength);
+}
+
 function safeUrl(value, siteUrl = "") {
   const raw = String(value || "").trim();
   if (!raw || /^(?:javascript|data|vbscript):/i.test(raw)) return "";
@@ -177,7 +183,15 @@ function renderDetailRows({ movie, coupon, plan, concessions, audience, siteUrl 
   }
   if (coupon) {
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Cupom</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right"><strong>${escapeHtml(coupon.couponCode || "CUPOM")}</strong> · ${escapeHtml(couponLabel(coupon))}</td></tr>`);
+    if (coupon.startsAt) rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Disponível a partir de</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(dateLabel(coupon.startsAt))}</td></tr>`);
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Validade</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(dateLabel(coupon.endsAt))}</td></tr>`);
+    const conditions = [
+      coupon.appliesTo === "tickets" ? "somente ingressos" : coupon.appliesTo === "concessions" ? "somente bomboniere" : "ingressos e bomboniere",
+      Number(coupon.minimumOrderValue || 0) > 0 ? `pedido mínimo de ${money(coupon.minimumOrderValue)}` : "",
+      coupon.firstPurchaseOnly ? "exclusivo para primeira compra" : "",
+      Number(coupon.perCustomerLimit || 0) > 0 ? `até ${Number(coupon.perCustomerLimit)} uso(s) por cliente` : ""
+    ].filter(Boolean).join(" · ");
+    rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Condições</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(conditions)}</td></tr>`);
   }
   if (plan) {
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Plano</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(plan.name || "Plano do Clube")} · ${escapeHtml(money(plan.monthlyPrice || plan.price || 0))}/mês</td></tr>`);
@@ -215,11 +229,12 @@ function buildCampaignDraft(input = {}) {
   const templateId = isTemplateCompatibleWithScenario(scenario, requestedTemplate) ? requestedTemplate : defaults.templateId;
   const usableReference = reference.id && reference.templateId === templateId ? reference : {};
   const referenceColors = usableReference.headlineColor || usableReference.textColor || usableReference.buttonColor ? usableReference : {};
+  const creative = input.creative && typeof input.creative === "object" ? input.creative : {};
   const colors = {
-    accent: safeColor(input.accentColor, defaults.accent),
-    headline: safeColor(referenceColors.headlineColor, "#ffffff"),
-    text: safeColor(referenceColors.textColor, "#dbeafe"),
-    button: safeColor(referenceColors.buttonColor, defaults.accent)
+    accent: safeColor(creative.accentColor, safeColor(input.accentColor, defaults.accent)),
+    headline: safeColor(creative.headlineColor, safeColor(referenceColors.headlineColor, "#ffffff")),
+    text: safeColor(creative.textColor, safeColor(referenceColors.textColor, "#dbeafe")),
+    button: safeColor(creative.buttonColor, safeColor(referenceColors.buttonColor, defaults.accent))
   };
   const brand = {
     name: String(input.brand?.name || "Cine Cruzeiro").trim().slice(0, 80),
@@ -228,7 +243,7 @@ function buildCampaignDraft(input = {}) {
     footer: String(input.brand?.footer || "Mensagem automática do Cine Cruzeiro.").trim().slice(0, 400)
   };
   const subjectMovie = movie?.title ? `: ${movie.title}` : "";
-  const subject = {
+  const fallbackSubject = {
     premiere: `Grande estreia${subjectMovie} no Cine Cruzeiro`,
     now_playing: `${movie?.title || "Novidades"} já está em cartaz`,
     last_chance: `Últimos dias${subjectMovie ? ` para assistir${subjectMovie}` : " no Cine Cruzeiro"}`,
@@ -240,10 +255,10 @@ function buildCampaignDraft(input = {}) {
     ticket: movie ? `Informações dos ingressos para ${movie.title}` : "Informações sobre seus ingressos",
     reactivation: "Sentimos sua falta no Cine Cruzeiro"
   }[scenario];
-  const headline = movie?.title && ["premiere", "now_playing", "last_chance"].includes(scenario)
+  const fallbackHeadline = movie?.title && ["premiere", "now_playing", "last_chance"].includes(scenario)
     ? scenario === "last_chance" ? `Últimas sessões de ${movie.title}` : scenario === "premiere" ? `${movie.title} está chegando` : `${movie.title} está em cartaz`
     : defaults.headline;
-  const message = String(input.brief || "").trim()
+  const fallbackMessage = String(input.brief || "").trim()
     ? `Olá, {{nome}}. ${String(input.brief).trim()}`
     : scenario === "premiere" && movie
       ? `Olá, {{nome}}. Prepare-se para viver ${movie.title} na tela grande. Consulte as sessões e escolha seu melhor horário.`
@@ -260,11 +275,16 @@ function buildCampaignDraft(input = {}) {
                 : scenario === "ticket"
                   ? `Olá, {{nome}}. Seus ingressos ficam disponíveis na sua conta. Confira QR Code, sessão e poltrona antes de chegar ao Cine Cruzeiro.`
                   : `Olá, {{nome}}. ${defaults.headline}. Preparamos esta novidade pensando em você.`;
+  const subject = safeText(creative.subject, fallbackSubject, 180);
+  const headline = safeText(creative.headline, fallbackHeadline, 180);
+  const message = safeText(creative.message, fallbackMessage, 4000, true);
+  const kicker = safeText(creative.kicker, defaults.kicker, 80);
+  const preheader = safeText(creative.preheader, movie ? `${movie.title} · ${defaults.kicker} · Cine Cruzeiro` : `${defaults.kicker} · Cine Cruzeiro`, 140);
   const imageUrl = movie?.posterUrl || plan?.imageUrl || concessions[0]?.imageUrl || input.imageUrl || "";
   const imageAlt = movie ? `Pôster de ${movie.title}` : plan ? `Imagem do ${plan.name}` : concessions[0] ? `Imagem de ${concessions[0].name}` : "Imagem da campanha";
   const imageLink = movieLink(movie, siteUrl) || (plan ? safeUrl(`/clube/assinar/${plan.id}`, siteUrl) : safeUrl("/filmes", siteUrl));
   const ctaUrl = imageLink || safeUrl("/filmes", siteUrl);
-  const ctaLabel = defaults.ctaLabel;
+  const ctaLabel = safeText(creative.ctaLabel, defaults.ctaLabel, 80);
   const audience = input.recipientMode || "all";
   const details = renderDetailRows({ movie, coupon, plan, concessions, audience, siteUrl });
   const variables = {
@@ -292,10 +312,10 @@ function buildCampaignDraft(input = {}) {
   };
   return {
     subject,
-    preheader: movie ? `${movie.title} · ${defaults.kicker} · Cine Cruzeiro` : `${defaults.kicker} · Cine Cruzeiro`,
+    preheader,
     headline,
     message,
-    html: renderHtml({ brand, kicker: defaults.kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaLabel, ctaUrl, colors, siteUrl }),
+    html: renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaLabel, ctaUrl, colors, siteUrl }),
     mode: "template",
     templateId,
     ctaLabel,
@@ -327,6 +347,7 @@ function buildCampaignDraft(input = {}) {
 
 module.exports = {
   buildCampaignDraft,
+  normalizeScenario,
   _test: {
     buildCampaignDraft,
     compatibleTemplatesForScenario,

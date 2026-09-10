@@ -6966,7 +6966,11 @@ function renderEmailCampaignAiControls() {
   movie.value = (state.content?.movies || []).some((item) => item.id === currentMovie && item.status !== "hidden") ? currentMovie : "";
 
   const currentCoupon = coupon.value;
-  coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.couponCode)} · ${escapeHtml(item.title || "Cupom")}</option>`).join("")}`;
+  coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && item.active !== false).map((item) => {
+    const expired = item.endsAt && new Date(item.endsAt).getTime() < Date.now();
+    const exhausted = Number(item.usageLimit || 0) > 0 && Number(item.usageCount || 0) >= Number(item.usageLimit);
+    return `<option value="${escapeHtml(item.id)}" ${expired || exhausted ? "disabled" : ""}>${escapeHtml(item.couponCode)} · ${escapeHtml(item.title || "Cupom")}${expired ? " · expirado" : exhausted ? " · limite atingido" : ""}</option>`;
+  }).join("")}`;
   coupon.value = (state.content?.promotions || []).some((item) => item.id === currentCoupon && item.couponCode && item.active !== false) ? currentCoupon : "";
 
   const currentPlan = plan.value;
@@ -6974,7 +6978,10 @@ function renderEmailCampaignAiControls() {
   plan.value = (state.content?.subscriptionPlans || []).some((item) => item.id === currentPlan && item.active !== false) ? currentPlan : "";
 
   const selectedConcessions = new Set(Array.from(concessions.selectedOptions).map((option) => option.value));
-  concessions.innerHTML = (state.content?.concessions || []).filter((item) => item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}" ${selectedConcessions.has(String(item.id)) ? "selected" : ""}>${escapeHtml(item.name || "Produto")} · ${escapeHtml(money(item.price || 0))}</option>`).join("");
+  concessions.innerHTML = (state.content?.concessions || []).filter((item) => item.active !== false).map((item) => {
+    const unavailable = item.stock !== "" && item.stock !== undefined && Number(item.stock || 0) <= 0;
+    return `<option value="${escapeHtml(item.id)}" ${selectedConcessions.has(String(item.id)) && !unavailable ? "selected" : ""} ${unavailable ? "disabled" : ""}>${escapeHtml(item.name || "Produto")} · ${escapeHtml(money(item.price || 0))}${unavailable ? " · sem estoque" : ""}</option>`;
+  }).join("");
 
   const currentTemplate = template.value;
   template.innerHTML = compatibleTemplates.map((id) => {
@@ -7019,12 +7026,30 @@ async function generateEmailCampaignAiDraft() {
   try {
     const result = await api("/api/admin/email/campaigns/ai-draft", { method: "POST", body: JSON.stringify(payload) });
     const campaign = result.campaign || {};
+    const ai = result.ai || {};
+    const eligibility = ai.eligibility || {};
+    const warnings = Array.isArray(eligibility.warnings) ? eligibility.warnings : [];
+    const providerLabel = ai.provider === "openai"
+      ? `OpenAI${ai.model ? ` (${ai.model})` : ""}`
+      : "motor local de contingência";
     state.emailCampaignAiDraftId = campaign.id || "";
     if (state.content) state.content.emailCampaigns = [campaign, ...(state.content.emailCampaigns || []).filter((item) => item.id !== campaign.id)];
     renderEmailCampaigns();
-    setEmailCampaignAiStatus(`Rascunho criado com ${result.ai?.referenceTemplateId || "o modelo selecionado"} e pronto para revisão.`, "success");
+    setEmailCampaignAiStatus(`Rascunho criado por ${providerLabel}, com catálogo e público conferidos.`, "success");
+    if ($("emailCampaignAiResultTitle")) $("emailCampaignAiResultTitle").textContent = `Rascunho criado por ${providerLabel}.`;
+    if ($("emailCampaignAiResultSummary")) {
+      const recipients = eligibility.recipients;
+      $("emailCampaignAiResultSummary").textContent = recipients
+        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.`
+        : "Catálogo validado. Confira a prévia antes de enviar.";
+    }
+    const warningList = $("emailCampaignAiWarnings");
+    if (warningList) {
+      warningList.innerHTML = warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+      warningList.hidden = !warnings.length;
+    }
     if (resultBox) resultBox.hidden = false;
-    showToast("Rascunho criado pelo agente de campanhas");
+    showToast(ai.provider === "openai" ? "Rascunho criado pela OpenAI" : "Rascunho criado; configure a OpenAI em Integrações para usar a IA");
   } catch (error) {
     setEmailCampaignAiStatus(error.message || "Não foi possível criar o rascunho.", "error");
     showToast(error.message, "error");

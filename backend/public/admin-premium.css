@@ -317,6 +317,9 @@ textarea:focus-visible,
 .campaign-ai-result { justify-content: space-between; padding: 11px 12px; border: 1px solid rgba(69,214,161,.22); background: rgba(69,214,161,.08); color: #dbeafe; font-size: 11px; }
 .campaign-ai-result > span { min-width: 0; }
 .campaign-ai-result strong { color: #6ee7b7; }
+.campaign-ai-warnings { flex: 1 1 100%; margin: 0; padding: 9px 10px 9px 28px; border-radius: 7px; background: rgba(245,158,11,.1); color: #fde68a; line-height: 1.45; }
+.campaign-ai-warnings[hidden] { display: none; }
+.campaign-ai-warnings li + li { margin-top: 4px; }
 .campaign-history-ai { display: inline-flex; align-items: center; padding: 4px 6px; border-radius: 5px; background: rgba(96,165,250,.13); color: #bfdbfe; font-size: 9px; font-weight: 850; }
 
 .campaign-workspace { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: var(--sp-14); align-items: start; }

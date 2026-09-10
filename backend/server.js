@@ -27,7 +27,9 @@ const paymentService = require("./services/paymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
-const { buildCampaignDraft } = require("./services/emailCampaignAiService");
+const { normalizeScenario } = require("./services/emailCampaignAiService");
+const { generateOpenAiCampaignDraft } = require("./services/openAiEmailAgentService");
+const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
@@ -6469,6 +6471,28 @@ function campaignRecipients(db, campaign = {}) {
   }));
 }
 
+function eligibleCampaignRecipients(db, campaign = {}, options = {}) {
+  const context = resolveCampaignContext(db, {
+    ...campaign,
+    scenario: normalizeScenario(campaign.aiScenario || campaign.scenario || "promotion")
+  }, options);
+  const baseRecipients = campaignRecipients(db, campaign);
+  const recipientCheck = filterOfferRecipients(db, context, baseRecipients);
+  return {
+    ...context,
+    recipients: recipientCheck.recipients,
+    report: {
+      ...context.report,
+      recipients: {
+        considered: baseRecipients.length,
+        eligible: recipientCheck.recipients.length,
+        excluded: recipientCheck.excluded,
+        exclusionReasons: recipientCheck.reasons
+      }
+    }
+  };
+}
+
 async function storeEmailAttachment(input = {}) {
   const contentType = String(input.contentType || "").toLowerCase().split(";")[0].trim();
   if (!EMAIL_ATTACHMENT_TYPES.has(contentType)) {
@@ -6624,7 +6648,22 @@ async function processEmailCampaign(campaignId) {
   if (!campaign) return;
 
   const db = await readDb();
-  const recipients = campaignRecipients(db, campaign);
+  let eligibility;
+  try {
+    eligibility = eligibleCampaignRecipients(db, campaign);
+  } catch (error) {
+    await withCriticalMutation(async () => {
+      const current = await readDb();
+      const item = (current.emailCampaigns || []).find((entry) => entry.id === campaignId);
+      if (!item) return;
+      item.status = "failed";
+      item.error = error.message || "A oferta desta campanha não está mais disponível.";
+      item.updatedAt = new Date().toISOString();
+      await writeDb(current);
+    });
+    return;
+  }
+  const recipients = eligibility.recipients;
   if (!recipients.length) {
     await withCriticalMutation(async () => {
       const current = await readDb();
@@ -6638,7 +6677,7 @@ async function processEmailCampaign(campaignId) {
     });
     return;
   }
-  const coupon = (db.promotions || []).find((item) => item.id === campaign.couponId);
+  const coupon = eligibility.coupon;
   const result = await emailService.sendPromotionCampaign(db, {
     ...campaign,
     recipients: recipients.map((recipient) => ({
@@ -7107,6 +7146,24 @@ async function testIntegrationProvider(db, provider, req) {
     }
     if (!config.webhookUrl) return { ok: false, message: "Informe SMTP ou webhook do provedor de e-mail." };
     return emailService.sendIntegrationTest(db, req.adminUser?.email || config.fromEmail);
+  }
+  if (key === "openai") {
+    if (!config.apiKey || !config.model) return { ok: false, message: "Informe a chave da API e o modelo da OpenAI." };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(5000, Math.min(60000, Number(config.timeout || 30000))));
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+        body: JSON.stringify({ model: config.model, store: false, max_output_tokens: 24, input: "Responda somente: conexão confirmada" })
+      });
+      return { ok: response.ok, message: response.ok ? `OpenAI conectada com o modelo ${config.model}.` : `A OpenAI recusou o teste (HTTP ${response.status}).` };
+    } catch (error) {
+      return { ok: false, message: error.name === "AbortError" ? "A OpenAI demorou demais para responder." : "Não foi possível conectar à OpenAI." };
+    } finally {
+      clearTimeout(timer);
+    }
   }
   if (key === "analytics") {
     const googleValid = !config.googleMeasurementId || /^G-[A-Z0-9]+$/i.test(config.googleMeasurementId);
@@ -8294,49 +8351,62 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/email/campaigns/ai-draft" && method === "POST") {
     const body = await readBody(req);
-    const scenario = String(body.scenario || "promotion").trim().slice(0, 40);
-    const requestedMovieId = String(body.movieId || "").trim();
-    const requestedCouponId = String(body.couponId || "").trim();
-    const requestedPlanId = String(body.clubPlanId || "").trim();
-    const requestedConcessionIds = Array.isArray(body.concessionIds)
-      ? [...new Set(body.concessionIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20)
-      : [];
-    const movieScenario = /premiere|estreia|launch|now_playing|cartaz|last_chance|últimos|ultimos/i.test(scenario);
-    const scenarioMovie = movieScenario && /premiere|estreia|launch/i.test(scenario)
-      ? (db.movies || []).find((movie) => movie.status === "upcoming" && movie.workflowStatus !== "archived")
-      : movieScenario
-        ? (db.movies || []).find((movie) => movie.status === "now_playing" && movie.workflowStatus !== "archived")
-        : null;
-    const movie = (db.movies || []).find((item) => item.id === requestedMovieId) || (scenarioMovie || null);
-    const coupon = (db.promotions || []).find((item) => item.id === requestedCouponId && item.active !== false) || null;
-    const plan = (db.subscriptionPlans || []).find((item) => item.id === requestedPlanId && item.active !== false) || null;
-    const concessions = (db.concessions || []).filter((item) => requestedConcessionIds.includes(String(item.id)) && item.active !== false);
-    const referenceCampaign = (db.emailCampaigns || []).find((item) => item.id === String(body.referenceCampaignId || "").trim()) || null;
-    const generated = buildCampaignDraft({
+    const scenario = normalizeScenario(String(body.scenario || "promotion").trim().slice(0, 40));
+    const context = resolveCampaignContext(db, {
       scenario,
-      movie,
-      coupon,
-      plan,
-      concessions,
+      movieId: body.movieId,
+      couponId: body.couponId,
+      clubPlanId: body.clubPlanId,
+      concessionIds: body.concessionIds
+    }, { allowAutoMovie: true });
+    const referenceCampaignId = String(body.referenceCampaignId || "").trim();
+    const referenceCampaign = referenceCampaignId ? (db.emailCampaigns || []).find((item) => item.id === referenceCampaignId) : null;
+    if (referenceCampaignId && !referenceCampaign) {
+      throw Object.assign(new Error("O rascunho de referência não existe mais."), { statusCode: 409, code: "EMAIL_CAMPAIGN_REFERENCE_NOT_FOUND" });
+    }
+    const openAiConfig = integrationConfigService.resolvedConfig(db, "openai");
+    const generated = await generateOpenAiCampaignDraft({
+      scenario,
+      movie: context.movie,
+      coupon: context.coupon,
+      plan: context.plan,
+      concessions: context.concessions,
       referenceCampaign,
       referenceTemplateId: String(body.referenceTemplateId || "").trim(),
       recipientMode: body.recipientMode,
       brief: String(body.brief || "").trim().slice(0, 1000),
       brand: db.settings?.emailBranding || {},
-      siteUrl: appFrontendUrl()
+      siteUrl: appFrontendUrl(),
+      eligibilityReport: context.report
+    }, {
+      config: openAiConfig,
+      safetyIdentifier: req.adminUser?.id || req.adminUser?.email || "cine-cruzeiro-admin"
     });
     const campaign = normalizeCampaignInput(generated, { brand: db.settings?.emailBranding || {} });
+    const recipientCheck = filterOfferRecipients(db, context, campaignRecipients(db, campaign));
+    const eligibility = {
+      ...context.report,
+      recipients: {
+        considered: recipientCheck.recipients.length + recipientCheck.excluded,
+        eligible: recipientCheck.recipients.length,
+        excluded: recipientCheck.excluded,
+        exclusionReasons: recipientCheck.reasons
+      }
+    };
     Object.assign(campaign, {
       status: "draft",
       createdBy: req.adminUser?.id || "",
-      recipientCount: campaignRecipients(db, campaign).length,
+      recipientCount: recipientCheck.recipients.length,
       aiGenerated: true,
       aiProvider: generated.aiProvider,
+      aiModel: generated.aiModel || "",
+      aiFallbackReason: generated.aiFallbackReason || "",
       aiScenario: generated.aiScenario,
       aiContext: generated.aiContext,
       aiReferenceCampaignId: generated.aiReferenceCampaignId,
       aiReferenceTemplateId: generated.aiReferenceTemplateId,
-      aiBrief: generated.aiBrief
+      aiBrief: generated.aiBrief,
+      aiEligibility: eligibility
     });
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
@@ -8347,6 +8417,9 @@ async function handleApi(req, res, pathname) {
     logEvent("info", "email_campaign.ai_draft_created", {
       actorUserId: req.adminUser?.id || "",
       campaignId: campaign.id,
+      provider: generated.aiProvider,
+      model: generated.aiModel || "",
+      fallbackReason: generated.aiFallbackReason || "",
       scenario: generated.aiScenario,
       context: generated.aiContext,
       referenceCampaignId: generated.aiReferenceCampaignId,
@@ -8356,10 +8429,13 @@ async function handleApi(req, res, pathname) {
       campaign: publicCampaign(campaign),
       ai: {
         provider: generated.aiProvider,
+        model: generated.aiModel || "",
+        fallbackReason: generated.aiFallbackReason || "",
         scenario: generated.aiScenario,
         context: generated.aiContext,
         referenceCampaignId: generated.aiReferenceCampaignId,
-        referenceTemplateId: generated.aiReferenceTemplateId
+        referenceTemplateId: generated.aiReferenceTemplateId,
+        eligibility
       }
     });
     return;
@@ -8367,11 +8443,13 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/email/campaigns/preview" && method === "POST") {
     const body = await readBody(req);
-    const recipients = campaignRecipients(db, body);
+    const eligibility = eligibleCampaignRecipients(db, body);
+    const recipients = eligibility.recipients;
     sendJson(res, 200, {
       count: recipients.length,
       sample: recipients.slice(0, 8).map(({ id, name, email, hasPurchased }) => ({ id, name, email, hasPurchased })),
-      suppressed: campaignCustomerPool(db).length - recipients.length
+      suppressed: campaignCustomerPool(db).length - recipients.length,
+      eligibility: eligibility.report
     });
     return;
   }
@@ -8389,6 +8467,7 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const campaign = normalizeCampaignInput(body, { brand: db.settings?.emailBranding || {} });
+    eligibleCampaignRecipients(db, campaign);
     const result = await emailService.sendPromotionTest(db, {
       ...campaign,
       to,
@@ -8410,9 +8489,11 @@ async function handleApi(req, res, pathname) {
     }
     const shouldSend = body.action === "send" || body.sendNow === true;
     const shouldSchedule = Boolean(campaign.scheduleAt);
+    const eligibility = eligibleCampaignRecipients(db, campaign);
     campaign.status = shouldSend ? "queued" : shouldSchedule ? "scheduled" : "draft";
     campaign.createdBy = req.adminUser?.id || "";
-    campaign.recipientCount = campaignRecipients(db, campaign).length;
+    campaign.recipientCount = eligibility.recipients.length;
+    campaign.eligibility = eligibility.report;
     let persistedCampaign = campaign;
     let alreadyCreated = false;
     await withCriticalMutation(async () => {
@@ -8480,10 +8561,16 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 412, { error: { code: "SMTP_NOT_CONFIGURED", message: "Configure e ative o SMTP em Integrações antes do disparo." } });
         return;
       }
+      const eligibility = eligibleCampaignRecipients(db, existing);
+      if (!eligibility.recipients.length) {
+        sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum destinatário pode usar a oferta desta campanha." } });
+        return;
+      }
       existing.status = "queued";
       existing.error = "";
       existing.updatedAt = new Date().toISOString();
-      existing.recipientCount = campaignRecipients(db, existing).length;
+      existing.recipientCount = eligibility.recipients.length;
+      existing.eligibility = eligibility.report;
       await writeDb(db);
       scheduleEmailCampaign(existing);
       sendJson(res, 202, { campaign: publicCampaign(existing) });
@@ -8515,8 +8602,10 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       body.attachments = resolveCampaignAttachments(db, body.attachments);
       const updated = normalizeCampaignInput(body, existing);
+      const eligibility = eligibleCampaignRecipients(db, updated);
       updated.status = "draft";
-      updated.recipientCount = campaignRecipients(db, updated).length;
+      updated.recipientCount = eligibility.recipients.length;
+      updated.eligibility = eligibility.report;
       Object.assign(existing, updated);
       await writeDb(db);
       sendJson(res, 200, { campaign: publicCampaign(existing) });
@@ -8541,7 +8630,9 @@ async function handleApi(req, res, pathname) {
     }
     campaign.status = "queued";
     campaign.createdBy = req.adminUser?.id || "";
-    campaign.recipientCount = campaignRecipients(db, campaign).length;
+    const eligibility = eligibleCampaignRecipients(db, campaign);
+    campaign.recipientCount = eligibility.recipients.length;
+    campaign.eligibility = eligibility.report;
     if (!campaign.recipientCount) {
       sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum cliente elegível com e-mail e consentimento de marketing." } });
       return;
