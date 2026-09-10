@@ -21,6 +21,12 @@ let state = {
   selectedTicketId: "",
   selectedConcessionId: "",
   selectedPromotionId: "",
+  promotionView: "active",
+  promotionUsageCouponId: "",
+  promotionUsageHistory: [],
+  promotionUsageMeta: null,
+  promotionUsageLoading: false,
+  promotionUsageRequestToken: 0,
   selectedAdId: "",
   selectedUserId: "",
   selectedIntegrationKey: "",
@@ -6970,9 +6976,10 @@ async function generateEmailCampaignAiDraft() {
       const layout = resolved?.templateId ? ` Layout: ${emailCampaignTemplateLabel(resolved.templateId)}.` : "";
       const visual = ai.visualStyleLabel ? ` Direção visual: ${ai.visualStyleLabel}.` : "";
       const coupon = generatedCoupon?.couponCode ? ` Cupom ${generatedCoupon.couponCode} criado e vinculado para revisão.` : "";
+      const schedule = ai.scheduleAt ? ` Envio agendado para ${new Date(ai.scheduleAt).toLocaleString("pt-BR")}.` : "";
       $("emailCampaignAiResultSummary").textContent = recipients
-        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.${layout}${visual}${coupon}`
-        : `Catálogo e datas validados. Confira a prévia antes de enviar.${layout}${visual}${coupon}`;
+        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.${layout}${visual}${coupon}${schedule}`
+        : `Catálogo e datas validados. Confira a prévia antes de enviar.${layout}${visual}${coupon}${schedule}`;
     }
     const warningList = $("emailCampaignAiWarnings");
     if (warningList) {
@@ -7003,13 +7010,25 @@ function syncCampaignImageMovieSelect() {
 
 function renderPromotions() {
   const items = state.content?.promotions || [];
+  const activeItems = items.filter((item) => !item.archivedAt);
+  const archivedItems = items.filter((item) => Boolean(item.archivedAt));
+  const visibleItems = state.promotionView === "archived" ? archivedItems : activeItems;
+  $("activePromotionsCount").textContent = String(activeItems.length);
+  $("archivedPromotionsCount").textContent = String(archivedItems.length);
+  $("activePromotionsTab").classList.toggle("active", state.promotionView === "active");
+  $("activePromotionsTab").setAttribute("aria-selected", String(state.promotionView === "active"));
+  $("archivedPromotionsTab").classList.toggle("active", state.promotionView === "archived");
+  $("archivedPromotionsTab").setAttribute("aria-selected", String(state.promotionView === "archived"));
   if (state.creating.promotion) {
     $("promotionsList").innerHTML = creationPlaceholder("Novo cupom", "Configure a regra comercial no quadro à direita.");
     fillPromotionForm(null);
     return;
   }
-  $("promotionsList").innerHTML = items.length
-    ? items.map((item) => `
+  if (!visibleItems.some((item) => item.id === state.selectedPromotionId)) {
+    state.selectedPromotionId = visibleItems[0]?.id || "";
+  }
+  $("promotionsList").innerHTML = visibleItems.length
+    ? visibleItems.map((item) => `
         <button class="list-item ${item.id === state.selectedPromotionId ? "active" : ""}" type="button" onclick="selectPromotion('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.title)}</span>
@@ -7018,8 +7037,12 @@ function renderPromotions() {
           <span class="badge">${Number(item.usageCount || 0)} uso(s)</span>
         </button>
       `).join("")
-    : `<div class="empty-state"><strong>Nenhum cupom</strong><span>Crie códigos de desconto com período e limites de uso.</span></div>`;
-  fillPromotionForm(currentPromotion());
+    : `<div class="empty-state"><strong>${state.promotionView === "archived" ? "Nenhum cupom arquivado" : "Nenhum cupom ativo"}</strong><span>${state.promotionView === "archived" ? "Cupons expirados e utilizados continuarão disponíveis aqui para consulta." : "Crie códigos de desconto com período e limites de uso."}</span></div>`;
+  const selected = currentPromotion();
+  fillPromotionForm(selected);
+  if (selected && state.promotionUsageCouponId !== selected.id && !state.promotionUsageLoading) {
+    void loadPromotionUsage(selected.id, 1);
+  }
 }
 
 function couponRuleLabel(item) {
@@ -7029,6 +7052,7 @@ function couponRuleLabel(item) {
 }
 
 function couponStatusLabel(item) {
+  if (item.archivedAt) return item.archiveReason === "expired" ? "arquivado após expirar" : "arquivado";
   if (item.active === false) return "inativo";
   const now = Date.now();
   if (item.startsAt && new Date(item.startsAt).getTime() > now) return "agendado";
@@ -7037,14 +7061,28 @@ function couponStatusLabel(item) {
   return "disponível";
 }
 
+function setPromotionView(view) {
+  state.promotionView = view === "archived" ? "archived" : "active";
+  state.creating.promotion = false;
+  state.selectedPromotionId = "";
+  state.promotionUsageCouponId = "";
+  state.promotionUsageHistory = [];
+  state.promotionUsageMeta = null;
+  renderPromotions();
+}
+
 function selectPromotion(id) {
   state.creating.promotion = false;
   state.selectedPromotionId = id;
+  state.promotionUsageCouponId = "";
+  state.promotionUsageHistory = [];
+  state.promotionUsageMeta = null;
   renderPromotions();
 }
 
 function newPromotion() {
   setAdminSubtab("marketing", "promotions");
+  state.promotionView = "active";
   state.creating.promotion = true;
   state.selectedPromotionId = "";
   $("promotionsList").innerHTML = creationPlaceholder("Novo cupom", "Configure a regra comercial no quadro à direita.");
@@ -7053,7 +7091,12 @@ function newPromotion() {
 
 function fillPromotionForm(item) {
   syncCreationControl("promotion", "cancelPromotionCreateButton", "deletePromotionButton", Boolean(item));
-  setDisabled("deletePromotionButton", !item);
+  const hasUsage = Number(item?.usageCount || 0) > 0;
+  const archivedWithHistory = Boolean(item?.archivedAt && hasUsage);
+  setDisabled("deletePromotionButton", !item || archivedWithHistory);
+  if ($("deletePromotionButton")) {
+    $("deletePromotionButton").textContent = archivedWithHistory ? "Arquivado" : hasUsage ? "Arquivar" : "Excluir";
+  }
   $("promotionId").value = item?.id || "";
   $("promotionTitle").value = item?.title || "";
   $("promotionDescription").value = item?.description || "";
@@ -7079,6 +7122,110 @@ function fillPromotionForm(item) {
     <div class="coupon-usage-stat"><span>Utilizações pagas</span><strong>${Number(item.usageCount || 0)}</strong></div>
     <div class="coupon-usage-stat"><span>Desconto concedido</span><strong>${money(item.discountGranted)}</strong></div>
   ` : "";
+  const archiveNotice = $("promotionArchiveNotice");
+  archiveNotice.hidden = !item?.archivedAt;
+  archiveNotice.innerHTML = item?.archivedAt
+    ? `<strong>Cupom arquivado</strong><span>${item.archiveReason === "expired" ? "A validade terminou" : "Arquivado manualmente"} em ${escapeHtml(formatCouponUsageDate(item.archivedAt))}. O histórico financeiro foi preservado.</span>`
+    : "";
+  $("promotionUsageHistorySection").hidden = !item;
+  renderPromotionUsageHistory();
+}
+
+function formatCouponUsageDate(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "data não informada";
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function couponOrderReference(orderId) {
+  const suffix = String(orderId || "").replace(/[^a-zA-Z0-9]/g, "").slice(-6).toUpperCase() || "000000";
+  return `#CC-${suffix}`;
+}
+
+function renderPromotionUsageHistory() {
+  const container = $("promotionUsageHistory");
+  const pager = $("promotionUsagePager");
+  const summary = $("promotionUsageHistorySummary");
+  if (!container || !pager || !summary) return;
+  const item = currentPromotion();
+  if (!item) {
+    container.innerHTML = "";
+    pager.innerHTML = "";
+    return;
+  }
+  if (state.promotionUsageLoading) {
+    summary.textContent = "Carregando as compras vinculadas a este cupom.";
+    container.innerHTML = `<div class="coupon-history-loading"><span class="inline-spinner" aria-hidden="true"></span>Buscando histórico de uso...</div>`;
+    pager.innerHTML = "";
+    return;
+  }
+  const meta = state.promotionUsageMeta;
+  summary.textContent = meta?.total
+    ? `${meta.total} compra(s) paga(s), com ${money(meta.discountGranted)} concedidos em descontos.`
+    : "Nenhuma compra paga utilizou este cupom.";
+  container.innerHTML = state.promotionUsageHistory.length
+    ? state.promotionUsageHistory.map((usage) => `
+        <article class="coupon-history-row">
+          <div class="coupon-history-customer">
+            <strong>${escapeHtml(usage.customerName || "Cliente")}</strong>
+            <span>${escapeHtml(usage.customerEmail || "E-mail não informado")}</span>
+          </div>
+          <div>
+            <span class="coupon-history-label">Data e hora</span>
+            <strong>${escapeHtml(formatCouponUsageDate(usage.usedAt))}</strong>
+          </div>
+          <div>
+            <span class="coupon-history-label">Filme e sessão</span>
+            <strong>${escapeHtml(usage.movieTitle || "Compra sem filme")}</strong>
+            <span>${escapeHtml([usage.sessionDate, usage.sessionTime].filter(Boolean).join(" às ") || "Sessão não informada")}</span>
+          </div>
+          <div>
+            <span class="coupon-history-label">Pedido</span>
+            <strong>${escapeHtml(couponOrderReference(usage.orderId))}</strong>
+            <span>${escapeHtml([...(usage.ticketItems || []), ...(usage.concessionItems || [])].join(" · ") || "Itens não informados")}</span>
+          </div>
+          <div class="coupon-history-values">
+            <span class="coupon-history-label">Desconto</span>
+            <strong>${money(usage.discountAmount)}</strong>
+            <span>Total ${money(usage.orderTotal)}</span>
+          </div>
+        </article>
+      `).join("")
+    : `<div class="empty-state compact"><strong>Sem utilizações</strong><span>O primeiro pagamento aprovado com este cupom aparecerá aqui.</span></div>`;
+  if (!meta || meta.pages <= 1) {
+    pager.innerHTML = "";
+    return;
+  }
+  pager.innerHTML = `
+    <button type="button" class="ghost-button" ${meta.page <= 1 ? "disabled" : ""} onclick="loadPromotionUsage('${item.id}', ${meta.page - 1})">Anterior</button>
+    <span>Página ${meta.page} de ${meta.pages}</span>
+    <button type="button" class="ghost-button" ${meta.page >= meta.pages ? "disabled" : ""} onclick="loadPromotionUsage('${item.id}', ${meta.page + 1})">Próxima</button>
+  `;
+}
+
+async function loadPromotionUsage(couponId, page = 1) {
+  if (!couponId) return;
+  const requestToken = ++state.promotionUsageRequestToken;
+  state.promotionUsageLoading = true;
+  renderPromotionUsageHistory();
+  try {
+    const result = await api(`/api/promotions/${encodeURIComponent(couponId)}/usage?page=${Math.max(1, Number(page || 1))}&pageSize=20`);
+    if (requestToken !== state.promotionUsageRequestToken || state.selectedPromotionId !== couponId) return;
+    state.promotionUsageCouponId = couponId;
+    state.promotionUsageHistory = result.usages || [];
+    state.promotionUsageMeta = result;
+  } catch (error) {
+    if (requestToken !== state.promotionUsageRequestToken) return;
+    state.promotionUsageCouponId = couponId;
+    state.promotionUsageHistory = [];
+    state.promotionUsageMeta = null;
+    showToast(error.message, "error");
+  } finally {
+    if (requestToken === state.promotionUsageRequestToken) {
+      state.promotionUsageLoading = false;
+      renderPromotionUsageHistory();
+    }
+  }
 }
 
 async function savePromotion(event) {
@@ -7109,6 +7256,8 @@ async function savePromotion(event) {
       : await api("/api/promotions", { method: "POST", body: JSON.stringify(payload) });
     state.creating.promotion = false;
     state.selectedPromotionId = saved.id;
+    state.promotionView = saved.archivedAt ? "archived" : "active";
+    state.promotionUsageCouponId = "";
     await loadContent({ silent: true });
     showSuccess("Cupom salvo", `${saved.title} foi atualizado.`);
   } catch (error) {
@@ -7118,12 +7267,15 @@ async function savePromotion(event) {
 
 async function deletePromotion() {
   const item = currentPromotion();
-  if (!item || !confirm(`Excluir ${item.title}?`)) return;
+  const hasUsage = Number(item?.usageCount || 0) > 0;
+  if (!item || !confirm(hasUsage ? `Arquivar ${item.title}? O histórico de uso continuará disponível.` : `Excluir ${item.title}?`)) return;
   try {
-    await api(`/api/promotions/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    const result = await api(`/api/promotions/${encodeURIComponent(item.id)}`, { method: "DELETE" });
     state.selectedPromotionId = "";
+    state.promotionUsageCouponId = "";
+    state.promotionView = result.archived ? "archived" : state.promotionView;
     await loadContent({ silent: true });
-    showToast("Promocao excluida.");
+    showToast(result.archived ? "Cupom arquivado. O histórico foi preservado." : "Cupom excluído.");
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -9073,6 +9225,8 @@ function bindEvents() {
     $(clearId)?.addEventListener("click", () => clearImageField(inputId, previewId, label));
   });
   $("newPromotionButton").addEventListener("click", newPromotion);
+  $("activePromotionsTab").addEventListener("click", () => setPromotionView("active"));
+  $("archivedPromotionsTab").addEventListener("click", () => setPromotionView("archived"));
   $("cancelPromotionCreateButton").addEventListener("click", () => cancelCreation("promotion"));
   $("promotionForm").addEventListener("submit", savePromotion);
   $("promotionCouponCode").addEventListener("input", (event) => {

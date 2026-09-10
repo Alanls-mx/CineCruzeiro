@@ -8,6 +8,7 @@ const {
   isTemplateCompatibleWithScenario,
   compatibleTemplatesForScenario
 } = require("./emailCampaignTemplateResolver");
+const { requestedButtonHints } = require("./emailCampaignBriefService");
 
 const SCENARIO_DEFAULTS = {
   announcement: { templateId: "announcement", kicker: "Cine Cruzeiro", accent: "#4d8dff", headline: "Uma mensagem para você", ctaLabel: "Saiba mais" },
@@ -182,15 +183,75 @@ function renderDetailRows({ movie, movies = [], coupon, plan, concessions, audie
   return rows.join("");
 }
 
-function renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaLabel, ctaUrl, colors, visual, siteUrl }) {
+function ctaIntentUrl(intent, { movie, coupon, siteUrl }) {
+  const destination = {
+    tickets: movieLink(movie, siteUrl) || safeUrl("/filmes", siteUrl),
+    movie: movieLink(movie, siteUrl) || safeUrl("/filmes", siteUrl),
+    programming: safeUrl("/filmes", siteUrl),
+    trailer: safeUrl(movie?.trailerVideoUrl || movie?.localTrailerUrl || movie?.trailerSourceUrl || movieLink(movie, siteUrl), siteUrl),
+    coupon: coupon?.appliesTo === "concessions" ? safeUrl("/filmes", siteUrl) : movieLink(movie, siteUrl) || safeUrl("/filmes", siteUrl),
+    concession: safeUrl("/filmes", siteUrl),
+    club: safeUrl("/clube", siteUrl),
+    event: safeUrl("/eventos", siteUrl),
+    account: safeUrl("/conta", siteUrl)
+  };
+  return destination[intent] || "";
+}
+
+function allowedButtonIntents(scenario, coupon) {
+  if (["premiere", "now_playing", "last_chance", "programming"].includes(scenario)) return new Set(["tickets", "movie", "programming", "trailer"]);
+  if (["coupon", "promotion"].includes(scenario)) return coupon?.appliesTo === "concessions"
+    ? new Set(["coupon", "concession"])
+    : new Set(["coupon", "tickets", "movie", "programming"]);
+  if (["concession", "combo"].includes(scenario)) return new Set(["concession"]);
+  if (["club", "club_plan"].includes(scenario)) return new Set(["club"]);
+  if (scenario === "event") return new Set(["event"]);
+  if (scenario === "ticket") return new Set(["account"]);
+  if (["birthday", "reactivation"].includes(scenario)) return new Set(["programming", "account"]);
+  return new Set(["programming", "event", "club", "account"]);
+}
+
+function campaignCtaButtons(buttons, fallback, context) {
+  const allowed = allowedButtonIntents(context.scenario, context.coupon);
+  const resolved = (Array.isArray(buttons) ? buttons : [])
+    .map((button) => {
+      const intent = String(button?.intent || "").trim();
+      const label = safeText(button?.label, "", 80);
+      const url = allowed.has(intent) ? ctaIntentUrl(intent, context) : "";
+      return label && url ? { label, intent, url } : null;
+    })
+    .filter(Boolean)
+    .filter((button, index, items) => items.findIndex((candidate) => candidate.intent === button.intent && candidate.label === button.label) === index)
+    .slice(0, 3);
+  return resolved.length ? resolved : [{ label: fallback.label, intent: fallback.intent, url: fallback.url }].filter((button) => button.label && button.url);
+}
+
+function mergeRequestedButtons(buttons, brief) {
+  const requested = requestedButtonHints(brief).map(({ intent }) => ({
+    intent,
+    label: {
+      tickets: "Comprar ingressos",
+      programming: "Ver programação",
+      trailer: "Ver trailer",
+      coupon: "Usar meu cupom",
+      concession: "Ver bomboniere",
+      club: "Conhecer o Clube",
+      event: "Ver evento",
+      account: "Acessar minha conta"
+    }[intent] || "Saiba mais"
+  }));
+  const requestedIntents = new Set(requested.map((button) => button.intent));
+  return [...requested, ...(Array.isArray(buttons) ? buttons : []).filter((button) => !requestedIntents.has(String(button?.intent || "")))].slice(0, 3);
+}
+
+function renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaButtons, colors, visual, siteUrl }) {
   const safeImage = safeUrl(imageUrl, siteUrl);
   const safeImageLink = safeUrl(imageLink, siteUrl);
-  const safeCta = safeUrl(ctaUrl, siteUrl);
   const logo = safeUrl(brand.logoUrl, siteUrl);
   const imageBlock = safeImage
     ? `<div style="padding:0 0 22px;text-align:center;background:${visual.content}">${safeImageLink ? `<a href="${escapeHtml(safeImageLink)}" style="text-decoration:none">` : ""}<img src="${escapeHtml(safeImage)}" alt="${escapeHtml(imageAlt)}" style="display:block;width:100%;max-width:${visual.imageWidth}px;height:auto;max-height:380px;object-fit:contain;margin:0 auto;border-radius:${visual.imageRadius}px;background-color:${visual.content};border:1px solid ${colors.accent}33">${safeImageLink ? "</a>" : ""}</div>`
     : "";
-  const cta = safeCta ? `<div style="padding-top:24px"><a href="${escapeHtml(safeCta)}" style="display:inline-block;padding:13px 20px;border-radius:7px;background:${colors.button};color:#020617;font-weight:800;text-decoration:none">${escapeHtml(ctaLabel)}</a></div>` : "";
+  const cta = ctaButtons.length ? `<div style="padding-top:24px;text-align:${visual.align}">${ctaButtons.map((button, index) => `<a href="${escapeHtml(safeUrl(button.url, siteUrl))}" style="display:inline-block;margin:0 8px 8px 0;padding:13px 20px;border:1px solid ${colors.button};border-radius:7px;background:${index === 0 ? colors.button : "transparent"};color:${index === 0 ? "#020617" : colors.headline};font-weight:800;text-decoration:none">${escapeHtml(button.label)}</a>`).join("")}</div>` : "";
   return `<div style="font-family:Arial,sans-serif;color:${colors.text};background:${visual.background}"><div style="padding:18px 20px;background:${visual.header};border-radius:8px 8px 0 0;text-align:${visual.align}">${logo ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(brand.name)}" style="display:block;width:120px;max-height:52px;object-fit:contain;object-position:${visual.align};margin:${visual.align === "center" ? "0 auto" : "0"};background-color:transparent">` : `<strong style="color:${colors.accent};letter-spacing:2px;text-transform:uppercase">${escapeHtml(brand.name)}</strong>`}<div style="padding-top:8px;color:#93a4bd;font-size:12px">${escapeHtml(brand.tagline)}</div></div><div style="padding:24px 20px;background:${visual.content}"><div style="color:${colors.accent};font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;text-align:${visual.align}">${escapeHtml(kicker)}</div><h1 style="margin:10px 0 16px;color:${colors.headline};font-size:30px;line-height:1.15;text-align:${visual.align}">${escapeHtml(headline)}</h1>${imageBlock}<div style="font-size:16px;line-height:1.65">${escapeHtml(message).replace(/\n/g, "<br>")}</div>${details ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:22px;border-top:1px solid rgba(148,163,184,.22)">${details}</table>` : ""}${cta}</div><div style="padding:16px 20px;color:#93a4bd;font-size:11px;line-height:1.5;border-top:1px solid rgba(148,163,184,.14);background:${visual.header}">${escapeHtml(brand.footer)}</div></div>`;
 }
 
@@ -209,15 +270,24 @@ function buildCampaignDraft(input = {}) {
   const requestedTemplate = validTemplate(input.referenceTemplateId || reference.templateId, defaults.templateId);
   const templateId = isTemplateCompatibleWithScenario(scenario, requestedTemplate) ? requestedTemplate : defaults.templateId;
   const usableReference = reference.id && reference.templateId === templateId ? reference : {};
-  const referenceColors = usableReference.headlineColor || usableReference.textColor || usableReference.buttonColor ? usableReference : {};
+  const referenceColors = usableReference.headlineColor || usableReference.textColor || usableReference.buttonColor || usableReference.accentColor ? usableReference : {};
   const creative = input.creative && typeof input.creative === "object" ? input.creative : {};
-  const visualStyle = resolveVisualStyle(creative.visualStyle || input.visualStyle, scenario);
+  const visualStyle = resolveVisualStyle(usableReference.visualStyle || creative.visualStyle || input.visualStyle, scenario);
   const visual = VISUAL_STYLE_PRESETS[visualStyle];
+  const referenceLocked = Boolean(usableReference.id);
   const colors = {
-    accent: brandSafeColor(creative.accentColor, safeColor(input.accentColor, visual.accent || defaults.accent)),
-    headline: brandSafeColor(creative.headlineColor, safeColor(referenceColors.headlineColor, visual.headline)),
-    text: brandSafeColor(creative.textColor, safeColor(referenceColors.textColor, visual.text)),
-    button: brandSafeColor(creative.buttonColor, safeColor(referenceColors.buttonColor, visual.accent || defaults.accent))
+    accent: referenceLocked
+      ? safeColor(referenceColors.accentColor, visual.accent || defaults.accent)
+      : brandSafeColor(creative.accentColor, safeColor(input.accentColor, visual.accent || defaults.accent)),
+    headline: referenceLocked
+      ? safeColor(referenceColors.headlineColor, visual.headline)
+      : brandSafeColor(creative.headlineColor, visual.headline),
+    text: referenceLocked
+      ? safeColor(referenceColors.textColor, visual.text)
+      : brandSafeColor(creative.textColor, visual.text),
+    button: referenceLocked
+      ? safeColor(referenceColors.buttonColor, visual.accent || defaults.accent)
+      : brandSafeColor(creative.buttonColor, visual.accent || defaults.accent)
   };
   const brand = {
     name: String(input.brand?.name || "Cine Cruzeiro").trim().slice(0, 80),
@@ -275,8 +345,19 @@ function buildCampaignDraft(input = {}) {
   const imageUrl = movie?.posterUrl || plan?.imageUrl || concessions[0]?.imageUrl || input.imageUrl || "";
   const imageAlt = movie ? `Pôster de ${movie.title}` : plan ? `Imagem do ${plan.name}` : concessions[0] ? `Imagem de ${concessions[0].name}` : "Imagem da campanha";
   const imageLink = movieLink(movie, siteUrl) || (plan ? safeUrl(`/clube/assinar/${plan.id}`, siteUrl) : safeUrl("/filmes", siteUrl));
-  const ctaUrl = imageLink || safeUrl("/filmes", siteUrl);
   const ctaLabel = safeText(creative.ctaLabel, defaults.ctaLabel, 80);
+  const defaultIntent = ["club", "club_plan"].includes(scenario) ? "club"
+    : scenario === "event" ? "event"
+      : scenario === "ticket" ? "account"
+        : ["concession", "combo"].includes(scenario) ? "concession"
+          : ["coupon", "promotion"].includes(scenario) ? "coupon"
+            : scenario === "programming" ? "programming" : "tickets";
+  const ctaButtons = campaignCtaButtons(mergeRequestedButtons(creative.buttons, input.brief), {
+    label: ctaLabel,
+    intent: defaultIntent,
+    url: ctaIntentUrl(defaultIntent, { movie, coupon, siteUrl }) || imageLink || safeUrl("/filmes", siteUrl)
+  }, { scenario, movie, coupon, siteUrl });
+  const primaryCta = ctaButtons[0] || { label: ctaLabel, url: imageLink || safeUrl("/filmes", siteUrl) };
   const audience = input.recipientMode || "all";
   const details = renderDetailRows({ movie, movies, coupon, plan, concessions, audience, siteUrl });
   const variables = {
@@ -308,11 +389,12 @@ function buildCampaignDraft(input = {}) {
     kicker,
     headline,
     message,
-    html: renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaLabel, ctaUrl, colors, visual, siteUrl }),
+    html: renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaButtons, colors, visual, siteUrl }),
     mode: "template",
     templateId,
-    ctaLabel,
-    ctaUrl,
+    ctaLabel: primaryCta.label,
+    ctaUrl: primaryCta.url,
+    ctaButtons,
     recipientMode: audience === "active" ? "recent" : ["all", "recent", "purchased", "reactivation", "birthday_manual", "selected"].includes(audience) ? audience : "all",
     couponId: coupon?.id || "",
     movieId: movie?.id || "",
@@ -328,6 +410,7 @@ function buildCampaignDraft(input = {}) {
     accentColor: colors.accent,
     visualStyle,
     visualStyleLabel: visual.label,
+    scheduleAt: input.scheduleAt || "",
     variables,
     brand,
     aiGenerated: true,
@@ -350,6 +433,7 @@ module.exports = {
     escapeHtml,
     normalizeScenario,
     resolveVisualStyle,
-    templateContext
+    templateContext,
+    mergeRequestedButtons
   }
 };

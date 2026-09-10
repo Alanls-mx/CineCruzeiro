@@ -1631,13 +1631,24 @@
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:promotions" hidden>
           <div class="split-grid compact marketing-grid">
             <div class="surface">
-              <div class="section-title">Cupons de desconto</div>
+              <div class="coupon-list-head">
+                <div class="section-title">Cupons de desconto</div>
+                <div class="coupon-view-tabs" role="tablist" aria-label="Situação dos cupons">
+                  <button id="activePromotionsTab" class="active" type="button" role="tab" aria-selected="true">
+                    Ativos <span id="activePromotionsCount">0</span>
+                  </button>
+                  <button id="archivedPromotionsTab" type="button" role="tab" aria-selected="false">
+                    Arquivados <span id="archivedPromotionsCount">0</span>
+                  </button>
+                </div>
+              </div>
               <div id="promotionsList" class="list"></div>
               <button id="newPromotionButton" class="ghost-button full" type="button">Novo cupom</button>
             </div>
             <form id="promotionForm" class="surface form-grid long-form coupon-form" data-dirty-track>
               <input type="hidden" id="promotionId" />
               <div id="promotionUsageStats" class="coupon-usage-stats" aria-live="polite"></div>
+              <div id="promotionArchiveNotice" class="coupon-archive-notice" hidden></div>
               <section class="coupon-form-section">
                 <div class="section-title">Identificação</div>
                 <label>
@@ -1726,6 +1737,16 @@
                   <select id="promotionAllowedMovieIds" multiple size="5" aria-describedby="promotionMoviesHelp"></select>
                   <span id="promotionMoviesHelp" class="helper-text">Sem seleção, o cupom vale para qualquer filme. Use Ctrl ou Command para selecionar vários.</span>
                 </label>
+              </section>
+              <section id="promotionUsageHistorySection" class="coupon-history" hidden aria-live="polite">
+                <div class="coupon-history-head">
+                  <div>
+                    <div class="section-title">Histórico de uso</div>
+                    <p id="promotionUsageHistorySummary">Compras pagas com este cupom.</p>
+                  </div>
+                </div>
+                <div id="promotionUsageHistory" class="coupon-history-list"></div>
+                <div id="promotionUsagePager" class="coupon-history-pager" aria-label="Paginação do histórico de uso"></div>
               </section>
               <div class="button-row">
                 <button id="deletePromotionButton" class="danger-button" type="button">Excluir</button>

@@ -65,6 +65,7 @@ function campaignFromRow(row = {}) {
     buttonColor: row.button_color || "#facc15",
     ctaLabel: row.cta_label || "",
     ctaUrl: row.cta_url || "",
+    ctaButtons: Array.isArray(ai.ctaButtons) ? ai.ctaButtons : [],
     variables: row.variables || {},
     brand: row.brand_snapshot || {},
     attachments: Array.isArray(row.attachments) ? row.attachments : [],
@@ -166,7 +167,8 @@ function campaignRecord(campaign = {}) {
     templateSelectionMode: campaign.templateSelectionMode || campaign.aiMetadata?.templateSelectionMode || "",
     templateReason: campaign.templateReason || campaign.aiMetadata?.templateReason || "",
     compatibleTemplates: campaign.compatibleTemplates || campaign.aiMetadata?.compatibleTemplates || [],
-    movieIds: Array.isArray(campaign.movieIds) ? campaign.movieIds.map(String).slice(0, 20) : campaign.aiMetadata?.movieIds || []
+    movieIds: Array.isArray(campaign.movieIds) ? campaign.movieIds.map(String).slice(0, 20) : campaign.aiMetadata?.movieIds || [],
+    ctaButtons: Array.isArray(campaign.ctaButtons) ? campaign.ctaButtons.slice(0, 3) : campaign.aiMetadata?.ctaButtons || []
   };
   return {
     id: campaign.id,

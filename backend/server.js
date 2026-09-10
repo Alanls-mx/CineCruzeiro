@@ -31,6 +31,8 @@ const { testGeminiConnection } = require("./services/geminiEmailAgentService");
 const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
 const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
 const { buildCampaignCoupon, syncCampaignCouponSchedule } = require("./services/emailCampaignCouponService");
+const { archiveExpiredCoupons, couponUsageHistory, couponUsageSummary } = require("./services/couponLifecycleService");
+const { extractRequestedSchedule } = require("./services/emailCampaignBriefService");
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
@@ -5476,22 +5478,12 @@ async function finalizeOrderWithoutCharge(db, order, customerUser) {
   return { order: savedOrder, tickets };
 }
 
-function couponUsageSummary(db, coupon) {
-  const orders = (db.orders || []).filter((order) =>
-    order.status === "paid" &&
-    (order.couponId === coupon.id || String(order.couponCode || "").toUpperCase() === coupon.couponCode)
-  );
-  return {
-    usageCount: orders.length,
-    discountGranted: Number(orders.reduce((sum, order) => sum + Number(order.couponDiscount || 0), 0).toFixed(2))
-  };
-}
-
 function applyCouponPricing(db, order, ticketTotal, concessionTotal) {
   const code = String(order.couponCode || "").trim().toUpperCase();
   if (!code) return { discountValue: 0, coupon: null };
   const coupon = (db.promotions || []).find((item) => item.couponCode === code);
   if (!coupon) throw Object.assign(new Error("Cupom não encontrado. Confira o código e tente novamente."), { statusCode: 422, code: "COUPON_NOT_FOUND" });
+  if (coupon.archivedAt) throw Object.assign(new Error("Este cupom expirou e foi arquivado."), { statusCode: 409, code: "COUPON_EXPIRED" });
   if (coupon.active === false) throw Object.assign(new Error("Este cupom está desativado."), { statusCode: 409, code: "COUPON_INACTIVE" });
 
   const now = Date.now();
@@ -5709,6 +5701,8 @@ function normalizePromotion(input, existing = {}) {
     sourceCampaignId: String(input.sourceCampaignId ?? existing.sourceCampaignId ?? "").trim().slice(0, 180),
     autoManagedByCampaign: input.autoManagedByCampaign !== undefined ? Boolean(input.autoManagedByCampaign) : Boolean(existing.autoManagedByCampaign),
     autoCouponDurationDays: Math.max(0, Math.min(31, Number(input.autoCouponDurationDays ?? existing.autoCouponDurationDays ?? 0))),
+    archivedAt: String(input.archivedAt ?? existing.archivedAt ?? ""),
+    archiveReason: String(input.archiveReason ?? existing.archiveReason ?? ""),
     createdAt: existing.createdAt || input.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -6750,6 +6744,14 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     variables: Object.fromEntries(Object.entries(input.variables ?? existing.variables ?? {}).filter(([key, value]) => /^[a-z][a-z0-9_]{0,39}$/i.test(key) && !reservedVariables.has(String(key).toLowerCase()) && String(value ?? "").trim()).slice(0, 48).map(([key, value]) => [key.toLowerCase(), String(value).trim().slice(0, 1000)])),
     ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "Ver programação").trim().slice(0, 80),
     ctaUrl: String(input.ctaUrl ?? existing.ctaUrl ?? "").trim().slice(0, 1000),
+    ctaButtons: (Array.isArray(input.ctaButtons) ? input.ctaButtons : (existing.ctaButtons || []))
+      .map((button) => ({
+        label: String(button?.label || "").trim().slice(0, 80),
+        intent: String(button?.intent || "").trim().slice(0, 32),
+        url: String(button?.url || "").trim().slice(0, 1000)
+      }))
+      .filter((button) => button.label && button.url)
+      .slice(0, 3),
     recipientMode: ["all", "selected", "purchased", "recent", "reactivation", "birthday_manual"].includes(input.recipientMode || existing.recipientMode) ? (input.recipientMode || existing.recipientMode) : "all",
     reactivationDays: Math.max(30, Math.min(730, Number(input.reactivationDays ?? existing.reactivationDays ?? 90))),
     customerIds: Array.isArray(input.customerIds) ? input.customerIds.map(String).slice(0, 5000) : (existing.customerIds || []),
@@ -8703,6 +8705,17 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/email/campaigns/ai-draft" && method === "POST") {
     const body = await readBody(req);
+    let briefSchedule;
+    if (body.scheduleAt) {
+      const explicitSchedule = new Date(body.scheduleAt);
+      if (!Number.isFinite(explicitSchedule.getTime())) {
+        throw Object.assign(new Error("A data de envio informada não é válida."), { statusCode: 422, code: "EMAIL_CAMPAIGN_SCHEDULE_INVALID" });
+      }
+      briefSchedule = { scheduleAt: explicitSchedule.toISOString(), matched: true, reason: "explicit_field" };
+    } else {
+      briefSchedule = extractRequestedSchedule(body.brief);
+    }
+    const requestedScheduleAt = briefSchedule.scheduleAt || "";
     const objective = normalizeObjective(body.objective || body.scenario) || "announcement";
     const campaignId = `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
     const requestedMovieIds = [...new Set([
@@ -8721,7 +8734,7 @@ async function handleApi(req, res, pathname) {
       autoCoupon = buildCampaignCoupon({
         brief: body.brief,
         campaignId,
-        scheduleAt: body.scheduleAt || releaseStart,
+        scheduleAt: requestedScheduleAt || releaseStart,
         movieIds: requestedMovieIds,
         concessionIds: Array.isArray(body.concessionIds) ? body.concessionIds : [],
         promotions: db.promotions || []
@@ -8736,6 +8749,7 @@ async function handleApi(req, res, pathname) {
       ...body,
       id: campaignId,
       objective,
+      scheduleAt: requestedScheduleAt,
       templateSelectionMode: "automatic"
     });
     const resolvedInput = resolveCampaignForInput(db, aiCampaignInput, { allowAutoMovie: false });
@@ -8770,6 +8784,7 @@ async function handleApi(req, res, pathname) {
       referenceTemplateId: templateResolution.templateId,
       recipientMode: body.recipientMode,
       brief: String(body.brief || "").trim().slice(0, 1000),
+      scheduleAt: requestedScheduleAt,
       brand: normalizeEmailBrand(db.settings?.emailBranding || {}),
       siteUrl: appFrontendUrl(),
       eligibilityReport: context.report
@@ -8787,7 +8802,8 @@ async function handleApi(req, res, pathname) {
       couponId: aiCampaignInput.couponId,
       clubPlanId: aiCampaignInput.clubPlanId,
       concessionIds: aiCampaignInput.concessionIds,
-      autoCouponId: autoCoupon?.id || ""
+      autoCouponId: autoCoupon?.id || "",
+      scheduleAt: requestedScheduleAt
     }, { brand: db.settings?.emailBranding || {} });
     const eligibilityCheck = eligibleCampaignRecipients(db, campaign);
     applyCampaignTemplateResolution(campaign, eligibilityCheck.templateResolution);
@@ -8840,6 +8856,8 @@ async function handleApi(req, res, pathname) {
       referenceCampaignId: generated.aiReferenceCampaignId,
       referenceTemplateId: generated.aiReferenceTemplateId,
       visualStyle: campaign.visualStyle,
+      scheduleAt: campaign.scheduleAt || "",
+      scheduleSource: briefSchedule.reason,
       autoCouponId: autoCoupon?.id || ""
     });
     sendJson(res, 201, {
@@ -8858,6 +8876,8 @@ async function handleApi(req, res, pathname) {
         referenceTemplateId: generated.aiReferenceTemplateId,
         visualStyle: campaign.visualStyle,
         visualStyleLabel: campaign.visualStyleLabel,
+        scheduleAt: campaign.scheduleAt || "",
+        scheduleSource: briefSchedule.reason,
         couponCreated: Boolean(autoCoupon),
         coupon: autoCoupon ? { ...autoCoupon, usageCount: 0 } : null,
         eligibility,
@@ -10790,6 +10810,22 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  const promotionUsageMatch = pathname.match(/^\/api\/promotions\/([^/]+)\/usage$/);
+  if (promotionUsageMatch && method === "GET") {
+    const id = decodeURIComponent(promotionUsageMatch[1]);
+    const coupon = db.promotions.find((item) => item.id === id);
+    if (!coupon) {
+      sendJson(res, 404, { error: { code: "COUPON_NOT_FOUND", message: "Cupom não encontrado." } });
+      return;
+    }
+    const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+    sendJson(res, 200, couponUsageHistory(db, coupon, {
+      page: requestUrl.searchParams.get("page"),
+      pageSize: requestUrl.searchParams.get("pageSize")
+    }));
+    return;
+  }
+
   const promotionMatch = pathname.match(/^\/api\/promotions\/([^/]+)$/);
   if (promotionMatch) {
     const id = decodeURIComponent(promotionMatch[1]);
@@ -10802,6 +10838,11 @@ async function handleApi(req, res, pathname) {
     if (method === "PUT") {
       const item = normalizePromotion(await readBody(req), db.promotions[index]);
       assertPromotionRules(db, item, id);
+      const endsAt = item.endsAt ? new Date(item.endsAt).getTime() : 0;
+      if (item.active && (!endsAt || endsAt > Date.now())) {
+        item.archivedAt = "";
+        item.archiveReason = "";
+      }
       db.promotions[index] = item;
       await writeDb(db);
       sendJson(res, 200, item);
@@ -10809,9 +10850,22 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "DELETE") {
-      const [removed] = db.promotions.splice(index, 1);
+      const usage = couponUsageSummary(db, db.promotions[index]);
+      let removed;
+      if (usage.usageCount > 0) {
+        removed = {
+          ...db.promotions[index],
+          active: false,
+          archivedAt: new Date().toISOString(),
+          archiveReason: "manual",
+          updatedAt: new Date().toISOString()
+        };
+        db.promotions[index] = removed;
+      } else {
+        [removed] = db.promotions.splice(index, 1);
+      }
       await writeDb(db);
-      sendJson(res, 200, removed);
+      sendJson(res, 200, { ...removed, deleted: usage.usageCount === 0, archived: usage.usageCount > 0 });
       return;
     }
   }
@@ -12450,18 +12504,21 @@ async function runSubscriptionMaintenance() {
       const movieTagsChanged = applyAutomatedMovieTags(db);
       const sessionMaintenance = archiveFinishedSessions(db, new Date(), expiredCheckoutOrders);
       const reservationsChanged = expireStaleReservations(db, expiredCheckoutOrders);
+      const couponMaintenance = archiveExpiredCoupons(db, new Date());
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
-      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || result.changed || lifecycle.changed) {
+      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || couponMaintenance.changed || result.changed || lifecycle.changed) {
         await writeDb(db);
         sessionMaintenance.archived.forEach((session) => logEvent("info", "session.finished_archived", session));
+        couponMaintenance.archived.forEach((coupon) => logEvent("info", "coupon.expired_archived", coupon));
         logEvent("info", "subscription.pending_payment_maintenance", {
           expired: result.expired,
           failed: result.failed,
           finalized: lifecycle.finalized,
           catalogUpdated: scheduledChanged || movieTagsChanged,
           sessionsArchived: sessionMaintenance.archived.length,
-          reservationsExpired: reservationsChanged
+          reservationsExpired: reservationsChanged,
+          couponsArchived: couponMaintenance.archived.length
         });
       }
     });
