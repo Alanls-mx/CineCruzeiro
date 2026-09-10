@@ -4,6 +4,26 @@ const { RESPONSE_SCHEMA, SYSTEM_INSTRUCTIONS, campaignGenerationContext } = requ
 const GEMINI_RESPONSE_SCHEMA = { ...RESPONSE_SCHEMA };
 delete GEMINI_RESPONSE_SCHEMA.additionalProperties;
 
+const GEMINI_COMPACT_RESPONSE_SCHEMA = {
+  type: "object",
+  required: ["subject", "preheader", "kicker", "headline", "message", "ctaLabel", "visualStyle", "accentColor", "headlineColor", "textColor", "buttonColor"],
+  properties: {
+    subject: { type: "string" },
+    preheader: { type: "string" },
+    kicker: { type: "string" },
+    headline: { type: "string" },
+    message: { type: "string" },
+    ctaLabel: { type: "string" },
+    visualStyle: RESPONSE_SCHEMA.properties.visualStyle,
+    accentColor: { type: "string" },
+    headlineColor: { type: "string" },
+    textColor: { type: "string" },
+    buttonColor: { type: "string" }
+  }
+};
+
+const COMPACT_RECOVERY_INSTRUCTIONS = "A resposta anterior ficou incompleta. Retorne agora apenas os campos compactos exigidos pelo esquema, sem sections, buttons ou artDirection. Seja conciso. O backend montará os botões e a composição visual de forma determinística a partir do briefing original.";
+
 function responseHeader(response, name) {
   if (!response?.headers || typeof response.headers.get !== "function") return "";
   return String(response.headers.get(name) || "").trim();
@@ -166,6 +186,90 @@ function geminiResponseText(payload = {}) {
     .trim();
 }
 
+function geminiFinishReason(payload = {}) {
+  return String(payload?.candidates?.[0]?.finishReason || payload?.promptFeedback?.blockReason || "").trim();
+}
+
+function parseGeminiCreative(payload = {}) {
+  const text = geminiResponseText(payload).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const finishReason = geminiFinishReason(payload);
+  if (!text) {
+    const blocked = String(payload?.promptFeedback?.blockReason || "").trim();
+    throw Object.assign(new Error(blocked
+      ? "O Gemini bloqueou a geração deste conteúdo. Revise o briefing e tente novamente."
+      : "O Gemini não retornou conteúdo utilizável. Tente novamente."), {
+      code: blocked ? "GEMINI_RESPONSE_BLOCKED" : "GEMINI_EMPTY_RESPONSE",
+      statusCode: 502,
+      expose: true,
+      retryableGeneration: !blocked,
+      finishReason
+    });
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw Object.assign(new Error("O Gemini devolveu uma resposta incompleta. O sistema tentará gerar novamente com um formato mais compacto."), {
+      code: "GEMINI_INVALID_RESPONSE",
+      statusCode: 502,
+      expose: true,
+      retryableGeneration: true,
+      finishReason
+    });
+  }
+}
+
+function campaignGenerationBody(providerInput, compact = false) {
+  return {
+    system_instruction: { parts: [{ text: compact ? `${SYSTEM_INSTRUCTIONS}\n\n${COMPACT_RECOVERY_INSTRUCTIONS}` : SYSTEM_INSTRUCTIONS }] },
+    contents: [{ role: "user", parts: [{ text: JSON.stringify(providerInput) }] }],
+    generationConfig: {
+      maxOutputTokens: compact ? 1800 : 3200,
+      responseMimeType: "application/json",
+      responseSchema: compact ? GEMINI_COMPACT_RESPONSE_SCHEMA : GEMINI_RESPONSE_SCHEMA
+    }
+  };
+}
+
+async function requestCampaignCreative(config, providerInput, options = {}, compact = false) {
+  const controller = new AbortController();
+  const timeout = Math.max(5000, Math.min(60000, Number(config.timeout || 30000)));
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const requestedTokens = Number(config.maxOutputTokens || 0);
+    const body = campaignGenerationBody(providerInput, compact);
+    body.generationConfig.maxOutputTokens = compact
+      ? Math.max(1400, Math.min(2400, requestedTokens || 1800))
+      : Math.max(2600, Math.min(5000, requestedTokens || 3200));
+    const result = await requestGeminiWithModelFallback(config, body, {
+      fetchImpl: options.fetchImpl || fetch,
+      signal: controller.signal,
+      maxRetries: 1,
+      sleepImpl: options.sleepImpl
+    });
+    return { ...result, creative: parseGeminiCreative(result.payload) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalizeGenerationError(error, repeated = false) {
+  if (error.name === "AbortError") {
+    return Object.assign(new Error(repeated
+      ? "O Gemini demorou demais nas duas tentativas. O briefing foi mantido; tente gerar novamente em alguns instantes."
+      : "O Gemini demorou demais para responder. Nenhum rascunho foi criado."), {
+      statusCode: 504,
+      code: "GEMINI_TIMEOUT",
+      expose: true
+    });
+  }
+  if (repeated && error.code === "GEMINI_INVALID_RESPONSE") {
+    error.message = "O Gemini devolveu uma resposta incompleta nas duas tentativas. O briefing foi mantido; tente gerar novamente.";
+  }
+  if (!error.statusCode) error.statusCode = ["GEMINI_EMPTY_RESPONSE", "GEMINI_INVALID_RESPONSE", "GEMINI_RESPONSE_BLOCKED"].includes(error.code) ? 502 : 503;
+  error.expose = true;
+  return error;
+}
+
 async function testGeminiConnection(config = {}, options = {}) {
   if (!config.apiKey || !config.model) return { ok: false, code: "GEMINI_NOT_CONFIGURED", message: "Informe a chave da API e o modelo do Gemini." };
   const controller = new AbortController();
@@ -201,36 +305,33 @@ async function generateGeminiCampaignDraft(input = {}, options = {}) {
     });
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Math.max(5000, Math.min(60000, Number(config.timeout || 30000))));
-  try {
-    const providerInput = campaignGenerationContext(input, baseline);
-    const { payload, model, modelChanged } = await requestGeminiWithModelFallback(config, {
-      system_instruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] },
-      contents: [{ role: "user", parts: [{ text: JSON.stringify(providerInput) }] }],
-      generationConfig: {
-        maxOutputTokens: Math.max(1800, Math.min(5000, Number(config.maxOutputTokens || 2800))),
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_RESPONSE_SCHEMA
+  const providerInput = campaignGenerationContext(input, baseline);
+  let firstFailure = null;
+  let activeConfig = config;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await requestCampaignCreative(activeConfig, providerInput, options, attempt === 1);
+      activeConfig = { ...activeConfig, model: result.model };
+      const generated = buildCampaignDraft({ ...input, creative: result.creative });
+      return {
+        ...generated,
+        aiProvider: "gemini",
+        aiModel: result.model,
+        aiModelResolved: result.modelChanged,
+        aiResponseId: result.payload.responseId || "",
+        aiGenerationRetried: attempt === 1,
+        aiGenerationRetryReason: firstFailure?.code || ""
+      };
+    } catch (error) {
+      const canRetry = attempt === 0 && (error.name === "AbortError" || error.retryableGeneration === true);
+      if (canRetry) {
+        firstFailure = error;
+        continue;
       }
-    }, { fetchImpl: options.fetchImpl || fetch, signal: controller.signal, maxRetries: 1, sleepImpl: options.sleepImpl });
-    const text = geminiResponseText(payload);
-    if (!text) throw Object.assign(new Error("O Gemini não retornou conteúdo utilizável."), { code: "GEMINI_EMPTY_RESPONSE" });
-    const creative = JSON.parse(text);
-    const generated = buildCampaignDraft({ ...input, creative });
-    return { ...generated, aiProvider: "gemini", aiModel: model, aiModelResolved: modelChanged, aiResponseId: payload.responseId || "" };
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw Object.assign(new Error("O Gemini demorou demais para responder. Nenhum rascunho foi criado."), {
-        statusCode: 504,
-        code: "GEMINI_TIMEOUT"
-      });
+      throw normalizeGenerationError(error, attempt === 1);
     }
-    if (!error.statusCode) error.statusCode = error.code === "GEMINI_EMPTY_RESPONSE" ? 502 : 503;
-    throw error;
-  } finally {
-    clearTimeout(timer);
   }
+  throw normalizeGenerationError(firstFailure || new Error("O Gemini não retornou conteúdo utilizável."), true);
 }
 
 module.exports = {
@@ -240,7 +341,9 @@ module.exports = {
     compatibleTextModels,
     correctedModelName,
     geminiErrorDetails,
+    geminiFinishReason,
     geminiResponseText,
+    parseGeminiCreative,
     normalizeModelName,
     pickGeminiModel,
     requestGeminiResponse,

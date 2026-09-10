@@ -188,6 +188,91 @@ test("agente Gemini usa catálogo validado e saída estruturada", async () => {
   assert.equal(result.visualStyle, "premiere");
 });
 
+test("Gemini recupera JSON truncado e mantém botões e composição pedidos no briefing", async () => {
+  const brief = `Crie uma campanha para Coyote x Acme com visual nostálgico.
+Cupom: ACME20. Válido de 10/09/2026 até 20/09/2026, às 23h59.
+CTA principal: USAR ACME20 E COMPRAR INGRESSOS.
+Use composição assimétrica com pôster ao lado, caixa/encomenda ACME, blueprint, estrada e marcas de impacto. O CTA deve aparecer no hero, depois do card e próximo ao final.`;
+  let requests = 0;
+  const requestBodies = [];
+  const result = await generateGeminiCampaignDraft({
+    scenario: "coupon",
+    objective: "offer",
+    siteUrl,
+    brief,
+    movie: { id: "coyote-acme", slug: "coyote-acme", title: "Coyote x Acme", posterUrl: "/uploads/coyote.jpg" },
+    coupon: { id: "cupom-acme", couponCode: "ACME20", discountType: "percentage", value: 20, appliesTo: "tickets", endsAt: "2026-09-20T23:59:00-03:00" }
+  }, {
+    config: { enabled: true, configured: true, apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000, maxOutputTokens: 1800 },
+    fetchImpl: async (_url, options) => {
+      requests += 1;
+      requestBodies.push(JSON.parse(options.body));
+      const text = requests === 1
+        ? '{"subject":"Coyote x Acme chegou'
+        : JSON.stringify({
+          subject: "A ACME entregou uma oferta para você",
+          preheader: "Use ACME20 e volte à infância",
+          kicker: "Entrega especial",
+          headline: "A nostalgia não vai escapar",
+          message: "Olá, {{nome}}. Reviva a diversão de Coyote x Acme na tela grande.",
+          ctaLabel: "USAR ACME20 E COMPRAR INGRESSOS",
+          visualStyle: "nostalgic",
+          accentColor: "#f6c453",
+          headlineColor: "#fff7e6",
+          textColor: "#e7dfd1",
+          buttonColor: "#f6c453"
+        });
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "" },
+        async json() {
+          return { responseId: `gemini-${requests}`, candidates: [{ finishReason: requests === 1 ? "MAX_TOKENS" : "STOP", content: { parts: [{ text }] } }] };
+        }
+      };
+    }
+  });
+
+  assert.equal(requests, 2);
+  assert.equal(result.aiGenerationRetried, true);
+  assert.equal(result.aiGenerationRetryReason, "GEMINI_INVALID_RESPONSE");
+  assert.equal(requestBodies[0].generationConfig.responseSchema.properties.sections.type, "array");
+  assert.equal(requestBodies[1].generationConfig.responseSchema.properties.sections, undefined);
+  assert.match(requestBodies[1].system_instruction.parts[0].text, /resposta anterior ficou incompleta/i);
+  assert.equal(result.ctaButtons[0].label, "USAR ACME20 E COMPRAR INGRESSOS");
+  assert.equal((result.html.match(/USAR ACME20 E COMPRAR INGRESSOS/g) || []).length, 3);
+  assert.match(result.html, /ACME Special Delivery/);
+  assert.match(result.html, /PLANO ACME Nº 20/);
+  assert.equal(result.artDirection.heroLayout, "split");
+  assert.equal(result.artDirection.ctaPlacement, "repeated");
+});
+
+test("Gemini retorna erro público específico após duas respostas truncadas", async () => {
+  let requests = 0;
+  await assert.rejects(
+    generateGeminiCampaignDraft({ scenario: "promotion", brief: "Crie uma promoção com botão para ver a programação." }, {
+      config: { enabled: true, configured: true, apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000 },
+      fetchImpl: async () => {
+        requests += 1;
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => "" },
+          async json() { return { candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [{ text: '{"subject":"interrompido' }] } }] }; }
+        };
+      }
+    }),
+    (error) => {
+      assert.equal(error.code, "GEMINI_INVALID_RESPONSE");
+      assert.equal(error.statusCode, 502);
+      assert.equal(error.expose, true);
+      assert.match(error.message, /duas tentativas/i);
+      return true;
+    }
+  );
+  assert.equal(requests, 2);
+});
+
 test("adaptação visual da IA fica limitada aos estilos e cores da marca", () => {
   const result = buildCampaignDraft({
     scenario: "premiere",

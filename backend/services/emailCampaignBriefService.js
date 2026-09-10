@@ -62,6 +62,7 @@ function requestedButtonHints(brief) {
     .replace(/[*_`"']/g, "")
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/[.!?:;,]+$/g, "")
     .slice(0, 80);
   const intentForLabel = (value) => {
     const normalized = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();

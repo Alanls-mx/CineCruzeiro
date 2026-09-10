@@ -8758,8 +8758,6 @@ async function handleApi(req, res, pathname) {
         concessionIds: Array.isArray(body.concessionIds) ? body.concessionIds : [],
         promotions: db.promotions || []
       });
-      db.promotions ||= [];
-      db.promotions.push(autoCoupon);
       body.couponId = autoCoupon.id;
       body.movieIds = requestedMovieIds;
       body.movieId = requestedMovieIds[0] || "";
@@ -8771,7 +8769,10 @@ async function handleApi(req, res, pathname) {
       scheduleAt: requestedScheduleAt,
       templateSelectionMode: "automatic"
     });
-    const resolvedInput = resolveCampaignForInput(db, aiCampaignInput, { allowAutoMovie: false });
+    const campaignDb = autoCoupon
+      ? { ...db, promotions: [...(db.promotions || []), autoCoupon] }
+      : db;
+    const resolvedInput = resolveCampaignForInput(campaignDb, aiCampaignInput, { allowAutoMovie: false });
     const context = resolvedInput.context;
     const templateResolution = resolvedInput.resolution;
     if (templateResolution.incomplete) {
@@ -8824,7 +8825,7 @@ async function handleApi(req, res, pathname) {
       autoCouponId: autoCoupon?.id || "",
       scheduleAt: requestedScheduleAt
     }, { brand: db.settings?.emailBranding || {} });
-    const eligibilityCheck = eligibleCampaignRecipients(db, campaign);
+    const eligibilityCheck = eligibleCampaignRecipients(campaignDb, campaign);
     applyCampaignTemplateResolution(campaign, eligibilityCheck.templateResolution);
     const recipientCheck = { recipients: eligibilityCheck.recipients, excluded: eligibilityCheck.report.recipients?.excluded || 0, reasons: eligibilityCheck.report.recipients?.exclusionReasons || {} };
     const eligibility = {
@@ -12487,10 +12488,11 @@ const server = http.createServer(async (req, res) => {
         code: error.code || "REQUEST_ERROR",
         message: error.message
       });
+      const exposeError = status < 500 || error.expose === true;
       sendJson(res, status, {
         error: {
-          code: status >= 500 ? "INTERNAL_ERROR" : error.code || "REQUEST_ERROR",
-          message: status >= 500 ? "Desculpe, erro interno no servidor." : error.message
+          code: exposeError ? error.code || "REQUEST_ERROR" : "INTERNAL_ERROR",
+          message: exposeError ? error.message : "Desculpe, erro interno no servidor."
         },
         ...(isProduction() ? {} : { detail: error.message })
       });

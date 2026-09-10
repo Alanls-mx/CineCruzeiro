@@ -277,6 +277,7 @@ async function api(path, options = {}) {
     }
     const error = new Error(data.error?.message || data.error || "Desculpe, erro interno no servidor");
     error.status = response.status;
+    error.code = data.error?.code || "REQUEST_ERROR";
     error.payload = data;
     throw error;
   }
@@ -7042,7 +7043,9 @@ async function generateEmailCampaignAiDraft() {
     if (resultBox) resultBox.hidden = false;
     showToast("Rascunho criado por Google Gemini", "ok");
   } catch (error) {
-    setEmailCampaignAiStatus(error.message || "Não foi possível criar o rascunho.", "error");
+    const retryable = ["GEMINI_INVALID_RESPONSE", "GEMINI_EMPTY_RESPONSE", "GEMINI_TIMEOUT", "GEMINI_UNAVAILABLE"].includes(error.code);
+    const message = `${error.message || "Não foi possível criar o rascunho."}${retryable ? " O briefing continua preenchido; tente novamente." : ""}`;
+    setEmailCampaignAiStatus(message, "error");
     showToast(error.message, "error");
   } finally {
     button.disabled = false;
