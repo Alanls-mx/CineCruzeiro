@@ -3630,7 +3630,7 @@ function maskManualSessionDate(value = "") {
 }
 
 function isManualSessionSellable(session = {}, now = new Date()) {
-  if (!session || session.status === "sold_out") return false;
+  if (!session || ["sold_out", "cancelled", "hidden", "archived"].includes(String(session.status || "").trim().toLowerCase())) return false;
   const startsAt = manualSessionStartsAt(session);
   return startsAt ? startsAt.getTime() + 10 * 60 * 1000 > now.getTime() : false;
 }
@@ -4781,7 +4781,7 @@ function validationSessionOptions() {
       movieId: movie.id,
       movieTitle: movie.title || "Filme"
     })))
-    .filter((session) => session.id && session.date >= today && !["cancelled", "hidden"].includes(String(session.status || "").toLowerCase()))
+    .filter((session) => session.id && session.date >= today && !["cancelled", "hidden", "archived"].includes(String(session.status || "").toLowerCase()))
     .sort((a, b) => String(`${a.date} ${a.time} ${a.movieTitle}`).localeCompare(String(`${b.date} ${b.time} ${b.movieTitle}`)));
 }
 

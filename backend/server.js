@@ -655,8 +655,12 @@ function sessionSellableUntil(session = {}, fallbackDate = todayIsoDate()) {
   return startsAt ? new Date(startsAt.getTime() + 10 * 60 * 1000) : null;
 }
 
+function normalizedSessionStatus(session = {}) {
+  return String(session?.status || "available").trim().toLowerCase();
+}
+
 function isSessionSellable(session = {}, fallbackDate = todayIsoDate(), now = new Date()) {
-  if (!session || session.status === "sold_out") return false;
+  if (!session || ["sold_out", "cancelled", "hidden", "archived"].includes(normalizedSessionStatus(session))) return false;
   const sellableUntil = sessionSellableUntil(session, fallbackDate);
   return sellableUntil ? sellableUntil.getTime() > now.getTime() : true;
 }
@@ -1859,14 +1863,17 @@ async function claimSeatHoldsForOrder(db, order) {
 }
 
 async function releaseOrderSeatHolds(order, broadcastStatus = "unavailable") {
-  if (!order?.seatHoldToken || !order?.sessionId) return [];
-  const released = await releaseSeatHoldsForOwner({ sessionId: order.sessionId, ownerToken: order.seatHoldToken });
-  released.forEach((hold) => seatRealtimeService?.broadcastSeatStatus(order.sessionId, hold.seatId, broadcastStatus));
+  const sessionId = order?.sessionId || order?.archivedSeatHoldSessionId || order?.archivedSessionId;
+  if (!order?.seatHoldToken || !sessionId) return [];
+  const released = await releaseSeatHoldsForOwner({ sessionId, ownerToken: order.seatHoldToken });
+  released.forEach((hold) => seatRealtimeService?.broadcastSeatStatus(sessionId, hold.seatId, broadcastStatus));
   return released;
 }
 
 function publicSessionStatus(db, session) {
-  if (!session || session.status === "sold_out") return "sold_out";
+  const status = normalizedSessionStatus(session);
+  if (!session || ["cancelled", "hidden", "archived"].includes(status)) return status || "sold_out";
+  if (status === "sold_out") return "sold_out";
   const room = roomForSession(db, session);
   const capacity = roomSeatSelectionEnabled(room)
     ? roomSeats(room).filter((seat) => seat.enabled !== false).length
@@ -1882,7 +1889,7 @@ function publicSessionStatus(db, session) {
   const occupied = issued + reserved;
   if (capacity > 0 && occupied >= capacity) return "sold_out";
   if (capacity > 0 && occupied / capacity >= 0.7) return "filling_fast";
-  return session.status === "filling_fast" ? "filling_fast" : "available";
+  return status === "filling_fast" ? "filling_fast" : "available";
 }
 
 function assignSeatsToOrder(db, order, session) {
@@ -4823,18 +4830,60 @@ function finishedSessionEndsAt(movie, session) {
 function snapshotFinishedSessionRecord(record, movie, session, archivedAt) {
   if (!record || String(record.sessionId || "") !== String(session.id || "")) return false;
   record.archivedSessionId = record.archivedSessionId || session.id;
+  if (record.seatHoldToken) record.archivedSeatHoldSessionId = record.archivedSeatHoldSessionId || session.id;
   record.movieId = movie.id;
   record.movieTitle = movie.title || record.movieTitle || "";
   record.sessionDate = session.date || record.sessionDate || "";
   record.sessionTime = session.time || record.sessionTime || "";
   record.sessionRoom = session.room || record.sessionRoom || "Sala Cruzeiro";
   record.sessionFormat = session.format || record.sessionFormat || "";
+  record.sessionStatus = "finished";
   record.sessionEndedAt = archivedAt;
   record.sessionId = "";
   return true;
 }
 
-function archiveFinishedSessions(db, now = new Date()) {
+function snapshotFinishedSessionItems(record, movie, session, archivedAt) {
+  if (!Array.isArray(record?.items)) return false;
+  return record.items.some((item) => snapshotFinishedSessionRecord(item, movie, session, archivedAt));
+}
+
+function expirePendingOrderForFinishedSession(db, order, session, expiredOrders) {
+  if (!order || order.status !== "pending_payment") return;
+  const payment = (db.payments || []).find((item) => item.orderId === order.id) || null;
+  if (["approved", "refunded"].includes(String(payment?.status || ""))) return;
+
+  order.status = "expired";
+  order.paymentStatus = "expired";
+  order.expiredAt = order.expiredAt || new Date().toISOString();
+  order.expirationCleanupPending = true;
+  order.clubCreditPending = false;
+  clubDomainService.releaseOrderCredits(db, order.id);
+  releaseConcessionReservation(db, order);
+  (db.payments || [])
+    .filter((item) => item.orderId === order.id && !["approved", "refunded"].includes(item.status))
+    .forEach((item) => {
+      item.status = "expired";
+      item.expiredAt = item.expiredAt || order.expiredAt;
+      item.updatedAt = new Date().toISOString();
+      item.qrCode = "";
+      item.qrCodeBase64 = "";
+      item.ticketUrl = "";
+      item.checkoutUrl = "";
+    });
+  if (!expiredOrders.some((item) => item.orderId === order.id)) {
+    expiredOrders.push({
+      orderId: order.id,
+      sessionId: session.id,
+      seatHoldToken: order.seatHoldToken,
+      selectedSeatIds: [...(order.selectedSeatIds || [])],
+      provider: payment?.provider || "",
+      providerPaymentId: payment?.providerPaymentId || ""
+    });
+  }
+}
+
+function archiveFinishedSessions(db, now = new Date(), expiredOrders = []) {
   const archived = [];
   const archivedAt = now.toISOString();
   for (const movie of db.movies || []) {
@@ -4849,7 +4898,12 @@ function archiveFinishedSessions(db, now = new Date()) {
       let detachedOrders = 0;
       let detachedTickets = 0;
       (db.orders || []).forEach((order) => {
-        if (snapshotFinishedSessionRecord(order, movie, session, archivedAt)) detachedOrders += 1;
+        const detached = snapshotFinishedSessionRecord(order, movie, session, archivedAt);
+        const detachedItem = snapshotFinishedSessionItems(order, movie, session, archivedAt);
+        if (detached || detachedItem) {
+          expirePendingOrderForFinishedSession(db, order, session, expiredOrders);
+          detachedOrders += 1;
+        }
       });
       (db.tickets || []).forEach((ticket) => {
         if (!snapshotFinishedSessionRecord(ticket, movie, session, archivedAt)) return;
@@ -4859,12 +4913,16 @@ function archiveFinishedSessions(db, now = new Date()) {
       (db.payments || []).forEach((payment) => {
         if (String(payment.sessionId || "") === String(session.id || "")) {
           payment.archivedSessionId = payment.archivedSessionId || session.id;
+          payment.sessionStatus = "finished";
+          payment.sessionEndedAt = payment.sessionEndedAt || archivedAt;
           payment.sessionId = "";
         }
       });
       (db.subscriptionUsage || db.subscriptionUsages || []).forEach((usage) => {
         if (String(usage.sessionId || "") === String(session.id || "")) {
           usage.archivedSessionId = usage.archivedSessionId || session.id;
+          usage.sessionStatus = "finished";
+          usage.sessionEndedAt = usage.sessionEndedAt || archivedAt;
           usage.sessionId = "";
         }
       });
@@ -6829,12 +6887,14 @@ function buildEmailCampaignWorker() {
 
 function sessionAvailabilityStatus(session, sold, capacity) {
   const now = new Date();
-  const startsAt = session?.date && session?.time ? new Date(`${session.date}T${session.time}:00`) : null;
-  if (startsAt && startsAt < now) return "Encerrada";
-  if (sold >= capacity || session?.status === "sold_out") return "Esgotada";
+  const status = normalizedSessionStatus(session);
+  if (["cancelled", "hidden", "archived"].includes(status)) return status === "cancelled" ? "Cancelada" : "Oculta";
+  const startsAt = sessionStartsAt(session);
+  if (startsAt && startsAt.getTime() < now.getTime()) return "Encerrada";
+  if (sold >= capacity || status === "sold_out") return "Esgotada";
   const rate = capacity ? sold / capacity : 0;
   if (rate >= 0.9) return "Quase lotada";
-  if (rate >= 0.7 || session?.status === "filling_fast") return "Enchendo rápido";
+  if (rate >= 0.7 || status === "filling_fast") return "Enchendo rápido";
   return "Boa disponibilidade";
 }
 
@@ -12144,7 +12204,7 @@ async function runSubscriptionMaintenance() {
       const db = await readDb();
       const scheduledChanged = applyScheduledPremieres(db);
       const movieTagsChanged = applyAutomatedMovieTags(db);
-      const sessionMaintenance = archiveFinishedSessions(db);
+      const sessionMaintenance = archiveFinishedSessions(db, new Date(), expiredCheckoutOrders);
       const reservationsChanged = expireStaleReservations(db, expiredCheckoutOrders);
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
