@@ -18,14 +18,40 @@ function addDays(value, days) {
   return date;
 }
 
-function parseBrazilianDeadline(brief, reference) {
-  const match = String(brief || "").match(/\b(?:at[eé]|v[aá]lid[oa]\s+at[eé])\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i);
-  if (!match) return null;
-  let year = Number(match[3] || reference.getUTCFullYear());
+function brazilianMoment(year, month, day, hour = 0, minute = 0, second = 0, millisecond = 0) {
+  const candidate = new Date(Date.UTC(year, month - 1, day, hour + 3, minute, second, millisecond));
+  if (!Number.isFinite(candidate.getTime())) return null;
+  const local = new Date(candidate.getTime() - (3 * 60 * 60 * 1000));
+  return local.getUTCFullYear() === year && local.getUTCMonth() + 1 === month && local.getUTCDate() === day
+    ? candidate
+    : null;
+}
+
+function parsedYear(value, fallback) {
+  let year = Number(value || fallback);
   if (year < 100) year += 2000;
-  const candidate = new Date(Date.UTC(year, Number(match[2]) - 1, Number(match[1]), 23, 59, 59, 999));
+  return year;
+}
+
+function parseBrazilianPeriod(brief, reference) {
+  const text = String(brief || "").replace(/[*_`]/g, "");
+  const match = text.match(/\b(?:v[aá]lid[oa]\s+)?de\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s+(?:at[eé]|a)\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s*,?\s*(?:[aà]s?|pelas?)\s*(\d{1,2})(?::|h)(\d{2})?)?/i);
+  if (!match) return null;
+  const startYear = parsedYear(match[3], reference.getUTCFullYear());
+  const endYear = parsedYear(match[6], startYear);
+  const start = brazilianMoment(startYear, Number(match[2]), Number(match[1]), 0, 0, 0, 0);
+  const end = brazilianMoment(endYear, Number(match[5]), Number(match[4]), Number(match[7] || 23), Number(match[8] || 59), 59, 999);
+  return start && end && end > start ? { start, end } : null;
+}
+
+function parseBrazilianDeadline(brief, reference) {
+  const match = String(brief || "").replace(/[*_`]/g, "").match(/\b(?:at[eé]|v[aá]lid[oa]\s+at[eé])\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s*,?\s*(?:[aà]s?|pelas?)\s*(\d{1,2})(?::|h)(\d{2})?)?/i);
+  if (!match) return null;
+  let year = parsedYear(match[3], reference.getUTCFullYear());
+  let candidate = brazilianMoment(year, Number(match[2]), Number(match[1]), Number(match[4] || 23), Number(match[5] || 59), 59, 999);
+  if (!candidate) return null;
   if (!match[3] && candidate < reference) candidate.setUTCFullYear(candidate.getUTCFullYear() + 1);
-  return Number.isFinite(candidate.getTime()) ? candidate : null;
+  return candidate;
 }
 
 function discountRule(brief) {
@@ -40,10 +66,12 @@ function discountRule(brief) {
 }
 
 function requestedCode(brief) {
-  const match = String(brief || "").match(/\b(?:cupom|c[oó]digo)(?:\s+(?:ser[aá]|chamado))?\s*[:=-]?\s*["']?([A-Z][A-Z0-9_-]{2,31})\b/);
+  const cleaned = String(brief || "").replace(/[*_`]/g, "");
+  const match = cleaned.match(/\b(?:cupom|c[oó]digo)(?:\s+(?:ser[aá]|chamado))?\s*[:=-]?\s*["']?([A-Z][A-Z0-9_-]{2,31})\b/i);
   if (!match) return "";
   const blocked = new Set(["COM", "PARA", "DE", "DESCONTO", "PROMOCAO", "PROMOÇÃO"]);
-  return blocked.has(match[1]) ? "" : match[1];
+  const code = String(match[1] || "").toUpperCase();
+  return blocked.has(code) ? "" : code;
 }
 
 function uniqueCode(preferred, rule, promotions = []) {
@@ -59,8 +87,10 @@ function uniqueCode(preferred, rule, promotions = []) {
 
 function couponScope(brief, movieIds, concessionIds) {
   const text = normalizedText(brief);
-  if (/bomboniere|pipoca|combo|produto/.test(text) || concessionIds.length) return "concessions";
-  if (/ingresso|filme|sessao|cinema/.test(text) || movieIds.length) return "tickets";
+  if (concessionIds.length) return "concessions";
+  if (movieIds.length) return "tickets";
+  if (/bomboniere|pipoca|combo|produto\s+da\s+bomboniere/.test(text)) return "concessions";
+  if (/ingresso|filme|sessao|cinema/.test(text)) return "tickets";
   return "all";
 }
 
@@ -72,10 +102,12 @@ function buildCampaignCoupon({ brief, campaignId, scheduleAt, movieIds = [], con
   if (rule.discountType === "percent" && rule.value > 50) {
     throw couponError("Cupons criados automaticamente aceitam no máximo 50% de desconto. Para uma condição maior, crie e revise o cupom manualmente.", { value: rule.value });
   }
-  const start = new Date(scheduleAt || now);
+  const scheduleStart = new Date(scheduleAt || now);
+  const explicitPeriod = parseBrazilianPeriod(brief, scheduleStart);
+  const start = explicitPeriod?.start || scheduleStart;
   const durationMatch = normalizedText(brief).match(/\bpor\s+(\d{1,2})\s+dias?\b/);
   const durationDays = Math.max(1, Math.min(31, Number(durationMatch?.[1] || 7)));
-  const explicitEnd = parseBrazilianDeadline(brief, start);
+  const explicitEnd = explicitPeriod?.end || parseBrazilianDeadline(brief, start);
   const end = explicitEnd || addDays(start, durationDays);
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
     throw couponError("A validade informada para o cupom não é compatível com a data da campanha.");
@@ -103,6 +135,7 @@ function buildCampaignCoupon({ brief, campaignId, scheduleAt, movieIds = [], con
     active: false,
     sourceCampaignId: campaignId,
     autoManagedByCampaign: true,
+    autoCouponValidityMode: explicitPeriod ? "explicit" : "relative",
     autoCouponDurationDays: durationDays,
     createdAt: new Date(now).toISOString(),
     updatedAt: new Date(now).toISOString()
@@ -111,6 +144,7 @@ function buildCampaignCoupon({ brief, campaignId, scheduleAt, movieIds = [], con
 
 function syncCampaignCouponSchedule(coupon, campaign, now = new Date()) {
   if (!coupon?.autoManagedByCampaign || String(coupon.sourceCampaignId || "") !== String(campaign?.id || "")) return coupon;
+  if (coupon.autoCouponValidityMode === "explicit") return { ...coupon, updatedAt: new Date(now).toISOString() };
   const start = new Date(campaign.scheduleAt || now);
   if (!Number.isFinite(start.getTime())) return coupon;
   const durationDays = Math.max(1, Math.min(31, Number(coupon.autoCouponDurationDays || 7)));
@@ -120,5 +154,5 @@ function syncCampaignCouponSchedule(coupon, campaign, now = new Date()) {
 module.exports = {
   buildCampaignCoupon,
   syncCampaignCouponSchedule,
-  _test: { couponScope, discountRule, parseBrazilianDeadline, requestedCode, uniqueCode }
+  _test: { couponScope, discountRule, parseBrazilianDeadline, parseBrazilianPeriod, requestedCode, uniqueCode }
 };

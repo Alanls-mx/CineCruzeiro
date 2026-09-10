@@ -154,6 +154,7 @@ let state = {
   emailCampaignObjective: "announcement",
   emailCampaignTemplateSelectionMode: "automatic",
   emailCampaignTemplateResolution: null,
+  emailCampaignUseCanonicalHtml: false,
   emailCampaignDraftId: "",
   emailCampaignAiDraftId: "",
   emailCampaignHistoryFilter: "all",
@@ -5623,7 +5624,7 @@ function emailCampaignPayload(action = "draft") {
     preheader: $("emailCampaignPreheader")?.value.trim() || "",
     headline: $("emailCampaignHeadline")?.value.trim() || "",
     message: $("emailCampaignMessage")?.value || "",
-    html: campaignTemplateHtml(),
+    html: state.emailCampaignUseCanonicalHtml ? campaignCanonicalHtmlWithEdits() : campaignTemplateHtml(),
     ctaLabel: $("emailCampaignCtaLabel")?.value.trim() || "",
     ctaUrl: campaignTemplateAbsoluteUrl($("emailCampaignCtaUrl")?.value) || "",
     recipientMode: $("emailCampaignAudience")?.value || "all",
@@ -5649,6 +5650,54 @@ function emailCampaignPayload(action = "draft") {
     scheduleAt: $("emailCampaignScheduleAt")?.value ? new Date($("emailCampaignScheduleAt").value).toISOString() : "",
     brand
   };
+}
+
+function campaignCanonicalHtmlWithEdits() {
+  const source = $("emailCampaignHtml")?.value || "";
+  if (!source) return campaignTemplateHtml();
+  const template = document.createElement("template");
+  template.innerHTML = source;
+  const setText = (selector, value, multiline = false) => {
+    template.content.querySelectorAll(selector).forEach((node) => {
+      node.textContent = String(value || "");
+      if (multiline) node.innerHTML = node.innerHTML.replace(/\r?\n/g, "<br>");
+    });
+  };
+  setText('[data-campaign-field="headline"]', $("emailCampaignHeadline")?.value);
+  setText('[data-campaign-field="message"]', $("emailCampaignMessage")?.value, true);
+  setText('[data-campaign-field="footer"]', $("emailBrandFooter")?.value);
+  template.content.querySelectorAll('[data-campaign-field="logo"]').forEach((node) => {
+    const src = campaignTemplateAbsoluteUrl(campaignEmailLogoUrl($("emailBrandLogoUrl")?.value));
+    if (src) node.setAttribute("src", src);
+    node.setAttribute("alt", $("emailBrandName")?.value || "Cine Cruzeiro");
+  });
+  template.content.querySelectorAll('[data-campaign-field="image"]').forEach((node) => {
+    const src = campaignTemplateAbsoluteUrl($("emailCampaignImageUrl")?.value);
+    if (src) node.setAttribute("src", src);
+    node.setAttribute("alt", $("emailCampaignImageAlt")?.value || "Imagem da campanha");
+    const link = campaignTemplateAbsoluteUrl($("emailCampaignImageLink")?.value);
+    if (link && node.parentElement?.tagName === "A") node.parentElement.setAttribute("href", link);
+  });
+  template.content.querySelectorAll('[data-campaign-cta-index="0"]').forEach((node) => {
+    node.textContent = $("emailCampaignCtaLabel")?.value || node.textContent;
+    const href = campaignTemplateAbsoluteUrl($("emailCampaignCtaUrl")?.value);
+    if (href) node.setAttribute("href", href);
+  });
+  const headlineColor = campaignColor($("emailCampaignHeadlineColor")?.value, "#ffffff");
+  const textColor = campaignColor($("emailCampaignTextColor")?.value, "#dbeafe");
+  const buttonColor = campaignColor($("emailCampaignButtonColor")?.value, "#facc15");
+  template.content.querySelectorAll('[data-campaign-field="headline"]').forEach((node) => { node.style.color = headlineColor; });
+  template.content.querySelectorAll('[data-campaign-field="message"]').forEach((node) => { node.style.color = textColor; });
+  template.content.querySelectorAll('[data-campaign-cta-index="0"]').forEach((node) => {
+    node.style.background = buttonColor;
+    node.style.borderColor = buttonColor;
+  });
+  return template.innerHTML;
+}
+
+function clearCampaignCanonicalHtml() {
+  state.emailCampaignUseCanonicalHtml = false;
+  if ($("emailCampaignHtml")) $("emailCampaignHtml").value = "";
 }
 
 async function refreshEmailCampaignRecipients() {
@@ -6228,7 +6277,7 @@ function applyEmailCampaignTemplate(templateId, { fillDefaults = true } = {}) {
       if ($(id) && (!$(id).value.trim() || $(id).value.trim() === previousDefaults[id])) $(id).value = value;
     });
   }
-  if ($("emailCampaignHtml")) $("emailCampaignHtml").value = campaignTemplateHtml();
+  if ($("emailCampaignHtml") && !state.emailCampaignUseCanonicalHtml) $("emailCampaignHtml").value = campaignTemplateHtml();
   renderEmailCampaignCatalogSummary();
   syncCampaignTemplateResolution(state.emailCampaignTemplateResolution || resolveCampaignTemplateClient());
   renderEmailCampaignPreview({ inspector: false });
@@ -6443,6 +6492,7 @@ async function saveEmailCampaign(event, action = "draft") {
     if (action === "send") {
       state.emailCampaignDraftId = "";
       state.emailCampaignIdempotencyKey = randomClientId("campanha");
+      clearCampaignCanonicalHtml();
     }
     if (resultNode) resultNode.textContent = action === "send" ? "Campanha colocada na fila de envio." : "Rascunho salvo.";
     await loadEmailCampaignHistory({ silent: true });
@@ -6574,6 +6624,7 @@ async function editEmailCampaign(id) {
     state.emailCampaignConcessionIds = (campaign.concessionIds || (campaign.concessionId ? [campaign.concessionId] : [])).map(String);
     state.emailCampaignObjective = campaign.objective || (campaign.templateId === "weekly" ? "programming" : ["premiere", "last_chance"].includes(campaign.templateId) ? "movie" : ["promotion", "coupon"].includes(campaign.templateId) ? "offer" : ["concession", "combo"].includes(campaign.templateId) ? "concession" : ["club", "club_plan"].includes(campaign.templateId) ? "club" : campaign.templateId === "event" ? "event" : "announcement");
     state.emailCampaignTemplateSelectionMode = campaign.templateSelectionMode || "manual";
+    state.emailCampaignUseCanonicalHtml = Boolean(campaign.aiGenerated && campaign.html);
     if ($("emailCampaignObjective")) $("emailCampaignObjective").value = state.emailCampaignObjective;
     setCampaignField("emailCampaignSubject", campaign.subject);
     setCampaignField("emailCampaignTemplate", campaign.templateId || "announcement");
@@ -6602,6 +6653,7 @@ async function editEmailCampaign(id) {
     setEmailCampaignStep("content");
     applyEmailCampaignTemplate(campaign.templateId || "announcement", { fillDefaults: false });
     renderEmailCampaignControls();
+    if (state.emailCampaignUseCanonicalHtml) setCampaignField("emailCampaignHtml", campaign.html);
     if ($("emailCampaignMovies")) {
       const selectedMovies = new Set((campaign.movieIds || (campaign.movieId ? [campaign.movieId] : [])).map(String));
       Array.from($("emailCampaignMovies").options).forEach((option) => { option.selected = selectedMovies.has(String(option.value)); });
@@ -6637,6 +6689,7 @@ async function deleteEmailCampaign(id) {
       state.emailCampaignIdempotencyKey = randomClientId("campanha");
       state.emailCampaignVariables = {};
       state.emailCampaignAttachments = [];
+      clearCampaignCanonicalHtml();
     }
     await loadEmailCampaignHistory({ silent: true });
     showToast("Rascunho excluído");
@@ -9032,6 +9085,7 @@ function bindEvents() {
   document.querySelectorAll("[data-campaign-objective]").forEach((button) => button.addEventListener("click", () => {
     state.emailCampaignObjective = button.dataset.campaignObjective;
     state.emailCampaignTemplateSelectionMode = "automatic";
+    clearCampaignCanonicalHtml();
     if ($("emailCampaignObjective")) $("emailCampaignObjective").value = state.emailCampaignObjective;
     const resolution = resolveCampaignTemplateClient();
     syncCampaignTemplateResolution(resolution);
@@ -9046,6 +9100,7 @@ function bindEvents() {
   });
   $("emailCampaignTemplate")?.addEventListener("change", () => {
     state.emailCampaignTemplateSelectionMode = "manual";
+    clearCampaignCanonicalHtml();
     applyEmailCampaignTemplate($("emailCampaignTemplate").value, { fillDefaults: false });
     syncCampaignTemplateResolution(resolveCampaignTemplateClient());
     scheduleEmailCampaignResolution();
@@ -9107,6 +9162,7 @@ function bindEvents() {
     renderEmailCampaignPreview();
   });
   ["emailCampaignMovie", "emailCampaignClubPlan"].forEach((id) => $(id)?.addEventListener("change", () => {
+    clearCampaignCanonicalHtml();
     const template = campaignTemplateDefinition();
     const item = template.catalog === "movie" ? selectedCampaignMovie() : template.catalog === "clubPlan" ? selectedCampaignClubPlan() : null;
     if (item) {
@@ -9122,10 +9178,12 @@ function bindEvents() {
     scheduleEmailCampaignResolution();
   }));
   $("emailCampaignMovies")?.addEventListener("change", () => {
+    clearCampaignCanonicalHtml();
     renderEmailCampaignPreview();
     scheduleEmailCampaignResolution();
   });
   $("emailCampaignConcessions")?.addEventListener("change", () => {
+    clearCampaignCanonicalHtml();
     state.emailCampaignConcessionIds = Array.from($("emailCampaignConcessions").selectedOptions).map((option) => option.value);
     const first = selectedCampaignConcession();
     if (first) {
@@ -9138,7 +9196,7 @@ function bindEvents() {
     renderEmailCampaignPreview();
     scheduleEmailCampaignResolution();
   });
-  $("emailCampaignClubOffer")?.addEventListener("input", renderEmailCampaignPreview);
+  $("emailCampaignClubOffer")?.addEventListener("input", () => { clearCampaignCanonicalHtml(); renderEmailCampaignPreview(); });
   $("emailCampaignImageUpload")?.addEventListener("change", () => uploadAdminImage("emailCampaignImageUpload", "emailCampaignImageUrl", "", "email-campaign", () => {
     $("emailCampaignImageMovie").value = "";
     if (!$('emailCampaignImageAlt').value) $('emailCampaignImageAlt').value = "Imagem da campanha";
@@ -9148,7 +9206,7 @@ function bindEvents() {
     if (["emailBrandName", "emailBrandLogoUrl"].includes(id)) renderEmailBrandLogoPreview();
     renderEmailCampaignPreview();
   }));
-  $("emailCampaignCoupon")?.addEventListener("change", () => { renderEmailCampaignPreview(); scheduleEmailCampaignResolution(); });
+  $("emailCampaignCoupon")?.addEventListener("change", () => { clearCampaignCanonicalHtml(); renderEmailCampaignPreview(); scheduleEmailCampaignResolution(); });
   $("emailCampaignAttachmentUpload")?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";

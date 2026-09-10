@@ -6725,6 +6725,23 @@ function normalizeCampaignInput(input = {}, existing = {}) {
   const status = input.status || existing.status || "draft";
   const reservedVariables = new Set(["nome", "email", "codigo_cupom", "validade_cupom", "link_cupom"]);
   const campaignColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "").trim()) ? String(value).trim().toLowerCase() : fallback;
+  const artDirectionSource = input.artDirection && typeof input.artDirection === "object" ? input.artDirection : (existing.artDirection || {});
+  const artDirection = {
+    heroLayout: ["stacked", "split"].includes(artDirectionSource.heroLayout) ? artDirectionSource.heroLayout : "stacked",
+    motifs: (Array.isArray(artDirectionSource.motifs) ? artDirectionSource.motifs : []).filter((item) => ["filmstrip", "package", "blueprint", "road", "impact", "ticket", "spotlight"].includes(item)).slice(0, 3),
+    offerCardStyle: ["classic", "package", "blueprint", "ticket"].includes(artDirectionSource.offerCardStyle) ? artDirectionSource.offerCardStyle : "classic",
+    dividerStyle: ["line", "dashed", "road", "tape"].includes(artDirectionSource.dividerStyle) ? artDirectionSource.dividerStyle : "line",
+    ctaPlacement: ["standard", "repeated"].includes(artDirectionSource.ctaPlacement) ? artDirectionSource.ctaPlacement : "standard"
+  };
+  const contentSections = (Array.isArray(input.contentSections) ? input.contentSections : (existing.contentSections || []))
+    .map((section) => ({
+      type: ["body", "highlight", "steps", "quote"].includes(section?.type) ? section.type : "body",
+      title: String(section?.title || "").trim().slice(0, 100),
+      body: String(section?.body || "").trim().slice(0, 700),
+      items: (Array.isArray(section?.items) ? section.items : []).map((item) => String(item || "").trim().slice(0, 180)).filter(Boolean).slice(0, 5)
+    }))
+    .filter((section) => section.title || section.body || section.items.length)
+    .slice(0, 6);
   return {
     ...existing,
     id: existing.id || String(input.id || `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`),
@@ -6779,6 +6796,8 @@ function normalizeCampaignInput(input = {}, existing = {}) {
       ? input.visualStyle
       : existing.visualStyle || "classic",
     visualStyleLabel: String(input.visualStyleLabel ?? existing.visualStyleLabel ?? "").trim().slice(0, 120),
+    artDirection,
+    contentSections,
     autoCouponId: String(input.autoCouponId ?? existing.autoCouponId ?? "").trim().slice(0, 180),
     contentBlocks: existing.mode === "legacy_visual" ? normalizeCampaignBlocks(existing.contentBlocks) : [],
     scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
@@ -8783,7 +8802,7 @@ async function handleApi(req, res, pathname) {
       referenceCampaign,
       referenceTemplateId: templateResolution.templateId,
       recipientMode: body.recipientMode,
-      brief: String(body.brief || "").trim().slice(0, 1000),
+      brief: String(body.brief || "").trim().slice(0, 12000),
       scheduleAt: requestedScheduleAt,
       brand: normalizeEmailBrand(db.settings?.emailBranding || {}),
       siteUrl: appFrontendUrl(),

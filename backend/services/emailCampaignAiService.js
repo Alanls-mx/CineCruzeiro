@@ -55,10 +55,22 @@ const VISUAL_STYLE_PRESETS = Object.freeze({
   fresh: { label: "Novidade do cinema", accent: "#45d6a1", background: "#0a1725", header: "#07131f", content: "#0c1c2d", headline: "#ffffff", text: "#dbeafe", imageWidth: 430, imageRadius: 8, align: "left" }
 });
 
-const BRAND_COLORS = new Set(["#ffffff", "#fff7e6", "#fff7d6", "#dbeafe", "#e7dfd1", "#facc15", "#f6c453", "#f59e0b", "#22d3ee", "#45d6a1", "#ff7185", "#4d8dff"]);
+const BRAND_COLORS = new Set(["#ffffff", "#fff7e6", "#fff7d6", "#f5e6c8", "#dbeafe", "#e7dfd1", "#facc15", "#fbbf24", "#f6c453", "#f59e0b", "#f97316", "#ef4444", "#22d3ee", "#45d6a1", "#ff7185", "#4d8dff", "#2563eb", "#1d4ed8"]);
+const ART_MOTIFS = new Set(["filmstrip", "package", "blueprint", "road", "impact", "ticket", "spotlight"]);
+const SECTION_TYPES = new Set(["body", "highlight", "steps", "quote"]);
 
 function defaultVisualStyle(scenario) {
   return ({ premiere: "premiere", last_chance: "dramatic", concession: "playful", combo: "playful", club: "elegant", club_plan: "elegant", coupon: "fresh", promotion: "fresh" })[scenario] || "classic";
+}
+
+function visualStyleFromBrief(value) {
+  const text = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/nostalg|retro|classico|memoria de infancia/.test(text)) return "nostalgic";
+  if (/dramatic|impactante|suspense|urgencia/.test(text)) return "dramatic";
+  if (/divertid|familia|colorid|animacao/.test(text)) return "playful";
+  if (/elegante|premium|sofisticad/.test(text)) return "elegant";
+  if (/estreia|blockbuster|cinematografic/.test(text)) return "premiere";
+  return "";
 }
 
 function resolveVisualStyle(value, scenario) {
@@ -90,6 +102,14 @@ function safeText(value, fallback, maxLength, multiline = false) {
   return normalized.slice(0, maxLength);
 }
 
+function briefOpening(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s{0,3}#{1,6}\s*/, "").replace(/[*_`]/g, "").trim())
+    .find(Boolean)
+    ?.slice(0, 360) || "";
+}
+
 function safeUrl(value, siteUrl = "") {
   const raw = String(value || "").trim();
   if (!raw || /^(?:javascript|data|vbscript):/i.test(raw)) return "";
@@ -109,6 +129,13 @@ function money(value) {
 function dateLabel(value) {
   const date = value ? new Date(value) : null;
   return date && Number.isFinite(date.getTime()) ? date.toLocaleDateString("pt-BR") : "sem data definida";
+}
+
+function dateTimeLabel(value) {
+  const date = value ? new Date(value) : null;
+  return date && Number.isFinite(date.getTime())
+    ? date.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    : "sem data definida";
 }
 
 function templateContext(templateId) {
@@ -138,7 +165,12 @@ function movieSessions(movie) {
   return (movie?.sessions || [])
     .filter((session) => session.date && session.time)
     .slice(0, 6)
-    .map((session) => `${dateLabel(`${session.date}T12:00:00`)} às ${session.time}`)
+    .map((session) => [
+      `${dateLabel(`${session.date}T12:00:00`)} às ${session.time}`,
+      session.language || session.audio,
+      session.format,
+      session.roomName || session.room
+    ].filter(Boolean).join(" · "))
     .join(" · ");
 }
 
@@ -227,9 +259,9 @@ function campaignCtaButtons(buttons, fallback, context) {
 }
 
 function mergeRequestedButtons(buttons, brief) {
-  const requested = requestedButtonHints(brief).map(({ intent }) => ({
+  const requested = requestedButtonHints(brief).map(({ intent, label, explicit }) => ({
     intent,
-    label: {
+    label: explicit && label ? label : {
       tickets: "Comprar ingressos",
       programming: "Ver programação",
       trailer: "Ver trailer",
@@ -244,15 +276,130 @@ function mergeRequestedButtons(buttons, brief) {
   return [...requested, ...(Array.isArray(buttons) ? buttons : []).filter((button) => !requestedIntents.has(String(button?.intent || "")))].slice(0, 3);
 }
 
-function renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaButtons, colors, visual, siteUrl }) {
+function inferredArtDirection(brief, visualStyle) {
+  const text = String(brief || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const motifs = [];
+  if (/caixa|encomenda|etiqueta industrial|special delivery/.test(text)) motifs.push("package");
+  if (/blueprint|planta tecnica|projeto tecnico|diagrama/.test(text)) motifs.push("blueprint");
+  if (/estrada|trajetoria|linha pontilhada/.test(text)) motifs.push("road");
+  if (/explos|impacto|dinamite|foguete|bigorna/.test(text)) motifs.push("impact");
+  if (/ingresso|ticket/.test(text)) motifs.push("ticket");
+  return {
+    heroLayout: /assimetr|ao lado|proximo ao poster|pr[oó]ximo ao p[oô]ster/.test(text) ? "split" : "stacked",
+    motifs: [...new Set(motifs)].slice(0, 3),
+    offerCardStyle: motifs.includes("package") ? "package" : motifs.includes("blueprint") ? "blueprint" : "classic",
+    dividerStyle: motifs.includes("road") ? "road" : motifs.includes("package") ? "tape" : "line",
+    ctaPlacement: /cta\s+deve\s+aparecer|cta[\s\S]{0,900}(?:no hero|depois do card|proximo ao final|pr[oó]ximo ao final)/.test(text) ? "repeated" : "standard",
+    visualStyle
+  };
+}
+
+function normalizeArtDirection(value, brief, visualStyle) {
+  const fallback = inferredArtDirection(brief, visualStyle);
+  const source = value && typeof value === "object" ? value : {};
+  const motifs = [...new Set([
+    ...(Array.isArray(source.motifs) ? source.motifs : []),
+    ...fallback.motifs
+  ])].filter((item) => ART_MOTIFS.has(item)).slice(0, 3);
+  return {
+    heroLayout: fallback.heroLayout === "split" ? "split" : (["stacked", "split"].includes(source.heroLayout) ? source.heroLayout : fallback.heroLayout),
+    motifs,
+    offerCardStyle: fallback.offerCardStyle !== "classic" ? fallback.offerCardStyle : (["classic", "package", "blueprint", "ticket"].includes(source.offerCardStyle) ? source.offerCardStyle : fallback.offerCardStyle),
+    dividerStyle: fallback.dividerStyle !== "line" ? fallback.dividerStyle : (["line", "dashed", "road", "tape"].includes(source.dividerStyle) ? source.dividerStyle : fallback.dividerStyle),
+    ctaPlacement: fallback.ctaPlacement === "repeated" ? "repeated" : (["standard", "repeated"].includes(source.ctaPlacement) ? source.ctaPlacement : fallback.ctaPlacement),
+    visualStyle
+  };
+}
+
+function normalizeContentSections(value) {
+  return (Array.isArray(value) ? value : []).map((section) => ({
+    type: SECTION_TYPES.has(section?.type) ? section.type : "body",
+    title: safeText(section?.title, "", 100),
+    body: safeText(section?.body, "", 700, true),
+    items: (Array.isArray(section?.items) ? section.items : []).map((item) => safeText(item, "", 180)).filter(Boolean).slice(0, 5)
+  })).filter((section) => section.title || section.body || section.items.length).slice(0, 6);
+}
+
+function renderEmailButton(button, colors, secondary = false, index = 0) {
+  if (!button?.label || !button?.url) return "";
+  return `<a data-campaign-field="cta-label" data-campaign-cta-index="${index}" href="${escapeHtml(button.url)}" style="display:inline-block;margin:0 8px 8px 0;padding:14px 20px;border:2px solid ${colors.button};border-radius:7px;background:${secondary ? "transparent" : colors.button};color:${secondary ? colors.headline : "#020617"};font-size:13px;font-weight:800;line-height:1.2;text-decoration:none">${escapeHtml(button.label)}</a>`;
+}
+
+function renderCtaGroup(buttons, colors, align, primaryOnly = false) {
+  const visible = primaryOnly ? buttons.slice(0, 1) : buttons;
+  return visible.length ? `<div style="padding-top:22px;text-align:${align}">${visible.map((button, index) => renderEmailButton(button, colors, index > 0, index)).join("")}</div>` : "";
+}
+
+function renderMotifDivider(style, colors) {
+  if (style === "road") return `<div role="separator" style="margin:26px 0;border-top:3px dashed ${colors.accent};height:0"></div>`;
+  if (style === "tape") return `<div role="separator" style="margin:24px 0;height:8px;background:${colors.button};opacity:.9"></div>`;
+  return `<div role="separator" style="margin:24px 0;border-top:${style === "dashed" ? "2px dashed" : "1px solid"} ${colors.accent};opacity:.55"></div>`;
+}
+
+function couponDisplayValue(coupon) {
+  if (!coupon) return "";
+  if (coupon.discountType === "percent") return `${Number(coupon.value || 0)}% OFF`;
+  if (coupon.discountType === "fixed_price") return `${money(coupon.value)} FINAL`;
+  return `${money(coupon.value)} OFF`;
+}
+
+function renderOfferCard(coupon, artDirection, colors) {
+  if (!coupon) return "";
+  const packageStyle = artDirection.offerCardStyle === "package";
+  const blueprintStyle = artDirection.offerCardStyle === "blueprint";
+  const background = packageStyle ? "#f5e6c8" : blueprintStyle ? "#1d4ed8" : "#f8fafc";
+  const foreground = blueprintStyle ? "#ffffff" : "#111827";
+  const border = packageStyle ? `2px dashed ${colors.button}` : blueprintStyle ? "1px solid #93c5fd" : `2px solid ${colors.accent}`;
+  const acmePackage = packageStyle && /^ACME/i.test(String(coupon.couponCode || ""));
+  return `<div style="margin:24px 0;padding:22px;background:${background};border:${border};border-radius:8px;color:${foreground};text-align:center">
+    <span style="display:block;margin-bottom:8px;font-size:11px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase">${acmePackage ? "ACME Special Delivery" : packageStyle ? "Entrega especial" : blueprintStyle ? "Oferta planejada" : "Condição especial"}</span>
+    <strong style="display:block;font-size:38px;line-height:1;color:${packageStyle ? "#b91c1c" : foreground}">${escapeHtml(couponDisplayValue(coupon))}</strong>
+    <span style="display:block;margin-top:14px;font-size:12px;text-transform:uppercase">Cupom</span>
+    <strong style="display:block;margin-top:3px;font-size:24px;letter-spacing:1.5px">${escapeHtml(coupon.couponCode || "CUPOM")}</strong>
+    ${acmePackage ? `<span style="display:inline-block;margin:14px 5px 0;padding:4px 8px;border:2px solid #b91c1c;color:#b91c1c;font-size:10px;font-weight:900;letter-spacing:1px">FRÁGIL</span><span style="display:inline-block;margin:14px 5px 0;padding:4px 8px;border:2px solid #111827;color:#111827;font-size:10px;font-weight:900;letter-spacing:1px">CUIDADO</span><span aria-hidden="true" style="display:block;margin-top:10px;color:#111827;font-family:monospace;font-size:16px;letter-spacing:2px">|||| || ||||| | ||||</span>` : ""}
+    <span style="display:block;margin-top:14px;padding-top:12px;border-top:1px dashed ${blueprintStyle ? "#bfdbfe" : "#64748b"};font-size:13px;font-weight:800">Válido até ${escapeHtml(dateTimeLabel(coupon.endsAt))}</span>
+  </div>`;
+}
+
+function renderCreativeSections(sections, artDirection, colors, coupon, movie) {
+  const normalized = [...sections];
+  if (artDirection.motifs.includes("blueprint") && !normalized.some((section) => section.type === "steps")) {
+    const codeNumber = String(coupon?.couponCode || "").match(/(\d+)/)?.[1] || "";
+    normalized.unshift({
+      type: "steps",
+      title: codeNumber && /^ACME/i.test(String(coupon?.couponCode || "")) ? `PLANO ACME Nº ${codeNumber}` : coupon?.couponCode ? `Plano ${coupon.couponCode}` : "Plano para aproveitar a oferta",
+      body: /^ACME/i.test(String(coupon?.couponCode || "")) ? "O que poderia dar errado?" : "",
+      items: ["Escolha uma sessão disponível", `Use o cupom ${coupon?.couponCode || "selecionado"}`, `Receba ${coupon ? couponLabel(coupon) : "a condição anunciada"}`, movie?.title ? `Assista ${movie.title}` : "Conclua a compra no site"]
+    });
+  }
+  return normalized.slice(0, 6).map((section) => {
+    if (section.type === "steps") {
+      const rows = section.items.map((item, index) => `<tr><td width="34" valign="top" style="width:34px;padding:7px 10px 7px 0;color:#bfdbfe;font-size:12px;font-weight:900">${index + 1}</td><td style="padding:7px 0;border-bottom:1px solid rgba(191,219,254,.28);color:#ffffff;font-size:14px">${escapeHtml(item)}</td></tr>`).join("");
+      return `<div style="margin:24px 0;padding:22px;background:#1d4ed8;border:1px solid #93c5fd;border-radius:8px"><strong style="display:block;color:#ffffff;font-size:19px">${escapeHtml(section.title || "Como funciona")}</strong>${section.body ? `<p style="margin:8px 0 0;color:#dbeafe;font-size:14px;line-height:1.55">${escapeHtml(section.body)}</p>` : ""}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px">${rows}</table></div>`;
+    }
+    if (section.type === "quote") return `<div style="margin:24px 0;padding:18px 20px;border-top:2px solid ${colors.accent};border-bottom:2px solid ${colors.accent};color:${colors.headline};font-size:20px;font-weight:800;line-height:1.35;text-align:center">${escapeHtml(section.body || section.title)}</div>`;
+    if (section.type === "highlight") return `<div style="margin:22px 0;padding:18px;background:${artDirection.motifs.includes("package") ? "#f5e6c8" : "#172235"};border-radius:8px;color:${artDirection.motifs.includes("package") ? "#111827" : colors.text}"><strong style="display:block;margin-bottom:7px;color:${artDirection.motifs.includes("package") ? "#b91c1c" : colors.headline};font-size:18px">${escapeHtml(section.title)}</strong><div style="font-size:14px;line-height:1.6">${escapeHtml(section.body).replace(/\n/g, "<br>")}</div></div>`;
+    return `<div style="margin:22px 0"><strong style="display:block;margin-bottom:7px;color:${colors.headline};font-size:19px">${escapeHtml(section.title)}</strong><div style="color:${colors.text};font-size:14px;line-height:1.65">${escapeHtml(section.body).replace(/\n/g, "<br>")}</div></div>`;
+  }).join("");
+}
+
+function renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaButtons, colors, visual, siteUrl, artDirection, contentSections, coupon, movie }) {
   const safeImage = safeUrl(imageUrl, siteUrl);
   const safeImageLink = safeUrl(imageLink, siteUrl);
   const logo = safeUrl(brand.logoUrl, siteUrl);
-  const imageBlock = safeImage
-    ? `<div style="padding:0 0 22px;text-align:center;background:${visual.content}">${safeImageLink ? `<a href="${escapeHtml(safeImageLink)}" style="text-decoration:none">` : ""}<img src="${escapeHtml(safeImage)}" alt="${escapeHtml(imageAlt)}" style="display:block;width:100%;max-width:${visual.imageWidth}px;height:auto;max-height:380px;object-fit:contain;margin:0 auto;border-radius:${visual.imageRadius}px;background-color:${visual.content};border:1px solid ${colors.accent}33">${safeImageLink ? "</a>" : ""}</div>`
+  const image = safeImage
+    ? `${safeImageLink ? `<a href="${escapeHtml(safeImageLink)}" style="text-decoration:none">` : ""}<img data-campaign-field="image" src="${escapeHtml(safeImage)}" alt="${escapeHtml(imageAlt)}" style="display:block;width:100%;max-width:${visual.imageWidth}px;height:auto;max-height:410px;object-fit:contain;margin:0 auto;border-radius:${visual.imageRadius}px;background-color:transparent;border:0">${safeImageLink ? "</a>" : ""}`
     : "";
-  const cta = ctaButtons.length ? `<div style="padding-top:24px;text-align:${visual.align}">${ctaButtons.map((button, index) => `<a href="${escapeHtml(safeUrl(button.url, siteUrl))}" style="display:inline-block;margin:0 8px 8px 0;padding:13px 20px;border:1px solid ${colors.button};border-radius:7px;background:${index === 0 ? colors.button : "transparent"};color:${index === 0 ? "#020617" : colors.headline};font-weight:800;text-decoration:none">${escapeHtml(button.label)}</a>`).join("")}</div>` : "";
-  return `<div style="font-family:Arial,sans-serif;color:${colors.text};background:${visual.background}"><div style="padding:18px 20px;background:${visual.header};border-radius:8px 8px 0 0;text-align:${visual.align}">${logo ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(brand.name)}" style="display:block;width:120px;max-height:52px;object-fit:contain;object-position:${visual.align};margin:${visual.align === "center" ? "0 auto" : "0"};background-color:transparent">` : `<strong style="color:${colors.accent};letter-spacing:2px;text-transform:uppercase">${escapeHtml(brand.name)}</strong>`}<div style="padding-top:8px;color:#93a4bd;font-size:12px">${escapeHtml(brand.tagline)}</div></div><div style="padding:24px 20px;background:${visual.content}"><div style="color:${colors.accent};font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;text-align:${visual.align}">${escapeHtml(kicker)}</div><h1 style="margin:10px 0 16px;color:${colors.headline};font-size:30px;line-height:1.15;text-align:${visual.align}">${escapeHtml(headline)}</h1>${imageBlock}<div style="font-size:16px;line-height:1.65">${escapeHtml(message).replace(/\n/g, "<br>")}</div>${details ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:22px;border-top:1px solid rgba(148,163,184,.22)">${details}</table>` : ""}${cta}</div><div style="padding:16px 20px;color:#93a4bd;font-size:11px;line-height:1.5;border-top:1px solid rgba(148,163,184,.14);background:${visual.header}">${escapeHtml(brand.footer)}</div></div>`;
+  const titleBlock = `<div style="color:${colors.accent};font-size:11px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;text-align:${visual.align}">${escapeHtml(kicker)}</div><h1 data-campaign-field="headline" style="margin:10px 0 16px;color:${colors.headline};font-size:32px;line-height:1.12;text-align:${visual.align}">${escapeHtml(headline)}</h1>`;
+  const repeated = artDirection.ctaPlacement === "repeated";
+  const hero = artDirection.heroLayout === "split" && image
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;table-layout:fixed"><tr><td class="cine-hero-copy" width="55%" valign="middle" style="width:55%;padding:8px 22px 8px 0">${titleBlock}${repeated ? renderCtaGroup(ctaButtons, colors, visual.align, true) : ""}</td><td class="cine-hero-image" width="45%" valign="middle" style="width:45%;padding:0">${image}</td></tr></table>`
+    : `${titleBlock}${image ? `<div style="padding:0 0 22px;text-align:center">${image}</div>` : ""}${repeated ? renderCtaGroup(ctaButtons, colors, visual.align, true) : ""}`;
+  const offerCard = renderOfferCard(coupon, artDirection, colors);
+  const sections = renderCreativeSections(contentSections, artDirection, colors, coupon, movie);
+  const firstRepeat = repeated && offerCard ? renderCtaGroup(ctaButtons, colors, "center", true) : "";
+  const finalCta = renderCtaGroup(ctaButtons, colors, visual.align);
+  return `<style>@media screen and (max-width:640px){.cine-hero-copy,.cine-hero-image{display:block!important;width:100%!important;box-sizing:border-box!important}.cine-hero-copy{padding:0 0 20px!important}.cine-email-pad{padding:22px 18px!important}}</style><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;margin:0 auto;background:${visual.background};font-family:Arial,sans-serif;color:${colors.text}"><tr><td class="cine-email-pad" style="padding:24px 26px;background:${visual.header}">${logo ? `<img data-campaign-field="logo" src="${escapeHtml(logo)}" alt="${escapeHtml(brand.name)}" style="display:block;width:126px;max-height:58px;object-fit:contain;margin:0;background-color:transparent;border:0">` : `<strong style="color:${colors.accent};font-size:15px">${escapeHtml(brand.name)}</strong>`}<div style="padding-top:8px;color:#93a4bd;font-size:12px">${escapeHtml(brand.tagline)}</div></td></tr><tr><td class="cine-email-pad" style="padding:28px 26px;background:${visual.content};background-color:${visual.content}">${hero}<div data-campaign-field="message" style="margin-top:20px;color:${colors.text};font-size:16px;line-height:1.65">${escapeHtml(message).replace(/\n/g, "<br>")}</div>${offerCard}${firstRepeat}${renderMotifDivider(artDirection.dividerStyle, colors)}${sections}${details ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:22px;border-top:1px solid rgba(148,163,184,.28)">${details}</table>` : ""}${finalCta}</td></tr><tr><td data-campaign-field="footer" class="cine-email-pad" style="padding:18px 26px;color:#93a4bd;font-size:11px;line-height:1.5;border-top:1px solid rgba(148,163,184,.18);background:${visual.header}">${escapeHtml(brand.footer)}</td></tr></table>`;
 }
 
 function buildCampaignDraft(input = {}) {
@@ -272,9 +419,11 @@ function buildCampaignDraft(input = {}) {
   const usableReference = reference.id && reference.templateId === templateId ? reference : {};
   const referenceColors = usableReference.headlineColor || usableReference.textColor || usableReference.buttonColor || usableReference.accentColor ? usableReference : {};
   const creative = input.creative && typeof input.creative === "object" ? input.creative : {};
-  const visualStyle = resolveVisualStyle(usableReference.visualStyle || creative.visualStyle || input.visualStyle, scenario);
+  const visualStyle = resolveVisualStyle(usableReference.visualStyle || visualStyleFromBrief(input.brief) || creative.visualStyle || input.visualStyle, scenario);
   const visual = VISUAL_STYLE_PRESETS[visualStyle];
   const referenceLocked = Boolean(usableReference.id);
+  const artDirection = normalizeArtDirection(referenceLocked ? usableReference.artDirection : creative.artDirection, input.brief, visualStyle);
+  const contentSections = normalizeContentSections(referenceLocked ? usableReference.contentSections : creative.sections);
   const colors = {
     accent: referenceLocked
       ? safeColor(referenceColors.accentColor, visual.accent || defaults.accent)
@@ -316,8 +465,8 @@ function buildCampaignDraft(input = {}) {
   const fallbackHeadline = movie?.title && ["premiere", "now_playing", "last_chance"].includes(scenario)
     ? scenario === "last_chance" ? `Últimas sessões de ${movie.title}` : scenario === "premiere" ? `${movie.title} está chegando` : `${movie.title} está em cartaz`
     : defaults.headline;
-  const fallbackMessage = String(input.brief || "").trim()
-    ? `Olá, {{nome}}. ${String(input.brief).trim()}`
+  const fallbackMessage = briefOpening(input.brief)
+    ? `Olá, {{nome}}. ${briefOpening(input.brief)}`
     : scenario === "premiere" && movie
       ? `Olá, {{nome}}. Prepare-se para viver ${movie.title} na tela grande. Consulte as sessões e escolha seu melhor horário.`
       : scenario === "now_playing" && movie
@@ -389,7 +538,7 @@ function buildCampaignDraft(input = {}) {
     kicker,
     headline,
     message,
-    html: renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaButtons, colors, visual, siteUrl }),
+    html: renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imageLink, details, ctaButtons, colors, visual, siteUrl, artDirection, contentSections, coupon, movie }),
     mode: "template",
     templateId,
     ctaLabel: primaryCta.label,
@@ -410,6 +559,8 @@ function buildCampaignDraft(input = {}) {
     accentColor: colors.accent,
     visualStyle,
     visualStyleLabel: visual.label,
+    artDirection,
+    contentSections,
     scheduleAt: input.scheduleAt || "",
     variables,
     brand,
@@ -420,7 +571,7 @@ function buildCampaignDraft(input = {}) {
     aiCompatibleTemplates: compatibleTemplatesForScenario(scenario),
     aiReferenceCampaignId: usableReference.id || "",
     aiReferenceTemplateId: templateId,
-    aiBrief: String(input.brief || "").trim().slice(0, 1000)
+    aiBrief: String(input.brief || "").trim().slice(0, 12000)
   };
 }
 
@@ -434,6 +585,9 @@ module.exports = {
     normalizeScenario,
     resolveVisualStyle,
     templateContext,
-    mergeRequestedButtons
+    mergeRequestedButtons,
+    normalizeArtDirection,
+    normalizeContentSections,
+    renderHtml
   }
 };

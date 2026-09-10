@@ -58,6 +58,31 @@ function extractRequestedSchedule(brief, options = {}) {
 function requestedButtonHints(brief) {
   const text = String(brief || "");
   const hints = [];
+  const cleanLabel = (value) => String(value || "")
+    .replace(/[*_`"']/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  const intentForLabel = (value) => {
+    const normalized = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    if (normalized.includes("cupom")) return "coupon";
+    if (normalized.includes("trailer")) return "trailer";
+    if (normalized.includes("bomboniere") || normalized.includes("combo")) return "concession";
+    if (normalized.includes("clube") || normalized.includes("plano")) return "club";
+    if (normalized.includes("evento")) return "event";
+    if (normalized.includes("conta") || normalized.includes("meus ingressos")) return "account";
+    if (normalized.includes("programacao") || normalized.includes("horario")) return "programming";
+    if (normalized.includes("ingresso") || normalized.includes("comprar") || normalized.includes("garantir")) return "tickets";
+    return "";
+  };
+  const explicitCtaPattern = /(?:cta(?:\s+principal)?|texto\s+do\s+bot[aã]o|bot[aã]o)\s*:\s*(?:\r?\n\s*)*(?:\*{1,2})?([^\r\n*]{3,100})/gi;
+  for (const match of text.matchAll(explicitCtaPattern)) {
+    const label = cleanLabel(match[1]);
+    const intent = intentForLabel(label);
+    if (intent && !hints.some((hint) => hint.intent === intent && hint.label === label)) {
+      hints.push({ intent, requestedText: label, label, explicit: true });
+    }
+  }
   const intentPatterns = [
     ["tickets", /(?:comprar|garantir|reservar)\s+(?:meu\s+|seu\s+)?ingresso|ver\s+sessoes?/i],
     ["programming", /ver\s+(?:a\s+)?programa[cç][aã]o|consultar\s+hor[aá]rios?/i],
@@ -70,21 +95,14 @@ function requestedButtonHints(brief) {
   ];
   for (const [intent, pattern] of intentPatterns) {
     const match = text.match(pattern);
-    if (match) hints.push({ intent, requestedText: match[0] });
+    if (match && !hints.some((hint) => hint.intent === intent)) hints.push({ intent, requestedText: match[0], label: "", explicit: false });
   }
   const listedButtons = text.match(/bot(?:ão|ões)\s*[:=-]\s*([^.!\n]{2,180})/i)?.[1] || "";
   if (listedButtons) {
     for (const requestedText of listedButtons.split(/,|;|\s+e\s+/i).map((item) => item.trim()).filter(Boolean)) {
-      const normalized = requestedText.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-      const intent = normalized.includes("trailer") ? "trailer"
-        : normalized.includes("cupom") ? "coupon"
-          : normalized.includes("bomboniere") || normalized.includes("combo") ? "concession"
-            : normalized.includes("clube") || normalized.includes("plano") ? "club"
-              : normalized.includes("evento") ? "event"
-                : normalized.includes("conta") || normalized.includes("ingressos") ? "account"
-                  : normalized.includes("programacao") || normalized.includes("horario") ? "programming"
-                    : normalized.includes("ingresso") || normalized.includes("comprar") || normalized.includes("garantir") ? "tickets" : "";
-      if (intent && !hints.some((hint) => hint.intent === intent)) hints.push({ intent, requestedText });
+      const label = cleanLabel(requestedText);
+      const intent = intentForLabel(label);
+      if (intent && !hints.some((hint) => hint.intent === intent)) hints.push({ intent, requestedText: label, label, explicit: true });
     }
   }
   return hints.slice(0, 3);
