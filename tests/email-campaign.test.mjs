@@ -87,14 +87,25 @@ test("layout de marketing preserva identidade e descadastro", () => {
   assert.match(result, /unsubscribe/);
 });
 
-test("logo de campanha usa URL absoluta e fundo compatível com transparência", () => {
+test("logo de campanha usa URL absoluta e fundo transparente", () => {
   const result = emailService._test.baseLayout("Oferta", "<p>Conteúdo</p>", {
     logoUrl: "/images/favicon-email.png",
     siteUrl: "https://example.com/projects/cinecruzeiro",
     brand: { name: "Cine Cruzeiro" }
   });
   assert.match(result, /https:\/\/example\.com\/projects\/cinecruzeiro\/images\/favicon-email\.png/);
-  assert.match(result, /background-color:#060a12/);
+  assert.match(result, /favicon-email\.png[^>]+background-color:transparent/);
+  assert.doesNotMatch(result, /favicon-email\.png[^>]+background-color:#060a12/);
+});
+
+test("HTML salvo com a logo antiga é reparado antes do envio", () => {
+  const result = emailService._test.repairCampaignBrandLogoHtml(
+    '<img src="https://example.com/projects/cinecruzeiro/images/logo-display.webp" style="display:block;background-color:#09111f">',
+    "https://example.com/projects/cinecruzeiro"
+  );
+  assert.match(result, /images\/favicon-email\.png/);
+  assert.match(result, /background-color:transparent/);
+  assert.doesNotMatch(result, /logo-display\.webp|background-color:#09111f/);
 });
 
 test("campanha renderiza imagem local com link e texto alternativo", () => {

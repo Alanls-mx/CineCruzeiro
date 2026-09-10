@@ -6694,6 +6694,21 @@ function normalizeCampaignBlocks(value, existing = []) {
   });
 }
 
+function normalizeEmailLogoUrl(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw || /\/images\/logo-display\.webp(?:[?#].*)?$/i.test(raw)) {
+    return `${appFrontendUrl()}/images/favicon-email.png`;
+  }
+  return raw;
+}
+
+function normalizeEmailBrand(brand = {}) {
+  return {
+    ...(brand && typeof brand === "object" ? brand : {}),
+    logoUrl: normalizeEmailLogoUrl(brand?.logoUrl)
+  };
+}
+
 function normalizeCampaignInput(input = {}, existing = {}) {
   const mode = ["template", "html"].includes(input.mode) ? input.mode : (existing.mode === "legacy_visual" ? "legacy_visual" : "template");
   const templateId = validCampaignTemplate(input.templateId, validCampaignTemplate(existing.templateId, "announcement"));
@@ -6748,7 +6763,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     contentBlocks: existing.mode === "legacy_visual" ? normalizeCampaignBlocks(existing.contentBlocks) : [],
     scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
     status,
-    brand: input.brand ?? existing.brand ?? {},
+    brand: normalizeEmailBrand(input.brand ?? existing.brand ?? {}),
     createdBy: existing.createdBy || input.createdBy || "",
     createdAt: existing.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -6782,7 +6797,7 @@ function campaignDetails(campaign = {}) {
     contentBlocks: Array.isArray(campaign.contentBlocks) ? campaign.contentBlocks : [],
     customerIds: Array.isArray(campaign.customerIds) ? campaign.customerIds : [],
     variables: campaign.variables || {},
-    brand: campaign.brand || {},
+    brand: normalizeEmailBrand(campaign.brand || {}),
     recipientSearch: campaign.recipientSearch || ""
   };
 }
@@ -6874,13 +6889,16 @@ function buildEmailCampaignWorker() {
         couponUrl: campaign.ctaUrl || appFrontendUrl()
       };
     },
-    deliver: (db, campaign, recipient, correlation) => emailService.sendMarketingDelivery(db, {
-      ...campaign,
-      logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
-      brand: campaign.brand || db.settings?.emailBranding || {},
-      siteUrl: appFrontendUrl(),
-      attachments: campaign.attachments || []
-    }, recipient, correlation),
+    deliver: (db, campaign, recipient, correlation) => {
+      const brand = normalizeEmailBrand(campaign.brand || db.settings?.emailBranding || {});
+      return emailService.sendMarketingDelivery(db, {
+        ...campaign,
+        logoUrl: brand.logoUrl,
+        brand,
+        siteUrl: appFrontendUrl(),
+        attachments: campaign.attachments || []
+      }, recipient, correlation);
+    },
     log: logEvent
   });
 }
@@ -8585,7 +8603,7 @@ async function handleApi(req, res, pathname) {
 
   const emailCampaignMatch = pathname.match(/^\/api\/admin\/email\/campaigns\/([^/]+)(?:\/(send|cancel|duplicate|delete|recipients|retry-failures))?$/);
   if (pathname === "/api/admin/email/branding" && method === "GET") {
-    sendJson(res, 200, { branding: db.settings?.emailBranding || {} });
+    sendJson(res, 200, { branding: normalizeEmailBrand(db.settings?.emailBranding || {}) });
     return;
   }
   if (pathname === "/api/admin/email/branding" && method === "PUT") {
@@ -8593,7 +8611,7 @@ async function handleApi(req, res, pathname) {
     db.settings.emailBranding = {
       ...(db.settings.emailBranding || {}),
       name: String(body.name || "Cine Cruzeiro").trim().slice(0, 80),
-      logoUrl: String(body.logoUrl || "").trim().slice(0, 1000),
+      logoUrl: normalizeEmailLogoUrl(String(body.logoUrl || "").trim().slice(0, 1000)),
       tagline: String(body.tagline || "").trim().slice(0, 180),
       footer: String(body.footer || "").trim().slice(0, 400),
       socialLinks: Array.isArray(body.socialLinks) ? body.socialLinks.slice(0, 5).map((item) => ({ label: String(item.label || "").trim().slice(0, 30), url: String(item.url || "").trim().slice(0, 500) })) : (db.settings.emailBranding.socialLinks || [])
@@ -8672,7 +8690,7 @@ async function handleApi(req, res, pathname) {
       referenceTemplateId: templateResolution.templateId,
       recipientMode: body.recipientMode,
       brief: String(body.brief || "").trim().slice(0, 1000),
-      brand: db.settings?.emailBranding || {},
+      brand: normalizeEmailBrand(db.settings?.emailBranding || {}),
       siteUrl: appFrontendUrl(),
       eligibilityReport: context.report
     }, {
@@ -8788,8 +8806,8 @@ async function handleApi(req, res, pathname) {
     const result = await emailService.sendPromotionTest(db, {
       ...campaign,
       to,
-      logoUrl: campaign.brand?.logoUrl || `${appFrontendUrl()}/images/favicon-email.png`,
-      brand: campaign.brand || db.settings?.emailBranding || {},
+      logoUrl: normalizeEmailLogoUrl(campaign.brand?.logoUrl),
+      brand: normalizeEmailBrand(campaign.brand || db.settings?.emailBranding || {}),
       siteUrl: appFrontendUrl()
     });
     sendJson(res, result.sent ? 200 : 502, { ok: result.sent > 0, ...result });

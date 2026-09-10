@@ -319,7 +319,7 @@ function baseLayout(title, body, options = {}) {
   const textColor = safeColor(options.textColor, "#dbeafe");
   const headlineColor = safeColor(options.headlineColor, "#ffffff");
   const logo = logoUrl
-    ? `<img src="${htmlEscape(logoUrl)}" width="126" alt="${htmlEscape(brandName)}" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px;background-color:#060a12">`
+    ? `<img src="${htmlEscape(logoUrl)}" width="126" alt="${htmlEscape(brandName)}" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px;background-color:transparent">`
     : `<strong style="display:block;color:#facc15;font-size:12px;letter-spacing:.18em;text-transform:uppercase">${htmlEscape(brandName)}</strong>`;
   const footer = String(brand.footer || "Mensagem automática do Cine Cruzeiro. Se você não reconhece esta ação, entre em contato com o cinema.").trim().slice(0, 400);
   const socialLinks = Array.isArray(brand.socialLinks) ? brand.socialLinks.filter((link) => safeLink(link?.url)).slice(0, 5) : [];
@@ -350,6 +350,27 @@ function sanitizeCampaignHtml(value) {
     .replace(/<(script|iframe|object|embed|form)[^>]*\/?>/gi, "")
     .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
     .replace(/(href|src)\s*=\s*(["'])\s*(javascript|data|vbscript):[\s\S]*?\2/gi, '$1="#"');
+}
+
+function repairCampaignBrandLogoHtml(value, siteUrl = "") {
+  const canonicalLogoUrl = absoluteUrl("/images/favicon-email.png", siteUrl);
+  return String(value || "").replace(/<img\b[^>]*>/gi, (tag) => {
+    const source = tag.match(/\bsrc\s*=\s*(["'])([^"']+)\1/i);
+    if (!source || !/\/images\/(?:favicon-email\.png|logo-display\.webp)(?:[?#][^"']*)?$/i.test(source[2])) return tag;
+
+    let repaired = tag.replace(source[0], `src="${htmlEscape(canonicalLogoUrl || source[2])}"`);
+    if (/\bstyle\s*=/i.test(repaired)) {
+      repaired = repaired.replace(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i, (_match, quote, css) => {
+        const declarations = String(css || "")
+          .split(";")
+          .map((declaration) => declaration.trim())
+          .filter(Boolean)
+          .filter((declaration) => !/^background(?:-color)?\s*:/i.test(declaration));
+        return `style=${quote}${declarations.join(";")}${declarations.length ? ";" : ""}background-color:transparent${quote}`;
+      });
+    }
+    return repaired;
+  });
 }
 
 function campaignVariableValues(recipient = {}, customVariables = {}) {
@@ -566,7 +587,7 @@ function promotionMessage(input = {}, recipient = {}) {
   const personalizedMessage = interpolateCampaign(input.message || "", recipient, input.variables);
   const hasCanonicalHtml = Boolean(String(input.html || "").trim());
   const hasLegacyBlocks = input.mode === "legacy_visual" && Array.isArray(input.contentBlocks) && input.contentBlocks.length > 0;
-  const campaignBody = hasCanonicalHtml
+  const rawCampaignBody = hasCanonicalHtml
     ? sanitizeCampaignHtml(personalizedHtml)
     : hasLegacyBlocks
       ? renderCampaignContentBlocks(input.contentBlocks, input, recipient)
@@ -575,6 +596,7 @@ function promotionMessage(input = {}, recipient = {}) {
         <p>${htmlEscape(personalizedMessage).replace(/\n/g, "<br>")}</p>
         ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl, false, { background: input.buttonColor })}</p>` : ""}
       `;
+  const campaignBody = repairCampaignBrandLogoHtml(rawCampaignBody, input.siteUrl);
   const unsubscribeUrl = recipient.unsubscribeUrl || "";
   return {
     to: recipient.email,
@@ -701,6 +723,7 @@ module.exports = {
     interpolateCampaign,
     safeLink,
     campaignImageBlock,
+    repairCampaignBrandLogoHtml,
     renderCampaignContentBlocks,
     campaignBlocksText,
     prepareAttachments,

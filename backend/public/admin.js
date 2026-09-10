@@ -6026,6 +6026,13 @@ function campaignTemplateAbsoluteUrl(value) {
   try { return new URL(safe, window.location.origin).href; } catch { return safe; }
 }
 
+function campaignEmailLogoUrl(value) {
+  const raw = String(value || "").trim() || `${API_BASE}/images/favicon-email.png`;
+  return /\/images\/logo-display\.webp(?:[?#].*)?$/i.test(raw)
+    ? raw.replace(/\/images\/logo-display\.webp(?:[?#].*)?$/i, "/images/favicon-email.png")
+    : raw;
+}
+
 function selectedCampaignMovie() {
   return (state.content?.movies || []).find((item) => item.id === $("emailCampaignMovie")?.value) || null;
 }
@@ -6072,7 +6079,7 @@ function selectedCampaignCatalogItem() {
 }
 
 function campaignTemplateLogo(logoUrl, brandName, align = "left") {
-  return `<div style="margin:0 0 22px;text-align:${align}">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" width="126" alt="${escapeHtml(brandName)}" style="display:inline-block;width:126px;max-width:45%;height:auto;border:0">` : `<strong style="color:#facc15;font-size:16px">${escapeHtml(brandName)}</strong>`}</div>`;
+  return `<div style="margin:0 0 22px;text-align:${align}">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" width="126" alt="${escapeHtml(brandName)}" style="display:inline-block;width:126px;max-width:45%;height:auto;border:0;background-color:transparent">` : `<strong style="color:#facc15;font-size:16px">${escapeHtml(brandName)}</strong>`}</div>`;
 }
 
 function campaignTemplateButton(label, url, color = "#facc15", align = "left") {
@@ -6107,7 +6114,7 @@ function campaignTemplateShell(content, footer, options = {}) {
 function campaignTemplateHtml() {
   const template = campaignTemplateDefinition();
   const brandName = $("emailBrandName")?.value.trim() || "Cine Cruzeiro";
-  const logoUrl = campaignTemplateAbsoluteUrl($("emailBrandLogoUrl")?.value || "/images/logo-display.webp");
+  const logoUrl = campaignTemplateAbsoluteUrl(campaignEmailLogoUrl($("emailBrandLogoUrl")?.value));
   const headline = $("emailCampaignHeadline")?.value.trim() || template.headline;
   const message = $("emailCampaignMessage")?.value.trim() || template.message;
   const movie = selectedCampaignMovie();
@@ -6366,7 +6373,7 @@ function sanitizeCampaignHtmlPreview(value) {
 function renderEmailBrandLogoPreview() {
   const preview = $("emailBrandLogoPreview");
   if (!preview) return;
-  const src = campaignEditorAssetUrl($("emailBrandLogoUrl")?.value);
+  const src = campaignEditorAssetUrl(campaignEmailLogoUrl($("emailBrandLogoUrl")?.value));
   preview.innerHTML = src ? `<img src="${escapeHtml(src)}" alt="${escapeHtml($("emailBrandName")?.value || "Cine Cruzeiro")}">` : "Nenhuma logo configurada";
 }
 
@@ -6584,7 +6591,7 @@ async function editEmailCampaign(id) {
     setCampaignField("emailCampaignImageLink", campaign.imageLink);
     syncCampaignImageMovieSelect();
     setCampaignField("emailBrandName", campaign.brand?.name);
-    setCampaignField("emailBrandLogoUrl", campaign.brand?.logoUrl);
+    setCampaignField("emailBrandLogoUrl", campaignEmailLogoUrl(campaign.brand?.logoUrl));
     setCampaignField("emailBrandFooter", campaign.brand?.footer);
     setEmailCampaignStep("content");
     applyEmailCampaignTemplate(campaign.templateId || "announcement", { fillDefaults: false });
@@ -6759,7 +6766,7 @@ function renderEmailCampaignControls() {
   syncCampaignColorControls();
   const branding = state.content?.settings?.emailBranding || {};
   if ($("emailBrandName") && !$("emailBrandName").value) $("emailBrandName").value = branding.name || "Cine Cruzeiro";
-  if ($("emailBrandLogoUrl") && !$('emailBrandLogoUrl').value) $("emailBrandLogoUrl").value = branding.logoUrl || `${API_BASE}/images/logo-display.webp`;
+  if ($("emailBrandLogoUrl") && !$('emailBrandLogoUrl').value) $("emailBrandLogoUrl").value = campaignEmailLogoUrl(branding.logoUrl);
   if ($("emailBrandFooter") && !$('emailBrandFooter').value) $("emailBrandFooter").value = branding.footer || "Mensagem automática do Cine Cruzeiro.";
   renderEmailBrandLogoPreview();
   applyEmailCampaignTemplate($("emailCampaignTemplate")?.value || "announcement", { fillDefaults: true });
