@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { buildCampaignDraft } = require("../backend/services/emailCampaignAiService.js");
-const { generateOpenAiCampaignDraft } = require("../backend/services/openAiEmailAgentService.js");
+const { generateOpenAiCampaignDraft, testOpenAiConnection, _test: openAiTest } = require("../backend/services/openAiEmailAgentService.js");
 const { resolveCampaignContext, filterCouponRecipients, filterOfferRecipients } = require("../backend/services/emailCampaignEligibilityService.js");
 
 const siteUrl = "https://lumixengine.com/projects/cinecruzeiro";
@@ -178,6 +178,69 @@ test("agente mantém gerador local quando OpenAI não está configurada", async 
   assert.equal(result.aiProvider, "local-reference-agent");
   assert.equal(result.aiFallbackReason, "OPENAI_NOT_CONFIGURED");
   assert.match(result.message, /Oferta de teste/);
+});
+
+test("teste OpenAI explica falta de créditos sem repetir a cobrança", async () => {
+  let requests = 0;
+  const result = await testOpenAiConnection({ apiKey: "test-key", model: "modelo-teste", timeout: 5000 }, {
+    fetchImpl: async () => {
+      requests += 1;
+      return {
+        ok: false,
+        status: 429,
+        headers: { get: (name) => name.toLowerCase() === "x-request-id" ? "req-quota" : "" },
+        async json() { return { error: { type: "insufficient_quota", code: "credit_balance_exhausted", message: "credit balance exhausted" } }; }
+      };
+    },
+    sleepImpl: async () => {}
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "OPENAI_QUOTA_EXCEEDED");
+  assert.match(result.message, /sem créditos/);
+  assert.equal(result.requestId, "req-quota");
+  assert.equal(requests, 1);
+});
+
+test("teste OpenAI repete uma vez quando o limite é temporário", async () => {
+  let requests = 0;
+  let waited = 0;
+  const result = await testOpenAiConnection({ apiKey: "test-key", model: "modelo-teste", timeout: 5000 }, {
+    fetchImpl: async () => {
+      requests += 1;
+      if (requests === 1) return {
+        ok: false,
+        status: 429,
+        headers: { get: (name) => name.toLowerCase() === "retry-after" ? "2" : "" },
+        async json() { return { error: { type: "rate_limit_error", code: "rate_limit_exceeded", message: "rate limit reached" } }; }
+      };
+      return { ok: true, status: 200, headers: { get: () => "req-ok" }, async json() { return { id: "resp-ok" }; } };
+    },
+    sleepImpl: async (milliseconds) => { waited = milliseconds; }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(requests, 2);
+  assert.equal(waited, 2000);
+});
+
+test("gerador local registra a causa amigável quando a cota OpenAI termina", async () => {
+  const result = await generateOpenAiCampaignDraft({ scenario: "promotion" }, {
+    config: { enabled: true, configured: true, apiKey: "test-key", model: "modelo-teste", timeout: 5000 },
+    fetchImpl: async () => ({
+      ok: false,
+      status: 429,
+      headers: { get: () => "" },
+      async json() { return { error: { type: "insufficient_quota", code: "insufficient_quota", message: "quota exceeded" } }; }
+    })
+  });
+  assert.equal(result.aiProvider, "local-reference-agent");
+  assert.equal(result.aiFallbackReason, "OPENAI_QUOTA_EXCEEDED");
+  assert.match(result.aiFallbackMessage, /sem cota disponível/);
+});
+
+test("classificador não confunde cota com limite temporário", () => {
+  const details = openAiTest.openAiErrorDetails(429, { error: { code: "rate_limit_exceeded", message: "rate limit reached" } });
+  assert.equal(details.code, "OPENAI_RATE_LIMITED");
+  assert.equal(details.retryable, true);
 });
 
 test("validação rejeita cupom expirado, esgotado e restrito a outro filme", () => {

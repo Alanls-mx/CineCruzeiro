@@ -313,6 +313,7 @@ textarea:focus-visible,
 .campaign-ai-status { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .campaign-ai-status.loading { color: #bfdbfe; }
 .campaign-ai-status.success { color: #6ee7b7; }
+.campaign-ai-status.warning { color: #fde68a; }
 .campaign-ai-status.error { color: #fda4af; }
 .campaign-ai-result { justify-content: space-between; padding: 11px 12px; border: 1px solid rgba(69,214,161,.22); background: rgba(69,214,161,.08); color: #dbeafe; font-size: 11px; }
 .campaign-ai-result > span { min-width: 0; }

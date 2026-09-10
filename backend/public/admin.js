@@ -7035,7 +7035,9 @@ async function generateEmailCampaignAiDraft() {
     state.emailCampaignAiDraftId = campaign.id || "";
     if (state.content) state.content.emailCampaigns = [campaign, ...(state.content.emailCampaigns || []).filter((item) => item.id !== campaign.id)];
     renderEmailCampaigns();
-    setEmailCampaignAiStatus(`Rascunho criado por ${providerLabel}, com catálogo e público conferidos.`, "success");
+    setEmailCampaignAiStatus(ai.fallbackMessage
+      ? `Rascunho criado pelo ${providerLabel}. ${ai.fallbackMessage}`
+      : `Rascunho criado por ${providerLabel}, com catálogo e público conferidos.`, ai.fallbackMessage ? "warning" : "success");
     if ($("emailCampaignAiResultTitle")) $("emailCampaignAiResultTitle").textContent = `Rascunho criado por ${providerLabel}.`;
     if ($("emailCampaignAiResultSummary")) {
       const recipients = eligibility.recipients;
@@ -7049,7 +7051,9 @@ async function generateEmailCampaignAiDraft() {
       warningList.hidden = !warnings.length;
     }
     if (resultBox) resultBox.hidden = false;
-    showToast(ai.provider === "openai" ? "Rascunho criado pela OpenAI" : "Rascunho criado; configure a OpenAI em Integrações para usar a IA");
+    showToast(ai.provider === "openai"
+      ? "Rascunho criado pela OpenAI"
+      : (ai.fallbackMessage || "Rascunho criado; configure a OpenAI em Integrações para usar a IA"), ai.fallbackMessage ? "error" : "ok");
   } catch (error) {
     setEmailCampaignAiStatus(error.message || "Não foi possível criar o rascunho.", "error");
     showToast(error.message, "error");
@@ -8111,6 +8115,12 @@ function renderIntegrationContext(integration, testResult = null) {
         <dt>Resultado</dt>
         <dd>${escapeHtml(testResult?.message || integration.lastTestMessage || "Sem mensagem registrada")}</dd>
       </div>
+      ${integration.key === "openai" && (testResult?.requestId || integration.lastTestRequestId) ? `
+        <div>
+          <dt>ID da solicitação</dt>
+          <dd>${escapeHtml(testResult?.requestId || integration.lastTestRequestId)}</dd>
+        </div>
+      ` : ""}
     </dl>
     ${integration.key === "googleWallet" ? integrationDiagnosticsMarkup(testResult?.checks, testResult?.diagnostics) : ""}
   `;

@@ -28,7 +28,7 @@ const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaym
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const { normalizeScenario } = require("./services/emailCampaignAiService");
-const { generateOpenAiCampaignDraft } = require("./services/openAiEmailAgentService");
+const { generateOpenAiCampaignDraft, testOpenAiConnection } = require("./services/openAiEmailAgentService");
 const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
@@ -7148,22 +7148,7 @@ async function testIntegrationProvider(db, provider, req) {
     return emailService.sendIntegrationTest(db, req.adminUser?.email || config.fromEmail);
   }
   if (key === "openai") {
-    if (!config.apiKey || !config.model) return { ok: false, message: "Informe a chave da API e o modelo da OpenAI." };
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.max(5000, Math.min(60000, Number(config.timeout || 30000))));
-    try {
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        signal: controller.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify({ model: config.model, store: false, max_output_tokens: 24, input: "Responda somente: conexão confirmada" })
-      });
-      return { ok: response.ok, message: response.ok ? `OpenAI conectada com o modelo ${config.model}.` : `A OpenAI recusou o teste (HTTP ${response.status}).` };
-    } catch (error) {
-      return { ok: false, message: error.name === "AbortError" ? "A OpenAI demorou demais para responder." : "Não foi possível conectar à OpenAI." };
-    } finally {
-      clearTimeout(timer);
-    }
+    return testOpenAiConnection(config);
   }
   if (key === "analytics") {
     const googleValid = !config.googleMeasurementId || /^G-[A-Z0-9]+$/i.test(config.googleMeasurementId);
@@ -8401,6 +8386,7 @@ async function handleApi(req, res, pathname) {
       aiProvider: generated.aiProvider,
       aiModel: generated.aiModel || "",
       aiFallbackReason: generated.aiFallbackReason || "",
+      aiFallbackMessage: generated.aiFallbackMessage || "",
       aiScenario: generated.aiScenario,
       aiContext: generated.aiContext,
       aiReferenceCampaignId: generated.aiReferenceCampaignId,
@@ -8431,6 +8417,7 @@ async function handleApi(req, res, pathname) {
         provider: generated.aiProvider,
         model: generated.aiModel || "",
         fallbackReason: generated.aiFallbackReason || "",
+        fallbackMessage: generated.aiFallbackMessage || "",
         scenario: generated.aiScenario,
         context: generated.aiContext,
         referenceCampaignId: generated.aiReferenceCampaignId,

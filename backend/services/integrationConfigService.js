@@ -307,6 +307,8 @@ function sanitizeConfig(db, provider) {
     lastTestAt: stored.lastTestAt || "",
     lastTestStatus: stored.lastTestStatus || "",
     lastTestMessage: stored.lastTestMessage || "",
+    lastTestCode: stored.lastTestCode || "",
+    lastTestRequestId: stored.lastTestRequestId || "",
     updatedAt: stored.updatedAt || "",
     updatedBy: stored.updatedBy || "",
     values,
@@ -392,11 +394,13 @@ function setTestResult(db, provider, result, user) {
     lastTestAt: new Date().toISOString(),
     lastTestStatus: result.ok ? "success" : "error",
     lastTestMessage: result.message || "",
+    lastTestCode: result.code || "",
+    lastTestRequestId: result.requestId || "",
     updatedAt: new Date().toISOString(),
     updatedBy: user?.id || ""
   };
   const after = sanitizeConfig(db, key);
-  audit(db, "integration.tested", key, user, before, after, { ok: Boolean(result.ok), message: result.message || "" });
+  audit(db, "integration.tested", key, user, before, after, { ok: Boolean(result.ok), code: result.code || "", message: result.message || "" });
   return after;
 }
 
