@@ -249,7 +249,7 @@ function campaignImageBlock(input = {}, recipient = {}) {
   if (!/^https?:\/\//i.test(imageUrl)) return "";
   const alt = interpolateCampaign(input.imageAlt || "Imagem da campanha", recipient, input.variables).slice(0, 140);
   const rawLink = interpolateCampaign(input.imageLink || "", recipient, input.variables);
-  const image = `<img src="${htmlEscape(imageUrl)}" width="640" alt="${htmlEscape(alt)}" style="display:block;width:100%;max-width:640px;height:auto;border:0;border-radius:8px;outline:0;text-decoration:none;margin:0 auto">`;
+  const image = `<img src="${htmlEscape(imageUrl)}" width="640" alt="${htmlEscape(alt)}" style="display:block;width:100%;max-width:640px;height:auto;border:0;border-radius:8px;outline:0;text-decoration:none;margin:0 auto;background-color:#0d1728">`;
   const link = absoluteUrl(rawLink, input.siteUrl || "");
   const safeImageLink = rawLink && safeLink(rawLink) && /^https?:\/\//i.test(link) ? link : "";
   return `<div style="margin:0 0 18px;text-align:center">${safeImageLink ? `<a href="${htmlEscape(safeImageLink)}" style="display:block;text-decoration:none">${image}</a>` : image}</div>`;
@@ -264,7 +264,7 @@ function campaignBlockMedia(block, input, recipient) {
   const link = rawLink && safeLink(rawLink) ? absoluteUrl(rawLink, input.siteUrl || "") : "";
   const width = Math.max(4, Math.min(100, Number(block.width || (block.type === "icon" ? 12 : 70))));
   const alt = htmlEscape(interpolateCampaignPlain(block.alt || "Imagem", recipient, input.variables));
-  const image = `<img src="${htmlEscape(url)}" width="${Math.round(640 * width / 100)}" alt="${alt}" style="display:inline-block;width:${width}%;max-width:100%;height:auto;border:0;border-radius:${block.type === "icon" ? 4 : 8}px;outline:0;text-decoration:none">`;
+  const image = `<img src="${htmlEscape(url)}" width="${Math.round(640 * width / 100)}" alt="${alt}" style="display:inline-block;width:${width}%;max-width:100%;height:auto;border:0;border-radius:${block.type === "icon" ? 4 : 8}px;outline:0;text-decoration:none;background-color:#0d1728">`;
   return /^https?:\/\//i.test(link) ? `<a href="${htmlEscape(link)}" style="display:inline-block;text-decoration:none">${image}</a>` : image;
 }
 
@@ -315,11 +315,11 @@ function baseLayout(title, body, options = {}) {
   const brand = options.brand || {};
   const brandName = String(brand.name || "Cine Cruzeiro").trim().slice(0, 80);
   const tagline = String(brand.tagline || "Cinema de rua, ingresso digital e atendimento de bairro.").trim().slice(0, 180);
-  const logoUrl = options.logoUrl || brand.logoUrl;
+  const logoUrl = absoluteUrl(options.logoUrl || brand.logoUrl, options.siteUrl || "");
   const textColor = safeColor(options.textColor, "#dbeafe");
   const headlineColor = safeColor(options.headlineColor, "#ffffff");
   const logo = logoUrl
-    ? `<img src="${htmlEscape(logoUrl)}" width="126" alt="${htmlEscape(brandName)}" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px">`
+    ? `<img src="${htmlEscape(logoUrl)}" width="126" alt="${htmlEscape(brandName)}" style="display:block;width:126px;max-width:40%;height:auto;border:0;margin:0 0 14px;background-color:#060a12">`
     : `<strong style="display:block;color:#facc15;font-size:12px;letter-spacing:.18em;text-transform:uppercase">${htmlEscape(brandName)}</strong>`;
   const footer = String(brand.footer || "Mensagem automática do Cine Cruzeiro. Se você não reconhece esta ação, entre em contato com o cinema.").trim().slice(0, 400);
   const socialLinks = Array.isArray(brand.socialLinks) ? brand.socialLinks.filter((link) => safeLink(link?.url)).slice(0, 5) : [];
@@ -586,6 +586,7 @@ function promotionMessage(input = {}, recipient = {}) {
       kind: "marketing",
       logoUrl: input.logoUrl,
       brand: input.brand,
+      siteUrl: input.siteUrl,
       heroImageHtml: hasCanonicalHtml || hasLegacyBlocks ? "" : campaignImageBlock(input, recipient),
       headlineColor: input.headlineColor,
       textColor: input.textColor,

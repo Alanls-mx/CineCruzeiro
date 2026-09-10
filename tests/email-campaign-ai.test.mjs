@@ -41,6 +41,8 @@ test("agente usa o filme, poster, sessoes e cores do rascunho de referência", (
   assert.equal(result.buttonColor, "#22d3ee");
   assert.match(result.html, /Novo Filme/);
   assert.match(result.html, /uploads\/movies\/filme.webp/);
+  assert.match(result.html, /background-color:#0d1728/);
+  assert.match(result.html, /background-color:#09111f/);
   assert.match(result.variables.sessoes_filme, /12\/09\/2026 às 19:00/);
 });
 

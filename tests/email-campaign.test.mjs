@@ -87,6 +87,16 @@ test("layout de marketing preserva identidade e descadastro", () => {
   assert.match(result, /unsubscribe/);
 });
 
+test("logo de campanha usa URL absoluta e fundo compatível com transparência", () => {
+  const result = emailService._test.baseLayout("Oferta", "<p>Conteúdo</p>", {
+    logoUrl: "/images/favicon-email.png",
+    siteUrl: "https://example.com/projects/cinecruzeiro",
+    brand: { name: "Cine Cruzeiro" }
+  });
+  assert.match(result, /https:\/\/example\.com\/projects\/cinecruzeiro\/images\/favicon-email\.png/);
+  assert.match(result, /background-color:#060a12/);
+});
+
 test("campanha renderiza imagem local com link e texto alternativo", () => {
   const result = emailService._test.campaignImageBlock({
     imageUrl: "/uploads/email-campaign/poster.webp",
@@ -97,6 +107,7 @@ test("campanha renderiza imagem local com link e texto alternativo", () => {
   assert.match(result, /https:\/\/example\.com\/projects\/cinecruzeiro\/uploads\/email-campaign\/poster\.webp/);
   assert.match(result, /Pôster do filme/);
   assert.match(result, /https:\/\/example\.com\/projects\/cinecruzeiro\/filmes\/homem-aranha/);
+  assert.match(result, /background-color:#0d1728/);
   assert.equal(emailService._test.campaignImageBlock({ imageUrl: "javascript:alert(1)", siteUrl: "https://example.com" }), "");
 });
 
