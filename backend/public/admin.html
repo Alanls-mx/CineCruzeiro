@@ -1276,35 +1276,34 @@
                 <span class="campaign-ai-badge">Gemini conectado é obrigatório</span>
               </div>
               <div class="campaign-ai-grid">
-              <label>Objetivo
-                <select id="emailCampaignAiScenario">
-                  <option value="premiere">Novo filme / grande estreia</option>
-                  <option value="now_playing">Filme em cartaz</option>
-                  <option value="last_chance">Últimos dias de um filme</option>
-                  <option value="promotion">Promoção</option>
-                  <option value="coupon">Cupom de desconto</option>
-                  <option value="club">Clube Cine Cruzeiro</option>
+              <label>O que você quer divulgar?
+                <select id="emailCampaignAiObjective">
+                  <option value="announcement" selected>Comunicado</option>
+                  <option value="movie">Filme</option>
+                  <option value="programming">Programação</option>
+                  <option value="offer">Oferta ou cupom</option>
                   <option value="concession">Bomboniere</option>
-                  <option value="event">Evento especial</option>
-                  <option value="ticket">Ingressos</option>
-                  <option value="reactivation">Reativação de clientes</option>
+                  <option value="club">Clube Cine Cruzeiro</option>
+                  <option value="event">Evento</option>
                 </select>
               </label>
-              <label>Filme de referência
+              <label id="emailCampaignAiMovieField">Filme
                 <select id="emailCampaignAiMovie"><option value="">Escolha conforme o objetivo</option></select>
               </label>
-              <label>Cupom (opcional)
+              <label id="emailCampaignAiMoviesField">Filmes da programação
+                <select id="emailCampaignAiMovies" multiple size="3" aria-label="Filmes da programação"></select>
+              </label>
+              <label id="emailCampaignAiCouponField">Cupom (opcional)
                 <select id="emailCampaignAiCoupon"><option value="">Nenhum cupom</option></select>
               </label>
-              <label>Plano do Clube (opcional)
+              <label id="emailCampaignAiClubPlanField">Plano do Clube (opcional)
                 <select id="emailCampaignAiClubPlan"><option value="">Nenhum plano</option></select>
               </label>
-              <label>Itens da bomboniere (opcional)
+              <label id="emailCampaignAiConcessionsField">Itens da bomboniere
                 <select id="emailCampaignAiConcessions" multiple size="3" aria-label="Itens da bomboniere para a campanha"></select>
               </label>
-              <label class="sr-only">Layout interno
-                <select id="emailCampaignAiTemplate"><option value="">Escolha pelo objetivo</option></select>
-              </label>
+              <input id="emailCampaignAiScenario" type="hidden" value="announcement" />
+              <input id="emailCampaignAiTemplate" type="hidden" value="" />
               <label>Rascunho de referência
                 <select id="emailCampaignAiCampaign"><option value="">Nenhum rascunho</option></select>
               </label>
@@ -1319,8 +1318,13 @@
                 </select>
               </label>
               <label class="full">Briefing da campanha (opcional)
-                <textarea id="emailCampaignAiBrief" rows="3" maxlength="1000" placeholder="Ex.: destaque a pré-venda, use um tom cinematográfico e convide o cliente a escolher a sessão de sexta-feira."></textarea>
+                <textarea id="emailCampaignAiBrief" rows="3" maxlength="1000" placeholder="Ex.: crie uma chamada acolhedora e incentive a compra antecipada para sexta-feira."></textarea>
               </label>
+              </div>
+              <div id="emailCampaignAiResolution" class="campaign-ai-resolution" aria-live="polite">
+                <span class="campaign-resolution-label">Layout escolhido automaticamente</span>
+                <strong id="emailCampaignAiResolvedTemplate">Comunicado</strong>
+                <small id="emailCampaignAiTemplateReason">Selecione o conteúdo para montarmos o layout correto.</small>
               </div>
               <div class="campaign-ai-actions">
                 <button id="emailCampaignAiGenerate" class="primary-button" type="button">Gerar rascunho com Gemini</button>

@@ -2,6 +2,8 @@ const {
   TEMPLATE_IDS,
   SCENARIO_COMPATIBLE_TEMPLATES,
   normalizeScenario,
+  resolveCampaignTemplate,
+  scopeCampaignContext,
   validTemplate,
   isTemplateCompatibleWithScenario,
   compatibleTemplatesForScenario
@@ -118,11 +120,14 @@ function movieLink(movie, siteUrl) {
   return movie ? safeUrl(`/filmes/${movie.slug || movie.id}`, siteUrl) : "";
 }
 
-function renderDetailRows({ movie, coupon, plan, concessions, audience, siteUrl }) {
+function renderDetailRows({ movie, movies = [], coupon, plan, concessions, audience, siteUrl }) {
   const rows = [];
-  if (movie) {
+  const catalogMovies = movies.length ? movies : (movie ? [movie] : []);
+  if (catalogMovies.length === 1) {
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Sessões</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(movieSessions(movie) || "Consulte a programação")}</td></tr>`);
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Duração e classificação</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml([movie.duration, movie.rating || movie.classification].filter(Boolean).join(" · ") || "Confira os detalhes")}</td></tr>`);
+  } else if (catalogMovies.length > 1) {
+    rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Filmes em destaque</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(catalogMovies.slice(0, 8).map((item) => item.title || "Filme").join(" · "))}</td></tr>`);
   }
   if (coupon) {
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Cupom</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right"><strong>${escapeHtml(coupon.couponCode || "CUPOM")}</strong> · ${escapeHtml(couponLabel(coupon))}</td></tr>`);
@@ -160,10 +165,13 @@ function renderHtml({ brand, kicker, headline, message, imageUrl, imageAlt, imag
 }
 
 function buildCampaignDraft(input = {}) {
-  const scenario = normalizeScenario(input.scenario);
+  input = scopeCampaignContext(input);
+  const resolvedScenario = resolveCampaignTemplate(input).scenario;
+  const scenario = SCENARIO_DEFAULTS[resolvedScenario] ? resolvedScenario : normalizeScenario(input.scenario || input.aiScenario || "announcement");
   const defaults = SCENARIO_DEFAULTS[scenario];
   const siteUrl = String(input.siteUrl || "").replace(/\/+$/, "");
-  const movie = input.movie || null;
+  const movies = Array.isArray(input.movies) ? input.movies.filter(Boolean).slice(0, 20) : [];
+  const movie = input.movie || movies[0] || null;
   const coupon = input.coupon || null;
   const plan = input.plan || null;
   const concessions = Array.isArray(input.concessions) ? input.concessions.filter(Boolean) : [];
@@ -229,7 +237,7 @@ function buildCampaignDraft(input = {}) {
   const ctaUrl = imageLink || safeUrl("/filmes", siteUrl);
   const ctaLabel = safeText(creative.ctaLabel, defaults.ctaLabel, 80);
   const audience = input.recipientMode || "all";
-  const details = renderDetailRows({ movie, coupon, plan, concessions, audience, siteUrl });
+  const details = renderDetailRows({ movie, movies, coupon, plan, concessions, audience, siteUrl });
   const variables = {
     nome_filme: movie?.title || "",
     link_filme: movieLink(movie, siteUrl),

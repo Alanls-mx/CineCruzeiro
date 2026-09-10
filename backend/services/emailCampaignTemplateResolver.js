@@ -62,6 +62,18 @@ function normalizeObjective(value) {
   return "";
 }
 
+function objectiveFromScenario(value) {
+  const scenario = normalizeScenario(value);
+  if (scenario === "ticket") return "movie";
+  if (["premiere", "now_playing", "last_chance"].includes(scenario)) return "movie";
+  if (scenario === "programming") return "programming";
+  if (["promotion", "coupon"].includes(scenario)) return "offer";
+  if (["concession", "combo"].includes(scenario)) return "concession";
+  if (["club", "club_plan"].includes(scenario)) return "club";
+  if (scenario === "event") return "event";
+  return "announcement";
+}
+
 function normalizeScenario(value) {
   return SCENARIO_ALIASES[String(value || "").trim().toLowerCase()] || "announcement";
 }
@@ -99,6 +111,51 @@ function selectedMovieCount(context = {}) {
   return new Set([...ids, context.movieId, context.movie?.id].filter(Boolean).map(String)).size;
 }
 
+function scopeCampaignContext(context = {}) {
+  const explicitObjective = normalizeObjective(context.objective);
+  const category = explicitObjective || objectiveFromScenario(context.scenario || context.aiScenario);
+  const scenario = normalizeScenario(context.scenario || context.aiScenario);
+  // Keep legacy scenario-only requests intact while still using its category
+  // to remove unrelated catalog references.
+  const scoped = { ...context, objective: explicitObjective || "" };
+  const hasCoupon = Boolean(context.coupon || context.couponId);
+
+  // Catalog references are mutually exclusive unless a coupon needs a movie to
+  // validate a film-specific restriction.
+  if (!["movie", "programming"].includes(category) && !(category === "offer" && hasCoupon)) {
+    delete scoped.movie;
+    delete scoped.movieId;
+    delete scoped.movieIds;
+    delete scoped.movies;
+  }
+  if (category !== "offer") {
+    delete scoped.coupon;
+    delete scoped.couponId;
+  }
+  if (category !== "concession") {
+    delete scoped.concessions;
+    delete scoped.concessionIds;
+    delete scoped.concessionId;
+  }
+  if (category !== "club") {
+    delete scoped.plan;
+    delete scoped.clubPlanId;
+    delete scoped.clubOffer;
+  }
+  if (category === "offer" && !hasCoupon) {
+    delete scoped.movie;
+    delete scoped.movieId;
+    delete scoped.movieIds;
+    delete scoped.movies;
+  }
+  if (["event", "announcement"].includes(category)) {
+    delete scoped.coupon;
+    delete scoped.couponId;
+  }
+  if (scenario === "ticket") scoped.objective = "";
+  return scoped;
+}
+
 function inferScenario(context = {}) {
   const explicit = String(context.scenario || context.aiScenario || "").trim();
   const objective = normalizeObjective(context.objective);
@@ -134,19 +191,20 @@ function inferScenario(context = {}) {
 }
 
 function resolveCampaignTemplate(context = {}) {
-  const objective = normalizeObjective(context.objective);
-  const scenario = inferScenario(context);
-  const movieCount = selectedMovieCount(context);
-  const concessionCount = Number(context.concessionCount ?? context.concessions?.length ?? context.concessionIds?.length ?? 0);
-  const incomplete = ["movie"].includes(scenario) && !context.movie;
-  const compatibleTemplates = incomplete ? [] : compatibleTemplatesForScenario(scenario, { ...context, concessionCount });
+  const scopedContext = scopeCampaignContext(context);
+  const objective = normalizeObjective(scopedContext.objective);
+  const scenario = inferScenario(scopedContext);
+  const movieCount = selectedMovieCount(scopedContext);
+  const concessionCount = Number(scopedContext.concessionCount ?? scopedContext.concessions?.length ?? scopedContext.concessionIds?.length ?? 0);
+  const incomplete = (["movie", "programming"].includes(scenario) && movieCount === 0) || (scenario === "concession" && concessionCount === 0);
+  const compatibleTemplates = incomplete ? [] : compatibleTemplatesForScenario(scenario, { ...scopedContext, concessionCount });
   const automaticTemplate = compatibleTemplates[0] || "";
-  const requestedTemplate = validTemplate(context.templateId || context.referenceTemplateId, "");
-  const selectionMode = context.templateSelectionMode === "manual" ? "manual" : "automatic";
+  const requestedTemplate = validTemplate(scopedContext.templateId || scopedContext.referenceTemplateId, "");
+  const selectionMode = scopedContext.templateSelectionMode === "manual" ? "manual" : "automatic";
   const manualCompatible = selectionMode === "manual" && requestedTemplate && compatibleTemplates.includes(requestedTemplate);
   const templateId = incomplete ? "" : manualCompatible ? requestedTemplate : automaticTemplate;
   let reason = "Comunicação geral sem vínculo específico com catálogo.";
-  if (incomplete) reason = "Selecione o conteúdo para montarmos o layout correto.";
+  if (incomplete) reason = scenario === "concession" ? "Selecione ao menos um item ativo da bomboniere." : "Selecione o conteúdo para montarmos o layout correto.";
   else if (scenario === "premiere") reason = "Selecionado porque o filme ainda está em período de estreia.";
   else if (scenario === "last_chance") reason = "Selecionado porque o catálogo marcou o filme como em últimas sessões.";
   else if (scenario === "now_playing") reason = movieCount > 1 ? "Selecionado porque vários filmes foram escolhidos." : "Selecionado porque o filme está em cartaz.";
@@ -191,5 +249,6 @@ module.exports = {
   compatibleTemplatesForScenario,
   isTemplateCompatibleWithScenario,
   resolveCampaignTemplate,
-  _test: { inferScenario, isUpcomingMovie, isLastChanceMovie, selectedMovieCount }
+  scopeCampaignContext,
+  _test: { inferScenario, isUpcomingMovie, isLastChanceMovie, selectedMovieCount, scopeCampaignContext }
 };

@@ -8,7 +8,7 @@ const { generateGeminiCampaignDraft, testGeminiConnection, _test: geminiTest } =
 const { generateEmailDraft, supportedProviders } = require("../backend/services/emailCampaignAiProviderService.js");
 const integrationConfigService = require("../backend/services/integrationConfigService.js");
 const { resolveCampaignContext, filterCouponRecipients, filterOfferRecipients } = require("../backend/services/emailCampaignEligibilityService.js");
-const { resolveCampaignTemplate, _test: templateResolverTest } = require("../backend/services/emailCampaignTemplateResolver.js");
+const { resolveCampaignTemplate, scopeCampaignContext, _test: templateResolverTest } = require("../backend/services/emailCampaignTemplateResolver.js");
 
 const siteUrl = "https://lumixengine.com/projects/cinecruzeiro";
 
@@ -44,7 +44,7 @@ test("agente usa o filme, poster, sessoes e cores do rascunho de referência", (
   assert.match(result.variables.sessoes_filme, /12\/09\/2026 às 19:00/);
 });
 
-test("agente incorpora cupom, plano, bomboniere e público no rascunho", () => {
+test("agente usa somente o catálogo pertencente ao objetivo", () => {
   const result = buildCampaignDraft({
     scenario: "promotion",
     siteUrl,
@@ -56,14 +56,14 @@ test("agente incorpora cupom, plano, bomboniere e público no rascunho", () => {
   });
 
   assert.equal(result.couponId, "cupom-1");
-  assert.equal(result.clubPlanId, "plano-1");
-  assert.deepEqual(result.concessionIds, ["pipoca"]);
+  assert.equal(result.clubPlanId, "");
+  assert.deepEqual(result.concessionIds, []);
   assert.equal(result.variables.codigo_cupom, "QUARTA20");
   assert.equal(result.variables.publico_oferta, "clientes com compras aprovadas");
   assert.match(result.message, /Destaque a condição/);
   assert.match(result.html, /QUARTA20/);
-  assert.match(result.html, /Plano Família/);
-  assert.match(result.html, /Pipoca Grande/);
+  assert.doesNotMatch(result.html, /Plano Família/);
+  assert.doesNotMatch(result.html, /Pipoca Grande/);
 });
 
 test("briefing e links não permitem HTML ou esquemas perigosos", () => {
@@ -425,4 +425,25 @@ test("resolvedor limita override aos layouts compatíveis e preserva o layout v�
   assert.equal(corrected.templateId, "concession");
   assert.equal(corrected.templateSelectionMode, "automatic");
   assert.match(corrected.reason, /não é compatível/);
+});
+
+test("objetivo da IA impede referências de categorias diferentes", () => {
+  const scoped = scopeCampaignContext({
+    objective: "concession",
+    movieId: "filme-antigo",
+    couponId: "cupom-antigo",
+    clubPlanId: "plano-antigo",
+    concessionIds: ["pipoca"]
+  });
+  assert.equal(scoped.movieId, undefined);
+  assert.equal(scoped.couponId, undefined);
+  assert.equal(scoped.clubPlanId, undefined);
+  assert.deepEqual(scoped.concessionIds, ["pipoca"]);
+});
+
+test("programação sem filme não recebe um layout por acaso", () => {
+  const result = resolveCampaignTemplate({ objective: "programming" });
+  assert.equal(result.incomplete, true);
+  assert.equal(result.templateId, "");
+  assert.equal(result.scenario, "programming");
 });

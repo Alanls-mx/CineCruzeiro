@@ -30,7 +30,7 @@ const emailService = require("./services/emailService");
 const { testGeminiConnection } = require("./services/geminiEmailAgentService");
 const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
 const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
-const { resolveCampaignTemplate, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
+const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
@@ -6515,9 +6515,10 @@ function eligibleCampaignRecipients(db, campaign = {}, options = {}) {
 }
 
 function resolveCampaignForInput(db, campaign = {}, options = {}) {
-  const preliminary = resolveCampaignTemplate(campaign);
+  const scopedCampaign = scopeCampaignContext(campaign);
+  const preliminary = resolveCampaignTemplate(scopedCampaign);
   const validationScenario = preliminary.incomplete ? "announcement" : preliminary.scenario;
-  const movieIds = [...new Set((campaign.movieIds || []).map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20);
+  const movieIds = [...new Set((scopedCampaign.movieIds || []).map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20);
   const movies = movieIds.map((id) => (db.movies || []).find((item) => String(item.id) === id));
   if (movies.some((movie) => !movie)) {
     const error = new Error("Um dos filmes selecionados não existe mais no catálogo.");
@@ -6532,17 +6533,17 @@ function resolveCampaignForInput(db, campaign = {}, options = {}) {
     throw error;
   }
   const context = resolveCampaignContext(db, {
-    ...campaign,
+    ...scopedCampaign,
     scenario: validationScenario,
     requireClubPlan: preliminary.scenario === "club_plan"
   }, options);
   context.movies = movies;
   const resolution = resolveCampaignTemplate({
-    ...campaign,
+    ...scopedCampaign,
     ...context,
     objective: preliminary.objective,
     scenario: preliminary.scenario,
-    movieIds: campaign.movieIds
+    movieIds: scopedCampaign.movieIds
   });
   return { context, resolution };
 }
@@ -8463,14 +8464,22 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/email/campaigns/ai-draft" && method === "POST") {
     const body = await readBody(req);
-    const initialResolution = resolveCampaignTemplate({ ...body, templateSelectionMode: "automatic" });
-    const scenario = initialResolution.incomplete ? "announcement" : initialResolution.scenario;
-    const resolvedInput = resolveCampaignForInput(db, {
+    const objective = normalizeObjective(body.objective || body.scenario) || "announcement";
+    const aiCampaignInput = scopeCampaignContext({
       ...body,
-      scenario,
+      objective,
       templateSelectionMode: "automatic"
-    }, { allowAutoMovie: true });
+    });
+    const resolvedInput = resolveCampaignForInput(db, aiCampaignInput, { allowAutoMovie: false });
     const context = resolvedInput.context;
+    const templateResolution = resolvedInput.resolution;
+    if (templateResolution.incomplete) {
+      const error = new Error(templateResolution.reason || "Selecione o conteúdo da campanha.");
+      error.statusCode = 409;
+      error.code = "EMAIL_CAMPAIGN_CONTEXT_REQUIRED";
+      throw error;
+    }
+    const scenario = templateResolution.scenario;
     const referenceCampaignId = String(body.referenceCampaignId || "").trim();
     const referenceCampaign = referenceCampaignId ? await findPersistedCampaign(referenceCampaignId) : null;
     if (referenceCampaignId && !referenceCampaign) {
@@ -8482,13 +8491,15 @@ async function handleApi(req, res, pathname) {
     }
     const aiConfig = integrationConfigService.resolvedConfig(db, requestedAiProvider);
     const generated = await generateEmailDraft(requestedAiProvider, {
+      objective: templateResolution.objective,
       scenario,
-      movie: context.movie,
+      movie: context.movie || context.movies?.[0] || null,
+      movies: context.movies || [],
       coupon: context.coupon,
       plan: context.plan,
       concessions: context.concessions,
       referenceCampaign,
-      referenceTemplateId: String(body.referenceTemplateId || "").trim(),
+      referenceTemplateId: templateResolution.templateId,
       recipientMode: body.recipientMode,
       brief: String(body.brief || "").trim().slice(0, 1000),
       brand: db.settings?.emailBranding || {},
@@ -8500,13 +8511,13 @@ async function handleApi(req, res, pathname) {
     });
     const campaign = normalizeCampaignInput({
       ...generated,
-      objective: body.objective || initialResolution.objective,
+      objective: templateResolution.objective,
       templateSelectionMode: "automatic",
-      movieId: body.movieId,
-      movieIds: body.movieIds,
-      couponId: body.couponId,
-      clubPlanId: body.clubPlanId,
-      concessionIds: body.concessionIds
+      movieId: aiCampaignInput.movieId,
+      movieIds: aiCampaignInput.movieIds,
+      couponId: aiCampaignInput.couponId,
+      clubPlanId: aiCampaignInput.clubPlanId,
+      concessionIds: aiCampaignInput.concessionIds
     }, { brand: db.settings?.emailBranding || {} });
     const eligibilityCheck = eligibleCampaignRecipients(db, campaign);
     applyCampaignTemplateResolution(campaign, eligibilityCheck.templateResolution);

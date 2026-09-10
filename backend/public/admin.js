@@ -5946,6 +5946,7 @@ function resolveCampaignTemplateClient(context = campaignObjectiveContext()) {
     promotion: ["promotion", "coupon"], coupon: ["coupon", "promotion"], concession: ["concession", "combo"], combo: ["combo", "concession"], club_plan: ["club_plan", "club"], club: ["club"],
     birthday: ["birthday", "announcement"], event: ["event", "announcement"], reactivation: ["reactivation", "announcement"]
   }[scenario] || ["announcement"];
+  const incomplete = (objective === "movie" || objective === "programming") && movieCount === 0 || objective === "concession" && concessionCount === 0;
   const manual = context.templateSelectionMode === "manual" && compatible.includes(context.templateId);
   const reasons = {
     premiere: "Selecionado porque o filme ainda está em período de estreia.", now_playing: movieCount > 1 ? "Selecionado porque vários filmes foram escolhidos." : "Selecionado porque o filme está em cartaz.",
@@ -5954,7 +5955,7 @@ function resolveCampaignTemplateClient(context = campaignObjectiveContext()) {
     club_plan: "Selecionado porque um plano ativo do Clube foi escolhido.", club: "Selecionado para uma comunicação geral do Clube.", birthday: "Selecionado porque o público foi definido como aniversariantes.",
     reactivation: "Selecionado porque o público representa clientes sem compra recente.", event: "Selecionado porque o objetivo da campanha é um evento.", announcement: "Comunicação geral sem vínculo específico com catálogo."
   };
-  return { templateId: manual ? context.templateId : compatible[0], reason: manual ? "Layout escolhido manualmente e compatível com o conteúdo." : reasons[scenario], compatibleTemplates: compatible, scenario, incomplete: false, templateSelectionMode: manual ? "manual" : "automatic" };
+  return { templateId: incomplete ? "" : manual ? context.templateId : compatible[0], reason: incomplete ? objective === "concession" ? "Selecione ao menos um item ativo da bomboniere." : "Selecione o conteúdo para montarmos o layout correto." : manual ? "Layout escolhido manualmente e compatível com o conteúdo." : reasons[scenario], compatibleTemplates: incomplete ? [] : compatible, scenario, incomplete, templateSelectionMode: manual ? "manual" : "automatic" };
 }
 
 function syncCampaignTemplateResolution(resolution = resolveCampaignTemplateClient()) {
@@ -6728,44 +6729,15 @@ function renderEmailCampaignControls() {
   void refreshEmailCampaignRecipients().catch(() => null);
 }
 
-const EMAIL_CAMPAIGN_AI_SCENARIOS = [
-  ["premiere", "Novo filme / grande estreia"],
-  ["now_playing", "Filme em cartaz"],
-  ["last_chance", "Últimos dias de um filme"],
-  ["promotion", "Promoção"],
-  ["coupon", "Cupom de desconto"],
-  ["club", "Clube Cine Cruzeiro"],
+const EMAIL_CAMPAIGN_AI_OBJECTIVES = [
+  ["movie", "Filme"],
+  ["programming", "Programação"],
+  ["offer", "Oferta ou cupom"],
   ["concession", "Bomboniere"],
-  ["event", "Evento especial"],
-  ["ticket", "Ingressos"],
-  ["reactivation", "Reativação de clientes"]
+  ["club", "Clube Cine Cruzeiro"],
+  ["event", "Evento"],
+  ["announcement", "Comunicado"]
 ];
-
-const EMAIL_CAMPAIGN_AI_DEFAULT_TEMPLATE = {
-  premiere: "premiere",
-  now_playing: "weekly",
-  last_chance: "last_chance",
-  promotion: "promotion",
-  coupon: "coupon",
-  club: "club_plan",
-  concession: "concession",
-  event: "event",
-  ticket: "ticket",
-  reactivation: "reactivation"
-};
-
-const EMAIL_CAMPAIGN_AI_COMPATIBLE_TEMPLATES = {
-  premiere: ["premiere", "weekly"],
-  now_playing: ["weekly", "announcement"],
-  last_chance: ["last_chance", "weekly"],
-  promotion: ["promotion", "coupon"],
-  coupon: ["coupon", "promotion"],
-  club: ["club_plan", "club"],
-  concession: ["concession", "combo"],
-  event: ["event", "announcement"],
-  ticket: ["ticket"],
-  reactivation: ["reactivation", "announcement"]
-};
 
 const EMAIL_CAMPAIGN_HISTORY_FILTERS = [
   ["all", "Todos"],
@@ -6777,13 +6749,34 @@ const EMAIL_CAMPAIGN_HISTORY_FILTERS = [
   ["cancelled", "Canceladas"]
 ];
 
-function emailCampaignAiCompatibleTemplates(scenario) {
-  return EMAIL_CAMPAIGN_AI_COMPATIBLE_TEMPLATES[scenario] || [EMAIL_CAMPAIGN_AI_DEFAULT_TEMPLATE[scenario] || "announcement"];
-}
-
 function emailCampaignTemplateLabel(templateId) {
   const template = EMAIL_CAMPAIGN_TEMPLATES[templateId] || EMAIL_CAMPAIGN_TEMPLATES.announcement;
   return template.label || templateId || "Comunicado";
+}
+
+function emailCampaignAiContext() {
+  const objective = $("emailCampaignAiObjective")?.value || "announcement";
+  const movieIds = objective === "programming"
+    ? Array.from($("emailCampaignAiMovies")?.selectedOptions || []).map((option) => option.value)
+    : [$("emailCampaignAiMovie")?.value || ""].filter(Boolean);
+  const movie = (state.content?.movies || []).find((item) => String(item.id) === String(movieIds[0] || "")) || null;
+  const concessions = objective === "concession"
+    ? Array.from($("emailCampaignAiConcessions")?.selectedOptions || []).map((option) => (state.content?.concessions || []).find((item) => String(item.id) === String(option.value))).filter(Boolean)
+    : [];
+  const plan = objective === "club"
+    ? (state.content?.subscriptionPlans || []).find((item) => String(item.id) === String($("emailCampaignAiClubPlan")?.value || "")) || null
+    : null;
+  return {
+    objective,
+    movie,
+    movieId: movieIds[0] || "",
+    movieIds,
+    couponId: objective === "offer" ? $("emailCampaignAiCoupon")?.value || "" : "",
+    concessions,
+    plan,
+    recipientMode: $("emailCampaignAiAudience")?.value || "all",
+    templateSelectionMode: "automatic"
+  };
 }
 
 function emailCampaignHistoryLinkedLabel(item = {}) {
@@ -6810,24 +6803,26 @@ function emailCampaignHistoryMatchesFilter(item, filter) {
 }
 
 function renderEmailCampaignAiControls() {
-  const scenario = $("emailCampaignAiScenario");
+  const objective = $("emailCampaignAiObjective");
   const movie = $("emailCampaignAiMovie");
+  const movies = $("emailCampaignAiMovies");
   const coupon = $("emailCampaignAiCoupon");
   const plan = $("emailCampaignAiClubPlan");
   const concessions = $("emailCampaignAiConcessions");
   const template = $("emailCampaignAiTemplate");
   const reference = $("emailCampaignAiCampaign");
-  if (!scenario || !movie || !coupon || !plan || !concessions || !template || !reference) return;
+  if (!objective || !movie || !movies || !coupon || !plan || !concessions || !template || !reference) return;
 
-  const currentScenario = scenario.value || "premiere";
-  scenario.innerHTML = EMAIL_CAMPAIGN_AI_SCENARIOS.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
-  scenario.value = EMAIL_CAMPAIGN_AI_SCENARIOS.some(([value]) => value === currentScenario) ? currentScenario : "premiere";
-  const compatibleTemplates = emailCampaignAiCompatibleTemplates(scenario.value);
-  const defaultTemplate = EMAIL_CAMPAIGN_AI_DEFAULT_TEMPLATE[scenario.value] || compatibleTemplates[0] || "announcement";
+  const currentObjective = objective.value || "announcement";
+  objective.innerHTML = EMAIL_CAMPAIGN_AI_OBJECTIVES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+  objective.value = EMAIL_CAMPAIGN_AI_OBJECTIVES.some(([value]) => value === currentObjective) ? currentObjective : "announcement";
 
   const currentMovie = movie.value;
   movie.innerHTML = `<option value="">Escolha conforme o objetivo</option>${(state.content?.movies || []).filter((item) => item.status !== "hidden").map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title || "Filme sem título")}</option>`).join("")}`;
   movie.value = (state.content?.movies || []).some((item) => item.id === currentMovie && item.status !== "hidden") ? currentMovie : "";
+
+  const currentMovies = new Set(Array.from(movies.selectedOptions).map((option) => option.value));
+  movies.innerHTML = (state.content?.movies || []).filter((item) => item.status !== "hidden").map((item) => `<option value="${escapeHtml(item.id)}" ${currentMovies.has(String(item.id)) ? "selected" : ""}>${escapeHtml(item.title || "Filme sem título")}</option>`).join("");
 
   const currentCoupon = coupon.value;
   coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && item.active !== false).map((item) => {
@@ -6846,19 +6841,30 @@ function renderEmailCampaignAiControls() {
     const unavailable = item.stock !== "" && item.stock !== undefined && Number(item.stock || 0) <= 0;
     return `<option value="${escapeHtml(item.id)}" ${selectedConcessions.has(String(item.id)) && !unavailable ? "selected" : ""} ${unavailable ? "disabled" : ""}>${escapeHtml(item.name || "Produto")} · ${escapeHtml(money(item.price || 0))}${unavailable ? " · sem estoque" : ""}</option>`;
   }).join("");
-
-  const currentTemplate = template.value;
-  template.innerHTML = compatibleTemplates.map((id) => {
-    const item = EMAIL_CAMPAIGN_TEMPLATES[id] || EMAIL_CAMPAIGN_TEMPLATES.announcement;
-    return `<option value="${id}">${escapeHtml(item.label || id)} · ${escapeHtml(item.family || "Campanha")}</option>`;
-  }).join("");
-  template.value = compatibleTemplates.includes(currentTemplate) ? currentTemplate : defaultTemplate;
-
+  const context = emailCampaignAiContext();
+  const resolution = resolveCampaignTemplateClient(context);
+  $("emailCampaignAiScenario").value = resolution.scenario || "announcement";
+  template.value = resolution.templateId || "";
+  if ($("emailCampaignAiResolvedTemplate")) $("emailCampaignAiResolvedTemplate").textContent = resolution.templateId ? emailCampaignTemplateLabel(resolution.templateId) : "Aguardando conteúdo";
+  if ($("emailCampaignAiTemplateReason")) $("emailCampaignAiTemplateReason").textContent = resolution.reason || "Selecione o conteúdo para montarmos o layout correto.";
+  const visibleFields = {
+    emailCampaignAiMovieField: ["movie", "offer"].includes(context.objective),
+    emailCampaignAiMoviesField: context.objective === "programming",
+    emailCampaignAiCouponField: context.objective === "offer",
+    emailCampaignAiClubPlanField: context.objective === "club",
+    emailCampaignAiConcessionsField: context.objective === "concession"
+  };
+  Object.entries(visibleFields).forEach(([id, visible]) => { if ($(id)) $(id).hidden = !visible; });
   const currentReference = reference.value;
-  const drafts = (state.content?.emailCampaigns || []).filter((item) => (!item.status || ["draft", "failed"].includes(item.status)) && item.templateId === template.value);
+  const compatibleTemplates = resolution.compatibleTemplates || [];
+  const drafts = (state.content?.emailCampaigns || []).filter((item) => (!item.status || ["draft", "failed"].includes(item.status)) && compatibleTemplates.includes(item.templateId));
   reference.innerHTML = `<option value="">Nenhum rascunho</option>${drafts.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.subject || "Campanha sem assunto")} · ${escapeHtml(emailCampaignTemplateLabel(item.templateId))}</option>`).join("")}`;
   reference.value = drafts.some((item) => item.id === currentReference) ? currentReference : "";
-  setEmailCampaignAiStatus(`Objetivo vinculado a ${compatibleTemplates.map(emailCampaignTemplateLabel).join(" ou ")}. Rascunhos de outros tipos ficam fora da lista.`);
+  const button = $("emailCampaignAiGenerate");
+  if (button) button.disabled = Boolean(resolution.incomplete);
+  setEmailCampaignAiStatus(resolution.incomplete
+    ? resolution.reason
+    : `Layout ${emailCampaignTemplateLabel(resolution.templateId)} preparado automaticamente. Referências incompatíveis ficam fora da lista.`);
 }
 
 function setEmailCampaignAiStatus(message, kind = "") {
@@ -6871,14 +6877,22 @@ function setEmailCampaignAiStatus(message, kind = "") {
 async function generateEmailCampaignAiDraft() {
   const button = $("emailCampaignAiGenerate");
   if (!button || button.disabled) return;
+  const context = emailCampaignAiContext();
+  const resolution = resolveCampaignTemplateClient(context);
+  if (resolution.incomplete) {
+    setEmailCampaignAiStatus(resolution.reason, "warning");
+    return;
+  }
   const payload = {
     aiProvider: "gemini",
-    scenario: $("emailCampaignAiScenario")?.value || "premiere",
-    movieId: $("emailCampaignAiMovie")?.value || "",
-    couponId: $("emailCampaignAiCoupon")?.value || "",
-    clubPlanId: $("emailCampaignAiClubPlan")?.value || "",
-    concessionIds: Array.from($("emailCampaignAiConcessions")?.selectedOptions || []).map((option) => option.value),
-    referenceTemplateId: $("emailCampaignAiTemplate")?.value || "",
+    objective: context.objective,
+    scenario: resolution.scenario,
+    movieId: context.movieId,
+    movieIds: context.movieIds,
+    couponId: context.couponId,
+    clubPlanId: context.plan?.id || "",
+    concessionIds: context.concessions.map((item) => item.id).filter(Boolean),
+    referenceTemplateId: resolution.templateId,
     referenceCampaignId: $("emailCampaignAiCampaign")?.value || "",
     recipientMode: $("emailCampaignAiAudience")?.value || "all",
     brief: $("emailCampaignAiBrief")?.value.trim() || ""
@@ -6902,9 +6916,11 @@ async function generateEmailCampaignAiDraft() {
     if ($("emailCampaignAiResultTitle")) $("emailCampaignAiResultTitle").textContent = `Rascunho criado por ${providerLabel}.`;
     if ($("emailCampaignAiResultSummary")) {
       const recipients = eligibility.recipients;
+      const resolved = ai.templateResolution || campaign.templateResolution;
+      const layout = resolved?.templateId ? ` Layout: ${emailCampaignTemplateLabel(resolved.templateId)}.` : "";
       $("emailCampaignAiResultSummary").textContent = recipients
-        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.`
-        : "Catálogo validado. Confira a prévia antes de enviar.";
+        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.${layout}`
+        : `Catálogo validado. Confira a prévia antes de enviar.${layout}`;
     }
     const warningList = $("emailCampaignAiWarnings");
     if (warningList) {
@@ -8806,12 +8822,9 @@ function bindEvents() {
   $("emailCampaignAiOpen")?.addEventListener("click", () => {
     if (state.emailCampaignAiDraftId) void editEmailCampaign(state.emailCampaignAiDraftId);
   });
-  $("emailCampaignAiScenario")?.addEventListener("change", () => {
-    const audience = $("emailCampaignAiAudience");
-    if (audience && $("emailCampaignAiScenario")?.value === "reactivation") audience.value = "reactivation";
-    renderEmailCampaignAiControls();
-  });
-  $("emailCampaignAiTemplate")?.addEventListener("change", renderEmailCampaignAiControls);
+  $("emailCampaignAiObjective")?.addEventListener("change", renderEmailCampaignAiControls);
+  ["emailCampaignAiMovie", "emailCampaignAiMovies", "emailCampaignAiCoupon", "emailCampaignAiClubPlan", "emailCampaignAiConcessions", "emailCampaignAiAudience", "emailCampaignAiCampaign"]
+    .forEach((id) => $(id)?.addEventListener("change", renderEmailCampaignAiControls));
   document.querySelectorAll("[data-campaign-objective]").forEach((button) => button.addEventListener("click", () => {
     state.emailCampaignObjective = button.dataset.campaignObjective;
     state.emailCampaignTemplateSelectionMode = "automatic";
