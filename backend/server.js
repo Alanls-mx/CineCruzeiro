@@ -8281,6 +8281,9 @@ async function handleApi(req, res, pathname) {
       const result = await testIntegrationProvider(db, key, req);
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
+        if (key === "gemini" && result.ok && result.resolvedModel) {
+          integrationConfigService.save(lockedDb, key, { model: result.resolvedModel }, req.adminUser);
+        }
         const saved = integrationConfigService.setTestResult(lockedDb, key, result, req.adminUser);
         await writeDb(lockedDb);
         sendJson(res, 200, { ...result, integration: saved });
@@ -8406,6 +8409,9 @@ async function handleApi(req, res, pathname) {
     });
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
+      if (requestedAiProvider === "gemini" && generated.aiProvider === "gemini" && generated.aiModelResolved && generated.aiModel) {
+        integrationConfigService.save(lockedDb, "gemini", { model: generated.aiModel }, req.adminUser);
+      }
       lockedDb.emailCampaigns ||= [];
       lockedDb.emailCampaigns.unshift(campaign);
       await writeDb(lockedDb);

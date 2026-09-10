@@ -287,8 +287,9 @@ test("agente Gemini usa catálogo validado e saída estruturada", async () => {
   assert.equal(result.aiResponseId, "gemini-response");
   assert.match(requestUrl, /gemini-2\.5-flash:generateContent$/);
   assert.equal(requestOptions.headers["x-goog-api-key"], "gemini-test-key");
-  assert.equal(requestBody.generationConfig.responseFormat.text.mimeType, "application/json");
-  assert.equal(requestBody.generationConfig.responseFormat.text.schema.type, "object");
+  assert.equal(requestBody.generationConfig.responseMimeType, "application/json");
+  assert.equal(requestBody.generationConfig.responseSchema.type, "object");
+  assert.equal(requestBody.generationConfig.responseSchema.additionalProperties, undefined);
   assert.match(requestBody.contents[0].parts[0].text, /Estreia Gemini/);
   assert.match(result.html, /Estreia Gemini/);
 });
@@ -305,6 +306,67 @@ test("teste Gemini valida conexão e modelo", async () => {
   assert.equal(result.ok, true);
   assert.equal(result.code, "GEMINI_CONNECTED");
   assert.equal(result.requestId, "gemini-request");
+});
+
+test("Gemini identifica e persiste sugestão de modelo quando o configurado não existe", async () => {
+  const urls = [];
+  const result = await testGeminiConnection({ apiKey: "gemini-test-key", model: "gemini-3-8-flash", timeout: 5000 }, {
+    fetchImpl: async (url) => {
+      urls.push(url);
+      if (urls.length === 1) return {
+        ok: false,
+        status: 404,
+        headers: { get: () => "" },
+        async json() { return { error: { status: "NOT_FOUND", message: "models/gemini-3-8-flash is not found for generateContent" } }; }
+      };
+      if (urls.length === 2) return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "" },
+        async json() {
+          return {
+            models: [
+              { name: "models/gemini-2.5-flash-image", supportedGenerationMethods: ["generateContent"] },
+              { name: "models/gemini-2.5-flash", supportedGenerationMethods: ["generateContent"] },
+              { name: "models/gemini-3.8-flash", supportedGenerationMethods: ["generateContent"] }
+            ]
+          };
+        }
+      };
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (name) => name.toLowerCase() === "x-goog-request-id" ? "resolved-request" : "" },
+        async json() { return { candidates: [{ content: { parts: [{ text: "conexão confirmada" }] } }] }; }
+      };
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.code, "GEMINI_MODEL_RESOLVED");
+  assert.equal(result.model, "gemini-3.8-flash");
+  assert.equal(result.resolvedModel, "gemini-3.8-flash");
+  assert.match(urls[0], /gemini-3-8-flash:generateContent$/);
+  assert.match(urls[1], /\/v1beta\/models\?pageSize=100$/);
+  assert.match(urls[2], /gemini-3\.8-flash:generateContent$/);
+});
+
+test("se a versão digitada não existir, Gemini escolhe o Flash estável mais recente disponível", () => {
+  const selected = geminiTest.pickGeminiModel([
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3-flash-preview"
+  ], "gemini-inexistente");
+  assert.equal(selected, "gemini-3.6-flash");
+});
+
+test("Gemini não reutiliza um modelo listado que já falhou por descontinuação", () => {
+  const selected = geminiTest.pickGeminiModel([
+    "gemini-2.5-flash",
+    "gemini-3.5-flash",
+    "gemini-3.6-flash"
+  ], "gemini-2.5-flash", ["gemini-2.5-flash"]);
+  assert.equal(selected, "gemini-3.6-flash");
 });
 
 test("Gemini explica cota esgotada sem repetir a solicitação", async () => {
@@ -359,7 +421,7 @@ test("Integrações expõem Gemini com segredo protegido e modelo padrão", () =
   const definition = integrationConfigService.DEFINITIONS.gemini;
   assert.ok(definition);
   assert.deepEqual(definition.secrets, ["apiKey"]);
-  assert.equal(definition.defaults.model, "gemini-2.5-flash");
+  assert.equal(definition.defaults.model, "gemini-3.6-flash");
   assert.equal(geminiTest.geminiErrorDetails(404, { error: { status: "NOT_FOUND" } }).code, "GEMINI_MODEL_NOT_FOUND");
 });
 

@@ -1,6 +1,9 @@
 const { buildCampaignDraft } = require("./emailCampaignAiService");
 const { RESPONSE_SCHEMA, SYSTEM_INSTRUCTIONS, campaignGenerationContext } = require("./emailCampaignAiProviderContext");
 
+const GEMINI_RESPONSE_SCHEMA = { ...RESPONSE_SCHEMA };
+delete GEMINI_RESPONSE_SCHEMA.additionalProperties;
+
 function responseHeader(response, name) {
   if (!response?.headers || typeof response.headers.get !== "function") return "";
   return String(response.headers.get(name) || "").trim();
@@ -33,8 +36,10 @@ function geminiErrorDetails(status, payload = {}, response = null) {
       : { code: "GEMINI_RATE_LIMITED", providerStatus, message: retryAfter ? `O Gemini atingiu um limite temporário. Tente novamente em ${retryAfter} segundo(s).` : "O Gemini atingiu um limite temporário de requisições. Aguarde alguns instantes e teste novamente.", retryable: true, retryAfter, requestId: id };
   }
   if ([401, 403].includes(Number(status))) return { code: "GEMINI_AUTHENTICATION_FAILED", providerStatus, message: "A chave da API Gemini é inválida, foi revogada ou não tem permissão para este projeto.", retryable: false, retryAfter, requestId: id };
-  if (Number(status) === 404) return { code: "GEMINI_MODEL_NOT_FOUND", providerStatus, message: "O modelo Gemini configurado não foi encontrado ou não está disponível para este projeto.", retryable: false, retryAfter, requestId: id };
-  if (Number(status) === 400) return { code: "GEMINI_REQUEST_INVALID", providerStatus, message: "O Gemini rejeitou a configuração da solicitação. Confira o nome do modelo configurado.", retryable: false, retryAfter, requestId: id };
+  if (Number(status) === 404 || (Number(status) === 400 && /model.*(?:not found|does not exist|not supported)|invalid.*model/.test(normalized))) {
+    return { code: "GEMINI_MODEL_NOT_FOUND", providerStatus, message: "O modelo Gemini configurado não existe mais ou não aceita geração de conteúdo.", retryable: false, retryAfter, requestId: id };
+  }
+  if (Number(status) === 400) return { code: "GEMINI_REQUEST_INVALID", providerStatus, message: "O Gemini rejeitou a configuração da solicitação.", retryable: false, retryAfter, requestId: id };
   if (Number(status) >= 500) return { code: "GEMINI_UNAVAILABLE", providerStatus, message: "O Gemini está temporariamente indisponível. Tente novamente em alguns instantes.", retryable: true, retryAfter, requestId: id };
   return { code: "GEMINI_RESPONSE_ERROR", providerStatus, message: `O Gemini recusou a solicitação (HTTP ${status}).`, retryable: false, retryAfter, requestId: id };
 }
@@ -54,7 +59,7 @@ function sleep(milliseconds, sleepImpl) {
 async function requestGeminiResponse(config, body, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const maxRetries = Math.max(0, Math.min(2, Number(options.maxRetries ?? 1)));
-  const model = encodeURIComponent(String(config.model || "gemini-2.5-flash"));
+  const model = encodeURIComponent(String(config.model || "gemini-3.6-flash"));
   let attempt = 0;
   while (true) {
     const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -78,6 +83,80 @@ async function requestGeminiResponse(config, body, options = {}) {
   }
 }
 
+function normalizeModelName(value) {
+  return String(value || "").trim().replace(/^models\//, "");
+}
+
+function correctedModelName(value) {
+  return normalizeModelName(value).replace(/^(gemini-\d+)-(\d+)(-)/, "$1.$2$3");
+}
+
+function compatibleTextModels(payload = {}) {
+  return (Array.isArray(payload.models) ? payload.models : [])
+    .filter((model) => (model?.supportedGenerationMethods || []).includes("generateContent"))
+    .map((model) => normalizeModelName(model.name))
+    .filter((name) => /^gemini-/i.test(name) && !/(?:image|audio|live|tts|embedding|robotics)/i.test(name));
+}
+
+function stableFlashVersion(name) {
+  const match = String(name).match(/^gemini-(\d+)(?:\.(\d+))?-flash$/i);
+  if (!match) return -1;
+  return (Number(match[1]) * 1000) + Number(match[2] || 0);
+}
+
+function pickGeminiModel(models = [], configuredModel = "", excludedModels = []) {
+  const excluded = new Set(excludedModels.map(normalizeModelName).filter(Boolean));
+  const available = [...new Set(models.map(normalizeModelName).filter((name) => name && !excluded.has(name)))];
+  const configured = normalizeModelName(configuredModel);
+  if (available.includes(configured)) return configured;
+  const corrected = correctedModelName(configured);
+  if (available.includes(corrected)) return corrected;
+  const stableFlash = available
+    .filter((name) => stableFlashVersion(name) >= 0)
+    .sort((left, right) => stableFlashVersion(right) - stableFlashVersion(left));
+  return stableFlash[0]
+    || available.find((name) => name === "gemini-2.5-flash")
+    || available.find((name) => name === "gemini-flash-latest")
+    || available.find((name) => /flash/i.test(name) && !/(?:preview|exp)/i.test(name))
+    || available.find((name) => /flash/i.test(name))
+    || available[0]
+    || "";
+}
+
+async function resolveGeminiModel(config = {}, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const response = await fetchImpl("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100", {
+    method: "GET",
+    signal: options.signal,
+    headers: { "x-goog-api-key": config.apiKey }
+  });
+  const payload = await parseResponsePayload(response);
+  if (!response.ok) {
+    const details = geminiErrorDetails(response.status, payload, response);
+    const error = new Error(details.message);
+    Object.assign(error, details, { statusCode: response.status });
+    throw error;
+  }
+  const model = pickGeminiModel(compatibleTextModels(payload), config.model, options.excludedModels || []);
+  if (!model) {
+    throw Object.assign(new Error("Nenhum modelo Gemini compatível com geração de texto está disponível para esta chave."), { code: "GEMINI_NO_COMPATIBLE_MODEL" });
+  }
+  return model;
+}
+
+async function requestGeminiWithModelFallback(config, body, options = {}) {
+  const configuredModel = normalizeModelName(config.model || "gemini-3.6-flash");
+  try {
+    const result = await requestGeminiResponse({ ...config, model: configuredModel }, body, options);
+    return { ...result, model: configuredModel, modelChanged: false };
+  } catch (error) {
+    if (error.code !== "GEMINI_MODEL_NOT_FOUND") throw error;
+    const model = await resolveGeminiModel(config, { ...options, excludedModels: [configuredModel] });
+    const result = await requestGeminiResponse({ ...config, model }, body, options);
+    return { ...result, model, modelChanged: true };
+  }
+}
+
 function geminiResponseText(payload = {}) {
   return (payload.candidates || [])
     .flatMap((candidate) => candidate?.content?.parts || [])
@@ -92,11 +171,18 @@ async function testGeminiConnection(config = {}, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(5000, Math.min(60000, Number(config.timeout || 30000))));
   try {
-    const { response } = await requestGeminiResponse(config, {
+    const { response, model, modelChanged } = await requestGeminiWithModelFallback(config, {
       contents: [{ role: "user", parts: [{ text: "Responda somente: conexão confirmada" }] }],
       generationConfig: { maxOutputTokens: 32 }
     }, { ...options, signal: controller.signal, maxRetries: 1 });
-    return { ok: true, code: "GEMINI_CONNECTED", message: `Gemini conectado com o modelo ${config.model}.`, requestId: requestId(response) };
+    return {
+      ok: true,
+      code: modelChanged ? "GEMINI_MODEL_RESOLVED" : "GEMINI_CONNECTED",
+      message: modelChanged ? `Gemini conectado. O modelo inválido foi substituído automaticamente por ${model}.` : `Gemini conectado com o modelo ${model}.`,
+      requestId: requestId(response),
+      model,
+      resolvedModel: modelChanged ? model : ""
+    };
   } catch (error) {
     if (error.name === "AbortError") return { ok: false, code: "GEMINI_TIMEOUT", message: "O Gemini demorou demais para responder." };
     return { ok: false, code: String(error.code || "GEMINI_UNAVAILABLE"), message: error.message || "Não foi possível conectar ao Gemini.", retryAfterSeconds: Number(error.retryAfter || 0), requestId: String(error.requestId || "") };
@@ -116,19 +202,20 @@ async function generateGeminiCampaignDraft(input = {}, options = {}) {
   const timer = setTimeout(() => controller.abort(), Math.max(5000, Math.min(60000, Number(config.timeout || 30000))));
   try {
     const providerInput = campaignGenerationContext(input, baseline);
-    const { payload } = await requestGeminiResponse(config, {
+    const { payload, model, modelChanged } = await requestGeminiWithModelFallback(config, {
       system_instruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] },
       contents: [{ role: "user", parts: [{ text: JSON.stringify(providerInput) }] }],
       generationConfig: {
         maxOutputTokens: Math.max(600, Math.min(4000, Number(config.maxOutputTokens || 1800))),
-        responseFormat: { text: { mimeType: "application/json", schema: RESPONSE_SCHEMA } }
+        responseMimeType: "application/json",
+        responseSchema: GEMINI_RESPONSE_SCHEMA
       }
     }, { fetchImpl: options.fetchImpl || fetch, signal: controller.signal, maxRetries: 1, sleepImpl: options.sleepImpl });
     const text = geminiResponseText(payload);
     if (!text) throw Object.assign(new Error("O Gemini não retornou conteúdo utilizável."), { code: "GEMINI_EMPTY_RESPONSE" });
     const creative = JSON.parse(text);
     const generated = buildCampaignDraft({ ...input, creative });
-    return { ...generated, aiProvider: "gemini", aiModel: config.model || "", aiResponseId: payload.responseId || "" };
+    return { ...generated, aiProvider: "gemini", aiModel: model, aiModelResolved: modelChanged, aiResponseId: payload.responseId || "" };
   } catch (error) {
     if (options.fallback === false) throw error;
     return {
@@ -145,5 +232,16 @@ async function generateGeminiCampaignDraft(input = {}, options = {}) {
 module.exports = {
   generateGeminiCampaignDraft,
   testGeminiConnection,
-  _test: { geminiErrorDetails, geminiResponseText, requestGeminiResponse, retryAfterSeconds }
+  _test: {
+    compatibleTextModels,
+    correctedModelName,
+    geminiErrorDetails,
+    geminiResponseText,
+    normalizeModelName,
+    pickGeminiModel,
+    requestGeminiResponse,
+    requestGeminiWithModelFallback,
+    resolveGeminiModel,
+    retryAfterSeconds
+  }
 };

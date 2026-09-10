@@ -98,12 +98,12 @@ const DEFINITIONS = {
   gemini: {
     name: "Gemini para campanhas",
     purpose: "Geração assistida de campanhas com o Google Gemini e o mesmo catálogo validado",
-    defaults: { enabled: false, environment: "production", model: "gemini-2.5-flash", timeout: 30000, maxOutputTokens: 1800 },
+    defaults: { enabled: false, environment: "production", model: "gemini-3.6-flash", timeout: 30000, maxOutputTokens: 1800 },
     secrets: ["apiKey"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
       { key: "apiKey", label: "Chave da API Gemini", type: "secret" },
-      { key: "model", label: "Modelo", type: "text", placeholder: "gemini-2.5-flash" },
+      { key: "model", label: "Modelo", type: "text", placeholder: "gemini-3.6-flash" },
       { key: "timeout", label: "Tempo limite em ms", type: "number" },
       { key: "maxOutputTokens", label: "Limite de tokens da resposta", type: "number" }
     ]
