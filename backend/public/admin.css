@@ -569,6 +569,26 @@ h1 {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.session-metric-row.is-in-progress {
+  background: linear-gradient(100deg, rgba(250, 204, 21, 0.16), rgba(37, 99, 235, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.52), 0 8px 24px rgba(2, 6, 23, 0.18);
+}
+
+.session-live-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.18);
+  color: #fde68a;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: .04em;
+  vertical-align: 2px;
+}
+
 .session-poster {
   width: 42px;
   aspect-ratio: 2 / 3;
@@ -617,6 +637,46 @@ h1 {
 
 .alert-row {
   background: rgba(251, 113, 133, 0.08);
+}
+
+.payment-summary-row {
+  box-shadow: inset 0 1px rgba(148, 163, 184, 0.1);
+}
+
+.payment-summary-row strong {
+  color: #e2e8f0;
+}
+
+.payment-summary-row.payments-approved strong {
+  color: #6ee7b7;
+}
+
+.payment-summary-row.payments-pending strong {
+  color: #fde68a;
+}
+
+.payment-summary-row.payments-failed strong,
+.payment-summary-row.payments-refunded strong,
+.payment-summary-row.payments-expired strong {
+  color: #fda4af;
+}
+
+.dashboard-note {
+  display: grid;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dashboard-note strong {
+  color: #dbeafe;
+  font-size: 12px;
+}
+
+.dashboard-note p {
+  margin: 0 0 9px;
 }
 
 .split-grid {

@@ -966,6 +966,9 @@ function renderInsights() {
 
 function renderDashboard() {
   const data = state.dashboard || {};
+  const dashboardTime = (value) => value
+    ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+    : "--:--";
   if ($("dashRevenueToday")) $("dashRevenueToday").textContent = money(data.revenueToday || 0);
   if ($("dashRevenueMonth")) $("dashRevenueMonth").textContent = money(data.revenuePeriod ?? data.revenueMonth ?? 0);
   if ($("dashSalesToday")) $("dashSalesToday").textContent = Number(data.salesToday || 0);
@@ -975,7 +978,8 @@ function renderDashboard() {
   if ($("dashAverageOccupancy")) $("dashAverageOccupancy").textContent = `${Number(data.capacity?.occupancyRate || 0)}%`;
   if ($("dashCustomers")) $("dashCustomers").textContent = Number(data.customers || 0);
   if ($("dashSubscriptions")) $("dashSubscriptions").textContent = Number(data.activeSubscriptions || 0);
-  if ($("dashPendingPayments")) $("dashPendingPayments").textContent = Number(data.problematicPayments ?? data.pendingPayments ?? 0);
+  if ($("dashPendingPayments")) $("dashPendingPayments").textContent = Number(data.pendingPayments || 0);
+  if ($("dashPendingPaymentsAmount")) $("dashPendingPaymentsAmount").textContent = `${money(data.pendingPaymentsAmount || 0)} em aberto no período`;
   if ($("dashConcessionRevenue")) $("dashConcessionRevenue").textContent = money(data.concessionRevenue || 0);
   if ($("dashRevenueCompare")) $("dashRevenueCompare").textContent = comparisonText(data.comparison?.revenue);
   if ($("dashSalesCompare")) $("dashSalesCompare").textContent = comparisonText(data.comparison?.sales);
@@ -994,6 +998,21 @@ function renderDashboard() {
     $("dashPaymentMethods").innerHTML = entries.length
       ? entries.map(([name, value]) => `<div class="metric-row clickable-row" onclick="setBoxOfficeTab('payments')"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
       : `<div class="empty-state compact"><strong>Sem pagamentos</strong><span>As formas usadas aparecerão aqui.</span></div>`;
+  }
+  if ($("dashPaymentSummary")) {
+    const paymentSummary = data.paymentSummary || {};
+    const rows = [
+      ["approved", "Aprovados", "payments-approved", "Entram na receita"],
+      ["pending", "Em aberto", "payments-pending", "Ainda não entram na receita"],
+      ["failed", "Recusados ou cancelados", "payments-failed", "Não geram receita"],
+      ["refunded", "Reembolsados", "payments-refunded", "Saíram da receita"],
+      ["expired", "Expirados", "payments-expired", "Não podem mais ser pagos"]
+    ].filter(([key]) => Number(paymentSummary[key]?.count || 0) > 0 || key === "approved" || key === "pending");
+    $("dashPaymentSummary").innerHTML = rows.map(([key, label, className, hint]) => `
+      <div class="metric-row payment-summary-row ${className}">
+        <span>${label}<small>${hint} • ${Number(paymentSummary[key]?.count || 0)} pagamento(s)</small></span>
+        <strong>${money(paymentSummary[key]?.amount || 0)}</strong>
+      </div>`).join("");
   }
   if ($("dashRevenueComposition")) {
     const entries = Array.isArray(data.revenueComposition) ? data.revenueComposition : [];
@@ -1021,13 +1040,13 @@ function renderDashboard() {
     const sessions = data.todaySessions || data.upcomingSessions || [];
     $("dashUpcomingSessions").innerHTML = sessions.length
       ? sessions.map((item) => `
-          <div class="session-metric-row clickable-row" onclick="openSessionDashboardDetail('${escapeHtml(item.movie?.id || "")}', '${escapeHtml(item.session?.id || "")}')">
+          <div class="session-metric-row clickable-row ${item.isInProgress ? "is-in-progress" : ""}" onclick="openSessionDashboardDetail('${escapeHtml(item.movie?.id || "")}', '${escapeHtml(item.session?.id || "")}')">
             <div class="session-poster">${item.movie?.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(item.movie.posterUrl))}" alt="">` : `<span>${escapeHtml(item.movie?.rating || "L")}</span>`}</div>
             <div>
-              <strong>${escapeHtml(item.movie?.title || "Filme")} • ${escapeHtml(item.session?.time || "-")}</strong>
+              <strong>${escapeHtml(item.movie?.title || "Filme")} • ${escapeHtml(item.session?.time || "-")}${item.isInProgress ? ` <em class="session-live-badge">EM ANDAMENTO</em>` : ""}</strong>
               <span>${escapeHtml(item.session?.format || "")}</span>
               <div class="mini-progress"><i style="width:${Math.min(100, Number(item.occupancyRate || 0))}%"></i></div>
-              <small>${Number(item.sold || 0)} / ${Number(item.capacity || 0)} • ${Number(item.occupancyRate || 0)}% • ${escapeHtml(item.status || "Boa disponibilidade")}</small>
+              <small>${item.isInProgress ? `Termina às ${dashboardTime(item.endsAt)} • faltam ${Number(item.remainingMinutes || 0)} min • ` : ""}${Number(item.sold || 0)} / ${Number(item.capacity || 0)} • ${Number(item.occupancyRate || 0)}% • ${escapeHtml(item.status || "Boa disponibilidade")}</small>
             </div>
           </div>`).join("")
       : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre um horário quando a programação estiver definida.</span><button class="ghost-button" type="button" onclick="createSessionFromDashboard()">Criar sessão</button></div>`;
@@ -1035,15 +1054,16 @@ function renderDashboard() {
   if ($("dashCapacity")) {
     const capacity = data.capacity || {};
     $("dashCapacity").innerHTML = `
+      <div class="metric-row"><span>Sessões consideradas</span><strong>${Number(capacity.sessions || 0)}</strong></div>
       <div class="metric-row"><span>Lugares ocupados</span><strong>${Number(capacity.occupied || 0)}</strong></div>
-      <div class="metric-row"><span>Lugares ofertados nas sessões</span><strong>${Number(capacity.roomCapacity || 0)}</strong></div>
+      <div class="metric-row"><span>Lugares nas sessões ativas</span><strong>${Number(capacity.roomCapacity || 0)}</strong></div>
       <div class="metric-row"><span>Ocupação estimada</span><strong>${Number(capacity.occupancyRate || 0)}%</strong></div>
     `;
   }
   if ($("dashTopProducts")) {
     const products = data.topProducts || [];
     $("dashTopProducts").innerHTML = products.length
-      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}</span><strong>${Number(item.quantity || 0)}</strong></div>`).join("")
+      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) vendidos • receita ${money(item.revenue || 0)}</small></span><strong>${Number(item.quantity || 0)}</strong></div>`).join("")
       : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" onclick="activatePanel('concessionsPanel', { scroll: true })">Ver Bomboniere</button></div>`;
   }
   if ($("dashLatestOrders")) {
@@ -1078,6 +1098,7 @@ function renderDashboard() {
     const alerts = [];
     if (data.cardTerminal && !data.cardTerminal.configured) alerts.push(["Maquininha sem integração automática", "Vendas por cartão serão registradas manualmente."]);
     (data.lowStockProducts || []).forEach((item) => alerts.push([`Estoque baixo: ${item.name}`, `${item.stock} unidade(s) disponíveis.`]));
+    (data.todaySessions || []).filter((item) => item.isInProgress).forEach((item) => alerts.push([`${item.movie.title} • sessão em andamento`, `Termina às ${dashboardTime(item.endsAt)} • faltam ${item.remainingMinutes} min.`]));
     (data.todaySessions || []).filter((item) => ["Quase lotada", "Esgotada"].includes(item.status)).forEach((item) => alerts.push([`${item.movie.title} • ${item.session.time}`, item.status]));
     $("dashOperationalAlerts").innerHTML = alerts.length
       ? alerts.map(([title, text]) => `<div class="metric-row alert-row"><span>${escapeHtml(title)}<small>${escapeHtml(text)}</small></span><strong>Atenção</strong></div>`).join("")

@@ -111,17 +111,17 @@
             </div>
           </div>
           <div class="insight-grid">
-            <div class="insight primary-metric"><span>Receita hoje</span><strong id="dashRevenueToday">R$ 0,00</strong></div>
-            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Receita do período</span><strong id="dashRevenueMonth">R$ 0,00</strong><small id="dashRevenueCompare"></small></div>
-            <div class="insight primary-metric"><span>Vendas hoje</span><strong id="dashSalesToday">0</strong></div>
-            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Vendas no período</span><strong id="dashSalesMonth">0</strong><small id="dashSalesCompare"></small></div>
-            <div class="insight primary-metric"><span>Ingressos vendidos</span><strong id="dashTicketsSold">0</strong><small id="dashTicketsCompare"></small></div>
-            <div class="insight primary-metric"><span>Ticket médio</span><strong id="dashAverageTicket">R$ 0,00</strong></div>
+            <div class="insight primary-metric"><span>Receita aprovada hoje</span><strong id="dashRevenueToday">R$ 0,00</strong><small>Pedidos pagos e Clube</small></div>
+            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Receita aprovada no período</span><strong id="dashRevenueMonth">R$ 0,00</strong><small id="dashRevenueCompare"></small></div>
+            <div class="insight primary-metric"><span>Pedidos pagos hoje</span><strong id="dashSalesToday">0</strong></div>
+            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Pedidos pagos no período</span><strong id="dashSalesMonth">0</strong><small id="dashSalesCompare"></small></div>
+            <div class="insight primary-metric"><span>Ingressos emitidos</span><strong id="dashTicketsSold">0</strong><small id="dashTicketsCompare"></small></div>
+            <div class="insight primary-metric"><span>Ticket médio por pedido</span><strong id="dashAverageTicket">R$ 0,00</strong><small>Pedidos pagos</small></div>
             <div class="insight secondary-metric"><span>Ocupação média</span><strong id="dashAverageOccupancy">0%</strong></div>
             <div class="insight secondary-metric"><span>Clientes</span><strong id="dashCustomers">0</strong></div>
             <div class="insight secondary-metric"><span>Assinaturas ativas</span><strong id="dashSubscriptions">0</strong></div>
-            <div class="insight secondary-metric"><span>Pagamentos pendentes</span><strong id="dashPendingPayments">0</strong></div>
-            <div class="insight secondary-metric"><span>Receita bomboniere</span><strong id="dashConcessionRevenue">R$ 0,00</strong></div>
+            <div class="insight secondary-metric"><span>Pagamentos em aberto</span><strong id="dashPendingPayments">0</strong><small id="dashPendingPaymentsAmount">R$ 0,00 em aberto no período</small></div>
+            <div class="insight secondary-metric"><span>Receita bomboniere aprovada</span><strong id="dashConcessionRevenue">R$ 0,00</strong><small>Valor líquido recebido</small></div>
           </div>
 
           <div class="dashboard-main-grid">
@@ -144,6 +144,27 @@
             <div class="surface dashboard-attention-surface">
               <div class="section-title">Pagamentos que precisam de atenção</div>
               <div id="dashAttentionPayments" class="metric-list"></div>
+            </div>
+          </div>
+
+          <div class="split-grid compact">
+            <div class="surface">
+              <div class="surface-head">
+                <div>
+                  <div class="section-title">Resumo dos pagamentos</div>
+                  <p>Valores separados por situação no período selecionado.</p>
+                </div>
+              </div>
+              <div id="dashPaymentSummary" class="metric-list"></div>
+            </div>
+            <div class="surface">
+              <div class="section-title">Critério financeiro</div>
+              <div class="dashboard-note">
+                <strong>Receita aprovada</strong>
+                <p>Considera somente pedidos pagos e mensalidades do Clube confirmadas. Reservas, pagamentos pendentes e falhas não entram no faturamento.</p>
+                <strong>Valores por categoria</strong>
+                <p>Ingressos e bomboniere são calculados pelos itens do pedido, já com descontos aplicados, e sempre fecham com o total pago.</p>
+              </div>
             </div>
           </div>
 
@@ -172,7 +193,7 @@
           </div>
           <div class="split-grid compact">
             <div class="surface">
-              <div class="section-title">Próximas sessões</div>
+              <div class="section-title">Sessões ativas de hoje</div>
               <div id="dashUpcomingSessions" class="metric-list"></div>
             </div>
             <div class="surface">
