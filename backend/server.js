@@ -27,10 +27,10 @@ const paymentService = require("./services/paymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
-const { normalizeScenario } = require("./services/emailCampaignAiService");
 const { testGeminiConnection } = require("./services/geminiEmailAgentService");
 const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
 const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
+const { resolveCampaignTemplate, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
@@ -6495,14 +6495,12 @@ function campaignRecipients(db, campaign = {}) {
 }
 
 function eligibleCampaignRecipients(db, campaign = {}, options = {}) {
-  const context = resolveCampaignContext(db, {
-    ...campaign,
-    scenario: normalizeScenario(campaign.aiScenario || campaign.scenario || "promotion")
-  }, options);
+  const { context, resolution } = resolveCampaignForInput(db, campaign, options);
   const baseRecipients = campaignRecipients(db, campaign);
   const recipientCheck = filterOfferRecipients(db, context, baseRecipients);
   return {
     ...context,
+    templateResolution: resolution,
     recipients: recipientCheck.recipients,
     report: {
       ...context.report,
@@ -6514,6 +6512,56 @@ function eligibleCampaignRecipients(db, campaign = {}, options = {}) {
       }
     }
   };
+}
+
+function resolveCampaignForInput(db, campaign = {}, options = {}) {
+  const preliminary = resolveCampaignTemplate(campaign);
+  const validationScenario = preliminary.incomplete ? "announcement" : preliminary.scenario;
+  const movieIds = [...new Set((campaign.movieIds || []).map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20);
+  const movies = movieIds.map((id) => (db.movies || []).find((item) => String(item.id) === id));
+  if (movies.some((movie) => !movie)) {
+    const error = new Error("Um dos filmes selecionados não existe mais no catálogo.");
+    error.statusCode = 409;
+    error.code = "EMAIL_CAMPAIGN_MOVIE_NOT_FOUND";
+    throw error;
+  }
+  if (movies.some((movie) => movie.workflowStatus === "archived" || movie.workflowStatus === "draft" || movie.status === "hidden")) {
+    const error = new Error("Um dos filmes selecionados não está publicado para os clientes.");
+    error.statusCode = 409;
+    error.code = "EMAIL_CAMPAIGN_MOVIE_UNAVAILABLE";
+    throw error;
+  }
+  const context = resolveCampaignContext(db, {
+    ...campaign,
+    scenario: validationScenario,
+    requireClubPlan: preliminary.scenario === "club_plan"
+  }, options);
+  context.movies = movies;
+  const resolution = resolveCampaignTemplate({
+    ...campaign,
+    ...context,
+    objective: preliminary.objective,
+    scenario: preliminary.scenario,
+    movieIds: campaign.movieIds
+  });
+  return { context, resolution };
+}
+
+function applyCampaignTemplateResolution(campaign, resolution, { allowIncomplete = false } = {}) {
+  if (resolution?.incomplete && !allowIncomplete) {
+    const error = new Error(resolution.reason || "Selecione o conteúdo da campanha.");
+    error.statusCode = 409;
+    error.code = "EMAIL_CAMPAIGN_CONTEXT_REQUIRED";
+    throw error;
+  }
+  if (resolution?.templateId) campaign.templateId = resolution.templateId;
+  campaign.objective = resolution?.objective || campaign.objective || "announcement";
+  campaign.aiScenario = resolution?.scenario || campaign.aiScenario || "announcement";
+  campaign.templateSelectionMode = resolution?.templateSelectionMode || "automatic";
+  campaign.templateReason = resolution?.reason || "";
+  campaign.compatibleTemplates = Array.isArray(resolution?.compatibleTemplates) ? resolution.compatibleTemplates : [];
+  campaign.templateIncomplete = Boolean(resolution?.incomplete);
+  return campaign;
 }
 
 async function storeEmailAttachment(input = {}) {
@@ -6589,8 +6637,12 @@ function normalizeCampaignBlocks(value, existing = []) {
 
 function normalizeCampaignInput(input = {}, existing = {}) {
   const mode = ["template", "html"].includes(input.mode) ? input.mode : (existing.mode === "legacy_visual" ? "legacy_visual" : "template");
-  const allowedTemplates = new Set(["announcement", "weekly", "premiere", "last_chance", "promotion", "coupon", "concession", "combo", "club_plan", "club", "birthday", "event", "ticket", "reactivation"]);
-  const templateId = allowedTemplates.has(input.templateId) ? input.templateId : (allowedTemplates.has(existing.templateId) ? existing.templateId : "announcement");
+  const templateId = validCampaignTemplate(input.templateId, validCampaignTemplate(existing.templateId, "announcement"));
+  const templateSelectionMode = ["automatic", "manual"].includes(input.templateSelectionMode)
+    ? input.templateSelectionMode
+    : ["automatic", "manual"].includes(existing.templateSelectionMode)
+      ? existing.templateSelectionMode
+      : existing.id ? "manual" : "automatic";
   const status = input.status || existing.status || "draft";
   const reservedVariables = new Set(["nome", "email", "codigo_cupom", "validade_cupom", "link_cupom"]);
   const campaignColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "").trim()) ? String(value).trim().toLowerCase() : fallback;
@@ -6601,6 +6653,10 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     subject: String(input.subject ?? existing.subject ?? "").trim().slice(0, 180),
     mode,
     templateId,
+    objective: String(input.objective ?? existing.objective ?? "").trim().slice(0, 40),
+    templateSelectionMode,
+    templateReason: String(input.templateReason ?? existing.templateReason ?? "").trim().slice(0, 300),
+    compatibleTemplates: Array.isArray(input.compatibleTemplates) ? input.compatibleTemplates.filter((item) => validCampaignTemplate(item, "") === item).slice(0, 14) : (existing.compatibleTemplates || []),
     preheader: String(input.preheader ?? existing.preheader ?? "").trim().slice(0, 140),
     headline: String(input.headline ?? existing.headline ?? "").trim().slice(0, 180),
     message: String(input.message ?? existing.message ?? "").slice(0, 12000),
@@ -6614,6 +6670,9 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     recipientSearch: String(input.recipientSearch ?? existing.recipientSearch ?? "").trim().slice(0, 160),
     couponId: String(input.couponId ?? existing.couponId ?? "").trim(),
     movieId: String(input.movieId ?? existing.movieId ?? "").trim().slice(0, 180),
+    movieIds: Array.isArray(input.movieIds)
+      ? [...new Set(input.movieIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20)
+      : Array.isArray(existing.movieIds) ? existing.movieIds.map(String).slice(0, 20) : (existing.movieId ? [String(existing.movieId)] : []),
     concessionId: String(input.concessionId ?? existing.concessionId ?? (Array.isArray(input.concessionIds) ? input.concessionIds[0] : "") ?? "").trim().slice(0, 180),
     concessionIds: Array.isArray(input.concessionIds)
       ? [...new Set(input.concessionIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20)
@@ -8404,14 +8463,14 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/email/campaigns/ai-draft" && method === "POST") {
     const body = await readBody(req);
-    const scenario = normalizeScenario(String(body.scenario || "promotion").trim().slice(0, 40));
-    const context = resolveCampaignContext(db, {
+    const initialResolution = resolveCampaignTemplate({ ...body, templateSelectionMode: "automatic" });
+    const scenario = initialResolution.incomplete ? "announcement" : initialResolution.scenario;
+    const resolvedInput = resolveCampaignForInput(db, {
+      ...body,
       scenario,
-      movieId: body.movieId,
-      couponId: body.couponId,
-      clubPlanId: body.clubPlanId,
-      concessionIds: body.concessionIds
+      templateSelectionMode: "automatic"
     }, { allowAutoMovie: true });
+    const context = resolvedInput.context;
     const referenceCampaignId = String(body.referenceCampaignId || "").trim();
     const referenceCampaign = referenceCampaignId ? await findPersistedCampaign(referenceCampaignId) : null;
     if (referenceCampaignId && !referenceCampaign) {
@@ -8439,10 +8498,21 @@ async function handleApi(req, res, pathname) {
       config: aiConfig,
       safetyIdentifier: req.adminUser?.id || req.adminUser?.email || "cine-cruzeiro-admin"
     });
-    const campaign = normalizeCampaignInput(generated, { brand: db.settings?.emailBranding || {} });
-    const recipientCheck = filterOfferRecipients(db, context, campaignRecipients(db, campaign));
+    const campaign = normalizeCampaignInput({
+      ...generated,
+      objective: body.objective || initialResolution.objective,
+      templateSelectionMode: "automatic",
+      movieId: body.movieId,
+      movieIds: body.movieIds,
+      couponId: body.couponId,
+      clubPlanId: body.clubPlanId,
+      concessionIds: body.concessionIds
+    }, { brand: db.settings?.emailBranding || {} });
+    const eligibilityCheck = eligibleCampaignRecipients(db, campaign);
+    applyCampaignTemplateResolution(campaign, eligibilityCheck.templateResolution);
+    const recipientCheck = { recipients: eligibilityCheck.recipients, excluded: eligibilityCheck.report.recipients?.excluded || 0, reasons: eligibilityCheck.report.recipients?.exclusionReasons || {} };
     const eligibility = {
-      ...context.report,
+      ...eligibilityCheck.report,
       recipients: {
         considered: recipientCheck.recipients.length + recipientCheck.excluded,
         eligible: recipientCheck.recipients.length,
@@ -8462,7 +8532,7 @@ async function handleApi(req, res, pathname) {
       aiModelResolutionReason: generated.aiModelResolved ? "O modelo configurado não estava disponível; foi usado um compatível apenas nesta execução." : "",
       aiFallbackReason: generated.aiFallbackReason || "",
       aiFallbackMessage: generated.aiFallbackMessage || "",
-      aiScenario: generated.aiScenario,
+      aiScenario: campaign.aiScenario,
       aiContext: generated.aiContext,
       aiReferenceCampaignId: generated.aiReferenceCampaignId,
       aiReferenceTemplateId: generated.aiReferenceTemplateId,
@@ -8496,7 +8566,8 @@ async function handleApi(req, res, pathname) {
         context: generated.aiContext,
         referenceCampaignId: generated.aiReferenceCampaignId,
         referenceTemplateId: generated.aiReferenceTemplateId,
-        eligibility
+        eligibility,
+        templateResolution: eligibilityCheck.templateResolution
       }
     });
     return;
@@ -8510,7 +8581,8 @@ async function handleApi(req, res, pathname) {
       count: recipients.length,
       sample: recipients.slice(0, 8).map(({ id, name, email, hasPurchased }) => ({ id, name, email, hasPurchased })),
       suppressed: campaignCustomerPool(db).length - recipients.length,
-      eligibility: eligibility.report
+      eligibility: eligibility.report,
+      templateResolution: eligibility.templateResolution
     });
     return;
   }
@@ -8530,7 +8602,8 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const campaign = normalizeCampaignInput(body, { brand: db.settings?.emailBranding || {} });
-    eligibleCampaignRecipients(db, campaign);
+    const eligibility = eligibleCampaignRecipients(db, campaign);
+    applyCampaignTemplateResolution(campaign, eligibility.templateResolution);
     const result = await emailService.sendPromotionTest(db, {
       ...campaign,
       to,
@@ -8554,6 +8627,7 @@ async function handleApi(req, res, pathname) {
     const shouldSend = body.action === "send" || body.sendNow === true;
     const shouldSchedule = Boolean(campaign.scheduleAt);
     const eligibility = eligibleCampaignRecipients(db, campaign);
+    applyCampaignTemplateResolution(campaign, eligibility.templateResolution);
     campaign.status = shouldSend ? "queued" : shouldSchedule ? "scheduled" : "draft";
     campaign.createdBy = req.adminUser?.id || "";
     campaign.recipientCount = eligibility.recipients.length;
@@ -8641,6 +8715,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const eligibility = eligibleCampaignRecipients(db, existing);
+      applyCampaignTemplateResolution(existing, eligibility.templateResolution);
       if (!eligibility.recipients.length) {
         sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum destinatário pode usar a oferta desta campanha." } });
         return;
@@ -8712,6 +8787,7 @@ async function handleApi(req, res, pathname) {
       validateCampaignAttachmentTotal(body.attachments);
       const updated = normalizeCampaignInput(body, existing);
       const eligibility = eligibleCampaignRecipients(db, updated);
+      applyCampaignTemplateResolution(updated, eligibility.templateResolution);
       updated.status = "draft";
       updated.recipientCount = eligibility.recipients.length;
       updated.eligibility = eligibility.report;

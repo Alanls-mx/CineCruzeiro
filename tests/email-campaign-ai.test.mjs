@@ -8,6 +8,7 @@ const { generateGeminiCampaignDraft, testGeminiConnection, _test: geminiTest } =
 const { generateEmailDraft, supportedProviders } = require("../backend/services/emailCampaignAiProviderService.js");
 const integrationConfigService = require("../backend/services/integrationConfigService.js");
 const { resolveCampaignContext, filterCouponRecipients, filterOfferRecipients } = require("../backend/services/emailCampaignEligibilityService.js");
+const { resolveCampaignTemplate, _test: templateResolverTest } = require("../backend/services/emailCampaignTemplateResolver.js");
 
 const siteUrl = "https://lumixengine.com/projects/cinecruzeiro";
 
@@ -390,4 +391,38 @@ test("público de um plano exclui clientes que já possuem a assinatura", () => 
   const result = filterOfferRecipients(db, { plan: { id: "familia" } }, recipients);
   assert.deepEqual(result.recipients.map((item) => item.id), ["b"]);
   assert.equal(result.reasons.alreadySubscribed, 1);
+});
+
+test("resolvedor escolhe automaticamente os cenários principais", () => {
+  const cases = [
+    [{ objective: "movie", movie: { id: "m", status: "upcoming" } }, "premiere"],
+    [{ objective: "movie", movie: { id: "m", status: "now_playing" } }, "now_playing"],
+    [{ objective: "movie", movie: { id: "m", status: "ending_soon" } }, "last_chance"],
+    [{ objective: "programming", movieIds: ["m1", "m2"] }, "programming"],
+    [{ objective: "offer", couponId: "cupom" }, "coupon"],
+    [{ objective: "offer" }, "promotion"],
+    [{ objective: "concession", concessions: [{ id: "p" }] }, "concession"],
+    [{ objective: "concession", concessions: [{ id: "p" }, { id: "c" }] }, "combo"],
+    [{ objective: "club", plan: { id: "plano" } }, "club_plan"],
+    [{ objective: "club" }, "club"],
+    [{ objective: "event" }, "event"],
+    [{ recipientMode: "reactivation" }, "reactivation"],
+    [{ recipientMode: "birthday_manual" }, "birthday"],
+    [{ objective: "announcement" }, "announcement"]
+  ];
+  for (const [context, scenario] of cases) assert.equal(resolveCampaignTemplate(context).scenario, scenario);
+  assert.equal(resolveCampaignTemplate({ objective: "movie" }).incomplete, true);
+  assert.equal(templateResolverTest.isUpcomingMovie({ status: "upcoming" }), true);
+});
+
+test("resolvedor limita override aos layouts compatíveis e preserva o layout válido", () => {
+  const compatible = resolveCampaignTemplate({ objective: "movie", movie: { id: "m", status: "upcoming" }, templateId: "weekly", templateSelectionMode: "manual" });
+  assert.equal(compatible.templateId, "weekly");
+  assert.equal(compatible.templateSelectionMode, "manual");
+  assert.deepEqual(compatible.compatibleTemplates, ["premiere", "weekly"]);
+
+  const corrected = resolveCampaignTemplate({ objective: "concession", concessions: [{ id: "p" }], templateId: "premiere", templateSelectionMode: "manual" });
+  assert.equal(corrected.templateId, "concession");
+  assert.equal(corrected.templateSelectionMode, "automatic");
+  assert.match(corrected.reason, /não é compatível/);
 });

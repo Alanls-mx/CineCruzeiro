@@ -51,6 +51,7 @@ function campaignFromRow(row = {}) {
     reactivationDays: Number(row.reactivation_days || 90),
     couponId: row.coupon_id || "",
     movieId: row.movie_id || "",
+    movieIds: Array.isArray(ai.movieIds) ? ai.movieIds.map(String) : (row.movie_id ? [String(row.movie_id)] : []),
     concessionId: row.concession_id || "",
     concessionIds: Array.isArray(row.concession_ids) ? row.concession_ids : [],
     clubPlanId: row.club_plan_id || "",
@@ -97,6 +98,10 @@ function campaignFromRow(row = {}) {
     aiFallbackReason: ai.fallbackReason || "",
     aiFallbackMessage: ai.fallbackMessage || "",
     aiScenario: ai.scenario || "",
+    objective: ai.objective || "",
+    templateSelectionMode: ai.templateSelectionMode || "",
+    templateReason: ai.templateReason || "",
+    compatibleTemplates: Array.isArray(ai.compatibleTemplates) ? ai.compatibleTemplates : [],
     aiContext: ai.context || {},
     aiReferenceCampaignId: ai.referenceCampaignId || "",
     aiReferenceTemplateId: ai.referenceTemplateId || "",
@@ -136,7 +141,8 @@ function recipientFromRow(row = {}) {
 }
 
 function campaignRecord(campaign = {}) {
-  const aiMetadata = campaign.aiMetadata || {
+  const aiMetadata = {
+    ...(campaign.aiMetadata || {}),
     generated: Boolean(campaign.aiGenerated),
     provider: campaign.aiProvider || "",
     requestedProvider: campaign.aiProviderRequested || "",
@@ -149,7 +155,12 @@ function campaignRecord(campaign = {}) {
     context: campaign.aiContext || {},
     referenceCampaignId: campaign.aiReferenceCampaignId || "",
     referenceTemplateId: campaign.aiReferenceTemplateId || "",
-    brief: campaign.aiBrief || ""
+    brief: campaign.aiBrief || "",
+    objective: campaign.objective || campaign.aiMetadata?.objective || "",
+    templateSelectionMode: campaign.templateSelectionMode || campaign.aiMetadata?.templateSelectionMode || "",
+    templateReason: campaign.templateReason || campaign.aiMetadata?.templateReason || "",
+    compatibleTemplates: campaign.compatibleTemplates || campaign.aiMetadata?.compatibleTemplates || [],
+    movieIds: Array.isArray(campaign.movieIds) ? campaign.movieIds.map(String).slice(0, 20) : campaign.aiMetadata?.movieIds || []
   };
   return {
     id: campaign.id,

@@ -118,7 +118,9 @@ function resolveCampaignContext(db, request = {}, options = {}) {
   if (plan && (plan.active === false || Number(plan.monthlyPrice ?? plan.price ?? 0) <= 0)) {
     throw campaignError("EMAIL_CAMPAIGN_PLAN_UNAVAILABLE", "O plano do Clube selecionado não está disponível para assinatura.");
   }
-  if (scenario === "club" && !plan) throw campaignError("EMAIL_CAMPAIGN_PLAN_REQUIRED", "Selecione um plano ativo para esta campanha do Clube.");
+  if ((scenario === "club_plan" || request.requireClubPlan === true) && !plan) {
+    throw campaignError("EMAIL_CAMPAIGN_PLAN_REQUIRED", "Selecione um plano ativo para esta campanha do Clube.");
+  }
 
   const concessions = requestedConcessionIds.map((id) => {
     const item = (db.concessions || []).find((entry) => String(entry.id) === id);

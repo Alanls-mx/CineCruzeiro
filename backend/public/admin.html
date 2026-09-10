@@ -1302,7 +1302,7 @@
               <label>Itens da bomboniere (opcional)
                 <select id="emailCampaignAiConcessions" multiple size="3" aria-label="Itens da bomboniere para a campanha"></select>
               </label>
-              <label>Template visual
+              <label class="sr-only">Layout interno
                 <select id="emailCampaignAiTemplate"><option value="">Escolha pelo objetivo</option></select>
               </label>
               <label>Rascunho de referência
@@ -1344,11 +1344,40 @@
                 <span id="emailCampaignStatus" class="campaign-status">Rascunho</span>
               </div>
               <div class="campaign-steps" aria-label="Etapas da campanha">
-                <button type="button" class="active" data-campaign-step="audience"><span>1</span><span><strong>Destinatários</strong><small>Escolha o público</small></span></button>
+                <button type="button" class="active" data-campaign-step="objective"><span>1</span><span><strong>Objetivo</strong><small>O que divulgar</small></span></button>
                 <button type="button" data-campaign-step="content"><span>2</span><span><strong>Conteúdo</strong><small>Monte a mensagem</small></span></button>
-                <button type="button" data-campaign-step="review"><span>3</span><span><strong>Revisão</strong><small>Teste e envie</small></span></button>
+                <button type="button" data-campaign-step="audience"><span>3</span><span><strong>Destinatários</strong><small>Escolha o público</small></span></button>
+                <button type="button" data-campaign-step="review"><span>4</span><span><strong>Revisão</strong><small>Teste e envie</small></span></button>
               </div>
-              <section class="campaign-step-panel active" data-campaign-step-panel="audience">
+              <section class="campaign-step-panel active" data-campaign-step-panel="objective">
+                <div class="campaign-objective-picker">
+                  <div class="campaign-template-picker-head">
+                    <div class="section-title">O que você quer divulgar?</div>
+                    <p>Escolha o objetivo. O sistema confere o catálogo e monta o layout mais adequado.</p>
+                  </div>
+                  <input id="emailCampaignObjective" type="hidden" value="announcement" />
+                  <div id="emailCampaignObjectives" class="campaign-objective-grid" role="radiogroup" aria-label="Objetivo da campanha">
+                    <button type="button" class="campaign-objective-option" role="radio" aria-checked="false" data-campaign-objective="movie"><strong>Filme</strong><span>Estreia, filme em cartaz ou últimas sessões</span></button>
+                    <button type="button" class="campaign-objective-option" role="radio" aria-checked="false" data-campaign-objective="programming"><strong>Programação</strong><span>Filmes e sessões disponíveis</span></button>
+                    <button type="button" class="campaign-objective-option" role="radio" aria-checked="false" data-campaign-objective="offer"><strong>Oferta ou cupom</strong><span>Promoções, descontos e cupons</span></button>
+                    <button type="button" class="campaign-objective-option" role="radio" aria-checked="false" data-campaign-objective="concession"><strong>Bomboniere</strong><span>Produtos e combos</span></button>
+                    <button type="button" class="campaign-objective-option" role="radio" aria-checked="false" data-campaign-objective="club"><strong>Clube Cine Cruzeiro</strong><span>Planos, benefícios e novidades</span></button>
+                    <button type="button" class="campaign-objective-option" role="radio" aria-checked="false" data-campaign-objective="event"><strong>Evento</strong><span>Um evento especial do cinema</span></button>
+                    <button type="button" class="campaign-objective-option active" role="radio" aria-checked="true" data-campaign-objective="announcement"><strong>Comunicado</strong><span>Uma comunicação geral para seus clientes</span></button>
+                  </div>
+                  <div class="campaign-template-resolution" aria-live="polite">
+                    <div><span class="campaign-resolution-label">Layout escolhido automaticamente</span><strong id="emailCampaignResolvedTemplate">Comunicado</strong><small id="emailCampaignTemplateReason">A campanha começa como um comunicado geral.</small></div>
+                    <button id="emailCampaignTemplateOverride" class="ghost-button" type="button" hidden>Alterar layout</button>
+                  </div>
+                  <div id="emailCampaignTemplateOverridePanel" class="campaign-template-override" hidden>
+                    <label>Layout compatível
+                      <select id="emailCampaignTemplate"><option value="announcement">Comunicado</option></select>
+                    </label>
+                    <span>Mostrando apenas layouts compatíveis com o conteúdo selecionado.</span>
+                  </div>
+                </div>
+              </section>
+              <section class="campaign-step-panel" data-campaign-step-panel="audience" hidden>
                 <div class="section-title">Para quem esta mensagem vai?</div>
                 <p class="helper-text campaign-audience-lead">O segmento escolhido define quem receberá a oferta. Clientes descadastrados são sempre excluídos.</p>
                 <div class="field-row">
@@ -1377,51 +1406,6 @@
                 <div id="emailCampaignRecipients" class="campaign-recipient-list" hidden></div>
               </section>
               <section class="campaign-step-panel" data-campaign-step-panel="content" hidden>
-                <div class="campaign-template-picker">
-                  <div class="campaign-template-picker-head">
-                    <div class="section-title">Escolha um modelo</div>
-                    <p>O layout, a identidade e os espaçamentos já estão preparados para cada situação.</p>
-                  </div>
-                  <div class="campaign-template-library" role="radiogroup" aria-label="Modelo do e-mail">
-                    <section class="campaign-template-family" aria-labelledby="campaignTemplateProgramming">
-                      <h3 id="campaignTemplateProgramming">Programação</h3>
-                      <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option active" role="radio" aria-checked="true" data-campaign-template="announcement" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Comunicado</strong><span>Mensagem institucional objetiva</span><small class="campaign-template-capability">Imagem opcional</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="weekly" data-template-accent="cyan"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Programação da semana</strong><span>Filmes e horários em formato de agenda</span><small class="campaign-template-capability">Pôsteres + imagem opcional</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="premiere" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Grande estreia</strong><span>Pôster, detalhes e sessões do filme</span><small class="campaign-template-capability">Pôster automático</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="last_chance" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Últimos dias</strong><span>Urgência para as últimas sessões</span><small class="campaign-template-capability">Pôster automático</small></button>
-                      </div>
-                    </section>
-                    <section class="campaign-template-family" aria-labelledby="campaignTemplateOffers">
-                      <h3 id="campaignTemplateOffers">Ofertas e bomboniere</h3>
-                      <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="promotion" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Promoção</strong><span>Oferta visual com prazo e chamada</span><small class="campaign-template-capability">Imagem opcional</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="coupon" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Cupom</strong><span>Código e validade automáticos</span><small class="campaign-template-capability">Sem imagem</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="concession" data-template-accent="orange"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Produto da bomboniere</strong><span>Imagem, preço e descrição do item</span><small class="campaign-template-capability">Imagem automática</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="combo" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Combo em destaque</strong><span>Composição e valor do combo</span><small class="campaign-template-capability">Imagens automáticas</small></button>
-                      </div>
-                    </section>
-                    <section class="campaign-template-family" aria-labelledby="campaignTemplateClub">
-                      <h3 id="campaignTemplateClub">Clube Cine Cruzeiro</h3>
-                      <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="club_plan" data-template-accent="gold"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Plano do Clube</strong><span>Preço, créditos e benefícios reais</span><small class="campaign-template-capability">Imagem automática</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="club" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Novidades do Clube</strong><span>Plano, novidade e relacionamento</span><small class="campaign-template-capability">Imagem do plano ou opcional</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="birthday" data-template-accent="rose"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Aniversário</strong><span>Mensagem pessoal com benefício</span><small class="campaign-template-capability">Sem imagem</small></button>
-                      </div>
-                    </section>
-                    <section class="campaign-template-family" aria-labelledby="campaignTemplateService">
-                      <h3 id="campaignTemplateService">Relacionamento e serviço</h3>
-                      <div class="campaign-template-grid">
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="event" data-template-accent="cyan"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Evento especial</strong><span>Convite com imagem e destaque</span><small class="campaign-template-capability">Imagem opcional</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="ticket" data-template-accent="mint"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Como acessar seu ingresso</strong><span>Orientação ou lembrete de uso</span><small class="campaign-template-capability">Campanha educativa</small></button>
-                        <button type="button" class="campaign-template-option" role="radio" aria-checked="false" data-campaign-template="reactivation" data-template-accent="blue"><span class="campaign-template-swatch" aria-hidden="true"></span><strong>Sentimos sua falta</strong><span>Reativação de clientes inativos</span><small class="campaign-template-capability">Imagem opcional</small></button>
-                      </div>
-                    </section>
-                  </div>
-                  <select id="emailCampaignTemplate" class="sr-only" tabindex="-1" aria-hidden="true">
-                    <option value="announcement">Comunicado</option><option value="weekly">Programação da semana</option><option value="premiere">Grande estreia</option><option value="last_chance">Últimos dias</option><option value="promotion">Promoção</option><option value="coupon">Cupom</option><option value="concession">Produto da bomboniere</option><option value="combo">Combo em destaque</option><option value="club_plan">Plano do Clube</option><option value="club">Novidades do Clube</option><option value="birthday">Aniversário</option><option value="event">Evento especial</option><option value="ticket">Como acessar seu ingresso</option><option value="reactivation">Sentimos sua falta</option>
-                  </select>
-                </div>
                 <div class="field-row">
                   <label>Assunto
                     <input id="emailCampaignSubject" placeholder="Ex.: Semana da pipoca em dobro" required />
@@ -1443,6 +1427,10 @@
                   </div>
                   <label id="emailCampaignMovieField" hidden>Filme
                     <select id="emailCampaignMovie"><option value="">Selecione um filme</option></select>
+                  </label>
+                  <label id="emailCampaignMoviesField" hidden>Filmes da programação
+                    <select id="emailCampaignMovies" multiple size="4" aria-describedby="emailCampaignMoviesHint"></select>
+                    <span id="emailCampaignMoviesHint" class="helper-text">Escolha um ou mais filmes. O layout de programação será aplicado automaticamente.</span>
                   </label>
                   <label id="emailCampaignConcessionField" hidden>Itens da bomboniere
                     <select id="emailCampaignConcessions" multiple size="4" aria-describedby="emailCampaignConcessionHint"></select>

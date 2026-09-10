@@ -1,21 +1,14 @@
-const TEMPLATE_IDS = new Set([
-  "announcement",
-  "weekly",
-  "premiere",
-  "last_chance",
-  "promotion",
-  "coupon",
-  "concession",
-  "combo",
-  "club_plan",
-  "club",
-  "birthday",
-  "event",
-  "ticket",
-  "reactivation"
-]);
+const {
+  TEMPLATE_IDS,
+  SCENARIO_COMPATIBLE_TEMPLATES,
+  normalizeScenario,
+  validTemplate,
+  isTemplateCompatibleWithScenario,
+  compatibleTemplatesForScenario
+} = require("./emailCampaignTemplateResolver");
 
 const SCENARIO_DEFAULTS = {
+  programming: { templateId: "weekly", kicker: "Programação do Cine Cruzeiro", accent: "#22d3ee", headline: "Escolha sua próxima sessão", ctaLabel: "Ver programação" },
   premiere: { templateId: "premiere", kicker: "Grande estreia", accent: "#facc15", headline: "Uma nova história começa aqui", ctaLabel: "Ver sessões" },
   now_playing: { templateId: "weekly", kicker: "Em cartaz no Cine Cruzeiro", accent: "#22d3ee", headline: "Seu próximo filme está na tela", ctaLabel: "Ver programação" },
   last_chance: { templateId: "last_chance", kicker: "Últimos dias", accent: "#ff7185", headline: "Não deixe para depois", ctaLabel: "Garantir ingresso" },
@@ -26,19 +19,6 @@ const SCENARIO_DEFAULTS = {
   event: { templateId: "event", kicker: "Um convite do Cine Cruzeiro", accent: "#22d3ee", headline: "Tem um encontro especial esperando por você", ctaLabel: "Saiba mais" },
   ticket: { templateId: "ticket", kicker: "Ingressos Cine Cruzeiro", accent: "#45d6a1", headline: "Tudo pronto para sua sessão", ctaLabel: "Ver meus ingressos" },
   reactivation: { templateId: "reactivation", kicker: "Sentimos sua falta", accent: "#4d8dff", headline: "Que tal voltar ao cinema?", ctaLabel: "Ver programação" }
-};
-
-const SCENARIO_COMPATIBLE_TEMPLATES = {
-  premiere: ["premiere", "weekly"],
-  now_playing: ["weekly", "announcement"],
-  last_chance: ["last_chance", "weekly"],
-  promotion: ["promotion", "coupon"],
-  coupon: ["coupon", "promotion"],
-  club: ["club_plan", "club"],
-  concession: ["concession", "combo"],
-  event: ["event", "announcement"],
-  ticket: ["ticket"],
-  reactivation: ["reactivation", "announcement"]
 };
 
 const TEMPLATE_CONTEXTS = {
@@ -56,29 +36,6 @@ const TEMPLATE_CONTEXTS = {
   event: "event",
   ticket: "ticket",
   reactivation: "relationship"
-};
-
-const SCENARIO_ALIASES = {
-  launch: "premiere",
-  estreia: "premiere",
-  premiere: "premiere",
-  cartaz: "now_playing",
-  now_playing: "now_playing",
-  last_chance: "last_chance",
-  promocao: "promotion",
-  promotion: "promotion",
-  cupom: "coupon",
-  coupon: "coupon",
-  clube: "club",
-  club: "club",
-  bomboniere: "concession",
-  concession: "concession",
-  evento: "event",
-  event: "event",
-  ingresso: "ticket",
-  ingressos: "ticket",
-  ticket: "ticket",
-  reactivation: "reactivation"
 };
 
 function escapeHtml(value) {
@@ -119,23 +76,6 @@ function money(value) {
 function dateLabel(value) {
   const date = value ? new Date(value) : null;
   return date && Number.isFinite(date.getTime()) ? date.toLocaleDateString("pt-BR") : "sem data definida";
-}
-
-function normalizeScenario(value) {
-  return SCENARIO_ALIASES[String(value || "").trim().toLowerCase()] || "promotion";
-}
-
-function validTemplate(value, fallback) {
-  return TEMPLATE_IDS.has(String(value || "")) ? String(value) : fallback;
-}
-
-function compatibleTemplatesForScenario(scenario) {
-  const normalized = normalizeScenario(scenario);
-  return SCENARIO_COMPATIBLE_TEMPLATES[normalized] || [SCENARIO_DEFAULTS[normalized]?.templateId || "promotion"];
-}
-
-function isTemplateCompatibleWithScenario(scenario, templateId) {
-  return compatibleTemplatesForScenario(scenario).includes(String(templateId || ""));
 }
 
 function templateContext(templateId) {
