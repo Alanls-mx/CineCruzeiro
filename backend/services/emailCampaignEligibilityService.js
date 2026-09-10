@@ -1,3 +1,5 @@
+const { validateCampaignTemporalClaims } = require("./emailCampaignTemporalValidator");
+
 function campaignError(code, message, details = {}) {
   const error = new Error(message);
   error.code = code;
@@ -76,7 +78,8 @@ function resolveCampaignContext(db, request = {}, options = {}) {
   const coupon = requestedCouponId ? (db.promotions || []).find((item) => String(item.id) === requestedCouponId) : null;
   if (requestedCouponId && !coupon) throw campaignError("EMAIL_CAMPAIGN_COUPON_NOT_FOUND", "O cupom selecionado não existe mais.");
   if (coupon) {
-    if (coupon.active === false) throw campaignError("EMAIL_CAMPAIGN_COUPON_INACTIVE", "O cupom selecionado está desativado.");
+    const ownDraftCoupon = coupon.autoManagedByCampaign === true && String(coupon.sourceCampaignId || "") === String(request.id || "");
+    if (coupon.active === false && !ownDraftCoupon) throw campaignError("EMAIL_CAMPAIGN_COUPON_INACTIVE", "O cupom selecionado está desativado.");
     if (!String(coupon.couponCode || "").trim() || Number(coupon.value || 0) <= 0) {
       throw campaignError("EMAIL_CAMPAIGN_COUPON_INVALID", "O cupom selecionado não possui código e desconto válidos.");
     }
@@ -198,6 +201,7 @@ function filterOfferRecipients(db, context = {}, recipients = []) {
 
 module.exports = {
   resolveCampaignContext,
+  validateCampaignTemporalClaims,
   filterCouponRecipients,
   filterOfferRecipients,
   _test: { availableConcessionStock, couponUsageCount, movieCampaignDate }

@@ -29,7 +29,8 @@ const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const { testGeminiConnection } = require("./services/geminiEmailAgentService");
 const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
-const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
+const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
+const { buildCampaignCoupon, syncCampaignCouponSchedule } = require("./services/emailCampaignCouponService");
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
@@ -5704,7 +5705,12 @@ function normalizePromotion(input, existing = {}) {
     allowedMovieIds: Array.isArray(input.allowedMovieIds)
       ? input.allowedMovieIds.map((id) => String(id || "").trim()).filter(Boolean)
       : Array.isArray(existing.allowedMovieIds) ? existing.allowedMovieIds : [],
-    active: input.active !== undefined ? Boolean(input.active) : existing.active !== false
+    active: input.active !== undefined ? Boolean(input.active) : existing.active !== false,
+    sourceCampaignId: String(input.sourceCampaignId ?? existing.sourceCampaignId ?? "").trim().slice(0, 180),
+    autoManagedByCampaign: input.autoManagedByCampaign !== undefined ? Boolean(input.autoManagedByCampaign) : Boolean(existing.autoManagedByCampaign),
+    autoCouponDurationDays: Math.max(0, Math.min(31, Number(input.autoCouponDurationDays ?? existing.autoCouponDurationDays ?? 0))),
+    createdAt: existing.createdAt || input.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 }
 
@@ -6596,6 +6602,11 @@ function resolveCampaignForInput(db, campaign = {}, options = {}) {
     requireClubPlan: preliminary.scenario === "club_plan"
   }, options);
   context.movies = movies;
+  const temporalValidation = validateCampaignTemporalClaims({
+    ...scopedCampaign,
+    scenario: preliminary.scenario
+  }, context, options);
+  context.report.temporalValidation = temporalValidation;
   const resolution = resolveCampaignTemplate({
     ...scopedCampaign,
     ...context,
@@ -6732,6 +6743,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     templateReason: String(input.templateReason ?? existing.templateReason ?? "").trim().slice(0, 300),
     compatibleTemplates: Array.isArray(input.compatibleTemplates) ? input.compatibleTemplates.filter((item) => validCampaignTemplate(item, "") === item).slice(0, 14) : (existing.compatibleTemplates || []),
     preheader: String(input.preheader ?? existing.preheader ?? "").trim().slice(0, 140),
+    kicker: String(input.kicker ?? existing.kicker ?? "").trim().slice(0, 80),
     headline: String(input.headline ?? existing.headline ?? "").trim().slice(0, 180),
     message: String(input.message ?? existing.message ?? "").slice(0, 12000),
     html: String(input.html ?? existing.html ?? "").slice(0, 100000),
@@ -6757,9 +6769,15 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     imageUrl: String(input.imageUrl ?? existing.imageUrl ?? "").trim().slice(0, 2000),
     imageAlt: String(input.imageAlt ?? existing.imageAlt ?? "").trim().slice(0, 140),
     imageLink: String(input.imageLink ?? existing.imageLink ?? "").trim().slice(0, 1000),
+    accentColor: campaignColor(input.accentColor ?? existing.accentColor, "#facc15"),
     headlineColor: campaignColor(input.headlineColor ?? existing.headlineColor, "#ffffff"),
     textColor: campaignColor(input.textColor ?? existing.textColor, "#dbeafe"),
     buttonColor: campaignColor(input.buttonColor ?? existing.buttonColor, "#facc15"),
+    visualStyle: ["classic", "premiere", "nostalgic", "playful", "dramatic", "elegant", "fresh"].includes(input.visualStyle)
+      ? input.visualStyle
+      : existing.visualStyle || "classic",
+    visualStyleLabel: String(input.visualStyleLabel ?? existing.visualStyleLabel ?? "").trim().slice(0, 120),
+    autoCouponId: String(input.autoCouponId ?? existing.autoCouponId ?? "").trim().slice(0, 180),
     contentBlocks: existing.mode === "legacy_visual" ? normalizeCampaignBlocks(existing.contentBlocks) : [],
     scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
     status,
@@ -6834,6 +6852,39 @@ async function createPersistedCampaign(campaign) {
     else { db.emailCampaigns.unshift(campaign); await writeDb(db); }
   });
   return result;
+}
+
+async function persistAutoCampaignCoupon(coupon) {
+  if (!coupon) return null;
+  let persisted = null;
+  await withCriticalMutation(async () => {
+    const fresh = await readDb();
+    fresh.promotions ||= [];
+    const current = fresh.promotions.find((item) => String(item.id) === String(coupon.id));
+    const normalized = normalizePromotion(coupon, current || {});
+    assertPromotionRules(fresh, normalized, current?.id || "");
+    fresh.promotions = fresh.promotions.filter((item) => String(item.id) !== String(normalized.id));
+    fresh.promotions.push(normalized);
+    await writeDb(fresh);
+    persisted = normalized;
+  });
+  return persisted;
+}
+
+async function removeAutoCampaignCoupon(campaignId, couponId = "") {
+  let removed = null;
+  await withCriticalMutation(async () => {
+    const fresh = await readDb();
+    const index = (fresh.promotions || []).findIndex((item) =>
+      item.autoManagedByCampaign === true &&
+      String(item.sourceCampaignId || "") === String(campaignId || "") &&
+      (!couponId || String(item.id) === String(couponId))
+    );
+    if (index < 0) return;
+    [removed] = fresh.promotions.splice(index, 1);
+    await writeDb(fresh);
+  });
+  return removed;
 }
 
 async function updatePersistedCampaign(id, campaign, allowedStates = ["draft", "failed"]) {
@@ -8653,8 +8704,37 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/email/campaigns/ai-draft" && method === "POST") {
     const body = await readBody(req);
     const objective = normalizeObjective(body.objective || body.scenario) || "announcement";
+    const campaignId = `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+    const requestedMovieIds = [...new Set([
+      ...(Array.isArray(body.movieIds) ? body.movieIds : []),
+      body.movieId
+    ].map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20);
+    let autoCoupon = null;
+    if (objective === "offer" && !String(body.couponId || "").trim()) {
+      const selectedMovie = requestedMovieIds.length === 1
+        ? (db.movies || []).find((item) => String(item.id) === requestedMovieIds[0])
+        : null;
+      const briefText = String(body.brief || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const releaseStart = selectedMovie?.releaseDate && ["upcoming", "coming_soon", "em_breve"].includes(String(selectedMovie.status || "").toLowerCase()) && !/pre[- ]?venda|antecipad/.test(briefText)
+        ? `${selectedMovie.releaseDate}T12:00:00-03:00`
+        : "";
+      autoCoupon = buildCampaignCoupon({
+        brief: body.brief,
+        campaignId,
+        scheduleAt: body.scheduleAt || releaseStart,
+        movieIds: requestedMovieIds,
+        concessionIds: Array.isArray(body.concessionIds) ? body.concessionIds : [],
+        promotions: db.promotions || []
+      });
+      db.promotions ||= [];
+      db.promotions.push(autoCoupon);
+      body.couponId = autoCoupon.id;
+      body.movieIds = requestedMovieIds;
+      body.movieId = requestedMovieIds[0] || "";
+    }
     const aiCampaignInput = scopeCampaignContext({
       ...body,
+      id: campaignId,
       objective,
       templateSelectionMode: "automatic"
     });
@@ -8699,13 +8779,15 @@ async function handleApi(req, res, pathname) {
     });
     const campaign = normalizeCampaignInput({
       ...generated,
+      id: campaignId,
       objective: templateResolution.objective,
       templateSelectionMode: "automatic",
       movieId: aiCampaignInput.movieId,
       movieIds: aiCampaignInput.movieIds,
       couponId: aiCampaignInput.couponId,
       clubPlanId: aiCampaignInput.clubPlanId,
-      concessionIds: aiCampaignInput.concessionIds
+      concessionIds: aiCampaignInput.concessionIds,
+      autoCouponId: autoCoupon?.id || ""
     }, { brand: db.settings?.emailBranding || {} });
     const eligibilityCheck = eligibleCampaignRecipients(db, campaign);
     applyCampaignTemplateResolution(campaign, eligibilityCheck.templateResolution);
@@ -8738,7 +8820,14 @@ async function handleApi(req, res, pathname) {
       aiBrief: generated.aiBrief,
       aiEligibility: eligibility
     });
-    await createPersistedCampaign(campaign);
+    let persistedCoupon = null;
+    try {
+      if (autoCoupon) persistedCoupon = await persistAutoCampaignCoupon(autoCoupon);
+      await createPersistedCampaign(campaign);
+    } catch (error) {
+      if (persistedCoupon) await removeAutoCampaignCoupon(campaign.id, persistedCoupon.id).catch(() => {});
+      throw error;
+    }
     logEvent("info", "email_campaign.ai_draft_created", {
       actorUserId: req.adminUser?.id || "",
       campaignId: campaign.id,
@@ -8749,7 +8838,9 @@ async function handleApi(req, res, pathname) {
       scenario: generated.aiScenario,
       context: generated.aiContext,
       referenceCampaignId: generated.aiReferenceCampaignId,
-      referenceTemplateId: generated.aiReferenceTemplateId
+      referenceTemplateId: generated.aiReferenceTemplateId,
+      visualStyle: campaign.visualStyle,
+      autoCouponId: autoCoupon?.id || ""
     });
     sendJson(res, 201, {
       campaign: publicCampaign(campaign),
@@ -8765,6 +8856,10 @@ async function handleApi(req, res, pathname) {
         context: generated.aiContext,
         referenceCampaignId: generated.aiReferenceCampaignId,
         referenceTemplateId: generated.aiReferenceTemplateId,
+        visualStyle: campaign.visualStyle,
+        visualStyleLabel: campaign.visualStyleLabel,
+        couponCreated: Boolean(autoCoupon),
+        coupon: autoCoupon ? { ...autoCoupon, usageCount: 0 } : null,
         eligibility,
         templateResolution: eligibilityCheck.templateResolution
       }
@@ -8824,10 +8919,10 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const shouldSend = body.action === "send" || body.sendNow === true;
-    const shouldSchedule = Boolean(campaign.scheduleAt);
+    const shouldSchedule = Boolean(campaign.scheduleAt && new Date(campaign.scheduleAt).getTime() > Date.now());
     const eligibility = eligibleCampaignRecipients(db, campaign);
     applyCampaignTemplateResolution(campaign, eligibility.templateResolution);
-    campaign.status = shouldSend ? "queued" : shouldSchedule ? "scheduled" : "draft";
+    campaign.status = shouldSchedule ? "scheduled" : shouldSend ? "queued" : "draft";
     campaign.createdBy = req.adminUser?.id || "";
     campaign.recipientCount = eligibility.recipients.length;
     campaign.eligibility = eligibility.report;
@@ -8883,6 +8978,9 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_DELETE_LOCKED", message: "A campanha mudou de estado e não pode mais ser excluída." } });
         return;
       }
+      await removeAutoCampaignCoupon(campaignId, existing.autoCouponId || existing.couponId).catch((error) => {
+        logEvent("warn", "email_campaign.auto_coupon_cleanup_failed", { campaignId, error: error.message });
+      });
       logEvent("info", "email_campaign.deleted", { campaignId, actorUserId: req.adminUser?.id || "" });
       sendJson(res, 200, { deleted: true, id: campaignId });
       return;
@@ -8899,6 +8997,8 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_STATE", message: "Esta campanha não pode ser cancelada no estado atual." } });
         return;
       }
+      const linkedCoupon = (db.promotions || []).find((item) => item.autoManagedByCampaign === true && String(item.sourceCampaignId || "") === String(campaignId));
+      if (linkedCoupon) await persistAutoCampaignCoupon({ ...linkedCoupon, active: false, updatedAt: new Date().toISOString() });
       logEvent("info", "email_campaign.cancelled", { campaignId, actorUserId: req.adminUser?.id || "" });
       sendJson(res, 200, { campaign: publicCampaign(cancelled) });
       return;
@@ -8913,24 +9013,33 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 412, { error: { code: "EMAIL_CHANNEL_NOT_CONFIGURED", message: "Configure e ative o SMTP ou webhook de e-mail em Integrações antes do disparo." } });
         return;
       }
+      const autoCouponIndex = (db.promotions || []).findIndex((item) => item.autoManagedByCampaign === true && String(item.sourceCampaignId || "") === String(existing.id));
+      let autoCouponUpdate = null;
+      if (autoCouponIndex >= 0) {
+        const scheduleAt = existing.scheduleAt && new Date(existing.scheduleAt).getTime() > Date.now() ? existing.scheduleAt : "";
+        autoCouponUpdate = { ...syncCampaignCouponSchedule(db.promotions[autoCouponIndex], { ...existing, scheduleAt }), active: true };
+        db.promotions[autoCouponIndex] = autoCouponUpdate;
+      }
       const eligibility = eligibleCampaignRecipients(db, existing);
       applyCampaignTemplateResolution(existing, eligibility.templateResolution);
       if (!eligibility.recipients.length) {
         sendJson(res, 409, { error: { code: "NO_EMAIL_RECIPIENTS", message: "Nenhum destinatário pode usar a oferta desta campanha." } });
         return;
       }
+      if (autoCouponUpdate) await persistAutoCampaignCoupon(autoCouponUpdate);
+      const targetStatus = existing.scheduleAt && new Date(existing.scheduleAt).getTime() > Date.now() ? "scheduled" : "queued";
       let queued;
       if (postgresEnabled()) {
         await emailCampaignRepository.snapshotRecipients(campaignId, eligibility.recipients);
-        queued = await emailCampaignRepository.transitionCampaign(campaignId, "queued", { from: ["draft", "failed"] });
+        queued = await emailCampaignRepository.transitionCampaign(campaignId, targetStatus, { from: ["draft", "failed"] });
       } else {
-        existing.status = "queued";
+        existing.status = targetStatus;
         existing.error = "";
         existing.recipientCount = eligibility.recipients.length;
         existing.eligibility = eligibility.report;
         queued = await updatePersistedCampaign(campaignId, existing);
       }
-      logEvent("info", "email_campaign.queued", { campaignId, actorUserId: req.adminUser?.id || "", recipients: eligibility.recipients.length });
+      logEvent("info", targetStatus === "scheduled" ? "email_campaign.scheduled" : "email_campaign.queued", { campaignId, actorUserId: req.adminUser?.id || "", recipients: eligibility.recipients.length, scheduleAt: existing.scheduleAt || "" });
       sendJson(res, 202, { campaign: publicCampaign(queued || existing) });
       return;
     }
@@ -8985,6 +9094,12 @@ async function handleApi(req, res, pathname) {
       body.attachments = resolveCampaignAttachments(db, body.attachments);
       validateCampaignAttachmentTotal(body.attachments);
       const updated = normalizeCampaignInput(body, existing);
+      const autoCouponIndex = (db.promotions || []).findIndex((item) => item.autoManagedByCampaign === true && String(item.sourceCampaignId || "") === String(updated.id));
+      let autoCouponUpdate = null;
+      if (autoCouponIndex >= 0 && String(updated.scheduleAt || "") !== String(existing.scheduleAt || "")) {
+        autoCouponUpdate = syncCampaignCouponSchedule(db.promotions[autoCouponIndex], updated);
+        db.promotions[autoCouponIndex] = autoCouponUpdate;
+      }
       const eligibility = eligibleCampaignRecipients(db, updated);
       applyCampaignTemplateResolution(updated, eligibility.templateResolution);
       updated.status = "draft";
@@ -8995,6 +9110,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "EMAIL_CAMPAIGN_LOCKED", message: "A campanha mudou de estado e não pode mais ser editada." } });
         return;
       }
+      if (autoCouponUpdate) await persistAutoCampaignCoupon(autoCouponUpdate);
       logEvent("info", "email_campaign.updated", {
         campaignId,
         actorUserId: req.adminUser?.id || "",

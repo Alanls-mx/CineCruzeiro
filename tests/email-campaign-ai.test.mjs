@@ -8,6 +8,8 @@ const { generateGeminiCampaignDraft, testGeminiConnection, _test: geminiTest } =
 const { generateEmailDraft, supportedProviders } = require("../backend/services/emailCampaignAiProviderService.js");
 const integrationConfigService = require("../backend/services/integrationConfigService.js");
 const { resolveCampaignContext, filterCouponRecipients, filterOfferRecipients } = require("../backend/services/emailCampaignEligibilityService.js");
+const { validateCampaignTemporalClaims } = require("../backend/services/emailCampaignTemporalValidator.js");
+const { buildCampaignCoupon, syncCampaignCouponSchedule } = require("../backend/services/emailCampaignCouponService.js");
 const { resolveCampaignTemplate, scopeCampaignContext, _test: templateResolverTest } = require("../backend/services/emailCampaignTemplateResolver.js");
 
 const siteUrl = "https://lumixengine.com/projects/cinecruzeiro";
@@ -161,6 +163,7 @@ test("agente Gemini usa catálogo validado e saída estruturada", async () => {
               headline: "Uma nova história na tela grande",
               message: "Olá, {{nome}}. Estreia Gemini está chegando ao Cine Cruzeiro.",
               ctaLabel: "Ver sessões",
+              visualStyle: "premiere",
               accentColor: "#facc15",
               headlineColor: "#ffffff",
               textColor: "#dbeafe",
@@ -182,6 +185,28 @@ test("agente Gemini usa catálogo validado e saída estruturada", async () => {
   assert.equal(requestBody.generationConfig.responseSchema.additionalProperties, undefined);
   assert.match(requestBody.contents[0].parts[0].text, /Estreia Gemini/);
   assert.match(result.html, /Estreia Gemini/);
+  assert.equal(result.visualStyle, "premiere");
+});
+
+test("adaptação visual da IA fica limitada aos estilos e cores da marca", () => {
+  const result = buildCampaignDraft({
+    scenario: "premiere",
+    siteUrl,
+    movie: { id: "filme-visual", title: "Memórias da Tela" },
+    creative: {
+      visualStyle: "nostalgic",
+      accentColor: "#00ff00",
+      headlineColor: "#fff7e6",
+      textColor: "#e7dfd1",
+      buttonColor: "#f6c453"
+    }
+  });
+
+  assert.equal(result.visualStyle, "nostalgic");
+  assert.equal(result.visualStyleLabel, "Nostalgia cinematográfica");
+  assert.equal(result.accentColor, "#f6c453");
+  assert.doesNotMatch(result.html, /#00ff00/i);
+  assert.match(result.html, /background:#121b2c/);
 });
 
 test("teste Gemini valida conexão e modelo", async () => {
@@ -365,6 +390,51 @@ test("validação alerta quando cupom não cobre todo o mês da estreia", () => 
   const result = resolveCampaignContext(db, { scenario: "premiere", movieId: "filme-1", couponId: "cupom" }, { now: "2026-09-09T12:00:00-03:00" });
   assert.equal(result.coupon.id, "cupom");
   assert.match(result.report.warnings[0], /não cobre todo o mês/);
+});
+
+test("validação temporal aceita estreia na semana da campanha", () => {
+  const movie = { id: "filme-semana", title: "Filme da Semana", status: "upcoming", releaseDate: "2026-09-12", sessions: [] };
+  const result = validateCampaignTemporalClaims(
+    { scenario: "premiere", brief: "Essa semana no Cine Cruzeiro", scheduleAt: "2026-09-10T12:00:00-03:00" },
+    { movie, movies: [movie] }
+  );
+  assert.deepEqual(result.claims, ["semana"]);
+  assert.equal(result.week.start, "2026-09-07");
+});
+
+test("validação temporal bloqueia filme que não estreia na semana anunciada", () => {
+  const movie = { id: "filme-outubro", title: "Filme de Outubro", status: "upcoming", releaseDate: "2026-10-15", sessions: [] };
+  assert.throws(() => validateCampaignTemporalClaims(
+    { scenario: "premiere", subject: "Essa semana no Cine Cruzeiro", scheduleAt: "2026-09-10T12:00:00-03:00" },
+    { movie, movies: [movie] }
+  ), { code: "EMAIL_CAMPAIGN_TEMPORAL_CLAIM_INVALID", statusCode: 422 });
+});
+
+test("cupom de campanha usa somente desconto explícito e mantém vínculo", () => {
+  const coupon = buildCampaignCoupon({
+    brief: "Ofereça 20% nos ingressos com o cupom CINE20 por 10 dias",
+    campaignId: "campanha-1",
+    scheduleAt: "2026-09-15T12:00:00-03:00",
+    movieIds: ["filme-1"],
+    promotions: []
+  });
+  assert.equal(coupon.couponCode, "CINE20");
+  assert.equal(coupon.discountType, "percent");
+  assert.equal(coupon.value, 20);
+  assert.equal(coupon.appliesTo, "tickets");
+  assert.deepEqual(coupon.allowedMovieIds, ["filme-1"]);
+  assert.equal(coupon.sourceCampaignId, "campanha-1");
+  assert.equal(coupon.autoManagedByCampaign, true);
+  const shifted = syncCampaignCouponSchedule(coupon, { id: "campanha-1", scheduleAt: "2026-10-01T12:00:00-03:00" });
+  assert.match(shifted.startsAt, /^2026-10-01T15:00:00\.000Z$/);
+  assert.match(shifted.endsAt, /^2026-10-11T15:00:00\.000Z$/);
+});
+
+test("cupom automático rejeita promoção sem valor comercial", () => {
+  assert.throws(() => buildCampaignCoupon({ brief: "Crie uma promoção especial", campaignId: "campanha-2" }), {
+    code: "EMAIL_CAMPAIGN_COUPON_DETAILS_REQUIRED",
+    statusCode: 422
+  });
 });
 
 test("validação bloqueia produto sem estoque e plano inativo", () => {

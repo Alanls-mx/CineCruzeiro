@@ -6718,7 +6718,7 @@ function renderEmailCampaignControls() {
   const coupon = $("emailCampaignCoupon");
   if (coupon) {
     const current = coupon.value;
-    coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && item.active !== false).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.couponCode)} · ${escapeHtml(item.title)}</option>`).join("")}`;
+    coupon.innerHTML = `<option value="">Nenhum cupom</option>${(state.content?.promotions || []).filter((item) => item.couponCode && (item.active !== false || (item.autoManagedByCampaign && item.sourceCampaignId === state.emailCampaignDraftId))).map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.couponCode)} · ${escapeHtml(item.title)}${item.active === false ? " · ativa no envio" : ""}</option>`).join("")}`;
     coupon.value = current;
   }
   const catalogSelects = [
@@ -6953,9 +6953,14 @@ async function generateEmailCampaignAiDraft() {
     const ai = result.ai || {};
     const eligibility = ai.eligibility || {};
     const warnings = Array.isArray(eligibility.warnings) ? eligibility.warnings : [];
+    const generatedCoupon = ai.coupon || null;
     const providerLabel = `Google Gemini${ai.model ? ` (${ai.model})` : ""}`;
     state.emailCampaignAiDraftId = campaign.id || "";
     if (state.content) state.content.emailCampaigns = [campaign, ...(state.content.emailCampaigns || []).filter((item) => item.id !== campaign.id)];
+    if (state.content && generatedCoupon?.id) {
+      state.content.promotions = [generatedCoupon, ...(state.content.promotions || []).filter((item) => item.id !== generatedCoupon.id)];
+      renderPromotions();
+    }
     renderEmailCampaigns();
     setEmailCampaignAiStatus(`Rascunho criado por ${providerLabel}, com catálogo e público conferidos.`, "success");
     if ($("emailCampaignAiResultTitle")) $("emailCampaignAiResultTitle").textContent = `Rascunho criado por ${providerLabel}.`;
@@ -6963,9 +6968,11 @@ async function generateEmailCampaignAiDraft() {
       const recipients = eligibility.recipients;
       const resolved = ai.templateResolution || campaign.templateResolution;
       const layout = resolved?.templateId ? ` Layout: ${emailCampaignTemplateLabel(resolved.templateId)}.` : "";
+      const visual = ai.visualStyleLabel ? ` Direção visual: ${ai.visualStyleLabel}.` : "";
+      const coupon = generatedCoupon?.couponCode ? ` Cupom ${generatedCoupon.couponCode} criado e vinculado para revisão.` : "";
       $("emailCampaignAiResultSummary").textContent = recipients
-        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.${layout}`
-        : `Catálogo validado. Confira a prévia antes de enviar.${layout}`;
+        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.${layout}${visual}${coupon}`
+        : `Catálogo e datas validados. Confira a prévia antes de enviar.${layout}${visual}${coupon}`;
     }
     const warningList = $("emailCampaignAiWarnings");
     if (warningList) {
