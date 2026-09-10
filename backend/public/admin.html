@@ -6,7 +6,7 @@
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
     <link rel="stylesheet" href="admin/admin.css?v=20260831-plans-fix" />
-    <link rel="stylesheet" href="admin/admin-premium.css?v=20260909-openai-email-agent" />
+    <link rel="stylesheet" href="admin/admin-premium.css?v=20260910-gemini-campaign-polish" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -1258,21 +1258,24 @@
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
-          <section class="surface campaign-ai-assistant" aria-labelledby="emailCampaignAiTitle">
-            <div class="campaign-ai-head">
-              <div>
-                <div class="section-title" id="emailCampaignAiTitle">Agente de campanhas</div>
-                <p>Escolha OpenAI ou Gemini para criar texto e direção visual usando somente filmes, ofertas e produtos validados no catálogo. O resultado fica salvo como rascunho para sua revisão.</p>
+          <details class="surface campaign-ai-assistant" aria-labelledby="emailCampaignAiTitle">
+            <summary class="campaign-ai-summary">
+              <span class="campaign-ai-mark" aria-hidden="true">IA</span>
+              <span>
+                <strong id="emailCampaignAiTitle">Criar rascunho com Gemini</strong>
+                <small>Use o catálogo e uma referência visual para preparar o conteúdo. Nada é enviado sem revisão.</small>
+              </span>
+              <span class="campaign-ai-summary-action">Configurar</span>
+            </summary>
+            <div class="campaign-ai-body">
+              <div class="campaign-ai-head">
+                <div>
+                  <div class="section-title">Assistência de criação</div>
+                  <p>O Gemini usa somente filmes, ofertas, planos e produtos validados. Se a integração estiver indisponível, nenhum rascunho será criado.</p>
+                </div>
+                <span class="campaign-ai-badge">Gemini conectado é obrigatório</span>
               </div>
-              <span class="campaign-ai-badge">IA · revisão antes do envio</span>
-            </div>
-            <div class="campaign-ai-grid">
-              <label>Motor de IA
-                <select id="emailCampaignAiProvider">
-                  <option value="openai">OpenAI</option>
-                  <option value="gemini">Google Gemini</option>
-                </select>
-              </label>
+              <div class="campaign-ai-grid">
               <label>Objetivo
                 <select id="emailCampaignAiScenario">
                   <option value="premiere">Novo filme / grande estreia</option>
@@ -1318,30 +1321,32 @@
               <label class="full">Briefing da campanha (opcional)
                 <textarea id="emailCampaignAiBrief" rows="3" maxlength="1000" placeholder="Ex.: destaque a pré-venda, use um tom cinematográfico e convide o cliente a escolher a sessão de sexta-feira."></textarea>
               </label>
+              </div>
+              <div class="campaign-ai-actions">
+                <button id="emailCampaignAiGenerate" class="primary-button" type="button">Gerar rascunho com Gemini</button>
+                <span id="emailCampaignAiStatus" class="campaign-ai-status" role="status" aria-live="polite">Selecione referências para começar.</span>
+              </div>
+              <div id="emailCampaignAiResult" class="campaign-ai-result" hidden>
+                <span><strong id="emailCampaignAiResultTitle">Rascunho criado.</strong> <span id="emailCampaignAiResultSummary">Confira a prévia e ajuste o conteúdo antes de enviar.</span></span>
+                <ul id="emailCampaignAiWarnings" class="campaign-ai-warnings" hidden></ul>
+                <button id="emailCampaignAiOpen" class="ghost-button" type="button">Abrir rascunho</button>
+              </div>
             </div>
-            <div class="campaign-ai-actions">
-              <button id="emailCampaignAiGenerate" class="primary-button" type="button">Gerar rascunho com IA</button>
-              <span id="emailCampaignAiStatus" class="campaign-ai-status" role="status" aria-live="polite">Selecione referências para começar.</span>
-            </div>
-            <div id="emailCampaignAiResult" class="campaign-ai-result" hidden>
-              <span><strong id="emailCampaignAiResultTitle">Rascunho criado.</strong> <span id="emailCampaignAiResultSummary">Confira a prévia e ajuste o conteúdo antes de enviar.</span></span>
-              <ul id="emailCampaignAiWarnings" class="campaign-ai-warnings" hidden></ul>
-              <button id="emailCampaignAiOpen" class="ghost-button" type="button">Abrir rascunho</button>
-            </div>
-          </section>
+          </details>
           <div id="emailCampaignWorkspace" class="campaign-workspace">
             <form id="emailCampaignForm" class="surface form-grid email-campaign-surface">
               <div class="form-head campaign-form-head">
                 <div>
-                  <div class="section-title">Central de campanhas</div>
-                  <p>Crie, revise e envie comunicações respeitando o consentimento de marketing. O canal de entrega é validado antes do disparo.</p>
+                  <span class="campaign-form-eyebrow">Nova campanha</span>
+                  <div class="section-title">Prepare o próximo envio</div>
+                  <p>Defina o público, monte a mensagem e confira o resultado antes de colocar a campanha na fila.</p>
                 </div>
                 <span id="emailCampaignStatus" class="campaign-status">Rascunho</span>
               </div>
               <div class="campaign-steps" aria-label="Etapas da campanha">
-                <button type="button" class="active" data-campaign-step="audience">1. Destinatários</button>
-                <button type="button" data-campaign-step="content">2. Conteúdo</button>
-                <button type="button" data-campaign-step="review">3. Revisão e envio</button>
+                <button type="button" class="active" data-campaign-step="audience"><span>1</span><span><strong>Destinatários</strong><small>Escolha o público</small></span></button>
+                <button type="button" data-campaign-step="content"><span>2</span><span><strong>Conteúdo</strong><small>Monte a mensagem</small></span></button>
+                <button type="button" data-campaign-step="review"><span>3</span><span><strong>Revisão</strong><small>Teste e envie</small></span></button>
               </div>
               <section class="campaign-step-panel active" data-campaign-step-panel="audience">
                 <div class="section-title">Para quem esta mensagem vai?</div>
@@ -1577,6 +1582,11 @@
             </form>
             <aside class="surface campaign-preview-surface">
               <div class="campaign-preview-head"><div><div class="section-title">Prévia do envio</div><span class="helper-text">Esta é a mensagem que o cliente receberá.</span></div><div class="preview-switch"><button type="button" class="active" data-campaign-preview="desktop">Desktop</button><button type="button" data-campaign-preview="mobile">Celular</button></div></div>
+              <div class="campaign-preview-context" aria-label="Resumo da campanha">
+                <div><span>Etapa</span><strong id="emailCampaignContextStep">Destinatários</strong></div>
+                <div><span>Público</span><strong id="emailCampaignContextAudience">0 pessoas</strong></div>
+                <div><span>Modelo</span><strong id="emailCampaignContextTemplate">Comunicado</strong></div>
+              </div>
               <div id="emailCampaignPreview" class="campaign-preview-frame" aria-label="Prévia do e-mail"></div>
             </aside>
           </div>
@@ -2487,6 +2497,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260909-openai-email-agent"></script>
+    <script src="admin/admin.js?v=20260910-gemini-campaign-polish"></script>
   </body>
 </html>

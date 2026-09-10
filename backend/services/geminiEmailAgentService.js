@@ -195,7 +195,10 @@ async function generateGeminiCampaignDraft(input = {}, options = {}) {
   const baseline = buildCampaignDraft(input);
   const config = options.config || {};
   if (!(config.enabled && config.configured && config.apiKey)) {
-    return { ...baseline, aiProvider: "local-reference-agent", aiFallbackReason: "GEMINI_NOT_CONFIGURED", aiFallbackMessage: "Configure e ative o Gemini em Integrações para usar este provedor." };
+    throw Object.assign(new Error("Configure, teste e ative o Gemini em Integrações antes de gerar campanhas com IA."), {
+      statusCode: 409,
+      code: "GEMINI_NOT_CONFIGURED"
+    });
   }
 
   const controller = new AbortController();
@@ -217,13 +220,14 @@ async function generateGeminiCampaignDraft(input = {}, options = {}) {
     const generated = buildCampaignDraft({ ...input, creative });
     return { ...generated, aiProvider: "gemini", aiModel: model, aiModelResolved: modelChanged, aiResponseId: payload.responseId || "" };
   } catch (error) {
-    if (options.fallback === false) throw error;
-    return {
-      ...baseline,
-      aiProvider: "local-reference-agent",
-      aiFallbackReason: error.name === "AbortError" ? "GEMINI_TIMEOUT" : String(error.code || "GEMINI_UNAVAILABLE"),
-      aiFallbackMessage: error.name === "AbortError" ? "O Gemini demorou demais para responder." : String(error.message || "O Gemini não está disponível.")
-    };
+    if (error.name === "AbortError") {
+      throw Object.assign(new Error("O Gemini demorou demais para responder. Nenhum rascunho foi criado."), {
+        statusCode: 504,
+        code: "GEMINI_TIMEOUT"
+      });
+    }
+    if (!error.statusCode) error.statusCode = error.code === "GEMINI_EMPTY_RESPONSE" ? 502 : 503;
+    throw error;
   } finally {
     clearTimeout(timer);
   }

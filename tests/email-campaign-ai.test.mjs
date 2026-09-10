@@ -4,8 +4,8 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { buildCampaignDraft } = require("../backend/services/emailCampaignAiService.js");
-const { generateOpenAiCampaignDraft, testOpenAiConnection, _test: openAiTest } = require("../backend/services/openAiEmailAgentService.js");
 const { generateGeminiCampaignDraft, testGeminiConnection, _test: geminiTest } = require("../backend/services/geminiEmailAgentService.js");
+const { generateEmailDraft, supportedProviders } = require("../backend/services/emailCampaignAiProviderService.js");
 const integrationConfigService = require("../backend/services/integrationConfigService.js");
 const { resolveCampaignContext, filterCouponRecipients, filterOfferRecipients } = require("../backend/services/emailCampaignEligibilityService.js");
 
@@ -130,119 +130,6 @@ test("agente gera rascunho coerente para template de ingressos", () => {
   assert.equal(result.aiContext, "ticket");
   assert.match(result.subject, /Sessão Especial/);
   assert.match(result.message, /QR Code/);
-});
-
-test("agente OpenAI usa saída estruturada sem aceitar HTML inventado", async () => {
-  let requestBody;
-  const result = await generateOpenAiCampaignDraft({
-    scenario: "premiere",
-    siteUrl,
-    movie: { id: "filme-ia", slug: "filme-ia", title: "Estreia Segura", workflowStatus: "published", status: "upcoming" }
-  }, {
-    config: { enabled: true, configured: true, apiKey: "test-key", model: "modelo-teste", timeout: 5000, maxOutputTokens: 900 },
-    safetyIdentifier: "admin-teste",
-    fetchImpl: async (_url, options) => {
-      requestBody = JSON.parse(options.body);
-      return {
-        ok: true,
-        async json() {
-          return {
-            id: "resp-teste",
-            model: "modelo-teste",
-            output_text: JSON.stringify({
-              subject: "Estreia Segura chega à tela grande",
-              preheader: "Reserve sua sessão",
-              kicker: "Grande estreia",
-              headline: "Uma noite para viver no cinema",
-              message: "Olá, {{nome}}. Estreia Segura está chegando ao Cine Cruzeiro.",
-              ctaLabel: "Ver sessões",
-              accentColor: "#facc15",
-              headlineColor: "#ffffff",
-              textColor: "#dbeafe",
-              buttonColor: "#facc15"
-            })
-          };
-        }
-      };
-    }
-  });
-
-  assert.equal(result.aiProvider, "openai");
-  assert.equal(result.aiResponseId, "resp-teste");
-  assert.equal(requestBody.store, false);
-  assert.equal(requestBody.text.format.type, "json_schema");
-  assert.match(result.html, /Estreia Segura/);
-  assert.doesNotMatch(result.html, /<script/i);
-});
-
-test("agente mantém gerador local quando OpenAI não está configurada", async () => {
-  const result = await generateOpenAiCampaignDraft({ scenario: "promotion", brief: "Oferta de teste" }, { config: { enabled: false } });
-  assert.equal(result.aiProvider, "local-reference-agent");
-  assert.equal(result.aiFallbackReason, "OPENAI_NOT_CONFIGURED");
-  assert.match(result.message, /Oferta de teste/);
-});
-
-test("teste OpenAI explica falta de créditos sem repetir a cobrança", async () => {
-  let requests = 0;
-  const result = await testOpenAiConnection({ apiKey: "test-key", model: "modelo-teste", timeout: 5000 }, {
-    fetchImpl: async () => {
-      requests += 1;
-      return {
-        ok: false,
-        status: 429,
-        headers: { get: (name) => name.toLowerCase() === "x-request-id" ? "req-quota" : "" },
-        async json() { return { error: { type: "insufficient_quota", code: "credit_balance_exhausted", message: "credit balance exhausted" } }; }
-      };
-    },
-    sleepImpl: async () => {}
-  });
-  assert.equal(result.ok, false);
-  assert.equal(result.code, "OPENAI_QUOTA_EXCEEDED");
-  assert.match(result.message, /sem créditos/);
-  assert.equal(result.requestId, "req-quota");
-  assert.equal(requests, 1);
-});
-
-test("teste OpenAI repete uma vez quando o limite é temporário", async () => {
-  let requests = 0;
-  let waited = 0;
-  const result = await testOpenAiConnection({ apiKey: "test-key", model: "modelo-teste", timeout: 5000 }, {
-    fetchImpl: async () => {
-      requests += 1;
-      if (requests === 1) return {
-        ok: false,
-        status: 429,
-        headers: { get: (name) => name.toLowerCase() === "retry-after" ? "2" : "" },
-        async json() { return { error: { type: "rate_limit_error", code: "rate_limit_exceeded", message: "rate limit reached" } }; }
-      };
-      return { ok: true, status: 200, headers: { get: () => "req-ok" }, async json() { return { id: "resp-ok" }; } };
-    },
-    sleepImpl: async (milliseconds) => { waited = milliseconds; }
-  });
-  assert.equal(result.ok, true);
-  assert.equal(requests, 2);
-  assert.equal(waited, 2000);
-});
-
-test("gerador local registra a causa amigável quando a cota OpenAI termina", async () => {
-  const result = await generateOpenAiCampaignDraft({ scenario: "promotion" }, {
-    config: { enabled: true, configured: true, apiKey: "test-key", model: "modelo-teste", timeout: 5000 },
-    fetchImpl: async () => ({
-      ok: false,
-      status: 429,
-      headers: { get: () => "" },
-      async json() { return { error: { type: "insufficient_quota", code: "insufficient_quota", message: "quota exceeded" } }; }
-    })
-  });
-  assert.equal(result.aiProvider, "local-reference-agent");
-  assert.equal(result.aiFallbackReason, "OPENAI_QUOTA_EXCEEDED");
-  assert.match(result.aiFallbackMessage, /sem cota disponível/);
-});
-
-test("classificador não confunde cota com limite temporário", () => {
-  const details = openAiTest.openAiErrorDetails(429, { error: { code: "rate_limit_exceeded", message: "rate limit reached" } });
-  assert.equal(details.code, "OPENAI_RATE_LIMITED");
-  assert.equal(details.retryable, true);
 });
 
 test("agente Gemini usa catálogo validado e saída estruturada", async () => {
@@ -410,11 +297,32 @@ test("Gemini repete uma vez quando o limite informa Retry-After", async () => {
   assert.equal(waited, 1000);
 });
 
-test("Gemini sem configuração mantém o motor local", async () => {
-  const result = await generateGeminiCampaignDraft({ scenario: "promotion", brief: "Oferta Gemini" }, { config: { enabled: false } });
-  assert.equal(result.aiProvider, "local-reference-agent");
-  assert.equal(result.aiFallbackReason, "GEMINI_NOT_CONFIGURED");
-  assert.match(result.aiFallbackMessage, /Configure e ative o Gemini/);
+test("Gemini sem configuração bloqueia a geração", async () => {
+  await assert.rejects(
+    generateGeminiCampaignDraft({ scenario: "promotion", brief: "Oferta Gemini" }, { config: { enabled: false } }),
+    { code: "GEMINI_NOT_CONFIGURED", statusCode: 409 }
+  );
+});
+
+test("falha do Gemini não cria rascunho por fallback local", async () => {
+  await assert.rejects(
+    generateGeminiCampaignDraft({ scenario: "promotion" }, {
+      config: { enabled: true, configured: true, apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000 },
+      fetchImpl: async () => ({
+        ok: false,
+        status: 503,
+        headers: { get: () => "" },
+        async json() { return { error: { status: "UNAVAILABLE", message: "temporarily unavailable" } }; }
+      }),
+      sleepImpl: async () => {}
+    }),
+    { code: "GEMINI_UNAVAILABLE" }
+  );
+});
+
+test("motor de campanhas expõe somente o Gemini", async () => {
+  assert.deepEqual(supportedProviders(), ["gemini"]);
+  await assert.rejects(generateEmailDraft("openai", {}), { code: "EMAIL_CAMPAIGN_AI_PROVIDER_INVALID" });
 });
 
 test("Integrações expõem Gemini com segredo protegido e modelo padrão", () => {
@@ -422,6 +330,7 @@ test("Integrações expõem Gemini com segredo protegido e modelo padrão", () =
   assert.ok(definition);
   assert.deepEqual(definition.secrets, ["apiKey"]);
   assert.equal(definition.defaults.model, "gemini-3.6-flash");
+  assert.equal(integrationConfigService.DEFINITIONS.openai, undefined);
   assert.equal(geminiTest.geminiErrorDetails(404, { error: { status: "NOT_FOUND" } }).code, "GEMINI_MODEL_NOT_FOUND");
 });
 

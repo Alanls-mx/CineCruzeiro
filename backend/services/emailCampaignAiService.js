@@ -338,7 +338,7 @@ function buildCampaignDraft(input = {}) {
     variables,
     brand,
     aiGenerated: true,
-    aiProvider: "local-reference-agent",
+    aiProvider: "",
     aiScenario: scenario,
     aiContext: templateContext(templateId),
     aiCompatibleTemplates: compatibleTemplatesForScenario(scenario),

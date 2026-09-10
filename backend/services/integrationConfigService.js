@@ -82,19 +82,6 @@ const DEFINITIONS = {
       { key: "webhookSecret", label: "Segredo do webhook", type: "secret" }
     ]
   },
-  openai: {
-    name: "OpenAI para campanhas",
-    purpose: "Geração assistida de textos, gatilhos e direção visual dos e-mails com catálogo validado",
-    defaults: { enabled: false, environment: "production", model: "gpt-5.6-terra", timeout: 30000, maxOutputTokens: 1800 },
-    secrets: ["apiKey"],
-    fields: [
-      { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
-      { key: "apiKey", label: "Chave da API OpenAI", type: "secret" },
-      { key: "model", label: "Modelo", type: "text", placeholder: "gpt-5.6-terra" },
-      { key: "timeout", label: "Tempo limite em ms", type: "number" },
-      { key: "maxOutputTokens", label: "Limite de tokens da resposta", type: "number" }
-    ]
-  },
   gemini: {
     name: "Gemini para campanhas",
     purpose: "Geração assistida de campanhas com o Google Gemini e o mesmo catálogo validado",
@@ -168,10 +155,6 @@ const ENV = {
     replyTo: ["SMTP_REPLY_TO", "EMAIL_REPLY_TO"],
     notificationEmail: ["EVENTS_EMAIL", "CONTACT_EMAIL", "SMTP_NOTIFICATION_EMAIL"]
   },
-  openai: {
-    apiKey: ["OPENAI_API_KEY"],
-    model: ["OPENAI_EMAIL_MODEL", "OPENAI_MODEL"]
-  },
   gemini: {
     apiKey: ["GEMINI_API_KEY"],
     model: ["GEMINI_EMAIL_MODEL", "GEMINI_MODEL"]
@@ -236,6 +219,7 @@ function ensureStore(db) {
     db.integrations = persisted && typeof persisted === "object" ? persisted : {};
   }
   db.settings.integrations = db.integrations;
+  delete db.integrations.openai;
   return db.integrations;
 }
 
@@ -269,7 +253,6 @@ function isConfigured(provider, config) {
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && config.serviceAccountJson);
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
-  if (provider === "openai") return Boolean(config.apiKey && config.model);
   if (provider === "gemini") return Boolean(config.apiKey && config.model);
   if (provider === "analytics") return Boolean(config.googleMeasurementId || config.metaPixelId);
   if (provider === "crm") return Boolean(config.url);

@@ -28,7 +28,6 @@ const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaym
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const { normalizeScenario } = require("./services/emailCampaignAiService");
-const { testOpenAiConnection } = require("./services/openAiEmailAgentService");
 const { testGeminiConnection } = require("./services/geminiEmailAgentService");
 const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
 const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
@@ -7193,9 +7192,6 @@ async function testIntegrationProvider(db, provider, req) {
     if (!config.webhookUrl) return { ok: false, message: "Informe SMTP ou webhook do provedor de e-mail." };
     return emailService.sendIntegrationTest(db, req.adminUser?.email || config.fromEmail);
   }
-  if (key === "openai") {
-    return testOpenAiConnection(config);
-  }
   if (key === "gemini") {
     return testGeminiConnection(config);
   }
@@ -8421,9 +8417,9 @@ async function handleApi(req, res, pathname) {
     if (referenceCampaignId && !referenceCampaign) {
       throw Object.assign(new Error("O rascunho de referência não existe mais."), { statusCode: 409, code: "EMAIL_CAMPAIGN_REFERENCE_NOT_FOUND" });
     }
-    const requestedAiProvider = String(body.aiProvider || "openai").trim().toLowerCase();
-    if (!["openai", "gemini"].includes(requestedAiProvider)) {
-      throw Object.assign(new Error("Selecione OpenAI ou Gemini como motor da campanha."), { statusCode: 422, code: "EMAIL_CAMPAIGN_AI_PROVIDER_INVALID" });
+    const requestedAiProvider = String(body.aiProvider || "gemini").trim().toLowerCase();
+    if (requestedAiProvider !== "gemini") {
+      throw Object.assign(new Error("O Gemini é o único motor de IA disponível para campanhas."), { statusCode: 422, code: "EMAIL_CAMPAIGN_AI_PROVIDER_INVALID" });
     }
     const aiConfig = integrationConfigService.resolvedConfig(db, requestedAiProvider);
     const generated = await generateEmailDraft(requestedAiProvider, {

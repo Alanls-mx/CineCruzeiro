@@ -5619,6 +5619,7 @@ async function refreshEmailCampaignRecipients() {
   state.emailCampaignRecipients = state.content?.emailCustomers || [];
   $("emailCampaignRecipientCount").textContent = `${result.count || 0} destinatário(s) elegível(is)`;
   $("emailCampaignReviewRecipients").textContent = String(result.count || 0);
+  updateEmailCampaignContext();
   const list = $("emailCampaignRecipients");
   const manual = ["selected", "birthday_manual"].includes(payload.recipientMode);
   if ($("emailCampaignReactivationField")) $("emailCampaignReactivationField").hidden = payload.recipientMode !== "reactivation";
@@ -6178,6 +6179,7 @@ function renderEmailCampaignPreview(options = {}) {
   const attachments = $("emailCampaignAttachments");
   if (attachments) attachments.innerHTML = state.emailCampaignAttachments.length ? state.emailCampaignAttachments.map((item) => `<span class="campaign-attachment-chip">${escapeHtml(item.filename)} <button type="button" data-campaign-remove-attachment="${escapeHtml(item.id)}" aria-label="Remover anexo">×</button></span>`).join("") : `<span class="helper-text">Nenhum anexo adicionado.</span>`;
   renderEmailCampaignVariables();
+  updateEmailCampaignContext();
 }
 
 function syncCampaignColorControls() {
@@ -6242,6 +6244,14 @@ function updateEmailCampaignWorkspaceState() {
   workspace.classList.toggle("is-content-step", state.emailCampaignStep === "content");
 }
 
+function updateEmailCampaignContext() {
+  const stepLabels = { audience: "Destinatários", content: "Conteúdo", review: "Revisão" };
+  const count = Number(String($("emailCampaignReviewRecipients")?.textContent || "0").replace(/\D/g, "")) || 0;
+  if ($("emailCampaignContextStep")) $("emailCampaignContextStep").textContent = stepLabels[state.emailCampaignStep] || "Destinatários";
+  if ($("emailCampaignContextAudience")) $("emailCampaignContextAudience").textContent = `${count.toLocaleString("pt-BR")} pessoa${count === 1 ? "" : "s"}`;
+  if ($("emailCampaignContextTemplate")) $("emailCampaignContextTemplate").textContent = campaignTemplateDefinition().label;
+}
+
 function setEmailCampaignStep(step) {
   state.emailCampaignStep = step;
   document.querySelectorAll("[data-campaign-step]").forEach((button) => button.classList.toggle("active", button.dataset.campaignStep === step));
@@ -6256,6 +6266,7 @@ function setEmailCampaignStep(step) {
   if (step === "review") void refreshEmailCampaignRecipients();
   if (step === "content") applyEmailCampaignTemplate($("emailCampaignTemplate")?.value || "announcement", { fillDefaults: false });
   updateEmailCampaignWorkspaceState();
+  updateEmailCampaignContext();
 }
 
 async function saveEmailCampaign(event, action = "draft") {
@@ -6740,7 +6751,7 @@ async function generateEmailCampaignAiDraft() {
   const button = $("emailCampaignAiGenerate");
   if (!button || button.disabled) return;
   const payload = {
-    aiProvider: $("emailCampaignAiProvider")?.value || "openai",
+    aiProvider: "gemini",
     scenario: $("emailCampaignAiScenario")?.value || "premiere",
     movieId: $("emailCampaignAiMovie")?.value || "",
     couponId: $("emailCampaignAiCoupon")?.value || "",
@@ -6762,17 +6773,11 @@ async function generateEmailCampaignAiDraft() {
     const ai = result.ai || {};
     const eligibility = ai.eligibility || {};
     const warnings = Array.isArray(eligibility.warnings) ? eligibility.warnings : [];
-    const providerLabel = ai.provider === "openai"
-      ? `OpenAI${ai.model ? ` (${ai.model})` : ""}`
-      : ai.provider === "gemini"
-        ? `Google Gemini${ai.model ? ` (${ai.model})` : ""}`
-        : "motor local de contingência";
+    const providerLabel = `Google Gemini${ai.model ? ` (${ai.model})` : ""}`;
     state.emailCampaignAiDraftId = campaign.id || "";
     if (state.content) state.content.emailCampaigns = [campaign, ...(state.content.emailCampaigns || []).filter((item) => item.id !== campaign.id)];
     renderEmailCampaigns();
-    setEmailCampaignAiStatus(ai.fallbackMessage
-      ? `Rascunho criado pelo ${providerLabel}. ${ai.fallbackMessage}`
-      : `Rascunho criado por ${providerLabel}, com catálogo e público conferidos.`, ai.fallbackMessage ? "warning" : "success");
+    setEmailCampaignAiStatus(`Rascunho criado por ${providerLabel}, com catálogo e público conferidos.`, "success");
     if ($("emailCampaignAiResultTitle")) $("emailCampaignAiResultTitle").textContent = `Rascunho criado por ${providerLabel}.`;
     if ($("emailCampaignAiResultSummary")) {
       const recipients = eligibility.recipients;
@@ -6786,9 +6791,7 @@ async function generateEmailCampaignAiDraft() {
       warningList.hidden = !warnings.length;
     }
     if (resultBox) resultBox.hidden = false;
-    showToast(["openai", "gemini"].includes(ai.provider)
-      ? `Rascunho criado por ${ai.provider === "gemini" ? "Google Gemini" : "OpenAI"}`
-      : (ai.fallbackMessage || "Rascunho criado pelo motor local de contingência"), ai.fallbackMessage ? "error" : "ok");
+    showToast("Rascunho criado por Google Gemini", "ok");
   } catch (error) {
     setEmailCampaignAiStatus(error.message || "Não foi possível criar o rascunho.", "error");
     showToast(error.message, "error");
@@ -7764,7 +7767,6 @@ function integrationCategory(key) {
     googleWallet: "Carteira digital",
     tmdb: "Catálogo",
     email: "E-mail",
-    openai: "IA para campanhas",
     gemini: "IA para campanhas",
     analytics: "Medição",
     crm: "CRM"
@@ -7852,7 +7854,7 @@ function renderIntegrationContext(integration, testResult = null) {
         <dt>Resultado</dt>
         <dd>${escapeHtml(testResult?.message || integration.lastTestMessage || "Sem mensagem registrada")}</dd>
       </div>
-      ${["openai", "gemini"].includes(integration.key) && (testResult?.requestId || integration.lastTestRequestId) ? `
+      ${integration.key === "gemini" && (testResult?.requestId || integration.lastTestRequestId) ? `
         <div>
           <dt>ID da solicitação</dt>
           <dd>${escapeHtml(testResult?.requestId || integration.lastTestRequestId)}</dd>
