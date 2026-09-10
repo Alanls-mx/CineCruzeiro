@@ -95,6 +95,19 @@ const DEFINITIONS = {
       { key: "maxOutputTokens", label: "Limite de tokens da resposta", type: "number" }
     ]
   },
+  gemini: {
+    name: "Gemini para campanhas",
+    purpose: "Geração assistida de campanhas com o Google Gemini e o mesmo catálogo validado",
+    defaults: { enabled: false, environment: "production", model: "gemini-2.5-flash", timeout: 30000, maxOutputTokens: 1800 },
+    secrets: ["apiKey"],
+    fields: [
+      { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
+      { key: "apiKey", label: "Chave da API Gemini", type: "secret" },
+      { key: "model", label: "Modelo", type: "text", placeholder: "gemini-2.5-flash" },
+      { key: "timeout", label: "Tempo limite em ms", type: "number" },
+      { key: "maxOutputTokens", label: "Limite de tokens da resposta", type: "number" }
+    ]
+  },
   analytics: {
     name: "Medição e anúncios",
     purpose: "Google Analytics 4 e Meta Pixel com carregamento após consentimento",
@@ -158,6 +171,10 @@ const ENV = {
   openai: {
     apiKey: ["OPENAI_API_KEY"],
     model: ["OPENAI_EMAIL_MODEL", "OPENAI_MODEL"]
+  },
+  gemini: {
+    apiKey: ["GEMINI_API_KEY"],
+    model: ["GEMINI_EMAIL_MODEL", "GEMINI_MODEL"]
   },
   analytics: {
     googleMeasurementId: ["GOOGLE_ANALYTICS_MEASUREMENT_ID", "NEXT_PUBLIC_GA_MEASUREMENT_ID"],
@@ -253,6 +270,7 @@ function isConfigured(provider, config) {
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
   if (provider === "openai") return Boolean(config.apiKey && config.model);
+  if (provider === "gemini") return Boolean(config.apiKey && config.model);
   if (provider === "analytics") return Boolean(config.googleMeasurementId || config.metaPixelId);
   if (provider === "crm") return Boolean(config.url);
   return false;

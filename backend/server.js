@@ -29,6 +29,7 @@ const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
 const { normalizeScenario } = require("./services/emailCampaignAiService");
 const { generateOpenAiCampaignDraft, testOpenAiConnection } = require("./services/openAiEmailAgentService");
+const { generateGeminiCampaignDraft, testGeminiConnection } = require("./services/geminiEmailAgentService");
 const { resolveCampaignContext, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
@@ -7150,6 +7151,9 @@ async function testIntegrationProvider(db, provider, req) {
   if (key === "openai") {
     return testOpenAiConnection(config);
   }
+  if (key === "gemini") {
+    return testGeminiConnection(config);
+  }
   if (key === "analytics") {
     const googleValid = !config.googleMeasurementId || /^G-[A-Z0-9]+$/i.test(config.googleMeasurementId);
     const metaValid = !config.metaPixelId || /^\d{5,30}$/.test(config.metaPixelId);
@@ -8349,8 +8353,13 @@ async function handleApi(req, res, pathname) {
     if (referenceCampaignId && !referenceCampaign) {
       throw Object.assign(new Error("O rascunho de referência não existe mais."), { statusCode: 409, code: "EMAIL_CAMPAIGN_REFERENCE_NOT_FOUND" });
     }
-    const openAiConfig = integrationConfigService.resolvedConfig(db, "openai");
-    const generated = await generateOpenAiCampaignDraft({
+    const requestedAiProvider = String(body.aiProvider || "openai").trim().toLowerCase();
+    if (!["openai", "gemini"].includes(requestedAiProvider)) {
+      throw Object.assign(new Error("Selecione OpenAI ou Gemini como motor da campanha."), { statusCode: 422, code: "EMAIL_CAMPAIGN_AI_PROVIDER_INVALID" });
+    }
+    const aiConfig = integrationConfigService.resolvedConfig(db, requestedAiProvider);
+    const generateCampaignDraft = requestedAiProvider === "gemini" ? generateGeminiCampaignDraft : generateOpenAiCampaignDraft;
+    const generated = await generateCampaignDraft({
       scenario,
       movie: context.movie,
       coupon: context.coupon,
@@ -8364,7 +8373,7 @@ async function handleApi(req, res, pathname) {
       siteUrl: appFrontendUrl(),
       eligibilityReport: context.report
     }, {
-      config: openAiConfig,
+      config: aiConfig,
       safetyIdentifier: req.adminUser?.id || req.adminUser?.email || "cine-cruzeiro-admin"
     });
     const campaign = normalizeCampaignInput(generated, { brand: db.settings?.emailBranding || {} });
@@ -8384,6 +8393,7 @@ async function handleApi(req, res, pathname) {
       recipientCount: recipientCheck.recipients.length,
       aiGenerated: true,
       aiProvider: generated.aiProvider,
+      aiProviderRequested: requestedAiProvider,
       aiModel: generated.aiModel || "",
       aiFallbackReason: generated.aiFallbackReason || "",
       aiFallbackMessage: generated.aiFallbackMessage || "",
@@ -8404,6 +8414,7 @@ async function handleApi(req, res, pathname) {
       actorUserId: req.adminUser?.id || "",
       campaignId: campaign.id,
       provider: generated.aiProvider,
+      requestedProvider: requestedAiProvider,
       model: generated.aiModel || "",
       fallbackReason: generated.aiFallbackReason || "",
       scenario: generated.aiScenario,
@@ -8415,6 +8426,7 @@ async function handleApi(req, res, pathname) {
       campaign: publicCampaign(campaign),
       ai: {
         provider: generated.aiProvider,
+        requestedProvider: requestedAiProvider,
         model: generated.aiModel || "",
         fallbackReason: generated.aiFallbackReason || "",
         fallbackMessage: generated.aiFallbackMessage || "",

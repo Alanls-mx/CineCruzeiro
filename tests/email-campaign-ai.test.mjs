@@ -5,6 +5,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { buildCampaignDraft } = require("../backend/services/emailCampaignAiService.js");
 const { generateOpenAiCampaignDraft, testOpenAiConnection, _test: openAiTest } = require("../backend/services/openAiEmailAgentService.js");
+const { generateGeminiCampaignDraft, testGeminiConnection, _test: geminiTest } = require("../backend/services/geminiEmailAgentService.js");
+const integrationConfigService = require("../backend/services/integrationConfigService.js");
 const { resolveCampaignContext, filterCouponRecipients, filterOfferRecipients } = require("../backend/services/emailCampaignEligibilityService.js");
 
 const siteUrl = "https://lumixengine.com/projects/cinecruzeiro";
@@ -241,6 +243,124 @@ test("classificador não confunde cota com limite temporário", () => {
   const details = openAiTest.openAiErrorDetails(429, { error: { code: "rate_limit_exceeded", message: "rate limit reached" } });
   assert.equal(details.code, "OPENAI_RATE_LIMITED");
   assert.equal(details.retryable, true);
+});
+
+test("agente Gemini usa catálogo validado e saída estruturada", async () => {
+  let requestUrl = "";
+  let requestOptions;
+  const result = await generateGeminiCampaignDraft({
+    scenario: "premiere",
+    siteUrl,
+    movie: { id: "filme-gemini", slug: "filme-gemini", title: "Estreia Gemini", workflowStatus: "published", status: "upcoming" }
+  }, {
+    config: { enabled: true, configured: true, apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000, maxOutputTokens: 900 },
+    fetchImpl: async (url, options) => {
+      requestUrl = url;
+      requestOptions = options;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "gemini-request" },
+        async json() {
+          return {
+            responseId: "gemini-response",
+            candidates: [{ content: { parts: [{ text: JSON.stringify({
+              subject: "Estreia Gemini chega ao Cine Cruzeiro",
+              preheader: "Escolha sua sessão",
+              kicker: "Grande estreia",
+              headline: "Uma nova história na tela grande",
+              message: "Olá, {{nome}}. Estreia Gemini está chegando ao Cine Cruzeiro.",
+              ctaLabel: "Ver sessões",
+              accentColor: "#facc15",
+              headlineColor: "#ffffff",
+              textColor: "#dbeafe",
+              buttonColor: "#facc15"
+            }) }] } }]
+          };
+        }
+      };
+    }
+  });
+
+  const requestBody = JSON.parse(requestOptions.body);
+  assert.equal(result.aiProvider, "gemini");
+  assert.equal(result.aiResponseId, "gemini-response");
+  assert.match(requestUrl, /gemini-2\.5-flash:generateContent$/);
+  assert.equal(requestOptions.headers["x-goog-api-key"], "gemini-test-key");
+  assert.equal(requestBody.generationConfig.responseFormat.text.mimeType, "application/json");
+  assert.equal(requestBody.generationConfig.responseFormat.text.schema.type, "object");
+  assert.match(requestBody.contents[0].parts[0].text, /Estreia Gemini/);
+  assert.match(result.html, /Estreia Gemini/);
+});
+
+test("teste Gemini valida conexão e modelo", async () => {
+  const result = await testGeminiConnection({ apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000 }, {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (name) => name.toLowerCase() === "x-goog-request-id" ? "gemini-request" : "" },
+      async json() { return { candidates: [{ content: { parts: [{ text: "conexão confirmada" }] } }] }; }
+    })
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.code, "GEMINI_CONNECTED");
+  assert.equal(result.requestId, "gemini-request");
+});
+
+test("Gemini explica cota esgotada sem repetir a solicitação", async () => {
+  let requests = 0;
+  const result = await testGeminiConnection({ apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000 }, {
+    fetchImpl: async () => {
+      requests += 1;
+      return {
+        ok: false,
+        status: 429,
+        headers: { get: () => "" },
+        async json() { return { error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Quota exceeded for free tier limit: 0" } }; }
+      };
+    },
+    sleepImpl: async () => {}
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "GEMINI_QUOTA_EXCEEDED");
+  assert.match(result.message, /cota do Gemini foi esgotada/);
+  assert.equal(requests, 1);
+});
+
+test("Gemini repete uma vez quando o limite informa Retry-After", async () => {
+  let requests = 0;
+  let waited = 0;
+  const result = await testGeminiConnection({ apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000 }, {
+    fetchImpl: async () => {
+      requests += 1;
+      if (requests === 1) return {
+        ok: false,
+        status: 429,
+        headers: { get: (name) => name.toLowerCase() === "retry-after" ? "1" : "" },
+        async json() { return { error: { status: "RESOURCE_EXHAUSTED", message: "Rate limit reached" } }; }
+      };
+      return { ok: true, status: 200, headers: { get: () => "" }, async json() { return { candidates: [] }; } };
+    },
+    sleepImpl: async (milliseconds) => { waited = milliseconds; }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(requests, 2);
+  assert.equal(waited, 1000);
+});
+
+test("Gemini sem configuração mantém o motor local", async () => {
+  const result = await generateGeminiCampaignDraft({ scenario: "promotion", brief: "Oferta Gemini" }, { config: { enabled: false } });
+  assert.equal(result.aiProvider, "local-reference-agent");
+  assert.equal(result.aiFallbackReason, "GEMINI_NOT_CONFIGURED");
+  assert.match(result.aiFallbackMessage, /Configure e ative o Gemini/);
+});
+
+test("Integrações expõem Gemini com segredo protegido e modelo padrão", () => {
+  const definition = integrationConfigService.DEFINITIONS.gemini;
+  assert.ok(definition);
+  assert.deepEqual(definition.secrets, ["apiKey"]);
+  assert.equal(definition.defaults.model, "gemini-2.5-flash");
+  assert.equal(geminiTest.geminiErrorDetails(404, { error: { status: "NOT_FOUND" } }).code, "GEMINI_MODEL_NOT_FOUND");
 });
 
 test("validação rejeita cupom expirado, esgotado e restrito a outro filme", () => {

@@ -7008,6 +7008,7 @@ async function generateEmailCampaignAiDraft() {
   const button = $("emailCampaignAiGenerate");
   if (!button || button.disabled) return;
   const payload = {
+    aiProvider: $("emailCampaignAiProvider")?.value || "openai",
     scenario: $("emailCampaignAiScenario")?.value || "premiere",
     movieId: $("emailCampaignAiMovie")?.value || "",
     couponId: $("emailCampaignAiCoupon")?.value || "",
@@ -7031,7 +7032,9 @@ async function generateEmailCampaignAiDraft() {
     const warnings = Array.isArray(eligibility.warnings) ? eligibility.warnings : [];
     const providerLabel = ai.provider === "openai"
       ? `OpenAI${ai.model ? ` (${ai.model})` : ""}`
-      : "motor local de contingência";
+      : ai.provider === "gemini"
+        ? `Google Gemini${ai.model ? ` (${ai.model})` : ""}`
+        : "motor local de contingência";
     state.emailCampaignAiDraftId = campaign.id || "";
     if (state.content) state.content.emailCampaigns = [campaign, ...(state.content.emailCampaigns || []).filter((item) => item.id !== campaign.id)];
     renderEmailCampaigns();
@@ -7051,9 +7054,9 @@ async function generateEmailCampaignAiDraft() {
       warningList.hidden = !warnings.length;
     }
     if (resultBox) resultBox.hidden = false;
-    showToast(ai.provider === "openai"
-      ? "Rascunho criado pela OpenAI"
-      : (ai.fallbackMessage || "Rascunho criado; configure a OpenAI em Integrações para usar a IA"), ai.fallbackMessage ? "error" : "ok");
+    showToast(["openai", "gemini"].includes(ai.provider)
+      ? `Rascunho criado por ${ai.provider === "gemini" ? "Google Gemini" : "OpenAI"}`
+      : (ai.fallbackMessage || "Rascunho criado pelo motor local de contingência"), ai.fallbackMessage ? "error" : "ok");
   } catch (error) {
     setEmailCampaignAiStatus(error.message || "Não foi possível criar o rascunho.", "error");
     showToast(error.message, "error");
@@ -8029,6 +8032,8 @@ function integrationCategory(key) {
     googleWallet: "Carteira digital",
     tmdb: "Catálogo",
     email: "E-mail",
+    openai: "IA para campanhas",
+    gemini: "IA para campanhas",
     analytics: "Medição",
     crm: "CRM"
   }[key] || "Integração";
@@ -8115,7 +8120,7 @@ function renderIntegrationContext(integration, testResult = null) {
         <dt>Resultado</dt>
         <dd>${escapeHtml(testResult?.message || integration.lastTestMessage || "Sem mensagem registrada")}</dd>
       </div>
-      ${integration.key === "openai" && (testResult?.requestId || integration.lastTestRequestId) ? `
+      ${["openai", "gemini"].includes(integration.key) && (testResult?.requestId || integration.lastTestRequestId) ? `
         <div>
           <dt>ID da solicitação</dt>
           <dd>${escapeHtml(testResult?.requestId || integration.lastTestRequestId)}</dd>
