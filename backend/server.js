@@ -34,6 +34,7 @@ const { buildCampaignCoupon, syncCampaignCouponSchedule } = require("./services/
 const { archiveExpiredCoupons, couponUsageHistory, couponUsageSummary } = require("./services/couponLifecycleService");
 const { extractRequestedSchedule } = require("./services/emailCampaignBriefService");
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
+const { listPromptTemplates, resolvePromptTemplate, updatePromptTemplate, renderPromptTemplate } = require("./services/emailCampaignPromptTemplates");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
@@ -6272,7 +6273,9 @@ function getContent(db, options = {}) {
   delete publicSettings.integrations;
   delete publicSettings.webhookSimulatorRuns;
   delete publicSettings.emailCampaigns;
+  delete publicSettings.emailAiPromptTemplates;
   if (!includePrivate) delete publicSettings.adminTwoFactorRequired;
+  if (includePrivate) publicSettings.emailAiPromptTemplates = listPromptTemplates(db.settings || {});
   const analyticsConfig = integrationConfigService.resolvedConfig(db, "analytics");
   publicSettings.tracking = {
     enabled: Boolean(analyticsConfig?.enabled && analyticsConfig?.configured),
@@ -6861,6 +6864,8 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     artDirection,
     contentSections,
     autoCouponId: String(input.autoCouponId ?? existing.autoCouponId ?? "").trim().slice(0, 180),
+    aiPromptTemplateId: String(input.aiPromptTemplateId ?? existing.aiPromptTemplateId ?? "").trim().slice(0, 40),
+    aiPromptTemplateName: String(input.aiPromptTemplateName ?? existing.aiPromptTemplateName ?? "").trim().slice(0, 120),
     contentBlocks: existing.mode === "legacy_visual" ? normalizeCampaignBlocks(existing.contentBlocks) : [],
     scheduleAt: (() => { const value = String(input.scheduleAt ?? existing.scheduleAt ?? "").trim(); return value && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : ""; })(),
     status,
@@ -8768,6 +8773,22 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, { branding: db.settings.emailBranding });
     return;
   }
+  if (pathname === "/api/admin/email/prompt-templates" && method === "GET") {
+    sendJson(res, 200, { templates: listPromptTemplates(db.settings || {}) });
+    return;
+  }
+  if (pathname === "/api/admin/email/prompt-templates" && method === "PUT") {
+    const body = await readBody(req);
+    db.settings ||= {};
+    const template = updatePromptTemplate(db.settings, body.id, body.prompt, { reset: body.reset === true });
+    await writeDb(db);
+    logEvent("info", body.reset === true ? "email_ai.prompt_template_reset" : "email_ai.prompt_template_updated", {
+      actorUserId: req.adminUser?.id || "",
+      promptTemplateId: template.id
+    });
+    sendJson(res, 200, { template, templates: listPromptTemplates(db.settings) });
+    return;
+  }
   if (pathname === "/api/admin/email/attachments" && method === "POST") {
     const body = await readBody(req);
     const attachment = await storeEmailAttachment(body);
@@ -8858,6 +8879,19 @@ async function handleApi(req, res, pathname) {
       throw error;
     }
     const scenario = templateResolution.scenario;
+    const promptTemplate = resolvePromptTemplate(db.settings || {}, scenario);
+    const renderedPromptTemplate = {
+      id: promptTemplate.id,
+      name: promptTemplate.name,
+      instructions: renderPromptTemplate(promptTemplate, {
+        movie: context.movie || context.movies?.[0] || null,
+        movies: context.movies || [],
+        coupon: context.coupon,
+        plan: context.plan,
+        concessions: context.concessions,
+        recipientMode: body.recipientMode
+      })
+    };
     const referenceCampaignId = String(body.referenceCampaignId || "").trim();
     const referenceCampaign = referenceCampaignId ? await findPersistedCampaign(referenceCampaignId) : null;
     if (referenceCampaignId && !referenceCampaign) {
@@ -8883,7 +8917,8 @@ async function handleApi(req, res, pathname) {
       scheduleAt: requestedScheduleAt,
       brand: normalizeEmailBrand(db.settings?.emailBranding || {}),
       siteUrl: appFrontendUrl(),
-      eligibilityReport: context.report
+      eligibilityReport: context.report,
+      promptTemplate: renderedPromptTemplate
     }, {
       config: aiConfig,
       safetyIdentifier: req.adminUser?.id || req.adminUser?.email || "cine-cruzeiro-admin"
@@ -8899,6 +8934,8 @@ async function handleApi(req, res, pathname) {
       clubPlanId: aiCampaignInput.clubPlanId,
       concessionIds: aiCampaignInput.concessionIds,
       autoCouponId: autoCoupon?.id || "",
+      aiPromptTemplateId: promptTemplate.id,
+      aiPromptTemplateName: promptTemplate.name,
       scheduleAt: requestedScheduleAt
     }, { brand: db.settings?.emailBranding || {} });
     const eligibilityCheck = eligibleCampaignRecipients(campaignDb, campaign);
@@ -8954,7 +8991,8 @@ async function handleApi(req, res, pathname) {
       visualStyle: campaign.visualStyle,
       scheduleAt: campaign.scheduleAt || "",
       scheduleSource: briefSchedule.reason,
-      autoCouponId: autoCoupon?.id || ""
+      autoCouponId: autoCoupon?.id || "",
+      promptTemplateId: promptTemplate.id
     });
     sendJson(res, 201, {
       campaign: publicCampaign(campaign),
@@ -8973,6 +9011,7 @@ async function handleApi(req, res, pathname) {
         visualStyle: campaign.visualStyle,
         visualStyleLabel: campaign.visualStyleLabel,
         scheduleAt: campaign.scheduleAt || "",
+        promptTemplate: { id: promptTemplate.id, name: promptTemplate.name },
         scheduleSource: briefSchedule.reason,
         couponCreated: Boolean(autoCoupon),
         coupon: autoCoupon ? { ...autoCoupon, usageCount: 0 } : null,

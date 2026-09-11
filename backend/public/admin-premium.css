@@ -326,6 +326,25 @@ textarea:focus-visible,
   .campaign-ai-resolution strong { color: #f8fafc; font-size: 13px; }
   .campaign-ai-resolution small { color: var(--muted); font-size: 11px; line-height: 1.4; }
   .campaign-ai-resolution .campaign-resolution-label { color: #93c5fd; font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.campaign-prompt-library { overflow: hidden; border: 1px solid rgba(148,163,184,.16); border-radius: 7px; background: #09111f; }
+.campaign-prompt-library > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 52px; padding: 11px 12px; cursor: pointer; list-style: none; }
+.campaign-prompt-library > summary::-webkit-details-marker { display: none; }
+.campaign-prompt-library > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.campaign-prompt-library > summary > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.campaign-prompt-library > summary strong { color: #f3f6fb; font-size: 12px; }
+.campaign-prompt-library > summary small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.campaign-prompt-active { flex: 0 0 auto; color: #bfdbfe; font-size: 10px; font-weight: 800; text-align: right; }
+.campaign-prompt-editor { display: grid; grid-template-columns: minmax(220px,.8fr) minmax(260px,1.2fr); gap: 11px; padding: 13px; border-top: 1px solid rgba(148,163,184,.13); }
+.campaign-prompt-editor .full, .campaign-prompt-help, .campaign-prompt-actions { grid-column: 1 / -1; }
+.campaign-prompt-editor textarea { min-height: 180px; resize: vertical; line-height: 1.55; }
+.campaign-prompt-description { display: grid; align-content: center; gap: 4px; min-width: 0; padding: 8px 10px; border-left: 2px solid #4d8dff; background: #0d1728; }
+.campaign-prompt-description span { color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.campaign-prompt-description strong { color: #dbeafe; font-size: 11px; line-height: 1.4; }
+.campaign-prompt-help { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.campaign-prompt-help code { color: #bfdbfe; font-family: inherit; font-weight: 800; }
+.campaign-prompt-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.campaign-prompt-actions .primary-button, .campaign-prompt-actions .ghost-button { width: fit-content; min-width: 132px; }
+.campaign-prompt-actions span { color: var(--muted); font-size: 10px; }
 .campaign-ai-actions, .campaign-ai-result { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .campaign-ai-actions .primary-button { width: fit-content; min-width: 190px; }
 .campaign-ai-status { color: var(--muted); font-size: 11px; line-height: 1.4; }
@@ -550,6 +569,10 @@ textarea:focus-visible,
   .campaign-ai-head { align-items: stretch; flex-direction: column; }
   .campaign-ai-grid { grid-template-columns: 1fr; }
   .campaign-ai-grid .full { grid-column: auto; }
+  .campaign-prompt-library > summary { align-items: flex-start; flex-direction: column; }
+  .campaign-prompt-active { text-align: left; }
+  .campaign-prompt-editor { grid-template-columns: 1fr; }
+  .campaign-prompt-editor .full, .campaign-prompt-help, .campaign-prompt-actions { grid-column: auto; }
   .campaign-ai-result { align-items: flex-start; flex-direction: column; }
   .campaign-form-head, .campaign-recipient-toolbar, .campaign-history-head, .campaign-history-pager { align-items: flex-start; flex-direction: column; }
   .campaign-history-tabs { justify-content: flex-start; max-width: none; }

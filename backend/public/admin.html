@@ -6,7 +6,7 @@
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
     <link rel="stylesheet" href="admin/admin.css?v=20260831-plans-fix" />
-    <link rel="stylesheet" href="admin/admin-premium.css?v=20260910-gemini-campaign-polish" />
+    <link rel="stylesheet" href="admin/admin-premium.css?v=20260911-ai-prompt-models" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -1364,6 +1364,33 @@
                 <strong id="emailCampaignAiResolvedTemplate">Comunicado</strong>
                 <small id="emailCampaignAiTemplateReason">Selecione o conteúdo para montarmos o layout correto.</small>
               </div>
+              <details class="campaign-prompt-library">
+                <summary>
+                  <span>
+                    <strong>Modelos de instrução da IA</strong>
+                    <small>Personalize como o Gemini deve escrever cada tipo de e-mail.</small>
+                  </span>
+                  <span id="emailCampaignAiActivePrompt" class="campaign-prompt-active">Em uso: Comunicado geral</span>
+                </summary>
+                <div class="campaign-prompt-editor">
+                  <label>Tipo de e-mail
+                    <select id="emailCampaignAiPromptTemplate" aria-label="Modelo de instrução da IA"></select>
+                  </label>
+                  <div class="campaign-prompt-description">
+                    <span>Finalidade deste modelo</span>
+                    <strong id="emailCampaignAiPromptDescription">Selecione um modelo para editar.</strong>
+                  </div>
+                  <label class="full">Instruções para o Gemini
+                    <textarea id="emailCampaignAiPromptText" rows="8" maxlength="12000" spellcheck="true"></textarea>
+                  </label>
+                  <p class="campaign-prompt-help">Variáveis disponíveis: <code>{{nome}}</code>, <code>{{filme}}</code>, <code>{{filmes}}</code>, <code>{{sessoes}}</code>, <code>{{cupom}}</code>, <code>{{produtos}}</code>, <code>{{plano}}</code> e <code>{{publico}}</code>. O backend substitui apenas dados validados.</p>
+                  <div class="campaign-prompt-actions">
+                    <button id="emailCampaignAiPromptReset" class="ghost-button" type="button">Restaurar padrão</button>
+                    <button id="emailCampaignAiPromptSave" class="primary-button" type="button">Salvar modelo</button>
+                    <span id="emailCampaignAiPromptStatus" role="status" aria-live="polite">Nenhuma alteração pendente.</span>
+                  </div>
+                </div>
+              </details>
               <div class="campaign-ai-actions">
                 <button id="emailCampaignAiGenerate" class="primary-button" type="button">Gerar rascunho com Gemini</button>
                 <span id="emailCampaignAiStatus" class="campaign-ai-status" role="status" aria-live="polite">Selecione referências para começar.</span>
@@ -2548,6 +2575,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260910-gemini-recovery"></script>
+    <script src="admin/admin.js?v=20260911-ai-prompt-models"></script>
   </body>
 </html>

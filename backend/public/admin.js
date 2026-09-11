@@ -157,6 +157,8 @@ let state = {
   emailCampaignUseCanonicalHtml: false,
   emailCampaignDraftId: "",
   emailCampaignAiDraftId: "",
+  emailCampaignAiPromptTemplateId: "",
+  emailCampaignAiPromptDirty: false,
   emailCampaignHistoryFilter: "all",
   emailCampaignHistoryOrigin: "",
   emailCampaignHistorySearch: "",
@@ -6951,6 +6953,84 @@ function emailCampaignAiContext() {
   };
 }
 
+function emailCampaignAiPromptTemplates() {
+  return Array.isArray(state.content?.settings?.emailAiPromptTemplates)
+    ? state.content.settings.emailAiPromptTemplates
+    : [];
+}
+
+function renderEmailCampaignAiPromptEditor(activeScenario = "announcement", options = {}) {
+  const select = $("emailCampaignAiPromptTemplate");
+  const textarea = $("emailCampaignAiPromptText");
+  if (!select || !textarea) return;
+  const templates = emailCampaignAiPromptTemplates();
+  if (!templates.length) {
+    select.innerHTML = '<option value="">Modelos indisponíveis</option>';
+    textarea.value = "";
+    textarea.disabled = true;
+    $("emailCampaignAiPromptSave").disabled = true;
+    $("emailCampaignAiPromptReset").disabled = true;
+    if ($("emailCampaignAiPromptStatus")) $("emailCampaignAiPromptStatus").textContent = "Não foi possível carregar os modelos.";
+    return;
+  }
+
+  textarea.disabled = false;
+  const activeTemplate = templates.find((item) => item.scenario === activeScenario) || templates.find((item) => item.id === "announcement") || templates[0];
+  if ($("emailCampaignAiActivePrompt")) $("emailCampaignAiActivePrompt").textContent = `Em uso: ${activeTemplate.name}`;
+
+  const previousId = state.emailCampaignAiPromptTemplateId || select.value;
+  const nextId = options.followActive && !state.emailCampaignAiPromptDirty
+    ? activeTemplate.id
+    : (templates.some((item) => item.id === previousId) ? previousId : activeTemplate.id);
+  select.innerHTML = templates.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}${item.customized ? " · personalizado" : ""}</option>`).join("");
+  select.value = nextId;
+  state.emailCampaignAiPromptTemplateId = nextId;
+
+  const selected = templates.find((item) => item.id === nextId) || activeTemplate;
+  if (!state.emailCampaignAiPromptDirty || options.forceValue) textarea.value = selected.prompt || "";
+  if ($("emailCampaignAiPromptDescription")) $("emailCampaignAiPromptDescription").textContent = selected.description || "Modelo de criação deste tipo de e-mail.";
+  if ($("emailCampaignAiPromptSave")) $("emailCampaignAiPromptSave").disabled = false;
+  if ($("emailCampaignAiPromptReset")) $("emailCampaignAiPromptReset").disabled = !selected.customized;
+  if ($("emailCampaignAiPromptStatus") && (options.forceValue || !state.emailCampaignAiPromptDirty)) {
+    $("emailCampaignAiPromptStatus").textContent = selected.customized ? "Modelo personalizado salvo." : "Usando o modelo padrão do sistema.";
+  }
+}
+
+async function saveEmailCampaignAiPromptTemplate({ reset = false } = {}) {
+  const id = state.emailCampaignAiPromptTemplateId || $("emailCampaignAiPromptTemplate")?.value || "";
+  const prompt = $("emailCampaignAiPromptText")?.value.trim() || "";
+  const button = reset ? $("emailCampaignAiPromptReset") : $("emailCampaignAiPromptSave");
+  if (!id || (!reset && prompt.length < 80)) {
+    showToast("O modelo precisa ter pelo menos 80 caracteres.", "error");
+    return;
+  }
+  if (button) {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  }
+  if ($("emailCampaignAiPromptStatus")) $("emailCampaignAiPromptStatus").textContent = reset ? "Restaurando modelo..." : "Salvando modelo...";
+  try {
+    const result = await api("/api/admin/email/prompt-templates", {
+      method: "PUT",
+      body: JSON.stringify({ id, prompt, reset })
+    });
+    state.content.settings ||= {};
+    state.content.settings.emailAiPromptTemplates = result.templates || [];
+    state.emailCampaignAiPromptDirty = false;
+    const scenario = $("emailCampaignAiScenario")?.value || "announcement";
+    renderEmailCampaignAiPromptEditor(scenario, { forceValue: true });
+    showToast(reset ? "Modelo padrão restaurado" : "Modelo de IA salvo", "ok");
+  } catch (error) {
+    if ($("emailCampaignAiPromptStatus")) $("emailCampaignAiPromptStatus").textContent = error.message || "Não foi possível salvar o modelo.";
+    showToast(error.message || "Não foi possível salvar o modelo.", "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+  }
+}
+
 function emailCampaignHistoryLinkedLabel(item = {}) {
   const movie = item.movieId ? (state.content?.movies || []).find((entry) => String(entry.id) === String(item.movieId)) : null;
   const plan = item.clubPlanId ? (state.content?.subscriptionPlans || []).find((entry) => String(entry.id) === String(item.clubPlanId)) : null;
@@ -7019,6 +7099,7 @@ function renderEmailCampaignAiControls() {
   template.value = resolution.templateId || "";
   if ($("emailCampaignAiResolvedTemplate")) $("emailCampaignAiResolvedTemplate").textContent = resolution.templateId ? emailCampaignTemplateLabel(resolution.templateId) : "Aguardando conteúdo";
   if ($("emailCampaignAiTemplateReason")) $("emailCampaignAiTemplateReason").textContent = resolution.reason || "Selecione o conteúdo para montarmos o layout correto.";
+  renderEmailCampaignAiPromptEditor(resolution.scenario || "announcement", { followActive: true });
   const visibleFields = {
     emailCampaignAiMovieField: ["movie", "offer"].includes(context.objective),
     emailCampaignAiMoviesField: context.objective === "programming",
@@ -7098,9 +7179,10 @@ async function generateEmailCampaignAiDraft() {
       const visual = ai.visualStyleLabel ? ` Direção visual: ${ai.visualStyleLabel}.` : "";
       const coupon = generatedCoupon?.couponCode ? ` Cupom ${generatedCoupon.couponCode} criado e vinculado para revisão.` : "";
       const schedule = ai.scheduleAt ? ` Envio agendado para ${new Date(ai.scheduleAt).toLocaleString("pt-BR")}.` : "";
+      const promptModel = ai.promptTemplate?.name ? ` Modelo de instrução: ${ai.promptTemplate.name}.` : "";
       $("emailCampaignAiResultSummary").textContent = recipients
-        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.${layout}${visual}${coupon}${schedule}`
-        : `Catálogo e datas validados. Confira a prévia antes de enviar.${layout}${visual}${coupon}${schedule}`;
+        ? `${recipients.eligible || 0} destinatário(s) elegível(is); ${recipients.excluded || 0} excluído(s) pelas regras da oferta.${layout}${promptModel}${visual}${coupon}${schedule}`
+        : `Catálogo e datas validados. Confira a prévia antes de enviar.${layout}${promptModel}${visual}${coupon}${schedule}`;
     }
     const warningList = $("emailCampaignAiWarnings");
     if (warningList) {
@@ -9146,6 +9228,17 @@ function bindEvents() {
   $("clubTransparentImages")?.addEventListener("change", syncTransparentImagePreviews);
   $("emailCampaignForm")?.addEventListener("submit", sendEmailCampaign);
   $("emailCampaignAiGenerate")?.addEventListener("click", () => void generateEmailCampaignAiDraft());
+  $("emailCampaignAiPromptTemplate")?.addEventListener("change", (event) => {
+    state.emailCampaignAiPromptTemplateId = event.target.value;
+    state.emailCampaignAiPromptDirty = false;
+    renderEmailCampaignAiPromptEditor($("emailCampaignAiScenario")?.value || "announcement", { forceValue: true });
+  });
+  $("emailCampaignAiPromptText")?.addEventListener("input", () => {
+    state.emailCampaignAiPromptDirty = true;
+    if ($("emailCampaignAiPromptStatus")) $("emailCampaignAiPromptStatus").textContent = "Alterações ainda não salvas.";
+  });
+  $("emailCampaignAiPromptSave")?.addEventListener("click", () => void saveEmailCampaignAiPromptTemplate());
+  $("emailCampaignAiPromptReset")?.addEventListener("click", () => void saveEmailCampaignAiPromptTemplate({ reset: true }));
   $("emailCampaignAiOpen")?.addEventListener("click", () => {
     if (state.emailCampaignAiDraftId) void editEmailCampaign(state.emailCampaignAiDraftId);
   });

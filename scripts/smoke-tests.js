@@ -385,6 +385,27 @@ async function run() {
     const targetCookie = target.cookie;
     let adminCookie = await loginAdmin();
 
+    const promptTemplates = await request("/api/admin/email/prompt-templates", { headers: jsonHeaders(adminCookie) });
+    assert.equal(promptTemplates.response.status, 200);
+    assert.ok(Array.isArray(promptTemplates.payload.templates));
+    assert.ok(promptTemplates.payload.templates.length >= 15);
+    const promptText = "Crie um comunicado de teste objetivo, preserve a identidade do Cine Cruzeiro e utilize somente os dados validados pelo backend para esta campanha.";
+    const updatedPrompt = await request("/api/admin/email/prompt-templates", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ id: "announcement", prompt: promptText })
+    });
+    assert.equal(updatedPrompt.response.status, 200);
+    assert.equal(updatedPrompt.payload.template.prompt, promptText);
+    assert.equal(updatedPrompt.payload.template.customized, true);
+    const resetPrompt = await request("/api/admin/email/prompt-templates", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ id: "announcement", reset: true })
+    });
+    assert.equal(resetPrompt.response.status, 200);
+    assert.equal(resetPrompt.payload.template.customized, false);
+
     const couponOrder = {
       movieId: TEST_MOVIE_ID,
       sessionId: TEST_SESSION_ID,
