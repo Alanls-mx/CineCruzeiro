@@ -332,10 +332,14 @@ async function updateStatus(id, nextStatus, expectedStatuses = [], patch = {}, o
       return { order: current, changed: false };
     }
     const next = { ...current, ...patch, status: nextStatus, updatedAt: new Date().toISOString() };
-    const values = orderValues(next);
     const result = await timedQuery(client, `UPDATE orders SET
-      status=$9, reservation_expires_at=$14, metadata=$24::jsonb, updated_at=now()
-      WHERE id=$1 RETURNING *`, values, { repository: "order", operation: "updateStatus.write" });
+      status=$2, reservation_expires_at=$3, metadata=$4::jsonb, updated_at=now()
+      WHERE id=$1 RETURNING *`, [
+      next.id,
+      next.status === "pix_pending" ? "pending_payment" : next.status || "pending_payment",
+      next.reservationExpiresAt || null,
+      JSON.stringify(next)
+    ], { repository: "order", operation: "updateStatus.write" });
     return { order: (await hydrateRows(client, result.rows))[0], changed: true };
   });
 }
