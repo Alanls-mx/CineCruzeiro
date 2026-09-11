@@ -6727,10 +6727,10 @@ function normalizeCampaignInput(input = {}, existing = {}) {
   const campaignColor = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "").trim()) ? String(value).trim().toLowerCase() : fallback;
   const artDirectionSource = input.artDirection && typeof input.artDirection === "object" ? input.artDirection : (existing.artDirection || {});
   const artDirection = {
-    heroLayout: ["stacked", "split"].includes(artDirectionSource.heroLayout) ? artDirectionSource.heroLayout : "stacked",
-    motifs: (Array.isArray(artDirectionSource.motifs) ? artDirectionSource.motifs : []).filter((item) => ["filmstrip", "package", "blueprint", "road", "impact", "ticket", "spotlight"].includes(item)).slice(0, 3),
+    heroLayout: ["stacked", "split", "cinematic"].includes(artDirectionSource.heroLayout) ? artDirectionSource.heroLayout : "stacked",
+    motifs: (Array.isArray(artDirectionSource.motifs) ? artDirectionSource.motifs : []).filter((item) => ["filmstrip", "package", "blueprint", "road", "impact", "ticket", "spotlight", "metal", "energy", "smoke"].includes(item)).slice(0, 3),
     offerCardStyle: ["classic", "package", "blueprint", "ticket"].includes(artDirectionSource.offerCardStyle) ? artDirectionSource.offerCardStyle : "classic",
-    dividerStyle: ["line", "dashed", "road", "tape"].includes(artDirectionSource.dividerStyle) ? artDirectionSource.dividerStyle : "line",
+    dividerStyle: ["line", "dashed", "road", "tape", "metal", "energy"].includes(artDirectionSource.dividerStyle) ? artDirectionSource.dividerStyle : "line",
     ctaPlacement: ["standard", "repeated"].includes(artDirectionSource.ctaPlacement) ? artDirectionSource.ctaPlacement : "standard"
   };
   const contentSections = (Array.isArray(input.contentSections) ? input.contentSections : (existing.contentSections || []))
@@ -6792,7 +6792,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
     headlineColor: campaignColor(input.headlineColor ?? existing.headlineColor, "#ffffff"),
     textColor: campaignColor(input.textColor ?? existing.textColor, "#dbeafe"),
     buttonColor: campaignColor(input.buttonColor ?? existing.buttonColor, "#facc15"),
-    visualStyle: ["classic", "premiere", "nostalgic", "playful", "dramatic", "elegant", "fresh"].includes(input.visualStyle)
+    visualStyle: ["classic", "premiere", "nostalgic", "playful", "dramatic", "elegant", "fresh", "emerald"].includes(input.visualStyle)
       ? input.visualStyle
       : existing.visualStyle || "classic",
     visualStyleLabel: String(input.visualStyleLabel ?? existing.visualStyleLabel ?? "").trim().slice(0, 120),

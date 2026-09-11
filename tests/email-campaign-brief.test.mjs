@@ -79,7 +79,7 @@ test("briefing promocional preserva CTA, cupom, período e direção visual soli
   assert.match(result.html, /ACME Special Delivery/);
   assert.match(result.html, /20% OFF/);
   assert.match(result.html, /PLANO ACME Nº 20/);
-  assert.match(result.html, /Dessa vez, o plano da ACME funciona/);
+  assert.doesNotMatch(result.html, /Dessa vez, o plano da ACME funciona/);
   assert.equal((result.html.match(/USAR ACME20 E COMPRAR INGRESSOS/g) || []).length, 3);
 });
 

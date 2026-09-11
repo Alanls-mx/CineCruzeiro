@@ -679,7 +679,7 @@ async function sendPromotionTest(db, input = {}) {
     ...input,
     recipients: [{
       email: input.to,
-      name: input.name || "administrador",
+      name: input.name || "Cliente de teste",
       unsubscribeUrl: "",
       couponCode: input.couponCode || "",
       couponExpiresAt: input.couponExpiresAt || "",

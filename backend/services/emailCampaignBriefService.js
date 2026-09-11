@@ -76,7 +76,7 @@ function requestedButtonHints(brief) {
     if (normalized.includes("ingresso") || normalized.includes("comprar") || normalized.includes("garantir")) return "tickets";
     return "";
   };
-  const explicitCtaPattern = /(?:cta(?:\s+principal)?|texto\s+do\s+bot[aã]o|bot[aã]o)\s*:\s*(?:\r?\n\s*)*(?:\*{1,2})?([^\r\n*]{3,100})/gi;
+  const explicitCtaPattern = /(?:cta(?:\s+(?:principal|grande|final))?|texto\s+do\s+bot[aã]o|bot[aã]o)\s*:\s*(?:\r?\n\s*)*(?:\*{1,2})?([^\r\n*]{3,100})/gi;
   for (const match of text.matchAll(explicitCtaPattern)) {
     const label = cleanLabel(match[1]);
     const intent = intentForLabel(label);

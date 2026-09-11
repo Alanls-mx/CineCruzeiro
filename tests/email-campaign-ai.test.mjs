@@ -294,6 +294,94 @@ test("adaptação visual da IA fica limitada aos estilos e cores da marca", () =
   assert.match(result.html, /background:#121b2c/);
 });
 
+test("superestreia detalhada filtra conteúdo interno, ficção e excesso visual da IA", () => {
+  const brief = `O objetivo principal desta geração é DESIGN.
+IDENTIDADE VISUAL OBRIGATÓRIA: Doutor Destino, metal envelhecido, energia dimensional e fumaça. Use preto profundo, grafite e verde esmeralda escuro. Não utilizar azul vivo, amarelo nos botões ou vermelho nos CTAs.
+HERO — PRIORIDADE MÁXIMA. O pôster deve ocupar grande parte da largura.
+SUPER ESTREIA
+VINGADORES: DOUTOR DESTINO
+O DESTINO ESTÁ CHEGANDO.
+Texto curto: Os Vingadores retornam para um novo evento cinematográfico. Escolha sua sessão e prepare-se para viver o próximo grande capítulo na tela grande.
+CTA: GARANTIR INGRESSOS
+O DIA DO DESTINO ESTÁ CHEGANDO. Uma ameaça monumental surge para redefinir o futuro de todos os universos.
+OS UNIVERSOS VÃO COLIDIR. Uma nova era dos Vingadores começa na tela grande.
+Sessões: ESCOLHA ONDE VOCÊ ESTARÁ QUANDO O DESTINO CHEGAR.
+Passos: Consulte a programação; Escolha sua sessão; Garanta seu ingresso; Viva a Superestreia.
+Utilize apenas UMA linguagem visual de botão em todo o e-mail.
+CTA final: VER SESSÕES E GARANTIR INGRESSOS.
+Não mostrar Olá administrador, clientes com marketing ativo nem dados internos.`;
+  const result = buildCampaignDraft({
+    scenario: "premiere",
+    siteUrl,
+    now: "2026-09-10T12:00:00-03:00",
+    brief,
+    recipientMode: "all",
+    brand: {
+      name: "Cine Cruzeiro",
+      logoUrl: "/uploads/logo.webp",
+      tagline: "Mensagem automática do Cine Cruzeiro.",
+      footer: "Rodapé público do Cine Cruzeiro."
+    },
+    movie: {
+      id: "vingadores-doctor-doom",
+      slug: "vingadores-doutor-destino",
+      title: "Vingadores: Doutor Destino",
+      synopsis: "Heróis icônicos de três universos diferentes são colocados em rota de colisão mortal e enfrentam uma ameaça existencial sem precedentes.",
+      posterUrl: "/uploads/movies/vingadores/poster.webp",
+      duration: "2h45m",
+      rating: "L",
+      sessions: [
+        { date: "2026-09-15", time: "19:00", format: "2D", language: "Dublado" },
+        { date: "2026-09-12", time: "21:00", format: "2D", language: "Dublado" },
+        { date: "2026-09-01", time: "19:00", format: "2D", language: "Dublado" },
+        { date: "2026-09-14", time: "20:00", format: "2D", language: "Dublado" },
+        { date: "2026-09-11", time: "18:00", format: "2D", language: "Dublado" },
+        { date: "2026-09-13", time: "19:30", format: "2D", language: "Dublado" }
+      ]
+    },
+    creative: {
+      subject: "Vingadores: Doutor Destino",
+      preheader: "Superestreia no Cine Cruzeiro",
+      kicker: "⚡ SUPER ESTREIA",
+      headline: "VINGADORES: DOUTOR DESTINO",
+      message: "Olá, administrador. Texto interno que não deve prevalecer.",
+      ctaLabel: "BOTÃO GENÉRICO",
+      visualStyle: "dramatic",
+      accentColor: "#ff7185",
+      headlineColor: "#ffffff",
+      textColor: "#dbeafe",
+      buttonColor: "#facc15",
+      artDirection: { heroLayout: "stacked", motifs: ["impact", "ticket"], offerCardStyle: "classic", dividerStyle: "line", ctaPlacement: "standard" },
+      sections: [
+        { type: "body", title: "O DIA DO DESTINO ESTÁ CHEGANDO", body: "Uma ameaça monumental surge para redefinir o futuro de todos os universos.", items: [] },
+        { type: "quote", title: "", body: "Heróis icônicos de três universos diferentes são colocados em rota de colisão mortal e enfrentam uma ameaça existencial sem precedentes.", items: [] },
+        { type: "body", title: "ESCOLHA ONDE VOCÊ ESTARÁ QUANDO O DESTINO CHEGAR", body: "Sessões confirmadas", items: [] },
+        { type: "steps", title: "Passos", body: "", items: ["01. Consulte a programação", "02. Escolha sua sessão", "03. Garanta seu ingresso", "04. Viva a Superestreia"] }
+      ],
+      buttons: [{ label: "Comprar agora", intent: "tickets" }]
+    }
+  });
+
+  assert.equal(result.visualStyle, "emerald");
+  assert.equal(result.buttonColor, "#047857");
+  assert.equal(result.artDirection.heroLayout, "cinematic");
+  assert.deepEqual(result.artDirection.motifs, ["metal", "energy", "smoke"]);
+  assert.equal(result.ctaButtons.length, 1);
+  assert.equal(result.ctaButtons[0].label, "VER SESSÕES E GARANTIR INGRESSOS");
+  assert.match(result.message, /^Os Vingadores retornam/);
+  assert.match(result.html, /width="588"/);
+  assert.match(result.html, /2h 45min/);
+  assert.match(result.html, /Livre/);
+  assert.match(result.html, /11\/09\/2026[\s\S]*12\/09\/2026[\s\S]*13\/09\/2026[\s\S]*14\/09\/2026/);
+  assert.doesNotMatch(result.html, /01\/09\/2026|15\/09\/2026/);
+  assert.doesNotMatch(result.html, /administrador|clientes com marketing ativo/i);
+  assert.doesNotMatch(result.html, /Heróis icônicos de três universos/i);
+  assert.doesNotMatch(result.html, /#facc15|#ff7185|#1d4ed8/i);
+  assert.doesNotMatch(result.html, /01\. Consulte/);
+  assert.doesNotMatch(result.html, /Mensagem automática do Cine Cruzeiro/);
+  assert.ok((result.html.match(/VER SESSÕES E GARANTIR INGRESSOS/g) || []).length <= 2);
+});
+
 test("teste Gemini valida conexão e modelo", async () => {
   const result = await testGeminiConnection({ apiKey: "gemini-test-key", model: "gemini-2.5-flash", timeout: 5000 }, {
     fetchImpl: async () => ({
