@@ -453,7 +453,7 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
 
             {!ticket.canTransfer && (
               <p className="mt-3 text-xs font-medium text-slate-400">
-                Este ingresso não pode ser transferido (já foi utilizado, cancelado ou a sessão já ocorreu).
+                {ticket.transferBlockedReason || "Este ingresso não pode ser transferido porque já foi utilizado, cancelado ou a sessão já ocorreu."}
               </p>
             )}
             {message && (

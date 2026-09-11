@@ -266,6 +266,20 @@ test("login aplica bloqueio progressivo com Retry-After", { skip: IS_PRODUCTION 
   assert.match(header(response, "retry-after"), /^\d+$/);
 });
 
+test("rate limit agrupa IDs dinâmicos da mesma operação", { skip: IS_PRODUCTION ? "não provoca rate limit em produção" : false }, async () => {
+  const auditIp = "203.0.113.88";
+  let response;
+  for (let attempt = 0; attempt < 9; attempt += 1) {
+    response = await post(`/api/me/tickets/audit-ticket-${attempt}/transfer`, {
+      email: "destino-inexistente@example.invalid"
+    }, { "X-Forwarded-For": auditIp });
+  }
+  assert.equal(response.status, 429);
+  assert.equal(response.json?.error?.category, "ticket-transfer");
+  assert.match(header(response, "retry-after"), /^\d+$/);
+  assert.equal(header(response, "ratelimit-policy"), "8;w=600");
+});
+
 test("tentativa simples de travessia de caminho não lê arquivos", async () => {
   const response = await request("/uploads/%2e%2e%2f%2e%2e%2fetc%2fpasswd");
   assert.doesNotMatch(response.text, /root:.*:0:0:/);

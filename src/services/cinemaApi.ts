@@ -102,6 +102,7 @@ export interface TicketRecord {
   archived?: boolean;
   archiveAt?: string;
   canTransfer?: boolean;
+  transferBlockedReason?: string;
   transferredAt?: string;
   usedAt?: string;
   createdAt: string;

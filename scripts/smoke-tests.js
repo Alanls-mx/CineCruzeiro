@@ -2016,6 +2016,8 @@ async function run() {
     assert.equal(transfer.response.status, 200);
     assert.equal(transfer.payload.ticket.customerUserId, target.user.id);
     assert.notEqual(transfer.payload.ticket.code, manualTicket.code);
+    assert.equal(transfer.payload.ticket.canTransfer, false);
+    assert.match(transfer.payload.ticket.transferBlockedReason, /Aguarde/i);
 
     const oldOwnerTickets = await request("/api/me/tickets", { headers: { Cookie: cookie } });
     assert.equal(oldOwnerTickets.response.status, 200);

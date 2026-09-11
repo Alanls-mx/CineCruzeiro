@@ -43,6 +43,7 @@ const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const clubDomainService = require("./services/clubDomainService");
 const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
+const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
 const { GoodsFiscalService } = require("./services/goodsFiscalService");
 const {
   applyMovieTagTransition,
@@ -847,25 +848,48 @@ const loginFailures = new Map();
 const LOGIN_FAILURE_THRESHOLD = 5;
 const LOGIN_BLOCK_BASE_MS = 30 * 1000;
 const LOGIN_BLOCK_MAX_MS = 15 * 60 * 1000;
+const RATE_BUCKET_MAX_ENTRIES = 50000;
+const LOGIN_FAILURE_MAX_ENTRIES = 20000;
+const ticketTransferLimits = transferLimits();
+
+const RATE_LIMIT_RULES = [
+  { id: "customer-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/auth/login" },
+  { id: "admin-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/login" },
+  { id: "admin-2fa", limit: 6, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/login/2fa" },
+  { id: "account-registration", limit: 10, windowMs: 60 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/auth/register" },
+  { id: "password-recovery-request", limit: 5, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/auth/password/request" },
+  { id: "password-recovery-confirm", limit: 10, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/auth/password/reset" },
+  { id: "email-verification", limit: 8, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/me/email-verification/request" },
+  { id: "email-change", limit: 5, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/me/email-change/request" },
+  { id: "oauth-start", limit: 30, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "GET" && path === "/api/auth/google/start" },
+  { id: "events", limit: 5, windowMs: 60 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/events" },
+  { id: "payments", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/payments\/(pix|card)$/.test(path) },
+  { id: "subscriptions", limit: 10, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/subscriptions/subscribe" },
+  { id: "coupon-preview", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/coupons/preview" },
+  { id: "ticket-transfer", limit: 8, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/me\/tickets\/[^/]+\/transfer$/.test(path) },
+  { id: "ticket-artifacts", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => /^\/api\/me\/tickets\/[^/]+\/(download|google-wallet)$/.test(path) },
+  { id: "ticket-validation", limit: 180, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/tickets/validate" },
+  { id: "uploads", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path.startsWith("/api/uploads/") },
+  { id: "email-attachments", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/email/attachments" },
+  { id: "integration-tests", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/integrations/test" },
+  { id: "campaign-generation", limit: 12, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/(ai-draft|preview|test)$/.test(path) },
+  { id: "campaign-dispatch", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/[^/]+\/(send|retry-failures)$/.test(path) },
+  { id: "reports", limit: 20, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && path.startsWith("/api/admin/reports/") },
+  { id: "external-lookups", limit: 60, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && /^\/api\/(tmdb|admin\/integrations)/.test(path) },
+  { id: "desktop-updates", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && path.startsWith("/api/desktop/update/") },
+  { id: "admin-mutations", limit: 180, windowMs: 60 * 1000, matches: (method, path) => mutatesState(method) && adminAuthRequired(path, method) },
+  { id: "customer-mutations", limit: 120, windowMs: 60 * 1000, matches: (method, path) => mutatesState(method) && /^\/api\/(me|subscriptions|coupons)/.test(path) }
+];
 
 function clientIp(req) {
-  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local").split(",")[0].trim();
+  const remoteAddress = String(req.socket.remoteAddress || "local").trim();
+  const proxyIsLocal = remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress === "::ffff:127.0.0.1";
+  if (!proxyIsLocal) return remoteAddress;
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").map((value) => value.trim()).filter(Boolean);
+  return forwarded.at(-1) || String(req.headers["x-real-ip"] || "").trim() || remoteAddress;
 }
 
-function rateLimit(req, pathname) {
-  const sensitive = /\/api\/(auth|payments|checkout|tickets\/validate|account\/tickets|admin)/.test(pathname);
-  if (!sensitive) return null;
-
-  const now = Date.now();
-  if (now - lastRateBucketSweep >= 60 * 1000) {
-    for (const [bucketKey, bucketValue] of rateBuckets) {
-      if (bucketValue.resetAt <= now) rateBuckets.delete(bucketKey);
-    }
-    lastRateBucketSweep = now;
-  }
-  const windowMs = 60 * 1000;
-  const limit = pathname.includes("/tickets/validate") ? 40 : pathname.includes("/payments") ? 15 : 30;
-  const key = `${clientIp(req)}:${pathname}`;
+function consumeRateBucket(key, limit, windowMs, now) {
   const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + windowMs };
   if (bucket.resetAt <= now) {
     bucket.count = 0;
@@ -873,9 +897,35 @@ function rateLimit(req, pathname) {
   }
   bucket.count += 1;
   rateBuckets.set(key, bucket);
-  return bucket.count > limit
-    ? { code: "RATE_LIMITED", message: "Muitas tentativas em pouco tempo. Aguarde um minuto e tente novamente.", retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)) }
-    : null;
+  return bucket.count > limit ? bucket : null;
+}
+
+function rateLimit(req, pathname, method = "GET") {
+  if (!pathname.startsWith("/api/") || pathname.startsWith("/api/health") || pathname.startsWith("/api/webhooks/")) return null;
+  const now = Date.now();
+  if (now - lastRateBucketSweep >= 60 * 1000) {
+    for (const [bucketKey, bucketValue] of rateBuckets) {
+      if (bucketValue.resetAt <= now) rateBuckets.delete(bucketKey);
+    }
+    while (rateBuckets.size > RATE_BUCKET_MAX_ENTRIES) rateBuckets.delete(rateBuckets.keys().next().value);
+    lastRateBucketSweep = now;
+  }
+
+  const ip = clientIp(req);
+  const globalRule = { id: "api-global", limit: 900, windowMs: 60 * 1000 };
+  const applicableRules = [globalRule, ...RATE_LIMIT_RULES.filter((rule) => rule.matches(method, pathname))];
+  for (const rule of applicableRules) {
+    const bucket = consumeRateBucket(`${ip}:${rule.id}`, rule.limit, rule.windowMs, now);
+    if (!bucket) continue;
+    return {
+      code: "RATE_LIMITED",
+      message: "Muitas tentativas em pouco tempo. Aguarde e tente novamente.",
+      retryAfter: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+      policy: `${rule.limit};w=${Math.ceil(rule.windowMs / 1000)}`,
+      category: rule.id
+    };
+  }
+  return null;
 }
 
 function loginFailureKey(req, scope, email) {
@@ -905,6 +955,13 @@ function recordLoginFailure(req, scope, email) {
     current.blockedUntil = now + Math.min(LOGIN_BLOCK_MAX_MS, LOGIN_BLOCK_BASE_MS * (2 ** exponent));
   }
   loginFailures.set(key, current);
+  if (loginFailures.size > LOGIN_FAILURE_MAX_ENTRIES) {
+    const expiry = now - LOGIN_BLOCK_MAX_MS;
+    for (const [failureKey, failure] of loginFailures) {
+      if (failure.lastFailureAt < expiry || loginFailures.size > LOGIN_FAILURE_MAX_ENTRIES) loginFailures.delete(failureKey);
+      if (loginFailures.size <= LOGIN_FAILURE_MAX_ENTRIES) break;
+    }
+  }
 }
 
 function clearLoginFailures(req, scope, email) {
@@ -2024,6 +2081,7 @@ function enrichTicket(db, ticket) {
   const orderExtras = Array.isArray(order?.concessionItems)
     ? order.concessionItems.map((item) => assetRecord(item, ["imageUrl"]))
     : [];
+  const transferCheck = canTransferTicket(db, ticket);
   return {
     ...ticket,
     customerEmail: ticket.customerEmail || order?.customerEmail || "",
@@ -2052,7 +2110,8 @@ function enrichTicket(db, ticket) {
     status,
     archived: ["archived", "used", "expired"].includes(status),
     archiveAt: archiveAt?.toISOString() || "",
-    canTransfer: canTransferTicket(db, ticket).ok
+    canTransfer: transferCheck.ok,
+    transferBlockedReason: transferCheck.ok ? "" : transferCheck.message
   };
 }
 
@@ -2063,6 +2122,8 @@ function canTransferTicket(db, ticket) {
   if (!order || order.status !== "paid") return { ok: false, message: "Somente ingressos pagos podem ser transferidos." };
   if (status !== "active") return { ok: false, message: "Este ingresso nao esta valido para transferencia." };
   if (ticketIsExpired(ticket, db)) return { ok: false, message: "Este ingresso ja passou do prazo de transferencia." };
+  const transferPolicy = evaluateTicketTransfer(db.ticketTransfers || [], { ticketId: ticket.id }, ticketTransferLimits);
+  if (!transferPolicy.ok) return transferPolicy;
   return { ok: true };
 }
 
@@ -7994,11 +8055,6 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname.startsWith("/api/desktop/update/") && method === "GET") {
-    await serveDesktopUpdate(res, pathname);
-    return;
-  }
-
   if (pathname === "/api/health/live" && method === "GET") {
     sendJson(res, 200, { status: "alive" }, { "Cache-Control": "no-store" });
     return;
@@ -8015,6 +8071,23 @@ async function handleApi(req, res, pathname) {
   }
 
   const context = requestContext.getStore();
+  if (!req.rateLimitChecked) {
+    req.rateLimitChecked = true;
+    const limited = rateLimit(req, pathname, method);
+    if (limited) {
+      sendJson(res, 429, { error: limited }, {
+        "Retry-After": String(limited.retryAfter),
+        "RateLimit-Policy": limited.policy
+      });
+      return;
+    }
+  }
+
+  if (pathname.startsWith("/api/desktop/update/") && method === "GET") {
+    await serveDesktopUpdate(res, pathname);
+    return;
+  }
+
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method) && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
@@ -8031,15 +8104,6 @@ async function handleApi(req, res, pathname) {
   }
 
   const db = await readDb();
-
-  const limited = rateLimit(req, pathname);
-  if (limited) {
-    sendJson(res, 429, { error: limited }, {
-      "Retry-After": String(limited.retryAfter),
-      "RateLimit-Policy": "30;w=60"
-    });
-    return;
-  }
 
   if (pathname === "/api/admin/login" && method === "POST") {
     const body = await readBody(req);
@@ -11418,7 +11482,30 @@ async function handleApi(req, res, pathname) {
         }
         const transferCheck = canTransferTicket(lockedDb, ticket);
         if (!transferCheck.ok) {
-          sendJson(res, 409, { error: { code: "TICKET_NOT_TRANSFERABLE", message: transferCheck.message } });
+          sendJson(res, transferCheck.statusCode || 409, {
+            error: { code: transferCheck.code || "TICKET_NOT_TRANSFERABLE", message: transferCheck.message }
+          }, transferCheck.retryAfter ? {
+            "Retry-After": String(transferCheck.retryAfter),
+            "RateLimit-Policy": `1;w=${Math.ceil(ticketTransferLimits.cooldownMs / 1000)};scope=ticket`
+          } : {});
+          return;
+        }
+        const transferPolicy = evaluateTicketTransfer(lockedDb.ticketTransfers || [], {
+          ticketId: ticket.id,
+          fromUserId: freshUser.id,
+          toUserId: targetUser.id
+        }, ticketTransferLimits);
+        if (!transferPolicy.ok) {
+          sendJson(res, transferPolicy.statusCode || 429, { error: { code: transferPolicy.code, message: transferPolicy.message } }, {
+            ...(transferPolicy.retryAfter ? { "Retry-After": String(transferPolicy.retryAfter) } : {}),
+            "RateLimit-Policy": transferPolicy.code === "TICKET_TRANSFER_RECIPIENT_LIMIT_REACHED"
+              ? `${ticketTransferLimits.maxIncomingPerWindow};w=${Math.ceil(ticketTransferLimits.windowMs / 1000)};scope=recipient`
+              : transferPolicy.code === "TICKET_TRANSFER_USER_LIMIT_REACHED"
+                ? `${ticketTransferLimits.maxOutgoingPerWindow};w=${Math.ceil(ticketTransferLimits.windowMs / 1000)};scope=sender`
+                : transferPolicy.retryAfter
+                  ? `1;w=${Math.ceil(ticketTransferLimits.cooldownMs / 1000)};scope=ticket`
+                  : `${ticketTransferLimits.maxPerTicket};scope=ticket`
+          });
           return;
         }
         const oldCode = ticket.code;
