@@ -54,7 +54,15 @@ async function upsert(ticket, options = {}) {
         description=EXCLUDED.description, active=EXCLUDED.active,
         bundle_quantity=EXCLUDED.bundle_quantity, updated_at=now()
       RETURNING *`, [ticket.id, ticket.name, Number(ticket.price || 0), ticket.description || "", ticket.active !== false, Number(ticket.bundleQuantity || 1)], { repository: "ticket_type", operation: "upsert" });
-    const sessionIds = await recalculateSessionPrices(client);
+    const affected = await timedQuery(client,
+      "SELECT DISTINCT session_id FROM session_ticket_types WHERE ticket_type_id = $1",
+      [ticket.id],
+      { repository: "ticket_type", operation: "sessions.find" }
+    );
+    const linkedSessionIds = affected.rows.map((row) => row.session_id);
+    const sessionIds = linkedSessionIds.length
+      ? await recalculateSessionPrices(client, linkedSessionIds)
+      : [];
     return { ticket: mapTicketType(result.rows[0]), sessionIds };
   });
 }
