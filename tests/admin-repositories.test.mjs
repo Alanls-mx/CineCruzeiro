@@ -41,11 +41,30 @@ test("repositories da segunda fase usam SQL direcionado e campos permitidos", ()
   assert.doesNotMatch(source("userRepository.js"), /email.*OR google_sub/i);
 });
 
+test("repository de pedidos usa SQL direcionado e idempotente", () => {
+  const file = "orderRepository.js";
+  assert.ok(fs.existsSync(path.join(repositoryDir, file)), `${file} ausente`);
+  const sql = source(file);
+  ["orders", "payments", "tickets", "movies", "users"].forEach((table) => {
+    assert.doesNotMatch(sql, new RegExp(`DELETE\\s+FROM\\s+${table}\\s*;`, "i"), `delete integral detectado em ${table}`);
+  });
+  assert.match(sql, /ON CONFLICT DO NOTHING/);
+  assert.match(sql, /WHERE order_id = \$1/);
+  assert.match(sql, /FOR UPDATE/);
+  assert.match(sql, /ORDER_CHANGED/);
+});
+
+test("backend deriva o base path publico para imagens fora do Next", () => {
+  const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  assert.match(server, /CINE_PUBLIC_BACKEND_URL \|\| process\.env\.FRONTEND_URL/);
+  assert.match(server, /new URL\(publicUrl\)\.pathname/);
+});
+
 test("rotas migradas nao entram no advisory lock global", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.match(server, /repositoryMutationRoute\(pathname, method\)/);
   assert.match(server, /!targetedRepositoryMutation && !context\?\.adminMutationLocked/);
-  ["movieRepository", "sessionRepository", "roomRepository", "ticketTypeRepository", "promotionRepository", "concessionRepository", "settingsRepository", "userRepository"].forEach((repository) => {
+  ["movieRepository", "sessionRepository", "roomRepository", "ticketTypeRepository", "promotionRepository", "concessionRepository", "settingsRepository", "userRepository", "orderRepository"].forEach((repository) => {
     assert.match(server, new RegExp(`${repository}\\.`));
   });
 });

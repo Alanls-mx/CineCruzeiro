@@ -19,6 +19,7 @@ const promotionRepository = require("../backend/repositories/promotionRepository
 const concessionRepository = require("../backend/repositories/concessionRepository");
 const settingsRepository = require("../backend/repositories/settingsRepository");
 const userRepository = require("../backend/repositories/userRepository");
+const orderRepository = require("../backend/repositories/orderRepository");
 
 async function counts() {
   const tables = ["users", "movies", "sessions", "orders", "payments", "tickets", "subscriptions", "promotions", "concessions", "audit_logs"];
@@ -120,6 +121,69 @@ test("segunda fase preserva dados e resolve concorrencia por entidade", { skip: 
     await queryPostgres("DELETE FROM concessions WHERE id=$1", [concessionId]).catch(() => null);
     await queryPostgres("DELETE FROM promotions WHERE id=ANY($1::text[])", [[promotionAId, promotionBId]]).catch(() => null);
     await queryPostgres("UPDATE settings SET value=value-$1-$2,updated_at=now() WHERE key='app'", [settingsA, settingsB]).catch(() => null);
+  }
+  assert.deepEqual(await counts(), before);
+});
+
+test("fase 3A cria pedido uma vez e preserva seus itens", { skip: !TEST_DATABASE_URL }, async () => {
+  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const userId = `order-user-${suffix}`;
+  const movieId = `order-movie-${suffix}`;
+  const roomId = `order-room-${suffix}`;
+  const ticketTypeId = `order-ticket-type-${suffix}`;
+  const sessionId = `order-session-${suffix}`;
+  const idempotencyKey = `checkout-${suffix}`;
+  const order = (id) => ({
+    id,
+    idempotencyKey,
+    customerUserId: userId,
+    customerName: "Cliente Pedido",
+    customerEmail: `${userId}@example.com`,
+    movieId,
+    sessionId,
+    status: "pending_payment",
+    subtotal: 28,
+    discountValue: 3,
+    totalPrice: 25,
+    serviceSubtotal: 20,
+    goodsSubtotal: 8,
+    additionalPayment: 25,
+    reservationExpiresAt: "2030-01-10T22:00:00.000Z",
+    ticketItems: [{ id: ticketTypeId, name: "Inteira", quantity: 1, unitPrice: 20 }],
+    concessionItems: [{ id: "pipoca-teste", name: "Pipoca", quantity: 1, unitPrice: 8 }],
+    createdAt: new Date().toISOString()
+  });
+  const before = await counts();
+  try {
+    await userRepository.create({ id: userId, name: "Cliente Pedido", email: `${userId}@example.com`, passwordHash: "hash", role: "customer", active: true });
+    await roomRepository.create({ id: roomId, name: "Sala Pedido", capacity: 20, technology: "2D", status: "active", seatSelectionEnabled: false, seatTypes: [], seatLayout: { screenLabel: "TELA", rows: [] } });
+    await ticketTypeRepository.create({ id: ticketTypeId, name: "Inteira Pedido", price: 20, description: "Teste", bundleQuantity: 1, active: true });
+    await movieRepository.create({ id: movieId, slug: movieId, workflowStatus: "draft", sortOrder: 100, status: "hidden", title: "Filme Pedido", genre: [], rating: "L", metadata: {}, sessions: [] });
+    await sessionRepository.create(movieId, { id: sessionId, date: "2030-01-10", time: "19:00", format: "2D", room: "Sala Pedido (2D)", roomId, ticketTypeIds: [ticketTypeId], priceFull: 20, priceHalf: 10, status: "available" });
+
+    const results = await Promise.all([
+      orderRepository.create(order(`order-a-${suffix}`)),
+      orderRepository.create(order(`order-b-${suffix}`))
+    ]);
+    assert.equal(results.filter((result) => result.created).length, 1);
+    assert.equal(new Set(results.map((result) => result.order.id)).size, 1);
+    const saved = await orderRepository.findByIdempotencyKey(idempotencyKey);
+    assert.equal(saved.totalPrice, 25);
+    assert.equal(saved.ticketItems.length, 1);
+    assert.equal(saved.concessionItems.length, 1);
+
+    const statusResults = await Promise.all([
+      orderRepository.updateStatus(saved.id, "expired", ["pending_payment"], { expiredAt: new Date().toISOString() }),
+      orderRepository.updateStatus(saved.id, "expired", ["pending_payment"], { expiredAt: new Date().toISOString() })
+    ]);
+    assert.equal(statusResults.filter((result) => result.changed).length, 1);
+    assert.equal((await orderRepository.findById(saved.id)).status, "expired");
+  } finally {
+    await queryPostgres("DELETE FROM orders WHERE idempotency_key=$1", [idempotencyKey]).catch(() => null);
+    await queryPostgres("DELETE FROM movies WHERE id=$1", [movieId]).catch(() => null);
+    await queryPostgres("DELETE FROM ticket_types WHERE id=$1", [ticketTypeId]).catch(() => null);
+    await queryPostgres("DELETE FROM rooms WHERE id=$1", [roomId]).catch(() => null);
+    await queryPostgres("DELETE FROM users WHERE id=$1", [userId]).catch(() => null);
   }
   assert.deepEqual(await counts(), before);
 });

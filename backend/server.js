@@ -63,6 +63,7 @@ const promotionRepository = require("./repositories/promotionRepository");
 const concessionRepository = require("./repositories/concessionRepository");
 const settingsRepository = require("./repositories/settingsRepository");
 const userRepository = require("./repositories/userRepository");
+const orderRepository = require("./repositories/orderRepository");
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
@@ -76,7 +77,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "032_targeted_business_repositories.sql";
+const LATEST_SCHEMA_MIGRATION = "033_orders_targeted_persistence.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -136,7 +137,15 @@ function pathIsInside(rootDir, candidatePath) {
 }
 
 function configuredAppBasePath() {
-  const raw = String(process.env.NEXT_PUBLIC_BASE_PATH || process.env.NEXT_BASE_PATH || process.env.APP_BASE_PATH || "").trim();
+  let raw = String(process.env.NEXT_PUBLIC_BASE_PATH || process.env.NEXT_BASE_PATH || process.env.APP_BASE_PATH || "").trim();
+  if (!raw) {
+    const publicUrl = String(process.env.CINE_PUBLIC_BACKEND_URL || process.env.FRONTEND_URL || "").trim();
+    try {
+      raw = new URL(publicUrl).pathname;
+    } catch {
+      raw = "";
+    }
+  }
   if (!raw || raw === "/") return "";
   return `/${raw.replace(/^\/+|\/+$/g, "")}`;
 }
@@ -1189,6 +1198,7 @@ function repositoryMutationRoute(pathname, method) {
     || /^\/api\/admin\/email\/campaigns(?:\/.*)?$/.test(pathname)
     || /^\/api\/admin\/integrations\/[^/]+(?:\/(test|enable|disable))?$/.test(pathname)
     || /^\/api\/users(?:\/[^/]+)?$/.test(pathname)
+    || (/^\/api\/orders\/[^/]+$/.test(pathname) && method === "PATCH")
     || pathname === "/api/admin/logout"
     || pathname.startsWith("/api/admin/2fa/");
 }
@@ -13035,7 +13045,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/orders" && method === "GET") {
-    sendJson(res, 200, db.orders);
+    sendJson(res, 200, postgresEnabled() ? await orderRepository.list() : db.orders);
     return;
   }
 
@@ -13077,7 +13087,9 @@ async function handleApi(req, res, pathname) {
 
   if (adminOrderMatch && method === "GET") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
-    const order = (db.orders || []).find((item) => item.id === orderId);
+    const order = postgresEnabled()
+      ? await orderRepository.findById(orderId)
+      : (db.orders || []).find((item) => item.id === orderId);
     if (!order) {
       sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
       return;
@@ -13093,6 +13105,37 @@ async function handleApi(req, res, pathname) {
   if (adminOrderMatch && method === "PATCH") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
     const body = await readBody(req);
+    if (postgresEnabled() && !["cancel"].includes(body.action)) {
+      const order = await orderRepository.findById(orderId);
+      if (!order) {
+        sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
+        return;
+      }
+      const before = structuredCloneSafe(order);
+      if (body.action === "archive") archiveOrder(order, body.reason, req.adminUser);
+      else if (body.action === "unarchive") unarchiveOrder(order, body.reason, req.adminUser);
+      else safeOrderUpdate(order, body, req.adminUser);
+      const saved = await orderRepository.update(order, {}, {
+        expectedUpdatedAt: before.updatedAt,
+        operation: body.action || "edit",
+        audit: {
+          userId: req.adminUser?.id,
+          action: `order.${body.action || "updated"}`,
+          entityType: "order",
+          entityId: order.id,
+          before,
+          after: order,
+          ip: clientIp(req)
+        }
+      });
+      const currentDb = await readDb();
+      sendJson(res, 200, {
+        order: saved,
+        payment: orderPayment(currentDb, saved.id),
+        tickets: orderTickets(currentDb, saved.id).map((ticket) => enrichTicket(currentDb, ticket))
+      });
+      return;
+    }
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const order = (lockedDb.orders || []).find((item) => item.id === orderId);
