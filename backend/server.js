@@ -55,6 +55,10 @@ const {
 } = require("./utils/movieTagLifecycle");
 const { brazilianDate } = require("./utils/dateFormat");
 const { requireRuntimeSecret } = require("./services/runtimeSecretService");
+const movieRepository = require("./repositories/movieRepository");
+const sessionRepository = require("./repositories/sessionRepository");
+const roomRepository = require("./repositories/roomRepository");
+const ticketTypeRepository = require("./repositories/ticketTypeRepository");
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
@@ -68,7 +72,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "029_email_campaign_reliability.sql";
+const LATEST_SCHEMA_MIGRATION = "031_targeted_admin_repositories.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -1165,6 +1169,14 @@ function mutatesState(method) {
   return ["POST", "PUT", "PATCH", "DELETE"].includes(method);
 }
 
+function repositoryMutationRoute(pathname, method) {
+  if (!mutatesState(method)) return false;
+  return pathname === "/api/movies/order"
+    || /^\/api\/movies(?:\/[^/]+(?:\/sessions(?:\/[^/]+)?)?)?$/.test(pathname)
+    || /^\/api\/rooms(?:\/[^/]+)?$/.test(pathname)
+    || /^\/api\/ticket-types(?:\/[^/]+)?$/.test(pathname);
+}
+
 function originHost(value) {
   try {
     return value ? new URL(value).host : "";
@@ -1269,9 +1281,21 @@ function ensureAdmin(req, res, db, pathname, method, allowedRoles = null) {
   const store = requestContext.getStore();
   if (store) {
     store.adminUser = user;
-    store.beforeDb ||= structuredCloneSafe(db);
+    if (!req.repositoryMutation) store.beforeDb ||= structuredCloneSafe(db);
   }
   return true;
+}
+
+function repositoryAudit(req, entityType, entityId, before, after) {
+  return {
+    userId: req.adminUser?.id || "",
+    action: `${req.method} ${new URL(req.url, `http://${req.headers.host}`).pathname}`,
+    entityType,
+    entityId: entityId || "",
+    before: sanitizeAuditValue(before),
+    after: sanitizeAuditValue(after),
+    ip: clientIp(req)
+  };
 }
 
 function structuredCloneSafe(value) {
@@ -8119,7 +8143,9 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method) && !context?.adminMutationLocked) {
+  const targetedRepositoryMutation = postgresEnabled() && repositoryMutationRoute(pathname, method);
+  req.repositoryMutation = targetedRepositoryMutation;
+  if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method) && !targetedRepositoryMutation && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
@@ -10722,14 +10748,23 @@ async function handleApi(req, res, pathname) {
     movie = localized.movie;
     if (movie.isHighlight) db.movies = db.movies.map((item) => ({ ...item, isHighlight: false }));
     db.movies.push(movie);
+    let savedMovie = movie;
     try {
       await syncHighlightTrailerCache(db, previousMovies);
-      await writeDb(db);
+      if (postgresEnabled()) {
+        movie = db.movies.find((item) => item.id === movie.id) || movie;
+        savedMovie = await movieRepository.create(movie, {
+          resetTrailerCache: true,
+          audit: repositoryAudit(req, "movies", movie.id, null, movie)
+        });
+      } else {
+        await writeDb(db);
+      }
     } catch (error) {
       await movieImageService.cleanupAssets(localized.assets);
       throw error;
     }
-    sendJson(res, 201, db.movies.find((item) => item.id === movie.id) || movie);
+    sendJson(res, 201, savedMovie);
     return;
   }
 
@@ -10745,7 +10780,13 @@ async function handleApi(req, res, pathname) {
       ...movie,
       sortOrder: orderMap.has(movie.id) ? orderMap.get(movie.id) : Number(movie.sortOrder || 1000)
     })).sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100));
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await movieRepository.reorder(ids, {
+        audit: repositoryAudit(req, "movies", "order", null, ids)
+      });
+    } else {
+      await writeDb(db);
+    }
     sendJson(res, 200, { movies: db.movies });
     return;
   }
@@ -10771,7 +10812,13 @@ async function handleApi(req, res, pathname) {
         movie.sessions.push(...created);
         movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
         movie.updatedAt = new Date().toISOString();
-        await writeDb(db);
+        if (postgresEnabled()) {
+          await sessionRepository.createMany(movieId, created, {
+            audit: repositoryAudit(req, "session", "batch", null, created)
+          });
+        } else {
+          await writeDb(db);
+        }
         sendJson(res, 201, { ...batch, created, totalCreated: created.length, totalSkipped: batch.skipped.length });
         return;
       }
@@ -10782,7 +10829,13 @@ async function handleApi(req, res, pathname) {
       }
       movie.sessions.push(session);
       movie.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await sessionRepository.create(movieId, session, {
+          audit: repositoryAudit(req, "session", session.id, null, session)
+        });
+      } else {
+        await writeDb(db);
+      }
       sendJson(res, 201, session);
       return;
     }
@@ -10795,7 +10848,14 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const body = await readBody(req);
-      const previousSession = movie.sessions[sessionIndex];
+      const previousSession = postgresEnabled()
+        ? await sessionRepository.findById(sessionId)
+        : movie.sessions[sessionIndex];
+      if (!previousSession) {
+        sendJson(res, 404, { error: { code: "SESSION_NOT_FOUND", message: "Sessão não encontrada." } });
+        return;
+      }
+      movie.sessions[sessionIndex] = previousSession;
       const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movieId, previousSession, db.ticketTypes));
       const commercialChanges = sessionCommercialChanges(previousSession, session);
       const hasHistory = sessionHasAuditHistory(db, sessionId);
@@ -10848,7 +10908,14 @@ async function handleApi(req, res, pathname) {
       }
       movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
       movie.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await sessionRepository.update(movie, session, {
+          reason: changeReason,
+          audit: repositoryAudit(req, "session", session.id, previousSession, session)
+        });
+      } else {
+        await writeDb(db);
+      }
       seatRealtimeService?.broadcastSessionRefresh(session.id);
       sendJson(res, 200, session);
       return;
@@ -10866,7 +10933,13 @@ async function handleApi(req, res, pathname) {
       }
       const [removed] = movie.sessions.splice(sessionIndex, 1);
       movie.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await sessionRepository.remove(movieId, sessionId, {
+          audit: repositoryAudit(req, "session", sessionId, removed, null)
+        });
+      } else {
+        await writeDb(db);
+      }
       sendJson(res, 200, removed);
       return;
     }
@@ -10883,7 +10956,14 @@ async function handleApi(req, res, pathname) {
 
     if (method === "PUT") {
       const previousMovies = db.movies.map((item) => ({ ...item }));
-      const previousMovie = db.movies[index];
+      const previousMovie = postgresEnabled()
+        ? await movieRepository.findById(id)
+        : db.movies[index];
+      if (!previousMovie) {
+        sendJson(res, 404, { error: "Filme nao encontrado" });
+        return;
+      }
+      db.movies[index] = previousMovie;
       const body = await readBody(req);
       let movie = normalizeMovie({ ...body, id }, previousMovie);
       movie.sessions = (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session));
@@ -10896,15 +10976,24 @@ async function handleApi(req, res, pathname) {
       movie = localized.movie;
       if (movie.isHighlight) db.movies = db.movies.map((item) => ({ ...item, isHighlight: false }));
       db.movies[index] = movie;
+      let savedMovie = movie;
       try {
         await syncHighlightTrailerCache(db, previousMovies);
-        await writeDb(db);
+        if (postgresEnabled()) {
+          movie = db.movies.find((item) => item.id === movie.id) || movie;
+          savedMovie = await movieRepository.update(movie, {
+            resetTrailerCache: true,
+            audit: repositoryAudit(req, "movies", movie.id, previousMovie, movie)
+          });
+        } else {
+          await writeDb(db);
+        }
       } catch (error) {
         await movieImageService.cleanupAssets(localized.assets);
         throw error;
       }
       await deleteUnreferencedAssets(db, [previousMovie.posterUrl, previousMovie.backdropUrl].filter((url) => url && url !== movie.posterUrl && url !== movie.backdropUrl));
-      sendJson(res, 200, db.movies.find((item) => item.id === movie.id) || movie);
+      sendJson(res, 200, savedMovie);
       return;
     }
 
@@ -10919,12 +11008,24 @@ async function handleApi(req, res, pathname) {
           archivedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
-        await writeDb(db);
+        if (postgresEnabled()) {
+          await movieRepository.archive(db.movies[index], {
+            audit: repositoryAudit(req, "movies", movie.id, movie, db.movies[index])
+          });
+        } else {
+          await writeDb(db);
+        }
         sendJson(res, 200, { archived: true, movie: db.movies[index] });
         return;
       }
       const [removed] = db.movies.splice(index, 1);
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await movieRepository.remove(id, {
+          audit: repositoryAudit(req, "movies", id, removed, null)
+        });
+      } else {
+        await writeDb(db);
+      }
       await Promise.all([
         deleteLocalTrailer(removed.localTrailerUrl),
         deleteUnreferencedAssets(db, [removed.posterUrl, removed.backdropUrl])
@@ -10938,7 +11039,13 @@ async function handleApi(req, res, pathname) {
     const room = normalizeRoom(await readBody(req));
     db.rooms = db.rooms.filter((item) => item.id !== room.id);
     db.rooms.push(room);
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await roomRepository.create(room, {
+        audit: repositoryAudit(req, "rooms", room.id, null, room)
+      });
+    } else {
+      await writeDb(db);
+    }
     sendJson(res, 201, room);
     return;
   }
@@ -10953,7 +11060,14 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "PUT") {
-      const existingRoom = db.rooms[index];
+      const existingRoom = postgresEnabled()
+        ? await roomRepository.findById(id)
+        : db.rooms[index];
+      if (!existingRoom) {
+        sendJson(res, 404, { error: "Sala nao encontrada" });
+        return;
+      }
+      db.rooms[index] = existingRoom;
       const linkedSessions = (db.movies || []).flatMap((movie) => (movie.sessions || [])
         .filter((session) => roomForSession(db, session)?.id === existingRoom.id)
         .map((session) => ({ movie, session })));
@@ -10975,7 +11089,15 @@ async function handleApi(req, res, pathname) {
       }
       db.rooms[index] = room;
       const synchronized = syncRoomSessionReferences(db, room, linkedSessions);
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await roomRepository.update(room, {
+          roomLabel: roomDisplayLabel(room),
+          sessionIds: linkedSessionIds,
+          audit: repositoryAudit(req, "rooms", room.id, existingRoom, room)
+        });
+      } else {
+        await writeDb(db);
+      }
       linkedSessionIds.forEach((sessionId) => seatRealtimeService?.broadcastSessionRefresh(sessionId));
       sendJson(res, 200, { ...room, synchronized });
       return;
@@ -10993,7 +11115,13 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const [removed] = db.rooms.splice(index, 1);
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await roomRepository.remove(id, {
+          audit: repositoryAudit(req, "rooms", id, removed, null)
+        });
+      } else {
+        await writeDb(db);
+      }
       sendJson(res, 200, removed);
       return;
     }
@@ -11003,7 +11131,13 @@ async function handleApi(req, res, pathname) {
     const ticket = normalizeTicketType(await readBody(req));
     db.ticketTypes = db.ticketTypes.filter((item) => item.id !== ticket.id);
     db.ticketTypes.push(ticket);
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await ticketTypeRepository.create(ticket, {
+        audit: repositoryAudit(req, "ticket_type", ticket.id, null, ticket)
+      });
+    } else {
+      await writeDb(db);
+    }
     sendJson(res, 201, ticket);
     return;
   }
@@ -11018,16 +11152,36 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "PUT") {
-      const ticket = normalizeTicketType(await readBody(req), db.ticketTypes[index]);
+      const previousTicket = postgresEnabled()
+        ? await ticketTypeRepository.findById(id)
+        : db.ticketTypes[index];
+      if (!previousTicket) {
+        sendJson(res, 404, { error: "Tipo de ingresso nao encontrado" });
+        return;
+      }
+      db.ticketTypes[index] = previousTicket;
+      const ticket = normalizeTicketType(await readBody(req), previousTicket);
       db.ticketTypes[index] = ticket;
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await ticketTypeRepository.update(ticket, {
+          audit: repositoryAudit(req, "ticket_type", ticket.id, previousTicket, ticket)
+        });
+      } else {
+        await writeDb(db);
+      }
       sendJson(res, 200, ticket);
       return;
     }
 
     if (method === "DELETE") {
       const [removed] = db.ticketTypes.splice(index, 1);
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await ticketTypeRepository.remove(id, {
+          audit: repositoryAudit(req, "ticket_type", id, removed, null)
+        });
+      } else {
+        await writeDb(db);
+      }
       sendJson(res, 200, removed);
       return;
     }

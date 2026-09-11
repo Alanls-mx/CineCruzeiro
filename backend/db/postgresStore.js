@@ -46,6 +46,10 @@ async function withPostgresTransaction(callback) {
   }
 }
 
+function invalidatePostgresSnapshot() {
+  invalidateSnapshotCache();
+}
+
 function num(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -638,7 +642,14 @@ async function withPostgresMutationLock(callback) {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    const lockStartedAt = performance.now();
     await client.query("SELECT pg_advisory_xact_lock(318642901, 20260823)");
+    console.info(JSON.stringify({
+      level: "info",
+      event: "advisory_lock.wait",
+      durationMs: Math.round((performance.now() - lockStartedAt) * 100) / 100,
+      scope: "legacy_snapshot_mutation"
+    }));
     const result = await transactionContext.run({ client }, callback);
     await client.query("COMMIT");
     invalidateSnapshotCache();
@@ -651,6 +662,13 @@ async function withPostgresMutationLock(callback) {
   }
 }
 
+/**
+ * LEGACY SNAPSHOT PERSISTENCE
+ *
+ * Reconstroi o estado relacional completo para manter compatibilidade com
+ * fluxos ainda nao migrados. Novos endpoints CRUD devem usar repositories
+ * direcionados e invalidar o snapshot apos o commit.
+ */
 async function writeDbToPostgres(db) {
   const existingClient = contextClient();
   const client = existingClient || await getPool().connect();
@@ -1482,6 +1500,7 @@ module.exports = {
   postgresEnabled,
   queryPostgres,
   withPostgresTransaction,
+  invalidatePostgresSnapshot,
   readDbFromPostgres,
   writeDbToPostgres,
   withPostgresMutationLock,

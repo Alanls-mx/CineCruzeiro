@@ -1839,6 +1839,32 @@ function orderedMovies() {
   return [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
 }
 
+function upsertAdminCollection(collection, item) {
+  if (!state.content || !item?.id) return;
+  const items = Array.isArray(state.content[collection]) ? state.content[collection] : [];
+  const index = items.findIndex((existing) => existing.id === item.id);
+  if (index >= 0) items[index] = item;
+  else items.push(item);
+  state.content[collection] = items;
+}
+
+function removeAdminCollectionItem(collection, id) {
+  if (!state.content) return;
+  state.content[collection] = (state.content[collection] || []).filter((item) => item.id !== id);
+}
+
+function applySessionMutation(movieId, session, removed = false) {
+  const movie = (state.content?.movies || []).find((item) => item.id === movieId);
+  if (!movie || !session?.id) return;
+  movie.sessions ||= [];
+  const index = movie.sessions.findIndex((item) => item.id === session.id);
+  if (removed) movie.sessions = movie.sessions.filter((item) => item.id !== session.id);
+  else if (index >= 0) movie.sessions[index] = session;
+  else movie.sessions.push(session);
+  movie.sessions.sort((a, b) => String(`${a.date} ${a.time}`).localeCompare(String(`${b.date} ${b.time}`)));
+  movie.updatedAt = new Date().toISOString();
+}
+
 async function saveMovieOrder(ids) {
   if (!ids.length) return;
   try {
@@ -1962,7 +1988,8 @@ async function saveMovieWithAction(action = "published") {
       : await api("/api/movies", { method: "POST", body: JSON.stringify(payload) });
     state.creating.movie = false;
     state.selectedMovieId = saved.id;
-    await loadContent({ silent: true });
+    upsertAdminCollection("movies", saved);
+    renderMovies();
     showToast(action === "draft" ? "Rascunho salvo." : "Filme publicado.");
     showSuccess(action === "draft" ? "Rascunho salvo" : "Filme publicado", `${saved.title} foi atualizado no catálogo administrativo.`);
   } catch (error) {
@@ -1981,7 +2008,9 @@ async function deleteMovie(id = "") {
   try {
     const result = await api(`/api/movies/${encodeURIComponent(movie.id)}`, { method: "DELETE" });
     state.selectedMovieId = "";
-    await loadContent({ silent: true });
+    if (result.archived && result.movie) upsertAdminCollection("movies", result.movie);
+    else removeAdminCollectionItem("movies", movie.id);
+    renderMovies();
     showToast(result.archived ? "Filme arquivado por possuir histórico." : "Filme excluído.");
   } catch (error) {
     showToast(error.message, "error");
@@ -2124,7 +2153,9 @@ async function saveSession() {
       body: JSON.stringify(payload)
     });
     closeSessionEditor();
-    await loadContent({ silent: true });
+    if (range) (result.created || []).forEach((session) => applySessionMutation(movieId, session));
+    else applySessionMutation(movieId, result);
+    renderMovies();
     setMovieWizardStep(3);
     if (range) {
       showSuccess("Programação criada", `${Number(result.totalCreated || 0)} sessão(ões) adicionada(s)${result.totalSkipped ? ` e ${result.totalSkipped} duplicada(s) ignorada(s)` : ""}.`);
@@ -2146,7 +2177,8 @@ async function removeSession(sessionId) {
   try {
     await api(`/api/movies/${encodeURIComponent(movieId)}/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
     closeSessionEditor();
-    await loadContent({ silent: true });
+    applySessionMutation(movieId, session, true);
+    renderMovies();
     setMovieWizardStep(3);
     showToast("Sessão excluída.");
   } catch (error) {
@@ -2159,11 +2191,12 @@ async function archiveMovie(id) {
   if (!movie) return;
   try {
     const { sessions, ...movieData } = movie;
-    await api(`/api/movies/${encodeURIComponent(movie.id)}`, {
+    const saved = await api(`/api/movies/${encodeURIComponent(movie.id)}`, {
       method: "PUT",
       body: JSON.stringify({ ...movieData, workflowStatus: "archived", status: "hidden", isHighlight: false })
     });
-    await loadContent({ silent: true });
+    upsertAdminCollection("movies", saved);
+    renderMovies();
     showToast("Filme arquivado.");
   } catch (error) {
     showToast(error.message, "error");
@@ -2189,7 +2222,8 @@ async function duplicateMovie(id) {
       })
     });
     state.selectedMovieId = copy.id;
-    await loadContent({ silent: true });
+    upsertAdminCollection("movies", copy);
+    renderMovies();
     showToast("Cópia criada como rascunho.");
   } catch (error) {
     showToast(error.message, "error");
@@ -2846,7 +2880,17 @@ async function saveRoom(event) {
       : await api("/api/rooms", { method: "POST", body: JSON.stringify(payload) });
     state.creating.room = false;
     state.selectedRoomId = saved.id;
-    await loadContent({ silent: true });
+    upsertAdminCollection("rooms", saved);
+    if (existingId) {
+      const label = `${saved.name}${saved.technology ? ` (${saved.technology})` : ""}`;
+      (state.content?.movies || []).forEach((movie) => (movie.sessions || []).forEach((session) => {
+        if (session.roomId === saved.id) session.room = label;
+      }));
+      (state.content?.orders || []).forEach((order) => { if (order.sessionRoomId === saved.id || order.roomId === saved.id) order.sessionRoom = label; });
+      (state.content?.tickets || []).forEach((ticket) => { if (ticket.sessionRoomId === saved.id || ticket.roomId === saved.id) ticket.sessionRoom = label; });
+    }
+    renderRooms();
+    renderRoomOptions();
     showToast("Sala salva.");
   } catch (error) {
     showToast(error.message, "error");
@@ -2859,7 +2903,9 @@ async function deleteRoom() {
   try {
     await api(`/api/rooms/${encodeURIComponent(room.id)}`, { method: "DELETE" });
     state.selectedRoomId = "";
-    await loadContent({ silent: true });
+    removeAdminCollectionItem("rooms", room.id);
+    renderRooms();
+    renderRoomOptions();
     showToast("Sala excluida.");
   } catch (error) {
     showToast(error.message, "error");
@@ -3065,7 +3111,8 @@ async function saveTicket(event) {
       : await api("/api/ticket-types", { method: "POST", body: JSON.stringify(payload) });
     state.creating.ticket = false;
     state.selectedTicketId = saved.id;
-    await loadContent({ silent: true });
+    upsertAdminCollection("ticketTypes", saved);
+    renderTickets();
     showToast("Ingresso salvo.");
   } catch (error) {
     showToast(error.message, "error");
@@ -3078,7 +3125,8 @@ async function deleteTicket() {
   try {
     await api(`/api/ticket-types/${encodeURIComponent(ticket.id)}`, { method: "DELETE" });
     state.selectedTicketId = "";
-    await loadContent({ silent: true });
+    removeAdminCollectionItem("ticketTypes", ticket.id);
+    renderTickets();
     showToast("Ingresso excluído.");
   } catch (error) {
     showToast(error.message, "error");
