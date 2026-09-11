@@ -580,6 +580,7 @@ function dashboardQuery() {
 async function refreshDashboardOnly() {
   state.dashboard = await api(`/api/admin/dashboard?${dashboardQuery()}`);
   renderDashboard();
+  renderConcessionInsights();
 }
 
 async function refreshPaymentsOnly() {
@@ -1026,11 +1027,16 @@ function renderDashboard() {
     const entries = Array.isArray(data.revenueComposition) ? data.revenueComposition : [];
     const total = entries.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     $("dashRevenueComposition").innerHTML = entries.some((item) => Number(item.amount || 0) > 0)
-      ? entries.map((item) => `
+      ? entries.map((item) => {
+          const reconciliation = item.key === "concessions" && Number(item.grossAmount || 0) > 0
+            ? ` • bruto ${money(item.grossAmount)}${Number(item.discountAmount || 0) > 0 ? ` • descontos ${money(item.discountAmount)}` : ""}`
+            : "";
+          return `
           <div class="metric-row finance-row">
-            <span>${escapeHtml(item.label || "Receita")}<small>${escapeHtml(item.hint || "")}${total ? ` • ${Math.round((Number(item.amount || 0) / total) * 100)}%` : ""}</small></span>
+            <span>${escapeHtml(item.label || "Receita")}<small>${escapeHtml(item.hint || "")}${reconciliation}${total ? ` • ${Math.round((Number(item.amount || 0) / total) * 100)}% da receita` : ""}</small></span>
             <strong>${money(item.amount)}</strong>
-          </div>`).join("")
+          </div>`;
+        }).join("")
       : `<div class="empty-state compact"><strong>Sem receita aprovada</strong><span>Ingressos, bomboniere e assinaturas aparecerão aqui quando forem pagos.</span></div>`;
   }
   if ($("dashMovieRevenue")) {
@@ -1071,7 +1077,7 @@ function renderDashboard() {
   if ($("dashTopProducts")) {
     const products = data.topProducts || [];
     $("dashTopProducts").innerHTML = products.length
-      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) vendidos • receita ${money(item.revenue || 0)}</small></span><strong>${Number(item.quantity || 0)}</strong></div>`).join("")
+      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal || (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("")
       : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" onclick="activatePanel('concessionsPanel', { scroll: true })">Ver Bomboniere</button></div>`;
   }
   if ($("dashLatestOrders")) {
@@ -5371,26 +5377,87 @@ function renderConcessions() {
 }
 
 function renderConcessionInsights() {
-  const orders = state.content?.orders || [];
-  const soldByItem = new Map();
-  orders.forEach((order) => {
-    (order.concessionItems || []).forEach((item) => {
-      const current = soldByItem.get(item.id) || { name: item.name, quantity: 0, revenue: 0 };
-      current.quantity += Number(item.quantity || 0);
-      current.revenue += Number(item.quantity || 0) * Number(item.unitPrice || 0);
-      soldByItem.set(item.id, current);
-    });
-  });
+  const insights = $("concessionInsights");
+  const discountSummary = $("concessionDiscountSummary");
+  const salesBreakdown = $("concessionSalesBreakdown");
+  if (!insights || !discountSummary || !salesBreakdown) return;
 
-  const totalQuantity = [...soldByItem.values()].reduce((sum, item) => sum + item.quantity, 0);
-  const totalRevenue = [...soldByItem.values()].reduce((sum, item) => sum + item.revenue, 0);
-  const topItem = [...soldByItem.values()].sort((a, b) => b.quantity - a.quantity)[0];
+  const summary = state.dashboard?.concessionSummary;
+  const period = state.dashboard?.period || {};
+  const formatDate = (value) => value
+    ? new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`))
+    : "";
+  const periodLabel = period.start && period.end
+    ? period.start === period.end
+      ? `Pedidos pagos em ${formatDate(period.start)}.`
+      : `Pedidos pagos de ${formatDate(period.start)} a ${formatDate(period.end)}.`
+    : "Somente pedidos pagos no período selecionado.";
+  if ($("concessionFinancePeriod")) $("concessionFinancePeriod").textContent = periodLabel;
 
-  $("concessionInsights").innerHTML = `
-    <div class="mini-insight"><span>Itens vendidos</span><strong>${totalQuantity}</strong></div>
-    <div class="mini-insight"><span>Receita</span><strong>${money(totalRevenue)}</strong></div>
-    <div class="mini-insight"><span>Mais vendido</span><strong>${escapeHtml(topItem?.name || "-")}</strong></div>
+  if (!summary) {
+    insights.innerHTML = `<div class="empty-state compact"><strong>Carregando resultado financeiro</strong><span>Os valores serão conciliados com os pedidos pagos.</span></div>`;
+    discountSummary.innerHTML = "";
+    salesBreakdown.innerHTML = "";
+    return;
+  }
+
+  const products = Array.isArray(summary.products) ? summary.products : [];
+  insights.innerHTML = `
+    <div class="mini-insight"><span>Receita líquida</span><strong>${money(summary.netRevenue)}</strong><small>Valor aprovado atribuído à bomboniere</small></div>
+    <div class="mini-insight"><span>Venda bruta</span><strong>${money(summary.grossRevenue)}</strong><small>Antes de benefícios e cupons</small></div>
+    <div class="mini-insight"><span>Descontos concedidos</span><strong>${money(summary.discountTotal)}</strong><small>${Number(summary.discountedOrders || 0)} pedido(s) com desconto</small></div>
+    <div class="mini-insight"><span>Volume pago</span><strong>${Number(summary.itemQuantity || 0)} item(ns)</strong><small>Distribuídos em ${Number(summary.orders || 0)} pedido(s)</small></div>
   `;
+
+  const adjustment = Number(summary.reconciliationAdjustment || 0);
+  discountSummary.innerHTML = `
+    <div class="concession-formula" aria-label="Fórmula da receita líquida">
+      <span><small>Venda bruta</small><strong>${money(summary.grossRevenue)}</strong></span>
+      <b aria-hidden="true">−</b>
+      <span><small>Descontos identificados</small><strong>${money(summary.identifiedDiscountTotal ?? summary.discountTotal)}</strong></span>
+      ${Math.abs(adjustment) > 0.009 ? `<b aria-hidden="true">${adjustment >= 0 ? "+" : "−"}</b><span><small>Ajuste de conciliação</small><strong>${money(Math.abs(adjustment))}</strong></span>` : ""}
+      <b aria-hidden="true">=</b>
+      <span class="is-net"><small>Receita líquida</small><strong>${money(summary.netRevenue)}</strong></span>
+    </div>
+    <div class="concession-discount-sources">
+      <span><small>Desconto do Clube</small><strong>${money(summary.clubDiscount)}</strong></span>
+      <span><small>Itens grátis do Clube</small><strong>${money(summary.freeItemDiscount)}</strong></span>
+      <span><small>Cupons aplicados</small><strong>${money(summary.couponDiscount)}</strong></span>
+    </div>
+  `;
+
+  salesBreakdown.innerHTML = products.length
+    ? products.map((item) => {
+        const gross = Number(item.grossRevenue || 0);
+        const net = Number(item.netRevenue || 0);
+        const unitPrice = Number(item.minimumUnitPrice || 0) === Number(item.maximumUnitPrice || 0)
+          ? `${money(item.minimumUnitPrice)} por unidade`
+          : `${money(item.minimumUnitPrice)} a ${money(item.maximumUnitPrice)} por unidade`;
+        const benefitNotes = [
+          Number(item.clubDiscountedQuantity || 0) ? `${Number(item.clubDiscountedQuantity)} item(ns) com desconto do Clube` : "",
+          Number(item.freeQuantity || 0) ? `${Number(item.freeQuantity)} item(ns) grátis pelo Clube` : "",
+          Number(item.couponDiscountedQuantity || 0)
+            ? `${Number(item.couponDiscountedQuantity)} item(ns) com ${Array.isArray(item.couponCodes) && item.couponCodes.length ? `cupom ${item.couponCodes.join(", ")}` : "cupom"}`
+            : ""
+        ].filter(Boolean);
+        return `
+          <article class="concession-breakdown-row">
+            <div class="concession-breakdown-product">
+              <strong>${escapeHtml(item.name || "Produto")}</strong>
+              <span>${Number(item.quantity || 0)} unidade(s) em ${Number(item.orders || 0)} pedido(s) • ${unitPrice}</span>
+              ${benefitNotes.length ? `<small>${benefitNotes.map(escapeHtml).join(" • ")}</small>` : `<small>Vendido sem desconto neste período</small>`}
+            </div>
+            <dl>
+              <div><dt>Bruto</dt><dd>${money(gross)}</dd></div>
+              ${Number(item.clubDiscount || 0) > 0 ? `<div class="is-discount"><dt>Clube</dt><dd>− ${money(item.clubDiscount)}</dd></div>` : ""}
+              ${Number(item.freeItemDiscount || 0) > 0 ? `<div class="is-discount"><dt>Itens grátis</dt><dd>− ${money(item.freeItemDiscount)}</dd></div>` : ""}
+              ${Number(item.couponDiscount || 0) > 0 ? `<div class="is-discount"><dt>Cupom</dt><dd>− ${money(item.couponDiscount)}</dd></div>` : ""}
+              ${Math.abs(Number(item.reconciliationAdjustment || 0)) > 0.009 ? `<div><dt>Ajuste</dt><dd>${Number(item.reconciliationAdjustment) >= 0 ? "+" : "−"} ${money(Math.abs(Number(item.reconciliationAdjustment)))}</dd></div>` : ""}
+              <div class="is-net"><dt>Líquido</dt><dd>${money(net)}</dd></div>
+            </dl>
+          </article>`;
+      }).join("")
+    : `<div class="empty-state"><strong>Nenhuma venda paga no período</strong><span>Quando um pedido com produtos da bomboniere for aprovado, cada item e desconto aparecerá detalhado aqui.</span></div>`;
 }
 
 function selectConcession(id) {

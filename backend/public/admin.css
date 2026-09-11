@@ -3672,6 +3672,182 @@ input[type="file"]::file-selector-button {
   font-size: 16px;
 }
 
+.mini-insight small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.concession-finance-surface {
+  margin-bottom: 18px;
+}
+
+.concession-finance-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.concession-discount-summary {
+  display: grid;
+  gap: 12px;
+  padding: 14px 0 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.concession-formula,
+.concession-discount-sources {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.concession-formula > span,
+.concession-discount-sources > span {
+  display: grid;
+  gap: 3px;
+}
+
+.concession-formula small,
+.concession-discount-sources small,
+.concession-breakdown-row dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.concession-formula b {
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.concession-formula .is-net strong,
+.concession-breakdown-row .is-net dd {
+  color: #6ee7b7;
+}
+
+.concession-discount-sources {
+  gap: 18px 28px;
+}
+
+.concession-discount-sources strong {
+  color: #fcd34d;
+}
+
+.concession-ledger-head {
+  padding: 18px 0 10px;
+}
+
+.concession-ledger-head strong,
+.concession-ledger-head span {
+  display: block;
+}
+
+.concession-ledger-head span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.concession-sales-breakdown {
+  display: grid;
+}
+
+.concession-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.25fr) minmax(420px, 2fr);
+  gap: 24px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.concession-breakdown-product strong,
+.concession-breakdown-product span,
+.concession-breakdown-product small {
+  display: block;
+}
+
+.concession-breakdown-product span,
+.concession-breakdown-product small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.concession-breakdown-product small {
+  color: #bfdbfe;
+}
+
+.concession-breakdown-row dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.concession-breakdown-row dl div {
+  min-width: 0;
+}
+
+.concession-breakdown-row dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.concession-breakdown-row .is-discount dd {
+  color: #fcd34d;
+}
+
+@media (max-width: 1120px) {
+  .concession-finance-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .concession-breakdown-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .concession-finance-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .concession-formula {
+    align-items: flex-start;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .concession-formula b {
+    display: none;
+  }
+
+  .concession-formula .is-net {
+    grid-column: 1 / -1;
+    padding-top: 10px;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+  }
+
+  .concession-discount-sources {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .concession-breakdown-row dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .concession-preview {
   display: grid;
   min-height: 180px;

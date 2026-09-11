@@ -42,6 +42,7 @@ const { createMovieImageService } = require("./services/movieImageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const clubDomainService = require("./services/clubDomainService");
+const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
 const { GoodsFiscalService } = require("./services/goodsFiscalService");
 const {
   applyMovieTagTransition,
@@ -7001,27 +7002,35 @@ function orderFinancialBreakdown(db, order = {}) {
   const concessionGross = Number((order.concessionItems || [])
     .reduce((sum, item) => sum + concessionAmountForOrderItem(item, "original"), 0).toFixed(2));
   const clubBenefits = order.clubBenefits && typeof order.clubBenefits === "object" ? order.clubBenefits : {};
-  let ticketNet = Math.max(0, ticketGross - Number(clubBenefits.ticketDiscount || 0) - Number(order.clubCreditsApplied || 0));
+  const ticketClubDiscount = Math.max(0, Number(clubBenefits.ticketDiscount || 0));
+  const concessionClubDiscount = Number((order.concessionItems || []).reduce((sum, item) => sum + Math.max(0, Number(item.clubDiscount || 0)), 0).toFixed(2));
+  const concessionFreeDiscount = Math.max(0, Number(clubBenefits.freeConcessionDiscount || 0));
+  let ticketNet = Math.max(0, ticketGross - ticketClubDiscount - Number(order.clubCreditsApplied || 0));
   let concessionNet = Number((order.concessionItems || [])
     .reduce((sum, item) => sum + concessionAmountForOrderItem(item), 0).toFixed(2));
-  concessionNet = Math.max(0, concessionNet - Number(clubBenefits.freeConcessionDiscount || 0));
+  concessionNet = Math.max(0, concessionNet - concessionFreeDiscount);
 
   const coupon = (db.promotions || []).find((item) => String(item.id) === String(order.couponId || ""));
   const couponDiscount = Math.max(0, Number(order.couponDiscount || 0));
   const appliesTo = ["tickets", "concessions"].includes(coupon?.appliesTo) ? coupon.appliesTo : "all";
+  let ticketCouponDiscount = 0;
+  let concessionCouponDiscount = 0;
   if (couponDiscount > 0) {
-    if (appliesTo === "tickets") ticketNet = Math.max(0, ticketNet - couponDiscount);
-    else if (appliesTo === "concessions") concessionNet = Math.max(0, concessionNet - couponDiscount);
+    if (appliesTo === "tickets") ticketCouponDiscount = Math.min(ticketNet, couponDiscount);
+    else if (appliesTo === "concessions") concessionCouponDiscount = Math.min(concessionNet, couponDiscount);
     else {
       const eligibleTotal = ticketNet + concessionNet;
       const ticketShare = eligibleTotal ? ticketNet / eligibleTotal : 1;
-      ticketNet = Math.max(0, ticketNet - couponDiscount * ticketShare);
-      concessionNet = Math.max(0, concessionNet - couponDiscount * (1 - ticketShare));
+      ticketCouponDiscount = Math.min(ticketNet, couponDiscount * ticketShare);
+      concessionCouponDiscount = Math.min(concessionNet, couponDiscount - ticketCouponDiscount);
     }
+    ticketNet = Math.max(0, ticketNet - ticketCouponDiscount);
+    concessionNet = Math.max(0, concessionNet - concessionCouponDiscount);
   }
 
   const orderTotal = Math.max(0, Number(order.totalPrice || 0));
   const calculatedTotal = ticketNet + concessionNet;
+  const concessionBeforeReconciliation = concessionNet;
   if (calculatedTotal > 0 && Math.abs(calculatedTotal - orderTotal) > 0.009) {
     const factor = orderTotal / calculatedTotal;
     ticketNet = Number((ticketNet * factor).toFixed(2));
@@ -7036,6 +7045,12 @@ function orderFinancialBreakdown(db, order = {}) {
     concessionGross,
     ticketRevenue: Number(ticketNet.toFixed(2)),
     concessionRevenue: Number(concessionNet.toFixed(2)),
+    ticketClubDiscount: Number(ticketClubDiscount.toFixed(2)),
+    concessionClubDiscount: Number(concessionClubDiscount.toFixed(2)),
+    concessionFreeDiscount: Number(concessionFreeDiscount.toFixed(2)),
+    ticketCouponDiscount: Number(ticketCouponDiscount.toFixed(2)),
+    concessionCouponDiscount: Number(concessionCouponDiscount.toFixed(2)),
+    concessionAdjustment: Number((concessionNet - concessionBeforeReconciliation).toFixed(2)),
     totalRevenue: Number((ticketNet + concessionNet).toFixed(2)),
     discount: Number(Math.max(0, ticketGross + concessionGross - orderTotal).toFixed(2))
   };
@@ -7107,17 +7122,13 @@ function adminDashboard(db, options = {}) {
     acc[key] = Number((acc[key] || 0) + breakdown.totalRevenue).toFixed(2) * 1;
     return acc;
   }, {});
-  const productSales = {};
   const revenueByMovie = {};
   const orderBreakdowns = periodPaidOrders.map((order) => orderFinancialBreakdown(db, order));
   const breakdownByOrderId = new Map(orderBreakdowns.map((item) => [item.orderId, item]));
-  periodPaidOrders.forEach((order) => (order.concessionItems || []).forEach((item) => {
-    const key = item.name || item.id;
-    const current = productSales[key] || { name: key, quantity: 0, revenue: 0 };
-    current.quantity += Math.max(0, Number(item.quantity || 0));
-    current.revenue += concessionAmountForOrderItem(item);
-    productSales[key] = current;
-  }));
+  const concessionSummary = summarizeConcessionFinance(periodPaidOrders.map((order) => ({
+    order,
+    breakdown: breakdownByOrderId.get(order.id) || orderFinancialBreakdown(db, order)
+  })));
   periodPaidOrders.forEach((order) => {
     const movie = movieForOrder(db, order);
     const movieTitle = order.movieTitle || movie?.title || "Filme não identificado";
@@ -7179,7 +7190,7 @@ function adminDashboard(db, options = {}) {
   }), {});
   const revenueComposition = [
     { key: "tickets", label: "Ingressos", amount: ticketRevenue, hint: `${ticketsSold} ingresso(s) vendidos` },
-    { key: "concessions", label: "Bomboniere", amount: concessionRevenue, hint: `${Object.values(productSales).reduce((total, item) => total + Number(item.quantity || 0), 0)} item(ns) vendidos` },
+    { key: "concessions", label: "Bomboniere", amount: concessionRevenue, grossAmount: concessionSummary.grossRevenue, discountAmount: concessionSummary.discountTotal, hint: `${concessionSummary.itemQuantity} item(ns) em ${concessionSummary.orders} pedido(s)` },
     { key: "club", label: "Assinaturas do Clube", amount: clubRevenue, hint: "Pagamentos recorrentes aprovados" }
   ];
   const attentionPayments = paymentsInPeriod.filter((payment) => {
@@ -7241,6 +7252,7 @@ function adminDashboard(db, options = {}) {
     rejectedPaymentsAmount: paymentSummary.failed?.amount || 0,
     problematicPayments: paymentsInPeriod.filter((payment) => problematicStatuses.includes(String(payment.status || "").toLowerCase())).length,
     concessionRevenue,
+    concessionSummary,
     ticketRevenue,
     clubRevenue,
     revenueComposition,
@@ -7278,7 +7290,7 @@ function adminDashboard(db, options = {}) {
         createdAt: payment.createdAt || ""
       };
     }),
-    topProducts: Object.values(productSales).sort((a, b) => b.quantity - a.quantity).slice(0, 6),
+    topProducts: concessionSummary.products.slice(0, 6).map((item) => ({ ...item, revenue: item.netRevenue })),
     lowStockProducts,
     club: {
       activeSubscriptions: activeSubscriptions.length,

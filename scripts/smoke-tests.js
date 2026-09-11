@@ -859,6 +859,9 @@ async function run() {
     assert.equal(adminDashboard.response.status, 200);
     assert.ok(Array.isArray(adminDashboard.payload.chart));
     assert.ok(Array.isArray(adminDashboard.payload.todaySessions));
+    assert.equal(typeof adminDashboard.payload.concessionSummary.netRevenue, "number");
+    assert.ok(Array.isArray(adminDashboard.payload.concessionSummary.products));
+    assert.equal(adminDashboard.payload.concessionSummary.netRevenue, adminDashboard.payload.concessionRevenue);
     assert.equal(Object.hasOwn(adminDashboard.payload, "fiscal"), false);
 
     const dashboardReport = await fetch(`${BASE_URL}/api/admin/reports/dashboard.csv?period=7d`, { headers: { Cookie: adminCookie } });

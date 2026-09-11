@@ -1066,10 +1066,27 @@
               Novo Produto
             </button>
           </div>
+          <div class="surface concession-finance-surface">
+            <div class="surface-head">
+              <div>
+                <div class="section-title">Receita da bomboniere</div>
+                <p id="concessionFinancePeriod">Somente pedidos pagos no período selecionado.</p>
+              </div>
+              <button class="ghost-button" type="button" data-goto-panel="dashboardPanel">Alterar período</button>
+            </div>
+            <div id="concessionInsights" class="insight-strip concession-finance-kpis"></div>
+            <div id="concessionDiscountSummary" class="concession-discount-summary"></div>
+            <div class="concession-ledger-head">
+              <div>
+                <strong>Composição por produto</strong>
+                <span>Quantidade e valores que formam a receita líquida aprovada.</span>
+              </div>
+            </div>
+            <div id="concessionSalesBreakdown" class="concession-sales-breakdown"></div>
+          </div>
           <div class="split-grid compact concessions-workspace">
             <div class="surface">
               <div class="section-title">Produtos ativos</div>
-              <div id="concessionInsights" class="insight-strip"></div>
               <div id="concessionsList" class="list"></div>
             </div>
             <form id="concessionForm" class="surface form-grid long-form" data-dirty-track>
