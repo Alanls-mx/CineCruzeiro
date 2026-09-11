@@ -5244,6 +5244,7 @@ function confirmConcessionStock(db, order) {
 
 function releaseConcessionReservation(db, order) {
   let changed = false;
+  if (goodsFiscalService.cancelUnissued(db, order, "order_terminated")) changed = true;
   if (order?.id && (db.subscriptionCreditRedemptions || []).some((item) => item.orderId === order.id && item.status === "reserved")) {
     clubDomainService.releaseOrderCredits(db, order.id);
     order.clubCreditPending = false;

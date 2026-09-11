@@ -54,6 +54,22 @@ class GoodsFiscalService {
     return document;
   }
 
+  cancelUnissued(db, order, reason = "order_terminated", now = new Date()) {
+    const document = (db.goodsFiscalDocuments || []).find((item) => item.orderId === order?.id);
+    if (!document || document.status !== "waiting_trigger") return null;
+
+    const cancelledAt = now.toISOString();
+    document.status = "cancelled";
+    document.cancelledAt = document.cancelledAt || cancelledAt;
+    document.updatedAt = cancelledAt;
+    document.metadata = {
+      ...(document.metadata || {}),
+      cancellationReason: String(reason || "order_terminated")
+    };
+    order.goodsFiscalStatus = "cancelled";
+    return document;
+  }
+
   async issue(db, order) {
     const document = this.prepare(db, order, order.goodsFiscalTrigger);
     if (!document || document.status === "authorized") return document;
