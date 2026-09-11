@@ -875,7 +875,74 @@ function logFilterDate(value, endOfMinute = false) {
   return date.toISOString();
 }
 
+let performanceLoading = false;
+let concessionSalesLoading = false;
+async function loadConcessionDailySales() {
+  if (concessionSalesLoading || document.hidden) return;
+  concessionSalesLoading = true;
+  const target = $("concessionDailySales");
+  if (!target) { concessionSalesLoading = false; return; }
+  try {
+    const data = await api("/api/admin/concession-sales");
+    const showArchived = $("concessionSalesArchived").checked;
+    target.innerHTML = data.groups.map((group) => {
+      const orders = group.orders.filter((order) => showArchived || !order.archived);
+      if (!orders.length) return "";
+      return `<section class="concession-session-sales"><h3>${escapeHtml(group.title)}</h3>
+        <p>${escapeHtml([group.date, group.time, group.room, group.status].filter(Boolean).join(" · "))}</p>
+        ${orders.map((order) => `<article class="concession-daily-order">
+          <strong>${escapeHtml(order.customerName)} · ${escapeHtml(orderStatusLabel(order.status))}</strong>
+          <p>${escapeHtml(order.id)} · ${new Date(order.purchasedAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
+          <ul>${order.items.map((item) => `<li>${Number(item.quantity)} x ${escapeHtml(item.name)} · ${Number(item.fulfilledQuantity)} entregue(s)</li>`).join("")}</ul>
+          <p>Bruto ${money(order.finance.grossRevenue)} · Clube ${money(order.finance.clubDiscount + order.finance.freeItemDiscount)} · Cupom ${money(order.finance.couponDiscount)} · ${order.status === "paid" ? "Líquido aprovado" : "Valor original da bomboniere"} ${money(order.finance.netRevenue)}</p>
+          <button class="ghost-button" data-concession-archive="${escapeHtml(order.id)}" data-archived="${order.archived}" type="button">${order.archived ? "Desarquivar bomboniere" : "Arquivar bomboniere"}</button>
+        </article>`).join("")}</section>`;
+    }).join("") || "<p>Nenhuma compra para os filtros de hoje.</p>";
+    target.querySelectorAll("[data-concession-archive]").forEach((button) => button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        await api(`/api/admin/concession-sales/${encodeURIComponent(button.dataset.concessionArchive)}/archive`, {
+          method: "POST", body: JSON.stringify({ archived: button.dataset.archived !== "true" })
+        });
+        await loadConcessionDailySales();
+      } catch (error) { showToast(error.message, "error"); }
+      finally { button.disabled = false; }
+    }));
+  } catch (error) { target.textContent = `Não foi possível carregar as compras: ${error.message}`; }
+  finally { concessionSalesLoading = false; }
+}
+
+async function loadPerformance() {
+  if (performanceLoading || document.hidden) return;
+  performanceLoading = true;
+  try {
+    const { current: metrics } = await api("/api/admin/logs/performance");
+    if (!metrics) { $("performanceStatus").textContent = "Coletando primeira amostra."; return; }
+    const gb = (bytes) => bytes == null ? "Indisponível" : `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+    $("performanceStatus").textContent = `Host · ${metrics.vcores} vCPU · Atualizado ${new Date(metrics.sampledAt).toLocaleTimeString("pt-BR")} · HTTP: últimos 5 minutos${metrics.sampleCapped ? " (amostra limitada)" : ""}.`;
+    $("performanceStats").innerHTML = [
+      ["CPU", metrics.cpuPercent == null ? "Coletando" : `${metrics.cpuPercent}%`],
+      ["RAM do host (inclui cache)", `${gb(metrics.memoryUsed)} / ${gb(metrics.memoryTotal)}`],
+      ["RAM do backend", gb(metrics.processRss)],
+      ["Disco disponível / total", `${gb(metrics.diskAvailable)} / ${gb(metrics.diskTotal)}`],
+      ["Latência HTTP p95", metrics.requestP95Ms == null ? "Sem requisições" : `${metrics.requestP95Ms} ms`],
+      ["Requisições / falhas 5xx", `${metrics.requestCount} / ${metrics.errors5xx}`],
+      ["Atraso do backend p95", `${metrics.eventLoopP95Ms} ms`]
+    ].map(([label, value]) => `<div class="log-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+    $("performanceAlerts").innerHTML = metrics.alerts.length
+      ? metrics.alerts.map((alert) => `<p class="danger-text">${escapeHtml(alert.message)}</p>`).join("")
+      : "<p>Sem alertas nos indicadores monitorados.</p>";
+  } catch (error) {
+    $("performanceStatus").textContent = `Métricas indisponíveis: ${error.message}`;
+  } finally { performanceLoading = false; }
+}
+setInterval(() => {
+  if ($("logsPanel")?.classList.contains("active")) void loadPerformance();
+  if ($("concessionsPanel")?.classList.contains("active")) void loadConcessionDailySales();
+}, 30000);
+
 async function loadLogs(options = {}) {
+  void loadPerformance();
   state.logsPage = Math.max(1, Number(options.page || state.logsPage || 1));
   const params = new URLSearchParams({ page: String(state.logsPage), pageSize: String(state.logsPageSize) });
   params.set("view", state.logsView || "business");
@@ -3396,7 +3463,8 @@ function fillOrderEditor(order, mode) {
   $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
   $("orderEditFields").hidden = mode !== "edit";
   $("orderSaveButton").hidden = mode !== "edit";
-  $("orderCancelButton").hidden = !order || order.archived || order.status === "cancelled" || order.status === "refunded";
+  $("orderCancelButton").hidden = !order || order.archived || ((order.status === "cancelled" || order.status === "refunded") && order.refundStatus !== "pending");
+  $("orderCancelButton").textContent = order?.refundStatus === "pending" ? "Retomar reembolso" : "Cancelar pedido";
   $("orderPermanentDeleteButton").hidden = !order || !isOwnerAdmin();
   if (order) {
     $("orderCustomerName").value = order.customerName || "";
@@ -3450,16 +3518,16 @@ async function cancelOrDeleteOrder(orderId = state.selectedOrderId) {
   if (!order) return;
   const draft = ["draft", "test"].includes(order.status);
   const action = draft ? "excluir" : "cancelar";
-  const reason = prompt(`Informe o motivo para ${action} este pedido:`);
+  const reason = prompt(`Informe o motivo para ${action} este pedido.${order.status === "paid" ? " O pagamento Mercado Pago aprovado sera reembolsado integralmente, quando elegivel." : ""}`);
   if (reason === null) return;
   try {
-    await api(`/api/orders/${encodeURIComponent(order.id)}`, {
+    const result = await api(`/api/orders/${encodeURIComponent(order.id)}`, {
       method: draft ? "DELETE" : "PATCH",
       body: JSON.stringify(draft ? { reason } : { action: "cancel", reason })
     });
     await loadContent({ silent: true });
     closeOrderOverlay();
-    showToast(draft ? "Pedido excluído." : "Pedido cancelado.");
+    showToast(result.order?.refundStatus === "completed" ? "Pedido reembolsado pelo Mercado Pago." : draft ? "Pedido excluído." : "Pedido cancelado.");
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -3601,8 +3669,9 @@ async function copyTicketCode(code) {
 }
 
 function printOrderTicket(orderId) {
-  openOrderView(orderId);
-  setTimeout(() => window.print(), 120);
+  const popup = window.open(`${API_BASE}/api/admin/orders/${encodeURIComponent(orderId)}/print`, "_blank");
+  if (popup) popup.opener = null;
+  else showToast("Permita pop-ups para abrir a via PDV.", "error");
 }
 
 async function resendOrderTicket(orderId) {
@@ -9231,6 +9300,8 @@ function bindEvents() {
     if (key && current) toggleIntegration(key, !current.enabled);
   });
   $("logsRefreshButton")?.addEventListener("click", () => loadLogs());
+  $("concessionSalesRefresh")?.addEventListener("click", () => loadConcessionDailySales());
+  $("concessionSalesArchived")?.addEventListener("change", () => loadConcessionDailySales());
   $("logsExportButton")?.addEventListener("click", exportLogs);
   $("logsPruneButton")?.addEventListener("click", pruneLogs);
   document.querySelectorAll("[data-logs-view]").forEach((button) => {
@@ -9939,6 +10010,7 @@ function activatePanel(panelId, options = {}) {
   }
   if (options.scroll) window.scrollTo({ top: 0, behavior: "smooth" });
   if (target === "logsPanel" && !state.logs) void loadLogs({ page: 1 });
+  if (target === "concessionsPanel") void loadConcessionDailySales();
 }
 
 window.selectMovie = selectMovie;

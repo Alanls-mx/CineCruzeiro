@@ -384,6 +384,14 @@ async function run() {
     let cookie = registered.cookie;
     const targetCookie = target.cookie;
     let adminCookie = await loginAdmin();
+    const performance = await request("/api/admin/logs/performance", { headers: jsonHeaders(adminCookie) });
+    assert.equal(performance.response.status, 200);
+    assert.ok(performance.payload.current.vcores > 0);
+    const publicPerformance = await request("/api/admin/logs/performance");
+    assert.equal(publicPerformance.response.status, 401);
+    const dailySales = await request("/api/admin/concession-sales", { headers: jsonHeaders(adminCookie) });
+    assert.equal(dailySales.response.status, 200);
+    assert.ok(Array.isArray(dailySales.payload.groups));
 
     const promptTemplates = await request("/api/admin/email/prompt-templates", { headers: jsonHeaders(adminCookie) });
     assert.equal(promptTemplates.response.status, 200);
@@ -1973,6 +1981,8 @@ async function run() {
     assert.equal(numberedSeatPdf.status, 200);
     const numberedSeatPdfBuffer = Buffer.from(await numberedSeatPdf.arrayBuffer());
     const numberedSeatPdfText = numberedSeatPdfBuffer.toString("latin1");
+    assert.match(numberedSeatPdfText, /MediaBox \[0 0 226\.77 566\.93\]/);
+    assert.match(numberedSeatPdfText, /VIA PDV/);
     assert.match(numberedSeatPdfText, /31\/12\/2099 as 18:00/);
     assert.match(numberedSeatPdfText, /POLTRONA/);
     assert.match(numberedSeatPdfText, /A2/);

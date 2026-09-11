@@ -274,10 +274,11 @@ async function cancelPayment(providerOrderId, config = {}, options = {}) {
 
 async function refundPayment(providerOrderId, config = {}, options = {}) {
   if (!providerOrderId) throw providerError("Order ID do Point não informado.", 400, "POINT_ORDER_ID_MISSING");
+  if (options.amount != null) throw providerError("A integracao Point suporta apenas reembolso integral da cobranca.", 422, "POINT_PARTIAL_REFUND_UNSUPPORTED");
   const payload = await request(`/v1/orders/${encodeURIComponent(providerOrderId)}/refund`, config, {
     method: "POST",
     headers: { "X-Idempotency-Key": String(options.idempotencyKey || crypto.randomUUID()) },
-    body: options.amount ? { transactions: { payments: [{ amount: decimalAmount(options.amount) }] } } : {}
+    body: {}
   });
   return normalizeOrder(payload);
 }

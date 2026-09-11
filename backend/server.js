@@ -64,6 +64,8 @@ const concessionRepository = require("./repositories/concessionRepository");
 const settingsRepository = require("./repositories/settingsRepository");
 const userRepository = require("./repositories/userRepository");
 const orderRepository = require("./repositories/orderRepository");
+const { createPerformanceMonitor } = require("./services/performanceMonitor");
+const { prepareRefund, submitFullRefund, refundError } = require("./services/orderRefundService");
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
@@ -520,6 +522,9 @@ const MERCADO_PAGO_ORDER_ACTIONS = new Set([
 ]);
 
 const BUSINESS_LOG_EVENTS = new Set([
+  "performance.anomaly",
+  "performance.recovered",
+  "order.refund_pending",
   "admin.action",
   "admin_two_factor.setup_started",
   "admin_two_factor.enabled",
@@ -1235,6 +1240,7 @@ function customerMutationOriginAllowed(req) {
 }
 
 function requiredAdminRoles(pathname, method) {
+  if (pathname.startsWith("/api/admin/concession-sales")) return ["owner", "manager"];
   if (pathname === "/api/admin/content") return ["owner", "manager", "operator"];
   if (pathname === "/api/admin/dashboard") return ["owner", "manager", "operator"];
   if (pathname.startsWith("/api/admin/logs")) return method === "DELETE" ? ["owner"] : ["owner", "manager"];
@@ -1259,6 +1265,8 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
+  if (pathname.startsWith("/api/admin/concession-sales")) return "concessions.manage";
+  if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "box_office.manage";
   if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
   if (pathname === "/api/admin/content") return "";
   if (pathname.startsWith("/api/admin/logs")) return "logs.view";
@@ -2835,6 +2843,7 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
   if (nextStatus === "refunded") payment.refundedAt ||= now;
 
   const orders = pointPaymentOrders(db, payment);
+  if (payment.metadata?.cancellationRefund) return { orders, tickets: [], newlyPaidOrders: [] };
   const newlyPaidOrders = [];
   const tickets = [];
   for (const order of orders) {
@@ -3377,11 +3386,12 @@ function ticketStatusLabel(status) {
   }[String(status || "")] || "Nao informado";
 }
 
-function pdfQr(payload, x, y, size) {
+function pdfQr(payload, x, y, size, quietModules = 0) {
   const qr = QRCode.create(String(payload || ""), { errorCorrectionLevel: "M" });
   const moduleCount = qr.modules.size;
   const cell = size / moduleCount;
-  let output = pdfRect(x - 10, y - 10, size + 20, size + 20, "#ffffff");
+  const quiet = Math.max(10, quietModules * cell);
+  let output = pdfRect(x - quiet, y - quiet, size + 2 * quiet, size + 2 * quiet, "#ffffff");
   for (let row = 0; row < moduleCount; row += 1) {
     for (let column = 0; column < moduleCount; column += 1) {
       if (qr.modules.get(row, column)) {
@@ -3415,7 +3425,7 @@ function buildPdf(pages, options = {}) {
   ];
 
   normalizedPages.forEach((_, index) => {
-    objects.push(Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${fontRegularObject} 0 R /F2 ${fontBoldObject} 0 R >>${resourceImage} >> /Contents ${contentStart + index} 0 R >>`, "utf8"));
+    objects.push(Buffer.from(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${options.width || 595} ${options.height || 842}] /Resources << /Font << /F1 ${fontRegularObject} 0 R /F2 ${fontBoldObject} 0 R >>${resourceImage} >> /Contents ${contentStart + index} 0 R >>`, "utf8"));
   });
 
   normalizedPages.forEach((content) => {
@@ -3451,6 +3461,57 @@ function buildPdf(pages, options = {}) {
   });
   xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${body.length}\n%%EOF`;
   return Buffer.concat([body, Buffer.from(xref, "utf8")]);
+}
+
+function ticketThermalPdf(db, tickets) {
+  const pages = tickets.map((ticket) => {
+    const item = enrichTicket(db, ticket);
+    let y = 545;
+    let content = "";
+    const text = (value, size = 10, bold = false) => {
+      const lines = wrapText(String(value || ""), size >= 14 ? 22 : 34).slice(0, 3);
+      for (const line of lines) {
+        content += pdfWriteText(line.replace(/([/_-]) /g, "$1"), 14, y, size, { bold, color: "#000000" });
+        y -= size + 5;
+      }
+    };
+    text("CINE CRUZEIRO", 14, true);
+    text("INGRESSO - VIA PDV", 9);
+    text(ticketStatusLabel(item.status).toUpperCase(), 10, true);
+    text(item.movieTitle, 14, true);
+    text(`${brazilianDate(item.sessionDate)} as ${item.sessionTime}`, 11, true);
+    text(item.sessionRoom);
+    text(item.sessionFormat);
+    text(`POLTRONA: ${item.seat}`, 14, true);
+    text(item.ticketType || "Ingresso");
+    const qrSize = 120;
+    content += pdfQr(item.qrPayload || item.code, 53, y - qrSize - 18, qrSize, 4);
+    y -= qrSize + 45;
+    text(item.code, 8);
+    text(`Pedido: ${item.orderReference || item.orderId}`, 8);
+    text("Apresente este QR Code na entrada.", 8);
+    text("Documento nao fiscal.", 8);
+    const output = [content];
+    if (item.extras?.length) {
+      content = "";
+      y = 545;
+      text("CINE CRUZEIRO", 14, true);
+      text("BOMBONIERE - VIA DO PEDIDO", 10, true);
+      text(`Pedido: ${item.orderReference || item.orderId}`, 8);
+      text(`${brazilianDate(item.sessionDate)} as ${item.sessionTime}`);
+      for (const extra of item.extras) {
+        const linesNeeded = Math.min(3, wrapText(`${extra.quantity} x ${extra.name}`, 34).length);
+        if (y < 55 + linesNeeded * 15) { output.push(content); content = ""; y = 545; }
+        text(`${extra.quantity} x ${extra.name}`, 10, true);
+        text(`Entregue: ${Number(extra.fulfilledQuantity || 0)}`, 8);
+      }
+      text("Itens compartilhados pelo pedido.", 8);
+      text("Documento nao fiscal.", 8);
+      output.push(content);
+    }
+    return output;
+  });
+  return buildPdf(pages.flat(), { width: 226.77, height: 566.93 });
 }
 
 async function ticketDownloadPdf(db, ticket) {
@@ -3531,6 +3592,7 @@ async function ticketDownloadPdf(db, ticket) {
 
 function finalizePaidOrder(db, order, payment, source = "online") {
   const existingTickets = (db.tickets || []).filter((ticket) => ticket.orderId === order?.id);
+  if (order?.refundStatus === "pending" || order?.refundStatus === "completed") return existingTickets;
   if (!order || (order.status === "paid" && existingTickets.length > 0)) {
     return existingTickets;
   }
@@ -5266,7 +5328,7 @@ function orderTickets(db, orderId) {
 }
 
 function orderPayment(db, orderId) {
-  return (db.payments || []).find((payment) => payment.orderId === orderId) || null;
+  return (db.payments || []).find((payment) => payment.orderId === orderId || payment.metadata?.relatedOrderIds?.includes(orderId)) || null;
 }
 
 function appendOrderAudit(order, entry) {
@@ -5295,6 +5357,69 @@ function safeOrderUpdate(order, body, adminUser) {
     reason: String(body.reason || "Edição operacional").trim(),
     before,
     after: structuredCloneSafe(order)
+  });
+}
+
+async function cancelOrderWithRefund(orderId, reason, adminUser) {
+  const prepared = await withCriticalMutation(async () => {
+    const db = await readDb();
+    const order = (db.orders || []).find((item) => item.id === orderId);
+    if (!order) throw refundError("ORDER_NOT_FOUND", "Pedido nao encontrado.", 404);
+    const payment = orderPayment(db, orderId);
+    const existing = payment?.metadata?.cancellationRefund;
+    if (existing?.status === "completed") return { completed: true, order, payment };
+    if (!existing && (order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0)) {
+      throw refundError("REFUND_FULFILLED_GOODS", "Ha produtos ja entregues. Este pedido precisa de conciliacao parcial antes do cancelamento.");
+    }
+    if (!existing && (!payment || payment.status !== "approved" || Number(payment.amount) === 0)) {
+      cancelOrder(db, order, reason, adminUser);
+      await writeDb(db);
+      return { completed: true, order, payment };
+    }
+    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
+    const token = paymentService.getMercadoPagoAccessToken(config);
+    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de cancelar uma cobranca aprovada.", 412);
+    const refund = prepareRefund(payment, order);
+    if (!existing) cancelOrder(db, order, reason, adminUser);
+    order.refundStatus = "pending";
+    payment.refundStatus = "pending";
+    payment.metadata = { ...payment.metadata, cancellationRefund: refund };
+    await writeDb(db);
+    return { refund: structuredCloneSafe(refund), token };
+  });
+  if (prepared.completed) return prepared;
+  // The durable key is committed before calling the provider, outside the database lock.
+  let confirmation;
+  try {
+    confirmation = await submitFullRefund(prepared.refund, prepared.token);
+  } catch (error) {
+    logEvent("warn", "order.refund_pending", { orderId, refundId: prepared.refund.id, code: error.code || "REFUND_NETWORK_ERROR" });
+    throw refundError("REFUND_PENDING", error.code ? error.message : "Sem confirmacao do reembolso. Tente novamente para consultar a mesma operacao; nao crie uma devolucao manual duplicada.");
+  }
+  return withCriticalMutation(async () => {
+    const db = await readDb();
+    const order = (db.orders || []).find((item) => item.id === orderId);
+    const payment = orderPayment(db, orderId);
+    const refund = payment?.metadata?.cancellationRefund;
+    if (!order || refund?.id !== prepared.refund.id) throw refundError("REFUND_STATE_CONFLICT", "Devolucao confirmada no provedor; conciliacao local necessaria.");
+    if (refund.status !== "completed") {
+      const now = new Date().toISOString();
+      Object.assign(refund, confirmation, { status: "completed", completedAt: now });
+      Object.assign(payment, { status: "refunded", refundStatus: "completed", refundedAt: now, updatedAt: now });
+      Object.assign(order, { status: "refunded", paymentStatus: "refunded", refundStatus: "completed", refundedAt: now, updatedAt: now });
+      if (order.stockReservationStatus === "sold") {
+        eachStockedOrderItem(db, order, (item, quantity) => {
+          item.stock = Number(item.stock || 0) + quantity;
+          item.sold = Math.max(0, Number(item.sold || 0) - quantity);
+        });
+        order.stockReservationStatus = "released";
+        order.stockReleasedAt = now;
+      }
+      orderTickets(db, orderId).forEach((ticket) => { ticket.status = "refunded"; ticket.refundedAt = now; });
+      appendOrderAudit(order, { action: "refund", refundId: refund.id, amount: refund.amount, updatedBy: adminUser?.id || "", createdAt: now });
+      await writeDb(db);
+    }
+    return { order, payment, refund };
   });
 }
 
@@ -5339,7 +5464,7 @@ function cancelOrder(db, order, reason, adminUser) {
     ticket.cancelledBy = adminUser?.id || "";
   });
 
-  if (order.origin === "club" || payment?.method === "club_credit") {
+  if ((db.subscriptionUsage || []).some((usage) => usage.orderId === order.id)) {
     (db.subscriptionUsage || [])
       .filter((usage) => usage.orderId === order.id)
       .forEach((usage) => refundSubscriptionCreditForUsage(db, usage, adminUser, order.cancellationReason));
@@ -5402,6 +5527,9 @@ function reverseConcessionStockForDeletion(db, order) {
 }
 
 function permanentlyDeleteOrder(db, orderId, body = {}, adminUser = {}) {
+  if (orderPayment(db, orderId)?.metadata?.cancellationRefund) {
+    throw refundError("REFUND_HISTORY_PROTECTED", "Pedidos com devolucao devem ser arquivados para preservar a conciliacao financeira.");
+  }
   if (!["owner", "master"].includes(adminUser.role)) {
     const error = new Error("Somente owner/master pode excluir pedido permanentemente.");
     error.statusCode = 403;
@@ -8111,7 +8239,7 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
     if (!order || !payment) return false;
 
     const wasAlreadyPaid = order.status === "paid";
-    payment.status = providerStatus.status;
+    payment.status = paymentStatusAfterWebhook(payment.status, providerStatus.status);
     payment.updatedAt = new Date().toISOString();
     payment.metadata = {
       ...(payment.metadata || {}),
@@ -8119,6 +8247,10 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
       providerStatus: providerStatus.raw || null
     };
     if (providerStatus.externalReference) payment.providerReference = providerStatus.externalReference;
+    if (payment.metadata?.cancellationRefund) {
+      await writeDb(lockedDb);
+      return true;
+    }
 
     let tickets = [];
     if (payment.status === "approved") {
@@ -8647,6 +8779,61 @@ async function handleApi(req, res, pathname) {
         ["Sessões em andamento", dashboard.capacity?.inProgress || 0, period.start, period.end]
       ]
     );
+    return;
+  }
+
+  if (pathname === "/api/admin/concession-sales" && method === "GET") {
+    const today = todayIsoDate();
+    const groups = new Map();
+    for (const order of db.orders || []) {
+      const payment = orderPayment(db, order.id);
+      const purchasedAt = order.paidAt || payment?.approvedAt || order.createdAt;
+      if (!inDateRange(purchasedAt, today, today) || !(order.concessionItems || []).length) continue;
+      if (!payment?.approvedAt && !["paid", "refunded"].includes(order.status)) continue;
+      const session = sessionForOrder(db, order);
+      const movie = (db.movies || []).find((item) => item.id === (session?.movieId || order.movieId));
+      const key = session?.id || order.archivedSessionId || `${order.movieId || "avulso"}-${order.sessionDate || ""}-${order.sessionTime || ""}`;
+      const start = session ? sessionStartsAt(session) : null;
+      const end = session ? finishedSessionEndsAt(movie, session) : null;
+      if (!groups.has(key)) groups.set(key, {
+        id: key,
+        title: movie?.title || order.movieTitle || "Venda sem sessao",
+        date: session?.date || order.sessionDate || "",
+        time: session?.time || order.sessionTime || "",
+        room: session?.room || order.sessionRoom || "",
+        status: !session ? "Historico / sem sessao ativa" : end && end.getTime() <= Date.now() ? "Encerrada" : start && start.getTime() <= Date.now() ? "Em andamento" : "Programada",
+        orders: []
+      });
+      groups.get(key).orders.push({
+        id: order.id, status: order.status, purchasedAt,
+        customerName: order.customerName || "Cliente avulso",
+        archived: Boolean(order.concessionArchived),
+        items: order.concessionItems.map((item) => ({ name: item.name, quantity: item.quantity, fulfilledQuantity: item.fulfilledQuantity || 0 })),
+        finance: summarizeConcessionFinance([{ order, breakdown: orderFinancialBreakdown(db, order) }])
+      });
+    }
+    sendJson(res, 200, { date: today, groups: [...groups.values()].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)) });
+    return;
+  }
+
+  const concessionArchiveMatch = pathname.match(/^\/api\/admin\/concession-sales\/([^/]+)\/archive$/);
+  if (concessionArchiveMatch && method === "POST") {
+    const body = await readBody(req);
+    await withCriticalMutation(async () => {
+      const currentDb = await readDb();
+      const order = (currentDb.orders || []).find((item) => item.id === decodeURIComponent(concessionArchiveMatch[1]));
+      if (!order) throw refundError("ORDER_NOT_FOUND", "Pedido nao encontrado.", 404);
+      order.concessionArchived = body.archived !== false;
+      order.updatedAt = new Date().toISOString();
+      appendOrderAudit(order, { action: order.concessionArchived ? "concessions.archive" : "concessions.unarchive", updatedBy: req.adminUser.id });
+      await writeDb(currentDb);
+      sendJson(res, 200, { archived: order.concessionArchived });
+    });
+    return;
+  }
+
+  if (pathname === "/api/admin/logs/performance" && method === "GET") {
+    sendJson(res, 200, performanceMonitor.snapshot());
     return;
   }
 
@@ -12214,23 +12401,24 @@ async function handleApi(req, res, pathname) {
   }
 
   const adminTicketPrintMatch = pathname.match(/^\/api\/admin\/tickets\/([^/]+)\/print$/);
-  if (adminTicketPrintMatch && method === "GET") {
+  const adminOrderPrintMatch = pathname.match(/^\/api\/admin\/orders\/([^/]+)\/print$/);
+  if ((adminTicketPrintMatch || adminOrderPrintMatch) && method === "GET") {
     const adminUser = getAdminUser(req, db);
     if (!adminUser) {
       sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para imprimir o ingresso." } });
       return;
     }
-    const ticketId = decodeURIComponent(adminTicketPrintMatch[1]);
-    const ticket = (db.tickets || []).find((item) => item.id === ticketId);
-    if (!ticket) {
+    const identifier = decodeURIComponent((adminTicketPrintMatch || adminOrderPrintMatch)[1]);
+    const tickets = (db.tickets || []).filter((item) => adminOrderPrintMatch ? item.orderId === identifier : item.id === identifier);
+    if (!tickets.length) {
       sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso não encontrado." } });
       return;
     }
-    const pdf = await ticketDownloadPdf(db, ticket);
+    const pdf = ticketThermalPdf(db, tickets);
     res.writeHead(200, {
       ...securityHeaders({
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="cine-cruzeiro-${ticket.code}.pdf"`,
+        "Content-Disposition": 'inline; filename="cine-cruzeiro-pdv.pdf"',
         "Cache-Control": "no-store"
       }),
       "Access-Control-Allow-Origin": responseCorsOrigin(req),
@@ -12979,6 +13167,11 @@ async function handleApi(req, res, pathname) {
       if (payment.status === "expired") payment.expiredAt = payment.expiredAt || new Date().toISOString();
       if (payment.status === "cancelled") payment.cancelledAt = payment.cancelledAt || new Date().toISOString();
       if (payment.status === "refunded") payment.refundedAt = payment.refundedAt || new Date().toISOString();
+      if (payment.metadata?.cancellationRefund) {
+        await writeDb(lockedDb);
+        sendJson(res, 200, { received: true, refundPending: payment.metadata.cancellationRefund.status !== "completed" });
+        return;
+      }
       let tickets = [];
       let subscription = null;
       if (isClubSubscriptionPayment) {
@@ -13106,6 +13299,10 @@ async function handleApi(req, res, pathname) {
   if (adminOrderMatch && method === "PATCH") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
     const body = await readBody(req);
+    if (body.action === "cancel") {
+      sendJson(res, 200, await cancelOrderWithRefund(orderId, body.reason, req.adminUser));
+      return;
+    }
     if (postgresEnabled() && !["cancel"].includes(body.action)) {
       const order = await orderRepository.findById(orderId);
       if (!order) {
@@ -13166,6 +13363,11 @@ async function handleApi(req, res, pathname) {
   if (adminOrderMatch && method === "DELETE") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
     const body = await readBody(req);
+    const currentOrder = (db.orders || []).find((item) => item.id === orderId);
+    if (currentOrder && !removableDraftOrder(currentOrder, orderPayment(db, orderId), orderTickets(db, orderId))) {
+      sendJson(res, 200, { deleted: false, ...await cancelOrderWithRefund(orderId, body.reason, req.adminUser) });
+      return;
+    }
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const index = (lockedDb.orders || []).findIndex((item) => item.id === orderId);
@@ -13182,14 +13384,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 200, { deleted: true, orderId });
         return;
       }
-      cancelOrder(lockedDb, order, body.reason, req.adminUser);
-      await writeDb(lockedDb);
-      sendJson(res, 200, {
-        deleted: false,
-        order,
-        payment: orderPayment(lockedDb, order.id),
-        tickets: orderTickets(lockedDb, order.id).map((ticket) => enrichTicket(lockedDb, ticket))
-      });
+      throw refundError("ORDER_CHANGED", "O pedido mudou durante a operacao. Atualize e solicite o cancelamento novamente.");
     });
     return;
   }
@@ -13202,6 +13397,7 @@ async function handleApi(req, res, pathname) {
   sendJson(res, 404, { error: "Rota nao encontrada" });
 }
 
+const performanceMonitor = createPerformanceMonitor({ diskPath: ROOT, onAlert: logEvent });
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -13213,6 +13409,9 @@ const server = http.createServer(async (req, res) => {
     startedAt: Date.now()
   };
   res.once("finish", () => {
+    if (pathname.startsWith("/api/") && !pathname.startsWith("/api/admin/logs")) {
+      performanceMonitor.record(Date.now() - store.startedAt, res.statusCode);
+    }
     if (!pathname.startsWith("/api/") || !postgresEnabled()) return;
     const durationMs = Date.now() - store.startedAt;
     const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
@@ -13268,6 +13467,7 @@ const server = http.createServer(async (req, res) => {
     });
 });
 
+server.once("close", () => performanceMonitor.close());
 seatRealtimeService = createSeatRealtimeService(server, {
   allowedOrigins: allowedCorsOrigins,
   getSessionState: realtimeSeatState,

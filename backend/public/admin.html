@@ -1066,6 +1066,14 @@
               Novo Produto
             </button>
           </div>
+          <div class="surface">
+            <div class="surface-head">
+              <h2>Compras de hoje por sessão</h2>
+              <button id="concessionSalesRefresh" class="ghost-button" type="button">Atualizar</button>
+            </div>
+            <label><input id="concessionSalesArchived" type="checkbox"> Incluir arquivados da bomboniere</label>
+            <div id="concessionDailySales" aria-live="polite"></div>
+          </div>
           <div class="surface concession-finance-surface">
             <div class="surface-head">
               <div>
@@ -2435,6 +2443,10 @@
               <button id="logsRefreshButton" class="primary-button" type="button">Atualizar histórico</button>
             </div>
           </div>
+          <h2>Desempenho do servidor</h2>
+          <p id="performanceStatus" aria-live="polite">Aguardando leitura.</p>
+          <div id="performanceStats" class="logs-stats"></div>
+          <div id="performanceAlerts" role="status" aria-live="polite"></div>
           <div id="logsStats" class="logs-stats" aria-live="polite"></div>
           <div class="surface logs-workspace">
             <div class="logs-view-switch" role="group" aria-label="Tipo de visualização">
