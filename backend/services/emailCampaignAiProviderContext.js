@@ -88,6 +88,8 @@ function catalogFacts(input = {}) {
     startsAt: input.coupon.startsAt || "",
     endsAt: input.coupon.endsAt || "",
     minimumOrderValue: Number(input.coupon.minimumOrderValue || 0),
+    usageLimit: Number(input.coupon.usageLimit || 0),
+    perCustomerLimit: Number(input.coupon.perCustomerLimit || 0),
     firstPurchaseOnly: Boolean(input.coupon.firstPurchaseOnly)
   } : null;
   const plan = input.plan ? {

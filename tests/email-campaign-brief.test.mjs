@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const { extractRequestedSchedule, requestedButtonHints } = require("../backend/services/emailCampaignBriefService.js");
 const { buildCampaignDraft } = require("../backend/services/emailCampaignAiService.js");
 const { campaignGenerationContext } = require("../backend/services/emailCampaignAiProviderContext.js");
-const { buildCampaignCoupon, syncCampaignCouponSchedule } = require("../backend/services/emailCampaignCouponService.js");
+const { armCampaignCoupon, buildCampaignCoupon, syncCampaignCouponSchedule, syncScheduledCampaignCoupons } = require("../backend/services/emailCampaignCouponService.js");
 
 test("briefing transforma data e hora explícitas em agendamento brasileiro", () => {
   const result = extractRequestedSchedule("Enviar esta campanha no dia 15/09/2026 às 14h.", { now: "2026-09-10T12:00:00-03:00" });
@@ -88,4 +88,49 @@ test("contexto enviado ao Gemini mantém o briefing além do antigo limite", () 
   const context = campaignGenerationContext({ scenario: "announcement", brief }, buildCampaignDraft({ scenario: "announcement", brief }));
   assert.match(context.operatorBrief, /MARCADOR_FINAL_DO_BRIEFING$/);
   assert.ok(context.operatorBrief.length > 1000);
+});
+
+test("horários do filme apontam diretamente para o checkout da sessão", () => {
+  const result = buildCampaignDraft({
+    scenario: "premiere",
+    siteUrl: "https://lumixengine.com/projects/cinecruzeiro",
+    now: "2026-09-11T12:00:00-03:00",
+    movie: {
+      id: "filme-coyote",
+      slug: "coyote-vs-acme",
+      title: "Coyote vs. ACME",
+      sessions: [{ id: "sessao-coyote-1", date: "2026-09-12", time: "19:30", format: "2D", language: "Dublado" }]
+    }
+  });
+
+  assert.match(result.html, /href="https:\/\/lumixengine\.com\/projects\/cinecruzeiro\/checkout\/sessao-coyote-1"/);
+  assert.match(result.html, /Escolher esta sessão/);
+});
+
+test("cupom de campanha respeita horários, quantidade e limite individual", () => {
+  const coupon = buildCampaignCoupon({
+    brief: "Cupom CINE20 com 20% de desconto, válido de 15/09/2026 às 14h30 até 20/09/2026 às 22h15, quantidade: 100 usos e 2 usos por cliente.",
+    campaignId: "campanha-agendada",
+    movieIds: ["filme-1"],
+    now: new Date("2026-09-11T12:00:00Z")
+  });
+
+  assert.equal(coupon.startsAt, "2026-09-15T17:30:00.000Z");
+  assert.equal(coupon.endsAt, "2026-09-21T01:15:59.999Z");
+  assert.equal(coupon.usageLimit, 100);
+  assert.equal(coupon.perCustomerLimit, 2);
+  assert.equal(coupon.active, false);
+
+  const armed = armCampaignCoupon(coupon, { id: "campanha-agendada" }, new Date("2026-09-14T12:00:00Z"));
+  assert.equal(armed.active, false);
+  assert.equal(armed.autoCouponActivationScheduled, true);
+
+  const db = { promotions: [armed] };
+  const activated = syncScheduledCampaignCoupons(db, new Date("2026-09-15T17:30:00Z"));
+  assert.equal(activated.changed, true);
+  assert.equal(db.promotions[0].active, true);
+
+  const deactivated = syncScheduledCampaignCoupons(db, new Date("2026-09-21T01:16:00Z"));
+  assert.equal(deactivated.changed, true);
+  assert.equal(db.promotions[0].active, false);
 });

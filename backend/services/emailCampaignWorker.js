@@ -10,6 +10,7 @@ function createEmailCampaignWorker(options = {}) {
   const readDb = options.readDb;
   const resolveAudience = options.resolveAudience;
   const deliver = options.deliver;
+  const prepareCampaign = options.prepareCampaign || (async (campaign) => campaign);
   const decorateRecipient = options.decorateRecipient || ((recipient) => recipient);
   const log = options.log || (() => {});
   const workerId = options.workerId || `email-worker-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
@@ -61,9 +62,11 @@ function createEmailCampaignWorker(options = {}) {
   }
 
   async function processCampaign(campaign) {
-    let db = await readDb();
+    let db;
     let audience;
     try {
+      campaign = await prepareCampaign(campaign) || campaign;
+      db = await readDb();
       audience = resolveAudience(db, campaign);
       if (!audience.recipients.length) throw new Error("Nenhum destinatário elegível com consentimento de marketing.");
       await repository.snapshotRecipients(campaign.id, audience.recipients);

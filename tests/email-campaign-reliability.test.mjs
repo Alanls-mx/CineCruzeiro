@@ -139,3 +139,25 @@ test("worker interrompe a campanha quando o público fica vazio na revalidação
   assert.match(failedMessage, /Nenhum destinatário continua elegível/);
   assert.equal(claimedRecipient, false);
 });
+
+test("worker prepara os recursos vinculados antes de resolver o público", async () => {
+  const sequence = [];
+  let claimed = false;
+  const fakeRepository = {
+    async claimCampaign() { return claimed ? null : (claimed = true, { id: "campaign-coupon", status: "sending", templateId: "coupon" }); },
+    async snapshotRecipients() {},
+    async getCampaign() { return { id: "campaign-coupon", status: "cancelled" }; },
+    async heartbeatCampaign() { return true; },
+    async failCampaign() {}
+  };
+  const worker = createEmailCampaignWorker({
+    repository: fakeRepository,
+    prepareCampaign: async (campaign) => { sequence.push("prepare"); return campaign; },
+    readDb: async () => { sequence.push("read"); return {}; },
+    resolveAudience: () => { sequence.push("audience"); return { recipients: [{ id: "user-1", email: "cliente@example.com" }] }; }
+  });
+  worker.start();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  worker.stop();
+  assert.deepEqual(sequence.slice(0, 3), ["prepare", "read", "audience"]);
+});

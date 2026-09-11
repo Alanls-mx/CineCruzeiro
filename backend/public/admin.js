@@ -1688,7 +1688,7 @@ async function importTmdbMovie(tmdbId) {
     fillMovieForm({
       ...movie,
       id: existingId || movie.id,
-      slug: existing?.slug || movie.slug || movie.id,
+      slug: movie.slug || movie.id,
       workflowStatus: existing?.workflowStatus || movie.workflowStatus || "draft",
       status: existing?.status || movie.status,
       isHighlight: Boolean(existing?.isHighlight),

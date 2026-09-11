@@ -261,6 +261,11 @@ function movieLink(movie, siteUrl) {
   return movie ? safeUrl(`/filmes/${movie.slug || movie.id}`, siteUrl) : "";
 }
 
+function sessionLink(session, siteUrl) {
+  const sessionId = String(session?.id || "").trim();
+  return sessionId ? safeUrl(`/checkout/${encodeURIComponent(sessionId)}`, siteUrl) : "";
+}
+
 function renderDetailRows({ movie, movies = [], coupon, plan, concessions }) {
   const rows = [];
   const catalogMovies = movies.length ? movies : (movie ? [movie] : []);
@@ -269,12 +274,13 @@ function renderDetailRows({ movie, movies = [], coupon, plan, concessions }) {
   }
   if (coupon) {
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Cupom</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right"><strong>${escapeHtml(coupon.couponCode || "CUPOM")}</strong> · ${escapeHtml(couponLabel(coupon))}</td></tr>`);
-    if (coupon.startsAt) rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Disponível a partir de</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(dateLabel(coupon.startsAt))}</td></tr>`);
-    rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Validade</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(dateLabel(coupon.endsAt))}</td></tr>`);
+    if (coupon.startsAt) rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Disponível a partir de</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(dateTimeLabel(coupon.startsAt))}</td></tr>`);
+    rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Validade</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(dateTimeLabel(coupon.endsAt))}</td></tr>`);
     const conditions = [
       coupon.appliesTo === "tickets" ? "somente ingressos" : coupon.appliesTo === "concessions" ? "somente bomboniere" : "ingressos e bomboniere",
       Number(coupon.minimumOrderValue || 0) > 0 ? `pedido mínimo de ${money(coupon.minimumOrderValue)}` : "",
       coupon.firstPurchaseOnly ? "exclusivo para primeira compra" : "",
+      Number(coupon.usageLimit || 0) > 0 ? `limite total de ${Number(coupon.usageLimit)} uso(s)` : "",
       Number(coupon.perCustomerLimit || 0) > 0 ? `até ${Number(coupon.perCustomerLimit)} uso(s) por cliente` : ""
     ].filter(Boolean).join(" · ");
     rows.push(`<tr><td style="padding:8px 0;color:#9aa8bd;font-size:13px">Condições</td><td style="padding:8px 0;color:#f8fafc;font-size:13px;text-align:right">${escapeHtml(conditions)}</td></tr>`);
@@ -302,11 +308,11 @@ function renderMovieFacts(movie, colors) {
 function renderMovieSchedule(movie, siteUrl, colors, heading, now = new Date()) {
   const sessions = availableMovieSessions(movie, now).slice(0, 4);
   if (!sessions.length) return "";
-  const movieUrl = movieLink(movie, siteUrl);
   const rows = sessions.map((session) => {
+    const checkoutUrl = sessionLink(session, siteUrl);
     const secondary = [session.format, session.language || session.audio].filter(Boolean).join(" · ");
     const content = `<span style="display:block;color:#94a3b8;font-size:12px">${escapeHtml(dateLabel(`${session.date}T12:00:00`))}</span><strong style="display:block;margin-top:3px;color:${colors.headline};font-size:21px">${escapeHtml(session.time)}</strong>${secondary ? `<span style="display:block;margin-top:3px;color:${colors.text};font-size:12px">${escapeHtml(secondary)}</span>` : ""}`;
-    return `<td class="cine-session-cell" width="50%" valign="top" style="padding:5px">${movieUrl ? `<a href="${escapeHtml(movieUrl)}" style="display:block;min-height:66px;padding:13px 14px;border:1px solid #2a463b;background:#0b1511;color:${colors.text};text-decoration:none">${content}</a>` : `<div style="min-height:66px;padding:13px 14px;border:1px solid #2a463b;background:#0b1511">${content}</div>`}</td>`;
+    return `<td class="cine-session-cell" width="50%" valign="top" style="padding:5px">${checkoutUrl ? `<a href="${escapeHtml(checkoutUrl)}" style="display:block;min-height:66px;padding:13px 14px;border:1px solid #2a463b;background:#0b1511;color:${colors.text};text-decoration:none">${content}<span style="display:block;margin-top:9px;color:${colors.accent};font-size:11px;font-weight:800">Escolher esta sessão</span></a>` : `<div style="min-height:66px;padding:13px 14px;border:1px solid #2a463b;background:#0b1511">${content}</div>`}</td>`;
   });
   const tableRows = [];
   for (let index = 0; index < rows.length; index += 2) tableRows.push(`<tr>${rows[index]}${rows[index + 1] || '<td width="50%"></td>'}</tr>`);
@@ -690,8 +696,8 @@ function buildCampaignDraft(input = {}) {
     codigo_cupom: coupon?.couponCode || "",
     titulo_cupom: coupon?.title || "",
     desconto_cupom: couponLabel(coupon),
-    validade_cupom: coupon?.endsAt ? dateLabel(coupon.endsAt) : "",
-    validade_oferta: coupon?.endsAt ? dateLabel(coupon.endsAt) : "",
+    validade_cupom: coupon?.endsAt ? dateTimeLabel(coupon.endsAt) : "",
+    validade_oferta: coupon?.endsAt ? dateTimeLabel(coupon.endsAt) : "",
     publico_oferta: audienceLabel(audience),
     nome_plano: plan?.name || "",
     preco_plano: plan ? `${money(plan.monthlyPrice || plan.price || 0)}/mês` : "",
@@ -758,6 +764,7 @@ module.exports = {
     resolveVisualStyle,
     templateContext,
     mergeRequestedButtons,
+    sessionLink,
     normalizeArtDirection,
     normalizeContentSections,
     renderHtml

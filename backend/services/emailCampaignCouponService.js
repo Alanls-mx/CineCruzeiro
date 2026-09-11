@@ -35,12 +35,12 @@ function parsedYear(value, fallback) {
 
 function parseBrazilianPeriod(brief, reference) {
   const text = String(brief || "").replace(/[*_`]/g, "");
-  const match = text.match(/\b(?:v[aá]lid[oa]\s+)?de\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s+(?:at[eé]|a)\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s*,?\s*(?:[aà]s?|pelas?)\s*(\d{1,2})(?::|h)(\d{2})?)?/i);
+  const match = text.match(/\b(?:v[aá]lid[oa]\s+)?de\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s*,?\s*(?:[aà]s?|pelas?)\s*(\d{1,2})(?::|h)(\d{2})?)?\s+(?:at[eé]|a)\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s*,?\s*(?:[aà]s?|pelas?)\s*(\d{1,2})(?::|h)(\d{2})?)?/i);
   if (!match) return null;
   const startYear = parsedYear(match[3], reference.getUTCFullYear());
-  const endYear = parsedYear(match[6], startYear);
-  const start = brazilianMoment(startYear, Number(match[2]), Number(match[1]), 0, 0, 0, 0);
-  const end = brazilianMoment(endYear, Number(match[5]), Number(match[4]), Number(match[7] || 23), Number(match[8] || 59), 59, 999);
+  const endYear = parsedYear(match[8], startYear);
+  const start = brazilianMoment(startYear, Number(match[2]), Number(match[1]), Number(match[4] || 0), Number(match[5] || 0), 0, 0);
+  const end = brazilianMoment(endYear, Number(match[7]), Number(match[6]), Number(match[9] || 23), Number(match[10] || 59), 59, 999);
   return start && end && end > start ? { start, end } : null;
 }
 
@@ -94,6 +94,27 @@ function couponScope(brief, movieIds, concessionIds) {
   return "all";
 }
 
+function requestedUsageLimits(brief) {
+  const text = normalizedText(brief);
+  const perCustomerMatch = text.match(/\b(?:ate\s+)?(\d{1,3})\s+(?:usos?|utilizacoes?|resgates?)\s+por\s+(?:cliente|pessoa)\b/)
+    || text.match(/\b(?:por\s+(?:cliente|pessoa)|limite\s+individual)\s*[:=-]?\s*(\d{1,3})\b/);
+  const totalMatch = text.match(/\b(?:limite|quantidade|total)\s*(?:de\s*)?[:=-]?\s*(\d{1,7})\s*(?:usos?|utilizacoes?|resgates?|cupons?)?\b/)
+    || text.match(/\b(?:limitado|disponivel)\s+(?:a|para)\s+(\d{1,7})\s+(?:usos?|clientes?|pessoas?|resgates?|cupons?)\b/);
+  const usageLimit = totalMatch ? Math.max(1, Math.min(1000000, Number(totalMatch[1]))) : 0;
+  const requestedPerCustomer = perCustomerMatch ? Math.max(1, Math.min(100, Number(perCustomerMatch[1]))) : 1;
+  return { usageLimit, perCustomerLimit: usageLimit ? Math.min(requestedPerCustomer, usageLimit) : requestedPerCustomer };
+}
+
+function couponWindowIsActive(coupon, now = new Date()) {
+  const reference = new Date(now);
+  const startsAt = coupon?.startsAt ? new Date(coupon.startsAt) : null;
+  const endsAt = coupon?.endsAt ? new Date(coupon.endsAt) : null;
+  if (!Number.isFinite(reference.getTime())) return false;
+  if (startsAt && Number.isFinite(startsAt.getTime()) && startsAt > reference) return false;
+  if (endsAt && Number.isFinite(endsAt.getTime()) && endsAt < reference) return false;
+  return true;
+}
+
 function buildCampaignCoupon({ brief, campaignId, scheduleAt, movieIds = [], concessionIds = [], promotions = [], now = new Date() } = {}) {
   const rule = discountRule(brief);
   if (!rule || !Number.isFinite(rule.value) || rule.value <= 0) {
@@ -113,6 +134,7 @@ function buildCampaignCoupon({ brief, campaignId, scheduleAt, movieIds = [], con
     throw couponError("A validade informada para o cupom não é compatível com a data da campanha.");
   }
   const scope = couponScope(brief, movieIds, concessionIds);
+  const limits = requestedUsageLimits(brief);
   const titleTarget = movieIds.length ? "Ingressos do filme selecionado" : scope === "concessions" ? "Oferta da bomboniere" : "Oferta da campanha";
   const couponCode = uniqueCode(requestedCode(brief), rule, promotions);
   return {
@@ -127,14 +149,15 @@ function buildCampaignCoupon({ brief, campaignId, scheduleAt, movieIds = [], con
     appliesTo: scope,
     minimumOrderValue: 0,
     maximumDiscount: 0,
-    usageLimit: 0,
-    perCustomerLimit: 1,
+    usageLimit: limits.usageLimit,
+    perCustomerLimit: limits.perCustomerLimit,
     firstPurchaseOnly: false,
     allowClubStacking: false,
     allowedMovieIds: scope === "tickets" ? movieIds.map(String).filter(Boolean).slice(0, 20) : [],
     active: false,
     sourceCampaignId: campaignId,
     autoManagedByCampaign: true,
+    autoCouponActivationScheduled: false,
     autoCouponValidityMode: explicitPeriod ? "explicit" : "relative",
     autoCouponDurationDays: durationDays,
     createdAt: new Date(now).toISOString(),
@@ -151,8 +174,33 @@ function syncCampaignCouponSchedule(coupon, campaign, now = new Date()) {
   return { ...coupon, startsAt: start.toISOString(), endsAt: addDays(start, durationDays).toISOString(), updatedAt: new Date(now).toISOString() };
 }
 
+function armCampaignCoupon(coupon, campaign, now = new Date()) {
+  const scheduled = syncCampaignCouponSchedule(coupon, campaign, now);
+  return {
+    ...scheduled,
+    autoCouponActivationScheduled: true,
+    active: couponWindowIsActive(scheduled, now),
+    updatedAt: new Date(now).toISOString()
+  };
+}
+
+function syncScheduledCampaignCoupons(db, now = new Date()) {
+  const changed = [];
+  for (const coupon of db?.promotions || []) {
+    if (!coupon?.autoManagedByCampaign || !coupon.autoCouponActivationScheduled || coupon.archivedAt) continue;
+    const active = couponWindowIsActive(coupon, now);
+    if (coupon.active === active) continue;
+    coupon.active = active;
+    coupon.updatedAt = new Date(now).toISOString();
+    changed.push({ id: coupon.id, couponCode: coupon.couponCode || "", active, startsAt: coupon.startsAt || "", endsAt: coupon.endsAt || "" });
+  }
+  return { changed: changed.length > 0, coupons: changed };
+}
+
 module.exports = {
+  armCampaignCoupon,
   buildCampaignCoupon,
+  syncScheduledCampaignCoupons,
   syncCampaignCouponSchedule,
-  _test: { couponScope, discountRule, parseBrazilianDeadline, parseBrazilianPeriod, requestedCode, uniqueCode }
+  _test: { couponScope, couponWindowIsActive, discountRule, parseBrazilianDeadline, parseBrazilianPeriod, requestedCode, requestedUsageLimits, uniqueCode }
 };

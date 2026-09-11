@@ -30,7 +30,7 @@ const emailService = require("./services/emailService");
 const { testGeminiConnection } = require("./services/geminiEmailAgentService");
 const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
 const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
-const { buildCampaignCoupon, syncCampaignCouponSchedule } = require("./services/emailCampaignCouponService");
+const { armCampaignCoupon, buildCampaignCoupon, syncCampaignCouponSchedule, syncScheduledCampaignCoupons } = require("./services/emailCampaignCouponService");
 const { archiveExpiredCoupons, couponUsageHistory, couponUsageSummary } = require("./services/couponLifecycleService");
 const { extractRequestedSchedule } = require("./services/emailCampaignBriefService");
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
@@ -5763,6 +5763,8 @@ function normalizePromotion(input, existing = {}) {
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false,
     sourceCampaignId: String(input.sourceCampaignId ?? existing.sourceCampaignId ?? "").trim().slice(0, 180),
     autoManagedByCampaign: input.autoManagedByCampaign !== undefined ? Boolean(input.autoManagedByCampaign) : Boolean(existing.autoManagedByCampaign),
+    autoCouponActivationScheduled: input.autoCouponActivationScheduled !== undefined ? Boolean(input.autoCouponActivationScheduled) : Boolean(existing.autoCouponActivationScheduled),
+    autoCouponValidityMode: ["explicit", "relative"].includes(input.autoCouponValidityMode) ? input.autoCouponValidityMode : existing.autoCouponValidityMode || "",
     autoCouponDurationDays: Math.max(0, Math.min(31, Number(input.autoCouponDurationDays ?? existing.autoCouponDurationDays ?? 0))),
     archivedAt: String(input.archivedAt ?? existing.archivedAt ?? ""),
     archiveReason: String(input.archiveReason ?? existing.archiveReason ?? ""),
@@ -7017,6 +7019,24 @@ function buildEmailCampaignWorker() {
     repository: emailCampaignRepository,
     readDb,
     resolveAudience: eligibleCampaignRecipients,
+    prepareCampaign: async (campaign) => {
+      const db = await readDb();
+      const coupon = (db.promotions || []).find((item) =>
+        item.autoManagedByCampaign === true &&
+        String(item.sourceCampaignId || "") === String(campaign.id || "")
+      );
+      if (!coupon) return campaign;
+      const armedCoupon = armCampaignCoupon(coupon, campaign, new Date());
+      await persistAutoCampaignCoupon(armedCoupon);
+      logEvent("info", "email_campaign.coupon_synchronized", {
+        campaignId: campaign.id,
+        couponId: armedCoupon.id,
+        active: armedCoupon.active,
+        startsAt: armedCoupon.startsAt,
+        endsAt: armedCoupon.endsAt
+      });
+      return campaign;
+    },
     decorateRecipient: async (db, campaign, recipient) => {
       const token = recipient.customerId ? await emailCampaignRepository.issueUnsubscribeToken(recipient.customerId) : "";
       const coupon = (db.promotions || []).find((item) => String(item.id) === String(campaign.couponId || ""));
@@ -9153,7 +9173,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const linkedCoupon = (db.promotions || []).find((item) => item.autoManagedByCampaign === true && String(item.sourceCampaignId || "") === String(campaignId));
-      if (linkedCoupon) await persistAutoCampaignCoupon({ ...linkedCoupon, active: false, updatedAt: new Date().toISOString() });
+      if (linkedCoupon) await persistAutoCampaignCoupon({ ...linkedCoupon, active: false, autoCouponActivationScheduled: false, updatedAt: new Date().toISOString() });
       logEvent("info", "email_campaign.cancelled", { campaignId, actorUserId: req.adminUser?.id || "" });
       sendJson(res, 200, { campaign: publicCampaign(cancelled) });
       return;
@@ -9172,7 +9192,7 @@ async function handleApi(req, res, pathname) {
       let autoCouponUpdate = null;
       if (autoCouponIndex >= 0) {
         const scheduleAt = existing.scheduleAt && new Date(existing.scheduleAt).getTime() > Date.now() ? existing.scheduleAt : "";
-        autoCouponUpdate = { ...syncCampaignCouponSchedule(db.promotions[autoCouponIndex], { ...existing, scheduleAt }), active: true };
+        autoCouponUpdate = armCampaignCoupon(db.promotions[autoCouponIndex], { ...existing, scheduleAt }, new Date());
         db.promotions[autoCouponIndex] = autoCouponUpdate;
       }
       const eligibility = eligibleCampaignRecipients(db, existing);
@@ -9252,7 +9272,11 @@ async function handleApi(req, res, pathname) {
       const autoCouponIndex = (db.promotions || []).findIndex((item) => item.autoManagedByCampaign === true && String(item.sourceCampaignId || "") === String(updated.id));
       let autoCouponUpdate = null;
       if (autoCouponIndex >= 0 && String(updated.scheduleAt || "") !== String(existing.scheduleAt || "")) {
-        autoCouponUpdate = syncCampaignCouponSchedule(db.promotions[autoCouponIndex], updated);
+        autoCouponUpdate = {
+          ...syncCampaignCouponSchedule(db.promotions[autoCouponIndex], updated),
+          active: false,
+          autoCouponActivationScheduled: false
+        };
         db.promotions[autoCouponIndex] = autoCouponUpdate;
       }
       const eligibility = eligibleCampaignRecipients(db, updated);
@@ -10632,7 +10656,7 @@ async function handleApi(req, res, pathname) {
     if (method === "POST" && !sessionId) {
       const body = await readBody(req);
       if (body.dateTo || body.dateEnd || Array.isArray(body.times)) {
-        const batch = createMovieSessionBatch(body, movieId, movie.sessions, db.ticketTypes);
+        const batch = createMovieSessionBatch(body, movie.slug || movieId, movie.sessions, db.ticketTypes);
         const created = batch.created.map((session) => sessionWithCurrentRoom(db, session));
         movie.sessions.push(...created);
         movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
@@ -10641,7 +10665,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 201, { ...batch, created, totalCreated: created.length, totalSkipped: batch.skipped.length });
         return;
       }
-      const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movieId, {}, db.ticketTypes));
+      const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movie.slug || movieId, {}, db.ticketTypes));
       if (movie.sessions.some((item) => item.id === session.id)) {
         sendJson(res, 409, { error: { code: "SESSION_EXISTS", message: "Já existe uma sessão com este identificador." } });
         return;
@@ -12663,13 +12687,15 @@ async function runSubscriptionMaintenance() {
       const movieTagsChanged = applyAutomatedMovieTags(db);
       const sessionMaintenance = archiveFinishedSessions(db, new Date(), expiredCheckoutOrders);
       const reservationsChanged = expireStaleReservations(db, expiredCheckoutOrders);
+      const scheduledCoupons = syncScheduledCampaignCoupons(db, new Date());
       const couponMaintenance = archiveExpiredCoupons(db, new Date());
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
-      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || couponMaintenance.changed || result.changed || lifecycle.changed) {
+      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || scheduledCoupons.changed || couponMaintenance.changed || result.changed || lifecycle.changed) {
         await writeDb(db);
         sessionMaintenance.archived.forEach((session) => logEvent("info", "session.finished_archived", session));
         couponMaintenance.archived.forEach((coupon) => logEvent("info", "coupon.expired_archived", coupon));
+        scheduledCoupons.coupons.forEach((coupon) => logEvent("info", coupon.active ? "coupon.scheduled_activated" : "coupon.scheduled_deactivated", coupon));
         logEvent("info", "subscription.pending_payment_maintenance", {
           expired: result.expired,
           failed: result.failed,
