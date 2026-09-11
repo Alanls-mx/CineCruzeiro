@@ -59,6 +59,10 @@ const movieRepository = require("./repositories/movieRepository");
 const sessionRepository = require("./repositories/sessionRepository");
 const roomRepository = require("./repositories/roomRepository");
 const ticketTypeRepository = require("./repositories/ticketTypeRepository");
+const promotionRepository = require("./repositories/promotionRepository");
+const concessionRepository = require("./repositories/concessionRepository");
+const settingsRepository = require("./repositories/settingsRepository");
+const userRepository = require("./repositories/userRepository");
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
@@ -72,7 +76,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "031_targeted_admin_repositories.sql";
+const LATEST_SCHEMA_MIGRATION = "032_targeted_business_repositories.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -1174,7 +1178,19 @@ function repositoryMutationRoute(pathname, method) {
   return pathname === "/api/movies/order"
     || /^\/api\/movies(?:\/[^/]+(?:\/sessions(?:\/[^/]+)?)?)?$/.test(pathname)
     || /^\/api\/rooms(?:\/[^/]+)?$/.test(pathname)
-    || /^\/api\/ticket-types(?:\/[^/]+)?$/.test(pathname);
+    || /^\/api\/ticket-types(?:\/[^/]+)?$/.test(pathname)
+    || /^\/api\/promotions(?:\/[^/]+)?$/.test(pathname)
+    || /^\/api\/concessions(?:\/[^/]+)?$/.test(pathname)
+    || pathname === "/api/settings"
+    || pathname === "/api/admin/security-policy"
+    || pathname === "/api/admin/goods-fiscal-settings"
+    || /^\/api\/admin\/email\/(branding|prompt-templates|attachments)$/.test(pathname)
+    || /^\/api\/admin\/email\/template-library\/[^/]+$/.test(pathname)
+    || /^\/api\/admin\/email\/campaigns(?:\/.*)?$/.test(pathname)
+    || /^\/api\/admin\/integrations\/[^/]+(?:\/(test|enable|disable))?$/.test(pathname)
+    || /^\/api\/users(?:\/[^/]+)?$/.test(pathname)
+    || pathname === "/api/admin/logout"
+    || pathname.startsWith("/api/admin/2fa/");
 }
 
 function originHost(value) {
@@ -6976,6 +6992,15 @@ async function createPersistedCampaign(campaign) {
 
 async function persistAutoCampaignCoupon(coupon) {
   if (!coupon) return null;
+  if (postgresEnabled()) {
+    const current = await promotionRepository.findById(coupon.id);
+    const fresh = await readDb();
+    const normalized = normalizePromotion(coupon, current || {});
+    assertPromotionRules(fresh, normalized, current?.id || "");
+    return current
+      ? promotionRepository.update(normalized)
+      : promotionRepository.create(normalized);
+  }
   let persisted = null;
   await withCriticalMutation(async () => {
     const fresh = await readDb();
@@ -6992,6 +7017,7 @@ async function persistAutoCampaignCoupon(coupon) {
 }
 
 async function removeAutoCampaignCoupon(campaignId, couponId = "") {
+  if (postgresEnabled()) return promotionRepository.removeCampaignCoupon(campaignId, couponId);
   let removed = null;
   await withCriticalMutation(async () => {
     const fresh = await readDb();
@@ -7793,6 +7819,10 @@ function webhookTestExpectation(scenario = "valid") {
 }
 
 async function storeWebhookSimulationRun(run) {
+  if (postgresEnabled()) {
+    await settingsRepository.prependArrayItem("webhookSimulatorRuns", run, 60);
+    return;
+  }
   await withCriticalMutation(async () => {
     const db = await readDb();
     db.settings ||= {};
@@ -8170,7 +8200,10 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 429, { error: { code: "ADMIN_LOGIN_BLOCKED", message: "Muitas tentativas. Aguarde antes de tentar novamente." } }, { "Retry-After": String(blocked.retryAfter) });
       return;
     }
-    const user = (db.users || []).find((item) => item.email === email && item.active !== false && adminRoles().has(item.role));
+    let user = postgresEnabled()
+      ? await userRepository.findByEmail(email)
+      : (db.users || []).find((item) => item.email === email);
+    if (user?.active === false || !adminRoles().has(user?.role)) user = null;
     if (!user || !verifyPassword(String(body.password || ""), user.passwordHash)) {
       recordLoginFailure(req, "admin", email);
       sendJson(res, 401, { error: { code: "ADMIN_LOGIN_INVALID", message: "E-mail ou senha invalidos." } });
@@ -8180,7 +8213,9 @@ async function handleApi(req, res, pathname) {
     if (passwordNeedsRehash(user.passwordHash)) {
       user.passwordHash = hashPassword(String(body.password || ""));
       user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      user = postgresEnabled()
+        ? await userRepository.updateFields(user.id, { passwordHash: user.passwordHash }, { event: "repository.user.password_rehash", operation: "passwordRehash" })
+        : (await writeDb(db), user);
     }
     if (user.twoFactorEnabled) {
       const secret = adminTwoFactorService.decryptSecret(user.twoFactorSecret);
@@ -8210,28 +8245,38 @@ async function handleApi(req, res, pathname) {
     challenge.attempts += 1;
     const submittedCode = String(body.code || "").trim();
     let authenticatedUser = null;
-    let authenticatedDb = null;
+    let authenticatedDb = db;
     let methodUsed = "totp";
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      const user = (lockedDb.users || []).find((item) => item.id === challenge.userId && item.active !== false && adminRoles().has(item.role));
+    const authenticateTwoFactor = async (lockedDb, direct = false) => {
+      const user = direct
+        ? await userRepository.findById(challenge.userId)
+        : (lockedDb.users || []).find((item) => item.id === challenge.userId);
       const secret = adminTwoFactorService.decryptSecret(user?.twoFactorSecret);
-      if (!user || !user.twoFactorEnabled || !secret) return;
+      if (!user || user.active === false || !adminRoles().has(user.role) || !user.twoFactorEnabled || !secret) return;
       let valid = adminTwoFactorService.verifyTotp(secret, submittedCode);
       if (!valid) {
         const recoveryIndex = adminTwoFactorService.recoveryCodeIndex(user.twoFactorRecoveryCodes, submittedCode);
         if (recoveryIndex >= 0) {
+          const expectedCodes = [...user.twoFactorRecoveryCodes];
           user.twoFactorRecoveryCodes.splice(recoveryIndex, 1);
           user.twoFactorUpdatedAt = new Date().toISOString();
-          methodUsed = "recovery_code";
-          valid = true;
-          await writeDb(lockedDb);
+          if (direct) {
+            const consumed = await userRepository.consumeRecoveryCode(user.id, expectedCodes, user.twoFactorRecoveryCodes);
+            valid = Boolean(consumed);
+            if (consumed) authenticatedUser = consumed;
+          } else {
+            valid = true;
+            await writeDb(lockedDb);
+          }
+          if (valid) methodUsed = "recovery_code";
         }
       }
       if (!valid) return;
-      authenticatedUser = user;
+      authenticatedUser ||= user;
       authenticatedDb = lockedDb;
-    });
+    };
+    if (postgresEnabled()) await authenticateTwoFactor(db, true);
+    else await withCriticalMutation(async () => authenticateTwoFactor(await readDb(), false));
     if (!authenticatedUser) {
       if (challenge.attempts >= 6) adminTwoFactorChallenges.delete(challengeToken);
       sendJson(res, 401, { error: { code: "ADMIN_2FA_INVALID", message: "Codigo invalido. Confira o autenticador ou use um codigo de recuperacao." } });
@@ -8250,22 +8295,28 @@ async function handleApi(req, res, pathname) {
       return;
     }
     if (user) {
-      const storedUser = (db.users || []).find((item) => item.id === user.id);
-      if (storedUser) storedUser.sessionVersion = Number(storedUser.sessionVersion || 0) + 1;
-      db.auditLogs ||= [];
-      db.auditLogs.push({
-        id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
-        userId: user.id,
-        userEmail: user.email,
-        action: "POST /api/admin/logout",
-        entityType: "admin_session",
-        entityId: user.id,
-        before: { active: true },
-        after: { active: false },
-        ip: clientIp(req),
-        createdAt: new Date().toISOString()
-      });
-      await writeDb(db);
+      if (postgresEnabled()) {
+        await userRepository.incrementSessionVersion(user.id, {
+          audit: repositoryAudit(req, "admin_session", user.id, { active: true }, { active: false })
+        });
+      } else {
+        const storedUser = (db.users || []).find((item) => item.id === user.id);
+        if (storedUser) storedUser.sessionVersion = Number(storedUser.sessionVersion || 0) + 1;
+        db.auditLogs ||= [];
+        db.auditLogs.push({
+          id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+          userId: user.id,
+          userEmail: user.email,
+          action: "POST /api/admin/logout",
+          entityType: "admin_session",
+          entityId: user.id,
+          before: { active: true },
+          after: { active: false },
+          ip: clientIp(req),
+          createdAt: new Date().toISOString()
+        });
+        await writeDb(db);
+      }
     }
     res.writeHead(204, {
       ...securityHeaders(),
@@ -8291,7 +8342,7 @@ async function handleApi(req, res, pathname) {
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
-    const user = (db.users || []).find((item) => item.id === req.adminUser.id);
+    const user = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : (db.users || []).find((item) => item.id === req.adminUser.id);
     sendJson(res, 200, {
       enabled: Boolean(user?.twoFactorEnabled),
       configurationReady: adminTwoFactorService.encryptionConfigured(),
@@ -8313,9 +8364,8 @@ async function handleApi(req, res, pathname) {
     const password = String(body.password || "");
     let secret = "";
     let accountEmail = "";
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+    const setupTwoFactor = async (lockedDb, direct = false) => {
+      const user = direct ? await userRepository.findById(req.adminUser.id) : (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
       if (!user || !verifyPassword(password, user.passwordHash)) {
         throw Object.assign(new Error("Informe sua senha atual para configurar o 2FA."), { statusCode: 422, code: "ADMIN_2FA_PASSWORD_INVALID" });
       }
@@ -8326,8 +8376,14 @@ async function handleApi(req, res, pathname) {
       accountEmail = user.email;
       user.twoFactorPendingSecret = adminTwoFactorService.encryptSecret(secret);
       user.twoFactorUpdatedAt = new Date().toISOString();
-      await writeDb(lockedDb);
-    });
+      if (direct) await userRepository.updateFields(user.id, {
+        twoFactorPendingSecret: user.twoFactorPendingSecret,
+        twoFactorUpdatedAt: user.twoFactorUpdatedAt
+      }, { event: "repository.user.two_factor_setup", operation: "twoFactorSetup" });
+      else await writeDb(lockedDb);
+    };
+    if (postgresEnabled()) await setupTwoFactor(db, true);
+    else await withCriticalMutation(async () => setupTwoFactor(await readDb(), false));
     const provisioningUri = adminTwoFactorService.otpauthUrl(secret, accountEmail);
     const qrCodeDataUrl = await QRCode.toDataURL(provisioningUri, {
       width: 280,
@@ -8344,9 +8400,8 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const code = String(body.code || "");
     let recoveryCodes = [];
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+    const enableTwoFactor = async (lockedDb, direct = false) => {
+      const user = direct ? await userRepository.findById(req.adminUser.id) : (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
       const secret = adminTwoFactorService.decryptSecret(user?.twoFactorPendingSecret);
       if (!user || !secret) {
         throw Object.assign(new Error("Inicie a configuracao do 2FA antes de confirmar."), { statusCode: 409, code: "ADMIN_2FA_SETUP_REQUIRED" });
@@ -8361,8 +8416,18 @@ async function handleApi(req, res, pathname) {
       user.twoFactorRecoveryCodes = recoveryCodes.map(adminTwoFactorService.hashRecoveryCode);
       user.twoFactorConfirmedAt = new Date().toISOString();
       user.twoFactorUpdatedAt = user.twoFactorConfirmedAt;
-      await writeDb(lockedDb);
-    });
+      if (direct) await userRepository.updateFields(user.id, {
+        twoFactorEnabled: true,
+        twoFactorSecret: user.twoFactorSecret,
+        twoFactorPendingSecret: "",
+        twoFactorRecoveryCodes: user.twoFactorRecoveryCodes,
+        twoFactorConfirmedAt: user.twoFactorConfirmedAt,
+        twoFactorUpdatedAt: user.twoFactorUpdatedAt
+      }, { event: "repository.user.two_factor_enable", operation: "twoFactorEnable" });
+      else await writeDb(lockedDb);
+    };
+    if (postgresEnabled()) await enableTwoFactor(db, true);
+    else await withCriticalMutation(async () => enableTwoFactor(await readDb(), false));
     sendJson(res, 200, {
       enabled: true,
       recoveryCodes,
@@ -8378,9 +8443,8 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const body = await readBody(req);
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+    const disableTwoFactor = async (lockedDb, direct = false) => {
+      const user = direct ? await userRepository.findById(req.adminUser.id) : (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
       const secret = adminTwoFactorService.decryptSecret(user?.twoFactorSecret);
       const passwordValid = user && verifyPassword(String(body.password || ""), user.passwordHash);
       const code = String(body.code || "");
@@ -8394,8 +8458,18 @@ async function handleApi(req, res, pathname) {
       user.twoFactorRecoveryCodes = [];
       user.twoFactorConfirmedAt = "";
       user.twoFactorUpdatedAt = new Date().toISOString();
-      await writeDb(lockedDb);
-    });
+      if (direct) await userRepository.updateFields(user.id, {
+        twoFactorEnabled: false,
+        twoFactorSecret: "",
+        twoFactorPendingSecret: "",
+        twoFactorRecoveryCodes: [],
+        twoFactorConfirmedAt: "",
+        twoFactorUpdatedAt: user.twoFactorUpdatedAt
+      }, { event: "repository.user.two_factor_disable", operation: "twoFactorDisable" });
+      else await writeDb(lockedDb);
+    };
+    if (postgresEnabled()) await disableTwoFactor(db, true);
+    else await withCriticalMutation(async () => disableTwoFactor(await readDb(), false));
     sendJson(res, 200, { enabled: false, message: "Autenticacao em duas etapas desativada." });
     logEvent("info", "admin_two_factor.disabled", { actorUserId: req.adminUser.id });
     return;
@@ -8411,7 +8485,13 @@ async function handleApi(req, res, pathname) {
     if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
     const body = await readBody(req);
     db.settings.adminTwoFactorRequired = Boolean(body.adminTwoFactorRequired);
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await settingsRepository.patchAppSettings({ adminTwoFactorRequired: db.settings.adminTwoFactorRequired }, {
+        audit: repositoryAudit(req, "settings", "adminTwoFactorRequired", null, { adminTwoFactorRequired: db.settings.adminTwoFactorRequired })
+      });
+    } else {
+      await writeDb(db);
+    }
     sendJson(res, 200, { adminTwoFactorRequired: db.settings.adminTwoFactorRequired });
     logEvent("info", "admin_two_factor.policy_updated", {
       actorUserId: req.adminUser.id,
@@ -8423,9 +8503,8 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/2fa/recovery-codes" && method === "POST") {
     const body = await readBody(req);
     let recoveryCodes = [];
-    await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      const user = (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
+    const regenerateRecoveryCodes = async (lockedDb, direct = false) => {
+      const user = direct ? await userRepository.findById(req.adminUser.id) : (lockedDb.users || []).find((item) => item.id === req.adminUser.id);
       const secret = adminTwoFactorService.decryptSecret(user?.twoFactorSecret);
       if (!user || !user.twoFactorEnabled || !verifyPassword(String(body.password || ""), user.passwordHash) || !adminTwoFactorService.verifyTotp(secret, String(body.code || ""))) {
         throw Object.assign(new Error("Confirme sua senha e o codigo atual do autenticador."), { statusCode: 422, code: "ADMIN_2FA_RECOVERY_REGEN_INVALID" });
@@ -8433,8 +8512,14 @@ async function handleApi(req, res, pathname) {
       recoveryCodes = adminTwoFactorService.generateRecoveryCodes();
       user.twoFactorRecoveryCodes = recoveryCodes.map(adminTwoFactorService.hashRecoveryCode);
       user.twoFactorUpdatedAt = new Date().toISOString();
-      await writeDb(lockedDb);
-    });
+      if (direct) await userRepository.updateFields(user.id, {
+        twoFactorRecoveryCodes: user.twoFactorRecoveryCodes,
+        twoFactorUpdatedAt: user.twoFactorUpdatedAt
+      }, { event: "repository.user.recovery_codes", operation: "recoveryCodes" });
+      else await writeDb(lockedDb);
+    };
+    if (postgresEnabled()) await regenerateRecoveryCodes(db, true);
+    else await withCriticalMutation(async () => regenerateRecoveryCodes(await readDb(), false));
     sendJson(res, 200, { recoveryCodes, message: "Novos codigos gerados. Os anteriores deixaram de funcionar." });
     logEvent("info", "admin_two_factor.recovery_codes_regenerated", { actorUserId: req.adminUser.id });
     return;
@@ -8760,34 +8845,64 @@ async function handleApi(req, res, pathname) {
     }
     if (method === "PUT" && !action) {
       const body = await readBody(req);
-      await withCriticalMutation(async () => {
-        const lockedDb = await readDb();
-        const saved = integrationConfigService.save(lockedDb, key, body, req.adminUser);
-        await writeDb(lockedDb);
+      if (postgresEnabled()) {
+        const before = integrationConfigService.sanitizeConfig(db, key);
+        const saved = integrationConfigService.save(db, key, body, req.adminUser);
+        await settingsRepository.updateSectionKey("integrations", key, db.settings.integrations[key], {
+          audit: repositoryAudit(req, "integration", key, before, saved)
+        });
         sendJson(res, 200, { integration: saved });
-      });
+      } else {
+        await withCriticalMutation(async () => {
+          const lockedDb = await readDb();
+          const saved = integrationConfigService.save(lockedDb, key, body, req.adminUser);
+          await writeDb(lockedDb);
+          sendJson(res, 200, { integration: saved });
+        });
+      }
       return;
     }
     if (method === "POST" && ["enable", "disable"].includes(action)) {
-      await withCriticalMutation(async () => {
-        const lockedDb = await readDb();
-        const saved = integrationConfigService.setEnabled(lockedDb, key, action === "enable", req.adminUser);
-        await writeDb(lockedDb);
+      if (postgresEnabled()) {
+        const before = integrationConfigService.sanitizeConfig(db, key);
+        const saved = integrationConfigService.setEnabled(db, key, action === "enable", req.adminUser);
+        await settingsRepository.updateSectionKey("integrations", key, db.settings.integrations[key], {
+          audit: repositoryAudit(req, "integration", key, before, saved)
+        });
         sendJson(res, 200, { integration: saved });
-      });
+      } else {
+        await withCriticalMutation(async () => {
+          const lockedDb = await readDb();
+          const saved = integrationConfigService.setEnabled(lockedDb, key, action === "enable", req.adminUser);
+          await writeDb(lockedDb);
+          sendJson(res, 200, { integration: saved });
+        });
+      }
       return;
     }
     if (method === "POST" && action === "test") {
       const result = await testIntegrationProvider(db, key, req);
-      await withCriticalMutation(async () => {
-        const lockedDb = await readDb();
+      if (postgresEnabled()) {
+        const before = integrationConfigService.sanitizeConfig(db, key);
         if (key === "gemini" && result.ok && result.resolvedModel) {
-          integrationConfigService.save(lockedDb, key, { model: result.resolvedModel }, req.adminUser);
+          integrationConfigService.save(db, key, { model: result.resolvedModel }, req.adminUser);
         }
-        const saved = integrationConfigService.setTestResult(lockedDb, key, result, req.adminUser);
-        await writeDb(lockedDb);
+        const saved = integrationConfigService.setTestResult(db, key, result, req.adminUser);
+        await settingsRepository.updateSectionKey("integrations", key, db.settings.integrations[key], {
+          audit: repositoryAudit(req, "integration", key, before, saved)
+        });
         sendJson(res, 200, { ...result, integration: saved });
-      });
+      } else {
+        await withCriticalMutation(async () => {
+          const lockedDb = await readDb();
+          if (key === "gemini" && result.ok && result.resolvedModel) {
+            integrationConfigService.save(lockedDb, key, { model: result.resolvedModel }, req.adminUser);
+          }
+          const saved = integrationConfigService.setTestResult(lockedDb, key, result, req.adminUser);
+          await writeDb(lockedDb);
+          sendJson(res, 200, { ...result, integration: saved });
+        });
+      }
       return;
     }
   }
@@ -8892,7 +9007,13 @@ async function handleApi(req, res, pathname) {
     const action = ["archive", "use"].includes(body.action) ? body.action : "favorite";
     db.settings ||= {};
     db.settings.emailTemplateLibrary = updateLibraryPreference(db.settings.emailTemplateLibrary || {}, itemId, action, body.value !== false);
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await settingsRepository.updateSection("emailTemplateLibrary", db.settings.emailTemplateLibrary, {
+        audit: repositoryAudit(req, "settings", "emailTemplateLibrary", null, { itemId, action, value: body.value !== false })
+      });
+    } else {
+      await writeDb(db);
+    }
     logEvent("info", `email_template_library.${action}`, { itemId, value: body.value !== false, actorUserId: req.adminUser?.id || "" });
     sendJson(res, 200, { preferences: db.settings.emailTemplateLibrary });
     return;
@@ -8911,7 +9032,13 @@ async function handleApi(req, res, pathname) {
       footer: String(body.footer || "").trim().slice(0, 400),
       socialLinks: Array.isArray(body.socialLinks) ? body.socialLinks.slice(0, 5).map((item) => ({ label: String(item.label || "").trim().slice(0, 30), url: String(item.url || "").trim().slice(0, 500) })) : (db.settings.emailBranding.socialLinks || [])
     };
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await settingsRepository.updateSection("emailBranding", db.settings.emailBranding, {
+        audit: repositoryAudit(req, "settings", "emailBranding", null, db.settings.emailBranding)
+      });
+    } else {
+      await writeDb(db);
+    }
     sendJson(res, 200, { branding: db.settings.emailBranding });
     return;
   }
@@ -8923,7 +9050,13 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     db.settings ||= {};
     const template = updatePromptTemplate(db.settings, body.id, body.prompt, { reset: body.reset === true });
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await settingsRepository.updateSection("emailAiPromptTemplates", db.settings.emailAiPromptTemplates || {}, {
+        audit: repositoryAudit(req, "settings", "emailAiPromptTemplates", null, { promptTemplateId: template.id, reset: body.reset === true })
+      });
+    } else {
+      await writeDb(db);
+    }
     logEvent("info", body.reset === true ? "email_ai.prompt_template_reset" : "email_ai.prompt_template_updated", {
       actorUserId: req.adminUser?.id || "",
       promptTemplateId: template.id
@@ -8937,7 +9070,8 @@ async function handleApi(req, res, pathname) {
     db.settings.emailAttachments ||= [];
     db.settings.emailAttachments.unshift(attachment);
     db.settings.emailAttachments = db.settings.emailAttachments.slice(0, 100);
-    await writeDb(db);
+    if (postgresEnabled()) await settingsRepository.prependArrayItem("emailAttachments", attachment, 100);
+    else await writeDb(db);
     const { path: privatePath, ...safeAttachment } = attachment;
     sendJson(res, 201, { attachment: safeAttachment });
     return;
@@ -9552,9 +9686,12 @@ async function handleApi(req, res, pathname) {
     ].forEach((key) => {
       if (body[key] !== undefined) body[key] = storedEditorialImageUrl(body[key]);
     });
+    const previous = Object.fromEntries(Object.keys(body).map((key) => [key, db.settings?.[key]]));
     db.settings = { ...db.settings, ...body };
-    await writeDb(db);
-    sendJson(res, 200, assetRecord(db.settings, [
+    const savedSettings = postgresEnabled()
+      ? await settingsRepository.patchAppSettings(body, { audit: repositoryAudit(req, "settings", "app", previous, body) })
+      : (await writeDb(db), db.settings);
+    sendJson(res, 200, assetRecord(savedSettings, [
       "eventHeroImageUrl",
       "eventGamesImageUrl",
       "eventPartiesImageUrl",
@@ -9619,12 +9756,12 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 422, { error: { code: "CUSTOMER_PASSWORD_INVALID", message: passwordError } });
       return;
     }
-    if (db.users.some((item) => item.email === email)) {
+    if (postgresEnabled() ? await userRepository.emailExists(email) : db.users.some((item) => item.email === email)) {
       sendJson(res, 409, { error: "Ja existe uma conta com este e-mail." });
       return;
     }
 
-    const user = normalizeUser({
+    let user = normalizeUser({
       name,
       email,
       phone: body.phone,
@@ -9642,7 +9779,7 @@ async function handleApi(req, res, pathname) {
     user.emailVerificationExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     user.emailVerificationRequestedAt = new Date().toISOString();
     db.users.push(user);
-    await writeDb(db);
+    user = postgresEnabled() ? await userRepository.create(user) : (await writeDb(db), user);
     const verificationEmailSent = await notifyEmailVerification(email, verificationUrl, db);
     if (isProduction() && !verificationEmailSent) {
       user.pendingEmail = "";
@@ -9650,7 +9787,13 @@ async function handleApi(req, res, pathname) {
       user.emailVerificationExpiresAt = "";
       user.emailVerificationRequestedAt = "";
       user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      if (postgresEnabled()) {
+        user = await userRepository.updateFields(user.id, {
+          pendingEmail: "", emailVerificationHash: "", emailVerificationExpiresAt: "", emailVerificationRequestedAt: ""
+        }, { event: "repository.user.email_verification_cleanup", operation: "emailVerificationCleanup" });
+      } else {
+        await writeDb(db);
+      }
     }
     sendJson(res, 201, {
       ...authResponse(user),
@@ -9670,7 +9813,8 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 429, { error: { code: "CUSTOMER_LOGIN_BLOCKED", message: "Muitas tentativas. Aguarde antes de tentar novamente." } }, { "Retry-After": String(blocked.retryAfter) });
       return;
     }
-    const user = db.users.find((item) => item.email === email && item.active);
+    let user = postgresEnabled() ? await userRepository.findByEmail(email) : db.users.find((item) => item.email === email);
+    if (user?.active === false) user = null;
     if (!user) {
       recordLoginFailure(req, "customer", email);
       sendJson(res, 401, { error: "E-mail ou senha invalidos." });
@@ -9693,7 +9837,9 @@ async function handleApi(req, res, pathname) {
     if (passwordNeedsRehash(user.passwordHash)) {
       user.passwordHash = hashPassword(String(body.password || ""));
       user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      user = postgresEnabled()
+        ? await userRepository.updateFields(user.id, { passwordHash: user.passwordHash }, { event: "repository.user.password_rehash", operation: "passwordRehash" })
+        : (await writeDb(db), user);
     }
 
     sendJson(res, 200, authResponse(user), { "Set-Cookie": customerCookie(customerSessionValue(user)) });
@@ -9711,11 +9857,14 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/auth/logout" && method === "POST") {
-    const user = getCustomerUser(req, db);
+    let user = getCustomerUser(req, db);
     if (user) {
-      user.sessionVersion = Number(user.sessionVersion || 0) + 1;
-      user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      if (postgresEnabled()) await userRepository.incrementSessionVersion(user.id);
+      else {
+        user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+        user.updatedAt = new Date().toISOString();
+        await writeDb(db);
+      }
     }
     sendJson(res, 200, { ok: true }, { "Set-Cookie": customerCookie("", 0) });
     return;
@@ -9724,7 +9873,8 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/auth/password/request" && method === "POST") {
     const body = await readBody(req);
     const email = String(body.email || "").trim().toLowerCase();
-    const user = email ? db.users.find((item) => item.email === email && item.active !== false && item.authProvider !== "google") : null;
+    let user = email ? (postgresEnabled() ? await userRepository.findByEmail(email) : db.users.find((item) => item.email === email)) : null;
+    if (user?.active === false || user?.authProvider === "google") user = null;
     let resetToken = "";
     let resetUrl = "";
 
@@ -9750,12 +9900,20 @@ async function handleApi(req, res, pathname) {
       user.passwordResetExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       user.passwordResetRequestedAt = new Date().toISOString();
       user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      if (postgresEnabled()) await userRepository.updateFields(user.id, {
+        passwordResetHash: user.passwordResetHash,
+        passwordResetExpiresAt: user.passwordResetExpiresAt,
+        passwordResetRequestedAt: user.passwordResetRequestedAt
+      }, { event: "repository.user.password_reset_request", operation: "passwordResetRequest" });
+      else await writeDb(db);
       const delivered = await notifyPasswordReset(email, resetUrl, db);
       if (isProduction() && !delivered) {
         user.passwordResetHash = "";
         user.passwordResetExpiresAt = "";
-        await writeDb(db);
+        if (postgresEnabled()) await userRepository.updateFields(user.id, {
+          passwordResetHash: "", passwordResetExpiresAt: ""
+        }, { event: "repository.user.password_reset_cleanup", operation: "passwordResetCleanup" });
+        else await writeDb(db);
       }
     }
 
@@ -9778,32 +9936,39 @@ async function handleApi(req, res, pathname) {
     }
 
     const tokenHash = hashResetToken(token);
-    const user = db.users.find((item) =>
-      item.active !== false &&
-      item.authProvider !== "google" &&
-      item.passwordResetHash === tokenHash &&
-      item.passwordResetExpiresAt &&
-      new Date(item.passwordResetExpiresAt).getTime() > Date.now()
-    );
+    let user = postgresEnabled()
+      ? await userRepository.findByPasswordResetHash(tokenHash)
+      : db.users.find((item) =>
+        item.active !== false && item.authProvider !== "google" && item.passwordResetHash === tokenHash
+        && item.passwordResetExpiresAt && new Date(item.passwordResetExpiresAt).getTime() > Date.now()
+      );
     if (!user) {
       sendJson(res, 400, { error: { code: "PASSWORD_RESET_EXPIRED", message: "Token de recuperacao invalido ou expirado." } });
       return;
     }
 
-    user.passwordHash = hashPassword(password);
-    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
-    user.authProvider = user.authProvider || "email";
-    user.passwordResetHash = "";
-    user.passwordResetExpiresAt = "";
-    user.passwordResetRequestedAt = "";
-    user.updatedAt = new Date().toISOString();
-    await writeDb(db);
+    if (postgresEnabled()) {
+      user = await userRepository.resetPassword(user.id, tokenHash, hashPassword(password), user.authProvider || "email");
+      if (!user) {
+        sendJson(res, 400, { error: { code: "PASSWORD_RESET_EXPIRED", message: "Token de recuperacao invalido ou expirado." } });
+        return;
+      }
+    } else {
+      user.passwordHash = hashPassword(password);
+      user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+      user.authProvider = user.authProvider || "email";
+      user.passwordResetHash = "";
+      user.passwordResetExpiresAt = "";
+      user.passwordResetRequestedAt = "";
+      user.updatedAt = new Date().toISOString();
+      await writeDb(db);
+    }
     sendJson(res, 200, { ok: true, ...authResponse(user) }, { "Set-Cookie": customerCookie(customerSessionValue(user)) });
     return;
   }
 
   if (pathname === "/api/me" && method === "PATCH") {
-    const user = getCustomerUser(req, db);
+    let user = getCustomerUser(req, db);
     if (!user) {
       sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para continuar." } });
       return;
@@ -9827,6 +9992,7 @@ async function handleApi(req, res, pathname) {
     user.phone = String(body.phone || user.phone || "").trim().slice(0, 30);
     user.cpf = String(body.cpf || user.cpf || "").replace(/\D/g, "").slice(0, 11);
     const wantsPasswordChange = body.password !== undefined || body.newPassword !== undefined || body.currentPassword !== undefined || body.confirmPassword !== undefined;
+    let passwordChanged = false;
     if (wantsPasswordChange) {
       const currentPassword = String(body.currentPassword || "");
       const nextPassword = String(body.newPassword ?? body.password ?? "");
@@ -9852,10 +10018,21 @@ async function handleApi(req, res, pathname) {
         user.passwordHash = hashPassword(nextPassword);
         user.sessionVersion = Number(user.sessionVersion || 0) + 1;
         user.authProvider = user.authProvider || "email";
+        passwordChanged = true;
       }
     }
     user.updatedAt = new Date().toISOString();
-    await writeDb(db);
+    if (postgresEnabled()) {
+      const fields = { name: user.name, phone: user.phone, cpf: user.cpf };
+      if (passwordChanged) {
+        Object.assign(fields, { passwordHash: user.passwordHash, authProvider: user.authProvider });
+      }
+      user = await userRepository.updateFields(user.id, fields, {
+        event: "repository.user.profile_update", operation: "profileUpdate", incrementSessionVersion: passwordChanged
+      });
+    } else {
+      await writeDb(db);
+    }
     sendJson(res, 200, { user: sanitizeUser(user) }, {
       "Set-Cookie": customerCookie(customerSessionValue(user))
     });
@@ -9863,7 +10040,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/me/email-change/request" && method === "POST") {
-    const user = getCustomerUser(req, db);
+    let user = getCustomerUser(req, db);
     if (!user) {
       sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para continuar." } });
       return;
@@ -9874,7 +10051,7 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: { code: "EMAIL_INVALID", message: "Informe um e-mail valido." } });
       return;
     }
-    if ((db.users || []).some((item) => item.id !== user.id && item.email === email && item.active !== false)) {
+    if (postgresEnabled() ? await userRepository.emailExists(email, user.id) : (db.users || []).some((item) => item.id !== user.id && item.email === email && item.active !== false)) {
       sendJson(res, 409, { error: { code: "EMAIL_IN_USE", message: "Ja existe uma conta com este e-mail." } });
       return;
     }
@@ -9889,13 +10066,22 @@ async function handleApi(req, res, pathname) {
     user.emailVerificationExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     user.emailVerificationRequestedAt = new Date().toISOString();
     user.updatedAt = new Date().toISOString();
-    await writeDb(db);
+    if (postgresEnabled()) user = await userRepository.updateFields(user.id, {
+      pendingEmail: user.pendingEmail,
+      emailVerificationHash: user.emailVerificationHash,
+      emailVerificationExpiresAt: user.emailVerificationExpiresAt,
+      emailVerificationRequestedAt: user.emailVerificationRequestedAt
+    }, { event: "repository.user.email_change_request", operation: "emailChangeRequest" });
+    else await writeDb(db);
     const delivered = await notifyEmailVerification(email, verificationUrl, db);
     if (isProduction() && !delivered) {
       user.pendingEmail = "";
       user.emailVerificationHash = "";
       user.emailVerificationExpiresAt = "";
-      await writeDb(db);
+      if (postgresEnabled()) user = await userRepository.updateFields(user.id, {
+        pendingEmail: "", emailVerificationHash: "", emailVerificationExpiresAt: ""
+      }, { event: "repository.user.email_change_cleanup", operation: "emailChangeCleanup" });
+      else await writeDb(db);
       sendJson(res, 412, { error: { code: "EMAIL_DELIVERY_NOT_CONFIGURED", message: "Configure e ative SMTP ou webhook de e-mail para verificar troca de e-mail em produção." } });
       return;
     }
@@ -9909,7 +10095,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/me/email-verification/request" && method === "POST") {
-    const user = getCustomerUser(req, db);
+    let user = getCustomerUser(req, db);
     if (!user) {
       sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para continuar." } });
       return;
@@ -9934,7 +10120,14 @@ async function handleApi(req, res, pathname) {
     user.emailVerificationExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     user.emailVerificationRequestedAt = new Date().toISOString();
     user.updatedAt = new Date().toISOString();
-    await writeDb(db);
+    if (postgresEnabled()) user = await userRepository.updateFields(user.id, {
+      pendingEmail: user.pendingEmail,
+      emailVerified: false,
+      emailVerificationHash: user.emailVerificationHash,
+      emailVerificationExpiresAt: user.emailVerificationExpiresAt,
+      emailVerificationRequestedAt: user.emailVerificationRequestedAt
+    }, { event: "repository.user.email_verification_request", operation: "emailVerificationRequest" });
+    else await writeDb(db);
     const delivered = await notifyEmailVerification(user.email, verificationUrl, db);
     if (isProduction() && !delivered) {
       user.emailVerificationHash = "";
@@ -9942,7 +10135,10 @@ async function handleApi(req, res, pathname) {
       user.emailVerificationRequestedAt = "";
       user.pendingEmail = "";
       user.updatedAt = new Date().toISOString();
-      await writeDb(db);
+      if (postgresEnabled()) user = await userRepository.updateFields(user.id, {
+        emailVerificationHash: "", emailVerificationExpiresAt: "", emailVerificationRequestedAt: "", pendingEmail: ""
+      }, { event: "repository.user.email_verification_cleanup", operation: "emailVerificationCleanup" });
+      else await writeDb(db);
       sendJson(res, 412, { error: { code: "EMAIL_DELIVERY_FAILED", message: "Não foi possível enviar a confirmação agora. Confira a integração de e-mail." } });
       return;
     }
@@ -9958,28 +10154,36 @@ async function handleApi(req, res, pathname) {
   if (["/api/auth/email/verify", "/api/me/email-change/confirm"].includes(pathname) && method === "POST") {
     const body = await readBody(req);
     const tokenHash = hashResetToken(body.token || "");
-    const user = (db.users || []).find((item) =>
-      item.active !== false &&
-      item.emailVerificationHash === tokenHash &&
-      item.emailVerificationExpiresAt &&
-      new Date(item.emailVerificationExpiresAt).getTime() > Date.now()
-    );
+    let user = postgresEnabled()
+      ? await userRepository.findByEmailVerificationHash(tokenHash)
+      : (db.users || []).find((item) =>
+        item.active !== false && item.emailVerificationHash === tokenHash
+        && item.emailVerificationExpiresAt && new Date(item.emailVerificationExpiresAt).getTime() > Date.now()
+      );
     if (!user || !user.pendingEmail) {
       sendJson(res, 400, { error: { code: "EMAIL_VERIFICATION_INVALID", message: "Token de verificacao invalido ou expirado." } });
       return;
     }
-    if ((db.users || []).some((item) => item.id !== user.id && item.email === user.pendingEmail && item.active !== false)) {
+    if (postgresEnabled() ? await userRepository.emailExists(user.pendingEmail, user.id) : (db.users || []).some((item) => item.id !== user.id && item.email === user.pendingEmail && item.active !== false)) {
       sendJson(res, 409, { error: { code: "EMAIL_IN_USE", message: "Ja existe uma conta com este e-mail." } });
       return;
     }
-    user.email = user.pendingEmail;
-    user.pendingEmail = "";
-    user.emailVerified = true;
-    user.emailVerificationHash = "";
-    user.emailVerificationExpiresAt = "";
-    user.emailVerificationRequestedAt = "";
-    user.updatedAt = new Date().toISOString();
-    await writeDb(db);
+    if (postgresEnabled()) {
+      user = await userRepository.confirmEmail(user.id, tokenHash, user.pendingEmail);
+      if (!user) {
+        sendJson(res, 400, { error: { code: "EMAIL_VERIFICATION_INVALID", message: "Token de verificacao invalido ou expirado." } });
+        return;
+      }
+    } else {
+      user.email = user.pendingEmail;
+      user.pendingEmail = "";
+      user.emailVerified = true;
+      user.emailVerificationHash = "";
+      user.emailVerificationExpiresAt = "";
+      user.emailVerificationRequestedAt = "";
+      user.updatedAt = new Date().toISOString();
+      await writeDb(db);
+    }
     sendJson(res, 200, { ok: true, ...authResponse(user) }, { "Set-Cookie": customerCookie(customerSessionValue(user)) });
     return;
   }
@@ -10060,26 +10264,49 @@ async function handleApi(req, res, pathname) {
     }
 
     const email = String(profile.email).toLowerCase();
-    const existingIndex = db.users.findIndex((item) => item.email === email || item.googleSub === profile.sub);
-    const existingUser = existingIndex >= 0 ? db.users[existingIndex] : null;
-    const user = normalizeUser(
+    const emailUser = postgresEnabled()
+      ? await userRepository.findByEmail(email)
+      : db.users.find((item) => item.email === email) || null;
+    const googleUser = postgresEnabled()
+      ? await userRepository.findByGoogleSub(profile.sub)
+      : db.users.find((item) => item.googleSub === profile.sub) || null;
+    const googleIdentityConflict = (emailUser && googleUser && emailUser.id !== googleUser.id)
+      || (emailUser?.googleSub && emailUser.googleSub !== profile.sub);
+    if (googleIdentityConflict) {
+      logEvent("warn", "google_oauth.failed", { reason: "identity_conflict" });
+      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_account_conflict`, "Set-Cookie": googleOAuthCookie("", 0) });
+      res.end();
+      return;
+    }
+    const existingUser = googleUser || emailUser;
+    const existingIndex = existingUser ? db.users.findIndex((item) => item.id === existingUser.id) : -1;
+    let user = normalizeUser(
       {
         name: profile.name || email,
         email,
         googleSub: profile.sub,
         picture: profile.picture || "",
         emailVerified: Boolean(profile.email_verified),
-        role: existingIndex >= 0 ? db.users[existingIndex].role : "customer",
+        role: existingUser?.role || "customer",
         authProvider: existingUser?.passwordHash ? (existingUser.authProvider || "email") : "google",
         active: true
       },
       existingUser || {}
     );
 
-    if (existingIndex >= 0) db.users[existingIndex] = user;
-    else db.users.push(user);
-    await writeDb(db);
-    logEvent("info", "google_oauth.completed", { userId: user.id, accountCreated: existingIndex < 0 });
+    if (postgresEnabled()) {
+      user = existingUser
+        ? await userRepository.updateFields(existingUser.id, {
+          name: user.name, email: user.email, googleSub: user.googleSub, picture: user.picture,
+          emailVerified: user.emailVerified, authProvider: user.authProvider, active: true
+        }, { event: "repository.user.google_login", operation: "googleLogin" })
+        : await userRepository.create(user);
+    } else {
+      if (existingIndex >= 0) db.users[existingIndex] = user;
+      else db.users.push(user);
+      await writeDb(db);
+    }
+    logEvent("info", "google_oauth.completed", { userId: user.id, accountCreated: !existingUser });
 
     const successUrl = new URL(`${config.frontendUrl}${state.returnTo || "/"}`);
     successUrl.searchParams.set("auth", "google_success");
@@ -10419,7 +10646,13 @@ async function handleApi(req, res, pathname) {
     }
     const body = await readBody(req);
     db.settings.nfceTrigger = body.nfceTrigger === "payment_approved" ? "payment_approved" : "goods_delivered";
-    await writeDb(db);
+    if (postgresEnabled()) {
+      await settingsRepository.patchAppSettings({ nfceTrigger: db.settings.nfceTrigger }, {
+        audit: repositoryAudit(req, "settings", "nfceTrigger", null, { nfceTrigger: db.settings.nfceTrigger })
+      });
+    } else {
+      await writeDb(db);
+    }
     sendJson(res, 200, { nfceTrigger: db.settings.nfceTrigger });
     return;
   }
@@ -11192,8 +11425,10 @@ async function handleApi(req, res, pathname) {
     db.concessions = db.concessions.filter((existing) => existing.id !== item.id);
     db.concessions.push(item);
     db.concessions.sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100));
-    await writeDb(db);
-    sendJson(res, 201, item);
+    const saved = postgresEnabled()
+      ? await concessionRepository.create(item, { audit: repositoryAudit(req, "concession", item.id, null, item) })
+      : (await writeDb(db), item);
+    sendJson(res, 201, saved);
     return;
   }
 
@@ -11201,24 +11436,40 @@ async function handleApi(req, res, pathname) {
   if (concessionMatch) {
     const id = decodeURIComponent(concessionMatch[1]);
     const index = db.concessions.findIndex((item) => item.id === id);
-    if (index === -1) {
+    const repositoryItem = postgresEnabled() ? await concessionRepository.findById(id) : null;
+    if (index === -1 && !repositoryItem) {
       sendJson(res, 404, { error: "Produto da bomboniere nao encontrado" });
       return;
     }
 
     if (method === "PUT") {
-      const item = normalizeConcession(await readBody(req), db.concessions[index]);
+      const body = await readBody(req);
+      const previous = repositoryItem || db.concessions[index];
+      if (!previous) {
+        sendJson(res, 404, { error: "Produto da bomboniere nao encontrado" });
+        return;
+      }
+      const item = normalizeConcession(body, previous);
       db.concessions[index] = item;
       db.concessions.sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100));
-      await writeDb(db);
-      sendJson(res, 200, item);
+      const inventoryChanged = ["stock", "reserved", "sold"].some((key) => Object.prototype.hasOwnProperty.call(body, key));
+      const saved = postgresEnabled()
+        ? await concessionRepository.update(item, {
+          updateInventory: inventoryChanged,
+          expectedInventory: { stock: previous.stock, reserved: previous.reserved, sold: previous.sold },
+          audit: repositoryAudit(req, "concession", id, previous, item)
+        })
+        : (await writeDb(db), item);
+      sendJson(res, 200, saved);
       return;
     }
 
     if (method === "DELETE") {
-      const [removed] = db.concessions.splice(index, 1);
-      await writeDb(db);
-      sendJson(res, 200, removed);
+      const [removed] = index >= 0 ? db.concessions.splice(index, 1) : [repositoryItem];
+      const saved = postgresEnabled()
+        ? await concessionRepository.remove(id, { audit: repositoryAudit(req, "concession", id, removed, null) })
+        : (await writeDb(db), removed);
+      sendJson(res, 200, saved);
       return;
     }
   }
@@ -11228,8 +11479,10 @@ async function handleApi(req, res, pathname) {
     assertPromotionRules(db, item);
     db.promotions = db.promotions.filter((existing) => existing.id !== item.id);
     db.promotions.push(item);
-    await writeDb(db);
-    sendJson(res, 201, item);
+    const saved = postgresEnabled()
+      ? await promotionRepository.create(item, { audit: repositoryAudit(req, "promotions", item.id, null, item) })
+      : (await writeDb(db), item);
+    sendJson(res, 201, saved);
     return;
   }
 
@@ -11253,41 +11506,64 @@ async function handleApi(req, res, pathname) {
   if (promotionMatch) {
     const id = decodeURIComponent(promotionMatch[1]);
     const index = db.promotions.findIndex((item) => item.id === id);
-    if (index === -1) {
+    const repositoryPromotion = postgresEnabled() ? await promotionRepository.findById(id) : null;
+    if (index === -1 && !repositoryPromotion) {
       sendJson(res, 404, { error: "Promocao nao encontrada" });
       return;
     }
 
     if (method === "PUT") {
-      const item = normalizePromotion(await readBody(req), db.promotions[index]);
+      const previous = repositoryPromotion || db.promotions[index];
+      if (!previous) {
+        sendJson(res, 404, { error: "Promocao nao encontrada" });
+        return;
+      }
+      if (index >= 0) db.promotions[index] = previous;
+      const item = normalizePromotion(await readBody(req), previous);
       assertPromotionRules(db, item, id);
       const endsAt = item.endsAt ? new Date(item.endsAt).getTime() : 0;
       if (item.active && (!endsAt || endsAt > Date.now())) {
         item.archivedAt = "";
         item.archiveReason = "";
       }
-      db.promotions[index] = item;
-      await writeDb(db);
-      sendJson(res, 200, item);
+      if (index >= 0) db.promotions[index] = item;
+      const saved = postgresEnabled()
+        ? await promotionRepository.update(item, { audit: repositoryAudit(req, "promotions", id, previous, item) })
+        : (await writeDb(db), item);
+      sendJson(res, 200, saved);
       return;
     }
 
     if (method === "DELETE") {
-      const usage = couponUsageSummary(db, db.promotions[index]);
+      const previous = repositoryPromotion || db.promotions[index];
+      if (!previous) {
+        sendJson(res, 404, { error: "Promocao nao encontrada" });
+        return;
+      }
+      if (index >= 0) db.promotions[index] = previous;
+      const usage = couponUsageSummary(db, previous);
       let removed;
       if (usage.usageCount > 0) {
         removed = {
-          ...db.promotions[index],
+          ...previous,
           active: false,
           archivedAt: new Date().toISOString(),
           archiveReason: "manual",
           updatedAt: new Date().toISOString()
         };
-        db.promotions[index] = removed;
+        if (index >= 0) db.promotions[index] = removed;
       } else {
-        [removed] = db.promotions.splice(index, 1);
+        [removed] = index >= 0 ? db.promotions.splice(index, 1) : [previous];
       }
-      await writeDb(db);
+      if (postgresEnabled()) {
+        if (usage.usageCount > 0) {
+          removed = await promotionRepository.update(removed, { audit: repositoryAudit(req, "promotions", id, previous, removed) });
+        } else {
+          removed = await promotionRepository.remove(id, { audit: repositoryAudit(req, "promotions", id, previous, null) });
+        }
+      } else {
+        await writeDb(db);
+      }
       sendJson(res, 200, { ...removed, deleted: usage.usageCount === 0, archived: usage.usageCount > 0 });
       return;
     }
@@ -11331,14 +11607,16 @@ async function handleApi(req, res, pathname) {
     if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
     const body = await readBody(req);
     const user = normalizeUser(adminUserPayload(body));
-    if (db.users.some((existing) => existing.email === user.email)) {
+    if (postgresEnabled() ? await userRepository.emailExists(user.email) : db.users.some((existing) => existing.email === user.email)) {
       sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
       return;
     }
     db.users = db.users.filter((existing) => existing.id !== user.id);
     db.users.push(user);
-    await writeDb(db);
-    sendJson(res, 201, sanitizeUser(user));
+    const saved = postgresEnabled()
+      ? await userRepository.create(user, { audit: repositoryAudit(req, "user", user.id, null, sanitizeUser(user)) })
+      : (await writeDb(db), user);
+    sendJson(res, 201, sanitizeUser(saved));
     return;
   }
 
@@ -11347,22 +11625,29 @@ async function handleApi(req, res, pathname) {
     if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
     const id = decodeURIComponent(userMatch[1]);
     const index = db.users.findIndex((item) => item.id === id);
-    if (index === -1) {
+    const repositoryUser = postgresEnabled() ? await userRepository.findById(id) : null;
+    if (index === -1 && !repositoryUser) {
       sendJson(res, 404, { error: "Usuario nao encontrado" });
       return;
     }
 
     if (method === "PUT") {
       const body = await readBody(req);
-      const existingUser = db.users[index];
+      const existingUser = repositoryUser || db.users[index];
+      if (!existingUser) {
+        sendJson(res, 404, { error: "Usuario nao encontrado" });
+        return;
+      }
       const nextRole = roleAlias(body.role || existingUser.role);
-      const activeOwners = db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false);
-      if (roleAlias(existingUser.role) === "owner" && existingUser.active !== false && (nextRole !== "owner" || body.active === false) && activeOwners.length <= 1) {
+      const activeOwnerCount = postgresEnabled()
+        ? await userRepository.countActiveOwners()
+        : db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false).length;
+      if (roleAlias(existingUser.role) === "owner" && existingUser.active !== false && (nextRole !== "owner" || body.active === false) && activeOwnerCount <= 1) {
         sendJson(res, 409, { error: { code: "LAST_OWNER_REQUIRED", message: "Mantenha ao menos uma conta de dono ativa no painel." } });
         return;
       }
       const user = normalizeUser(adminUserPayload(body, existingUser), existingUser);
-      if (db.users.some((existing, existingIndex) => existingIndex !== index && existing.email === user.email)) {
+      if (postgresEnabled() ? await userRepository.emailExists(user.email, id) : db.users.some((existing, existingIndex) => existingIndex !== index && existing.email === user.email)) {
         sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
         return;
       }
@@ -11372,9 +11657,15 @@ async function handleApi(req, res, pathname) {
         || JSON.stringify(user.adminPermissions || []) !== JSON.stringify(existingUser.adminPermissions || [])
         || Boolean(body.password);
       if (accessChanged) user.sessionVersion = Number(existingUser.sessionVersion || 0) + 1;
-      db.users[index] = user;
-      await writeDb(db);
-      sendJson(res, 200, sanitizeUser(user));
+      if (index >= 0) db.users[index] = user;
+      const saved = postgresEnabled()
+        ? await userRepository.updateAdmin(user, {
+          incrementSessionVersion: accessChanged,
+          protectLastOwner: true,
+          audit: repositoryAudit(req, "user", id, sanitizeUser(existingUser), sanitizeUser(user))
+        })
+        : (await writeDb(db), user);
+      sendJson(res, 200, sanitizeUser(saved));
       return;
     }
 
@@ -11383,7 +11674,11 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: "Sua propria conta nao pode ser excluida enquanto estiver em uso." });
         return;
       }
-      if (roleAlias(db.users[index].role) === "owner" && db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false).length <= 1) {
+      const existingUser = repositoryUser || db.users[index];
+      const activeOwnerCount = postgresEnabled()
+        ? await userRepository.countActiveOwners()
+        : db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false).length;
+      if (roleAlias(existingUser.role) === "owner" && activeOwnerCount <= 1) {
         sendJson(res, 409, { error: { code: "LAST_OWNER_REQUIRED", message: "A última conta de dono ativa não pode ser excluída." } });
         return;
       }
@@ -11401,9 +11696,11 @@ async function handleApi(req, res, pathname) {
       db.subscriptionCredits = (db.subscriptionCredits || []).filter((credit) => !subscriptionIds.has(credit.subscriptionId));
       db.subscriptionUsage = (db.subscriptionUsage || []).filter((usage) => usage.userId !== id && !subscriptionIds.has(usage.subscriptionId));
       db.orders = (db.orders || []).map((order) => order.customerUserId === id ? { ...order, customerUserId: "" } : order);
-      const [removed] = db.users.splice(index, 1);
-      await writeDb(db);
-      sendJson(res, 200, sanitizeUser(removed));
+      const [removed] = index >= 0 ? db.users.splice(index, 1) : [existingUser];
+      const saved = postgresEnabled()
+        ? await userRepository.remove(id, { audit: repositoryAudit(req, "user", id, sanitizeUser(existingUser), null) })
+        : (await writeDb(db), removed);
+      sendJson(res, 200, sanitizeUser(saved));
       return;
     }
   }
@@ -13063,7 +13360,8 @@ async function runEmailAttachmentMaintenance() {
     }
     if (kept.length !== (db.settings?.emailAttachments || []).length) {
       db.settings.emailAttachments = kept;
-      await writeDb(db);
+      if (postgresEnabled()) await settingsRepository.updateSection("emailAttachments", kept);
+      else await writeDb(db);
     }
   } finally {
     emailAttachmentMaintenanceRunning = false;

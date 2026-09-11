@@ -5603,7 +5603,9 @@ async function saveConcession(event) {
       throw new Error("O produto foi salvo, mas a imagem não foi persistida. Envie o arquivo novamente.");
     }
     delete state.pendingImages.concessionImageUrl;
-    await loadContent({ silent: true });
+    upsertAdminCollection("concessions", saved);
+    state.content.concessions.sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100));
+    renderConcessions();
     showSuccess("Produto salvo", `${saved.name} ja pode aparecer na bomboniere do checkout.`);
   } catch (error) {
     showToast(error.message, "error");
@@ -5616,7 +5618,8 @@ async function deleteConcession() {
   try {
     await api(`/api/concessions/${encodeURIComponent(item.id)}`, { method: "DELETE" });
     state.selectedConcessionId = "";
-    await loadContent({ silent: true });
+    removeAdminCollectionItem("concessions", item.id);
+    renderConcessions();
     showToast("Produto excluído.");
   } catch (error) {
     showToast(error.message, "error");
@@ -7711,7 +7714,8 @@ async function savePromotion(event) {
     state.selectedPromotionId = saved.id;
     state.promotionView = saved.archivedAt ? "archived" : "active";
     state.promotionUsageCouponId = "";
-    await loadContent({ silent: true });
+    upsertAdminCollection("promotions", saved);
+    renderPromotions();
     showSuccess("Cupom salvo", `${saved.title} foi atualizado.`);
   } catch (error) {
     showToast(error.message, "error");
@@ -7727,7 +7731,9 @@ async function deletePromotion() {
     state.selectedPromotionId = "";
     state.promotionUsageCouponId = "";
     state.promotionView = result.archived ? "archived" : state.promotionView;
-    await loadContent({ silent: true });
+    if (result.archived) upsertAdminCollection("promotions", result);
+    else removeAdminCollectionItem("promotions", item.id);
+    renderPromotions();
     showToast(result.archived ? "Cupom arquivado. O histórico foi preservado." : "Cupom excluído.");
   } catch (error) {
     showToast(error.message, "error");
@@ -7911,7 +7917,9 @@ async function saveUser(event) {
     state.creating.user = false;
     state.selectedUserId = saved.id;
     $("userPassword").value = "";
-    await loadContent({ silent: true });
+    upsertAdminCollection("users", saved);
+    renderUsers();
+    renderCustomerUsers();
     showSuccess("Usuário salvo", `${saved.name} foi atualizado.`);
   } catch (error) {
     showToast(error.message, "error");
@@ -8000,7 +8008,9 @@ async function saveCustomerUser(event) {
     state.creating.customerUser = false;
     state.selectedCustomerAccountId = saved.id;
     $("customerUserPassword").value = "";
-    await loadContent({ silent: true });
+    upsertAdminCollection("users", saved);
+    renderCustomerUsers();
+    renderUsers();
     showSuccess("Cliente salvo", `${saved.name} continua com acesso somente ao site e à própria conta.`);
   } catch (error) {
     showToast(error.message, "error");
@@ -8013,7 +8023,9 @@ async function deleteCustomerUser() {
   try {
     await api(`/api/users/${encodeURIComponent(item.id)}`, { method: "DELETE" });
     state.selectedCustomerAccountId = "";
-    await loadContent({ silent: true });
+    removeAdminCollectionItem("users", item.id);
+    renderCustomerUsers();
+    renderUsers();
     showToast("Conta de cliente excluída.");
   } catch (error) {
     showToast(error.message, "error");
@@ -8046,7 +8058,9 @@ async function deleteUser() {
   try {
     await api(`/api/users/${encodeURIComponent(item.id)}`, { method: "DELETE" });
     state.selectedUserId = "";
-    await loadContent({ silent: true });
+    removeAdminCollectionItem("users", item.id);
+    renderUsers();
+    renderCustomerUsers();
     showToast("Usuário excluído.");
   } catch (error) {
     showToast(error.message, "error");

@@ -24,11 +24,28 @@ test("repositories da primeira fase usam SQL direcionado", () => {
   assert.match(source("ticketTypeRepository.js"), /sessions\.reprice/);
 });
 
+test("repositories da segunda fase usam SQL direcionado e campos permitidos", () => {
+  const files = ["promotionRepository.js", "concessionRepository.js", "settingsRepository.js", "userRepository.js"];
+  files.forEach((file) => assert.ok(fs.existsSync(path.join(repositoryDir, file)), `${file} ausente`));
+  const sql = files.map(source).join("\n");
+  ["users", "orders", "payments", "tickets", "movies", "rooms", "ticket_types", "sessions", "promotions", "concessions"].forEach((table) => {
+    assert.doesNotMatch(sql, new RegExp(`DELETE\\s+FROM\\s+${table}\\s*;`, "i"), `delete integral detectado em ${table}`);
+  });
+  assert.match(source("promotionRepository.js"), /UPDATE promotions SET/);
+  assert.match(source("concessionRepository.js"), /available\+\$2 >= 0/);
+  assert.match(source("concessionRepository.js"), /CONCESSION_INVENTORY_CHANGED/);
+  assert.match(source("settingsRepository.js"), /jsonb_set/);
+  assert.match(source("userRepository.js"), /FIELD_COLUMNS/);
+  assert.match(source("userRepository.js"), /session_version=session_version\+1/);
+  assert.match(source("userRepository.js"), /ORDER BY id FOR UPDATE/);
+  assert.doesNotMatch(source("userRepository.js"), /email.*OR google_sub/i);
+});
+
 test("rotas migradas nao entram no advisory lock global", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.match(server, /repositoryMutationRoute\(pathname, method\)/);
   assert.match(server, /!targetedRepositoryMutation && !context\?\.adminMutationLocked/);
-  ["movieRepository", "sessionRepository", "roomRepository", "ticketTypeRepository"].forEach((repository) => {
+  ["movieRepository", "sessionRepository", "roomRepository", "ticketTypeRepository", "promotionRepository", "concessionRepository", "settingsRepository", "userRepository"].forEach((repository) => {
     assert.match(server, new RegExp(`${repository}\\.`));
   });
 });
@@ -40,4 +57,7 @@ test("painel atualiza os quatro dominios sem recarregar todo o conteudo", () => 
   assert.match(admin, /upsertAdminCollection\("movies", saved\)/);
   assert.match(admin, /upsertAdminCollection\("rooms", saved\)/);
   assert.match(admin, /upsertAdminCollection\("ticketTypes", saved\)/);
+  assert.match(admin, /upsertAdminCollection\("concessions", saved\)/);
+  assert.match(admin, /upsertAdminCollection\("promotions", saved\)/);
+  assert.match(admin, /upsertAdminCollection\("users", saved\)/);
 });
