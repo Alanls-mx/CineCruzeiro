@@ -1296,6 +1296,70 @@
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
+          <section class="surface email-template-library" aria-labelledby="emailTemplateLibraryTitle">
+            <div class="email-template-library-head">
+              <div>
+                <div id="emailTemplateLibraryTitle" class="section-title">Biblioteca de modelos</div>
+                <p>Encontre uma referência por objetivo. Ao usar um modelo, o editor atual continua responsável pelo conteúdo e pelo envio.</p>
+              </div>
+              <div class="email-template-library-head-actions">
+                <button id="emailTemplateLibraryAiCreate" class="ghost-button" type="button">Criar modelo com Gemini</button>
+                <button id="emailTemplateLibraryToggle" class="ghost-button" type="button" aria-expanded="false" aria-controls="emailTemplateLibraryBody">Explorar modelos</button>
+              </div>
+            </div>
+            <div id="emailTemplateLibraryBody" hidden>
+              <div class="email-template-library-query">
+                <label class="email-template-library-search">Buscar modelo
+                  <input id="emailTemplateLibrarySearch" type="search" placeholder="Filme, campanha, estilo ou finalidade" autocomplete="off" />
+                </label>
+                <label>Ordenar
+                  <select id="emailTemplateLibrarySort">
+                    <option value="recommended">Mais adequados</option>
+                    <option value="recent">Mais recentes</option>
+                    <option value="popular">Mais usados</option>
+                    <option value="name">Nome</option>
+                  </select>
+                </label>
+                <label>Origem
+                  <select id="emailTemplateLibraryOrigin">
+                    <option value="">Todas</option>
+                    <option value="SYSTEM">Sistema</option>
+                    <option value="MANUAL">Manual</option>
+                    <option value="AI_GENERATED">Gemini</option>
+                  </select>
+                </label>
+              </div>
+              <div id="emailTemplateLibraryCategories" class="email-template-library-categories" aria-label="Categorias de modelos"></div>
+              <details class="email-template-library-filters">
+                <summary>Filtros avançados</summary>
+                <div>
+                  <label>Estilo visual
+                    <select id="emailTemplateLibraryStyle"><option value="">Todos os estilos</option></select>
+                  </label>
+                  <label>Gênero do filme
+                    <select id="emailTemplateLibraryGenre"><option value="">Todos os gêneros</option></select>
+                  </label>
+                  <label>Recurso do conteúdo
+                    <select id="emailTemplateLibraryContent">
+                      <option value="">Todos os recursos</option>
+                      <option value="sessions">Com sessões</option>
+                      <option value="coupon">Com cupom</option>
+                      <option value="discount">Com desconto</option>
+                      <option value="trailer">Com trailer</option>
+                      <option value="cta">Com chamada para ação</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
+              <div class="email-template-library-toolbar">
+                <strong id="emailTemplateLibraryCount">Carregando modelos</strong>
+                <label class="check-field compact"><input id="emailTemplateLibraryFavorites" type="checkbox" /> Somente favoritos</label>
+              </div>
+              <div id="emailTemplateLibraryGrid" class="email-template-library-grid" aria-live="polite"></div>
+              <div id="emailTemplateLibraryPager" class="campaign-history-pager" aria-label="Paginação da biblioteca"></div>
+              <p id="emailTemplateLibraryStatus" class="helper-text" role="status" aria-live="polite"></p>
+            </div>
+          </section>
           <details class="surface campaign-ai-assistant" aria-labelledby="emailCampaignAiTitle">
             <summary class="campaign-ai-summary">
               <span class="campaign-ai-mark" aria-hidden="true">IA</span>
@@ -1670,6 +1734,28 @@
             <div id="emailCampaignHistoryPager" class="campaign-history-pager" aria-label="Paginação do histórico de campanhas"></div>
             <section id="emailCampaignReport" class="campaign-report" hidden aria-live="polite"></section>
           </div>
+          <dialog id="emailTemplatePreviewDialog" class="email-template-preview-dialog" aria-labelledby="emailTemplatePreviewTitle">
+            <div class="email-template-preview-head">
+              <div>
+                <span id="emailTemplatePreviewCategory" class="campaign-status">Modelo</span>
+                <h3 id="emailTemplatePreviewTitle">Prévia do modelo</h3>
+              </div>
+              <button id="emailTemplatePreviewClose" class="icon-button" type="button" aria-label="Fechar prévia" title="Fechar">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+              </button>
+            </div>
+            <div class="preview-switch" aria-label="Largura da prévia">
+              <button type="button" class="active" data-template-preview-size="desktop">Desktop</button>
+              <button type="button" data-template-preview-size="mobile">Celular</button>
+            </div>
+            <div id="emailTemplatePreviewContent" class="email-template-preview-content"></div>
+            <div class="button-row">
+              <button id="emailTemplatePreviewFavorite" class="ghost-button" type="button">Adicionar aos favoritos</button>
+              <button id="emailTemplatePreviewArchive" class="danger-button" type="button">Arquivar referência</button>
+              <button id="emailTemplatePreviewVariation" class="ghost-button" type="button">Criar variação com Gemini</button>
+              <button id="emailTemplatePreviewUse" class="primary-button" type="button">Usar este modelo</button>
+            </div>
+          </dialog>
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:promotions" hidden>

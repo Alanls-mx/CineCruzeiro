@@ -167,6 +167,13 @@ let state = {
   emailCampaignHistoryMeta: null,
   emailCampaignHistoryTimer: null,
   emailCampaignHistorySearchTimer: null,
+  emailTemplateLibrary: null,
+  emailTemplateLibraryOpen: false,
+  emailTemplateLibraryCategory: "all",
+  emailTemplateLibraryPage: 1,
+  emailTemplateLibrarySearch: "",
+  emailTemplateLibrarySearchTimer: null,
+  emailTemplateLibraryPreviewItem: null,
   emailCampaignReportId: "",
   emailCampaignIdempotencyKey: randomClientId("campanha")
 };
@@ -277,9 +284,14 @@ async function api(path, options = {}) {
       window.location.href = `${API_BASE}/admin`;
       return {};
     }
-    const error = new Error(data.error?.message || data.error || "Desculpe, erro interno no servidor");
+    const requestId = data.error?.requestId || response.headers.get("x-request-id") || "";
+    const fallback = requestId
+      ? `Não foi possível concluir a operação. Informe o código ${requestId} caso o problema continue.`
+      : "Não foi possível concluir a operação. Tente novamente.";
+    const error = new Error(data.error?.message || data.error || fallback);
     error.status = response.status;
     error.code = data.error?.code || "REQUEST_ERROR";
+    error.requestId = requestId;
     error.payload = data;
     throw error;
   }
@@ -605,17 +617,19 @@ async function loadContent(options = {}) {
   }
   if (!silent && !state.content) renderLoading();
   try {
-    const [content, dashboard, payments, integrations] = await Promise.all([
+    const [content, dashboard, payments, integrations, templateLibrary] = await Promise.all([
       api("/api/admin/content"),
       api(`/api/admin/dashboard?${dashboardQuery()}`).catch(() => null),
       api(`/api/admin/payments?${dashboardQuery()}`).catch(() => null),
-      isOwnerAdmin() ? api("/api/integrations").catch(() => null) : Promise.resolve(null)
+      isOwnerAdmin() ? api("/api/integrations").catch(() => null) : Promise.resolve(null),
+      api("/api/admin/email/template-library?page=1&pageSize=18").catch(() => null)
     ]);
     state.content = cleanAdminContentAssets(content);
     state.emailCampaignHistoryMeta = content.emailCampaignPagination || state.emailCampaignHistoryMeta;
     state.dashboard = dashboard;
     state.payments = payments;
     state.integrations = integrations;
+    state.emailTemplateLibrary = templateLibrary;
     if (!state.creating.movie && !state.content.movies.some((movie) => movie.id === state.selectedMovieId)) {
       state.selectedMovieId = state.content.movies[0]?.id || "";
     }
@@ -638,8 +652,8 @@ async function loadContent(options = {}) {
   } catch (error) {
     console.error(error);
     setStatus("Erro", "error");
-    showError(`Desculpe, erro interno no servidor ao sincronizar os dados. ${error.message}`);
-    showToast("Falha ao atualizar dados do painel.", "error");
+    showError(`Não foi possível sincronizar os dados do painel. ${error.message}`);
+    showToast("A sincronização falhou. Confira a mensagem exibida no topo.", "error");
   } finally {
     if (silent) {
       state.refreshStatusTimer = setTimeout(() => setDisabled("refreshButton", false), 220);
@@ -660,6 +674,7 @@ function renderAll() {
     renderMarketingOverview();
     renderEmailCampaignControls();
     renderEmailCampaigns();
+    renderEmailTemplateLibrary();
     renderPromotions();
   renderAds();
   renderUsers();
@@ -6616,6 +6631,191 @@ function campaignHistoryCount(filter, totals = {}) {
   return Object.values(totals).reduce((sum, value) => sum + Number(value || 0), 0);
 }
 
+function emailTemplateLibraryQuery() {
+  const params = new URLSearchParams({
+    page: String(state.emailTemplateLibraryPage || 1),
+    pageSize: "18",
+    category: state.emailTemplateLibraryCategory || "all",
+    sort: $("emailTemplateLibrarySort")?.value || "recommended"
+  });
+  if (state.emailTemplateLibrarySearch) params.set("search", state.emailTemplateLibrarySearch);
+  if ($("emailTemplateLibraryOrigin")?.value) params.set("origin", $("emailTemplateLibraryOrigin").value);
+  if ($("emailTemplateLibraryStyle")?.value) params.set("visualStyle", $("emailTemplateLibraryStyle").value);
+  if ($("emailTemplateLibraryGenre")?.value) params.set("genre", $("emailTemplateLibraryGenre").value);
+  if ($("emailTemplateLibraryContent")?.value) params.set("content", $("emailTemplateLibraryContent").value);
+  if ($("emailTemplateLibraryFavorites")?.checked) params.set("favorites", "true");
+  const resolution = state.emailCampaignTemplateResolution;
+  if (resolution?.templateId) params.set("templateId", resolution.templateId);
+  if (state.emailCampaignObjective) params.set("contextObjective", state.emailCampaignObjective);
+  if ($("emailCampaignMovie")?.value) params.set("movieId", $("emailCampaignMovie").value);
+  return params.toString();
+}
+
+async function loadEmailTemplateLibrary(options = {}) {
+  const grid = $("emailTemplateLibraryGrid");
+  if (!options.silent && grid) grid.innerHTML = '<div class="skeleton-card compact"></div><div class="skeleton-card compact"></div><div class="skeleton-card compact"></div>';
+  try {
+    state.emailTemplateLibrary = await api(`/api/admin/email/template-library?${emailTemplateLibraryQuery()}`);
+    renderEmailTemplateLibrary();
+  } catch (error) {
+    if (grid) grid.innerHTML = `<div class="email-template-library-empty"><strong>Não foi possível carregar os modelos.</strong><span>${escapeHtml(error.message)}</span><button class="ghost-button" type="button" data-template-library-retry>Tentar novamente</button></div>`;
+  }
+}
+
+function renderEmailTemplateLibrary() {
+  const body = $("emailTemplateLibraryBody");
+  const toggle = $("emailTemplateLibraryToggle");
+  if (!body || !toggle) return;
+  body.hidden = !state.emailTemplateLibraryOpen;
+  toggle.setAttribute("aria-expanded", String(state.emailTemplateLibraryOpen));
+  toggle.textContent = state.emailTemplateLibraryOpen ? "Fechar biblioteca" : "Explorar modelos";
+  if (!state.emailTemplateLibraryOpen) return;
+  const library = state.emailTemplateLibrary || { items: [], categories: [], page: 1, pages: 1, total: 0 };
+  const categories = $("emailTemplateLibraryCategories");
+  if (categories) categories.innerHTML = (library.categories || []).map((category) => `<button type="button" class="${state.emailTemplateLibraryCategory === category.id ? "active" : ""}" data-template-library-category="${escapeHtml(category.id)}">${escapeHtml(category.label)} <span>${Number(category.count || 0)}</span></button>`).join("");
+  if ($("emailTemplateLibraryCount")) $("emailTemplateLibraryCount").textContent = `${Number(library.total || 0)} modelo(s) encontrado(s)`;
+  const styleSelect = $("emailTemplateLibraryStyle");
+  if (styleSelect) {
+    const selected = styleSelect.value;
+    const styles = [...new Set([...(library.filters?.visualStyles || []), selected].filter(Boolean))].sort();
+    styleSelect.innerHTML = '<option value="">Todos os estilos</option>' + styles.map((style) => `<option value="${escapeHtml(style)}">${escapeHtml(style)}</option>`).join("");
+    styleSelect.value = selected;
+  }
+  const genreSelect = $("emailTemplateLibraryGenre");
+  if (genreSelect) {
+    const selected = genreSelect.value;
+    const genres = [...new Set((state.content?.movies || []).flatMap((movie) => Array.isArray(movie.genres) ? movie.genres : String(movie.genre || "").split(",")).map((genre) => String(genre || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    genreSelect.innerHTML = '<option value="">Todos os gêneros</option>' + genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join("");
+    genreSelect.value = selected;
+  }
+  const grid = $("emailTemplateLibraryGrid");
+  if (grid) {
+    grid.innerHTML = (library.items || []).length ? library.items.map((item) => {
+      const image = item.imageUrl
+        ? `<img src="${escapeHtml(adminAssetUrl(item.imageUrl))}" alt="" loading="lazy" />`
+        : `<span class="email-template-library-monogram" aria-hidden="true">${escapeHtml(String(item.name || "M").slice(0, 1))}</span>`;
+      return `<article class="email-template-card" data-template-library-id="${escapeHtml(item.id)}">
+        <button class="email-template-card-preview" type="button" data-template-library-preview="${escapeHtml(item.id)}" aria-label="Visualizar ${escapeHtml(item.name)}">
+          <span class="email-template-card-media">${image}<span>${escapeHtml(item.categoryLabel || "Modelo")}</span></span>
+          <span class="email-template-card-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.description || "Modelo do Cine Cruzeiro")}</small></span>
+        </button>
+        <div class="email-template-card-meta"><span>${escapeHtml(item.visualStyle || "editorial")}</span><span>${item.origin === "AI_GENERATED" ? "Gemini" : item.origin === "MANUAL" ? "Manual" : "Sistema"}</span></div>
+        <div class="email-template-card-actions">
+          <button class="icon-button ${item.favorite ? "active" : ""}" type="button" data-template-library-favorite="${escapeHtml(item.id)}" aria-label="${item.favorite ? "Remover dos" : "Adicionar aos"} favoritos" title="Favorito">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/></svg>
+          </button>
+          <button class="ghost-button" type="button" data-template-library-preview="${escapeHtml(item.id)}">Prévia</button>
+          <button class="primary-button" type="button" data-template-library-use="${escapeHtml(item.id)}">Usar</button>
+        </div>
+      </article>`;
+    }).join("") : '<div class="email-template-library-empty"><strong>Nenhum modelo corresponde aos filtros.</strong><span>Altere a categoria ou os termos da busca.</span></div>';
+  }
+  const pager = $("emailTemplateLibraryPager");
+  if (pager) {
+    const page = Number(library.page || 1);
+    const pages = Number(library.pages || 1);
+    pager.innerHTML = `<button type="button" data-template-library-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>Anterior</button><span>Página ${page} de ${pages}</span><button type="button" data-template-library-page="${page + 1}" ${page >= pages ? "disabled" : ""}>Próxima</button>`;
+  }
+  if ($("emailTemplateLibraryStatus")) $("emailTemplateLibraryStatus").textContent = library.capabilities?.massGenerationReason || "";
+}
+
+async function previewEmailTemplateLibraryItem(id) {
+  const dialog = $("emailTemplatePreviewDialog");
+  if (!dialog) return;
+  const summary = (state.emailTemplateLibrary?.items || []).find((item) => item.id === id) || { id, name: "Modelo" };
+  state.emailTemplateLibraryPreviewItem = summary;
+  $("emailTemplatePreviewTitle").textContent = summary.name || "Prévia do modelo";
+  $("emailTemplatePreviewCategory").textContent = summary.categoryLabel || "Modelo";
+  $("emailTemplatePreviewContent").innerHTML = '<div class="skeleton-card"></div>';
+  $("emailTemplatePreviewUse").disabled = true;
+  dialog.showModal();
+  try {
+    const result = await api(`/api/admin/email/template-library/${encodeURIComponent(id)}`);
+    state.emailTemplateLibraryPreviewItem = { ...summary, ...result.item };
+    const campaign = result.item?.campaign;
+    if (campaign) {
+      const html = campaign.html || `<div style="padding:32px;background:#0d1728;color:#fff;font-family:Arial,sans-serif"><h1>${escapeHtml(campaign.headline || campaign.subject || summary.name)}</h1><p>${escapeHtml(campaign.message || "")}</p></div>`;
+      $("emailTemplatePreviewContent").innerHTML = '<iframe title="Prévia segura do modelo" sandbox="allow-popups"></iframe>';
+      $("emailTemplatePreviewContent").querySelector("iframe").srcdoc = html;
+    } else {
+      $("emailTemplatePreviewContent").innerHTML = `<div class="email-template-system-preview"><span>${escapeHtml(summary.categoryLabel || "Modelo")}</span><strong>${escapeHtml(summary.name || "")}</strong><p>${escapeHtml(summary.description || "")}</p><small>O conteúdo real será montado pelo editor com os filmes, ofertas e público que você selecionar.</small></div>`;
+    }
+    $("emailTemplatePreviewFavorite").textContent = summary.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos";
+    $("emailTemplatePreviewUse").disabled = false;
+  } catch (error) {
+    $("emailTemplatePreviewContent").innerHTML = `<div class="email-template-library-empty"><strong>Não foi possível abrir a prévia.</strong><span>${escapeHtml(error.message)}</span></div>`;
+  }
+}
+
+async function setEmailTemplateLibraryFavorite(id, value) {
+  await api(`/api/admin/email/template-library/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ action: "favorite", value }) });
+  await loadEmailTemplateLibrary({ silent: true });
+}
+
+async function useEmailTemplateLibraryItem(item = state.emailTemplateLibraryPreviewItem) {
+  if (!item?.id) return;
+  await api(`/api/admin/email/template-library/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ action: "use" }) });
+  if (item.sourceType === "campaign") {
+    const result = await api(`/api/admin/email/campaigns/${encodeURIComponent(item.sourceId)}/duplicate`, { method: "POST" });
+    $("emailTemplatePreviewDialog")?.close();
+    await loadEmailCampaignHistory({ silent: true });
+    await editEmailCampaign(result.campaign.id);
+    showToast("Uma cópia da referência foi aberta para edição.");
+    return;
+  }
+  const objective = item.objective || "announcement";
+  document.querySelector(`[data-campaign-objective="${objective}"]`)?.click();
+  const resolution = resolveCampaignTemplateClient();
+  if ((resolution.compatibleTemplates || []).includes(item.templateId)) {
+    syncCampaignTemplateResolution({ ...resolution, templateId: item.templateId, templateSelectionMode: "manual" });
+    if ($("emailCampaignTemplate")) $("emailCampaignTemplate").value = item.templateId;
+    applyEmailCampaignTemplate(item.templateId, { fillDefaults: true });
+  }
+  $("emailTemplatePreviewDialog")?.close();
+  setEmailCampaignStep(resolution.incomplete ? "objective" : "content");
+  $("emailCampaignForm")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast(resolution.incomplete ? "Selecione o conteúdo para completar este modelo." : "Modelo aplicado ao editor.");
+}
+
+async function prepareEmailTemplateAiVariation(item = null) {
+  const assistant = document.querySelector(".campaign-ai-assistant");
+  if (!assistant) return;
+  let referenceId = item?.sourceType === "campaign" ? item.sourceId || "" : "";
+  if (referenceId && item.status !== "DRAFT_REFERENCE") {
+    const duplicated = await api(`/api/admin/email/campaigns/${encodeURIComponent(referenceId)}/duplicate`, { method: "POST" });
+    referenceId = duplicated.campaign.id;
+    state.content.emailCampaigns ||= [];
+    state.content.emailCampaigns.unshift(duplicated.campaign);
+  }
+  assistant.open = true;
+  if ($("emailCampaignAiObjective")) $("emailCampaignAiObjective").value = item?.objective || "announcement";
+  if ($("emailCampaignAiMovie")) $("emailCampaignAiMovie").value = item?.movieId || "";
+  if ($("emailCampaignAiMovies")) {
+    const movieIds = new Set((item?.movieIds || []).map(String));
+    Array.from($("emailCampaignAiMovies").options).forEach((option) => { option.selected = movieIds.has(String(option.value)); });
+  }
+  if ($("emailCampaignAiCoupon")) $("emailCampaignAiCoupon").value = item?.couponId || "";
+  if ($("emailCampaignAiClubPlan")) $("emailCampaignAiClubPlan").value = item?.clubPlanId || "";
+  if ($("emailCampaignAiConcessions")) {
+    const concessionIds = new Set((item?.concessionIds || []).map(String));
+    Array.from($("emailCampaignAiConcessions").options).forEach((option) => { option.selected = concessionIds.has(String(option.value)); });
+  }
+  if ($("emailCampaignAiAudience")) $("emailCampaignAiAudience").value = item?.recipientMode || "all";
+  renderEmailCampaignAiControls();
+  if (referenceId && $("emailCampaignAiCampaign")) {
+    $("emailCampaignAiCampaign").value = referenceId;
+  }
+  if ($("emailCampaignAiBrief")) {
+    $("emailCampaignAiBrief").value = item
+      ? `Crie uma variação coerente deste modelo de ${item.categoryLabel || "campanha"}. Preserve a identidade do Cine Cruzeiro e use somente dados válidos do conteúdo selecionado.`
+      : "Descreva aqui a finalidade, o público e a direção visual do novo modelo.";
+  }
+  renderEmailCampaignAiControls();
+  $("emailTemplatePreviewDialog")?.close();
+  assistant.scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast(item ? "Referência preparada no assistente do Gemini." : "Assistente do Gemini aberto para criar o modelo.");
+}
+
 function renderEmailCampaigns() {
   const history = $("emailCampaignHistory");
   if (!history) return;
@@ -9245,6 +9445,77 @@ function bindEvents() {
   $("emailCampaignAiObjective")?.addEventListener("change", renderEmailCampaignAiControls);
   ["emailCampaignAiMovie", "emailCampaignAiMovies", "emailCampaignAiCoupon", "emailCampaignAiClubPlan", "emailCampaignAiConcessions", "emailCampaignAiAudience", "emailCampaignAiCampaign"]
     .forEach((id) => $(id)?.addEventListener("change", renderEmailCampaignAiControls));
+  $("emailTemplateLibraryToggle")?.addEventListener("click", () => {
+    state.emailTemplateLibraryOpen = !state.emailTemplateLibraryOpen;
+    renderEmailTemplateLibrary();
+    if (state.emailTemplateLibraryOpen && !state.emailTemplateLibrary) void loadEmailTemplateLibrary();
+  });
+  $("emailTemplateLibrarySearch")?.addEventListener("input", (event) => {
+    state.emailTemplateLibrarySearch = event.target.value.trim();
+    state.emailTemplateLibraryPage = 1;
+    clearTimeout(state.emailTemplateLibrarySearchTimer);
+    state.emailTemplateLibrarySearchTimer = setTimeout(() => void loadEmailTemplateLibrary(), 300);
+  });
+  ["emailTemplateLibrarySort", "emailTemplateLibraryOrigin", "emailTemplateLibraryStyle", "emailTemplateLibraryGenre", "emailTemplateLibraryContent", "emailTemplateLibraryFavorites"].forEach((id) => $(id)?.addEventListener("change", () => {
+    state.emailTemplateLibraryPage = 1;
+    void loadEmailTemplateLibrary();
+  }));
+  $("emailTemplateLibraryCategories")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-template-library-category]");
+    if (!button) return;
+    state.emailTemplateLibraryCategory = button.dataset.templateLibraryCategory || "all";
+    state.emailTemplateLibraryPage = 1;
+    void loadEmailTemplateLibrary();
+  });
+  $("emailTemplateLibraryGrid")?.addEventListener("click", (event) => {
+    const retry = event.target.closest("[data-template-library-retry]");
+    if (retry) return void loadEmailTemplateLibrary();
+    const favorite = event.target.closest("[data-template-library-favorite]");
+    if (favorite) {
+      const item = (state.emailTemplateLibrary?.items || []).find((entry) => entry.id === favorite.dataset.templateLibraryFavorite);
+      return void setEmailTemplateLibraryFavorite(favorite.dataset.templateLibraryFavorite, !item?.favorite).catch((error) => showToast(error.message, "error"));
+    }
+    const preview = event.target.closest("[data-template-library-preview]");
+    if (preview) return void previewEmailTemplateLibraryItem(preview.dataset.templateLibraryPreview);
+    const use = event.target.closest("[data-template-library-use]");
+    if (use) {
+      const item = (state.emailTemplateLibrary?.items || []).find((entry) => entry.id === use.dataset.templateLibraryUse);
+      return void useEmailTemplateLibraryItem(item).catch((error) => showToast(error.message, "error"));
+    }
+  });
+  $("emailTemplateLibraryPager")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-template-library-page]");
+    if (!button || button.disabled) return;
+    state.emailTemplateLibraryPage = Number(button.dataset.templateLibraryPage || 1);
+    void loadEmailTemplateLibrary();
+  });
+  $("emailTemplatePreviewClose")?.addEventListener("click", () => $("emailTemplatePreviewDialog")?.close());
+  $("emailTemplatePreviewDialog")?.addEventListener("click", (event) => {
+    if (event.target === $("emailTemplatePreviewDialog")) $("emailTemplatePreviewDialog").close();
+  });
+  $("emailTemplatePreviewFavorite")?.addEventListener("click", () => {
+    const item = state.emailTemplateLibraryPreviewItem;
+    if (!item) return;
+    void setEmailTemplateLibraryFavorite(item.id, !item.favorite).then(() => {
+      item.favorite = !item.favorite;
+      $("emailTemplatePreviewFavorite").textContent = item.favorite ? "Remover dos favoritos" : "Adicionar aos favoritos";
+    }).catch((error) => showToast(error.message, "error"));
+  });
+  $("emailTemplatePreviewArchive")?.addEventListener("click", () => {
+    const item = state.emailTemplateLibraryPreviewItem;
+    if (!item || !window.confirm("Arquivar esta referência na biblioteca? A campanha original será preservada.")) return;
+    void api(`/api/admin/email/template-library/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ action: "archive", value: true }) })
+      .then(() => { $("emailTemplatePreviewDialog")?.close(); return loadEmailTemplateLibrary({ silent: true }); })
+      .then(() => showToast("Referência arquivada. A campanha original foi preservada."))
+      .catch((error) => showToast(error.message, "error"));
+  });
+  $("emailTemplatePreviewUse")?.addEventListener("click", () => void useEmailTemplateLibraryItem().catch((error) => showToast(error.message, "error")));
+  $("emailTemplatePreviewVariation")?.addEventListener("click", () => void prepareEmailTemplateAiVariation(state.emailTemplateLibraryPreviewItem).catch((error) => showToast(error.message, "error")));
+  $("emailTemplateLibraryAiCreate")?.addEventListener("click", () => void prepareEmailTemplateAiVariation().catch((error) => showToast(error.message, "error")));
+  document.querySelectorAll("[data-template-preview-size]").forEach((button) => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-template-preview-size]").forEach((item) => item.classList.toggle("active", item === button));
+    $("emailTemplatePreviewContent")?.classList.toggle("mobile", button.dataset.templatePreviewSize === "mobile");
+  }));
   document.querySelectorAll("[data-campaign-objective]").forEach((button) => button.addEventListener("click", () => {
     state.emailCampaignObjective = button.dataset.campaignObjective;
     state.emailCampaignTemplateSelectionMode = "automatic";

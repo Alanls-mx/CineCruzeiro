@@ -35,6 +35,8 @@ const { archiveExpiredCoupons, couponUsageHistory, couponUsageSummary } = requir
 const { extractRequestedSchedule } = require("./services/emailCampaignBriefService");
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
 const { listPromptTemplates, resolvePromptTemplate, updatePromptTemplate, renderPromptTemplate } = require("./services/emailCampaignPromptTemplates");
+const { buildTemplateLibrary, definitionFor, updateLibraryPreference, findDuplicateReference } = require("./services/emailTemplateLibraryService");
+const { publicApiError } = require("./services/publicApiErrorService");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
@@ -423,13 +425,17 @@ const MIME_TYPES = {
   ".zip": "application/zip"
 };
 
-function normalizeApiPayload(data, status) {
+function normalizeApiPayload(data, status, requestId = "") {
   if (!data || typeof data !== "object" || !("error" in data)) return data;
   if (typeof data.error === "string") {
+    if (status >= 500) {
+      const safe = publicApiError(Object.assign(new Error(data.error), { statusCode: status }), requestId);
+      return { ...data, error: { code: safe.code, message: safe.message, requestId: safe.requestId } };
+    }
     return {
       ...data,
       error: {
-        code: status >= 500 ? "INTERNAL_ERROR" : "REQUEST_ERROR",
+        code: "REQUEST_ERROR",
         message: data.error
       }
     };
@@ -602,7 +608,7 @@ function sanitizeWebhookTestPayload(body = {}) {
 function sendJson(res, status, data, extraHeaders = {}) {
   const store = requestContext.getStore();
   const req = store?.req;
-  const payload = normalizeApiPayload(data, status);
+  const payload = normalizeApiPayload(data, status, store?.requestId || "");
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, {
     ...securityHeaders(),
@@ -8775,6 +8781,96 @@ async function handleApi(req, res, pathname) {
   }
 
   const emailCampaignMatch = pathname.match(/^\/api\/admin\/email\/campaigns\/([^/]+)(?:\/(send|cancel|duplicate|delete|recipients|retry-failures))?$/);
+  const emailTemplateLibraryMatch = pathname.match(/^\/api\/admin\/email\/template-library\/([^/]+)$/);
+  if (pathname === "/api/admin/email/template-library" && method === "GET") {
+    const params = new URL(req.url, `http://${req.headers.host}`).searchParams;
+    const campaignResult = await listPersistedCampaigns({ page: 1, pageSize: 100, order: "desc" });
+    const moviesById = new Map((db.movies || []).map((item) => [String(item.id), item]));
+    const couponsById = new Map((db.promotions || []).map((item) => [String(item.id), item]));
+    const concessionsById = new Map((db.concessions || []).map((item) => [String(item.id), item]));
+    const plansById = new Map((db.subscriptionPlans || []).map((item) => [String(item.id), item]));
+    const indexedCampaigns = (campaignResult.campaigns || []).map((campaign) => {
+      const movie = moviesById.get(String(campaign.movieId || ""));
+      const coupon = couponsById.get(String(campaign.couponId || ""));
+      const plan = plansById.get(String(campaign.clubPlanId || ""));
+      const concessionNames = (campaign.concessionIds || []).map((id) => concessionsById.get(String(id))?.name).filter(Boolean);
+      return {
+        ...campaign,
+        movieTitle: movie?.title || "",
+        moviePosterUrl: movie?.posterUrl || "",
+        genres: Array.isArray(movie?.genres) ? movie.genres : String(movie?.genre || "").split(",").map((item) => item.trim()).filter(Boolean),
+        couponTitle: coupon?.title || coupon?.couponCode || "",
+        clubPlanName: plan?.name || "",
+        itemTitle: concessionNames.join(", ")
+      };
+    });
+    const selectedMovie = (db.movies || []).find((movie) => String(movie.id) === String(params.get("movieId") || ""));
+    const library = buildTemplateLibrary({
+      campaigns: indexedCampaigns,
+      preferences: db.settings?.emailTemplateLibrary || {},
+      filters: {
+        page: params.get("page"),
+        pageSize: params.get("pageSize"),
+        search: String(params.get("search") || "").slice(0, 160),
+        category: params.get("category") || "all",
+        objective: params.get("objective") || "",
+        visualStyle: params.get("visualStyle") || "",
+        genre: params.get("genre") || "",
+        content: params.get("content") || "",
+        origin: params.get("origin") || "",
+        sort: params.get("sort") || "recommended",
+        favorites: params.get("favorites") === "true",
+        includeArchived: params.get("includeArchived") === "true"
+      },
+      context: {
+        templateId: params.get("templateId") || "",
+        objective: params.get("contextObjective") || "",
+        genres: Array.isArray(selectedMovie?.genres)
+          ? selectedMovie.genres
+          : String(selectedMovie?.genre || "").split(",").map((item) => item.trim()).filter(Boolean)
+      }
+    });
+    sendJson(res, 200, {
+      ...library,
+      capabilities: {
+        existingHtmlPreserved: true,
+        aiGenerationEnabled: Boolean(integrationConfigService.resolvedConfig(db, "gemini")?.configured),
+        massGenerationEnabled: false,
+        massGenerationReason: "A geração em lote fica desativada até a validação da arquitetura e das referências."
+      }
+    });
+    return;
+  }
+  if (emailTemplateLibraryMatch && method === "GET") {
+    const itemId = decodeURIComponent(emailTemplateLibraryMatch[1]);
+    if (itemId.startsWith("campaign:")) {
+      const campaign = await findPersistedCampaign(itemId.slice("campaign:".length));
+      if (!campaign) {
+        sendJson(res, 404, { error: { code: "EMAIL_TEMPLATE_REFERENCE_NOT_FOUND", message: "A referência de e-mail não existe mais." } });
+        return;
+      }
+      sendJson(res, 200, { item: { id: itemId, sourceType: "campaign", campaign: campaignDetails(campaign) } });
+      return;
+    }
+    const templateId = itemId.replace(/^system:/, "");
+    if (!validCampaignTemplate(templateId)) {
+      sendJson(res, 404, { error: { code: "EMAIL_TEMPLATE_NOT_FOUND", message: "Modelo de e-mail não encontrado." } });
+      return;
+    }
+    sendJson(res, 200, { item: { id: `system:${templateId}`, sourceType: "system", ...definitionFor(templateId) } });
+    return;
+  }
+  if (emailTemplateLibraryMatch && method === "PATCH") {
+    const itemId = decodeURIComponent(emailTemplateLibraryMatch[1]);
+    const body = await readBody(req);
+    const action = ["archive", "use"].includes(body.action) ? body.action : "favorite";
+    db.settings ||= {};
+    db.settings.emailTemplateLibrary = updateLibraryPreference(db.settings.emailTemplateLibrary || {}, itemId, action, body.value !== false);
+    await writeDb(db);
+    logEvent("info", `email_template_library.${action}`, { itemId, value: body.value !== false, actorUserId: req.adminUser?.id || "" });
+    sendJson(res, 200, { preferences: db.settings.emailTemplateLibrary });
+    return;
+  }
   if (pathname === "/api/admin/email/branding" && method === "GET") {
     sendJson(res, 200, { branding: normalizeEmailBrand(db.settings?.emailBranding || {}) });
     return;
@@ -8989,6 +9085,20 @@ async function handleApi(req, res, pathname) {
       aiBrief: generated.aiBrief,
       aiEligibility: eligibility
     });
+    const comparableReferences = await listPersistedCampaigns({
+      page: 1,
+      pageSize: 100,
+      templateId: campaign.templateId,
+      order: "desc"
+    });
+    const duplicateReference = findDuplicateReference(campaign, comparableReferences.campaigns || []);
+    if (duplicateReference) {
+      throw Object.assign(new Error("Já existe uma referência equivalente na biblioteca. Abra o modelo existente ou detalhe melhor a variação desejada."), {
+        statusCode: 409,
+        code: "EMAIL_TEMPLATE_DUPLICATE",
+        expose: true
+      });
+    }
     let persistedCoupon = null;
     try {
       if (autoCoupon) persistedCoupon = await persistAutoCampaignCoupon(autoCoupon);
@@ -12644,17 +12754,18 @@ const server = http.createServer(async (req, res) => {
 
       sendJson(res, 404, { error: "Nao encontrado" });
     } catch (error) {
-      const status = error.statusCode || 500;
+      const publicError = publicApiError(error, store.requestId);
+      const status = publicError.status;
       logEvent(status >= 500 ? "error" : "warn", "request.failed", {
         status,
         code: error.code || "REQUEST_ERROR",
         message: error.message
       });
-      const exposeError = status < 500 || error.expose === true;
       sendJson(res, status, {
         error: {
-          code: exposeError ? error.code || "REQUEST_ERROR" : "INTERNAL_ERROR",
-          message: exposeError ? error.message : "Desculpe, erro interno no servidor."
+          code: publicError.code,
+          message: publicError.message,
+          requestId: publicError.requestId
         },
         ...(isProduction() ? {} : { detail: error.message })
       });
