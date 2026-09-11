@@ -77,6 +77,29 @@ async function run() {
     assert.equal((await filesBelow(legacyFolder)).length, 2);
     await service.cleanupAssets(upgraded.assets);
 
+    const renamedMovie = {
+      id: "superman",
+      slug: "coyote-vs-acme",
+      title: "Coyote vs. ACME",
+      posterUrl: "/uploads/movies-superman/poster-superman-old.jpg",
+      backdropUrl: "/uploads/movies-superman/backdrop-superman-old.jpg",
+      metadata: { tmdbPosterSourceUrl: posterSource, tmdbBackdropSourceUrl: backdropSource }
+    };
+    assert.equal(needsLocalization(renamedMovie), true);
+    const renamed = await service.localizeMovie(renamedMovie);
+    assert.match(renamed.movie.posterUrl, /^\/uploads\/movies-coyote-vs-acme\/poster-coyote-vs-acme-/);
+    assert.match(renamed.movie.backdropUrl, /^\/uploads\/movies-coyote-vs-acme\/backdrop-coyote-vs-acme-/);
+    assert.equal(renamed.movie.metadata.imageStorageKey, "coyote-vs-acme");
+    assert.equal(needsLocalization(renamed.movie), false);
+    await service.cleanupAssets(renamed.assets);
+
+    const manualUpload = {
+      ...renamedMovie,
+      posterUrl: "/uploads/admin/poster-personalizado.jpg",
+      backdropUrl: "/uploads/admin/banner-personalizado.jpg"
+    };
+    assert.equal(needsLocalization(manualUpload), false);
+
     const partialFailure = createMovieImageService({
       storageService,
       fetchImpl: async (url) => {

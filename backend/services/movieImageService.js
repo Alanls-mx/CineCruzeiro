@@ -14,8 +14,22 @@ function isTmdbImageUrl(value) {
   }
 }
 
-function safeMovieFolder(movieId) {
-  return `movies-${String(movieId || "movie").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "movie"}`;
+function safeMovieKey(value) {
+  return String(value || "movie")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "movie";
+}
+
+function movieStorageKey(movie) {
+  return safeMovieKey(movie?.slug || movie?.title || movie?.id);
+}
+
+function safeMovieFolder(storageKey) {
+  return `movies-${safeMovieKey(storageKey)}`;
 }
 
 function tmdbSourceForField(movie, field) {
@@ -23,9 +37,11 @@ function tmdbSourceForField(movie, field) {
   if (isTmdbImageUrl(currentUrl)) return { sourceUrl: currentUrl, previousUrl: currentUrl };
   const metadataKey = field === "posterUrl" ? "tmdbPosterSourceUrl" : "tmdbBackdropSourceUrl";
   const sourceUrl = String(movie?.metadata?.[metadataKey] || "");
-  const localizedFolder = `/uploads/${safeMovieFolder(movie?.id)}/`;
-  const isLegacyLocalizedImage = currentUrl.startsWith(localizedFolder) && !/\.jpe?g(?:$|[?#])/i.test(currentUrl);
-  return isLegacyLocalizedImage && isTmdbImageUrl(sourceUrl)
+  const localizedFolder = `/uploads/${safeMovieFolder(movieStorageKey(movie))}/`;
+  const isManagedLocalizedImage = /^\/uploads\/movies-[^/]+\//i.test(currentUrl);
+  const needsFormatUpgrade = isManagedLocalizedImage && !/\.jpe?g(?:$|[?#])/i.test(currentUrl);
+  const belongsToPreviousSlug = isManagedLocalizedImage && !currentUrl.startsWith(localizedFolder);
+  return (needsFormatUpgrade || belongsToPreviousSlug) && isTmdbImageUrl(sourceUrl)
     ? { sourceUrl, previousUrl: currentUrl }
     : null;
 }
@@ -37,7 +53,7 @@ function needsLocalization(movie) {
 function createMovieImageService({ storageService, fetchImpl = global.fetch, timeoutMs = 12000, maxBytes = 5 * 1024 * 1024 }) {
   if (!storageService?.uploadImageBuffer) throw new Error("Storage de imagens indisponível.");
 
-  async function download(sourceUrl, movieId, field) {
+  async function download(sourceUrl, storageKey, field) {
     if (!isTmdbImageUrl(sourceUrl)) return null;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -54,9 +70,9 @@ function createMovieImageService({ storageService, fetchImpl = global.fetch, tim
       const buffer = await sharp(sourceBuffer).rotate().jpeg({ quality: 88, progressive: true }).toBuffer();
       return storageService.uploadImageBuffer({
         buffer,
-        filename: `${field === "posterUrl" ? "poster" : "backdrop"}-${movieId}.jpg`,
+        filename: `${field === "posterUrl" ? "poster" : "backdrop"}-${storageKey}.jpg`,
         contentType: "image/jpeg",
-        folder: safeMovieFolder(movieId)
+        folder: safeMovieFolder(storageKey)
       });
     } catch (cause) {
       const error = new Error(`Não foi possível baixar ${field === "posterUrl" ? "o pôster" : "a capa"} do TMDB: ${cause.message || "falha desconhecida"}`);
@@ -69,11 +85,12 @@ function createMovieImageService({ storageService, fetchImpl = global.fetch, tim
   }
 
   async function localizeMovie(movie) {
+    const storageKey = movieStorageKey(movie);
     const candidates = IMAGE_FIELDS
       .map((field) => ({ field, ...tmdbSourceForField(movie, field) }))
       .filter(({ sourceUrl }) => Boolean(sourceUrl));
     const results = await Promise.allSettled(candidates.map(async ({ field, sourceUrl, previousUrl }) => {
-      const uploaded = await download(sourceUrl, movie.id, field);
+      const uploaded = await download(sourceUrl, storageKey, field);
       return { field, sourceUrl, previousUrl, localUrl: uploaded.url, path: uploaded.path };
     }));
     const assets = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
@@ -89,6 +106,7 @@ function createMovieImageService({ storageService, fetchImpl = global.fetch, tim
       next.metadata[asset.field === "posterUrl" ? "tmdbPosterSourceUrl" : "tmdbBackdropSourceUrl"] = asset.sourceUrl;
     }
     next.metadata.imagesLocalizedAt = new Date().toISOString();
+    next.metadata.imageStorageKey = storageKey;
     return { movie: next, assets, changed: true };
   }
 
@@ -97,7 +115,7 @@ function createMovieImageService({ storageService, fetchImpl = global.fetch, tim
   }
 
   async function pruneLocalizedAssets(movie) {
-    const folder = safeMovieFolder(movie?.id);
+    const folder = safeMovieFolder(movieStorageKey(movie));
     const folderPath = path.join(storageService.rootDir, folder);
     const activeFiles = new Set(IMAGE_FIELDS.map((field) => {
       const value = String(movie?.[field] || "");
