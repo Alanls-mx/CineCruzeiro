@@ -885,25 +885,45 @@ async function loadConcessionDailySales() {
   const target = $("concessionDailySales");
   if (!target) { concessionSalesLoading = false; return; }
   try {
-    const data = await api("/api/admin/concession-sales");
+    const dateInput = $("concessionSalesDate");
+    if (dateInput && !dateInput.value) {
+      dateInput.value = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+    }
+    const selectedDate = dateInput?.value || "";
+    const data = await api(`/api/admin/concession-sales${selectedDate ? `?date=${encodeURIComponent(selectedDate)}` : ""}`);
     const showArchived = $("concessionSalesArchived").checked;
+    const summary = data.summary || {};
+    const dailyInsights = $("concessionDailyInsights");
+    if (dailyInsights) dailyInsights.innerHTML = `
+      <div class="mini-insight"><span>Receita líquida</span><strong>${money(summary.netRevenue || 0)}</strong><small>Valor confirmado após descontos e devoluções</small></div>
+      <div class="mini-insight"><span>Venda bruta</span><strong>${money(summary.grossRevenue || 0)}</strong><small>${Number(summary.itemQuantity || 0)} item(ns) em ${Number(summary.orders || 0)} pedido(s)</small></div>
+      <div class="mini-insight"><span>Descontos</span><strong>${money(summary.discountTotal || 0)}</strong><small>Clube, itens grátis e cupons</small></div>
+      <div class="mini-insight"><span>Reembolsos</span><strong>${money(summary.refundTotal || 0)}</strong><small>${Number(summary.refundedQuantity || 0)} item(ns) devolvido(s)</small></div>`;
     target.innerHTML = data.groups.map((group) => {
       const orders = group.orders.filter((order) => showArchived || !order.archived);
       if (!orders.length) return "";
-      return `<section class="concession-session-sales"><h3>${escapeHtml(group.title)}</h3>
-        <p>${escapeHtml([group.date, group.time, group.room, group.status].filter(Boolean).join(" · "))}</p>
+      const groupItemCount = orders.reduce((total, order) => total + order.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), 0);
+      const groupRevenue = orders.reduce((total, order) => total + Number(order.finance?.netRevenue || 0), 0);
+      return `<section class="concession-session-sales">
+        <header class="concession-session-head"><div><h3>${escapeHtml(group.title)}</h3><p>${escapeHtml([group.date, group.time, group.room, group.status].filter(Boolean).join(" · "))}</p></div><div><strong>${money(groupRevenue)}</strong><span>${groupItemCount} item(ns) · ${orders.length} pedido(s)</span></div></header>
         ${orders.map((order) => `<article class="concession-daily-order">
-          <strong>${escapeHtml(order.customerName)} · ${escapeHtml(orderStatusLabel(order.status))}</strong>
-          <p>${escapeHtml(order.id)} · ${new Date(order.purchasedAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
-          <ul>${order.items.map((item) => `<li>${Number(item.quantity)} x ${escapeHtml(item.name)} · ${Number(item.fulfilledQuantity)} entregue(s)${item.refundStatus === "completed" ? " · reembolsado" : ""}</li>`).join("")}</ul>
-          <p>Bruto ${money(order.finance.grossRevenue)} · Clube ${money(order.finance.clubDiscount + order.finance.freeItemDiscount)} · Cupom ${money(order.finance.couponDiscount)}${Number(order.finance.refundTotal || 0) ? ` · Reembolsado ${money(order.finance.refundTotal)}` : ""} · Líquido reconhecido ${money(order.finance.netRevenue)}</p>
+          <header class="concession-order-head"><div><strong>${escapeHtml(order.customerName)}</strong><span>${escapeHtml(order.id)} · ${new Date(order.purchasedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}</span></div><div><span class="badge">${escapeHtml(orderStatusLabel(order.status))}</span><small>${escapeHtml(order.paymentMethod)} · ${escapeHtml(order.paymentStatus)}</small></div></header>
+          <div class="concession-item-table" role="table" aria-label="Produtos do pedido">
+            <div class="concession-item-row concession-item-labels" role="row"><span>Produto</span><span>Qtd.</span><span>Unitário</span><span>Descontos</span><span>Líquido</span></div>
+            ${order.items.map((item) => {
+              const productFinance = (order.finance?.products || []).find((product) => String(product.id) === String(item.id)) || {};
+              const discounts = Number(productFinance.discountTotal || 0);
+              return `<div class="concession-item-row" role="row"><span><strong>${escapeHtml(item.name)}</strong><small>${Number(item.fulfilledQuantity)} entregue(s)${item.refundStatus === "completed" ? " · reembolsado" : ""}</small></span><span>${Number(item.quantity)}</span><span>${money(item.originalUnitPrice)}</span><span>${discounts ? `-${money(discounts)}` : "-"}</span><span>${money(productFinance.netRevenue || 0)}</span></div>`;
+            }).join("")}
+          </div>
+          <div class="concession-order-finance"><span>Bruto <strong>${money(order.finance.grossRevenue)}</strong></span><span>Clube <strong>-${money(Number(order.finance.clubDiscount || 0) + Number(order.finance.freeItemDiscount || 0))}</strong></span><span>Cupom${order.couponCode ? ` ${escapeHtml(order.couponCode)}` : ""} <strong>-${money(order.finance.couponDiscount)}</strong></span>${Number(order.finance.refundTotal || 0) ? `<span>Reembolsado <strong>-${money(order.finance.refundTotal)}</strong></span>` : ""}<span class="is-net">Líquido <strong>${money(order.finance.netRevenue)}</strong></span></div>
           <div class="concession-order-actions">
             ${order.refundEligibility?.allowed ? `<button class="danger-button" data-concession-refund="${escapeHtml(order.id)}" data-refund-amount="${Number(order.refundEligibility.amount || 0)}" type="button">${Number(order.refundEligibility.amount || 0) > 0 ? `Reembolsar ${money(order.refundEligibility.amount)}` : "Cancelar bomboniere"}</button>` : ""}
             <button class="ghost-button" data-concession-archive="${escapeHtml(order.id)}" data-archived="${order.archived}" type="button">${order.archived ? "Desarquivar bomboniere" : "Arquivar bomboniere"}</button>
           </div>
           <small>${escapeHtml(order.refundEligibility?.reason || "")}</small>
         </article>`).join("")}</section>`;
-    }).join("") || "<p>Nenhuma compra para os filtros de hoje.</p>";
+    }).join("") || `<div class="empty-state"><strong>Nenhum pedido nesta data</strong><span>Não há vendas confirmadas da bomboniere em ${escapeHtml(data.date || selectedDate)}.</span></div>`;
     target.querySelectorAll("[data-concession-archive]").forEach((button) => button.addEventListener("click", async () => {
       button.disabled = true;
       try {
@@ -3472,6 +3492,8 @@ function orderDetailHtml(order) {
       ["Valor", money(payment?.amount ?? order.totalPrice)],
       ["Complemento pago", money(order.additionalPayment || 0)],
       ["Status", paymentStatusLabel(payment?.status || order.paymentStatus)],
+      ["Reembolso", order.refundStatus === "required" ? "Devolução manual necessária" : order.refundStatus === "completed" ? "Concluído" : order.refundStatus === "pending" ? "Em processamento" : "-"],
+      ["Orientação", order.manualRefundReason || payment?.metadata?.manualRefund?.reason || "-"],
       ["Referência externa", payment?.providerPaymentId || payment?.providerReference || "-"]
     ])}
     ${sectionHtml("Histórico", [["Eventos", history], ["Observação", order.operationalNotes || "-"]])}
@@ -3485,8 +3507,8 @@ function fillOrderEditor(order, mode) {
   $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
   $("orderEditFields").hidden = mode !== "edit";
   $("orderSaveButton").hidden = mode !== "edit";
-  $("orderCancelButton").hidden = !order || order.archived || ((order.status === "cancelled" || order.status === "refunded") && order.refundStatus !== "pending");
-  $("orderCancelButton").textContent = order?.refundStatus === "pending" ? "Retomar reembolso" : "Cancelar pedido";
+  $("orderCancelButton").hidden = !order || order.archived || ["cancelled", "refunded"].includes(order.status);
+  $("orderCancelButton").textContent = "Cancelar pedido";
   $("orderPermanentDeleteButton").hidden = !order || !isOwnerAdmin();
   if (order) {
     $("orderCustomerName").value = order.customerName || "";
@@ -3538,6 +3560,10 @@ async function saveOrderEdit(event) {
 async function cancelOrDeleteOrder(orderId = state.selectedOrderId) {
   const order = (state.content?.orders || []).find((item) => item.id === orderId);
   if (!order) return;
+  if (["cancelled", "refunded"].includes(order.status)) {
+    showToast("Este pedido já foi cancelado. Agora ele pode ser arquivado ou excluído.", "error");
+    return;
+  }
   const draft = ["draft", "test"].includes(order.status);
   const action = draft ? "excluir" : "cancelar";
   const reason = prompt(`Informe o motivo para ${action} este pedido.${order.status === "paid" ? " O pagamento Mercado Pago aprovado sera reembolsado integralmente, quando elegivel." : ""}`);
@@ -3549,7 +3575,13 @@ async function cancelOrDeleteOrder(orderId = state.selectedOrderId) {
     });
     await loadContent({ silent: true });
     closeOrderOverlay();
-    showToast(result.order?.refundStatus === "completed" ? "Pedido reembolsado pelo Mercado Pago." : draft ? "Pedido excluído." : "Pedido cancelado.");
+    showToast(result.manualRefundRequired
+      ? `Pedido cancelado. ${result.manualRefundReason || "A devolução deve ser concluída manualmente."}`
+      : result.order?.refundStatus === "completed"
+      ? "Pedido reembolsado pelo Mercado Pago."
+      : draft
+      ? "Pedido excluído."
+      : "Pedido cancelado.");
   } catch (error) {
     showToast(error.message, "error");
   }
@@ -3631,6 +3663,7 @@ function toggleOrderMenu(orderId, event) {
   delete floating.dataset.campaignId;
   const order = (state.content?.orders || []).find((item) => item.id === orderId);
   if (!order) return;
+  const terminated = ["cancelled", "refunded"].includes(order.status);
   if (!floating.hidden && floating.dataset.orderId === orderId) {
     closeFloatingActionMenu();
     return;
@@ -3638,10 +3671,10 @@ function toggleOrderMenu(orderId, event) {
   floating.dataset.orderId = orderId;
   floating.innerHTML = `
     <button type="button" onclick="openOrderView('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Visualizar</button>
-    <button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>
+    ${terminated ? "" : `<button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>
     <button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>
-    <button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>
-    ${order.archived ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
+    <button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>`}
+    ${order.archived || terminated ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
     ${order.archived
       ? `<button type="button" onclick="restoreOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Restaurar pedido</button>`
       : `<button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>`}
@@ -8422,11 +8455,11 @@ function renderClubPlanExcludedItems(plan) {
   const excluded = new Set(plan?.excludedConcessionIds || []);
   const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
   target.innerHTML = concessions.length
-    ? concessions.map((item) => `
+      ? concessions.map((item) => `
         <div class="benefit-product-row benefit-product-row-toggle">
-          <label><input type="checkbox" data-club-excluded-item="${escapeHtml(item.id)}" ${excluded.has(String(item.id)) ? "checked" : ""} /><span>${escapeHtml(item.name)}</span></label>
+          <label><input type="checkbox" data-club-eligible-item="${escapeHtml(item.id)}" ${excluded.has(String(item.id)) ? "" : "checked"} /><span>${escapeHtml(item.name)}</span></label>
         </div>`).join("")
-    : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre a bomboniere antes de configurar exclusões.</span></div>`;
+    : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre a bomboniere antes de configurar a elegibilidade.</span></div>`;
 }
 
 function renderClubPlanFreeItems(plan) {
@@ -8498,7 +8531,7 @@ async function saveClubPlan(event) {
     allowPriceDifference: $("clubPlanAllowPriceDifference").checked,
     eligibleFormats: [...document.querySelectorAll("#clubPlanEligibleFormats input:checked")].map((input) => input.value),
     eligibleSessionIds: $("clubPlanEligibleSessions").value.split(",").map((item) => item.trim()).filter(Boolean),
-    excludedConcessionIds: [...document.querySelectorAll("[data-club-excluded-item]:checked")].map((input) => input.dataset.clubExcludedItem),
+    excludedConcessionIds: [...document.querySelectorAll("[data-club-eligible-item]:not(:checked)")].map((input) => input.dataset.clubEligibleItem),
     freeConcessionItems: [...document.querySelectorAll("[data-club-free-item]:checked")].map((input) => ({
       concessionId: input.dataset.clubFreeItem,
       quantityPerCycle: Number(document.querySelector(`[data-club-free-quantity="${CSS.escape(input.dataset.clubFreeItem)}"]`)?.value || 1)
@@ -9327,6 +9360,7 @@ function bindEvents() {
   });
   $("logsRefreshButton")?.addEventListener("click", () => loadLogs());
   $("concessionSalesRefresh")?.addEventListener("click", () => loadConcessionDailySales());
+  $("concessionSalesDate")?.addEventListener("change", () => loadConcessionDailySales());
   $("concessionSalesArchived")?.addEventListener("change", () => loadConcessionDailySales());
   $("logsExportButton")?.addEventListener("click", exportLogs);
   $("logsPruneButton")?.addEventListener("click", pruneLogs);

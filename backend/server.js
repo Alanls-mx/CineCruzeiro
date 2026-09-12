@@ -1830,7 +1830,7 @@ function ticketArchiveAt(ticket, db = null) {
 }
 
 function isTicketArchived(ticket, db = null) {
-  if (ticket.status === "used") return true;
+  if (["used", "cancelled", "refunded", "expired"].includes(String(ticket.status || ""))) return true;
   const archiveAt = ticketArchiveAt(ticket, db);
   return archiveAt ? archiveAt.getTime() <= Date.now() : false;
 }
@@ -2175,7 +2175,7 @@ function enrichTicket(db, ticket) {
     orderTicketIndex,
     orderTicketCount,
     status,
-    archived: ["archived", "used", "expired"].includes(status),
+    archived: ["archived", "used", "cancelled", "refunded", "expired"].includes(status),
     archiveAt: archiveAt?.toISOString() || "",
     canTransfer: transferCheck.ok,
     transferBlockedReason: transferCheck.ok ? "" : transferCheck.message
@@ -5372,8 +5372,8 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     const payment = orderPayment(db, orderId);
     const existing = payment?.metadata?.cancellationRefund;
     if (existing?.status === "completed") return { completed: true, order, payment };
-    if (!existing && (order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0)) {
-      throw refundError("REFUND_FULFILLED_GOODS", "Ha produtos ja entregues. Este pedido precisa de conciliacao parcial antes do cancelamento.");
+    if (["cancelled", "refunded"].includes(order.status) && !existing) {
+      return { completed: true, manualRefundRequired: order.refundStatus === "required", order, payment };
     }
     if (!existing && (!payment || payment.status !== "approved" || Number(payment.amount) === 0)) {
       cancelOrder(db, order, reason, adminUser);
@@ -5382,8 +5382,39 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     }
     const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
     const token = paymentService.getMercadoPagoAccessToken(config);
-    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de cancelar uma cobranca aprovada.", 412);
-    const refund = prepareRefund(payment, order);
+    let manualRefundReason = (order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0)
+      ? "Ha produtos ja entregues; a devolucao e a conciliacao devem ser feitas manualmente."
+      : !token
+      ? "A integracao do Mercado Pago nao esta configurada para executar a devolucao automaticamente."
+      : "";
+    let refund = existing || null;
+    if (!manualRefundReason && !refund) {
+      try {
+        refund = prepareRefund(payment, order);
+      } catch (error) {
+        manualRefundReason = error.message || "A forma de pagamento exige devolucao manual.";
+      }
+    }
+    if (manualRefundReason) {
+      if (!['cancelled', 'refunded'].includes(order.status)) cancelOrder(db, order, reason, adminUser);
+      const now = new Date().toISOString();
+      order.refundStatus = "required";
+      order.manualRefundRequired = true;
+      order.manualRefundReason = manualRefundReason;
+      payment.refundStatus = "required";
+      payment.metadata = {
+        ...(payment.metadata || {}),
+        manualRefund: {
+          status: "required",
+          reason: manualRefundReason,
+          requestedAt: payment.metadata?.manualRefund?.requestedAt || now,
+          requestedBy: adminUser?.id || ""
+        }
+      };
+      appendOrderAudit(order, { action: "refund.manual_required", reason: manualRefundReason, updatedBy: adminUser?.id || "", createdAt: now });
+      await writeDb(db);
+      return { completed: true, manualRefundRequired: true, manualRefundReason, order, payment };
+    }
     if (!existing) cancelOrder(db, order, reason, adminUser);
     order.refundStatus = "pending";
     payment.refundStatus = "pending";
@@ -6816,7 +6847,15 @@ function parseAdminPeriod(url) {
 }
 
 function inDateRange(value, start, end) {
-  const date = String(value || "").slice(0, 10);
+  const raw = String(value || "").trim();
+  let date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+  if (!date && raw) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      const parts = datePartsInSaoPaulo(parsed);
+      date = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+    }
+  }
   return date && date >= start && date <= end;
 }
 
@@ -7434,9 +7473,14 @@ function orderFinancialBreakdown(db, order = {}) {
   }
 
   const concessionAdjustment = Number((concessionNet - concessionBeforeReconciliation).toFixed(2));
-  const concessionRefunded = order.concessionRefund?.status === "completed"
+  const fullOrderRefunded = order.status === "refunded" || order.paymentStatus === "refunded";
+  const ticketRefunded = fullOrderRefunded ? ticketNet : 0;
+  const concessionRefunded = fullOrderRefunded
+    ? concessionNet
+    : order.concessionRefund?.status === "completed"
     ? Math.min(concessionNet, Math.max(0, Number(order.concessionRefund.amount || 0)))
     : 0;
+  if (fullOrderRefunded) ticketNet = 0;
   concessionNet = Number(Math.max(0, concessionNet - concessionRefunded).toFixed(2));
 
   return {
@@ -7444,6 +7488,7 @@ function orderFinancialBreakdown(db, order = {}) {
     ticketGross: Number(ticketGross.toFixed(2)),
     concessionGross,
     ticketRevenue: Number(ticketNet.toFixed(2)),
+    ticketRefunded: Number(ticketRefunded.toFixed(2)),
     concessionRevenue: Number(concessionNet.toFixed(2)),
     concessionRefunded: Number(concessionRefunded.toFixed(2)),
     ticketClubDiscount: Number(ticketClubDiscount.toFixed(2)),
@@ -8912,13 +8957,20 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/concession-sales" && method === "GET") {
-    const today = todayIsoDate();
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const requestedDate = String(url.searchParams.get("date") || "").trim();
+    const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : todayIsoDate();
     const groups = new Map();
+    const financeEntries = [];
     for (const order of db.orders || []) {
       const payment = orderPayment(db, order.id);
       const purchasedAt = order.paidAt || payment?.approvedAt || order.createdAt;
-      if (!inDateRange(purchasedAt, today, today) || !(order.concessionItems || []).length) continue;
-      if (!payment?.approvedAt && !["paid", "refunded"].includes(order.status)) continue;
+      if (!inDateRange(purchasedAt, selectedDate, selectedDate) || !(order.concessionItems || []).length) continue;
+      const financiallyConfirmed = Boolean(payment?.approvedAt)
+        || ["approved", "refunded"].includes(String(payment?.status || ""))
+        || ["paid", "refunded"].includes(String(order.status || ""))
+        || ["approved", "refunded"].includes(String(order.paymentStatus || ""));
+      if (!financiallyConfirmed) continue;
       const session = sessionForOrder(db, order);
       const movie = (db.movies || []).find((item) => item.id === (session?.movieId || order.movieId));
       const key = session?.id || order.archivedSessionId || `${order.movieId || "avulso"}-${order.sessionDate || ""}-${order.sessionTime || ""}`;
@@ -8933,17 +8985,39 @@ async function handleApi(req, res, pathname) {
         status: !session ? "Historico / sem sessao ativa" : end && end.getTime() <= Date.now() ? "Encerrada" : start && start.getTime() <= Date.now() ? "Em andamento" : "Programada",
         orders: []
       });
+      const breakdown = orderFinancialBreakdown(db, order);
+      const finance = summarizeConcessionFinance([{ order, breakdown }]);
+      financeEntries.push({ order, breakdown });
       groups.get(key).orders.push({
         id: order.id, status: order.status, purchasedAt,
         customerName: order.customerName || "Cliente avulso",
         archived: Boolean(order.concessionArchived),
-        items: order.concessionItems.map((item) => ({ name: item.name, quantity: item.quantity, fulfilledQuantity: item.fulfilledQuantity || 0, refundStatus: item.refundStatus || "" })),
-        finance: summarizeConcessionFinance([{ order, breakdown: orderFinancialBreakdown(db, order) }]),
+        paymentMethod: methodLabel(payment?.method || order.paymentMethod),
+        paymentStatus: paymentStatusLabel(payment?.status || order.paymentStatus),
+        couponCode: order.couponCode || "",
+        items: order.concessionItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          fulfilledQuantity: item.fulfilledQuantity || 0,
+          originalUnitPrice: Number(item.originalPrice ?? item.unitPrice ?? item.price ?? 0),
+          finalUnitPrice: Number(item.finalPrice ?? item.unitPrice ?? item.price ?? 0),
+          clubDiscount: Number(item.clubDiscount || 0),
+          refundStatus: item.refundStatus || ""
+        })),
+        finance,
         refund: order.concessionRefund || null,
         refundEligibility: concessionRefundEligibility(db, order, payment)
       });
     }
-    sendJson(res, 200, { date: today, groups: [...groups.values()].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)) });
+    const orderedGroups = [...groups.values()]
+      .map((group) => ({ ...group, orders: group.orders.sort((a, b) => String(b.purchasedAt).localeCompare(String(a.purchasedAt))) }))
+      .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+    sendJson(res, 200, {
+      date: selectedDate,
+      summary: summarizeConcessionFinance(financeEntries),
+      groups: orderedGroups
+    });
     return;
   }
 
@@ -12171,7 +12245,7 @@ async function handleApi(req, res, pathname) {
         paymentId: payment.providerPaymentId,
         paymentStatus: payment.status,
         status: payment.status === "approved" ? "paid" : "pending_payment",
-        reservationExpiresAt: payment.status === "approved" ? "" : order.reservationExpiresAt
+        reservationExpiresAt: payment.status === "approved" ? "" : (payment.expiresAt || order.reservationExpiresAt)
       };
       reserveConcessionStock(lockedDb, savedOrder);
       const tickets = payment.status === "approved" ? finalizePaidOrder(lockedDb, savedOrder, payment, "online") : [];
@@ -12272,7 +12346,7 @@ async function handleApi(req, res, pathname) {
         paymentId: payment.providerPaymentId,
         paymentStatus: payment.status,
         status: payment.status === "approved" ? "paid" : "pending_payment",
-        reservationExpiresAt: payment.status === "approved" ? "" : new Date(Date.now() + 15 * 60 * 1000).toISOString()
+        reservationExpiresAt: payment.status === "approved" ? "" : (payment.expiresAt || order.reservationExpiresAt)
       };
       reserveConcessionStock(lockedDb, savedOrder);
       const tickets = payment.status === "approved" ? finalizePaidOrder(lockedDb, savedOrder, payment, "online") : [];

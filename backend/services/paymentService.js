@@ -155,6 +155,7 @@ function createPaymentRecord(order, providerPayment, method) {
     expiredAt: status === "expired" ? now : "",
     cancelledAt: status === "cancelled" ? now : "",
     refundedAt: status === "refunded" ? now : "",
+    expiresAt: status === "approved" ? "" : (providerPayment.expiresAt || order.reservationExpiresAt || ""),
     metadata: {
       statusDetail: providerPayment.statusDetail || "",
       orderId: providerPayment.orderId || providerPayment.id || "",
@@ -467,6 +468,7 @@ function normalizeMercadoPagoOrder(data = {}, method) {
     ticketUrl: paymentMethod.ticket_url || "",
     checkoutUrl: transactionSecurity.url || "",
     transactionSecurityUrl: transactionSecurity.url || "",
+    expiresAt: transaction.expiration_date || transaction.date_of_expiration || data.expiration_date || data.date_of_expiration || "",
     raw: data
   };
 }

@@ -60,12 +60,13 @@ assert.equal(normalized.amount, 10);
 const longOrderId = "deadpool-wolverine-sessao-1787616443186-e2e8b3-1787631042989-f953e55fc40cf8";
 const providerExternalReference = longOrderId.slice(0, 64);
 const paymentRecord = paymentService.createPaymentRecord(
-  { id: longOrderId, totalPrice: 10 },
+  { id: longOrderId, totalPrice: 10, reservationExpiresAt: "2026-09-12T03:30:00.000Z" },
   { provider: "mercado_pago", id: dataId, status: "pending", externalReference: providerExternalReference },
   "pix"
 );
 assert.equal(paymentRecord.orderId, longOrderId);
 assert.equal(paymentRecord.providerReference, providerExternalReference);
+assert.equal(paymentRecord.expiresAt, "2026-09-12T03:30:00.000Z");
 
 const bodyWithDifferentId = structuredClone(body);
 bodyWithDifferentId.data.id = "ID_DO_BODY_NAO_ASSINADO";

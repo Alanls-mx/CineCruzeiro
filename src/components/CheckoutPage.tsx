@@ -25,7 +25,7 @@ type CheckoutPaymentResult = {
     clubCreditSummary?: NonNullable<ClubBenefitsPreviewResult["creditSummary"]>;
     reservationExpiresAt?: string;
   };
-  payment?: { id?: string; status?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string } | null;
+  payment?: { id?: string; method?: string; status?: string; expiresAt?: string; qrCode?: string; qrCodeBase64?: string; ticketUrl?: string; checkoutUrl?: string } | null;
   tickets?: Array<{ code: string }>;
 };
 type MercadoPagoCheckoutConfig = {
@@ -786,6 +786,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               draft={draft}
               confirmationStatus={confirmationStatus}
               orderReference={`${found.movie.title} - ${found.session.time} • ${found.session.format}`}
+              onRestartPayment={() => updateDraft({ paymentResult: undefined, seatHoldToken: crypto.randomUUID() })}
             />
           )}
         </section>
@@ -1417,12 +1418,29 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
   );
 }
 
-function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft: StoredCheckoutDraft; confirmationStatus: "idle" | "checking" | "ready" | "invalid"; orderReference: string }) {
+function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestartPayment }: { draft: StoredCheckoutDraft; confirmationStatus: "idle" | "checking" | "ready" | "invalid"; orderReference: string; onRestartPayment: () => void }) {
   const [copied, setCopied] = useState(false);
   const result = draft.paymentResult as CheckoutPaymentResult | undefined;
+  const expiresAt = result?.payment?.expiresAt || result?.order?.reservationExpiresAt || "";
+  const [remainingMs, setRemainingMs] = useState(() => {
+    const timestamp = new Date(expiresAt).getTime();
+    return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : 0;
+  });
+  useEffect(() => {
+    const update = () => {
+      const timestamp = new Date(expiresAt).getTime();
+      setRemainingMs(Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : 0);
+    };
+    update();
+    if (!expiresAt) return;
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
   const approved = result?.payment?.status === "approved" || (result?.order?.status === "paid" && Boolean(result?.tickets?.length));
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
-  const expired = result?.payment?.status === "expired" || result?.order?.status === "expired";
+  const timerExpired = Boolean(expiresAt && remainingMs <= 0 && pending);
+  const expired = result?.payment?.status === "expired" || result?.order?.status === "expired" || timerExpired;
+  const remainingLabel = `${String(Math.floor(remainingMs / 60000)).padStart(2, "0")}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, "0")}`;
   const copyPix = async () => {
     if (!result?.payment?.qrCode) return;
     await navigator.clipboard?.writeText(result.payment.qrCode);
@@ -1448,7 +1466,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
                   : approved
                   ? "Tudo certo com sua compra"
                   : expired
-                  ? "O prazo deste Pix terminou"
+                  ? "O prazo deste pagamento terminou"
                   : "Pedido criado com segurança"}
               </h2>
             </div>
@@ -1458,7 +1476,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
             {approved
               ? "Seus ingressos digitais foram liberados na sua conta. Lá você encontra QR Code, download, transferência e histórico da compra."
               : expired
-              ? "A cobrança foi cancelada e as poltronas voltaram a ficar disponíveis. Gere um novo Pix para refazer a reserva."
+              ? "A cobrança foi cancelada e as poltronas voltaram a ficar disponíveis. Inicie um novo pagamento para refazer a reserva."
               : "Finalize o pagamento para liberar os ingressos. Assim que o provedor confirmar, eles aparecem automaticamente em Minha Conta."}
           </p>
 
@@ -1470,7 +1488,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
             <div className="rounded-lg bg-brand-950/70 p-4" aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
               <strong className="mt-2 block text-white">
-                {approved ? "Pagamento aprovado" : expired ? "Pix expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
+                {approved ? "Pagamento aprovado" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
               </strong>
               {pending && (
                 <span className="mt-2 flex items-center gap-2 text-xs font-semibold text-brand-300">
@@ -1479,9 +1497,16 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
                 </span>
               )}
             </div>
+            {pending && expiresAt && !expired && (
+              <div className="rounded-lg bg-brand-950/70 p-4 sm:col-span-2" role="timer" aria-live="polite">
+                <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Tempo para concluir</span>
+                <strong className="mt-2 block font-mono text-2xl tabular-nums text-gold-300">{remainingLabel}</strong>
+                <span className="mt-1 block text-xs text-slate-400">Prazo do pedido controlado pelo servidor.</span>
+              </div>
+            )}
           </div>
 
-          {pending && result?.payment?.qrCode && (
+          {pending && !expired && result?.payment?.qrCode && (
             <div className="mt-6 grid items-center gap-5 rounded-lg bg-gold-400/10 p-4 sm:grid-cols-[auto_1fr] sm:p-5">
               <PixQrCode code={result.payment.qrCode} base64={result.payment.qrCodeBase64} />
               <div>
@@ -1496,8 +1521,8 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference }: { draft
 
           <div className="mt-8 flex flex-wrap gap-3">
             {expired && (
-              <Link href={`/checkout/${draft.sessionId}/pagamento`} className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
-                Gerar novo Pix
+              <Link href={`/checkout/${draft.sessionId}/pagamento`} onClick={onRestartPayment} className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
+                Iniciar novo pagamento
               </Link>
             )}
             <Link href="/conta/ingressos" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
@@ -1568,7 +1593,7 @@ function isValidPaymentResult(value: unknown) {
   const result = value as CheckoutPaymentResult | null;
   const paymentStatus = result?.payment?.status;
   const confirmedWithoutCharge = result?.order?.status === "paid" && Boolean(result?.tickets?.length);
-  const providerPayment = result?.payment?.id && ["pending", "processing", "approved"].includes(String(paymentStatus || ""));
+  const providerPayment = result?.payment?.id && ["pending", "processing", "approved", "expired", "cancelled", "rejected", "refunded"].includes(String(paymentStatus || ""));
   return Boolean(result?.order?.id && (confirmedWithoutCharge || providerPayment));
 }
 

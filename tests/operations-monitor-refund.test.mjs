@@ -136,3 +136,36 @@ test("cancellation commits refund intent before provider I/O and retries without
   assert.equal(db.orders[0].status, "refunded");
   assert.equal(db.tickets[0].status, "refunded");
 });
+
+test("manual refund requirement does not block order cancellation", async () => {
+  const source = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
+  const functionSource = source.slice(source.indexOf("async function cancelOrderWithRefund("), source.indexOf("\nfunction cancelOrder(db,"));
+  const manualPayment = { ...payment(), provider: "manual_external" };
+  const db = { orders: [{ ...order, status: "paid" }], payments: [manualPayment], tickets: [] };
+  let writes = 0;
+  const context = {
+    Date, Number, String,
+    withCriticalMutation: async (fn) => fn(),
+    readDb: async () => db,
+    writeDb: async () => { writes++; },
+    orderPayment: () => manualPayment,
+    orderTickets: () => [],
+    prepareRefund,
+    refundError: (code, message) => Object.assign(new Error(message), { code }),
+    structuredCloneSafe: structuredClone,
+    integrationConfigService: { resolvedConfig: () => ({}) },
+    paymentService: { getMercadoPagoAccessToken: () => "fake" },
+    cancelOrder: (_, item) => { item.status = "cancelled"; },
+    logEvent: () => {},
+    appendOrderAudit: () => {},
+    eachStockedOrderItem: () => {},
+    submitFullRefund: async () => { throw new Error("must not call provider"); }
+  };
+  const cancel = vm.runInNewContext(`${functionSource}; cancelOrderWithRefund`, context);
+  const result = await cancel(order.id, "Solicitado", { id: "admin" });
+  assert.equal(result.manualRefundRequired, true);
+  assert.equal(db.orders[0].status, "cancelled");
+  assert.equal(db.orders[0].refundStatus, "required");
+  assert.equal(manualPayment.refundStatus, "required");
+  assert.equal(writes, 1);
+});

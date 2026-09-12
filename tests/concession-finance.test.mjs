@@ -121,3 +121,25 @@ test("separa reembolso de desconto e zera a receita dos produtos devolvidos", ()
   assert.equal(summary.products[0].refundTotal, 18);
   assert.equal(summary.products[0].refundedQuantity, 2);
 });
+
+test("pedido integralmente reembolsado não permanece como receita da bomboniere", () => {
+  const summary = summarizeConcessionFinance([{
+    order: {
+      id: "order-full-refund",
+      status: "refunded",
+      concessionItems: [{ id: "drink", name: "Refrigerante", quantity: 2, unitPrice: 8 }]
+    },
+    breakdown: {
+      concessionGross: 16,
+      concessionRevenue: 0,
+      concessionRefunded: 16,
+      concessionClubDiscount: 0,
+      concessionFreeDiscount: 0,
+      concessionCouponDiscount: 0,
+      concessionAdjustment: 0
+    }
+  }]);
+  assert.equal(summary.netRevenue, 0);
+  assert.equal(summary.refundTotal, 16);
+  assert.equal(summary.refundedQuantity, 2);
+});

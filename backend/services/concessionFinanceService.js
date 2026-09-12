@@ -122,7 +122,7 @@ function summarizeConcessionFinance(entries = []) {
     reconciliationAdjustment += orderAdjustment;
     refundTotal += orderRefund;
     itemQuantity += itemRows.reduce((sum, item) => sum + item.quantity, 0);
-    refundedQuantity += order.concessionRefund?.status === "completed" ? itemRows.reduce((sum, item) => sum + item.quantity, 0) : 0;
+    refundedQuantity += orderRefund > 0 ? itemRows.reduce((sum, item) => sum + item.quantity, 0) : 0;
     if (Number(breakdown.concessionGross || 0) - Number(breakdown.concessionRevenue || 0) - orderRefund > 0.009) discountedOrders += 1;
   });
 

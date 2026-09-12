@@ -1068,10 +1068,19 @@
           </div>
           <div class="surface">
             <div class="surface-head">
-              <h2>Compras de hoje por sessão</h2>
-              <button id="concessionSalesRefresh" class="ghost-button" type="button">Atualizar</button>
+              <div>
+                <h2>Pedidos da bomboniere</h2>
+                <p>Vendas confirmadas, descontos, entregas e reembolsos organizados por sessão.</p>
+              </div>
+              <div class="concession-sales-toolbar">
+                <label>Data das vendas
+                  <input id="concessionSalesDate" type="date" />
+                </label>
+                <button id="concessionSalesRefresh" class="ghost-button" type="button">Atualizar</button>
+              </div>
             </div>
-            <label><input id="concessionSalesArchived" type="checkbox"> Incluir arquivados da bomboniere</label>
+            <div id="concessionDailyInsights" class="insight-strip concession-daily-kpis" aria-live="polite"></div>
+            <label class="inline-check"><input id="concessionSalesArchived" type="checkbox"> Incluir pedidos arquivados</label>
             <div id="concessionDailySales" aria-live="polite"></div>
           </div>
           <div class="surface concession-finance-surface">
@@ -2302,7 +2311,8 @@
                   <textarea id="clubPlanEligibleSessions" rows="2" placeholder="IDs separados por vírgula; vazio permite todas"></textarea>
                 </label>
                 <fieldset class="benefit-products-fieldset club-plan-products">
-                  <legend>Produtos sem desconto percentual</legend>
+                  <legend>Produtos elegíveis ao desconto percentual</legend>
+                  <p>Marque os produtos nos quais o desconto de bomboniere deste plano pode ser aplicado.</p>
                   <div id="clubPlanExcludedItems" class="benefit-product-list"></div>
                 </fieldset>
               </section>
