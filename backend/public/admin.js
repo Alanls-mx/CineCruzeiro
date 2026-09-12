@@ -1447,6 +1447,50 @@ function renderPerformanceKpis(metrics, history) {
   `;
 }
 
+function buildPerfTimeLabels(samples, xFn, height) {
+  if (!samples || !samples.length) return "";
+  if (samples.length === 1) {
+    const d = new Date(samples[0].sampledAt);
+    const tStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return `<text class="perf-axis-text" x="${xFn(0).toFixed(1)}" y="${height - 10}" text-anchor="middle">${tStr}</text>`;
+  }
+
+  const targetCount = Math.min(5, samples.length);
+  const step = (samples.length - 1) / Math.max(1, targetCount - 1);
+  const candidateIndices = [];
+  for (let k = 0; k < targetCount; k++) {
+    const idx = Math.round(k * step);
+    if (!candidateIndices.includes(idx)) candidateIndices.push(idx);
+  }
+
+  const safeIndices = [];
+  let lastX = -999;
+  for (const idx of candidateIndices) {
+    const posX = xFn(idx);
+    if (posX - lastX >= 80) {
+      safeIndices.push(idx);
+      lastX = posX;
+    }
+  }
+
+  const lastIdx = samples.length - 1;
+  const lastPos = xFn(lastIdx);
+  if (!safeIndices.includes(lastIdx)) {
+    if (safeIndices.length > 0 && (lastPos - xFn(safeIndices[safeIndices.length - 1]) < 80)) {
+      safeIndices[safeIndices.length - 1] = lastIdx;
+    } else {
+      safeIndices.push(lastIdx);
+    }
+  }
+
+  return safeIndices.map((idx) => {
+    const s = samples[idx];
+    const d = new Date(s.sampledAt);
+    const tStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return `<text class="perf-axis-text" x="${xFn(idx).toFixed(1)}" y="${height - 10}" text-anchor="middle">${tStr}</text>`;
+  }).join("");
+}
+
 function renderPerformanceCharts(history, current) {
   let samples = Array.isArray(history) && history.length ? [...history] : [current];
   if (samples.length > 40) samples = samples.slice(-40);
@@ -1493,15 +1537,7 @@ function renderPerformanceCharts(history, current) {
       `;
     }).join("");
 
-    const showStep = Math.max(1, Math.floor(samples.length / 5));
-    const timeLabels = samples.map((s, i) => {
-      if (i % showStep === 0 || i === samples.length - 1) {
-        const d = new Date(s.sampledAt);
-        const tStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        return `<text class="perf-axis-text" x="${x(i).toFixed(1)}" y="${height - 10}" text-anchor="middle">${tStr}</text>`;
-      }
-      return "";
-    }).join("");
+    const timeLabels = buildPerfTimeLabels(samples, x, height);
 
     cpuContainer.innerHTML = `
       <svg class="perf-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
@@ -1587,15 +1623,7 @@ function renderPerformanceCharts(history, current) {
       `;
     }).join("");
 
-    const showStep = Math.max(1, Math.floor(samples.length / 5));
-    const timeLabels = samples.map((s, i) => {
-      if (i % showStep === 0 || i === samples.length - 1) {
-        const d = new Date(s.sampledAt);
-        const tStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        return `<text class="perf-axis-text" x="${x(i).toFixed(1)}" y="${height - 10}" text-anchor="middle">${tStr}</text>`;
-      }
-      return "";
-    }).join("");
+    const timeLabels = buildPerfTimeLabels(samples, x, height);
 
     latContainer.innerHTML = `
       <svg class="perf-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
@@ -2123,10 +2151,10 @@ function renderDashboardChart(rows) {
   }
   const width = 720;
   const height = 270;
-  const padLeft = 62;
+  const padLeft = 68;
   const padRight = 24;
   const padTop = 22;
-  const padBottom = 44;
+  const padBottom = 46;
   const metric = state.dashboardMetric === "sales" ? "sales" : "revenue";
   const valueOf = (item) => metric === "sales" ? Number(item.orders || 0) : Number(item.revenue || 0);
   const maxValue = Math.max(1, ...rows.map(valueOf));
@@ -2139,7 +2167,20 @@ function renderDashboardChart(rows) {
     const lineY = y(value);
     return `<g class="chart-axis"><line x1="${padLeft}" y1="${lineY}" x2="${width - padRight}" y2="${lineY}" /><text x="${padLeft - 10}" y="${lineY + 4}" text-anchor="end">${escapeHtml(axisLabel(value))}</text></g>`;
   }).join("");
-  const showEvery = Math.max(1, Math.ceil(rows.length / 7));
+
+  let dateIndices = [];
+  if (rows.length <= 7) {
+    dateIndices = rows.map((_, i) => i);
+  } else {
+    const maxLabels = Math.min(7, Math.max(4, Math.floor((width - padLeft - padRight) / 80)));
+    const step = (rows.length - 1) / Math.max(1, maxLabels - 1);
+    for (let k = 0; k < maxLabels; k++) {
+      const idx = Math.round(k * step);
+      if (!dateIndices.includes(idx)) dateIndices.push(idx);
+    }
+  }
+  const dateSet = new Set(dateIndices);
+
   target.innerHTML = `
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${metric === "revenue" ? "Receita" : "Vendas"} por período">
       ${gridLines}
@@ -2155,7 +2196,7 @@ function renderDashboardChart(rows) {
             onmouseenter="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})"
             onfocus="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})"
             onclick="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})" />
-          ${index % showEvery === 0 || index === rows.length - 1 ? `<text class="chart-date" x="${x(index)}" y="${height - 16}" text-anchor="middle">${dateLabel}</text>` : ""}
+          ${dateSet.has(index) ? `<text class="chart-date" x="${x(index)}" y="${height - 16}" text-anchor="middle">${dateLabel}</text>` : ""}
         `;
       }).join("")}
     </svg>

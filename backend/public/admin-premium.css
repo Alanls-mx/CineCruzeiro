@@ -2194,9 +2194,16 @@ td {
 }
 .chart-mode-switch button.active { color: #fff; background: #2458d8; }
 
-.chart-tooltip { min-height: 16px; color: var(--muted); font-size: 10px; }
-.chart-axis line { stroke: rgba(138,157,187,.16); stroke-width: 1; }
-.chart-axis text, .chart-date { fill: #8493aa; font-size: 10px; }
+.chart-axis line { stroke: rgba(138,157,187,.18); stroke-width: 1px; }
+.chart-axis text, .chart-date {
+  fill: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  stroke: none !important;
+  stroke-width: 0 !important;
+  user-select: none;
+}
 
 /* ── 23. Issued Tickets ───────────────────────────────────────────────── */
 .issued-ticket-filters {
