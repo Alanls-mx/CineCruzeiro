@@ -7869,8 +7869,9 @@ th {
 
 .dash-analytics-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.05fr);
   gap: 18px;
+  align-items: stretch;
 }
 
 .dash-chart-box {
@@ -7881,7 +7882,9 @@ th {
 .dash-finance-breakdown-box {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  gap: 10px;
+  max-height: 440px;
+  overflow-y: auto;
 }
 
 .dash-box-section {
@@ -7893,7 +7896,7 @@ th {
 .dash-box-divider {
   height: 1px;
   background: var(--line, rgba(255, 255, 255, 0.06));
-  margin: 14px 0;
+  margin: 10px 0;
 }
 
 .dash-note-compact {
@@ -7901,7 +7904,7 @@ th {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
   border-radius: 6px;
-  margin-top: 12px;
+  margin-top: 6px;
   color: var(--muted, #94a3b8);
   font-size: 11px;
   line-height: 1.4;
@@ -7914,7 +7917,7 @@ th {
 }
 
 .session-list-scroll {
-  max-height: 380px;
+  max-height: 340px;
   overflow-y: auto;
 }
 
@@ -7922,6 +7925,13 @@ th {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
+}
+
+.dash-commercial-grid .surface {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 340px;
 }
 
 .dash-card-sub {
@@ -7984,5 +7994,89 @@ th {
   .dash-support-divider {
     display: none;
   }
+}
+
+/* ==========================================================================
+   SISTEMA DE PAGINAÇÃO DE TABELAS E LISTAS
+   ========================================================================== */
+.table-pagination-bar,
+.issued-tickets-pager-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--muted, #94a3b8);
+}
+
+.table-pagination-bar strong,
+.issued-tickets-pager-bar strong {
+  color: var(--text, #f8fafc);
+}
+
+.pager-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pager-controls .ghost-button {
+  padding: 4px 10px;
+  font-size: 12px;
+  min-height: 28px;
+  border-radius: 6px;
+}
+
+.pager-controls .ghost-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pager-page-indicator {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text, #f8fafc);
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Mini paginação para cards do dashboard */
+.dash-card-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+  border-radius: 0 0 8px 8px;
+}
+
+.dash-card-pager-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dash-card-pager-controls .ghost-button {
+  padding: 2px 8px;
+  font-size: 11px;
+  min-height: 24px;
+  border-radius: 4px;
+}
+
+.dash-card-pager-controls .ghost-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 

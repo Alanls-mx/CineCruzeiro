@@ -62,6 +62,20 @@ let state = {
   concessionFrom: "",
   concessionTo: "",
   concessionFinanceData: null,
+  paymentsPage: 1,
+  paymentsPageSize: 8,
+  concessionDailySalesPage: 1,
+  concessionDailySalesPageSize: 8,
+  concessionBreakdownPage: 1,
+  concessionBreakdownPageSize: 5,
+  dashMoviePage: 1,
+  dashMoviePageSize: 5,
+  dashTopProductsPage: 1,
+  dashTopProductsPageSize: 5,
+  dashSessionsPage: 1,
+  dashSessionsPageSize: 4,
+  dashLatestOrdersPage: 1,
+  dashLatestOrdersPageSize: 5,
   payments: null,
   paymentFilters: {
     status: "",
@@ -936,6 +950,11 @@ function findConcessionOrder(orderId) {
   return null;
 }
 
+function changeConcessionDailySalesPage(delta) {
+  state.concessionDailySalesPage = Math.max(1, (state.concessionDailySalesPage || 1) + delta);
+  renderConcessionDailySales();
+}
+
 function renderConcessionDailySales() {
   const target = $("concessionDailySales");
   if (!target) return;
@@ -981,7 +1000,25 @@ function renderConcessionDailySales() {
     return;
   }
 
+  const pageSize = state.concessionDailySalesPageSize || 8;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  state.concessionDailySalesPage = Math.min(Math.max(1, state.concessionDailySalesPage || 1), totalPages);
+  const start = (state.concessionDailySalesPage - 1) * pageSize;
+  const pageOrders = filtered.slice(start, start + pageSize);
+
+  const pagerMarkup = `
+    <div class="table-pagination-bar">
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageOrders.length, filtered.length)}</strong> de <strong>${filtered.length}</strong> pedido(s)</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state.concessionDailySalesPage <= 1 ? "disabled" : ""} onclick="changeConcessionDailySalesPage(-1)">← Anterior</button>
+        <span class="pager-page-indicator">Página ${state.concessionDailySalesPage} de ${totalPages}</span>
+        <button class="ghost-button" type="button" ${state.concessionDailySalesPage >= totalPages ? "disabled" : ""} onclick="changeConcessionDailySalesPage(1)">Próxima →</button>
+      </div>
+    </div>
+  `;
+
   target.innerHTML = `
+    ${pagerMarkup}
     <table>
       <thead>
         <tr>
@@ -996,7 +1033,7 @@ function renderConcessionDailySales() {
         </tr>
       </thead>
       <tbody>
-        ${filtered.map(({ order, group }) => {
+        ${pageOrders.map(({ order, group }) => {
           const items = order.items || [];
           const finance = order.finance || {};
           const totalItems = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
@@ -1846,6 +1883,39 @@ function renderInsights() {
   $("statBaseTicket").textContent = money(baseTicket);
 }
 
+function renderMiniPager(page, totalPages, totalItems, onPrevCall, onNextCall, label = "item(ns)") {
+  if (totalPages <= 1) return "";
+  return `
+    <div class="dash-card-pager">
+      <span>Página <b>${page}</b> de <b>${totalPages}</b> (${totalItems} ${label})</span>
+      <div class="dash-card-pager-controls">
+        <button class="ghost-button" type="button" ${page <= 1 ? "disabled" : ""} onclick="${onPrevCall}">← Anterior</button>
+        <button class="ghost-button" type="button" ${page >= totalPages ? "disabled" : ""} onclick="${onNextCall}">Próxima →</button>
+      </div>
+    </div>
+  `;
+}
+
+function changeDashMoviePage(delta) {
+  state.dashMoviePage = Math.max(1, (state.dashMoviePage || 1) + delta);
+  renderDashboard();
+}
+
+function changeDashSessionsPage(delta) {
+  state.dashSessionsPage = Math.max(1, (state.dashSessionsPage || 1) + delta);
+  renderDashboard();
+}
+
+function changeDashTopProductsPage(delta) {
+  state.dashTopProductsPage = Math.max(1, (state.dashTopProductsPage || 1) + delta);
+  renderDashboard();
+}
+
+function changeDashLatestOrdersPage(delta) {
+  state.dashLatestOrdersPage = Math.max(1, (state.dashLatestOrdersPage || 1) + delta);
+  renderDashboard();
+}
+
 function renderDashboard() {
   const data = state.dashboard || {};
   const dashboardTime = (value) => value
@@ -1915,18 +1985,30 @@ function renderDashboard() {
   if ($("dashMovieRevenue")) {
     const movies = Array.isArray(data.revenueByMovie) ? data.revenueByMovie : [];
     const total = movies.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const pageSize = state.dashMoviePageSize || 5;
+    const totalPages = Math.max(1, Math.ceil(movies.length / pageSize));
+    state.dashMoviePage = Math.min(Math.max(1, state.dashMoviePage || 1), totalPages);
+    const start = (state.dashMoviePage - 1) * pageSize;
+    const pageMovies = movies.slice(start, start + pageSize);
+
     $("dashMovieRevenue").innerHTML = movies.length
-      ? movies.map((item) => `
+      ? pageMovies.map((item) => `
           <div class="metric-row finance-row">
             <span>${escapeHtml(item.name || "Filme")}<small>${total ? Math.round((Number(item.amount || 0) / total) * 100) : 0}% da receita de ingressos</small></span>
             <strong>${money(item.amount)}</strong>
-          </div>`).join("")
+          </div>`).join("") + renderMiniPager(state.dashMoviePage, totalPages, movies.length, "changeDashMoviePage(-1)", "changeDashMoviePage(1)", "filme(s)")
       : `<div class="empty-state compact"><strong>Sem receita por filme</strong><span>As vendas aprovadas por sessão entram nesta lista.</span></div>`;
   }
   if ($("dashUpcomingSessions")) {
     const sessions = data.todaySessions || data.upcomingSessions || [];
+    const pageSize = state.dashSessionsPageSize || 4;
+    const totalPages = Math.max(1, Math.ceil(sessions.length / pageSize));
+    state.dashSessionsPage = Math.min(Math.max(1, state.dashSessionsPage || 1), totalPages);
+    const start = (state.dashSessionsPage - 1) * pageSize;
+    const pageSessions = sessions.slice(start, start + pageSize);
+
     $("dashUpcomingSessions").innerHTML = sessions.length
-      ? sessions.map((item) => `
+      ? pageSessions.map((item) => `
           <div class="session-metric-row clickable-row ${item.isInProgress ? "is-in-progress" : ""}" onclick="openSessionDashboardDetail('${escapeHtml(item.movie?.id || "")}', '${escapeHtml(item.session?.id || "")}')">
             <div class="session-poster">${item.movie?.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(item.movie.posterUrl))}" alt="">` : `<span>${escapeHtml(item.movie?.rating || "L")}</span>`}</div>
             <div>
@@ -1935,7 +2017,7 @@ function renderDashboard() {
               <div class="mini-progress"><i style="width:${Math.min(100, Number(item.occupancyRate || 0))}%"></i></div>
               <small>${item.isInProgress ? `Termina às ${dashboardTime(item.endsAt)} • faltam ${Number(item.remainingMinutes || 0)} min • ` : ""}${Number(item.sold || 0)} / ${Number(item.capacity || 0)} • ${Number(item.occupancyRate || 0)}% • ${escapeHtml(item.status || "Boa disponibilidade")}</small>
             </div>
-          </div>`).join("")
+          </div>`).join("") + renderMiniPager(state.dashSessionsPage, totalPages, sessions.length, "changeDashSessionsPage(-1)", "changeDashSessionsPage(1)", "sessão(ões)")
       : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre um horário quando a programação estiver definida.</span><button class="ghost-button" type="button" onclick="createSessionFromDashboard()">Criar sessão</button></div>`;
   }
   if ($("dashCapacity")) {
@@ -1949,14 +2031,26 @@ function renderDashboard() {
   }
   if ($("dashTopProducts")) {
     const products = data.topProducts || [];
+    const pageSize = state.dashTopProductsPageSize || 5;
+    const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
+    state.dashTopProductsPage = Math.min(Math.max(1, state.dashTopProductsPage || 1), totalPages);
+    const start = (state.dashTopProductsPage - 1) * pageSize;
+    const pageProducts = products.slice(start, start + pageSize);
+
     $("dashTopProducts").innerHTML = products.length
-      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0)))}` : ""}${Number(item.refundTotal || 0) > 0 ? ` • reembolsos ${money(item.refundTotal)}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("")
+      ? pageProducts.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0)))}` : ""}${Number(item.refundTotal || 0) > 0 ? ` • reembolsos ${money(item.refundTotal)}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("") + renderMiniPager(state.dashTopProductsPage, totalPages, products.length, "changeDashTopProductsPage(-1)", "changeDashTopProductsPage(1)", "produto(s)")
       : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" onclick="activatePanel('concessionsPanel', { scroll: true })">Ver Bomboniere</button></div>`;
   }
   if ($("dashLatestOrders")) {
     const orders = data.latestOrders || [];
+    const pageSize = state.dashLatestOrdersPageSize || 5;
+    const totalPages = Math.max(1, Math.ceil(orders.length / pageSize));
+    state.dashLatestOrdersPage = Math.min(Math.max(1, state.dashLatestOrdersPage || 1), totalPages);
+    const start = (state.dashLatestOrdersPage - 1) * pageSize;
+    const pageOrders = orders.slice(start, start + pageSize);
+
     $("dashLatestOrders").innerHTML = orders.length
-      ? orders.map((order) => `<div class="metric-row clickable-row" onclick="openOrderView('${escapeHtml(order.id)}')"><span>${escapeHtml(order.reference || orderReference(order))} • ${escapeHtml(order.customerName)}<small>${escapeHtml(order.movieTitle || "")} • ${escapeHtml(order.origin)} • ${escapeHtml(order.status)}</small></span><strong>${money(order.totalPrice)}</strong></div>`).join("")
+      ? pageOrders.map((order) => `<div class="metric-row clickable-row" onclick="openOrderView('${escapeHtml(order.id)}')"><span>${escapeHtml(order.reference || orderReference(order))} • ${escapeHtml(order.customerName)}<small>${escapeHtml(order.movieTitle || "")} • ${escapeHtml(order.origin)} • ${escapeHtml(order.status)}</small></span><strong>${money(order.totalPrice)}</strong></div>`).join("") + renderMiniPager(state.dashLatestOrdersPage, totalPages, orders.length, "changeDashLatestOrdersPage(-1)", "changeDashLatestOrdersPage(1)", "pedido(s)")
       : `<div class="empty-state compact"><strong>Sem pedidos recentes</strong><span>As últimas vendas aparecerão aqui.</span></div>`;
   }
   if ($("dashAttentionPayments")) {
@@ -4522,6 +4616,11 @@ async function permanentlyDeleteSelectedOrder(event) {
   }
 }
 
+function changePaymentsPage(delta) {
+  state.paymentsPage = Math.max(1, (state.paymentsPage || 1) + delta);
+  renderPaymentsCenter();
+}
+
 function renderPaymentsCenter() {
   const target = $("paymentsList");
   if (!target) return;
@@ -4531,12 +4630,31 @@ function renderPaymentsCenter() {
       ? `Terminal Point integrado: ${data.cardTerminal.provider}.`
       : "Terminal Point não configurado. Ative a integração para receber Pix, débito ou crédito na Bilheteria.";
   }
-  const rows = data.payments || [];
-  if (!rows.length) {
+  const allRows = data.payments || [];
+  if (!allRows.length) {
     target.innerHTML = `<div class="empty-state"><strong>Nenhum pagamento encontrado.</strong><span>Ajuste os filtros ou selecione outro período.</span></div>`;
     return;
   }
+
+  const pageSize = state.paymentsPageSize || 8;
+  const totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+  state.paymentsPage = Math.min(Math.max(1, state.paymentsPage || 1), totalPages);
+  const start = (state.paymentsPage - 1) * pageSize;
+  const rows = allRows.slice(start, start + pageSize);
+
+  const pagerMarkup = `
+    <div class="table-pagination-bar">
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + rows.length, allRows.length)}</strong> de <strong>${allRows.length}</strong> pagamento(s)</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state.paymentsPage <= 1 ? "disabled" : ""} onclick="changePaymentsPage(-1)">← Anterior</button>
+        <span class="pager-page-indicator">Página ${state.paymentsPage} de ${totalPages}</span>
+        <button class="ghost-button" type="button" ${state.paymentsPage >= totalPages ? "disabled" : ""} onclick="changePaymentsPage(1)">Próxima →</button>
+      </div>
+    </div>
+  `;
+
   target.innerHTML = `
+    ${pagerMarkup}
     <table>
       <thead>
         <tr>
@@ -6391,6 +6509,11 @@ function renderConcessions() {
   fillConcessionForm(currentConcession());
 }
 
+function changeConcessionBreakdownPage(delta) {
+  state.concessionBreakdownPage = Math.max(1, (state.concessionBreakdownPage || 1) + delta);
+  renderConcessionInsights();
+}
+
 function renderConcessionInsights() {
   const insights = $("concessionInsights");
   const discountSummary = $("concessionDiscountSummary");
@@ -6444,8 +6567,25 @@ function renderConcessionInsights() {
     </div>
   `;
 
+  const pageSize = state.concessionBreakdownPageSize || 5;
+  const totalPages = Math.max(1, Math.ceil(products.length / pageSize));
+  state.concessionBreakdownPage = Math.min(Math.max(1, state.concessionBreakdownPage || 1), totalPages);
+  const start = (state.concessionBreakdownPage - 1) * pageSize;
+  const pageProducts = products.slice(start, start + pageSize);
+
+  const pagerMarkup = products.length > pageSize ? `
+    <div class="table-pagination-bar" style="margin-bottom: 12px;">
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageProducts.length, products.length)}</strong> de <strong>${products.length}</strong> produto(s)</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state.concessionBreakdownPage <= 1 ? "disabled" : ""} onclick="changeConcessionBreakdownPage(-1)">← Anterior</button>
+        <span class="pager-page-indicator">Página ${state.concessionBreakdownPage} de ${totalPages}</span>
+        <button class="ghost-button" type="button" ${state.concessionBreakdownPage >= totalPages ? "disabled" : ""} onclick="changeConcessionBreakdownPage(1)">Próxima →</button>
+      </div>
+    </div>
+  ` : "";
+
   salesBreakdown.innerHTML = products.length
-    ? products.map((item) => {
+    ? `${pagerMarkup}${pageProducts.map((item) => {
         const gross = Number(item.grossRevenue || 0);
         const net = Number(item.netRevenue || 0);
         const unitPrice = Number(item.minimumUnitPrice || 0) === Number(item.maximumUnitPrice || 0)
@@ -6476,7 +6616,7 @@ function renderConcessionInsights() {
               <div class="is-net"><dt>Líquido</dt><dd>${money(net)}</dd></div>
             </dl>
           </article>`;
-      }).join("")
+      }).join("")}`
     : `<div class="empty-state"><strong>Nenhuma venda paga no período</strong><span>Quando um pedido com produtos da bomboniere for aprovado, cada item e desconto aparecerá detalhado aqui.</span></div>`;
 }
 
