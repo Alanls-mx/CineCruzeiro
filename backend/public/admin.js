@@ -950,6 +950,73 @@ function findConcessionOrder(orderId) {
   return null;
 }
 
+function getOrderTickets(order) {
+  if (Array.isArray(order?.tickets) && order.tickets.length) return order.tickets;
+  if (order?.id && Array.isArray(state.content?.tickets)) {
+    return state.content.tickets.filter((t) => t.orderId === order.id);
+  }
+  return [];
+}
+
+function isOrderFullyValidated(order) {
+  if (!order) return false;
+  const tickets = getOrderTickets(order);
+  const hasTickets = tickets.length > 0;
+  const ticketsDone = !hasTickets || tickets.every((t) => ["validated", "cancelled"].includes(t.status));
+  const concessionItems = Array.isArray(order.concessionItems || order.items) ? (order.concessionItems || order.items) : [];
+  const hasConcessions = concessionItems.length > 0;
+  const concessionsDone = !hasConcessions || Boolean(
+    order.concessionDeliveryStatus === "delivered" ||
+    order.concessionStatus === "cancelled" ||
+    order.concessionsFulfilledAt ||
+    (order.concessionValidation && order.concessionValidation.fulfilledItems >= order.concessionValidation.totalItems)
+  );
+  if (!hasTickets && !hasConcessions) return false;
+  return ticketsDone && concessionsDone;
+}
+
+function isOrderEffectivelyArchived(order) {
+  if (!order) return false;
+  if (order.archived === true) return true;
+  if (["cancelled", "refunded"].includes(order.status)) return true;
+  if (order.status === "paid" && isOrderFullyValidated(order)) return true;
+  return false;
+}
+
+function isOrderEffectivelyActive(order) {
+  if (!order) return false;
+  return !isOrderEffectivelyArchived(order);
+}
+
+function getOrderValidationSummary(order) {
+  const tickets = getOrderTickets(order);
+  const hasTickets = tickets.length > 0;
+  const ticketsValidated = hasTickets && tickets.every((t) => ["validated", "cancelled"].includes(t.status)) && tickets.some((t) => t.status === "validated");
+  const ticketsCancelled = hasTickets && tickets.every((t) => t.status === "cancelled");
+  const ticketsPending = hasTickets && !ticketsValidated && !ticketsCancelled;
+
+  const concessionItems = Array.isArray(order?.concessionItems || order?.items) ? (order.concessionItems || order.items) : [];
+  const hasConcessions = concessionItems.length > 0;
+  const concessionsDelivered = hasConcessions && Boolean(
+    order.concessionDeliveryStatus === "delivered" ||
+    order.concessionsFulfilledAt ||
+    (order.concessionValidation && order.concessionValidation.fulfilledItems >= order.concessionValidation.totalItems)
+  );
+  const concessionsCancelled = hasConcessions && order.concessionStatus === "cancelled";
+  const concessionsPending = hasConcessions && !concessionsDelivered && !concessionsCancelled;
+
+  return {
+    hasTickets,
+    ticketsValidated,
+    ticketsCancelled,
+    ticketsPending,
+    hasConcessions,
+    concessionsDelivered,
+    concessionsCancelled,
+    concessionsPending
+  };
+}
+
 function changeConcessionDailySalesPage(delta) {
   state.concessionDailySalesPage = Math.max(1, (state.concessionDailySalesPage || 1) + delta);
   renderConcessionDailySales();
@@ -981,7 +1048,8 @@ function renderConcessionDailySales() {
   }
 
   const filtered = allOrdersWithGroup.filter(({ order }) => {
-    if (!showArchived && order.archived) return false;
+    const isArchived = isOrderEffectivelyArchived(order);
+    if (!showArchived && isArchived) return false;
     if (statusFilter === "all") return true;
 
     const totalItems = (order.items || []).reduce((s, i) => s + Number(i.quantity || 0), 0);
@@ -1204,7 +1272,8 @@ function openConcessionOrderDetail(orderId) {
 
   if (refundBtn) {
     const eligibility = order.refundEligibility || {};
-    if (eligibility.allowed && !isCancelled) {
+    const fullyDelivered = fulfilledItems >= totalItems && totalItems > 0;
+    if (eligibility.allowed && !isCancelled && !fullyDelivered) {
       refundBtn.hidden = false;
       const amt = Number(eligibility.amount || 0);
       refundBtn.textContent = amt > 0 ? `Reembolsar ${money(amt)}` : "Cancelar bomboniere";
@@ -4149,8 +4218,8 @@ function renderOrders() {
   const orders = state.content?.orders || [];
   const query = (state.orderFilters.allQuery || "").toLowerCase();
   let filteredOrders = orders.filter((order) => {
-    if (state.orderFilters.archiveStatus === "archived") return order.archived === true;
-    if (state.orderFilters.archiveStatus === "active") return order.archived !== true;
+    if (state.orderFilters.archiveStatus === "archived") return isOrderEffectivelyArchived(order);
+    if (state.orderFilters.archiveStatus === "active") return isOrderEffectivelyActive(order);
     return true;
   });
   filteredOrders = query
@@ -4169,11 +4238,11 @@ function renderOrders() {
     compact: false,
     emptyTitle: state.orderFilters.archiveStatus === "archived" ? "Nenhum pedido arquivado" : "Nenhum pedido encontrado",
     emptyMessage: state.orderFilters.archiveStatus === "archived"
-      ? "Os pedidos arquivados ficam preservados e podem ser restaurados aqui."
+      ? "Os pedidos arquivados (validados por QR Code, cancelados ou reembolsados) ficam preservados aqui."
       : "Ajuste a busca ou aguarde uma nova venda."
   });
   const today = state.content?.calendar?.today || new Date().toISOString().slice(0, 10);
-  let todayOrders = orders.filter((order) => order.archived !== true && String(order.createdAt || "").slice(0, 10) === today);
+  let todayOrders = orders.filter((order) => isOrderEffectivelyActive(order) && String(order.createdAt || "").slice(0, 10) === today);
   if (state.orderFilters.todayOrigin !== "all") todayOrders = todayOrders.filter((order) => String(order.origin || "online") === state.orderFilters.todayOrigin);
   if (state.orderFilters.todayStatus !== "all") {
     todayOrders = todayOrders.filter((order) => {
@@ -4259,15 +4328,16 @@ function renderOrdersTable(targetId, orders, options = {}) {
                 const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>`).join(" ");
                 const quickSale = order.saleMode === "quick";
                 const customerLabel = quickSale ? "Venda rápida" : order.customerName || "Cliente avulso";
+                const isArchived = isOrderEffectivelyArchived(order);
                 return `
-                <tr class="order-table-row ${order.archived ? "is-archived" : ""}" onclick="openOrderView('${escapeHtml(order.id)}')">
+                <tr class="order-table-row ${isArchived ? "is-archived" : ""}" onclick="openOrderView('${escapeHtml(order.id)}')">
                   <td data-label="Data/Hora"><strong>${escapeHtml(orderReference(order))}</strong><br><span class="list-meta">${new Date(order.createdAt).toLocaleString("pt-BR")}</span></td>
                   <td data-label="Cliente">${escapeHtml(customerLabel)}<br><span class="list-meta">${escapeHtml(quickSale ? "Sem identificação do cliente" : order.customerPhone || order.customerEmail || "")}</span></td>
                   <td data-label="Filme/Sessão"><strong>${escapeHtml(order.movieTitle || "-")}</strong><br><span class="list-meta">${escapeHtml([order.sessionTime, order.sessionFormat].filter(Boolean).join(" • ") || "-")}</span></td>
                   <td data-label="Itens">${orderTicketCount(order)} ingresso(s)<br><span class="list-meta">${extras}</span>${tickets ? `<div class="ticket-code-row">${tickets}</div>` : ""}</td>
                   <td data-label="Total"><strong>${money(order.totalPrice)}</strong></td>
                   <td data-label="Pagamento">${escapeHtml(originLabel(order.origin || "online"))}<br><span class="list-meta">${escapeHtml(paymentMethodLabel(order.paymentMethod))}</span></td>
-                  <td data-label="Status"><div class="order-status-stack"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span>${order.archived ? '<span class="status-label archived">Arquivado</span>' : ""}</div></td>
+                  <td data-label="Status"><div class="order-status-stack"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span>${isArchived ? '<span class="status-label archived">Arquivado</span>' : ""}</div></td>
                   <td data-label="Ações" onclick="event.stopPropagation()">
                     <div class="context-menu">
                       <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
@@ -4333,6 +4403,7 @@ function sectionHtml(title, rows) {
 function orderDetailHtml(order) {
   const payment = paymentForOrder(order.id);
   const movie = movieForOrder(order);
+  const val = getOrderValidationSummary(order);
   const tickets = (order.tickets || []).map((ticket) => `
     <button class="copy-code" type="button" onclick="copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>
     <span class="list-meta">${escapeHtml(orderStatusLabel(ticket.status))}</span>
@@ -4359,7 +4430,9 @@ function orderDetailHtml(order) {
       ["Data", new Date(order.createdAt).toLocaleString("pt-BR")],
       ["Origem", originLabel(order.origin || "online")],
       ["Status", orderStatusLabel(order.status)],
-      ["Arquivamento", order.archived ? `Arquivado em ${new Date(order.archivedAt || order.updatedAt).toLocaleString("pt-BR")}` : "Pedido ativo"]
+      ["Arquivamento", isOrderEffectivelyArchived(order)
+        ? `Arquivado ${order.archivedAt ? `em ${new Date(order.archivedAt).toLocaleString("pt-BR")}` : "(pedido concluído / cancelado)"}`
+        : "Pedido ativo (aguardando validação ou pagamento)"]
     ])}
     ${sectionHtml("Cliente", [
       ["Tipo", order.saleMode === "quick" ? "Venda rápida" : order.customerUserId ? "Usuário cadastrado" : "Cliente avulso"],
@@ -4375,6 +4448,7 @@ function orderDetailHtml(order) {
     ])}
     ${sectionHtml("Ingressos", [
       ["Quantidade", `${orderTicketCount(order)} ingresso(s)`],
+      ["Status no cinema", val.ticketsValidated ? "Validados no cinema (Não reembolsável)" : val.ticketsCancelled ? "Cancelados / Reembolsados" : "Aguardando validação QR Code"],
       ["Códigos", tickets]
     ])}
     ${sectionHtml("Serviços de cinema", [
@@ -4384,6 +4458,7 @@ function orderDetailHtml(order) {
       ["Tratamento fiscal", "Conforme regra contábil vigente do Clube"]
     ])}
     ${sectionHtml("Mercadorias da bomboniere", [
+      ["Status no balcão", val.concessionsDelivered ? "Entregue no balcão (Não reembolsável)" : val.concessionsCancelled ? "Cancelada / Reembolsada" : (order.concessionItems && order.concessionItems.length) ? "Aguardando retirada" : "Sem itens de bomboniere"],
       ["Produtos", goodsRows === "-" ? extras : goodsRows],
       ["Subtotal", money(order.goodsSubtotal || 0)],
       ["Status NFC-e", goodsFiscalLabel]
@@ -4409,8 +4484,63 @@ function fillOrderEditor(order, mode) {
   $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
   $("orderEditFields").hidden = mode !== "edit";
   $("orderSaveButton").hidden = mode !== "edit";
-  $("orderCancelButton").hidden = !order || order.archived || ["cancelled", "refunded"].includes(order.status);
-  $("orderCancelButton").textContent = "Cancelar pedido";
+
+  const isArchived = isOrderEffectivelyArchived(order);
+  const isCancelledOrRefunded = !order || ["cancelled", "refunded"].includes(order.status);
+  const val = getOrderValidationSummary(order);
+  const cancelBtn = $("orderCancelButton");
+  const refundTicketsBtn = $("orderRefundTicketsButton");
+  const refundConcessionsBtn = $("orderRefundConcessionsButton");
+
+  if (isCancelledOrRefunded || isArchived || isOrderFullyValidated(order)) {
+    cancelBtn.hidden = true;
+    if (refundTicketsBtn) refundTicketsBtn.hidden = true;
+    if (refundConcessionsBtn) refundConcessionsBtn.hidden = true;
+  } else if (order.status === "paid") {
+    if (val.hasTickets && val.hasConcessions) {
+      if (!val.ticketsValidated && !val.concessionsDelivered) {
+        cancelBtn.hidden = false;
+        cancelBtn.textContent = "Cancelar pedido integral";
+        if (refundTicketsBtn) {
+          refundTicketsBtn.hidden = false;
+          refundTicketsBtn.textContent = "Reembolsar apenas ingressos";
+        }
+        if (refundConcessionsBtn) {
+          refundConcessionsBtn.hidden = false;
+          refundConcessionsBtn.textContent = "Reembolsar apenas bomboniere";
+        }
+      } else if (val.ticketsValidated && !val.concessionsDelivered && val.concessionsPending) {
+        cancelBtn.hidden = true;
+        if (refundTicketsBtn) refundTicketsBtn.hidden = true;
+        if (refundConcessionsBtn) {
+          refundConcessionsBtn.hidden = false;
+          refundConcessionsBtn.textContent = "Reembolsar bomboniere (ingressos já validados)";
+        }
+      } else if (val.concessionsDelivered && !val.ticketsValidated && val.ticketsPending) {
+        cancelBtn.hidden = true;
+        if (refundTicketsBtn) {
+          refundTicketsBtn.hidden = false;
+          refundTicketsBtn.textContent = "Reembolsar ingressos (bomboniere já entregue)";
+        }
+        if (refundConcessionsBtn) refundConcessionsBtn.hidden = true;
+      } else {
+        cancelBtn.hidden = true;
+        if (refundTicketsBtn) refundTicketsBtn.hidden = true;
+        if (refundConcessionsBtn) refundConcessionsBtn.hidden = true;
+      }
+    } else {
+      cancelBtn.hidden = false;
+      cancelBtn.textContent = "Cancelar pedido";
+      if (refundTicketsBtn) refundTicketsBtn.hidden = true;
+      if (refundConcessionsBtn) refundConcessionsBtn.hidden = true;
+    }
+  } else {
+    cancelBtn.hidden = false;
+    cancelBtn.textContent = "Cancelar pedido";
+    if (refundTicketsBtn) refundTicketsBtn.hidden = true;
+    if (refundConcessionsBtn) refundConcessionsBtn.hidden = true;
+  }
+
   $("orderPermanentDeleteButton").hidden = !order || !isOwnerAdmin();
   if (order) {
     $("orderCustomerName").value = order.customerName || "";
@@ -4420,6 +4550,42 @@ function fillOrderEditor(order, mode) {
     $("orderOperationalNotes").value = order.operationalNotes || "";
   }
   $("orderOverlay").hidden = false;
+}
+
+async function executeOrderRefundTickets(orderId = state.selectedOrderId) {
+  const order = (state.content?.orders || []).find((item) => item.id === orderId);
+  if (!order) return;
+  const reason = prompt("Informe o motivo para reembolsar o valor dos ingressos deste pedido:", "Cancelamento de ingressos pelo painel");
+  if (reason === null) return;
+  try {
+    const result = await api(`/api/orders/${encodeURIComponent(order.id)}/refund-tickets`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    });
+    await loadContent({ silent: true });
+    closeOrderOverlay();
+    showToast(result.message || `Ingressos reembolsados: ${money(result.refundedAmount || 0)}`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function executeOrderRefundConcessions(orderId = state.selectedOrderId) {
+  const order = (state.content?.orders || []).find((item) => item.id === orderId);
+  if (!order) return;
+  const reason = prompt("Informe o motivo para reembolsar o valor da bomboniere deste pedido:", "Cancelamento de bomboniere pelo painel");
+  if (reason === null) return;
+  try {
+    const result = await api(`/api/orders/${encodeURIComponent(order.id)}/refund-concessions`, {
+      method: "POST",
+      body: JSON.stringify({ reason })
+    });
+    await loadContent({ silent: true });
+    closeOrderOverlay();
+    showToast(result.message || `Bomboniere reembolsada: ${money(result.refundedAmount || 0)}`);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 function openOrderView(orderId) {
@@ -4565,7 +4731,8 @@ function toggleOrderMenu(orderId, event) {
   delete floating.dataset.campaignId;
   const order = (state.content?.orders || []).find((item) => item.id === orderId);
   if (!order) return;
-  const terminated = ["cancelled", "refunded"].includes(order.status);
+  const isArchived = isOrderEffectivelyArchived(order);
+  const terminated = ["cancelled", "refunded"].includes(order.status) || isOrderFullyValidated(order);
   if (!floating.hidden && floating.dataset.orderId === orderId) {
     closeFloatingActionMenu();
     return;
@@ -4576,9 +4743,11 @@ function toggleOrderMenu(orderId, event) {
     ${terminated ? "" : `<button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>
     <button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>
     <button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>`}
-    ${order.archived || terminated ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
+    ${isArchived || terminated ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
     ${order.archived
       ? `<button type="button" onclick="restoreOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Restaurar pedido</button>`
+      : isArchived
+      ? ""
       : `<button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>`}
     <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>
   `;
@@ -10375,6 +10544,8 @@ function bindEvents() {
   });
   $("orderEditorForm").addEventListener("submit", saveOrderEdit);
   $("orderCancelButton").addEventListener("click", () => cancelOrDeleteOrder());
+  $("orderRefundTicketsButton")?.addEventListener("click", () => executeOrderRefundTickets());
+  $("orderRefundConcessionsButton")?.addEventListener("click", () => executeOrderRefundConcessions());
   $("orderPermanentDeleteButton").addEventListener("click", () => openPermanentDelete());
   $("permanentDeleteCloseButton").addEventListener("click", closePermanentDelete);
   $("permanentDeleteBackButton").addEventListener("click", closePermanentDelete);

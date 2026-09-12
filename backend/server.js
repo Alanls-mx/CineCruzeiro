@@ -65,7 +65,7 @@ const settingsRepository = require("./repositories/settingsRepository");
 const userRepository = require("./repositories/userRepository");
 const orderRepository = require("./repositories/orderRepository");
 const { createPerformanceMonitor } = require("./services/performanceMonitor");
-const { prepareRefund, prepareConcessionRefund, submitFullRefund, submitConcessionRefund, refundError } = require("./services/orderRefundService");
+const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, refundError } = require("./services/orderRefundService");
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
@@ -2338,6 +2338,54 @@ function searchCustomers(db, query) {
     .map(sanitizeUser);
 }
 
+function isOrderFullyValidated(order, tickets = []) {
+  if (!order) return false;
+  const hasTickets = Array.isArray(tickets) && tickets.length > 0;
+  const allTicketsValidated = !hasTickets || tickets.every((t) => ["used", "cancelled", "refunded"].includes(String(t.status || "")));
+  const concessions = Array.isArray(order.concessionItems) ? order.concessionItems : [];
+  const hasConcessions = concessions.length > 0;
+  const allConcessionsValidated = !hasConcessions || concessions.every((item) => {
+    if (item.status === "cancelled" || item.refundStatus === "completed") return true;
+    return Number(item.fulfilledQuantity || 0) >= Number(item.quantity || 0);
+  }) || Boolean(order.concessionsFulfilledAt) || ["cancelled", "refunded"].includes(String(order.concessionStatus || ""));
+  return allTicketsValidated && allConcessionsValidated;
+}
+
+function isOrderEffectivelyArchived(order, tickets = []) {
+  if (!order) return false;
+  if (order.archived === true) return true;
+  if (["cancelled", "refunded", "expired"].includes(String(order.status || ""))) return true;
+  if (order.status === "paid" && isOrderFullyValidated(order, tickets)) return true;
+  return false;
+}
+
+function isOrderEffectivelyActive(order, tickets = []) {
+  if (!order) return false;
+  return !isOrderEffectivelyArchived(order, tickets) && ["pending", "pending_payment", "processing", "paid"].includes(String(order.status || ""));
+}
+
+function checkAndAutoArchiveOrder(db, order, adminUser, reason = "Todos os itens validados pelo cinema") {
+  if (!order || order.archived) return false;
+  const tickets = orderTickets(db, order.id) || [];
+  if (isOrderFullyValidated(order, tickets)) {
+    const now = new Date().toISOString();
+    order.archived = true;
+    order.archivedAt = now;
+    order.archivedBy = adminUser?.id || "system";
+    order.archivedByEmail = adminUser?.email || "system@cinecruzeiro.local";
+    order.archivedReason = reason;
+    order.updatedAt = now;
+    appendOrderAudit(order, {
+      action: "archive",
+      updatedBy: order.archivedBy,
+      reason,
+      after: structuredCloneSafe(order)
+    });
+    return true;
+  }
+  return false;
+}
+
 function validateTicket(db, code, adminUser, expectedSessionId = "") {
   const ticketCode = extractTicketCode(code);
   const ticket = (db.tickets || []).find((item) => item.code === ticketCode);
@@ -2395,6 +2443,9 @@ function validateTicket(db, code, adminUser, expectedSessionId = "") {
   ticket.status = "used";
   ticket.usedAt = new Date().toISOString();
   ticket.usedBy = adminUser?.id || "";
+  if (order) {
+    checkAndAutoArchiveOrder(db, order, adminUser, "Ingressos e bomboniere validados pelo cinema");
+  }
   return ticket;
 }
 
@@ -2457,6 +2508,7 @@ function validateTicketConcessions(db, code, adminUser) {
   });
   order.concessionsFulfilledAt = fulfilledAt;
   order.concessionsFulfilledBy = adminUser?.id || "";
+  checkAndAutoArchiveOrder(db, order, adminUser, "Ingressos e bomboniere validados pelo cinema");
   return { ticket, order, concessions: pending, fulfilledAt };
 }
 
@@ -5400,6 +5452,21 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     if (["cancelled", "refunded"].includes(order.status) && !existing) {
       return { completed: true, manualRefundRequired: order.refundStatus === "required", order, payment };
     }
+
+    const tickets = orderTickets(db, orderId) || [];
+    const hasUsedTickets = tickets.some((t) => t.status === "used");
+    const hasFulfilledConcessions = (order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0) || Boolean(order.concessionsFulfilledAt);
+
+    if (hasUsedTickets && hasFulfilledConcessions) {
+      throw refundError("ORDER_ALREADY_VALIDATED", "Este pedido já foi totalmente validado e consumido no cinema; cancelamento e reembolso indisponíveis.", 409);
+    }
+    if (hasUsedTickets) {
+      throw refundError("TICKETS_ALREADY_USED", "Os ingressos deste pedido já foram validados no cinema e não podem ser estornados. Você pode reembolsar separadamente a bomboniere pendente.", 409);
+    }
+    if (hasFulfilledConcessions) {
+      throw refundError("CONCESSIONS_ALREADY_FULFILLED", "Os itens de bomboniere já foram entregues ao cliente e não podem ser estornados. Você pode reembolsar separadamente os ingressos pendentes.", 409);
+    }
+
     if (!existing && (!payment || payment.status !== "approved" || Number(payment.amount) === 0)) {
       cancelOrder(db, order, reason, adminUser);
       await writeDb(db);
@@ -5407,9 +5474,7 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     }
     const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
     const token = paymentService.getMercadoPagoAccessToken(config);
-    let manualRefundReason = (order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0)
-      ? "Ha produtos ja entregues; a devolucao e a conciliacao devem ser feitas manualmente."
-      : !token
+    let manualRefundReason = !token
       ? "A integracao do Mercado Pago nao esta configurada para executar a devolucao automaticamente."
       : "";
     let refund = existing || null;
@@ -5426,6 +5491,10 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
       order.refundStatus = "required";
       order.manualRefundRequired = true;
       order.manualRefundReason = manualRefundReason;
+      order.archived = true;
+      order.archivedAt = now;
+      order.archivedBy = adminUser?.id || "system";
+      order.archivedReason = "Pedido cancelado (devolução manual)";
       payment.refundStatus = "required";
       payment.metadata = {
         ...(payment.metadata || {}),
@@ -5472,6 +5541,10 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
       Object.assign(refund, confirmation, { status: "completed", completedAt: now });
       Object.assign(payment, { status: "refunded", refundStatus: "completed", refundedAt: now, updatedAt: now });
       Object.assign(order, { status: "refunded", paymentStatus: "refunded", refundStatus: "completed", refundedAt: now, updatedAt: now });
+      order.archived = true;
+      order.archivedAt = now;
+      order.archivedBy = adminUser?.id || "system";
+      order.archivedReason = "Pedido cancelado e reembolsado";
       order.concessionStatus = "cancelled";
       order.concessionCancelledAt = now;
       order.concessionCancelledBy = adminUser?.id || "";
@@ -5558,6 +5631,7 @@ function completeConcessionCancellation(db, order, payment, refund, adminUser) {
   const tickets = orderTickets(db, order.id) || [];
   const hasTickets = tickets.length > 0;
   const allTicketsCancelledOrRefunded = !hasTickets || tickets.every((t) => ["cancelled", "refunded"].includes(t.status));
+  const allTicketsDone = !hasTickets || tickets.every((t) => ["cancelled", "refunded", "used"].includes(t.status));
 
   if (refund.full || !hasTickets || allTicketsCancelledOrRefunded) {
     if (payment) {
@@ -5576,6 +5650,12 @@ function completeConcessionCancellation(db, order, payment, refund, adminUser) {
       ticket.cancelledAt = now;
       ticket.refundedAt = now;
     });
+  }
+  if (allTicketsDone) {
+    order.archived = true;
+    order.archivedAt = now;
+    order.archivedBy = adminUser?.id || "system";
+    order.archivedReason = "Bomboniere estornada e itens concluídos";
   }
   appendOrderAudit(order, { action: "concessions.refund", refundId: refund.id, amount: refund.amount, updatedBy: adminUser?.id || "", createdAt: now });
   appendOrderAudit(order, { action: "concessions.cancel", refundId: refund.id, updatedBy: adminUser?.id || "", createdAt: now });
@@ -5640,11 +5720,142 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
   return result;
 }
 
+function ticketRefundEligibility(db, order, payment = orderPayment(db, order?.id)) {
+  if (!order) return { allowed: false, reason: "Pedido não encontrado." };
+  const tickets = orderTickets(db, order.id) || [];
+  if (!tickets.length) return { allowed: false, reason: "Este pedido não possui ingressos." };
+  if (tickets.every((t) => ["cancelled", "refunded"].includes(String(t.status || "")))) {
+    return { allowed: false, completed: true, reason: "Os ingressos deste pedido já foram cancelados/reembolsados." };
+  }
+  if (tickets.some((t) => t.status === "used")) {
+    return { allowed: false, reason: "Há ingressos já validados no cinema. Ingressos utilizados não podem ser reembolsados." };
+  }
+  const breakdown = orderFinancialBreakdown(db, order);
+  const amount = order.ticketRefund?.amount ?? breakdown.ticketNet;
+  if (Number(amount) <= 0) {
+    return { allowed: true, amount: 0, complimentary: true, reason: "Ingressos sem valor líquido cobrado; o cancelamento libera os assentos e cancela os bilhetes sem movimentar o pagamento." };
+  }
+  if (!payment || payment.status !== "approved") return { allowed: false, reason: "O pagamento não está aprovado para reembolso automático." };
+  if (payment.provider !== "mercado_pago" || !/^ORD[A-Z0-9]+$/i.test(payment.providerPaymentId || "")) return { allowed: false, reason: "A forma de pagamento exige conciliação e devolução manual." };
+  if ((payment.metadata?.relatedOrderIds || []).length > 1) return { allowed: false, reason: "A cobrança agrupa vários pedidos e não permite este estorno isolado." };
+  const full = Math.round(Number(amount) * 100) === Math.round(Number(payment.amount || 0) * 100);
+  if (!full && !String(payment.metadata?.transactionId || "").trim()) return { allowed: false, reason: "A transação parcial exigida pelo Mercado Pago não foi registrada neste pagamento." };
+  return { allowed: true, amount: Number(Number(amount).toFixed(2)), full, reason: `Reembolso de ingressos calculado pelo servidor: R$ ${Number(amount).toFixed(2).replace(".", ",")}.` };
+}
+
+function completeTicketCancellation(db, order, payment, refund, adminUser) {
+  if (refund.status === "completed") return;
+  const now = new Date().toISOString();
+  refund.status = "completed";
+  refund.completedAt = now;
+  const tickets = orderTickets(db, order.id) || [];
+  tickets.forEach((ticket) => {
+    ticket.status = "refunded";
+    ticket.cancelledAt = now;
+    ticket.refundedAt = now;
+    ticket.cancelledBy = adminUser?.id || "";
+  });
+  order.ticketRefund = refund;
+  order.ticketsRefundedAt = now;
+  order.updatedAt = now;
+  if (payment) {
+    payment.refundedAmount = Number((Number(payment.refundedAmount || 0) + Number(refund.amount || 0)).toFixed(2));
+    payment.refundStatus = "completed";
+    payment.updatedAt = now;
+    payment.metadata = { ...(payment.metadata || {}), ticketRefund: refund };
+  }
+  const concessions = Array.isArray(order.concessionItems) ? order.concessionItems : [];
+  const hasConcessions = concessions.length > 0;
+  const allConcessionsDone = !hasConcessions || concessions.every((i) => ["cancelled", "refunded"].includes(i.status) || i.refundStatus === "completed" || Number(i.fulfilledQuantity || 0) >= Number(i.quantity || 0)) || Boolean(order.concessionsFulfilledAt) || ["cancelled", "refunded"].includes(order.concessionStatus);
+
+  if (refund.full || !hasConcessions) {
+    if (payment && refund.full) {
+      payment.status = "refunded";
+      payment.refundedAt = now;
+    }
+    if (!hasConcessions) {
+      order.status = "refunded";
+      order.paymentStatus = "refunded";
+      order.refundStatus = "completed";
+      order.refundedAt = now;
+      order.cancelledAt = now;
+      order.cancelledBy = adminUser?.id || "";
+      order.cancellationReason = String(refund.reason || "Reembolso de ingressos").trim();
+    }
+  }
+  if (allConcessionsDone) {
+    order.archived = true;
+    order.archivedAt = now;
+    order.archivedBy = adminUser?.id || "system";
+    order.archivedReason = "Ingressos estornados e itens concluídos";
+  }
+  appendOrderAudit(order, { action: "tickets.refund", refundId: refund.id, amount: refund.amount, updatedBy: adminUser?.id || "", createdAt: now });
+  appendOrderAudit(order, { action: "tickets.cancel", refundId: refund.id, updatedBy: adminUser?.id || "", createdAt: now });
+}
+
+async function refundOrderTickets(orderId, reason, adminUser) {
+  const prepared = await withCriticalMutation(async () => {
+    const db = await readDb();
+    const order = (db.orders || []).find((item) => item.id === orderId);
+    if (!order) throw refundError("ORDER_NOT_FOUND", "Pedido não encontrado.", 404);
+    const payment = orderPayment(db, orderId);
+    const eligibility = ticketRefundEligibility(db, order, payment);
+    if (eligibility.completed) return { completed: true, order, payment, refund: order.ticketRefund };
+    if (!eligibility.allowed) throw refundError("TICKET_REFUND_BLOCKED", eligibility.reason);
+    if (eligibility.complimentary) {
+      const refund = order.ticketRefund || { id: crypto.randomUUID(), orderId, scope: "tickets", amount: 0, full: false, status: "pending", reason: String(reason || "Cancelamento de ingressos"), createdAt: new Date().toISOString() };
+      order.ticketRefund = refund;
+      completeTicketCancellation(db, order, payment, refund, adminUser);
+      await writeDb(db);
+      return { completed: true, order, payment, refund };
+    }
+    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
+    const token = paymentService.getMercadoPagoAccessToken(config);
+    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de solicitar o reembolso.", 412);
+    const refund = prepareTicketRefund(payment, order, eligibility.amount);
+    refund.reason ||= String(reason || "Cancelamento de ingressos");
+    order.ticketRefund = refund;
+    payment.refundStatus = "pending";
+    payment.metadata = { ...(payment.metadata || {}), ticketRefund: refund };
+    await writeDb(db);
+    return { refund: structuredCloneSafe(refund), token };
+  });
+  if (prepared.completed) {
+    if (typeof broadcastReleasedOrderSeats === "function") {
+      await broadcastReleasedOrderSeats(prepared.order);
+    }
+    return prepared;
+  }
+  let confirmation;
+  try {
+    confirmation = await submitPartialRefund(prepared.refund, prepared.token);
+  } catch (error) {
+    logEvent("warn", "order.ticket_refund_pending", { orderId, refundId: prepared.refund.id, code: error.code || "REFUND_NETWORK_ERROR" });
+    throw refundError("REFUND_PENDING", error.code ? error.message : "Sem confirmacao do reembolso. Tente novamente para consultar a mesma operacao.");
+  }
+  const result = await withCriticalMutation(async () => {
+    const db = await readDb();
+    const order = (db.orders || []).find((item) => item.id === orderId);
+    const payment = orderPayment(db, orderId);
+    const refund = order?.ticketRefund;
+    if (!order || refund?.id !== prepared.refund.id) throw refundError("REFUND_STATE_CONFLICT", "Devolucao confirmada no provedor; conciliacao local necessaria.");
+    Object.assign(refund, confirmation);
+    completeTicketCancellation(db, order, payment, refund, adminUser);
+    await writeDb(db);
+    logEvent("info", "order.ticket_refunded", { orderId, refundId: refund.id, amount: refund.amount });
+    return { order, payment, refund };
+  });
+  if (typeof broadcastReleasedOrderSeats === "function") {
+    await broadcastReleasedOrderSeats(result.order);
+  }
+  return result;
+}
+
 function cancelOrder(db, order, reason, adminUser) {
   const payment = orderPayment(db, order.id);
   const tickets = orderTickets(db, order.id);
   if (tickets.some((ticket) => ticket.status === "used")) {
-    const error = new Error("Pedido com ingresso ja utilizado nao pode ser cancelado pelo painel.");
+    const error = new Error("Pedido com ingresso já utilizado não pode ser cancelado pelo painel.");
     error.statusCode = 409;
     throw error;
   }
@@ -5653,6 +5864,10 @@ function cancelOrder(db, order, reason, adminUser) {
   const now = new Date().toISOString();
   releaseConcessionReservation(db, order);
   order.status = "cancelled";
+  order.archived = true;
+  order.archivedAt = now;
+  order.archivedBy = adminUser?.id || "system";
+  order.archivedReason = String(reason || "Cancelado pelo painel").trim();
   order.cancelledBy = adminUser?.id || "";
   order.cancelledByEmail = adminUser?.email || "";
   order.cancelledAt = now;
@@ -13597,6 +13812,22 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  const orderRefundTicketsMatch = pathname.match(/^\/api\/orders\/([^/]+)\/refund-tickets$/);
+  if (orderRefundTicketsMatch && method === "POST") {
+    const orderId = decodeURIComponent(orderRefundTicketsMatch[1]);
+    const body = await readBody(req);
+    sendJson(res, 200, await refundOrderTickets(orderId, body.reason, req.adminUser));
+    return;
+  }
+
+  const orderRefundConcessionsMatch = pathname.match(/^\/api\/orders\/([^/]+)\/refund-concessions$/);
+  if (orderRefundConcessionsMatch && method === "POST") {
+    const orderId = decodeURIComponent(orderRefundConcessionsMatch[1]);
+    const body = await readBody(req);
+    sendJson(res, 200, await refundOrderConcessions(orderId, body.reason, req.adminUser));
+    return;
+  }
+
   if (adminOrderMatch && method === "GET") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
     const order = postgresEnabled()
@@ -13619,6 +13850,14 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     if (body.action === "cancel") {
       sendJson(res, 200, await cancelOrderWithRefund(orderId, body.reason, req.adminUser));
+      return;
+    }
+    if (body.action === "refund_tickets") {
+      sendJson(res, 200, await refundOrderTickets(orderId, body.reason, req.adminUser));
+      return;
+    }
+    if (body.action === "refund_concessions") {
+      sendJson(res, 200, await refundOrderConcessions(orderId, body.reason, req.adminUser));
       return;
     }
     if (postgresEnabled() && !["cancel"].includes(body.action)) {

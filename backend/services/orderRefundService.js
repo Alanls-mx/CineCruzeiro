@@ -110,4 +110,31 @@ async function submitConcessionRefund(refund, accessToken, request = fetch) {
   };
 }
 
-module.exports = { prepareRefund, prepareConcessionRefund, submitFullRefund, submitConcessionRefund, refundError };
+function prepareTicketRefund(payment, order, amount, now = new Date().toISOString()) {
+  const existing = order.ticketRefund;
+  if (existing) return existing;
+  if (payment.provider !== "mercado_pago" || !/^ORD[A-Z0-9]+$/i.test(payment.providerPaymentId || "")) {
+    throw refundError("REFUND_PROVIDER_UNSUPPORTED", "Esta forma de pagamento exige devolucao manual. Nenhum reembolso foi executado.");
+  }
+  if ((payment.metadata?.relatedOrderIds || []).length > 1) {
+    throw refundError("REFUND_SHARED_PAYMENT", "A cobranca inclui varios pedidos. O estorno precisa ser conciliado manualmente; nenhum reembolso foi executado.");
+  }
+  if (payment.status !== "approved") throw refundError("REFUND_PAYMENT_NOT_APPROVED", "Somente pagamentos aprovados podem ser reembolsados.");
+  const normalizedAmount = Number(Number(amount || 0).toFixed(2));
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0 || normalizedAmount > Number(payment.amount || 0)) {
+    throw refundError("REFUND_AMOUNT_INVALID", "O valor calculado para os ingressos nao pode ser reembolsado automaticamente.");
+  }
+  const full = Math.round(normalizedAmount * 100) === Math.round(Number(payment.amount || 0) * 100);
+  const transactionId = String(payment.metadata?.transactionId || "").trim();
+  if (!full && !transactionId) {
+    throw refundError("REFUND_TRANSACTION_MISSING", "O pagamento nao possui a transacao exigida pelo Mercado Pago para um reembolso parcial.");
+  }
+  return { id: crypto.randomUUID(), orderId: order.id, providerOrderId: payment.providerPaymentId, transactionId, scope: "tickets", amount: normalizedAmount, full, status: "pending", createdAt: now };
+}
+
+async function submitPartialRefund(refund, accessToken, request = fetch) {
+  return submitConcessionRefund(refund, accessToken, request);
+}
+
+module.exports = { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, refundError };
+
