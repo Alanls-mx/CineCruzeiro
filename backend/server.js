@@ -3280,21 +3280,47 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
   const config = getGoogleWalletConfig(db);
   const enriched = enrichTicket(db, ticket);
   const objectId = googleWalletObjectId(config, ticket);
-  const validTimeInterval = {
-    start: { date: `${enriched.sessionDate}T00:00:00-03:00` },
-    end: { date: enriched.archiveAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() }
-  };
+  const sessionStart = new Date(`${enriched.sessionDate || ""}T${enriched.sessionTime || "00:00"}:00-03:00`);
+  const archiveAt = new Date(enriched.archiveAt || "");
+  const validTimeInterval = Number.isFinite(sessionStart.getTime())
+    ? {
+        start: { date: sessionStart.toISOString() },
+        end: {
+          date: (Number.isFinite(archiveAt.getTime()) && archiveAt > sessionStart
+            ? archiveAt
+            : new Date(sessionStart.getTime() + 24 * 60 * 60 * 1000)).toISOString()
+        }
+      }
+    : undefined;
   const frontendUrl = getGoogleOAuthConfig(req, db).frontendUrl;
+  const seatLabel = String(enriched.seat || "").trim();
+  const seatRow = seatLabel.match(/^[A-Za-z]+/)?.[0] || "";
 
   return {
     id: objectId,
     classId: config.classId,
     state: enriched.status === "active" ? "ACTIVE" : "INACTIVE",
-    heroImage: enriched.backdropUrl ? { sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.backdropUrl) } } : undefined,
-    imageModulesData: enriched.posterUrl ? [{ mainImage: { sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.posterUrl) } }, id: "poster" }] : undefined,
-    eventName: googleWalletLocalized(enriched.movieTitle || "Ingresso Cine Cruzeiro"),
+    heroImage: enriched.backdropUrl ? {
+      sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.backdropUrl) },
+      contentDescription: googleWalletLocalized(`Banner de ${enriched.movieTitle || "Cine Cruzeiro"}`)
+    } : undefined,
+    imageModulesData: enriched.posterUrl ? [{
+      mainImage: {
+        sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.posterUrl) },
+        contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
+      },
+      id: "poster"
+    }] : undefined,
     ticketHolderName: user.name || enriched.customerName || "Cliente Cine Cruzeiro",
     ticketNumber: enriched.code,
+    ticketType: googleWalletLocalized(enriched.ticketType || "Ingresso"),
+    seatInfo: seatLabel ? {
+      seat: googleWalletLocalized(seatLabel),
+      ...(seatRow ? { row: googleWalletLocalized(seatRow) } : {})
+    } : undefined,
+    reservationInfo: {
+      confirmationCode: String(enriched.orderId || ticket.orderId || enriched.code || ticket.id)
+    },
     barcode: {
       type: "QR_CODE",
       value: enriched.qrPayload,
@@ -3355,7 +3381,8 @@ function googleWalletSaveUrl(db, ticket, user, req) {
     passType: "eventTicketObjects",
     objectPreview: {
       state: eventTicketObject.state,
-      eventName: eventTicketObject.eventName?.defaultValue?.value || "",
+      movieTitle: enriched.movieTitle || "",
+      ticketType: eventTicketObject.ticketType?.defaultValue?.value || "",
       barcodeType: eventTicketObject.barcode?.type || "",
       hasHeroImage: Boolean(eventTicketObject.heroImage),
       hasPoster: Boolean(eventTicketObject.imageModulesData?.length)
