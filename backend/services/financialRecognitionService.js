@@ -76,7 +76,8 @@ function applyCompletedRefunds({ ticketRevenue = 0, concessionRevenue = 0, order
   let ticketRefunded = Math.min(originalTicketRevenue, completedRefundAmount(order.ticketRefund));
   let concessionRefunded = Math.min(originalConcessionRevenue, completedRefundAmount(order.concessionRefund));
   const specificallyAllocated = money(ticketRefunded + concessionRefunded);
-  let unallocated = Math.max(0, money(paymentState.refundedAmount - specificallyAllocated));
+  const sharedPayment = Array.isArray(payment?.metadata?.relatedOrderIds) && payment.metadata.relatedOrderIds.length > 1;
+  let unallocated = sharedPayment ? 0 : Math.max(0, money(paymentState.refundedAmount - specificallyAllocated));
 
   if (unallocated > 0 && totalRevenue > 0) {
     const availableTicket = Math.max(0, originalTicketRevenue - ticketRefunded);

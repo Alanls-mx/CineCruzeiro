@@ -61,6 +61,23 @@ test("reembolso sem escopo e distribuido proporcionalmente", () => {
   assert.equal(result.ticketRevenue + result.concessionRevenue, 75);
 });
 
+test("reembolso parcial de cobranca agrupada nao e duplicado entre pedidos", () => {
+  const result = applyCompletedRefunds({
+    ticketRevenue: 30,
+    concessionRevenue: 20,
+    order: {},
+    payment: {
+      status: "approved",
+      amount: 100,
+      refundedAmount: 25,
+      metadata: { relatedOrderIds: ["order-1", "order-2"] }
+    }
+  });
+  assert.equal(result.ticketRevenue, 30);
+  assert.equal(result.concessionRevenue, 20);
+  assert.equal(result.refundTotal, 0);
+});
+
 test("evidencia do provedor prevalece sobre status atrasado do pedido", () => {
   const order = { status: "paid", paymentStatus: "approved", createdAt: "2026-09-09T10:00:00Z" };
   const payment = { status: "refunded", amount: 50, approvedAt: "2026-09-09T11:00:00Z" };
