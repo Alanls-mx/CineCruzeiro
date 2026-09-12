@@ -4706,46 +4706,190 @@ input[type="file"]::file-selector-button {
   text-transform: uppercase;
 }
 
-.concession-sales-toolbar input { min-height: 38px; }
-.concession-daily-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 16px 0; }
-.concession-session-sales { padding-block: 18px; border-top: 1px solid var(--border); }
-.concession-session-head,
-.concession-order-head {
-  display: flex;
-  justify-content: space-between;
+/* ── Concessions Layout, 2-Column Product Form & Static Actions ── */
+.split-grid.compact.concessions-workspace {
+  grid-template-columns: minmax(280px, 330px) minmax(560px, 1fr) !important;
   gap: 20px;
-  align-items: flex-start;
+  align-items: start;
 }
 
-.concession-session-head h3 { margin: 0; font-size: 17px; }
-.concession-session-head p,
-.concession-session-head span,
-.concession-order-head span,
-.concession-order-head small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
-.concession-session-head > div:last-child,
-.concession-order-head > div:last-child { text-align: right; }
-.concession-session-head > div:last-child strong { color: #6ee7b7; font-size: 18px; }
-.concession-daily-order { padding: 16px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
-.concession-order-head .badge { display: inline-flex; margin-top: 0; color: var(--text); }
-.concession-item-table { margin-top: 14px; border-top: 1px solid rgba(148, 163, 184, 0.14); }
-.concession-item-row {
+.concession-editor-form {
+  min-width: 0;
+  padding: 20px;
+}
+
+.concession-form-columns {
   display: grid;
-  grid-template-columns: minmax(180px, 1.5fr) 54px repeat(3, minmax(88px, .7fr));
-  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+
+.concession-form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.concession-form-col > label,
+.concession-form-col > .field-row,
+.concession-form-col > .image-setting-grid {
+  margin-bottom: 0;
+}
+
+.concession-toggle-row {
+  display: flex;
   align-items: center;
-  min-height: 46px;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  gap: 18px;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.concession-toggle-row .check-field {
+  margin: 0;
+}
+
+/* Ensure buttons stay completely static in the menu and never stick to the viewport scroll */
+#concessionForm .button-row,
+#concessionForm .sticky-form-actions,
+.concession-form-actions {
+  position: static !important;
+  bottom: auto !important;
+  z-index: 1 !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin: 22px 0 0 0 !important;
+  padding: 16px 0 0 0 !important;
+  border-top: 1px solid var(--line-soft, rgba(255, 255, 255, 0.08)) !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+#concessionForm .button-row .danger-button {
+  margin-right: auto !important;
+  margin-left: 0 !important;
+}
+
+.concession-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compact-date-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.compact-date-label input[type="date"] {
+  min-height: 36px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.concession-category-filter {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.concession-item-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 320px;
+}
+
+.concession-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.concession-chip strong {
+  font-weight: 800;
+  color: #fff;
+}
+
+.concession-chip.chip-ok {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
+}
+
+.concession-chip.chip-warn {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+}
+
+.concession-chip.chip-pending {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(148, 163, 184, 0.06);
+  color: #cbd5e1;
+}
+
+.concession-chip.chip-refunded {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
+  text-decoration: line-through;
+}
+
+.discount-tag {
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.concession-order-modal {
+  max-width: 680px;
+  width: 100%;
+}
+
+.modal-compact-table {
+  margin-top: 10px;
   font-size: 12px;
 }
-.concession-item-row > span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.concession-item-row small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
-.concession-item-labels { min-height: 34px; color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
-.concession-order-finance { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 18px; padding-top: 12px; color: var(--muted); font-size: 11px; }
-.concession-order-finance strong { margin-left: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
-.concession-order-finance .is-net strong { color: #6ee7b7; }
-.concession-order-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-.concession-daily-order > small { display: block; margin-top: 8px; color: var(--muted); text-align: right; }
+
+.modal-compact-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.modal-compact-table th,
+.modal-compact-table td {
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.modal-compact-table th {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 #concessionSalesArchived { width: 16px; height: 16px; }
 .inline-check {
   display: inline-flex;
@@ -4758,26 +4902,27 @@ input[type="file"]::file-selector-button {
   font-weight: 750;
 }
 
-@media (max-width: 820px) {
-  .concession-sales-toolbar { width: 100%; align-items: stretch; }
-  .concession-sales-toolbar label { min-width: 0; flex: 1; }
-  .concession-daily-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .concession-item-labels { display: none; }
-  .concession-item-row { grid-template-columns: minmax(120px, 1fr) repeat(4, auto); gap: 8px; }
+@media (max-width: 1024px) {
+  .split-grid.compact.concessions-workspace {
+    grid-template-columns: 1fr !important;
+  }
 }
 
-@media (max-width: 560px) {
-  .concession-sales-toolbar,
-  .concession-session-head,
-  .concession-order-head { align-items: stretch; flex-direction: column; }
-  .concession-session-head > div:last-child,
-  .concession-order-head > div:last-child { text-align: left; }
-  .concession-item-row { grid-template-columns: 1fr auto; }
-  .concession-item-row > span { text-align: right; }
-  .concession-item-row > span:first-child { text-align: left; grid-column: 1 / -1; }
-  .concession-order-finance,
-  .concession-order-actions { justify-content: flex-start; }
-  .concession-daily-order > small { text-align: left; }
+@media (max-width: 820px) {
+  .concession-toolbar-group { width: 100%; justify-content: space-between; }
+  .concession-item-chips { max-width: 100%; }
+}
+
+@media (max-width: 680px) {
+  .concession-form-columns {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .concession-toggle-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
 }
 .log-stat.warn strong { color: #fde68a; }
 .log-stat.info strong { color: #93c5fd; }

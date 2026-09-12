@@ -104,6 +104,11 @@ let state = {
   movieSessionsPageSize: 5,
   clubSubscriptionsSearch: "",
   boxOfficeTab: "newSale",
+  concessionTab: "todaySales",
+  concessionCategoryFilter: "all",
+  concessionStatusFilter: "all",
+  concessionSalesData: null,
+  selectedConcessionOrderId: null,
   saleMode: "registered",
   selectedCustomer: null,
   customerSearchResults: [],
@@ -891,67 +896,314 @@ async function loadConcessionDailySales() {
     }
     const selectedDate = dateInput?.value || "";
     const data = await api(`/api/admin/concession-sales${selectedDate ? `?date=${encodeURIComponent(selectedDate)}` : ""}`);
-    const showArchived = $("concessionSalesArchived").checked;
-    const summary = data.summary || {};
-    const dailyInsights = $("concessionDailyInsights");
-    if (dailyInsights) dailyInsights.innerHTML = `
-      <div class="mini-insight"><span>Receita líquida</span><strong>${money(summary.netRevenue || 0)}</strong><small>Valor confirmado após descontos e devoluções</small></div>
-      <div class="mini-insight"><span>Venda bruta</span><strong>${money(summary.grossRevenue || 0)}</strong><small>${Number(summary.itemQuantity || 0)} item(ns) em ${Number(summary.orders || 0)} pedido(s)</small></div>
-      <div class="mini-insight"><span>Descontos</span><strong>${money(summary.discountTotal || 0)}</strong><small>Clube, itens grátis e cupons</small></div>
-      <div class="mini-insight"><span>Reembolsos</span><strong>${money(summary.refundTotal || 0)}</strong><small>${Number(summary.refundedQuantity || 0)} item(ns) devolvido(s)</small></div>`;
-    target.innerHTML = data.groups.map((group) => {
-      const orders = group.orders.filter((order) => showArchived || !order.archived);
-      if (!orders.length) return "";
-      const groupItemCount = orders.reduce((total, order) => total + order.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), 0);
-      const groupRevenue = orders.reduce((total, order) => total + Number(order.finance?.netRevenue || 0), 0);
-      return `<section class="concession-session-sales">
-        <header class="concession-session-head"><div><h3>${escapeHtml(group.title)}</h3><p>${escapeHtml([group.date, group.time, group.room, group.status].filter(Boolean).join(" · "))}</p></div><div><strong>${money(groupRevenue)}</strong><span>${groupItemCount} item(ns) · ${orders.length} pedido(s)</span></div></header>
-        ${orders.map((order) => `<article class="concession-daily-order">
-          <header class="concession-order-head"><div><strong>${escapeHtml(order.customerName)}</strong><span>${escapeHtml(order.id)} · ${new Date(order.purchasedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" })}</span></div><div><span class="badge">${escapeHtml(orderStatusLabel(order.status))}</span><small>${escapeHtml(order.paymentMethod)} · ${escapeHtml(order.paymentStatus)}</small></div></header>
-          <div class="concession-item-table" role="table" aria-label="Produtos do pedido">
-            <div class="concession-item-row concession-item-labels" role="row"><span>Produto</span><span>Qtd.</span><span>Unitário</span><span>Descontos</span><span>Líquido</span></div>
-            ${order.items.map((item) => {
-              const productFinance = (order.finance?.products || []).find((product) => String(product.id) === String(item.id)) || {};
-              const discounts = Number(productFinance.discountTotal || 0);
-              return `<div class="concession-item-row" role="row"><span><strong>${escapeHtml(item.name)}</strong><small>${Number(item.fulfilledQuantity)} entregue(s)${item.refundStatus === "completed" ? " · reembolsado" : ""}</small></span><span>${Number(item.quantity)}</span><span>${money(item.originalUnitPrice)}</span><span>${discounts ? `-${money(discounts)}` : "-"}</span><span>${money(productFinance.netRevenue || 0)}</span></div>`;
+    state.concessionSalesData = data;
+    renderConcessionDailySales();
+  } catch (error) {
+    target.innerHTML = `<div class="empty-state"><strong>Não foi possível carregar as vendas</strong><span>${escapeHtml(error.message)}</span></div>`;
+  } finally {
+    concessionSalesLoading = false;
+  }
+}
+
+function findConcessionOrder(orderId) {
+  for (const group of state.concessionSalesData?.groups || []) {
+    const found = group.orders.find((o) => o.id === orderId);
+    if (found) return { order: found, group };
+  }
+  return null;
+}
+
+function renderConcessionDailySales() {
+  const target = $("concessionDailySales");
+  if (!target) return;
+  const data = state.concessionSalesData || { summary: {}, groups: [] };
+  const summary = data.summary || {};
+  const showArchived = Boolean($("concessionSalesArchived")?.checked);
+  const statusFilter = state.concessionStatusFilter || "all";
+
+  const summaryEl = $("concessionSalesSummary");
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div><span>Receita Líquida</span><strong>${money(summary.netRevenue || 0)}</strong></div>
+      <div><span>Venda Bruta</span><strong>${money(summary.grossRevenue || 0)}</strong></div>
+      <div><span>Itens Vendidos</span><strong>${Number(summary.itemQuantity || 0)}</strong></div>
+      <div><span>Descontos / Devoluções</span><strong>${money((Number(summary.discountTotal || 0)) + (Number(summary.refundTotal || 0)))}</strong></div>
+    `;
+  }
+
+  const allOrdersWithGroup = [];
+  for (const group of data.groups || []) {
+    for (const order of group.orders || []) {
+      allOrdersWithGroup.push({ order, group });
+    }
+  }
+
+  const filtered = allOrdersWithGroup.filter(({ order }) => {
+    if (!showArchived && order.archived) return false;
+    if (statusFilter === "all") return true;
+
+    const totalItems = (order.items || []).reduce((s, i) => s + Number(i.quantity || 0), 0);
+    const fulfilledItems = (order.items || []).reduce((s, i) => s + Number(i.fulfilledQuantity || 0), 0);
+    const isRefunded = Number(order.finance?.refundTotal || 0) > 0 || order.status === "refunded";
+
+    if (statusFilter === "refunded") return isRefunded;
+    if (statusFilter === "fulfilled") return !isRefunded && fulfilledItems >= totalItems && totalItems > 0;
+    if (statusFilter === "pending") return !isRefunded && fulfilledItems < totalItems;
+    return true;
+  });
+
+  if (!filtered.length) {
+    target.innerHTML = `<div class="empty-state"><strong>Nenhum pedido encontrado</strong><span>Não há pedidos para o filtro selecionado nesta data.</span></div>`;
+    return;
+  }
+
+  target.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Data/Hora</th>
+          <th>Cliente</th>
+          <th>Sessão / Balcão</th>
+          <th>Itens da Bomboniere</th>
+          <th>Total Líquido</th>
+          <th>Pagamento</th>
+          <th>Entrega</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(({ order, group }) => {
+          const items = order.items || [];
+          const finance = order.finance || {};
+          const totalItems = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
+          const fulfilledItems = items.reduce((s, i) => s + Number(i.fulfilledQuantity || 0), 0);
+          const isRefunded = Number(finance.refundTotal || 0) > 0 || order.status === "refunded";
+          const discountTotal = Number(finance.clubDiscount || 0) + Number(finance.freeItemDiscount || 0) + Number(finance.couponDiscount || 0);
+
+          let deliveryLabel = "Aguardando";
+          let deliveryTone = "warn";
+          if (isRefunded) {
+            deliveryLabel = "Reembolsado";
+            deliveryTone = "danger";
+          } else if (totalItems > 0 && fulfilledItems >= totalItems) {
+            deliveryLabel = "Entregue";
+            deliveryTone = "ok";
+          } else if (fulfilledItems > 0) {
+            deliveryLabel = `${fulfilledItems}/${totalItems} entregue`;
+            deliveryTone = "warn";
+          }
+
+          const orderTime = new Date(order.purchasedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+
+          return `
+            <tr class="order-table-row ${order.archived ? "is-archived" : ""}" onclick="openConcessionOrderDetail('${escapeHtml(order.id)}')">
+              <td data-label="Data/Hora">
+                <strong>#${escapeHtml(order.id.slice(-8).toUpperCase())}</strong><br>
+                <span class="list-meta">${orderTime}</span>
+              </td>
+              <td data-label="Cliente">
+                <strong>${escapeHtml(order.customerName || "Cliente avulso")}</strong>
+              </td>
+              <td data-label="Sessão">
+                <strong>${escapeHtml(group.title || "Balcão")}</strong><br>
+                <span class="list-meta">${escapeHtml([group.time, group.room].filter(Boolean).join(" • ") || "Venda avulsa")}</span>
+              </td>
+              <td data-label="Itens">
+                <div class="concession-item-chips">
+                  ${items.map((item) => {
+                    const itemRefunded = item.refundStatus === "completed";
+                    const f = Number(item.fulfilledQuantity || 0);
+                    const q = Number(item.quantity || 0);
+                    const isF = f >= q && !itemRefunded;
+                    const tone = itemRefunded ? "chip-refunded" : isF ? "chip-ok" : "chip-pending";
+                    return `<span class="concession-chip ${tone}" title="${escapeHtml(item.name)}: ${itemRefunded ? "Reembolsado" : isF ? "Entregue" : `${f}/${q} retirado`}"><strong>${q}x</strong> ${escapeHtml(item.name)}</span>`;
+                  }).join("")}
+                </div>
+              </td>
+              <td data-label="Total">
+                <strong>${money(finance.netRevenue || 0)}</strong>
+                ${discountTotal > 0 ? `<br><span class="list-meta discount-tag">-${money(discountTotal)}</span>` : ""}
+              </td>
+              <td data-label="Pagamento">
+                <strong>${escapeHtml(order.paymentMethod || "Pix")}</strong><br>
+                <span class="list-meta">${escapeHtml(order.paymentStatus || "Aprovado")}</span>
+              </td>
+              <td data-label="Entrega">
+                <div class="order-status-stack">
+                  <span class="status-label ${deliveryTone}">${deliveryLabel}</span>
+                  ${order.archived ? '<span class="status-label archived">Arquivado</span>' : ""}
+                </div>
+              </td>
+              <td data-label="Ações" onclick="event.stopPropagation()">
+                <button class="ghost-button" type="button" onclick="openConcessionOrderDetail('${escapeHtml(order.id)}')">Detalhes</button>
+              </td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function openConcessionOrderDetail(orderId) {
+  const match = findConcessionOrder(orderId);
+  if (!match) {
+    showToast("Pedido não encontrado nesta data.", "error");
+    return;
+  }
+  const { order, group } = match;
+  state.selectedConcessionOrderId = orderId;
+  const overlay = $("concessionOrderOverlay");
+  if (!overlay) return;
+
+  const titleEl = $("concessionOrderModalTitle");
+  const subtitleEl = $("concessionOrderModalSubtitle");
+  const bodyEl = $("concessionOrderDetailBody");
+  const refundBtn = $("concessionModalRefundButton");
+  const archiveBtn = $("concessionModalArchiveButton");
+
+  if (titleEl) titleEl.textContent = `Pedido #${order.id.slice(-8).toUpperCase()}`;
+  if (subtitleEl) subtitleEl.textContent = `Registrado em ${new Date(order.purchasedAt).toLocaleString("pt-BR")}`;
+
+  const items = order.items || [];
+  const finance = order.finance || {};
+  const totalItems = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
+  const fulfilledItems = items.reduce((s, i) => s + Number(i.fulfilledQuantity || 0), 0);
+  const isRefunded = Number(finance.refundTotal || 0) > 0 || order.status === "refunded";
+
+  let deliveryBadge = '<span class="status-label warn">Aguardando retirada</span>';
+  if (isRefunded) {
+    deliveryBadge = '<span class="status-label danger">Reembolsado</span>';
+  } else if (fulfilledItems >= totalItems && totalItems > 0) {
+    deliveryBadge = `<span class="status-label ok">Entregue (${fulfilledItems}/${totalItems})</span>`;
+  } else if (fulfilledItems > 0) {
+    deliveryBadge = `<span class="status-label warn">Retirada parcial (${fulfilledItems}/${totalItems})</span>`;
+  }
+
+  bodyEl.innerHTML = `
+    <section class="order-detail-section">
+      <h3>Informações do pedido</h3>
+      <dl>
+        <div><dt>Código completo</dt><dd><code>${escapeHtml(order.id)}</code></dd></div>
+        <div><dt>Cliente</dt><dd>${escapeHtml(order.customerName || "Cliente avulso")}</dd></div>
+        <div><dt>Sessão / Balcão</dt><dd>${escapeHtml(group.title || "Balcão")}${group.time ? ` • ${escapeHtml([group.time, group.room].filter(Boolean).join(" • "))}` : ""}</dd></div>
+        <div><dt>Pagamento</dt><dd>${escapeHtml(order.paymentMethod || "Pix")} • ${escapeHtml(order.paymentStatus || "Aprovado")}</dd></div>
+        <div><dt>Status de entrega</dt><dd>${deliveryBadge}${order.archived ? ' <span class="status-label archived">Arquivado</span>' : ""}</dd></div>
+      </dl>
+    </section>
+
+    <section class="order-detail-section">
+      <h3>Itens do pedido (${totalItems} total)</h3>
+      <div class="orders-table modal-compact-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>Qtd.</th>
+              <th>Entregue</th>
+              <th>Unitário</th>
+              <th>Descontos</th>
+              <th>Líquido</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((item) => {
+              const productFinance = (finance.products || []).find((p) => String(p.id) === String(item.id)) || {};
+              const discount = Number(productFinance.discountTotal || 0);
+              const isFulfilled = (item.fulfilledQuantity || 0) >= (item.quantity || 0);
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(item.name)}</strong>${item.refundStatus === "completed" ? '<br><small class="danger-text">Reembolsado</small>' : ""}</td>
+                  <td>${Number(item.quantity || 0)}</td>
+                  <td><span class="status-label ${isFulfilled ? "ok" : "warn"}">${Number(item.fulfilledQuantity || 0)}/${Number(item.quantity || 0)}</span></td>
+                  <td>${money(item.originalUnitPrice)}</td>
+                  <td>${discount > 0 ? `-${money(discount)}` : "-"}</td>
+                  <td><strong>${money(productFinance.netRevenue || (item.quantity * item.originalUnitPrice - discount))}</strong></td>
+                </tr>
+              `;
             }).join("")}
-          </div>
-          <div class="concession-order-finance"><span>Bruto <strong>${money(order.finance.grossRevenue)}</strong></span><span>Clube <strong>-${money(Number(order.finance.clubDiscount || 0) + Number(order.finance.freeItemDiscount || 0))}</strong></span><span>Cupom${order.couponCode ? ` ${escapeHtml(order.couponCode)}` : ""} <strong>-${money(order.finance.couponDiscount)}</strong></span>${Number(order.finance.refundTotal || 0) ? `<span>Reembolsado <strong>-${money(order.finance.refundTotal)}</strong></span>` : ""}<span class="is-net">Líquido <strong>${money(order.finance.netRevenue)}</strong></span></div>
-          <div class="concession-order-actions">
-            ${order.refundEligibility?.allowed ? `<button class="danger-button" data-concession-refund="${escapeHtml(order.id)}" data-refund-amount="${Number(order.refundEligibility.amount || 0)}" type="button">${Number(order.refundEligibility.amount || 0) > 0 ? `Reembolsar ${money(order.refundEligibility.amount)}` : "Cancelar bomboniere"}</button>` : ""}
-            <button class="ghost-button" data-concession-archive="${escapeHtml(order.id)}" data-archived="${order.archived}" type="button">${order.archived ? "Desarquivar bomboniere" : "Arquivar bomboniere"}</button>
-          </div>
-          <small>${escapeHtml(order.refundEligibility?.reason || "")}</small>
-        </article>`).join("")}</section>`;
-    }).join("") || `<div class="empty-state"><strong>Nenhum pedido nesta data</strong><span>Não há vendas confirmadas da bomboniere em ${escapeHtml(data.date || selectedDate)}.</span></div>`;
-    target.querySelectorAll("[data-concession-archive]").forEach((button) => button.addEventListener("click", async () => {
-      button.disabled = true;
-      try {
-        await api(`/api/admin/concession-sales/${encodeURIComponent(button.dataset.concessionArchive)}/archive`, {
-          method: "POST", body: JSON.stringify({ archived: button.dataset.archived !== "true" })
-        });
-        await loadConcessionDailySales();
-      } catch (error) { showToast(error.message, "error"); }
-      finally { button.disabled = false; }
-    }));
-    target.querySelectorAll("[data-concession-refund]").forEach((button) => button.addEventListener("click", async () => {
-      const amount = Number(button.dataset.refundAmount || 0);
-      const message = amount > 0
-        ? `Reembolsar ${money(amount)} da bomboniere pela forma de pagamento original? Os ingressos permanecerao ativos.`
-        : "Cancelar os itens da bomboniere e liberar estoque e beneficios?";
-      if (!confirm(message)) return;
-      button.disabled = true;
-      try {
-        const result = await api(`/api/admin/concession-sales/${encodeURIComponent(button.dataset.concessionRefund)}/refund`, {
-          method: "POST", body: JSON.stringify({ reason: "Cancelamento da bomboniere pelo painel" })
-        });
-        showToast(Number(result.refund?.amount || 0) > 0 ? "Bomboniere reembolsada. Os ingressos continuam ativos." : "Bomboniere cancelada.");
-        await Promise.all([loadConcessionDailySales(), loadDashboard()]);
-      } catch (error) { showToast(error.message, "error"); }
-      finally { button.disabled = false; }
-    }));
-  } catch (error) { target.textContent = `Não foi possível carregar as compras: ${error.message}`; }
-  finally { concessionSalesLoading = false; }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="order-detail-section">
+      <h3>Conciliação financeira</h3>
+      <dl>
+        <div><dt>Venda bruta</dt><dd>${money(finance.grossRevenue || 0)}</dd></div>
+        ${Number(finance.clubDiscount || 0) + Number(finance.freeItemDiscount || 0) > 0 ? `<div><dt>Desconto Clube</dt><dd class="is-discount">- ${money(Number(finance.clubDiscount || 0) + Number(finance.freeItemDiscount || 0))}</dd></div>` : ""}
+        ${Number(finance.couponDiscount || 0) > 0 ? `<div><dt>Cupom${order.couponCode ? ` (${escapeHtml(order.couponCode)})` : ""}</dt><dd class="is-discount">- ${money(finance.couponDiscount)}</dd></div>` : ""}
+        ${Number(finance.refundTotal || 0) > 0 ? `<div><dt>Reembolso</dt><dd class="is-refund">- ${money(finance.refundTotal)}</dd></div>` : ""}
+        <div class="is-net"><dt>Receita líquida da bomboniere</dt><dd><strong>${money(finance.netRevenue || 0)}</strong></dd></div>
+      </dl>
+    </section>
+  `;
+
+  if (refundBtn) {
+    const eligibility = order.refundEligibility || {};
+    if (eligibility.allowed) {
+      refundBtn.hidden = false;
+      const amt = Number(eligibility.amount || 0);
+      refundBtn.textContent = amt > 0 ? `Reembolsar ${money(amt)}` : "Cancelar bomboniere";
+      refundBtn.onclick = () => executeConcessionRefund(order.id, amt);
+    } else {
+      refundBtn.hidden = true;
+    }
+  }
+
+  if (archiveBtn) {
+    archiveBtn.textContent = order.archived ? "Desarquivar pedido" : "Arquivar pedido";
+    archiveBtn.onclick = () => toggleConcessionArchive(order.id, order.archived);
+  }
+
+  overlay.hidden = false;
+}
+
+function closeConcessionOrderOverlay() {
+  const overlay = $("concessionOrderOverlay");
+  if (overlay) overlay.hidden = true;
+  state.selectedConcessionOrderId = null;
+}
+
+async function executeConcessionRefund(orderId, amount) {
+  const message = amount > 0
+    ? `Reembolsar ${money(amount)} da bomboniere pela forma de pagamento original? Os ingressos permanecerão ativos.`
+    : "Cancelar os itens da bomboniere e liberar estoque e benefícios?";
+  if (!confirm(message)) return;
+
+  const btn = $("concessionModalRefundButton");
+  if (btn) btn.disabled = true;
+  try {
+    const result = await api(`/api/admin/concession-sales/${encodeURIComponent(orderId)}/refund`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "Cancelamento da bomboniere pelo painel" })
+    });
+    showToast(Number(result.refund?.amount || 0) > 0 ? "Bomboniere reembolsada com sucesso." : "Bomboniere cancelada.");
+    closeConcessionOrderOverlay();
+    await Promise.all([loadConcessionDailySales(), loadDashboard()]);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function toggleConcessionArchive(orderId, currentArchived) {
+  const btn = $("concessionModalArchiveButton");
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/admin/concession-sales/${encodeURIComponent(orderId)}/archive`, {
+      method: "POST",
+      body: JSON.stringify({ archived: !currentArchived })
+    });
+    showToast(currentArchived ? "Pedido desarquivado." : "Pedido arquivado.");
+    closeConcessionOrderOverlay();
+    await loadConcessionDailySales();
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function loadPerformance() {
@@ -4974,6 +5226,66 @@ function updateManualTotal() {
   renderManualSaleSummary();
 }
 
+function mountScanner(target) {
+  const scanner = $("sharedScannerShell");
+  if (!scanner) return;
+  const mount = target === "concessions" ? $("concessionScannerMount") : $("boxOfficeScannerMount");
+  if (mount && scanner.parentElement !== mount) {
+    mount.appendChild(scanner);
+  }
+  const backBtn = scanner.querySelector("[data-scanner-back]");
+  const backText = $("scannerBackText");
+  if (backBtn && backText) {
+    if (target === "concessions") {
+      backBtn.dataset.scannerBack = "concessions";
+      backText.textContent = "Voltar à Bomboniere";
+    } else {
+      backBtn.dataset.scannerBack = "boxOffice";
+      backText.textContent = "Voltar à Bilheteria";
+    }
+  }
+}
+
+function setConcessionTab(tab) {
+  state.concessionTab = tab;
+  document.querySelectorAll("[data-concession-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.concessionTab === tab);
+  });
+  const panelByTab = {
+    todaySales: "concessionTodaySalesTab",
+    products: "concessionProductsTab",
+    finance: "concessionFinanceTab",
+    validateQr: "concessionValidateQrTab"
+  };
+  Object.entries(panelByTab).forEach(([key, id]) => {
+    const panel = $(id);
+    if (panel) panel.classList.toggle("active", key === tab);
+  });
+
+  const newProductBtn = $("newConcessionButton");
+  if (newProductBtn) {
+    newProductBtn.style.display = tab === "products" ? "" : "none";
+  }
+
+  if (tab === "validateQr") {
+    mountScanner("concessions");
+    setTicketValidationMode("concessions");
+    startQrReader();
+  } else {
+    if (state.boxOfficeTab !== "validateTicket" || !$("boxOfficePanel")?.classList.contains("active")) {
+      stopQrReader();
+    }
+    if (tab === "todaySales") {
+      void loadConcessionDailySales();
+    } else if (tab === "products") {
+      renderConcessions();
+    } else if (tab === "finance") {
+      renderConcessionInsights();
+      if (!state.dashboard) void loadDashboard();
+    }
+  }
+}
+
 function setBoxOfficeTab(tab) {
   state.boxOfficeTab = tab;
   document.querySelectorAll("[data-box-office-tab]").forEach((button) => {
@@ -4991,9 +5303,13 @@ function setBoxOfficeTab(tab) {
     if (panel) panel.classList.toggle("active", key === tab);
   });
   if (tab === "validateTicket") {
+    mountScanner("boxOffice");
+    setTicketValidationMode("entry");
     startQrReader();
   } else {
-    stopQrReader();
+    if (state.concessionTab !== "validateQr" || !$("concessionsPanel")?.classList.contains("active")) {
+      stopQrReader();
+    }
   }
 }
 
@@ -5061,16 +5377,25 @@ function updateValidationSessionLock() {
 
 function setTicketValidationMode(mode) {
   state.validationMode = mode === "concessions" ? "concessions" : "entry";
-  document.querySelectorAll("[data-validation-mode]").forEach((button) => {
-    const active = button.dataset.validationMode === state.validationMode;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-  });
   const concessionsMode = state.validationMode === "concessions";
   const scope = document.querySelector(".validation-scope");
   if (scope) scope.hidden = concessionsMode;
   const validateButton = $("validateTicketButton");
-  if (validateButton) validateButton.textContent = concessionsMode ? "Validar itens da bomboniere" : "Validar entrada";
+  if (validateButton) validateButton.textContent = concessionsMode ? "Validar retirada da bomboniere" : "Validar entrada";
+  const manualLabel = $("manualCodeLabelText");
+  if (manualLabel) manualLabel.textContent = concessionsMode ? "Código do pedido ou ingresso" : "Código do ingresso";
+  const instruction = $("scannerInstructionText");
+  if (instruction) {
+    instruction.textContent = concessionsMode
+      ? "Aponte a câmera para o QR Code do pedido ou ingresso para retirar os itens da bomboniere."
+      : "Aponte a câmera para o QR Code do ingresso. A validação acontece no servidor.";
+  }
+  const placeholderSubtitle = $("qrPlaceholderSubtitle");
+  if (placeholderSubtitle) {
+    placeholderSubtitle.textContent = concessionsMode
+      ? "A câmera abrirá aqui para conferir a retirada dos itens da bomboniere."
+      : "A câmera traseira abrirá aqui para validar o ingresso com segurança.";
+  }
   const result = $("ticketValidationResult");
   if (result) {
     result.className = "validation-result scanner-ready";
@@ -5217,7 +5542,7 @@ async function validateTicketByCode(code, options = {}) {
     state.qrValidationLocked = false;
     if (options.autoRestart) {
       state.qrAutoRestartTimer = setTimeout(() => {
-        if (state.boxOfficeTab === "validateTicket") startQrReader();
+        if (state.boxOfficeTab === "validateTicket" || state.concessionTab === "validateQr") startQrReader();
       }, 4200);
     }
   }
@@ -5538,15 +5863,21 @@ function scanNextTicket() {
 }
 
 function renderConcessions() {
-  const items = state.content?.concessions || [];
+  const allItems = state.content?.concessions || [];
   renderConcessionInsights();
   if (state.creating.concession) {
     $("concessionsList").innerHTML = creationPlaceholder("Novo produto", "Preencha nome, preço, estoque e imagem por upload no quadro à direita.");
     fillConcessionForm(null);
     return;
   }
+  const categoryFilter = state.concessionCategoryFilter || "all";
+  const items = categoryFilter === "all"
+    ? allItems
+    : allItems.filter((item) => (item.category || "combo").toLowerCase() === categoryFilter.toLowerCase());
+
   if (!items.length) {
-    $("concessionsList").innerHTML = `<div class="empty-state"><strong>Nenhum produto cadastrado</strong><span>Crie combos para aparecerem no checkout.</span></div>`;
+    const filterLabel = categoryFilter !== "all" ? ` na categoria "${categoryFilter}"` : "";
+    $("concessionsList").innerHTML = `<div class="empty-state"><strong>Nenhum produto cadastrado${escapeHtml(filterLabel)}</strong><span>Crie produtos para aparecerem no checkout ou selecione outra categoria.</span></div>`;
     fillConcessionForm(null);
     return;
   }
@@ -5666,6 +5997,9 @@ function newConcession() {
   state.selectedConcessionId = "";
   $("concessionsList").innerHTML = creationPlaceholder("Novo produto", "Preencha nome, preço, estoque e imagem por upload no quadro à direita.");
   fillConcessionForm(null);
+  if (state.concessionCategoryFilter && state.concessionCategoryFilter !== "all") {
+    if ($("concessionCategory")) $("concessionCategory").value = state.concessionCategoryFilter;
+  }
 }
 
 function fillConcessionForm(item) {
@@ -9158,6 +9492,11 @@ function applyRbacVisibility() {
     const firstAvailableTab = [...document.querySelectorAll(".box-office-tabs [data-box-office-tab]")].find((button) => !button.hidden);
     if (firstAvailableTab) setBoxOfficeTab(firstAvailableTab.dataset.boxOfficeTab);
   }
+  const activeConcessionTab = document.querySelector("[data-concession-tab].active");
+  if (activeConcessionTab?.hidden) {
+    const firstAvailableTab = [...document.querySelectorAll(".concession-tabs [data-concession-tab]")].find((button) => !button.hidden);
+    if (firstAvailableTab) setConcessionTab(firstAvailableTab.dataset.concessionTab);
+  }
   const active = document.querySelector(".panel.active")?.id;
   if (active && !allowedPanels.has(active)) activatePanel(allowedPanels.has("dashboardPanel") ? "dashboardPanel" : "ordersPanel", { scroll: false });
 }
@@ -9192,6 +9531,7 @@ function bindEvents() {
       closeAdminDrawer();
       closeIntegrationConfig();
       if (!$("twoFactorOverlay")?.hidden) closeTwoFactorSettings();
+      if (!$("concessionOrderOverlay")?.hidden) closeConcessionOrderOverlay();
       closeResponsiveSelects();
       document.querySelectorAll(".context-menu-popover").forEach((menu) => {
         menu.hidden = true;
@@ -9614,6 +9954,42 @@ function bindEvents() {
   $("concessionImageUpload").addEventListener("change", () => uploadAdminImage("concessionImageUpload", "concessionImageUrl", "", "concessions", renderConcessionPreview));
   $("concessionImageUrl").addEventListener("input", renderConcessionPreview);
   $("concessionImageClear").addEventListener("click", () => clearImageField("concessionImageUrl", "concessionImagePreview", "Imagem do produto"));
+
+  document.querySelectorAll("[data-concession-tab]").forEach((button) => {
+    button.addEventListener("click", () => setConcessionTab(button.dataset.concessionTab));
+  });
+  document.querySelectorAll("[data-concession-cat]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-concession-cat]").forEach((b) => b.classList.toggle("active", b === button));
+      state.concessionCategoryFilter = button.dataset.concessionCat;
+      renderConcessions();
+    });
+  });
+  document.querySelectorAll('[data-concession-filter="status"] button').forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll('[data-concession-filter="status"] button').forEach((b) => b.classList.toggle("active", b === button));
+      state.concessionStatusFilter = button.dataset.value;
+      renderConcessionDailySales();
+    });
+  });
+  $("concessionSalesRefresh")?.addEventListener("click", () => void loadConcessionDailySales());
+  $("concessionSalesDate")?.addEventListener("change", () => void loadConcessionDailySales());
+  $("concessionSalesArchived")?.addEventListener("change", () => renderConcessionDailySales());
+
+  $("concessionOrderCloseButton")?.addEventListener("click", closeConcessionOrderOverlay);
+  $("concessionOrderModalCloseAction")?.addEventListener("click", closeConcessionOrderOverlay);
+  $("concessionOrderOverlay")?.addEventListener("click", (event) => {
+    if (event.target === $("concessionOrderOverlay")) closeConcessionOrderOverlay();
+  });
+  document.querySelectorAll("[data-scanner-back]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.scannerBack === "concessions") {
+        setConcessionTab("todaySales");
+      } else {
+        setBoxOfficeTab("todaySales");
+      }
+    });
+  });
 
   $("settingsForm").addEventListener("submit", saveSettings);
   $("clubVisualForm")?.addEventListener("submit", saveClubVisualSettings);
@@ -10069,8 +10445,15 @@ function activatePanel(panelId, options = {}) {
     history.replaceState(null, "", `#${target}`);
   }
   if (options.scroll) window.scrollTo({ top: 0, behavior: "smooth" });
+  if (target !== "concessionsPanel" && target !== "boxOfficePanel") {
+    stopQrReader();
+  }
   if (target === "logsPanel" && !state.logs) void loadLogs({ page: 1 });
-  if (target === "concessionsPanel") void loadConcessionDailySales();
+  if (target === "concessionsPanel") {
+    setConcessionTab(state.concessionTab || "todaySales");
+  } else if (target === "boxOfficePanel") {
+    setBoxOfficeTab(state.boxOfficeTab || "newSale");
+  }
 }
 
 window.selectMovie = selectMovie;
@@ -10109,6 +10492,11 @@ window.showChartHint = showChartHint;
 window.openSessionDashboardDetail = openSessionDashboardDetail;
 window.activatePanel = activatePanel;
 window.setBoxOfficeTab = setBoxOfficeTab;
+window.setConcessionTab = setConcessionTab;
+window.openConcessionOrderDetail = openConcessionOrderDetail;
+window.closeConcessionOrderOverlay = closeConcessionOrderOverlay;
+window.executeConcessionRefund = executeConcessionRefund;
+window.toggleConcessionArchive = toggleConcessionArchive;
 window.scanNextTicket = scanNextTicket;
 window.importTmdbMovie = importTmdbMovie;
 window.selectBoxOfficeCustomer = selectBoxOfficeCustomer;

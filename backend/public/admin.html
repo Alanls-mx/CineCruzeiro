@@ -887,70 +887,67 @@
           </div>
 
           <div id="boxOfficeValidateTicket" class="box-office-tab-panel">
-            <div class="ticket-scanner-shell">
-              <div class="scanner-topbar">
-                <button class="ghost-button icon-label" type="button" data-box-office-tab="newSale">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-                  Validar ingresso
-                </button>
-                <span id="qrReaderStatus">Câmera desligada</span>
-              </div>
+            <div id="boxOfficeScannerMount">
+              <div id="sharedScannerShell" class="ticket-scanner-shell">
+                <div class="scanner-topbar">
+                  <button class="ghost-button icon-label" type="button" data-scanner-back="boxOffice">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                    <span id="scannerBackText">Validar ingresso</span>
+                  </button>
+                  <span id="qrReaderStatus">Câmera desligada</span>
+                </div>
 
-              <div class="validation-mode-switch" role="tablist" aria-label="Tipo de validação">
-                <button class="active" type="button" role="tab" aria-selected="true" data-validation-mode="entry">Entrada</button>
-                <button type="button" role="tab" aria-selected="false" data-validation-mode="concessions">Bomboniere</button>
-              </div>
+                <div id="ticketValidationResult" class="validation-result scanner-ready" aria-live="assertive">Leitor pronto para validar a entrada.</div>
 
-              <div id="ticketValidationResult" class="validation-result scanner-ready" aria-live="assertive">Leitor pronto para validar a entrada.</div>
-
-              <section class="validation-scope" aria-labelledby="validationScopeTitle">
-                <div class="validation-scope-heading">
-                  <div>
-                    <strong id="validationScopeTitle">Sessão da validação</strong>
-                    <span>Opcional: bloqueie o leitor para aceitar somente a sessão selecionada.</span>
+                <section class="validation-scope" aria-labelledby="validationScopeTitle">
+                  <div class="validation-scope-heading">
+                    <div>
+                      <strong id="validationScopeTitle">Sessão da validação</strong>
+                      <span>Opcional: bloqueie o leitor para aceitar somente a sessão selecionada.</span>
+                    </div>
+                    <label class="validation-scope-toggle">
+                      <input id="ticketValidationSessionLock" type="checkbox" />
+                      <span>Restringir a uma sessão</span>
+                    </label>
                   </div>
-                  <label class="validation-scope-toggle">
-                    <input id="ticketValidationSessionLock" type="checkbox" />
-                    <span>Restringir a uma sessão</span>
+                  <label id="ticketValidationSessionField" class="validation-session-field" hidden>
+                    Sessão permitida
+                    <select id="ticketValidationSessionSelect" aria-describedby="ticketValidationSessionHint"></select>
                   </label>
+                  <p id="ticketValidationSessionHint" class="validation-scope-status" aria-live="polite">O leitor aceitará ingressos de qualquer sessão válida.</p>
+                </section>
+
+                <div id="qrReaderFrame" class="qr-reader" aria-label="Leitor de QR Code">
+                  <video id="qrVideo" playsinline autoplay muted></video>
+                  <div class="qr-reader-placeholder">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M7 8h.01M11 8h.01M15 8h.01M7 12h.01M15 12h.01M7 16h.01M11 16h.01M15 16h.01"/></svg>
+                    <strong>Leitor pronto</strong>
+                    <span id="qrPlaceholderSubtitle">A câmera traseira abrirá aqui para validar o ingresso com segurança.</span>
+                  </div>
+                  <div class="qr-scan-mask" aria-hidden="true">
+                    <span></span>
+                  </div>
+                  <div class="qr-reader-info">
+                    <span>Aponte para o QR Code</span>
+                    <strong id="qrCountdown">30s</strong>
+                  </div>
                 </div>
-                <label id="ticketValidationSessionField" class="validation-session-field" hidden>
-                  Sessão permitida
-                  <select id="ticketValidationSessionSelect" aria-describedby="ticketValidationSessionHint"></select>
+
+                <p id="scannerInstructionText" class="scanner-instruction">Aponte a câmera para o QR Code do ingresso. A validação acontece no servidor.</p>
+
+                <div class="scanner-actions">
+                  <button id="startQrButton" class="primary-button" type="button">Abrir câmera</button>
+                  <button id="torchQrButton" class="ghost-button" type="button" disabled>Lanterna</button>
+                  <button id="manualCodeToggle" class="ghost-button" type="button">Digitar código</button>
+                  <button id="stopQrButton" class="ghost-button" type="button" disabled>Parar</button>
+                </div>
+
+                <label id="manualCodeBox" class="manual-code-box" hidden>
+                  <span id="manualCodeLabelText">Código do ingresso</span>
+                  <input id="ticketValidationCode" placeholder="Ex.: CC-AB12CD34" />
                 </label>
-                <p id="ticketValidationSessionHint" class="validation-scope-status" aria-live="polite">O leitor aceitará ingressos de qualquer sessão válida.</p>
-              </section>
-
-              <div id="qrReaderFrame" class="qr-reader" aria-label="Leitor de QR Code">
-                <video id="qrVideo" playsinline autoplay muted></video>
-                <div class="qr-reader-placeholder">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M7 8h.01M11 8h.01M15 8h.01M7 12h.01M11 12h.01M15 12h.01M7 16h.01M11 16h.01M15 16h.01"/></svg>
-                  <strong>Leitor pronto</strong>
-                  <span>A câmera traseira abrirá aqui para validar o ingresso com segurança.</span>
-                </div>
-                <div class="qr-scan-mask" aria-hidden="true">
-                  <span></span>
-                </div>
-                <div class="qr-reader-info">
-                  <span>Aponte para o QR Code</span>
-                  <strong id="qrCountdown">30s</strong>
-                </div>
+                <button id="validateTicketButton" class="primary-button full" type="button" hidden>Validar entrada</button>
               </div>
-
-              <p class="scanner-instruction">Aponte a câmera para o QR Code do ingresso. A validação acontece no servidor.</p>
-
-              <div class="scanner-actions">
-                <button id="startQrButton" class="primary-button" type="button">Abrir câmera</button>
-                <button id="torchQrButton" class="ghost-button" type="button" disabled>Lanterna</button>
-                <button id="manualCodeToggle" class="ghost-button" type="button">Digitar código</button>
-                <button id="stopQrButton" class="ghost-button" type="button" disabled>Parar</button>
-              </div>
-
-              <label id="manualCodeBox" class="manual-code-box" hidden>
-                Código do ingresso
-                <input id="ticketValidationCode" placeholder="Ex.: CC-AB12CD34" />
-              </label>
-              <button id="validateTicketButton" class="primary-button full" type="button" hidden>Validar entrada</button>
             </div>
           </div>
 
@@ -1059,142 +1056,203 @@
           <div class="panel-heading">
             <div>
               <h1>Bomboniere</h1>
-              <p>Personalize combos, doces, bebidas e produtos vendidos no checkout.</p>
+              <p>Vendas de balcão e online, catálogo por categoria, financeiro e validação por QR Code.</p>
             </div>
             <button id="newConcessionButton" class="primary-button icon-label" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Novo Produto
             </button>
           </div>
-          <div class="surface">
-            <div class="surface-head">
-              <div>
-                <h2>Pedidos da bomboniere</h2>
-                <p>Vendas confirmadas, descontos, entregas e reembolsos organizados por sessão.</p>
-              </div>
-              <div class="concession-sales-toolbar">
-                <label>Data das vendas
-                  <input id="concessionSalesDate" type="date" />
-                </label>
-                <button id="concessionSalesRefresh" class="ghost-button" type="button">Atualizar</button>
-              </div>
-            </div>
-            <div id="concessionDailyInsights" class="insight-strip concession-daily-kpis" aria-live="polite"></div>
-            <label class="inline-check"><input id="concessionSalesArchived" type="checkbox"> Incluir pedidos arquivados</label>
-            <div id="concessionDailySales" aria-live="polite"></div>
+
+          <div class="box-office-tabs concession-tabs" aria-label="Áreas da bomboniere">
+            <button class="active" type="button" data-concession-tab="todaySales" data-permission="concessions.manage">Vendas de hoje</button>
+            <button type="button" data-concession-tab="products" data-permission="concessions.manage">Cardápio / Categorias</button>
+            <button type="button" data-concession-tab="finance" data-permission="concessions.manage">Financeiro</button>
+            <button type="button" data-concession-tab="validateQr" data-permission="tickets.validate">Validar retirada (QR Code)</button>
           </div>
-          <div class="surface concession-finance-surface">
-            <div class="surface-head">
-              <div>
-                <div class="section-title">Receita da bomboniere</div>
-                <p id="concessionFinancePeriod">Somente pedidos pagos no período selecionado.</p>
-              </div>
-              <button class="ghost-button" type="button" data-goto-panel="dashboardPanel">Alterar período</button>
-            </div>
-            <div id="concessionInsights" class="insight-strip concession-finance-kpis"></div>
-            <div id="concessionDiscountSummary" class="concession-discount-summary"></div>
-            <div class="concession-ledger-head">
-              <div>
-                <strong>Composição por produto</strong>
-                <span>Quantidade e valores que formam a receita líquida aprovada.</span>
-              </div>
-            </div>
-            <div id="concessionSalesBreakdown" class="concession-sales-breakdown"></div>
-          </div>
-          <div class="split-grid compact concessions-workspace">
+
+          <!-- 1. Vendas de hoje -->
+          <div id="concessionTodaySalesTab" class="box-office-tab-panel concession-tab-panel active">
             <div class="surface">
-              <div class="section-title">Produtos ativos</div>
-              <div id="concessionsList" class="list"></div>
+              <div id="concessionSalesSummary" class="sales-summary"></div>
+              <div class="table-filter-row">
+                <div class="concession-toolbar-group">
+                  <label class="compact-date-label">
+                    <span>Data</span>
+                    <input id="concessionSalesDate" type="date" />
+                  </label>
+                  <button id="concessionSalesRefresh" class="ghost-button" type="button">Atualizar</button>
+                </div>
+                <div class="segmented-filter" data-concession-filter="status" aria-label="Filtro de entrega da bomboniere">
+                  <button class="active" type="button" data-value="all">Todos</button>
+                  <button type="button" data-value="pending">Aguardando</button>
+                  <button type="button" data-value="fulfilled">Entregues</button>
+                  <button type="button" data-value="refunded">Reembolsados</button>
+                </div>
+                <label class="inline-check">
+                  <input id="concessionSalesArchived" type="checkbox" />
+                  Incluir arquivados
+                </label>
+              </div>
+              <div id="concessionDailySales" class="orders-table" aria-live="polite"></div>
             </div>
-            <form id="concessionForm" class="surface form-grid long-form" data-dirty-track>
-              <input type="hidden" id="concessionId" />
-              <label>
-                Nome
-                <input id="concessionName" required />
-              </label>
-              <div class="field-row">
-                <label>
-                  SKU interno
-                  <input id="concessionSku" placeholder="Ex.: combo-familia" />
-                </label>
-                <label>
-                  Selo
-                  <input id="concessionBadge" placeholder="Ex.: Mais vendido" />
-                </label>
+          </div>
+
+          <!-- 2. Produtos e Categorias -->
+          <div id="concessionProductsTab" class="box-office-tab-panel concession-tab-panel">
+            <div class="surface" style="margin-bottom: var(--sp-12);">
+              <div class="surface-head">
+                <div>
+                  <div class="section-title">Categorias de produtos</div>
+                  <p>Filtre o catálogo por tipo de produto ou cadastre novos itens.</p>
+                </div>
               </div>
-              <label>
-                Descricao
-                <input id="concessionDescription" />
-              </label>
-              <div class="image-setting-grid">
-                <label class="upload-field compact">
-                  Imagem do produto
-                  <input id="concessionImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
-                  <span>JPG, PNG ou WebP até 5 MB.</span>
-                </label>
-                <input id="concessionImageUrl" type="hidden" />
-                <div class="media-preview product-preview" id="concessionImagePreview"><span>Imagem do produto</span></div>
-                <button id="concessionImageClear" class="ghost-button" type="button">Remover imagem</button>
+              <div class="segmented-filter concession-category-filter" aria-label="Filtrar produtos por categoria">
+                <button class="active" type="button" data-concession-cat="all">Todos</button>
+                <button type="button" data-concession-cat="combo">Combos</button>
+                <button type="button" data-concession-cat="pipoca">Pipocas</button>
+                <button type="button" data-concession-cat="bebida">Bebidas</button>
+                <button type="button" data-concession-cat="doce">Doces</button>
+                <button type="button" data-concession-cat="promocao">Promoções</button>
+                <button type="button" data-concession-cat="outro">Outros</button>
               </div>
-              <div class="field-row">
-                <label>
-                  Preco
-                  <input id="concessionPrice" type="number" min="0" step="0.01" required />
-                </label>
-                <label>
-                  De
-                  <input id="concessionCompareAt" type="number" min="0" step="0.01" />
-                </label>
+            </div>
+
+            <div class="split-grid compact concessions-workspace">
+              <div class="surface">
+                <div class="surface-head">
+                  <div class="section-title" id="concessionListHeading">Produtos do cardápio</div>
+                  <span id="concessionCountBadge" class="status-pill muted">0 produtos</span>
+                </div>
+                <div id="concessionsList" class="list"></div>
               </div>
-              <div class="field-row">
-                <label>
-                  Estoque
-                  <input id="concessionStock" type="number" min="0" step="1" placeholder="Sem limite" />
-                </label>
-                <label>
-                  Limite por pedido
-                  <input id="concessionMaxPerOrder" type="number" min="1" step="1" value="8" />
-                </label>
+              <form id="concessionForm" class="surface concession-editor-form">
+                <input type="hidden" id="concessionId" />
+                <div class="concession-form-columns">
+                  <div class="concession-form-col">
+                    <label>
+                      Nome
+                      <input id="concessionName" required />
+                    </label>
+                    <div class="field-row">
+                      <label>
+                        SKU interno
+                        <input id="concessionSku" placeholder="Ex.: combo-familia" />
+                      </label>
+                      <label>
+                        Selo
+                        <input id="concessionBadge" placeholder="Ex.: Mais vendido" />
+                      </label>
+                    </div>
+                    <label>
+                      Descricao
+                      <input id="concessionDescription" />
+                    </label>
+                    <div class="image-setting-grid">
+                      <label class="upload-field compact">
+                        Imagem do produto
+                        <input id="concessionImageUpload" type="file" accept="image/jpeg,image/png,image/webp" />
+                        <span>JPG, PNG ou WebP até 5 MB.</span>
+                      </label>
+                      <input id="concessionImageUrl" type="hidden" />
+                      <div class="media-preview product-preview" id="concessionImagePreview"><span>Imagem do produto</span></div>
+                      <button id="concessionImageClear" class="ghost-button" type="button">Remover imagem</button>
+                    </div>
+                    <div class="field-row">
+                      <label>
+                        Preco
+                        <input id="concessionPrice" type="number" min="0" step="0.01" required />
+                      </label>
+                      <label>
+                        De
+                        <input id="concessionCompareAt" type="number" min="0" step="0.01" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="concession-form-col">
+                    <div class="field-row">
+                      <label>
+                        Estoque
+                        <input id="concessionStock" type="number" min="0" step="1" placeholder="Sem limite" />
+                      </label>
+                      <label>
+                        Limite por pedido
+                        <input id="concessionMaxPerOrder" type="number" min="1" step="1" value="8" />
+                      </label>
+                    </div>
+                    <div class="field-row">
+                      <label>
+                        Ordem
+                        <input id="concessionSortOrder" type="number" step="1" value="100" />
+                      </label>
+                      <label>
+                        Tags
+                        <input id="concessionTags" placeholder="Ex.: família, infantil, promoção" />
+                      </label>
+                    </div>
+                    <label>
+                      Categoria
+                      <select id="concessionCategory">
+                        <option value="combo">Combo</option>
+                        <option value="pipoca">Pipoca</option>
+                        <option value="bebida">Bebida</option>
+                        <option value="doce">Doce</option>
+                        <option value="promocao">Promoção</option>
+                        <option value="outro">Outro</option>
+                      </select>
+                    </label>
+                    <label>
+                      Itens do combo
+                      <textarea id="concessionComboItems" rows="3" placeholder="Ex.: Pipoca grande | 1&#10;Ex.: Refrigerante 500 ml | 2"></textarea>
+                    </label>
+                    <div class="field-row concession-toggle-row">
+                      <label class="check-field">
+                        <input id="concessionFeatured" type="checkbox" />
+                        Destacar no checkout
+                      </label>
+                      <label class="check-field">
+                        <input id="concessionActive" type="checkbox" />
+                        Ativo no checkout
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="button-row concession-form-actions">
+                  <button id="deleteConcessionButton" class="danger-button" type="button">Excluir</button>
+                  <button id="cancelConcessionCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
+                  <button class="primary-button" type="submit">Salvar Produto</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- 3. Financeiro da Bomboniere -->
+          <div id="concessionFinanceTab" class="box-office-tab-panel concession-tab-panel">
+            <div class="surface concession-finance-surface">
+              <div class="surface-head">
+                <div>
+                  <div class="section-title">Receita da bomboniere</div>
+                  <p id="concessionFinancePeriod">Somente pedidos pagos no período selecionado.</p>
+                </div>
+                <button class="ghost-button" type="button" data-goto-panel="dashboardPanel">Alterar período</button>
               </div>
-              <div class="field-row">
-                <label>
-                  Ordem
-                  <input id="concessionSortOrder" type="number" step="1" value="100" />
-                </label>
-                <label>
-                  Tags
-                  <input id="concessionTags" placeholder="Ex.: família, infantil, promoção" />
-                </label>
+              <div id="concessionInsights" class="insight-strip concession-finance-kpis"></div>
+              <div id="concessionDiscountSummary" class="concession-discount-summary"></div>
+              <div class="concession-ledger-head">
+                <div>
+                  <strong>Composição por produto</strong>
+                  <span>Quantidade e valores que formam a receita líquida aprovada.</span>
+                </div>
               </div>
-              <label>
-                Categoria
-                <select id="concessionCategory">
-                  <option value="combo">Combo</option>
-                  <option value="pipoca">Pipoca</option>
-                  <option value="bebida">Bebida</option>
-                  <option value="doce">Doce</option>
-                  <option value="promocao">Promoção</option>
-                  <option value="outro">Outro</option>
-                </select>
-              </label>
-              <label>
-                Itens do combo
-                <textarea id="concessionComboItems" rows="4" placeholder="Ex.: Pipoca grande | 1&#10;Ex.: Refrigerante 500 ml | 2"></textarea>
-              </label>
-              <label class="check-field">
-                <input id="concessionFeatured" type="checkbox" />
-                Destacar no checkout
-              </label>
-              <label class="check-field">
-                <input id="concessionActive" type="checkbox" />
-                Ativo no checkout
-              </label>
-              <div class="button-row">
-                <button id="deleteConcessionButton" class="danger-button" type="button">Excluir</button>
-                <button id="cancelConcessionCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
-                <button class="primary-button" type="submit">Salvar Produto</button>
-              </div>
-            </form>
+              <div id="concessionSalesBreakdown" class="concession-sales-breakdown"></div>
+            </div>
+          </div>
+
+          <!-- 4. Validador de QR Code da Bomboniere -->
+          <div id="concessionValidateQrTab" class="box-office-tab-panel concession-tab-panel">
+            <div id="concessionScannerMount"></div>
           </div>
         </section>
 
@@ -2541,6 +2599,27 @@
           <button id="orderCancelButton" class="danger-button" type="button">Cancelar pedido</button>
         </div>
       </form>
+    </div>
+
+    <!-- Modal de detalhes do pedido da bomboniere -->
+    <div id="concessionOrderOverlay" class="success-overlay" hidden>
+      <div class="success-card order-card concession-order-modal">
+        <div class="form-head">
+          <div>
+            <div id="concessionOrderModalTitle" class="section-title">Pedido da Bomboniere</div>
+            <p id="concessionOrderModalSubtitle">Detalhes dos itens, entrega e conciliação.</p>
+          </div>
+          <button id="concessionOrderCloseButton" class="ghost-button icon-only-sm" type="button" aria-label="Fechar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div id="concessionOrderDetailBody" class="order-detail-sections"></div>
+        <div class="button-row">
+          <button id="concessionModalRefundButton" class="danger-button" type="button" hidden>Reembolsar bomboniere</button>
+          <button id="concessionModalArchiveButton" class="ghost-button" type="button">Arquivar</button>
+          <button class="ghost-button" type="button" id="concessionOrderModalCloseAction">Fechar</button>
+        </div>
+      </div>
     </div>
 
     <div id="permanentDeleteOverlay" class="success-overlay" hidden>
