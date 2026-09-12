@@ -118,17 +118,20 @@ async function cleanup(client) {
 async function seed(client) {
   await cleanup(client);
   const now = new Date();
-  const rooms = [
-    { id: `${PREFIX}room-1`, name: "[SIMULACAO] Sala Principal", capacity: 120, technology: "Laser 4K + Dolby 7.1" },
-    { id: `${PREFIX}room-2`, name: "[SIMULACAO] Sala Premium", capacity: 80, technology: "Laser 2K + Dolby Atmos" },
-    { id: `${PREFIX}room-3`, name: "[SIMULACAO] Sala Familia", capacity: 160, technology: "Projecao digital 2D" }
-  ];
-  for (const room of rooms) {
+  let rooms = (await client.query(
+    "SELECT id, name, capacity, technology FROM rooms WHERE id NOT LIKE $1 ORDER BY (status = 'active') DESC, name LIMIT 3",
+    [`${PREFIX}%`]
+  )).rows;
+  let createdRoomCount = 0;
+  if (!rooms.length) {
+    const fallbackRoom = { id: `${PREFIX}room-1`, name: "[SIMULACAO] Sala Tecnica", capacity: 120, technology: "Projecao digital 2D" };
     await client.query(
       `INSERT INTO rooms (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout)
        VALUES ($1,$2,$3,$4,'hidden',false,'[]'::jsonb,'{"screenLabel":"TELA","rows":[]}'::jsonb)`,
-      [room.id, room.name, room.capacity, room.technology]
+      [fallbackRoom.id, fallbackRoom.name, fallbackRoom.capacity, fallbackRoom.technology]
     );
+    rooms = [fallbackRoom];
+    createdRoomCount = 1;
   }
 
   const sourceMedia = await client.query(
@@ -391,7 +394,7 @@ async function seed(client) {
   return {
     batch: BATCH,
     users: users.length,
-    rooms: rooms.length,
+    rooms: createdRoomCount,
     movies: movies.length,
     sessions: sessions.length,
     orders: ORDER_COUNT,
