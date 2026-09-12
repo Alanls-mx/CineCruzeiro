@@ -46,6 +46,12 @@ const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const clubDomainService = require("./services/clubDomainService");
 const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
+const {
+  applyCompletedRefunds,
+  isOrderFinanciallySettled,
+  paymentFinancialState,
+  recognitionDate
+} = require("./services/financialRecognitionService");
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
 const { GoodsFiscalService } = require("./services/goodsFiscalService");
 const {
@@ -5866,7 +5872,7 @@ function ticketRefundEligibility(db, order, payment = orderPayment(db, order?.id
     return { allowed: false, reason: "Há ingressos já validados no cinema. Ingressos utilizados não podem ser reembolsados." };
   }
   const breakdown = orderFinancialBreakdown(db, order);
-  const amount = order.ticketRefund?.amount ?? breakdown.ticketNet;
+  const amount = order.ticketRefund?.amount ?? breakdown.ticketRevenue;
   if (Number(amount) <= 0) {
     return { allowed: true, amount: 0, complimentary: true, reason: "Ingressos sem valor líquido cobrado; o cancelamento libera os assentos e cancela os bilhetes sem movimentar o pagamento." };
   }
@@ -7349,6 +7355,14 @@ function orderTicketCount(order) {
   return Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0);
 }
 
+function recognizedTicketCount(db, orders) {
+  return orders.reduce((total, order) => {
+    const issued = (db.tickets || []).filter((ticket) => ticket.orderId === order.id);
+    if (!issued.length) return total + orderTicketCount(order);
+    return total + issued.filter((ticket) => !["cancelled", "refunded", "expired"].includes(String(ticket.status || ""))).length;
+  }, 0);
+}
+
 function sessionCapacity(db, session) {
   const room = roomForSession(db, session);
   return Number(room?.capacity || 120);
@@ -7934,30 +7948,35 @@ function orderFinancialBreakdown(db, order = {}) {
   }
 
   const concessionAdjustment = Number((concessionNet - concessionBeforeReconciliation).toFixed(2));
-  const fullOrderRefunded = order.status === "refunded" || order.paymentStatus === "refunded";
-  const ticketRefunded = fullOrderRefunded ? ticketNet : 0;
-  const concessionRefunded = fullOrderRefunded
-    ? concessionNet
-    : order.concessionRefund?.status === "completed"
-    ? Math.min(concessionNet, Math.max(0, Number(order.concessionRefund.amount || 0)))
-    : 0;
-  if (fullOrderRefunded) ticketNet = 0;
-  concessionNet = Number(Math.max(0, concessionNet - concessionRefunded).toFixed(2));
+  const ticketRevenueBeforeRefund = Number(ticketNet.toFixed(2));
+  const concessionRevenueBeforeRefund = Number(concessionNet.toFixed(2));
+  const refunds = applyCompletedRefunds({
+    ticketRevenue: ticketRevenueBeforeRefund,
+    concessionRevenue: concessionRevenueBeforeRefund,
+    order,
+    payment: orderPayment(db, order.id)
+  });
+  ticketNet = refunds.ticketRevenue;
+  concessionNet = refunds.concessionRevenue;
 
   return {
     orderId: order.id || "",
     ticketGross: Number(ticketGross.toFixed(2)),
     concessionGross,
+    ticketRevenueBeforeRefund,
+    concessionRevenueBeforeRefund,
     ticketRevenue: Number(ticketNet.toFixed(2)),
-    ticketRefunded: Number(ticketRefunded.toFixed(2)),
+    ticketRefunded: refunds.ticketRefunded,
     concessionRevenue: Number(concessionNet.toFixed(2)),
-    concessionRefunded: Number(concessionRefunded.toFixed(2)),
+    concessionRefunded: refunds.concessionRefunded,
     ticketClubDiscount: Number(ticketClubDiscount.toFixed(2)),
     concessionClubDiscount: Number(concessionClubDiscount.toFixed(2)),
     concessionFreeDiscount: Number(concessionFreeDiscount.toFixed(2)),
     ticketCouponDiscount: Number(ticketCouponDiscount.toFixed(2)),
     concessionCouponDiscount: Number(concessionCouponDiscount.toFixed(2)),
     concessionAdjustment,
+    approvedBeforeRefunds: Number((ticketRevenueBeforeRefund + concessionRevenueBeforeRefund).toFixed(2)),
+    refundTotal: refunds.refundTotal,
     totalRevenue: Number((ticketNet + concessionNet).toFixed(2)),
     discount: Number(Math.max(0, ticketGross + concessionGross - orderTotal).toFixed(2))
   };
@@ -7967,13 +7986,21 @@ function adminDashboard(db, options = {}) {
   const now = new Date();
   const today = todayIsoDate();
   const period = options.period || { period: "today", start: today, end: today, previousStart: today, previousEnd: today, days: 1 };
-  const paidOrders = (db.orders || []).filter((order) => order.status === "paid");
+  const paymentForOrder = (order) => orderPayment(db, order.id);
+  const paidOrders = (db.orders || []).filter((order) => isOrderFinanciallySettled(order, paymentForOrder(order)));
   const periodOrders = (db.orders || []).filter((order) => inDateRange(order.createdAt, period.start, period.end));
-  const periodPaidOrders = paidOrders.filter((order) => inDateRange(order.createdAt, period.start, period.end));
-  const previousPaidOrders = paidOrders.filter((order) => inDateRange(order.createdAt, period.previousStart, period.previousEnd));
-  const todayOrders = paidOrders.filter((order) => String(order.createdAt || "").slice(0, 10) === today);
-  const sum = (orders) => orders.reduce((total, order) => total + Number(order.totalPrice || 0), 0);
-  const ticketCountForOrders = (orders) => orders.reduce((total, order) => total + orderTicketCount(order), 0);
+  const periodSettledOrders = paidOrders.filter((order) => inDateRange(recognitionDate(order, paymentForOrder(order)), period.start, period.end));
+  const previousSettledOrders = paidOrders.filter((order) => inDateRange(recognitionDate(order, paymentForOrder(order)), period.previousStart, period.previousEnd));
+  const periodBreakdowns = periodSettledOrders.map((order) => orderFinancialBreakdown(db, order));
+  const breakdownByOrderId = new Map(periodBreakdowns.map((item) => [item.orderId, item]));
+  const periodPaidOrders = periodSettledOrders.filter((order) => Number(breakdownByOrderId.get(order.id)?.totalRevenue || 0) > 0);
+  const previousBreakdowns = new Map(previousSettledOrders.map((order) => [order.id, orderFinancialBreakdown(db, order)]));
+  const previousPaidOrders = previousSettledOrders.filter((order) => Number(previousBreakdowns.get(order.id)?.totalRevenue || 0) > 0);
+  const todayOrders = paidOrders.filter((order) => {
+    if (!inDateRange(recognitionDate(order, paymentForOrder(order)), today, today)) return false;
+    return orderFinancialBreakdown(db, order).totalRevenue > 0;
+  });
+  const ticketCountForOrders = (orders) => recognizedTicketCount(db, orders);
   const ticketsSold = ticketCountForOrders(periodPaidOrders);
   const todaySessions = (db.movies || [])
     .flatMap((movie) => (movie.sessions || []).filter((session) => {
@@ -7984,7 +8011,7 @@ function adminDashboard(db, options = {}) {
         && (!endsAt || endsAt.getTime() > now.getTime());
     }).map((session) => {
       const currentSession = sessionWithCurrentRoom(db, session);
-      const sold = (db.tickets || []).filter((ticket) => ticket.sessionId === session.id && !["cancelled", "refunded"].includes(ticket.status)).length;
+      const sold = (db.tickets || []).filter((ticket) => ticket.sessionId === session.id && !["cancelled", "refunded", "expired"].includes(ticket.status)).length;
       const capacity = sessionCapacity(db, currentSession);
       const startsAt = sessionStartsAt(currentSession);
       const endsAt = finishedSessionEndsAt(movie, currentSession);
@@ -8018,11 +8045,6 @@ function adminDashboard(db, options = {}) {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
-  const groupAmount = (items, getter) => items.reduce((acc, item) => {
-    const key = getter(item);
-    acc[key] = (acc[key] || 0) + Number(item.totalPrice || item.amount || 0);
-    return acc;
-  }, {});
   const groupOrderRevenue = (orders, getter) => orders.reduce((acc, order) => {
     const key = getter(order);
     const breakdown = breakdownByOrderId.get(order.id) || orderFinancialBreakdown(db, order);
@@ -8030,9 +8052,8 @@ function adminDashboard(db, options = {}) {
     return acc;
   }, {});
   const revenueByMovie = {};
-  const orderBreakdowns = periodPaidOrders.map((order) => orderFinancialBreakdown(db, order));
-  const breakdownByOrderId = new Map(orderBreakdowns.map((item) => [item.orderId, item]));
-  const concessionSummary = summarizeConcessionFinance(periodPaidOrders.map((order) => ({
+  const orderBreakdowns = periodPaidOrders.map((order) => breakdownByOrderId.get(order.id));
+  const concessionSummary = summarizeConcessionFinance(periodSettledOrders.map((order) => ({
     order,
     breakdown: breakdownByOrderId.get(order.id) || orderFinancialBreakdown(db, order)
   })));
@@ -8045,56 +8066,71 @@ function adminDashboard(db, options = {}) {
   const concessionRevenue = Number(orderBreakdowns.reduce((total, item) => total + item.concessionRevenue, 0).toFixed(2));
   const ticketRevenue = Number(orderBreakdowns.reduce((total, item) => total + item.ticketRevenue, 0).toFixed(2));
   const paidOrderRevenue = Number((ticketRevenue + concessionRevenue).toFixed(2));
+  const orderRefunds = Number(periodBreakdowns.reduce((total, item) => total + Number(item.refundTotal || 0), 0).toFixed(2));
+  const orderApprovedBeforeRefunds = Number(periodBreakdowns.reduce((total, item) => total + Number(item.approvedBeforeRefunds || 0), 0).toFixed(2));
   const lowStockProducts = (db.concessions || [])
     .filter((item) => item.active !== false && item.stock !== "" && item.stock !== undefined && Number(item.stock || 0) <= 5)
     .map((item) => ({ id: item.id, name: item.name, imageUrl: item.imageUrl || "", stock: Number(item.stock || 0) }))
     .slice(0, 6);
-  const latestOrders = periodOrders.slice(0, 8).map((order) => ({
-    id: order.id,
-    reference: shortOrderReference(order),
-    customerName: order.customerName || order.customer?.name || "Cliente",
-    movieTitle: order.movieTitle || movieForOrder(db, order)?.title || "Filme",
-    status: orderStatusLabel(order.status),
-    origin: originLabel(order.origin || "online"),
-    paymentMethod: methodLabel(order.paymentMethod),
-    totalPrice: Number(order.totalPrice || 0),
-    createdAt: order.createdAt || ""
-  }));
-  const paymentsInPeriod = (db.payments || []).filter((payment) => inDateRange(payment.createdAt, period.start, period.end));
-  const approvedPaymentStatuses = new Set(["approved", "paid", "processed"]);
+  const latestOrders = periodOrders.slice(0, 8).map((order) => {
+    const breakdown = orderFinancialBreakdown(db, order);
+    const financiallySettled = isOrderFinanciallySettled(order, paymentForOrder(order));
+    return {
+      id: order.id,
+      reference: shortOrderReference(order),
+      customerName: order.customerName || order.customer?.name || "Cliente",
+      movieTitle: order.movieTitle || movieForOrder(db, order)?.title || "Filme",
+      status: orderStatusLabel(order.status),
+      origin: originLabel(order.origin || "online"),
+      paymentMethod: methodLabel(order.paymentMethod),
+      totalPrice: financiallySettled ? Number(breakdown.totalRevenue || 0) : Number(order.totalPrice || 0),
+      originalTotal: Number(order.totalPrice || 0),
+      refundedAmount: Number(breakdown.refundTotal || 0),
+      createdAt: order.createdAt || ""
+    };
+  });
+  const paymentsInPeriod = (db.payments || []).filter((payment) => inDateRange(payment.approvedAt || payment.refundedAt || payment.createdAt, period.start, period.end));
   const paymentSummary = paymentsInPeriod.reduce((summary, payment) => {
     const rawStatus = String(payment.status || "").toLowerCase();
-    const status = approvedPaymentStatuses.has(rawStatus)
-      ? "approved"
+    const financialState = paymentFinancialState(payment);
+    const status = financialState.fullyRefunded
+      ? "refunded"
+      : financialState.approved ? "approved"
       : ["pending", "processing", "pending_payment"].includes(rawStatus)
         ? "pending"
         : ["rejected", "cancelled", "canceled"].includes(rawStatus)
           ? "failed"
-          : rawStatus === "refunded" ? "refunded" : rawStatus === "expired" ? "expired" : "other";
+          : rawStatus === "expired" ? "expired" : "other";
     summary[status] ||= { count: 0, amount: 0 };
     summary[status].count += 1;
-    const refundedAmount = status === "refunded"
-      ? Number(payment.amount || 0)
-      : Math.min(Number(payment.amount || 0), Math.max(0, Number(payment.refundedAmount || 0)));
-    const recognizedAmount = status === "approved" ? Math.max(0, Number(payment.amount || 0) - refundedAmount) : Number(payment.amount || 0);
+    const recognizedAmount = status === "approved" ? financialState.netAmount : status === "refunded" ? financialState.refundedAmount : Number(payment.amount || 0);
     summary[status].amount = Number((summary[status].amount + recognizedAmount).toFixed(2));
-    if (status === "approved" && refundedAmount > 0) {
+    if (status === "approved" && financialState.refundedAmount > 0) {
       summary.refunded ||= { count: 0, amount: 0 };
       summary.refunded.count += 1;
-      summary.refunded.amount = Number((summary.refunded.amount + refundedAmount).toFixed(2));
+      summary.refunded.amount = Number((summary.refunded.amount + financialState.refundedAmount).toFixed(2));
     }
     return summary;
   }, {});
-  const clubRevenueForRange = (start, end) => {
+  const clubFinanceForRange = (start, end) => {
     const detailed = (db.subscriptionPayments || [])
-      .filter((payment) => payment.status === "approved" && inDateRange(payment.approvedAt || payment.createdAt, start, end));
-    if (detailed.length) return Number(detailed.reduce((total, payment) => total + Number(payment.amount || 0), 0).toFixed(2));
-    return Number((db.payments || [])
-      .filter((payment) => approvedPaymentStatuses.has(String(payment.status || "").toLowerCase()) && payment.metadata?.kind === "club_subscription" && inDateRange(payment.createdAt, start, end))
-      .reduce((total, payment) => total + Number(payment.amount || 0), 0).toFixed(2));
+      .filter((payment) => isOrderFinanciallySettled({}, payment) && inDateRange(payment.approvedAt || payment.createdAt, start, end));
+    const source = detailed.length ? detailed : (db.payments || [])
+      .filter((payment) => payment.metadata?.kind === "club_subscription" && isOrderFinanciallySettled({}, payment) && inDateRange(payment.approvedAt || payment.createdAt, start, end));
+    return source.reduce((result, payment) => {
+      const state = paymentFinancialState(payment);
+      result.gross += state.approved || state.fullyRefunded ? state.amount : 0;
+      result.refunds += state.refundedAmount;
+      result.net += state.netAmount;
+      return result;
+    }, { gross: 0, refunds: 0, net: 0 });
   };
-  const clubRevenue = clubRevenueForRange(period.start, period.end);
-  const previousClubRevenue = clubRevenueForRange(period.previousStart, period.previousEnd);
+  const clubFinance = clubFinanceForRange(period.start, period.end);
+  const previousClubFinance = clubFinanceForRange(period.previousStart, period.previousEnd);
+  const clubRevenue = Number(clubFinance.net.toFixed(2));
+  const previousClubRevenue = Number(previousClubFinance.net.toFixed(2));
+  const refundsPeriod = Number((orderRefunds + clubFinance.refunds).toFixed(2));
+  const approvedGrossRevenue = Number((orderApprovedBeforeRefunds + clubFinance.gross).toFixed(2));
   const clubRedemptions = (db.subscriptionCreditRedemptions || []).filter((item) => inDateRange(item.redeemedAt || item.createdAt, period.start, period.end));
   const clubTopUps = clubRedemptions.reduce((total, item) => total + Number(item.additionalPaymentAmount || 0), 0);
   const courtesies = (db.tickets || []).filter((ticket) => ticket.paymentSource === "courtesy" && inDateRange(ticket.createdAt, period.start, period.end)).length;
@@ -8105,9 +8141,17 @@ function adminDashboard(db, options = {}) {
     [item.status]: Number(counts[item.status] || 0) + 1
   }), {});
   const revenueComposition = [
-    { key: "tickets", label: "Ingressos", amount: ticketRevenue, hint: `${ticketsSold} ingresso(s) vendidos` },
-    { key: "concessions", label: "Bomboniere", amount: concessionRevenue, grossAmount: concessionSummary.grossRevenue, discountAmount: concessionSummary.discountTotal, hint: `${concessionSummary.itemQuantity} item(ns) em ${concessionSummary.orders} pedido(s)` },
-    { key: "club", label: "Assinaturas do Clube", amount: clubRevenue, hint: "Pagamentos recorrentes aprovados" }
+    {
+      key: "tickets",
+      label: "Ingressos",
+      amount: ticketRevenue,
+      grossAmount: Number(periodBreakdowns.reduce((total, item) => total + Number(item.ticketGross || 0), 0).toFixed(2)),
+      discountAmount: Number(periodBreakdowns.reduce((total, item) => total + Math.max(0, Number(item.ticketGross || 0) - Number(item.ticketRevenueBeforeRefund || 0)), 0).toFixed(2)),
+      refundAmount: Number(periodBreakdowns.reduce((total, item) => total + Number(item.ticketRefunded || 0), 0).toFixed(2)),
+      hint: `${ticketsSold} ingresso(s) válidos`
+    },
+    { key: "concessions", label: "Bomboniere", amount: concessionRevenue, grossAmount: concessionSummary.grossRevenue, discountAmount: concessionSummary.discountTotal, refundAmount: concessionSummary.refundTotal, hint: `${concessionSummary.itemQuantity} item(ns) em ${concessionSummary.orders} pedido(s)` },
+    { key: "club", label: "Assinaturas do Clube", amount: clubRevenue, grossAmount: Number(clubFinance.gross.toFixed(2)), refundAmount: Number(clubFinance.refunds.toFixed(2)), hint: "Mensalidades aprovadas menos devoluções" }
   ];
   const attentionPayments = paymentsInPeriod.filter((payment) => {
     const status = String(payment.status || "").toLowerCase();
@@ -8124,10 +8168,11 @@ function adminDashboard(db, options = {}) {
     const date = new Date(`${period.start}T12:00:00`);
     date.setDate(date.getDate() + index);
     const key = date.toISOString().slice(0, 10);
-    const orders = periodPaidOrders.filter((order) => String(order.createdAt || "").slice(0, 10) === key);
+    const orders = periodPaidOrders.filter((order) => String(recognitionDate(order, paymentForOrder(order)) || "").slice(0, 10) === key);
+    const dayClubFinance = clubFinanceForRange(key, key);
     chart.push({
       date: key,
-      revenue: Number((orders.reduce((total, order) => total + (breakdownByOrderId.get(order.id) || orderFinancialBreakdown(db, order)).totalRevenue, 0) + clubRevenueForRange(key, key)).toFixed(2)),
+      revenue: Number((orders.reduce((total, order) => total + (breakdownByOrderId.get(order.id) || orderFinancialBreakdown(db, order)).totalRevenue, 0) + dayClubFinance.net).toFixed(2)),
       orders: orders.length,
       tickets: ticketCountForOrders(orders)
     });
@@ -8141,14 +8186,16 @@ function adminDashboard(db, options = {}) {
     return total + Number(plan?.monthlyPrice || plan?.price || 0);
   }, 0);
   const periodUsers = (db.users || []).filter((user) => user.role === "customer" && inDateRange(user.createdAt, period.start, period.end));
-  const problematicStatuses = ["pending", "processing", "rejected", "cancelled", "refunded"];
+  const problematicStatuses = ["pending", "processing", "rejected", "cancelled"];
   return {
     period,
-    revenueToday: Number((todayOrders.reduce((total, order) => total + (breakdownByOrderId.get(order.id)?.totalRevenue || orderFinancialBreakdown(db, order).totalRevenue), 0) + clubRevenueForRange(today, today)).toFixed(2)),
+    revenueToday: Number((todayOrders.reduce((total, order) => total + orderFinancialBreakdown(db, order).totalRevenue, 0) + clubFinanceForRange(today, today).net).toFixed(2)),
     revenuePeriod: Number((paidOrderRevenue + clubRevenue).toFixed(2)),
     revenueMonth: Number((paidOrderRevenue + clubRevenue).toFixed(2)),
+    approvedGrossRevenue,
+    refundsPeriod,
     comparison: {
-      revenue: compareMetric(paidOrderRevenue + clubRevenue, previousPaidOrders.reduce((total, order) => total + orderFinancialBreakdown(db, order).totalRevenue, 0) + previousClubRevenue),
+      revenue: compareMetric(paidOrderRevenue + clubRevenue, previousPaidOrders.reduce((total, order) => total + previousBreakdowns.get(order.id).totalRevenue, 0) + previousClubRevenue),
       sales: compareMetric(periodPaidOrders.length, previousPaidOrders.length),
       tickets: compareMetric(ticketsSold, ticketCountForOrders(previousPaidOrders))
     },
@@ -8157,6 +8204,7 @@ function adminDashboard(db, options = {}) {
     salesMonth: periodPaidOrders.length,
     ticketsSold,
     averageTicket: periodPaidOrders.length ? paidOrderRevenue / periodPaidOrders.length : 0,
+    averageConcessionOrder: concessionSummary.orders ? concessionRevenue / concessionSummary.orders : 0,
     customers: (db.users || []).filter((user) => user.role === "customer").length,
     newCustomers: periodUsers.length,
     activeSubscriptions: activeSubscriptions.length,
@@ -8187,7 +8235,18 @@ function adminDashboard(db, options = {}) {
     revenueByOrigin: groupOrderRevenue(periodPaidOrders, (order) => originLabel(order.origin || "online")),
     paymentMethods: groupCount(periodOrders, (order) => methodLabel(order.paymentMethod)),
     revenueByMethod: groupOrderRevenue(periodPaidOrders, (order) => methodLabel(order.paymentMethod)),
-    reconciliation: groupAmount(paymentsInPeriod, (payment) => paymentStatusLabel(payment.status)),
+    reconciliation: Object.entries(paymentSummary).reduce((result, [status, summary]) => {
+      const label = {
+        approved: "Aprovado líquido",
+        pending: "Pendente",
+        failed: "Recusado ou cancelado",
+        refunded: "Reembolsado",
+        expired: "Expirado",
+        other: "Outro"
+      }[status] || status;
+      result[label] = Number(summary.amount || 0);
+      return result;
+    }, {}),
     paymentSummary,
     upcomingSessions,
     todaySessions,

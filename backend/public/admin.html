@@ -122,15 +122,15 @@
 
           <!-- Grade de Destaque: 4 Hero KPIs Principais -->
           <div class="dashboard-hero-kpis">
-            <div class="dash-hero-card clickable" role="button" tabindex="0" data-goto-panel="ordersPanel">
-              <span class="dash-card-label">Receita Aprovada</span>
+            <div class="dash-hero-card">
+              <span class="dash-card-label">Receita Líquida Aprovada</span>
               <strong id="dashRevenueMonth" class="dash-hero-value">R$ 0,00</strong>
               <div class="dash-hero-footer">
                 <span id="dashRevenueCompare" class="dash-trend-tag"></span>
                 <span class="dash-sub-value">Hoje: <b id="dashRevenueToday">R$ 0,00</b></span>
               </div>
             </div>
-            <div class="dash-hero-card clickable" role="button" tabindex="0" data-goto-panel="ordersPanel">
+            <div class="dash-hero-card">
               <span class="dash-card-label">Pedidos Pagos</span>
               <strong id="dashSalesMonth" class="dash-hero-value">0</strong>
               <div class="dash-hero-footer">
@@ -146,12 +146,12 @@
                 <span class="dash-sub-value">Ocupação média: <b id="dashAverageOccupancy">0%</b></span>
               </div>
             </div>
-            <div class="dash-hero-card clickable" role="button" tabindex="0" data-goto-panel="concessionsPanel">
+            <div class="dash-hero-card">
               <span class="dash-card-label">Bomboniere Líquida</span>
               <strong id="dashConcessionRevenue" class="dash-hero-value">R$ 0,00</strong>
               <div class="dash-hero-footer">
-                <span class="dash-neutral-tag">Valor recebido</span>
-                <span class="dash-sub-value">Ticket médio: <b id="dashAverageTicket">R$ 0,00</b></span>
+                <span class="dash-neutral-tag">Após descontos e devoluções</span>
+                <span class="dash-sub-value">Média por pedido: <b id="dashAverageTicket">R$ 0,00</b></span>
               </div>
             </div>
           </div>
@@ -172,6 +172,16 @@
               <span>Pagamentos Pendentes:</span>
               <strong id="dashPendingPayments">0</strong>
               <small id="dashPendingPaymentsAmount">(R$ 0,00)</small>
+            </div>
+            <div class="dash-support-divider"></div>
+            <div class="dash-support-item">
+              <span>Aprovado antes dos reembolsos:</span>
+              <strong id="dashApprovedGrossRevenue">R$ 0,00</strong>
+            </div>
+            <div class="dash-support-divider"></div>
+            <div class="dash-support-item dash-refund-support">
+              <span>Reembolsos:</span>
+              <strong id="dashRefundsPeriod">R$ 0,00</strong>
             </div>
           </div>
 
@@ -212,7 +222,7 @@
                   <div id="dashPaymentSummary" class="metric-list"></div>
                 </div>
                 <div class="dash-note-compact">
-                  <small><strong>Nota:</strong> Receita aprovada considera apenas pedidos pagos e mensalidades ativas do Clube. Ingressos e bomboniere já contemplam os descontos.</small>
+                  <small><strong>Nota:</strong> A receita líquida considera pagamentos aprovados menos reembolsos concluídos. Descontos comerciais e devoluções são apresentados separadamente.</small>
                 </div>
               </div>
             </div>

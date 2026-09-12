@@ -2078,13 +2078,15 @@ function renderDashboard() {
   if ($("dashSalesToday")) $("dashSalesToday").textContent = Number(data.salesToday || 0);
   if ($("dashSalesMonth")) $("dashSalesMonth").textContent = Number(data.salesPeriod ?? data.salesMonth ?? 0);
   if ($("dashTicketsSold")) $("dashTicketsSold").textContent = Number(data.ticketsSold || 0);
-  if ($("dashAverageTicket")) $("dashAverageTicket").textContent = money(data.averageTicket || 0);
+  if ($("dashAverageTicket")) $("dashAverageTicket").textContent = money(data.averageConcessionOrder || 0);
   if ($("dashAverageOccupancy")) $("dashAverageOccupancy").textContent = `${Number(data.capacity?.occupancyRate || 0)}%`;
   if ($("dashCustomers")) $("dashCustomers").textContent = Number(data.customers || 0);
   if ($("dashSubscriptions")) $("dashSubscriptions").textContent = Number(data.activeSubscriptions || 0);
   if ($("dashPendingPayments")) $("dashPendingPayments").textContent = Number(data.pendingPayments || 0);
   if ($("dashPendingPaymentsAmount")) $("dashPendingPaymentsAmount").textContent = `${money(data.pendingPaymentsAmount || 0)} em aberto no período`;
   if ($("dashConcessionRevenue")) $("dashConcessionRevenue").textContent = money(data.concessionRevenue || 0);
+  if ($("dashApprovedGrossRevenue")) $("dashApprovedGrossRevenue").textContent = money(data.approvedGrossRevenue || 0);
+  if ($("dashRefundsPeriod")) $("dashRefundsPeriod").textContent = money(data.refundsPeriod || 0);
   if ($("dashRevenueCompare")) $("dashRevenueCompare").textContent = comparisonText(data.comparison?.revenue);
   if ($("dashSalesCompare")) $("dashSalesCompare").textContent = comparisonText(data.comparison?.sales);
   if ($("dashTicketsCompare")) $("dashTicketsCompare").textContent = comparisonText(data.comparison?.tickets);
@@ -2106,7 +2108,7 @@ function renderDashboard() {
   if ($("dashPaymentSummary")) {
     const paymentSummary = data.paymentSummary || {};
     const rows = [
-      ["approved", "Aprovados", "payments-approved", "Entram na receita"],
+      ["approved", "Aprovados líquidos", "payments-approved", "Valor aprovado após devoluções"],
       ["pending", "Em aberto", "payments-pending", "Ainda não entram na receita"],
       ["failed", "Recusados ou cancelados", "payments-failed", "Não geram receita"],
       ["refunded", "Reembolsados", "payments-refunded", "Saíram da receita"],
@@ -2123,8 +2125,8 @@ function renderDashboard() {
     const total = entries.reduce((sum, item) => sum + Number(item.amount || 0), 0);
     $("dashRevenueComposition").innerHTML = entries.some((item) => Number(item.amount || 0) > 0)
       ? entries.map((item) => {
-          const reconciliation = item.key === "concessions" && Number(item.grossAmount || 0) > 0
-            ? ` • bruto ${money(item.grossAmount)}${Number(item.discountAmount || 0) > 0 ? ` • descontos ${money(item.discountAmount)}` : ""}`
+          const reconciliation = Number(item.grossAmount || 0) > 0 || Number(item.refundAmount || 0) > 0
+            ? `${Number(item.grossAmount || 0) > 0 ? ` • bruto ${money(item.grossAmount)}` : ""}${Number(item.discountAmount || 0) > 0 ? ` • descontos ${money(item.discountAmount)}` : ""}${Number(item.refundAmount || 0) > 0 ? ` • reembolsos ${money(item.refundAmount)}` : ""}`
             : "";
           return `
           <div class="metric-row finance-row">
@@ -10569,28 +10571,6 @@ function bindEvents() {
       activatePanel(button.dataset.panel, { scroll: true });
       closeAdminDrawer();
     });
-  });
-
-  document.querySelectorAll("[data-goto-panel]").forEach((element) => {
-    const openTargetPanel = () => {
-      const panelId = element.dataset.gotoPanel;
-      const navButton = document.querySelector(`.nav-button[data-panel="${panelId}"]`);
-      if (!panelId || !$(panelId)) return;
-      if (navButton?.hidden) {
-        showToast("Seu perfil não possui permissão para abrir esta área.", "error");
-        return;
-      }
-      activatePanel(panelId, { scroll: true });
-      closeAdminDrawer();
-    };
-    element.addEventListener("click", openTargetPanel);
-    if (element.getAttribute("role") === "button") {
-      element.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        openTargetPanel();
-      });
-    }
   });
 
   $("logoutButton").addEventListener("click", logoutAdmin);

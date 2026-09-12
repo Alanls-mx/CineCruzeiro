@@ -7786,22 +7786,12 @@ th {
 
 .dash-hero-card {
   background: var(--surface, #1e293b);
-  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border: 0;
   border-radius: 10px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  transition: border-color 0.2s, transform 0.15s;
-}
-
-.dash-hero-card.clickable {
-  cursor: pointer;
-}
-
-.dash-hero-card.clickable:hover {
-  border-color: rgba(250, 204, 21, 0.4);
-  transform: translateY(-1px);
 }
 
 .dash-card-label {
@@ -7858,7 +7848,7 @@ th {
   gap: 20px;
   padding: 8px 16px;
   background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border: 0;
   border-radius: 8px;
   margin-bottom: 24px;
   flex-wrap: wrap;
@@ -7880,6 +7870,10 @@ th {
 .dash-support-item small {
   color: var(--muted, #94a3b8);
   font-size: 11px;
+}
+
+.dash-refund-support strong {
+  color: #fda4af;
 }
 
 .dash-support-divider {
@@ -7944,7 +7938,7 @@ th {
 .dash-note-compact {
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border: 0;
   border-radius: 6px;
   margin-top: 6px;
   color: var(--muted, #94a3b8);
@@ -7974,7 +7968,7 @@ th {
   display: flex;
   flex-direction: column;
   background: var(--surface, #1e293b);
-  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border: 0;
   border-radius: 10px;
   padding: 16px;
   box-sizing: border-box;
@@ -8010,7 +8004,7 @@ th {
 
 .dash-club-stat {
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border: 0;
   border-radius: 6px;
   padding: 8px 10px;
   display: flex;
@@ -8027,6 +8021,10 @@ th {
   font-size: 13px;
   font-weight: 600;
   color: var(--text, #f8fafc);
+}
+
+#dashboardPanel .surface {
+  box-shadow: none;
 }
 
 .dash-club-footer-link {
