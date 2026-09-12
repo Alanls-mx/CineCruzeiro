@@ -4330,7 +4330,15 @@ function renderTodaySalesSummary(orders) {
 }
 
 function orderTicketCount(order) {
-  return Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0);
+  const legacyCount = Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0);
+  const itemCount = (order.ticketItems || []).reduce((total, item) => {
+    const explicitTickets = Number(item.ticketQuantity || 0);
+    const quantity = Math.max(0, Number(item.quantity || 0));
+    const bundleQuantity = Math.max(1, Number(item.bundleQuantity || 1));
+    return total + (explicitTickets > 0 ? explicitTickets : quantity * bundleQuantity);
+  }, 0);
+  const issuedCount = Array.isArray(order.tickets) ? order.tickets.length : 0;
+  return Math.max(0, legacyCount, itemCount, issuedCount);
 }
 
 function renderOrdersTable(targetId, orders, options = {}) {
