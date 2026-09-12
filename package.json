@@ -13,6 +13,7 @@
     "db:migrate": "node scripts/db-migrate.js",
     "db:seed": "node scripts/db-seed.js",
     "db:import-json": "node scripts/db-import-json.js",
+    "simulation:admin": "node scripts/admin-panel-simulation.js",
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
