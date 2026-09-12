@@ -95,132 +95,218 @@
         <div id="errorBanner" class="error-banner" hidden></div>
 
         <section id="dashboardPanel" class="panel">
-          <div class="panel-heading">
+          <!-- Cabeçalho Unificado: Título + Filtros de Período + Ações (Exportar + Atualizar) -->
+          <div class="panel-heading dashboard-header-compact">
             <div>
               <h1>Dashboard</h1>
-              <p>Financeiro e operação do cinema com dados reais do período selecionado.</p>
+              <p>Financeiro e operação do cinema com dados do período selecionado.</p>
             </div>
-            <div class="dashboard-filters" aria-label="Filtro de período">
-              <button class="active" type="button" data-dashboard-period="today">Hoje</button>
-              <button type="button" data-dashboard-period="7d">7 dias</button>
-              <button type="button" data-dashboard-period="30d">30 dias</button>
-              <button type="button" data-dashboard-period="month">Este mês</button>
-              <button type="button" data-dashboard-period="custom">Personalizado</button>
-              <input id="dashboardFrom" type="date" hidden />
-              <input id="dashboardTo" type="date" hidden />
+            <div class="dashboard-top-controls">
+              <div class="dashboard-filters" aria-label="Filtro de período">
+                <button class="active" type="button" data-dashboard-period="today">Hoje</button>
+                <button type="button" data-dashboard-period="7d">7 dias</button>
+                <button type="button" data-dashboard-period="30d">30 dias</button>
+                <button type="button" data-dashboard-period="month">Este mês</button>
+                <button type="button" data-dashboard-period="custom">Personalizado</button>
+                <input id="dashboardFrom" type="date" hidden />
+                <input id="dashboardTo" type="date" hidden />
+              </div>
+              <div class="dashboard-actions">
+                <button id="dashboardReportButton" class="ghost-button icon-label" type="button" title="Baixar relatório CSV do período">
+                  <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Exportar CSV
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="insight-grid">
-            <div class="insight primary-metric"><span>Receita aprovada hoje</span><strong id="dashRevenueToday">R$ 0,00</strong><small>Pedidos pagos e Clube</small></div>
-            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Receita aprovada no período</span><strong id="dashRevenueMonth">R$ 0,00</strong><small id="dashRevenueCompare"></small></div>
-            <div class="insight primary-metric"><span>Pedidos pagos hoje</span><strong id="dashSalesToday">0</strong></div>
-            <div class="insight primary-metric clickable" role="button" tabindex="0" data-goto-panel="ordersPanel"><span>Pedidos pagos no período</span><strong id="dashSalesMonth">0</strong><small id="dashSalesCompare"></small></div>
-            <div class="insight primary-metric"><span>Ingressos emitidos</span><strong id="dashTicketsSold">0</strong><small id="dashTicketsCompare"></small></div>
-            <div class="insight primary-metric"><span>Ticket médio por pedido</span><strong id="dashAverageTicket">R$ 0,00</strong><small>Pedidos pagos</small></div>
-            <div class="insight secondary-metric"><span>Ocupação média</span><strong id="dashAverageOccupancy">0%</strong></div>
-            <div class="insight secondary-metric"><span>Clientes</span><strong id="dashCustomers">0</strong></div>
-            <div class="insight secondary-metric"><span>Assinaturas ativas</span><strong id="dashSubscriptions">0</strong></div>
-            <div class="insight secondary-metric"><span>Pagamentos em aberto</span><strong id="dashPendingPayments">0</strong><small id="dashPendingPaymentsAmount">R$ 0,00 em aberto no período</small></div>
-            <div class="insight secondary-metric"><span>Receita bomboniere aprovada</span><strong id="dashConcessionRevenue">R$ 0,00</strong><small>Valor líquido recebido</small></div>
           </div>
 
-          <div class="dashboard-main-grid">
-            <div class="surface dashboard-chart-surface">
-              <div class="surface-head">
-                <div>
-                  <div class="section-title">Receita e vendas</div>
-                  <p>Movimento diário do período selecionado.</p>
-                </div>
-                <div class="chart-toolbar">
-                  <div class="chart-mode-switch" aria-label="Métrica do gráfico">
-                    <button class="active" type="button" data-dashboard-metric="revenue">Receita</button>
-                    <button type="button" data-dashboard-metric="sales">Vendas</button>
+          <!-- Grade de Destaque: 4 Hero KPIs Principais -->
+          <div class="dashboard-hero-kpis">
+            <div class="dash-hero-card clickable" role="button" tabindex="0" data-goto-panel="ordersPanel">
+              <span class="dash-card-label">Receita Aprovada</span>
+              <strong id="dashRevenueMonth" class="dash-hero-value">R$ 0,00</strong>
+              <div class="dash-hero-footer">
+                <span id="dashRevenueCompare" class="dash-trend-tag"></span>
+                <span class="dash-sub-value">Hoje: <b id="dashRevenueToday">R$ 0,00</b></span>
+              </div>
+            </div>
+            <div class="dash-hero-card clickable" role="button" tabindex="0" data-goto-panel="ordersPanel">
+              <span class="dash-card-label">Pedidos Pagos</span>
+              <strong id="dashSalesMonth" class="dash-hero-value">0</strong>
+              <div class="dash-hero-footer">
+                <span id="dashSalesCompare" class="dash-trend-tag"></span>
+                <span class="dash-sub-value">Hoje: <b id="dashSalesToday">0</b></span>
+              </div>
+            </div>
+            <div class="dash-hero-card">
+              <span class="dash-card-label">Ingressos Emitidos</span>
+              <strong id="dashTicketsSold" class="dash-hero-value">0</strong>
+              <div class="dash-hero-footer">
+                <span id="dashTicketsCompare" class="dash-trend-tag"></span>
+                <span class="dash-sub-value">Ocupação média: <b id="dashAverageOccupancy">0%</b></span>
+              </div>
+            </div>
+            <div class="dash-hero-card clickable" role="button" tabindex="0" data-goto-panel="concessionsPanel">
+              <span class="dash-card-label">Bomboniere Líquida</span>
+              <strong id="dashConcessionRevenue" class="dash-hero-value">R$ 0,00</strong>
+              <div class="dash-hero-footer">
+                <span class="dash-neutral-tag">Valor recebido</span>
+                <span class="dash-sub-value">Ticket médio: <b id="dashAverageTicket">R$ 0,00</b></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Faixa Secundária Compacta de Métricas de Suporte -->
+          <div class="dash-support-strip">
+            <div class="dash-support-item">
+              <span>Clientes:</span>
+              <strong id="dashCustomers">0</strong>
+            </div>
+            <div class="dash-support-divider"></div>
+            <div class="dash-support-item">
+              <span>Assinaturas do Clube:</span>
+              <strong id="dashSubscriptions">0</strong>
+            </div>
+            <div class="dash-support-divider"></div>
+            <div class="dash-support-item">
+              <span>Pagamentos Pendentes:</span>
+              <strong id="dashPendingPayments">0</strong>
+              <small id="dashPendingPaymentsAmount">(R$ 0,00)</small>
+            </div>
+          </div>
+
+          <!-- SEÇÃO 1: Faturamento & Desempenho (Split 60% / 40%) -->
+          <section class="dashboard-block">
+            <div class="dashboard-block-header">
+              <h2>Faturamento & Tendência de Vendas</h2>
+              <p>Evolução diária das vendas e detalhamento contábil dos pagamentos.</p>
+            </div>
+            <div class="dash-analytics-grid">
+              <!-- Gráfico de Tendência -->
+              <div class="surface dash-chart-box">
+                <div class="surface-head">
+                  <div>
+                    <div class="section-title">Evolução do Período</div>
+                    <p>Comparativo diário de receita e quantidade de vendas.</p>
                   </div>
-                  <span id="dashChartHint" class="chart-tooltip" aria-live="polite"></span>
+                  <div class="chart-toolbar">
+                    <div class="chart-mode-switch" aria-label="Métrica do gráfico">
+                      <button class="active" type="button" data-dashboard-metric="revenue">Receita</button>
+                      <button type="button" data-dashboard-metric="sales">Vendas</button>
+                    </div>
+                    <span id="dashChartHint" class="chart-tooltip" aria-live="polite"></span>
+                  </div>
+                </div>
+                <div id="dashRevenueChart" class="dashboard-chart"></div>
+              </div>
+
+              <!-- Composição da Receita & Situação dos Pagamentos -->
+              <div class="surface dash-finance-breakdown-box">
+                <div class="dash-box-section">
+                  <div class="section-title">Composição da Receita</div>
+                  <div id="dashRevenueComposition" class="metric-list"></div>
+                </div>
+                <div class="dash-box-divider"></div>
+                <div class="dash-box-section">
+                  <div class="section-title">Situação dos Pagamentos</div>
+                  <div id="dashPaymentSummary" class="metric-list"></div>
+                </div>
+                <div class="dash-note-compact">
+                  <small><strong>Nota:</strong> Receita aprovada considera apenas pedidos pagos e mensalidades ativas do Clube. Ingressos e bomboniere já contemplam os descontos.</small>
                 </div>
               </div>
-              <div id="dashRevenueChart" class="dashboard-chart"></div>
             </div>
-            <div class="surface dashboard-attention-surface">
-              <div class="section-title">Pagamentos que precisam de atenção</div>
-              <div id="dashAttentionPayments" class="metric-list"></div>
-            </div>
-          </div>
+          </section>
 
-          <div class="split-grid compact">
+          <!-- SEÇÃO 2: Operação & Sessões de Hoje -->
+          <section class="dashboard-block">
+            <div class="dashboard-block-header">
+              <h2>Operação & Sessões de Hoje</h2>
+              <p>Status ao vivo das salas, sessões em andamento e alertas operacionais.</p>
+            </div>
+            <div class="dash-operation-grid">
+              <!-- Sessões Ativas de Hoje -->
+              <div class="surface">
+                <div class="surface-head">
+                  <div>
+                    <div class="section-title">Programação do Dia</div>
+                    <p>Acompanhamento de horário e capacidade em tempo real.</p>
+                  </div>
+                </div>
+                <div id="dashUpcomingSessions" class="metric-list session-list-scroll"></div>
+              </div>
+
+              <!-- Capacidade & Central de Atenção/Alertas -->
+              <div class="surface">
+                <div class="dash-box-section">
+                  <div class="section-title">Ocupação da Sala</div>
+                  <div id="dashCapacity" class="metric-list"></div>
+                </div>
+                <div class="dash-box-divider"></div>
+                <div class="dash-box-section">
+                  <div class="section-title">Alertas Operacionais & Pagamentos</div>
+                  <div id="dashOperationalAlerts" class="metric-list"></div>
+                  <div id="dashAttentionPayments" class="metric-list"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- SEÇÃO 3: Detalhamento Comercial por Categoria (Grid 3 Colunas) -->
+          <section class="dashboard-block">
+            <div class="dashboard-block-header">
+              <h2>Detalhamento Comercial</h2>
+              <p>Desempenho por título em cartaz, produtos da bomboniere, canais e fidelidade.</p>
+            </div>
+            <div class="dash-commercial-grid">
+              <!-- Coluna 1: Bilheteria por Filme -->
+              <div class="surface">
+                <div class="section-title">Bilheteria por Filme</div>
+                <p class="dash-card-sub">Participação na receita de ingressos.</p>
+                <div id="dashMovieRevenue" class="metric-list"></div>
+              </div>
+
+              <!-- Coluna 2: Bomboniere no Período -->
+              <div class="surface">
+                <div class="section-title">Produtos Mais Vendidos</div>
+                <p class="dash-card-sub">Bruto, descontos e receita líquida.</p>
+                <div id="dashTopProducts" class="metric-list"></div>
+              </div>
+
+              <!-- Coluna 3: Canais, Formas de Pagamento & Clube -->
+              <div class="surface">
+                <div class="dash-subtab-card">
+                  <div class="section-title">Canais & Formas de Pagamento</div>
+                  <div class="dash-channels-block">
+                    <strong>Origem das Vendas</strong>
+                    <div id="dashSalesOrigin" class="metric-list"></div>
+                  </div>
+                  <div class="dash-channels-block" style="margin-top: 14px;">
+                    <strong>Formas de Pagamento</strong>
+                    <div id="dashPaymentMethods" class="metric-list"></div>
+                  </div>
+                  <div class="dash-box-divider"></div>
+                  <div class="dash-channels-block">
+                    <strong>Clube Cine Cruzeiro</strong>
+                    <div id="dashClubMetrics" class="metric-list"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- SEÇÃO 4: Pedidos Recentes -->
+          <section class="dashboard-block">
             <div class="surface">
               <div class="surface-head">
                 <div>
-                  <div class="section-title">Resumo dos pagamentos</div>
-                  <p>Valores separados por situação no período selecionado.</p>
+                  <div class="section-title">Pedidos Recentes</div>
+                  <p>Últimas compras processadas na bilheteria e online.</p>
                 </div>
               </div>
-              <div id="dashPaymentSummary" class="metric-list"></div>
+              <div id="dashLatestOrders" class="metric-list recent-orders-grid"></div>
             </div>
-            <div class="surface">
-              <div class="section-title">Critério financeiro</div>
-              <div class="dashboard-note">
-                <strong>Receita aprovada</strong>
-                <p>Considera somente pedidos pagos e mensalidades do Clube confirmadas. Reservas, pagamentos pendentes e falhas não entram no faturamento.</p>
-                <strong>Valores por categoria</strong>
-                <p>Ingressos e bomboniere são calculados pelos itens do pedido, já com descontos aplicados, e sempre fecham com o total pago.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="split-grid compact">
-            <div class="surface">
-              <div class="section-title">Origem das vendas</div>
-              <div id="dashSalesOrigin" class="metric-list"></div>
-            </div>
-            <div class="surface">
-              <div class="section-title">Formas de pagamento</div>
-              <div id="dashPaymentMethods" class="metric-list"></div>
-            </div>
-          </div>
-          <div class="button-row">
-            <button id="dashboardReportButton" class="ghost-button" type="button">Baixar relatório do dashboard</button>
-          </div>
-          <div class="split-grid compact">
-            <div class="surface">
-              <div class="section-title">Composição da receita</div>
-              <div id="dashRevenueComposition" class="metric-list"></div>
-            </div>
-            <div class="surface">
-              <div class="section-title">Receita por filme</div>
-              <div id="dashMovieRevenue" class="metric-list"></div>
-            </div>
-          </div>
-          <div class="split-grid compact">
-            <div class="surface">
-              <div class="section-title">Sessões ativas de hoje</div>
-              <div id="dashUpcomingSessions" class="metric-list"></div>
-            </div>
-            <div class="surface">
-              <div class="section-title">Ocupação da sala</div>
-              <div id="dashCapacity" class="metric-list"></div>
-            </div>
-          </div>
-          <div class="split-grid compact">
-            <div class="surface">
-              <div class="section-title">Produtos mais vendidos</div>
-              <div id="dashTopProducts" class="metric-list"></div>
-            </div>
-            <div class="surface">
-              <div class="section-title">Pedidos recentes</div>
-              <div id="dashLatestOrders" class="metric-list"></div>
-            </div>
-          </div>
-          <div class="split-grid compact">
-            <div class="surface">
-              <div class="section-title">Clube Cine Cruzeiro</div>
-              <div id="dashClubMetrics" class="metric-list"></div>
-            </div>
-            <div class="surface">
-              <div class="section-title">Alertas operacionais</div>
-              <div id="dashOperationalAlerts" class="metric-list"></div>
-            </div>
-          </div>
+          </section>
         </section>
 
         <section id="moviesPanel" class="panel">
@@ -1231,12 +1317,28 @@
           <!-- 3. Financeiro da Bomboniere -->
           <div id="concessionFinanceTab" class="box-office-tab-panel concession-tab-panel">
             <div class="surface concession-finance-surface">
-              <div class="surface-head">
+              <div class="surface-head concession-head-split">
                 <div>
                   <div class="section-title">Receita da bomboniere</div>
                   <p id="concessionFinancePeriod">Somente pedidos pagos no período selecionado.</p>
                 </div>
-                <button class="ghost-button" type="button" data-goto-panel="dashboardPanel">Alterar período</button>
+                <div class="concession-period-toolbar" aria-label="Filtro de período da bomboniere">
+                  <div class="pill-selector">
+                    <button class="active" type="button" data-concession-period="today">Hoje</button>
+                    <button type="button" data-concession-period="7d">7 dias</button>
+                    <button type="button" data-concession-period="30d">30 dias</button>
+                    <button type="button" data-concession-period="month">Este mês</button>
+                    <button type="button" data-concession-period="custom">Personalizado</button>
+                  </div>
+                  <div class="concession-custom-dates" id="concessionCustomDates" hidden>
+                    <input id="concessionFrom" type="date" aria-label="Data inicial bomboniere" />
+                    <span>até</span>
+                    <input id="concessionTo" type="date" aria-label="Data final bomboniere" />
+                  </div>
+                  <button id="concessionFinanceRefreshBtn" class="ghost-button icon-only-sm" type="button" title="Atualizar dados da bomboniere" aria-label="Atualizar dados da bomboniere">
+                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                  </button>
+                </div>
               </div>
               <div id="concessionInsights" class="insight-strip concession-finance-kpis"></div>
               <div id="concessionDiscountSummary" class="concession-discount-summary"></div>

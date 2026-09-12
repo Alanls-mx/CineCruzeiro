@@ -22,5 +22,5 @@ test("server.js executa manutencao periodica de logs e rota DELETE com retencao 
   assert.match(code, /technicalRetentionDays = Math\.min\(3650, Math\.max\(1, Number\(process\.env\.TECHNICAL_LOG_RETENTION_DAYS \|\| 3\)\)\)/);
   assert.match(code, /systemLogMaintenanceTimer = setInterval/);
   assert.match(code, /6 \* 60 \* 60 \* 1000/);
-  assert.match(code, /technicalRetentionDays: Math\.min\(3650, Math\.max\(1, Number\(body\.technicalRetentionDays \|\| 3\)\)\)/);
+  assert.match(code, /technicalRetentionDays = Math\.min\(3650, Math\.max\(1, Number\(body\.technicalRetentionDays \|\| 3\)\)\)/);
 });

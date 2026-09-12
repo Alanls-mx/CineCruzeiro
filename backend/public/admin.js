@@ -58,6 +58,10 @@ let state = {
   dashboardPeriod: "today",
   dashboardFrom: "",
   dashboardTo: "",
+  concessionPeriod: "today",
+  concessionFrom: "",
+  concessionTo: "",
+  concessionFinanceData: null,
   payments: null,
   paymentFilters: {
     status: "",
@@ -596,10 +600,30 @@ function dashboardQuery() {
   return params.toString();
 }
 
+function concessionFinanceQuery() {
+  const params = new URLSearchParams({ period: state.concessionPeriod || "today" });
+  if (state.concessionPeriod === "custom") {
+    if (state.concessionFrom) params.set("from", state.concessionFrom);
+    if (state.concessionTo) params.set("to", state.concessionTo);
+  }
+  return params.toString();
+}
+
+async function loadConcessionFinance() {
+  try {
+    state.concessionFinanceData = await api(`/api/admin/dashboard?${concessionFinanceQuery()}`);
+    renderConcessionInsights();
+  } catch (error) {
+    console.error("Erro ao carregar dados financeiros da bomboniere:", error);
+  }
+}
+
 async function refreshDashboardOnly() {
   state.dashboard = await api(`/api/admin/dashboard?${dashboardQuery()}`);
   renderDashboard();
-  renderConcessionInsights();
+  if (!state.concessionFinanceData) {
+    renderConcessionInsights();
+  }
 }
 
 async function refreshPaymentsOnly() {
@@ -5752,7 +5776,7 @@ function setConcessionTab(tab) {
       renderConcessions();
     } else if (tab === "finance") {
       renderConcessionInsights();
-      if (!state.dashboard) void loadDashboard();
+      void loadConcessionFinance();
     }
   }
 }
@@ -6373,8 +6397,9 @@ function renderConcessionInsights() {
   const salesBreakdown = $("concessionSalesBreakdown");
   if (!insights || !discountSummary || !salesBreakdown) return;
 
-  const summary = state.dashboard?.concessionSummary;
-  const period = state.dashboard?.period || {};
+  const financeSource = state.concessionFinanceData || state.dashboard || {};
+  const summary = financeSource.concessionSummary;
+  const period = financeSource.period || {};
   const formatDate = (value) => value
     ? new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`))
     : "";
@@ -10230,6 +10255,30 @@ function bindEvents() {
         await refreshPaymentsOnly();
       }
     });
+  });
+  document.querySelectorAll("[data-concession-period]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      state.concessionPeriod = button.dataset.concessionPeriod;
+      document.querySelectorAll("[data-concession-period]").forEach((item) => item.classList.toggle("active", item === button));
+      const custom = state.concessionPeriod === "custom";
+      if ($("concessionCustomDates")) $("concessionCustomDates").hidden = !custom;
+      await loadConcessionFinance();
+    });
+  });
+  ["concessionFrom", "concessionTo"].forEach((id) => {
+    const el = $(id);
+    if (el) {
+      el.addEventListener("change", async () => {
+        state.concessionFrom = $("concessionFrom").value;
+        state.concessionTo = $("concessionTo").value;
+        if (state.concessionPeriod === "custom") {
+          await loadConcessionFinance();
+        }
+      });
+    }
+  });
+  $("concessionFinanceRefreshBtn")?.addEventListener("click", async () => {
+    await loadConcessionFinance();
   });
   $("newMovieButton").addEventListener("click", newMovie);
   $("cancelMovieCreateButton").addEventListener("click", () => cancelCreation("movie"));

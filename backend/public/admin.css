@@ -7651,3 +7651,338 @@ th {
   }
 }
 
+/* ==========================================================================
+   TOOLBAR INDEPENDENTE DA BOMBONIERE
+   ========================================================================== */
+.concession-head-split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.concession-period-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pill-selector {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.pill-selector button {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pill-selector button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pill-selector button.active {
+  background: var(--gold);
+  color: #111827;
+  font-weight: 600;
+}
+
+.concession-custom-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.concession-custom-dates input[type="date"] {
+  width: 135px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* ==========================================================================
+   DASHBOARD 2.0: ARQUITETURA DE INFORMAÇÃO & SEÇÕES ORGANIZADAS
+   ========================================================================== */
+.dashboard-header-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dashboard-top-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashboard-hero-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.dash-hero-card {
+  background: var(--surface, #1e293b);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.dash-hero-card.clickable {
+  cursor: pointer;
+}
+
+.dash-hero-card.clickable:hover {
+  border-color: rgba(250, 204, 21, 0.4);
+  transform: translateY(-1px);
+}
+
+.dash-card-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted, #94a3b8);
+}
+
+.dash-hero-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text, #f8fafc);
+  line-height: 1.2;
+  margin: 8px 0;
+}
+
+.dash-hero-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.dash-trend-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gold, #facc15);
+}
+
+.dash-neutral-tag {
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+}
+
+.dash-sub-value {
+  color: var(--muted, #94a3b8);
+  font-size: 11px;
+}
+
+.dash-sub-value b {
+  color: var(--text, #f8fafc);
+  font-weight: 600;
+}
+
+.dash-support-strip {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border-radius: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.dash-support-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted, #94a3b8);
+}
+
+.dash-support-item strong {
+  color: var(--text, #f8fafc);
+  font-weight: 600;
+}
+
+.dash-support-item small {
+  color: var(--muted, #94a3b8);
+  font-size: 11px;
+}
+
+.dash-support-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--line, rgba(255, 255, 255, 0.08));
+}
+
+.dashboard-block {
+  margin-bottom: 28px;
+}
+
+.dashboard-block-header {
+  margin-bottom: 12px;
+}
+
+.dashboard-block-header h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #f8fafc);
+  margin: 0 0 2px 0;
+}
+
+.dashboard-block-header p {
+  font-size: 12px;
+  color: var(--muted, #94a3b8);
+  margin: 0;
+}
+
+.dash-analytics-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.dash-chart-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-finance-breakdown-box {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.dash-box-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dash-box-divider {
+  height: 1px;
+  background: var(--line, rgba(255, 255, 255, 0.06));
+  margin: 14px 0;
+}
+
+.dash-note-compact {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border-radius: 6px;
+  margin-top: 12px;
+  color: var(--muted, #94a3b8);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.dash-operation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.session-list-scroll {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.dash-commercial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.dash-card-sub {
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+  margin: -4px 0 10px 0;
+}
+
+.dash-subtab-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-channels-block strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted, #94a3b8);
+  margin-bottom: 6px;
+}
+
+.recent-orders-grid {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-hero-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dash-commercial-grid {
+    grid-template-columns: 1fr;
+  }
+  .dash-analytics-grid,
+  .dash-operation-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-hero-kpis {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-header-compact {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .dashboard-top-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .dash-support-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .dash-support-divider {
+    display: none;
+  }
+}
+
