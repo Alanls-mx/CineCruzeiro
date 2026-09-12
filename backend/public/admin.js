@@ -6463,12 +6463,14 @@ async function validateTicketByCode(code, options = {}) {
     });
     if (result.result === "ticket_pending_confirmation") {
       state.qrPendingEntryCode = cleanCode;
+      setQrReaderActive(false, "Aguardando liberação do operador");
       renderTicketValidationResult("entryPending", {
         code: cleanCode,
         ticket: result.ticket
       });
     } else if (result.result === "concessions_pending_confirmation") {
       state.qrPendingConcessionCode = cleanCode;
+      setQrReaderActive(false, "Aguardando conferência dos itens");
       renderTicketValidationResult("concessionsPending", {
         code: cleanCode,
         ticket: result.ticket,
@@ -6477,6 +6479,10 @@ async function validateTicketByCode(code, options = {}) {
     } else {
       state.qrPendingEntryCode = "";
       state.qrPendingConcessionCode = "";
+      setQrReaderActive(
+        false,
+        result.result === "concessions_fulfilled" ? "Retirada confirmada" : "Entrada liberada"
+      );
       renderTicketValidationResult(
         result.result === "concessions_fulfilled" ? "concessionsOk" : "ok",
         { ticket: result.ticket, concessions: result.concessions }
