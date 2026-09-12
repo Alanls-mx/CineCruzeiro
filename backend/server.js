@@ -9186,9 +9186,31 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/logs" && method === "DELETE") {
     const body = await readBody(req);
     const retentionDays = Math.min(3650, Math.max(1, Number(body.retentionDays || 90)));
-    const deleted = postgresEnabled() ? await pruneSystemLogsFromPostgres(retentionDays) : 0;
-    logEvent("info", "logs.retention_applied", { retentionDays, deleted, actorUserId: req.adminUser?.id || "" });
-    sendJson(res, 200, { deleted, retentionDays, message: `${deleted} registro(s) antigo(s) removido(s).` });
+    const technicalRetentionDays = Math.min(3650, Math.max(1, Number(body.technicalRetentionDays || 3)));
+    const result = postgresEnabled()
+      ? await pruneSystemLogsFromPostgres({
+          retentionDays,
+          technicalRetentionDays,
+          businessEvents: [...BUSINESS_LOG_EVENTS]
+        })
+      : { total: 0, deletedTechnical: 0, deletedGeneral: 0 };
+    const deleted = result.total || 0;
+    logEvent("info", "logs.retention_applied", {
+      retentionDays,
+      technicalRetentionDays,
+      deleted,
+      deletedTechnical: result.deletedTechnical || 0,
+      deletedGeneral: result.deletedGeneral || 0,
+      actorUserId: req.adminUser?.id || ""
+    });
+    sendJson(res, 200, {
+      deleted,
+      deletedTechnical: result.deletedTechnical || 0,
+      deletedGeneral: result.deletedGeneral || 0,
+      retentionDays,
+      technicalRetentionDays,
+      message: `${deleted} registro(s) antigo(s) removido(s) (${result.deletedTechnical || 0} de diagnóstico técnico, ${result.deletedGeneral || 0} da visão do cinema).`
+    });
     return;
   }
 
@@ -13912,6 +13934,30 @@ async function runEmailAttachmentMaintenance() {
   }
 }
 
+async function runSystemLogMaintenance() {
+  if (!postgresEnabled()) return;
+  try {
+    const technicalRetentionDays = Math.min(3650, Math.max(1, Number(process.env.TECHNICAL_LOG_RETENTION_DAYS || 3)));
+    const retentionDays = Math.min(3650, Math.max(1, Number(process.env.SYSTEM_LOG_RETENTION_DAYS || 90)));
+    const result = await pruneSystemLogsFromPostgres({
+      retentionDays,
+      technicalRetentionDays,
+      businessEvents: [...BUSINESS_LOG_EVENTS]
+    });
+    if (result.total > 0) {
+      logEvent("info", "logs.retention_applied", {
+        technicalRetentionDays,
+        retentionDays,
+        deletedTechnical: result.deletedTechnical,
+        deletedGeneral: result.deletedGeneral,
+        totalDeleted: result.total
+      });
+    }
+  } catch (error) {
+    logEvent("warn", "logs.retention_failed", { message: error.message });
+  }
+}
+
 loadEnvFiles().then(() => {
   if (isProduction() && !postgresEnabled()) {
     console.error("POSTGRES_REQUIRED_IN_PRODUCTION: configure DATABASE_URL ou POSTGRES_URL antes de iniciar em producao.");
@@ -13929,10 +13975,12 @@ loadEnvFiles().then(() => {
       emailCampaignWorker = buildEmailCampaignWorker();
       emailCampaignWorker?.start();
       logEvent("info", "email_campaign.worker_started", { workerId: emailCampaignWorker?.workerId || "", config: emailCampaignWorker?.config || {} });
-      void pruneSystemLogsFromPostgres(process.env.SYSTEM_LOG_RETENTION_DAYS || 90).catch((error) => {
-        logEvent("warn", "logs.retention_failed", { message: error.message });
-      });
+      void runSystemLogMaintenance();
     }
+    const systemLogMaintenanceTimer = setInterval(() => {
+      void runSystemLogMaintenance();
+    }, 6 * 60 * 60 * 1000);
+    systemLogMaintenanceTimer.unref?.();
     const subscriptionMaintenanceTimer = setInterval(() => {
       void runSubscriptionMaintenance();
     }, SUBSCRIPTION_MAINTENANCE_INTERVAL_MS);

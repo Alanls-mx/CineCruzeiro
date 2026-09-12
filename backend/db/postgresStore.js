@@ -1397,10 +1397,52 @@ async function listSystemLogsFromPostgres(filters = {}) {
   }
 }
 
-async function pruneSystemLogsFromPostgres(retentionDays = 90) {
-  const days = Math.min(3650, Math.max(1, Number(retentionDays || 90)));
-  const result = await getPool().query("DELETE FROM system_logs WHERE created_at < now() - ($1::text || ' days')::interval", [String(days)]);
-  return Number(result.rowCount || 0);
+async function pruneSystemLogsFromPostgres(options = 90) {
+  const isObject = typeof options === "object" && options !== null;
+  const generalDays = Math.min(3650, Math.max(1, Number(isObject ? options.retentionDays : options) || 90));
+  const technicalDays = Math.min(3650, Math.max(1, Number(isObject ? options.technicalRetentionDays : 3) || 3));
+  const businessEvents = isObject && Array.isArray(options.businessEvents) ? options.businessEvents : [];
+
+  const pool = getPool();
+  let deletedTechnical = 0;
+  let deletedGeneral = 0;
+
+  // 1. Delete technical diagnostic logs older than technicalDays (default 3 days)
+  if (businessEvents.length > 0) {
+    const techResult = await pool.query(
+      `DELETE FROM system_logs 
+       WHERE created_at < now() - ($1::text || ' days')::interval 
+         AND level != 'error' 
+         AND NOT (event = ANY($2::text[]))`,
+      [String(technicalDays), businessEvents]
+    );
+    deletedTechnical = Number(techResult.rowCount || 0);
+  } else {
+    const techResult = await pool.query(
+      `DELETE FROM system_logs 
+       WHERE created_at < now() - ($1::text || ' days')::interval 
+         AND level != 'error' 
+         AND (category = 'http' OR event LIKE 'http.%')`,
+      [String(technicalDays)]
+    );
+    deletedTechnical = Number(techResult.rowCount || 0);
+  }
+
+  // 2. Delete all remaining logs (including business logs and audit records) older than generalDays (default 90 days)
+  const genResult = await pool.query(
+    "DELETE FROM system_logs WHERE created_at < now() - ($1::text || ' days')::interval",
+    [String(generalDays)]
+  );
+  deletedGeneral = Number(genResult.rowCount || 0);
+
+  const total = deletedTechnical + deletedGeneral;
+  return {
+    deletedTechnical,
+    deletedGeneral,
+    total,
+    valueOf() { return total; },
+    toString() { return String(total); }
+  };
 }
 
 async function checkPostgresReadiness(expectedMigration = "") {

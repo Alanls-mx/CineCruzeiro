@@ -1780,10 +1780,13 @@ function renderLogs() {
 
 async function pruneLogs() {
   const days = Math.max(1, Number($("logsRetentionDays")?.value || 90));
-  if (!confirm(`Remover logs com mais de ${days} dias? Esta ação não apaga o histórico auditável de pedidos.`)) return;
+  if (!confirm(`Remover logs da visão do cinema com mais de ${days} dias e logs do diagnóstico técnico com mais de 3 dias? Esta ação não apaga pedidos nem registros fiscais.`)) return;
   try {
-    const result = await api("/api/admin/logs", { method: "DELETE", body: JSON.stringify({ retentionDays: days }) });
-    showSuccess("Logs organizados", result.message || "A política de retenção foi aplicada.");
+    const result = await api("/api/admin/logs", {
+      method: "DELETE",
+      body: JSON.stringify({ retentionDays: days, technicalRetentionDays: 3 })
+    });
+    showSuccess("Logs organizados", result.message || "A política de retenção foi aplicada com sucesso.");
     await loadLogs({ page: 1 });
   } catch (error) {
     showToast(error.message, "error");
