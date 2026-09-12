@@ -203,7 +203,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     if (!found) return;
     const persisted = readCheckoutDraft();
     const source = persisted?.sessionId === found.session.id ? persisted : draft;
-    const next = {
+    const next: StoredCheckoutDraft = {
       ...(source || {}),
       movieId: found.movie.id,
       sessionId: found.session.id,
@@ -217,9 +217,12 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       paymentMethod: source?.paymentMethod || "credit_card",
       ...patch,
     };
+    if (step !== "confirmacao" && !patch.paymentResult) {
+      delete next.paymentResult;
+    }
     writeCheckoutDraft(next);
     setDraft(next);
-  }, [availableTicketTypes, draft, found]);
+  }, [availableTicketTypes, draft, found, step]);
 
   const applySeatChange = useCallback((change: { seatId: string; status: "available" | "held" | "unavailable"; heldByMe?: boolean }) => {
     setSeatMap((current) => current ? {
@@ -263,9 +266,18 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
 
   useEffect(() => {
     const stored = readCheckoutDraft();
-    setDraft(stored?.sessionId === sessionId ? stored : null);
+    if (stored?.sessionId === sessionId) {
+      if (step !== "confirmacao" && isValidPaymentResult(stored.paymentResult)) {
+        clearCheckoutDraft(sessionId);
+        setDraft(null);
+      } else {
+        setDraft(stored);
+      }
+    } else {
+      setDraft(null);
+    }
     setHydratedSessionId(sessionId);
-  }, [sessionId]);
+  }, [sessionId, step]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !found || !draft || draft.seatHoldToken || isValidPaymentResult(draft.paymentResult)) return;
@@ -937,7 +949,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
   const [seatActionError, setSeatActionError] = useState("");
   const toggleSeat = async (seatId: string) => {
     const seat = seatsById.get(seatId);
-    if (!seat || (seat.status !== "available" && !seat.heldByMe) || realtimeStatus !== "connected") return;
+    if (!seat || (seat.status !== "available" && !seat.heldByMe)) return;
     setSeatActionError("");
     if (selectedSeatIds.includes(seatId)) {
       const result = await onReleaseSeat(seatId);
@@ -1014,7 +1026,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                         const selected = selectedSeatIds.includes(seat.id);
                         const type = seatTypesById.get(seat.typeId);
                         const temporarilyReserved = seat.status === "held" && !seat.heldByMe;
-                        const unavailable = (seat.status !== "available" && !seat.heldByMe) || realtimeStatus !== "connected";
+                        const unavailable = seat.status !== "available" && !seat.heldByMe;
                         let seatStateClass = "bg-brand-700 hover:-translate-y-0.5";
                         if (unavailable) seatStateClass = "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60";
                         if (temporarilyReserved) seatStateClass = "cursor-not-allowed border-rose-300 bg-rose-800 text-rose-50 opacity-90";

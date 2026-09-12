@@ -1998,6 +1998,23 @@ async function releaseOrderSeatHolds(order, broadcastStatus = "unavailable") {
   return released;
 }
 
+async function broadcastReleasedOrderSeats(order) {
+  if (!order) return;
+  const sessionId = order.sessionId || order.archivedSeatHoldSessionId || order.archivedSessionId;
+  const seatIds = Array.isArray(order.selectedSeatIds) ? order.selectedSeatIds : [];
+  try {
+    await releaseOrderSeatHolds(order, "available");
+  } catch (err) {
+    logEvent("warn", "seat_realtime.release_hold_error", { orderId: order.id, message: err.message });
+  }
+  if (sessionId) {
+    for (const seatId of seatIds) {
+      seatRealtimeService?.broadcastSeatStatus(sessionId, seatId, "available");
+    }
+    seatRealtimeService?.broadcastSessionRefresh(sessionId);
+  }
+}
+
 function publicSessionStatus(db, session) {
   const status = normalizedSessionStatus(session);
   if (!session || ["cancelled", "hidden", "archived"].includes(status)) return status || "sold_out";
@@ -5430,7 +5447,12 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     await writeDb(db);
     return { refund: structuredCloneSafe(refund), token };
   });
-  if (prepared.completed) return prepared;
+  if (prepared.completed) {
+    if (typeof broadcastReleasedOrderSeats === "function") {
+      await broadcastReleasedOrderSeats(prepared.order);
+    }
+    return prepared;
+  }
   // The durable key is committed before calling the provider, outside the database lock.
   let confirmation;
   try {
@@ -5439,7 +5461,7 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     logEvent("warn", "order.refund_pending", { orderId, refundId: prepared.refund.id, code: error.code || "REFUND_NETWORK_ERROR" });
     throw refundError("REFUND_PENDING", error.code ? error.message : "Sem confirmacao do reembolso. Tente novamente para consultar a mesma operacao; nao crie uma devolucao manual duplicada.");
   }
-  return withCriticalMutation(async () => {
+  const result = await withCriticalMutation(async () => {
     const db = await readDb();
     const order = (db.orders || []).find((item) => item.id === orderId);
     const payment = orderPayment(db, orderId);
@@ -5475,6 +5497,10 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     }
     return { order, payment, refund };
   });
+  if (typeof broadcastReleasedOrderSeats === "function") {
+    await broadcastReleasedOrderSeats(result.order);
+  }
+  return result;
 }
 
 function concessionRefundEligibility(db, order, payment = orderPayment(db, order?.id)) {
@@ -5583,7 +5609,12 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
     await writeDb(db);
     return { refund: structuredCloneSafe(refund), token };
   });
-  if (prepared.completed) return prepared;
+  if (prepared.completed) {
+    if (prepared.order?.status === "cancelled") {
+      await broadcastReleasedOrderSeats(prepared.order);
+    }
+    return prepared;
+  }
   let confirmation;
   try {
     confirmation = await submitConcessionRefund(prepared.refund, prepared.token);
@@ -5591,7 +5622,7 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
     logEvent("warn", "order.concession_refund_pending", { orderId, refundId: prepared.refund.id, code: error.code || "REFUND_NETWORK_ERROR" });
     throw refundError("REFUND_PENDING", error.code ? error.message : "Sem confirmacao do reembolso. Tente novamente para consultar a mesma operacao.");
   }
-  return withCriticalMutation(async () => {
+  const result = await withCriticalMutation(async () => {
     const db = await readDb();
     const order = (db.orders || []).find((item) => item.id === orderId);
     const payment = orderPayment(db, orderId);
@@ -5603,6 +5634,10 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
     logEvent("info", "order.concession_refunded", { orderId, refundId: refund.id, amount: refund.amount });
     return { order, payment, refund };
   });
+  if (result.order?.status === "cancelled") {
+    await broadcastReleasedOrderSeats(result.order);
+  }
+  return result;
 }
 
 function cancelOrder(db, order, reason, adminUser) {
@@ -13612,6 +13647,9 @@ async function handleApi(req, res, pathname) {
         safeOrderUpdate(order, body, req.adminUser);
       }
       await writeDb(lockedDb);
+      if (body.action === "cancel") {
+        await broadcastReleasedOrderSeats(order);
+      }
       sendJson(res, 200, {
         order,
         payment: orderPayment(lockedDb, order.id),
@@ -13642,6 +13680,7 @@ async function handleApi(req, res, pathname) {
       if (removableDraftOrder(order, payment, tickets)) {
         lockedDb.orders.splice(index, 1);
         await writeDb(lockedDb);
+        await broadcastReleasedOrderSeats(order);
         sendJson(res, 200, { deleted: true, orderId });
         return;
       }

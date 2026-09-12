@@ -25,22 +25,30 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
   selectedRef.current = selectedSeatIds;
   callbacksRef.current = { onSeatChange, onSessionState, onSessionRefresh };
 
-  const sendRequest = useCallback((type: "select_seat" | "release_seat", seatId: string) => new Promise<SeatResult>((resolve) => {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      resolve({ ok: false, code: "REALTIME_DISCONNECTED", message: "Conexão em tempo real indisponível. Aguarde alguns segundos." });
-      return;
+  const sendRequest = useCallback(async (type: "select_seat" | "release_seat", seatId: string) => {
+    let socket = socketRef.current;
+    if (socket && socket.readyState === WebSocket.CONNECTING) {
+      const start = Date.now();
+      while (socket && socket.readyState === WebSocket.CONNECTING && Date.now() - start < 2500) {
+        await new Promise((r) => window.setTimeout(r, 100));
+        socket = socketRef.current;
+      }
     }
-    const requestId = crypto.randomUUID();
-    pendingRef.current.set(requestId, resolve);
-    socket.send(JSON.stringify({ type, requestId, seatId }));
-    window.setTimeout(() => {
-      const pending = pendingRef.current.get(requestId);
-      if (!pending) return;
-      pendingRef.current.delete(requestId);
-      pending({ ok: false, code: "REALTIME_TIMEOUT", message: "A reserva demorou para responder. Tente novamente." });
-    }, 8000);
-  }), []);
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return { ok: false, code: "REALTIME_DISCONNECTED", message: "Conectando ao sistema de poltronas. Tente novamente em instantes." };
+    }
+    return new Promise<SeatResult>((resolve) => {
+      const requestId = crypto.randomUUID();
+      pendingRef.current.set(requestId, resolve);
+      socket!.send(JSON.stringify({ type, requestId, seatId }));
+      window.setTimeout(() => {
+        const pending = pendingRef.current.get(requestId);
+        if (!pending) return;
+        pendingRef.current.delete(requestId);
+        pending({ ok: false, code: "REALTIME_TIMEOUT", message: "A reserva demorou para responder. Tente novamente." });
+      }, 8000);
+    });
+  }, []);
 
   useEffect(() => {
     if (!enabled || !sessionId || !ownerToken) {
@@ -50,7 +58,23 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
     let disposed = false;
     let reconnectTimer = 0;
     let heartbeatTimer = 0;
+    let fallbackPollTimer = 0;
     let attempt = 0;
+
+    const startFallbackPoll = () => {
+      if (fallbackPollTimer) return;
+      fallbackPollTimer = window.setInterval(() => {
+        if (disposed) return;
+        callbacksRef.current.onSessionRefresh?.();
+      }, 8000);
+    };
+
+    const stopFallbackPoll = () => {
+      if (fallbackPollTimer) {
+        window.clearInterval(fallbackPollTimer);
+        fallbackPollTimer = 0;
+      }
+    };
 
     const connect = () => {
       if (disposed) return;
@@ -64,6 +88,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
 
       socket.addEventListener("open", () => {
         attempt = 0;
+        stopFallbackPoll();
         setStatus("connected");
         socket.send(JSON.stringify({ type: "join_session", requestId: crypto.randomUUID(), sessionId, ownerToken }));
         heartbeatTimer = window.setInterval(() => {
@@ -110,6 +135,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
         window.clearInterval(heartbeatTimer);
         if (disposed) return;
         setStatus("disconnected");
+        startFallbackPoll();
         attempt += 1;
         reconnectTimer = window.setTimeout(connect, Math.min(10000, 750 * (2 ** Math.min(attempt, 4))));
       });
@@ -119,6 +145,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
     connect();
     return () => {
       disposed = true;
+      stopFallbackPoll();
       window.clearTimeout(reconnectTimer);
       window.clearInterval(heartbeatTimer);
       socketRef.current?.close();
