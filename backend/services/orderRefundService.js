@@ -28,6 +28,28 @@ function prepareRefund(payment, order, now = new Date().toISOString()) {
   };
 }
 
+function prepareConcessionRefund(payment, order, amount, now = new Date().toISOString()) {
+  const existing = order.concessionRefund;
+  if (existing) return existing;
+  if (payment.provider !== "mercado_pago" || !/^ORD[A-Z0-9]+$/i.test(payment.providerPaymentId || "")) {
+    throw refundError("REFUND_PROVIDER_UNSUPPORTED", "Esta forma de pagamento exige devolucao manual. Nenhum reembolso foi executado.");
+  }
+  if ((payment.metadata?.relatedOrderIds || []).length > 1) {
+    throw refundError("REFUND_SHARED_PAYMENT", "A cobranca inclui varios pedidos. A bomboniere precisa ser conciliada manualmente; nenhum reembolso foi executado.");
+  }
+  if (payment.status !== "approved") throw refundError("REFUND_PAYMENT_NOT_APPROVED", "Somente pagamentos aprovados podem ser reembolsados.");
+  const normalizedAmount = Number(Number(amount || 0).toFixed(2));
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0 || normalizedAmount > Number(payment.amount || 0)) {
+    throw refundError("REFUND_AMOUNT_INVALID", "O valor calculado para a bomboniere nao pode ser reembolsado automaticamente.");
+  }
+  const full = Math.round(normalizedAmount * 100) === Math.round(Number(payment.amount || 0) * 100);
+  const transactionId = String(payment.metadata?.transactionId || "").trim();
+  if (!full && !transactionId) {
+    throw refundError("REFUND_TRANSACTION_MISSING", "O pagamento nao possui a transacao exigida pelo Mercado Pago para um reembolso parcial.");
+  }
+  return { id: crypto.randomUUID(), orderId: order.id, providerOrderId: payment.providerPaymentId, transactionId, scope: "concessions", amount: normalizedAmount, full, status: "pending", createdAt: now };
+}
+
 async function submitFullRefund(refund, accessToken, request = fetch) {
   if (!accessToken) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de solicitar o reembolso.", 412);
   const response = await request(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(refund.providerOrderId)}/refund`, {
@@ -57,4 +79,35 @@ async function submitFullRefund(refund, accessToken, request = fetch) {
   };
 }
 
-module.exports = { prepareRefund, submitFullRefund, refundError };
+async function submitConcessionRefund(refund, accessToken, request = fetch) {
+  if (!accessToken) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de solicitar o reembolso.", 412);
+  const body = refund.full ? {} : { transactions: [{ id: refund.transactionId, amount: Number(refund.amount).toFixed(2) }] };
+  const response = await request(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(refund.providerOrderId)}/refund`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "X-Idempotency-Key": refund.id },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20000)
+  });
+  let data = await response.json().catch(() => ({}));
+  let confirmedResponse = response.ok;
+  if (response.status === 409) {
+    const statusResponse = await request(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(refund.providerOrderId)}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(20000)
+    });
+    data = await statusResponse.json().catch(() => ({}));
+    confirmedResponse = statusResponse.ok;
+  }
+  if (!confirmedResponse) throw refundError("REFUND_PROVIDER_PENDING", "O Mercado Pago nao confirmou a devolucao. Tente novamente: a mesma chave sera reutilizada para evitar duplicidade.");
+  const status = String(data.status_detail || data.status || "");
+  const expected = refund.full ? "refunded" : "partially_refunded";
+  if (String(data.id) !== String(refund.providerOrderId) || status !== expected) {
+    throw refundError("REFUND_CONFIRMATION_PENDING", "Reembolso solicitado, ainda sem confirmacao do Mercado Pago.");
+  }
+  return {
+    providerStatus: data.status || "",
+    providerStatusDetail: data.status_detail || "",
+    providerRefundIds: (data.transactions?.refunds || []).map((entry) => String(entry.id || "")).filter(Boolean)
+  };
+}
+
+module.exports = { prepareRefund, prepareConcessionRefund, submitFullRefund, submitConcessionRefund, refundError };

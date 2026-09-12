@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 const require = createRequire(import.meta.url);
-const { prepareRefund, submitFullRefund } = require("../backend/services/orderRefundService");
+const { prepareRefund, prepareConcessionRefund, submitFullRefund, submitConcessionRefund } = require("../backend/services/orderRefundService");
 const { createPerformanceMonitor, percentile } = require("../backend/services/performanceMonitor");
 
 const payment = () => ({ provider: "mercado_pago", providerPaymentId: "ORD123", status: "approved", amount: 12.34, metadata: {} });
@@ -48,6 +48,26 @@ test("unknown, partial and failed provider responses never claim full refund", a
   }
   await assert.rejects(submitFullRefund(refund, "fake", async () => ({ ok: false, json: async () => ({}) })));
   await assert.rejects(submitFullRefund(refund, ""));
+});
+
+test("partial concession refund uses the server amount and payment transaction", async () => {
+  const p = { ...payment(), amount: 50, metadata: { transactionId: "PAY123" } };
+  const refund = prepareConcessionRefund(p, { id: "order1" }, 17.25);
+  let sentBody;
+  const result = await submitConcessionRefund(refund, "fake", async (_url, options) => {
+    sentBody = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ id: "ORD123", status: "processed", status_detail: "partially_refunded", transactions: { refunds: [{ id: "REF-PARTIAL" }] } }) };
+  });
+  assert.deepEqual(sentBody, { transactions: [{ id: "PAY123", amount: "17.25" }] });
+  assert.deepEqual(result.providerRefundIds, ["REF-PARTIAL"]);
+  p.metadata.concessionRefund = refund;
+  const orderWithIntent = { id: "order1", concessionRefund: refund };
+  assert.strictEqual(prepareConcessionRefund(p, orderWithIntent, 1), refund);
+});
+
+test("partial concession refund rejects missing transaction and shared payments", () => {
+  assert.throws(() => prepareConcessionRefund({ ...payment(), amount: 50 }, { id: "order1" }, 10));
+  assert.throws(() => prepareConcessionRefund({ ...payment(), amount: 50, metadata: { transactionId: "PAY1", relatedOrderIds: ["a", "b"] } }, { id: "order1" }, 10));
 });
 
 test("monitor reports host and process separately with bounded samples", async () => {

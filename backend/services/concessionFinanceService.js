@@ -17,6 +17,8 @@ function summarizeConcessionFinance(entries = []) {
   let freeItemDiscount = 0;
   let couponDiscount = 0;
   let reconciliationAdjustment = 0;
+  let refundTotal = 0;
+  let refundedQuantity = 0;
   let itemQuantity = 0;
   let discountedOrders = 0;
 
@@ -51,6 +53,8 @@ function summarizeConcessionFinance(entries = []) {
     const orderAdjustment = Number(breakdown.concessionAdjustment || 0);
     let allocatedCoupon = 0;
     let allocatedAdjustment = 0;
+    let allocatedRefund = 0;
+    const orderRefund = Math.max(0, Number(breakdown.concessionRefunded || 0));
 
     itemRows.forEach((item, index) => {
       const last = index === itemRows.length - 1;
@@ -64,7 +68,13 @@ function summarizeConcessionFinance(entries = []) {
         ? moneyValue(orderAdjustment - allocatedAdjustment)
         : moneyValue(adjustmentWeightTotal ? orderAdjustment * (beforeAdjustment / adjustmentWeightTotal) : 0);
       allocatedAdjustment = moneyValue(allocatedAdjustment + itemAdjustment);
-      const finalRevenue = moneyValue(Math.max(0, beforeAdjustment + itemAdjustment));
+      const revenueBeforeRefund = moneyValue(Math.max(0, beforeAdjustment + itemAdjustment));
+      const refundBaseTotal = Math.max(0, baseNetTotal - orderCouponDiscount + orderAdjustment);
+      const itemRefund = last
+        ? moneyValue(orderRefund - allocatedRefund)
+        : moneyValue(refundBaseTotal ? orderRefund * (revenueBeforeRefund / refundBaseTotal) : 0);
+      allocatedRefund = moneyValue(allocatedRefund + itemRefund);
+      const finalRevenue = moneyValue(Math.max(0, revenueBeforeRefund - itemRefund));
       const current = products.get(item.id) || {
         id: item.id,
         name: item.name,
@@ -75,7 +85,9 @@ function summarizeConcessionFinance(entries = []) {
         freeItemDiscount: 0,
         couponDiscount: 0,
         reconciliationAdjustment: 0,
+        refundTotal: 0,
         netRevenue: 0,
+        refundedQuantity: 0,
         clubDiscountedQuantity: 0,
         couponDiscountedQuantity: 0,
         couponCodes: new Set(),
@@ -90,7 +102,9 @@ function summarizeConcessionFinance(entries = []) {
       current.freeItemDiscount += item.freeItemDiscount;
       current.couponDiscount += itemCouponDiscount;
       current.reconciliationAdjustment += itemAdjustment;
+      current.refundTotal += itemRefund;
       current.netRevenue += finalRevenue;
+      current.refundedQuantity += itemRefund > 0 || order.concessionRefund?.status === "completed" ? item.quantity : 0;
       current.clubDiscountedQuantity += item.clubDiscount > 0 ? Math.max(0, item.quantity - item.freeQuantity) : 0;
       current.couponDiscountedQuantity += itemCouponDiscount > 0 ? item.quantity : 0;
       if (itemCouponDiscount > 0 && order.couponCode) current.couponCodes.add(String(order.couponCode).toUpperCase());
@@ -106,8 +120,10 @@ function summarizeConcessionFinance(entries = []) {
     freeItemDiscount += Number(breakdown.concessionFreeDiscount || 0);
     couponDiscount += orderCouponDiscount;
     reconciliationAdjustment += orderAdjustment;
+    refundTotal += orderRefund;
     itemQuantity += itemRows.reduce((sum, item) => sum + item.quantity, 0);
-    if (Number(breakdown.concessionGross || 0) - Number(breakdown.concessionRevenue || 0) > 0.009) discountedOrders += 1;
+    refundedQuantity += order.concessionRefund?.status === "completed" ? itemRows.reduce((sum, item) => sum + item.quantity, 0) : 0;
+    if (Number(breakdown.concessionGross || 0) - Number(breakdown.concessionRevenue || 0) - orderRefund > 0.009) discountedOrders += 1;
   });
 
   const productRows = [...products.values()].map((item) => ({
@@ -119,8 +135,9 @@ function summarizeConcessionFinance(entries = []) {
     freeItemDiscount: moneyValue(item.freeItemDiscount),
     couponDiscount: moneyValue(item.couponDiscount),
     reconciliationAdjustment: moneyValue(item.reconciliationAdjustment),
+    refundTotal: moneyValue(item.refundTotal),
     netRevenue: moneyValue(item.netRevenue),
-    discountTotal: moneyValue(Math.max(0, item.grossRevenue - item.netRevenue)),
+    discountTotal: moneyValue(Math.max(0, item.grossRevenue - item.netRevenue - item.refundTotal)),
     minimumUnitPrice: moneyValue(item.minimumUnitPrice),
     maximumUnitPrice: moneyValue(item.maximumUnitPrice)
   })).sort((left, right) => right.netRevenue - left.netRevenue || right.quantity - left.quantity || left.name.localeCompare(right.name, "pt-BR"));
@@ -128,12 +145,14 @@ function summarizeConcessionFinance(entries = []) {
   return {
     grossRevenue: moneyValue(grossRevenue),
     netRevenue: moneyValue(netRevenue),
-    discountTotal: moneyValue(Math.max(0, grossRevenue - netRevenue)),
+    discountTotal: moneyValue(Math.max(0, grossRevenue - netRevenue - refundTotal)),
     identifiedDiscountTotal: moneyValue(clubDiscount + freeItemDiscount + couponDiscount),
     clubDiscount: moneyValue(clubDiscount),
     freeItemDiscount: moneyValue(freeItemDiscount),
     couponDiscount: moneyValue(couponDiscount),
     reconciliationAdjustment: moneyValue(reconciliationAdjustment),
+    refundTotal: moneyValue(refundTotal),
+    refundedQuantity,
     itemQuantity,
     orders: entries.filter(({ order }) => Array.isArray(order?.concessionItems) && order.concessionItems.some((item) => Number(item.quantity || 0) > 0)).length,
     discountedOrders,

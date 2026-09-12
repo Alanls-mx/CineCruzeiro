@@ -95,3 +95,29 @@ test("distribui ajustes de conciliação sem perder o total aprovado", () => {
   assert.equal(summary.reconciliationAdjustment, -1);
   assert.equal(summary.products.reduce((total, item) => total + item.netRevenue, 0), 34);
 });
+
+test("separa reembolso de desconto e zera a receita dos produtos devolvidos", () => {
+  const summary = summarizeConcessionFinance([{
+    order: {
+      id: "order-refund",
+      concessionRefund: { status: "completed", amount: 18 },
+      concessionItems: [{ id: "combo", name: "Combo", quantity: 2, unitPrice: 10, originalPrice: 10, clubDiscount: 2 }]
+    },
+    breakdown: {
+      concessionGross: 20,
+      concessionRevenue: 0,
+      concessionRefunded: 18,
+      concessionClubDiscount: 2,
+      concessionFreeDiscount: 0,
+      concessionCouponDiscount: 0,
+      concessionAdjustment: 0
+    }
+  }]);
+  assert.equal(summary.grossRevenue, 20);
+  assert.equal(summary.discountTotal, 2);
+  assert.equal(summary.refundTotal, 18);
+  assert.equal(summary.netRevenue, 0);
+  assert.equal(summary.refundedQuantity, 2);
+  assert.equal(summary.products[0].refundTotal, 18);
+  assert.equal(summary.products[0].refundedQuantity, 2);
+});

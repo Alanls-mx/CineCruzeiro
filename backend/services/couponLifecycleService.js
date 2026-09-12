@@ -10,6 +10,11 @@ function validDate(value) {
 
 function orderUsesCoupon(order, coupon) {
   if (!order || order.status !== "paid" || !coupon) return false;
+  if (order.concessionRefund?.status === "completed") {
+    const scope = String(coupon.appliesTo || "all");
+    const hasTickets = (order.ticketItems || []).some((item) => Number(item.ticketQuantity ?? item.quantity ?? 0) > 0);
+    if (scope === "concessions" || !hasTickets) return false;
+  }
   if (order.couponId && coupon.id && String(order.couponId) === String(coupon.id)) return true;
   return Boolean(couponCode(coupon.couponCode) && couponCode(order.couponCode) === couponCode(coupon.couponCode));
 }
@@ -18,11 +23,17 @@ function paidCouponOrders(db, coupon) {
   return (db.orders || []).filter((order) => orderUsesCoupon(order, coupon));
 }
 
+function effectiveCouponDiscount(order) {
+  const granted = Number(order.couponDiscount || order.discountValue || 0);
+  const reversed = order.concessionRefund?.status === "completed" ? Number(order.concessionRefund.couponDiscount || 0) : 0;
+  return Math.max(0, granted - reversed);
+}
+
 function couponUsageSummary(db, coupon) {
   const orders = paidCouponOrders(db, coupon);
   return {
     usageCount: orders.length,
-    discountGranted: Number(orders.reduce((sum, order) => sum + Number(order.couponDiscount || order.discountValue || 0), 0).toFixed(2))
+    discountGranted: Number(orders.reduce((sum, order) => sum + effectiveCouponDiscount(order), 0).toFixed(2))
   };
 }
 
@@ -90,7 +101,7 @@ function couponUsageHistory(db, coupon, options = {}) {
       sessionTime: order.sessionTime || order.archivedSessionTime || "",
       ticketItems: itemSummary(order.ticketItems),
       concessionItems: itemSummary(order.concessionItems),
-      discountAmount: Number(order.couponDiscount || order.discountValue || 0),
+      discountAmount: Number(effectiveCouponDiscount(order).toFixed(2)),
       orderTotal: Number(order.totalPrice || 0),
       paymentMethod: order.paymentMethod || ""
     };
@@ -110,5 +121,5 @@ module.exports = {
   couponUsageHistory,
   couponUsageSummary,
   orderUsesCoupon,
-  _test: { itemSummary, paidCouponOrders, usageDate }
+  _test: { effectiveCouponDiscount, itemSummary, paidCouponOrders, usageDate }
 };

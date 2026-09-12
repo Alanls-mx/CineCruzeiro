@@ -4692,6 +4692,8 @@ input[type="file"]::file-selector-button {
 #performanceStats .log-stat strong { font-size: 16px; overflow-wrap: anywhere; }
 .concession-session-sales { padding-block: 16px; border-top: 1px solid var(--border); }
 .concession-daily-order { padding-block: 12px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.concession-order-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.concession-daily-order > small { display: block; margin-top: 8px; color: var(--muted); }
 #concessionSalesArchived { width: 16px; height: 16px; }
 .log-stat.warn strong { color: #fde68a; }
 .log-stat.info strong { color: #93c5fd; }

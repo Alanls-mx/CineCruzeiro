@@ -795,6 +795,8 @@ function logPresentation(log = {}) {
     "payment.reconciled": { title: "Pagamento confirmado", description: "O pagamento foi localizado e conciliado com o pedido." },
     "payment.reconciliation_reference_mismatch": { title: "Pagamento não localizado no pedido", description: "A referência recebida não corresponde ao pedido e precisa ser conferida." },
     "payment.reconciliation_amount_mismatch": { title: "Valor do pagamento diferente", description: "O valor confirmado pelo provedor não corresponde ao total do pedido." },
+    "order.concession_refund_pending": { title: "Reembolso da bomboniere pendente", description: "A devolução foi solicitada, mas ainda precisa de confirmação do Mercado Pago." },
+    "order.concession_refunded": { title: "Bomboniere reembolsada", description: "Os produtos foram devolvidos pela forma de pagamento original sem cancelar os ingressos do pedido." },
     "ticket.used": { title: "Ingresso validado", description: "A entrada foi liberada e o ingresso foi marcado como utilizado." },
     "ticket.transferred": { title: "Ingresso transferido", description: "O ingresso foi enviado para outro cliente." },
     "ticket_email.failed": { title: "E-mail do ingresso não enviado", description: "O ingresso foi emitido, mas o e-mail não pôde ser entregue." },
@@ -893,9 +895,13 @@ async function loadConcessionDailySales() {
         ${orders.map((order) => `<article class="concession-daily-order">
           <strong>${escapeHtml(order.customerName)} · ${escapeHtml(orderStatusLabel(order.status))}</strong>
           <p>${escapeHtml(order.id)} · ${new Date(order.purchasedAt).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
-          <ul>${order.items.map((item) => `<li>${Number(item.quantity)} x ${escapeHtml(item.name)} · ${Number(item.fulfilledQuantity)} entregue(s)</li>`).join("")}</ul>
-          <p>Bruto ${money(order.finance.grossRevenue)} · Clube ${money(order.finance.clubDiscount + order.finance.freeItemDiscount)} · Cupom ${money(order.finance.couponDiscount)} · ${order.status === "paid" ? "Líquido aprovado" : "Valor original da bomboniere"} ${money(order.finance.netRevenue)}</p>
-          <button class="ghost-button" data-concession-archive="${escapeHtml(order.id)}" data-archived="${order.archived}" type="button">${order.archived ? "Desarquivar bomboniere" : "Arquivar bomboniere"}</button>
+          <ul>${order.items.map((item) => `<li>${Number(item.quantity)} x ${escapeHtml(item.name)} · ${Number(item.fulfilledQuantity)} entregue(s)${item.refundStatus === "completed" ? " · reembolsado" : ""}</li>`).join("")}</ul>
+          <p>Bruto ${money(order.finance.grossRevenue)} · Clube ${money(order.finance.clubDiscount + order.finance.freeItemDiscount)} · Cupom ${money(order.finance.couponDiscount)}${Number(order.finance.refundTotal || 0) ? ` · Reembolsado ${money(order.finance.refundTotal)}` : ""} · Líquido reconhecido ${money(order.finance.netRevenue)}</p>
+          <div class="concession-order-actions">
+            ${order.refundEligibility?.allowed ? `<button class="danger-button" data-concession-refund="${escapeHtml(order.id)}" data-refund-amount="${Number(order.refundEligibility.amount || 0)}" type="button">${Number(order.refundEligibility.amount || 0) > 0 ? `Reembolsar ${money(order.refundEligibility.amount)}` : "Cancelar bomboniere"}</button>` : ""}
+            <button class="ghost-button" data-concession-archive="${escapeHtml(order.id)}" data-archived="${order.archived}" type="button">${order.archived ? "Desarquivar bomboniere" : "Arquivar bomboniere"}</button>
+          </div>
+          <small>${escapeHtml(order.refundEligibility?.reason || "")}</small>
         </article>`).join("")}</section>`;
     }).join("") || "<p>Nenhuma compra para os filtros de hoje.</p>";
     target.querySelectorAll("[data-concession-archive]").forEach((button) => button.addEventListener("click", async () => {
@@ -905,6 +911,22 @@ async function loadConcessionDailySales() {
           method: "POST", body: JSON.stringify({ archived: button.dataset.archived !== "true" })
         });
         await loadConcessionDailySales();
+      } catch (error) { showToast(error.message, "error"); }
+      finally { button.disabled = false; }
+    }));
+    target.querySelectorAll("[data-concession-refund]").forEach((button) => button.addEventListener("click", async () => {
+      const amount = Number(button.dataset.refundAmount || 0);
+      const message = amount > 0
+        ? `Reembolsar ${money(amount)} da bomboniere pela forma de pagamento original? Os ingressos permanecerao ativos.`
+        : "Cancelar os itens da bomboniere e liberar estoque e beneficios?";
+      if (!confirm(message)) return;
+      button.disabled = true;
+      try {
+        const result = await api(`/api/admin/concession-sales/${encodeURIComponent(button.dataset.concessionRefund)}/refund`, {
+          method: "POST", body: JSON.stringify({ reason: "Cancelamento da bomboniere pelo painel" })
+        });
+        showToast(Number(result.refund?.amount || 0) > 0 ? "Bomboniere reembolsada. Os ingressos continuam ativos." : "Bomboniere cancelada.");
+        await Promise.all([loadConcessionDailySales(), loadDashboard()]);
       } catch (error) { showToast(error.message, "error"); }
       finally { button.disabled = false; }
     }));
@@ -1161,7 +1183,7 @@ function renderDashboard() {
   if ($("dashTopProducts")) {
     const products = data.topProducts || [];
     $("dashTopProducts").innerHTML = products.length
-      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal || (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("")
+      ? products.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0)))}` : ""}${Number(item.refundTotal || 0) > 0 ? ` • reembolsos ${money(item.refundTotal)}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("")
       : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" onclick="activatePanel('concessionsPanel', { scroll: true })">Ver Bomboniere</button></div>`;
   }
   if ($("dashLatestOrders")) {
@@ -5540,7 +5562,8 @@ function renderConcessionInsights() {
     <div class="mini-insight"><span>Receita líquida</span><strong>${money(summary.netRevenue)}</strong><small>Valor aprovado atribuído à bomboniere</small></div>
     <div class="mini-insight"><span>Venda bruta</span><strong>${money(summary.grossRevenue)}</strong><small>Antes de benefícios e cupons</small></div>
     <div class="mini-insight"><span>Descontos concedidos</span><strong>${money(summary.discountTotal)}</strong><small>${Number(summary.discountedOrders || 0)} pedido(s) com desconto</small></div>
-    <div class="mini-insight"><span>Volume pago</span><strong>${Number(summary.itemQuantity || 0)} item(ns)</strong><small>Distribuídos em ${Number(summary.orders || 0)} pedido(s)</small></div>
+    <div class="mini-insight"><span>Reembolsos</span><strong>${money(summary.refundTotal)}</strong><small>${Number(summary.refundedQuantity || 0)} item(ns) devolvido(s)</small></div>
+    <div class="mini-insight"><span>Volume registrado</span><strong>${Number(summary.itemQuantity || 0)} item(ns)</strong><small>Distribuídos em ${Number(summary.orders || 0)} pedido(s)</small></div>
   `;
 
   const adjustment = Number(summary.reconciliationAdjustment || 0);
@@ -5549,6 +5572,7 @@ function renderConcessionInsights() {
       <span><small>Venda bruta</small><strong>${money(summary.grossRevenue)}</strong></span>
       <b aria-hidden="true">−</b>
       <span><small>Descontos identificados</small><strong>${money(summary.identifiedDiscountTotal ?? summary.discountTotal)}</strong></span>
+      ${Number(summary.refundTotal || 0) > 0 ? `<b aria-hidden="true">−</b><span><small>Reembolsos confirmados</small><strong>${money(summary.refundTotal)}</strong></span>` : ""}
       ${Math.abs(adjustment) > 0.009 ? `<b aria-hidden="true">${adjustment >= 0 ? "+" : "−"}</b><span><small>Ajuste de conciliação</small><strong>${money(Math.abs(adjustment))}</strong></span>` : ""}
       <b aria-hidden="true">=</b>
       <span class="is-net"><small>Receita líquida</small><strong>${money(summary.netRevenue)}</strong></span>
@@ -5572,7 +5596,8 @@ function renderConcessionInsights() {
           Number(item.freeQuantity || 0) ? `${Number(item.freeQuantity)} item(ns) grátis pelo Clube` : "",
           Number(item.couponDiscountedQuantity || 0)
             ? `${Number(item.couponDiscountedQuantity)} item(ns) com ${Array.isArray(item.couponCodes) && item.couponCodes.length ? `cupom ${item.couponCodes.join(", ")}` : "cupom"}`
-            : ""
+            : "",
+          Number(item.refundedQuantity || 0) ? `${Number(item.refundedQuantity)} item(ns) reembolsado(s)` : ""
         ].filter(Boolean);
         return `
           <article class="concession-breakdown-row">
@@ -5586,6 +5611,7 @@ function renderConcessionInsights() {
               ${Number(item.clubDiscount || 0) > 0 ? `<div class="is-discount"><dt>Clube</dt><dd>− ${money(item.clubDiscount)}</dd></div>` : ""}
               ${Number(item.freeItemDiscount || 0) > 0 ? `<div class="is-discount"><dt>Itens grátis</dt><dd>− ${money(item.freeItemDiscount)}</dd></div>` : ""}
               ${Number(item.couponDiscount || 0) > 0 ? `<div class="is-discount"><dt>Cupom</dt><dd>− ${money(item.couponDiscount)}</dd></div>` : ""}
+              ${Number(item.refundTotal || 0) > 0 ? `<div class="is-refund"><dt>Reembolso</dt><dd>− ${money(item.refundTotal)}</dd></div>` : ""}
               ${Math.abs(Number(item.reconciliationAdjustment || 0)) > 0.009 ? `<div><dt>Ajuste</dt><dd>${Number(item.reconciliationAdjustment) >= 0 ? "+" : "−"} ${money(Math.abs(Number(item.reconciliationAdjustment)))}</dd></div>` : ""}
               <div class="is-net"><dt>Líquido</dt><dd>${money(net)}</dd></div>
             </dl>

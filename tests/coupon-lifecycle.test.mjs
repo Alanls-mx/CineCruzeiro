@@ -102,3 +102,14 @@ test("histórico aceita pedidos antigos vinculados somente pelo código e pagina
   assert.equal(secondPage.total, 3);
   assert.deepEqual(secondPage.usages.map((usage) => usage.orderId), ["order-1"]);
 });
+
+test("reembolso da bomboniere libera cupom exclusivo e preserva somente o desconto dos ingressos", () => {
+  const concessionCoupon = { id: "goods", couponCode: "PIPOCA", appliesTo: "concessions" };
+  const mixedCoupon = { id: "mixed", couponCode: "MISTO", appliesTo: "all" };
+  const db = { orders: [
+    { id: "goods-order", status: "paid", couponId: "goods", couponDiscount: 5, concessionRefund: { status: "completed", couponDiscount: 5 }, concessionItems: [{ quantity: 1 }] },
+    { id: "mixed-order", status: "paid", couponId: "mixed", couponDiscount: 8, concessionRefund: { status: "completed", couponDiscount: 3 }, ticketItems: [{ quantity: 1 }], concessionItems: [{ quantity: 1 }] }
+  ] };
+  assert.equal(couponUsageSummary(db, concessionCoupon).usageCount, 0);
+  assert.deepEqual(couponUsageSummary(db, mixedCoupon), { usageCount: 1, discountGranted: 5 });
+});

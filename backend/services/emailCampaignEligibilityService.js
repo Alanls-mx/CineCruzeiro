@@ -1,4 +1,5 @@
 const { validateCampaignTemporalClaims } = require("./emailCampaignTemporalValidator");
+const { orderUsesCoupon } = require("./couponLifecycleService");
 
 function campaignError(code, message, details = {}) {
   const error = new Error(message);
@@ -24,11 +25,7 @@ function movieCampaignDate(movie) {
 }
 
 function couponUsageCount(db, coupon) {
-  const code = String(coupon?.couponCode || "").toUpperCase();
-  return (db.orders || []).filter((order) => order.status === "paid" && (
-    String(order.couponId || "") === String(coupon?.id || "") ||
-    (code && String(order.couponCode || "").toUpperCase() === code)
-  )).length;
+  return (db.orders || []).filter((order) => orderUsesCoupon(order, coupon)).length;
 }
 
 function availableConcessionStock(item) {
