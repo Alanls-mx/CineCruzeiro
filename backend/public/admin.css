@@ -4154,8 +4154,8 @@ input[type="file"]::file-selector-button {
 
 .concession-breakdown-row {
   display: grid;
-  grid-template-columns: minmax(210px, 1.25fr) minmax(420px, 2fr);
-  gap: 24px;
+  grid-template-columns: minmax(260px, 1.15fr) minmax(620px, 2fr);
+  gap: 32px;
   align-items: center;
   padding: 14px 0;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
@@ -4181,8 +4181,8 @@ input[type="file"]::file-selector-button {
 
 .concession-breakdown-row dl {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(7, minmax(76px, 1fr));
+  gap: 10px;
   margin: 0;
 }
 
@@ -4201,6 +4201,15 @@ input[type="file"]::file-selector-button {
   color: #fcd34d;
 }
 
+.concession-breakdown-row .is-refund dd {
+  color: #fda4af;
+}
+
+.concession-breakdown-row .is-empty dd {
+  color: #64748b;
+  font-weight: 750;
+}
+
 @media (max-width: 1120px) {
   .concession-finance-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4210,11 +4219,19 @@ input[type="file"]::file-selector-button {
     grid-template-columns: 1fr;
     gap: 12px;
   }
+
+  .concession-breakdown-row dl {
+    grid-template-columns: repeat(4, minmax(92px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .concession-finance-kpis {
     grid-template-columns: 1fr;
+  }
+
+  .concession-breakdown-row dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .concession-formula {
@@ -5256,6 +5273,15 @@ input[type="file"]::file-selector-button {
 
 .account-search {
   margin-bottom: 14px;
+}
+
+.customer-pagination-bar {
+  margin: 6px 0 0;
+}
+
+.customer-pagination-bar .pager-controls {
+  width: 100%;
+  justify-content: space-between;
 }
 
 .account-type-notice {

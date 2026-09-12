@@ -43,6 +43,8 @@ let state = {
   selectedWebhookRunId: "",
   selectedCustomerAccountId: "",
   customerAccountsSearch: "",
+  customerAccountsPage: 1,
+  customerAccountsPageSize: 10,
   movieWizardStep: 0,
   movieDraftMetadata: {},
   movieDraftSessions: [],
@@ -6898,13 +6900,13 @@ function renderConcessionInsights() {
               <span>${Number(item.quantity || 0)} unidade(s) em ${Number(item.orders || 0)} pedido(s) • ${unitPrice}</span>
               ${benefitNotes.length ? `<small>${benefitNotes.map(escapeHtml).join(" • ")}</small>` : `<small>Vendido sem desconto neste período</small>`}
             </div>
-            <dl>
+            <dl aria-label="Composição financeira de ${escapeHtml(item.name || "Produto")}">
               <div><dt>Bruto</dt><dd>${money(gross)}</dd></div>
-              ${Number(item.clubDiscount || 0) > 0 ? `<div class="is-discount"><dt>Clube</dt><dd>− ${money(item.clubDiscount)}</dd></div>` : ""}
-              ${Number(item.freeItemDiscount || 0) > 0 ? `<div class="is-discount"><dt>Itens grátis</dt><dd>− ${money(item.freeItemDiscount)}</dd></div>` : ""}
-              ${Number(item.couponDiscount || 0) > 0 ? `<div class="is-discount"><dt>Cupom</dt><dd>− ${money(item.couponDiscount)}</dd></div>` : ""}
-              ${Number(item.refundTotal || 0) > 0 ? `<div class="is-refund"><dt>Reembolso</dt><dd>− ${money(item.refundTotal)}</dd></div>` : ""}
-              ${Math.abs(Number(item.reconciliationAdjustment || 0)) > 0.009 ? `<div><dt>Ajuste</dt><dd>${Number(item.reconciliationAdjustment) >= 0 ? "+" : "−"} ${money(Math.abs(Number(item.reconciliationAdjustment)))}</dd></div>` : ""}
+              <div class="${Number(item.clubDiscount || 0) > 0 ? "is-discount" : "is-empty"}"><dt>Clube</dt><dd>${Number(item.clubDiscount || 0) > 0 ? `− ${money(item.clubDiscount)}` : money(0)}</dd></div>
+              <div class="${Number(item.freeItemDiscount || 0) > 0 ? "is-discount" : "is-empty"}"><dt>Itens grátis</dt><dd>${Number(item.freeItemDiscount || 0) > 0 ? `− ${money(item.freeItemDiscount)}` : money(0)}</dd></div>
+              <div class="${Number(item.couponDiscount || 0) > 0 ? "is-discount" : "is-empty"}"><dt>Cupom</dt><dd>${Number(item.couponDiscount || 0) > 0 ? `− ${money(item.couponDiscount)}` : money(0)}</dd></div>
+              <div class="${Number(item.refundTotal || 0) > 0 ? "is-refund" : "is-empty"}"><dt>Reembolso</dt><dd>${Number(item.refundTotal || 0) > 0 ? `− ${money(item.refundTotal)}` : money(0)}</dd></div>
+              <div class="${Math.abs(Number(item.reconciliationAdjustment || 0)) > 0.009 ? "" : "is-empty"}"><dt>Ajuste</dt><dd>${Math.abs(Number(item.reconciliationAdjustment || 0)) > 0.009 ? `${Number(item.reconciliationAdjustment) >= 0 ? "+" : "−"} ${money(Math.abs(Number(item.reconciliationAdjustment)))}` : money(0)}</dd></div>
               <div class="is-net"><dt>Líquido</dt><dd>${money(net)}</dd></div>
             </dl>
           </article>`;
@@ -9336,8 +9338,23 @@ function renderCustomerUsers() {
     fillCustomerUserForm(null);
     return;
   }
+  const pageSize = state.customerAccountsPageSize || 10;
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  state.customerAccountsPage = Math.min(Math.max(1, state.customerAccountsPage || 1), totalPages);
+  const start = (state.customerAccountsPage - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
+  const pagerMarkup = items.length > pageSize ? `
+    <div class="table-pagination-bar customer-pagination-bar">
+      <span>Exibindo <strong>${start + 1}-${Math.min(start + pageItems.length, items.length)}</strong> de <strong>${items.length}</strong> cliente(s)</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state.customerAccountsPage <= 1 ? "disabled" : ""} onclick="changeCustomerAccountsPage(-1)">Anterior</button>
+        <span class="pager-page-indicator">Página ${state.customerAccountsPage} de ${totalPages}</span>
+        <button class="ghost-button" type="button" ${state.customerAccountsPage >= totalPages ? "disabled" : ""} onclick="changeCustomerAccountsPage(1)">Próxima</button>
+      </div>
+    </div>
+  ` : "";
   $("customerUsersList").innerHTML = items.length
-    ? items.map((item) => `
+    ? `${pageItems.map((item) => `
         <button class="list-item ${item.id === state.selectedCustomerAccountId ? "active" : ""}" type="button" onclick="selectCustomerAccount('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.name)}</span>
@@ -9345,9 +9362,15 @@ function renderCustomerUsers() {
           </span>
           <span class="badge">${item.active ? "ativo" : "off"}</span>
         </button>
-      `).join("")
+      `).join("")}${pagerMarkup}`
     : `<div class="empty-state"><strong>${state.customerAccountsSearch ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"}</strong><span>${state.customerAccountsSearch ? "Revise o nome, e-mail, telefone ou CPF pesquisado." : "As contas criadas no site também aparecerão aqui."}</span></div>`;
   fillCustomerUserForm(currentCustomerAccount());
+}
+
+function changeCustomerAccountsPage(delta) {
+  state.customerAccountsPage = Math.max(1, (state.customerAccountsPage || 1) + delta);
+  renderCustomerUsers();
+  $("customerUsersList")?.closest(".surface")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function selectCustomerAccount(id) {
@@ -9399,6 +9422,8 @@ async function saveCustomerUser(event) {
     state.selectedCustomerAccountId = saved.id;
     $("customerUserPassword").value = "";
     upsertAdminCollection("users", saved);
+    const savedIndex = filteredCustomerAccounts().findIndex((item) => item.id === saved.id);
+    if (savedIndex >= 0) state.customerAccountsPage = Math.floor(savedIndex / (state.customerAccountsPageSize || 10)) + 1;
     renderCustomerUsers();
     renderUsers();
     showSuccess("Cliente salvo", `${saved.name} continua com acesso somente ao site e à própria conta.`);
@@ -11255,6 +11280,7 @@ function bindEvents() {
   $("deleteCustomerUserButton")?.addEventListener("click", deleteCustomerUser);
   $("customerAccountsSearch")?.addEventListener("input", (event) => {
     state.customerAccountsSearch = event.target.value;
+    state.customerAccountsPage = 1;
     renderCustomerUsers();
   });
 
