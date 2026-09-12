@@ -5415,12 +5415,20 @@ function renderManualSeatMap(errorMessage = "") {
     `<span>${obeseSeatIcon}Pessoa obesa</span>`
   ].join("");
   const seatRows = seatMap?.rows || [];
-  const columnGuideRow = seatRows.reduce((widest, row) => (
-    (row.seats || []).length > (widest?.seats || []).length ? row : widest
-  ), null);
-  const columnAisles = (columnGuideRow?.seats || []).map((_, columnIndex) => (
-    seatRows.some((row) => row.seats?.[columnIndex]?.aisleAfter)
-  ));
+  const columnGuides = new Map();
+  seatRows.forEach((row) => {
+    const rowLabel = String(row.label || "").trim();
+    const labels = (row.seats || []).map((seat) => {
+      const seatLabel = String(seat.label || "").trim();
+      return rowLabel && seatLabel.toLocaleUpperCase("pt-BR").startsWith(rowLabel.toLocaleUpperCase("pt-BR"))
+        ? seatLabel.slice(rowLabel.length).trim() || seatLabel
+        : seatLabel;
+    });
+    const aisles = (row.seats || []).map((seat) => Boolean(seat.aisleAfter));
+    const signature = JSON.stringify({ labels, aisles });
+    if (columnGuides.has(signature)) columnGuides.get(signature).rowLabels.push(rowLabel);
+    else columnGuides.set(signature, { rowLabels: [rowLabel], labels, aisles });
+  });
   const seatRowsMarkup = seatRows.map((row) => `
     <div class="manual-seat-row">
       <span class="manual-seat-row-label">${escapeHtml(row.label)}</span>
@@ -5447,22 +5455,19 @@ function renderManualSeatMap(errorMessage = "") {
       <span class="manual-seat-row-spacer" aria-hidden="true"></span>
     </div>
   `).join("");
-  const columnGuideMarkup = columnGuideRow ? `
-    <div class="manual-seat-column-footer" aria-label="Números das colunas">
-      <span class="manual-seat-row-spacer" aria-hidden="true"></span>
-      <div class="manual-seat-column-labels">
-        ${(columnGuideRow.seats || []).map((seat, columnIndex) => {
-          const rowLabel = String(columnGuideRow.label || "").trim();
-          const seatLabel = String(seat.label || "").trim();
-          const columnLabel = rowLabel && seatLabel.toLocaleUpperCase("pt-BR").startsWith(rowLabel.toLocaleUpperCase("pt-BR"))
-            ? seatLabel.slice(rowLabel.length).trim()
-            : seatLabel;
-          return `<span style="${columnAisles[columnIndex] ? "margin-right:24px" : ""}">${escapeHtml(columnLabel || seatLabel)}</span>`;
-        }).join("")}
-      </div>
-      <span class="manual-seat-row-spacer" aria-hidden="true"></span>
-    </div>
-  ` : "";
+  const columnGuideMarkup = [...columnGuides.values()].map((guide) => {
+    const codes = guide.rowLabels.map((label) => /^[A-Z]$/i.test(label) ? label.toLocaleUpperCase("pt-BR").charCodeAt(0) : -1);
+    const consecutive = codes.length > 2 && codes.every((code, index) => index === 0 || code === codes[index - 1] + 1);
+    const groupedRowLabel = consecutive ? `${guide.rowLabels[0]}–${guide.rowLabels.at(-1)}` : guide.rowLabels.join(", ");
+    return `
+      <div class="manual-seat-column-footer" aria-label="Numeração das fileiras ${escapeHtml(groupedRowLabel)}">
+        <span class="manual-seat-row-label">${columnGuides.size > 1 ? escapeHtml(groupedRowLabel) : ""}</span>
+        <div class="manual-seat-column-labels">
+          ${guide.labels.map((label, columnIndex) => `<span style="${guide.aisles[columnIndex] ? "margin-right:24px" : ""}">${escapeHtml(label)}</span>`).join("")}
+        </div>
+        <span class="manual-seat-row-spacer" aria-hidden="true"></span>
+      </div>`;
+  }).join("");
   $("manualSeatMap").innerHTML = seatRowsMarkup + columnGuideMarkup;
   $("manualSeatMap").querySelectorAll("[data-manual-seat-id]").forEach((button) => {
     button.addEventListener("click", () => void toggleManualSeat(button.dataset.manualSeatId));
