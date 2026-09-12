@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_COMMIT="58f47e8a639c410389994dade1ff769860d7f9e6"
-COMMIT_SHORT="58f47e8"
+TARGET_COMMIT="${1:-af43d7f57f94bc0a967237fb53cd70e2152fb99c}"
+COMMIT_SHORT="${TARGET_COMMIT:0:7}"
 RELEASE_TAG="$(date -u +%Y%m%d-%H%M)-$COMMIT_SHORT"
 BASE_DIR="/home/ubuntu/projects/cinecruzeiro"
 RELEASE_DIR="$BASE_DIR/releases/$RELEASE_TAG"
