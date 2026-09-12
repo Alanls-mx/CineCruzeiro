@@ -882,7 +882,6 @@ function logFilterDate(value, endOfMinute = false) {
   return date.toISOString();
 }
 
-let performanceLoading = false;
 let concessionSalesLoading = false;
 async function loadConcessionDailySales() {
   if (concessionSalesLoading || document.hidden) return;
@@ -1209,34 +1208,492 @@ async function toggleConcessionArchive(orderId, currentArchived) {
   }
 }
 
+let performanceLoading = false;
+let performanceStreamTimer = null;
+let performanceIntervalMs = 3000;
+let performanceHistoryCache = [];
+let performancePeakCpu = 0;
+
+function formatPerfUptime(seconds) {
+  if (!seconds || seconds <= 0) return "--";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m ${seconds % 60}s`;
+}
+
+function formatPerfBytes(bytes) {
+  if (bytes == null || isNaN(bytes)) return "Indisponível";
+  const gb = bytes / (1024 ** 3);
+  if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  const mb = bytes / (1024 ** 2);
+  return `${mb.toFixed(0)} MB`;
+}
+
+function buildSmoothSvgPath(points) {
+  if (!points || !points.length) return "";
+  if (points.length === 1) return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+function renderCircularGauge(percent, toneClass = "cyan") {
+  const radius = 24;
+  const circumference = 150.8;
+  const clamped = Math.max(0, Math.min(100, Number(percent) || 0));
+  const offset = (circumference * (1 - clamped / 100)).toFixed(1);
+  return `
+    <div class="perf-circular-gauge">
+      <svg viewBox="0 0 60 60">
+        <circle class="perf-gauge-bg" cx="30" cy="30" r="${radius}" stroke-width="5.5" />
+        <circle class="perf-gauge-fill ${toneClass}" cx="30" cy="30" r="${radius}" stroke-width="5.5" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" />
+      </svg>
+      <span class="perf-gauge-text">${Math.round(clamped)}%</span>
+    </div>
+  `;
+}
+
+function renderPerformanceKpis(metrics, history) {
+  const grid = $("perfKpiGrid");
+  if (!grid) return;
+
+  const cpu = metrics.cpuPercent != null ? Number(metrics.cpuPercent) : 0;
+  performancePeakCpu = Math.max(performancePeakCpu, cpu);
+  const cpuTone = cpu >= 85 ? "danger" : cpu >= 60 ? "amber" : "cyan";
+  const cpuBadge = cpu >= 85 ? "Sobrecarga" : cpu >= 60 ? "Moderado" : "Normal";
+
+  const totalMem = Number(metrics.memoryTotal) || 1;
+  const usedMem = Number(metrics.memoryUsed) || 0;
+  const memPercent = Math.round((usedMem / totalMem) * 100);
+  const memTone = memPercent >= 90 ? "danger" : memPercent >= 75 ? "amber" : "purple";
+
+  const reqLatency = metrics.requestP95Ms;
+  const latencyVal = reqLatency != null ? `${reqLatency} ms` : "Sem tráfego";
+  const latencyTone = reqLatency == null ? "emerald" : reqLatency < 200 ? "emerald" : reqLatency < 800 ? "amber" : "danger";
+  const latencyBadge = reqLatency == null ? "Ocioso" : reqLatency < 200 ? "Excelente" : reqLatency < 800 ? "Moderado" : "Atenção";
+
+  const diskTotal = Number(metrics.diskTotal) || 0;
+  const diskAvail = Number(metrics.diskAvailable) || 0;
+  const diskUsedPercent = diskTotal > 0 ? Math.round(((diskTotal - diskAvail) / diskTotal) * 100) : 0;
+  const diskTone = diskUsedPercent >= 90 ? "danger" : diskUsedPercent >= 75 ? "amber" : "emerald";
+
+  const errors = Number(metrics.errors5xx) || 0;
+  const reqCount = Number(metrics.requestCount) || 0;
+  const healthBadge = errors === 0 ? "100% Estável" : `${errors} Falhas`;
+  const healthTone = errors === 0 ? "emerald" : "danger";
+
+  grid.innerHTML = `
+    <!-- Card 1: CPU -->
+    <div class="perf-kpi-card tone-${cpuTone}">
+      <div class="perf-kpi-head">
+        <span class="perf-kpi-title">Uso de CPU</span>
+        <span class="perf-kpi-badge ${cpuTone === 'danger' ? 'danger' : cpuTone === 'amber' ? 'warn' : 'ok'}">${cpuBadge}</span>
+      </div>
+      <div class="perf-kpi-body">
+        <div class="perf-kpi-value-group">
+          <span class="perf-kpi-big-num tone-${cpuTone}">${cpu}%</span>
+          <span class="perf-kpi-subnum">${metrics.vcores || 2} vCPU do Host</span>
+        </div>
+        ${renderCircularGauge(cpu, cpuTone)}
+      </div>
+      <div class="perf-kpi-footer">
+        <span>Pico na sessão: <strong>${performancePeakCpu}%</strong></span>
+        <span>Amostras: 15s</span>
+      </div>
+    </div>
+
+    <!-- Card 2: Memória RAM -->
+    <div class="perf-kpi-card tone-${memTone}">
+      <div class="perf-kpi-head">
+        <span class="perf-kpi-title">Memória RAM</span>
+        <span class="perf-kpi-badge ${memTone === 'danger' ? 'danger' : memTone === 'amber' ? 'warn' : 'ok'}">${memPercent}% em uso</span>
+      </div>
+      <div class="perf-kpi-body">
+        <div class="perf-kpi-value-group">
+          <span class="perf-kpi-big-num tone-${memTone}">${formatPerfBytes(usedMem)}</span>
+          <span class="perf-kpi-subnum">de ${formatPerfBytes(totalMem)} (Host + Cache)</span>
+        </div>
+        ${renderCircularGauge(memPercent, memTone)}
+      </div>
+      <div class="perf-kpi-footer">
+        <span>Backend (Node.js): <strong>${formatPerfBytes(metrics.processRss)}</strong></span>
+        <span>Livre: <strong>${formatPerfBytes(totalMem - usedMem)}</strong></span>
+      </div>
+    </div>
+
+    <!-- Card 3: Latência HTTP -->
+    <div class="perf-kpi-card tone-${latencyTone}">
+      <div class="perf-kpi-head">
+        <span class="perf-kpi-title">Latência HTTP (p95)</span>
+        <span class="perf-kpi-badge ${latencyTone === 'danger' ? 'danger' : latencyTone === 'amber' ? 'warn' : 'ok'}">${latencyBadge}</span>
+      </div>
+      <div class="perf-kpi-body">
+        <div class="perf-kpi-value-group">
+          <span class="perf-kpi-big-num tone-${latencyTone}">${latencyVal}</span>
+          <span class="perf-kpi-subnum">Tempo de resposta 95%</span>
+        </div>
+        <div class="perf-circular-gauge">
+          <svg viewBox="0 0 60 60">
+            <circle class="perf-gauge-bg" cx="30" cy="30" r="24" stroke-width="5.5" />
+            <circle class="perf-gauge-fill ${latencyTone}" cx="30" cy="30" r="24" stroke-width="5.5" stroke-dasharray="150.8" stroke-dashoffset="${(150.8 * (1 - Math.min(100, (reqLatency || 20) / 10))).toFixed(1)}" />
+          </svg>
+          <span class="perf-gauge-text" style="font-size: 9px;">p95</span>
+        </div>
+      </div>
+      <div class="perf-kpi-footer">
+        <span>Atraso Event Loop: <strong>${metrics.eventLoopP95Ms || 0} ms</strong></span>
+        <span>Janela: 5 min</span>
+      </div>
+    </div>
+
+    <!-- Card 4: Disco e Tráfego -->
+    <div class="perf-kpi-card tone-${diskTone}">
+      <div class="perf-kpi-head">
+        <span class="perf-kpi-title">Disco &amp; Confiabilidade</span>
+        <span class="perf-kpi-badge ${healthTone === 'danger' ? 'danger' : 'ok'}">${healthBadge}</span>
+      </div>
+      <div class="perf-kpi-body">
+        <div class="perf-kpi-value-group">
+          <span class="perf-kpi-big-num tone-${diskTone}">${formatPerfBytes(diskAvail)}</span>
+          <span class="perf-kpi-subnum">livres de ${formatPerfBytes(diskTotal)}</span>
+        </div>
+        ${renderCircularGauge(diskUsedPercent, diskTone)}
+      </div>
+      <div class="perf-kpi-footer">
+        <span>Tráfego: <strong>${reqCount} reqs</strong></span>
+        <span>Erros 5xx: <strong>${errors}</strong></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderPerformanceCharts(history, current) {
+  let samples = Array.isArray(history) && history.length ? [...history] : [current];
+  if (samples.length > 40) samples = samples.slice(-40);
+
+  // Gráfico 1: CPU & RAM (%)
+  const cpuContainer = $("perfCpuChartContainer");
+  if (cpuContainer) {
+    const width = 740;
+    const height = 205;
+    const padL = 42;
+    const padR = 20;
+    const padT = 16;
+    const padB = 30;
+    const innerW = width - padL - padR;
+    const innerH = height - padT - padB;
+
+    const x = (i) => padL + (samples.length === 1 ? innerW / 2 : (i / (samples.length - 1)) * innerW);
+    const yPct = (pct) => padT + (1 - Math.max(0, Math.min(100, pct || 0)) / 100) * innerH;
+
+    const cpuPoints = samples.map((s, i) => ({ x: x(i), y: yPct(s.cpuPercent || 0), s }));
+    const ramPoints = samples.map((s, i) => ({ x: x(i), y: yPct((s.memoryUsed / s.memoryTotal) * 100), s }));
+    const appPoints = samples.map((s, i) => ({ x: x(i), y: yPct((s.processRss / s.memoryTotal) * 100), s }));
+
+    const cpuLine = buildSmoothSvgPath(cpuPoints);
+    const ramLine = buildSmoothSvgPath(ramPoints);
+    const appLine = buildSmoothSvgPath(appPoints);
+
+    const firstX = cpuPoints[0].x.toFixed(1);
+    const lastX = cpuPoints[cpuPoints.length - 1].x.toFixed(1);
+    const bottomY = (height - padB).toFixed(1);
+
+    const cpuArea = `${cpuLine} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`;
+    const ramArea = `${ramLine} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`;
+
+    const lastCpu = cpuPoints[cpuPoints.length - 1];
+    const lastRam = ramPoints[ramPoints.length - 1];
+
+    const gridLines = [0, 25, 50, 75, 100].map((pct) => {
+      const lineY = yPct(pct).toFixed(1);
+      return `
+        <line class="perf-grid-line" x1="${padL}" y1="${lineY}" x2="${width - padR}" y2="${lineY}" />
+        <text class="perf-axis-text" x="${padL - 8}" y="${Number(lineY) + 3}" text-anchor="end">${pct}%</text>
+      `;
+    }).join("");
+
+    const showStep = Math.max(1, Math.floor(samples.length / 5));
+    const timeLabels = samples.map((s, i) => {
+      if (i % showStep === 0 || i === samples.length - 1) {
+        const d = new Date(s.sampledAt);
+        const tStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        return `<text class="perf-axis-text" x="${x(i).toFixed(1)}" y="${height - 10}" text-anchor="middle">${tStr}</text>`;
+      }
+      return "";
+    }).join("");
+
+    cpuContainer.innerHTML = `
+      <svg class="perf-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="cpuAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.32" />
+            <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.0" />
+          </linearGradient>
+          <linearGradient id="ramAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#a855f7" stop-opacity="0.25" />
+            <stop offset="100%" stop-color="#a855f7" stop-opacity="0.0" />
+          </linearGradient>
+        </defs>
+        ${gridLines}
+        <path d="${ramArea}" fill="url(#ramAreaGrad)" />
+        <path d="${cpuArea}" fill="url(#cpuAreaGrad)" />
+        <path d="${ramLine}" fill="none" stroke="#a855f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="${appLine}" fill="none" stroke="#38bdf8" stroke-width="1.6" stroke-dasharray="3 3" stroke-linecap="round" />
+        <path d="${cpuLine}" fill="none" stroke="#06b6d4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+        <circle class="perf-live-dot" cx="${lastRam.x.toFixed(1)}" cy="${lastRam.y.toFixed(1)}" r="4.5" fill="#a855f7" />
+        <circle class="perf-live-dot" cx="${lastCpu.x.toFixed(1)}" cy="${lastCpu.y.toFixed(1)}" r="5" fill="#06b6d4" stroke="#fff" stroke-width="1.5" />
+        ${timeLabels}
+      </svg>
+      <div id="perfCpuTooltip" class="perf-tooltip-overlay" style="display:none;"></div>
+    `;
+
+    cpuContainer.onmousemove = (e) => {
+      const rect = cpuContainer.getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / rect.width;
+      const idx = Math.min(samples.length - 1, Math.max(0, Math.round(relX * (samples.length - 1))));
+      const s = samples[idx];
+      const tip = $("perfCpuTooltip");
+      if (tip && s) {
+        tip.style.display = "block";
+        const tStr = new Date(s.sampledAt).toLocaleTimeString("pt-BR");
+        const ramUsedGb = formatPerfBytes(s.memoryUsed);
+        tip.innerHTML = `<strong>${tStr}</strong> • CPU: <span style="color:#38bdf8">${s.cpuPercent}%</span> • RAM: <span style="color:#c084fc">${ramUsedGb} (${Math.round(s.memoryUsed/s.memoryTotal*100)}%)</span> • Backend: <span style="color:#38bdf8">${formatPerfBytes(s.processRss)}</span>`;
+      }
+    };
+    cpuContainer.onmouseleave = () => {
+      const tip = $("perfCpuTooltip");
+      if (tip) tip.style.display = "none";
+    };
+  }
+
+  // Gráfico 2: Latência HTTP & Event Loop
+  const latContainer = $("perfLatencyChartContainer");
+  if (latContainer) {
+    const width = 740;
+    const height = 205;
+    const padL = 46;
+    const padR = 20;
+    const padT = 16;
+    const padB = 30;
+    const innerW = width - padL - padR;
+    const innerH = height - padT - padB;
+
+    const maxMs = Math.max(80, ...samples.map((s) => Math.max(Number(s.requestP95Ms) || 0, Number(s.eventLoopP95Ms) || 0))) * 1.15;
+    const x = (i) => padL + (samples.length === 1 ? innerW / 2 : (i / (samples.length - 1)) * innerW);
+    const yMs = (ms) => padT + (1 - Math.max(0, Number(ms) || 0) / maxMs) * innerH;
+
+    const latPoints = samples.map((s, i) => ({ x: x(i), y: yMs(s.requestP95Ms || 0), s }));
+    const loopPoints = samples.map((s, i) => ({ x: x(i), y: yMs(s.eventLoopP95Ms || 0), s }));
+
+    const latLine = buildSmoothSvgPath(latPoints);
+    const loopLine = buildSmoothSvgPath(loopPoints);
+
+    const firstX = latPoints[0].x.toFixed(1);
+    const lastX = latPoints[latPoints.length - 1].x.toFixed(1);
+    const bottomY = (height - padB).toFixed(1);
+    const latArea = `${latLine} L ${lastX} ${bottomY} L ${firstX} ${bottomY} Z`;
+
+    const lastLat = latPoints[latPoints.length - 1];
+    const lastLoop = loopPoints[loopPoints.length - 1];
+
+    const gridLines = [0, 0.33, 0.66, 1].map((ratio) => {
+      const val = Math.round(maxMs * ratio);
+      const lineY = yMs(val).toFixed(1);
+      return `
+        <line class="perf-grid-line" x1="${padL}" y1="${lineY}" x2="${width - padR}" y2="${lineY}" />
+        <text class="perf-axis-text" x="${padL - 8}" y="${Number(lineY) + 3}" text-anchor="end">${val}ms</text>
+      `;
+    }).join("");
+
+    const showStep = Math.max(1, Math.floor(samples.length / 5));
+    const timeLabels = samples.map((s, i) => {
+      if (i % showStep === 0 || i === samples.length - 1) {
+        const d = new Date(s.sampledAt);
+        const tStr = isNaN(d.getTime()) ? "" : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        return `<text class="perf-axis-text" x="${x(i).toFixed(1)}" y="${height - 10}" text-anchor="middle">${tStr}</text>`;
+      }
+      return "";
+    }).join("");
+
+    latContainer.innerHTML = `
+      <svg class="perf-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="latencyAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.28" />
+            <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.0" />
+          </linearGradient>
+        </defs>
+        ${gridLines}
+        <path d="${latArea}" fill="url(#latencyAreaGrad)" />
+        <path d="${loopLine}" fill="none" stroke="#10b981" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="${latLine}" fill="none" stroke="#f59e0b" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" />
+        <circle class="perf-live-dot" cx="${lastLoop.x.toFixed(1)}" cy="${lastLoop.y.toFixed(1)}" r="4" fill="#10b981" />
+        <circle class="perf-live-dot" cx="${lastLat.x.toFixed(1)}" cy="${lastLat.y.toFixed(1)}" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+        ${timeLabels}
+      </svg>
+      <div id="perfLatTooltip" class="perf-tooltip-overlay" style="display:none;"></div>
+    `;
+
+    latContainer.onmousemove = (e) => {
+      const rect = latContainer.getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / rect.width;
+      const idx = Math.min(samples.length - 1, Math.max(0, Math.round(relX * (samples.length - 1))));
+      const s = samples[idx];
+      const tip = $("perfLatTooltip");
+      if (tip && s) {
+        tip.style.display = "block";
+        const tStr = new Date(s.sampledAt).toLocaleTimeString("pt-BR");
+        const latStr = s.requestP95Ms != null ? `${s.requestP95Ms} ms` : "0 ms";
+        tip.innerHTML = `<strong>${tStr}</strong> • Latência HTTP p95: <span style="color:#fbbf24">${latStr}</span> • Event Loop: <span style="color:#34d399">${s.eventLoopP95Ms} ms</span>`;
+      }
+    };
+    latContainer.onmouseleave = () => {
+      const tip = $("perfLatTooltip");
+      if (tip) tip.style.display = "none";
+    };
+  }
+}
+
+function renderPerformanceAlerts(alerts = []) {
+  const alertsEl = $("performanceAlerts");
+  if (!alertsEl) return;
+  if (!alerts.length) {
+    alertsEl.className = "perf-alerts-bar";
+    alertsEl.innerHTML = `
+      <div class="perf-alert-healthy">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+        <span>Todos os sistemas operando normalmente. Sem gargalos de CPU, memória, latência ou armazenamento.</span>
+      </div>
+    `;
+    return;
+  }
+  alertsEl.className = "perf-alerts-bar has-alerts";
+  alertsEl.innerHTML = alerts.map((alert) => `
+    <div class="perf-alert-entry">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      <span><strong>Atenção:</strong> ${escapeHtml(alert.message)}</span>
+    </div>
+  `).join("");
+}
+
+function setPerformanceInterval(ms) {
+  performanceIntervalMs = ms;
+  document.querySelectorAll("[data-perf-interval]").forEach((btn) => {
+    btn.classList.toggle("active", Number(btn.dataset.perfInterval) === ms);
+  });
+  const liveBadge = $("perfLiveBadge");
+  if (liveBadge) {
+    if (ms > 0) {
+      liveBadge.className = "perf-live-pill live";
+      const lbl = liveBadge.querySelector(".live-label");
+      if (lbl) lbl.textContent = "AO VIVO";
+      liveBadge.title = `Transmissão ativa a cada ${ms / 1000}s`;
+    } else {
+      liveBadge.className = "perf-live-pill paused";
+      const lbl = liveBadge.querySelector(".live-label");
+      if (lbl) lbl.textContent = "PAUSADO";
+      liveBadge.title = "Telemetria em tempo real pausada";
+    }
+  }
+  startPerformanceStream();
+  if (ms > 0) void loadPerformance();
+}
+
+function startPerformanceStream() {
+  if (performanceStreamTimer) {
+    clearInterval(performanceStreamTimer);
+    performanceStreamTimer = null;
+  }
+  if (performanceIntervalMs > 0) {
+    performanceStreamTimer = setInterval(() => {
+      if ($("logsPanel")?.classList.contains("active") && !document.hidden) {
+        void loadPerformance();
+      }
+    }, performanceIntervalMs);
+  }
+}
+
+function stopPerformanceStream() {
+  if (performanceStreamTimer) {
+    clearInterval(performanceStreamTimer);
+    performanceStreamTimer = null;
+  }
+}
+
+function setupPerformanceControls() {
+  document.querySelectorAll("[data-perf-interval]").forEach((btn) => {
+    btn.onclick = () => {
+      const ms = Number(btn.dataset.perfInterval) || 0;
+      setPerformanceInterval(ms);
+    };
+  });
+  const refreshBtn = $("perfManualRefreshBtn");
+  if (refreshBtn) {
+    refreshBtn.onclick = async () => {
+      refreshBtn.classList.add("spinning");
+      try {
+        await loadPerformance();
+      } finally {
+        setTimeout(() => refreshBtn.classList.remove("spinning"), 500);
+      }
+    };
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && $("logsPanel")?.classList.contains("active")) {
+      startPerformanceStream();
+      void loadPerformance();
+    } else if (document.hidden) {
+      stopPerformanceStream();
+    }
+  });
+}
+
 async function loadPerformance() {
   if (performanceLoading || document.hidden) return;
   performanceLoading = true;
   try {
-    const { current: metrics } = await api("/api/admin/logs/performance");
-    if (!metrics) { $("performanceStatus").textContent = "Coletando primeira amostra."; return; }
-    const gb = (bytes) => bytes == null ? "Indisponível" : `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-    $("performanceStatus").textContent = `Host · ${metrics.vcores} vCPU · Atualizado ${new Date(metrics.sampledAt).toLocaleTimeString("pt-BR")} · HTTP: últimos 5 minutos${metrics.sampleCapped ? " (amostra limitada)" : ""}.`;
-    $("performanceStats").innerHTML = [
-      ["CPU", metrics.cpuPercent == null ? "Coletando" : `${metrics.cpuPercent}%`],
-      ["RAM do host (inclui cache)", `${gb(metrics.memoryUsed)} / ${gb(metrics.memoryTotal)}`],
-      ["RAM do backend", gb(metrics.processRss)],
-      ["Disco disponível / total", `${gb(metrics.diskAvailable)} / ${gb(metrics.diskTotal)}`],
-      ["Latência HTTP p95", metrics.requestP95Ms == null ? "Sem requisições" : `${metrics.requestP95Ms} ms`],
-      ["Requisições / falhas 5xx", `${metrics.requestCount} / ${metrics.errors5xx}`],
-      ["Atraso do backend p95", `${metrics.eventLoopP95Ms} ms`]
-    ].map(([label, value]) => `<div class="log-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-    $("performanceAlerts").innerHTML = metrics.alerts.length
-      ? metrics.alerts.map((alert) => `<p class="danger-text">${escapeHtml(alert.message)}</p>`).join("")
-      : "<p>Sem alertas nos indicadores monitorados.</p>";
+    const data = await api("/api/admin/logs/performance");
+    const metrics = data?.current;
+    if (!metrics) {
+      if ($("performanceStatus")) $("performanceStatus").textContent = "Coletando primeira amostra de telemetria.";
+      return;
+    }
+
+    if (Array.isArray(data.history) && data.history.length) {
+      performanceHistoryCache = data.history;
+    } else {
+      performanceHistoryCache.push(metrics);
+      if (performanceHistoryCache.length > 60) performanceHistoryCache.shift();
+    }
+
+    if ($("perfHostMeta")) $("perfHostMeta").textContent = `Host · ${metrics.vcores || 2} vCPU`;
+    if ($("perfUptimeMeta")) $("perfUptimeMeta").textContent = `Uptime: ${formatPerfUptime(metrics.uptimeSeconds)}`;
+    if ($("performanceStatus")) {
+      $("performanceStatus").textContent = `Atualizado ${new Date(metrics.sampledAt).toLocaleTimeString("pt-BR")} · HTTP: últimos 5m${metrics.sampleCapped ? " (amostra limitada)" : ""}`;
+    }
+
+    renderPerformanceKpis(metrics, performanceHistoryCache);
+    renderPerformanceCharts(performanceHistoryCache, metrics);
+    renderPerformanceAlerts(metrics.alerts);
   } catch (error) {
-    $("performanceStatus").textContent = `Métricas indisponíveis: ${error.message}`;
-  } finally { performanceLoading = false; }
+    if ($("performanceStatus")) $("performanceStatus").textContent = `Telemetria indisponível: ${error.message}`;
+  } finally {
+    performanceLoading = false;
+  }
 }
-setInterval(() => {
-  if ($("logsPanel")?.classList.contains("active")) void loadPerformance();
-  if ($("concessionsPanel")?.classList.contains("active")) void loadConcessionDailySales();
-}, 30000);
 
 async function loadLogs(options = {}) {
   void loadPerformance();
@@ -10451,7 +10908,13 @@ function activatePanel(panelId, options = {}) {
   if (target !== "concessionsPanel" && target !== "boxOfficePanel") {
     stopQrReader();
   }
-  if (target === "logsPanel" && !state.logs) void loadLogs({ page: 1 });
+  if (target === "logsPanel") {
+    startPerformanceStream();
+    if (!state.logs) void loadLogs({ page: 1 });
+    else void loadPerformance();
+  } else {
+    stopPerformanceStream();
+  }
   if (target === "concessionsPanel") {
     setConcessionTab(state.concessionTab || "todaySales");
   } else if (target === "boxOfficePanel") {
@@ -10513,11 +10976,16 @@ window.testIntegration = testIntegration;
 window.showWebhookRun = showWebhookRun;
 window.resendWebhookRun = resendWebhookRun;
 window.toggleIntegration = toggleIntegration;
+window.loadPerformance = loadPerformance;
+window.setPerformanceInterval = setPerformanceInterval;
+window.startPerformanceStream = startPerformanceStream;
+window.stopPerformanceStream = stopPerformanceStream;
 
 async function initAdmin() {
   const logo = $("adminLogoImg");
   if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp`;
   bindEvents();
+  setupPerformanceControls();
   setBoxOfficeTab("newSale");
   const user = await loadAdminUser();
   if (user?.twoFactorSetupRequired) {
@@ -10527,6 +10995,10 @@ async function initAdmin() {
     return;
   }
   await loadContent();
+  if ($("logsPanel")?.classList.contains("active")) {
+    startPerformanceStream();
+    void loadPerformance();
+  }
 }
 
 initAdmin();

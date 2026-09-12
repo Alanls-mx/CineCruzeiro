@@ -2511,10 +2511,95 @@
               <button id="logsRefreshButton" class="primary-button" type="button">Atualizar histórico</button>
             </div>
           </div>
-          <h2>Desempenho do servidor</h2>
-          <p id="performanceStatus" aria-live="polite">Aguardando leitura.</p>
-          <div id="performanceStats" class="logs-stats"></div>
-          <div id="performanceAlerts" role="status" aria-live="polite"></div>
+          <!-- Painel de Desempenho em Tempo Real com Gráficos Animados -->
+          <div class="surface perf-telemetry-surface">
+            <div class="perf-header">
+              <div class="perf-title-col">
+                <div class="perf-heading-row">
+                  <div class="perf-icon-badge">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  </div>
+                  <h2>Desempenho do Servidor</h2>
+                  <span id="perfLiveBadge" class="perf-live-pill live" title="Transmissão de telemetria em tempo real ativa">
+                    <span class="pulse-ring"></span>
+                    <span class="pulse-dot"></span>
+                    <span class="live-label">AO VIVO</span>
+                  </span>
+                </div>
+                <div class="perf-meta-row">
+                  <span id="perfHostMeta" class="perf-meta-item">Host · 2 vCPU</span>
+                  <span class="perf-meta-sep">•</span>
+                  <span id="perfUptimeMeta" class="perf-meta-item">Uptime: --</span>
+                  <span class="perf-meta-sep">•</span>
+                  <span id="performanceStatus" class="perf-meta-item" aria-live="polite">Aguardando telemetria...</span>
+                </div>
+              </div>
+              <div class="perf-actions">
+                <div class="perf-timeframe-picker" role="group" aria-label="Intervalo de atualização em tempo real">
+                  <span class="perf-picker-label">Taxa:</span>
+                  <button type="button" class="perf-chip-btn active" data-perf-interval="3000">3s</button>
+                  <button type="button" class="perf-chip-btn" data-perf-interval="5000">5s</button>
+                  <button type="button" class="perf-chip-btn" data-perf-interval="15000">15s</button>
+                  <button type="button" class="perf-chip-btn" data-perf-interval="0">Pausar</button>
+                </div>
+                <button id="perfManualRefreshBtn" type="button" class="ghost-button icon-only-sm perf-btn-refresh" title="Atualizar telemetria agora">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Grid de Indicadores Principais (KPIs com Medidores Circulares e Barras) -->
+            <div id="perfKpiGrid" class="perf-kpi-grid">
+              <div class="perf-kpi-card skeleton-pulse"></div>
+              <div class="perf-kpi-card skeleton-pulse"></div>
+              <div class="perf-kpi-card skeleton-pulse"></div>
+              <div class="perf-kpi-card skeleton-pulse"></div>
+            </div>
+
+            <!-- Gráficos Animados em Tempo Real -->
+            <div class="perf-charts-grid">
+              <!-- Gráfico 1: CPU & RAM -->
+              <div class="perf-chart-card">
+                <div class="perf-chart-card-header">
+                  <div class="perf-chart-card-title">
+                    <span class="perf-chart-icon cpu-icon"></span>
+                    <div>
+                      <strong>Carga de Processamento &amp; Memória</strong>
+                      <span class="perf-chart-subtitle">Histórico de uso (%) com interpolação contínua</span>
+                    </div>
+                  </div>
+                  <div class="perf-chart-legend">
+                    <span class="legend-item"><span class="legend-swatch cpu-swatch"></span> CPU Host</span>
+                    <span class="legend-item"><span class="legend-swatch ram-swatch"></span> RAM Host</span>
+                    <span class="legend-item"><span class="legend-swatch app-swatch"></span> RAM Backend</span>
+                  </div>
+                </div>
+                <div id="perfCpuChartContainer" class="perf-chart-canvas-wrap"></div>
+              </div>
+
+              <!-- Gráfico 2: Latência HTTP & Event Loop -->
+              <div class="perf-chart-card">
+                <div class="perf-chart-card-header">
+                  <div class="perf-chart-card-title">
+                    <span class="perf-chart-icon latency-icon"></span>
+                    <div>
+                      <strong>Tempo de Resposta &amp; Atraso do Backend</strong>
+                      <span class="perf-chart-subtitle">Latência HTTP p95 e atraso do event loop (ms)</span>
+                    </div>
+                  </div>
+                  <div class="perf-chart-legend">
+                    <span class="legend-item"><span class="legend-swatch latency-swatch"></span> Latência HTTP p95</span>
+                    <span class="legend-item"><span class="legend-swatch loop-swatch"></span> Atraso Event Loop</span>
+                  </div>
+                </div>
+                <div id="perfLatencyChartContainer" class="perf-chart-canvas-wrap"></div>
+              </div>
+            </div>
+
+            <!-- Barra de Alertas / Diagnósticos de Saúde do Sistema -->
+            <div id="performanceAlerts" class="perf-alerts-bar" role="status" aria-live="polite"></div>
+            <div id="performanceStats" class="sr-only" style="display:none;" aria-hidden="true"></div>
+          </div>
           <div id="logsStats" class="logs-stats" aria-live="polite"></div>
           <div class="surface logs-workspace">
             <div class="logs-view-switch" role="group" aria-label="Tipo de visualização">
