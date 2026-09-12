@@ -2062,17 +2062,37 @@ function renderDashboard() {
   if ($("dashClubMetrics")) {
     const club = data.club || {};
     $("dashClubMetrics").innerHTML = `
-      <div class="metric-row clickable-row" onclick="activatePanel('clubPanel', { scroll: true })"><span>Assinaturas ativas</span><strong>${Number(club.activeSubscriptions || 0)}</strong></div>
-      <div class="metric-row"><span>Novos assinantes no período</span><strong>${Number(club.newSubscribers || 0)}</strong></div>
-      <div class="metric-row"><span>Cancelamentos no período</span><strong>${Number(club.cancellations || 0)}</strong></div>
-      <div class="metric-row"><span>Receita recorrente estimada</span><strong>${money(club.recurringRevenueEstimate || 0)}</strong></div>
-      <div class="metric-row"><span>Créditos emitidos</span><strong>${Number(club.creditsIssued || 0)}</strong></div>
-      <div class="metric-row"><span>Créditos usados</span><strong>${Number(club.creditsUsed || 0)}</strong></div>
-      <div class="metric-row"><span>Créditos expirados</span><strong>${Number(club.creditsExpired || 0)}</strong></div>
-      <div class="metric-row"><span>Ingressos via Clube</span><strong>${Number(club.clubTickets || 0)}</strong></div>
-      <div class="metric-row"><span>Complementos pagos</span><strong>${money(club.topUps || 0)}</strong></div>
-      <div class="metric-row"><span>Descontos na bomboniere</span><strong>${money(club.goodsDiscount || 0)}</strong></div>
-      <div class="metric-row"><span>NFC-e aguardando/erro</span><strong>${Number(club.goodsFiscal?.waiting_trigger || 0) + Number(club.goodsFiscal?.pending || 0) + Number(club.goodsFiscal?.error || 0)}</strong></div>
+      <div class="dash-club-compact-grid">
+        <div class="dash-club-stat clickable-row" onclick="activatePanel('clubPanel', { scroll: true })">
+          <span>Assinaturas ativas</span>
+          <strong>${Number(club.activeSubscriptions || 0)}</strong>
+        </div>
+        <div class="dash-club-stat">
+          <span>Receita recorrente</span>
+          <strong>${money(club.recurringRevenueEstimate || 0)}</strong>
+        </div>
+        <div class="dash-club-stat">
+          <span>Novos no período</span>
+          <strong>${Number(club.newSubscribers || 0)}</strong>
+        </div>
+        <div class="dash-club-stat">
+          <span>Cancelamentos</span>
+          <strong>${Number(club.cancellations || 0)}</strong>
+        </div>
+        <div class="dash-club-stat">
+          <span>Ingressos via Clube</span>
+          <strong>${Number(club.clubTickets || 0)}</strong>
+        </div>
+        <div class="dash-club-stat">
+          <span>Créditos usados</span>
+          <strong>${Number(club.creditsUsed || 0)}</strong>
+        </div>
+      </div>
+      <div class="dash-club-footer-link">
+        <button class="ghost-button" type="button" onclick="activatePanel('clubPanel', { scroll: true })">
+          Gerenciar Clube →
+        </button>
+      </div>
     `;
   }
   if ($("dashOperationalAlerts")) {
@@ -10384,6 +10404,15 @@ function bindEvents() {
       document.querySelectorAll("[data-dashboard-metric]").forEach((item) => item.classList.toggle("active", item === button));
       if ($("dashChartHint")) $("dashChartHint").textContent = "";
       renderDashboardChart(state.dashboard?.chart || []);
+    });
+  });
+  document.querySelectorAll("[data-dash-channel-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const tab = button.dataset.dashChannelTab;
+      document.querySelectorAll("[data-dash-channel-tab]").forEach((item) => item.classList.toggle("active", item === button));
+      if ($("dashChannelTabOrigin")) $("dashChannelTabOrigin").hidden = tab !== "origin";
+      if ($("dashChannelTabMethods")) $("dashChannelTabMethods").hidden = tab !== "methods";
+      if ($("dashChannelTabClub")) $("dashChannelTabClub").hidden = tab !== "club";
     });
   });
   ["dashboardFrom", "dashboardTo"].forEach((id) => {

@@ -7925,35 +7925,79 @@ th {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
+  align-items: start;
 }
 
-.dash-commercial-grid .surface {
+.dash-compact-surface {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  min-height: 340px;
+  background: var(--surface, #1e293b);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
-.dash-card-sub {
+.dash-compact-surface .metric-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dash-compact-surface .empty-state,
+.dash-compact-surface .empty-state.compact {
+  padding: 24px 14px;
+  margin: 6px 0;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dash-channel-tab-content {
+  margin-top: 6px;
+}
+
+.dash-club-compact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dash-club-stat {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.06));
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-club-stat span {
   font-size: 11px;
   color: var(--muted, #94a3b8);
-  margin: -4px 0 10px 0;
 }
 
-.dash-subtab-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.dash-channels-block strong {
-  display: block;
-  font-size: 11px;
+.dash-club-stat strong {
+  font-size: 13px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: var(--muted, #94a3b8);
-  margin-bottom: 6px;
+  color: var(--text, #f8fafc);
 }
+
+.dash-club-footer-link {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.dash-club-footer-link button {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
 
 .recent-orders-grid {
   display: grid;

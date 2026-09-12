@@ -260,36 +260,48 @@
             </div>
             <div class="dash-commercial-grid">
               <!-- Coluna 1: Bilheteria por Filme -->
-              <div class="surface">
-                <div class="section-title">Bilheteria por Filme</div>
-                <p class="dash-card-sub">Participação na receita de ingressos.</p>
+              <div class="surface dash-compact-surface">
+                <div class="surface-head" style="margin-bottom: 8px;">
+                  <div>
+                    <div class="section-title">Bilheteria por Filme</div>
+                    <p class="dash-card-sub" style="margin: 0;">Participação na receita de ingressos.</p>
+                  </div>
+                </div>
                 <div id="dashMovieRevenue" class="metric-list"></div>
               </div>
 
               <!-- Coluna 2: Bomboniere no Período -->
-              <div class="surface">
-                <div class="section-title">Produtos Mais Vendidos</div>
-                <p class="dash-card-sub">Bruto, descontos e receita líquida.</p>
+              <div class="surface dash-compact-surface">
+                <div class="surface-head" style="margin-bottom: 8px;">
+                  <div>
+                    <div class="section-title">Produtos Mais Vendidos</div>
+                    <p class="dash-card-sub" style="margin: 0;">Bruto, descontos e receita líquida.</p>
+                  </div>
+                </div>
                 <div id="dashTopProducts" class="metric-list"></div>
               </div>
 
-              <!-- Coluna 3: Canais, Formas de Pagamento & Clube -->
-              <div class="surface">
-                <div class="dash-subtab-card">
-                  <div class="section-title">Canais & Formas de Pagamento</div>
-                  <div class="dash-channels-block">
-                    <strong>Origem das Vendas</strong>
-                    <div id="dashSalesOrigin" class="metric-list"></div>
+              <!-- Coluna 3: Canais, Formas de Pagamento & Clube com Abas Rápidas -->
+              <div class="surface dash-compact-surface dash-channels-surface">
+                <div class="surface-head" style="margin-bottom: 8px;">
+                  <div>
+                    <div class="section-title">Canais & Fidelidade</div>
+                    <p class="dash-card-sub" style="margin: 0;">Origem, meios e Clube.</p>
                   </div>
-                  <div class="dash-channels-block" style="margin-top: 14px;">
-                    <strong>Formas de Pagamento</strong>
-                    <div id="dashPaymentMethods" class="metric-list"></div>
+                  <div class="segmented-filter compact" aria-label="Abas de canais">
+                    <button class="active" type="button" data-dash-channel-tab="origin">Origem</button>
+                    <button type="button" data-dash-channel-tab="methods">Pagamento</button>
+                    <button type="button" data-dash-channel-tab="club">Clube</button>
                   </div>
-                  <div class="dash-box-divider"></div>
-                  <div class="dash-channels-block">
-                    <strong>Clube Cine Cruzeiro</strong>
-                    <div id="dashClubMetrics" class="metric-list"></div>
-                  </div>
+                </div>
+                <div id="dashChannelTabOrigin" class="dash-channel-tab-content">
+                  <div id="dashSalesOrigin" class="metric-list"></div>
+                </div>
+                <div id="dashChannelTabMethods" class="dash-channel-tab-content" hidden>
+                  <div id="dashPaymentMethods" class="metric-list"></div>
+                </div>
+                <div id="dashChannelTabClub" class="dash-channel-tab-content" hidden>
+                  <div id="dashClubMetrics" class="metric-list"></div>
                 </div>
               </div>
             </div>
