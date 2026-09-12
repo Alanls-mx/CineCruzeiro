@@ -1349,6 +1349,11 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
               <span>
                 <strong className="block text-sm text-white">Usar {requestedTickets} crédito(s) do Clube</strong>
                 <span className="mt-1 block text-xs leading-5 text-slate-300">Você possui {clubCredits}. O benefício será aplicado na finalização.</span>
+                {clubBenefitsEnabled && clubCreditsEnabled && (
+                  <span className="mt-2 block text-xs font-semibold leading-5 text-brand-200">
+                    O crédito cobre primeiro o valor integral do ingresso. O desconto percentual continua apenas nos demais itens elegíveis.
+                  </span>
+                )}
               </span>
             </label>
             {clubCreditsEnabled && (

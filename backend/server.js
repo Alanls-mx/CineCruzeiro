@@ -4276,6 +4276,11 @@ function summarizeClubCreditItems(order, plan, redemptions = null) {
   };
 }
 
+function calculateClubTicketDiscount(order, ticketNetAfterCoupon, ticketDiscountPercent) {
+  if (order?.useClubCredits) return 0;
+  return Number((Number(ticketNetAfterCoupon || 0) * (Number(ticketDiscountPercent || 0) / 100)).toFixed(2));
+}
+
 function assertClubPlanEligibility(plan, order) {
   if ((plan.eligibleFormats || []).length && !plan.eligibleFormats.includes(order.sessionFormat)) {
     const error = new Error("Este formato de sessão não aceita créditos deste plano.");
@@ -4472,7 +4477,7 @@ function applyClubPlanBenefits(db, order, user) {
     freeConcessionDiscount += quantity * effectiveUnitPrice;
   }
 
-  const ticketDiscount = Number((ticketNetAfterCoupon * (ticketDiscountPercent / 100)).toFixed(2));
+  const ticketDiscount = calculateClubTicketDiscount(order, ticketNetAfterCoupon, ticketDiscountPercent);
   const excludedConcessionIds = new Set(plan.excludedConcessionIds || []);
   let concessionDiscount = 0;
   order.concessionItems = clubDomainService.calculateGoodsDiscount((order.concessionItems || []).map((item) => {
