@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { Accessibility, CircleUserRound } from "lucide-react";
+import { Accessibility, Check, CircleUserRound, TriangleAlert } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { useSeatRealtime } from "@/hooks/useSeatRealtime";
@@ -829,17 +829,19 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         </section>
         <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={displayedCouponPreview} clubBenefits={summaryClubBenefits} clubCreditSummary={summaryClubCredits} clubBenefitsLoading={step === "pagamento" && clubCalculationRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
-      <MobileCheckoutBar
-        draft={draft}
-        step={step}
-        total={checkoutTotal}
-        loading={loading || clubLoading}
-        paymentMethod={draft.paymentMethod || "pix"}
-        onSubmit={submitPayment}
-        onContinueToPayment={continueToPayment}
-        submitDisabled={checkoutTotal > 0 && (draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments)}
-        continueDisabled={step === "ingressos" && !ticketSelectionComplete}
-      />
+      {step !== "confirmacao" && (
+        <MobileCheckoutBar
+          draft={draft}
+          step={step}
+          total={checkoutTotal}
+          loading={loading || clubLoading}
+          paymentMethod={draft.paymentMethod || "pix"}
+          onSubmit={submitPayment}
+          onContinueToPayment={continueToPayment}
+          submitDisabled={checkoutTotal > 0 && (draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments)}
+          continueDisabled={step === "ingressos" && !ticketSelectionComplete}
+        />
+      )}
     </PageShell>
   );
 }
@@ -1548,6 +1550,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
   const timerExpired = Boolean(expiresAt && remainingMs <= 0 && pending);
   const expired = result?.payment?.status === "expired" || result?.order?.status === "expired" || timerExpired;
+  const pixVisible = pending && !expired && Boolean(result?.payment?.qrCode);
   const remainingLabel = `${String(Math.floor(remainingMs / 60000)).padStart(2, "0")}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, "0")}`;
   const copyPix = async () => {
     if (!result?.payment?.qrCode) return;
@@ -1558,22 +1561,13 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
 
   return (
     <section className="max-w-3xl">
-      <div className={`overflow-hidden rounded-xl bg-[#101827] shadow-[0_24px_80px_rgba(2,6,23,.38)] transition-all duration-700 ease-out ${approved ? "border border-emerald-500/40 animate-[paymentSuccessGlow_2s_ease-out_both]" : "border border-white/5"}`}>
+      <div className={`overflow-hidden rounded-xl bg-[#101827] transition-[box-shadow] duration-500 ease-out ${approved ? "shadow-[0_24px_80px_rgba(2,6,23,.38),0_18px_55px_rgba(16,185,129,.10)]" : "shadow-[0_24px_80px_rgba(2,6,23,.38)]"}`}>
         <div className="p-6 sm:p-8">
-          {approved && (
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-1.5 text-xs font-black uppercase tracking-wider text-emerald-300 animate-[paymentSuccessPill_0.5s_cubic-bezier(0.34,1.56,0.64,1)_both]">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
-              </span>
-              Pagamento confirmado com sucesso
-            </div>
-          )}
           <div className="flex flex-wrap items-center gap-3">
-            <span className={`inline-flex h-12 w-12 items-center justify-center rounded-full text-2xl font-black transition-all duration-500 ease-out transform ${approved ? "bg-emerald-400 text-emerald-950 ring-4 ring-emerald-400/25 scale-100 animate-[paymentSuccessPop_0.7s_cubic-bezier(0.34,1.56,0.64,1)_both]" : "bg-gold-400 text-amber-950"}`}>
-              {approved ? "✓" : "!"}
+            <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ${approved ? "payment-success-icon bg-emerald-300 text-emerald-950" : "bg-gold-400 text-amber-950"}`}>
+              {approved ? <Check className="h-6 w-6" strokeWidth={3} aria-hidden="true" /> : <TriangleAlert className="h-5 w-5" strokeWidth={2.5} aria-hidden="true" />}
             </span>
-            <div className={`transition-all duration-500 ease-out ${approved ? "animate-[paymentSuccessFadeIn_0.6s_ease-out_both]" : ""}`}>
+            <div className={approved ? "payment-success-heading" : ""}>
               <p className={`text-xs font-black uppercase tracking-[.16em] transition-colors duration-500 ${approved ? "text-emerald-400" : "text-brand-300"}`}>
                 {approved ? "Compra confirmada" : "Pagamento em andamento"}
               </p>
@@ -1581,15 +1575,15 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
                 {confirmationStatus === "checking"
                   ? "Estamos conferindo seu pedido"
                   : approved
-                  ? "Tudo pronto para a sessão"
+                  ? "Tudo certo com sua compra"
                   : expired
-                  ? "Tempo limite do pedido esgotado"
-                  : "Aguardando confirmação do pagamento"}
+                  ? "O prazo deste pagamento terminou"
+                  : "Pedido criado com segurança"}
               </h2>
             </div>
           </div>
 
-          <p className={`mt-6 max-w-2xl text-base leading-7 text-slate-300 transition-all duration-500 ease-out ${approved ? "animate-[paymentSuccessFadeIn_0.7s_ease-out_both]" : ""}`}>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300">
             {approved
               ? "Seus ingressos digitais foram liberados na sua conta. Lá você encontra QR Code, download, transferência e histórico da compra."
               : expired
@@ -1602,7 +1596,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Referência</span>
               <strong className="mt-2 block break-all text-white">{orderReference}</strong>
             </div>
-            <div className={`rounded-lg p-4 transition-all duration-500 ${approved ? "bg-emerald-950/40 ring-1 ring-emerald-500/20" : "bg-brand-950/70"}`} aria-live="polite">
+            <div className={`rounded-lg p-4 transition-colors duration-300 ${approved ? "bg-emerald-950/40" : "bg-brand-950/70"}`} aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
               <strong className={`mt-2 block text-white transition-colors duration-500 ${approved ? "text-emerald-300 font-semibold" : ""}`}>
                 {approved ? "Pagamento aprovado" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
@@ -1617,26 +1611,30 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
             )}
           </div>
 
-          {pending && !expired && result?.payment?.qrCode && (
-            <div className="mt-6 grid items-center gap-5 rounded-lg bg-gold-400/10 p-4 sm:grid-cols-[auto_1fr] sm:p-5">
-              <PixQrCode code={result.payment.qrCode} base64={result.payment.qrCodeBase64} />
-              <div>
-                <p className="text-sm font-black text-gold-200">Pix gerado</p>
-                <p className="mt-2 text-sm leading-6 text-slate-300">Escaneie o QR Code ou copie o código Pix e conclua no app do seu banco. O ingresso só fica válido após aprovação.</p>
-                <button type="button" onClick={copyPix} className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition duration-200 hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
-                  {copied ? "Código copiado" : "Copiar código Pix"}
-                </button>
+          {result?.payment?.qrCode && (
+            <div className={`pix-payment-panel ${pixVisible ? "pix-payment-panel-visible" : ""}`} aria-hidden={!pixVisible}>
+              <div className="min-h-0 overflow-hidden">
+                <div className="grid items-center gap-5 rounded-lg bg-gold-400/10 p-4 sm:grid-cols-[auto_1fr] sm:p-5">
+                  <PixQrCode code={result.payment.qrCode} base64={result.payment.qrCodeBase64} />
+                  <div>
+                    <p className="text-sm font-black text-gold-200">Pix gerado</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">Escaneie o QR Code ou copie o código Pix e conclua no app do seu banco. O ingresso só fica válido após aprovação.</p>
+                    <button type="button" onClick={copyPix} tabIndex={pixVisible ? 0 : -1} className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition duration-200 hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
+                      {copied ? "Código copiado" : "Copiar código Pix"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
-          <div className={`mt-8 flex flex-wrap gap-3 transition-all duration-500 ${approved ? "animate-[paymentSuccessFadeIn_0.8s_ease-out_both]" : ""}`}>
+          <div className="mt-8 flex flex-wrap gap-3">
             {expired && (
               <Link href={`/checkout/${draft.sessionId}/pagamento`} onClick={onRestartPayment} className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
                 Iniciar novo pagamento
               </Link>
             )}
-            <Link href="/conta/ingressos" className={`inline-flex min-h-[48px] items-center justify-center rounded-lg px-6 text-sm font-black transition ${approved ? "bg-emerald-400 text-emerald-950 hover:bg-emerald-300 shadow-[0_4px_20px_rgba(52,211,153,0.35)]" : "bg-gold-400 text-slate-950 hover:bg-gold-300"}`}>
+            <Link href="/conta/ingressos" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
               Ver meus ingressos
             </Link>
             {(result?.payment?.checkoutUrl || result?.payment?.ticketUrl) && !approved && (
