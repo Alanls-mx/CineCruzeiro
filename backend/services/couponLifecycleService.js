@@ -10,6 +10,7 @@ function validDate(value) {
 
 function orderUsesCoupon(order, coupon) {
   if (!order || order.status !== "paid" || !coupon) return false;
+  if (effectiveCouponDiscount(order) <= 0) return false;
   if (order.concessionRefund?.status === "completed") {
     const scope = String(coupon.appliesTo || "all");
     const hasTickets = (order.ticketItems || []).some((item) => Number(item.ticketQuantity ?? item.quantity ?? 0) > 0);
@@ -24,7 +25,9 @@ function paidCouponOrders(db, coupon) {
 }
 
 function effectiveCouponDiscount(order) {
-  const granted = Number(order.couponDiscount || order.discountValue || 0);
+  const granted = order.couponDiscount !== undefined && order.couponDiscount !== null
+    ? Number(order.couponDiscount || 0)
+    : Number(order.discountValue || 0);
   const reversed = order.concessionRefund?.status === "completed" ? Number(order.concessionRefund.couponDiscount || 0) : 0;
   return Math.max(0, granted - reversed);
 }

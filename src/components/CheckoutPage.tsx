@@ -21,6 +21,8 @@ type CheckoutPaymentResult = {
     totalPrice?: number;
     couponCode?: string;
     couponDiscount?: number;
+    couponOriginalDiscount?: number;
+    couponAppliedAfterClubCredits?: boolean;
     clubBenefits?: ClubBenefitsPreviewResult["benefits"];
     clubCreditSummary?: NonNullable<ClubBenefitsPreviewResult["creditSummary"]>;
     reservationExpiresAt?: string;
@@ -130,6 +132,24 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const clubCreditsEnabled = draft?.useClubCredits === true;
   const clubCalculationRequested = Boolean(customerUser && activeClub && couponCanStackWithClub && (clubBenefitsEnabled || clubCreditsEnabled));
   const appliedClubBenefitsPreview = clubCalculationRequested ? clubBenefitsPreview : null;
+  const couponAdjustment = confirmationOrder?.couponAppliedAfterClubCredits
+    ? {
+        discountValue: Number(confirmationOrder.couponDiscount || 0),
+        originalDiscountValue: Number(confirmationOrder.couponOriginalDiscount || confirmationOrder.couponDiscount || 0),
+        appliedAfterClubCredits: true,
+      }
+    : appliedClubBenefitsPreview?.coupon;
+  const displayedCouponPreview = couponPreview && couponAdjustment
+    ? {
+        ...couponPreview,
+        coupon: {
+          ...couponPreview.coupon,
+          discountValue: couponAdjustment.discountValue,
+          originalDiscountValue: couponAdjustment.originalDiscountValue,
+          appliedAfterClubCredits: couponAdjustment.appliedAfterClubCredits,
+        },
+      }
+    : couponPreview;
   const confirmedTotal = Number(confirmationOrder?.totalPrice);
   const checkoutTotal = Number.isFinite(confirmedTotal)
     ? confirmedTotal
@@ -779,7 +799,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               updateDraft={updateDraft}
               total={checkoutTotal}
               baseTotal={total}
-              couponPreview={couponPreview}
+              couponPreview={displayedCouponPreview}
               couponLoading={couponLoading}
               couponError={couponError}
               onApplyCoupon={applyCoupon}
@@ -807,7 +827,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             />
           )}
         </section>
-        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} clubBenefits={summaryClubBenefits} clubCreditSummary={summaryClubCredits} clubBenefitsLoading={step === "pagamento" && clubCalculationRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
+        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={displayedCouponPreview} clubBenefits={summaryClubBenefits} clubCreditSummary={summaryClubCredits} clubBenefitsLoading={step === "pagamento" && clubCalculationRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
       <MobileCheckoutBar
         draft={draft}
@@ -1249,7 +1269,13 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
             <div className="mt-3 flex items-start justify-between gap-4 rounded-lg bg-emerald-400/10 p-4" role="status">
               <div>
                 <strong className="block text-sm text-emerald-200">{couponPreview.coupon.code} aplicado</strong>
-                <span className="mt-1 block text-xs leading-5 text-slate-300">{couponPreview.coupon.title} · você economizou {money(couponPreview.coupon.discountValue)}</span>
+                <span className="mt-1 block text-xs leading-5 text-slate-300">
+                  {couponPreview.coupon.title} · {couponPreview.coupon.appliedAfterClubCredits
+                    ? couponPreview.coupon.discountValue > 0
+                      ? `aplicado ao saldo após os créditos: ${money(couponPreview.coupon.discountValue)}`
+                      : "os créditos cobrem todos os itens elegíveis; este cupom não será consumido"
+                    : `você economizou ${money(couponPreview.coupon.discountValue)}`}
+                </span>
                 {!couponPreview.coupon.allowsClubStacking && activeClub && (
                   <span className="mt-1 block text-xs text-slate-400">Este cupom substitui os benefícios e créditos do Clube nesta compra.</span>
                 )}
@@ -1717,8 +1743,8 @@ function OrderSummary({ draft, total, baseTotal, couponPreview, clubBenefits, cl
           </div>
           {couponPreview && (
             <div className="flex justify-between gap-4 border-t border-white/8 pt-3 text-emerald-300">
-              <dt>Cupom {couponPreview.coupon.code}</dt>
-              <dd>-{money(couponPreview.coupon.discountValue)}</dd>
+              <dt>Cupom {couponPreview.coupon.code}{couponPreview.coupon.appliedAfterClubCredits ? " · após créditos" : ""}</dt>
+              <dd>{couponPreview.coupon.discountValue > 0 ? `-${money(couponPreview.coupon.discountValue)}` : "Não consumido"}</dd>
             </div>
           )}
           {clubBenefits && (

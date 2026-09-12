@@ -297,6 +297,11 @@ export interface AccountSubscription {
 export interface ClubBenefitsPreviewResult {
   valid: boolean;
   plan: { id: string; name: string };
+  coupon: {
+    discountValue: number;
+    originalDiscountValue: number;
+    appliedAfterClubCredits: boolean;
+  } | null;
   benefits: {
     ticketDiscountPercent: number;
     concessionDiscountPercent: number;
@@ -539,6 +544,8 @@ export type CouponPreviewResult = {
     title: string;
     discountValue: number;
     allowsClubStacking: boolean;
+    originalDiscountValue?: number;
+    appliedAfterClubCredits?: boolean;
   };
   subtotal: number;
   total: number;

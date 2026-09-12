@@ -4218,10 +4218,36 @@ function allocateDiscountAcrossAmounts(amounts, discountValue) {
   return allocations.map((amount) => amount / 100);
 }
 
-function discountedTicketUnitsForOrder(order) {
+function calculateCouponDiscountForAmounts(coupon, ticketTotal, concessionTotal) {
+  const appliesTo = ["tickets", "concessions"].includes(coupon?.appliesTo) ? coupon.appliesTo : "all";
+  const normalizedTicketTotal = Math.max(0, Number(ticketTotal || 0));
+  const normalizedConcessionTotal = Math.max(0, Number(concessionTotal || 0));
+  const subtotal = Number((normalizedTicketTotal + normalizedConcessionTotal).toFixed(2));
+  const eligibleSubtotal = appliesTo === "tickets" ? normalizedTicketTotal : appliesTo === "concessions" ? normalizedConcessionTotal : subtotal;
+  const value = Math.max(0, Number(coupon?.value || 0));
+  let discountValue = coupon?.discountType === "percent"
+    ? eligibleSubtotal * Math.min(100, value) / 100
+    : coupon?.discountType === "fixed_price"
+      ? Math.max(0, eligibleSubtotal - value)
+      : Math.min(eligibleSubtotal, value);
+  if (Number(coupon?.maximumDiscount || 0) > 0) discountValue = Math.min(discountValue, Number(coupon.maximumDiscount));
+  discountValue = Number(Math.min(eligibleSubtotal, Math.max(0, discountValue)).toFixed(2));
+  const [ticketDiscount, concessionDiscount] = appliesTo === "tickets"
+    ? [discountValue, 0]
+    : appliesTo === "concessions"
+      ? [0, discountValue]
+      : allocateDiscountAcrossAmounts([normalizedTicketTotal, normalizedConcessionTotal], discountValue);
+  return { discountValue, ticketDiscount, concessionDiscount };
+}
+
+function discountedTicketUnitsForOrder(order, plan = null) {
   const units = ticketUnitsForOrder(order);
   const prices = units.map((unit) => unit.unitPrice);
-  const couponAllocations = allocateDiscountAcrossAmounts(prices, order?.couponTicketDiscount);
+  const referenceValue = Math.max(0, Number(plan?.creditReferenceValue || 0));
+  const creditFirstAmounts = order?.useClubCredits && plan
+    ? prices.map((price) => Math.max(0, Number((price - Math.min(price, referenceValue > 0 ? referenceValue : price)).toFixed(2))))
+    : prices;
+  const couponAllocations = allocateDiscountAcrossAmounts(creditFirstAmounts, order?.couponTicketDiscount);
   const afterCoupon = prices.map((price, index) => Math.max(0, Number((price - couponAllocations[index]).toFixed(2))));
   const clubAllocations = allocateDiscountAcrossAmounts(afterCoupon, order?.clubBenefits?.ticketDiscount);
   return units.map((unit, index) => ({
@@ -4233,15 +4259,15 @@ function discountedTicketUnitsForOrder(order) {
 }
 
 function summarizeClubCreditItems(order, plan, redemptions = null) {
-  const units = discountedTicketUnitsForOrder(order);
+  const units = discountedTicketUnitsForOrder(order, plan);
   const referenceValue = Math.max(0, Number(plan?.creditReferenceValue || 0));
   const applied = units.map((unit, index) => {
     const redemption = redemptions?.[index];
-    const creditAmount = Number(redemption?.creditAmount ?? Math.min(unit.discountedPrice, referenceValue > 0 ? referenceValue : unit.discountedPrice));
+    const creditAmount = Number(redemption?.creditAmount ?? Math.min(unit.unitPrice, referenceValue > 0 ? referenceValue : unit.unitPrice));
     return {
       ...unit,
       creditAmount: Number(creditAmount.toFixed(2)),
-      additionalPaymentAmount: Number((redemption?.additionalPaymentAmount ?? Math.max(0, unit.discountedPrice - creditAmount)).toFixed(2))
+      additionalPaymentAmount: Number(Math.max(0, unit.discountedPrice - creditAmount).toFixed(2))
     };
   });
   const grouped = new Map();
@@ -4313,13 +4339,17 @@ function reserveClubCreditsForOrder(db, order, user, idempotencyKey) {
     throw error;
   }
   assertClubPlanEligibility(plan, order);
-  const effectivePrices = discountedTicketUnitsForOrder(order).map((unit) => unit.discountedPrice);
+  const effectivePrices = ticketUnitPricesForOrder(order);
   const redemptions = clubDomainService.reserveCredits(db, {
     subscription,
     order,
     ticketPrices: effectivePrices,
     reservationExpiresAt: order.reservationExpiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
     idempotencyKey: idempotencyKey || order.id
+  });
+  const creditFirstPricing = discountedTicketUnitsForOrder(order, plan);
+  redemptions.forEach((redemption, index) => {
+    redemption.additionalPaymentAmount = Number(Math.max(0, Number(creditFirstPricing[index]?.discountedPrice || 0) - Number(redemption.creditAmount || 0)).toFixed(2));
   });
   const creditAmount = Number(redemptions.reduce((sum, item) => sum + Number(item.creditAmount || 0), 0).toFixed(2));
   const additionalPayment = Number(redemptions.reduce((sum, item) => sum + Number(item.additionalPaymentAmount || 0), 0).toFixed(2));
@@ -4518,7 +4548,8 @@ function consumePendingClubCredit(db, order, tickets, userId) {
   if (!order?.clubCreditPending || order.clubCreditUsageId) return null;
   const subscription = (db.subscriptions || []).find((item) => item.id === order.clubSubscriptionId);
   if (!subscription) return null;
-  const pricingUnits = discountedTicketUnitsForOrder(order);
+  const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId) || null;
+  const pricingUnits = discountedTicketUnitsForOrder(order, plan);
   const redemptions = clubDomainService.redeemReservedCredits(db, order, tickets);
   const usage = consumeSubscriptionCredit(db, subscription, {
     userId: userId || order.customerUserId,
@@ -6235,6 +6266,10 @@ function couponOrderCounts(db, coupon, order) {
       const expiresAt = new Date(existing.reservationExpiresAt).getTime();
       if (Number.isFinite(expiresAt) && expiresAt <= now) return false;
     }
+    const existingCouponDiscount = existing.couponDiscount !== undefined && existing.couponDiscount !== null
+      ? Number(existing.couponDiscount || 0)
+      : Number(existing.discountValue || 0);
+    if (existingCouponDiscount <= 0) return false;
     return existing.couponId === coupon.id || String(existing.couponCode || "").toUpperCase() === coupon.couponCode;
   });
   return {
@@ -6316,21 +6351,27 @@ function applyCouponPricing(db, order, ticketTotal, concessionTotal) {
   const appliesTo = ["tickets", "concessions"].includes(coupon.appliesTo) ? coupon.appliesTo : "all";
   const eligibleSubtotal = appliesTo === "tickets" ? ticketTotal : appliesTo === "concessions" ? concessionTotal : subtotal;
   if (eligibleSubtotal <= 0) throw Object.assign(new Error("O pedido não possui itens elegíveis para este cupom."), { statusCode: 409, code: "COUPON_NO_ELIGIBLE_ITEMS" });
-  const value = Math.max(0, Number(coupon.value || 0));
-  let discountValue = coupon.discountType === "percent"
-    ? eligibleSubtotal * Math.min(100, value) / 100
-    : coupon.discountType === "fixed_price"
-      ? Math.max(0, eligibleSubtotal - value)
-      : Math.min(eligibleSubtotal, value);
-  if (Number(coupon.maximumDiscount || 0) > 0) discountValue = Math.min(discountValue, Number(coupon.maximumDiscount));
-  discountValue = Number(Math.min(eligibleSubtotal, Math.max(0, discountValue)).toFixed(2));
+  const { discountValue, ticketDiscount, concessionDiscount } = calculateCouponDiscountForAmounts(coupon, ticketTotal, concessionTotal);
   if (discountValue <= 0) throw Object.assign(new Error("Este cupom não gera desconto para o pedido atual."), { statusCode: 409, code: "COUPON_NO_DISCOUNT" });
-  const [ticketDiscount, concessionDiscount] = appliesTo === "tickets"
-    ? [discountValue, 0]
-    : appliesTo === "concessions"
-      ? [0, discountValue]
-      : allocateDiscountAcrossAmounts([ticketTotal, concessionTotal], discountValue);
   return { discountValue, ticketDiscount, concessionDiscount, coupon };
+}
+
+function prioritizeClubCreditsInCouponPricing(db, order, ticketItems, ticketTotal, concessionTotal, couponPricing) {
+  if (!order?.useClubCredits || !couponPricing.coupon || couponPricing.coupon.allowClubStacking !== true) return couponPricing;
+  const membership = activeClubPlanForBenefits(db, order.customerUserId);
+  if (!membership?.plan) return couponPricing;
+  const referenceValue = Math.max(0, Number(membership.plan.creditReferenceValue || 0));
+  const creditAmount = ticketUnitsForOrder({ ...order, ticketItems }).reduce((sum, unit) => (
+    sum + Math.min(unit.unitPrice, referenceValue > 0 ? referenceValue : unit.unitPrice)
+  ), 0);
+  const ticketTotalAfterCredits = Math.max(0, Number((ticketTotal - creditAmount).toFixed(2)));
+  const prioritized = calculateCouponDiscountForAmounts(couponPricing.coupon, ticketTotalAfterCredits, concessionTotal);
+  return {
+    ...prioritized,
+    coupon: couponPricing.coupon,
+    originalDiscountValue: couponPricing.discountValue,
+    appliedAfterClubCredits: true
+  };
 }
 
 function repriceOrderFromCatalog(db, order, options = {}) {
@@ -6408,7 +6449,8 @@ function repriceOrderFromCatalog(db, order, options = {}) {
 
   const pricedItems = concessionItems;
   const concessionTotal = pricedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const couponPricing = applyCouponPricing(db, order, ticketTotal, concessionTotal);
+  const initialCouponPricing = applyCouponPricing(db, order, ticketTotal, concessionTotal);
+  const couponPricing = prioritizeClubCreditsInCouponPricing(db, order, ticketItems, ticketTotal, concessionTotal, initialCouponPricing);
   const concessionCouponAllocations = allocateDiscountAcrossAmounts(
     pricedItems.map((item) => item.quantity * item.unitPrice),
     couponPricing.concessionDiscount
@@ -6438,6 +6480,8 @@ function repriceOrderFromCatalog(db, order, options = {}) {
     couponCode: couponPricing.coupon?.couponCode || "",
     couponTitle: couponPricing.coupon?.title || "",
     couponDiscount: discountValue,
+    couponOriginalDiscount: Number(couponPricing.originalDiscountValue ?? discountValue),
+    couponAppliedAfterClubCredits: couponPricing.appliedAfterClubCredits === true,
     couponTicketDiscount: couponPricing.ticketDiscount,
     couponConcessionDiscount: couponPricing.concessionDiscount,
     couponAllowsClubStacking: couponPricing.coupon?.allowClubStacking === true,
@@ -12623,6 +12667,7 @@ async function handleApi(req, res, pathname) {
       });
     }
     const { plan } = membership;
+    if (normalizedOrder.useClubCredits) assertClubPlanEligibility(plan, pricedOrder);
     if (normalizedOrder.useClubBenefits) applyClubPlanBenefits(db, pricedOrder, customerUser);
     const creditSummary = normalizedOrder.useClubCredits ? summarizeClubCreditItems(pricedOrder, plan) : null;
     if (creditSummary) {
@@ -12631,6 +12676,11 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, {
       valid: true,
       plan: { id: plan.id, name: plan.name || "Clube Cine Cruzeiro" },
+      coupon: pricedOrder.couponId ? {
+        discountValue: Number(pricedOrder.couponDiscount || 0),
+        originalDiscountValue: Number(pricedOrder.couponOriginalDiscount || pricedOrder.couponDiscount || 0),
+        appliedAfterClubCredits: pricedOrder.couponAppliedAfterClubCredits === true
+      } : null,
       benefits: pricedOrder.clubBenefits || null,
       creditSummary,
       subtotal,
