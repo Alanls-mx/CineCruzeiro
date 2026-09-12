@@ -97,6 +97,7 @@ export interface TicketRecord {
     imageUrl?: string;
   }>;
   extrasSharedByOrder?: boolean;
+  extrasAttachedToTicket?: boolean;
   orderTicketIndex?: number;
   orderTicketCount?: number;
   archived?: boolean;
@@ -917,18 +918,18 @@ export async function createGoogleWalletPass(ticketId: string) {
   return payload as { url: string };
 }
 
-export async function transferTicket(ticketId: string, email: string) {
+export async function transferTicket(ticketId: string, email: string, concessionTargetTicketId = "") {
   const response = await fetch(`${API_BASE}/api/me/tickets/${encodeURIComponent(ticketId)}/transfer`, {
     method: "POST",
     credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, concessionTargetTicketId }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível transferir o ingresso. Tente novamente."));
   }
-  return payload as { ok: boolean; ticket: TicketRecord };
+  return payload as { ok: boolean; ticket: TicketRecord; concessionsTransferred: boolean; concessionTargetTicketId: string };
 }
 
 export async function validateTicket(code: string) {

@@ -9018,16 +9018,16 @@ function renderPromotionUsageHistory() {
             <strong>${escapeHtml(usage.customerName || "Cliente")}</strong>
             <span>${escapeHtml(usage.customerEmail || "E-mail não informado")}</span>
           </div>
-          <div>
+          <div class="coupon-history-date">
             <span class="coupon-history-label">Data e hora</span>
             <strong>${escapeHtml(formatCouponUsageDate(usage.usedAt))}</strong>
           </div>
-          <div>
+          <div class="coupon-history-session">
             <span class="coupon-history-label">Filme e sessão</span>
             <strong>${escapeHtml(usage.movieTitle || "Compra sem filme")}</strong>
             <span>${escapeHtml([usage.sessionDate, usage.sessionTime].filter(Boolean).join(" às ") || "Sessão não informada")}</span>
           </div>
-          <div>
+          <div class="coupon-history-order">
             <span class="coupon-history-label">Pedido</span>
             <strong>${escapeHtml(couponOrderReference(usage.orderId))}</strong>
             <span>${escapeHtml([...(usage.ticketItems || []), ...(usage.concessionItems || [])].join(" · ") || "Itens não informados")}</span>

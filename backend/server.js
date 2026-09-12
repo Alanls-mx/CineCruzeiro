@@ -53,6 +53,13 @@ const {
   recognitionDate
 } = require("./services/financialRecognitionService");
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
+const { shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
+const {
+  assignConcessionsToTicket,
+  concessionOrdersForTicket,
+  orderTicketsSorted,
+  pendingConcessionOrdersForTicket
+} = require("./services/ticketConcessionAssignmentService");
 const { GoodsFiscalService } = require("./services/goodsFiscalService");
 const {
   applyMovieTagTransition,
@@ -792,11 +799,6 @@ function buildCalendarDaysForMovies(movies = [], minimumDays = 7) {
   });
 }
 
-function isPastOrToday(date) {
-  if (!date) return false;
-  return String(date).slice(0, 10) <= todayIsoDate();
-}
-
 function defaultPremiereSessions(movie, db) {
   const room = db.rooms?.find((item) => item.status === "active") || db.rooms?.[0];
   const roomName = room ? roomDisplayLabel(room) : "Sala Cruzeiro (Laser 4K)";
@@ -818,8 +820,10 @@ function defaultPremiereSessions(movie, db) {
 
 function applyScheduledPremieres(db) {
   let changed = false;
+  const now = new Date();
+  const today = todayIsoDate();
   db.movies = db.movies.map((movie) => {
-    if (movie.status === "upcoming" && movie.autoPublish && isPastOrToday(movie.releaseDate)) {
+    if (shouldPublishUpcomingMovie(movie, today, now)) {
       changed = true;
       const tag = movie.tag === "Em Breve" ? "Estreia" : movie.tag;
       return {
@@ -2129,6 +2133,20 @@ function orderForTicket(db, ticket) {
   return (db.orders || []).find((order) => order.id === ticket.orderId) || null;
 }
 
+function persistedTicketTransferHistory(db, ticket) {
+  const records = [
+    ...(Array.isArray(ticket?.transferHistory) ? ticket.transferHistory : []),
+    ...(Array.isArray(db.ticketTransfers) ? db.ticketTransfers : [])
+  ];
+  const seen = new Set();
+  return records.filter((entry) => {
+    const key = String(entry.id || `${entry.ticketId}:${entry.transferredAt}:${entry.fromUserId}:${entry.toUserId}`);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function effectiveTicketStatus(ticket, order, session = null, db = null) {
   if (ticket.status === "used") return "used";
   if (["cancelled", "refunded", "expired"].includes(ticket.status)) return ticket.status;
@@ -2165,14 +2183,17 @@ function enrichTicket(db, ticket) {
   const sessionRoom = roomDisplayLabel(room) || session?.room || order?.sessionRoom || ticket.sessionRoom || "Sala Cruzeiro";
   const sessionFormat = session?.format || order?.sessionFormat || ticket.sessionFormat || "";
   const capacity = Number(session?.capacity || room?.capacity || 0);
-  const orderTickets = (db.tickets || [])
-    .filter((item) => item.orderId && item.orderId === ticket.orderId)
-    .sort((a, b) => String(a.createdAt || a.id || "").localeCompare(String(b.createdAt || b.id || "")));
+  const orderTickets = orderTicketsSorted(db, ticket.orderId);
   const orderTicketIndex = Math.max(0, orderTickets.findIndex((item) => item.id === ticket.id));
   const orderTicketCount = orderTickets.length || 1;
-  const orderExtras = Array.isArray(order?.concessionItems)
-    ? order.concessionItems.map((item) => assetRecord(item, ["imageUrl"]))
-    : [];
+  const concessionOrders = concessionOrdersForTicket(db, ticket);
+  const pendingConcessionOrders = pendingConcessionOrdersForTicket(db, ticket);
+  const orderExtras = concessionOrders.flatMap((sourceOrder) =>
+    (sourceOrder.concessionItems || []).map((item) => ({
+      ...assetRecord(item, ["imageUrl"]),
+      sourceOrderId: sourceOrder.id
+    }))
+  );
   const transferCheck = canTransferTicket(db, ticket);
   return {
     ...ticket,
@@ -2195,8 +2216,9 @@ function enrichTicket(db, ticket) {
     orderReference: order?.id || ticket.orderId,
     orderStatus: order?.status || "",
     paymentStatus: order?.paymentStatus || "",
-    extras: orderTicketIndex <= 0 ? orderExtras : [],
-    extrasSharedByOrder: orderExtras.length > 0,
+    extras: orderExtras,
+    extrasSharedByOrder: Boolean((order?.concessionItems || []).length),
+    extrasAttachedToTicket: pendingConcessionOrders.length > 0,
     orderTicketIndex,
     orderTicketCount,
     status,
@@ -2214,7 +2236,7 @@ function canTransferTicket(db, ticket) {
   if (!order || order.status !== "paid") return { ok: false, message: "Somente ingressos pagos podem ser transferidos." };
   if (status !== "active") return { ok: false, message: "Este ingresso nao esta valido para transferencia." };
   if (ticketIsExpired(ticket, db)) return { ok: false, message: "Este ingresso ja passou do prazo de transferencia." };
-  const transferPolicy = evaluateTicketTransfer(db.ticketTransfers || [], { ticketId: ticket.id }, ticketTransferLimits);
+  const transferPolicy = evaluateTicketTransfer(persistedTicketTransferHistory(db, ticket), { ticketId: ticket.id }, ticketTransferLimits);
   if (!transferPolicy.ok) return transferPolicy;
   return { ok: true };
 }
@@ -2492,8 +2514,20 @@ function validateTicketConcessions(db, code, adminUser) {
     error.code = "TICKET_NOT_FOUND";
     throw error;
   }
-  const order = orderForTicket(db, ticket);
-  if (!order || order.status !== "paid") {
+  const assignedOrders = concessionOrdersForTicket(db, ticket);
+  const legacyOrder = orderForTicket(db, ticket);
+  if (!assignedOrders.length && legacyOrder && !legacyOrder.concessionTicketId && (legacyOrder.concessionItems || []).length) {
+    assignedOrders.push(legacyOrder);
+  }
+  if (!assignedOrders.length) {
+    const error = new Error("Este ingresso não possui itens de bomboniere vinculados.");
+    error.statusCode = 409;
+    error.code = "ORDER_WITHOUT_CONCESSIONS";
+    error.ticket = ticket;
+    throw error;
+  }
+  const paidOrders = assignedOrders.filter((order) => order.status === "paid");
+  if (!paidOrders.length) {
     const error = new Error("A bomboniere só pode ser entregue após a aprovação do pagamento.");
     error.statusCode = 409;
     error.code = "TICKET_PAYMENT_PENDING";
@@ -2508,7 +2542,10 @@ function validateTicketConcessions(db, code, adminUser) {
     throw error;
   }
 
-  if (order.concessionStatus === "cancelled" || order.concessionCancelledAt || order.concessionRefund?.status === "completed" || ["cancelled", "refunded"].includes(String(order.status || ""))) {
+  const activeOrders = paidOrders.filter((order) =>
+    order.concessionStatus !== "cancelled" && !order.concessionCancelledAt && order.concessionRefund?.status !== "completed" && !["cancelled", "refunded"].includes(String(order.status || ""))
+  );
+  if (!activeOrders.length) {
     const error = new Error("Os itens de bomboniere deste pedido foram cancelados ou reembolsados.");
     error.statusCode = 409;
     error.code = "CONCESSIONS_CANCELLED";
@@ -2516,17 +2553,11 @@ function validateTicketConcessions(db, code, adminUser) {
     throw error;
   }
 
-  const concessions = Array.isArray(order.concessionItems) ? order.concessionItems : [];
-  if (!concessions.length) {
-    const error = new Error("Este pedido não possui itens de bomboniere.");
-    error.statusCode = 409;
-    error.code = "ORDER_WITHOUT_CONCESSIONS";
-    error.ticket = ticket;
-    throw error;
-  }
+  const concessions = activeOrders.flatMap((order) => order.concessionItems || []);
   const pending = concessions.filter((item) => item.status !== "cancelled" && item.refundStatus !== "completed" && Number(item.quantity || 0) > Number(item.fulfilledQuantity || 0));
   if (!pending.length) {
-    const error = new Error(`Itens já entregues em ${new Date(order.concessionsFulfilledAt || concessions[0]?.fulfilledAt || Date.now()).toLocaleString("pt-BR")}.`);
+    const fulfilledAt = activeOrders.find((order) => order.concessionsFulfilledAt)?.concessionsFulfilledAt || concessions[0]?.fulfilledAt;
+    const error = new Error(`Itens já entregues em ${new Date(fulfilledAt || Date.now()).toLocaleString("pt-BR")}.`);
     error.statusCode = 409;
     error.code = "CONCESSIONS_ALREADY_FULFILLED";
     error.ticket = ticket;
@@ -2540,10 +2571,12 @@ function validateTicketConcessions(db, code, adminUser) {
     item.fulfilledAt = fulfilledAt;
     item.fulfilledBy = adminUser?.id || "";
   });
-  order.concessionsFulfilledAt = fulfilledAt;
-  order.concessionsFulfilledBy = adminUser?.id || "";
-  checkAndAutoArchiveOrder(db, order, adminUser, "Ingressos e bomboniere validados pelo cinema");
-  return { ticket, order, concessions: pending, fulfilledAt };
+  activeOrders.forEach((order) => {
+    order.concessionsFulfilledAt = fulfilledAt;
+    order.concessionsFulfilledBy = adminUser?.id || "";
+    checkAndAutoArchiveOrder(db, order, adminUser, "Ingressos e bomboniere validados pelo cinema");
+  });
+  return { ticket, order: activeOrders[0], orders: activeOrders, concessions: pending, fulfilledAt };
 }
 
 async function createOpenFinancePixPayment(order, config = {}) {
@@ -13062,6 +13095,7 @@ async function handleApi(req, res, pathname) {
     if (method === "POST" && action === "transfer") {
       const body = await readBody(req);
       const targetEmail = String(body.email || "").trim().toLowerCase();
+      const concessionTargetTicketId = String(body.concessionTargetTicketId || "").trim();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
         sendJson(res, 400, { error: { code: "EMAIL_INVALID", message: "Informe o e-mail de uma conta cadastrada." } });
         return;
@@ -13089,11 +13123,11 @@ async function handleApi(req, res, pathname) {
             error: { code: transferCheck.code || "TICKET_NOT_TRANSFERABLE", message: transferCheck.message }
           }, transferCheck.retryAfter ? {
             "Retry-After": String(transferCheck.retryAfter),
-            "RateLimit-Policy": `1;w=${Math.ceil(ticketTransferLimits.cooldownMs / 1000)};scope=ticket`
+            "RateLimit-Policy": `${ticketTransferLimits.maxPerTicketPerWindow};w=${Math.ceil(ticketTransferLimits.windowMs / 1000)};scope=ticket`
           } : {});
           return;
         }
-        const transferPolicy = evaluateTicketTransfer(lockedDb.ticketTransfers || [], {
+        const transferPolicy = evaluateTicketTransfer(persistedTicketTransferHistory(lockedDb, ticket), {
           ticketId: ticket.id,
           fromUserId: freshUser.id,
           toUserId: targetUser.id
@@ -13107,9 +13141,22 @@ async function handleApi(req, res, pathname) {
                 ? `${ticketTransferLimits.maxOutgoingPerWindow};w=${Math.ceil(ticketTransferLimits.windowMs / 1000)};scope=sender`
                 : transferPolicy.retryAfter
                   ? `1;w=${Math.ceil(ticketTransferLimits.cooldownMs / 1000)};scope=ticket`
-                  : `${ticketTransferLimits.maxPerTicket};scope=ticket`
+                  : `${ticketTransferLimits.maxPerTicketPerWindow};w=${Math.ceil(ticketTransferLimits.windowMs / 1000)};scope=ticket`
           });
           return;
+        }
+        const attachedConcessionOrders = pendingConcessionOrdersForTicket(lockedDb, ticket);
+        let concessionTargetTicket = null;
+        if (concessionTargetTicketId && attachedConcessionOrders.length) {
+          concessionTargetTicket = (lockedDb.tickets || []).find((item) => item.id === concessionTargetTicketId) || null;
+          const targetStatus = concessionTargetTicket
+            ? effectiveTicketStatus(concessionTargetTicket, orderForTicket(lockedDb, concessionTargetTicket), sessionForTicket(lockedDb, concessionTargetTicket), lockedDb)
+            : "";
+          if (!concessionTargetTicket || concessionTargetTicket.id === ticket.id || !ticketBelongsToUser(lockedDb, concessionTargetTicket, freshUser) || targetStatus !== "active") {
+            sendJson(res, 409, { error: { code: "CONCESSION_TRANSFER_TARGET_INVALID", message: "Escolha outro ingresso ativo da sua conta para manter a bomboniere." } });
+            return;
+          }
+          assignConcessionsToTicket(attachedConcessionOrders, concessionTargetTicket.id);
         }
         const oldCode = ticket.code;
         const newCode = createTicketCode(lockedDb.tickets || []);
@@ -13124,15 +13171,19 @@ async function handleApi(req, res, pathname) {
         ticket.transferredFromUserId = freshUser.id;
         ticket.updatedAt = new Date().toISOString();
         lockedDb.ticketTransfers ||= [];
-        lockedDb.ticketTransfers.push({
+        const transferRecord = {
           id: `transfer-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
           fromUserId: freshUser.id,
           toUserId: targetUser.id,
           ticketId: ticket.id,
           oldCode,
           newCode,
-          transferredAt: ticket.transferredAt
-        });
+          transferredAt: ticket.transferredAt,
+          concessionsTransferred: attachedConcessionOrders.length > 0 && !concessionTargetTicket,
+          concessionTargetTicketId: concessionTargetTicket?.id || ""
+        };
+        lockedDb.ticketTransfers.push(transferRecord);
+        ticket.transferHistory = [...(Array.isArray(ticket.transferHistory) ? ticket.transferHistory : []), transferRecord].slice(-100);
         lockedDb.auditLogs ||= [];
         lockedDb.auditLogs.push({
           id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
@@ -13142,7 +13193,12 @@ async function handleApi(req, res, pathname) {
           entityType: "ticket",
           entityId: ticket.id,
           before: { customerUserId: freshUser.id, code: oldCode },
-          after: { customerUserId: targetUser.id, code: newCode },
+          after: {
+            customerUserId: targetUser.id,
+            code: newCode,
+            concessionsTransferred: transferRecord.concessionsTransferred,
+            concessionTargetTicketId: transferRecord.concessionTargetTicketId
+          },
           ip: clientIp(req),
           createdAt: ticket.transferredAt
         });
@@ -13174,8 +13230,19 @@ async function handleApi(req, res, pathname) {
         }).catch((error) => {
           logEvent("warn", "ticket_transfer_email.failed", { ticketId: ticket.id, message: error.message });
         });
-        logEvent("info", "ticket.transferred", { ticketId: ticket.id, fromUserId: freshUser.id, toUserId: targetUser.id });
-        sendJson(res, 200, { ok: true, ticket: enrichTicket(lockedDb, ticket) });
+        logEvent("info", "ticket.transferred", {
+          ticketId: ticket.id,
+          fromUserId: freshUser.id,
+          toUserId: targetUser.id,
+          concessionsTransferred: transferRecord.concessionsTransferred,
+          concessionTargetTicketId: transferRecord.concessionTargetTicketId
+        });
+        sendJson(res, 200, {
+          ok: true,
+          ticket: enrichTicket(lockedDb, ticket),
+          concessionsTransferred: transferRecord.concessionsTransferred,
+          concessionTargetTicketId: transferRecord.concessionTargetTicketId
+        });
       });
       return;
     }

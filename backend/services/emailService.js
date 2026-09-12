@@ -556,12 +556,21 @@ async function sendTicketTransfer(db, input = {}) {
   const fromUser = input.fromUser || {};
   const toUser = input.toUser || {};
   const movieTitle = ticket.movieTitle || input.movieTitle || "Cine Cruzeiro";
+  const transferredExtras = (Array.isArray(ticket.extras) ? ticket.extras : []).filter((item) =>
+    item.status !== "cancelled"
+      && item.refundStatus !== "completed"
+      && Number(item.quantity || 0) > Number(item.fulfilledQuantity || 0)
+  );
+  const extrasNotice = transferredExtras.length
+    ? `<p>Os itens da bomboniere vinculados a este ingresso também foram transferidos: ${extrasSummary(transferredExtras)}.</p>`
+    : "";
   const toSent = toUser.email ? await sendTransactional(db, {
     to: toUser.email,
     subject: `Ingresso transferido para você: ${movieTitle}`,
     html: baseLayout("Ingresso recebido", `
       <p>${htmlEscape(fromUser.name || "Um cliente")} transferiu um ingresso para sua conta.</p>
       ${ticketCard(ticket, input)}
+      ${extrasNotice}
       <p>O QR Code válido já está disponível em Meus ingressos. O código anterior foi invalidado por segurança.</p>
     `, { kicker: "Transferência", logoUrl: input.logoUrl }),
     text: `Você recebeu um ingresso para ${movieTitle}. Acesse sua conta do Cine Cruzeiro.`,
@@ -573,6 +582,7 @@ async function sendTicketTransfer(db, input = {}) {
     subject: `Transferência concluída: ${movieTitle}`,
     html: baseLayout("Transferência concluída", `
       <p>O ingresso foi transferido para ${htmlEscape(toUser.email || "o destinatário")}.</p>
+      ${extrasNotice}
       <p>Por segurança, o QR Code anterior foi invalidado e não libera mais a entrada.</p>
       <p>${button("Ver meus ingressos", input.accountUrl)}</p>
     `, { kicker: "Transferência", logoUrl: input.logoUrl }),

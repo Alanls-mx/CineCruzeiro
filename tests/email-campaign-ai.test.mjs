@@ -541,7 +541,7 @@ test("validação rejeita cupom expirado, esgotado e restrito a outro filme", ()
     concessions: [], subscriptionPlans: [], orders: []
   };
   assert.throws(() => resolveCampaignContext({ ...base, promotions: [{ id: "cupom", couponCode: "FIM", value: 10, active: true, endsAt: "2026-08-01" }] }, { scenario: "premiere", movieId: "filme-1", couponId: "cupom" }, { now: "2026-09-09T12:00:00-03:00" }), { code: "EMAIL_CAMPAIGN_COUPON_EXPIRED" });
-  assert.throws(() => resolveCampaignContext({ ...base, promotions: [{ id: "cupom", couponCode: "LIMITE", value: 10, active: true, usageLimit: 1 }], orders: [{ status: "paid", couponId: "cupom" }] }, { scenario: "premiere", movieId: "filme-1", couponId: "cupom" }, { now: "2026-09-09T12:00:00-03:00" }), { code: "EMAIL_CAMPAIGN_COUPON_EXHAUSTED" });
+  assert.throws(() => resolveCampaignContext({ ...base, promotions: [{ id: "cupom", couponCode: "LIMITE", value: 10, active: true, usageLimit: 1 }], orders: [{ status: "paid", couponId: "cupom", couponDiscount: 10 }] }, { scenario: "premiere", movieId: "filme-1", couponId: "cupom" }, { now: "2026-09-09T12:00:00-03:00" }), { code: "EMAIL_CAMPAIGN_COUPON_EXHAUSTED" });
   assert.throws(() => resolveCampaignContext({ ...base, promotions: [{ id: "cupom", couponCode: "OUTRO", value: 10, active: true, allowedMovieIds: ["filme-2"] }] }, { scenario: "premiere", movieId: "filme-1", couponId: "cupom" }, { now: "2026-09-09T12:00:00-03:00" }), { code: "EMAIL_CAMPAIGN_COUPON_MOVIE_INVALID" });
 });
 

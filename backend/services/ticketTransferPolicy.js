@@ -1,5 +1,5 @@
 const DEFAULT_TRANSFER_LIMITS = Object.freeze({
-  maxPerTicket: 2,
+  maxPerTicketPerWindow: 1,
   maxOutgoingPerWindow: 10,
   maxIncomingPerWindow: 20,
   windowMs: 24 * 60 * 60 * 1000,
@@ -13,7 +13,7 @@ function boundedInteger(value, fallback, minimum, maximum) {
 
 function transferLimits(env = process.env) {
   return {
-    maxPerTicket: boundedInteger(env.TICKET_TRANSFER_MAX_PER_TICKET, DEFAULT_TRANSFER_LIMITS.maxPerTicket, 1, 10),
+    maxPerTicketPerWindow: boundedInteger(env.TICKET_TRANSFER_MAX_PER_TICKET_DAY, DEFAULT_TRANSFER_LIMITS.maxPerTicketPerWindow, 1, 10),
     maxOutgoingPerWindow: boundedInteger(env.TICKET_TRANSFER_MAX_PER_USER_DAY, DEFAULT_TRANSFER_LIMITS.maxOutgoingPerWindow, 1, 100),
     maxIncomingPerWindow: boundedInteger(env.TICKET_TRANSFER_MAX_INCOMING_DAY, DEFAULT_TRANSFER_LIMITS.maxIncomingPerWindow, 1, 200),
     windowMs: boundedInteger(env.TICKET_TRANSFER_WINDOW_MINUTES, DEFAULT_TRANSFER_LIMITS.windowMs / 60000, 10, 7 * 24 * 60) * 60000,
@@ -42,11 +42,14 @@ function evaluateTicketTransfer(transfers = [], context = {}, limits = transferL
     .filter((transfer) => String(transfer.ticketId || "") === String(context.ticketId || ""))
     .sort((left, right) => transferTimestamp(right) - transferTimestamp(left));
 
-  if (ticketHistory.length >= limits.maxPerTicket) {
+  const windowStart = now - limits.windowMs;
+  const recentTicketTransfers = ticketHistory.filter((transfer) => transferTimestamp(transfer) > windowStart);
+  if (recentTicketTransfers.length >= limits.maxPerTicketPerWindow) {
     return reject(
-      "TICKET_TRANSFER_LIMIT_REACHED",
-      `Este ingresso atingiu o limite de ${limits.maxPerTicket} transferencia(s).`,
-      409
+      "TICKET_TRANSFER_DAILY_LIMIT_REACHED",
+      "Aguarde o fim do período de 24 horas. Este ingresso já foi transferido uma vez neste intervalo.",
+      429,
+      retryAfterForWindow(recentTicketTransfers, now, limits.windowMs)
     );
   }
 
@@ -56,7 +59,6 @@ function evaluateTicketTransfer(transfers = [], context = {}, limits = transferL
     return reject("TICKET_TRANSFER_COOLDOWN", "Aguarde alguns instantes antes de transferir este ingresso novamente.", 429, retryAfter);
   }
 
-  const windowStart = now - limits.windowMs;
   if (context.fromUserId) {
     const outgoing = history.filter((transfer) =>
       String(transfer.fromUserId || "") === String(context.fromUserId) && transferTimestamp(transfer) > windowStart

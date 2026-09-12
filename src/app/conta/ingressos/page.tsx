@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { ArrowLeft, Check, Download, Eye, Lock, Mail, Send, Ticket as TicketIcon, WalletCards, X } from "lucide-react";
+import { ArrowLeft, Check, Download, Eye, Send, Ticket as TicketIcon, WalletCards } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import {
   createGoogleWalletPass,
@@ -27,6 +27,7 @@ type TransferSuccessInfo = {
   sessionTime?: string;
   seat?: string;
   ticketCode?: string;
+  concessionsTransferred?: boolean;
 };
 
 export default function IngressosPage() {
@@ -84,6 +85,12 @@ export default function IngressosPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!transferSuccessInfo) return;
+    const timer = window.setTimeout(() => setTransferSuccessInfo(null), 6500);
+    return () => window.clearTimeout(timer);
+  }, [transferSuccessInfo]);
+
   return (
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
       <SiteHeader />
@@ -97,50 +104,18 @@ export default function IngressosPage() {
 
         {transferSuccessInfo && (
           <div
-            className="mt-8 rounded-2xl border border-gold-400/30 bg-[#0c162d] p-6 text-white shadow-2xl shadow-blue-950/40 backdrop-blur-sm animate-in fade-in slide-in-from-top-3"
+            className="mt-8 bg-[#0c162d] px-5 py-4 text-white animate-in fade-in slide-in-from-top-3"
             role="status"
             aria-live="polite"
           >
-            <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gold-400 text-slate-950 shadow-glow-gold">
-                  <Check className="h-5 w-5 stroke-[2.5]" />
-                </div>
-                <div className="space-y-2">
-                  <div>
-                    <span className="text-xs font-black uppercase tracking-[.18em] text-gold-400">
-                      Transferência de ingresso
-                    </span>
-                    <h2 className="mt-1 font-display text-2xl font-black text-white sm:text-3xl">
-                      Ingresso para &quot;{transferSuccessInfo.movieTitle}&quot; transferido com sucesso
-                    </h2>
-                  </div>
-                  <p className="text-sm text-slate-300 leading-relaxed max-w-2xl">
-                    O ingresso foi transferido para o e-mail{" "}
-                    <strong className="text-white font-bold underline">{transferSuccessInfo.recipientEmail}</strong> e
-                    já está disponível na conta do destinatário.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 border border-white/10">
-                      <Lock className="h-3.5 w-3.5 text-gold-400" />
-                      QR Code anterior invalidado
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 border border-white/10">
-                      <Mail className="h-3.5 w-3.5 text-gold-400" />
-                      E-mail com PDF enviado ao destinatário
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setTransferSuccessInfo(null)}
-                className="self-start inline-flex items-center gap-1.5 rounded-xl bg-white/8 px-3.5 py-2 text-xs font-black text-slate-300 hover:bg-white/15 hover:text-white transition"
-              >
-                <X className="h-3.5 w-3.5" />
-                Dispensar
-              </button>
+            <div className="max-w-4xl">
+              <h2 className="font-display text-xl font-black text-white sm:text-2xl">
+                Ingresso para &quot;{transferSuccessInfo.movieTitle}&quot; transferido com sucesso
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                O novo QR Code e o PDF foram enviados para <strong className="font-bold text-white">{transferSuccessInfo.recipientEmail}</strong>.
+                {transferSuccessInfo.concessionsTransferred ? " Os itens da bomboniere vinculados também foram transferidos." : ""}
+              </p>
             </div>
           </div>
         )}
@@ -175,8 +150,9 @@ export default function IngressosPage() {
             {selectedTicket ? (
               <TicketDetails
                 ticket={selectedTicket}
+                alternativeTickets={upcoming.filter((ticket) => ticket.id !== selectedTicket.id && ticket.status === "active")}
                 justValidated={selectedTicket.id === validatedTicketId}
-                onTransferred={(transferredTicket, recipientEmail) => {
+                onTransferred={(transferredTicket, recipientEmail, concessionsTransferred) => {
                   setTransferSuccessInfo({
                     movieTitle: transferredTicket.movieTitle,
                     recipientEmail,
@@ -184,6 +160,7 @@ export default function IngressosPage() {
                     sessionTime: transferredTicket.sessionTime,
                     seat: transferredTicket.seat || transferredTicket.seatLabel || "Lugar livre",
                     ticketCode: transferredTicket.code,
+                    concessionsTransferred,
                   });
                   reloadTickets(true);
                 }}
@@ -243,12 +220,11 @@ function TicketEmptyState({ tab }: { tab: "upcoming" | "archived" }) {
   );
 }
 
-function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: TicketRecord; justValidated: boolean; onTransferred: (ticket: TicketRecord, recipientEmail: string) => void }) {
+function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferred }: { ticket: TicketRecord; alternativeTickets: TicketRecord[]; justValidated: boolean; onTransferred: (ticket: TicketRecord, recipientEmail: string, concessionsTransferred: boolean) => void }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [transferEmail, setTransferEmail] = useState("");
-  const [transferredToEmail, setTransferredToEmail] = useState("");
+  const [concessionTargetTicketId, setConcessionTargetTicketId] = useState("");
   const [message, setMessage] = useState("");
-  const [transferSuccess, setTransferSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const statusClassName = ticket.status === "active"
     ? "bg-emerald-400/15 text-emerald-200"
@@ -261,6 +237,12 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
       color: { dark: "#020617", light: "#f8fafc" },
     }).then(setQrDataUrl).catch(() => setQrDataUrl(""));
   }, [ticket.code, ticket.qrPayload]);
+
+  useEffect(() => {
+    setTransferEmail("");
+    setConcessionTargetTicketId("");
+    setMessage("");
+  }, [ticket.id]);
 
   async function addWallet() {
     setMessage("");
@@ -278,14 +260,19 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
     setMessage("");
     try {
       const recipient = transferEmail.trim();
-      await transferTicket(ticket.id, recipient);
+      const hasConcessions = Boolean(ticket.extrasAttachedToTicket);
+      const confirmationMessage = hasConcessions
+        ? concessionTargetTicketId
+          ? "O ingresso será transferido, mas os itens da bomboniere permanecerão na sua conta e serão vinculados ao ingresso escolhido. Confirmar?"
+          : "Este ingresso possui itens da bomboniere. Eles também serão transferidos para o destinatário. Confirmar?"
+        : "Confirmar a transferência deste ingresso? O QR Code atual será invalidado.";
+      if (!window.confirm(confirmationMessage)) return;
+      const result = await transferTicket(ticket.id, recipient, concessionTargetTicketId);
       setTransferEmail("");
-      setTransferredToEmail(recipient);
-      setTransferSuccess(true);
+      setConcessionTargetTicketId("");
       setMessage("");
-      onTransferred(ticket, recipient);
+      onTransferred(result.ticket, recipient, result.concessionsTransferred);
     } catch (error) {
-      setTransferSuccess(false);
       setMessage(error instanceof Error ? error.message : "Desculpe, não foi possível transferir o ingresso. Tente novamente.");
     } finally {
       setLoading(false);
@@ -385,49 +372,6 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
               Transfira a titularidade deste ingresso para outro usuário cadastrado no Cine Cruzeiro.
             </p>
 
-            {transferSuccess && (
-              <div
-                className="mt-4 rounded-xl border border-gold-400/30 bg-[#0c162d] p-5 text-white shadow-xl shadow-blue-950/40 animate-in fade-in slide-in-from-top-2"
-                role="status"
-                aria-live="polite"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold-400 text-slate-950 font-black shadow-glow-gold">
-                      <Check className="h-4 w-4 stroke-[2.5]" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <strong className="block text-sm font-black text-gold-400">
-                        Transferência concluída com sucesso
-                      </strong>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        O ingresso foi transferido para{" "}
-                        <span className="font-bold text-white underline">{transferredToEmail}</span> e já está disponível na conta do destinatário.
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-bold text-slate-300">
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 border border-white/10">
-                          <Lock className="h-3 w-3 text-gold-400" />
-                          QR Code anterior invalidado
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-white/5 px-2.5 py-1 border border-white/10">
-                          <Mail className="h-3 w-3 text-gold-400" />
-                          E-mail com PDF enviado ao destinatário
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setTransferSuccess(false)}
-                    className="inline-flex items-center gap-1 rounded-lg bg-white/8 p-1.5 text-xs text-slate-400 hover:text-white transition"
-                    aria-label="Fechar mensagem de sucesso"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
-
             <label className="mt-4 block">
               <span className="text-xs font-black uppercase tracking-[.16em] text-slate-300">E-mail do destinatário cadastrado</span>
               <input
@@ -440,6 +384,30 @@ function TicketDetails({ ticket, justValidated, onTransferred }: { ticket: Ticke
                 placeholder="cliente@email.com"
               />
             </label>
+
+            {!!ticket.extrasAttachedToTicket && (
+              <div className="mt-4 bg-white/[0.035] p-4 text-sm leading-6 text-slate-300">
+                <strong className="block text-white">Este ingresso possui itens da bomboniere vinculados.</strong>
+                <p className="mt-1">Ao transferir o ingresso, esses itens também serão transferidos para o destinatário.</p>
+                {!!alternativeTickets.length && (
+                  <label className="mt-3 block">
+                    <span className="text-xs font-black uppercase tracking-[.12em] text-slate-300">Manter a bomboniere em outro ingresso</span>
+                    <select
+                      value={concessionTargetTicketId}
+                      onChange={(event) => setConcessionTargetTicketId(event.target.value)}
+                      className="mt-2 w-full bg-slate-900 px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-gold-400"
+                    >
+                      <option value="">Transferir junto com este ingresso</option>
+                      {alternativeTickets.map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                          {candidate.movieTitle} - {formatSessionDate(candidate.sessionDate)} às {candidate.sessionTime} - {candidate.seat || candidate.seatLabel || "Lugar livre"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
