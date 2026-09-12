@@ -596,7 +596,10 @@ async function loadDbFromPostgres() {
   }
 }
 
-const SNAPSHOT_CACHE_TTL_MS = 500;
+const configuredSnapshotCacheTtlMs = Number(process.env.POSTGRES_SNAPSHOT_CACHE_TTL_MS || 2000);
+const SNAPSHOT_CACHE_TTL_MS = Number.isFinite(configuredSnapshotCacheTtlMs)
+  ? Math.min(10000, Math.max(500, configuredSnapshotCacheTtlMs))
+  : 2000;
 let snapshotCache = null;
 let snapshotCacheExpiresAt = 0;
 let snapshotLoadPromise = null;

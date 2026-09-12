@@ -8,6 +8,14 @@ function percentile(values, fraction) {
   return Math.round(sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)]);
 }
 
+function isExternalDependencyPath(pathname = "") {
+  return /^\/api\/(?:payments|webhooks|subscriptions\/checkout|checkout\/orders\/)/.test(String(pathname));
+}
+
+function routeKey(request) {
+  return `${request.method || "GET"} ${String(request.path || "").replace(/\/[0-9a-f-]{16,}/gi, "/:id")}`;
+}
+
 function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 15000 }) {
   const delay = monitorEventLoopDelay({ resolution: 20 });
   delay.enable();
@@ -19,8 +27,15 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
   let activeAlerts = new Set();
   const history = [];
 
-  function record(durationMs, statusCode) {
-    requests.push({ at: Date.now(), durationMs, statusCode });
+  function record(durationMs, statusCode, metadata = {}) {
+    requests.push({
+      at: Date.now(),
+      durationMs: Math.max(0, Number(durationMs) || 0),
+      statusCode: Number(statusCode) || 0,
+      method: String(metadata.method || "GET").toUpperCase(),
+      path: String(metadata.path || ""),
+      externalDependency: metadata.externalDependency === true || isExternalDependencyPath(metadata.path)
+    });
     if (requests.length > 25000) requests.splice(0, requests.length - 25000);
   }
 
@@ -43,6 +58,27 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       requests = requests.filter((request) => request.at > now - 300000);
       const totalMemory = os.totalmem();
       const memoryUsed = totalMemory - os.freemem();
+      const internalRequests = requests.filter((request) => !request.externalDependency);
+      const externalRequests = requests.filter((request) => request.externalDependency);
+      const routeGroups = new Map();
+      requests.forEach((request) => {
+        const key = routeKey(request);
+        const group = routeGroups.get(key) || { route: key, durations: [], requestCount: 0, errors5xx: 0, externalDependency: request.externalDependency };
+        group.durations.push(request.durationMs);
+        group.requestCount += 1;
+        if (request.statusCode >= 500) group.errors5xx += 1;
+        routeGroups.set(key, group);
+      });
+      const slowestRoutes = [...routeGroups.values()]
+        .map((group) => ({
+          route: group.route,
+          requestCount: group.requestCount,
+          requestP95Ms: percentile(group.durations, 0.95),
+          errors5xx: group.errors5xx,
+          externalDependency: group.externalDependency
+        }))
+        .sort((a, b) => b.requestP95Ms - a.requestP95Ms)
+        .slice(0, 5);
       const sampleData = {
         sampledAt: new Date(now).toISOString(),
         scope: "host",
@@ -56,7 +92,12 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
         eventLoopP95Ms: Math.round(delay.percentile(95) / 1e6),
         requestCount: requests.length,
         sampleCapped: requests.length >= 25000,
-        requestP95Ms: percentile(requests.map((r) => r.durationMs), 0.95),
+        requestP95Ms: percentile(internalRequests.map((request) => request.durationMs), 0.95),
+        overallRequestP95Ms: percentile(requests.map((request) => request.durationMs), 0.95),
+        externalRequestP95Ms: percentile(externalRequests.map((request) => request.durationMs), 0.95),
+        internalRequestCount: internalRequests.length,
+        externalRequestCount: externalRequests.length,
+        slowestRoutes,
         errors5xx: requests.filter((r) => r.statusCode >= 500).length,
         uptimeSeconds: Math.floor(process.uptime())
       };
@@ -65,7 +106,8 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       if (sampleData.cpuPercent >= 90) alerts.push({ code: "cpu", message: "CPU do servidor acima de 90%." });
       if (memoryUsed / totalMemory >= 0.9) alerts.push({ code: "memory", message: "Memoria do host acima de 90% (inclui cache do sistema)." });
       if (stat && sampleData.diskAvailable / sampleData.diskTotal < 0.1) alerts.push({ code: "disk", message: "Menos de 10% de disco disponivel." });
-      if (requests.length >= 10 && sampleData.requestP95Ms > 2000) alerts.push({ code: "latency", message: "95% das requisicoes levam ate mais de 2 segundos." });
+      if (internalRequests.length >= 10 && sampleData.requestP95Ms > 2000) alerts.push({ code: "latency", message: "A latência interna HTTP p95 está acima de 2 segundos." });
+      if (externalRequests.length >= 5 && sampleData.externalRequestP95Ms > 5000) alerts.push({ code: "external_latency", message: "Integrações externas estão respondendo acima de 5 segundos no p95." });
       if (sampleData.eventLoopP95Ms > 200) alerts.push({ code: "event_loop", message: "Backend com atraso no processamento acima de 200 ms." });
       if (sampleData.errors5xx >= 5 && sampleData.errors5xx / requests.length >= 0.05) alerts.push({ code: "http_errors", message: "Falhas internas em pelo menos 5% das requisicoes." });
       for (const alert of alerts) {

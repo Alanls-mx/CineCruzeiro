@@ -8166,3 +8166,63 @@ th {
   cursor: not-allowed;
 }
 
+.perf-slow-routes {
+  margin-top: 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: rgba(6, 12, 24, 0.42);
+  overflow: hidden;
+}
+
+.perf-slow-routes-head,
+.perf-slow-route-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, auto) 86px 92px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+}
+
+.perf-slow-routes-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text, #f8fafc);
+  font-size: 12px;
+}
+
+.perf-slow-routes-head span,
+.perf-slow-route-row span,
+.perf-slow-route-row small {
+  color: var(--muted, #94a3b8);
+  font-size: 11px;
+}
+
+.perf-slow-route-row {
+  border-top: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-slow-route-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #dbeafe;
+  white-space: nowrap;
+}
+
+.perf-slow-route-row strong,
+.perf-slow-route-row small {
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .perf-slow-route-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .perf-slow-route-row span,
+  .perf-slow-route-row small {
+    text-align: left;
+  }
+}
+

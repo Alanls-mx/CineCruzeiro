@@ -13,11 +13,11 @@ const publicContentSecurityPolicy = [
   "object-src 'none'",
   "img-src 'self' data: blob: https:",
   "media-src 'self' blob: https:",
-  "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://accounts.google.com https://www.googletagmanager.com https://connect.facebook.net",
+  "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://http2.mlstatic.com https://accounts.google.com https://www.googletagmanager.com https://connect.facebook.net",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   `connect-src 'self' https: wss:${process.env.NODE_ENV === "production" ? "" : " ws:"}`,
-  "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://*.mercadopago.com https://*.mercadolibre.com",
+  "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://*.mercadopago.com https://*.mercadopago.com.br https://*.mercadolibre.com https://*.mercadolivre.com.br",
   "worker-src 'self' blob:",
   ...(process.env.NODE_ENV === "production" ? ["upgrade-insecure-requests"] : []),
 ].join("; ");

@@ -975,10 +975,34 @@ function isOrderFullyValidated(order) {
   return ticketsDone && concessionsDone;
 }
 
+function orderSessionStartsAt(order = {}) {
+  let date = String(order?.sessionDate || "").slice(0, 10);
+  let time = String(order?.sessionTime || "").trim();
+  if ((!date || !time) && order?.sessionId && Array.isArray(state.content?.sessions)) {
+    const foundSession = state.content.sessions.find((s) => s.id === order.sessionId);
+    if (foundSession) {
+      date = date || String(foundSession.date || "").slice(0, 10);
+      time = time || String(foundSession.time || "").trim();
+    }
+  }
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const normalizedTime = /^\d{2}:\d{2}$/.test(time) ? time : "00:00";
+  const parsed = new Date(`${date}T${normalizedTime}:00-03:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isOrderSessionExpired(order = {}) {
+  if (!order) return false;
+  const startsAt = orderSessionStartsAt(order);
+  if (!startsAt) return false;
+  return startsAt.getTime() <= Date.now();
+}
+
 function isOrderEffectivelyArchived(order) {
   if (!order) return false;
   if (order.archived === true) return true;
   if (["cancelled", "refunded"].includes(order.status)) return true;
+  if (isOrderSessionExpired(order)) return true;
   if (order.status === "paid" && isOrderFullyValidated(order)) return true;
   return false;
 }
@@ -1340,7 +1364,7 @@ async function toggleConcessionArchive(orderId, currentArchived) {
 
 let performanceLoading = false;
 let performanceStreamTimer = null;
-let performanceIntervalMs = 3000;
+let performanceIntervalMs = 15000;
 let performanceHistoryCache = [];
 let performancePeakCpu = 0;
 
@@ -1426,6 +1450,8 @@ function renderPerformanceKpis(metrics, history) {
 
   const errors = Number(metrics.errors5xx) || 0;
   const reqCount = Number(metrics.requestCount) || 0;
+  const externalLatency = metrics.externalRequestP95Ms != null ? `${metrics.externalRequestP95Ms} ms` : "Sem chamadas";
+  const externalCount = Number(metrics.externalRequestCount) || 0;
   const healthBadge = errors === 0 ? "Estável" : `${errors} Falhas`;
   const healthTone = errors === 0 ? "normal" : "danger";
 
@@ -1475,7 +1501,7 @@ function renderPerformanceKpis(metrics, history) {
     <!-- Card 3: Latência HTTP -->
     <div class="perf-kpi-card">
       <div class="perf-kpi-head">
-        <span class="perf-kpi-title">Latência HTTP (p95)</span>
+        <span class="perf-kpi-title">Latência interna HTTP (p95)</span>
         <span class="perf-kpi-badge ${latencyTone}">${latencyBadge}</span>
       </div>
       <div class="perf-kpi-body">
@@ -1488,8 +1514,8 @@ function renderPerformanceKpis(metrics, history) {
         </div>
       </div>
       <div class="perf-kpi-footer">
-        <span>Atraso Event Loop: <strong>${metrics.eventLoopP95Ms || 0} ms</strong></span>
-        <span>Tráfego: <strong>${reqCount} reqs</strong></span>
+        <span>Integrações: <strong>${externalLatency}</strong> em ${externalCount} reqs</span>
+        <span>Tráfego total: <strong>${reqCount} reqs</strong></span>
       </div>
     </div>
 
@@ -1755,6 +1781,34 @@ function renderPerformanceAlerts(alerts = []) {
   `).join("");
 }
 
+function renderPerformanceSlowRoutes(routes = []) {
+  const container = $("performanceSlowRoutes");
+  if (!container) return;
+  const items = (Array.isArray(routes) ? routes : []).filter((route) => route?.route && route.requestP95Ms != null);
+  if (!items.length) {
+    container.innerHTML = "";
+    container.hidden = true;
+    return;
+  }
+  container.hidden = false;
+  container.innerHTML = `
+    <div class="perf-slow-routes-head">
+      <strong>Rotas com maior tempo de resposta</strong>
+      <span>Janela móvel de 5 minutos</span>
+    </div>
+    <div class="perf-slow-routes-list">
+      ${items.map((route) => `
+        <div class="perf-slow-route-row">
+          <code>${escapeHtml(route.route)}</code>
+          <span>${route.externalDependency ? "Integração externa" : "Processamento interno"}</span>
+          <strong>${Number(route.requestP95Ms || 0)} ms</strong>
+          <small>${Number(route.requestCount || 0)} reqs${Number(route.errors5xx || 0) ? ` · ${Number(route.errors5xx)} erros` : ""}</small>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
 function setPerformanceInterval(ms) {
   performanceIntervalMs = ms;
   document.querySelectorAll("[data-perf-interval]").forEach((btn) => {
@@ -1854,6 +1908,7 @@ async function loadPerformance() {
     renderPerformanceKpis(metrics, performanceHistoryCache);
     renderPerformanceCharts(performanceHistoryCache, metrics);
     renderPerformanceAlerts(metrics.alerts);
+    renderPerformanceSlowRoutes(metrics.slowestRoutes);
   } catch (error) {
     if ($("performanceStatus")) $("performanceStatus").textContent = `Telemetria indisponível: ${error.message}`;
   } finally {
@@ -4431,7 +4486,7 @@ function orderDetailHtml(order) {
       ["Origem", originLabel(order.origin || "online")],
       ["Status", orderStatusLabel(order.status)],
       ["Arquivamento", isOrderEffectivelyArchived(order)
-        ? `Arquivado ${order.archivedAt ? `em ${new Date(order.archivedAt).toLocaleString("pt-BR")}` : "(pedido concluído / cancelado)"}`
+        ? `Arquivado ${order.archivedAt ? `em ${new Date(order.archivedAt).toLocaleString("pt-BR")}` : isOrderSessionExpired(order) ? "(sessão de cinema expirada)" : "(pedido concluído / cancelado)"}`
         : "Pedido ativo (aguardando validação ou pagamento)"]
     ])}
     ${sectionHtml("Cliente", [
@@ -4448,7 +4503,7 @@ function orderDetailHtml(order) {
     ])}
     ${sectionHtml("Ingressos", [
       ["Quantidade", `${orderTicketCount(order)} ingresso(s)`],
-      ["Status no cinema", val.ticketsValidated ? "Validados no cinema (Não reembolsável)" : val.ticketsCancelled ? "Cancelados / Reembolsados" : "Aguardando validação QR Code"],
+      ["Status no cinema", isOrderSessionExpired(order) ? "Sessão já expirada (Não reembolsável)" : val.ticketsValidated ? "Validados no cinema (Não reembolsável)" : val.ticketsCancelled ? "Cancelados / Reembolsados" : "Aguardando validação QR Code"],
       ["Códigos", tickets]
     ])}
     ${sectionHtml("Serviços de cinema", [

@@ -209,7 +209,7 @@ function redeemReservedCredits(db, order, tickets, now = new Date()) {
       ticket.additionalPaymentAmount = redemption.additionalPaymentAmount;
       ticket.paymentSource = "subscription_credit";
       ticket.subscriptionCreditId = credit.id;
-      ticket.ticketType = "Clube Cine Cruzeiro";
+      ticket.clubBenefitLabel = "Crédito do Clube Cine Cruzeiro";
     }
   });
   return redemptions;

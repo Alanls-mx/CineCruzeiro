@@ -118,14 +118,31 @@ async function run() {
   const ticket = { id: "ingresso-clube", ticketType: "Inteira", paymentSource: "standard" };
   club.redeemReservedCredits(base.db, redeemOrder, [ticket], base.now);
   assert.equal(ticket.paymentSource, "subscription_credit", "15. ingresso Clube possui origem propria");
+  assert.equal(ticket.ticketType, "Inteira", "16. uso do credito preserva o tipo real do ingresso");
+  assert.equal(ticket.clubBenefitLabel, "Crédito do Clube Cine Cruzeiro");
   assert.notEqual(ticket.paymentSource, "courtesy");
   assert.equal(reserved[0].status, "redeemed");
 
+  base = fixture({ plan: { includedTickets: 2, creditReferenceValue: 10 } });
+  issue(base);
+  const distinctPrices = club.reserveCredits(base.db, {
+    subscription: base.subscription,
+    order: order("pedido-tipos"),
+    ticketPrices: [5, 14],
+    idempotencyKey: "tipos",
+    now: base.now
+  });
+  assert.deepEqual(
+    distinctPrices.map((item) => [item.basePrice, item.creditAmount, item.additionalPaymentAmount]),
+    [[5, 5, 0], [14, 10, 4]],
+    "17. cada ingresso usa seu proprio valor no calculo do credito"
+  );
+
   const serverSource = fs.readFileSync(path.join(__dirname, "..", "backend", "server.js"), "utf8");
-  assert.match(serverSource, /Somente o proprietário pode alterar regras contábeis do Clube/, "16. RBAC owner protege configuracao contabil");
+  assert.match(serverSource, /Somente o proprietário pode alterar regras contábeis do Clube/, "18. RBAC owner protege configuracao contabil");
   assert.match(serverSource, /roleAlias\(req\.adminUser\?\.role\) !== "owner"/);
 
-  console.log("Club hybrid domain: 16 scenarios passed");
+  console.log("Club hybrid domain: 18 scenarios passed");
 }
 
 run().catch((error) => {

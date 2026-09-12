@@ -757,8 +757,13 @@ async function fetchMercadoPagoOrder(providerPaymentId, integrationConfig = {}) 
   if (!accessToken || !providerPaymentId) return null;
 
   const response = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(providerPaymentId)}`, {
-    headers: { Authorization: `Bearer ${accessToken}` }
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(5000)
+  }).catch((error) => {
+    if (error?.name === "TimeoutError") return null;
+    throw error;
   });
+  if (!response) return null;
   const data = await response.json().catch(() => ({}));
   if (!response.ok) return null;
 
@@ -792,8 +797,13 @@ async function fetchOpenFinancePayment(providerPaymentId, integrationConfig = {}
   const response = await fetch(endpoint, {
     headers: {
       ...(config.token ? { Authorization: `Bearer ${config.token}` } : {})
-    }
+    },
+    signal: AbortSignal.timeout(5000)
+  }).catch((error) => {
+    if (error?.name === "TimeoutError") return null;
+    throw error;
   });
+  if (!response) return null;
   const data = await response.json().catch(() => ({}));
   if (!response.ok) return null;
 

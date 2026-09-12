@@ -71,6 +71,7 @@ const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
 const adminTwoFactorChallenges = new Map();
 const memorySeatHolds = new Map();
+const paymentReconciliationAttempts = new Map();
 let seatRealtimeService = null;
 let jsonMutationQueue = Promise.resolve();
 let movieImageMaintenanceRunning = false;
@@ -400,10 +401,11 @@ function securityHeaders(extra = {}) {
     "frame-ancestors 'self'",
     "img-src 'self' data: blob: https:",
     "media-src 'self' blob: https:",
-    "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://accounts.google.com",
+    "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://http2.mlstatic.com https://accounts.google.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
-    `connect-src 'self' https: wss:${isProduction() ? "" : " ws://localhost:3000 ws://localhost:4000 ws://localhost:4010 ws://127.0.0.1:3000 ws://127.0.0.1:4000 ws://127.0.0.1:4010"}`
+    `connect-src 'self' https: wss:${isProduction() ? "" : " ws://localhost:3000 ws://localhost:4000 ws://localhost:4010 ws://127.0.0.1:3000 ws://127.0.0.1:4000 ws://127.0.0.1:4010"}`,
+    "frame-src 'self' https://accounts.google.com https://*.mercadopago.com https://*.mercadopago.com.br https://*.mercadolibre.com https://*.mercadolivre.com.br"
   ].join("; ");
   return {
     "Content-Security-Policy": csp,
@@ -2351,23 +2353,49 @@ function isOrderFullyValidated(order, tickets = []) {
   return allTicketsValidated && allConcessionsValidated;
 }
 
-function isOrderEffectivelyArchived(order, tickets = []) {
+function orderSessionStartsAt(order = {}, db = null) {
+  let date = String(order?.sessionDate || "").slice(0, 10);
+  let time = String(order?.sessionTime || "").trim();
+  if ((!date || !time) && db && order?.sessionId) {
+    const foundSession = (db.sessions || []).find((s) => s.id === order.sessionId);
+    if (foundSession) {
+      date = date || String(foundSession.date || "").slice(0, 10);
+      time = time || String(foundSession.time || "").trim();
+    }
+  }
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const normalizedTime = /^\d{2}:\d{2}$/.test(time) ? time : "00:00";
+  const parsed = new Date(`${date}T${normalizedTime}:00-03:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isOrderSessionExpired(order = {}, db = null, now = new Date()) {
+  if (!order) return false;
+  const startsAt = orderSessionStartsAt(order, db);
+  if (!startsAt) return false;
+  return startsAt.getTime() <= now.getTime();
+}
+
+function isOrderEffectivelyArchived(order, tickets = [], db = null) {
   if (!order) return false;
   if (order.archived === true) return true;
   if (["cancelled", "refunded", "expired"].includes(String(order.status || ""))) return true;
+  if (isOrderSessionExpired(order, db)) return true;
   if (order.status === "paid" && isOrderFullyValidated(order, tickets)) return true;
   return false;
 }
 
-function isOrderEffectivelyActive(order, tickets = []) {
+function isOrderEffectivelyActive(order, tickets = [], db = null) {
   if (!order) return false;
-  return !isOrderEffectivelyArchived(order, tickets) && ["pending", "pending_payment", "processing", "paid"].includes(String(order.status || ""));
+  return !isOrderEffectivelyArchived(order, tickets, db) && ["pending", "pending_payment", "processing", "paid"].includes(String(order.status || ""));
 }
 
 function checkAndAutoArchiveOrder(db, order, adminUser, reason = "Todos os itens validados pelo cinema") {
   if (!order || order.archived) return false;
   const tickets = orderTickets(db, order.id) || [];
-  if (isOrderFullyValidated(order, tickets)) {
+  const sessionExpired = isOrderSessionExpired(order, db);
+  if (sessionExpired || isOrderFullyValidated(order, tickets)) {
+    const archiveReason = sessionExpired ? "Sessão de cinema já expirada" : reason;
     const now = new Date().toISOString();
     order.archived = true;
     order.archivedAt = now;
@@ -4174,19 +4202,46 @@ function ticketUnitPricesForOrder(order) {
   return ticketUnitsForOrder(order).map((item) => item.unitPrice);
 }
 
-function summarizeClubCreditItems(order, plan, redemptions = null) {
+function allocateDiscountAcrossAmounts(amounts, discountValue) {
+  const cents = amounts.map((amount) => Math.max(0, Math.round(Number(amount || 0) * 100)));
+  const subtotalCents = cents.reduce((sum, amount) => sum + amount, 0);
+  const discountCents = Math.min(subtotalCents, Math.max(0, Math.round(Number(discountValue || 0) * 100)));
+  if (!subtotalCents || !discountCents) return cents.map(() => 0);
+  const allocations = cents.map((amount) => Math.floor(discountCents * amount / subtotalCents));
+  let remainder = discountCents - allocations.reduce((sum, amount) => sum + amount, 0);
+  for (let index = 0; remainder > 0 && index < allocations.length; index = (index + 1) % allocations.length) {
+    if (allocations[index] < cents[index]) {
+      allocations[index] += 1;
+      remainder -= 1;
+    }
+  }
+  return allocations.map((amount) => amount / 100);
+}
+
+function discountedTicketUnitsForOrder(order) {
   const units = ticketUnitsForOrder(order);
-  const discountRate = Math.min(90, Math.max(0, Number(plan?.ticketDiscountPercent || 0))) / 100;
+  const prices = units.map((unit) => unit.unitPrice);
+  const couponAllocations = allocateDiscountAcrossAmounts(prices, order?.couponTicketDiscount);
+  const afterCoupon = prices.map((price, index) => Math.max(0, Number((price - couponAllocations[index]).toFixed(2))));
+  const clubAllocations = allocateDiscountAcrossAmounts(afterCoupon, order?.clubBenefits?.ticketDiscount);
+  return units.map((unit, index) => ({
+    ...unit,
+    couponDiscount: couponAllocations[index],
+    planDiscount: clubAllocations[index],
+    discountedPrice: Math.max(0, Number((unit.unitPrice - couponAllocations[index] - clubAllocations[index]).toFixed(2)))
+  }));
+}
+
+function summarizeClubCreditItems(order, plan, redemptions = null) {
+  const units = discountedTicketUnitsForOrder(order);
   const referenceValue = Math.max(0, Number(plan?.creditReferenceValue || 0));
   const applied = units.map((unit, index) => {
-    const discountedPrice = Number((unit.unitPrice * (1 - discountRate)).toFixed(2));
     const redemption = redemptions?.[index];
-    const creditAmount = Number(redemption?.creditAmount ?? Math.min(discountedPrice, referenceValue > 0 ? referenceValue : discountedPrice));
+    const creditAmount = Number(redemption?.creditAmount ?? Math.min(unit.discountedPrice, referenceValue > 0 ? referenceValue : unit.discountedPrice));
     return {
       ...unit,
-      discountedPrice,
       creditAmount: Number(creditAmount.toFixed(2)),
-      additionalPaymentAmount: Number((redemption?.additionalPaymentAmount ?? Math.max(0, discountedPrice - creditAmount)).toFixed(2))
+      additionalPaymentAmount: Number((redemption?.additionalPaymentAmount ?? Math.max(0, unit.discountedPrice - creditAmount)).toFixed(2))
     };
   });
   const grouped = new Map();
@@ -4196,13 +4251,20 @@ function summarizeClubCreditItems(order, plan, redemptions = null) {
       ticketTypeId: item.ticketTypeId,
       ticketTypeName: item.ticketTypeName,
       quantity: 0,
+      originalUnitPrice: item.unitPrice,
+      originalTotalPrice: 0,
       discountedUnitPrice: item.discountedPrice,
       discountedTotalPrice: 0,
+      couponDiscountAmount: 0,
+      planDiscountAmount: 0,
       creditAmount: 0,
       additionalPaymentAmount: 0
     };
     current.quantity += 1;
+    current.originalTotalPrice = Number((current.originalTotalPrice + item.unitPrice).toFixed(2));
     current.discountedTotalPrice = Number((current.discountedTotalPrice + item.discountedPrice).toFixed(2));
+    current.couponDiscountAmount = Number((current.couponDiscountAmount + item.couponDiscount).toFixed(2));
+    current.planDiscountAmount = Number((current.planDiscountAmount + item.planDiscount).toFixed(2));
     current.creditAmount = Number((current.creditAmount + item.creditAmount).toFixed(2));
     current.additionalPaymentAmount = Number((current.additionalPaymentAmount + item.additionalPaymentAmount).toFixed(2));
     grouped.set(key, current);
@@ -4246,9 +4308,7 @@ function reserveClubCreditsForOrder(db, order, user, idempotencyKey) {
     throw error;
   }
   assertClubPlanEligibility(plan, order);
-  const rawPrices = ticketUnitPricesForOrder(order);
-  const discountRate = Math.min(90, Math.max(0, Number(plan.ticketDiscountPercent || 0))) / 100;
-  const effectivePrices = rawPrices.map((price) => Number((price * (1 - discountRate)).toFixed(2)));
+  const effectivePrices = discountedTicketUnitsForOrder(order).map((unit) => unit.discountedPrice);
   const redemptions = clubDomainService.reserveCredits(db, {
     subscription,
     order,
@@ -4299,6 +4359,10 @@ function materializeOrderAccounting(db, order) {
     originalUnitPrice: Number(item.originalPrice ?? item.unitPrice ?? 0),
     clubDiscount: Number(item.clubDiscount || 0),
     finalUnitPrice: Number(item.finalPrice ?? item.unitPrice ?? 0),
+    metadata: {
+      couponDiscount: Number(item.couponDiscount || 0),
+      clubFreeDiscount: Number(item.clubFreeDiscount || 0)
+    },
     createdAt: order.createdAt || new Date().toISOString()
   }));
   db.orderGoodsItems = (db.orderGoodsItems || []).filter((item) => item.orderId !== order.id).concat(order.goodsItems);
@@ -4388,6 +4452,7 @@ function applyClubPlanBenefits(db, order, user) {
   }
   const { subscription, plan } = benefit;
   const ticketSubtotal = ticketSubtotalForOrder(db, order);
+  const ticketNetAfterCoupon = Math.max(0, Number((ticketSubtotal - Number(order.couponTicketDiscount || 0)).toFixed(2)));
   const ticketDiscountPercent = Math.min(90, Math.max(0, Number(plan.ticketDiscountPercent || 0)));
   const concessionDiscountPercent = Math.min(90, Math.max(0, Number(plan.concessionDiscountPercent || 0)));
   const freeConcessionItems = [];
@@ -4401,21 +4466,30 @@ function applyClubPlanBenefits(db, order, user) {
     const used = reservedFreeConcessionQuantity(db, subscription, concessionId, order.id);
     const quantity = Math.min(Number(item.quantity || 0), Math.max(0, limit - used));
     if (!quantity) continue;
-    freeConcessionItems.push({ concessionId, name: item.name, quantity, unitPrice: Number(item.unitPrice || 0) });
-    freeConcessionDiscount += quantity * Number(item.unitPrice || 0);
+    const itemSubtotal = Number(item.quantity || 0) * Number(item.unitPrice || 0);
+    const effectiveUnitPrice = Math.max(0, Number(((itemSubtotal - Number(item.couponDiscount || 0)) / Math.max(1, Number(item.quantity || 0))).toFixed(2)));
+    freeConcessionItems.push({ concessionId, name: item.name, quantity, unitPrice: effectiveUnitPrice });
+    freeConcessionDiscount += quantity * effectiveUnitPrice;
   }
 
-  const concessionSubtotal = (order.concessionItems || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
-  const ticketDiscount = ticketSubtotal * (ticketDiscountPercent / 100);
+  const ticketDiscount = Number((ticketNetAfterCoupon * (ticketDiscountPercent / 100)).toFixed(2));
   const excludedConcessionIds = new Set(plan.excludedConcessionIds || []);
   let concessionDiscount = 0;
   order.concessionItems = clubDomainService.calculateGoodsDiscount((order.concessionItems || []).map((item) => {
     const freeQuantity = Number(freeConcessionItems.find((entry) => entry.concessionId === item.id)?.quantity || 0);
     return { ...item, discountableQuantity: Math.max(0, Number(item.quantity || 0) - freeQuantity) };
   }), { ...plan, concessionDiscountPercent, excludedConcessionIds: [...excludedConcessionIds] }).map((item) => {
-    const fullDiscount = item.clubDiscountExcluded ? 0 : Number((Number(item.discountableQuantity || 0) * Number(item.unitPrice || 0) * (concessionDiscountPercent / 100)).toFixed(2));
+    const itemSubtotal = Number(item.quantity || 0) * Number(item.unitPrice || 0);
+    const effectiveUnitPrice = Math.max(0, (itemSubtotal - Number(item.couponDiscount || 0)) / Math.max(1, Number(item.quantity || 0)));
+    const fullDiscount = item.clubDiscountExcluded ? 0 : Number((Number(item.discountableQuantity || 0) * effectiveUnitPrice * (concessionDiscountPercent / 100)).toFixed(2));
     concessionDiscount += fullDiscount;
-    return { ...item, clubDiscount: fullDiscount, finalPrice: Number(Math.max(0, Number(item.unitPrice || 0) - fullDiscount / Math.max(1, Number(item.quantity || 1))).toFixed(2)) };
+    const freeDiscount = Number(freeConcessionItems.find((entry) => entry.concessionId === item.id)?.quantity || 0) * effectiveUnitPrice;
+    return {
+      ...item,
+      clubDiscount: fullDiscount,
+      clubFreeDiscount: Number(freeDiscount.toFixed(2)),
+      finalPrice: Number(Math.max(0, Number(item.unitPrice || 0) - fullDiscount / Math.max(1, Number(item.quantity || 1))).toFixed(2))
+    };
   });
   const clubDiscount = Math.min(Number(order.totalPrice || 0), Number((ticketDiscount + freeConcessionDiscount + concessionDiscount).toFixed(2)));
 
@@ -4439,6 +4513,7 @@ function consumePendingClubCredit(db, order, tickets, userId) {
   if (!order?.clubCreditPending || order.clubCreditUsageId) return null;
   const subscription = (db.subscriptions || []).find((item) => item.id === order.clubSubscriptionId);
   if (!subscription) return null;
+  const pricingUnits = discountedTicketUnitsForOrder(order);
   const redemptions = clubDomainService.redeemReservedCredits(db, order, tickets);
   const usage = consumeSubscriptionCredit(db, subscription, {
     userId: userId || order.customerUserId,
@@ -4454,7 +4529,16 @@ function consumePendingClubCredit(db, order, tickets, userId) {
   subscription.updatedAt = new Date().toISOString();
   const ticketItemsByIndex = tickets.map((ticket, index) => {
     const redemption = redemptions[index];
-    const fallbackPrice = ticketUnitPricesForOrder(order)[index] || 0;
+    const pricing = pricingUnits[index] || { unitPrice: 0, couponDiscount: 0, planDiscount: 0, discountedPrice: 0 };
+    const fallbackPrice = pricing.discountedPrice;
+    ticket.metadata = {
+      ...(ticket.metadata || {}),
+      originalBasePrice: pricing.unitPrice,
+      couponDiscount: pricing.couponDiscount,
+      clubPlanDiscount: pricing.planDiscount,
+      priceAfterDiscounts: pricing.discountedPrice,
+      clubBenefitLabel: "Crédito do Clube Cine Cruzeiro"
+    };
     return {
       id: `servico-${order.id}-${index + 1}`,
       orderId: order.id,
@@ -4468,6 +4552,12 @@ function consumePendingClubCredit(db, order, tickets, userId) {
       additionalPaymentAmount: Number(redemption?.additionalPaymentAmount ?? fallbackPrice),
       paymentSource: redemption ? "subscription_credit" : ticket.paymentSource || "standard",
       subscriptionCreditId: redemption?.subscriptionCreditId || "",
+      metadata: {
+        originalUnitPrice: pricing.unitPrice,
+        couponDiscount: pricing.couponDiscount,
+        clubPlanDiscount: pricing.planDiscount,
+        priceAfterDiscounts: pricing.discountedPrice
+      },
       createdAt: new Date().toISOString()
     };
   });
@@ -5457,6 +5547,9 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     const hasUsedTickets = tickets.some((t) => t.status === "used");
     const hasFulfilledConcessions = (order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0) || Boolean(order.concessionsFulfilledAt);
 
+    if (isOrderSessionExpired(order, db)) {
+      throw refundError("SESSION_EXPIRED", "A sessão deste pedido já expirou; cancelamento e reembolso indisponíveis.", 409);
+    }
     if (hasUsedTickets && hasFulfilledConcessions) {
       throw refundError("ORDER_ALREADY_VALIDATED", "Este pedido já foi totalmente validado e consumido no cinema; cancelamento e reembolso indisponíveis.", 409);
     }
@@ -5579,6 +5672,9 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
 function concessionRefundEligibility(db, order, payment = orderPayment(db, order?.id)) {
   if (!order || !(order.concessionItems || []).some((item) => Number(item.quantity || 0) > 0)) return { allowed: false, reason: "Este pedido nao possui produtos da bomboniere." };
   if (order.concessionRefund?.status === "completed" || order.concessionStatus === "cancelled") return { allowed: false, completed: true, reason: "A bomboniere deste pedido ja foi cancelada/reembolsada." };
+  if (isOrderSessionExpired(order, db)) {
+    return { allowed: false, reason: "A sessão de cinema deste pedido já expirou. Itens da bomboniere não podem ser reembolsados após a sessão." };
+  }
   if ((order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0)) return { allowed: false, reason: "Ha produtos ja entregues. Faca a conciliacao manual antes de qualquer devolucao." };
   const fiscal = (db.goodsFiscalDocuments || []).find((item) => item.orderId === order.id);
   if (fiscal && !["waiting_trigger", "cancelled"].includes(String(fiscal.status || ""))) {
@@ -5726,6 +5822,9 @@ function ticketRefundEligibility(db, order, payment = orderPayment(db, order?.id
   if (!tickets.length) return { allowed: false, reason: "Este pedido não possui ingressos." };
   if (tickets.every((t) => ["cancelled", "refunded"].includes(String(t.status || "")))) {
     return { allowed: false, completed: true, reason: "Os ingressos deste pedido já foram cancelados/reembolsados." };
+  }
+  if (isOrderSessionExpired(order, db)) {
+    return { allowed: false, reason: "A sessão de cinema deste pedido já expirou. Ingressos de sessões passadas não podem ser reembolsados." };
   }
   if (tickets.some((t) => t.status === "used")) {
     return { allowed: false, reason: "Há ingressos já validados no cinema. Ingressos utilizados não podem ser reembolsados." };
@@ -6168,7 +6267,7 @@ async function finalizeOrderWithoutCharge(db, order, customerUser) {
 
 function applyCouponPricing(db, order, ticketTotal, concessionTotal) {
   const code = String(order.couponCode || "").trim().toUpperCase();
-  if (!code) return { discountValue: 0, coupon: null };
+  if (!code) return { discountValue: 0, ticketDiscount: 0, concessionDiscount: 0, coupon: null };
   const coupon = (db.promotions || []).find((item) => item.couponCode === code);
   if (!coupon) throw Object.assign(new Error("Cupom não encontrado. Confira o código e tente novamente."), { statusCode: 422, code: "COUPON_NOT_FOUND" });
   if (coupon.archivedAt) throw Object.assign(new Error("Este cupom expirou e foi arquivado."), { statusCode: 409, code: "COUPON_EXPIRED" });
@@ -6221,7 +6320,12 @@ function applyCouponPricing(db, order, ticketTotal, concessionTotal) {
   if (Number(coupon.maximumDiscount || 0) > 0) discountValue = Math.min(discountValue, Number(coupon.maximumDiscount));
   discountValue = Number(Math.min(eligibleSubtotal, Math.max(0, discountValue)).toFixed(2));
   if (discountValue <= 0) throw Object.assign(new Error("Este cupom não gera desconto para o pedido atual."), { statusCode: 409, code: "COUPON_NO_DISCOUNT" });
-  return { discountValue, coupon };
+  const [ticketDiscount, concessionDiscount] = appliesTo === "tickets"
+    ? [discountValue, 0]
+    : appliesTo === "concessions"
+      ? [0, discountValue]
+      : allocateDiscountAcrossAmounts([ticketTotal, concessionTotal], discountValue);
+  return { discountValue, ticketDiscount, concessionDiscount, coupon };
 }
 
 function repriceOrderFromCatalog(db, order, options = {}) {
@@ -6300,6 +6404,14 @@ function repriceOrderFromCatalog(db, order, options = {}) {
   const pricedItems = concessionItems;
   const concessionTotal = pricedItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const couponPricing = applyCouponPricing(db, order, ticketTotal, concessionTotal);
+  const concessionCouponAllocations = allocateDiscountAcrossAmounts(
+    pricedItems.map((item) => item.quantity * item.unitPrice),
+    couponPricing.concessionDiscount
+  );
+  const couponAdjustedItems = pricedItems.map((item, index) => ({
+    ...item,
+    couponDiscount: concessionCouponAllocations[index] || 0
+  }));
   const discountValue = couponPricing.discountValue;
   const totalPrice = Math.max(0, Number((ticketTotal + concessionTotal - discountValue).toFixed(2)));
 
@@ -6313,14 +6425,16 @@ function repriceOrderFromCatalog(db, order, options = {}) {
     fullTicketsCount: Math.max(0, Number(order.fullTicketsCount || 0)),
     halfTicketsCount: Math.max(0, Number(order.halfTicketsCount || 0)),
     ticketItems,
-    concessionItems: pricedItems,
-    includeComboUpsell: pricedItems.length > 0,
-    comboUpsellQuantity: pricedItems.reduce((sum, item) => sum + item.quantity, 0),
+    concessionItems: couponAdjustedItems,
+    includeComboUpsell: couponAdjustedItems.length > 0,
+    comboUpsellQuantity: couponAdjustedItems.reduce((sum, item) => sum + item.quantity, 0),
     discountValue,
     couponId: couponPricing.coupon?.id || "",
     couponCode: couponPricing.coupon?.couponCode || "",
     couponTitle: couponPricing.coupon?.title || "",
     couponDiscount: discountValue,
+    couponTicketDiscount: couponPricing.ticketDiscount,
+    couponConcessionDiscount: couponPricing.concessionDiscount,
     couponAllowsClubStacking: couponPricing.coupon?.allowClubStacking === true,
     totalPrice
   };
@@ -7742,17 +7856,19 @@ function orderFinancialBreakdown(db, order = {}) {
   const coupon = (db.promotions || []).find((item) => String(item.id) === String(order.couponId || ""));
   const couponDiscount = Math.max(0, Number(order.couponDiscount || 0));
   const appliesTo = ["tickets", "concessions"].includes(coupon?.appliesTo) ? coupon.appliesTo : "all";
-  let ticketCouponDiscount = 0;
-  let concessionCouponDiscount = 0;
+  let ticketCouponDiscount = Math.max(0, Number(order.couponTicketDiscount || 0));
+  let concessionCouponDiscount = Math.max(0, Number(order.couponConcessionDiscount || 0));
   if (couponDiscount > 0) {
-    if (appliesTo === "tickets") ticketCouponDiscount = Math.min(ticketNet, couponDiscount);
-    else if (appliesTo === "concessions") concessionCouponDiscount = Math.min(concessionNet, couponDiscount);
-    else {
+    if (ticketCouponDiscount + concessionCouponDiscount <= 0 && appliesTo === "tickets") ticketCouponDiscount = Math.min(ticketNet, couponDiscount);
+    else if (ticketCouponDiscount + concessionCouponDiscount <= 0 && appliesTo === "concessions") concessionCouponDiscount = Math.min(concessionNet, couponDiscount);
+    else if (ticketCouponDiscount + concessionCouponDiscount <= 0) {
       const eligibleTotal = ticketNet + concessionNet;
       const ticketShare = eligibleTotal ? ticketNet / eligibleTotal : 1;
       ticketCouponDiscount = Math.min(ticketNet, couponDiscount * ticketShare);
       concessionCouponDiscount = Math.min(concessionNet, couponDiscount - ticketCouponDiscount);
     }
+    ticketCouponDiscount = Math.min(ticketNet, ticketCouponDiscount);
+    concessionCouponDiscount = Math.min(concessionNet, concessionCouponDiscount);
     ticketNet = Math.max(0, ticketNet - ticketCouponDiscount);
     concessionNet = Math.max(0, concessionNet - concessionCouponDiscount);
   }
@@ -8678,6 +8794,16 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
   const needsReconciliation = ["pending", "processing"].includes(String(snapshotPayment.status || ""))
     || (snapshotPayment.status === "approved" && (snapshotOrder.status !== "paid" || !hasTickets));
   if (!needsReconciliation) return false;
+
+  const now = Date.now();
+  const lastAttempt = Number(paymentReconciliationAttempts.get(snapshotOrder.id) || 0);
+  if (now - lastAttempt < 10000) return false;
+  paymentReconciliationAttempts.set(snapshotOrder.id, now);
+  if (paymentReconciliationAttempts.size > 5000) {
+    for (const [candidateId, attemptedAt] of paymentReconciliationAttempts) {
+      if (now - attemptedAt > 30 * 60 * 1000) paymentReconciliationAttempts.delete(candidateId);
+    }
+  }
 
   const providerConfig = integrationConfigService.resolvedConfig(snapshotDb, "mercadoPago");
   const providerStatus = await paymentService.fetchProviderPaymentStatus(
@@ -11312,11 +11438,11 @@ async function handleApi(req, res, pathname) {
         customerCpf: lockedUser.cpf || "",
         paymentMethod: "CLUB_CREDIT",
         useClubCredits: true,
-        useClubBenefits: true
+        useClubBenefits: body.useClubBenefits !== false
       }));
       await claimSeatHoldsForOrder(lockedDb, pricedOrder);
       pricedOrder.reservationExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      applyClubPlanBenefits(lockedDb, pricedOrder, lockedUser);
+      if (pricedOrder.useClubBenefits) applyClubPlanBenefits(lockedDb, pricedOrder, lockedUser);
       reserveClubCreditsForOrder(lockedDb, pricedOrder, lockedUser, idempotencyKey);
       materializeOrderAccounting(lockedDb, pricedOrder);
       if (pricedOrder.totalPrice > 0) {
@@ -12480,11 +12606,19 @@ async function handleApi(req, res, pathname) {
       customerEmail: customerUser.email || "",
       customerPhone: customerUser.phone || "",
       customerCpf: customerUser.cpf || "",
-      useClubBenefits: true
+      useClubBenefits: input.useClubBenefits !== false
     });
     const pricedOrder = repriceOrderFromCatalog(db, normalizedOrder, { assignSeats: false });
     const subtotal = Number(pricedOrder.totalPrice || 0);
-    const { plan } = applyClubPlanBenefits(db, pricedOrder, customerUser);
+    const membership = activeClubPlanForBenefits(db, customerUser.id);
+    if (!membership) {
+      throw Object.assign(new Error("Nenhuma assinatura ativa foi encontrada para aplicar os benefícios."), {
+        statusCode: 409,
+        code: "NO_ACTIVE_SUBSCRIPTION"
+      });
+    }
+    const { plan } = membership;
+    if (normalizedOrder.useClubBenefits) applyClubPlanBenefits(db, pricedOrder, customerUser);
     const creditSummary = normalizedOrder.useClubCredits ? summarizeClubCreditItems(pricedOrder, plan) : null;
     if (creditSummary) {
       pricedOrder.totalPrice = Math.max(0, Number((Number(pricedOrder.totalPrice || 0) - creditSummary.totalAmount).toFixed(2)));
@@ -12492,7 +12626,7 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, {
       valid: true,
       plan: { id: plan.id, name: plan.name || "Clube Cine Cruzeiro" },
-      benefits: pricedOrder.clubBenefits,
+      benefits: pricedOrder.clubBenefits || null,
       creditSummary,
       subtotal,
       total: pricedOrder.totalPrice
@@ -13971,7 +14105,10 @@ const server = http.createServer(async (req, res) => {
   };
   res.once("finish", () => {
     if (pathname.startsWith("/api/") && !pathname.startsWith("/api/admin/logs")) {
-      performanceMonitor.record(Date.now() - store.startedAt, res.statusCode);
+      performanceMonitor.record(Date.now() - store.startedAt, res.statusCode, {
+        method: req.method,
+        path: pathname
+      });
     }
     if (!pathname.startsWith("/api/") || !postgresEnabled()) return;
     const durationMs = Date.now() - store.startedAt;

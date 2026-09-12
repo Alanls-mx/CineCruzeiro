@@ -305,7 +305,7 @@ export interface ClubBenefitsPreviewResult {
     freeConcessionDiscount: number;
     totalDiscount: number;
     freeConcessionItems: Array<{ concessionId: string; name: string; quantity: number; unitPrice: number }>;
-  };
+  } | null;
   creditSummary: {
     quantity: number;
     totalAmount: number;
@@ -313,8 +313,12 @@ export interface ClubBenefitsPreviewResult {
       ticketTypeId: string;
       ticketTypeName: string;
       quantity: number;
+      originalUnitPrice: number;
+      originalTotalPrice: number;
       discountedUnitPrice: number;
       discountedTotalPrice: number;
+      couponDiscountAmount: number;
+      planDiscountAmount: number;
       creditAmount: number;
       additionalPaymentAmount: number;
     }>;
@@ -447,6 +451,7 @@ export async function previewCheckoutClubBenefits(order: {
   ticketItems?: Array<{ id: string; quantity: number }>;
   concessionItems?: Array<{ id: string; quantity: number }>;
   couponCode?: string;
+  useClubBenefits?: boolean;
   useClubCredits?: boolean;
 }) {
   const response = await apiFetch(`${API_BASE}/api/checkout/club-benefits/preview`, {
@@ -643,6 +648,7 @@ export async function createClubCreditCheckout(data: {
   seatHoldToken?: string;
   concessionItems?: Array<{ id: string; quantity: number }>;
   couponCode?: string;
+  useClubBenefits?: boolean;
 }) {
   const response = await fetch(`${API_BASE}/api/checkout/club-credit`, {
     method: "POST",

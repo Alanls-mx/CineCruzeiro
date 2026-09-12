@@ -75,15 +75,22 @@ test("monitor reports host and process separately with bounded samples", async (
   assert.equal(percentile([100, 2, 3, 4], .95), 100);
   const monitor = createPerformanceMonitor({ diskPath: process.cwd(), intervalMs: 10 });
   try {
-    for (let i = 0; i < 10; i++) monitor.record(2500, 500);
+    for (let i = 0; i < 10; i++) monitor.record(2500, 500, { method: "GET", path: "/api/admin/dashboard" });
+    for (let i = 0; i < 5; i++) monitor.record(6200, 200, { method: "GET", path: `/api/checkout/orders/00000000-0000-4000-8000-00000000000${i}` });
     await new Promise((resolve) => setTimeout(resolve, 150));
     const snapshot = monitor.snapshot();
-    assert.equal(snapshot.current.requestCount, 10);
+    assert.equal(snapshot.current.requestCount, 15);
+    assert.equal(snapshot.current.internalRequestCount, 10);
+    assert.equal(snapshot.current.externalRequestCount, 5);
+    assert.equal(snapshot.current.requestP95Ms, 2500);
+    assert.equal(snapshot.current.externalRequestP95Ms, 6200);
     assert.equal(snapshot.current.errors5xx, 10);
     assert.ok(snapshot.current.memoryTotal > 0);
     assert.ok(snapshot.current.processRss > 0);
     assert.ok(snapshot.current.alerts.some((alert) => alert.code === "latency"));
+    assert.ok(snapshot.current.alerts.some((alert) => alert.code === "external_latency"));
     assert.ok(snapshot.current.alerts.some((alert) => alert.code === "http_errors"));
+    assert.ok(snapshot.current.slowestRoutes.some((route) => route.route === "GET /api/checkout/orders/:id" && route.externalDependency));
   } finally { monitor.close(); }
 });
 
@@ -116,6 +123,7 @@ test("cancellation commits refund intent before provider I/O and retries without
     logEvent: () => {},
     appendOrderAudit: () => {},
     eachStockedOrderItem: () => {},
+    isOrderSessionExpired: () => false,
     submitFullRefund: async (refund) => {
       assert.equal(locked, false);
       assert.ok(writes > 0);
@@ -159,6 +167,7 @@ test("manual refund requirement does not block order cancellation", async () => 
     logEvent: () => {},
     appendOrderAudit: () => {},
     eachStockedOrderItem: () => {},
+    isOrderSessionExpired: () => false,
     submitFullRefund: async () => { throw new Error("must not call provider"); }
   };
   const cancel = vm.runInNewContext(`${functionSource}; cancelOrderWithRefund`, context);
@@ -169,3 +178,34 @@ test("manual refund requirement does not block order cancellation", async () => 
   assert.equal(manualPayment.refundStatus, "required");
   assert.equal(writes, 1);
 });
+
+test("cancellation is blocked when session has already expired", async () => {
+  const source = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
+  const functionSource = source.slice(source.indexOf("async function cancelOrderWithRefund("), source.indexOf("\nfunction cancelOrder(db,"));
+  const db = { orders: [{ ...order, status: "paid" }], payments: [payment()], tickets: [] };
+  const context = {
+    Date, Number, String,
+    withCriticalMutation: async (fn) => fn(),
+    readDb: async () => db,
+    writeDb: async () => {},
+    orderPayment: () => db.payments[0],
+    orderTickets: () => [],
+    prepareRefund,
+    refundError: (code, message) => Object.assign(new Error(message), { code }),
+    structuredCloneSafe: structuredClone,
+    integrationConfigService: { resolvedConfig: () => ({}) },
+    paymentService: { getMercadoPagoAccessToken: () => "fake" },
+    cancelOrder: () => {},
+    logEvent: () => {},
+    appendOrderAudit: () => {},
+    eachStockedOrderItem: () => {},
+    isOrderSessionExpired: () => true,
+    submitFullRefund: async () => {}
+  };
+  const cancel = vm.runInNewContext(`${functionSource}; cancelOrderWithRefund`, context);
+  await assert.rejects(cancel(order.id, "Motivo", { id: "admin" }), (err) => {
+    assert.equal(err.code, "SESSION_EXPIRED");
+    return true;
+  });
+});
+

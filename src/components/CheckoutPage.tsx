@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { Accessibility, CircleUserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
@@ -110,6 +110,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [clubBenefitsPreview, setClubBenefitsPreview] = useState<ClubBenefitsPreviewResult | null>(null);
   const [clubBenefitsLoading, setClubBenefitsLoading] = useState(false);
   const [clubBenefitsError, setClubBenefitsError] = useState("");
+  const clubBenefitsRequestRef = useRef(0);
   const [seatMap, setSeatMap] = useState<SessionSeatMap | null>(null);
   const [seatMapStatus, setSeatMapStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const loadedSeatSessionRef = useRef("");
@@ -125,8 +126,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const total = checkoutDraftTotal(draft, found?.session, content?.concessions || [], content?.ticketTypes || []);
   const activeClub = activeClubSubscription(clubSubscriptions);
   const couponCanStackWithClub = !couponPreview || couponPreview.coupon.allowsClubStacking;
-  const clubBenefitsRequested = Boolean(customerUser && activeClub && couponCanStackWithClub && draft?.useClubBenefits !== false);
-  const appliedClubBenefitsPreview = clubBenefitsRequested ? clubBenefitsPreview : null;
+  const clubBenefitsEnabled = draft?.useClubBenefits !== false;
+  const clubCreditsEnabled = draft?.useClubCredits === true;
+  const clubCalculationRequested = Boolean(customerUser && activeClub && couponCanStackWithClub && (clubBenefitsEnabled || clubCreditsEnabled));
+  const appliedClubBenefitsPreview = clubCalculationRequested ? clubBenefitsPreview : null;
   const confirmedTotal = Number(confirmationOrder?.totalPrice);
   const checkoutTotal = Number.isFinite(confirmedTotal)
     ? confirmedTotal
@@ -149,8 +152,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     tickets: draft?.ticketQuantities || {},
     concessions: draft?.concessionQuantities || {},
     couponCode: couponPreview?.coupon.code || "",
-    requested: clubBenefitsRequested,
-    useClubCredits: draft?.useClubCredits === true,
+    requested: clubCalculationRequested,
+    useClubBenefits: clubBenefitsEnabled,
+    useClubCredits: clubCreditsEnabled,
   });
   const requiredSeatCount = draft ? generatedTicketCount(draft, availableTicketTypes) : 0;
   const selectedSeatIds = draft?.selectedSeatIds || [];
@@ -433,14 +437,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         updateDraft({ paymentResult: fresh });
         setConfirmationStatus("ready");
         if (["pending", "processing"].includes(String(fresh.payment?.status || ""))) {
-          timer = window.setTimeout(pollPayment, 3000);
+          timer = window.setTimeout(pollPayment, 5000);
         }
       } catch {
         if (!cancelled) timer = window.setTimeout(pollPayment, 5000);
       }
     };
 
-    timer = window.setTimeout(pollPayment, 3000);
+    timer = window.setTimeout(pollPayment, 5000);
     return () => {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
@@ -531,14 +535,14 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   }, [couponBasis, couponPreview]);
 
   useEffect(() => {
-    if (step !== "pagamento" || !found || !draft || !clubBenefitsRequested) {
+    if (step !== "pagamento" || !found || !draft || !clubCalculationRequested) {
+      clubBenefitsRequestRef.current += 1;
       setClubBenefitsPreview(null);
       setClubBenefitsLoading(false);
       setClubBenefitsError("");
       return;
     }
-    let cancelled = false;
-    setClubBenefitsPreview(null);
+    const requestId = ++clubBenefitsRequestRef.current;
     setClubBenefitsLoading(true);
     setClubBenefitsError("");
     previewCheckoutClubBenefits({
@@ -551,20 +555,20 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         .filter(([, quantity]) => Number(quantity) > 0)
         .map(([id, quantity]) => ({ id, quantity: Number(quantity) })),
       couponCode: couponPreview?.coupon.code || "",
+      useClubBenefits: draft.useClubBenefits !== false,
       useClubCredits: draft.useClubCredits === true,
     })
       .then((preview) => {
-        if (!cancelled) setClubBenefitsPreview(preview);
+        if (requestId === clubBenefitsRequestRef.current) setClubBenefitsPreview(preview);
       })
       .catch((error) => {
-        if (cancelled) return;
+        if (requestId !== clubBenefitsRequestRef.current) return;
         setClubBenefitsPreview(null);
         setClubBenefitsError(error instanceof Error ? error.message : "Não foi possível calcular os benefícios do Clube.");
       })
       .finally(() => {
-        if (!cancelled) setClubBenefitsLoading(false);
+        if (requestId === clubBenefitsRequestRef.current) setClubBenefitsLoading(false);
       });
-    return () => { cancelled = true; };
   }, [clubBenefitsBasis]);
 
   const submitPayment = useCallback(async (cardData?: MercadoPagoCardPayload) => {
@@ -655,6 +659,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           .filter(([, qty]) => Number(qty) > 0)
           .map(([id, qty]) => ({ id, quantity: Number(qty) })),
         couponCode: couponPreview?.coupon.code || "",
+        useClubBenefits: draft.useClubBenefits !== false,
       });
       updateDraft({ paymentResult: result });
       router.push(checkoutPathFor("confirmacao"));
@@ -786,7 +791,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               clubSubscriptions={clubSubscriptions}
               customerUser={customerUser!}
               clubBenefitsPreview={appliedClubBenefitsPreview}
-              clubBenefitsLoading={clubBenefitsRequested && clubBenefitsLoading}
+              clubBenefitsLoading={clubCalculationRequested && clubBenefitsLoading}
               clubBenefitsError={clubBenefitsError}
               onSubmit={submitPayment}
               onClubCredit={submitClubCredit}
@@ -802,7 +807,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
             />
           )}
         </section>
-        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} clubBenefits={summaryClubBenefits} clubCreditSummary={summaryClubCredits} clubBenefitsLoading={step === "pagamento" && clubBenefitsRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
+        <OrderSummary draft={draft} total={checkoutTotal} baseTotal={total} couponPreview={couponPreview} clubBenefits={summaryClubBenefits} clubCreditSummary={summaryClubCredits} clubBenefitsLoading={step === "pagamento" && clubCalculationRequested && clubBenefitsLoading} selectedConcessions={selectedConcessions} ticketTypes={availableTicketTypes} seatMap={seatMap} />
       </div>
       <MobileCheckoutBar
         draft={draft}
@@ -1205,6 +1210,8 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   const creditSummary = clubCreditsEnabled ? clubBenefitsPreview?.creditSummary : null;
   const estimatedCredit = Number(creditSummary?.totalAmount || 0);
   const estimatedPayable = total;
+  const clubPricingPending = Boolean(activeClub && couponCanStack && (clubBenefitsEnabled || clubCreditsEnabled))
+    && (clubBenefitsLoading || !clubBenefitsPreview || Boolean(clubBenefitsError));
   const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
@@ -1276,8 +1283,13 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
                 Mercado Pago indisponível para cobranças reais. Ative a integração com credenciais de produção em Admin → Integrações.
               </p>
             )}
-            {!mercadoPagoUnavailable && (
+            {!mercadoPagoUnavailable && !clubPricingPending && (
               <CardPaymentBrick publicKey={mercadoPagoConfig.publicKey} amount={total} loading={loading} onSubmit={onSubmit} />
+            )}
+            {!mercadoPagoUnavailable && clubPricingPending && (
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-300" role="status">
+                {clubBenefitsError || "Confirmando o valor dos benefícios e créditos antes de carregar o cartão..."}
+              </div>
             )}
           </div>
         )}
@@ -1292,7 +1304,7 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
         )}
         {paymentError && <p className="mt-5 text-sm font-semibold text-rose-200">{paymentError}</p>}
         {draft.paymentMethod !== "credit_card" && (
-          <button type="button" onClick={() => void onSubmit()} disabled={loading || mercadoPagoUnavailable} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
+          <button type="button" onClick={() => void onSubmit()} disabled={loading || mercadoPagoUnavailable || clubPricingPending} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
             {loading ? "Processando..." : "Gerar Pix"}
           </button>
         )}
@@ -1342,14 +1354,26 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
             {clubCreditsEnabled && (
               <div className="mt-3 space-y-2 bg-slate-950/60 p-4 text-sm tabular-nums">
                 <div className="flex justify-between gap-4"><span>Ingresso(s)</span><strong>{money(ticketSubtotal)}</strong></div>
+                {clubBenefitsLoading && !creditSummary && (
+                  <p className="border-t border-white/8 pt-3 text-xs font-semibold text-brand-200" role="status">Calculando o valor de cada crédito...</p>
+                )}
+                {!clubBenefitsLoading && !clubBenefitsError && !creditSummary && (
+                  <p className="border-t border-white/8 pt-3 text-xs font-semibold text-amber-200">Não foi possível confirmar a aplicação dos créditos. Desmarque e selecione novamente para recalcular.</p>
+                )}
                 {creditSummary?.items.map((item) => (
-                  <div key={item.ticketTypeId} className="flex justify-between gap-4 text-slate-300">
-                    <span>{item.quantity}× {item.ticketTypeName} · {money(item.discountedTotalPrice)} no total</span>
-                    <strong>{money(item.creditAmount)}</strong>
+                  <div key={item.ticketTypeId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 border-t border-white/8 pt-2 text-slate-300">
+                    <strong className="text-white">{item.quantity}× {item.ticketTypeName}</strong>
+                    <strong className="text-emerald-300">-{money(item.creditAmount)}</strong>
+                    <span className="text-xs text-slate-400">
+                      {money(item.originalUnitPrice)} cada · {money(item.originalTotalPrice)} original · {money(item.discountedTotalPrice)} após descontos
+                      {item.couponDiscountAmount > 0 ? `; -${money(item.couponDiscountAmount)} cupom` : ""}
+                      {item.planDiscountAmount > 0 ? `; -${money(item.planDiscountAmount)} plano` : ""}
+                    </span>
+                    <span className="text-right text-xs text-slate-400">Complemento {money(item.additionalPaymentAmount)}</span>
                   </div>
                 ))}
-                <div className="flex justify-between gap-4 text-emerald-300"><span>Crédito Clube</span><strong>-{money(estimatedCredit)}</strong></div>
-                <div className="flex justify-between gap-4 border-t border-white/10 pt-2"><span>{estimatedPayable > 0 ? "Complemento estimado" : "A pagar"}</span><strong>{money(estimatedPayable)}</strong></div>
+                {creditSummary && <div className="flex justify-between gap-4 text-emerald-300"><span>Crédito Clube</span><strong>-{money(estimatedCredit)}</strong></div>}
+                {creditSummary && <div className="flex justify-between gap-4 border-t border-white/10 pt-2"><span>{estimatedPayable > 0 ? "Complemento estimado" : "A pagar"}</span><strong>{money(estimatedPayable)}</strong></div>}
                 <p className="pt-1 text-xs text-slate-400">Créditos restantes após confirmação: {Math.max(0, clubCredits - requestedTickets)}.</p>
               </div>
             )}
@@ -1361,8 +1385,11 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
 }
 
 function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey: string; amount: number; loading: boolean; onSubmit: (cardData: MercadoPagoCardPayload) => Promise<void> }) {
+  const reactId = useId();
+  const containerId = useMemo(() => `card-payment-brick-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`, [reactId]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
+  const [mountAttempt, setMountAttempt] = useState(0);
   const onSubmitRef = useRef(onSubmit);
 
   useEffect(() => {
@@ -1372,11 +1399,15 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
   useEffect(() => {
     let mounted = true;
     let controller: MercadoPagoBrickController | null = null;
+    let readyTimeout = 0;
 
     async function mountBrick() {
       setReady(false);
       setError("");
       try {
+        const container = document.getElementById(containerId);
+        if (!container) throw new Error("Área segura do cartão não foi encontrada.");
+        container.replaceChildren();
         const { loadMercadoPago } = await import("@mercadopago/sdk-js");
         await loadMercadoPago();
         if (!mounted) return;
@@ -1384,7 +1415,10 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
         if (!MercadoPago) throw new Error("SDK do Mercado Pago não foi carregado.");
         const mp = new MercadoPago(publicKey, { locale: "pt-BR" });
         const bricksBuilder = mp.bricks();
-        controller = await bricksBuilder.create("cardPayment", "cardPaymentBrick_container", {
+        readyTimeout = window.setTimeout(() => {
+          if (mounted) setError("O formulário do Mercado Pago demorou para responder. Verifique a conexão e tente novamente.");
+        }, 15000);
+        const mountedController = await bricksBuilder.create("cardPayment", containerId, {
           initialization: { amount: Number(amount.toFixed(2)) },
           customization: {
             visual: { style: { theme: "dark" } },
@@ -1392,7 +1426,11 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
           },
           callbacks: {
             onReady: () => {
-              if (mounted) setReady(true);
+              window.clearTimeout(readyTimeout);
+              if (mounted) {
+                setError("");
+                setReady(true);
+              }
             },
             onSubmit: (formData: Record<string, unknown>, additionalData: Record<string, unknown>) => {
               const payload: MercadoPagoCardPayload = {
@@ -1409,7 +1447,10 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
             }
           }
         });
+        if (!mounted) mountedController?.unmount?.();
+        else controller = mountedController;
       } catch (err) {
+        window.clearTimeout(readyTimeout);
         if (mounted) setError(err instanceof Error ? err.message : "Não foi possível carregar o Mercado Pago.");
       }
     }
@@ -1417,15 +1458,23 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
     if (publicKey && amount > 0) void mountBrick();
     return () => {
       mounted = false;
+      window.clearTimeout(readyTimeout);
       controller?.unmount?.();
     };
-  }, [amount, publicKey]);
+  }, [amount, containerId, mountAttempt, publicKey]);
 
   return (
     <div className="rounded-lg bg-white/[0.03] p-4 shadow-soft">
-      {!ready && !error && <div className="h-48 skeleton-soft" />}
-      <div id="cardPaymentBrick_container" className={loading ? "pointer-events-none opacity-70" : ""} />
-      {error && <p className="mt-3 text-sm font-semibold text-rose-200">{error}</p>}
+      {!ready && !error && <div className="h-48 skeleton-soft" aria-label="Carregando formulário seguro do cartão" />}
+      <div id={containerId} className={`${loading ? "pointer-events-none opacity-70" : ""} ${!ready ? "min-h-1" : ""}`} />
+      {error && (
+        <div className="space-y-3" role="alert">
+          <p className="text-sm font-semibold text-rose-200">{error}</p>
+          <button type="button" onClick={() => setMountAttempt((attempt) => attempt + 1)} className="border border-white/15 bg-brand-900 px-4 py-2 text-xs font-black text-white hover:bg-brand-800">
+            Tentar carregar novamente
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1462,10 +1511,19 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
 
   return (
     <section className="max-w-3xl">
-      <div className={`overflow-hidden rounded-xl bg-[#101827] shadow-[0_24px_80px_rgba(2,6,23,.38)] transition-all duration-700 ease-out ${approved ? "ring-1 ring-emerald-500/30 shadow-[0_24px_80px_rgba(16,185,129,0.14)]" : ""}`}>
+      <div className={`overflow-hidden rounded-xl bg-[#101827] shadow-[0_24px_80px_rgba(2,6,23,.38)] transition-all duration-700 ease-out ${approved ? "border border-emerald-500/40 animate-[paymentSuccessGlow_2s_ease-out_both]" : "border border-white/5"}`}>
         <div className="p-6 sm:p-8">
+          {approved && (
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-1.5 text-xs font-black uppercase tracking-wider text-emerald-300 animate-[paymentSuccessPill_0.5s_cubic-bezier(0.34,1.56,0.64,1)_both]">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+              </span>
+              Pagamento confirmado com sucesso
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3">
-            <span className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-xl font-black transition-all duration-500 ease-out transform ${approved ? "bg-emerald-300 text-emerald-950 scale-100 animate-[paymentSuccessPop_0.5s_cubic-bezier(0.34,1.56,0.64,1)_both]" : "bg-gold-400 text-amber-950"}`}>
+            <span className={`inline-flex h-12 w-12 items-center justify-center rounded-full text-2xl font-black transition-all duration-500 ease-out transform ${approved ? "bg-emerald-400 text-emerald-950 ring-4 ring-emerald-400/25 scale-100 animate-[paymentSuccessPop_0.7s_cubic-bezier(0.34,1.56,0.64,1)_both]" : "bg-gold-400 text-amber-950"}`}>
               {approved ? "✓" : "!"}
             </span>
             <div className={`transition-all duration-500 ease-out ${approved ? "animate-[paymentSuccessFadeIn_0.6s_ease-out_both]" : ""}`}>
@@ -1476,10 +1534,10 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
                 {confirmationStatus === "checking"
                   ? "Estamos conferindo seu pedido"
                   : approved
-                  ? "Tudo certo com sua compra"
+                  ? "Tudo pronto para a sessão"
                   : expired
-                  ? "O prazo deste pagamento terminou"
-                  : "Pedido criado com segurança"}
+                  ? "Tempo limite do pedido esgotado"
+                  : "Aguardando confirmação do pagamento"}
               </h2>
             </div>
           </div>
@@ -1531,7 +1589,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
                 Iniciar novo pagamento
               </Link>
             )}
-            <Link href="/conta/ingressos" className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
+            <Link href="/conta/ingressos" className={`inline-flex min-h-[48px] items-center justify-center rounded-lg px-6 text-sm font-black transition ${approved ? "bg-emerald-400 text-emerald-950 hover:bg-emerald-300 shadow-[0_4px_20px_rgba(52,211,153,0.35)]" : "bg-gold-400 text-slate-950 hover:bg-gold-300"}`}>
               Ver meus ingressos
             </Link>
             {(result?.payment?.checkoutUrl || result?.payment?.ticketUrl) && !approved && (
@@ -1607,7 +1665,6 @@ function activeClubSubscription(subscriptions: AccountSubscription[]) {
   const now = Date.now();
   return subscriptions.find((subscription) => {
     if (!['active', 'ending'].includes(subscription.status)) return false;
-    if (Number(subscription.creditsRemaining ?? subscription.creditsAvailable ?? 0) <= 0) return false;
     const benefitsUntil = subscription.benefitsUntil || subscription.currentPeriodEnd || subscription.cycleEnd;
     return !benefitsUntil || new Date(benefitsUntil).getTime() > now;
   }) || null;
@@ -1672,9 +1729,15 @@ function OrderSummary({ draft, total, baseTotal, couponPreview, clubBenefits, cl
                 <dd>{clubCreditSummary.quantity} {clubCreditSummary.quantity === 1 ? "crédito" : "créditos"}</dd>
               </div>
               {clubCreditSummary.items.map((item) => (
-                <div key={item.ticketTypeId} className="flex justify-between gap-4 pl-3 text-xs leading-5">
-                  <dt>{item.quantity}× {item.ticketTypeName}<span className="block text-slate-400">{money(item.discountedTotalPrice)} neste tipo de ingresso</span></dt>
-                  <dd className="shrink-0">-{money(item.creditAmount)}</dd>
+                <div key={item.ticketTypeId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 pl-3 text-xs leading-5">
+                  <dt className="font-bold text-emerald-200">{item.quantity}× {item.ticketTypeName}</dt>
+                  <dd className="shrink-0 font-bold">-{money(item.creditAmount)}</dd>
+                  <dt className="text-slate-400">
+                    {money(item.originalUnitPrice)} cada · {money(item.originalTotalPrice)} original · {money(item.discountedTotalPrice)} após descontos
+                    {item.couponDiscountAmount > 0 ? `; cupom -${money(item.couponDiscountAmount)}` : ""}
+                    {item.planDiscountAmount > 0 ? `; plano -${money(item.planDiscountAmount)}` : ""}
+                  </dt>
+                  <dd className="shrink-0 text-slate-400">Complemento {money(item.additionalPaymentAmount)}</dd>
                 </div>
               ))}
             </div>
