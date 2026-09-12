@@ -357,12 +357,15 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               Baixar ingresso
             </a>
             <ActionButton icon={<WalletCards />} label="Adicionar à Google Wallet" onClick={addWallet} />
-            <a href="#transferir-ingresso" className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
-              <Send className="h-4 w-4" />
-              Transferir ingresso
-            </a>
+            {ticket.canTransfer && (
+              <a href="#transferir-ingresso" className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
+                <Send className="h-4 w-4" />
+                Transferir ingresso
+              </a>
+            )}
           </div>
 
+          {ticket.canTransfer ? (
           <form id="transferir-ingresso" onSubmit={submitTransfer} className="mt-6 rounded-2xl border border-white/10 bg-brand-950/80 p-5 backdrop-blur-sm sm:p-6">
             <h4 className="text-sm font-black uppercase tracking-[.16em] text-gold-400 flex items-center gap-2">
               <Send className="h-4 w-4" />
@@ -419,17 +422,20 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               </button>
             </div>
 
-            {!ticket.canTransfer && (
-              <p className="mt-3 text-xs font-medium text-slate-400">
-                {ticket.transferBlockedReason || "Este ingresso não pode ser transferido porque já foi utilizado, cancelado ou a sessão já ocorreu."}
-              </p>
-            )}
             {message && (
               <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-950/50 p-3 text-xs font-semibold text-amber-200">
                 {message}
               </div>
             )}
           </form>
+          ) : (
+            <div className="mt-6 bg-brand-950/70 p-4 text-sm leading-6 text-slate-300">
+              <strong className="block text-white">Transferência indisponível</strong>
+              <p className="mt-1">
+                {ticket.transferBlockedReason || "Este ingresso não pode ser transferido porque já foi utilizado, cancelado ou a sessão já ocorreu."}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </article>

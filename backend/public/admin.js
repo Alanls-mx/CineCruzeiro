@@ -158,6 +158,7 @@ let state = {
   qrTorchTrack: null,
   qrCameraPermission: "unknown",
   qrAutoRestartTimer: null,
+  qrPendingEntryCode: "",
   qrPendingConcessionCode: "",
   validationSessionLock: false,
   validationSessionId: "",
@@ -6285,12 +6286,13 @@ function updateValidationSessionLock() {
 
 function setTicketValidationMode(mode) {
   state.validationMode = mode === "concessions" ? "concessions" : "entry";
+  state.qrPendingEntryCode = "";
   state.qrPendingConcessionCode = "";
   const concessionsMode = state.validationMode === "concessions";
   const scope = document.querySelector(".validation-scope");
   if (scope) scope.hidden = concessionsMode;
   const validateButton = $("validateTicketButton");
-  if (validateButton) validateButton.textContent = concessionsMode ? "Validar retirada da bomboniere" : "Validar entrada";
+  if (validateButton) validateButton.textContent = concessionsMode ? "Conferir pedido" : "Conferir ingresso";
   const manualLabel = $("manualCodeLabelText");
   if (manualLabel) manualLabel.textContent = concessionsMode ? "Código do pedido ou ingresso" : "Código do ingresso";
   const instruction = $("scannerInstructionText");
@@ -6371,6 +6373,11 @@ function renderTicketValidationResult(type, payload = {}) {
       copy: "Marque cada item depois de confirmar que ele entrou em preparo. A baixa só acontece na confirmação final.",
       action: "Confirmar preparo e entrega"
     },
+    entryPending: {
+      title: "Confira o ingresso",
+      copy: "Verifique os dados da sessão e libere a entrada somente depois de confirmar o ingresso com o cliente.",
+      action: "Liberar entrada"
+    },
     concessionsUsed: {
       title: "Itens já entregues",
       copy: message || "A bomboniere deste pedido já foi retirada.",
@@ -6384,20 +6391,28 @@ function renderTicketValidationResult(type, payload = {}) {
   };
   const template = templates[type] || templates.invalid;
   const concessions = Array.isArray(payload.concessions) ? payload.concessions : [];
-  const pendingConfirmation = type === "concessionsPending";
+  const pendingConcessionConfirmation = type === "concessionsPending";
+  const pendingEntryConfirmation = type === "entryPending";
+  const detailsMarkup = details.length ? `<div class="scanner-result-details">${details.map(escapeHtml).join("<br>")}</div>` : "";
+  const itemsMarkup = concessions.length ? `<div class="scanner-result-items">${concessions.map((item, index) => pendingConcessionConfirmation
+    ? `<label><input type="checkbox" data-concession-confirmation="${index}" /><span><b>${Number(item.quantity || 0)}x</b> ${escapeHtml(item.name || item.id || "Item")} <small>está sendo preparado</small></span></label>`
+    : `<span><b>${Number(item.quantity || 0)}x</b> ${escapeHtml(item.name || item.id || "Item")}</span>`).join("")}</div>` : "";
+  const priorityMarkup = pendingConcessionConfirmation
+    ? `<section class="scanner-order-priority"><span class="scanner-result-label">Itens do pedido</span>${itemsMarkup}</section>
+       <div class="scanner-result-context"><span class="scanner-result-label">Filme e sessão vinculados</span>${detailsMarkup}</div>`
+    : `${detailsMarkup}${itemsMarkup}`;
   target.className = `validation-result scanner-result ${type}`;
   target.innerHTML = `
     <strong>${escapeHtml(template.title)}</strong>
-    ${details.length ? `<div class="scanner-result-details">${details.map(escapeHtml).join("<br>")}</div>` : ""}
-    ${concessions.length ? `<div class="scanner-result-items">${concessions.map((item, index) => pendingConfirmation
-      ? `<label><input type="checkbox" data-concession-confirmation="${index}" /><span><b>${Number(item.quantity || 0)}x</b> ${escapeHtml(item.name || item.id || "Item")} <small>está sendo preparado</small></span></label>`
-      : `<span><b>${Number(item.quantity || 0)}x</b> ${escapeHtml(item.name || item.id || "Item")}</span>`).join("")}</div>` : ""}
+    ${priorityMarkup}
     <p>${template.copy}</p>
-    ${pendingConfirmation
+    ${pendingConcessionConfirmation
       ? `<div class="scanner-confirmation-actions"><button class="primary-button full" id="confirmConcessionFulfillmentButton" type="button" disabled>${escapeHtml(template.action)}</button><button class="ghost-button full" type="button" onclick="scanNextTicket()">Cancelar e ler outro QR</button></div>`
+      : pendingEntryConfirmation
+        ? `<div class="scanner-confirmation-actions"><button class="primary-button full" id="confirmTicketEntryButton" type="button">${escapeHtml(template.action)}</button><button class="ghost-button full" type="button" onclick="scanNextTicket()">Cancelar e ler outro QR</button></div>`
       : `<button class="primary-button full" type="button" onclick="scanNextTicket()">${escapeHtml(template.action)}</button>`}
   `;
-  if (pendingConfirmation) {
+  if (pendingConcessionConfirmation) {
     const checkboxes = [...target.querySelectorAll("[data-concession-confirmation]")];
     const confirmButton = target.querySelector("#confirmConcessionFulfillmentButton");
     const updateConfirmation = () => {
@@ -6405,6 +6420,8 @@ function renderTicketValidationResult(type, payload = {}) {
     };
     checkboxes.forEach((checkbox) => checkbox.addEventListener("change", updateConfirmation));
     confirmButton.addEventListener("click", () => confirmTicketConcessions(payload.code));
+  } else if (pendingEntryConfirmation) {
+    target.querySelector("#confirmTicketEntryButton")?.addEventListener("click", () => confirmTicketEntry(payload.code));
   }
 }
 
@@ -6426,16 +6443,23 @@ async function validateTicketByCode(code, options = {}) {
       return;
     }
     const isConcessions = state.validationMode === "concessions";
+    const isConfirmation = isConcessions ? options.confirmConcessions : options.confirmEntry;
     const result = await api("/api/tickets/validate", {
       method: "POST",
       body: JSON.stringify({
         code: cleanCode,
         sessionId,
         mode: state.validationMode,
-        action: isConcessions && !options.confirmConcessions ? "inspect" : "confirm"
+        action: isConfirmation ? "confirm" : "inspect"
       })
     });
-    if (result.result === "concessions_pending_confirmation") {
+    if (result.result === "ticket_pending_confirmation") {
+      state.qrPendingEntryCode = cleanCode;
+      renderTicketValidationResult("entryPending", {
+        code: cleanCode,
+        ticket: result.ticket
+      });
+    } else if (result.result === "concessions_pending_confirmation") {
       state.qrPendingConcessionCode = cleanCode;
       renderTicketValidationResult("concessionsPending", {
         code: cleanCode,
@@ -6443,6 +6467,7 @@ async function validateTicketByCode(code, options = {}) {
         concessions: result.concessions
       });
     } else {
+      state.qrPendingEntryCode = "";
       state.qrPendingConcessionCode = "";
       renderTicketValidationResult(
         result.result === "concessions_fulfilled" ? "concessionsOk" : "ok",
@@ -6451,7 +6476,7 @@ async function validateTicketByCode(code, options = {}) {
     }
     if ($("ticketValidationCode")) $("ticketValidationCode").value = result.ticket?.code || cleanCode;
     navigator.vibrate?.(80);
-    if (result.result !== "concessions_pending_confirmation") await loadContent({ silent: true });
+    if (!result.confirmationRequired) await loadContent({ silent: true });
   } catch (error) {
     if (!navigator.onLine) {
       renderTicketValidationResult("offline");
@@ -6484,7 +6509,7 @@ async function validateTicketByCode(code, options = {}) {
     }
   } finally {
     state.qrValidationLocked = false;
-    if (options.autoRestart && state.validationMode !== "concessions") {
+    if (options.autoRestart && !state.qrPendingEntryCode && !state.qrPendingConcessionCode) {
       state.qrAutoRestartTimer = setTimeout(() => {
         if (state.boxOfficeTab === "validateTicket" || state.concessionTab === "validateQr") startQrReader();
       }, 4200);
@@ -6499,6 +6524,15 @@ async function confirmTicketConcessions(code) {
     return;
   }
   await validateTicketByCode(cleanCode, { confirmConcessions: true });
+}
+
+async function confirmTicketEntry(code) {
+  const cleanCode = String(code || state.qrPendingEntryCode || "").trim();
+  if (!cleanCode) {
+    renderTicketValidationResult("invalid", { message: "Leia novamente o QR Code para liberar esta entrada." });
+    return;
+  }
+  await validateTicketByCode(cleanCode, { confirmEntry: true });
 }
 
 async function startQrReader() {
@@ -6808,6 +6842,7 @@ function scanNextTicket() {
   if ($("ticketValidationCode")) $("ticketValidationCode").value = "";
   state.qrLastValue = "";
   state.qrLastValueAt = 0;
+  state.qrPendingEntryCode = "";
   state.qrPendingConcessionCode = "";
   if ($("ticketValidationResult")) {
     $("ticketValidationResult").className = "validation-result scanner-ready";

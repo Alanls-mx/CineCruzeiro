@@ -3353,6 +3353,43 @@ input[type="file"]::file-selector-button {
   line-height: 1.45;
 }
 
+.scanner-result-label {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.scanner-order-priority {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  background: rgba(2, 6, 23, 0.56);
+}
+
+.scanner-order-priority .scanner-result-items {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.scanner-order-priority .scanner-result-items label {
+  min-height: 58px;
+  padding: 5px;
+  font-size: 15px;
+}
+
+.scanner-result-context {
+  display: grid;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+.scanner-result-context .scanner-result-details {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .scanner-result-items {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -3423,6 +3460,12 @@ input[type="file"]::file-selector-button {
 .scanner-result.concessionsPending {
   color: #fde68a;
   background: rgba(120, 75, 10, 0.22);
+  box-shadow: var(--shadow-soft);
+}
+
+.scanner-result.entryPending {
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.16);
   box-shadow: var(--shadow-soft);
 }
 

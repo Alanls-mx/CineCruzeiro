@@ -2236,7 +2236,10 @@ function canTransferTicket(db, ticket) {
   if (!order || order.status !== "paid") return { ok: false, message: "Somente ingressos pagos podem ser transferidos." };
   if (status !== "active") return { ok: false, message: "Este ingresso nao esta valido para transferencia." };
   if (ticketIsExpired(ticket, db)) return { ok: false, message: "Este ingresso ja passou do prazo de transferencia." };
-  const transferPolicy = evaluateTicketTransfer(persistedTicketTransferHistory(db, ticket), { ticketId: ticket.id }, ticketTransferLimits);
+  const transferPolicy = evaluateTicketTransfer(persistedTicketTransferHistory(db, ticket), {
+    ticketId: ticket.id,
+    sessionStartsAt: ticketSessionStartsAt(ticket, db)
+  }, ticketTransferLimits);
   if (!transferPolicy.ok) return transferPolicy;
   return { ok: true };
 }
@@ -2442,7 +2445,7 @@ function checkAndAutoArchiveOrder(db, order, adminUser, reason = "Todos os itens
   return false;
 }
 
-function validateTicket(db, code, adminUser, expectedSessionId = "") {
+function inspectTicket(db, code, expectedSessionId = "") {
   const ticketCode = extractTicketCode(code);
   const ticket = (db.tickets || []).find((item) => item.code === ticketCode);
   if (!ticket) {
@@ -2496,6 +2499,12 @@ function validateTicket(db, code, adminUser, expectedSessionId = "") {
     error.ticket = enrichTicket(db, ticket);
     throw error;
   }
+  return ticket;
+}
+
+function validateTicket(db, code, adminUser, expectedSessionId = "") {
+  const ticket = inspectTicket(db, code, expectedSessionId);
+  const order = (db.orders || []).find((item) => item.id === ticket.orderId);
   ticket.status = "used";
   ticket.usedAt = new Date().toISOString();
   ticket.usedBy = adminUser?.id || "";
@@ -13136,7 +13145,8 @@ async function handleApi(req, res, pathname) {
         const transferPolicy = evaluateTicketTransfer(persistedTicketTransferHistory(lockedDb, ticket), {
           ticketId: ticket.id,
           fromUserId: freshUser.id,
-          toUserId: targetUser.id
+          toUserId: targetUser.id,
+          sessionStartsAt: ticketSessionStartsAt(ticket, lockedDb)
         }, ticketTransferLimits);
         if (!transferPolicy.ok) {
           sendJson(res, transferPolicy.statusCode || 429, { error: { code: transferPolicy.code, message: transferPolicy.message } }, {
@@ -13659,6 +13669,7 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const validationMode = body.mode === "concessions" ? "concessions" : "entry";
     const inspectConcessions = validationMode === "concessions" && body.action === "inspect";
+    const inspectEntry = validationMode === "entry" && body.action === "inspect";
     try {
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
@@ -13667,8 +13678,24 @@ async function handleApi(req, res, pathname) {
           ? inspectConcessions
             ? inspectTicketConcessions(lockedDb, body.code || body.qrPayload)
             : validateTicketConcessions(lockedDb, body.code || body.qrPayload, adminUser)
-          : { ticket: validateTicket(lockedDb, body.code || body.qrPayload, adminUser, body.sessionId) };
+          : { ticket: inspectEntry
+            ? inspectTicket(lockedDb, body.code || body.qrPayload, body.sessionId)
+            : validateTicket(lockedDb, body.code || body.qrPayload, adminUser, body.sessionId) };
         const ticket = validation.ticket;
+        if (inspectEntry) {
+          logEvent("info", "ticket.inspected", {
+            ticketId: ticket.id,
+            orderId: ticket.orderId,
+            inspectedBy: adminUser?.id || ""
+          });
+          sendJson(res, 200, {
+            ok: true,
+            result: "ticket_pending_confirmation",
+            confirmationRequired: true,
+            ticket: enrichTicket(lockedDb, ticket)
+          });
+          return;
+        }
         if (inspectConcessions) {
           logEvent("info", "concessions.inspected", {
             ticketId: ticket.id,

@@ -35,6 +35,12 @@ function reject(code, message, statusCode, retryAfter = 0) {
   return { ok: false, code, message, statusCode, retryAfter };
 }
 
+function timestamp(value) {
+  if (value instanceof Date) return value.getTime();
+  const parsed = new Date(value || 0).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function evaluateTicketTransfer(transfers = [], context = {}, limits = transferLimits(), nowValue = Date.now()) {
   const now = nowValue instanceof Date ? nowValue.getTime() : Number(nowValue || Date.now());
   const history = Array.isArray(transfers) ? transfers : [];
@@ -45,11 +51,20 @@ function evaluateTicketTransfer(transfers = [], context = {}, limits = transferL
   const windowStart = now - limits.windowMs;
   const recentTicketTransfers = ticketHistory.filter((transfer) => transferTimestamp(transfer) > windowStart);
   if (recentTicketTransfers.length >= limits.maxPerTicketPerWindow) {
+    const retryAfter = retryAfterForWindow(recentTicketTransfers, now, limits.windowMs);
+    const sessionStartsAt = timestamp(context.sessionStartsAt);
+    if (sessionStartsAt && sessionStartsAt <= now + retryAfter * 1000) {
+      return reject(
+        "TICKET_TRANSFER_WINDOW_EXCEEDS_SESSION",
+        "Este ingresso já foi transferido e a sessão acontece antes do fim do intervalo de 24 horas. Uma nova transferência não estará disponível.",
+        409
+      );
+    }
     return reject(
       "TICKET_TRANSFER_DAILY_LIMIT_REACHED",
       "Aguarde o fim do período de 24 horas. Este ingresso já foi transferido uma vez neste intervalo.",
       429,
-      retryAfterForWindow(recentTicketTransfers, now, limits.windowMs)
+      retryAfter
     );
   }
 
@@ -94,5 +109,5 @@ module.exports = {
   DEFAULT_TRANSFER_LIMITS,
   evaluateTicketTransfer,
   transferLimits,
-  _test: { boundedInteger, retryAfterForWindow, transferTimestamp }
+  _test: { boundedInteger, retryAfterForWindow, timestamp, transferTimestamp }
 };

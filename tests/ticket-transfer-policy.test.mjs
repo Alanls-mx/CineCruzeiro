@@ -51,6 +51,23 @@ test("permite nova transferência do mesmo ingresso após 24 horas", () => {
   assert.deepEqual(result, { ok: true });
 });
 
+test("não oferece nova transferência quando a sessão ocorre antes do fim das 24 horas", () => {
+  const result = evaluateTicketTransfer([
+    transfer({ transferredAt: new Date(NOW - 2 * 60 * 60 * 1000).toISOString() })
+  ], {
+    ticketId: "ticket-1",
+    fromUserId: "user-c",
+    toUserId: "user-d",
+    sessionStartsAt: new Date(NOW + 3 * 60 * 60 * 1000).toISOString()
+  }, LIMITS, NOW);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.statusCode, 409);
+  assert.equal(result.code, "TICKET_TRANSFER_WINDOW_EXCEEDS_SESSION");
+  assert.equal(result.retryAfter, 0);
+  assert.match(result.message, /não estará disponível/i);
+});
+
 test("limita transferências enviadas por usuário dentro da janela", () => {
   const history = ["ticket-a", "ticket-b", "ticket-c"].map((ticketId, index) => transfer({
     ticketId,
