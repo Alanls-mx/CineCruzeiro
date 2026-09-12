@@ -1462,17 +1462,17 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
 
   return (
     <section className="max-w-3xl">
-      <div className="overflow-hidden rounded-xl bg-[#101827] shadow-[0_24px_80px_rgba(2,6,23,.38)]">
+      <div className={`overflow-hidden rounded-xl bg-[#101827] shadow-[0_24px_80px_rgba(2,6,23,.38)] transition-all duration-700 ease-out ${approved ? "ring-1 ring-emerald-500/30 shadow-[0_24px_80px_rgba(16,185,129,0.14)]" : ""}`}>
         <div className="p-6 sm:p-8">
           <div className="flex flex-wrap items-center gap-3">
-            <span className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-xl font-black ${approved ? "bg-emerald-300 text-emerald-950" : "bg-gold-400 text-amber-950"}`}>
+            <span className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-xl font-black transition-all duration-500 ease-out transform ${approved ? "bg-emerald-300 text-emerald-950 scale-100 animate-[paymentSuccessPop_0.5s_cubic-bezier(0.34,1.56,0.64,1)_both]" : "bg-gold-400 text-amber-950"}`}>
               {approved ? "✓" : "!"}
             </span>
-            <div>
-              <p className="text-xs font-black uppercase tracking-[.16em] text-brand-300">
+            <div className={`transition-all duration-500 ease-out ${approved ? "animate-[paymentSuccessFadeIn_0.6s_ease-out_both]" : ""}`}>
+              <p className={`text-xs font-black uppercase tracking-[.16em] transition-colors duration-500 ${approved ? "text-emerald-400" : "text-brand-300"}`}>
                 {approved ? "Compra confirmada" : "Pagamento em andamento"}
               </p>
-              <h2 className="mt-1 font-display text-3xl font-black leading-none sm:text-4xl">
+              <h2 className="mt-1 font-display text-3xl font-black leading-none sm:text-4xl text-white">
                 {confirmationStatus === "checking"
                   ? "Estamos conferindo seu pedido"
                   : approved
@@ -1484,7 +1484,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
             </div>
           </div>
 
-          <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300">
+          <p className={`mt-6 max-w-2xl text-base leading-7 text-slate-300 transition-all duration-500 ease-out ${approved ? "animate-[paymentSuccessFadeIn_0.7s_ease-out_both]" : ""}`}>
             {approved
               ? "Seus ingressos digitais foram liberados na sua conta. Lá você encontra QR Code, download, transferência e histórico da compra."
               : expired
@@ -1497,23 +1497,17 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Referência</span>
               <strong className="mt-2 block break-all text-white">{orderReference}</strong>
             </div>
-            <div className="rounded-lg bg-brand-950/70 p-4" aria-live="polite">
+            <div className={`rounded-lg p-4 transition-all duration-500 ${approved ? "bg-emerald-950/40 ring-1 ring-emerald-500/20" : "bg-brand-950/70"}`} aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
-              <strong className="mt-2 block text-white">
+              <strong className={`mt-2 block text-white transition-colors duration-500 ${approved ? "text-emerald-300 font-semibold" : ""}`}>
                 {approved ? "Pagamento aprovado" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
               </strong>
-              {pending && (
-                <span className="mt-2 flex items-center gap-2 text-xs font-semibold text-brand-300">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-brand-300" aria-hidden="true" />
-                  Atualização automática ativa
-                </span>
-              )}
             </div>
             {pending && expiresAt && !expired && (
               <div className="rounded-lg bg-brand-950/70 p-4 sm:col-span-2" role="timer" aria-live="polite">
                 <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Tempo para concluir</span>
                 <strong className="mt-2 block font-mono text-2xl tabular-nums text-gold-300">{remainingLabel}</strong>
-                <span className="mt-1 block text-xs text-slate-400">Prazo do pedido controlado pelo servidor.</span>
+                <span className="mt-1 block text-xs text-slate-400">Conclua o pagamento no prazo estimado</span>
               </div>
             )}
           </div>
@@ -1531,7 +1525,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
             </div>
           )}
 
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className={`mt-8 flex flex-wrap gap-3 transition-all duration-500 ${approved ? "animate-[paymentSuccessFadeIn_0.8s_ease-out_both]" : ""}`}>
             {expired && (
               <Link href={`/checkout/${draft.sessionId}/pagamento`} onClick={onRestartPayment} className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
                 Iniciar novo pagamento
