@@ -1,26 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET_COMMIT="${1:-af43d7f57f94bc0a967237fb53cd70e2152fb99c}"
-COMMIT_SHORT="${TARGET_COMMIT:0:7}"
-RELEASE_TAG="$(date -u +%Y%m%d-%H%M)-$COMMIT_SHORT"
 BASE_DIR="/home/ubuntu/projects/cinecruzeiro"
-RELEASE_DIR="$BASE_DIR/releases/$RELEASE_TAG"
-BACKUP_FILE="$BASE_DIR/backups/cinecruzeiro-$(date -u +%Y%m%dT%H%MZ)-pre-deploy-$COMMIT_SHORT.dump"
-
-echo "=== [1/6] Starting deploy for commit $COMMIT_SHORT ($RELEASE_TAG) ==="
+RELEASE_TAG_BASE="$(date -u +%Y%m%d-%H%M)"
+TMP_CLONE_DIR="$BASE_DIR/releases/tmp-clone-$$"
 
 # 1. Database backup
-echo "=== [2/6] Performing database backup ==="
+echo "=== [1/6] Performing database backup ==="
 export $(grep -v '^#' "$BASE_DIR/shared/backend.runtime.env" | xargs -d '\n')
+BACKUP_FILE="$BASE_DIR/backups/cinecruzeiro-$(date -u +%Y%m%dT%H%MZ)-pre-deploy.dump"
 pg_dump -d "$DATABASE_URL" -Fc -f "$BACKUP_FILE"
 ls -lh "$BACKUP_FILE"
 
-# 2. Clone repository & checkout target commit
-echo "=== [3/6] Cloning repo to $RELEASE_DIR ==="
-git clone --quiet https://github.com/Alanls-mx/CineCruzeiro.git "$RELEASE_DIR"
+# 2. Clone repository & determine commit
+echo "=== [2/6] Cloning repo ==="
+git clone --quiet https://github.com/Alanls-mx/CineCruzeiro.git "$TMP_CLONE_DIR"
+TARGET_COMMIT="${1:-$(git -C "$TMP_CLONE_DIR" rev-parse HEAD)}"
+COMMIT_SHORT="${TARGET_COMMIT:0:7}"
+RELEASE_TAG="${RELEASE_TAG_BASE}-${COMMIT_SHORT}"
+RELEASE_DIR="$BASE_DIR/releases/$RELEASE_TAG"
+rm -rf "$RELEASE_DIR"
+mv "$TMP_CLONE_DIR" "$RELEASE_DIR"
 cd "$RELEASE_DIR"
 git checkout "$TARGET_COMMIT"
+
+echo "=== [3/6] Deploying commit $COMMIT_SHORT ($RELEASE_TAG) ==="
 
 # 3. Install dependencies & build
 echo "=== [4/6] Installing dependencies and building ==="
