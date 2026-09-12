@@ -944,11 +944,12 @@ function renderConcessionDailySales() {
 
     const totalItems = (order.items || []).reduce((s, i) => s + Number(i.quantity || 0), 0);
     const fulfilledItems = (order.items || []).reduce((s, i) => s + Number(i.fulfilledQuantity || 0), 0);
-    const isRefunded = Number(order.finance?.refundTotal || 0) > 0 || order.status === "refunded";
+    const isRefunded = Number(order.finance?.refundTotal || 0) > 0 || order.refund?.status === "completed" || order.status === "refunded";
+    const isCancelled = order.concessionStatus === "cancelled" || order.status === "cancelled" || isRefunded;
 
-    if (statusFilter === "refunded") return isRefunded;
-    if (statusFilter === "fulfilled") return !isRefunded && fulfilledItems >= totalItems && totalItems > 0;
-    if (statusFilter === "pending") return !isRefunded && fulfilledItems < totalItems;
+    if (statusFilter === "refunded" || statusFilter === "cancelled") return isCancelled;
+    if (statusFilter === "fulfilled") return !isCancelled && fulfilledItems >= totalItems && totalItems > 0;
+    if (statusFilter === "pending") return !isCancelled && fulfilledItems < totalItems;
     return true;
   });
 
@@ -977,13 +978,14 @@ function renderConcessionDailySales() {
           const finance = order.finance || {};
           const totalItems = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
           const fulfilledItems = items.reduce((s, i) => s + Number(i.fulfilledQuantity || 0), 0);
-          const isRefunded = Number(finance.refundTotal || 0) > 0 || order.status === "refunded";
+          const isRefunded = Number(finance.refundTotal || 0) > 0 || order.refund?.status === "completed" || order.status === "refunded";
+          const isCancelled = order.concessionStatus === "cancelled" || order.status === "cancelled" || isRefunded;
           const discountTotal = Number(finance.clubDiscount || 0) + Number(finance.freeItemDiscount || 0) + Number(finance.couponDiscount || 0);
 
           let deliveryLabel = "Aguardando";
           let deliveryTone = "warn";
-          if (isRefunded) {
-            deliveryLabel = "Reembolsado";
+          if (isCancelled) {
+            deliveryLabel = isRefunded ? "Cancelado (Reembolsado)" : "Cancelado";
             deliveryTone = "danger";
           } else if (totalItems > 0 && fulfilledItems >= totalItems) {
             deliveryLabel = "Entregue";
@@ -1011,12 +1013,12 @@ function renderConcessionDailySales() {
               <td data-label="Itens">
                 <div class="concession-item-chips">
                   ${items.map((item) => {
-                    const itemRefunded = item.refundStatus === "completed";
+                    const itemRefunded = item.refundStatus === "completed" || item.status === "cancelled" || isCancelled;
                     const f = Number(item.fulfilledQuantity || 0);
                     const q = Number(item.quantity || 0);
                     const isF = f >= q && !itemRefunded;
                     const tone = itemRefunded ? "chip-refunded" : isF ? "chip-ok" : "chip-pending";
-                    return `<span class="concession-chip ${tone}" title="${escapeHtml(item.name)}: ${itemRefunded ? "Reembolsado" : isF ? "Entregue" : `${f}/${q} retirado`}"><strong>${q}x</strong> ${escapeHtml(item.name)}</span>`;
+                    return `<span class="concession-chip ${tone}" title="${escapeHtml(item.name)}: ${itemRefunded ? "Cancelado / Reembolsado" : isF ? "Entregue" : `${f}/${q} retirado`}"><strong>${q}x</strong> ${escapeHtml(item.name)}</span>`;
                   }).join("")}
                 </div>
               </td>
@@ -1069,11 +1071,12 @@ function openConcessionOrderDetail(orderId) {
   const finance = order.finance || {};
   const totalItems = items.reduce((s, i) => s + Number(i.quantity || 0), 0);
   const fulfilledItems = items.reduce((s, i) => s + Number(i.fulfilledQuantity || 0), 0);
-  const isRefunded = Number(finance.refundTotal || 0) > 0 || order.status === "refunded";
+  const isRefunded = Number(finance.refundTotal || 0) > 0 || order.refund?.status === "completed" || order.status === "refunded";
+  const isCancelled = order.concessionStatus === "cancelled" || order.status === "cancelled" || isRefunded;
 
   let deliveryBadge = '<span class="status-label warn">Aguardando retirada</span>';
-  if (isRefunded) {
-    deliveryBadge = '<span class="status-label danger">Reembolsado</span>';
+  if (isCancelled) {
+    deliveryBadge = `<span class="status-label danger">${isRefunded ? "Cancelado (Reembolsado)" : "Cancelado"}</span>`;
   } else if (fulfilledItems >= totalItems && totalItems > 0) {
     deliveryBadge = `<span class="status-label ok">Entregue (${fulfilledItems}/${totalItems})</span>`;
   } else if (fulfilledItems > 0) {
@@ -1141,7 +1144,7 @@ function openConcessionOrderDetail(orderId) {
 
   if (refundBtn) {
     const eligibility = order.refundEligibility || {};
-    if (eligibility.allowed) {
+    if (eligibility.allowed && !isCancelled) {
       refundBtn.hidden = false;
       const amt = Number(eligibility.amount || 0);
       refundBtn.textContent = amt > 0 ? `Reembolsar ${money(amt)}` : "Cancelar bomboniere";

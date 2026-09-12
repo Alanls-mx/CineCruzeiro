@@ -2406,6 +2406,14 @@ function validateTicketConcessions(db, code, adminUser) {
     throw error;
   }
 
+  if (order.concessionStatus === "cancelled" || order.concessionCancelledAt || order.concessionRefund?.status === "completed" || ["cancelled", "refunded"].includes(String(order.status || ""))) {
+    const error = new Error("Os itens de bomboniere deste pedido foram cancelados ou reembolsados.");
+    error.statusCode = 409;
+    error.code = "CONCESSIONS_CANCELLED";
+    error.ticket = ticket;
+    throw error;
+  }
+
   const concessions = Array.isArray(order.concessionItems) ? order.concessionItems : [];
   if (!concessions.length) {
     const error = new Error("Este pedido não possui itens de bomboniere.");
@@ -2414,7 +2422,7 @@ function validateTicketConcessions(db, code, adminUser) {
     error.ticket = ticket;
     throw error;
   }
-  const pending = concessions.filter((item) => Number(item.quantity || 0) > Number(item.fulfilledQuantity || 0));
+  const pending = concessions.filter((item) => item.status !== "cancelled" && item.refundStatus !== "completed" && Number(item.quantity || 0) > Number(item.fulfilledQuantity || 0));
   if (!pending.length) {
     const error = new Error(`Itens já entregues em ${new Date(order.concessionsFulfilledAt || concessions[0]?.fulfilledAt || Date.now()).toLocaleString("pt-BR")}.`);
     error.statusCode = 409;
@@ -5442,6 +5450,17 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
       Object.assign(refund, confirmation, { status: "completed", completedAt: now });
       Object.assign(payment, { status: "refunded", refundStatus: "completed", refundedAt: now, updatedAt: now });
       Object.assign(order, { status: "refunded", paymentStatus: "refunded", refundStatus: "completed", refundedAt: now, updatedAt: now });
+      order.concessionStatus = "cancelled";
+      order.concessionCancelledAt = now;
+      order.concessionCancelledBy = adminUser?.id || "";
+      order.concessionCancellationReason = "Reembolsado";
+      (order.concessionItems || []).forEach((item) => {
+        item.status = "cancelled";
+        item.refundStatus = "completed";
+        item.refundedQuantity = Number(item.quantity || 0);
+        item.refundedAt = now;
+      });
+      if (typeof goodsFiscalService !== "undefined") goodsFiscalService.cancelUnissued(db, order, "order_refunded", new Date(now));
       if (order.stockReservationStatus === "sold") {
         eachStockedOrderItem(db, order, (item, quantity) => {
           item.stock = Number(item.stock || 0) + quantity;
@@ -5460,7 +5479,7 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
 
 function concessionRefundEligibility(db, order, payment = orderPayment(db, order?.id)) {
   if (!order || !(order.concessionItems || []).some((item) => Number(item.quantity || 0) > 0)) return { allowed: false, reason: "Este pedido nao possui produtos da bomboniere." };
-  if (order.concessionRefund?.status === "completed") return { allowed: false, completed: true, reason: "A bomboniere deste pedido ja foi reembolsada." };
+  if (order.concessionRefund?.status === "completed" || order.concessionStatus === "cancelled") return { allowed: false, completed: true, reason: "A bomboniere deste pedido ja foi cancelada/reembolsada." };
   if ((order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0)) return { allowed: false, reason: "Ha produtos ja entregues. Faca a conciliacao manual antes de qualquer devolucao." };
   const fiscal = (db.goodsFiscalDocuments || []).find((item) => item.orderId === order.id);
   if (fiscal && !["waiting_trigger", "cancelled"].includes(String(fiscal.status || ""))) {
@@ -5506,15 +5525,34 @@ function completeConcessionCancellation(db, order, payment, refund, adminUser) {
     payment.updatedAt = now;
     payment.metadata = { ...(payment.metadata || {}), concessionRefund: refund };
   }
-  if (refund.full && payment) {
-    payment.status = "refunded";
-    payment.refundedAt = now;
-    order.status = "refunded";
+  order.concessionStatus = "cancelled";
+  order.concessionCancelledAt = now;
+  order.concessionCancelledBy = adminUser?.id || "";
+  order.concessionCancellationReason = String(refund.reason || "Reembolsado").trim();
+  const tickets = orderTickets(db, order.id) || [];
+  const hasTickets = tickets.length > 0;
+  const allTicketsCancelledOrRefunded = !hasTickets || tickets.every((t) => ["cancelled", "refunded"].includes(t.status));
+
+  if (refund.full || !hasTickets || allTicketsCancelledOrRefunded) {
+    if (payment) {
+      payment.status = "refunded";
+      payment.refundedAt = now;
+    }
+    order.status = "cancelled";
     order.paymentStatus = "refunded";
+    order.refundStatus = "completed";
     order.refundedAt = now;
-    orderTickets(db, order.id).forEach((ticket) => { ticket.status = "refunded"; ticket.refundedAt = now; });
+    order.cancelledAt = now;
+    order.cancelledBy = adminUser?.id || "";
+    order.cancellationReason = String(refund.reason || "Reembolsado").trim();
+    tickets.forEach((ticket) => {
+      ticket.status = "cancelled";
+      ticket.cancelledAt = now;
+      ticket.refundedAt = now;
+    });
   }
   appendOrderAudit(order, { action: "concessions.refund", refundId: refund.id, amount: refund.amount, updatedBy: adminUser?.id || "", createdAt: now });
+  appendOrderAudit(order, { action: "concessions.cancel", refundId: refund.id, updatedBy: adminUser?.id || "", createdAt: now });
 }
 
 async function refundOrderConcessions(orderId, reason, adminUser) {
@@ -5585,6 +5623,14 @@ function cancelOrder(db, order, reason, adminUser) {
   order.cancelledAt = now;
   order.updatedAt = now;
   order.cancellationReason = String(reason || "Cancelado pelo painel").trim();
+  order.concessionStatus = "cancelled";
+  order.concessionCancelledAt = now;
+  order.concessionCancelledBy = adminUser?.id || "";
+  order.concessionCancellationReason = order.cancellationReason;
+  (order.concessionItems || []).forEach((item) => {
+    item.status = "cancelled";
+  });
+  goodsFiscalService.cancelUnissued(db, order, "order_cancelled", new Date(now));
 
   if (payment) {
     payment.updatedAt = now;
@@ -8968,8 +9014,8 @@ async function handleApi(req, res, pathname) {
       if (!inDateRange(purchasedAt, selectedDate, selectedDate) || !(order.concessionItems || []).length) continue;
       const financiallyConfirmed = Boolean(payment?.approvedAt)
         || ["approved", "refunded"].includes(String(payment?.status || ""))
-        || ["paid", "refunded"].includes(String(order.status || ""))
-        || ["approved", "refunded"].includes(String(order.paymentStatus || ""));
+        || ["paid", "refunded", "cancelled"].includes(String(order.status || ""))
+        || ["approved", "refunded", "cancelled"].includes(String(order.paymentStatus || ""));
       if (!financiallyConfirmed) continue;
       const session = sessionForOrder(db, order);
       const movie = (db.movies || []).find((item) => item.id === (session?.movieId || order.movieId));
@@ -8992,6 +9038,8 @@ async function handleApi(req, res, pathname) {
         id: order.id, status: order.status, purchasedAt,
         customerName: order.customerName || "Cliente avulso",
         archived: Boolean(order.concessionArchived),
+        concessionStatus: order.concessionStatus || (order.concessionRefund?.status === "completed" || ["cancelled", "refunded"].includes(order.status) ? "cancelled" : "active"),
+        concessionCancelledAt: order.concessionCancelledAt || null,
         paymentMethod: methodLabel(payment?.method || order.paymentMethod),
         paymentStatus: paymentStatusLabel(payment?.status || order.paymentStatus),
         couponCode: order.couponCode || "",

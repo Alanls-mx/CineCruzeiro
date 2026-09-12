@@ -23,7 +23,7 @@
     "test:security": "node --test tests/security/abuse.test.mjs",
     "test:abuse-controls": "node --test tests/ticket-transfer-policy.test.mjs",
     "test:coupon": "node --test tests/coupon-lifecycle.test.mjs",
-    "test:finance": "node --test tests/concession-finance.test.mjs tests/operations-monitor-refund.test.mjs",
+    "test:finance": "node --test tests/concession-finance.test.mjs tests/concession-cancellation.test.mjs tests/operations-monitor-refund.test.mjs",
     "test:integrity": "node --test tests/goods-fiscal-lifecycle.test.mjs",
     "test:admin-repositories": "node --test tests/admin-repositories.test.mjs tests/admin-repositories-postgres.test.mjs",
     "test:email-campaign": "node --test tests/email-campaign.test.mjs tests/email-campaign-ai.test.mjs tests/email-campaign-brief.test.mjs tests/email-campaign-reliability.test.mjs tests/email-campaign-postgres.test.mjs tests/email-campaign-prompt-templates.test.mjs tests/email-template-library.test.mjs",
