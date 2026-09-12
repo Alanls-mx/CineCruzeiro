@@ -1261,68 +1261,10 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
           )}
           {couponError && <p className="mt-3 text-sm font-semibold text-rose-200" role="alert">{couponError}</p>}
         </div>
-        {total > 0 ? (
-          <>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <button type="button" onClick={() => updateDraft({ paymentMethod: "pix" })} className={`py-4 text-sm font-black ${draft.paymentMethod !== "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Pix</button>
-          <button type="button" onClick={() => updateDraft({ paymentMethod: "credit_card" })} className={`py-4 text-sm font-black ${draft.paymentMethod === "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Cartão</button>
-        </div>
-        {draft.paymentMethod === "credit_card" && (
-          <div className="mt-6 space-y-4">
-            <div className="rounded-lg bg-brand-900/70 p-5 shadow-soft">
-              <h3 className="text-base font-black text-white">Cartão transparente Mercado Pago</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                O formulário seguro do Mercado Pago gera um token para processar a compra. O Cine Cruzeiro não recebe número, validade ou CVV do cartão.
-              </p>
-              <p className="mt-3 text-xs font-bold text-slate-500">
-                Total confirmado: {money(total)}. Ingressos liberados após aprovação do pagamento.
-              </p>
-            </div>
-            {mercadoPagoUnavailable && (
-              <p className="text-sm font-semibold text-amber-200">
-                Mercado Pago indisponível para cobranças reais. Ative a integração com credenciais de produção em Admin → Integrações.
-              </p>
-            )}
-            {!mercadoPagoUnavailable && !clubPricingPending && (
-              <CardPaymentBrick publicKey={mercadoPagoConfig.publicKey} amount={total} loading={loading} onSubmit={onSubmit} />
-            )}
-            {!mercadoPagoUnavailable && clubPricingPending && (
-              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-300" role="status">
-                {clubBenefitsError || "Confirmando o valor dos benefícios e créditos antes de carregar o cartão..."}
-              </div>
-            )}
-          </div>
-        )}
-        {draft.paymentMethod !== "credit_card" && (
-          <div className="mt-6 rounded-lg bg-brand-900/70 p-5 shadow-soft">
-            <h3 className="text-base font-black text-white">Pix Mercado Pago</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Gere o QR Code e o Pix copia-e-cola sem sair do checkout. O ingresso só é liberado após a confirmação do Mercado Pago.
-            </p>
-            <p className="mt-3 text-xs font-bold text-slate-500">Total confirmado: {money(total)}.</p>
-          </div>
-        )}
-        {paymentError && <p className="mt-5 text-sm font-semibold text-rose-200">{paymentError}</p>}
-        {draft.paymentMethod !== "credit_card" && (
-          <button type="button" onClick={() => void onSubmit()} disabled={loading || mercadoPagoUnavailable || clubPricingPending} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
-            {loading ? "Processando..." : "Gerar Pix"}
-          </button>
-        )}
-          </>
-        ) : (
-          <div className="mt-6">
-            <div className="rounded-lg bg-emerald-400/10 p-5">
-              <h3 className="text-base font-black text-emerald-200">Pedido integralmente coberto</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-300">{clubCreditsEnabled ? "Os créditos do Clube cobriram integralmente os ingressos selecionados." : `O cupom reduziu o total de ${money(baseTotal)} para zero.`} Confirme para emitir os ingressos sem abrir uma cobrança.</p>
-            </div>
-            <button type="button" onClick={() => void (clubCreditsEnabled ? onClubCredit() : onSubmit())} disabled={loading || clubLoading} className="mt-4 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
-              {loading || clubLoading ? "Confirmando..." : clubCreditsEnabled ? "Confirmar com créditos do Clube" : "Finalizar pedido"}
-            </button>
-          </div>
-        )}
         {activeClub && couponCanStack && (
-          <div className="mt-5 border-t border-white/10 pt-5">
-            <label className="flex cursor-pointer items-start gap-3 rounded-lg bg-brand-900/70 p-4">
+          <div className="border-b border-white/10 py-5">
+            <h3 className="text-sm font-black text-white">Benefícios do Clube</h3>
+            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-lg bg-brand-900/70 p-4">
               <input
                 type="checkbox"
                 checked={clubBenefitsEnabled}
@@ -1382,6 +1324,65 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
                 <p className="pt-1 text-xs text-slate-400">Créditos restantes após confirmação: {Math.max(0, clubCredits - requestedTickets)}.</p>
               </div>
             )}
+          </div>
+        )}
+        {total > 0 ? (
+          <>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button type="button" onClick={() => updateDraft({ paymentMethod: "pix" })} className={`py-4 text-sm font-black ${draft.paymentMethod !== "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Pix</button>
+          <button type="button" onClick={() => updateDraft({ paymentMethod: "credit_card" })} className={`py-4 text-sm font-black ${draft.paymentMethod === "credit_card" ? "bg-brand-700 text-white" : "bg-white/5 text-slate-300"}`}>Cartão</button>
+        </div>
+        {draft.paymentMethod === "credit_card" && (
+          <div className="mt-6 space-y-4">
+            <div className="rounded-lg bg-brand-900/70 p-5 shadow-soft">
+              <h3 className="text-base font-black text-white">Cartão transparente Mercado Pago</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                O formulário seguro do Mercado Pago gera um token para processar a compra. O Cine Cruzeiro não recebe número, validade ou CVV do cartão.
+              </p>
+              <p className="mt-3 text-xs font-bold text-slate-500">
+                Total confirmado: {money(total)}. Ingressos liberados após aprovação do pagamento.
+              </p>
+            </div>
+            {mercadoPagoUnavailable && (
+              <p className="text-sm font-semibold text-amber-200">
+                Mercado Pago indisponível para cobranças reais. Ative a integração com credenciais de produção em Admin → Integrações.
+              </p>
+            )}
+            {!mercadoPagoUnavailable && !clubPricingPending && (
+              <CardPaymentBrick publicKey={mercadoPagoConfig.publicKey} amount={total} loading={loading} onSubmit={onSubmit} />
+            )}
+            {!mercadoPagoUnavailable && clubPricingPending && (
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-300" role="status">
+                {clubBenefitsError || "Confirmando o valor dos benefícios e créditos antes de carregar o cartão..."}
+              </div>
+            )}
+          </div>
+        )}
+        {draft.paymentMethod !== "credit_card" && (
+          <div className="mt-6 rounded-lg bg-brand-900/70 p-5 shadow-soft">
+            <h3 className="text-base font-black text-white">Pix Mercado Pago</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Gere o QR Code e o Pix copia-e-cola sem sair do checkout. O ingresso só é liberado após a confirmação do Mercado Pago.
+            </p>
+            <p className="mt-3 text-xs font-bold text-slate-500">Total confirmado: {money(total)}.</p>
+          </div>
+        )}
+        {paymentError && <p className="mt-5 text-sm font-semibold text-rose-200">{paymentError}</p>}
+        {draft.paymentMethod !== "credit_card" && (
+          <button type="button" onClick={() => void onSubmit()} disabled={loading || mercadoPagoUnavailable || clubPricingPending} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
+            {loading ? "Processando..." : "Gerar Pix"}
+          </button>
+        )}
+          </>
+        ) : (
+          <div className="mt-6">
+            <div className="rounded-lg bg-emerald-400/10 p-5">
+              <h3 className="text-base font-black text-emerald-200">Pedido integralmente coberto</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{clubCreditsEnabled ? "Os créditos do Clube cobriram integralmente os ingressos selecionados." : `O cupom reduziu o total de ${money(baseTotal)} para zero.`} Confirme para emitir os ingressos sem abrir uma cobrança.</p>
+            </div>
+            <button type="button" onClick={() => void (clubCreditsEnabled ? onClubCredit() : onSubmit())} disabled={loading || clubLoading} className="mt-4 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
+              {loading || clubLoading ? "Confirmando..." : clubCreditsEnabled ? "Confirmar com créditos do Clube" : "Finalizar pedido"}
+            </button>
           </div>
         )}
       </section>
