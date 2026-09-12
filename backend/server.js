@@ -2505,7 +2505,7 @@ function validateTicket(db, code, adminUser, expectedSessionId = "") {
   return ticket;
 }
 
-function validateTicketConcessions(db, code, adminUser) {
+function inspectTicketConcessions(db, code) {
   const ticketCode = extractTicketCode(code);
   const ticket = (db.tickets || []).find((item) => item.code === ticketCode);
   if (!ticket) {
@@ -2565,6 +2565,12 @@ function validateTicketConcessions(db, code, adminUser) {
     throw error;
   }
 
+  return { ticket, order: activeOrders[0], orders: activeOrders, concessions: pending };
+}
+
+function validateTicketConcessions(db, code, adminUser) {
+  const validation = inspectTicketConcessions(db, code);
+  const { ticket, orders: activeOrders, concessions: pending } = validation;
   const fulfilledAt = new Date().toISOString();
   pending.forEach((item) => {
     item.fulfilledQuantity = Number(item.quantity || 0);
@@ -2576,7 +2582,7 @@ function validateTicketConcessions(db, code, adminUser) {
     order.concessionsFulfilledBy = adminUser?.id || "";
     checkAndAutoArchiveOrder(db, order, adminUser, "Ingressos e bomboniere validados pelo cinema");
   });
-  return { ticket, order: activeOrders[0], orders: activeOrders, concessions: pending, fulfilledAt };
+  return { ...validation, fulfilledAt };
 }
 
 async function createOpenFinancePixPayment(order, config = {}) {
@@ -13652,14 +13658,36 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/tickets/validate" && method === "POST") {
     const body = await readBody(req);
     const validationMode = body.mode === "concessions" ? "concessions" : "entry";
+    const inspectConcessions = validationMode === "concessions" && body.action === "inspect";
     try {
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
         const adminUser = getAdminUser(req, lockedDb);
         const validation = validationMode === "concessions"
-          ? validateTicketConcessions(lockedDb, body.code || body.qrPayload, adminUser)
+          ? inspectConcessions
+            ? inspectTicketConcessions(lockedDb, body.code || body.qrPayload)
+            : validateTicketConcessions(lockedDb, body.code || body.qrPayload, adminUser)
           : { ticket: validateTicket(lockedDb, body.code || body.qrPayload, adminUser, body.sessionId) };
         const ticket = validation.ticket;
+        if (inspectConcessions) {
+          logEvent("info", "concessions.inspected", {
+            ticketId: ticket.id,
+            orderIds: validation.orders.map((order) => order.id),
+            inspectedBy: adminUser?.id || "",
+            items: validation.concessions.length
+          });
+          sendJson(res, 200, {
+            ok: true,
+            result: "concessions_pending_confirmation",
+            confirmationRequired: true,
+            ticket: enrichTicket(lockedDb, ticket),
+            concessions: validation.concessions.map((item) => ({
+              ...item,
+              quantity: Math.max(0, Number(item.quantity || 0) - Number(item.fulfilledQuantity || 0))
+            }))
+          });
+          return;
+        }
         lockedDb.auditLogs ||= [];
         lockedDb.auditLogs.push({
           id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
