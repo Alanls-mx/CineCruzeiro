@@ -324,10 +324,12 @@ function getGoogleWalletConfig(db) {
   const privateKey = String(serviceAccount.private_key || configured?.privateKey || getFirstEnv(GOOGLE_WALLET_PRIVATE_KEY_ENV_KEYS)?.value || "").replace(/\\n/g, "\n");
   const origins = normalizeGoogleWalletOrigins(configured?.origins || getFirstEnv(GOOGLE_WALLET_ORIGINS_ENV_KEYS)?.value || appFrontendUrl());
 
+  const canonicalClassId = configured?.resolvedClassId || googleWalletResourceId(issuerId, rawClassId);
+
   return {
     configured: Boolean(issuerId && rawClassId && clientEmail && privateKey),
     issuerId,
-    classId: configured?.resolvedClassId || googleWalletResourceId(issuerId, rawClassId),
+    classId: canonicalClassId,
     clientEmail,
     privateKey,
     origins,
@@ -3330,14 +3332,14 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
     },
     validTimeInterval,
     textModulesData: [
-      { id: "pedido", header: "Pedido", body: `${enriched.movieTitle || "Cine Cruzeiro"} - ${enriched.sessionTime || "sessao"}${enriched.sessionFormat ? ` • ${enriched.sessionFormat}` : ""}` },
-      { id: "sessao", header: "Sessao", body: `${enriched.sessionDate} as ${enriched.sessionTime}` },
-      { id: "sala", header: "Sala", body: enriched.sessionRoom || "Sala Cruzeiro" },
-      { id: "poltrona", header: "Poltrona", body: enriched.seat || "Lugar livre" },
-      { id: "formato", header: "Formato", body: enriched.sessionFormat || "Sessao Cine Cruzeiro" },
-      { id: "tipo", header: "Tipo", body: enriched.ticketType },
+      { id: "pedido", header: "Pedido", body: `${enriched.movieTitle || "Cine Cruzeiro"} - ${enriched.sessionTime || "sessao"}${enriched.sessionFormat ? ` - ${enriched.sessionFormat}` : ""}` },
+      { id: "sessao", header: "Sessao", body: `${enriched.sessionDate || "Data a confirmar"} as ${enriched.sessionTime || "Horario a confirmar"}` },
+      { id: "sala", header: "Sala", body: String(enriched.sessionRoom || "Sala Cruzeiro") },
+      { id: "poltrona", header: "Poltrona", body: String(enriched.seat || "Lugar livre") },
+      { id: "formato", header: "Formato", body: String(enriched.sessionFormat || "Sessao Cine Cruzeiro") },
+      { id: "tipo", header: "Tipo", body: String(enriched.ticketType || "Ingresso normal") },
       { id: "entrada", header: "Entrada", body: "Apresente o QR Code na portaria. Chegue com 15 minutos de antecedencia." }
-    ],
+    ].filter((module) => Boolean(module && module.id && module.header && module.body && String(module.body).trim())),
     linksModuleData: {
       uris: [
         {
@@ -13207,8 +13209,22 @@ async function handleApi(req, res, pathname) {
         return;
       }
       try {
-        sendJson(res, 200, { url: googleWalletSaveUrl(db, ticket, user, req) });
+        const url = googleWalletSaveUrl(db, ticket, user, req);
+        const config = getGoogleWalletConfig(db);
+        logEvent("info", "google_wallet.save_url_issued", {
+          ticketId: ticket.id,
+          ticketCode: ticket.code,
+          issuerId: config.issuerId,
+          classId: config.classId,
+          userId: user.id
+        });
+        sendJson(res, 200, { url });
       } catch (error) {
+        logEvent("warn", "google_wallet.save_url_failed", {
+          ticketId: ticket.id,
+          message: error.message,
+          statusCode: error.statusCode || 400
+        });
         sendJson(res, error.statusCode || 400, { error: { code: error.statusCode === 412 ? "GOOGLE_WALLET_NOT_CONFIGURED" : "GOOGLE_WALLET_UNAVAILABLE", message: error.message } });
       }
       return;

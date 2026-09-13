@@ -131,4 +131,17 @@ test("garante uso do recurso eventTicketClass na API e estrutura EventTicketObje
   assert.match(serverContent, /passType:\s*"EventTicket"/);
 });
 
+test("garante que o JWT do Google Wallet contem estrutura valida e textModulesData nao contem modulos vazios", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const serverContent = fs.readFileSync(path.resolve("backend/server.js"), "utf8");
+
+  const saveUrlSlice = serverContent.slice(
+    serverContent.indexOf("function googleWalletSaveUrl"),
+    serverContent.indexOf("function pdfText")
+  );
+  assert.match(saveUrlSlice, /payload:\s*\{\s*eventTicketObjects:\s*\[eventTicketObject\]/);
+  assert.match(serverContent, /Boolean\(module && module\.id && module\.header && module\.body && String\(module\.body\)\.trim\(\)\)/);
+});
+
 
