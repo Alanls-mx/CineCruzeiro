@@ -40,6 +40,25 @@ test("Google Wallet valida, salva e preserva a Service Account", () => {
   assert.equal(updated.secrets.serviceAccountJson.hasValue, true);
 });
 
+test("Google Wallet invalida a classe resolvida somente quando o Class ID muda", () => {
+  const db = {
+    settings: {},
+    integrations: {
+      googleWallet: {
+        classId: "cine_ingressos",
+        resolvedClassId: "3388000000000000000.3388000000000000000.cine_ingressos"
+      }
+    },
+    auditLogs: []
+  };
+
+  integrationConfigService.save(db, "googleWallet", { origins: "https://cinema.example" }, { id: "admin-test" });
+  assert.equal(db.integrations.googleWallet.resolvedClassId, "3388000000000000000.3388000000000000000.cine_ingressos");
+
+  integrationConfigService.save(db, "googleWallet", { classId: "cine_ingressos_v2" }, { id: "admin-test" });
+  assert.equal(db.integrations.googleWallet.resolvedClassId, undefined);
+});
+
 test("Google Wallet rejeita JSON e chave privada inválidos antes de salvar", () => {
   const db = { settings: {}, integrations: {}, auditLogs: [] };
   assert.throws(
@@ -174,7 +193,7 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
 test("fallback de classe não duplica o Issuer no Class ID", () => {
   const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.doesNotMatch(serverContent, /`\$\{wallet\.issuerId\}\.\$\{wallet\.classId\}`/);
-  assert.match(serverContent, /const canonicalClassId = googleWalletResourceId\(issuerId, rawClassId\)/);
+  assert.match(serverContent, /resolveGoogleWalletClassId\(issuerId, configuredClassId, resolvedClassId\)/);
   assert.equal(
     googleWalletPassLayoutService.normalizeGoogleWalletResourceId(
       "3388000000023202983",
@@ -189,6 +208,22 @@ test("fallback de classe não duplica o Issuer no Class ID", () => {
   assert.equal(
     googleWalletPassLayoutService.normalizeGoogleWalletResourceId("3388000000023202983", "outro-issuer.classe"),
     "outro-issuer.classe"
+  );
+  assert.equal(
+    googleWalletPassLayoutService.resolveGoogleWalletClassId(
+      "3388000000023202983",
+      "lumixengine_ingressos",
+      "3388000000023202983.3388000000023202983.lumixengine_ingressos"
+    ),
+    "3388000000023202983.3388000000023202983.lumixengine_ingressos"
+  );
+  assert.equal(
+    googleWalletPassLayoutService.resolveGoogleWalletClassId(
+      "3388000000023202983",
+      "lumixengine_ingressos",
+      ""
+    ),
+    "3388000000023202983.lumixengine_ingressos"
   );
 });
 

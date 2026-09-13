@@ -400,6 +400,11 @@ function save(db, provider, input = {}, user) {
   const before = sanitizeConfig(db, key);
   const current = rawConfig(db, key);
   const next = { ...current, enabled: Boolean(input.enabled ?? current.enabled) };
+  const googleWalletClassChanged = key === "googleWallet"
+    && Object.prototype.hasOwnProperty.call(input, "classId")
+    && input.classId !== null
+    && input.classId !== undefined
+    && String(input.classId).trim() !== String(current.classId || "").trim();
   definition.fields.forEach((field) => {
     if (!(field.key in input)) return;
     const value = input[field.key];
@@ -423,6 +428,7 @@ function save(db, provider, input = {}, user) {
     else if (field.type === "number") next[field.key] = Number(value || 0);
     else next[field.key] = String(value ?? "").trim();
   });
+  if (googleWalletClassChanged) delete next.resolvedClassId;
   next.updatedAt = new Date().toISOString();
   next.updatedBy = user?.id || "";
   store[key] = next;

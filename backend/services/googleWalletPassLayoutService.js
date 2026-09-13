@@ -17,6 +17,11 @@ function normalizeGoogleWalletResourceId(issuerId, resourceId) {
   return suffix ? `${issuerPrefix}${suffix}` : safeResource;
 }
 
+function resolveGoogleWalletClassId(issuerId, configuredClassId, resolvedClassId) {
+  const resolved = String(resolvedClassId || "").trim();
+  return resolved || normalizeGoogleWalletResourceId(issuerId, configuredClassId);
+}
+
 function templateItem(firstFieldPath, secondFieldPath = "") {
   return {
     firstValue: fieldSelector(firstFieldPath),
@@ -82,5 +87,6 @@ module.exports = {
   buildGoogleWalletTextModules,
   formatConcessionItems,
   formatSessionDate,
-  normalizeGoogleWalletResourceId
+  normalizeGoogleWalletResourceId,
+  resolveGoogleWalletClassId
 };

@@ -82,7 +82,8 @@ const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullR
 const {
   buildGoogleWalletClassTemplateInfo,
   buildGoogleWalletTextModules,
-  normalizeGoogleWalletResourceId
+  normalizeGoogleWalletResourceId,
+  resolveGoogleWalletClassId
 } = require("./services/googleWalletPassLayoutService");
 
 const requestContext = new AsyncLocalStorage();
@@ -324,17 +325,20 @@ function getGoogleWalletConfig(db) {
   }
 
   const issuerId = configured?.issuerId || getFirstEnv(GOOGLE_WALLET_ISSUER_ID_ENV_KEYS)?.value || "";
-  const rawClassId = configured?.resolvedClassId || configured?.classId || getFirstEnv(GOOGLE_WALLET_CLASS_ID_ENV_KEYS)?.value || "";
+  const configuredClassId = configured?.classId || getFirstEnv(GOOGLE_WALLET_CLASS_ID_ENV_KEYS)?.value || "";
+  const resolvedClassId = configured?.resolvedClassId || "";
   const clientEmail = serviceAccount.client_email || configured?.clientEmail || getFirstEnv(GOOGLE_WALLET_CLIENT_EMAIL_ENV_KEYS)?.value || "";
   const privateKey = String(serviceAccount.private_key || configured?.privateKey || getFirstEnv(GOOGLE_WALLET_PRIVATE_KEY_ENV_KEYS)?.value || "").replace(/\\n/g, "\n");
   const origins = normalizeGoogleWalletOrigins(configured?.origins || getFirstEnv(GOOGLE_WALLET_ORIGINS_ENV_KEYS)?.value || appFrontendUrl());
 
-  const canonicalClassId = googleWalletResourceId(issuerId, rawClassId);
+  const canonicalConfiguredClassId = googleWalletResourceId(issuerId, configuredClassId);
+  const effectiveClassId = resolveGoogleWalletClassId(issuerId, configuredClassId, resolvedClassId);
 
   return {
-    configured: Boolean(issuerId && rawClassId && clientEmail && privateKey),
+    configured: Boolean(issuerId && configuredClassId && clientEmail && privateKey),
     issuerId,
-    classId: canonicalClassId,
+    classId: effectiveClassId,
+    configuredClassId: canonicalConfiguredClassId,
     clientEmail,
     privateKey,
     origins,
@@ -8453,7 +8457,7 @@ async function testGoogleWalletIntegration(db) {
   const checks = [
     { key: "serviceAccount", label: "Service Account", ok: Boolean(wallet.clientEmail && wallet.privateKey), detail: wallet.clientEmail ? `Configurada como ${wallet.clientEmail}` : "JSON da Service Account ausente." },
     { key: "issuer", label: "Issuer", ok: Boolean(wallet.issuerId), detail: wallet.issuerId || "Issuer ID ausente." },
-    { key: "class", label: "Classe", ok: Boolean(wallet.classId), detail: wallet.classId || "Class ID ausente." },
+    { key: "class", label: "Classe configurada", ok: Boolean(wallet.configuredClassId), detail: wallet.configuredClassId || "Class ID ausente." },
     { key: "origin", label: "Origem", ok: wallet.origins.length > 0, detail: wallet.origins.join(", ") || "Origem ausente." }
   ];
   if (checks.some((item) => !item.ok)) {
