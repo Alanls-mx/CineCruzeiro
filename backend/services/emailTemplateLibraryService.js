@@ -15,6 +15,41 @@ const TEMPLATE_DEFINITIONS = Object.freeze([
   { id: "reactivation", name: "Sentimos sua falta", category: "relationship", objective: "announcement", visualStyle: "reactivation", description: "Reativação exclusiva para público inativo validado pelo sistema.", tags: ["reativação", "relacionamento", "inativos"] }
 ]);
 
+function templateVariant(id, templateId, name, description, visualStyle, defaults, theme, tags = []) {
+  return Object.freeze({ id, variantId: id, templateId, name, description, visualStyle, defaults, theme, tags });
+}
+
+const TEMPLATE_VARIANTS = Object.freeze([
+  templateVariant("announcement", "announcement", "Comunicado editorial", "Mensagem institucional sóbria, com leitura direta e uma ação principal.", "editorial", { subject: "Uma novidade do Cine Cruzeiro", headline: "Uma informação importante para você", message: "Olá, {{nome}}. Confira esta novidade do Cine Cruzeiro.", ctaLabel: "Saiba mais" }, { accent: "#4d8dff", background: "#0d1728", surface: "#09111f", headline: "#ffffff", text: "#dbeafe" }, ["direto", "institucional"]),
+  templateVariant("announcement-service", "announcement", "Aviso de serviço", "Comunicado objetivo para mudanças operacionais, orientações e atendimento.", "service", { subject: "Informação de atendimento do Cine Cruzeiro", headline: "Antes da sua próxima visita", message: "Olá, {{nome}}. Reunimos uma orientação importante para sua experiência no cinema.", ctaLabel: "Consultar informações" }, { accent: "#45d6a1", background: "#09131f", surface: "#0c1c2d", headline: "#f8fafc", text: "#dbeafe" }, ["serviço", "orientação"]),
+  templateVariant("weekly", "weekly", "Programação em cartaz", "Agenda escaneável com filmes e horários confirmados.", "catalog", { subject: "A programação desta semana no Cine Cruzeiro", headline: "Escolha sua próxima sessão", message: "Olá, {{nome}}. Veja os filmes e horários disponíveis nesta semana.", ctaLabel: "Ver programação completa" }, { accent: "#22d3ee", background: "#07111d", surface: "#091827", headline: "#ffffff", text: "#dbeafe" }, ["agenda", "horários"]),
+  templateVariant("weekly-marquee", "weekly", "Programação em destaque", "Seleção com ritmo de cartaz de cinema e maior contraste nos títulos.", "marquee", { subject: "As grandes histórias da semana estão aqui", headline: "Esta semana na tela do Cine Cruzeiro", message: "Olá, {{nome}}. Escolha entre os destaques em cartaz e garanta seu horário.", ctaLabel: "Escolher um filme" }, { accent: "#facc15", background: "#090f1b", surface: "#111b2b", headline: "#fff7d6", text: "#dbeafe" }, ["destaques", "cartaz"]),
+  templateVariant("premiere", "premiere", "Estreia cinematográfica", "Pôster protagonista, título forte e chamada para sessões.", "cinematic", { subject: "Uma grande estreia chega ao Cine Cruzeiro", headline: "A próxima grande história começa aqui", message: "Olá, {{nome}}. Prepare-se para viver esta estreia na tela grande.", ctaLabel: "Ver sessões" }, { accent: "#facc15", background: "#09111f", surface: "#050912", headline: "#ffffff", text: "#dbeafe" }, ["blockbuster", "lançamento"]),
+  templateVariant("premiere-spotlight", "premiere", "Estreia sob os holofotes", "Composição elegante para drama, suspense e lançamentos de prestígio.", "spotlight", { subject: "Uma estreia para viver na tela grande", headline: "As luzes se acendem para uma nova história", message: "Olá, {{nome}}. Descubra a nova estreia do Cine Cruzeiro e escolha sua sessão.", ctaLabel: "Garantir ingresso" }, { accent: "#ff7185", background: "#0a1220", surface: "#120d18", headline: "#ffffff", text: "#f1e5e8" }, ["holofote", "prestígio"]),
+  templateVariant("last_chance", "last_chance", "Últimas sessões", "Urgência legítima com horários restantes em primeiro plano.", "urgent", { subject: "Últimas sessões no Cine Cruzeiro", headline: "Sua última chance na tela grande", message: "Olá, {{nome}}. Confira os últimos horários confirmados para este filme.", ctaLabel: "Garantir ingresso" }, { accent: "#fb7185", background: "#120a11", surface: "#2a1019", headline: "#ffffff", text: "#fecdd3" }, ["urgência", "encerramento"]),
+  templateVariant("last_chance-farewell", "last_chance", "Despedida da programação", "Tom de despedida para a última oportunidade de assistir no cinema.", "farewell", { subject: "É hora da última sessão", headline: "Uma última vez na tela do Cine Cruzeiro", message: "Olá, {{nome}}. Ainda dá tempo de viver esta história como ela merece.", ctaLabel: "Ver últimos horários" }, { accent: "#f6c453", background: "#10131a", surface: "#1b1b21", headline: "#fff7e6", text: "#e7dfd1" }, ["despedida", "última oportunidade"]),
+  templateVariant("promotion", "promotion", "Oferta em destaque", "Benefício comercial amplo com condições claramente separadas.", "promotional", { subject: "Uma condição especial no Cine Cruzeiro", headline: "Mais cinema por uma condição especial", message: "Olá, {{nome}}. Confira o benefício e as condições desta campanha.", ctaLabel: "Aproveitar oferta" }, { accent: "#facc15", background: "#111827", surface: "#facc15", headline: "#050912", text: "#241b00" }, ["benefício", "oferta"]),
+  templateVariant("promotion-premium", "promotion", "Benefício exclusivo", "Oferta de aparência premium para segmentos e ocasiões especiais.", "premium-offer", { subject: "Uma condição reservada para você", headline: "Uma experiência especial no Cine Cruzeiro", message: "Olá, {{nome}}. Preparamos uma condição exclusiva dentro do período informado.", ctaLabel: "Conhecer benefício" }, { accent: "#45d6a1", background: "#071710", surface: "#0d2a20", headline: "#ffffff", text: "#d7f5e8" }, ["exclusivo", "premium"]),
+  templateVariant("coupon", "coupon", "Cupom recortável", "Código, desconto e validade organizados como um voucher digital.", "voucher", { subject: "Seu cupom do Cine Cruzeiro chegou", headline: "Um desconto reservado para você", message: "Olá, {{nome}}. Use o código abaixo dentro da validade e das condições informadas.", ctaLabel: "Usar meu cupom" }, { accent: "#45d6a1", background: "#071710", surface: "#f3f6fb", headline: "#ffffff", text: "#dbeafe" }, ["voucher", "código"]),
+  templateVariant("coupon-ticket", "coupon", "Cupom em formato de ingresso", "Oferta com linguagem visual inspirada em bilhete de cinema.", "ticket-offer", { subject: "Seu ingresso para uma oferta especial", headline: "Apresente este código na sua próxima compra", message: "Olá, {{nome}}. Este código libera o benefício conforme as regras da campanha.", ctaLabel: "Ver filmes elegíveis" }, { accent: "#facc15", background: "#0b1523", surface: "#fff7d6", headline: "#ffffff", text: "#dbeafe" }, ["ingresso", "cupom"]),
+  templateVariant("concession", "concession", "Produto protagonista", "Imagem ampla, nome e preço para um único item da bomboniere.", "product", { subject: "Um sabor especial espera por você", headline: "Complete sua sessão com este destaque", message: "Olá, {{nome}}. Conheça este item selecionado da nossa bomboniere.", ctaLabel: "Ver na bomboniere" }, { accent: "#f59e0b", background: "#141008", surface: "#231a0b", headline: "#ffffff", text: "#fef3c7" }, ["produto", "sabor"]),
+  templateVariant("concession-premium", "concession", "Bomboniere premium", "Apresentação refinada para itens especiais e lançamentos sazonais.", "product-premium", { subject: "Um destaque especial da bomboniere", headline: "Um detalhe a mais para sua experiência", message: "Olá, {{nome}}. Descubra o produto selecionado para acompanhar sua sessão.", ctaLabel: "Conhecer o produto" }, { accent: "#f6c453", background: "#0d1218", surface: "#171e27", headline: "#fff7e6", text: "#e7dfd1" }, ["produto", "refinado"]),
+  templateVariant("combo", "combo", "Combo para compartilhar", "Vários itens com composição conjunta, quantidades e valores legíveis.", "product-grid", { subject: "Um combo completo para sua próxima sessão", headline: "Tudo combina melhor na tela grande", message: "Olá, {{nome}}. Confira os itens selecionados para completar sua visita.", ctaLabel: "Escolher uma sessão" }, { accent: "#fb7185", background: "#160b12", surface: "#29101d", headline: "#ffffff", text: "#fce7f3" }, ["combo", "compartilhar"]),
+  templateVariant("combo-family", "combo", "Combo em família", "Composição acolhedora para grupos e sessões em família.", "family", { subject: "A sessão da família ficou completa", headline: "Mais sabores para dividir boas histórias", message: "Olá, {{nome}}. Veja a seleção preparada para compartilhar durante o filme.", ctaLabel: "Planejar a sessão" }, { accent: "#22d3ee", background: "#0b1728", surface: "#0d2538", headline: "#ffffff", text: "#dbeafe" }, ["família", "grupo"]),
+  templateVariant("club_plan", "club_plan", "Plano em destaque", "Aquisição com preço, créditos e benefícios confirmados.", "membership", { subject: "Um plano para viver mais cinema", headline: "Mais cinema, benefícios de verdade", message: "Olá, {{nome}}. Conheça o plano que combina com sua rotina de cinema.", ctaLabel: "Assinar este plano" }, { accent: "#facc15", background: "#081425", surface: "#172235", headline: "#ffffff", text: "#dbeafe" }, ["assinatura", "benefícios"]),
+  templateVariant("club_plan-comparison", "club_plan", "Plano com benefícios", "Hierarquia orientada à comparação dos benefícios reais do plano.", "membership-benefits", { subject: "Veja tudo o que este plano inclui", headline: "Seu cinema, com vantagens em cada visita", message: "Olá, {{nome}}. Confira os benefícios e valores confirmados deste plano.", ctaLabel: "Conhecer o plano" }, { accent: "#45d6a1", background: "#07131f", surface: "#0c2630", headline: "#ffffff", text: "#d7f5e8" }, ["comparação", "vantagens"]),
+  templateVariant("club", "club", "Novidades para membros", "Relacionamento com membros e comunicação geral do Clube.", "membership-news", { subject: "Novidades do Clube Cine Cruzeiro", headline: "Tem novidade para quem vive cinema", message: "Olá, {{nome}}. Confira a atualização preparada para membros do Clube.", ctaLabel: "Acessar o Clube" }, { accent: "#facc15", background: "#081425", surface: "#172235", headline: "#ffffff", text: "#dbeafe" }, ["membros", "novidade"]),
+  templateVariant("club-community", "club", "Comunidade Cine Cruzeiro", "Tom próximo para pertencimento, relacionamento e benefícios do Clube.", "community", { subject: "Uma novidade para a comunidade do Cine Cruzeiro", headline: "Fazer parte também é viver mais histórias", message: "Olá, {{nome}}. Veja o que preparamos para a comunidade do Clube.", ctaLabel: "Ver novidades" }, { accent: "#4d8dff", background: "#0a1220", surface: "#111f35", headline: "#ffffff", text: "#dbeafe" }, ["comunidade", "relacionamento"]),
+  templateVariant("birthday", "birthday", "Aniversário cinematográfico", "Mensagem pessoal de celebração com uma ação simples.", "celebration", { subject: "Feliz aniversário, {{nome}}!", headline: "Seu novo ciclo merece cinema", message: "Parabéns, {{nome}}! Desejamos um ano cheio de histórias inesquecíveis.", ctaLabel: "Escolher um filme" }, { accent: "#facc15", background: "#090d1c", surface: "#172554", headline: "#ffffff", text: "#dbeafe" }, ["aniversário", "celebração"]),
+  templateVariant("birthday-classic", "birthday", "Celebração clássica", "Aniversário elegante e discreto para relacionamento recorrente.", "classic-celebration", { subject: "Uma sessão especial para celebrar você", headline: "Hoje a história principal é a sua", message: "Olá, {{nome}}. O Cine Cruzeiro deseja um aniversário cheio de bons momentos.", ctaLabel: "Celebrar no cinema" }, { accent: "#f6c453", background: "#10131a", surface: "#1d2330", headline: "#fff7e6", text: "#e7dfd1" }, ["aniversário", "elegante"]),
+  templateVariant("event", "event", "Evento imersivo", "Imagem em largura total e convite centralizado para evento confirmado.", "event", { subject: "Um evento especial no Cine Cruzeiro", headline: "Reserve esta data", message: "Olá, {{nome}}. Você está convidado para uma experiência especial no cinema.", ctaLabel: "Ver detalhes" }, { accent: "#22d3ee", background: "#07111d", surface: "#091827", headline: "#ffffff", text: "#dbeafe" }, ["evento", "convite"]),
+  templateVariant("event-premium", "event", "Noite especial", "Convite sofisticado para pré-estreias, encontros e experiências exclusivas.", "event-premium", { subject: "Um convite especial do Cine Cruzeiro", headline: "Uma noite para ficar na memória", message: "Olá, {{nome}}. Confira os detalhes desta experiência especial no Cine Cruzeiro.", ctaLabel: "Confirmar interesse" }, { accent: "#f6c453", background: "#0b0d12", surface: "#191b22", headline: "#fff7e6", text: "#e7dfd1" }, ["evento", "noite especial"]),
+  templateVariant("ticket", "ticket", "Guia do ingresso digital", "Orientação clara sobre QR Code, sessão e acesso à conta.", "service", { subject: "Tudo sobre seu ingresso do Cine Cruzeiro", headline: "Tudo pronto para sua sessão", message: "Olá, {{nome}}. Consulte seu ingresso digital e confira os dados antes de chegar.", ctaLabel: "Ver meus ingressos" }, { accent: "#45d6a1", background: "#0b1523", surface: "#09111f", headline: "#ffffff", text: "#dbeafe" }, ["qr code", "orientação"]),
+  templateVariant("ticket-reminder", "ticket", "Lembrete de sessão", "Modelo de serviço para reforçar acesso, horário e preparação para a visita.", "reminder", { subject: "Sua sessão está chegando", headline: "Seu ingresso já está disponível", message: "Olá, {{nome}}. Abra seu ingresso e confira QR Code, horário e poltrona.", ctaLabel: "Abrir ingresso" }, { accent: "#4d8dff", background: "#09131f", surface: "#111f35", headline: "#ffffff", text: "#dbeafe" }, ["lembrete", "sessão"]),
+  templateVariant("reactivation", "reactivation", "Boas-vindas de volta", "Reaproximação acolhedora, sem pressão ou oferta inventada.", "reactivation", { subject: "Sentimos sua falta no Cine Cruzeiro", headline: "Tem uma nova história esperando por você", message: "Olá, {{nome}}. Venha descobrir o que está em cartaz no Cine Cruzeiro.", ctaLabel: "Ver programação" }, { accent: "#4d8dff", background: "#0a1220", surface: "#111f35", headline: "#ffffff", text: "#dbeafe" }, ["retorno", "acolhimento"]),
+  templateVariant("reactivation-discovery", "reactivation", "Redescubra o cinema", "Reativação editorial focada em descoberta e programação atual.", "discovery", { subject: "Que tal redescobrir o Cine Cruzeiro?", headline: "Novas histórias chegaram à nossa tela", message: "Olá, {{nome}}. Confira a programação atual e escolha uma nova história para viver.", ctaLabel: "Descobrir filmes" }, { accent: "#22d3ee", background: "#07111d", surface: "#0d1d31", headline: "#ffffff", text: "#dbeafe" }, ["descoberta", "programação"])
+]);
+
 const CATEGORY_LABELS = Object.freeze({
   all: "Todos",
   movies: "Filmes",
@@ -35,10 +70,14 @@ function definitionFor(templateId) {
   return TEMPLATE_DEFINITIONS.find((item) => item.id === String(templateId || "")) || TEMPLATE_DEFINITIONS[0];
 }
 
+function variantFor(variantId) {
+  return TEMPLATE_VARIANTS.find((item) => item.id === String(variantId || "")) || null;
+}
+
 function campaignLibraryItem(campaign = {}, preferences = {}) {
   const definition = definitionFor(campaign.templateId);
   const id = `campaign:${campaign.id}`;
-  const origin = campaign.aiGenerated ? "AI_GENERATED" : "MANUAL";
+  const origin = "SAVED";
   const linkedName = campaign.movieTitle || campaign.itemTitle || campaign.couponTitle || campaign.clubPlanName || "";
   const contentFlags = {
     coupon: Boolean(campaign.couponId),
@@ -84,14 +123,18 @@ function campaignLibraryItem(campaign = {}, preferences = {}) {
   };
 }
 
-function systemLibraryItem(definition, preferences = {}) {
-  const id = `system:${definition.id}`;
+function systemLibraryItem(variant, preferences = {}) {
+  const definition = definitionFor(variant.templateId);
+  const id = `system:${variant.id}`;
   return {
     ...definition,
+    ...variant,
     id,
-    sourceId: definition.id,
+    sourceId: variant.id,
     sourceType: "system",
-    templateId: definition.id,
+    variantId: variant.id,
+    templateId: variant.templateId,
+    tags: [...new Set([...(definition.tags || []), ...(variant.tags || [])])],
     categoryLabel: CATEGORY_LABELS[definition.category],
     origin: "SYSTEM",
     status: "ACTIVE",
@@ -105,9 +148,9 @@ function systemLibraryItem(definition, preferences = {}) {
     updatedAt: "",
     hasRealPreview: false,
     contentFlags: {
-      coupon: definition.id === "coupon",
-      discount: ["coupon", "promotion"].includes(definition.id),
-      sessions: ["weekly", "premiere", "last_chance"].includes(definition.id),
+      coupon: variant.templateId === "coupon",
+      discount: ["coupon", "promotion"].includes(variant.templateId),
+      sessions: ["weekly", "premiere", "last_chance"].includes(variant.templateId),
       trailer: false,
       cta: true
     }
@@ -152,7 +195,7 @@ function buildTemplateLibrary({ campaigns = [], preferences = {}, filters = {}, 
   const pageSize = Math.min(48, Math.max(6, Number(filters.pageSize || 18)));
   const query = normalizeText(filters.search || filters.query);
   const matchingItems = [
-    ...TEMPLATE_DEFINITIONS.map((item) => systemLibraryItem(item, preferences)),
+    ...TEMPLATE_VARIANTS.map((item) => systemLibraryItem(item, preferences)),
     ...(campaigns || []).map((item) => campaignLibraryItem(item, preferences))
   ].filter((item) => {
     if (!filters.includeArchived && item.archived) return false;
@@ -182,6 +225,7 @@ function buildTemplateLibrary({ campaigns = [], preferences = {}, filters = {}, 
     pageSize,
     total,
     pages: Math.max(1, Math.ceil(total / pageSize)),
+    systemModelCount: TEMPLATE_VARIANTS.length,
     categories: Object.entries(CATEGORY_LABELS).map(([id, label]) => ({ id, label, count: id === "all" ? matchingItems.length : matchingItems.filter((item) => item.category === id).length })),
     filters: {
       visualStyles: [...new Set(items.map((item) => item.visualStyle).filter(Boolean))].sort(),
@@ -212,8 +256,10 @@ function updateLibraryPreference(preferences = {}, id, action, value = true) {
 
 module.exports = {
   TEMPLATE_DEFINITIONS,
+  TEMPLATE_VARIANTS,
   CATEGORY_LABELS,
   definitionFor,
+  variantFor,
   campaignLibraryItem,
   buildTemplateLibrary,
   updateLibraryPreference,

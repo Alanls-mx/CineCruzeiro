@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
-const { TEMPLATE_DEFINITIONS, buildTemplateLibrary, updateLibraryPreference, findDuplicateReference } = require("../backend/services/emailTemplateLibraryService.js");
+const { TEMPLATE_DEFINITIONS, TEMPLATE_VARIANTS, buildTemplateLibrary, updateLibraryPreference, findDuplicateReference, variantFor } = require("../backend/services/emailTemplateLibraryService.js");
 const { publicApiError } = require("../backend/services/publicApiErrorService.js");
 
 test("biblioteca preserva todos os layouts do sistema", () => {
@@ -11,6 +12,16 @@ test("biblioteca preserva todos os layouts do sistema", () => {
     "announcement", "weekly", "premiere", "last_chance", "promotion", "coupon", "concession",
     "combo", "club_plan", "club", "birthday", "event", "ticket", "reactivation"
   ]);
+});
+
+test("cada layout possui duas variantes determinísticas e mantém o templateId original", () => {
+  assert.equal(TEMPLATE_VARIANTS.length, TEMPLATE_DEFINITIONS.length * 2);
+  for (const definition of TEMPLATE_DEFINITIONS) {
+    const variants = TEMPLATE_VARIANTS.filter((item) => item.templateId === definition.id);
+    assert.equal(variants.length, 2, `${definition.id} deve possuir duas variantes`);
+    assert.ok(variants.every((item) => item.defaults?.headline && item.theme?.accent));
+  }
+  assert.equal(variantFor("premiere-spotlight")?.templateId, "premiere");
 });
 
 test("biblioteca indexa referências sem carregar o HTML completo", () => {
@@ -32,7 +43,7 @@ test("biblioteca indexa referências sem carregar o HTML completo", () => {
 
   assert.equal(result.total, 1);
   assert.equal(result.items[0].sourceType, "campaign");
-  assert.equal(result.items[0].origin, "AI_GENERATED");
+  assert.equal(result.items[0].origin, "SAVED");
   assert.equal("html" in result.items[0], false);
   assert.equal(result.items[0].hasRealPreview, true);
 });
@@ -52,6 +63,27 @@ test("filtros combinam categoria, origem e favoritos", () => {
     filters: { category: "concession", favorites: true, origin: "SYSTEM" }
   });
   assert.deepEqual(result.items.map((item) => item.id), ["system:combo"]);
+});
+
+test("biblioteca expõe as 28 variantes como modelos do sistema", () => {
+  const result = buildTemplateLibrary({ filters: { page: 1, pageSize: 48, origin: "SYSTEM" } });
+  assert.equal(result.total, 28);
+  assert.equal(result.systemModelCount, 28);
+  assert.ok(result.items.some((item) => item.id === "system:combo-family" && item.templateId === "combo"));
+});
+
+test("gerador Gemini foi removido das rotas, serviços e interface", () => {
+  const server = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
+  const adminHtml = readFileSync(new URL("../backend/public/admin.html", import.meta.url), "utf8");
+  const adminJs = readFileSync(new URL("../backend/public/admin.js", import.meta.url), "utf8");
+  const integrations = readFileSync(new URL("../backend/services/integrationConfigService.js", import.meta.url), "utf8");
+
+  assert.doesNotMatch(server, /campaigns\/ai-draft|email\/prompt-templates/);
+  assert.doesNotMatch(adminHtml, /Gemini|Criar com IA|gerador com IA/i);
+  assert.doesNotMatch(adminJs, /campaigns\/ai-draft|email\/prompt-templates|Gemini/i);
+  assert.doesNotMatch(integrations, /Gemini|generativelanguage\.googleapis/i);
+  assert.equal(existsSync(new URL("../backend/services/geminiEmailAgentService.js", import.meta.url)), false);
+  assert.equal(existsSync(new URL("../backend/services/emailCampaignAiService.js", import.meta.url)), false);
 });
 
 test("uso do modelo alimenta popularidade e histórico sem alterar o template", () => {
@@ -85,7 +117,6 @@ test("erro inesperado recebe mensagem acionável e código de atendimento", () =
 
 test("erros conhecidos recebem orientação específica", () => {
   assert.equal(publicApiError(Object.assign(new Error("duplicate"), { code: "23505" })).code, "RESOURCE_CONFLICT");
-  assert.equal(publicApiError(Object.assign(new Error("Gemini invalid response"), { statusCode: 500 })).code, "GEMINI_UNAVAILABLE");
   const validation = publicApiError(Object.assign(new Error("Revise o filme selecionado."), { statusCode: 422, code: "MOVIE_INVALID" }));
   assert.equal(validation.message, "Revise o filme selecionado.");
 });

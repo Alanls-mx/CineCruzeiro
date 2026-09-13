@@ -27,15 +27,11 @@ const paymentService = require("./services/paymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const emailService = require("./services/emailService");
-const { testGeminiConnection } = require("./services/geminiEmailAgentService");
-const { generateEmailDraft } = require("./services/emailCampaignAiProviderService");
 const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
-const { armCampaignCoupon, buildCampaignCoupon, syncCampaignCouponSchedule, syncScheduledCampaignCoupons } = require("./services/emailCampaignCouponService");
+const { armCampaignCoupon, syncCampaignCouponSchedule, syncScheduledCampaignCoupons } = require("./services/emailCampaignCouponService");
 const { archiveExpiredCoupons, couponUsageHistory, couponUsageSummary } = require("./services/couponLifecycleService");
-const { extractRequestedSchedule } = require("./services/emailCampaignBriefService");
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
-const { listPromptTemplates, resolvePromptTemplate, updatePromptTemplate, renderPromptTemplate } = require("./services/emailCampaignPromptTemplates");
-const { buildTemplateLibrary, definitionFor, updateLibraryPreference, findDuplicateReference } = require("./services/emailTemplateLibraryService");
+const { buildTemplateLibrary, definitionFor, variantFor, updateLibraryPreference } = require("./services/emailTemplateLibraryService");
 const { publicApiError } = require("./services/publicApiErrorService");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
@@ -102,7 +98,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "033_orders_targeted_persistence.sql";
+const LATEST_SCHEMA_MIGRATION = "035_remove_gemini_email_integration.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -928,7 +924,7 @@ const RATE_LIMIT_RULES = [
   { id: "uploads", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path.startsWith("/api/uploads/") },
   { id: "email-attachments", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/email/attachments" },
   { id: "integration-tests", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/integrations/test" },
-  { id: "campaign-generation", limit: 12, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/(ai-draft|preview|test)$/.test(path) },
+  { id: "campaign-generation", limit: 12, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/(preview|test)$/.test(path) },
   { id: "campaign-dispatch", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/[^/]+\/(send|retry-failures)$/.test(path) },
   { id: "reports", limit: 20, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && path.startsWith("/api/admin/reports/") },
   { id: "external-lookups", limit: 60, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && /^\/api\/(tmdb|admin\/integrations)/.test(path) },
@@ -1225,7 +1221,7 @@ function repositoryMutationRoute(pathname, method) {
     || pathname === "/api/settings"
     || pathname === "/api/admin/security-policy"
     || pathname === "/api/admin/goods-fiscal-settings"
-    || /^\/api\/admin\/email\/(branding|prompt-templates|attachments)$/.test(pathname)
+    || /^\/api\/admin\/email\/(branding|attachments)$/.test(pathname)
     || /^\/api\/admin\/email\/template-library\/[^/]+$/.test(pathname)
     || /^\/api\/admin\/email\/campaigns(?:\/.*)?$/.test(pathname)
     || /^\/api\/admin\/integrations\/[^/]+(?:\/(test|enable|disable))?$/.test(pathname)
@@ -1511,6 +1507,8 @@ function normalizeDb(db) {
   })).sort((a, b) => Number(a.displayOrder || 100) - Number(b.displayOrder || 100));
   db.webhookEvents ||= [];
   db.integrations ||= db.settings.integrations || {};
+  delete db.integrations.gemini;
+  delete db.settings.emailAiPromptTemplates;
   db.settings.integrations = db.integrations;
   db.settings.mercadoPagoSubscriptionPlans ||= db.settings.mercadoPagoSubscriptionPlans || {};
   db.emailCampaigns ||= postgresEnabled() ? [] : (db.settings.emailCampaigns || []);
@@ -7192,7 +7190,6 @@ function getContent(db, options = {}) {
   delete publicSettings.emailCampaigns;
   delete publicSettings.emailAiPromptTemplates;
   if (!includePrivate) delete publicSettings.adminTwoFactorRequired;
-  if (includePrivate) publicSettings.emailAiPromptTemplates = listPromptTemplates(db.settings || {});
   const analyticsConfig = integrationConfigService.resolvedConfig(db, "analytics");
   publicSettings.tracking = {
     enabled: Boolean(analyticsConfig?.enabled && analyticsConfig?.configured),
@@ -8707,9 +8704,6 @@ async function testIntegrationProvider(db, provider, req) {
     if (!config.webhookUrl) return { ok: false, message: "Informe SMTP ou webhook do provedor de e-mail." };
     return emailService.sendIntegrationTest(db, req.adminUser?.email || config.fromEmail);
   }
-  if (key === "gemini") {
-    return testGeminiConnection(config);
-  }
   if (key === "analytics") {
     const googleValid = !config.googleMeasurementId || /^G-[A-Z0-9]+$/i.test(config.googleMeasurementId);
     const metaValid = !config.metaPixelId || /^\d{5,30}$/.test(config.metaPixelId);
@@ -10064,9 +10058,6 @@ async function handleApi(req, res, pathname) {
       const result = await testIntegrationProvider(db, key, req);
       if (postgresEnabled()) {
         const before = integrationConfigService.sanitizeConfig(db, key);
-        if (key === "gemini" && result.ok && result.resolvedModel) {
-          integrationConfigService.save(db, key, { model: result.resolvedModel }, req.adminUser);
-        }
         if (key === "googleWallet" && result.ok && result.resolvedClassId) {
           if (db.integrations?.googleWallet) db.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
           if (db.settings?.integrations?.googleWallet) db.settings.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
@@ -10080,9 +10071,6 @@ async function handleApi(req, res, pathname) {
       } else {
         await withCriticalMutation(async () => {
           const lockedDb = await readDb();
-          if (key === "gemini" && result.ok && result.resolvedModel) {
-            integrationConfigService.save(lockedDb, key, { model: result.resolvedModel }, req.adminUser);
-          }
           if (key === "googleWallet" && result.ok && result.resolvedClassId) {
             if (lockedDb.integrations?.googleWallet) lockedDb.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
             if (lockedDb.settings?.integrations?.googleWallet) lockedDb.settings.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
@@ -10164,9 +10152,8 @@ async function handleApi(req, res, pathname) {
       ...library,
       capabilities: {
         existingHtmlPreserved: true,
-        aiGenerationEnabled: Boolean(integrationConfigService.resolvedConfig(db, "gemini")?.configured),
-        massGenerationEnabled: false,
-        massGenerationReason: "A geração em lote fica desativada até a validação da arquitetura e das referências."
+        deterministicModels: true,
+        modelCount: library.systemModelCount
       }
     });
     return;
@@ -10182,12 +10169,13 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 200, { item: { id: itemId, sourceType: "campaign", campaign: campaignDetails(campaign) } });
       return;
     }
-    const templateId = itemId.replace(/^system:/, "");
-    if (!validCampaignTemplate(templateId)) {
+    const variantId = itemId.replace(/^system:/, "");
+    const variant = variantFor(variantId);
+    if (!variant || !validCampaignTemplate(variant.templateId)) {
       sendJson(res, 404, { error: { code: "EMAIL_TEMPLATE_NOT_FOUND", message: "Modelo de e-mail não encontrado." } });
       return;
     }
-    sendJson(res, 200, { item: { id: `system:${templateId}`, sourceType: "system", ...definitionFor(templateId) } });
+    sendJson(res, 200, { item: { id: `system:${variant.id}`, sourceType: "system", ...definitionFor(variant.templateId), ...variant } });
     return;
   }
   if (emailTemplateLibraryMatch && method === "PATCH") {
@@ -10231,28 +10219,6 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, { branding: db.settings.emailBranding });
     return;
   }
-  if (pathname === "/api/admin/email/prompt-templates" && method === "GET") {
-    sendJson(res, 200, { templates: listPromptTemplates(db.settings || {}) });
-    return;
-  }
-  if (pathname === "/api/admin/email/prompt-templates" && method === "PUT") {
-    const body = await readBody(req);
-    db.settings ||= {};
-    const template = updatePromptTemplate(db.settings, body.id, body.prompt, { reset: body.reset === true });
-    if (postgresEnabled()) {
-      await settingsRepository.updateSection("emailAiPromptTemplates", db.settings.emailAiPromptTemplates || {}, {
-        audit: repositoryAudit(req, "settings", "emailAiPromptTemplates", null, { promptTemplateId: template.id, reset: body.reset === true })
-      });
-    } else {
-      await writeDb(db);
-    }
-    logEvent("info", body.reset === true ? "email_ai.prompt_template_reset" : "email_ai.prompt_template_updated", {
-      actorUserId: req.adminUser?.id || "",
-      promptTemplateId: template.id
-    });
-    sendJson(res, 200, { template, templates: listPromptTemplates(db.settings) });
-    return;
-  }
   if (pathname === "/api/admin/email/attachments" && method === "POST") {
     const body = await readBody(req);
     const attachment = await storeEmailAttachment(body);
@@ -10281,223 +10247,6 @@ async function handleApi(req, res, pathname) {
       search: String(params.get("search") || "").slice(0, 160)
     });
     sendJson(res, 200, { ...result, campaigns: result.campaigns.map(publicCampaign) });
-    return;
-  }
-
-  if (pathname === "/api/admin/email/campaigns/ai-draft" && method === "POST") {
-    const body = await readBody(req);
-    let briefSchedule;
-    if (body.scheduleAt) {
-      const explicitSchedule = new Date(body.scheduleAt);
-      if (!Number.isFinite(explicitSchedule.getTime())) {
-        throw Object.assign(new Error("A data de envio informada não é válida."), { statusCode: 422, code: "EMAIL_CAMPAIGN_SCHEDULE_INVALID" });
-      }
-      briefSchedule = { scheduleAt: explicitSchedule.toISOString(), matched: true, reason: "explicit_field" };
-    } else {
-      briefSchedule = extractRequestedSchedule(body.brief);
-    }
-    const requestedScheduleAt = briefSchedule.scheduleAt || "";
-    const objective = normalizeObjective(body.objective || body.scenario) || "announcement";
-    const campaignId = `campanha-email-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
-    const requestedMovieIds = [...new Set([
-      ...(Array.isArray(body.movieIds) ? body.movieIds : []),
-      body.movieId
-    ].map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 20);
-    let autoCoupon = null;
-    if (objective === "offer" && !String(body.couponId || "").trim()) {
-      const selectedMovie = requestedMovieIds.length === 1
-        ? (db.movies || []).find((item) => String(item.id) === requestedMovieIds[0])
-        : null;
-      const briefText = String(body.brief || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-      const releaseStart = selectedMovie?.releaseDate && ["upcoming", "coming_soon", "em_breve"].includes(String(selectedMovie.status || "").toLowerCase()) && !/pre[- ]?venda|antecipad/.test(briefText)
-        ? `${selectedMovie.releaseDate}T12:00:00-03:00`
-        : "";
-      autoCoupon = buildCampaignCoupon({
-        brief: body.brief,
-        campaignId,
-        scheduleAt: requestedScheduleAt || releaseStart,
-        movieIds: requestedMovieIds,
-        concessionIds: Array.isArray(body.concessionIds) ? body.concessionIds : [],
-        promotions: db.promotions || []
-      });
-      body.couponId = autoCoupon.id;
-      body.movieIds = requestedMovieIds;
-      body.movieId = requestedMovieIds[0] || "";
-    }
-    const aiCampaignInput = scopeCampaignContext({
-      ...body,
-      id: campaignId,
-      objective,
-      scheduleAt: requestedScheduleAt,
-      templateSelectionMode: "automatic"
-    });
-    const campaignDb = autoCoupon
-      ? { ...db, promotions: [...(db.promotions || []), autoCoupon] }
-      : db;
-    const resolvedInput = resolveCampaignForInput(campaignDb, aiCampaignInput, { allowAutoMovie: false });
-    const context = resolvedInput.context;
-    const templateResolution = resolvedInput.resolution;
-    if (templateResolution.incomplete) {
-      const error = new Error(templateResolution.reason || "Selecione o conteúdo da campanha.");
-      error.statusCode = 409;
-      error.code = "EMAIL_CAMPAIGN_CONTEXT_REQUIRED";
-      throw error;
-    }
-    const scenario = templateResolution.scenario;
-    const promptTemplate = resolvePromptTemplate(db.settings || {}, scenario);
-    const renderedPromptTemplate = {
-      id: promptTemplate.id,
-      name: promptTemplate.name,
-      instructions: renderPromptTemplate(promptTemplate, {
-        movie: context.movie || context.movies?.[0] || null,
-        movies: context.movies || [],
-        coupon: context.coupon,
-        plan: context.plan,
-        concessions: context.concessions,
-        recipientMode: body.recipientMode
-      })
-    };
-    const referenceCampaignId = String(body.referenceCampaignId || "").trim();
-    const referenceCampaign = referenceCampaignId ? await findPersistedCampaign(referenceCampaignId) : null;
-    if (referenceCampaignId && !referenceCampaign) {
-      throw Object.assign(new Error("O rascunho de referência não existe mais."), { statusCode: 409, code: "EMAIL_CAMPAIGN_REFERENCE_NOT_FOUND" });
-    }
-    const requestedAiProvider = String(body.aiProvider || "gemini").trim().toLowerCase();
-    if (requestedAiProvider !== "gemini") {
-      throw Object.assign(new Error("O Gemini é o único motor de IA disponível para campanhas."), { statusCode: 422, code: "EMAIL_CAMPAIGN_AI_PROVIDER_INVALID" });
-    }
-    const aiConfig = integrationConfigService.resolvedConfig(db, requestedAiProvider);
-    const generated = await generateEmailDraft(requestedAiProvider, {
-      objective: templateResolution.objective,
-      scenario,
-      movie: context.movie || context.movies?.[0] || null,
-      movies: context.movies || [],
-      coupon: context.coupon,
-      plan: context.plan,
-      concessions: context.concessions,
-      referenceCampaign,
-      referenceTemplateId: templateResolution.templateId,
-      recipientMode: body.recipientMode,
-      brief: String(body.brief || "").trim().slice(0, 12000),
-      scheduleAt: requestedScheduleAt,
-      brand: normalizeEmailBrand(db.settings?.emailBranding || {}),
-      siteUrl: appFrontendUrl(),
-      eligibilityReport: context.report,
-      promptTemplate: renderedPromptTemplate
-    }, {
-      config: aiConfig,
-      safetyIdentifier: req.adminUser?.id || req.adminUser?.email || "cine-cruzeiro-admin"
-    });
-    const campaign = normalizeCampaignInput({
-      ...generated,
-      id: campaignId,
-      objective: templateResolution.objective,
-      templateSelectionMode: "automatic",
-      movieId: aiCampaignInput.movieId,
-      movieIds: aiCampaignInput.movieIds,
-      couponId: aiCampaignInput.couponId,
-      clubPlanId: aiCampaignInput.clubPlanId,
-      concessionIds: aiCampaignInput.concessionIds,
-      autoCouponId: autoCoupon?.id || "",
-      aiPromptTemplateId: promptTemplate.id,
-      aiPromptTemplateName: promptTemplate.name,
-      scheduleAt: requestedScheduleAt
-    }, { brand: db.settings?.emailBranding || {} });
-    const eligibilityCheck = eligibleCampaignRecipients(campaignDb, campaign);
-    applyCampaignTemplateResolution(campaign, eligibilityCheck.templateResolution);
-    const recipientCheck = { recipients: eligibilityCheck.recipients, excluded: eligibilityCheck.report.recipients?.excluded || 0, reasons: eligibilityCheck.report.recipients?.exclusionReasons || {} };
-    const eligibility = {
-      ...eligibilityCheck.report,
-      recipients: {
-        considered: recipientCheck.recipients.length + recipientCheck.excluded,
-        eligible: recipientCheck.recipients.length,
-        excluded: recipientCheck.excluded,
-        exclusionReasons: recipientCheck.reasons
-      }
-    };
-    Object.assign(campaign, {
-      status: "draft",
-      createdBy: req.adminUser?.id || "",
-      recipientCount: recipientCheck.recipients.length,
-      aiGenerated: true,
-      aiProvider: generated.aiProvider,
-      aiProviderRequested: requestedAiProvider,
-      aiModel: generated.aiModel || "",
-      aiConfiguredModel: aiConfig.model || "",
-      aiModelResolutionReason: generated.aiModelResolved ? "O modelo configurado não estava disponível; foi usado um compatível apenas nesta execução." : "",
-      aiFallbackReason: generated.aiFallbackReason || "",
-      aiFallbackMessage: generated.aiFallbackMessage || "",
-      aiScenario: campaign.aiScenario,
-      aiContext: generated.aiContext,
-      aiReferenceCampaignId: generated.aiReferenceCampaignId,
-      aiReferenceTemplateId: generated.aiReferenceTemplateId,
-      aiBrief: generated.aiBrief,
-      aiEligibility: eligibility
-    });
-    const comparableReferences = await listPersistedCampaigns({
-      page: 1,
-      pageSize: 100,
-      templateId: campaign.templateId,
-      order: "desc"
-    });
-    const duplicateReference = findDuplicateReference(campaign, comparableReferences.campaigns || []);
-    if (duplicateReference) {
-      throw Object.assign(new Error("Já existe uma referência equivalente na biblioteca. Abra o modelo existente ou detalhe melhor a variação desejada."), {
-        statusCode: 409,
-        code: "EMAIL_TEMPLATE_DUPLICATE",
-        expose: true
-      });
-    }
-    let persistedCoupon = null;
-    try {
-      if (autoCoupon) persistedCoupon = await persistAutoCampaignCoupon(autoCoupon);
-      await createPersistedCampaign(campaign);
-    } catch (error) {
-      if (persistedCoupon) await removeAutoCampaignCoupon(campaign.id, persistedCoupon.id).catch(() => {});
-      throw error;
-    }
-    logEvent("info", "email_campaign.ai_draft_created", {
-      actorUserId: req.adminUser?.id || "",
-      campaignId: campaign.id,
-      provider: generated.aiProvider,
-      requestedProvider: requestedAiProvider,
-      model: generated.aiModel || "",
-      fallbackReason: generated.aiFallbackReason || "",
-      scenario: generated.aiScenario,
-      context: generated.aiContext,
-      referenceCampaignId: generated.aiReferenceCampaignId,
-      referenceTemplateId: generated.aiReferenceTemplateId,
-      visualStyle: campaign.visualStyle,
-      scheduleAt: campaign.scheduleAt || "",
-      scheduleSource: briefSchedule.reason,
-      autoCouponId: autoCoupon?.id || "",
-      promptTemplateId: promptTemplate.id
-    });
-    sendJson(res, 201, {
-      campaign: publicCampaign(campaign),
-      ai: {
-        provider: generated.aiProvider,
-        requestedProvider: requestedAiProvider,
-        model: generated.aiModel || "",
-        configuredModel: aiConfig.model || "",
-        modelResolutionReason: campaign.aiModelResolutionReason || "",
-        fallbackReason: generated.aiFallbackReason || "",
-        fallbackMessage: generated.aiFallbackMessage || "",
-        scenario: generated.aiScenario,
-        context: generated.aiContext,
-        referenceCampaignId: generated.aiReferenceCampaignId,
-        referenceTemplateId: generated.aiReferenceTemplateId,
-        visualStyle: campaign.visualStyle,
-        visualStyleLabel: campaign.visualStyleLabel,
-        scheduleAt: campaign.scheduleAt || "",
-        promptTemplate: { id: promptTemplate.id, name: promptTemplate.name },
-        scheduleSource: briefSchedule.reason,
-        couponCreated: Boolean(autoCoupon),
-        coupon: autoCoupon ? { ...autoCoupon, usageCount: 0 } : null,
-        eligibility,
-        templateResolution: eligibilityCheck.templateResolution
-      }
-    });
     return;
   }
 
