@@ -192,4 +192,17 @@ test("fallback de classe não duplica o Issuer no Class ID", () => {
   );
 });
 
+test("atualização visual de classe aprovada volta para revisão sem substituir outros campos", () => {
+  const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const patchSlice = serverContent.slice(
+    serverContent.indexOf("eventClass = await googleWalletApiPatch"),
+    serverContent.indexOf("checks.push(", serverContent.indexOf("eventClass = await googleWalletApiPatch"))
+  );
+
+  assert.match(patchSlice, /classTemplateInfo:\s*desiredTemplate/);
+  assert.match(patchSlice, /reviewStatus:\s*"UNDER_REVIEW"/);
+  assert.match(patchSlice, /reviewStatus = String\(eventClass\.reviewStatus \|\| "UNDER_REVIEW"\)/);
+  assert.doesNotMatch(patchSlice, /\.\.\.eventClass/);
+});
+
 

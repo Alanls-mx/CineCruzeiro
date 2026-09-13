@@ -8504,7 +8504,7 @@ async function testGoogleWalletIntegration(db) {
 
     const issuerFromClass = String(eventClass.id || "").split(".")[0] || "";
     const classBelongsToIssuer = issuerFromClass === wallet.issuerId || String(eventClass.id || "").startsWith(`${wallet.issuerId}.`);
-    const reviewStatus = String(eventClass.reviewStatus || "").toUpperCase();
+    let reviewStatus = String(eventClass.reviewStatus || "").toUpperCase();
     const classRejected = reviewStatus === "REJECTED";
     const desiredTemplate = buildGoogleWalletClassTemplateInfo();
     const currentTemplate = eventClass.classTemplateInfo || {};
@@ -8516,13 +8516,14 @@ async function testGoogleWalletIntegration(db) {
       eventClass = await googleWalletApiPatch(
         `/eventTicketClass/${encodeURIComponent(resolvedClassId)}`,
         wallet,
-        { classTemplateInfo: desiredTemplate }
+        { classTemplateInfo: desiredTemplate, reviewStatus: "UNDER_REVIEW" }
       );
+      reviewStatus = String(eventClass.reviewStatus || "UNDER_REVIEW").toUpperCase();
     }
     checks.push(
       { key: "auth", label: "Autenticação", ok: true, detail: "Service Account autenticada na API Google Wallet." },
       { key: "classRead", label: "EventTicketClass", ok: true, detail: `${eventClass.id || wallet.classId} encontrada.` },
-      { key: "classLayout", label: "Layout do ingresso", ok: !classRejected && classBelongsToIssuer, detail: classRejected ? "A classe rejeitada não pode receber o layout de produção." : !classBelongsToIssuer ? "O layout não foi alterado porque a classe pertence a outro Issuer." : templateChanged ? "Layout Cine Cruzeiro aplicado à classe." : "Layout Cine Cruzeiro já estava atualizado." },
+      { key: "classLayout", label: "Layout do ingresso", ok: !classRejected && classBelongsToIssuer, detail: classRejected ? "A classe rejeitada não pode receber o layout de produção." : !classBelongsToIssuer ? "O layout não foi alterado porque a classe pertence a outro Issuer." : templateChanged ? "Layout Cine Cruzeiro enviado para revisão da classe." : "Layout Cine Cruzeiro já estava atualizado." },
       { key: "classIssuer", label: "Classe do Issuer", ok: classBelongsToIssuer, detail: classBelongsToIssuer ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
       {
         key: "classStatus",
