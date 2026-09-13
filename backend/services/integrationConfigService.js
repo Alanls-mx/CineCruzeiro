@@ -463,6 +463,7 @@ function setTestResult(db, provider, result, user) {
     lastTestMessage: result.message || "",
     lastTestCode: result.code || "",
     lastTestRequestId: result.requestId || "",
+    ...(result.resolvedClassId ? { resolvedClassId: result.resolvedClassId } : {}),
     updatedAt: new Date().toISOString(),
     updatedBy: user?.id || ""
   };

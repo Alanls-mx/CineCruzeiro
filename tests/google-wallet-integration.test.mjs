@@ -120,3 +120,15 @@ test("settingsRepository e repositorySupport utilizam explicit casts ($1::text) 
   assert.match(repoSupportContent, /\(SELECT id FROM users WHERE id = \$1::text\)/);
 });
 
+test("garante uso do recurso eventTicketClass na API e estrutura EventTicketObject no passe", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const serverContent = fs.readFileSync(path.resolve("backend/server.js"), "utf8");
+
+  assert.match(serverContent, /\/eventTicketClass\//);
+  assert.doesNotMatch(serverContent, /\/genericClass\//);
+  assert.match(serverContent, /eventTicketObjects:\s*\[eventTicketObject\]/);
+  assert.match(serverContent, /passType:\s*"EventTicket"/);
+});
+
+

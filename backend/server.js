@@ -319,15 +319,15 @@ function getGoogleWalletConfig(db) {
   }
 
   const issuerId = configured?.issuerId || getFirstEnv(GOOGLE_WALLET_ISSUER_ID_ENV_KEYS)?.value || "";
-  const classId = configured?.classId || getFirstEnv(GOOGLE_WALLET_CLASS_ID_ENV_KEYS)?.value || "";
+  const rawClassId = configured?.resolvedClassId || configured?.classId || getFirstEnv(GOOGLE_WALLET_CLASS_ID_ENV_KEYS)?.value || "";
   const clientEmail = serviceAccount.client_email || configured?.clientEmail || getFirstEnv(GOOGLE_WALLET_CLIENT_EMAIL_ENV_KEYS)?.value || "";
   const privateKey = String(serviceAccount.private_key || configured?.privateKey || getFirstEnv(GOOGLE_WALLET_PRIVATE_KEY_ENV_KEYS)?.value || "").replace(/\\n/g, "\n");
   const origins = normalizeGoogleWalletOrigins(configured?.origins || getFirstEnv(GOOGLE_WALLET_ORIGINS_ENV_KEYS)?.value || appFrontendUrl());
 
   return {
-    configured: Boolean(issuerId && classId && clientEmail && privateKey),
+    configured: Boolean(issuerId && rawClassId && clientEmail && privateKey),
     issuerId,
-    classId: googleWalletResourceId(issuerId, classId),
+    classId: configured?.resolvedClassId || googleWalletResourceId(issuerId, rawClassId),
     clientEmail,
     privateKey,
     origins,
@@ -8462,14 +8462,55 @@ async function testGoogleWalletIntegration(db) {
   }
 
   try {
-    const eventClass = await googleWalletApiGet(`/eventTicketClass/${encodeURIComponent(wallet.classId)}`, wallet);
+    let eventClass = null;
+    let resolvedClassId = wallet.classId;
+
+    try {
+      eventClass = await googleWalletApiGet(`/eventTicketClass/${encodeURIComponent(wallet.classId)}`, wallet);
+      resolvedClassId = eventClass.id || wallet.classId;
+    } catch (err) {
+      if (err.statusCode === 404) {
+        const candidateId = `${wallet.issuerId}.${wallet.classId}`;
+        try {
+          eventClass = await googleWalletApiGet(`/eventTicketClass/${encodeURIComponent(candidateId)}`, wallet);
+          resolvedClassId = eventClass.id || candidateId;
+        } catch (subErr) {
+          if (subErr.statusCode === 404) {
+            const listData = await googleWalletApiGet(`/eventTicketClass?issuerId=${encodeURIComponent(wallet.issuerId)}`, wallet).catch(() => null);
+            const matching = (listData?.resources || []).find((item) => (
+              item.id === wallet.classId ||
+              item.id === candidateId ||
+              item.id.endsWith(`.${wallet.classId}`) ||
+              (wallet.classId.includes(".") && item.id.endsWith(wallet.classId.split(".").slice(1).join(".")))
+            ));
+            if (matching) {
+              eventClass = matching;
+              resolvedClassId = matching.id;
+            } else {
+              throw err;
+            }
+          } else {
+            throw subErr;
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    wallet.classId = resolvedClassId;
+    if (db) {
+      if (db.integrations?.googleWallet) db.integrations.googleWallet.resolvedClassId = resolvedClassId;
+      if (db.settings?.integrations?.googleWallet) db.settings.integrations.googleWallet.resolvedClassId = resolvedClassId;
+    }
+
     const issuerFromClass = String(eventClass.id || "").split(".")[0] || "";
     const reviewStatus = String(eventClass.reviewStatus || "").toUpperCase();
     const classRejected = reviewStatus === "REJECTED";
     checks.push(
       { key: "auth", label: "Autenticação", ok: true, detail: "Service Account autenticada na API Google Wallet." },
       { key: "classRead", label: "EventTicketClass", ok: true, detail: `${eventClass.id || wallet.classId} encontrada.` },
-      { key: "classIssuer", label: "Classe do Issuer", ok: issuerFromClass === wallet.issuerId, detail: issuerFromClass === wallet.issuerId ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
+      { key: "classIssuer", label: "Classe do Issuer", ok: issuerFromClass === wallet.issuerId || String(eventClass.id || "").startsWith(`${wallet.issuerId}.`), detail: (issuerFromClass === wallet.issuerId || String(eventClass.id || "").startsWith(`${wallet.issuerId}.`)) ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
       {
         key: "classStatus",
         label: "Status da classe",
@@ -8496,6 +8537,7 @@ async function testGoogleWalletIntegration(db) {
     });
     return {
       ok,
+      resolvedClassId,
       message: ok
         ? reviewStatus === "APPROVED"
           ? "Google Wallet autenticado, Issuer encontrado e EventTicketClass pronta."
@@ -9956,6 +9998,10 @@ async function handleApi(req, res, pathname) {
         if (key === "gemini" && result.ok && result.resolvedModel) {
           integrationConfigService.save(db, key, { model: result.resolvedModel }, req.adminUser);
         }
+        if (key === "googleWallet" && result.ok && result.resolvedClassId) {
+          if (db.integrations?.googleWallet) db.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
+          if (db.settings?.integrations?.googleWallet) db.settings.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
+        }
         const saved = integrationConfigService.setTestResult(db, key, result, req.adminUser);
         const payloadToPersist = db.integrations?.[key] || db.settings?.integrations?.[key] || {};
         await settingsRepository.updateSectionKey("integrations", key, payloadToPersist, {
@@ -9967,6 +10013,10 @@ async function handleApi(req, res, pathname) {
           const lockedDb = await readDb();
           if (key === "gemini" && result.ok && result.resolvedModel) {
             integrationConfigService.save(lockedDb, key, { model: result.resolvedModel }, req.adminUser);
+          }
+          if (key === "googleWallet" && result.ok && result.resolvedClassId) {
+            if (lockedDb.integrations?.googleWallet) lockedDb.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
+            if (lockedDb.settings?.integrations?.googleWallet) lockedDb.settings.integrations.googleWallet.resolvedClassId = result.resolvedClassId;
           }
           const saved = integrationConfigService.setTestResult(lockedDb, key, result, req.adminUser);
           await writeDb(lockedDb);
