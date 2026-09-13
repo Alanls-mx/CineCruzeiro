@@ -860,7 +860,7 @@
                 </label>
                 <div id="manualCustomerResults" class="customer-results"></div>
                 <div id="manualSelectedCustomer" class="selected-customer-state empty" role="status" aria-live="polite">
-                  <span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar.</span>
+                  <span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar e adicionar.</span>
                 </div>
               </div>
 
@@ -917,7 +917,7 @@
               <div id="manualTicketTypes" class="manual-ticket-types" aria-label="Tipos de ingresso disponíveis"></div>
 
               <div class="manual-sale-add-row">
-                <p>Adicione uma sessão por vez. Todos os ingressos serão vinculados ao mesmo cliente.</p>
+                <p>Adicione uma sessão por vez. Com mais de um cliente, distribua cada ingresso antes de finalizar.</p>
                 <button id="manualAddMovieButton" class="ghost-button" type="button">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
                   Adicionar filme à venda
@@ -952,6 +952,18 @@
                   <div id="manualSeatMap" class="manual-seat-map" aria-label="Mapa de poltronas"></div>
                 </div>
                 <p id="manualSeatSelectionSummary" class="manual-seat-selection-summary"></p>
+              </section>
+
+              <section id="manualTicketAssignmentsSection" class="manual-ticket-assignments-section" aria-labelledby="manualTicketAssignmentsTitle" hidden>
+                <div class="manual-ticket-assignments-heading">
+                  <div>
+                    <strong id="manualTicketAssignmentsTitle">Distribuição dos ingressos</strong>
+                    <span>Defina em qual conta cada ingresso digital ficará disponível.</span>
+                  </div>
+                  <span id="manualTicketAssignmentsCount" class="status-pill muted">0 ingressos</span>
+                </div>
+                <div id="manualTicketAssignments" class="manual-ticket-assignments"></div>
+                <p id="manualTicketAssignmentsNote" class="manual-ticket-assignments-note"></p>
               </section>
 
               <section id="manualConcessionsSection" class="manual-concessions-section" aria-labelledby="manualConcessionsTitle">
@@ -1076,6 +1088,8 @@
                   <button type="button" data-value="paid">Pago</button>
                   <button type="button" data-value="pending">Pendente</button>
                   <button type="button" data-value="cancelled">Cancelado</button>
+                  <button type="button" data-value="refunded">Reembolsado</button>
+                  <button type="button" data-value="expired">Expirado</button>
                 </div>
               </div>
               <div id="todayOrdersList" class="orders-table"></div>
@@ -1088,6 +1102,18 @@
                 <label class="table-search">
                   Buscar pedido
                   <input id="ordersSearch" placeholder="Cliente, filme, código ou referência" />
+                </label>
+                <label class="compact-select-label">
+                  <span>Status</span>
+                  <select id="ordersStatusFilter">
+                    <option value="all">Todos os status</option>
+                    <option value="paid">Pagos</option>
+                    <option value="pending">Pendentes</option>
+                    <option value="refunded">Reembolsados</option>
+                    <option value="expired">Expirados</option>
+                    <option value="cancelled">Cancelados</option>
+                    <option value="rejected">Recusados</option>
+                  </select>
                 </label>
                 <div class="segmented-filter" data-order-filter="archiveStatus" aria-label="Arquivamento dos pedidos">
                   <button class="active" type="button" data-value="active">Ativos</button>
@@ -1118,6 +1144,7 @@
                     <option value="rejected">Recusado</option>
                     <option value="cancelled">Cancelado</option>
                     <option value="refunded">Reembolsado</option>
+                    <option value="expired">Expirado</option>
                   </select>
                 </label>
                 <label>
@@ -1281,16 +1308,30 @@
                   </div>
 
                   <div class="concession-form-col">
-                    <div class="field-row">
+                    <div class="field-row concession-stock-row">
                       <label>
-                        Estoque
-                        <input id="concessionStock" type="number" min="0" step="1" placeholder="Sem limite" />
+                        Estoque disponível
+                        <input id="concessionStock" type="number" min="0" step="0.001" placeholder="Sem limite" />
+                      </label>
+                      <label>
+                        Unidade do estoque
+                        <select id="concessionStockUnit">
+                          <option value="unit">Unidade</option>
+                          <option value="kg">kg</option>
+                          <option value="g">g</option>
+                          <option value="mg">mg</option>
+                        </select>
+                      </label>
+                      <label id="concessionUsagePerSaleField" hidden>
+                        Consumo por item vendido
+                        <input id="concessionUsagePerSale" type="number" min="0.001" step="0.001" value="1" />
                       </label>
                       <label>
                         Limite por pedido
                         <input id="concessionMaxPerOrder" type="number" min="1" step="1" value="8" />
                       </label>
                     </div>
+                    <p id="concessionStockEstimate" class="helper-text inventory-estimate" aria-live="polite"></p>
                     <div class="field-row">
                       <label>
                         Ordem
@@ -1400,6 +1441,7 @@
 
           <div class="admin-tab-panel active" data-admin-tab-panel="marketing:overview">
             <div id="marketingOverview" class="admin-overview"></div>
+            <div id="marketingPerformance" class="marketing-performance-grid"></div>
             <div class="quick-actions" aria-label="Atalhos de Marketing">
               <button class="ghost-button icon-label" type="button" data-marketing-shortcut="promotions">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -1990,6 +2032,10 @@
                 <input id="adTitle" required />
               </label>
               <label>
+                Descrição
+                <textarea id="adDescription" rows="3" placeholder="Contexto curto exibido junto ao anúncio"></textarea>
+              </label>
+              <label>
                 Posição
                 <select id="adPlacement">
                   <option value="home">Home</option>
@@ -2011,6 +2057,20 @@
                 Link
                 <input id="adLinkUrl" placeholder="Cole o link de destino do anúncio" />
               </label>
+              <label>
+                Texto do botão
+                <input id="adCtaLabel" placeholder="Ex.: Saiba mais" />
+              </label>
+              <div class="field-row">
+                <label>
+                  Início da exibição
+                  <input id="adStartsAt" type="datetime-local" />
+                </label>
+                <label>
+                  Fim da exibição
+                  <input id="adEndsAt" type="datetime-local" />
+                </label>
+              </div>
               <label class="check-field">
                 <input id="adActive" type="checkbox" />
                 Anúncio ativo
@@ -2710,6 +2770,7 @@
         <div class="button-row">
           <button id="concessionModalRefundButton" class="danger-button" type="button" hidden>Reembolsar bomboniere</button>
           <button id="concessionModalArchiveButton" class="ghost-button" type="button">Arquivar</button>
+          <button id="concessionModalDeleteButton" class="danger-button" type="button" hidden>Excluir da bomboniere</button>
           <button class="ghost-button" type="button" id="concessionOrderModalCloseAction">Fechar</button>
         </div>
       </div>

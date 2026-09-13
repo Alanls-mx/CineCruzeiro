@@ -5,6 +5,7 @@ import { Ticket } from "lucide-react";
 import { HomeTrailerButton } from "@/components/HomeTrailerButton";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { MovieMetadata } from "@/components/MovieMetadata";
+import { MarketingAd } from "@/components/MarketingAd";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { CinemaContent, normalizeCinemaContent } from "@/services/cinemaApi";
 import { Movie } from "@/types";
@@ -103,6 +104,9 @@ export default async function HomePage() {
                   )}
                 </Link>
               </div>
+            </section>
+            <section className="mx-auto max-w-[1320px] px-4 pt-10 sm:px-6 lg:px-8">
+              <MarketingAd ad={content.ads.find((ad) => ad.placement === "home")} />
             </section>
             <MovieStrip title="Em Cartaz" movies={content.nowPlaying} />
             <MovieStrip title="Em Breve" movies={content.upcoming} muted />

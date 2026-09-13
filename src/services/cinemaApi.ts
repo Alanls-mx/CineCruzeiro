@@ -181,6 +181,19 @@ export interface TicketTypeRecord {
   active: boolean;
 }
 
+export interface MarketingAd {
+  id: string;
+  title: string;
+  description?: string;
+  placement: "home" | "club" | "checkout" | string;
+  imageUrl?: string;
+  linkUrl?: string;
+  ctaLabel?: string;
+  startsAt?: string;
+  endsAt?: string;
+  active?: boolean;
+}
+
 export interface CinemaContent {
   featuredMovie: Movie | null;
   nowPlaying: Movie[];
@@ -199,7 +212,7 @@ export interface CinemaContent {
   ticketTypes: TicketTypeRecord[];
   concessions: ConcessionItem[];
   promotions: Array<Record<string, unknown>>;
-  ads: Array<Record<string, unknown>>;
+  ads: MarketingAd[];
   settings: {
     cinemaName?: string;
     defaultTicketPrice?: number;
@@ -388,7 +401,13 @@ export function normalizeCinemaContent(data: Record<string, any>): CinemaContent
       ? data.promotions.map((item: Record<string, unknown>) => ({ ...item, imageUrl: publicAssetPath(String(item.imageUrl || "")) }))
       : [],
     ads: Array.isArray(data.ads)
-      ? data.ads.map((item: Record<string, unknown>) => ({ ...item, imageUrl: publicAssetPath(String(item.imageUrl || "")) }))
+      ? data.ads.map((item: Record<string, unknown>) => ({
+          ...item,
+          id: String(item.id || ""),
+          title: String(item.title || "Destaque"),
+          placement: String(item.placement || "home"),
+          imageUrl: publicAssetPath(String(item.imageUrl || ""))
+        })) as MarketingAd[]
       : [],
     settings: {
       ...(data.settings || {}),

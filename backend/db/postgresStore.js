@@ -248,6 +248,8 @@ async function loadDbFromPostgres() {
           price: num(row.price),
           compareAt: row.compare_at === null ? "" : num(row.compare_at),
           category: row.category || "combo",
+          stockUnit: row.stock_unit || "unit",
+          usagePerSale: Number(row.usage_per_sale || 1),
           stock: stock === null || stock === undefined ? "" : Number(stock),
           reserved: inventoryItem?.reserved === null || inventoryItem?.reserved === undefined ? 0 : Number(inventoryItem.reserved),
           sold: inventoryItem?.sold === null || inventoryItem?.sold === undefined ? 0 : Number(inventoryItem.sold),
@@ -843,8 +845,8 @@ async function writeDbToPostgres(db) {
     }
 
     for (const item of asArray(db.concessions)) {
-      await query(client, `INSERT INTO concessions (id, sku, name, description, image_url, badge, price, compare_at, category, max_per_order, featured, sort_order, tags, combo_items, active)
-        VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,NULLIF($8,'')::numeric,$9,$10,$11,$12,$13,$14,$15)`, [
+      await query(client, `INSERT INTO concessions (id, sku, name, description, image_url, badge, price, compare_at, category, max_per_order, featured, sort_order, tags, combo_items, active, stock_unit, usage_per_sale)
+        VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,NULLIF($8,'')::numeric,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, [
         item.id,
         item.sku || "",
         item.name,
@@ -859,7 +861,9 @@ async function writeDbToPostgres(db) {
         Number(item.sortOrder || 100),
         asArray(item.tags),
         JSON.stringify(asArray(item.comboItems)),
-        item.active !== false
+        item.active !== false,
+        item.stockUnit || "unit",
+        Number(item.usagePerSale || 1)
       ]);
       await query(client, "INSERT INTO concession_inventory (concession_id, available, reserved, sold) VALUES ($1,$2,$3,$4)", [
         item.id,

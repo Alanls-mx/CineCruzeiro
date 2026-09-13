@@ -23,6 +23,7 @@ function summarizeConcessionFinance(entries = []) {
   let discountedOrders = 0;
 
   entries.forEach(({ order = {}, breakdown = {} }) => {
+    if (order.concessionDeletedAt) return;
     const items = Array.isArray(order.concessionItems) ? order.concessionItems.filter((item) => Number(item.quantity || 0) > 0) : [];
     if (!items.length) return;
     const benefits = order.clubBenefits && typeof order.clubBenefits === "object" ? order.clubBenefits : {};
@@ -154,7 +155,7 @@ function summarizeConcessionFinance(entries = []) {
     refundTotal: moneyValue(refundTotal),
     refundedQuantity,
     itemQuantity,
-    orders: entries.filter(({ order }) => Array.isArray(order?.concessionItems) && order.concessionItems.some((item) => Number(item.quantity || 0) > 0)).length,
+    orders: entries.filter(({ order }) => !order?.concessionDeletedAt && Array.isArray(order?.concessionItems) && order.concessionItems.some((item) => Number(item.quantity || 0) > 0)).length,
     discountedOrders,
     products: productRows
   };

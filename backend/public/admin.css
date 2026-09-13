@@ -3685,9 +3685,8 @@ input[type="file"]::file-selector-button {
   display: grid;
   gap: 7px;
   padding: 12px;
-  border-left: 3px solid var(--gold);
-  border-radius: 0 7px 7px 0;
-  background: rgba(255, 255, 255, 0.035);
+  border-radius: 7px;
+  background: linear-gradient(90deg, rgba(250, 204, 21, .12), rgba(255, 255, 255, .035) 22%);
 }
 
 .manual-sale-summary-session-title strong {
@@ -7598,7 +7597,6 @@ th {
 .perf-bar-fill {
   height: 100%;
   border-radius: 9999px;
-  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .perf-bar-fill.tone-cpu { background: #38bdf8; }
@@ -8397,6 +8395,146 @@ th {
   color: #ecfdf5;
 }
 
+.selected-customer-state.confirmed.multiple {
+  display: block;
+}
+
+.selected-customers-heading,
+.manual-ticket-assignments-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.selected-customers-heading > span {
+  color: #a7f3d0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.selected-customers-list {
+  display: grid;
+  margin-top: 10px;
+}
+
+.selected-customer-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(167, 243, 208, 0.14);
+}
+
+.selected-customer-row .icon-button {
+  color: #fecdd3;
+}
+
+.selected-customer-state.confirmed.multiple > p {
+  margin: 8px 0 0;
+  color: #c7f9e8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.customer-result {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.customer-result > strong,
+.customer-result > span {
+  grid-column: 1;
+}
+
+.customer-result > small {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.customer-result.selected,
+.customer-result:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.customer-result.selected > small {
+  color: #6ee7b7;
+}
+
+.manual-ticket-assignments-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.manual-ticket-assignments-section[hidden] {
+  display: none;
+}
+
+.manual-ticket-assignments-heading strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.manual-ticket-assignments-heading span:not(.status-pill) {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.manual-ticket-assignments {
+  display: grid;
+}
+
+.manual-ticket-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.75fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.manual-ticket-assignment-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.manual-ticket-assignment-row strong,
+.manual-ticket-assignment-row small {
+  overflow-wrap: anywhere;
+}
+
+.manual-ticket-assignment-row strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.manual-ticket-assignment-row small,
+.manual-ticket-assignments-note {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.manual-ticket-assignments-note {
+  margin: 0;
+}
+
+.admin-list-pagination {
+  margin-top: 12px;
+}
+
 .selected-customer-icon {
   display: grid;
   width: 32px;
@@ -8676,6 +8814,23 @@ th {
     width: 100%;
   }
 
+  .selected-customers-heading,
+  .manual-ticket-assignments-heading,
+  .manual-ticket-assignment-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .selected-customers-heading,
+  .manual-ticket-assignments-heading {
+    flex-direction: column;
+  }
+
+  .selected-customers-heading .text-button,
+  .manual-ticket-assignments-heading .status-pill {
+    align-self: flex-start;
+  }
+
   .club-overview-heading,
   .club-detail-heading {
     align-items: stretch;
@@ -8703,3 +8858,92 @@ th {
   }
 }
 
+/* Operational metrics, financial timestamps and mass-based inventory */
+.financial-event-time {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.concession-stock-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(110px, .65fr) minmax(0, 1fr);
+  gap: var(--sp-12);
+  align-items: end;
+}
+
+.inventory-estimate {
+  grid-column: 1 / -1;
+  min-height: 20px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.marketing-performance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-16);
+  margin-top: var(--sp-16);
+}
+
+.marketing-performance-panel {
+  min-width: 0;
+  padding: var(--sp-20);
+  background: rgba(8, 16, 29, .72);
+}
+
+.marketing-performance-panel h3 {
+  margin: 0 0 var(--sp-16);
+  font-size: 16px;
+}
+
+.marketing-funnel,
+.marketing-rank-list {
+  display: grid;
+  gap: 10px;
+}
+
+.marketing-funnel > div:not(.empty-state),
+.marketing-rank-list > div:not(.empty-state) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-12);
+  align-items: center;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(148, 163, 184, .14);
+}
+
+.marketing-funnel > div:not(.empty-state):last-child,
+.marketing-rank-list > div:not(.empty-state):last-child {
+  border-bottom: 0;
+}
+
+.marketing-funnel > div:not(.empty-state) > span,
+.marketing-rank-list > div:not(.empty-state) > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketing-funnel > div:not(.empty-state) > strong,
+.marketing-rank-list > div:not(.empty-state) > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+@media (max-width: 1050px) {
+  .marketing-performance-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .concession-stock-row {
+    grid-template-columns: 1fr;
+  }
+}

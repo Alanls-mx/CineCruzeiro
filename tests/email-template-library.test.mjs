@@ -20,6 +20,8 @@ test("cada layout possui duas variantes determinísticas e mantém o templateId 
     const variants = TEMPLATE_VARIANTS.filter((item) => item.templateId === definition.id);
     assert.equal(variants.length, 2, `${definition.id} deve possuir duas variantes`);
     assert.ok(variants.every((item) => item.defaults?.headline && item.theme?.accent));
+    assert.ok(variants.every((item) => item.defaults?.preheader && item.defaults.message.length > 180));
+    assert.notEqual(variants[0].defaults.message, variants[1].defaults.message);
   }
   assert.equal(variantFor("premiere-spotlight")?.templateId, "premiere");
 });

@@ -301,6 +301,37 @@ async function listCampaigns(filters = {}) {
   };
 }
 
+async function aggregateCampaignMetrics() {
+  const result = await queryPostgres(`
+    SELECT
+      COUNT(*)::integer AS campaigns,
+      COALESCE(SUM(eligible_recipient_count), 0)::bigint AS recipients,
+      COALESCE(SUM(sent_count), 0)::bigint AS sent,
+      COALESCE(SUM(delivered_count), 0)::bigint AS delivered,
+      COALESCE(SUM(opened_count), 0)::bigint AS opened,
+      COALESCE(SUM(clicked_count), 0)::bigint AS clicked,
+      COALESCE(SUM(failed_count), 0)::bigint AS failed,
+      BOOL_OR(delivered_count IS NOT NULL) AS delivered_supported,
+      BOOL_OR(opened_count IS NOT NULL) AS opened_supported,
+      BOOL_OR(clicked_count IS NOT NULL) AS clicked_supported
+    FROM email_campaigns
+    WHERE archived_at IS NULL
+  `);
+  const row = result.rows[0] || {};
+  return {
+    campaigns: Number(row.campaigns || 0),
+    recipients: Number(row.recipients || 0),
+    sent: Number(row.sent || 0),
+    delivered: Number(row.delivered || 0),
+    opened: Number(row.opened || 0),
+    clicked: Number(row.clicked || 0),
+    failed: Number(row.failed || 0),
+    deliveredSupported: Boolean(row.delivered_supported),
+    openedSupported: Boolean(row.opened_supported),
+    clickedSupported: Boolean(row.clicked_supported)
+  };
+}
+
 async function updateCampaign(id, campaign, allowedStates = ["draft", "failed"]) {
   const record = campaignRecord({ ...campaign, id });
   const immutable = new Set(["id", "idempotency_key", "created_at", "created_by", "updated_at", "processed_count", "sent_count", "failed_count", "delivered_count", "bounced_count", "opened_count", "clicked_count"]);
@@ -618,6 +649,7 @@ module.exports = {
   createCampaign,
   getCampaign,
   listCampaigns,
+  aggregateCampaignMetrics,
   updateCampaign,
   deleteCampaign,
   transitionCampaign,

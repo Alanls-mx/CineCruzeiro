@@ -33,6 +33,7 @@ let state = {
   selectedClubPlanId: "",
   selectedOrderId: "",
   dashboard: null,
+  marketingOverviewData: null,
   integrations: null,
   logs: null,
   logsPage: 1,
@@ -40,6 +41,8 @@ let state = {
   logsView: "business",
   logFilters: { search: "", level: "", category: "", from: "", to: "" },
   webhookSimulatorRuns: [],
+  webhookHistoryPage: 1,
+  webhookHistoryPageSize: 8,
   selectedWebhookRunId: "",
   selectedCustomerAccountId: "",
   customerAccountsSearch: "",
@@ -89,6 +92,7 @@ let state = {
     todayOrigin: "all",
     todayStatus: "all",
     archiveStatus: "active",
+    allStatus: "all",
     allQuery: ""
   },
   issuedTicketFilters: {
@@ -122,6 +126,22 @@ let state = {
   clubUsagePageSize: 5,
   movieSessionsPage: 1,
   movieSessionsPageSize: 5,
+  moviesPage: 1,
+  moviesPageSize: 8,
+  roomsPage: 1,
+  roomsPageSize: 8,
+  ticketTypesPage: 1,
+  ticketTypesPageSize: 8,
+  concessionsPage: 1,
+  concessionsPageSize: 8,
+  promotionsPage: 1,
+  promotionsPageSize: 8,
+  adsPage: 1,
+  adsPageSize: 8,
+  usersPage: 1,
+  usersPageSize: 8,
+  clubPlansPage: 1,
+  clubPlansPageSize: 8,
   clubSubscriptionsSearch: "",
   boxOfficeTab: "newSale",
   concessionTab: "todaySales",
@@ -131,6 +151,8 @@ let state = {
   selectedConcessionOrderId: null,
   saleMode: "registered",
   selectedCustomer: null,
+  selectedCustomers: [],
+  manualTicketCustomerAssignments: {},
   customerSearchResults: [],
   customerSearchTimer: null,
   customerSearchRequestId: 0,
@@ -663,12 +685,13 @@ async function loadContent(options = {}) {
   }
   if (!silent && !state.content) renderLoading();
   try {
-    const [content, dashboard, payments, integrations, templateLibrary] = await Promise.all([
+    const [content, dashboard, payments, integrations, templateLibrary, marketingOverview] = await Promise.all([
       api("/api/admin/content"),
       api(`/api/admin/dashboard?${dashboardQuery()}`).catch(() => null),
       api(`/api/admin/payments?${dashboardQuery()}`).catch(() => null),
       isOwnerAdmin() ? api("/api/integrations").catch(() => null) : Promise.resolve(null),
-      api("/api/admin/email/template-library?page=1&pageSize=18").catch(() => null)
+      api("/api/admin/email/template-library?page=1&pageSize=18").catch(() => null),
+      api("/api/admin/marketing/overview").catch(() => null)
     ]);
     state.content = cleanAdminContentAssets(content);
     state.emailCampaignHistoryMeta = content.emailCampaignPagination || state.emailCampaignHistoryMeta;
@@ -676,6 +699,7 @@ async function loadContent(options = {}) {
     state.payments = payments;
     state.integrations = integrations;
     state.emailTemplateLibrary = templateLibrary;
+    state.marketingOverviewData = marketingOverview;
     if (!state.creating.movie && !state.content.movies.some((movie) => movie.id === state.selectedMovieId)) {
       state.selectedMovieId = state.content.movies[0]?.id || "";
     }
@@ -1184,6 +1208,7 @@ function renderConcessionDailySales() {
               <td data-label="Pagamento">
                 <strong>${escapeHtml(order.paymentMethod || "Pix")}</strong><br>
                 <span class="list-meta">${escapeHtml(order.paymentStatus || "Aprovado")}</span>
+                ${financialStatusEventHtml(order.refund || {}, { status: isRefunded ? "refunded" : "approved", approvedAt: order.approvedAt, refundedAt: order.refund?.completedAt })}
               </td>
               <td data-label="Entrega">
                 <div class="order-status-stack">
@@ -1218,6 +1243,7 @@ function openConcessionOrderDetail(orderId) {
   const bodyEl = $("concessionOrderDetailBody");
   const refundBtn = $("concessionModalRefundButton");
   const archiveBtn = $("concessionModalArchiveButton");
+  const deleteBtn = $("concessionModalDeleteButton");
 
   if (titleEl) titleEl.textContent = `Pedido #${order.id.slice(-8).toUpperCase()}`;
   if (subtitleEl) subtitleEl.textContent = `Registrado em ${new Date(order.purchasedAt).toLocaleString("pt-BR")}`;
@@ -1246,6 +1272,8 @@ function openConcessionOrderDetail(orderId) {
         <div><dt>Cliente</dt><dd>${escapeHtml(order.customerName || "Cliente avulso")}</dd></div>
         <div><dt>Sessão / Balcão</dt><dd>${escapeHtml(group.title || "Balcão")}${group.time ? ` • ${escapeHtml([group.time, group.room].filter(Boolean).join(" • "))}` : ""}</dd></div>
         <div><dt>Pagamento</dt><dd>${escapeHtml(order.paymentMethod || "Pix")} • ${escapeHtml(order.paymentStatus || "Aprovado")}</dd></div>
+        <div><dt>Pagamento aprovado em</dt><dd>${order.approvedAt ? new Date(order.approvedAt).toLocaleString("pt-BR") : "-"}</dd></div>
+        <div><dt>Reembolso concluído em</dt><dd>${order.refund?.completedAt ? new Date(order.refund.completedAt).toLocaleString("pt-BR") : "-"}</dd></div>
         <div><dt>Status de entrega</dt><dd>${deliveryBadge}${order.archived ? ' <span class="status-label archived">Arquivado</span>' : ""}</dd></div>
       </dl>
     </section>
@@ -1313,6 +1341,11 @@ function openConcessionOrderDetail(orderId) {
   if (archiveBtn) {
     archiveBtn.textContent = order.archived ? "Desarquivar pedido" : "Arquivar pedido";
     archiveBtn.onclick = () => toggleConcessionArchive(order.id, order.archived);
+  }
+
+  if (deleteBtn) {
+    deleteBtn.hidden = !isCancelled;
+    deleteBtn.onclick = () => deleteConcessionOrder(order.id);
   }
 
   overlay.hidden = false;
@@ -2718,7 +2751,8 @@ function renderMovies() {
     return;
   }
 
-  $("moviesList").innerHTML = movies
+  const pagination = paginateAdminItems(movies, "movies", "selectedMovieId");
+  $("moviesList").innerHTML = pagination.pageItems
     .map((movie) => {
       const sessionCount = movie.sessions?.length || 0;
       const active = movie.id === state.selectedMovieId ? "active" : "";
@@ -2750,7 +2784,7 @@ function renderMovies() {
         </div>
       `;
     })
-    .join("");
+    .join("") + renderAdminListPager("movies", pagination, "filme(s)");
 
   fillMovieForm(currentMovie());
 }
@@ -3952,7 +3986,8 @@ function renderRooms() {
     return;
   }
 
-  $("roomsList").innerHTML = rooms
+  const pagination = paginateAdminItems(rooms, "rooms", "selectedRoomId");
+  $("roomsList").innerHTML = pagination.pageItems
     .map((room) => {
       const active = room.id === state.selectedRoomId ? "active" : "";
       return `
@@ -3965,7 +4000,7 @@ function renderRooms() {
         </button>
       `;
     })
-    .join("");
+    .join("") + renderAdminListPager("rooms", pagination, "sala(s)");
   fillRoomForm(currentRoom());
 }
 
@@ -4072,7 +4107,8 @@ function renderTickets() {
     return;
   }
 
-  $("ticketsList").innerHTML = tickets
+  const pagination = paginateAdminItems(tickets, "ticketTypes", "selectedTicketId");
+  $("ticketsList").innerHTML = pagination.pageItems
     .map((ticket) => {
       const active = ticket.id === state.selectedTicketId ? "active" : "";
       return `
@@ -4085,7 +4121,7 @@ function renderTickets() {
         </button>
       `;
     })
-    .join("");
+    .join("") + renderAdminListPager("ticketTypes", pagination, "tipo(s)");
   fillTicketForm(currentTicket());
   renderIssuedTickets();
 }
@@ -4294,6 +4330,10 @@ function renderOrders() {
         ...(order.tickets || []).map((ticket) => ticket.displayCode || ticket.code)
       ].join(" ").toLowerCase().includes(query))
     : filteredOrders;
+  if (state.orderFilters.allStatus !== "all") {
+    filteredOrders = filteredOrders.filter((order) => orderMatchesStatusFilter(order, state.orderFilters.allStatus));
+  }
+
   renderOrdersTable("ordersList", filteredOrders, {
     compact: false,
     emptyTitle: state.orderFilters.archiveStatus === "archived" ? "Nenhum pedido arquivado" : "Nenhum pedido encontrado",
@@ -4302,13 +4342,17 @@ function renderOrders() {
       : "Ajuste a busca ou aguarde uma nova venda."
   });
   const today = state.content?.calendar?.today || new Date().toISOString().slice(0, 10);
-  let todayOrders = orders.filter((order) => isOrderEffectivelyActive(order) && String(order.createdAt || "").slice(0, 10) === today);
+  const relevantDate = (order, filter) => {
+    const payment = paymentForOrder(order.id) || {};
+    if (filter === "refunded") return payment.refundedAt || order.refundedAt || order.concessionRefund?.completedAt || order.createdAt;
+    if (filter === "expired") return payment.expiredAt || order.expiredAt || order.createdAt;
+    if (filter === "paid") return payment.approvedAt || order.paidAt || order.createdAt;
+    return order.createdAt;
+  };
+  let todayOrders = orders.filter((order) => String(relevantDate(order, state.orderFilters.todayStatus) || "").slice(0, 10) === today);
   if (state.orderFilters.todayOrigin !== "all") todayOrders = todayOrders.filter((order) => String(order.origin || "online") === state.orderFilters.todayOrigin);
   if (state.orderFilters.todayStatus !== "all") {
-    todayOrders = todayOrders.filter((order) => {
-      if (state.orderFilters.todayStatus === "pending") return ["pending", "pending_payment", "processing"].includes(order.status);
-      return order.status === state.orderFilters.todayStatus;
-    });
+    todayOrders = todayOrders.filter((order) => orderMatchesStatusFilter(order, state.orderFilters.todayStatus));
   }
   renderTodaySalesSummary(orders.filter((order) => String(order.createdAt || "").slice(0, 10) === today));
   renderOrdersTable("todayOrdersList", todayOrders, { compact: true });
@@ -4405,7 +4449,7 @@ function renderOrdersTable(targetId, orders, options = {}) {
                   <td data-label="Itens">${orderTicketCount(order)} ingresso(s)<br><span class="list-meta">${extras}</span>${tickets ? `<div class="ticket-code-row">${tickets}</div>` : ""}</td>
                   <td data-label="Total"><strong>${money(order.totalPrice)}</strong></td>
                   <td data-label="Pagamento">${escapeHtml(originLabel(order.origin || "online"))}<br><span class="list-meta">${escapeHtml(paymentMethodLabel(order.paymentMethod))}</span></td>
-                  <td data-label="Status"><div class="order-status-stack"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span>${isArchived ? '<span class="status-label archived">Arquivado</span>' : ""}</div></td>
+                  <td data-label="Status"><div class="order-status-stack"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span>${isArchived ? '<span class="status-label archived">Arquivado</span>' : ""}${financialStatusEventHtml(order, paymentForOrder(order.id))}</div></td>
                   <td data-label="Ações" onclick="event.stopPropagation()">
                     <div class="context-menu">
                       <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
@@ -4537,7 +4581,9 @@ function orderDetailHtml(order) {
       ["Valor", money(payment?.amount ?? order.totalPrice)],
       ["Complemento pago", money(order.additionalPayment || 0)],
       ["Status", paymentStatusLabel(payment?.status || order.paymentStatus)],
+      ["Pagamento aprovado em", payment?.approvedAt || order.paidAt ? new Date(payment?.approvedAt || order.paidAt).toLocaleString("pt-BR") : "-"],
       ["Reembolso", order.refundStatus === "required" ? "Devolução manual necessária" : order.refundStatus === "completed" ? "Concluído" : order.refundStatus === "pending" ? "Em processamento" : "-"],
+      ["Reembolso concluído em", payment?.refundedAt || order.refundedAt || order.ticketRefund?.completedAt || order.concessionRefund?.completedAt ? new Date(payment?.refundedAt || order.refundedAt || order.ticketRefund?.completedAt || order.concessionRefund?.completedAt).toLocaleString("pt-BR") : "-"],
       ["Orientação", order.manualRefundReason || payment?.metadata?.manualRefund?.reason || "-"],
       ["Referência externa", payment?.providerPaymentId || payment?.providerReference || "-"]
     ])}
@@ -4976,7 +5022,7 @@ function renderPaymentsCenter() {
             <td data-label="Método">${escapeHtml(payment.methodLabel || paymentMethodLabel(payment.method))}</td>
             <td data-label="Provider">${escapeHtml(payment.providerLabel || providerLabel(payment.provider))}</td>
             <td data-label="Valor"><strong>${money(payment.amount)}</strong></td>
-            <td data-label="Status"><span class="status-label ${statusClass(payment.status)}">${escapeHtml(payment.statusLabel || paymentStatusLabel(payment.status))}</span></td>
+            <td data-label="Status"><div class="order-status-stack"><span class="status-label ${statusClass(payment.status)}">${escapeHtml(payment.statusLabel || paymentStatusLabel(payment.status))}</span>${financialStatusEventHtml(payment)}</div></td>
           </tr>
         `).join("")}
       </tbody>
@@ -5660,12 +5706,140 @@ function renderManualSaleItems() {
       ? `Finalizar venda de ${count} filmes`
       : state.saleMode === "quick" ? "Finalizar venda rápida" : "Finalizar venda";
   }
+  renderManualTicketAssignments();
   renderManualSaleSummary();
+}
+
+async function deleteConcessionOrder(orderId) {
+  if (!confirm("Excluir este registro das telas e do financeiro da bomboniere? A conciliação global e a auditoria serão preservadas.")) return;
+  const btn = $("concessionModalDeleteButton");
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/admin/concession-sales/${encodeURIComponent(orderId)}`, { method: "DELETE" });
+    showToast("Registro removido da bomboniere. A auditoria financeira foi preservada.");
+    closeConcessionOrderOverlay();
+    await Promise.all([loadConcessionDailySales(), loadConcessionFinance(), loadDashboard()]);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function orderMatchesStatusFilter(order = {}, filter = "all") {
+  if (!filter || filter === "all") return true;
+  const status = String(order.status || order.paymentStatus || "").toLowerCase();
+  const paymentStatus = String(paymentForOrder(order.id)?.status || order.paymentStatus || "").toLowerCase();
+  if (filter === "pending") return ["pending", "pending_payment", "processing", "pix_pending"].includes(status) || ["pending", "processing"].includes(paymentStatus);
+  if (filter === "refunded") return status === "refunded" || paymentStatus === "refunded" || order.refundStatus === "completed" || order.ticketRefund?.status === "completed" || order.concessionRefund?.status === "completed";
+  if (filter === "expired") return status === "expired" || paymentStatus === "expired";
+  if (filter === "paid") return status === "paid" && !orderMatchesStatusFilter(order, "refunded");
+  return status === filter || paymentStatus === filter;
+}
+
+function financialStatusEvent(record = {}, related = {}) {
+  const refund = record.refund || record.concessionRefund || record.ticketRefund || related.refund || related.concessionRefund || related.ticketRefund || {};
+  const status = String(record.status || related.status || "").toLowerCase();
+  const refundedAt = refund.completedAt || record.refundedAt || related.refundedAt || record.concessionCancelledAt || related.concessionCancelledAt || "";
+  if (refundedAt || status === "refunded") return { label: "Reembolsado em", at: refundedAt || record.updatedAt || related.updatedAt };
+  const approvedAt = record.approvedAt || record.paidAt || related.approvedAt || related.paidAt || "";
+  if (approvedAt || ["paid", "approved"].includes(status)) return { label: "Aprovado em", at: approvedAt || record.updatedAt || related.updatedAt };
+  const expiredAt = record.expiredAt || related.expiredAt || (status === "expired" ? record.updatedAt || related.updatedAt : "");
+  if (expiredAt) return { label: "Expirado em", at: expiredAt };
+  const cancelledAt = record.cancelledAt || related.cancelledAt || (status === "cancelled" ? record.updatedAt || related.updatedAt : "");
+  if (cancelledAt) return { label: "Cancelado em", at: cancelledAt };
+  return { label: "Criado em", at: record.createdAt || related.createdAt || "" };
+}
+
+function financialStatusEventHtml(record = {}, related = {}) {
+  const event = financialStatusEvent(record, related);
+  if (!event.at || Number.isNaN(new Date(event.at).getTime())) return "";
+  return `<span class="list-meta financial-event-time">${escapeHtml(event.label)} ${new Date(event.at).toLocaleString("pt-BR")}</span>`;
+}
+
+function manualSaleTicketUnits(saleItems = null) {
+  const draft = manualSaleDraft();
+  const items = saleItems || (state.manualSaleItems.length ? state.manualSaleItems : draft ? [draft] : []);
+  let globalIndex = 0;
+  return items.flatMap((saleItem) => {
+    let seatIndex = 0;
+    return (saleItem.ticketSummary || []).flatMap((ticket) => {
+      const issuedQuantity = Math.max(0, Number(ticket.quantity || 0) * Math.max(1, Number(ticket.bundleQuantity || 1)));
+      return Array.from({ length: issuedQuantity }, (_, index) => {
+        const unit = {
+          key: `${saleItem.sessionId}:${ticket.id}:${index}`,
+          sessionId: saleItem.sessionId,
+          movieTitle: saleItem.movieTitle,
+          ticketTypeId: ticket.id,
+          ticketTypeName: ticket.name || "Ingresso",
+          seatLabel: saleItem.selectedSeatLabels?.[seatIndex] || "Lugar livre",
+          globalIndex
+        };
+        seatIndex += 1;
+        globalIndex += 1;
+        return unit;
+      });
+    });
+  });
+}
+
+function renderManualTicketAssignments() {
+  const section = $("manualTicketAssignmentsSection");
+  const target = $("manualTicketAssignments");
+  if (!section || !target) return;
+  const customers = selectedBoxOfficeCustomers();
+  const units = manualSaleTicketUnits();
+  section.hidden = state.saleMode !== "registered" || customers.length < 2 || !units.length;
+  if (section.hidden) {
+    target.innerHTML = "";
+    return;
+  }
+  const customerIds = new Set(customers.map((customer) => String(customer.id)));
+  const activeKeys = new Set(units.map((unit) => unit.key));
+  Object.keys(state.manualTicketCustomerAssignments || {}).forEach((key) => {
+    if (!activeKeys.has(key)) delete state.manualTicketCustomerAssignments[key];
+  });
+  units.forEach((unit) => {
+    if (!customerIds.has(String(state.manualTicketCustomerAssignments[unit.key] || ""))) {
+      state.manualTicketCustomerAssignments[unit.key] = customers[unit.globalIndex % customers.length].id;
+    }
+  });
+  $("manualTicketAssignmentsCount").textContent = `${units.length} ${units.length === 1 ? "ingresso" : "ingressos"}`;
+  target.innerHTML = units.map((unit) => `
+    <label class="manual-ticket-assignment-row">
+      <span>
+        <strong>${escapeHtml(unit.movieTitle || "Filme")}</strong>
+        <small>${escapeHtml(unit.ticketTypeName)} · ${escapeHtml(unit.seatLabel)}</small>
+      </span>
+      <select data-ticket-customer-assignment="${escapeHtml(unit.key)}" aria-label="Cliente de ${escapeHtml(unit.ticketTypeName)} ${escapeHtml(unit.seatLabel)}">
+        ${customers.map((customer) => `<option value="${escapeHtml(customer.id)}" ${String(state.manualTicketCustomerAssignments[unit.key]) === String(customer.id) ? "selected" : ""}>${escapeHtml(customer.name || customer.email || "Cliente")}</option>`).join("")}
+      </select>
+    </label>`).join("");
+  target.querySelectorAll("[data-ticket-customer-assignment]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.manualTicketCustomerAssignments[select.dataset.ticketCustomerAssignment] = select.value;
+      renderManualSaleSummary();
+    });
+  });
+  const primary = customers[0];
+  $("manualTicketAssignmentsNote").textContent = `Produtos da bomboniere e comprovante da compra permanecem vinculados a ${primary.name || primary.email || "titular principal"}.`;
+}
+
+function ticketCustomerUserIdsForSaleItem(saleItem) {
+  const customers = selectedBoxOfficeCustomers();
+  if (customers.length < 2) return [];
+  return manualSaleTicketUnits([saleItem]).map((unit, index) => (
+    state.manualTicketCustomerAssignments[unit.key] || customers[index % customers.length].id
+  ));
 }
 
 function manualSaleSummaryCustomer() {
   if (state.saleMode === "quick") return "Venda rápida";
-  if (state.saleMode === "registered") return state.selectedCustomer?.name || "Cliente não selecionado";
+  if (state.saleMode === "registered") {
+    const customers = selectedBoxOfficeCustomers();
+    if (customers.length > 1) return `${customers.length} clientes · titular ${customers[0].name || customers[0].email}`;
+    return customers[0]?.name || "Cliente não selecionado";
+  }
   return $("manualCustomerName")?.value.trim() || "Cliente avulso";
 }
 
@@ -5720,6 +5894,14 @@ function renderManualSaleSummary() {
   const concessionsTotal = concessions.reduce((sum, item) => sum + item.quantity * Number(item.product.price || 0), 0);
   const total = ticketsTotal + concessionsTotal;
   const isDraft = !state.manualSaleItems.length && Boolean(draft);
+  const selectedCustomers = selectedBoxOfficeCustomers();
+  const assignmentCounts = selectedCustomers.length > 1
+    ? manualSaleTicketUnits(saleItems).reduce((counts, unit) => {
+      const customerId = state.manualTicketCustomerAssignments[unit.key];
+      counts[customerId] = Number(counts[customerId] || 0) + 1;
+      return counts;
+    }, {})
+    : {};
 
   const saleItemsMarkup = saleItems.length ? saleItems.map((item) => {
     const date = item.sessionDate ? manualSessionDateDisplay(item.sessionDate) : "";
@@ -5767,6 +5949,15 @@ function renderManualSaleSummary() {
         `).join("")}
       </div>
     </section>` : "";
+  const customerDistributionMarkup = selectedCustomers.length > 1 ? `
+    <section class="manual-sale-summary-section">
+      <div class="manual-sale-summary-section-title"><span>Destinatários</span><strong>${selectedCustomers.length} contas</strong></div>
+      <div class="manual-sale-summary-lines">
+        ${selectedCustomers.map((customer, index) => `
+          <div><span>${escapeHtml(customer.name || customer.email || "Cliente")}${index === 0 ? " · titular" : ""}</span><strong>${Number(assignmentCounts[customer.id] || 0)} ingresso(s)</strong></div>
+        `).join("")}
+      </div>
+    </section>` : "";
 
   target.innerHTML = `
     <div class="manual-sale-summary-heading">
@@ -5788,6 +5979,7 @@ function renderManualSaleSummary() {
       </div>
       <div class="manual-sale-summary-sessions">${saleItemsMarkup}</div>
     </section>
+    ${customerDistributionMarkup}
     ${concessionsMarkup}
     <div class="manual-sale-summary-footer">
       <div>
@@ -5811,9 +6003,20 @@ async function createManualTicket(event) {
     showToast(`Complete a seleção de poltronas para ${incompleteSeatItem.movieTitle}.`, "error");
     return;
   }
-  if (state.saleMode === "registered" && !$("manualCustomerUserId").value) {
-    showToast("Selecione o usuário que receberá os ingressos.", "error");
+  const selectedCustomers = selectedBoxOfficeCustomers();
+  if (state.saleMode === "registered" && !selectedCustomers.length) {
+    showToast("Selecione ao menos um usuário para receber os ingressos.", "error");
     return;
+  }
+  renderManualTicketAssignments();
+  if (state.saleMode === "registered" && selectedCustomers.length > 1) {
+    const selectedIds = new Set(selectedCustomers.map((customer) => String(customer.id)));
+    const invalidAssignment = manualSaleTicketUnits(saleItems).find((unit) => !selectedIds.has(String(state.manualTicketCustomerAssignments[unit.key] || "")));
+    if (invalidAssignment) {
+      showToast("Revise a distribuição dos ingressos entre os clientes selecionados.", "error");
+      $("manualTicketAssignmentsSection")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
   }
 
   const submitButton = $("manualSaleSubmitButton");
@@ -5838,6 +6041,7 @@ async function createManualTicket(event) {
         ticketItems: item.ticketItems,
         selectedSeatIds: item.selectedSeatIds || [],
         seatHoldToken: item.seatHoldToken || "",
+        ticketCustomerUserIds: saleMode === "registered" ? ticketCustomerUserIdsForSaleItem(item) : [],
         autoAssignSeats: false
       })),
       concessionItems: manualConcessionItems(),
@@ -5845,6 +6049,7 @@ async function createManualTicket(event) {
       ticketDeliveryMethod,
       paymentMethod,
       customerUserId: saleMode === "registered" ? $("manualCustomerUserId").value : "",
+      customerUserIds: saleMode === "registered" ? selectedCustomers.map((customer) => customer.id) : [],
       customerName: saleMode === "quick" ? "" : $("manualCustomerName").value,
       customerEmail: saleMode === "quick" ? "" : $("manualCustomerEmail").value,
       customerPhone: saleMode === "quick" ? "" : $("manualCustomerPhone").value,
@@ -5855,6 +6060,7 @@ async function createManualTicket(event) {
     const orders = result.orders || (result.order ? [result.order] : []);
     state.manualSaleItems = [];
     state.manualConcessionQuantities = {};
+    state.manualTicketCustomerAssignments = {};
     state.manualSelectedSeatIds = [];
     closeManualSeatRealtime();
     renderManualSaleItems();
@@ -6070,38 +6276,146 @@ function renderSaleMode() {
   renderManualSaleSummary();
 }
 
-function clearSelectedCustomer() {
-  state.selectedCustomer = null;
-  $("manualCustomerUserId").value = "";
-  $("registeredCustomerBox")?.classList.remove("has-selected-customer");
-  $("manualSelectedCustomer").className = "selected-customer-state empty";
-  $("manualSelectedCustomer").innerHTML = `<span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar.</span>`;
+function selectedBoxOfficeCustomers() {
+  return Array.isArray(state.selectedCustomers) ? state.selectedCustomers : [];
+}
+
+function syncPrimaryBoxOfficeCustomer() {
+  const customers = selectedBoxOfficeCustomers();
+  const primary = customers[0] || null;
+  state.selectedCustomer = primary;
+  $("manualCustomerUserId").value = primary?.id || "";
+  $("manualCustomerName").value = primary?.name || "";
+  $("manualCustomerEmail").value = primary?.email || "";
+  $("manualCustomerPhone").value = primary?.phone || "";
+  $("manualCustomerCpf").value = primary?.cpf || "";
+}
+
+function renderSelectedBoxOfficeCustomers() {
+  const customers = selectedBoxOfficeCustomers();
+  const target = $("manualSelectedCustomer");
+  $("registeredCustomerBox")?.classList.toggle("has-selected-customer", customers.length > 0);
+  if (!customers.length) {
+    target.className = "selected-customer-state empty";
+    target.innerHTML = `<span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar e adicionar.</span>`;
+    renderManualTicketAssignments();
+    renderManualSaleSummary();
+    return;
+  }
+  target.className = "selected-customer-state confirmed multiple";
+  target.innerHTML = `
+    <div class="selected-customers-heading">
+      <span><strong>${customers.length}</strong> ${customers.length === 1 ? "cliente selecionado" : "clientes selecionados"}</span>
+      <button class="text-button" type="button" onclick="changeBoxOfficeCustomer()">Limpar todos</button>
+    </div>
+    <div class="selected-customers-list">
+      ${customers.map((customer, index) => `
+        <div class="selected-customer-row">
+          <span class="selected-customer-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
+          </span>
+          <span class="selected-customer-copy">
+            <span class="selected-customer-label">${index === 0 ? "Titular da compra" : "Receberá ingresso"}</span>
+            <strong>${escapeHtml(customer.name || "Cliente")}</strong>
+            <small>${escapeHtml([customer.email, customer.phone].filter(Boolean).join(" · ") || "Conta cadastrada")}</small>
+          </span>
+          <button class="icon-button" type="button" aria-label="Remover ${escapeHtml(customer.name || "cliente")}" onclick="removeBoxOfficeCustomer('${escapeHtml(customer.id)}')">${trashIcon}</button>
+        </div>`).join("")}
+    </div>
+    <p>${customers.length > 1 ? "Distribua os ingressos abaixo. A bomboniere ficará no pedido do titular da compra." : "Ingressos e itens serão associados a esta conta."}</p>`;
+  renderManualTicketAssignments();
   renderManualSaleSummary();
 }
 
+function clearSelectedCustomer() {
+  state.selectedCustomer = null;
+  state.selectedCustomers = [];
+  state.manualTicketCustomerAssignments = {};
+  $("manualCustomerUserId").value = "";
+  syncPrimaryBoxOfficeCustomer();
+  renderSelectedBoxOfficeCustomers();
+}
+
+function paginateAdminItems(items, key, selectedKey = "") {
+  const pageKey = `${key}Page`;
+  const pageSize = Math.max(1, Number(state[`${key}PageSize`] || 8));
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  state[pageKey] = Math.min(Math.max(1, Number(state[pageKey] || 1)), totalPages);
+  const selectedIndex = selectedKey && state[selectedKey]
+    ? items.findIndex((item) => String(item.id) === String(state[selectedKey]))
+    : -1;
+  if (selectedIndex >= 0) state[pageKey] = Math.floor(selectedIndex / pageSize) + 1;
+  const start = (state[pageKey] - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
+  if (selectedKey && pageItems.length && !pageItems.some((item) => String(item.id) === String(state[selectedKey] || ""))) {
+    state[selectedKey] = pageItems[0].id;
+  }
+  return { page: state[pageKey], pageSize, totalPages, start, pageItems, total: items.length };
+}
+
+function renderAdminListPager(key, pagination, label) {
+  if (!pagination || pagination.total <= pagination.pageSize) return "";
+  const end = Math.min(pagination.start + pagination.pageItems.length, pagination.total);
+  return `
+    <div class="table-pagination-bar admin-list-pagination">
+      <span>Exibindo <strong>${pagination.start + 1}–${end}</strong> de <strong>${pagination.total}</strong> ${escapeHtml(label)}</span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${pagination.page <= 1 ? "disabled" : ""} onclick="changeAdminListPage('${key}', -1)">Anterior</button>
+        <span class="pager-page-indicator">Página ${pagination.page} de ${pagination.totalPages}</span>
+        <button class="ghost-button" type="button" ${pagination.page >= pagination.totalPages ? "disabled" : ""} onclick="changeAdminListPage('${key}', 1)">Próxima</button>
+      </div>
+    </div>`;
+}
+
+function changeAdminListPage(key, delta) {
+  const renderers = {
+    movies: renderMovies,
+    rooms: renderRooms,
+    ticketTypes: renderTickets,
+    concessions: renderConcessions,
+    promotions: renderPromotions,
+    ads: renderAds,
+    users: renderUsers,
+    clubPlans: renderClub
+  };
+  const selectedKeys = {
+    movies: "selectedMovieId",
+    rooms: "selectedRoomId",
+    ticketTypes: "selectedTicketId",
+    concessions: "selectedConcessionId",
+    promotions: "selectedPromotionId",
+    ads: "selectedAdId",
+    users: "selectedUserId",
+    clubPlans: "selectedClubPlanId"
+  };
+  if (!renderers[key]) return;
+  state[`${key}Page`] = Math.max(1, Number(state[`${key}Page`] || 1) + Number(delta || 0));
+  if (selectedKeys[key]) state[selectedKeys[key]] = "";
+  renderers[key]();
+}
+
 function selectBoxOfficeCustomer(customer) {
-  state.selectedCustomer = customer;
-  $("manualCustomerUserId").value = customer.id;
-  $("manualCustomerName").value = customer.name || "";
-  $("manualCustomerEmail").value = customer.email || "";
-  $("manualCustomerPhone").value = customer.phone || "";
-  $("manualCustomerCpf").value = customer.cpf || "";
-  $("manualCustomerSearch").value = customer.name || customer.email || "";
-  $("registeredCustomerBox")?.classList.add("has-selected-customer");
-  $("manualSelectedCustomer").className = "selected-customer-state confirmed";
-  $("manualSelectedCustomer").innerHTML = `
-    <span class="selected-customer-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
-    </span>
-    <span class="selected-customer-copy">
-      <span class="selected-customer-label">Cliente selecionado</span>
-      <strong>${escapeHtml(customer.name || "Cliente")}</strong>
-      <small>${escapeHtml([customer.email, customer.phone].filter(Boolean).join(" · ") || "Conta cadastrada")}</small>
-      <span>Ingressos e itens vinculados serão associados a esta conta.</span>
-    </span>
-    <button class="ghost-button compact-button" type="button" onclick="changeBoxOfficeCustomer()">Trocar</button>`;
+  const customers = selectedBoxOfficeCustomers();
+  if (customers.some((item) => String(item.id) === String(customer.id))) return;
+  if (customers.length >= 20) {
+    showToast("Selecione no máximo 20 clientes por venda.", "error");
+    return;
+  }
+  state.selectedCustomers = [...customers, customer];
+  syncPrimaryBoxOfficeCustomer();
+  $("manualCustomerSearch").value = "";
   $("manualCustomerResults").innerHTML = "";
-  renderManualSaleSummary();
+  renderSelectedBoxOfficeCustomers();
+  $("manualCustomerSearch").focus();
+}
+
+function removeBoxOfficeCustomer(customerId) {
+  state.selectedCustomers = selectedBoxOfficeCustomers().filter((customer) => String(customer.id) !== String(customerId));
+  Object.entries(state.manualTicketCustomerAssignments || {}).forEach(([key, value]) => {
+    if (String(value) === String(customerId)) delete state.manualTicketCustomerAssignments[key];
+  });
+  syncPrimaryBoxOfficeCustomer();
+  renderSelectedBoxOfficeCustomers();
 }
 
 function changeBoxOfficeCustomer() {
@@ -6122,16 +6436,6 @@ async function searchBoxOfficeCustomers() {
   const query = $("manualCustomerSearch").value.trim();
   const target = $("manualCustomerResults");
   const searchableLength = query.replace(/\s/g, "").length;
-  const keepSelection = state.selectedCustomer && (
-    query === state.selectedCustomer.name ||
-    query === state.selectedCustomer.email ||
-    query === state.selectedCustomer.phone
-  );
-  if (keepSelection) {
-    target.innerHTML = "";
-    return;
-  }
-  clearSelectedCustomer();
   state.customerSearchRequestId += 1;
   const requestId = state.customerSearchRequestId;
   if (searchableLength < 2) {
@@ -6148,12 +6452,16 @@ async function searchBoxOfficeCustomers() {
     const customers = result.customers || [];
     state.customerSearchResults = customers;
     target.innerHTML = customers.length
-      ? customers.map((customer) => `
-          <button type="button" class="customer-result" onclick="selectBoxOfficeCustomerById('${escapeHtml(customer.id)}')">
+      ? customers.map((customer) => {
+        const selected = selectedBoxOfficeCustomers().some((item) => String(item.id) === String(customer.id));
+        return `
+          <button type="button" class="customer-result ${selected ? "selected" : ""}" onclick="selectBoxOfficeCustomerById('${escapeHtml(customer.id)}')" ${selected ? "disabled" : ""}>
             <strong>${escapeHtml(customer.name)}</strong>
             <span>${escapeHtml(customer.email || "")} ${customer.phone ? `- ${escapeHtml(customer.phone)}` : ""} ${customer.role ? `- ${escapeHtml(adminRoleLabel(customer.role))}` : ""}</span>
+            <small>${selected ? "Já selecionado" : "Adicionar à venda"}</small>
           </button>
-        `).join("")
+        `;
+      }).join("")
       : `<div class="empty-state compact"><strong>Nenhum cliente encontrado</strong><span>Use Cliente avulso ou Venda rapida.</span></div>`;
   } catch (error) {
     if (requestId !== state.customerSearchRequestId) return;
@@ -6172,12 +6480,14 @@ function updateManualTotal() {
   if (state.manualSaleItems.length) {
     const total = state.manualSaleItems.reduce((sum, item) => sum + Number(item.subtotal || 0), 0) + concessionsTotal;
     if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
+    renderManualTicketAssignments();
     renderManualSaleSummary();
     return;
   }
   const types = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
   const total = manualTicketItems().reduce((sum, item) => sum + item.quantity * Number(types.get(item.id)?.price || 0), 0) + concessionsTotal;
   if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
+  renderManualTicketAssignments();
   renderManualSaleSummary();
 }
 
@@ -6925,17 +7235,18 @@ function renderConcessions() {
     return;
   }
 
-  $("concessionsList").innerHTML = items
+  const pagination = paginateAdminItems(items, "concessions", "selectedConcessionId");
+  $("concessionsList").innerHTML = pagination.pageItems
     .map((item) => `
       <button class="list-item ${item.id === state.selectedConcessionId ? "active" : ""}" type="button" onclick="selectConcession('${item.id}')">
         <span>
           <span class="list-title">${escapeHtml(item.name)}</span>
-          <span class="list-meta">${escapeHtml(item.category || "combo")} • ${item.active ? "ativo" : "inativo"}${item.featured ? " • destaque" : ""}${item.stock !== "" && item.stock !== undefined ? ` • estoque ${item.stock}` : ""}</span>
+          <span class="list-meta">${escapeHtml(item.category || "combo")} • ${item.active ? "ativo" : "inativo"}${item.featured ? " • destaque" : ""}${item.stock !== "" && item.stock !== undefined ? ` • estoque ${escapeHtml(formatConcessionStock(item))}` : ""}</span>
         </span>
         <span class="badge">${money(item.price)}</span>
       </button>
     `)
-    .join("");
+    .join("") + renderAdminListPager("concessions", pagination, "produto(s)");
   fillConcessionForm(currentConcession());
 }
 
@@ -7082,6 +7393,8 @@ function fillConcessionForm(item) {
   $("concessionPrice").value = item?.price ?? 0;
   $("concessionCompareAt").value = item?.compareAt || "";
   $("concessionStock").value = item?.stock ?? "";
+  $("concessionStockUnit").value = item?.stockUnit || "unit";
+  $("concessionUsagePerSale").value = item?.usagePerSale ?? 1;
   $("concessionMaxPerOrder").value = item?.maxPerOrder ?? 8;
   $("concessionSortOrder").value = item?.sortOrder ?? 100;
   $("concessionTags").value = (item?.tags || []).join(", ");
@@ -7089,6 +7402,7 @@ function fillConcessionForm(item) {
   $("concessionComboItems").value = (item?.comboItems || []).map((comboItem) => `${comboItem.name} | ${comboItem.quantity}`).join("\n");
   $("concessionFeatured").checked = Boolean(item?.featured);
   $("concessionActive").checked = item?.active !== false;
+  syncConcessionStockFields();
   renderConcessionPreview();
 }
 
@@ -7113,6 +7427,8 @@ async function saveConcession(event) {
       price: Number($("concessionPrice").value || 0),
       compareAt: $("concessionCompareAt").value,
       stock: $("concessionStock").value,
+      stockUnit: $("concessionStockUnit").value,
+      usagePerSale: Number($("concessionUsagePerSale").value || 1),
       maxPerOrder: Number($("concessionMaxPerOrder").value || 8),
       sortOrder: Number($("concessionSortOrder").value || 100),
       tags: $("concessionTags").value,
@@ -7181,12 +7497,79 @@ function renderMarketingOverview() {
   const promotions = state.content?.promotions || [];
   const ads = state.content?.ads || [];
   const coupons = promotions.filter((item) => item.couponCode);
+  const metrics = state.marketingOverviewData || {};
+  const email = metrics.email || {};
+  const advertising = metrics.ads || {};
+  const delivered = Number(email.delivered || email.sent || 0);
+  const deliveryRate = Number(email.sent || 0) > 0 ? Math.round((delivered / Number(email.sent)) * 100) : 0;
+  const clickRate = Number(email.delivered || 0) > 0 && email.clickedSupported
+    ? Math.round((Number(email.clicked || 0) / Number(email.delivered)) * 1000) / 10
+    : null;
+  const adCtr = Number(advertising.impressions || 0) > 0
+    ? Math.round((Number(advertising.clicks || 0) / Number(advertising.impressions)) * 1000) / 10
+    : 0;
   $("marketingOverview").innerHTML = `
-    <div class="mini-insight"><span>Faixa superior</span><strong>${settings.announcementEnabled === false ? "Oculta" : "Visível"}</strong></div>
-    <div class="mini-insight"><span>Promoções ativas</span><strong>${promotions.filter((item) => item.active !== false).length}</strong></div>
-    <div class="mini-insight"><span>Cupons</span><strong>${coupons.length}</strong></div>
-    <div class="mini-insight"><span>Anúncios ativos</span><strong>${ads.filter((item) => item.active !== false).length}</strong></div>
+    <div class="mini-insight"><span>E-mails enviados</span><strong>${Number(email.sent || 0).toLocaleString("pt-BR")}</strong><small>${deliveryRate}% entregues</small></div>
+    <div class="mini-insight"><span>Cliques em e-mail</span><strong>${email.clickedSupported ? Number(email.clicked || 0).toLocaleString("pt-BR") : "Indisponível"}</strong><small>${clickRate === null ? "Provider sem rastreamento" : `${clickRate}% das entregas`}</small></div>
+    <div class="mini-insight"><span>Anúncios ativos</span><strong>${Number(advertising.active ?? ads.filter((item) => item.active !== false).length)}</strong><small>${Number(advertising.impressions || 0).toLocaleString("pt-BR")} impressões</small></div>
+    <div class="mini-insight"><span>Cliques em anúncios</span><strong>${Number(advertising.clicks || 0).toLocaleString("pt-BR")}</strong><small>CTR de ${adCtr}%</small></div>
+    <div class="mini-insight"><span>Cupons ativos</span><strong>${Number(metrics.coupons?.active ?? coupons.filter((item) => item.active !== false).length)}</strong><small>${Number(metrics.coupons?.uses || 0).toLocaleString("pt-BR")} uso(s)</small></div>
+    <div class="mini-insight"><span>Faixa da home</span><strong>${settings.announcementEnabled === false ? "Oculta" : "Visível"}</strong><small>Canal institucional</small></div>
   `;
+  const performance = $("marketingPerformance");
+  if (!performance) return;
+  const campaigns = metrics.recentCampaigns || [];
+  const adRows = metrics.topAds || [];
+  performance.innerHTML = `
+    <section class="surface marketing-performance-panel">
+      <div class="surface-head"><div><div class="section-title">Desempenho dos e-mails</div><p>Envios consolidados, falhas e interações informadas pelo provider.</p></div></div>
+      <div class="marketing-funnel">
+        <div><span>Destinatários</span><strong>${Number(email.recipients || 0).toLocaleString("pt-BR")}</strong></div>
+        <div><span>Enviados</span><strong>${Number(email.sent || 0).toLocaleString("pt-BR")}</strong></div>
+        <div><span>Entregues</span><strong>${email.deliveredSupported ? Number(email.delivered || 0).toLocaleString("pt-BR") : "-"}</strong></div>
+        <div><span>Aberturas</span><strong>${email.openedSupported ? Number(email.opened || 0).toLocaleString("pt-BR") : "-"}</strong></div>
+        <div><span>Cliques</span><strong>${email.clickedSupported ? Number(email.clicked || 0).toLocaleString("pt-BR") : "-"}</strong></div>
+        <div><span>Falhas</span><strong>${Number(email.failed || 0).toLocaleString("pt-BR")}</strong></div>
+      </div>
+      <div class="marketing-rank-list">${campaigns.length ? campaigns.map((item) => `<div><span><strong>${escapeHtml(item.subject || "Campanha")}</strong><small>${escapeHtml(emailCampaignTemplateLabel(item.templateId || "announcement"))} · ${new Date(item.createdAt).toLocaleDateString("pt-BR")}</small></span><span class="status-label ${statusClass(item.status)}">${escapeHtml(item.statusLabel || humanizeEnum(item.status))}</span></div>`).join("") : '<div class="empty-state compact"><strong>Nenhuma campanha enviada</strong><span>Os resultados aparecerão após o primeiro envio.</span></div>'}</div>
+    </section>
+    <section class="surface marketing-performance-panel">
+      <div class="surface-head"><div><div class="section-title">Desempenho dos anúncios</div><p>Exibições e acessos registrados nas posições publicadas do site.</p></div></div>
+      <div class="marketing-rank-list">${adRows.length ? adRows.map((item) => `<div><span><strong>${escapeHtml(item.title || "Anúncio")}</strong><small>${escapeHtml(humanizeEnum(item.placement || "home"))} · ${Number(item.impressions || 0).toLocaleString("pt-BR")} impressões</small></span><strong>${Number(item.clicks || 0).toLocaleString("pt-BR")} cliques</strong></div>`).join("") : '<div class="empty-state compact"><strong>Nenhuma interação registrada</strong><span>Publique um anúncio para começar a medir exibições e cliques.</span></div>'}</div>
+    </section>
+  `;
+}
+
+function concessionStockUnitLabel(unit = "unit", amount = 0) {
+  if (unit === "unit") return Number(amount) === 1 ? "unidade" : "unidades";
+  return unit;
+}
+
+function formatConcessionStock(item = {}) {
+  if (item.stock === "" || item.stock === undefined) return "Sem limite";
+  const stock = Number(item.stock || 0);
+  const unit = item.stockUnit || "unit";
+  const formatted = stock.toLocaleString("pt-BR", { maximumFractionDigits: unit === "unit" ? 0 : 3 });
+  const portions = unit === "unit" ? "" : ` · cerca de ${Math.floor(stock / Math.max(0.001, Number(item.usagePerSale || 1)))} porções`;
+  return `${formatted} ${concessionStockUnitLabel(unit, stock)}${portions}`;
+}
+
+function syncConcessionStockFields() {
+  const unit = $("concessionStockUnit")?.value || "unit";
+  const usageField = $("concessionUsagePerSaleField");
+  if (usageField) usageField.hidden = unit === "unit";
+  const estimate = $("concessionStockEstimate");
+  if (!estimate) return;
+  const stockText = $("concessionStock")?.value;
+  if (stockText === "") {
+    estimate.textContent = "Sem limite de estoque. Defina um valor para habilitar o controle automático.";
+    return;
+  }
+  const stock = Math.max(0, Number(stockText || 0));
+  const usage = unit === "unit" ? 1 : Math.max(0.001, Number($("concessionUsagePerSale")?.value || 1));
+  estimate.textContent = unit === "unit"
+    ? `${Math.floor(stock)} item(ns) disponível(is) para venda.`
+    : `${stock.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} ${unit} em estoque · consumo de ${usage.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} ${unit} por item · aproximadamente ${Math.floor(stock / usage)} item(ns) vendável(is).`;
 }
 
 function setAdminSubtab(group, tab, options = {}) {
@@ -7962,8 +8345,8 @@ function applyEmailCampaignTemplate(templateId, { fillDefaults = true } = {}) {
       if ($("emailCampaignImageAlt")) $("emailCampaignImageAlt").value = "";
       if ($("emailCampaignImageLink")) $("emailCampaignImageLink").value = "";
     }
-    const defaults = { emailCampaignSubject: variantDefaults.subject || template.subject, emailCampaignHeadline: variantDefaults.headline || template.headline, emailCampaignMessage: variantDefaults.message || template.message, emailCampaignCtaLabel: variantDefaults.ctaLabel || template.ctaLabel, emailCampaignCtaUrl: variantDefaults.ctaUrl || template.ctaUrl };
-    const previousDefaults = { emailCampaignSubject: previous.subject, emailCampaignHeadline: previous.headline, emailCampaignMessage: previous.message, emailCampaignCtaLabel: previous.ctaLabel, emailCampaignCtaUrl: previous.ctaUrl };
+    const defaults = { emailCampaignSubject: variantDefaults.subject || template.subject, emailCampaignPreheader: variantDefaults.preheader || "", emailCampaignHeadline: variantDefaults.headline || template.headline, emailCampaignMessage: variantDefaults.message || template.message, emailCampaignCtaLabel: variantDefaults.ctaLabel || template.ctaLabel, emailCampaignCtaUrl: variantDefaults.ctaUrl || template.ctaUrl };
+    const previousDefaults = { emailCampaignSubject: previous.subject, emailCampaignPreheader: "", emailCampaignHeadline: previous.headline, emailCampaignMessage: previous.message, emailCampaignCtaLabel: previous.ctaLabel, emailCampaignCtaUrl: previous.ctaUrl };
     Object.entries(defaults).forEach(([id, value]) => {
       if ($(id) && (!$(id).value.trim() || $(id).value.trim() === previousDefaults[id])) $(id).value = value;
     });
@@ -8420,6 +8803,7 @@ async function useEmailTemplateLibraryItem(item = state.emailTemplateLibraryPrev
   const variantDefaults = item.defaults || {};
   [
     ["emailCampaignSubject", variantDefaults.subject],
+    ["emailCampaignPreheader", variantDefaults.preheader],
     ["emailCampaignHeadline", variantDefaults.headline],
     ["emailCampaignMessage", variantDefaults.message],
     ["emailCampaignCtaLabel", variantDefaults.ctaLabel],
@@ -8785,11 +9169,9 @@ function renderPromotions() {
     fillPromotionForm(null);
     return;
   }
-  if (!visibleItems.some((item) => item.id === state.selectedPromotionId)) {
-    state.selectedPromotionId = visibleItems[0]?.id || "";
-  }
+  const pagination = paginateAdminItems(visibleItems, "promotions", "selectedPromotionId");
   $("promotionsList").innerHTML = visibleItems.length
-    ? visibleItems.map((item) => `
+    ? pagination.pageItems.map((item) => `
         <button class="list-item ${item.id === state.selectedPromotionId ? "active" : ""}" type="button" onclick="selectPromotion('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.title)}</span>
@@ -8797,7 +9179,7 @@ function renderPromotions() {
           </span>
           <span class="badge">${Number(item.usageCount || 0)} uso(s)</span>
         </button>
-      `).join("")
+      `).join("") + renderAdminListPager("promotions", pagination, "cupom(ns)")
     : `<div class="empty-state"><strong>${state.promotionView === "archived" ? "Nenhum cupom arquivado" : "Nenhum cupom ativo"}</strong><span>${state.promotionView === "archived" ? "Cupons expirados e utilizados continuarão disponíveis aqui para consulta." : "Crie códigos de desconto com período e limites de uso."}</span></div>`;
   const selected = currentPromotion();
   fillPromotionForm(selected);
@@ -8829,6 +9211,7 @@ function setPromotionView(view) {
   state.promotionUsageCouponId = "";
   state.promotionUsageHistory = [];
   state.promotionUsageMeta = null;
+  state.promotionsPage = 1;
   renderPromotions();
 }
 
@@ -9052,16 +9435,23 @@ function renderAds() {
     fillAdForm(null);
     return;
   }
+  const pagination = paginateAdminItems(items, "ads", "selectedAdId");
   $("adsList").innerHTML = items.length
-    ? items.map((item) => `
+    ? pagination.pageItems.map((item) => {
+        const now = Date.now();
+        const scheduled = item.startsAt && new Date(item.startsAt).getTime() > now;
+        const ended = item.endsAt && new Date(item.endsAt).getTime() <= now;
+        const status = item.active === false ? "inativo" : scheduled ? "agendado" : ended ? "encerrado" : "em exibição";
+        return `
         <button class="list-item ${item.id === state.selectedAdId ? "active" : ""}" type="button" onclick="selectAd('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.title)}</span>
-            <span class="list-meta">${escapeHtml(item.placement || "home")} • ${item.active ? "ativo" : "inativo"}</span>
+            <span class="list-meta">${escapeHtml(humanizeEnum(item.placement || "home"))} • ${status} • ${Number(item.impressions || 0).toLocaleString("pt-BR")} impressões • ${Number(item.clicks || 0).toLocaleString("pt-BR")} cliques</span>
           </span>
           <span class="badge">Ad</span>
         </button>
-      `).join("")
+      `;
+      }).join("") + renderAdminListPager("ads", pagination, "anúncio(s)")
     : `<div class="empty-state"><strong>Nenhum anuncio</strong><span>Crie banners e destaques comerciais.</span></div>`;
   fillAdForm(currentAd());
 }
@@ -9085,9 +9475,13 @@ function fillAdForm(item) {
   setDisabled("deleteAdButton", !item);
   $("adId").value = item?.id || "";
   $("adTitle").value = item?.title || "";
+  $("adDescription").value = item?.description || "";
   $("adPlacement").value = item?.placement || "home";
   $("adImageUrl").value = item?.imageUrl || "";
   $("adLinkUrl").value = item?.linkUrl || "";
+  $("adCtaLabel").value = item?.ctaLabel || "";
+  $("adStartsAt").value = datetimeLocalValue(item?.startsAt);
+  $("adEndsAt").value = datetimeLocalValue(item?.endsAt);
   $("adActive").checked = item?.active !== false;
   renderAdminImagePreview("adImageUrl", "adImagePreview", "Prévia do anúncio");
 }
@@ -9098,9 +9492,13 @@ async function saveAd(event) {
     const payload = {
       id: $("adId").value || undefined,
       title: $("adTitle").value,
+      description: $("adDescription").value,
       placement: $("adPlacement").value,
       imageUrl: cleanAdminAssetUrl($("adImageUrl").value),
       linkUrl: $("adLinkUrl").value,
+      ctaLabel: $("adCtaLabel").value,
+      startsAt: datetimeIsoValue($("adStartsAt").value),
+      endsAt: datetimeIsoValue($("adEndsAt").value),
       active: $("adActive").checked
     };
     const existingId = $("adId").value;
@@ -9161,8 +9559,9 @@ function renderUsers() {
     fillUserForm(null);
     return;
   }
+  const pagination = paginateAdminItems(items, "users", "selectedUserId");
   $("usersList").innerHTML = items.length
-    ? items.map((item) => `
+    ? pagination.pageItems.map((item) => `
         <button class="list-item ${item.id === state.selectedUserId ? "active" : ""}" type="button" onclick="selectUser('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.name)}</span>
@@ -9170,7 +9569,7 @@ function renderUsers() {
           </span>
           <span class="badge">${item.active ? "ativo" : "off"}</span>
         </button>
-      `).join("")
+      `).join("") + renderAdminListPager("users", pagination, "conta(s)")
     : `<div class="empty-state"><strong>Ninguém na equipe</strong><span>Adicione uma conta administrativa para conceder acesso ao painel.</span></div>`;
   fillUserForm(currentUser());
 }
@@ -9487,10 +9886,11 @@ function renderClub() {
     `;
   }
   if ($("clubPlansList")) {
+    const planPagination = paginateAdminItems(plans, "clubPlans", "selectedClubPlanId");
     $("clubPlansList").innerHTML = state.creating.clubPlan
       ? creationPlaceholder("Novo plano", "Configure nome, créditos, preço e imagem local no quadro à direita.")
       : plans.length
-      ? plans.map((plan) => `
+      ? planPagination.pageItems.map((plan) => `
           <button class="list-item club-plan-item ${plan.id === state.selectedClubPlanId ? "active" : ""}" type="button" onclick="selectClubPlan('${escapeHtml(plan.id)}')">
             <span class="plan-thumb">${plan.imageUrl ? `<img src="${escapeHtml(adminAssetUrl(plan.imageUrl))}" alt="">` : `<span>Plano</span>`}</span>
             <span class="club-plan-list-copy">
@@ -9503,7 +9903,7 @@ function renderClub() {
               <small>Prioridade ${Number(plan.displayOrder ?? 100)}</small>
             </span>
           </button>
-        `).join("")
+        `).join("") + renderAdminListPager("clubPlans", planPagination, "plano(s)")
       : `<div class="empty-state"><strong>Nenhum plano cadastrado</strong><span>Crie planos para vender assinatura recorrente.</span></div>`;
   }
   fillClubPlanForm(currentClubPlan());
@@ -9612,7 +10012,7 @@ function renderClub() {
                   <td data-label="Assinatura">${escapeHtml(item.subscriptionId || "-")}</td>
                   <td data-label="Pedido">${escapeHtml(item.orderId || "-")}</td>
                   <td data-label="Ingresso">${escapeHtml(item.ticketId || "-")}</td>
-                  <td data-label="Status"><span class="badge ${item.refundedAt ? "muted" : ""}">${item.refundedAt ? "Crédito devolvido" : "Consumido"}</span></td>
+                  <td data-label="Status"><span class="badge ${item.refundedAt ? "muted" : ""}">${item.refundedAt ? "Crédito devolvido" : "Consumido"}</span>${item.refundedAt ? `<small class="financial-event-time">Devolvido em ${new Date(item.refundedAt).toLocaleString("pt-BR")}</small>` : ""}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -10200,8 +10600,13 @@ function renderWebhookHistory() {
   const target = $("webhookTestHistory");
   if (!target) return;
   const runs = state.webhookSimulatorRuns || [];
+  const pageSize = state.webhookHistoryPageSize || 8;
+  const pages = Math.max(1, Math.ceil(runs.length / pageSize));
+  state.webhookHistoryPage = Math.min(Math.max(1, state.webhookHistoryPage || 1), pages);
+  const start = (state.webhookHistoryPage - 1) * pageSize;
+  const pageRuns = runs.slice(start, start + pageSize);
   $("webhookHistoryCount").textContent = runs.length ? `${runs.length} registro${runs.length === 1 ? "" : "s"}` : "Nenhum teste";
-  target.innerHTML = runs.length ? runs.map((run) => `
+  target.innerHTML = runs.length ? pageRuns.map((run) => `
     <div class="webhook-history-row ${state.selectedWebhookRunId === run.id ? "selected" : ""}">
       <button type="button" class="webhook-history-main" onclick="showWebhookRun('${escapeHtml(run.id)}')">
         <span>${escapeHtml(new Date(run.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</span>
@@ -10212,7 +10617,20 @@ function renderWebhookHistory() {
       </button>
       <button class="ghost-button webhook-resend" type="button" onclick="resendWebhookRun('${escapeHtml(run.id)}')">Reenviar</button>
     </div>
-  `).join("") : `<div class="empty-state compact"><strong>Console vazio</strong><span>Os testes recentes aparecerão aqui.</span></div>`;
+  `).join("") + (runs.length > pageSize ? `
+    <div class="table-pagination-bar">
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageRuns.length, runs.length)}</strong> de <strong>${runs.length}</strong></span>
+      <div class="pager-controls">
+        <button class="ghost-button" type="button" ${state.webhookHistoryPage <= 1 ? "disabled" : ""} onclick="changeWebhookHistoryPage(-1)">← Anterior</button>
+        <span class="pager-page-indicator">Página ${state.webhookHistoryPage} de ${pages}</span>
+        <button class="ghost-button" type="button" ${state.webhookHistoryPage >= pages ? "disabled" : ""} onclick="changeWebhookHistoryPage(1)">Próxima →</button>
+      </div>
+    </div>` : "") : `<div class="empty-state compact"><strong>Console vazio</strong><span>Os testes recentes aparecerão aqui.</span></div>`;
+}
+
+function changeWebhookHistoryPage(delta) {
+  state.webhookHistoryPage = Math.max(1, state.webhookHistoryPage + delta);
+  renderWebhookHistory();
 }
 
 function showWebhookRun(id) {
@@ -10900,6 +11318,11 @@ function bindEvents() {
     state.orderFilters.allQuery = $("ordersSearch").value.trim();
     renderOrders();
   });
+  $("ordersStatusFilter")?.addEventListener("change", (event) => {
+    state.ordersPage = 1;
+    state.orderFilters.allStatus = event.target.value || "all";
+    renderOrders();
+  });
   [
     ["paymentFilterStatus", "status"],
     ["paymentFilterMethod", "method"],
@@ -10935,6 +11358,9 @@ function bindEvents() {
   $("concessionImageUpload").addEventListener("change", () => uploadAdminImage("concessionImageUpload", "concessionImageUrl", "", "concessions", renderConcessionPreview));
   $("concessionImageUrl").addEventListener("input", renderConcessionPreview);
   $("concessionImageClear").addEventListener("click", () => clearImageField("concessionImageUrl", "concessionImagePreview", "Imagem do produto"));
+  ["concessionStock", "concessionStockUnit", "concessionUsagePerSale"].forEach((id) => {
+    $(id)?.addEventListener(id === "concessionStockUnit" ? "change" : "input", syncConcessionStockFields);
+  });
 
   document.querySelectorAll("[data-concession-tab]").forEach((button) => {
     button.addEventListener("click", () => setConcessionTab(button.dataset.concessionTab));
@@ -10943,6 +11369,8 @@ function bindEvents() {
     button.addEventListener("click", () => {
       document.querySelectorAll("[data-concession-cat]").forEach((b) => b.classList.toggle("active", b === button));
       state.concessionCategoryFilter = button.dataset.concessionCat;
+      state.concessionsPage = 1;
+      state.selectedConcessionId = "";
       renderConcessions();
     });
   });

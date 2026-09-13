@@ -12,6 +12,8 @@ function mapConcession(row) {
     price: Number(row.price || 0),
     compareAt: row.compare_at === null ? "" : Number(row.compare_at || 0),
     category: row.category || "combo",
+    stockUnit: row.stock_unit || "unit",
+    usagePerSale: Number(row.usage_per_sale || 1),
     stock: row.available === null || row.available === undefined ? "" : Number(row.available),
     reserved: Number(row.reserved || 0),
     sold: Number(row.sold || 0),
@@ -42,16 +44,17 @@ async function list() {
 
 async function writeConcession(client, item, updateInventory = false) {
   await timedQuery(client, `INSERT INTO concessions
-    (id,sku,name,description,image_url,badge,price,compare_at,category,max_per_order,featured,sort_order,tags,combo_items,active,updated_at)
-    VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,NULLIF($8,'')::numeric,$9,$10,$11,$12,$13,$14::jsonb,$15,now())
+    (id,sku,name,description,image_url,badge,price,compare_at,category,max_per_order,featured,sort_order,tags,combo_items,active,stock_unit,usage_per_sale,updated_at)
+    VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,NULLIF($8,'')::numeric,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,now())
     ON CONFLICT (id) DO UPDATE SET sku=EXCLUDED.sku,name=EXCLUDED.name,description=EXCLUDED.description,
       image_url=EXCLUDED.image_url,badge=EXCLUDED.badge,price=EXCLUDED.price,compare_at=EXCLUDED.compare_at,
       category=EXCLUDED.category,max_per_order=EXCLUDED.max_per_order,featured=EXCLUDED.featured,
-      sort_order=EXCLUDED.sort_order,tags=EXCLUDED.tags,combo_items=EXCLUDED.combo_items,active=EXCLUDED.active,updated_at=now()`, [
+      sort_order=EXCLUDED.sort_order,tags=EXCLUDED.tags,combo_items=EXCLUDED.combo_items,active=EXCLUDED.active,
+      stock_unit=EXCLUDED.stock_unit,usage_per_sale=EXCLUDED.usage_per_sale,updated_at=now()`, [
     item.id, item.sku || "", item.name, item.description || "", item.imageUrl || "", item.badge || "",
     Number(item.price || 0), item.compareAt === "" ? "" : Number(item.compareAt || 0), item.category || "combo",
     Number(item.maxPerOrder || 8), Boolean(item.featured), Number(item.sortOrder || 100), item.tags || [],
-    JSON.stringify(item.comboItems || []), item.active !== false
+    JSON.stringify(item.comboItems || []), item.active !== false, item.stockUnit || "unit", Number(item.usagePerSale || 1)
   ], { repository: "concession", operation: "upsert" });
   if (updateInventory) {
     await timedQuery(client, `INSERT INTO concession_inventory (concession_id,available,reserved,sold,updated_at)
@@ -91,12 +94,12 @@ function update(item, options = {}) {
     const result = await timedQuery(client, `UPDATE concessions SET
       sku=NULLIF($2,''),name=$3,description=$4,image_url=$5,badge=$6,price=$7,
       compare_at=NULLIF($8,'')::numeric,category=$9,max_per_order=$10,featured=$11,
-      sort_order=$12,tags=$13,combo_items=$14::jsonb,active=$15,updated_at=now()
+      sort_order=$12,tags=$13,combo_items=$14::jsonb,active=$15,stock_unit=$16,usage_per_sale=$17,updated_at=now()
       WHERE id=$1 RETURNING id`, [
       item.id, item.sku || "", item.name, item.description || "", item.imageUrl || "", item.badge || "",
       Number(item.price || 0), item.compareAt === "" ? "" : Number(item.compareAt || 0), item.category || "combo",
       Number(item.maxPerOrder || 8), Boolean(item.featured), Number(item.sortOrder || 100), item.tags || [],
-      JSON.stringify(item.comboItems || []), item.active !== false
+      JSON.stringify(item.comboItems || []), item.active !== false, item.stockUnit || "unit", Number(item.usagePerSale || 1)
     ], { repository: "concession", operation: "update" });
     if (!result.rowCount) return null;
     if (options.updateInventory === true) {

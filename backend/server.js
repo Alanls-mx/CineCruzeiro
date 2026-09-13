@@ -34,6 +34,7 @@ const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, valid
 const { buildTemplateLibrary, definitionFor, variantFor, updateLibraryPreference } = require("./services/emailTemplateLibraryService");
 const { publicApiError } = require("./services/publicApiErrorService");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
+const adMetricRepository = require("./repositories/adMetricRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
@@ -98,7 +99,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "035_remove_gemini_email_integration.sql";
+const LATEST_SCHEMA_MIGRATION = "036_concession_mass_inventory_and_marketing.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const ROOT = __dirname;
@@ -926,6 +927,7 @@ const RATE_LIMIT_RULES = [
   { id: "integration-tests", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/integrations/test" },
   { id: "campaign-generation", limit: 12, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/(preview|test)$/.test(path) },
   { id: "campaign-dispatch", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/[^/]+\/(send|retry-failures)$/.test(path) },
+  { id: "ad-metrics", limit: 120, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/marketing\/ads\/[^/]+\/(impression|click)$/.test(path) },
   { id: "reports", limit: 20, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && path.startsWith("/api/admin/reports/") },
   { id: "external-lookups", limit: 60, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && /^\/api\/(tmdb|admin\/integrations)/.test(path) },
   { id: "desktop-updates", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "GET" && path.startsWith("/api/desktop/update/") },
@@ -1289,6 +1291,7 @@ function requiredAdminRoles(pathname, method) {
 
 function requiredAdminPermission(pathname, method) {
   if (pathname.startsWith("/api/admin/concession-sales")) return "concessions.manage";
+  if (pathname.startsWith("/api/admin/marketing")) return "marketing.manage";
   if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "box_office.manage";
   if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
   if (pathname === "/api/admin/content") return "";
@@ -1800,6 +1803,9 @@ function normalizePaymentOrder(input) {
           }))
           .filter((item) => item.id && item.quantity > 0)
       : [],
+    ticketCustomerUserIds: Array.isArray(input.ticketCustomerUserIds)
+      ? input.ticketCustomerUserIds.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 400)
+      : [],
     concessionItems: Array.isArray(input.concessionItems)
       ? input.concessionItems.map((item) => ({
           id: String(item.id || ""),
@@ -1813,6 +1819,9 @@ function normalizePaymentOrder(input) {
     autoAssignSeats: Boolean(input.autoAssignSeats),
     couponCode: String(input.couponCode || "").trim().toUpperCase(),
     customerUserId: String(input.customerUserId || input.userId || "").trim(),
+    customerUserIds: Array.isArray(input.customerUserIds)
+      ? [...new Set(input.customerUserIds.map((value) => String(value || "").trim()).filter(Boolean))].slice(0, 20)
+      : [],
     customerName,
     customerEmail: String(input.customerEmail || `cliente-${Date.now()}@cinecruzeiro.local`).trim(),
     customerPhone: String(input.customerPhone || "").trim(),
@@ -2192,8 +2201,10 @@ function enrichTicket(db, ticket) {
   const orderTickets = orderTicketsSorted(db, ticket.orderId);
   const orderTicketIndex = Math.max(0, orderTickets.findIndex((item) => item.id === ticket.id));
   const orderTicketCount = orderTickets.length || 1;
-  const concessionOrders = concessionOrdersForTicket(db, ticket);
-  const pendingConcessionOrders = pendingConcessionOrdersForTicket(db, ticket);
+  const multiCustomerOrder = Array.isArray(order?.customerUserIds) && order.customerUserIds.length > 1;
+  const carriesOrderConcessions = !multiCustomerOrder || String(ticket.customerUserId || "") === String(order?.customerUserId || "");
+  const concessionOrders = carriesOrderConcessions ? concessionOrdersForTicket(db, ticket) : [];
+  const pendingConcessionOrders = carriesOrderConcessions ? pendingConcessionOrdersForTicket(db, ticket) : [];
   const orderExtras = concessionOrders.flatMap((sourceOrder) =>
     (sourceOrder.concessionItems || []).map((item) => ({
       ...assetRecord(item, ["imageUrl"]),
@@ -2287,8 +2298,17 @@ function buildTicketsForOrder(order, db, source = "online") {
   const pushTicket = (ticketType, index) => {
     const code = createTicketCode([...(db.tickets || []), ...tickets]);
     const selectedSeat = Array.isArray(order.selectedSeats) ? order.selectedSeats[index - 1] : null;
+    const assignedUserId = String(order.ticketCustomerUserIds?.[index - 1] || order.customerUserId || "");
+    const assignedCustomer = assignedUserId
+      ? (db.users || []).find((user) => String(user.id) === assignedUserId && user.active !== false)
+      : null;
     tickets.push({
       ...base,
+      customerName: assignedCustomer?.name || base.customerName,
+      customerPhone: assignedCustomer?.phone || base.customerPhone,
+      customerEmail: String(assignedCustomer?.email || base.customerEmail || "").trim().toLowerCase(),
+      customerCpf: String(assignedCustomer?.cpf || base.customerCpf || "").replace(/\D/g, ""),
+      customerUserId: assignedCustomer?.id || base.customerUserId,
       id: `ticket-${Date.now()}-${index}-${crypto.randomBytes(2).toString("hex")}`,
       code,
       qrPayload: ticketQrPayload(code),
@@ -3043,14 +3063,36 @@ async function deliverBoxOfficeTicketsBySelectedMethod(db, order, tickets) {
     return { method: order?.ticketDeliveryMethod || "physical", status: "not_requested", message: "" };
   }
   if (order.ticketDelivery?.status === "delivered") return order.ticketDelivery;
-  const delivered = await deliverTicketsByEmail(db, order, tickets);
+  const groupedTickets = tickets.reduce((groups, ticket) => {
+    const key = String(ticket.customerUserId || order.customerUserId || "");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ticket);
+    return groups;
+  }, new Map());
+  const deliveries = await Promise.all([...groupedTickets.entries()].map(async ([userId, customerTickets]) => {
+    const customer = (db.users || []).find((user) => String(user.id) === userId && user.active !== false);
+    const firstTicket = customerTickets[0] || {};
+    return deliverTicketsByEmail(db, {
+      ...order,
+      concessionItems: String(userId) === String(order.customerUserId || "") ? order.concessionItems : [],
+      customerUserId: customer?.id || firstTicket.customerUserId || order.customerUserId,
+      customerName: customer?.name || firstTicket.customerName || order.customerName,
+      customerEmail: customer?.email || firstTicket.customerEmail || order.customerEmail,
+      customerPhone: customer?.phone || firstTicket.customerPhone || order.customerPhone,
+      customerCpf: customer?.cpf || firstTicket.customerCpf || order.customerCpf
+    }, customerTickets);
+  }));
+  const delivered = deliveries.length > 0 && deliveries.every(Boolean);
+  if (delivered) order.emailDeliveredAt = new Date().toISOString();
   order.ticketDelivery = {
     method: "online",
     status: delivered ? "delivered" : "failed",
     processedAt: new Date().toISOString(),
     message: delivered
-      ? "Os ingressos digitais e PDFs foram enviados por e-mail."
-      : "Os ingressos foram emitidos, mas o e-mail não pôde ser entregue."
+      ? groupedTickets.size > 1
+        ? `Os ingressos digitais e PDFs foram enviados para ${groupedTickets.size} clientes.`
+        : "Os ingressos digitais e PDFs foram enviados por e-mail."
+      : "Os ingressos foram emitidos, mas ao menos um e-mail não pôde ser entregue."
   };
   return order.ticketDelivery;
 }
@@ -5555,6 +5597,12 @@ function normalizeConcession(input, existing = {}) {
           };
         })
         .filter((item) => item.name);
+  const stockUnit = ["unit", "kg", "g", "mg"].includes(String(input.stockUnit || existing.stockUnit || "unit"))
+    ? String(input.stockUnit || existing.stockUnit || "unit")
+    : "unit";
+  const usagePerSale = stockUnit === "unit"
+    ? 1
+    : Math.max(0.001, Number(input.usagePerSale ?? existing.usagePerSale ?? 1));
 
   return {
     id: String(input.id || existing.id || slugify(name) || `produto-${Date.now()}`),
@@ -5566,7 +5614,9 @@ function normalizeConcession(input, existing = {}) {
     price: Number(input.price ?? existing.price ?? 0),
     compareAt: input.compareAt === "" ? "" : Number(input.compareAt ?? existing.compareAt ?? 0),
     category: input.category || existing.category || "combo",
-    stock: stockValue === "" || stockValue === undefined ? "" : Number(stockValue),
+    stock: stockValue === "" || stockValue === undefined ? "" : Math.max(0, Number(Number(stockValue).toFixed(3))),
+    stockUnit,
+    usagePerSale: Number(usagePerSale.toFixed(3)),
     reserved: reservedValue === "" || reservedValue === undefined ? 0 : Math.max(0, Number(reservedValue || 0)),
     sold: soldValue === "" || soldValue === undefined ? 0 : Math.max(0, Number(soldValue || 0)),
     maxPerOrder: Number(input.maxPerOrder ?? existing.maxPerOrder ?? 8),
@@ -5582,13 +5632,25 @@ function finiteStock(item) {
   return item && item.stock !== "" && item.stock !== undefined;
 }
 
+function concessionStockConsumption(item, orderItem, quantity) {
+  const explicit = Number(orderItem?.stockDeduction);
+  if (Number.isFinite(explicit) && explicit >= 0) return explicit;
+  const usage = item?.stockUnit && item.stockUnit !== "unit" ? Math.max(0.001, Number(item.usagePerSale || 1)) : 1;
+  return Number((Math.max(0, Number(quantity || 0)) * usage).toFixed(3));
+}
+
+function adjustConcessionStock(item, delta) {
+  item.stock = Number((Number(item.stock || 0) + Number(delta || 0)).toFixed(3));
+}
+
 function eachStockedOrderItem(db, order, callback) {
   (order.concessionItems || []).forEach((orderItem) => {
     const item = db.concessions.find((concession) => concession.id === orderItem.id);
     if (!item || !finiteStock(item)) return;
     const quantity = Math.max(0, Number(orderItem.quantity || 0));
-    if (!quantity) return;
-    callback(item, quantity);
+    const stockQuantity = concessionStockConsumption(item, orderItem, quantity);
+    if (!stockQuantity) return;
+    callback(item, stockQuantity, quantity);
   });
 }
 
@@ -5604,7 +5666,7 @@ function reserveConcessionStock(db, order) {
   });
 
   eachStockedOrderItem(db, order, (item, quantity) => {
-    item.stock = Number(item.stock || 0) - quantity;
+    adjustConcessionStock(item, -quantity);
     item.reserved = Math.max(0, Number(item.reserved || 0) + quantity);
   });
   order.stockReservationStatus = "reserved";
@@ -5626,7 +5688,7 @@ function confirmConcessionStock(db, order) {
         error.statusCode = 409;
         throw error;
       }
-      item.stock = Number(item.stock || 0) - quantity;
+      adjustConcessionStock(item, -quantity);
       item.sold = Math.max(0, Number(item.sold || 0) + quantity);
     });
   }
@@ -5646,7 +5708,7 @@ function releaseConcessionReservation(db, order) {
   if (order.stockReservationStatus !== "reserved") return changed;
 
   eachStockedOrderItem(db, order, (item, quantity) => {
-    item.stock = Number(item.stock || 0) + quantity;
+    adjustConcessionStock(item, quantity);
     item.reserved = Math.max(0, Number(item.reserved || 0) - quantity);
   });
   order.stockReservationStatus = "released";
@@ -5811,7 +5873,7 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
       if (typeof goodsFiscalService !== "undefined") goodsFiscalService.cancelUnissued(db, order, "order_refunded", new Date(now));
       if (order.stockReservationStatus === "sold") {
         eachStockedOrderItem(db, order, (item, quantity) => {
-          item.stock = Number(item.stock || 0) + quantity;
+          adjustConcessionStock(item, quantity);
           item.sold = Math.max(0, Number(item.sold || 0) - quantity);
         });
         order.stockReservationStatus = "released";
@@ -5864,7 +5926,7 @@ function completeConcessionCancellation(db, order, payment, refund, adminUser) {
   if (["reserved", "sold"].includes(order.stockReservationStatus)) {
     const previousStockStatus = order.stockReservationStatus;
     eachStockedOrderItem(db, order, (item, quantity) => {
-      item.stock = Number(item.stock || 0) + quantity;
+      adjustConcessionStock(item, quantity);
       if (previousStockStatus === "sold") item.sold = Math.max(0, Number(item.sold || 0) - quantity);
       else item.reserved = Math.max(0, Number(item.reserved || 0) - quantity);
     });
@@ -6218,7 +6280,7 @@ function reverseConcessionStockForDeletion(db, order) {
   const status = order.stockReservationStatus;
   if (!["reserved", "sold"].includes(status)) return;
   eachStockedOrderItem(db, order, (item, quantity) => {
-    item.stock = Number(item.stock || 0) + quantity;
+    adjustConcessionStock(item, quantity);
     if (status === "reserved") item.reserved = Math.max(0, Number(item.reserved || 0) - quantity);
     if (status === "sold") item.sold = Math.max(0, Number(item.sold || 0) - quantity);
   });
@@ -6554,7 +6616,8 @@ function repriceOrderFromCatalog(db, order, options = {}) {
         throw error;
       }
       const quantity = Math.max(0, Math.min(Number(item.quantity || 0), Number(concession.maxPerOrder || 8)));
-      if (finiteStock(concession) && quantity > Number(concession.stock || 0)) {
+      const stockDeduction = concessionStockConsumption(concession, null, quantity);
+      if (finiteStock(concession) && stockDeduction > Number(concession.stock || 0)) {
         const error = new Error(`${concession.name} nao possui estoque suficiente.`);
         error.statusCode = 409;
         throw error;
@@ -6566,6 +6629,9 @@ function repriceOrderFromCatalog(db, order, options = {}) {
         category: concession.category,
         imageUrl: concession.imageUrl,
         quantity,
+        stockDeduction,
+        stockUnit: concession.stockUnit || "unit",
+        usagePerSale: Number(concession.usagePerSale || 1),
         unitPrice: Number(concession.price || 0)
       };
     })
@@ -6705,14 +6771,35 @@ function assertPromotionRules(db, promotion, currentId = "") {
 
 function normalizeAd(input, existing = {}) {
   const title = String(input.title || existing.title || "Anuncio").trim();
+  const startsAt = String(input.startsAt ?? existing.startsAt ?? "").trim();
+  const endsAt = String(input.endsAt ?? existing.endsAt ?? "").trim();
+  if (startsAt && endsAt && new Date(startsAt).getTime() >= new Date(endsAt).getTime()) {
+    throw Object.assign(new Error("O fim da exibição deve ser posterior ao início."), { statusCode: 422, code: "AD_PERIOD_INVALID" });
+  }
   return {
     id: String(input.id || existing.id || slugify(title) || `anuncio-${Date.now()}`),
     title,
+    description: String(input.description ?? existing.description ?? "").trim().slice(0, 500),
     placement: input.placement || existing.placement || "home",
     imageUrl: input.imageUrl !== undefined ? storedLocalUploadUrl(input.imageUrl) : storedLocalUploadUrl(existing.imageUrl || ""),
     linkUrl: input.linkUrl || existing.linkUrl || "",
+    ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "Saiba mais").trim().slice(0, 60),
+    startsAt: startsAt && Number.isFinite(new Date(startsAt).getTime()) ? new Date(startsAt).toISOString() : "",
+    endsAt: endsAt && Number.isFinite(new Date(endsAt).getTime()) ? new Date(endsAt).toISOString() : "",
+    impressions: Math.max(0, Number(existing.impressions || 0)),
+    clicks: Math.max(0, Number(existing.clicks || 0)),
+    lastImpressionAt: existing.lastImpressionAt || "",
+    lastClickAt: existing.lastClickAt || "",
+    createdAt: existing.createdAt || input.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false
   };
+}
+
+function adIsVisible(ad, now = Date.now()) {
+  return Boolean(ad && ad.active !== false
+    && (!ad.startsAt || new Date(ad.startsAt).getTime() <= now)
+    && (!ad.endsAt || new Date(ad.endsAt).getTime() > now));
 }
 
 function normalizeUser(input, existing = {}) {
@@ -7248,7 +7335,18 @@ function getContent(db, options = {}) {
     promotions: includePrivate
       ? (db.promotions || []).map((item) => ({ ...assetRecord(item, ["imageUrl"]), ...couponUsageSummary(db, item) }))
       : (db.promotions || []).filter((item) => !item.couponCode).map(({ couponCode, usageLimit, perCustomerLimit, ...item }) => assetRecord(item, ["imageUrl"])),
-    ads: (db.ads || []).map((item) => assetRecord(item, ["imageUrl"])),
+    ads: (db.ads || [])
+      .filter((item) => includePrivate || (
+        item.active !== false &&
+        (!item.startsAt || new Date(item.startsAt).getTime() <= now.getTime()) &&
+        (!item.endsAt || new Date(item.endsAt).getTime() > now.getTime())
+      ))
+      .map((item) => {
+        const withAsset = assetRecord(item, ["imageUrl"]);
+        if (includePrivate) return withAsset;
+        const { impressions, clicks, lastImpressionAt, lastClickAt, ...publicAd } = withAsset;
+        return publicAd;
+      }),
     movies: includePrivate ? movies : visibleMovies,
     nowPlaying,
     upcoming,
@@ -9392,6 +9490,39 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  const publicAdMetricMatch = pathname.match(/^\/api\/marketing\/ads\/([^/]+)\/(impression|click)$/);
+  if (publicAdMetricMatch && method === "POST") {
+    const adId = decodeURIComponent(publicAdMetricMatch[1]);
+    const metric = publicAdMetricMatch[2];
+    let found = false;
+    const currentAd = (db.ads || []).find((item) => item.id === adId);
+    if (currentAd && adIsVisible(currentAd)) {
+      found = true;
+      if (postgresEnabled()) {
+        await adMetricRepository.increment(adId, metric);
+      } else {
+        await withCriticalMutation(async () => {
+          const currentDb = await readDb();
+          const ad = (currentDb.ads || []).find((item) => item.id === adId);
+          if (!ad || !adIsVisible(ad)) return;
+          const now = new Date().toISOString();
+          if (metric === "impression") {
+            ad.impressions = Math.max(0, Number(ad.impressions || 0)) + 1;
+            ad.lastImpressionAt = now;
+          } else {
+            ad.clicks = Math.max(0, Number(ad.clicks || 0)) + 1;
+            ad.lastClickAt = now;
+          }
+          ad.updatedAt = now;
+          await writeDb(currentDb);
+        });
+      }
+    }
+    res.writeHead(found ? 204 : 404, securityHeaders());
+    res.end();
+    return;
+  }
+
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
@@ -9660,6 +9791,48 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/marketing/overview" && method === "GET") {
+    const campaignResult = await listPersistedCampaigns({ page: 1, pageSize: 100, order: "desc" });
+    const campaigns = campaignResult.campaigns || [];
+    const sumCampaign = (field) => campaigns.reduce((total, campaign) => total + Math.max(0, Number(campaign[field] || 0)), 0);
+    const emailMetrics = postgresEnabled()
+      ? await emailCampaignRepository.aggregateCampaignMetrics()
+      : {
+          campaigns: Number(campaignResult.total || campaigns.length),
+          recipients: sumCampaign("recipientCount"),
+          sent: sumCampaign("sent"),
+          delivered: sumCampaign("delivered"),
+          opened: sumCampaign("opened"),
+          clicked: sumCampaign("clicked"),
+          failed: sumCampaign("failed"),
+          deliveredSupported: campaigns.some((campaign) => campaign.delivered !== null && campaign.delivered !== undefined),
+          openedSupported: campaigns.some((campaign) => campaign.opened !== null && campaign.opened !== undefined),
+          clickedSupported: campaigns.some((campaign) => campaign.clicked !== null && campaign.clicked !== undefined)
+        };
+    const ads = db.ads || [];
+    const promotions = db.promotions || [];
+    const adImpressions = ads.reduce((total, ad) => total + Math.max(0, Number(ad.impressions || 0)), 0);
+    const adClicks = ads.reduce((total, ad) => total + Math.max(0, Number(ad.clicks || 0)), 0);
+    sendJson(res, 200, {
+      email: emailMetrics,
+      ads: {
+        total: ads.length,
+        active: ads.filter((ad) => adIsVisible(ad)).length,
+        impressions: adImpressions,
+        clicks: adClicks,
+        ctr: adImpressions ? Number(((adClicks / adImpressions) * 100).toFixed(2)) : 0
+      },
+      coupons: {
+        total: promotions.length,
+        active: promotions.filter((promotion) => promotion.active !== false && !promotion.archivedAt).length,
+        uses: promotions.reduce((total, promotion) => total + Number(couponUsageSummary(db, promotion).usageCount || 0), 0)
+      },
+      recentCampaigns: campaigns.slice(0, 5).map(publicCampaign),
+      topAds: ads.slice().sort((a, b) => Number(b.clicks || 0) - Number(a.clicks || 0) || Number(b.impressions || 0) - Number(a.impressions || 0)).slice(0, 5)
+    });
+    return;
+  }
+
   if (pathname === "/api/admin/reports/dashboard.csv" && method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const period = parseAdminPeriod(url);
@@ -9699,6 +9872,7 @@ async function handleApi(req, res, pathname) {
     const groups = new Map();
     const financeEntries = [];
     for (const order of db.orders || []) {
+      if (order.concessionDeletedAt) continue;
       const payment = orderPayment(db, order.id);
       const purchasedAt = order.paidAt || payment?.approvedAt || order.createdAt;
       if (!inDateRange(purchasedAt, selectedDate, selectedDate) || !(order.concessionItems || []).length) continue;
@@ -9726,6 +9900,8 @@ async function handleApi(req, res, pathname) {
       financeEntries.push({ order, breakdown });
       groups.get(key).orders.push({
         id: order.id, status: order.status, purchasedAt,
+        approvedAt: payment?.approvedAt || order.paidAt || null,
+        refundedAt: order.concessionRefund?.completedAt || payment?.refundedAt || order.refundedAt || null,
         customerName: order.customerName || "Cliente avulso",
         archived: Boolean(order.concessionArchived),
         concessionStatus: order.concessionStatus || (order.concessionRefund?.status === "completed" || ["cancelled", "refunded"].includes(order.status) ? "cancelled" : "active"),
@@ -9780,6 +9956,40 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const orderId = decodeURIComponent(concessionRefundMatch[1]);
     sendJson(res, 200, await refundOrderConcessions(orderId, body.reason, req.adminUser));
+    return;
+  }
+
+  const concessionDeleteMatch = pathname.match(/^\/api\/admin\/concession-sales\/([^/]+)$/);
+  if (concessionDeleteMatch && method === "DELETE") {
+    const orderId = decodeURIComponent(concessionDeleteMatch[1]);
+    await withCriticalMutation(async () => {
+      const currentDb = await readDb();
+      const order = (currentDb.orders || []).find((item) => item.id === orderId);
+      if (!order || !(order.concessionItems || []).length) throw refundError("CONCESSION_ORDER_NOT_FOUND", "Pedido de bomboniere não encontrado.", 404);
+      const payment = orderPayment(currentDb, order.id);
+      const completed = order.concessionRefund?.status === "completed"
+        || order.concessionStatus === "cancelled"
+        || ["cancelled", "refunded", "expired"].includes(String(order.status || ""));
+      if (!completed) throw refundError("CONCESSION_DELETE_REQUIRES_CANCELLATION", "Cancele ou reembolse a bomboniere antes de removê-la desta área.", 409);
+      if (order.concessionDeletedAt) {
+        sendJson(res, 200, { deleted: true, deletedAt: order.concessionDeletedAt });
+        return;
+      }
+      const now = new Date().toISOString();
+      order.concessionDeletedAt = now;
+      order.concessionDeletedBy = req.adminUser.id;
+      order.updatedAt = now;
+      appendOrderAudit(order, {
+        action: "concessions.delete_from_finance_view",
+        updatedBy: req.adminUser.id,
+        metadata: {
+          paymentId: payment?.id || "",
+          items: order.concessionItems.map((item) => ({ id: item.id, name: item.name, quantity: item.quantity }))
+        }
+      });
+      await writeDb(currentDb);
+      sendJson(res, 200, { deleted: true, deletedAt: now });
+    });
     return;
   }
 
@@ -9876,8 +10086,22 @@ async function handleApi(req, res, pathname) {
     const methodFilter = paymentsUrl.searchParams.get("method") || "";
     const originFilter = paymentsUrl.searchParams.get("origin") || "";
     const providerFilter = paymentsUrl.searchParams.get("provider") || "";
-    let rows = (db.payments || []).filter((payment) => inDateRange(payment.createdAt, period.start, period.end));
-    if (statusFilter) rows = rows.filter((payment) => String(payment.status || "") === statusFilter);
+    const paymentOrder = (payment) => (db.orders || []).find((item) => item.id === payment.orderId) || {};
+    const statusEventAt = (payment, order = paymentOrder(payment)) => {
+      if (statusFilter === "refunded") return payment.refundedAt || order.refundedAt || order.concessionRefund?.completedAt || payment.updatedAt || payment.createdAt;
+      if (statusFilter === "approved") return payment.approvedAt || order.paidAt || payment.updatedAt || payment.createdAt;
+      if (statusFilter === "expired") return payment.expiredAt || order.expiredAt || payment.updatedAt || payment.createdAt;
+      return payment.approvedAt || payment.refundedAt || payment.expiredAt || payment.createdAt;
+    };
+    let rows = (db.payments || []).filter((payment) => inDateRange(statusEventAt(payment), period.start, period.end));
+    if (statusFilter) rows = rows.filter((payment) => {
+      const order = paymentOrder(payment);
+      if (statusFilter === "refunded") return payment.status === "refunded"
+        || payment.refundStatus === "completed"
+        || Number(payment.refundedAmount || 0) > 0
+        || order.concessionRefund?.status === "completed";
+      return String(payment.status || "") === statusFilter;
+    });
     if (methodFilter) rows = rows.filter((payment) => String(payment.method || "") === methodFilter);
     if (providerFilter) rows = rows.filter((payment) => String(payment.provider || "") === providerFilter);
     if (originFilter) {
@@ -9892,10 +10116,13 @@ async function handleApi(req, res, pathname) {
         configured: cardTerminalProvider.configured(integrationConfigService.resolvedConfig(db, "mercadoPago") || {}),
         provider: providerLabel(cardTerminalProvider.providerName())
       },
-      payments: rows.slice(0, 200).map((payment) => {
+      payments: rows.sort((a, b) => String(statusEventAt(b)).localeCompare(String(statusEventAt(a)))).slice(0, 200).map((payment) => {
         const order = (db.orders || []).find((item) => item.id === payment.orderId) || {};
         return {
           ...payment,
+          approvedAt: payment.approvedAt || order.paidAt || "",
+          refundedAt: payment.refundedAt || order.refundedAt || order.concessionRefund?.completedAt || "",
+          expiredAt: payment.expiredAt || order.expiredAt || "",
           orderReference: shortOrderReference(order),
           orderStatusLabel: orderStatusLabel(order.status),
           statusLabel: paymentStatusLabel(payment.status),
@@ -13366,14 +13593,27 @@ async function handleApi(req, res, pathname) {
       };
       const paymentMethod = methodMap[String(body.paymentMethod || "cash").trim()] || "cash";
       const pointPayment = ["card_terminal", "point_debit", "point_credit", "point_qr"].includes(paymentMethod);
-      const selectedCustomer = body.customerUserId
-        ? (lockedDb.users || []).find((user) => user.id === body.customerUserId && user.active !== false && ["customer", ...adminRoles()].includes(user.role))
-        : null;
-      if (body.customerUserId && !selectedCustomer) {
-        sendJson(res, 404, { error: { code: "BOX_OFFICE_CUSTOMER_NOT_FOUND", message: "O usuário selecionado não está mais disponível. Busque o cliente novamente." } });
+      const requestedCustomerIds = [...new Set([
+        String(body.customerUserId || "").trim(),
+        ...(Array.isArray(body.customerUserIds) ? body.customerUserIds.map((value) => String(value || "").trim()) : [])
+      ].filter(Boolean))];
+      if (requestedCustomerIds.length > 20) {
+        sendJson(res, 422, { error: { code: "BOX_OFFICE_CUSTOMER_LIMIT", message: "Selecione no máximo 20 clientes por venda." } });
         return;
       }
+      const selectedCustomers = requestedCustomerIds.map((customerId) => (
+        (lockedDb.users || []).find((user) => user.id === customerId && user.active !== false && ["customer", ...adminRoles()].includes(user.role))
+      )).filter(Boolean);
+      if (selectedCustomers.length !== requestedCustomerIds.length) {
+        sendJson(res, 404, { error: { code: "BOX_OFFICE_CUSTOMER_NOT_FOUND", message: "Um dos usuários selecionados não está mais disponível. Revise os clientes da venda." } });
+        return;
+      }
+      const selectedCustomer = selectedCustomers[0] || null;
       const saleMode = body.saleMode || (selectedCustomer ? "registered" : body.customerName ? "guest" : "quick");
+      if (saleMode === "registered" && !selectedCustomer) {
+        sendJson(res, 422, { error: { code: "BOX_OFFICE_CUSTOMER_REQUIRED", message: "Selecione ao menos um usuário para receber os ingressos." } });
+        return;
+      }
       const ticketDeliveryMethod = boxOfficeTicketDeliveryMethod(saleMode, body.ticketDeliveryMethod);
       const guestDeliveryEmail = String(body.customerEmail || "").trim().toLowerCase();
       if (saleMode === "guest" && ticketDeliveryMethod === "online" && (guestDeliveryEmail.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDeliveryEmail))) {
@@ -13394,6 +13634,7 @@ async function handleApi(req, res, pathname) {
       const batchId = `venda-lote-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
       const customerData = {
         customerUserId: selectedCustomer?.id || "",
+        customerUserIds: selectedCustomers.map((customer) => customer.id),
         customerName: selectedCustomer?.name || body.customerName || (saleMode === "quick" ? "Venda rápida de balcão" : "Cliente avulso"),
         customerEmail: selectedCustomer?.email || body.customerEmail || "",
         customerPhone: selectedCustomer?.phone || body.customerPhone || "",
@@ -13402,6 +13643,7 @@ async function handleApi(req, res, pathname) {
 
       // Valida e precifica o lote inteiro antes de emitir qualquer ingresso.
       const sharedConcessionItems = Array.isArray(body.concessionItems) ? body.concessionItems : [];
+      const selectedCustomerIds = new Set(selectedCustomers.map((customer) => String(customer.id)));
       const preparedOrders = requestedSales.map((saleItem, index) => {
         const order = repriceOrderFromCatalog(lockedDb, normalizePaymentOrder({
           ...body,
@@ -13415,6 +13657,19 @@ async function handleApi(req, res, pathname) {
           paymentStatus: pointPayment ? "pending" : "approved",
           autoAssignSeats: saleItem.autoAssignSeats !== false
         }));
+        const issuedTicketCount = ticketUnitsForOrder(order).length;
+        if (selectedCustomers.length > 1) {
+          if (order.ticketCustomerUserIds.length !== issuedTicketCount) {
+            throw Object.assign(new Error("Distribua todos os ingressos entre os clientes selecionados."), { statusCode: 422, code: "BOX_OFFICE_TICKET_ASSIGNMENT_INCOMPLETE" });
+          }
+          if (order.ticketCustomerUserIds.some((customerId) => !selectedCustomerIds.has(String(customerId)))) {
+            throw Object.assign(new Error("A distribuição contém um cliente que não faz parte desta venda."), { statusCode: 422, code: "BOX_OFFICE_TICKET_ASSIGNMENT_INVALID" });
+          }
+        } else if (selectedCustomer) {
+          order.ticketCustomerUserIds = Array.from({ length: issuedTicketCount }, () => selectedCustomer.id);
+        } else {
+          order.ticketCustomerUserIds = [];
+        }
         if (paymentMethod === "courtesy") {
           order.discountValue = Number(order.totalPrice || 0);
           order.totalPrice = 0;
@@ -13484,7 +13739,8 @@ async function handleApi(req, res, pathname) {
             ticketDeliveryMethod,
             createdBy: adminUser.id,
             createdAt: timestamp,
-            customerId: selectedCustomer?.id || ""
+            customerId: selectedCustomer?.id || "",
+            customerIds: selectedCustomers.map((customer) => customer.id)
           }
         }));
         lockedDb.orders.unshift(...orders);
@@ -13557,7 +13813,8 @@ async function handleApi(req, res, pathname) {
             ticketDeliveryMethod,
             createdBy: adminUser.id,
             createdAt: timestamp,
-            customerId: selectedCustomer?.id || ""
+            customerId: selectedCustomer?.id || "",
+            customerIds: selectedCustomers.map((customer) => customer.id)
           }
         };
         const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, paymentMethod === "courtesy" ? "courtesy" : "box_office");
@@ -13587,7 +13844,8 @@ async function handleApi(req, res, pathname) {
         tickets: tickets.length,
         paymentMethod,
         createdBy: adminUser.id,
-        customerId: selectedCustomer?.id || ""
+        customerId: selectedCustomer?.id || "",
+        customerIds: selectedCustomers.map((customer) => customer.id)
       });
       sendJson(res, 201, {
         order: orders[0],

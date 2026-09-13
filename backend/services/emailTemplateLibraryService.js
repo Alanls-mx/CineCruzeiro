@@ -15,8 +15,31 @@ const TEMPLATE_DEFINITIONS = Object.freeze([
   { id: "reactivation", name: "Sentimos sua falta", category: "relationship", objective: "announcement", visualStyle: "reactivation", description: "Reativação exclusiva para público inativo validado pelo sistema.", tags: ["reativação", "relacionamento", "inativos"] }
 ]);
 
+const DRAFT_DETAILS = Object.freeze({
+  announcement: "No conteúdo abaixo você encontra o contexto completo, os pontos que merecem atenção e o caminho mais rápido para consultar as informações atualizadas.",
+  weekly: "A seleção usa automaticamente os filmes publicados e seus horários disponíveis. Escolha a sessão que combina com sua semana e consulte os detalhes antes de concluir a compra.",
+  premiere: "O pôster e os horários do filme selecionado são carregados automaticamente. Veja a sinopse, escolha a melhor sessão e garanta seu lugar para viver a estreia na tela grande.",
+  last_chance: "Os botões abaixo mostram somente as sessões ainda disponíveis para o filme selecionado. Consulte os horários restantes e faça sua escolha antes da saída de cartaz.",
+  promotion: "A condição, o período e os itens elegíveis aparecem de forma clara antes da compra. Consulte as regras da campanha e aproveite o benefício enquanto estiver disponível.",
+  coupon: "O código, a validade, o limite de usos e os itens elegíveis são confirmados pelo sistema. Aplique o cupom no checkout para visualizar o desconto antes do pagamento.",
+  concession: "A imagem, a descrição e o preço do produto selecionado vêm diretamente do catálogo. Adicione o item durante o checkout e retire no atendimento da bomboniere.",
+  combo: "Os produtos, quantidades e valores do combo são apresentados a partir do cadastro atual. Escolha sua sessão e inclua a opção desejada antes de seguir para o pagamento.",
+  club_plan: "Os créditos, descontos, itens elegíveis e regras exibidos correspondem ao plano publicado. Compare os benefícios e escolha a assinatura mais adequada à sua rotina.",
+  club: "Acompanhe seus créditos, benefícios e novidades pela mesma conta usada nas compras. As condições apresentadas respeitam o plano ativo e o saldo disponível.",
+  birthday: "Preparamos uma seleção para tornar a data ainda mais especial. Consulte a programação atual e escolha uma história para celebrar do seu jeito.",
+  event: "Data, horário, disponibilidade e condições são preenchidos a partir do evento selecionado. Consulte todos os detalhes antes de confirmar sua participação.",
+  ticket: "Na sua conta ficam reunidos QR Code, filme, sessão, sala, poltrona e itens de bomboniere vinculados. Revise os dados e apresente o ingresso na chegada.",
+  reactivation: "A programação exibida é atualizada automaticamente com os títulos disponíveis. Explore as novidades, compare os horários e volte quando encontrar a sessão certa para você."
+});
+
 function templateVariant(id, templateId, name, description, visualStyle, defaults, theme, tags = []) {
-  return Object.freeze({ id, variantId: id, templateId, name, description, visualStyle, defaults, theme, tags });
+  const detail = DRAFT_DETAILS[templateId] || DRAFT_DETAILS.announcement;
+  const completeDefaults = {
+    ...defaults,
+    preheader: defaults.preheader || `${name}: ${description}`.slice(0, 140),
+    message: `${defaults.message}\n\n${detail}`
+  };
+  return Object.freeze({ id, variantId: id, templateId, name, description, visualStyle, defaults: completeDefaults, theme, tags });
 }
 
 const TEMPLATE_VARIANTS = Object.freeze([

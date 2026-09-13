@@ -143,3 +143,21 @@ test("pedido integralmente reembolsado não permanece como receita da bomboniere
   assert.equal(summary.refundTotal, 16);
   assert.equal(summary.refundedQuantity, 2);
 });
+
+test("pedido removido da visão da bomboniere não altera a conciliação global", () => {
+  const summary = summarizeConcessionFinance([{
+    order: {
+      id: "order-deleted-view",
+      concessionDeletedAt: "2026-09-13T20:00:00.000Z",
+      concessionItems: [{ id: "drink", name: "Refrigerante", quantity: 1, unitPrice: 8 }]
+    },
+    breakdown: {
+      concessionGross: 8,
+      concessionRevenue: 8,
+      concessionRefunded: 0
+    }
+  }]);
+  assert.equal(summary.orders, 0);
+  assert.equal(summary.netRevenue, 0);
+  assert.deepEqual(summary.products, []);
+});

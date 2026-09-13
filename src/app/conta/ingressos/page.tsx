@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { ArrowLeft, Check, Download, Eye, Send, Ticket as TicketIcon, WalletCards } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Download, Eye, Send, Ticket as TicketIcon, WalletCards } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import {
   createGoogleWalletPass,
@@ -30,11 +30,14 @@ type TransferSuccessInfo = {
   concessionsTransferred?: boolean;
 };
 
+const TICKETS_PER_PAGE = 6;
+
 export default function IngressosPage() {
   const [upcoming, setUpcoming] = useState<TicketRecord[]>([]);
   const [archived, setArchived] = useState<TicketRecord[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [tab, setTab] = useState<"upcoming" | "archived">("upcoming");
+  const [ticketPage, setTicketPage] = useState(1);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [validatedTicketId, setValidatedTicketId] = useState("");
   const [transferSuccessInfo, setTransferSuccessInfo] = useState<TransferSuccessInfo | null>(null);
@@ -42,6 +45,7 @@ export default function IngressosPage() {
   const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const visibleTickets = tab === "upcoming" ? upcoming : archived;
+  const visibleTicketKey = visibleTickets.map((ticket) => ticket.id).join("|");
   const selectedTicket = useMemo(
     () => visibleTickets.find((ticket) => ticket.id === selectedId) || visibleTickets[0] || null,
     [selectedId, visibleTickets]
@@ -60,6 +64,7 @@ export default function IngressosPage() {
         setArchived(result.archived);
         if (newlyValidated) {
           setTab("archived");
+          setTicketPage(Math.floor(Math.max(0, result.archived.findIndex((ticket) => ticket.id === newlyValidated.id)) / TICKETS_PER_PAGE) + 1);
           setSelectedId(newlyValidated.id);
           setValidatedTicketId(newlyValidated.id);
           if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
@@ -90,6 +95,29 @@ export default function IngressosPage() {
     const timer = window.setTimeout(() => setTransferSuccessInfo(null), 6500);
     return () => window.clearTimeout(timer);
   }, [transferSuccessInfo]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(visibleTickets.length / TICKETS_PER_PAGE));
+    const safePage = Math.min(ticketPage, totalPages);
+    const pageTickets = visibleTickets.slice((safePage - 1) * TICKETS_PER_PAGE, safePage * TICKETS_PER_PAGE);
+    if (safePage !== ticketPage) setTicketPage(safePage);
+    if (!pageTickets.some((ticket) => ticket.id === selectedId)) setSelectedId(pageTickets[0]?.id || "");
+  }, [selectedId, ticketPage, visibleTicketKey, visibleTickets]);
+
+  function selectTab(nextTab: "upcoming" | "archived") {
+    const nextTickets = nextTab === "upcoming" ? upcoming : archived;
+    setTab(nextTab);
+    setTicketPage(1);
+    setSelectedId(nextTickets[0]?.id || "");
+  }
+
+  function selectTicketPage(nextPage: number) {
+    const totalPages = Math.max(1, Math.ceil(visibleTickets.length / TICKETS_PER_PAGE));
+    const safePage = Math.min(Math.max(1, nextPage), totalPages);
+    const firstTicket = visibleTickets[(safePage - 1) * TICKETS_PER_PAGE];
+    setTicketPage(safePage);
+    setSelectedId(firstTicket?.id || "");
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
@@ -129,13 +157,13 @@ export default function IngressosPage() {
         )}
 
         {status === "ready" && (
-          <div className="mt-10 grid gap-8 lg:grid-cols-[360px_1fr]">
-            <aside>
+          <div className="mt-10 grid items-start gap-8 lg:grid-cols-[360px_1fr]">
+            <aside className="min-w-0">
               <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg bg-brand-900/70 p-1">
-                <button type="button" onClick={() => setTab("upcoming")} className={`rounded-md px-3 py-3 text-sm font-black ${tab === "upcoming" ? "bg-brand-600 text-white" : "text-slate-400"}`}>
+                <button type="button" onClick={() => selectTab("upcoming")} className={`rounded-md px-3 py-3 text-sm font-black ${tab === "upcoming" ? "bg-brand-600 text-white" : "text-slate-400"}`}>
                   Próximos
                 </button>
-                <button type="button" onClick={() => setTab("archived")} className={`rounded-md px-3 py-3 text-sm font-black ${tab === "archived" ? "bg-brand-600 text-white" : "text-slate-400"}`}>
+                <button type="button" onClick={() => selectTab("archived")} className={`rounded-md px-3 py-3 text-sm font-black ${tab === "archived" ? "bg-brand-600 text-white" : "text-slate-400"}`}>
                   Arquivados
                 </button>
               </div>
@@ -143,6 +171,9 @@ export default function IngressosPage() {
                 tickets={tab === "upcoming" ? upcoming : archived}
                 selectedId={selectedTicket?.id || ""}
                 onSelect={setSelectedId}
+                page={ticketPage}
+                pageSize={TICKETS_PER_PAGE}
+                onPageChange={selectTicketPage}
                 empty={tab === "upcoming" ? "Nenhum ingresso futuro." : "Nenhum ingresso arquivado."}
               />
             </aside>
@@ -176,22 +207,63 @@ export default function IngressosPage() {
   );
 }
 
-function TicketList({ tickets, selectedId, onSelect, empty }: { tickets: TicketRecord[]; selectedId: string; onSelect: (id: string) => void; empty: string }) {
+function TicketList({ tickets, selectedId, onSelect, page, pageSize, onPageChange, empty }: {
+  tickets: TicketRecord[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  empty: string;
+}) {
   if (!tickets.length) return <p className="rounded-lg bg-white/[0.04] p-4 text-sm text-slate-400">{empty}</p>;
+  const totalPages = Math.max(1, Math.ceil(tickets.length / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = (safePage - 1) * pageSize;
+  const pageTickets = tickets.slice(start, start + pageSize);
   return (
-    <div className="space-y-3">
-      {tickets.map((ticket) => (
-        <button
-          key={ticket.id}
-          type="button"
-          onClick={() => onSelect(ticket.id)}
-          className={`w-full rounded-lg p-4 text-left transition ${ticket.id === selectedId ? "bg-brand-700 shadow-glow-blue" : "bg-brand-900/70 hover:bg-brand-850"}`}
-        >
-          <span className="text-xs font-black uppercase tracking-[.14em] text-gold-400">{formatSessionDate(ticket.sessionDate)} • {ticket.sessionTime}</span>
-          <strong className="mt-2 block line-clamp-2 text-lg">{ticket.movieTitle}</strong>
-          <span className="mt-1 block text-sm text-slate-300">{ticket.ticketType} • {statusLabel(ticket.status)}</span>
-        </button>
-      ))}
+    <div>
+      <div className="space-y-3">
+        {pageTickets.map((ticket) => (
+          <button
+            key={ticket.id}
+            type="button"
+            onClick={() => onSelect(ticket.id)}
+            className={`w-full rounded-lg p-4 text-left transition ${ticket.id === selectedId ? "bg-brand-700 shadow-glow-blue" : "bg-brand-900/70 hover:bg-brand-850"}`}
+          >
+            <span className="text-xs font-black uppercase tracking-[.14em] text-gold-400">{formatSessionDate(ticket.sessionDate)} • {ticket.sessionTime}</span>
+            <strong className="mt-2 block line-clamp-2 text-lg">{ticket.movieTitle}</strong>
+            <span className="mt-1 block text-sm text-slate-300">{ticket.ticketType} • {statusLabel(ticket.status)}</span>
+          </button>
+        ))}
+      </div>
+      {totalPages > 1 && (
+        <nav className="mt-4 flex min-h-[48px] items-center justify-between bg-brand-900/55 px-3" aria-label="Paginação dos ingressos">
+          <button
+            type="button"
+            onClick={() => onPageChange(safePage - 1)}
+            disabled={safePage === 1}
+            className="inline-flex h-10 w-10 items-center justify-center text-slate-200 transition hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-30"
+            aria-label="Página anterior"
+            title="Página anterior"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <span className="text-xs font-bold text-slate-300">
+            {start + 1}-{Math.min(start + pageTickets.length, tickets.length)} de {tickets.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => onPageChange(safePage + 1)}
+            disabled={safePage === totalPages}
+            className="inline-flex h-10 w-10 items-center justify-center text-slate-200 transition hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-30"
+            aria-label="Próxima página"
+            title="Próxima página"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </nav>
+      )}
     </div>
   );
 }
@@ -285,7 +357,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
   }
 
   return (
-    <article className="relative overflow-hidden rounded-lg bg-[#101827] shadow-2xl shadow-blue-950/20">
+    <article className="relative self-start overflow-hidden rounded-lg bg-[#101827] shadow-2xl shadow-blue-950/20">
       {justValidated && (
         <div className="ticket-validation-celebration" role="status" aria-live="assertive">
           <span className="ticket-validation-check" aria-hidden="true"><Check /></span>
@@ -294,11 +366,11 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
         </div>
       )}
       <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
-        <div className="bg-brand-950">
+        <div className="self-start bg-brand-950">
           {ticket.posterUrl ? (
-            <img src={ticket.posterUrl} alt={`Poster de ${ticket.movieTitle}`} className="aspect-[2/3] h-full w-full object-cover" />
+            <img src={ticket.posterUrl} alt={`Poster de ${ticket.movieTitle}`} className="aspect-[2/3] w-full object-cover" />
           ) : (
-            <div className="flex aspect-[2/3] h-full w-full items-center justify-center bg-brand-900 text-sm font-black text-slate-500">Poster</div>
+            <div className="flex aspect-[2/3] w-full items-center justify-center bg-brand-900 text-sm font-black text-slate-500">Poster</div>
           )}
         </div>
 

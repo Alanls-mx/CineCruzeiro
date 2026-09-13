@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarCheck, Check, ChevronDown, ChevronLeft, ChevronRight, Popcorn, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
+import { MarketingAd } from "@/components/MarketingAd";
 import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
 import { isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
@@ -16,6 +17,7 @@ function uploadedImageUrl(value: string | undefined) {
 export default function ClubePage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
+  const [ads, setAds] = useState<CinemaContent["ads"]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   async function loadAvailablePlans() {
@@ -37,8 +39,14 @@ export default function ClubePage() {
   useEffect(() => {
     void loadAvailablePlans();
     fetchCinemaContent()
-      .then((content) => setSettings(content.settings || {}))
-      .catch(() => setSettings({}));
+      .then((content) => {
+        setSettings(content.settings || {});
+        setAds(content.ads || []);
+      })
+      .catch(() => {
+        setSettings({});
+        setAds([]);
+      });
   }, []);
 
   const carouselPlans = useMemo(
@@ -88,6 +96,10 @@ export default function ClubePage() {
               <p className="max-w-[15rem] font-display text-lg font-black leading-tight sm:text-xl">Créditos prontos para a próxima sessão.</p>
             </div>
           </div>
+        </section>
+
+        <section className="mx-auto max-w-[1040px] px-4 py-5 sm:px-6 lg:px-8">
+          <MarketingAd ad={ads.find((ad) => ad.placement === "club")} />
         </section>
 
         <section className="mx-auto grid max-w-[1040px] gap-5 px-4 py-5 sm:px-6 md:grid-cols-4 lg:px-8">
