@@ -3425,6 +3425,16 @@ function pdfWriteText(text, x, y, size, options = {}) {
   return `BT /${font} ${size} Tf ${color} rg ${x.toFixed(2)} ${y.toFixed(2)} Td ${pdfText(text)} Tj ET\n`;
 }
 
+function pdfApproxTextWidth(text, size, options = {}) {
+  const averageGlyphWidth = options.bold ? 0.58 : 0.52;
+  return String(text || "").length * size * averageGlyphWidth;
+}
+
+function pdfWriteCenteredText(text, centerX, y, size, options = {}) {
+  const width = pdfApproxTextWidth(text, size, options);
+  return pdfWriteText(text, centerX - width / 2, y, size, options);
+}
+
 function wrapText(value, maxChars) {
   const words = String(value || "")
     .replace(/[-_/]/g, "$& ")
@@ -3742,10 +3752,10 @@ async function ticketDownloadPdf(db, ticket) {
   }
   page1 += pdfLine(78, enriched.paymentSource === "subscription_credit" ? 330 : 354, 517, enriched.paymentSource === "subscription_credit" ? 330 : 354, "#334155", 1);
   page1 += pdfWriteText("QR Code de entrada", 214, enriched.paymentSource === "subscription_credit" ? 306 : 324, 10, { bold: true, color: "#bfdbfe" });
-  page1 += pdfQr(enriched.displayQrPayload || enriched.qrPayload || enriched.code, 222, 134, 164);
-  page1 += pdfWriteText(enriched.displayCode || enriched.code, 238, 118, 10, { bold: true, color: "#facc15" });
-  page1 += pdfWriteText("Apresente este codigo na entrada.", 202, 104, 11, { bold: true, color: "#ffffff" });
-  page1 += pdfWriteText("Pagina 1 de 2", 462, 86, 9, { color: "#94a3b8" });
+  page1 += pdfQr(enriched.displayQrPayload || enriched.qrPayload || enriched.code, 222, 148, 164);
+  page1 += pdfWriteCenteredText(enriched.displayCode || enriched.code, 304, 126, 10, { bold: true, color: "#facc15" });
+  page1 += pdfWriteCenteredText("Apresente este codigo na entrada.", 304, 103, 11, { bold: true, color: "#ffffff" });
+  page1 += pdfWriteText("Pagina 1 de 2", 462, 76, 9, { color: "#94a3b8" });
 
   let page2 = "";
   page2 += pdfRect(0, 0, 595, 842, "#050914");

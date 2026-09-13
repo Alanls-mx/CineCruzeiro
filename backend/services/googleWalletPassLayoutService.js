@@ -58,20 +58,16 @@ function buildGoogleWalletClassTemplateInfo() {
           }
         },
         {
-          twoItems: {
+          threeItems: {
             startItem: templateItem("object.textModulesData['sessao']"),
-            endItem: templateItem("object.textModulesData['sala']")
+            middleItem: templateItem("object.textModulesData['sala']"),
+            endItem: templateItem("object.textModulesData['assento']")
           }
         },
         {
           twoItems: {
-            startItem: templateItem("object.textModulesData['assento']"),
-            endItem: templateItem("object.textModulesData['tipo']")
-          }
-        },
-        {
-          oneItem: {
-            item: templateItem("object.textModulesData['bomboniere']")
+            startItem: templateItem("object.textModulesData['tipo']"),
+            endItem: templateItem("object.textModulesData['bomboniere']")
           }
         }
       ]
@@ -102,6 +98,12 @@ function formatConcessionItems(items = []) {
     .join("\n");
 }
 
+function googleWalletConcessionItems(enriched = {}) {
+  const currentItems = Array.isArray(enriched.extras) ? enriched.extras : [];
+  if (currentItems.length) return currentItems;
+  return Array.isArray(enriched.concessionItems) ? enriched.concessionItems : [];
+}
+
 function formatSessionDate(value) {
   const normalized = String(value || "").trim();
   const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
@@ -114,7 +116,7 @@ function formatRoomName(value) {
 }
 
 function buildGoogleWalletTextModules(enriched = {}) {
-  const concessions = formatConcessionItems(enriched.extras);
+  const concessions = formatConcessionItems(googleWalletConcessionItems(enriched));
   return [
     { id: "filme", header: "Filme", body: String(enriched.movieTitle || "Cine Cruzeiro") },
     {

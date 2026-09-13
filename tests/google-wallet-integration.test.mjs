@@ -186,12 +186,13 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
 
   const template = googleWalletPassLayoutService.buildGoogleWalletClassTemplateInfo();
   const rows = template.cardTemplateOverride.cardRowTemplateInfos;
+  assert.equal(rows.length, 3, "a API Google Wallet aceita no máximo três linhas no card");
   assert.equal(rows[0].oneItem.item.firstValue.fields[0].fieldPath, "object.textModulesData['filme']");
-  assert.equal(rows[1].twoItems.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['sessao']");
-  assert.equal(rows[1].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['sala']");
-  assert.equal(rows[2].twoItems.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['assento']");
-  assert.equal(rows[2].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['tipo']");
-  assert.equal(rows[3].oneItem.item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
+  assert.equal(rows[1].threeItems.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['sessao']");
+  assert.equal(rows[1].threeItems.middleItem.firstValue.fields[0].fieldPath, "object.textModulesData['sala']");
+  assert.equal(rows[1].threeItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['assento']");
+  assert.equal(rows[2].twoItems.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['tipo']");
+  assert.equal(rows[2].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
   assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
   assert.equal(
     googleWalletPassLayoutService.buildGoogleWalletClassIdentity().eventName.defaultValue.value,
@@ -201,6 +202,20 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
     googleWalletPassLayoutService.formatRoomName("Sala Principal (Projeção digital 2D)"),
     "Sala Principal"
   );
+});
+
+test("Google Wallet recupera bomboniere do campo legado quando a lista atual não existe", () => {
+  const modules = googleWalletPassLayoutService.buildGoogleWalletTextModules({
+    movieTitle: "Vingadores: Doutor Destino",
+    sessionDate: "2026-09-13",
+    sessionTime: "19:00",
+    concessionItems: [
+      { id: "combo", name: "Combo Clássico", quantity: 1 },
+      { id: "familia", name: "Combo Família", quantity: 1 }
+    ]
+  });
+  const concessions = modules.find((item) => item.id === "bomboniere");
+  assert.equal(concessions?.body, "1x Combo Clássico\n1x Combo Família");
 });
 
 test("Google Wallet usa somente a origem HTTPS do TMDB para imagens de filmes", () => {

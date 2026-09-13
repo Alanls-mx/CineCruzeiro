@@ -1,4 +1,6 @@
 const assert = require("assert/strict");
+const fs = require("fs");
+const path = require("path");
 const { brazilianDate } = require("../backend/utils/dateFormat");
 const emailService = require("../backend/services/emailService");
 
@@ -29,5 +31,9 @@ assert.equal(
   emailService._test.absoluteUrl("/projects/cinecruzeiro/uploads/movies-filme/poster.jpg", "https://lumixengine.com/projects/cinecruzeiro"),
   "https://lumixengine.com/projects/cinecruzeiro/uploads/movies-filme/poster.jpg"
 );
+
+const serverSource = fs.readFileSync(path.resolve(__dirname, "../backend/server.js"), "utf8");
+assert.match(serverSource, /pdfWriteCenteredText\(enriched\.displayCode \|\| enriched\.code, 304, 126/);
+assert.match(serverSource, /pdfQr\(enriched\.displayQrPayload \|\| enriched\.qrPayload \|\| enriched\.code, 222, 148, 164\)/);
 
 console.log("Ticket document tests passed.");

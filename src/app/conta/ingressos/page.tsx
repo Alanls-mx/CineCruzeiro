@@ -321,10 +321,13 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
               <Info label="Pedido" value={ticketHumanReference(ticket)} title={ticket.orderReference || ticket.orderId || ticketHumanReference(ticket)} />
-              <Info label="Código" value={ticket.displayCode || ticket.code} mono />
             </dl>
-            <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-xs font-black text-slate-950">
+            <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-slate-950">
               {qrDataUrl ? <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.displayCode || ticket.code}`} className="mx-auto h-44 w-44 max-w-full" /> : (ticket.displayCode || ticket.code)}
+              <span className="mt-3 block text-[10px] font-black uppercase tracking-[.12em] text-slate-500">Código</span>
+              <strong className="mt-1 block font-mono text-sm font-black tracking-normal text-slate-950">
+                {ticket.displayCode || ticket.code}
+              </strong>
             </div>
           </div>
 
