@@ -8443,6 +8443,19 @@ function renderEmailCampaigns() {
     : null;
 }
 
+function emailCampaignHistoryLinkedLabel(item = {}) {
+  const movie = item.movieId ? (state.content?.movies || []).find((entry) => String(entry.id) === String(item.movieId)) : null;
+  const plan = item.clubPlanId ? (state.content?.subscriptionPlans || []).find((entry) => String(entry.id) === String(item.clubPlanId)) : null;
+  const concessionIds = Array.isArray(item.concessionIds) ? item.concessionIds : (item.concessionId ? [item.concessionId] : []);
+  const concessions = concessionIds.map((id) => (state.content?.concessions || []).find((entry) => String(entry.id) === String(id))).filter(Boolean);
+  const coupon = item.couponId ? (state.content?.promotions || []).find((entry) => String(entry.id) === String(item.couponId)) : null;
+  if (movie) return movie.title || "Filme vinculado";
+  if (plan) return plan.name || "Plano vinculado";
+  if (concessions.length) return concessions.map((entry) => entry.name || "Produto").join(", ");
+  if (coupon) return coupon.couponCode || coupon.title || "Cupom vinculado";
+  return "";
+}
+
 function setCampaignField(id, value) {
   const field = $(id);
   if (field) field.value = value || "";

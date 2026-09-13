@@ -81,6 +81,7 @@ test("gerador Gemini foi removido das rotas, serviços e interface", () => {
   assert.doesNotMatch(server, /campaigns\/ai-draft|email\/prompt-templates/);
   assert.doesNotMatch(adminHtml, /Gemini|Criar com IA|gerador com IA/i);
   assert.doesNotMatch(adminJs, /campaigns\/ai-draft|email\/prompt-templates|Gemini/i);
+  assert.match(adminJs, /function emailCampaignHistoryLinkedLabel\(/);
   assert.doesNotMatch(integrations, /Gemini|generativelanguage\.googleapis/i);
   assert.equal(existsSync(new URL("../backend/services/geminiEmailAgentService.js", import.meta.url)), false);
   assert.equal(existsSync(new URL("../backend/services/emailCampaignAiService.js", import.meta.url)), false);
