@@ -430,7 +430,7 @@ function ticketCard(ticket = {}, options = {}) {
             <tr>
               <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px;vertical-align:top">Tipo<br><strong style="color:#fff;font-size:14px;word-break:break-word">${htmlEscape(ticket.ticketType || "Ingresso")}</strong></td>
               <td style="width:10px"></td>
-              <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px;vertical-align:top">Código<br><strong style="color:#fff;font-size:14px;word-break:break-all">${htmlEscape(ticket.code || "-")}</strong></td>
+              <td style="padding:8px 10px;background:#111827;border-radius:8px;color:#bfdbfe;font-size:12px;vertical-align:top">Código<br><strong style="color:#fff;font-size:14px;word-break:break-all">${htmlEscape(ticket.displayCode || ticket.code || "-")}</strong></td>
             </tr>
           </table>
           ${clubValues}
@@ -542,11 +542,11 @@ async function sendTicketDelivery(db, order, tickets = [], options = {}) {
         ${totalLine}
       </div>
     `, { kicker: "Pagamento aprovado", logoUrl: options.logoUrl }),
-    text: `Ingressos confirmados: ${tickets.map((ticket) => ticket.code).join(", ")}`,
+    text: `Ingressos confirmados: ${tickets.map((ticket) => ticket.displayCode || ticket.code).join(", ")}`,
     attachments: options.attachments || []
   }, "payment.approved", {
     orderId: order.id,
-    ticketCodes: tickets.map((ticket) => ticket.code),
+    ticketCodes: tickets.map((ticket) => ticket.displayCode || ticket.code),
     attachments: (options.attachments || []).map((item) => item.filename)
   });
 }

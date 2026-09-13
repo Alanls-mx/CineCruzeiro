@@ -67,6 +67,8 @@ export interface TicketRecord {
   orderId?: string;
   code: string;
   qrPayload: string;
+  displayCode?: string;
+  displayQrPayload?: string;
   movieId?: string;
   movieTitle: string;
   posterUrl?: string;

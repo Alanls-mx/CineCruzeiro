@@ -25,7 +25,7 @@ test("agente usa o filme, poster, sessoes e cores do rascunho de referência", (
       posterUrl: "/uploads/movies/filme.webp",
       duration: "1h 50m",
       rating: "12",
-      sessions: [{ date: "2026-09-12", time: "19:00" }]
+      sessions: [{ date: "2099-09-12", time: "19:00" }]
     },
     referenceCampaign: {
       id: "campanha-antiga",
@@ -45,7 +45,7 @@ test("agente usa o filme, poster, sessoes e cores do rascunho de referência", (
   assert.match(result.html, /uploads\/movies\/filme.webp/);
   assert.match(result.html, /background-color:#0d1728/);
   assert.match(result.html, /logo\.webp[^>]+background-color:transparent/);
-  assert.match(result.variables.sessoes_filme, /12\/09\/2026 às 19:00/);
+  assert.match(result.variables.sessoes_filme, /12\/09\/2099 às 19:00/);
 });
 
 test("agente usa somente o catálogo pertencente ao objetivo", () => {

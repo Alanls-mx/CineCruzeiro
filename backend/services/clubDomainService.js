@@ -247,15 +247,37 @@ function calculateGoodsDiscount(items, plan) {
   return (items || []).map((item) => {
     const quantity = Math.max(0, Number(item.quantity || 0));
     const originalUnitPrice = money(item.unitPrice);
-    const discount = excluded.has(item.id) ? 0 : money(quantity * originalUnitPrice * (percent / 100));
+    const discountableQuantity = Math.min(quantity, Math.max(0, Number(item.discountableQuantity ?? quantity)));
+    const discount = excluded.has(item.id) ? 0 : money(discountableQuantity * originalUnitPrice * (percent / 100));
     return {
       ...item,
       originalPrice: originalUnitPrice,
+      discountableQuantity,
       clubDiscount: discount,
       finalPrice: money(originalUnitPrice - discount / Math.max(1, quantity)),
       clubDiscountExcluded: excluded.has(item.id)
     };
   });
+}
+
+function allocateGoodsCouponDiscount(items, freeItems, discountValue) {
+  const freeByItem = new Map((freeItems || []).map((item) => [String(item.concessionId || item.id || ""), Number(item.quantity || 0)]));
+  const cents = (items || []).map((item) => {
+    const paidQuantity = Math.max(0, Number(item.quantity || 0) - Number(freeByItem.get(String(item.id)) || 0));
+    return Math.max(0, Math.round(paidQuantity * Number(item.unitPrice || 0) * 100));
+  });
+  const subtotal = cents.reduce((sum, amount) => sum + amount, 0);
+  const totalDiscount = Math.min(subtotal, Math.max(0, Math.round(Number(discountValue || 0) * 100)));
+  if (!subtotal || !totalDiscount) return cents.map(() => 0);
+  const allocations = cents.map((amount) => Math.floor(totalDiscount * amount / subtotal));
+  let remainder = totalDiscount - allocations.reduce((sum, amount) => sum + amount, 0);
+  for (let index = 0; remainder > 0; index = (index + 1) % allocations.length) {
+    if (allocations[index] < cents[index]) {
+      allocations[index] += 1;
+      remainder -= 1;
+    }
+  }
+  return allocations.map((amount) => amount / 100);
 }
 
 function orderBreakdown({ ticketSubtotal = 0, goods = [], creditAmount = 0, ticketDiscount = 0, freeGoodsDiscount = 0 }) {
@@ -269,6 +291,7 @@ function orderBreakdown({ ticketSubtotal = 0, goods = [], creditAmount = 0, tick
 }
 
 module.exports = {
+  allocateGoodsCouponDiscount,
   calculateGoodsDiscount,
   creditCounts,
   eligibleCredits,

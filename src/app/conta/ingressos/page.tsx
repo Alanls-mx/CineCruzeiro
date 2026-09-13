@@ -232,12 +232,12 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
     : "bg-white/8 text-slate-300";
 
   useEffect(() => {
-    QRCode.toDataURL(ticket.qrPayload || ticket.code, {
+    QRCode.toDataURL(ticket.displayQrPayload || ticket.qrPayload || ticket.code, {
       margin: 1,
       width: 220,
       color: { dark: "#020617", light: "#f8fafc" },
     }).then(setQrDataUrl).catch(() => setQrDataUrl(""));
-  }, [ticket.code, ticket.qrPayload]);
+  }, [ticket.code, ticket.displayQrPayload, ticket.qrPayload]);
 
   useEffect(() => {
     setTransferEmail("");
@@ -321,10 +321,10 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
               <Info label="Pedido" value={ticketHumanReference(ticket)} title={ticket.orderReference || ticket.orderId || ticketHumanReference(ticket)} />
-              <Info label="Código" value={ticket.code} mono />
+              <Info label="Código" value={ticket.displayCode || ticket.code} mono />
             </dl>
             <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-xs font-black text-slate-950">
-              {qrDataUrl ? <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.code}`} className="mx-auto h-44 w-44 max-w-full" /> : ticket.code}
+              {qrDataUrl ? <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.displayCode || ticket.code}`} className="mx-auto h-44 w-44 max-w-full" /> : (ticket.displayCode || ticket.code)}
             </div>
           </div>
 

@@ -68,6 +68,11 @@ function buildGoogleWalletClassTemplateInfo() {
             startItem: templateItem("object.textModulesData['assento']"),
             endItem: templateItem("object.textModulesData['tipo']")
           }
+        },
+        {
+          oneItem: {
+            item: templateItem("object.textModulesData['bomboniere']")
+          }
         }
       ]
     },
@@ -99,7 +104,7 @@ function formatConcessionItems(items = []) {
 
 function formatSessionDate(value) {
   const normalized = String(value || "").trim();
-  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:T|$)/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : (normalized || "Data a confirmar");
 }
 

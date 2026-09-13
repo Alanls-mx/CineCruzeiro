@@ -491,12 +491,12 @@ function AccountTicketCard({
   const isUsed = ticket.status === "used";
 
   useEffect(() => {
-    QRCode.toDataURL(ticket.qrPayload || ticket.code, {
+    QRCode.toDataURL(ticket.displayQrPayload || ticket.qrPayload || ticket.code, {
       margin: 1,
       width: 160,
       color: { dark: "#020617", light: "#ffffff" },
     }).then(setQrDataUrl);
-  }, [ticket.code, ticket.qrPayload]);
+  }, [ticket.code, ticket.displayQrPayload, ticket.qrPayload]);
 
   const pointerX = (event: React.PointerEvent<HTMLDivElement>) => event.clientX;
 
@@ -534,7 +534,7 @@ function AccountTicketCard({
       <div className="grid grid-cols-[104px_1fr] gap-4 p-4">
         <div className="rounded-2xl bg-white p-2">
           {qrDataUrl ? (
-            <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.code}`} className="h-20 w-20" />
+            <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.displayCode || ticket.code}`} className="h-20 w-20" />
           ) : (
             <div className="flex h-20 w-20 items-center justify-center text-slate-900">
               <QrCode className="h-9 w-9" />
@@ -551,7 +551,7 @@ function AccountTicketCard({
           <p className="mt-1 text-xs font-semibold text-brand-300">
             {ticket.sessionDate} • {ticket.sessionTime} • {ticket.ticketType} • {ticket.seat || ticket.seatLabel || "Lugar livre"}
           </p>
-          <p className="mt-2 font-mono text-xs font-black text-gold-400">{ticket.code}</p>
+          <p className="mt-2 font-mono text-xs font-black text-gold-400">{ticket.displayCode || ticket.code}</p>
         </div>
       </div>
 

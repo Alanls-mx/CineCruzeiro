@@ -181,6 +181,7 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
 
   assert.deepEqual(modules.map((item) => item.id), ["filme", "sessao", "sala", "assento", "tipo", "bomboniere"]);
   assert.equal(modules[1].body, "12/09/2026 às 19:00");
+  assert.equal(googleWalletPassLayoutService.formatSessionDate("2026-09-12T19:00:00-03:00"), "12/09/2026");
   assert.equal(modules.at(-1).body, "1x Pipoca Grande\n2x Combo Familia");
 
   const template = googleWalletPassLayoutService.buildGoogleWalletClassTemplateInfo();
@@ -190,6 +191,7 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
   assert.equal(rows[1].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['sala']");
   assert.equal(rows[2].twoItems.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['assento']");
   assert.equal(rows[2].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['tipo']");
+  assert.equal(rows[3].oneItem.item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
   assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
   assert.equal(
     googleWalletPassLayoutService.buildGoogleWalletClassIdentity().eventName.defaultValue.value,

@@ -3194,7 +3194,7 @@ function renderSessionLinkedTickets(sessionId) {
       </div>
       <div class="session-linked-list">
         ${linkedTickets.slice(0, 6).map((ticket) => `
-          <span>${escapeHtml(ticket.code || ticket.id)} • ${escapeHtml(ticketStatusText(ticket.status))} • ${escapeHtml(ticket.customerName || ticket.customerEmail || "Cliente")}</span>
+          <span>${escapeHtml(ticket.displayCode || ticket.code || ticket.id)} • ${escapeHtml(ticketStatusText(ticket.status))} • ${escapeHtml(ticket.customerName || ticket.customerEmail || "Cliente")}</span>
         `).join("")}
       </div>
     `
@@ -4292,7 +4292,7 @@ function renderOrders() {
         order.movieTitle,
         order.sessionTime,
         order.saleMode,
-        ...(order.tickets || []).map((ticket) => ticket.code)
+        ...(order.tickets || []).map((ticket) => ticket.displayCode || ticket.code)
       ].join(" ").toLowerCase().includes(query))
     : filteredOrders;
   renderOrdersTable("ordersList", filteredOrders, {
@@ -4394,7 +4394,7 @@ function renderOrdersTable(targetId, orders, options = {}) {
             .map(
               (order) => {
                 const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name)} x${Number(item.quantity || 0)}`).join("<br>") || "Sem extras";
-                const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>`).join(" ");
+                const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.displayCode || ticket.code)}')">${escapeHtml(ticket.displayCode || ticket.code)}</button>`).join(" ");
                 const quickSale = order.saleMode === "quick";
                 const customerLabel = quickSale ? "Venda rápida" : order.customerName || "Cliente avulso";
                 const isArchived = isOrderEffectivelyArchived(order);
@@ -4474,7 +4474,7 @@ function orderDetailHtml(order) {
   const movie = movieForOrder(order);
   const val = getOrderValidationSummary(order);
   const tickets = (order.tickets || []).map((ticket) => `
-    <button class="copy-code" type="button" onclick="copyTicketCode('${escapeHtml(ticket.code)}')">${escapeHtml(ticket.code)}</button>
+    <button class="copy-code" type="button" onclick="copyTicketCode('${escapeHtml(ticket.displayCode || ticket.code)}')">${escapeHtml(ticket.displayCode || ticket.code)}</button>
     <span class="list-meta">${escapeHtml(orderStatusLabel(ticket.status))}</span>
   `).join("<br>") || "-";
   const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name || item.id)} x${Number(item.quantity || 0)}`).join("<br>") || "-";

@@ -68,6 +68,7 @@ const {
 } = require("./utils/movieTagLifecycle");
 const { brazilianDate } = require("./utils/dateFormat");
 const { requireRuntimeSecret } = require("./services/runtimeSecretService");
+const ticketCodeService = require("./services/ticketCodeService");
 const movieRepository = require("./repositories/movieRepository");
 const sessionRepository = require("./repositories/sessionRepository");
 const roomRepository = require("./repositories/roomRepository");
@@ -1828,16 +1829,11 @@ function normalizePaymentOrder(input) {
 }
 
 function createTicketCode(existingTickets = []) {
-  const existingCodes = new Set(existingTickets.map((ticket) => ticket.code));
-  let code = "";
-  do {
-    code = `CC-${crypto.randomBytes(16).toString("hex").toUpperCase()}`;
-  } while (existingCodes.has(code));
-  return code;
+  return ticketCodeService.createTicketCode(existingTickets);
 }
 
 function ticketQrPayload(code) {
-  return `CINECRUZEIRO:TICKET:${code}`;
+  return ticketCodeService.qrPayload(code);
 }
 
 function ticketSessionStartsAt(ticket, db = null) {
@@ -2207,8 +2203,11 @@ function enrichTicket(db, ticket) {
     }))
   );
   const transferCheck = canTransferTicket(db, ticket);
+  const displayCode = ticketCodeService.displayCode(ticket);
   return {
     ...ticket,
+    displayCode,
+    displayQrPayload: ticketQrPayload(displayCode),
     customerEmail: ticket.customerEmail || order?.customerEmail || "",
     customerPhone: ticket.customerPhone || order?.customerPhone || "",
     customerCpf: ticket.customerCpf || order?.customerCpf || "",
@@ -2257,23 +2256,7 @@ function canTransferTicket(db, ticket) {
 }
 
 function extractTicketCode(value) {
-  const raw = String(value || "").trim();
-  // Compatibilidade somente online para ingressos CC2 já emitidos. O código
-  // continua sendo validado contra o banco; nenhuma assinatura ou cache offline é usado.
-  if (raw.startsWith("CC2.") && raw.length <= 2048) {
-    const parts = raw.split(".");
-    if (parts.length === 3 && /^[A-Za-z0-9_-]+$/.test(parts[1]) && /^[A-Za-z0-9_-]+$/.test(parts[2])) {
-      try {
-        const legacy = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-        const legacyCode = String(legacy?.c || "").toUpperCase();
-        if (legacy?.v === 2 && /^CC-[A-F0-9]{8,32}$/.test(legacyCode)) return legacyCode;
-      } catch {
-        // Segue para a validação normal e será recusado como ingresso inexistente.
-      }
-    }
-  }
-  const match = raw.match(/(?:CINECRUZEIRO:TICKET:)?(CC-[A-F0-9]{8,32})/i);
-  return match ? match[1].toUpperCase() : raw.toUpperCase();
+  return ticketCodeService.normalizeCode(value);
 }
 
 function buildTicketsForOrder(order, db, source = "online") {
@@ -2459,7 +2442,7 @@ function checkAndAutoArchiveOrder(db, order, adminUser, reason = "Todos os itens
 
 function inspectTicket(db, code, expectedSessionId = "") {
   const ticketCode = extractTicketCode(code);
-  const ticket = (db.tickets || []).find((item) => item.code === ticketCode);
+  const ticket = ticketCodeService.findTicketByCode(db.tickets || [], ticketCode);
   if (!ticket) {
     const error = new Error("Ingresso nao encontrado.");
     error.statusCode = 404;
@@ -2528,7 +2511,7 @@ function validateTicket(db, code, adminUser, expectedSessionId = "") {
 
 function inspectTicketConcessions(db, code) {
   const ticketCode = extractTicketCode(code);
-  const ticket = (db.tickets || []).find((item) => item.code === ticketCode);
+  const ticket = ticketCodeService.findTicketByCode(db.tickets || [], ticketCode);
   if (!ticket) {
     const error = new Error("Ingresso não encontrado.");
     error.statusCode = 404;
@@ -3312,19 +3295,19 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
     imageModulesData: [],
     hexBackgroundColor: "#0b1424",
     ticketHolderName: user.name || enriched.customerName || "Cliente Cine Cruzeiro",
-    ticketNumber: enriched.code,
+    ticketNumber: enriched.displayCode,
     ticketType: googleWalletLocalized(enriched.ticketType || "Ingresso"),
     seatInfo: seatLabel ? {
       seat: googleWalletLocalized(seatLabel),
       ...(seatRow ? { row: googleWalletLocalized(seatRow) } : {})
     } : undefined,
     reservationInfo: {
-      confirmationCode: String(enriched.orderId || ticket.orderId || enriched.code || ticket.id)
+      confirmationCode: String(enriched.orderId || ticket.orderId || enriched.displayCode || ticket.id)
     },
     barcode: {
       type: "QR_CODE",
-      value: enriched.qrPayload,
-      alternateText: enriched.code
+      value: enriched.displayQrPayload,
+      alternateText: enriched.displayCode
     },
     validTimeInterval,
     textModulesData: buildGoogleWalletTextModules(enriched),
@@ -3689,9 +3672,9 @@ function ticketThermalPdf(db, tickets) {
     text(`POLTRONA: ${item.seat}`, 14, true);
     text(item.ticketType || "Ingresso");
     const qrSize = 120;
-    content += pdfQr(item.qrPayload || item.code, 53, y - qrSize - 18, qrSize, 4);
+    content += pdfQr(item.displayQrPayload || item.qrPayload || item.code, 53, y - qrSize - 18, qrSize, 4);
     y -= qrSize + 45;
-    text(item.code, 8);
+    text(item.displayCode || item.code, 8);
     text(`Pedido: ${item.orderReference || item.orderId}`, 8);
     text("Apresente este QR Code na entrada.", 8);
     text("Documento nao fiscal.", 8);
@@ -3759,7 +3742,8 @@ async function ticketDownloadPdf(db, ticket) {
   }
   page1 += pdfLine(78, enriched.paymentSource === "subscription_credit" ? 330 : 354, 517, enriched.paymentSource === "subscription_credit" ? 330 : 354, "#334155", 1);
   page1 += pdfWriteText("QR Code de entrada", 214, enriched.paymentSource === "subscription_credit" ? 306 : 324, 10, { bold: true, color: "#bfdbfe" });
-  page1 += pdfQr(enriched.qrPayload || enriched.code, 222, 134, 164);
+  page1 += pdfQr(enriched.displayQrPayload || enriched.qrPayload || enriched.code, 222, 134, 164);
+  page1 += pdfWriteText(enriched.displayCode || enriched.code, 238, 118, 10, { bold: true, color: "#facc15" });
   page1 += pdfWriteText("Apresente este codigo na entrada.", 202, 104, 11, { bold: true, color: "#ffffff" });
   page1 += pdfWriteText("Pagina 1 de 2", 462, 86, 9, { color: "#94a3b8" });
 
@@ -3774,7 +3758,7 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteMultiline(enriched.movieTitle, 78, 672, 20, { bold: true, color: "#ffffff", maxChars: 34, maxLines: 2, lineHeight: 24 });
   page2 += pdfWriteText(`${sessionDate} as ${enriched.sessionTime}`, 78, 608, 14, { bold: true, color: "#facc15" });
   page2 += pdfLine(78, 574, 517, 574, "#334155", 1);
-  page2 += pdfWriteValueBlock("CODIGO", enriched.code, 78, 538, { valueSize: 12, maxChars: 32, maxLines: 2 });
+  page2 += pdfWriteValueBlock("CODIGO", enriched.displayCode || enriched.code, 78, 538, { valueSize: 12, maxChars: 16, maxLines: 1 });
   page2 += pdfWriteValueBlock("PEDIDO", enriched.orderReference || enriched.orderId || "-", 78, 462, { valueSize: 10, maxChars: 48, maxLines: 3, boldValue: false });
   page2 += pdfWriteValueBlock("TIPO", enriched.ticketType || "Ingresso", 338, 538, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
@@ -4563,6 +4547,40 @@ function reservedFreeConcessionQuantity(db, subscription, concessionId, currentO
   }, 0);
 }
 
+function prioritizeFreeConcessionsBeforeDiscounts(db, order, freeConcessionItems) {
+  const coupon = (db.promotions || []).find((item) => item.id === order.couponId);
+  if (!coupon || !order.couponAllowsClubStacking || !freeConcessionItems.length) return;
+
+  const freeByItem = new Map(freeConcessionItems.map((item) => [String(item.concessionId), Number(item.quantity || 0)]));
+  const concessionAmounts = (order.concessionItems || []).map((item) => {
+    const paidQuantity = Math.max(0, Number(item.quantity || 0) - Number(freeByItem.get(String(item.id)) || 0));
+    return Number((paidQuantity * Number(item.unitPrice || 0)).toFixed(2));
+  });
+  const concessionTotal = Number(concessionAmounts.reduce((sum, amount) => sum + amount, 0).toFixed(2));
+  const ticketTotal = ticketSubtotalForOrder(db, order);
+  const membership = order.useClubCredits ? activeClubPlanForBenefits(db, order.customerUserId) : null;
+  const referenceValue = Math.max(0, Number(membership?.plan?.creditReferenceValue || 0));
+  const creditAmount = membership
+    ? ticketUnitsForOrder(order).reduce((sum, unit) => sum + Math.min(unit.unitPrice, referenceValue > 0 ? referenceValue : unit.unitPrice), 0)
+    : 0;
+  const couponTicketBase = Math.max(0, Number((ticketTotal - creditAmount).toFixed(2)));
+  const pricing = calculateCouponDiscountForAmounts(coupon, couponTicketBase, concessionTotal);
+  const allocations = clubDomainService.allocateGoodsCouponDiscount(order.concessionItems, freeConcessionItems, pricing.concessionDiscount);
+
+  order.concessionItems = (order.concessionItems || []).map((item, index) => ({
+    ...item,
+    couponDiscount: allocations[index] || 0
+  }));
+  order.couponOriginalDiscount = Number(order.couponOriginalDiscount ?? order.couponDiscount ?? 0);
+  order.couponDiscount = pricing.discountValue;
+  order.couponTicketDiscount = pricing.ticketDiscount;
+  order.couponConcessionDiscount = pricing.concessionDiscount;
+  order.couponAppliedAfterClubFreeItems = true;
+  order.discountValue = pricing.discountValue;
+  const grossConcessions = (order.concessionItems || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
+  order.totalPrice = Math.max(0, Number((ticketTotal + grossConcessions - pricing.discountValue).toFixed(2)));
+}
+
 function applyClubPlanBenefits(db, order, user) {
   if (!order?.useClubBenefits) return { order, subscription: null, plan: null };
   if (order.couponId && !order.couponAllowsClubStacking) {
@@ -4584,7 +4602,7 @@ function applyClubPlanBenefits(db, order, user) {
   }
   const { subscription, plan } = benefit;
   const ticketSubtotal = ticketSubtotalForOrder(db, order);
-  const ticketNetAfterCoupon = Math.max(0, Number((ticketSubtotal - Number(order.couponTicketDiscount || 0)).toFixed(2)));
+  let ticketNetAfterCoupon = Math.max(0, Number((ticketSubtotal - Number(order.couponTicketDiscount || 0)).toFixed(2)));
   const ticketDiscountPercent = Math.min(90, Math.max(0, Number(plan.ticketDiscountPercent || 0)));
   const concessionDiscountPercent = Math.min(90, Math.max(0, Number(plan.concessionDiscountPercent || 0)));
   const freeConcessionItems = [];
@@ -4598,11 +4616,13 @@ function applyClubPlanBenefits(db, order, user) {
     const used = reservedFreeConcessionQuantity(db, subscription, concessionId, order.id);
     const quantity = Math.min(Number(item.quantity || 0), Math.max(0, limit - used));
     if (!quantity) continue;
-    const itemSubtotal = Number(item.quantity || 0) * Number(item.unitPrice || 0);
-    const effectiveUnitPrice = Math.max(0, Number(((itemSubtotal - Number(item.couponDiscount || 0)) / Math.max(1, Number(item.quantity || 0))).toFixed(2)));
-    freeConcessionItems.push({ concessionId, name: item.name, quantity, unitPrice: effectiveUnitPrice });
-    freeConcessionDiscount += quantity * effectiveUnitPrice;
+    const unitPrice = Math.max(0, Number(item.unitPrice || 0));
+    freeConcessionItems.push({ concessionId, name: item.name, quantity, unitPrice });
+    freeConcessionDiscount += quantity * unitPrice;
   }
+
+  prioritizeFreeConcessionsBeforeDiscounts(db, order, freeConcessionItems);
+  ticketNetAfterCoupon = Math.max(0, Number((ticketSubtotal - Number(order.couponTicketDiscount || 0)).toFixed(2)));
 
   const ticketDiscount = calculateClubTicketDiscount(order, ticketNetAfterCoupon, ticketDiscountPercent);
   const excludedConcessionIds = new Set(plan.excludedConcessionIds || []);
@@ -4611,11 +4631,11 @@ function applyClubPlanBenefits(db, order, user) {
     const freeQuantity = Number(freeConcessionItems.find((entry) => entry.concessionId === item.id)?.quantity || 0);
     return { ...item, discountableQuantity: Math.max(0, Number(item.quantity || 0) - freeQuantity) };
   }), { ...plan, concessionDiscountPercent, excludedConcessionIds: [...excludedConcessionIds] }).map((item) => {
-    const itemSubtotal = Number(item.quantity || 0) * Number(item.unitPrice || 0);
-    const effectiveUnitPrice = Math.max(0, (itemSubtotal - Number(item.couponDiscount || 0)) / Math.max(1, Number(item.quantity || 0)));
-    const fullDiscount = item.clubDiscountExcluded ? 0 : Number((Number(item.discountableQuantity || 0) * effectiveUnitPrice * (concessionDiscountPercent / 100)).toFixed(2));
+    const paidQuantity = Number(item.discountableQuantity || 0);
+    const paidSubtotalAfterCoupon = Math.max(0, paidQuantity * Number(item.unitPrice || 0) - Number(item.couponDiscount || 0));
+    const fullDiscount = item.clubDiscountExcluded ? 0 : Number((paidSubtotalAfterCoupon * (concessionDiscountPercent / 100)).toFixed(2));
     concessionDiscount += fullDiscount;
-    const freeDiscount = Number(freeConcessionItems.find((entry) => entry.concessionId === item.id)?.quantity || 0) * effectiveUnitPrice;
+    const freeDiscount = Number(freeConcessionItems.find((entry) => entry.concessionId === item.id)?.quantity || 0) * Number(item.unitPrice || 0);
     return {
       ...item,
       clubDiscount: fullDiscount,

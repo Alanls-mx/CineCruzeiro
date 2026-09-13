@@ -1,5 +1,6 @@
 const assert = require("assert");
 const point = require("../backend/services/cardTerminalProvider");
+const ticketCodeService = require("../backend/services/ticketCodeService");
 
 const originalFetch = global.fetch;
 const calls = [];
@@ -120,7 +121,9 @@ async function run() {
     qrPayload: "CINECRUZEIRO:TICKET:CC-ABCDEF123456"
   }], printOrders);
   assert.ok(printContent.includes("27/08/2026 19:00"));
-  assert.ok(printContent.includes("{qr}CINECRUZEIRO:TICKET:CC-ABCDEF123456{/qr}"));
+  const displayCode = ticketCodeService.displayCode({ code: "CC-ABCDEF123456" });
+  assert.ok(printContent.includes(`{qr}CINECRUZEIRO:TICKET:${displayCode}{/qr}`));
+  assert.ok(printContent.includes(displayCode));
   assert.ok(printContent.includes("BOMBONIERE"));
   assert.ok(printContent.includes("2x Pipoca Grande - R$ 36,00"));
   assert.ok(printContent.includes("1x Coca-Cola 500ML - R$ 9,00"));

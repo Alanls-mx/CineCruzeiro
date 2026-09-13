@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const ticketCodeService = require("./ticketCodeService");
 
 const API_BASE_URL = "https://api.mercadopago.com";
 
@@ -93,8 +94,8 @@ function ticketPrintContent(tickets = [], orders = []) {
     const format = printText(ticket.sessionFormat, 24);
     const room = printText(ticket.sessionRoom || "Sala Cruzeiro", 30);
     const type = printText(ticket.ticketType || "Ingresso", 24);
-    const code = printText(ticket.code, 42);
-    const qrPayload = printText(ticket.qrPayload || ticket.code, 160);
+    const code = printText(ticket.displayCode || ticketCodeService.displayCode(ticket), 42);
+    const qrPayload = printText(ticket.displayQrPayload || ticketCodeService.qrPayload(code), 160);
     content += `{center}{b}${index + 1}/${normalized.length} - ${movie}{/b}{br}`;
     content += `${date} ${time}${format ? ` - ${format}` : ""}{br}`;
     content += `${room}{br}${type}{br}{s}${code}{/s}{br}`;
