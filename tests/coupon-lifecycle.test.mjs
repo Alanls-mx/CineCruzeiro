@@ -103,6 +103,32 @@ test("histórico aceita pedidos antigos vinculados somente pelo código e pagina
   assert.deepEqual(secondPage.usages.map((usage) => usage.orderId), ["order-1"]);
 });
 
+test("cupom sem desconto efetivo não é consumido pelo crédito do Clube", () => {
+  const coupon = { id: "coupon-1", couponCode: "CLUBE20" };
+  const zeroDiscountOrder = {
+    id: "order-credit",
+    status: "paid",
+    couponId: coupon.id,
+    couponCode: coupon.couponCode,
+    couponDiscount: 0,
+    discountValue: 10,
+    clubCreditDiscount: 10
+  };
+  const legacyOrder = {
+    id: "order-legacy",
+    status: "paid",
+    couponCode: coupon.couponCode,
+    discountValue: 2
+  };
+
+  assert.equal(orderUsesCoupon(zeroDiscountOrder, coupon), false);
+  assert.equal(orderUsesCoupon(legacyOrder, coupon), true);
+  assert.deepEqual(couponUsageSummary({ orders: [zeroDiscountOrder, legacyOrder] }, coupon), {
+    usageCount: 1,
+    discountGranted: 2
+  });
+});
+
 test("reembolso da bomboniere libera cupom exclusivo e preserva somente o desconto dos ingressos", () => {
   const concessionCoupon = { id: "goods", couponCode: "PIPOCA", appliesTo: "concessions" };
   const mixedCoupon = { id: "mixed", couponCode: "MISTO", appliesTo: "all" };

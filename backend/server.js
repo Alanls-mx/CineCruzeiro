@@ -142,6 +142,8 @@ const ADMIN_EMAIL_ENV_KEYS = ["ADMIN_EMAIL", "SEED_ADMIN_EMAIL"];
 const ADMIN_PASSWORD_ENV_KEYS = ["ADMIN_PASSWORD", "SEED_ADMIN_PASSWORD"];
 const GOOGLE_WALLET_ISSUER_ID_ENV_KEYS = ["GOOGLE_WALLET_ISSUER_ID"];
 const GOOGLE_WALLET_CLASS_ID_ENV_KEYS = ["GOOGLE_WALLET_CLASS_ID"];
+const GOOGLE_WALLET_CLIENT_EMAIL_ENV_KEYS = ["GOOGLE_WALLET_CLIENT_EMAIL"];
+const GOOGLE_WALLET_PRIVATE_KEY_ENV_KEYS = ["GOOGLE_WALLET_PRIVATE_KEY"];
 const GOOGLE_WALLET_SERVICE_ACCOUNT_JSON_ENV_KEYS = ["GOOGLE_WALLET_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_JSON"];
 const GOOGLE_WALLET_ORIGINS_ENV_KEYS = ["GOOGLE_WALLET_ORIGINS", "FRONTEND_URL", "NEXT_PUBLIC_SITE_URL"];
 
@@ -318,8 +320,8 @@ function getGoogleWalletConfig(db) {
 
   const issuerId = configured?.issuerId || getFirstEnv(GOOGLE_WALLET_ISSUER_ID_ENV_KEYS)?.value || "";
   const classId = configured?.classId || getFirstEnv(GOOGLE_WALLET_CLASS_ID_ENV_KEYS)?.value || "";
-  const clientEmail = serviceAccount.client_email || "";
-  const privateKey = String(serviceAccount.private_key || "").replace(/\\n/g, "\n");
+  const clientEmail = serviceAccount.client_email || configured?.clientEmail || getFirstEnv(GOOGLE_WALLET_CLIENT_EMAIL_ENV_KEYS)?.value || "";
+  const privateKey = String(serviceAccount.private_key || configured?.privateKey || getFirstEnv(GOOGLE_WALLET_PRIVATE_KEY_ENV_KEYS)?.value || "").replace(/\\n/g, "\n");
   const origins = normalizeGoogleWalletOrigins(configured?.origins || getFirstEnv(GOOGLE_WALLET_ORIGINS_ENV_KEYS)?.value || appFrontendUrl());
 
   return {
@@ -330,7 +332,7 @@ function getGoogleWalletConfig(db) {
     privateKey,
     origins,
     projectId: serviceAccount.project_id || "",
-    serviceAccountConfigured: Boolean(serviceAccountJson),
+    serviceAccountConfigured: Boolean(serviceAccountJson || (clientEmail && privateKey)),
     environment: configured?.environment || "production"
   };
 }
@@ -9903,7 +9905,8 @@ async function handleApi(req, res, pathname) {
       if (postgresEnabled()) {
         const before = integrationConfigService.sanitizeConfig(db, key);
         const saved = integrationConfigService.save(db, key, body, req.adminUser);
-        await settingsRepository.updateSectionKey("integrations", key, db.settings.integrations[key], {
+        const payloadToPersist = db.integrations?.[key] || db.settings?.integrations?.[key] || {};
+        await settingsRepository.updateSectionKey("integrations", key, payloadToPersist, {
           audit: repositoryAudit(req, "integration", key, before, saved)
         });
         sendJson(res, 200, { integration: saved });
@@ -9921,7 +9924,8 @@ async function handleApi(req, res, pathname) {
       if (postgresEnabled()) {
         const before = integrationConfigService.sanitizeConfig(db, key);
         const saved = integrationConfigService.setEnabled(db, key, action === "enable", req.adminUser);
-        await settingsRepository.updateSectionKey("integrations", key, db.settings.integrations[key], {
+        const payloadToPersist = db.integrations?.[key] || db.settings?.integrations?.[key] || {};
+        await settingsRepository.updateSectionKey("integrations", key, payloadToPersist, {
           audit: repositoryAudit(req, "integration", key, before, saved)
         });
         sendJson(res, 200, { integration: saved });
@@ -9943,7 +9947,8 @@ async function handleApi(req, res, pathname) {
           integrationConfigService.save(db, key, { model: result.resolvedModel }, req.adminUser);
         }
         const saved = integrationConfigService.setTestResult(db, key, result, req.adminUser);
-        await settingsRepository.updateSectionKey("integrations", key, db.settings.integrations[key], {
+        const payloadToPersist = db.integrations?.[key] || db.settings?.integrations?.[key] || {};
+        await settingsRepository.updateSectionKey("integrations", key, payloadToPersist, {
           audit: repositoryAudit(req, "integration", key, before, saved)
         });
         sendJson(res, 200, { ...result, integration: saved });

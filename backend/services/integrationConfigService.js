@@ -39,8 +39,8 @@ const DEFINITIONS = {
   googleWallet: {
     name: "Google Wallet",
     purpose: "Adicionar ingressos digitais à carteira do cliente",
-    defaults: { enabled: false, environment: "production", issuerId: "", classId: "", clientEmail: "", origins: "" },
-    secrets: ["serviceAccountJson"],
+    defaults: { enabled: false, environment: "production", issuerId: "", classId: "", clientEmail: "", privateKey: "", serviceAccountJson: "", origins: "" },
+    secrets: ["serviceAccountJson", "privateKey"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
       { key: "issuerId", label: "Issuer ID", type: "text" },
@@ -136,6 +136,8 @@ const ENV = {
   googleWallet: {
     issuerId: ["GOOGLE_WALLET_ISSUER_ID"],
     classId: ["GOOGLE_WALLET_CLASS_ID"],
+    clientEmail: ["GOOGLE_WALLET_CLIENT_EMAIL"],
+    privateKey: ["GOOGLE_WALLET_PRIVATE_KEY"],
     serviceAccountJson: ["GOOGLE_WALLET_SERVICE_ACCOUNT_JSON", "GOOGLE_SERVICE_ACCOUNT_JSON"],
     origins: ["GOOGLE_WALLET_ORIGINS", "FRONTEND_URL", "NEXT_PUBLIC_SITE_URL"]
   },
@@ -184,8 +186,18 @@ function secretKey() {
 }
 
 function encryptSecret(value) {
+  let key;
+  try {
+    key = secretKey();
+  } catch (error) {
+    const err = new Error(error.message || "Chave de criptografia não configurada no servidor.");
+    err.statusCode = 422;
+    err.code = error.code || "INTEGRATION_SECRET_KEY_REQUIRED";
+    err.expose = true;
+    throw err;
+  }
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", secretKey(), iv, { authTagLength: GCM_AUTH_TAG_BYTES });
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_AUTH_TAG_BYTES });
   const encrypted = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
   return { encrypted: true, value: `${iv.toString("base64")}:${cipher.getAuthTag().toString("base64")}:${encrypted.toString("base64")}` };
 }
@@ -213,9 +225,10 @@ function providerKey(provider) {
 }
 
 function ensureStore(db) {
+  if (!db || typeof db !== "object") return {};
   db.settings ||= {};
   const persisted = db.settings.integrations;
-  if (!db.integrations || !Object.keys(db.integrations).length) {
+  if (!db.integrations || typeof db.integrations !== "object" || !Object.keys(db.integrations).length) {
     db.integrations = persisted && typeof persisted === "object" ? persisted : {};
   }
   db.settings.integrations = db.integrations;
@@ -250,7 +263,7 @@ function resolvedConfig(db, provider) {
 function isConfigured(provider, config) {
   if (provider === "mercadoPago") return Boolean(config.publicKey && config.accessToken);
   if (provider === "googleLogin") return Boolean(config.clientId && config.clientSecret);
-  if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && config.serviceAccountJson);
+  if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.serviceAccountJson || (config.clientEmail && config.privateKey)));
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
   if (provider === "gemini") return Boolean(config.apiKey && config.model);
@@ -333,8 +346,10 @@ function sanitizeConfig(db, provider) {
     } catch {
       serviceAccount = {};
     }
-    values.clientEmail = resolved.clientEmail || serviceAccount.client_email || "";
-    values.serviceAccountConfigured = Boolean(serviceAccountJson);
+    const legacyEmail = decryptSecret(stored.clientEmail) || firstEnv((ENV[key] || {}).clientEmail || []);
+    const legacyPrivateKey = decryptSecret(stored.privateKey) || firstEnv((ENV[key] || {}).privateKey || []);
+    values.clientEmail = resolved.clientEmail || serviceAccount.client_email || legacyEmail || "";
+    values.serviceAccountConfigured = Boolean(serviceAccountJson || (values.clientEmail && legacyPrivateKey));
   }
   return {
     key,
@@ -411,6 +426,10 @@ function save(db, provider, input = {}, user) {
   next.updatedAt = new Date().toISOString();
   next.updatedBy = user?.id || "";
   store[key] = next;
+  if (db?.settings) {
+    db.settings.integrations ||= {};
+    db.settings.integrations[key] = next;
+  }
   const after = sanitizeConfig(db, key);
   audit(db, "integration.config.updated", key, user, before, after);
   return after;
@@ -421,7 +440,12 @@ function setEnabled(db, provider, enabled, user) {
   if (!key) return null;
   const store = ensureStore(db);
   const before = sanitizeConfig(db, key);
-  store[key] = { ...rawConfig(db, key), enabled: Boolean(enabled), updatedAt: new Date().toISOString(), updatedBy: user?.id || "" };
+  const nextConfig = { ...rawConfig(db, key), enabled: Boolean(enabled), updatedAt: new Date().toISOString(), updatedBy: user?.id || "" };
+  store[key] = nextConfig;
+  if (db?.settings) {
+    db.settings.integrations ||= {};
+    db.settings.integrations[key] = nextConfig;
+  }
   const after = sanitizeConfig(db, key);
   audit(db, enabled ? "integration.enabled" : "integration.disabled", key, user, before, after);
   return after;
@@ -432,7 +456,7 @@ function setTestResult(db, provider, result, user) {
   if (!key) return null;
   const store = ensureStore(db);
   const before = sanitizeConfig(db, key);
-  store[key] = {
+  const nextConfig = {
     ...rawConfig(db, key),
     lastTestAt: new Date().toISOString(),
     lastTestStatus: result.ok ? "success" : "error",
@@ -442,6 +466,11 @@ function setTestResult(db, provider, result, user) {
     updatedAt: new Date().toISOString(),
     updatedBy: user?.id || ""
   };
+  store[key] = nextConfig;
+  if (db?.settings) {
+    db.settings.integrations ||= {};
+    db.settings.integrations[key] = nextConfig;
+  }
   const after = sanitizeConfig(db, key);
   audit(db, "integration.tested", key, user, before, after, { ok: Boolean(result.ok), code: result.code || "", message: result.message || "" });
   return after;

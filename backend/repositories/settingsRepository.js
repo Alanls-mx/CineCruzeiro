@@ -31,6 +31,7 @@ async function updateSectionKey(section, key, value, options = {}) {
   if (![section, key].every((part) => /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(String(part || "")))) {
     throw Object.assign(new Error("Caminho de configuração inválido."), { statusCode: 422, code: "SETTINGS_PATH_INVALID" });
   }
+  const safeValue = value === undefined ? {} : value;
   return runMutation({
     event: "repository.settings.patch",
     metadata: { repository: "settings", operation: "patchKey", section, key },
@@ -47,7 +48,7 @@ async function updateSectionKey(section, key, value, options = {}) {
         ),
         ARRAY[$1,$2],$3::jsonb,true
       ),updated_at=now()
-      RETURNING value`, [section, key, JSON.stringify(value)], { repository: "settings", operation: "patchKey" });
+      RETURNING value`, [section, key, JSON.stringify(safeValue)], { repository: "settings", operation: "patchKey" });
     return result.rows[0]?.value || {};
   });
 }

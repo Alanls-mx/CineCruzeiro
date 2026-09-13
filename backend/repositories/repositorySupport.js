@@ -32,17 +32,24 @@ async function timedQuery(client, text, values = [], metadata = {}) {
 
 async function insertAudit(client, audit = {}) {
   if (!audit?.userId) return;
-  await timedQuery(client, `INSERT INTO audit_logs
-    (user_id, action, entity_type, entity_id, before, after, ip, created_at)
-    VALUES ((SELECT id FROM users WHERE id = $1), $2, $3, $4, $5::jsonb, $6::jsonb, $7, now())`, [
-    audit.userId,
-    audit.action || "repository.update",
-    audit.entityType || "system",
-    audit.entityId || "",
-    JSON.stringify(audit.before ?? null),
-    JSON.stringify(audit.after ?? null),
-    audit.ip || ""
-  ], { repository: audit.entityType || "system", operation: "audit" });
+  try {
+    await timedQuery(client, `INSERT INTO audit_logs
+      (user_id, action, entity_type, entity_id, before, after, ip, created_at)
+      VALUES ((SELECT id FROM users WHERE id = $1), $2, $3, $4, $5::jsonb, $6::jsonb, $7, now())`, [
+      audit.userId,
+      audit.action || "repository.update",
+      audit.entityType || "system",
+      audit.entityId || "",
+      JSON.stringify(audit.before ?? null),
+      JSON.stringify(audit.after ?? null),
+      audit.ip || ""
+    ], { repository: audit.entityType || "system", operation: "audit" });
+  } catch (error) {
+    // Falhas no log de auditoria secundário não devem impedir mutações de negócio
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("insertAudit warning:", error.message);
+    }
+  }
 }
 
 async function runMutation({ event, metadata = {}, audit }, callback) {

@@ -58,3 +58,53 @@ test("painel salva alterações antes de testar a conexão", () => {
   assert.ok(testFlow.indexOf("persistIntegrationForm") < testFlow.indexOf("/test"));
   assert.match(testFlow, /Salvando e testando/);
 });
+
+test("setTestResult sincroniza store e db.settings.integrations", () => {
+  const db = { settings: {}, integrations: {}, auditLogs: [] };
+  const result = { ok: true, message: "Conexão estabelecida com sucesso." };
+  const saved = integrationConfigService.setTestResult(db, "googleWallet", result, { id: "admin-test" });
+  assert.equal(saved.lastTestStatus, "success");
+  assert.equal(saved.lastTestMessage, "Conexão estabelecida com sucesso.");
+  assert.ok(db.settings.integrations.googleWallet);
+  assert.equal(db.settings.integrations.googleWallet.lastTestStatus, "success");
+});
+
+test("save lança erro 422 amigável e exposto se segredo de produção estiver ausente", () => {
+  const originalEnv = process.env.NODE_ENV;
+  const originalKey = process.env.INTEGRATION_SECRET_KEY;
+  const originalJwt = process.env.JWT_SECRET;
+  try {
+    process.env.NODE_ENV = "production";
+    delete process.env.INTEGRATION_SECRET_KEY;
+    delete process.env.JWT_SECRET;
+    const db = { settings: {}, integrations: {}, auditLogs: [] };
+    const account = serviceAccount();
+    assert.throws(
+      () => integrationConfigService.save(db, "googleWallet", { serviceAccountJson: JSON.stringify(account) }, { id: "admin-test" }),
+      (err) => err.statusCode === 422 && err.expose === true && err.code === "INTEGRATION_SECRET_KEY_REQUIRED"
+    );
+  } finally {
+    process.env.NODE_ENV = originalEnv;
+    if (originalKey !== undefined) process.env.INTEGRATION_SECRET_KEY = originalKey;
+  }
+});
+
+test("reconhece e resolve credenciais legadas do Google Wallet com clientEmail e privateKey", () => {
+  const account = serviceAccount();
+  const db = {
+    settings: {
+      integrations: {
+        googleWallet: {
+          issuerId: "3388000000023188948",
+          classId: "lumixengine_ingressos",
+          clientEmail: account.client_email,
+          privateKey: account.private_key
+        }
+      }
+    }
+  };
+  const sanitized = integrationConfigService.sanitizeConfig(db, "googleWallet");
+  assert.equal(sanitized.configured, true);
+  assert.equal(sanitized.values.clientEmail, account.client_email);
+  assert.equal(sanitized.values.serviceAccountConfigured, true);
+});

@@ -10502,7 +10502,10 @@ async function testIntegration(key) {
   }
   try {
     if (state.selectedIntegrationKey === key) {
-      await persistIntegrationForm({ close: false, announce: false });
+      const formPayload = collectIntegrationForm();
+      if (Object.keys(formPayload).length > 0) {
+        await persistIntegrationForm({ close: false, announce: false });
+      }
     }
     const result = await api(`/api/admin/integrations/${encodeURIComponent(key)}/test`, { method: "POST" });
     if (state.integrations?.integrations && result.integration) state.integrations.integrations[key] = result.integration;

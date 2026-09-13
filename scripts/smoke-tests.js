@@ -135,6 +135,7 @@ async function run() {
       maximumDiscount: 50,
       usageLimit: 10,
       perCustomerLimit: 2,
+      allowClubStacking: true,
       allowedMovieIds: [TEST_MOVIE_ID],
       active: true
     },
@@ -1411,6 +1412,67 @@ async function run() {
     assert.equal(providerApprovedSubscription.paymentStatus, "approved");
     assert.equal(providerApprovedSubscription.creditsRemaining, 1);
 
+    const independentCreditPreview = await request("/api/checkout/club-benefits/preview", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        fullTicketsCount: 1,
+        halfTicketsCount: 0,
+        useClubBenefits: false,
+        useClubCredits: true
+      })
+    });
+    assert.equal(independentCreditPreview.response.status, 200);
+    assert.equal(independentCreditPreview.payload.benefits, null);
+    assert.equal(independentCreditPreview.payload.creditSummary.quantity, 1);
+    assert.ok(independentCreditPreview.payload.creditSummary.totalAmount > 0);
+    assert.ok(independentCreditPreview.payload.total < independentCreditPreview.payload.subtotal);
+
+    const prioritizedCreditPreview = await request("/api/checkout/club-benefits/preview", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        fullTicketsCount: 1,
+        halfTicketsCount: 0,
+        useClubBenefits: true,
+        useClubCredits: true
+      })
+    });
+    assert.equal(prioritizedCreditPreview.response.status, 200);
+    assert.equal(prioritizedCreditPreview.payload.benefits.ticketDiscount, 0);
+    assert.equal(prioritizedCreditPreview.payload.creditSummary.items[0].planDiscountAmount, 0);
+    assert.equal(
+      prioritizedCreditPreview.payload.creditSummary.totalAmount,
+      prioritizedCreditPreview.payload.creditSummary.items[0].originalTotalPrice
+    );
+
+    const couponAfterCreditPreview = await request("/api/checkout/club-benefits/preview", {
+      method: "POST",
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({
+        movieId: TEST_MOVIE_ID,
+        sessionId: TEST_SESSION_ID,
+        fullTicketsCount: 1,
+        halfTicketsCount: 0,
+        couponCode: "SMOKE20",
+        useClubBenefits: true,
+        useClubCredits: true
+      })
+    });
+    assert.equal(couponAfterCreditPreview.response.status, 200);
+    assert.equal(couponAfterCreditPreview.payload.coupon.appliedAfterClubCredits, true);
+    assert.equal(couponAfterCreditPreview.payload.coupon.discountValue, 0);
+    assert.ok(couponAfterCreditPreview.payload.coupon.originalDiscountValue > 0);
+    assert.equal(couponAfterCreditPreview.payload.creditSummary.items[0].couponDiscountAmount, 0);
+    assert.equal(
+      couponAfterCreditPreview.payload.creditSummary.totalAmount,
+      couponAfterCreditPreview.payload.creditSummary.items[0].originalTotalPrice
+    );
+
     const benefitOrderId = `smoke-club-benefits-${Date.now()}`;
     const planBenefitsPix = await request("/api/payments/pix", {
       method: "POST",
@@ -2038,6 +2100,10 @@ async function run() {
     assert.equal(walletPayload.payload.eventTicketObjects[0].classId, "3388000000023188948.lumixengine_ingressos");
     assert.equal(walletPayload.payload.eventTicketObjects[0].id, `3388000000023188948.ticket_${manualTicket.id.replace(/[^A-Za-z0-9._-]/g, "_")}`);
     assert.equal(walletPayload.payload.eventTicketObjects[0].state, "ACTIVE");
+    assert.equal(walletPayload.payload.eventTicketObjects[0].eventName, undefined);
+    assert.equal(walletPayload.payload.eventTicketObjects[0].ticketType.defaultValue.value, manualTicket.ticketType);
+    assert.equal(walletPayload.payload.eventTicketObjects[0].reservationInfo.confirmationCode, manualTicket.orderId);
+    assert.equal(walletPayload.payload.eventTicketObjects[0].seatInfo.seat.defaultValue.value, manualTicket.seat);
 
     const transfer = await request(`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/transfer`, {
       method: "POST",
