@@ -79,6 +79,10 @@ const userRepository = require("./repositories/userRepository");
 const orderRepository = require("./repositories/orderRepository");
 const { createPerformanceMonitor } = require("./services/performanceMonitor");
 const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, refundError } = require("./services/orderRefundService");
+const {
+  buildGoogleWalletClassTemplateInfo,
+  buildGoogleWalletTextModules
+} = require("./services/googleWalletPassLayoutService");
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
@@ -3311,17 +3315,11 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
     id: objectId,
     classId: config.classId,
     state: enriched.status === "active" ? "ACTIVE" : "INACTIVE",
-    heroImage: enriched.backdropUrl ? {
-      sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.backdropUrl) },
-      contentDescription: googleWalletLocalized(`Banner de ${enriched.movieTitle || "Cine Cruzeiro"}`)
+    heroImage: (enriched.posterUrl || enriched.backdropUrl) ? {
+      sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.posterUrl || enriched.backdropUrl) },
+      contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
     } : undefined,
-    imageModulesData: enriched.posterUrl ? [{
-      mainImage: {
-        sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.posterUrl) },
-        contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
-      },
-      id: "poster"
-    }] : undefined,
+    hexBackgroundColor: "#0b1424",
     ticketHolderName: user.name || enriched.customerName || "Cliente Cine Cruzeiro",
     ticketNumber: enriched.code,
     ticketType: googleWalletLocalized(enriched.ticketType || "Ingresso"),
@@ -3338,15 +3336,7 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
       alternateText: enriched.code
     },
     validTimeInterval,
-    textModulesData: [
-      { id: "pedido", header: "Pedido", body: `${enriched.movieTitle || "Cine Cruzeiro"} - ${enriched.sessionTime || "sessao"}${enriched.sessionFormat ? ` - ${enriched.sessionFormat}` : ""}` },
-      { id: "sessao", header: "Sessao", body: `${enriched.sessionDate || "Data a confirmar"} as ${enriched.sessionTime || "Horario a confirmar"}` },
-      { id: "sala", header: "Sala", body: String(enriched.sessionRoom || "Sala Cruzeiro") },
-      { id: "poltrona", header: "Poltrona", body: String(enriched.seat || "Lugar livre") },
-      { id: "formato", header: "Formato", body: String(enriched.sessionFormat || "Sessao Cine Cruzeiro") },
-      { id: "tipo", header: "Tipo", body: String(enriched.ticketType || "Ingresso normal") },
-      { id: "entrada", header: "Entrada", body: "Apresente o QR Code na portaria. Chegue com 15 minutos de antecedencia." }
-    ].filter((module) => Boolean(module && module.id && module.header && module.body && String(module.body).trim())),
+    textModulesData: buildGoogleWalletTextModules(enriched),
     linksModuleData: {
       uris: [
         {
@@ -8432,10 +8422,15 @@ async function googleWalletAccessToken(config) {
   return token;
 }
 
-async function googleWalletApiGet(pathname, config) {
+async function googleWalletApiRequest(pathname, config, options = {}) {
   const token = await googleWalletAccessToken(config);
   const response = await fetch(`https://walletobjects.googleapis.com/walletobjects/v1${pathname}`, {
-    headers: { Authorization: `Bearer ${token}` }
+    method: options.method || "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(options.body ? { "Content-Type": "application/json" } : {})
+    },
+    ...(options.body ? { body: JSON.stringify(options.body) } : {})
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -8445,6 +8440,14 @@ async function googleWalletApiGet(pathname, config) {
     throw error;
   }
   return payload;
+}
+
+async function googleWalletApiGet(pathname, config) {
+  return googleWalletApiRequest(pathname, config);
+}
+
+async function googleWalletApiPatch(pathname, config, body) {
+  return googleWalletApiRequest(pathname, config, { method: "PATCH", body });
 }
 
 async function testGoogleWalletIntegration(db) {
@@ -8479,28 +8482,16 @@ async function testGoogleWalletIntegration(db) {
       resolvedClassId = eventClass.id || wallet.classId;
     } catch (err) {
       if (err.statusCode === 404) {
-        const candidateId = `${wallet.issuerId}.${wallet.classId}`;
-        try {
-          eventClass = await googleWalletApiGet(`/eventTicketClass/${encodeURIComponent(candidateId)}`, wallet);
-          resolvedClassId = eventClass.id || candidateId;
-        } catch (subErr) {
-          if (subErr.statusCode === 404) {
-            const listData = await googleWalletApiGet(`/eventTicketClass?issuerId=${encodeURIComponent(wallet.issuerId)}`, wallet).catch(() => null);
-            const matching = (listData?.resources || []).find((item) => (
-              item.id === wallet.classId ||
-              item.id === candidateId ||
-              item.id.endsWith(`.${wallet.classId}`) ||
-              (wallet.classId.includes(".") && item.id.endsWith(wallet.classId.split(".").slice(1).join(".")))
-            ));
-            if (matching) {
-              eventClass = matching;
-              resolvedClassId = matching.id;
-            } else {
-              throw err;
-            }
-          } else {
-            throw subErr;
-          }
+        const classSuffix = wallet.classId.includes(".") ? wallet.classId.split(".").slice(1).join(".") : wallet.classId;
+        const listData = await googleWalletApiGet(`/eventTicketClass?issuerId=${encodeURIComponent(wallet.issuerId)}`, wallet).catch(() => null);
+        const matching = (listData?.resources || []).find((item) => (
+          item.id === wallet.classId || item.id === `${wallet.issuerId}.${classSuffix}` || item.id.endsWith(`.${classSuffix}`)
+        ));
+        if (matching) {
+          eventClass = matching;
+          resolvedClassId = matching.id;
+        } else {
+          throw err;
         }
       } else {
         throw err;
@@ -8514,12 +8505,27 @@ async function testGoogleWalletIntegration(db) {
     }
 
     const issuerFromClass = String(eventClass.id || "").split(".")[0] || "";
+    const classBelongsToIssuer = issuerFromClass === wallet.issuerId || String(eventClass.id || "").startsWith(`${wallet.issuerId}.`);
     const reviewStatus = String(eventClass.reviewStatus || "").toUpperCase();
     const classRejected = reviewStatus === "REJECTED";
+    const desiredTemplate = buildGoogleWalletClassTemplateInfo();
+    const currentTemplate = eventClass.classTemplateInfo || {};
+    const templateChanged = JSON.stringify({
+      cardTemplateOverride: currentTemplate.cardTemplateOverride,
+      detailsTemplateOverride: currentTemplate.detailsTemplateOverride
+    }) !== JSON.stringify(desiredTemplate);
+    if (templateChanged && !classRejected && classBelongsToIssuer) {
+      eventClass = await googleWalletApiPatch(
+        `/eventTicketClass/${encodeURIComponent(resolvedClassId)}`,
+        wallet,
+        { classTemplateInfo: desiredTemplate }
+      );
+    }
     checks.push(
       { key: "auth", label: "Autenticação", ok: true, detail: "Service Account autenticada na API Google Wallet." },
       { key: "classRead", label: "EventTicketClass", ok: true, detail: `${eventClass.id || wallet.classId} encontrada.` },
-      { key: "classIssuer", label: "Classe do Issuer", ok: issuerFromClass === wallet.issuerId || String(eventClass.id || "").startsWith(`${wallet.issuerId}.`), detail: (issuerFromClass === wallet.issuerId || String(eventClass.id || "").startsWith(`${wallet.issuerId}.`)) ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
+      { key: "classLayout", label: "Layout do ingresso", ok: !classRejected && classBelongsToIssuer, detail: classRejected ? "A classe rejeitada não pode receber o layout de produção." : !classBelongsToIssuer ? "O layout não foi alterado porque a classe pertence a outro Issuer." : templateChanged ? "Layout Cine Cruzeiro aplicado à classe." : "Layout Cine Cruzeiro já estava atualizado." },
+      { key: "classIssuer", label: "Classe do Issuer", ok: classBelongsToIssuer, detail: classBelongsToIssuer ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
       {
         key: "classStatus",
         label: "Status da classe",

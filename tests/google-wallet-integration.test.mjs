@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import integrationConfigService from "../backend/services/integrationConfigService.js";
+import googleWalletPassLayoutService from "../backend/services/googleWalletPassLayoutService.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -141,7 +142,38 @@ test("garante que o JWT do Google Wallet contem estrutura valida e textModulesDa
     serverContent.indexOf("function pdfText")
   );
   assert.match(saveUrlSlice, /payload:\s*\{\s*eventTicketObjects:\s*\[eventTicketObject\]/);
-  assert.match(serverContent, /Boolean\(module && module\.id && module\.header && module\.body && String\(module\.body\)\.trim\(\)\)/);
+  assert.match(serverContent, /buildGoogleWalletTextModules\(enriched\)/);
+});
+
+test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () => {
+  const modules = googleWalletPassLayoutService.buildGoogleWalletTextModules({
+    movieTitle: "Coyote vs. ACME",
+    sessionDate: "2026-09-12",
+    sessionTime: "19:00",
+    sessionRoom: "Sala Principal",
+    seat: "E7",
+    ticketType: "Ingresso normal",
+    extras: [
+      { name: "Pipoca Grande", quantity: 1 },
+      { name: "Combo Familia", quantity: 2 },
+      { name: "Item cancelado", quantity: 1, status: "cancelled" }
+    ]
+  });
+
+  assert.deepEqual(modules.map((item) => item.id), ["filme", "sessao", "sala", "assento", "tipo", "bomboniere"]);
+  assert.equal(modules[1].body, "12/09/2026 as 19:00");
+  assert.equal(modules.at(-1).body, "1x Pipoca Grande\n2x Combo Familia");
+
+  const template = googleWalletPassLayoutService.buildGoogleWalletClassTemplateInfo();
+  const row = template.cardTemplateOverride.cardRowTemplateInfos[0].threeItems;
+  assert.equal(row.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['filme']");
+  assert.equal(row.startItem.secondValue.fields[0].fieldPath, "object.textModulesData['sessao']");
+  assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
+});
+
+test("fallback de classe não duplica o Issuer no Class ID", () => {
+  const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  assert.doesNotMatch(serverContent, /`\$\{wallet\.issuerId\}\.\$\{wallet\.classId\}`/);
 });
 
 
