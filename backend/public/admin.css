@@ -8352,3 +8352,354 @@ th {
   }
 }
 
+/* Bilheteria: busca progressiva e confirmação explícita da conta selecionada. */
+.customer-search-box.has-selected-customer {
+  background: rgba(16, 185, 129, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.42);
+}
+
+.customer-search-hint {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: rgba(250, 204, 21, 0.07);
+}
+
+.customer-search-hint strong {
+  color: #fef3c7;
+  font-size: 12px;
+}
+
+.customer-search-hint span {
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.selected-customer-state {
+  margin-top: 10px;
+}
+
+.selected-customer-state.empty {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.selected-customer-state.confirmed {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: rgba(16, 185, 129, 0.13);
+  color: #ecfdf5;
+}
+
+.selected-customer-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: #34d399;
+  color: #052e2b;
+}
+
+.selected-customer-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.5;
+}
+
+.selected-customer-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.selected-customer-copy .selected-customer-label {
+  color: #6ee7b7;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.selected-customer-copy strong,
+.selected-customer-copy small,
+.selected-customer-copy > span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.selected-customer-copy strong {
+  color: #fff;
+  font-size: 13px;
+}
+
+.selected-customer-copy small,
+.selected-customer-copy > span:last-child {
+  color: #c7f9e8;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* Clube: visão financeira separa realizado, projeção, pendências e devoluções. */
+.club-overview-dashboard {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.club-overview-heading,
+.club-detail-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.club-overview-heading p,
+.club-detail-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.club-period-label {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  background: rgba(96, 165, 250, 0.1);
+  color: #bfdbfe;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.club-finance-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.club-finance-kpi {
+  min-width: 0;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.club-finance-kpi.primary {
+  background: rgba(16, 185, 129, 0.11);
+}
+
+.club-finance-kpi > span,
+.club-finance-kpi small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.club-finance-kpi > span {
+  text-transform: uppercase;
+}
+
+.club-finance-kpi strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-finance-kpi.primary strong {
+  color: #6ee7b7;
+}
+
+.club-finance-kpi small {
+  margin-top: 6px;
+  color: #b7c4d8;
+}
+
+.club-overview-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  gap: 10px;
+}
+
+.club-plan-ranking,
+.club-member-summary {
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.club-detail-heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.club-detail-heading > strong {
+  max-width: 45%;
+  color: var(--gold);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.club-ranking-list {
+  display: grid;
+  margin-top: 13px;
+}
+
+.club-ranking-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(54px, auto) minmax(92px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.club-ranking-position {
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.club-ranking-name,
+.club-ranking-active,
+.club-ranking-revenue {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.club-ranking-name strong {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.club-ranking-row small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.club-ranking-active,
+.club-ranking-revenue {
+  text-align: right;
+}
+
+.club-ranking-active strong,
+.club-ranking-revenue strong {
+  color: #e2e8f0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-member-summary dl {
+  display: grid;
+  gap: 0;
+  margin: 13px 0 0;
+}
+
+.club-member-summary dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.club-member-summary dt {
+  color: #b7c4d8;
+  font-size: 11px;
+}
+
+.club-member-summary dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.club-savings-summary {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.club-savings-summary span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.club-savings-summary strong {
+  color: #facc15;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .club-finance-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .club-overview-details {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .selected-customer-state.confirmed {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .selected-customer-state.confirmed .ghost-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .club-overview-heading,
+  .club-detail-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .club-period-label,
+  .club-detail-heading > strong {
+    align-self: flex-start;
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .club-finance-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .club-ranking-row {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+
+  .club-ranking-revenue {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+}
+

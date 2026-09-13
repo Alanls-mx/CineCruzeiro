@@ -856,10 +856,12 @@
               <div id="registeredCustomerBox" class="customer-search-box">
                 <label>
                   Buscar cliente
-                  <input id="manualCustomerSearch" placeholder="Nome, e-mail ou WhatsApp" autocomplete="off" />
+                  <input id="manualCustomerSearch" placeholder="Digite pelo menos 2 caracteres" autocomplete="off" aria-describedby="manualSelectedCustomer" />
                 </label>
                 <div id="manualCustomerResults" class="customer-results"></div>
-                <p id="manualSelectedCustomer" class="helper-text">Nenhum cliente selecionado.</p>
+                <div id="manualSelectedCustomer" class="selected-customer-state empty" role="status" aria-live="polite">
+                  <span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar.</span>
+                </div>
               </div>
 
               <div id="guestCustomerBox" class="field-row">
@@ -2190,7 +2192,7 @@
           <div class="panel-heading">
             <div>
               <h1>Clube Cine Cruzeiro</h1>
-              <p>Controle planos, atribuições manuais e consumo de créditos mensais.</p>
+              <p>Acompanhe faturamento, assinaturas, planos e consumo dos benefícios do Clube.</p>
             </div>
             <button id="newClubPlanButton" class="primary-button icon-label" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -2205,7 +2207,7 @@
             <button type="button" data-admin-tab="credits">Créditos</button>
           </nav>
           <div class="admin-tab-panel active" data-admin-tab-panel="club:overview">
-          <div id="clubOverview" class="admin-overview"></div>
+          <div id="clubOverview" class="club-overview-dashboard"></div>
           </div>
           <div class="admin-tab-panel" data-admin-tab-panel="club:appearance" hidden>
           <form id="clubVisualForm" class="surface form-grid marketing-settings long-form" data-dirty-track>

@@ -132,6 +132,8 @@ let state = {
   saleMode: "registered",
   selectedCustomer: null,
   customerSearchResults: [],
+  customerSearchTimer: null,
+  customerSearchRequestId: 0,
   manualSaleItems: [],
   manualConcessionQuantities: {},
   manualSeatMap: null,
@@ -6071,7 +6073,9 @@ function renderSaleMode() {
 function clearSelectedCustomer() {
   state.selectedCustomer = null;
   $("manualCustomerUserId").value = "";
-  $("manualSelectedCustomer").textContent = "Nenhum cliente selecionado.";
+  $("registeredCustomerBox")?.classList.remove("has-selected-customer");
+  $("manualSelectedCustomer").className = "selected-customer-state empty";
+  $("manualSelectedCustomer").innerHTML = `<span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar.</span>`;
   renderManualSaleSummary();
 }
 
@@ -6082,9 +6086,31 @@ function selectBoxOfficeCustomer(customer) {
   $("manualCustomerEmail").value = customer.email || "";
   $("manualCustomerPhone").value = customer.phone || "";
   $("manualCustomerCpf").value = customer.cpf || "";
-  $("manualSelectedCustomer").textContent = `${customer.name} selecionado. Os ingressos serao vinculados a esta conta.`;
+  $("manualCustomerSearch").value = customer.name || customer.email || "";
+  $("registeredCustomerBox")?.classList.add("has-selected-customer");
+  $("manualSelectedCustomer").className = "selected-customer-state confirmed";
+  $("manualSelectedCustomer").innerHTML = `
+    <span class="selected-customer-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
+    </span>
+    <span class="selected-customer-copy">
+      <span class="selected-customer-label">Cliente selecionado</span>
+      <strong>${escapeHtml(customer.name || "Cliente")}</strong>
+      <small>${escapeHtml([customer.email, customer.phone].filter(Boolean).join(" · ") || "Conta cadastrada")}</small>
+      <span>Ingressos e itens vinculados serão associados a esta conta.</span>
+    </span>
+    <button class="ghost-button compact-button" type="button" onclick="changeBoxOfficeCustomer()">Trocar</button>`;
   $("manualCustomerResults").innerHTML = "";
   renderManualSaleSummary();
+}
+
+function changeBoxOfficeCustomer() {
+  state.customerSearchRequestId += 1;
+  state.customerSearchResults = [];
+  $("manualCustomerSearch").value = "";
+  $("manualCustomerResults").innerHTML = "";
+  clearSelectedCustomer();
+  $("manualCustomerSearch").focus();
 }
 
 function selectBoxOfficeCustomerById(customerId) {
@@ -6095,21 +6121,30 @@ function selectBoxOfficeCustomerById(customerId) {
 async function searchBoxOfficeCustomers() {
   const query = $("manualCustomerSearch").value.trim();
   const target = $("manualCustomerResults");
-  const digits = query.replace(/\D/g, "");
+  const searchableLength = query.replace(/\s/g, "").length;
   const keepSelection = state.selectedCustomer && (
     query === state.selectedCustomer.name ||
     query === state.selectedCustomer.email ||
     query === state.selectedCustomer.phone
   );
-  if (!keepSelection) clearSelectedCustomer();
-  if (query.length > 0 && query.length < 2 && digits.length < 3) {
+  if (keepSelection) {
+    target.innerHTML = "";
+    return;
+  }
+  clearSelectedCustomer();
+  state.customerSearchRequestId += 1;
+  const requestId = state.customerSearchRequestId;
+  if (searchableLength < 2) {
     state.customerSearchResults = [];
-    target.innerHTML = `<div class="empty-state compact"><strong>Continue digitando</strong><span>Busque por nome, e-mail, WhatsApp ou CPF.</span></div>`;
+    target.innerHTML = query
+      ? `<div class="customer-search-hint"><strong>Digite mais um caractere</strong><span>A busca começa com 2 caracteres.</span></div>`
+      : "";
     return;
   }
   target.innerHTML = `<div class="skeleton-card compact"></div>`;
   try {
     const result = await api(`/api/admin/customers?query=${encodeURIComponent(query)}`);
+    if (requestId !== state.customerSearchRequestId) return;
     const customers = result.customers || [];
     state.customerSearchResults = customers;
     target.innerHTML = customers.length
@@ -6121,8 +6156,14 @@ async function searchBoxOfficeCustomers() {
         `).join("")
       : `<div class="empty-state compact"><strong>Nenhum cliente encontrado</strong><span>Use Cliente avulso ou Venda rapida.</span></div>`;
   } catch (error) {
+    if (requestId !== state.customerSearchRequestId) return;
     target.innerHTML = `<div class="validation-result error">${escapeHtml(error.message)}</div>`;
   }
+}
+
+function scheduleBoxOfficeCustomerSearch({ immediate = false } = {}) {
+  window.clearTimeout(state.customerSearchTimer);
+  state.customerSearchTimer = window.setTimeout(searchBoxOfficeCustomers, immediate ? 0 : 280);
 }
 
 function updateManualTotal() {
@@ -9359,14 +9400,90 @@ function renderClub() {
   const subscriptions = state.content?.subscriptions || [];
   const credits = state.content?.subscriptionCredits || [];
   const usage = state.content?.subscriptionUsage || [];
+  const payments = state.content?.subscriptionPayments || [];
   const totalSavings = subscriptions.reduce((sum, subscription) => sum + Number(subscription.savings?.total || 0), 0);
   if ($("clubOverview")) {
+    const now = new Date();
+    const inCurrentMonth = (value) => {
+      if (!value) return false;
+      const date = new Date(value);
+      return !Number.isNaN(date.getTime()) && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+    };
+    const statusOf = (item) => String(item?.status || "").toLowerCase();
+    const refundAmount = (payment) => {
+      const explicit = Number(payment.refundedAmount || payment.refundAmount || payment.metadata?.refundedAmount || 0);
+      if (explicit > 0) return Math.min(Number(payment.amount || 0), explicit);
+      return ["refunded", "chargeback"].includes(statusOf(payment)) ? Number(payment.amount || 0) : 0;
+    };
+    const approvedThisMonth = payments.filter((payment) => payment.approvedAt && inCurrentMonth(payment.approvedAt));
+    const refundedThisMonth = payments.filter((payment) => refundAmount(payment) > 0 && inCurrentMonth(payment.refundedAt || payment.updatedAt));
+    const pendingThisMonth = payments.filter((payment) => statusOf(payment) === "pending" && inCurrentMonth(payment.createdAt));
+    const grossThisMonth = approvedThisMonth.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const refundsThisMonth = refundedThisMonth.reduce((sum, payment) => sum + refundAmount(payment), 0);
+    const netThisMonth = grossThisMonth - refundsThisMonth;
+    const activeSubscriptions = subscriptions.filter((subscription) => statusOf(subscription) === "active");
+    const endingSubscriptions = subscriptions.filter((subscription) => statusOf(subscription) === "ending");
+    const monthlyRecurringEstimate = activeSubscriptions.reduce((sum, subscription) => {
+      const plan = subscription.plan || plans.find((item) => item.id === subscription.planId) || {};
+      return sum + Number(plan.monthlyPrice || plan.price || 0);
+    }, 0);
+    const newThisMonth = subscriptions.filter((subscription) => inCurrentMonth(subscription.startedAt || subscription.createdAt)).length;
+    const cancelledThisMonth = subscriptions.filter((subscription) => inCurrentMonth(subscription.cancelledAt)).length;
+    const planRanking = plans.map((plan) => {
+      const planSubscriptions = subscriptions.filter((subscription) => String(subscription.planId) === String(plan.id));
+      const active = planSubscriptions.filter((subscription) => statusOf(subscription) === "active").length;
+      const ending = planSubscriptions.filter((subscription) => statusOf(subscription) === "ending").length;
+      return {
+        plan,
+        active,
+        ending,
+        total: planSubscriptions.length,
+        recurring: active * Number(plan.monthlyPrice || plan.price || 0)
+      };
+    }).filter((item) => item.total > 0)
+      .sort((a, b) => b.active - a.active || b.total - a.total || String(a.plan.name || "").localeCompare(String(b.plan.name || ""), "pt-BR"));
+    const topPlan = planRanking.find((item) => item.active > 0 || item.total > 0);
+    const rawMonthLabel = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(now);
+    const monthLabel = `${rawMonthLabel.charAt(0).toLocaleUpperCase("pt-BR")}${rawMonthLabel.slice(1)}`;
+    const pendingAmount = pendingThisMonth.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const averagePayment = approvedThisMonth.length ? grossThisMonth / approvedThisMonth.length : 0;
     $("clubOverview").innerHTML = `
-      <div class="mini-insight"><span>Planos ativos</span><strong>${plans.filter((plan) => plan.active !== false).length}</strong></div>
-      <div class="mini-insight"><span>Assinaturas ativas</span><strong>${subscriptions.filter((item) => item.status === "active").length}</strong></div>
-      <div class="mini-insight"><span>Créditos disponíveis</span><strong>${credits.reduce((sum, item) => sum + Number(item.remaining || 0), 0)}</strong></div>
-      <div class="mini-insight"><span>Usos registrados</span><strong>${usage.length}</strong></div>
-      <div class="mini-insight club-savings-overview"><span>Economia entregue</span><strong>${money(totalSavings)}</strong></div>
+      <div class="club-overview-heading">
+        <div><div class="section-title">Desempenho do Clube</div><p>Receita reconhecida e situação atual da base de assinantes.</p></div>
+        <span class="club-period-label">${escapeHtml(monthLabel)}</span>
+      </div>
+      <div class="club-finance-kpis">
+        <div class="club-finance-kpi primary"><span>Faturamento líquido no mês</span><strong>${money(netThisMonth)}</strong><small>${money(grossThisMonth)} recebidos · ${money(refundsThisMonth)} devolvidos</small></div>
+        <div class="club-finance-kpi"><span>Receita recorrente estimada</span><strong>${money(monthlyRecurringEstimate)}</strong><small>${activeSubscriptions.length} assinatura(s) ativa(s) renováveis</small></div>
+        <div class="club-finance-kpi"><span>Cobranças pendentes no mês</span><strong>${money(pendingAmount)}</strong><small>${pendingThisMonth.length} mensalidade(s) aguardando confirmação</small></div>
+        <div class="club-finance-kpi"><span>Valor médio recebido</span><strong>${money(averagePayment)}</strong><small>${approvedThisMonth.length} mensalidade(s) aprovada(s) no mês</small></div>
+      </div>
+      <div class="club-overview-details">
+        <section class="club-plan-ranking" aria-labelledby="club-plan-ranking-title">
+          <div class="club-detail-heading"><div><h3 id="club-plan-ranking-title">Planos mais assinados</h3><p>Base ativa e estimativa mensal por plano.</p></div><strong>${escapeHtml(topPlan?.plan?.name || "Sem assinaturas")}</strong></div>
+          <div class="club-ranking-list">
+            ${planRanking.length ? planRanking.map((item, index) => `
+              <div class="club-ranking-row">
+                <span class="club-ranking-position">${index + 1}</span>
+                <span class="club-ranking-name"><strong>${escapeHtml(item.plan.name || "Plano")}</strong><small>${item.total} assinatura(s) no histórico${item.ending ? ` · ${item.ending} encerrando` : ""}</small></span>
+                <span class="club-ranking-active"><strong>${item.active}</strong><small>ativas</small></span>
+                <span class="club-ranking-revenue"><strong>${money(item.recurring)}</strong><small>estimado/mês</small></span>
+              </div>`).join("") : `<div class="empty-state compact"><strong>Nenhum plano cadastrado</strong><span>Os indicadores aparecerão após a criação dos planos.</span></div>`}
+          </div>
+        </section>
+        <section class="club-member-summary" aria-labelledby="club-member-summary-title">
+          <div class="club-detail-heading"><div><h3 id="club-member-summary-title">Movimento da base</h3><p>Leitura operacional do período atual.</p></div></div>
+          <dl>
+            <div><dt>Assinaturas ativas</dt><dd>${activeSubscriptions.length}</dd></div>
+            <div><dt>Novas no mês</dt><dd>${newThisMonth}</dd></div>
+            <div><dt>Canceladas no mês</dt><dd>${cancelledThisMonth}</dd></div>
+            <div><dt>Encerrando no fim do ciclo</dt><dd>${endingSubscriptions.length}</dd></div>
+            <div><dt>Créditos disponíveis</dt><dd>${credits.reduce((sum, item) => sum + Number(item.remaining || 0), 0)}</dd></div>
+            <div><dt>Créditos utilizados</dt><dd>${usage.filter((item) => !item.refundedAt).length}</dd></div>
+          </dl>
+          <div class="club-savings-summary"><span>Economia entregue aos assinantes</span><strong>${money(totalSavings)}</strong></div>
+        </section>
+      </div>
     `;
   }
   if ($("clubPlansList")) {
@@ -10756,8 +10873,8 @@ function bindEvents() {
   });
   $("manualAddMovieButton").addEventListener("click", addManualSaleItem);
   $("manualClearSaleButton").addEventListener("click", clearManualSaleItems);
-  $("manualCustomerSearch").addEventListener("input", searchBoxOfficeCustomers);
-  $("manualCustomerSearch").addEventListener("focus", searchBoxOfficeCustomers);
+  $("manualCustomerSearch").addEventListener("input", () => scheduleBoxOfficeCustomerSearch());
+  $("manualCustomerSearch").addEventListener("focus", () => scheduleBoxOfficeCustomerSearch({ immediate: true }));
   document.querySelectorAll("[data-sale-mode]").forEach((button) => {
     button.addEventListener("click", () => setSaleMode(button.dataset.saleMode));
   });

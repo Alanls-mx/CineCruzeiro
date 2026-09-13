@@ -2351,13 +2351,12 @@ function searchCustomers(db, query) {
   return (db.users || [])
     .filter((user) => user.active !== false && ["customer", ...adminRoles()].includes(user.role))
     .filter((user) => {
-      if (!term) return true;
-      if (term.length < 2 && digits.length < 3) return false;
+      if (term.length < 2 && digits.length < 2) return false;
       const name = normalizeSearchText(user.name);
       const email = normalizeSearchText(user.email);
       const cpf = String(user.cpf || "").replace(/\D/g, "");
       const phone = String(user.phone || "").replace(/\D/g, "");
-      return name.includes(term) || email.includes(term) || (digits.length >= 3 && (phone.includes(digits) || cpf.includes(digits)));
+      return name.includes(term) || email.includes(term) || (digits.length >= 2 && (phone.includes(digits) || cpf.includes(digits)));
     })
     .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")))
     .slice(0, 12)
