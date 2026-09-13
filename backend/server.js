@@ -80,6 +80,7 @@ const orderRepository = require("./repositories/orderRepository");
 const { createPerformanceMonitor } = require("./services/performanceMonitor");
 const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, refundError } = require("./services/orderRefundService");
 const {
+  buildGoogleWalletClassIdentity,
   buildGoogleWalletClassTemplateInfo,
   buildGoogleWalletTextModules,
   googleWalletTmdbImageUrl,
@@ -3308,13 +3309,7 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
       sourceUri: { uri: walletPosterUrl },
       contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
     } : undefined,
-    imageModulesData: walletPosterUrl ? [{
-      id: "poster",
-      mainImage: {
-        sourceUri: { uri: walletPosterUrl },
-        contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
-      }
-    }] : undefined,
+    imageModulesData: [],
     hexBackgroundColor: "#0b1424",
     ticketHolderName: user.name || enriched.customerName || "Cliente Cine Cruzeiro",
     ticketNumber: enriched.code,
@@ -8529,23 +8524,31 @@ async function testGoogleWalletIntegration(db) {
     let reviewStatus = String(eventClass.reviewStatus || "").toUpperCase();
     const classRejected = reviewStatus === "REJECTED";
     const desiredTemplate = buildGoogleWalletClassTemplateInfo();
+    const desiredIdentity = buildGoogleWalletClassIdentity();
     const currentTemplate = eventClass.classTemplateInfo || {};
     const templateChanged = JSON.stringify({
       cardTemplateOverride: currentTemplate.cardTemplateOverride,
       detailsTemplateOverride: currentTemplate.detailsTemplateOverride
     }) !== JSON.stringify(desiredTemplate);
-    if (templateChanged && !classRejected && classBelongsToIssuer) {
+    const identityChanged = String(eventClass.eventName?.defaultValue?.value || "")
+      !== desiredIdentity.eventName.defaultValue.value;
+    const classPresentationChanged = templateChanged || identityChanged;
+    if (classPresentationChanged && !classRejected && classBelongsToIssuer) {
       eventClass = await googleWalletApiPatch(
         `/eventTicketClass/${encodeURIComponent(resolvedClassId)}`,
         wallet,
-        { classTemplateInfo: desiredTemplate, reviewStatus: "UNDER_REVIEW" }
+        {
+          classTemplateInfo: desiredTemplate,
+          ...desiredIdentity,
+          reviewStatus: "UNDER_REVIEW"
+        }
       );
       reviewStatus = String(eventClass.reviewStatus || "UNDER_REVIEW").toUpperCase();
     }
     checks.push(
       { key: "auth", label: "Autenticação", ok: true, detail: "Service Account autenticada na API Google Wallet." },
       { key: "classRead", label: "EventTicketClass", ok: true, detail: `${eventClass.id || wallet.classId} encontrada.` },
-      { key: "classLayout", label: "Layout do ingresso", ok: !classRejected && classBelongsToIssuer, detail: classRejected ? "A classe rejeitada não pode receber o layout de produção." : !classBelongsToIssuer ? "O layout não foi alterado porque a classe pertence a outro Issuer." : templateChanged ? "Layout Cine Cruzeiro enviado para revisão da classe." : "Layout Cine Cruzeiro já estava atualizado." },
+      { key: "classLayout", label: "Layout do ingresso", ok: !classRejected && classBelongsToIssuer, detail: classRejected ? "A classe rejeitada não pode receber o layout de produção." : !classBelongsToIssuer ? "O layout não foi alterado porque a classe pertence a outro Issuer." : classPresentationChanged ? "Layout Cine Cruzeiro enviado para revisão da classe." : "Layout Cine Cruzeiro já estava atualizado." },
       { key: "classIssuer", label: "Classe do Issuer", ok: classBelongsToIssuer, detail: classBelongsToIssuer ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
       {
         key: "classStatus",

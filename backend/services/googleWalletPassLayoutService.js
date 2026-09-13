@@ -53,20 +53,37 @@ function buildGoogleWalletClassTemplateInfo() {
     cardTemplateOverride: {
       cardRowTemplateInfos: [
         {
-          threeItems: {
-            startItem: templateItem("object.textModulesData['filme']", "object.textModulesData['sessao']"),
-            middleItem: templateItem("object.textModulesData['sala']", "object.textModulesData['tipo']"),
-            endItem: templateItem("object.textModulesData['assento']")
+          oneItem: {
+            item: templateItem("object.textModulesData['filme']")
+          }
+        },
+        {
+          twoItems: {
+            startItem: templateItem("object.textModulesData['sessao']"),
+            endItem: templateItem("object.textModulesData['sala']")
+          }
+        },
+        {
+          twoItems: {
+            startItem: templateItem("object.textModulesData['assento']"),
+            endItem: templateItem("object.textModulesData['tipo']")
           }
         }
       ]
     },
     detailsTemplateOverride: {
       detailsItemInfos: [
-        { item: templateItem("object.imageModulesData['poster']") },
         { item: templateItem("object.textModulesData['bomboniere']") },
         { item: templateItem("object.linksModuleData.uris['conta']") }
       ]
+    }
+  };
+}
+
+function buildGoogleWalletClassIdentity() {
+  return {
+    eventName: {
+      defaultValue: { language: "pt-BR", value: "Ingresso Cine Cruzeiro" }
     }
   };
 }
@@ -86,16 +103,21 @@ function formatSessionDate(value) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : (normalized || "Data a confirmar");
 }
 
+function formatRoomName(value) {
+  const room = String(value || "").trim();
+  return room.replace(/\s*\([^)]*\)\s*$/, "") || "Sala Cruzeiro";
+}
+
 function buildGoogleWalletTextModules(enriched = {}) {
   const concessions = formatConcessionItems(enriched.extras);
   return [
     { id: "filme", header: "Filme", body: String(enriched.movieTitle || "Cine Cruzeiro") },
     {
       id: "sessao",
-      header: "Data / horario",
-      body: `${formatSessionDate(enriched.sessionDate)} as ${String(enriched.sessionTime || "Horario a confirmar")}`
+      header: "Data e horário",
+      body: `${formatSessionDate(enriched.sessionDate)} às ${String(enriched.sessionTime || "Horário a confirmar")}`
     },
-    { id: "sala", header: "Sala", body: String(enriched.sessionRoom || "Sala Cruzeiro") },
+    { id: "sala", header: "Sala", body: formatRoomName(enriched.sessionRoom) },
     { id: "assento", header: "Assento", body: String(enriched.seat || "Lugar livre") },
     { id: "tipo", header: "Tipo do ingresso", body: String(enriched.ticketType || "Ingresso normal") },
     ...(concessions ? [{ id: "bomboniere", header: "Itens da bomboniere", body: concessions }] : [])
@@ -104,8 +126,10 @@ function buildGoogleWalletTextModules(enriched = {}) {
 
 module.exports = {
   buildGoogleWalletClassTemplateInfo,
+  buildGoogleWalletClassIdentity,
   buildGoogleWalletTextModules,
   formatConcessionItems,
+  formatRoomName,
   formatSessionDate,
   googleWalletTmdbImageUrl,
   normalizeGoogleWalletResourceId,

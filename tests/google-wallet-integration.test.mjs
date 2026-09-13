@@ -180,15 +180,25 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
   });
 
   assert.deepEqual(modules.map((item) => item.id), ["filme", "sessao", "sala", "assento", "tipo", "bomboniere"]);
-  assert.equal(modules[1].body, "12/09/2026 as 19:00");
+  assert.equal(modules[1].body, "12/09/2026 às 19:00");
   assert.equal(modules.at(-1).body, "1x Pipoca Grande\n2x Combo Familia");
 
   const template = googleWalletPassLayoutService.buildGoogleWalletClassTemplateInfo();
-  const row = template.cardTemplateOverride.cardRowTemplateInfos[0].threeItems;
-  assert.equal(row.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['filme']");
-  assert.equal(row.startItem.secondValue.fields[0].fieldPath, "object.textModulesData['sessao']");
-  assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.imageModulesData['poster']");
-  assert.equal(template.detailsTemplateOverride.detailsItemInfos[1].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
+  const rows = template.cardTemplateOverride.cardRowTemplateInfos;
+  assert.equal(rows[0].oneItem.item.firstValue.fields[0].fieldPath, "object.textModulesData['filme']");
+  assert.equal(rows[1].twoItems.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['sessao']");
+  assert.equal(rows[1].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['sala']");
+  assert.equal(rows[2].twoItems.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['assento']");
+  assert.equal(rows[2].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['tipo']");
+  assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
+  assert.equal(
+    googleWalletPassLayoutService.buildGoogleWalletClassIdentity().eventName.defaultValue.value,
+    "Ingresso Cine Cruzeiro"
+  );
+  assert.equal(
+    googleWalletPassLayoutService.formatRoomName("Sala Principal (Projeção digital 2D)"),
+    "Sala Principal"
+  );
 });
 
 test("Google Wallet usa somente a origem HTTPS do TMDB para imagens de filmes", () => {
@@ -213,7 +223,7 @@ test("Google Wallet usa somente a origem HTTPS do TMDB para imagens de filmes", 
   );
   assert.match(objectSlice, /googleWalletTmdbImageUrl\(movieForTicket\(db, ticket\)\)/);
   assert.match(objectSlice, /sourceUri:\s*\{ uri: walletPosterUrl \}/);
-  assert.match(objectSlice, /imageModulesData:\s*walletPosterUrl/);
+  assert.match(objectSlice, /imageModulesData:\s*\[\]/);
   assert.doesNotMatch(objectSlice, /googleWalletAbsoluteUrl\(req, db, enriched\.posterUrl/);
 });
 
