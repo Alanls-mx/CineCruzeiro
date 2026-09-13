@@ -3277,6 +3277,13 @@ function googleWalletAbsoluteUrl(req, db, value) {
   if (!raw) return "";
   if (/^https?:\/\//i.test(raw)) return raw;
   const frontendUrl = getGoogleOAuthConfig(req, db).frontendUrl.replace(/\/+$/, "");
+  try {
+    const parsed = new URL(frontendUrl);
+    const basePath = parsed.pathname.replace(/\/+$/, "");
+    if (basePath && (raw === basePath || raw.startsWith(`${basePath}/`))) {
+      return `${parsed.origin}${raw.startsWith("/") ? raw : `/${raw}`}`;
+    }
+  } catch {}
   return `${frontendUrl}${raw.startsWith("/") ? raw : `/${raw}`}`;
 }
 
