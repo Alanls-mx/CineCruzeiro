@@ -10127,7 +10127,7 @@ function integrationDiagnosticsMarkup(checks = [], diagnostics = {}) {
       ${items.length ? `
         <ol>
           ${items.map((item) => `
-            <li class="${item.ok ? "ok" : "error"}">
+            <li class="${escapeHtml(item.level || (item.ok ? "ok" : "error"))}">
               <span aria-hidden="true"></span>
               <div><b>${escapeHtml(item.label || item.key || "Verificação")}</b>${item.detail ? `<small>${escapeHtml(item.detail)}</small>` : ""}</div>
             </li>
@@ -10459,26 +10459,51 @@ function collectIntegrationForm() {
   return payload;
 }
 
+async function persistIntegrationForm({ close = true, announce = true } = {}) {
+  const key = state.selectedIntegrationKey;
+  if (!key) return null;
+  const data = await api(`/api/admin/integrations/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    body: JSON.stringify(collectIntegrationForm())
+  });
+  state.integrations.integrations[key] = data.integration;
+  renderIntegrations();
+  if (close) closeIntegrationConfig();
+  if (announce) showToast("Integração salva com segurança.");
+  return data.integration;
+}
+
 async function saveIntegration(event) {
   event.preventDefault();
-  const key = state.selectedIntegrationKey;
-  if (!key) return;
+  const submitButton = event.submitter || $("integrationForm").querySelector('button[type="submit"]');
+  const originalLabel = submitButton?.textContent || "Salvar configuração";
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = "Salvando...";
+  }
   try {
-    const data = await api(`/api/admin/integrations/${encodeURIComponent(key)}`, {
-      method: "PUT",
-      body: JSON.stringify(collectIntegrationForm())
-    });
-    state.integrations.integrations[key] = data.integration;
-    renderIntegrations();
-    closeIntegrationConfig();
-    showToast("Integração salva com segurança.");
+    await persistIntegrationForm();
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = originalLabel;
+    }
   }
 }
 
 async function testIntegration(key) {
+  const button = $("integrationTestButton");
+  const originalLabel = button?.textContent || "Testar conexão";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Salvando e testando...";
+  }
   try {
+    if (state.selectedIntegrationKey === key) {
+      await persistIntegrationForm({ close: false, announce: false });
+    }
     const result = await api(`/api/admin/integrations/${encodeURIComponent(key)}/test`, { method: "POST" });
     if (state.integrations?.integrations && result.integration) state.integrations.integrations[key] = result.integration;
     renderIntegrations();
@@ -10488,6 +10513,11 @@ async function testIntegration(key) {
     showToast(result.message || "Integração testada.", result.ok ? "ok" : "error");
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
   }
 }
 

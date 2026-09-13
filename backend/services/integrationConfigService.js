@@ -270,6 +270,45 @@ function isMaskedSecret(value) {
   return text.startsWith(SECRET_MASK) || /^[*•]{8,}/u.test(text);
 }
 
+function configValidationError(message, code) {
+  const error = new Error(message);
+  error.statusCode = 422;
+  error.code = code;
+  return error;
+}
+
+function normalizeGoogleWalletServiceAccount(value) {
+  let credential;
+  try {
+    credential = JSON.parse(String(value || "").trim());
+  } catch {
+    throw configValidationError(
+      "O JSON da Service Account é inválido. Use o arquivo JSON baixado no Google Cloud sem alterar seu conteúdo.",
+      "GOOGLE_WALLET_SERVICE_ACCOUNT_JSON_INVALID"
+    );
+  }
+  if (!credential || Array.isArray(credential) || typeof credential !== "object") {
+    throw configValidationError("A credencial do Google Wallet deve ser um objeto JSON.", "GOOGLE_WALLET_SERVICE_ACCOUNT_INVALID");
+  }
+  if (credential.type !== "service_account" || !credential.client_email || !credential.private_key) {
+    throw configValidationError(
+      "A credencial precisa ser uma Service Account e conter client_email e private_key.",
+      "GOOGLE_WALLET_SERVICE_ACCOUNT_INCOMPLETE"
+    );
+  }
+  try {
+    crypto.createPrivateKey(String(credential.private_key).replace(/\\n/g, "\n"));
+  } catch {
+    throw configValidationError(
+      "A chave privada da Service Account é inválida. Importe novamente o arquivo JSON original.",
+      "GOOGLE_WALLET_PRIVATE_KEY_INVALID"
+    );
+  }
+  credential.client_email = String(credential.client_email).trim();
+  credential.private_key = String(credential.private_key).replace(/\\n/g, "\n");
+  return JSON.stringify(credential);
+}
+
 function sanitizeConfig(db, provider) {
   const key = providerKey(provider);
   if (!key) return null;
@@ -351,11 +390,14 @@ function save(db, provider, input = {}, user) {
     const value = input[field.key];
     if (definition.secrets.includes(field.key)) {
       if (value === null || value === undefined) return;
-      const normalized = String(value || "").trim();
+      let normalized = String(value || "").trim();
       if (!normalized || isMaskedSecret(normalized)) return;
       if (normalized === "__CLEAR__") {
         delete next[field.key];
       } else {
+        if (key === "googleWallet" && field.key === "serviceAccountJson") {
+          normalized = normalizeGoogleWalletServiceAccount(normalized);
+        }
         next[field.key] = encryptSecret(normalized);
       }
       return;
@@ -413,6 +455,7 @@ module.exports = {
   resolvedConfig,
   isConfigured,
   isMaskedSecret,
+  normalizeGoogleWalletServiceAccount,
   save,
   setEnabled,
   setTestResult

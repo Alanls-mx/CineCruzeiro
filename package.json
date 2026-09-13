@@ -21,6 +21,7 @@
     "test:operations": "node scripts/backup-retention-tests.js",
     "test:postgres": "node scripts/postgres-concurrency-tests.js",
     "test:desktop": "node scripts/desktop-shell-tests.js",
+    "test:google-wallet": "node --test tests/google-wallet-integration.test.mjs",
     "test:security": "node --test tests/security/abuse.test.mjs",
     "test:abuse-controls": "node --test tests/ticket-transfer-policy.test.mjs",
     "test:ticket-concessions": "node --test tests/ticket-concession-assignment.test.mjs",

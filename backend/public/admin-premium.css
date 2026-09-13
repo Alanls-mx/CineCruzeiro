@@ -2496,6 +2496,7 @@ body:has(.success-overlay:not([hidden])) { overflow: hidden; }
 .integration-diagnostics li { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: var(--sp-8); align-items: start; padding: var(--sp-8) 0; border-bottom: 1px solid rgba(148, 163, 184, 0.12); }
 .integration-diagnostics li > span { width: 8px; height: 8px; margin-top: 5px; border-radius: 999px; background: var(--muted); }
 .integration-diagnostics li.ok > span    { background: var(--green); }
+.integration-diagnostics li.warning > span { background: var(--gold); }
 .integration-diagnostics li.error > span { background: var(--danger); }
 .integration-diagnostics b, .integration-diagnostics small, .integration-diagnostics-meta dt, .integration-diagnostics-meta dd { display: block; min-width: 0; }
 .integration-diagnostics b { color: var(--text); }

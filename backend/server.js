@@ -8458,12 +8458,23 @@ async function testGoogleWalletIntegration(db) {
   try {
     const eventClass = await googleWalletApiGet(`/eventTicketClass/${encodeURIComponent(wallet.classId)}`, wallet);
     const issuerFromClass = String(eventClass.id || "").split(".")[0] || "";
-    const classApproved = String(eventClass.reviewStatus || "").toUpperCase() === "APPROVED";
+    const reviewStatus = String(eventClass.reviewStatus || "").toUpperCase();
+    const classRejected = reviewStatus === "REJECTED";
     checks.push(
       { key: "auth", label: "Autenticação", ok: true, detail: "Service Account autenticada na API Google Wallet." },
       { key: "classRead", label: "EventTicketClass", ok: true, detail: `${eventClass.id || wallet.classId} encontrada.` },
       { key: "classIssuer", label: "Classe do Issuer", ok: issuerFromClass === wallet.issuerId, detail: issuerFromClass === wallet.issuerId ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
-      { key: "classStatus", label: "Status da classe", ok: classApproved, detail: eventClass.reviewStatus || "Status não informado." },
+      {
+        key: "classStatus",
+        label: "Status da classe",
+        ok: !classRejected,
+        level: reviewStatus === "APPROVED" ? "ok" : classRejected ? "error" : "warning",
+        detail: reviewStatus === "APPROVED"
+          ? "Classe aprovada para publicação."
+          : classRejected
+            ? "Classe rejeitada pelo Google. Revise-a no Google Pay & Wallet Console."
+            : `${eventClass.reviewStatus || "Status não informado"}. A conexão funciona, mas a publicação pode ficar restrita a usuários de teste.`
+      },
       { key: "jwt", label: "Geração JWT", ok: true, detail: "Assinatura RS256 pronta para Save to Google Wallet." },
       { key: "publication", label: "Publicação", ok: true, detail: String(wallet.environment || "production") === "sandbox" ? "Modo de demonstração/teste." : "Produção configurada." }
     );
@@ -8480,7 +8491,9 @@ async function testGoogleWalletIntegration(db) {
     return {
       ok,
       message: ok
-        ? "Google Wallet autenticado, Issuer encontrado e EventTicketClass pronta."
+        ? reviewStatus === "APPROVED"
+          ? "Google Wallet autenticado, Issuer encontrado e EventTicketClass pronta."
+          : "Google Wallet autenticado e EventTicketClass encontrada. A classe ainda não está aprovada para publicação geral."
         : checks.find((item) => !item.ok)?.detail || "Revise a configuração do Google Wallet.",
       checks,
       diagnostics: {
@@ -8507,8 +8520,10 @@ async function testGoogleWalletIntegration(db) {
     return {
       ok: false,
       message: error.statusCode === 403
-        ? `Falha: a Service Account não possui acesso ao Issuer ${wallet.issuerId}.`
-        : error.message || "Falha ao testar Google Wallet.",
+        ? `A Service Account ${wallet.clientEmail} não possui acesso ao Issuer ${wallet.issuerId}. Adicione esse e-mail como usuário no Google Pay & Wallet Console.`
+        : error.statusCode === 404
+          ? `A classe ${wallet.classId} não foi encontrada. Confirme o Issuer ID e o Class ID cadastrados no Google Pay & Wallet Console.`
+          : error.message || "Falha ao testar Google Wallet.",
       checks,
       diagnostics: {
         issuerId: wallet.issuerId,
