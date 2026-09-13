@@ -102,7 +102,7 @@ E1 entra no slide 11 com a conta; E2 fica como evidência suplementar nas notas,
 
 ### Novos estados necessários
 
-Estes arquivos NÃO existem ainda. Só capturar em etapa futura expressamente autorizada, sem gerar cobranças reais, enviar campanhas ou liberar ingresso de cliente. Guardar novas cópias em uma subpasta `complementares/` do banco, sem sobrescrever os 61 arquivos existentes.
+Estes arquivos ainda dependem da execução autenticada do coletor `scripts/capture-production-complements.mjs`. A captura está autorizada, não cria cobranças e reutiliza somente estados pertencentes à conta de demonstração. Os novos arquivos são adicionados à pasta existente sem sobrescrever os 61 originais.
 
 | ID e nome reservado | Uso | Estado que precisa ficar visível |
 |---|---|---|
@@ -115,5 +115,7 @@ Estes arquivos NÃO existem ainda. Só capturar em etapa futura expressamente au
 | R07-bomboniere-entrega-concluida.png | 17 | Estado estável de sucesso após resposta do servidor, não “Validando...”. |
 | R08-email-recebido.png | 18, opcional | E-mail de teste realmente recebido, logo/imagens/CTA carregados, sem dados de terceiros. Não necessário se o slide permanecer rotulado “Prévia”. |
 | R09-monitoramento-coerente.png | 21, opcional | Métricas e mensagem de status coerentes. Pode mostrar alerta real, não precisa estar tudo verde. |
+
+O conjunto complementar também inclui `R04b-checkout-pagamento-cartao.png`, `R04c-checkout-clube-creditos.png`, as duas páginas do PDF real do ingresso (`R10` e `R10b`) e o comprovante não fiscal de PDV (`R11`). O plano detalhado, os requisitos e os cuidados de evidência estão em `docs/CAPTURAS_COMPLEMENTARES.md`.
 
 R01/R02/R04/R05 são bloqueios para a versão final completa do fluxo de compra. R06/R07 são necessários para comprovar os estados finais descritos. R03/R08/R09 são melhorias condicionais. Não inventar telas, nem extrair telas antigas de teste e apresentá-las como estado atual. Sem novas capturas, seguir as alternativas narrativas explícitas do plano e informar a redução de evidência.

@@ -338,6 +338,8 @@ O planejamento não autoriza capturas ou mudanças em produção nesta etapa. An
 6. Extrair e confirmar logo LumixEngine original do PPTX na montagem. Caminhos/relacionamentos estão no sistema visual; não redesenhar.
 7. Sem novas capturas, versão de evidência reduzida:06 só filme/sessão;07 conceitual;08 registro administrativo no lugar do checkout;12 sem extras;17 sem resultado final. Exige aceite explícito antes da montagem; não é o padrão completo planejado.
 
+O roteiro de coleta autenticada, incluindo Pix, cartão, Clube, confirmação, ingresso com bomboniere e PDFs, está definido em `docs/CAPTURAS_COMPLEMENTARES.md`. Depois da execução, o `COMPLEMENTOS.md` criado na pasta de imagens passa a ser a fonte de resolução e função das novas evidências.
+
 ## Notas e saída futura
 
 Cada slide deverá ter notas com a função exata da página, a ação permitida, o estado capturado, o benefício, o limite da evidência e a transição acima. O apresentador não deve precisar adivinhar a função pela imagem.
