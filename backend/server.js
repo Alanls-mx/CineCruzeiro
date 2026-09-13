@@ -8385,10 +8385,13 @@ function adminIntegrationsStatus(req, db) {
 
 function googleWalletApiError(error, fallback = "Google Wallet recusou a requisicao.") {
   if (!error) return fallback;
-  if (error.error) {
+  if (typeof error === "string") return error;
+  if (error.error_description) return error.error_description;
+  if (typeof error.error === "string") return error.error;
+  if (error.error && typeof error.error === "object") {
     const apiError = error.error;
     const details = Array.isArray(apiError.errors) && apiError.errors[0] ? apiError.errors[0] : {};
-    return [apiError.status || details.reason || "", apiError.message || fallback].filter(Boolean).join(": ");
+    return [apiError.status || details.reason || "", apiError.message || details.message || fallback].filter(Boolean).join(": ");
   }
   return error.message || fallback;
 }
@@ -8397,7 +8400,7 @@ async function googleWalletAccessToken(config) {
   const now = Math.floor(Date.now() / 1000);
   const assertion = signWalletJwt({
     iss: config.clientEmail,
-    scope: "https://www.googleapis.com/auth/wallet_object",
+    scope: "https://www.googleapis.com/auth/wallet_object.issuer",
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
     exp: now + 3600
@@ -8411,12 +8414,13 @@ async function googleWalletAccessToken(config) {
     })
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.access_token) {
+  const token = payload.access_token;
+  if (!response.ok || !token) {
     const error = new Error(googleWalletApiError(payload, "Falha ao autenticar a Service Account."));
     error.statusCode = response.status;
     throw error;
   }
-  return payload.access_token;
+  return token;
 }
 
 async function googleWalletApiGet(pathname, config) {
@@ -8509,6 +8513,15 @@ async function testGoogleWalletIntegration(db) {
       }
     };
   } catch (error) {
+    const isServiceDisabled = /has not been used in project|disabled|SERVICE_DISABLED/i.test(error.message || "");
+    const failureMessage = isServiceDisabled
+      ? (error.message || "A Google Wallet API está desativada no projeto do Google Cloud. Ative-a no Google Cloud Console.")
+      : error.statusCode === 403
+        ? `A Service Account ${wallet.clientEmail} não possui acesso ao Issuer ${wallet.issuerId}. Adicione esse e-mail como usuário no Google Pay & Wallet Console.`
+        : error.statusCode === 404
+          ? `A classe ${wallet.classId} não foi encontrada. Confirme o Issuer ID e o Class ID cadastrados no Google Pay & Wallet Console.`
+          : error.message || "Falha ao testar Google Wallet.";
+
     checks.push({ key: "api", label: "API Google Wallet", ok: false, detail: error.message || "Falha ao consultar a classe." });
     logEvent("warn", "google_wallet.integration_failed", {
       issuerId: wallet.issuerId,
@@ -8521,11 +8534,7 @@ async function testGoogleWalletIntegration(db) {
     });
     return {
       ok: false,
-      message: error.statusCode === 403
-        ? `A Service Account ${wallet.clientEmail} não possui acesso ao Issuer ${wallet.issuerId}. Adicione esse e-mail como usuário no Google Pay & Wallet Console.`
-        : error.statusCode === 404
-          ? `A classe ${wallet.classId} não foi encontrada. Confirme o Issuer ID e o Class ID cadastrados no Google Pay & Wallet Console.`
-          : error.message || "Falha ao testar Google Wallet.",
+      message: failureMessage,
       checks,
       diagnostics: {
         issuerId: wallet.issuerId,
@@ -8533,7 +8542,8 @@ async function testGoogleWalletIntegration(db) {
         clientEmail: wallet.clientEmail,
         origins: wallet.origins,
         passType: "EventTicket",
-        statusCode: error.statusCode || 0
+        statusCode: error.statusCode || 0,
+        apiErrorDetail: error.message || ""
       }
     };
   }
