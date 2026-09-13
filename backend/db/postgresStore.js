@@ -1284,7 +1284,7 @@ async function appendAuditLogToPostgres(log) {
   const existingClient = contextClient();
   const client = existingClient || await getPool().connect();
   try {
-    await query(client, "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, before, after, ip, created_at) VALUES ((SELECT id FROM users WHERE id = $1),$2,$3,$4,$5,$6,$7,COALESCE(NULLIF($8,'')::timestamptz, now()))", [
+    await query(client, "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, before, after, ip, created_at) VALUES ((SELECT id FROM users WHERE id = $1::text),$2,$3,$4,$5,$6,$7,COALESCE(NULLIF($8,'')::timestamptz, now()))", [
       log.userId || null,
       log.action || "unknown",
       log.entityType || "system",

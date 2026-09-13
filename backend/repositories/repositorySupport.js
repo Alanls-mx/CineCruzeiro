@@ -35,7 +35,7 @@ async function insertAudit(client, audit = {}) {
   try {
     await timedQuery(client, `INSERT INTO audit_logs
       (user_id, action, entity_type, entity_id, before, after, ip, created_at)
-      VALUES ((SELECT id FROM users WHERE id = $1), $2, $3, $4, $5::jsonb, $6::jsonb, $7, now())`, [
+      VALUES ((SELECT id FROM users WHERE id = $1::text), $2, $3, $4, $5::jsonb, $6::jsonb, $7, now())`, [
       audit.userId,
       audit.action || "repository.update",
       audit.entityType || "system",

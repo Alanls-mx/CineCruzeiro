@@ -108,3 +108,15 @@ test("reconhece e resolve credenciais legadas do Google Wallet com clientEmail e
   assert.equal(sanitized.values.clientEmail, account.client_email);
   assert.equal(sanitized.values.serviceAccountConfigured, true);
 });
+
+test("settingsRepository e repositorySupport utilizam explicit casts ($1::text) nas queries para evitar erro 42P08 do PostgreSQL", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const settingsRepoContent = fs.readFileSync(path.resolve("backend/repositories/settingsRepository.js"), "utf8");
+  const repoSupportContent = fs.readFileSync(path.resolve("backend/repositories/repositorySupport.js"), "utf8");
+
+  assert.match(settingsRepoContent, /\$1::text/);
+  assert.match(settingsRepoContent, /\$2::text/);
+  assert.match(repoSupportContent, /\(SELECT id FROM users WHERE id = \$1::text\)/);
+});
+
