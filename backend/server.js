@@ -81,7 +81,8 @@ const { createPerformanceMonitor } = require("./services/performanceMonitor");
 const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, refundError } = require("./services/orderRefundService");
 const {
   buildGoogleWalletClassTemplateInfo,
-  buildGoogleWalletTextModules
+  buildGoogleWalletTextModules,
+  normalizeGoogleWalletResourceId
 } = require("./services/googleWalletPassLayoutService");
 
 const requestContext = new AsyncLocalStorage();
@@ -328,7 +329,7 @@ function getGoogleWalletConfig(db) {
   const privateKey = String(serviceAccount.private_key || configured?.privateKey || getFirstEnv(GOOGLE_WALLET_PRIVATE_KEY_ENV_KEYS)?.value || "").replace(/\\n/g, "\n");
   const origins = normalizeGoogleWalletOrigins(configured?.origins || getFirstEnv(GOOGLE_WALLET_ORIGINS_ENV_KEYS)?.value || appFrontendUrl());
 
-  const canonicalClassId = configured?.resolvedClassId || googleWalletResourceId(issuerId, rawClassId);
+  const canonicalClassId = googleWalletResourceId(issuerId, rawClassId);
 
   return {
     configured: Boolean(issuerId && rawClassId && clientEmail && privateKey),
@@ -359,10 +360,7 @@ function normalizeGoogleWalletOrigins(value) {
 }
 
 function googleWalletResourceId(issuerId, resourceId) {
-  const safeIssuer = String(issuerId || "").trim();
-  const safeResource = String(resourceId || "").trim();
-  if (!safeIssuer || !safeResource) return safeResource;
-  return safeResource.includes(".") ? safeResource : `${safeIssuer}.${safeResource}`;
+  return normalizeGoogleWalletResourceId(issuerId, resourceId);
 }
 
 function googleWalletObjectId(config, ticket) {

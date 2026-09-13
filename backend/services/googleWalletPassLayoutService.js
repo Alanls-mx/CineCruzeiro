@@ -2,6 +2,21 @@ function fieldSelector(fieldPath) {
   return { fields: [{ fieldPath }] };
 }
 
+function normalizeGoogleWalletResourceId(issuerId, resourceId) {
+  const safeIssuer = String(issuerId || "").trim();
+  const safeResource = String(resourceId || "").trim();
+  if (!safeIssuer || !safeResource) return safeResource;
+
+  const issuerPrefix = `${safeIssuer}.`;
+  if (!safeResource.startsWith(issuerPrefix)) {
+    return safeResource.includes(".") ? safeResource : `${issuerPrefix}${safeResource}`;
+  }
+
+  let suffix = safeResource;
+  while (suffix.startsWith(issuerPrefix)) suffix = suffix.slice(issuerPrefix.length);
+  return suffix ? `${issuerPrefix}${suffix}` : safeResource;
+}
+
 function templateItem(firstFieldPath, secondFieldPath = "") {
   return {
     firstValue: fieldSelector(firstFieldPath),
@@ -66,5 +81,6 @@ module.exports = {
   buildGoogleWalletClassTemplateInfo,
   buildGoogleWalletTextModules,
   formatConcessionItems,
-  formatSessionDate
+  formatSessionDate,
+  normalizeGoogleWalletResourceId
 };

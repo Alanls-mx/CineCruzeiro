@@ -174,6 +174,22 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
 test("fallback de classe não duplica o Issuer no Class ID", () => {
   const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.doesNotMatch(serverContent, /`\$\{wallet\.issuerId\}\.\$\{wallet\.classId\}`/);
+  assert.match(serverContent, /const canonicalClassId = googleWalletResourceId\(issuerId, rawClassId\)/);
+  assert.equal(
+    googleWalletPassLayoutService.normalizeGoogleWalletResourceId(
+      "3388000000023202983",
+      "3388000000023202983.3388000000023202983.lumixengine_ingressos"
+    ),
+    "3388000000023202983.lumixengine_ingressos"
+  );
+  assert.equal(
+    googleWalletPassLayoutService.normalizeGoogleWalletResourceId("3388000000023202983", "lumixengine_ingressos"),
+    "3388000000023202983.lumixengine_ingressos"
+  );
+  assert.equal(
+    googleWalletPassLayoutService.normalizeGoogleWalletResourceId("3388000000023202983", "outro-issuer.classe"),
+    "outro-issuer.classe"
+  );
 });
 
 
