@@ -3219,10 +3219,10 @@ async function deliverTicketsByEmail(db, order, tickets) {
     user.active !== false &&
     (user.id === order.customerUserId || String(user.email || "").toLowerCase() === String(order.customerEmail || "").toLowerCase())
   );
-  const enrichedTickets = tickets.map((ticket) => {
+  const enrichedTickets = await Promise.all(tickets.map(async (ticket) => {
     const enriched = enrichTicket(db, ticket);
     try {
-      enriched.googleWalletUrl = googleWalletSaveUrl(db, ticket, emailUser || {
+      enriched.googleWalletUrl = await googleWalletSaveUrl(db, ticket, emailUser || {
         id: order.customerUserId || "",
         name: order.customerName || enriched.customerName || "Cliente Cine Cruzeiro",
         email: order.customerEmail || enriched.customerEmail || ""
@@ -3231,7 +3231,7 @@ async function deliverTicketsByEmail(db, order, tickets) {
       enriched.googleWalletUrl = "";
     }
     return enriched;
-  });
+  }));
   const attachments = [];
   for (const ticket of tickets) {
     try {
@@ -3308,6 +3308,13 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
       sourceUri: { uri: walletPosterUrl },
       contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
     } : undefined,
+    imageModulesData: walletPosterUrl ? [{
+      id: "poster",
+      mainImage: {
+        sourceUri: { uri: walletPosterUrl },
+        contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
+      }
+    }] : undefined,
     hexBackgroundColor: "#0b1424",
     ticketHolderName: user.name || enriched.customerName || "Cliente Cine Cruzeiro",
     ticketNumber: enriched.code,
@@ -3338,7 +3345,27 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
   };
 }
 
-function googleWalletSaveUrl(db, ticket, user, req) {
+async function syncGoogleWalletEventTicketObject(config, eventTicketObject) {
+  try {
+    await googleWalletApiGet(`/eventTicketObject/${encodeURIComponent(eventTicketObject.id)}`, config);
+    const { id, classId, ...mutableFields } = eventTicketObject;
+    await googleWalletApiPatch(
+      `/eventTicketObject/${encodeURIComponent(eventTicketObject.id)}`,
+      config,
+      mutableFields
+    );
+    return "updated";
+  } catch (error) {
+    if (error.statusCode !== 404) throw error;
+    await googleWalletApiRequest("/eventTicketObject", config, {
+      method: "POST",
+      body: eventTicketObject
+    });
+    return "created";
+  }
+}
+
+async function googleWalletSaveUrl(db, ticket, user, req) {
   const config = getGoogleWalletConfig(db);
   if (!config.configured) {
     const error = new Error("Configure GOOGLE_WALLET_ISSUER_ID, GOOGLE_WALLET_CLASS_ID e credenciais da service account para habilitar Google Wallet.");
@@ -3352,6 +3379,9 @@ function googleWalletSaveUrl(db, ticket, user, req) {
     throw error;
   }
   const eventTicketObject = walletEventTicketObjectForTicket(db, ticket, user, req);
+  const syncAction = String(process.env.GOOGLE_WALLET_SYNC_OBJECTS || "true").toLowerCase() === "false"
+    ? "skipped"
+    : await syncGoogleWalletEventTicketObject(config, eventTicketObject);
   const claims = {
     iss: config.clientEmail,
     aud: "google",
@@ -3370,6 +3400,7 @@ function googleWalletSaveUrl(db, ticket, user, req) {
     origins: config.origins,
     passType: "eventTicketObjects",
     objectPreview: {
+      syncAction,
       state: eventTicketObject.state,
       movieTitle: enriched.movieTitle || "",
       ticketType: eventTicketObject.ticketType?.defaultValue?.value || "",
@@ -13212,7 +13243,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
       try {
-        const url = googleWalletSaveUrl(db, ticket, user, req);
+        const url = await googleWalletSaveUrl(db, ticket, user, req);
         const config = getGoogleWalletConfig(db);
         logEvent("info", "google_wallet.save_url_issued", {
           ticketId: ticket.id,
@@ -13356,7 +13387,7 @@ async function handleApi(req, res, pathname) {
           logEvent("warn", "ticket_transfer_pdf.failed", { ticketId: ticket.id, message: error.message });
         }
         try {
-          enrichedTransferTicket.googleWalletUrl = googleWalletSaveUrl(lockedDb, ticket, targetUser, null);
+          enrichedTransferTicket.googleWalletUrl = await googleWalletSaveUrl(lockedDb, ticket, targetUser, null);
         } catch {
           enrichedTransferTicket.googleWalletUrl = "";
         }

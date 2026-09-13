@@ -187,7 +187,8 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
   const row = template.cardTemplateOverride.cardRowTemplateInfos[0].threeItems;
   assert.equal(row.startItem.firstValue.fields[0].fieldPath, "object.textModulesData['filme']");
   assert.equal(row.startItem.secondValue.fields[0].fieldPath, "object.textModulesData['sessao']");
-  assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
+  assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.imageModulesData['poster']");
+  assert.equal(template.detailsTemplateOverride.detailsItemInfos[1].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
 });
 
 test("Google Wallet usa somente a origem HTTPS do TMDB para imagens de filmes", () => {
@@ -212,7 +213,23 @@ test("Google Wallet usa somente a origem HTTPS do TMDB para imagens de filmes", 
   );
   assert.match(objectSlice, /googleWalletTmdbImageUrl\(movieForTicket\(db, ticket\)\)/);
   assert.match(objectSlice, /sourceUri:\s*\{ uri: walletPosterUrl \}/);
+  assert.match(objectSlice, /imageModulesData:\s*walletPosterUrl/);
   assert.doesNotMatch(objectSlice, /googleWalletAbsoluteUrl\(req, db, enriched\.posterUrl/);
+});
+
+test("Google Wallet sincroniza o EventTicketObject antes de emitir o link", () => {
+  const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const syncSlice = serverContent.slice(
+    serverContent.indexOf("async function syncGoogleWalletEventTicketObject"),
+    serverContent.indexOf("function pdfText")
+  );
+
+  assert.match(syncSlice, /\/eventTicketObject\/\$\{encodeURIComponent\(eventTicketObject\.id\)\}/);
+  assert.match(syncSlice, /googleWalletApiPatch/);
+  assert.match(syncSlice, /method:\s*"POST"/);
+  assert.match(syncSlice, /await syncGoogleWalletEventTicketObject\(config, eventTicketObject\)/);
+  assert.match(syncSlice, /GOOGLE_WALLET_SYNC_OBJECTS/);
+  assert.match(serverContent, /const url = await googleWalletSaveUrl\(db, ticket, user, req\)/);
 });
 
 test("fallback de classe não duplica o Issuer no Class ID", () => {

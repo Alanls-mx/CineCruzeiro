@@ -26,6 +26,7 @@ process.env.MERCADO_PAGO_WEBHOOK_SECRET = "smoke-mercado-pago-webhook-secret";
 process.env.WEBHOOK_TESTER_ENABLED = "true";
 process.env.MAX_JSON_BODY_BYTES = String(64 * 1024);
 process.env.MOVIE_IMAGE_MAINTENANCE_ENABLED = "false";
+process.env.GOOGLE_WALLET_SYNC_OBJECTS = "false";
 
 function jsonHeaders(cookie = "") {
   return {

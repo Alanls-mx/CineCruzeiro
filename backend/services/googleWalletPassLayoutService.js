@@ -63,6 +63,7 @@ function buildGoogleWalletClassTemplateInfo() {
     },
     detailsTemplateOverride: {
       detailsItemInfos: [
+        { item: templateItem("object.imageModulesData['poster']") },
         { item: templateItem("object.textModulesData['bomboniere']") },
         { item: templateItem("object.linksModuleData.uris['conta']") }
       ]
