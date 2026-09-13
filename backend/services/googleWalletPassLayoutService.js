@@ -22,6 +22,25 @@ function resolveGoogleWalletClassId(issuerId, configuredClassId, resolvedClassId
   return resolved || normalizeGoogleWalletResourceId(issuerId, configuredClassId);
 }
 
+function googleWalletTmdbImageUrl(movie = {}) {
+  const candidates = [
+    movie?.metadata?.tmdbPosterSourceUrl,
+    movie?.posterUrl,
+    movie?.metadata?.tmdbBackdropSourceUrl,
+    movie?.backdropUrl
+  ];
+  return candidates.map((value) => String(value || "").trim()).find((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:"
+        && url.hostname === "image.tmdb.org"
+        && url.pathname.startsWith("/t/p/");
+    } catch {
+      return false;
+    }
+  }) || "";
+}
+
 function templateItem(firstFieldPath, secondFieldPath = "") {
   return {
     firstValue: fieldSelector(firstFieldPath),
@@ -87,6 +106,7 @@ module.exports = {
   buildGoogleWalletTextModules,
   formatConcessionItems,
   formatSessionDate,
+  googleWalletTmdbImageUrl,
   normalizeGoogleWalletResourceId,
   resolveGoogleWalletClassId
 };

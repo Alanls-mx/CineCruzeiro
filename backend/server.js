@@ -82,6 +82,7 @@ const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullR
 const {
   buildGoogleWalletClassTemplateInfo,
   buildGoogleWalletTextModules,
+  googleWalletTmdbImageUrl,
   normalizeGoogleWalletResourceId,
   resolveGoogleWalletClassId
 } = require("./services/googleWalletPassLayoutService");
@@ -3278,24 +3279,10 @@ function googleWalletLocalized(value) {
   return { defaultValue: { language: "pt-BR", value: String(value || "") } };
 }
 
-function googleWalletAbsoluteUrl(req, db, value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  if (/^https?:\/\//i.test(raw)) return raw;
-  const frontendUrl = getGoogleOAuthConfig(req, db).frontendUrl.replace(/\/+$/, "");
-  try {
-    const parsed = new URL(frontendUrl);
-    const basePath = parsed.pathname.replace(/\/+$/, "");
-    if (basePath && (raw === basePath || raw.startsWith(`${basePath}/`))) {
-      return `${parsed.origin}${raw.startsWith("/") ? raw : `/${raw}`}`;
-    }
-  } catch {}
-  return `${frontendUrl}${raw.startsWith("/") ? raw : `/${raw}`}`;
-}
-
 function walletEventTicketObjectForTicket(db, ticket, user, req) {
   const config = getGoogleWalletConfig(db);
   const enriched = enrichTicket(db, ticket);
+  const walletPosterUrl = googleWalletTmdbImageUrl(movieForTicket(db, ticket));
   const objectId = googleWalletObjectId(config, ticket);
   const sessionStart = new Date(`${enriched.sessionDate || ""}T${enriched.sessionTime || "00:00"}:00-03:00`);
   const archiveAt = new Date(enriched.archiveAt || "");
@@ -3317,8 +3304,8 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
     id: objectId,
     classId: config.classId,
     state: enriched.status === "active" ? "ACTIVE" : "INACTIVE",
-    heroImage: (enriched.posterUrl || enriched.backdropUrl) ? {
-      sourceUri: { uri: googleWalletAbsoluteUrl(req, db, enriched.posterUrl || enriched.backdropUrl) },
+    heroImage: walletPosterUrl ? {
+      sourceUri: { uri: walletPosterUrl },
       contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
     } : undefined,
     hexBackgroundColor: "#0b1424",

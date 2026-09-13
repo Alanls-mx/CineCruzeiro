@@ -190,6 +190,31 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
   assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
 });
 
+test("Google Wallet usa somente a origem HTTPS do TMDB para imagens de filmes", () => {
+  assert.equal(
+    googleWalletPassLayoutService.googleWalletTmdbImageUrl({
+      posterUrl: "/uploads/movies-coyote/poster-coyote.jpg",
+      metadata: { tmdbPosterSourceUrl: "https://image.tmdb.org/t/p/w780/coyote.jpg" }
+    }),
+    "https://image.tmdb.org/t/p/w780/coyote.jpg"
+  );
+  assert.equal(
+    googleWalletPassLayoutService.googleWalletTmdbImageUrl({
+      posterUrl: "https://lumixengine.com/projects/cinecruzeiro/uploads/poster.jpg"
+    }),
+    ""
+  );
+
+  const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const objectSlice = serverContent.slice(
+    serverContent.indexOf("function walletEventTicketObjectForTicket"),
+    serverContent.indexOf("function googleWalletSaveUrl")
+  );
+  assert.match(objectSlice, /googleWalletTmdbImageUrl\(movieForTicket\(db, ticket\)\)/);
+  assert.match(objectSlice, /sourceUri:\s*\{ uri: walletPosterUrl \}/);
+  assert.doesNotMatch(objectSlice, /googleWalletAbsoluteUrl\(req, db, enriched\.posterUrl/);
+});
+
 test("fallback de classe não duplica o Issuer no Class ID", () => {
   const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.doesNotMatch(serverContent, /`\$\{wallet\.issuerId\}\.\$\{wallet\.classId\}`/);
