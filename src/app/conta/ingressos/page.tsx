@@ -226,6 +226,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
   const [concessionTargetTicketId, setConcessionTargetTicketId] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
   const statusClassName = ticket.status === "active"
     ? "bg-emerald-400/15 text-emerald-200"
     : "bg-white/8 text-slate-300";
@@ -242,15 +243,19 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
     setTransferEmail("");
     setConcessionTargetTicketId("");
     setMessage("");
+    setWalletLoading(false);
   }, [ticket.id]);
 
   async function addWallet() {
+    if (walletLoading) return;
+    setWalletLoading(true);
     setMessage("");
     try {
       const result = await createGoogleWalletPass(ticket.id);
       window.location.href = result.url;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Google Wallet indisponível.");
+      setWalletLoading(false);
     }
   }
 
@@ -356,7 +361,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               <Download className="h-4 w-4" />
               Baixar ingresso
             </a>
-            <ActionButton icon={<WalletCards />} label="Adicionar à Google Wallet" onClick={addWallet} />
+            <ActionButton icon={<WalletCards />} label={walletLoading ? "Preparando Google Wallet..." : "Adicionar à Google Wallet"} onClick={addWallet} disabled={walletLoading} />
             {ticket.canTransfer && (
               <a href="#transferir-ingresso" className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
                 <Send className="h-4 w-4" />
@@ -451,9 +456,9 @@ function Info({ label, value, mono = false, title }: { label: string; value: str
   );
 }
 
-function ActionButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+function ActionButton({ icon, label, onClick, disabled = false }: { icon: ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
+    <button type="button" onClick={onClick} disabled={disabled} className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12 disabled:cursor-wait disabled:opacity-60">
       <span className="h-4 w-4 [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
       {label}
     </button>
