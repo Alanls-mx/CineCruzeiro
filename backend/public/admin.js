@@ -3055,18 +3055,34 @@ function applySessionMutation(movieId, session, removed = false) {
   movie.updatedAt = new Date().toISOString();
 }
 
+function loweredMoviePriorityMessage(changes) {
+  if (!changes.length) return "Nenhum outro filme perdeu prioridade.";
+  const visible = changes.slice(0, 3).map((change) => `${change.title}: posição ${change.from} → ${change.to}`);
+  const remaining = changes.length - visible.length;
+  return `${visible.join("; ")}${remaining > 0 ? `; e mais ${remaining} filme(s)` : ""}.`;
+}
+
 async function saveMovieOrder(ids, options = {}) {
   if (!ids.length) return;
+  const previousPositions = new Map(orderedMovies().map((movie, index) => [movie.id, index + 1]));
   try {
     const result = await api("/api/movies/order", {
       method: "PUT",
       body: JSON.stringify({ ids })
     });
     state.content.movies = result.movies || state.content.movies;
+    const loweredMovies = orderedMovies()
+      .map((movie, index) => ({
+        id: movie.id,
+        title: movie.title || "Filme sem título",
+        from: previousPositions.get(movie.id),
+        to: index + 1
+      }))
+      .filter((movie) => movie.from && movie.to > movie.from);
     if (options.render !== false) renderMovies();
     setStatus("Salvo");
-    if (options.notify !== false) showToast("Prioridade dos filmes atualizada.");
-    return state.content.movies;
+    if (options.notify !== false) showToast(`Prioridade atualizada. ${loweredMoviePriorityMessage(loweredMovies)}`);
+    return { movies: state.content.movies, loweredMovies };
   } catch (error) {
     if (options.notify !== false) showToast(error.message, "error");
     if (options.rethrow) throw error;
@@ -3077,8 +3093,8 @@ async function applyMovieCatalogPosition(movieId, requestedPosition) {
   const ids = orderedMovies().map((movie) => movie.id).filter((id) => id !== movieId);
   const position = Math.min(Math.max(1, Math.trunc(Number(requestedPosition) || 1)), ids.length + 1);
   ids.splice(position - 1, 0, movieId);
-  await saveMovieOrder(ids, { render: false, notify: false, rethrow: true });
-  return position;
+  const result = await saveMovieOrder(ids, { render: false, notify: false, rethrow: true });
+  return { position, loweredMovies: result?.loweredMovies || [] };
 }
 
 function moveMovie(id, direction) {
@@ -3190,10 +3206,13 @@ async function saveMovieWithAction(action = "published") {
     state.creating.movie = false;
     state.selectedMovieId = saved.id;
     upsertAdminCollection("movies", saved);
-    const appliedPosition = await applyMovieCatalogPosition(saved.id, requestedPosition);
+    const priorityChange = await applyMovieCatalogPosition(saved.id, requestedPosition);
     renderMovies();
     showToast(action === "draft" ? "Rascunho salvo." : "Filme publicado.");
-    showSuccess(action === "draft" ? "Rascunho salvo" : "Filme publicado", `${saved.title} foi atualizado na posição ${appliedPosition} do catálogo administrativo.`);
+    showSuccess(
+      action === "draft" ? "Rascunho salvo" : "Filme publicado",
+      `${saved.title} foi atualizado na posição ${priorityChange.position} do catálogo administrativo. ${loweredMoviePriorityMessage(priorityChange.loweredMovies)}`
+    );
   } catch (error) {
     showToast(error.message, "error");
   }
