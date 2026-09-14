@@ -4350,6 +4350,33 @@ input[type="file"]::file-selector-button {
   background: rgba(148, 163, 184, 0.1);
 }
 
+.concession-counter-loading {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 144px;
+  padding: 24px;
+  background: #0b1424;
+  color: var(--muted);
+  text-align: left;
+}
+
+.concession-counter-loading > span:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.concession-counter-loading strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.concession-counter-loading small {
+  font-size: 12px;
+}
+
 .concession-counter-product {
   display: flex;
   align-items: center;

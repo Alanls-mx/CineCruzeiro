@@ -6191,6 +6191,17 @@ function renderConcessionCounterSummary() {
 function renderConcessionCounterSale() {
   const target = $("concessionCounterProducts");
   if (!target) return;
+  if (!state.content) {
+    target.innerHTML = `
+      <div class="concession-counter-loading" role="status" aria-live="polite">
+        <span class="inline-spinner" aria-hidden="true"></span>
+        <span><strong>Carregando produtos</strong><small>Sincronizando cardápio e estoque...</small></span>
+      </div>`;
+    const pager = $("concessionCounterPager");
+    if (pager) pager.innerHTML = "";
+    renderConcessionCounterSummary();
+    return;
+  }
   const products = concessionCounterProducts();
   const productIds = new Set((state.content?.concessions || []).filter((item) => item.active !== false).map((item) => item.id));
   state.concessionCounterQuantities = Object.fromEntries(Object.entries(state.concessionCounterQuantities || {}).filter(([id, quantity]) => productIds.has(id) && Number(quantity) > 0));
