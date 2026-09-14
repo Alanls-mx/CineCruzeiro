@@ -650,13 +650,43 @@
           <div class="panel-heading">
             <div>
               <h1>Salas</h1>
-              <p>Cadastre salas e capacidade para montar sessões de venda.</p>
+              <p>Acompanhe a programação global e configure a estrutura de cada sala.</p>
             </div>
             <button id="newRoomButton" class="primary-button icon-label" type="button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Nova Sala
             </button>
           </div>
+          <section class="surface room-schedule-manager" aria-labelledby="globalSessionsTitle">
+            <div class="room-schedule-head">
+              <div>
+                <div id="globalSessionsTitle" class="section-title">Agenda global de sessões</div>
+                <p>Confira todos os filmes por data e horário e resolva conflitos antes de abrir as vendas.</p>
+              </div>
+              <div class="room-schedule-create">
+                <select id="globalSessionCreateMovie" aria-label="Filme para nova sessão"></select>
+                <button id="globalSessionCreateButton" class="primary-button" type="button">Nova sessão</button>
+              </div>
+            </div>
+            <div class="room-schedule-filters" aria-label="Filtros da agenda">
+              <label>De<input id="globalSessionsFrom" type="date" /></label>
+              <label>Até<input id="globalSessionsTo" type="date" /></label>
+              <label>Sala<select id="globalSessionsRoom"><option value="">Todas as salas</option></select></label>
+              <label>Filme<select id="globalSessionsMovie"><option value="">Todos os filmes</option></select></label>
+              <label>Status
+                <select id="globalSessionsStatus">
+                  <option value="active">Ativas</option>
+                  <option value="">Todos</option>
+                  <option value="available">Disponíveis</option>
+                  <option value="sold_out">Esgotadas</option>
+                  <option value="cancelled">Canceladas</option>
+                </select>
+              </label>
+              <label class="check-field room-conflict-filter"><input id="globalSessionsConflictsOnly" type="checkbox" />Somente conflitos</label>
+            </div>
+            <div id="globalSessionsSummary" class="room-schedule-summary" aria-live="polite"></div>
+            <div id="globalSessionsList" class="global-sessions-list"></div>
+          </section>
           <div class="split-grid compact">
             <div class="surface">
               <div class="section-title">Salas cadastradas</div>

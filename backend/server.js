@@ -51,6 +51,7 @@ const {
 } = require("./services/financialRecognitionService");
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
 const { moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
+const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
 const {
   assignConcessionsToTicket,
   concessionOrdersForTicket,
@@ -5443,6 +5444,28 @@ function movieDurationMinutes(movie = {}) {
   if (hours || minutes) return Math.max(1, Math.round(hours * 60 + minutes));
   const numeric = Number(raw.replace(/[^\d.,]/g, "").replace(",", "."));
   return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 100;
+}
+
+function sessionRoomConflicts(db, movie, candidate, options = {}) {
+  return findSessionRoomConflicts({
+    movies: db.movies || [],
+    candidateMovie: movie,
+    candidate,
+    ignoreSessionId: options.ignoreSessionId,
+    additional: options.additional
+  });
+}
+
+function requireSessionRoomConflictConfirmation(res, conflicts, confirmed) {
+  if (!conflicts.length || confirmed === true) return false;
+  sendJson(res, 409, {
+    error: {
+      code: "SESSION_ROOM_CONFLICT",
+      message: "Já existe uma sessão ocupando esta sala no período informado. Revise a agenda ou confirme a sobreposição.",
+      conflicts
+    }
+  });
+  return true;
 }
 
 function finishedSessionEndsAt(movie, session) {
@@ -12336,6 +12359,13 @@ async function handleApi(req, res, pathname) {
       if (body.dateTo || body.dateEnd || Array.isArray(body.times)) {
         const batch = createMovieSessionBatch(body, movie.slug || movieId, movie.sessions, db.ticketTypes);
         const created = batch.created.map((session) => sessionWithCurrentRoom(db, session));
+        const accepted = [];
+        const conflicts = created.flatMap((session) => {
+          const found = sessionRoomConflicts(db, movie, session, { additional: accepted.map((item) => ({ movie, session: item })) });
+          accepted.push(session);
+          return found.map((conflict) => ({ requestedDate: session.date, requestedTime: session.time, requestedRoom: session.room, ...conflict }));
+        });
+        if (requireSessionRoomConflictConfirmation(res, conflicts, body.confirmRoomConflict)) return;
         movie.sessions.push(...created);
         movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
         movie.updatedAt = new Date().toISOString();
@@ -12354,6 +12384,8 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, { error: { code: "SESSION_EXISTS", message: "Já existe uma sessão com este identificador." } });
         return;
       }
+      const conflicts = sessionRoomConflicts(db, movie, session);
+      if (requireSessionRoomConflictConfirmation(res, conflicts, body.confirmRoomConflict)) return;
       movie.sessions.push(session);
       movie.updatedAt = new Date().toISOString();
       if (postgresEnabled()) {
@@ -12384,6 +12416,8 @@ async function handleApi(req, res, pathname) {
       }
       movie.sessions[sessionIndex] = previousSession;
       const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movieId, previousSession, db.ticketTypes));
+      const conflicts = sessionRoomConflicts(db, movie, session, { ignoreSessionId: sessionId });
+      if (requireSessionRoomConflictConfirmation(res, conflicts, body.confirmRoomConflict)) return;
       const commercialChanges = sessionCommercialChanges(previousSession, session);
       const hasHistory = sessionHasAuditHistory(db, sessionId);
       if (session.room !== previousSession.room && sessionHasActiveSeatAssignments(db, sessionId)) {

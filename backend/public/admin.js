@@ -131,6 +131,9 @@ let state = {
   moviesPageSize: 8,
   roomsPage: 1,
   roomsPageSize: 8,
+  globalSessionsPage: 1,
+  globalSessionsPageSize: 12,
+  globalSessionFilters: { from: "", to: "", roomId: "", movieId: "", status: "active", conflictsOnly: false },
   ticketTypesPage: 1,
   ticketTypesPageSize: 8,
   concessionsPage: 1,
@@ -772,7 +775,7 @@ function renderAll() {
 }
 
 function renderLoading() {
-  ["moviesList", "roomsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "customerUsersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList", "logsList"].forEach((id) => {
+  ["moviesList", "roomsList", "globalSessionsList", "ticketsList", "concessionsList", "promotionsList", "adsList", "usersList", "customerUsersList", "ordersList", "todayOrdersList", "paymentsList", "clubPlansList", "clubSubscriptionsList", "integrationsList", "logsList"].forEach((id) => {
     if ($(id)) {
       $(id).innerHTML = Array.from({ length: 4 }, () => `<div class="skeleton-card"></div>`).join("");
     }
@@ -3097,6 +3100,7 @@ function applySessionMutation(movieId, session, removed = false) {
   else movie.sessions.push(session);
   movie.sessions.sort((a, b) => String(`${a.date} ${a.time}`).localeCompare(String(`${b.date} ${b.time}`)));
   movie.updatedAt = new Date().toISOString();
+  renderGlobalSessions();
 }
 
 function loweredMoviePriorityMessage(changes) {
@@ -3413,10 +3417,19 @@ async function saveSession() {
 
   try {
     setDisabled("saveSessionButton", true);
-    const result = await api(`/api/movies/${encodeURIComponent(movieId)}/sessions${sessionId ? `/${encodeURIComponent(sessionId)}` : ""}`, {
-      method: sessionId ? "PUT" : "POST",
-      body: JSON.stringify(payload)
-    });
+    const endpoint = `/api/movies/${encodeURIComponent(movieId)}/sessions${sessionId ? `/${encodeURIComponent(sessionId)}` : ""}`;
+    const persistSession = () => api(endpoint, { method: sessionId ? "PUT" : "POST", body: JSON.stringify(payload) });
+    let result;
+    try {
+      result = await persistSession();
+    } catch (error) {
+      if (error.code !== "SESSION_ROOM_CONFLICT") throw error;
+      const conflicts = error.payload?.error?.conflicts || [];
+      const details = [...new Set(conflicts.map((conflict) => `${conflict.movieTitle} em ${new Date(`${conflict.date}T12:00:00`).toLocaleDateString("pt-BR")} às ${conflict.time}`))].join("\n");
+      if (!confirm(`Conflito de sala detectado:\n\n${details}\n\nDeseja salvar mesmo assim?`)) return;
+      payload.confirmRoomConflict = true;
+      result = await persistSession();
+    }
     closeSessionEditor();
     if (range) (result.created || []).forEach((session) => applySessionMutation(movieId, session));
     else applySessionMutation(movieId, result);
@@ -4059,8 +4072,168 @@ function handleRoomSeatSelectionAction(action) {
   renderRoomSeatMap();
 }
 
+function adminTodayKey() {
+  return state.content?.calendar?.today || new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+function globalSessionRoomKey(session = {}) {
+  if (session.roomId) return `id:${session.roomId}`;
+  const label = String(session.room || "").trim().toLocaleLowerCase("pt-BR");
+  const room = (state.content?.rooms || []).find((candidate) => {
+    const name = String(candidate.name || "").toLocaleLowerCase("pt-BR");
+    return label === name || label.startsWith(`${name} (`);
+  });
+  return room ? `id:${room.id}` : `label:${label || "sem-sala"}`;
+}
+
+function globalSessionDuration(movie = {}) {
+  const raw = String(movie.duration || "").trim().toLowerCase();
+  const hours = Number(raw.match(/(\d+(?:[.,]\d+)?)\s*h/)?.[1]?.replace(",", ".") || 0);
+  const minutes = Number(raw.match(/(\d+)\s*(?:m|min)/)?.[1] || 0);
+  if (hours || minutes) return Math.max(1, Math.round(hours * 60 + minutes));
+  const numeric = Number(raw.replace(/[^\d.,]/g, "").replace(",", "."));
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 100;
+}
+
+function globalSessionTime(session = {}) {
+  const date = String(session.date || "").slice(0, 10);
+  const time = String(session.time || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return Number.MAX_SAFE_INTEGER;
+  const parsed = new Date(`${date}T${time}:00-03:00`).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+}
+
+function globalSessionEntries() {
+  return (state.content?.movies || []).flatMap((movie) => (movie.sessions || []).map((session) => ({
+    movie,
+    session,
+    startsAt: globalSessionTime(session),
+    endsAt: globalSessionTime(session) + globalSessionDuration(movie) * 60 * 1000,
+    roomKey: globalSessionRoomKey(session)
+  }))).sort((a, b) => a.startsAt - b.startsAt || a.roomKey.localeCompare(b.roomKey) || String(a.movie.title || "").localeCompare(String(b.movie.title || "")));
+}
+
+function globalSessionConflictMap(entries) {
+  const conflicts = new Map();
+  entries.forEach((entry, index) => {
+    if (["cancelled", "hidden", "archived"].includes(String(entry.session.status || "").toLowerCase())) return;
+    for (let cursor = index + 1; cursor < entries.length; cursor += 1) {
+      const candidate = entries[cursor];
+      if (candidate.startsAt >= entry.endsAt) break;
+      if (candidate.roomKey !== entry.roomKey || ["cancelled", "hidden", "archived"].includes(String(candidate.session.status || "").toLowerCase())) continue;
+      if (entry.startsAt < candidate.endsAt && candidate.startsAt < entry.endsAt) {
+        conflicts.set(entry.session.id, [...(conflicts.get(entry.session.id) || []), candidate]);
+        conflicts.set(candidate.session.id, [...(conflicts.get(candidate.session.id) || []), entry]);
+      }
+    }
+  });
+  return conflicts;
+}
+
+function globalSessionStatusLabel(status = "") {
+  return { available: "Disponível", sold_out: "Esgotada", cancelled: "Cancelada", hidden: "Oculta", archived: "Arquivada" }[String(status || "available").toLowerCase()] || "Disponível";
+}
+
+function renderGlobalSessionOptions() {
+  const rooms = state.content?.rooms || [];
+  const movies = [...(state.content?.movies || [])].sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
+  const creatableMovies = movies.filter((movie) => movie.workflowStatus !== "archived");
+  $("globalSessionsRoom").innerHTML = `<option value="">Todas as salas</option>${rooms.map((room) => `<option value="${escapeHtml(room.id)}">${escapeHtml(room.name)}</option>`).join("")}`;
+  $("globalSessionsMovie").innerHTML = `<option value="">Todos os filmes</option>${movies.map((movie) => `<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join("")}`;
+  $("globalSessionCreateMovie").innerHTML = creatableMovies.length
+    ? creatableMovies.map((movie) => `<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join("")
+    : `<option value="">Cadastre um filme primeiro</option>`;
+  $("globalSessionCreateButton").disabled = !creatableMovies.length;
+  $("globalSessionsRoom").value = state.globalSessionFilters.roomId;
+  $("globalSessionsMovie").value = state.globalSessionFilters.movieId;
+  $("globalSessionsStatus").value = state.globalSessionFilters.status;
+  $("globalSessionsConflictsOnly").checked = state.globalSessionFilters.conflictsOnly;
+}
+
+function renderGlobalSessions() {
+  if (!$("globalSessionsList")) return;
+  if (!state.globalSessionFilters.from) state.globalSessionFilters.from = adminTodayKey();
+  renderGlobalSessionOptions();
+  $("globalSessionsFrom").value = state.globalSessionFilters.from;
+  $("globalSessionsTo").value = state.globalSessionFilters.to;
+
+  const entries = globalSessionEntries();
+  const conflicts = globalSessionConflictMap(entries);
+  const filters = state.globalSessionFilters;
+  const filtered = entries.filter((entry) => {
+    const status = String(entry.session.status || "available").toLowerCase();
+    return (!filters.from || entry.session.date >= filters.from)
+      && (!filters.to || entry.session.date <= filters.to)
+      && (!filters.roomId || entry.roomKey === `id:${filters.roomId}`)
+      && (!filters.movieId || entry.movie.id === filters.movieId)
+      && (!filters.status || (filters.status === "active" ? !["cancelled", "hidden", "archived"].includes(status) : status === filters.status))
+      && (!filters.conflictsOnly || conflicts.has(entry.session.id));
+  });
+  const conflictCount = filtered.filter((entry) => conflicts.has(entry.session.id)).length;
+  const pageSize = state.globalSessionsPageSize || 12;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  state.globalSessionsPage = Math.min(Math.max(1, state.globalSessionsPage || 1), totalPages);
+  const start = (state.globalSessionsPage - 1) * pageSize;
+  const pageItems = filtered.slice(start, start + pageSize);
+  const roomCount = new Set(filtered.map((entry) => entry.roomKey)).size;
+  $("globalSessionsSummary").innerHTML = `
+    <div><span>Sessões encontradas</span><strong>${filtered.length}</strong></div>
+    <div><span>Salas na agenda</span><strong>${roomCount}</strong></div>
+    <div class="${conflictCount ? "has-conflict" : "is-clear"}"><span>Sessões em conflito</span><strong>${conflictCount}</strong></div>
+    <p>${conflictCount ? "Há horários sobrepostos. Abra as sessões sinalizadas para corrigir a programação." : "Nenhuma sobreposição encontrada nos filtros atuais."}</p>`;
+
+  if (!pageItems.length) {
+    $("globalSessionsList").innerHTML = `<div class="empty-state"><strong>Nenhuma sessão encontrada</strong><span>Ajuste o período ou os filtros para consultar outra parte da programação.</span></div>`;
+    return;
+  }
+  let lastDate = "";
+  $("globalSessionsList").innerHTML = pageItems.map((entry) => {
+    const dateHeading = entry.session.date !== lastDate
+      ? `<div class="global-session-date"><strong>${new Date(`${entry.session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}</strong><span>${entry.session.date}</span></div>`
+      : "";
+    lastDate = entry.session.date;
+    const related = conflicts.get(entry.session.id) || [];
+    const conflictCopy = related.length ? `Conflita com ${related.map((item) => `${item.movie.title} às ${item.session.time}`).join(", ")}` : "";
+    return `${dateHeading}
+      <article class="global-session-row ${related.length ? "has-conflict" : ""}">
+        <time datetime="${escapeHtml(`${entry.session.date}T${entry.session.time}`)}">${escapeHtml(entry.session.time || "--:--")}</time>
+        <div class="global-session-movie">
+          <span class="global-session-poster">${entry.movie.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(entry.movie.posterUrl))}" alt="" />` : escapeHtml(entry.movie.rating || "L")}</span>
+          <span><strong>${escapeHtml(entry.movie.title || "Filme sem título")}</strong><small>${escapeHtml(entry.session.format || "Formato não informado")}</small></span>
+        </div>
+        <div class="global-session-room"><strong>${escapeHtml(entry.session.room || "Sala não informada")}</strong><small>${escapeHtml(globalSessionStatusLabel(entry.session.status))}</small></div>
+        <div class="global-session-alert">${related.length ? `<strong>Conflito de horário</strong><small>${escapeHtml(conflictCopy)}</small>` : `<span>Horário livre</span>`}</div>
+        <button class="ghost-button" type="button" onclick="openGlobalSessionEditor('${escapeHtml(entry.movie.id)}', '${escapeHtml(entry.session.id)}')">Editar</button>
+      </article>`;
+  }).join("") + renderAdminListPager("globalSessions", { page: state.globalSessionsPage, pageSize, totalPages, start, pageItems, total: filtered.length }, "sessão(ões)");
+}
+
+function updateGlobalSessionFilters() {
+  state.globalSessionFilters = {
+    from: $("globalSessionsFrom").value,
+    to: $("globalSessionsTo").value,
+    roomId: $("globalSessionsRoom").value,
+    movieId: $("globalSessionsMovie").value,
+    status: $("globalSessionsStatus").value,
+    conflictsOnly: $("globalSessionsConflictsOnly").checked
+  };
+  state.globalSessionsPage = 1;
+  renderGlobalSessions();
+}
+
+function openGlobalSessionEditor(movieId, sessionId = "") {
+  if (!movieId) return showToast("Selecione um filme para criar a sessão.", "error");
+  state.creating.movie = false;
+  state.selectedMovieId = movieId;
+  activatePanel("moviesPanel", { scroll: true });
+  renderMovies();
+  setMovieWizardStep(3);
+  openSessionEditor(sessionId);
+}
+
 function renderRooms() {
   const rooms = state.content?.rooms || [];
+  renderGlobalSessions();
   if (state.creating.room) {
     $("roomsList").innerHTML = creationPlaceholder("Nova sala", "Cadastre nome, capacidade e tecnologia no quadro à direita.");
     fillRoomForm(null);
@@ -6555,6 +6728,7 @@ function changeAdminListPage(key, delta) {
   const renderers = {
     movies: renderMovies,
     rooms: renderRooms,
+    globalSessions: renderGlobalSessions,
     ticketTypes: renderTickets,
     concessions: renderConcessions,
     promotions: renderPromotions,
@@ -11476,6 +11650,10 @@ function bindEvents() {
   });
 
   $("newRoomButton").addEventListener("click", newRoom);
+  ["globalSessionsFrom", "globalSessionsTo", "globalSessionsRoom", "globalSessionsMovie", "globalSessionsStatus", "globalSessionsConflictsOnly"].forEach((id) => {
+    $(id)?.addEventListener("change", updateGlobalSessionFilters);
+  });
+  $("globalSessionCreateButton")?.addEventListener("click", () => openGlobalSessionEditor($("globalSessionCreateMovie").value));
   $("cancelRoomCreateButton").addEventListener("click", () => cancelCreation("room"));
   $("roomForm").addEventListener("submit", saveRoom);
   $("deleteRoomButton").addEventListener("click", deleteRoom);
@@ -12153,6 +12331,7 @@ window.handleMovieDragLeave = handleMovieDragLeave;
 window.handleMovieDragEnd = handleMovieDragEnd;
 window.handleMovieDrop = handleMovieDrop;
 window.selectRoom = selectRoom;
+window.openGlobalSessionEditor = openGlobalSessionEditor;
 window.selectTicket = selectTicket;
 window.showSessionTickets = showSessionTickets;
 window.selectConcession = selectConcession;

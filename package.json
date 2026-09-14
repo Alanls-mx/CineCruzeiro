@@ -26,6 +26,7 @@
     "test:abuse-controls": "node --test tests/ticket-transfer-policy.test.mjs",
     "test:ticket-concessions": "node --test tests/ticket-concession-assignment.test.mjs",
     "test:movie-publication": "node --test tests/movie-publication-policy.test.mjs",
+    "test:session-conflicts": "node --test tests/session-room-conflict.test.mjs",
     "test:coupon": "node --test tests/coupon-lifecycle.test.mjs",
     "test:finance": "node --test tests/club-checkout-pricing.test.mjs tests/club-free-item-pricing.test.mjs tests/concession-finance.test.mjs tests/concession-cancellation.test.mjs tests/financial-recognition.test.mjs tests/operations-monitor-refund.test.mjs",
     "test:ticket-code": "node --test tests/ticket-code.test.mjs",
@@ -34,7 +35,7 @@
     "test:email-campaign": "node --test tests/email-campaign.test.mjs tests/email-campaign-reliability.test.mjs tests/email-campaign-postgres.test.mjs tests/email-template-library.test.mjs",
     "audit:security": "node --test tests/security/abuse.test.mjs",
     "audit:integrity": "node scripts/audit-data-integrity.js",
-    "test": "npm run test:ticket-code && node scripts/club-hybrid-tests.js && node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/movie-image-localization-tests.js && node scripts/admin-two-factor-tests.js && node scripts/mercado-pago-point-tests.js && node scripts/ticket-document-tests.js && node scripts/seat-realtime-tests.js && node scripts/desktop-shell-tests.js && npm run test:abuse-controls && npm run test:ticket-concessions && npm run test:movie-publication && npm run test:coupon && npm run test:finance && npm run test:integrity && npm run test:admin-repositories && npm run test:email-campaign && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
+    "test": "npm run test:ticket-code && node scripts/club-hybrid-tests.js && node scripts/session-timezone-tests.js && node scripts/movie-tag-lifecycle-tests.js && node scripts/movie-image-localization-tests.js && node scripts/admin-two-factor-tests.js && node scripts/mercado-pago-point-tests.js && node scripts/ticket-document-tests.js && node scripts/seat-realtime-tests.js && node scripts/desktop-shell-tests.js && npm run test:abuse-controls && npm run test:ticket-concessions && npm run test:movie-publication && npm run test:session-conflicts && npm run test:coupon && npm run test:finance && npm run test:integrity && npm run test:admin-repositories && npm run test:email-campaign && node scripts/smoke-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/postgres-concurrency-tests.js"
   },
   "dependencies": {
     "@mercadopago/sdk-js": "^0.0.3",
