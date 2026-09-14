@@ -1291,6 +1291,11 @@ async function run() {
     assert.equal(reorderedMovies.response.status, 200);
     const orderAfter = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
     assert.equal(orderAfter.payload.movies[0].id, "smoke-rascunho-admin");
+    assert.equal(Number(orderAfter.payload.movies[0].sortOrder), 10);
+    assert.deepEqual(
+      orderAfter.payload.movies.map((movie) => Number(movie.sortOrder)),
+      orderAfter.payload.movies.map((_, index) => (index + 1) * 10)
+    );
 
     const customerSearch = await request(`/api/admin/customers?query=${encodeURIComponent(emailChangeAddress)}`, {
       headers: jsonHeaders(adminCookie)

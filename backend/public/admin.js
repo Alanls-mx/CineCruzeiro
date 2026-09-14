@@ -2745,6 +2745,7 @@ function validateMovieWizardStep(step, finalPublish = false) {
 
 function renderMovies() {
   const movies = [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
+  const catalogPositions = new Map(movies.map((movie, index) => [movie.id, index + 1]));
   if (state.creating.movie) {
     $("moviesList").innerHTML = creationPlaceholder("Novo filme em edição", "Preencha o quadro à direita e publique quando estiver pronto.");
     fillMovieForm(null);
@@ -2779,7 +2780,7 @@ function renderMovies() {
           <div>
             <span class="list-title">${escapeHtml(movie.title)}</span>
             <span class="movie-status-pill ${escapeHtml(priorityState.className)}"><span></span>${escapeHtml(priorityState.label)}</span>
-            <span class="list-meta">${workflowLabel} • ${statusLabel} • ${sessionCount} sessões • ${escapeHtml(movie.duration || "-")} • ${escapeHtml(movie.rating || "L")}${release}${automation}${movie.isHighlight ? " • destaque" : ""}${updated}</span>
+            <span class="list-meta">Posição ${catalogPositions.get(movie.id)} • ${workflowLabel} • ${statusLabel} • ${sessionCount} sessões • ${escapeHtml(movie.duration || "-")} • ${escapeHtml(movie.rating || "L")}${release}${automation}${movie.isHighlight ? " • destaque" : ""}${updated}</span>
           </div>
           <div class="movie-row-actions" onclick="event.stopPropagation()">
             <button class="icon-button" type="button" onclick="toggleMovieMenu('${escapeHtml(movie.id)}')" aria-label="Ações do filme">•••</button>
@@ -2818,6 +2819,11 @@ function fillMovieForm(movie) {
   state.movieDraftMetadata = structuredClone(movie?.metadata || {});
   $("movieDirector").value = movie?.director || "";
   $("movieTag").value = movie?.tag ?? "";
+  const catalogPosition = movie
+    ? orderedMovies().findIndex((item) => item.id === movie.id) + 1
+    : orderedMovies().length + 1;
+  $("movieCatalogPosition").max = String(Math.max(1, orderedMovies().length + (movie ? 0 : 1)));
+  $("movieCatalogPosition").value = String(Math.max(1, catalogPosition));
   $("movieGenre").value = (movie?.genre || []).join(", ");
   $("movieSynopsis").value = movie?.synopsis || "";
   $("movieTrailer").value = movie?.trailerYoutubeId || "";
@@ -3049,7 +3055,7 @@ function applySessionMutation(movieId, session, removed = false) {
   movie.updatedAt = new Date().toISOString();
 }
 
-async function saveMovieOrder(ids) {
+async function saveMovieOrder(ids, options = {}) {
   if (!ids.length) return;
   try {
     const result = await api("/api/movies/order", {
@@ -3057,12 +3063,22 @@ async function saveMovieOrder(ids) {
       body: JSON.stringify({ ids })
     });
     state.content.movies = result.movies || state.content.movies;
-    renderMovies();
+    if (options.render !== false) renderMovies();
     setStatus("Salvo");
-    showToast("Prioridade dos filmes atualizada.");
+    if (options.notify !== false) showToast("Prioridade dos filmes atualizada.");
+    return state.content.movies;
   } catch (error) {
-    showToast(error.message, "error");
+    if (options.notify !== false) showToast(error.message, "error");
+    if (options.rethrow) throw error;
   }
+}
+
+async function applyMovieCatalogPosition(movieId, requestedPosition) {
+  const ids = orderedMovies().map((movie) => movie.id).filter((id) => id !== movieId);
+  const position = Math.min(Math.max(1, Math.trunc(Number(requestedPosition) || 1)), ids.length + 1);
+  ids.splice(position - 1, 0, movieId);
+  await saveMovieOrder(ids, { render: false, notify: false, rethrow: true });
+  return position;
 }
 
 function moveMovie(id, direction) {
@@ -3153,7 +3169,7 @@ function getMoviePayload(action = "published") {
     trailerYoutubeId: $("movieTrailer").value,
     isHighlight: $("movieHighlight").checked,
     tag: $("movieTag").value,
-    sortOrder: Number(currentMovie()?.sortOrder ?? 100),
+    sortOrder: Number(currentMovie()?.sortOrder ?? ((orderedMovies().length + 1) * 10)),
     metadata: {
       ...(state.movieDraftMetadata || {}),
       updatedFromAdmin: true
@@ -3164,6 +3180,7 @@ function getMoviePayload(action = "published") {
 async function saveMovieWithAction(action = "published") {
   try {
     if (!validateMovieWizardStep(4, action === "published")) return;
+    const requestedPosition = Number($("movieCatalogPosition").value || 1);
     const payload = getMoviePayload(action);
     const existingId = $("movieId").value || state.selectedMovieId;
     if (existingId) payload.id = existingId;
@@ -3173,9 +3190,10 @@ async function saveMovieWithAction(action = "published") {
     state.creating.movie = false;
     state.selectedMovieId = saved.id;
     upsertAdminCollection("movies", saved);
+    const appliedPosition = await applyMovieCatalogPosition(saved.id, requestedPosition);
     renderMovies();
     showToast(action === "draft" ? "Rascunho salvo." : "Filme publicado.");
-    showSuccess(action === "draft" ? "Rascunho salvo" : "Filme publicado", `${saved.title} foi atualizado no catálogo administrativo.`);
+    showSuccess(action === "draft" ? "Rascunho salvo" : "Filme publicado", `${saved.title} foi atualizado na posição ${appliedPosition} do catálogo administrativo.`);
   } catch (error) {
     showToast(error.message, "error");
   }
