@@ -6173,7 +6173,10 @@ function renderConcessionCounterSummary() {
   if (!target) return;
   const products = new Map((state.content?.concessions || []).map((item) => [item.id, item]));
   const items = concessionCounterItems().map((item) => ({ ...item, product: products.get(item.id) })).filter((item) => item.product);
-  const total = items.reduce((sum, item) => sum + item.quantity * Number(item.product.price || 0), 0);
+  const grossTotal = items.reduce((sum, item) => sum + item.quantity * Number(item.product.price || 0), 0);
+  const paymentMethod = document.querySelector("input[name='concessionCounterPaymentMethod']:checked")?.value || "cash";
+  const courtesy = paymentMethod === "courtesy";
+  const total = courtesy ? 0 : grossTotal;
   const quantity = items.reduce((sum, item) => sum + item.quantity, 0);
   target.innerHTML = `
     <div class="concession-counter-summary-head">
@@ -6183,7 +6186,8 @@ function renderConcessionCounterSummary() {
     <div class="concession-counter-summary-items">
       ${items.length ? items.map((item) => `<div><span>${item.quantity}× ${escapeHtml(item.product.name)}</span><strong>${money(item.quantity * Number(item.product.price || 0))}</strong></div>`).join("") : `<div class="manual-sale-empty">Os produtos selecionados aparecerão aqui.</div>`}
     </div>
-    <div class="concession-counter-summary-total"><span>Total calculado</span><strong>${money(total)}</strong></div>`;
+    ${courtesy && items.length ? `<div class="concession-counter-summary-benefit"><span>Valor concedido como cortesia</span><strong>-${money(grossTotal)}</strong></div>` : ""}
+    <div class="concession-counter-summary-total"><span>${courtesy ? "Total da cortesia" : "Total calculado"}</span><strong>${money(total)}</strong></div>`;
   const submit = $("concessionCounterSubmitButton");
   if (submit) submit.disabled = items.length === 0;
 }
@@ -7812,11 +7816,29 @@ function emailCampaignPayload(action = "draft") {
   };
 }
 
+function ensureCampaignBrandLogoInTemplate(template, logoValue = $("emailBrandLogoUrl")?.value, brandName = $("emailBrandName")?.value || "Cine Cruzeiro") {
+  if (!template?.content || template.content.querySelector('[data-campaign-brand="true"], [data-campaign-field="logo"]')) return;
+  const firstCell = template.content.querySelector("table td");
+  if (!firstCell) return;
+  firstCell.insertAdjacentHTML("afterbegin", campaignTemplateLogo(
+    campaignTemplateAbsoluteUrl(campaignEmailLogoUrl(logoValue)),
+    brandName || "Cine Cruzeiro"
+  ));
+}
+
+function campaignHtmlWithRequiredBrand(source, brand = {}) {
+  const template = document.createElement("template");
+  template.innerHTML = String(source || "");
+  ensureCampaignBrandLogoInTemplate(template, brand.logoUrl, brand.name || "Cine Cruzeiro");
+  return template.innerHTML;
+}
+
 function campaignCanonicalHtmlWithEdits() {
   const source = $("emailCampaignHtml")?.value || "";
   if (!source) return campaignTemplateHtml();
   const template = document.createElement("template");
   template.innerHTML = source;
+  ensureCampaignBrandLogoInTemplate(template);
   const setText = (selector, value, multiline = false) => {
     template.content.querySelectorAll(selector).forEach((node) => {
       node.textContent = String(value || "");
@@ -7826,6 +7848,7 @@ function campaignCanonicalHtmlWithEdits() {
   setText('[data-campaign-field="headline"]', $("emailCampaignHeadline")?.value);
   setText('[data-campaign-field="message"]', $("emailCampaignMessage")?.value, true);
   setText('[data-campaign-field="footer"]', $("emailBrandFooter")?.value);
+  setText('[data-campaign-field="movie-title"]', selectedCampaignMovie()?.title || $("emailCampaignHeadline")?.value);
   template.content.querySelectorAll('[data-campaign-field="logo"]').forEach((node) => {
     const src = campaignTemplateAbsoluteUrl(campaignEmailLogoUrl($("emailBrandLogoUrl")?.value));
     if (src) node.setAttribute("src", src);
@@ -8309,24 +8332,24 @@ function selectedCampaignCatalogItem() {
 
 function campaignTemplateLogo(logoUrl, brandName, align = "left") {
   const accent = campaignTemplateTheme().accent || "#facc15";
-  return `<div style="margin:0 0 22px;text-align:${align}">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" width="126" alt="${escapeHtml(brandName)}" style="display:inline-block;width:126px;max-width:45%;height:auto;border:0;background-color:transparent">` : `<strong style="color:${accent};font-size:16px">${escapeHtml(brandName)}</strong>`}</div>`;
+  return `<div data-campaign-brand="true" style="margin:0 0 22px;text-align:${align}">${logoUrl ? `<img data-campaign-field="logo" src="${escapeHtml(logoUrl)}" width="126" alt="${escapeHtml(brandName)}" style="display:inline-block;width:126px;max-width:45%;height:auto;border:0;background-color:transparent">` : `<strong style="color:${accent};font-size:16px">${escapeHtml(brandName)}</strong>`}</div>`;
 }
 
 function campaignTemplateButton(label, url, color = "#facc15", align = "left") {
   color = campaignTemplateTheme().accent || color;
-  return url && label ? `<div style="margin-top:24px;text-align:${align}"><a href="${escapeHtml(url)}" style="display:inline-block;padding:13px 19px;background:${color};color:#050912;text-decoration:none;font-weight:800;border-radius:6px">${escapeHtml(label)}</a></div>` : "";
+  return url && label ? `<div style="margin-top:24px;text-align:${align}"><a data-campaign-cta-index="0" href="${escapeHtml(url)}" style="display:inline-block;padding:13px 19px;background:${color};color:#050912;text-decoration:none;font-weight:800;border-radius:6px">${escapeHtml(label)}</a></div>` : "";
 }
 
 function campaignTemplateMessage(message, color = "#dbeafe", align = "left") {
   color = campaignTemplateTheme().text || color;
-  return `<div style="color:${color};font-size:15px;line-height:1.65;text-align:${align}">${escapeHtml(message).replace(/\n/g, "<br>")}</div>`;
+  return `<div data-campaign-field="message" style="color:${color};font-size:15px;line-height:1.65;text-align:${align}">${escapeHtml(message).replace(/\n/g, "<br>")}</div>`;
 }
 
 function campaignTemplateImage(url, alt, link = "", options = {}) {
   if (!url) return "";
   const width = Number(options.width || 560);
   const radius = Number(options.radius ?? 8);
-  const image = `<img src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" width="${width}" style="display:block;width:100%;max-width:${width}px;max-height:${Number(options.maxHeight || 380)}px;height:auto;margin:0 auto;border:0;border-radius:${radius}px;object-fit:contain">`;
+  const image = `<img data-campaign-field="image" src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" width="${width}" style="display:block;width:100%;max-width:${width}px;max-height:${Number(options.maxHeight || 380)}px;height:auto;margin:0 auto;border:0;border-radius:${radius}px;object-fit:contain">`;
   return link ? `<a href="${escapeHtml(link)}" style="display:block;text-decoration:none">${image}</a>` : image;
 }
 
@@ -8342,7 +8365,7 @@ function campaignMovieSessions(movie) {
 function campaignTemplateShell(content, footer, options = {}) {
   const theme = campaignTemplateTheme();
   const border = theme.accent ? `4px solid ${theme.accent}` : options.topBorder || "0";
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:620px;margin:0 auto;background:${theme.background || options.background || "#0d1728"};font-family:'Segoe UI',Arial,sans-serif"><tbody><tr><td style="padding:${options.padding || "28px"};border-top:${border}">${content}<p style="margin:28px 0 0;padding-top:18px;border-top:1px solid ${options.divider || "#233047"};color:${options.muted || "#93a4bd"};font-size:12px;line-height:1.5">${escapeHtml(footer)}</p></td></tr></tbody></table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:620px;margin:0 auto;background:${theme.background || options.background || "#0d1728"};font-family:'Segoe UI',Arial,sans-serif"><tbody><tr><td style="padding:${options.padding || "28px"};border-top:${border}">${content}<p data-campaign-field="footer" style="margin:28px 0 0;padding-top:18px;border-top:1px solid ${options.divider || "#233047"};color:${options.muted || "#93a4bd"};font-size:12px;line-height:1.5">${escapeHtml(footer)}</p></td></tr></tbody></table>`;
 }
 
 function campaignTemplateHtml() {
@@ -8370,21 +8393,30 @@ function campaignTemplateHtml() {
   const theme = campaignTemplateTheme();
   const logo = (align = "left") => campaignTemplateLogo(logoUrl, brandName, align);
   const kicker = (color = "#60a5fa", align = "left") => `<p style="margin:0 0 9px;color:${theme.accent || color};font-size:11px;font-weight:800;text-transform:uppercase;text-align:${align}">${escapeHtml(template.kicker)}</p>`;
-  const title = (color = "#ffffff", size = 30, align = "left") => `<h1 style="margin:0 0 18px;color:${theme.headline || color};font-size:${size}px;line-height:1.15;text-align:${align};word-break:normal">${escapeHtml(headline)}</h1>`;
+  const title = (color = "#ffffff", size = 30, align = "left") => `<h1 data-campaign-field="headline" style="margin:0 0 18px;color:${theme.headline || color};font-size:${size}px;line-height:1.15;text-align:${align};word-break:normal">${escapeHtml(headline)}</h1>`;
   const linkedImage = campaignTemplateImage(imageUrl, imageAlt, imageLink || ctaUrl);
 
   if (template.layout === "premiere") {
     const genre = Array.isArray(movie?.genres) ? movie.genres[0] : Array.isArray(movie?.genre) ? movie.genre[0] : movie?.genre || "";
     const details = [movie?.duration ? String(movie.duration) : "", movie?.rating || movie?.classification || "", genre].filter(Boolean).join(" · ");
-    return campaignTemplateShell(`${logo("center")}${linkedImage ? `<div style="margin:0 auto 22px;max-width:300px;padding:10px;background:#050912;border-radius:8px">${linkedImage}</div>` : ""}${kicker("#facc15", "center")}${title("#ffffff", 32, "center")}${details ? `<p style="margin:0 0 16px;color:#93a4bd;font-size:12px;text-align:center">${escapeHtml(details)}</p>` : ""}${campaignTemplateMessage(message, "#dbeafe", "center")}<div style="margin-top:18px;text-align:center">${campaignMovieSessions(movie)}</div>${campaignTemplateButton(ctaLabel, ctaUrl, "#facc15", "center")}`, footer, { topBorder: "4px solid #facc15" });
+    const movieTitle = movie?.title || headline;
+    const campaignHeadline = movie && headline !== movieTitle ? `<p data-campaign-field="headline" style="margin:0 0 10px;color:${theme.headline || "#ffffff"};font-size:18px;font-weight:800;text-align:center">${escapeHtml(headline)}</p>` : "";
+    return campaignTemplateShell(`${logo("center")}${linkedImage ? `<div style="margin:0 auto 22px;max-width:300px;padding:10px;background:#050912;border-radius:8px">${linkedImage}</div>` : ""}${kicker("#facc15", "center")}<h1 data-campaign-field="movie-title" style="margin:0 0 10px;color:${theme.headline || "#ffffff"};font-size:32px;line-height:1.15;text-align:center">${escapeHtml(movieTitle)}</h1>${campaignHeadline}${details ? `<p style="margin:0 0 16px;color:#93a4bd;font-size:12px;text-align:center">${escapeHtml(details)}</p>` : ""}${campaignTemplateMessage(message, "#dbeafe", "center")}<div style="margin-top:18px;text-align:center">${campaignMovieSessions(movie)}</div>${campaignTemplateButton(ctaLabel, ctaUrl, "#facc15", "center")}`, footer, { topBorder: "4px solid #facc15" });
   }
   if (template.layout === "weekly") {
     const films = selectedCampaignMovies().slice(0, 4);
-    const rows = films.map((item) => `<tr><td style="padding:12px 0;border-bottom:1px solid #233047"><strong style="display:block;color:#f3f6fb;font-size:14px">${escapeHtml(item.title || "Filme")}</strong><div style="margin-top:4px">${campaignMovieSessions(item)}</div></td></tr>`).join("") || `<tr><td style="padding:14px 0;color:#93a4bd">Cadastre filmes e sessões para preencher esta agenda.</td></tr>`;
+    const rows = films.map((item) => {
+      const posterUrl = campaignTemplateAbsoluteUrl(item.posterUrl);
+      const poster = posterUrl
+        ? `<td width="78" valign="top" style="width:78px;padding:12px 0;border-bottom:1px solid #233047"><img src="${escapeHtml(posterUrl)}" alt="Pôster de ${escapeHtml(item.title || "filme")}" width="64" height="94" style="display:block;width:64px;height:94px;border:0;border-radius:5px;object-fit:cover"></td>`
+        : "";
+      return `<tr>${poster}<td valign="middle" style="padding:12px 0;border-bottom:1px solid #233047"><strong style="display:block;color:#f3f6fb;font-size:14px">${escapeHtml(item.title || "Filme")}</strong><div style="margin-top:4px">${campaignMovieSessions(item)}</div></td></tr>`;
+    }).join("") || `<tr><td style="padding:14px 0;color:#93a4bd">Cadastre filmes e sessões para preencher esta agenda.</td></tr>`;
     return campaignTemplateShell(`${logo()}${linkedImage ? `<div style="margin:0 0 20px">${linkedImage}</div>` : ""}${kicker("#67e8f9")}${title()}${campaignTemplateMessage(message)}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin-top:20px;background:#09111f;border-radius:8px"><tbody>${rows}</tbody></table>${campaignTemplateButton(ctaLabel, ctaUrl, "#67e8f9")}`, footer, { background: "#07111d", topBorder: "4px solid #22d3ee" });
   }
   if (template.layout === "lastChance") {
-    return campaignTemplateShell(`${logo("center")}${kicker("#fb7185", "center")}${linkedImage ? `<div style="margin:0 auto 20px;max-width:280px">${linkedImage}</div>` : ""}${title("#ffffff", 32, "center")}${campaignTemplateMessage(message, "#dbeafe", "center")}<div style="margin:20px 0;padding:13px;background:#2a1019;color:#fecdd3;text-align:center;border-radius:6px;font-size:13px;font-weight:800">Últimas sessões disponíveis</div><div style="text-align:center">${campaignMovieSessions(movie)}</div>${campaignTemplateButton(ctaLabel, ctaUrl, "#fb7185", "center")}`, footer, { background: "#120a11", divider: "#42202b", topBorder: "4px solid #fb7185" });
+    const movieTitle = movie?.title || headline;
+    return campaignTemplateShell(`${logo("center")}${kicker("#fb7185", "center")}${linkedImage ? `<div style="margin:0 auto 20px;max-width:280px">${linkedImage}</div>` : ""}<h1 data-campaign-field="movie-title" style="margin:0 0 10px;color:${theme.headline || "#ffffff"};font-size:32px;line-height:1.15;text-align:center">${escapeHtml(movieTitle)}</h1>${movie && headline !== movieTitle ? `<p data-campaign-field="headline" style="margin:0 0 18px;color:#fecdd3;font-size:17px;font-weight:800;text-align:center">${escapeHtml(headline)}</p>` : ""}${campaignTemplateMessage(message, "#dbeafe", "center")}<div style="margin:20px 0;padding:13px;background:#2a1019;color:#fecdd3;text-align:center;border-radius:6px;font-size:13px;font-weight:800">Últimas sessões disponíveis</div><div style="text-align:center">${campaignMovieSessions(movie)}</div>${campaignTemplateButton(ctaLabel, ctaUrl, "#fb7185", "center")}`, footer, { background: "#120a11", divider: "#42202b", topBorder: "4px solid #fb7185" });
   }
   if (template.layout === "promotion") {
     const coupon = (state.content?.promotions || []).find((item) => item.id === $("emailCampaignCoupon")?.value);
@@ -8873,7 +8905,9 @@ async function previewEmailTemplateLibraryItem(id) {
     state.emailTemplateLibraryPreviewItem = { ...summary, ...result.item };
     const campaign = result.item?.campaign;
     if (campaign) {
-      const html = campaign.html || `<div style="padding:32px;background:#0d1728;color:#fff;font-family:Arial,sans-serif"><h1>${escapeHtml(campaign.headline || campaign.subject || summary.name)}</h1><p>${escapeHtml(campaign.message || "")}</p></div>`;
+      const html = campaign.html
+        ? campaignHtmlWithRequiredBrand(campaign.html, campaign.brand || {})
+        : `<div style="padding:32px;background:#0d1728;color:#fff;font-family:Arial,sans-serif"><h1>${escapeHtml(campaign.headline || campaign.subject || summary.name)}</h1><p>${escapeHtml(campaign.message || "")}</p></div>`;
       $("emailTemplatePreviewContent").innerHTML = '<iframe title="Prévia segura do modelo" sandbox="allow-popups"></iframe>';
       $("emailTemplatePreviewContent").querySelector("iframe").srcdoc = html;
     } else {
@@ -11473,6 +11507,9 @@ function bindEvents() {
     button.addEventListener("click", () => setConcessionTab(button.dataset.concessionTab));
   });
   $("concessionCounterForm")?.addEventListener("submit", createConcessionCounterSale);
+  document.querySelectorAll("input[name='concessionCounterPaymentMethod']").forEach((input) => {
+    input.addEventListener("change", renderConcessionCounterSummary);
+  });
   $("concessionCounterSearch")?.addEventListener("input", (event) => {
     state.concessionCounterSearch = event.target.value;
     state.concessionCounterPage = 1;

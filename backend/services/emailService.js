@@ -352,9 +352,9 @@ function sanitizeCampaignHtml(value) {
     .replace(/(href|src)\s*=\s*(["'])\s*(javascript|data|vbscript):[\s\S]*?\2/gi, '$1="#"');
 }
 
-function repairCampaignBrandLogoHtml(value, siteUrl = "") {
-  const canonicalLogoUrl = absoluteUrl("/images/favicon-email.png", siteUrl);
-  return String(value || "").replace(/<img\b[^>]*>/gi, (tag) => {
+function repairCampaignBrandLogoHtml(value, siteUrl = "", logoUrl = "", brandName = "Cine Cruzeiro") {
+  const canonicalLogoUrl = absoluteUrl(logoUrl || "/images/favicon-email.png", siteUrl);
+  const repairedHtml = String(value || "").replace(/<img\b[^>]*>/gi, (tag) => {
     const source = tag.match(/\bsrc\s*=\s*(["'])([^"']+)\1/i);
     if (!source || !/\/images\/(?:favicon-email\.png|logo-display\.webp)(?:[?#][^"']*)?$/i.test(source[2])) return tag;
 
@@ -371,6 +371,11 @@ function repairCampaignBrandLogoHtml(value, siteUrl = "") {
     }
     return repaired;
   });
+  const hasBrand = /data-campaign-(?:brand|field)\s*=\s*(["'])(?:true|logo)\1/i.test(repairedHtml)
+    || /<img\b[^>]*(?:favicon-email\.png|logo-display\.webp)[^>]*>/i.test(repairedHtml);
+  if (hasBrand || !canonicalLogoUrl) return repairedHtml;
+  const logo = `<div data-campaign-brand="true" style="margin:0 0 22px;text-align:left"><img data-campaign-field="logo" src="${htmlEscape(canonicalLogoUrl)}" width="126" alt="${htmlEscape(brandName || "Cine Cruzeiro")}" style="display:inline-block;width:126px;max-width:45%;height:auto;border:0;background-color:transparent"></div>`;
+  return `${logo}${repairedHtml}`;
 }
 
 function campaignVariableValues(recipient = {}, customVariables = {}) {
@@ -606,7 +611,7 @@ function promotionMessage(input = {}, recipient = {}) {
         <p>${htmlEscape(personalizedMessage).replace(/\n/g, "<br>")}</p>
         ${input.ctaUrl ? `<p>${button(input.ctaLabel || "Ver promoção", input.ctaUrl, false, { background: input.buttonColor })}</p>` : ""}
       `;
-  const campaignBody = repairCampaignBrandLogoHtml(rawCampaignBody, input.siteUrl);
+  const campaignBody = repairCampaignBrandLogoHtml(rawCampaignBody, input.siteUrl, input.logoUrl, input.brand?.name);
   const unsubscribeUrl = recipient.unsubscribeUrl || "";
   return {
     to: recipient.email,

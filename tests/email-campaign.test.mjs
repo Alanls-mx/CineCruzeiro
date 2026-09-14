@@ -108,6 +108,18 @@ test("HTML salvo com a logo antiga é reparado antes do envio", () => {
   assert.doesNotMatch(result, /logo-display\.webp|background-color:#09111f/);
 });
 
+test("HTML salvo sem marca recebe a logo antes do envio", () => {
+  const result = emailService._test.repairCampaignBrandLogoHtml(
+    '<table><tr><td><h1>Oferta</h1></td></tr></table>',
+    "https://example.com/projects/cinecruzeiro",
+    "/images/favicon-email.png",
+    "Cine Cruzeiro"
+  );
+  assert.match(result, /data-campaign-field="logo"/);
+  assert.match(result, /https:\/\/example\.com\/projects\/cinecruzeiro\/images\/favicon-email\.png/);
+  assert.equal((result.match(/data-campaign-field="logo"/g) || []).length, 1);
+});
+
 test("campanha renderiza imagem local com link e texto alternativo", () => {
   const result = emailService._test.campaignImageBlock({
     imageUrl: "/uploads/email-campaign/poster.webp",

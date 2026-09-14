@@ -1771,6 +1771,21 @@ async function run() {
     assert.equal(concessionCounterSale.payload.tickets.length, 0);
     assert.equal(concessionCounterSale.payload.payment.metadata.origin, "concession_counter");
 
+    const concessionCourtesySale = await request("/api/admin/concession-counter-sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        saleMode: "concession_counter",
+        paymentMethod: "courtesy",
+        concessionItems: [{ id: "smoke-counter-product", quantity: 1 }]
+      })
+    });
+    assert.equal(concessionCourtesySale.response.status, 201);
+    assert.equal(concessionCourtesySale.payload.order.totalPrice, 0);
+    assert.equal(concessionCourtesySale.payload.order.discountValue, 17.5);
+    assert.equal(concessionCourtesySale.payload.payment.method, "courtesy");
+    assert.equal(concessionCourtesySale.payload.payment.amount, 0);
+
     const counterReceipt = await fetch(`${BASE_URL}/api/admin/concession-sales/${encodeURIComponent(concessionCounterSale.payload.order.id)}/print`, {
       headers: { Cookie: adminCookie }
     });
