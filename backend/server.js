@@ -12361,6 +12361,7 @@ async function handleApi(req, res, pathname) {
       orders: historyOrders,
       filters,
       turnaroundMinutes: body.turnaroundMinutes,
+      stepMinutes: body.stepMinutes,
       includeSales: body.includeSales === true
     });
 

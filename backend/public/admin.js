@@ -4241,6 +4241,7 @@ function sessionAutocorrectPayload() {
     roomId: state.globalSessionFilters.roomId,
     movieId: state.globalSessionFilters.movieId,
     turnaroundMinutes: Number($("sessionAutocorrectTurnaround")?.value || 20),
+    stepMinutes: Number($("sessionAutocorrectStep")?.value || 5),
     includeSales: Boolean($("sessionAutocorrectIncludeSales")?.checked)
   };
 }
@@ -4259,10 +4260,13 @@ function renderSessionAutocorrectPreview(plan) {
   if (!preview) return;
   const changes = plan.changes || [];
   const unresolved = plan.unresolved || [];
+  const stepLabel = Number(plan.stepMinutes) > 1
+    ? ` · Arredondamento: múltiplos de ${Number(plan.stepMinutes)} min`
+    : "";
   preview.hidden = false;
   preview.innerHTML = `
     <div class="session-autocorrect-result-head">
-      <div><strong>${changes.length ? `${changes.length} ajuste(s) sugerido(s)` : "Programação sem ajustes automáticos"}</strong><span>Intervalo operacional considerado: ${Number(plan.turnaroundMinutes || 0)} minutos.</span></div>
+      <div><strong>${changes.length ? `${changes.length} ajuste(s) sugerido(s)` : "Programação sem ajustes automáticos"}</strong><span>Intervalo operacional: ${Number(plan.turnaroundMinutes || 0)} min${stepLabel}.</span></div>
       <button class="icon-only-sm ghost-button" type="button" onclick="clearSessionAutocorrectPreview()" aria-label="Fechar sugestão"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     ${changes.length ? `<div class="session-autocorrect-changes">${changes.map((change) => `
@@ -11752,7 +11756,7 @@ function bindEvents() {
   });
   $("globalSessionCreateButton")?.addEventListener("click", () => openGlobalSessionEditor($("globalSessionCreateMovie").value));
   $("sessionAutocorrectPreviewButton")?.addEventListener("click", previewSessionAutocorrect);
-  ["sessionAutocorrectTurnaround", "sessionAutocorrectIncludeSales"].forEach((id) => $(id)?.addEventListener("change", clearSessionAutocorrectPreview));
+  ["sessionAutocorrectTurnaround", "sessionAutocorrectStep", "sessionAutocorrectIncludeSales"].forEach((id) => $(id)?.addEventListener("change", clearSessionAutocorrectPreview));
   $("cancelRoomCreateButton").addEventListener("click", () => cancelCreation("room"));
   $("roomForm").addEventListener("submit", saveRoom);
   $("deleteRoomButton").addEventListener("click", deleteRoom);

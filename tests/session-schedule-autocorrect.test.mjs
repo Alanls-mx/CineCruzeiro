@@ -35,3 +35,46 @@ test("não cria conflito com sessão fora do período filtrado", () => {
   const plan = service.buildSessionAutocorrectPlan({ movies: calendar, filters: { from: "2026-09-20", to: "2026-09-20" }, now: new Date("2026-09-19T12:00:00-03:00").getTime(), turnaroundMinutes: 20 });
   assert.deepEqual(plan.changes[0].to, { date: "2026-09-21", time: "01:50" });
 });
+
+test("arredonda horários quebrados para o próximo múltiplo de 5 minutos (ex.: 21:03 para 21:05)", () => {
+  // Filme A: 19:00 + 1h 43min (103 min) = 20:43.
+  // Limpeza de 20 min => 20:43 + 20 min = 21:03.
+  // Com arredondamento de 5 min, o horário sugerido deve ser 21:05.
+  const moviesWithOddDuration = [
+    { id: "a", title: "Filme A", duration: "1h 43min", sessions: [{ id: "a1", date: "2026-09-20", time: "19:00", room: "Sala 1", status: "available" }] },
+    { id: "b", title: "Filme B", duration: "1h 30min", sessions: [{ id: "b1", date: "2026-09-20", time: "19:30", room: "Sala 1", status: "available" }] }
+  ];
+  const plan = service.buildSessionAutocorrectPlan({
+    movies: moviesWithOddDuration,
+    now: new Date("2026-09-19T12:00:00-03:00").getTime(),
+    turnaroundMinutes: 20
+  });
+  assert.equal(plan.changes.length, 1);
+  assert.deepEqual(plan.changes[0].to, { date: "2026-09-20", time: "21:05" });
+  assert.equal(plan.stepMinutes, 5);
+});
+
+test("permite configurar stepMinutes customizado (ex.: 10 min ou 1 min exato)", () => {
+  const moviesWithOddDuration = [
+    { id: "a", title: "Filme A", duration: "1h 43min", sessions: [{ id: "a1", date: "2026-09-20", time: "19:00", room: "Sala 1", status: "available" }] },
+    { id: "b", title: "Filme B", duration: "1h 30min", sessions: [{ id: "b1", date: "2026-09-20", time: "19:30", room: "Sala 1", status: "available" }] }
+  ];
+  const plan10 = service.buildSessionAutocorrectPlan({
+    movies: moviesWithOddDuration,
+    now: new Date("2026-09-19T12:00:00-03:00").getTime(),
+    turnaroundMinutes: 20,
+    stepMinutes: 10
+  });
+  assert.deepEqual(plan10.changes[0].to, { date: "2026-09-20", time: "21:10" });
+  assert.equal(plan10.stepMinutes, 10);
+
+  const planExact = service.buildSessionAutocorrectPlan({
+    movies: moviesWithOddDuration,
+    now: new Date("2026-09-19T12:00:00-03:00").getTime(),
+    turnaroundMinutes: 20,
+    stepMinutes: 1
+  });
+  assert.deepEqual(planExact.changes[0].to, { date: "2026-09-20", time: "21:03" });
+  assert.equal(planExact.stepMinutes, 1);
+});
+
