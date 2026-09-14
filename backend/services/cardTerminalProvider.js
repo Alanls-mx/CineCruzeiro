@@ -82,11 +82,14 @@ function concessionPrintItems(orders = []) {
 
 function ticketPrintContent(tickets = [], orders = []) {
   const normalized = (Array.isArray(tickets) ? tickets : []).filter(Boolean);
-  if (!normalized.length) {
-    throw providerError("Nenhum ingresso foi informado para impressão.", 400, "POINT_PRINT_TICKETS_MISSING");
+  const concessions = concessionPrintItems(orders);
+  if (!normalized.length && !concessions.length) {
+    throw providerError("Nenhum ingresso ou item da bomboniere foi informado para impressão.", 400, "POINT_PRINT_CONTENT_MISSING");
   }
 
-  let content = "{center}{w}{b}CINE CRUZEIRO{/b}{/w}{br}{s}INGRESSO FISICO{/s}{/center}{br}";
+  let content = normalized.length
+    ? "{center}{w}{b}CINE CRUZEIRO{/b}{/w}{br}{s}INGRESSO FISICO{/s}{/center}{br}"
+    : "{center}{w}{b}CINE CRUZEIRO{/b}{/w}{br}{s}BOMBONIERE - VIA PDV{/s}{/center}{br}";
   normalized.forEach((ticket, index) => {
     const movie = printText(ticket.movieTitle || "Filme", 38);
     const date = brazilianDate(ticket.sessionDate);
@@ -101,7 +104,6 @@ function ticketPrintContent(tickets = [], orders = []) {
     content += `${room}{br}${type}{br}{s}${code}{/s}{br}`;
     content += `{qr}${qrPayload}{/qr}{br}--------------------------------{/center}{br}`;
   });
-  const concessions = concessionPrintItems(orders);
   if (concessions.length) {
     content += "{center}{b}BOMBONIERE{/b}{/center}{br}";
     concessions.forEach((item) => {
@@ -110,7 +112,9 @@ function ticketPrintContent(tickets = [], orders = []) {
     const total = concessions.reduce((sum, item) => sum + Number(item.total || 0), 0);
     content += `{b}Total bomboniere: ${brazilianMoney(total)}{/b}{br}--------------------------------{br}`;
   }
-  content += "{center}{s}Apresente o QR Code na entrada.{/s}{/center}{br}";
+  content += normalized.length
+    ? "{center}{s}Apresente o QR Code na entrada.{/s}{/center}{br}"
+    : "{center}{s}Venda presencial concluida. Documento nao fiscal.{/s}{/center}{br}";
 
   if (content.length > 4096) {
     throw providerError(

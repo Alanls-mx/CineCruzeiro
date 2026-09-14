@@ -117,9 +117,21 @@ async function run() {
   if (!db.users.some((user) => user.id === "admin")) {
     db.users.push({ id: "admin", name: "Administrador", email: process.env.ADMIN_EMAIL, role: "owner", active: true, passwordHash: "" });
   }
-  db.concessions = (db.concessions || []).map((item) =>
+  db.concessions = (db.concessions || []).filter((item) => item.id !== "smoke-counter-product").map((item) =>
     item.id === "combo-classico" ? { ...item, stock: 3, reserved: 0, sold: 0 } : item
   );
+  db.concessions.push({
+    id: "smoke-counter-product",
+    sku: "SMOKE-PDV",
+    name: "Pipoca Smoke PDV",
+    category: "pipoca",
+    price: 17.5,
+    stock: 2,
+    stockUnit: "kg",
+    usagePerSale: 0.25,
+    maxPerOrder: 8,
+    active: true
+  });
   db.ticketTypes = (db.ticketTypes || []).filter((item) => item.id !== "triple-smoke");
   db.ticketTypes.push({ id: "triple-smoke", name: "Triple Ingresso", price: 25, description: "Pacote de teste", bundleQuantity: 3, active: true });
   db.promotions = (db.promotions || []).filter((item) => !["cupom-smoke-20", "cupom-smoke-gratis"].includes(item.id));
@@ -1740,6 +1752,37 @@ async function run() {
     assert.equal(boxOfficeSale.payload.payment.method, "external_pix");
     assert.equal(boxOfficeSale.payload.tickets.length, 1);
     assert.equal(boxOfficeSale.payload.tickets[0].ticketType, "Ingresso Promocional");
+
+    const concessionCounterSale = await request("/api/admin/concession-counter-sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        saleMode: "concession_counter",
+        paymentMethod: "cash",
+        concessionItems: [{ id: "smoke-counter-product", quantity: 2 }]
+      })
+    });
+    assert.equal(concessionCounterSale.response.status, 201);
+    assert.equal(concessionCounterSale.payload.order.origin, "concession_counter");
+    assert.equal(concessionCounterSale.payload.order.saleMode, "concession_counter");
+    assert.equal(concessionCounterSale.payload.order.totalPrice, 35);
+    assert.equal(concessionCounterSale.payload.order.concessionStatus, "fulfilled");
+    assert.equal(concessionCounterSale.payload.order.concessionItems[0].fulfilledQuantity, 2);
+    assert.equal(concessionCounterSale.payload.tickets.length, 0);
+    assert.equal(concessionCounterSale.payload.payment.metadata.origin, "concession_counter");
+
+    const counterReceipt = await fetch(`${BASE_URL}/api/admin/concession-sales/${encodeURIComponent(concessionCounterSale.payload.order.id)}/print`, {
+      headers: { Cookie: adminCookie }
+    });
+    assert.equal(counterReceipt.status, 200);
+    assert.match(counterReceipt.headers.get("content-type") || "", /application\/pdf/);
+    assert.ok((await counterReceipt.arrayBuffer()).byteLength > 500);
+
+    const counterDailySales = await request(`/api/admin/concession-sales?date=${new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" })}`, { headers: jsonHeaders(adminCookie) });
+    assert.equal(counterDailySales.response.status, 200);
+    const counterGroup = counterDailySales.payload.groups.find((group) => group.id.startsWith("counter-sales-"));
+    assert.equal(counterGroup.title, "Balcão da bomboniere");
+    assert.ok(counterGroup.orders.some((order) => order.id === concessionCounterSale.payload.order.id));
 
     const multiMovieSale = await request("/api/box-office/sales", {
       method: "POST",

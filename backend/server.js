@@ -1265,6 +1265,8 @@ function customerMutationOriginAllowed(req) {
 }
 
 function requiredAdminRoles(pathname, method) {
+  if (pathname === "/api/admin/concession-counter-sales" && method === "POST") return ["owner", "manager", "operator"];
+  if (/^\/api\/admin\/concession-sales\/[^/]+\/print$/.test(pathname) && method === "GET") return ["owner", "manager", "operator"];
   if (pathname.startsWith("/api/admin/concession-sales")) return ["owner", "manager"];
   if (pathname === "/api/admin/content") return ["owner", "manager", "operator"];
   if (pathname === "/api/admin/dashboard") return ["owner", "manager", "operator"];
@@ -1290,6 +1292,7 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
+  if (pathname === "/api/admin/concession-counter-sales") return "concessions.manage";
   if (pathname.startsWith("/api/admin/concession-sales")) return "concessions.manage";
   if (pathname.startsWith("/api/admin/marketing")) return "marketing.manage";
   if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "box_office.manage";
@@ -1378,6 +1381,7 @@ function auditCollectionForPath(pathname) {
     return { entityType: "order", collection: "orders", entityId: match?.[1] ? decodeURIComponent(match[1]) : "" };
   }
   if (pathname === "/api/box-office/sales") return { entityType: "box_office_sale", collection: "orders", entityId: "" };
+  if (pathname === "/api/admin/concession-counter-sales") return { entityType: "concession_counter_sale", collection: "orders", entityId: "" };
   if (pathname === "/api/tickets/manual") return { entityType: "manual_sale", collection: "orders", entityId: "" };
   if (pathname === "/api/tickets/validate") return { entityType: "ticket_validation", collection: "tickets", entityId: "" };
   return { entityType: "admin_action", collection: "", entityId: "" };
@@ -1822,6 +1826,8 @@ function normalizePaymentOrder(input) {
     customerCpf: input.customerCpf ? String(input.customerCpf).replace(/\D/g, "").slice(0, 11) : "",
     payerFirstName: firstName || "Cliente",
     payerLastName: lastNameParts.join(" ") || "Cine Cruzeiro",
+    saleMode: String(input.saleMode || "").trim(),
+    ticketDeliveryMethod: String(input.ticketDeliveryMethod || "").trim(),
     paymentMethod: input.paymentMethod || "PIX",
     useClubCredits: Boolean(input.useClubCredits),
     useClubBenefits: Boolean(input.useClubBenefits),
@@ -2890,6 +2896,7 @@ function createPaymentRecord(order, providerPayment, method) {
 
 function createBoxOfficePaymentRecord(order, method, adminUser) {
   const now = new Date().toISOString();
+  const origin = order?.saleMode === "concession_counter" ? "concession_counter" : "box_office";
   const provider = method === "courtesy"
     ? "admin"
     : method === "card_terminal"
@@ -2911,7 +2918,7 @@ function createBoxOfficePaymentRecord(order, method, adminUser) {
     updatedAt: now,
     approvedAt: now,
     metadata: {
-      origin: "box_office",
+      origin,
       ...(method === "card_terminal" ? cardTerminalProvider.manualTerminalPaymentMetadata({}, adminUser) : {}),
       manualConfirmation: !cardTerminalProvider.configured() || method !== "card_terminal",
       createdBy: adminUser?.id || "",
@@ -2923,6 +2930,7 @@ function createBoxOfficePaymentRecord(order, method, adminUser) {
 function createPointPaymentRecord(orders, providerPayment, adminUser, batchId, method = "card_terminal") {
   const now = new Date().toISOString();
   const relatedOrderIds = orders.map((order) => order.id);
+  const origin = orders.some((order) => order?.saleMode === "concession_counter") ? "concession_counter" : "box_office";
   return {
     id: `pagamento-point-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
     orderId: relatedOrderIds[0],
@@ -2938,7 +2946,7 @@ function createPointPaymentRecord(orders, providerPayment, adminUser, batchId, m
     approvedAt: providerPayment.status === "approved" ? now : "",
     metadata: {
       kind: "point_sale",
-      origin: "box_office",
+      origin,
       batchId,
       relatedOrderIds,
       terminalId: providerPayment.terminalId || "",
@@ -3027,13 +3035,14 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
 function boxOfficeOrdersForAutomaticPrint(orders = []) {
   return (Array.isArray(orders) ? orders : []).filter((order) => (
     order?.saleMode === "quick" ||
+    order?.saleMode === "concession_counter" ||
     (order?.saleMode === "guest" && String(order.ticketDeliveryMethod || "physical") === "physical")
   ));
 }
 
 function boxOfficeTicketDeliveryMethod(saleMode, requestedMethod) {
   if (saleMode === "registered") return "online";
-  if (saleMode === "quick") return "physical";
+  if (["quick", "concession_counter"].includes(saleMode)) return "physical";
   return requestedMethod === "online" ? "online" : "physical";
 }
 
@@ -3088,7 +3097,8 @@ async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {
   if (existingPrint && printableOrders.every((order) => order.pointPrint?.status === "queued")) {
     return { requested: true, ...existingPrint, message: "A impressão desta venda já foi enviada para a Point." };
   }
-  if (!printableOrders.length || !printableTickets.length) {
+  const printableConcessionCount = printableOrders.reduce((sum, order) => sum + (order.concessionItems || []).reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0), 0);
+  if (!printableOrders.length || (!printableTickets.length && !printableConcessionCount)) {
     return { requested: false, status: "not_requested", terminalId: "", actionId: "", message: "" };
   }
   if (!cardTerminalProvider.configured(config)) {
@@ -3121,7 +3131,9 @@ async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {
       requestedAt: new Date().toISOString(),
       ticketCount: printableTickets.length,
       concessionItemCount: printableOrders.reduce((sum, order) => sum + (order.concessionItems || []).reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0), 0),
-      message: "Ingressos e itens da bomboniere foram enviados para impressão na Point."
+      message: printableTickets.length
+        ? "Ingressos e itens da bomboniere foram enviados para impressão na Point."
+        : "O comprovante da bomboniere foi enviado para impressão na Point."
     };
     printableOrders.forEach((order) => { order.pointPrint = { ...pointPrint }; });
     logEvent("info", "box_office_ticket_print.queued", {
@@ -3733,6 +3745,52 @@ function ticketThermalPdf(db, tickets) {
   return buildPdf(pages.flat(), { width: 226.77, height: 566.93 });
 }
 
+function concessionThermalPdf(order, payment) {
+  const items = Array.isArray(order?.concessionItems) ? order.concessionItems.filter((item) => Number(item.quantity || 0) > 0) : [];
+  const pages = [];
+  let y = 545;
+  let content = "";
+  const text = (value, size = 9, bold = false, maxChars = 34) => {
+    const lines = wrapText(String(value || ""), maxChars).slice(0, 4);
+    for (const line of lines) {
+      content += pdfWriteText(line, 14, y, size, { bold, color: "#000000" });
+      y -= size + 5;
+    }
+  };
+  const nextPage = () => {
+    if (content) pages.push(content);
+    content = "";
+    y = 545;
+    text("CINE CRUZEIRO", 14, true);
+    text("BOMBONIERE - VIA PDV", 10, true);
+  };
+  nextPage();
+  text("PAGAMENTO APROVADO", 9, true);
+  text(`Pedido: ${order?.id || "-"}`, 8, false, 40);
+  const purchasedAt = order?.paidAt || payment?.approvedAt || order?.createdAt || new Date().toISOString();
+  text(new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(purchasedAt)), 9);
+  content += pdfLine(14, y, 212, y, "#000000", 0.8);
+  y -= 18;
+  items.forEach((item) => {
+    if (y < 90) nextPage();
+    const quantity = Number(item.quantity || 0);
+    const unitPrice = Number(item.finalPrice ?? item.unitPrice ?? item.price ?? 0);
+    text(`${quantity} x ${item.name || "Produto"}`, 10, true);
+    text(`${brl(unitPrice)} cada - ${brl(quantity * unitPrice)}`, 8);
+    y -= 4;
+  });
+  content += pdfLine(14, y, 212, y, "#000000", 0.8);
+  y -= 20;
+  text(`TOTAL: ${brl(order?.totalPrice || 0)}`, 13, true);
+  text(`Pagamento: ${methodLabel(payment?.method || order?.paymentMethod)}`, 9);
+  if (order?.createdByEmail) text(`Operador: ${order.createdByEmail}`, 8, false, 40);
+  y -= 8;
+  text("Venda presencial concluida.", 9, true);
+  text("Documento nao fiscal.", 8);
+  if (content) pages.push(content);
+  return buildPdf(pages, { width: 226.77, height: 566.93 });
+}
+
 async function ticketDownloadPdf(db, ticket) {
   const enriched = enrichTicket(db, ticket);
   const sessionDate = brazilianDate(enriched.sessionDate);
@@ -3850,6 +3908,19 @@ function finalizePaidOrder(db, order, payment, source = "online") {
     db.orderServiceItems = (db.orderServiceItems || []).filter((item) => item.orderId !== order.id).concat(serviceItems);
   }
   order.ticketCodes = tickets.map((ticket) => ticket.code);
+  if (order.saleMode === "concession_counter") {
+    const fulfilledAt = new Date().toISOString();
+    order.concessionItems = (order.concessionItems || []).map((item) => ({
+      ...item,
+      fulfilledQuantity: Number(item.quantity || 0),
+      fulfilledAt: item.fulfilledAt || fulfilledAt
+    }));
+    order.concessionDeliveryStatus = "delivered";
+    order.concessionStatus = "fulfilled";
+    order.concessionsFulfilledAt ||= fulfilledAt;
+    order.concessionsFulfilledBy ||= order.createdBy || "counter_sale";
+    materializeOrderAccounting(db, order);
+  }
   confirmConcessionStock(db, order);
   db.tickets.unshift(...tickets);
   return tickets;
@@ -6661,6 +6732,68 @@ function repriceOrderFromCatalog(db, order, options = {}) {
     totalPrice
   };
   return options.assignSeats === false ? pricedOrder : assignSeatsToOrder(db, pricedOrder, session);
+}
+
+function repriceConcessionCounterOrder(db, order) {
+  const concessionItems = (Array.isArray(order.concessionItems) ? order.concessionItems : [])
+    .map((item) => {
+      const concession = (db.concessions || []).find((catalogItem) => catalogItem.id === item.id && catalogItem.active !== false);
+      if (!concession) {
+        throw Object.assign(new Error(`Produto indisponivel na bomboniere: ${item.name || item.id}`), { statusCode: 400, code: "CONCESSION_UNAVAILABLE" });
+      }
+      const quantity = Math.max(0, Math.min(Math.floor(Number(item.quantity || 0)), Math.max(1, Number(concession.maxPerOrder || 8))));
+      const stockDeduction = concessionStockConsumption(concession, null, quantity);
+      if (finiteStock(concession) && stockDeduction > Number(concession.stock || 0)) {
+        throw Object.assign(new Error(`${concession.name} nao possui estoque suficiente.`), { statusCode: 409, code: "CONCESSION_STOCK_UNAVAILABLE" });
+      }
+      const unitPrice = Number(concession.price || 0);
+      return {
+        id: concession.id,
+        sku: concession.sku,
+        name: concession.name,
+        category: concession.category,
+        imageUrl: concession.imageUrl,
+        quantity,
+        stockDeduction,
+        stockUnit: concession.stockUnit || "unit",
+        usagePerSale: Number(concession.usagePerSale || 1),
+        originalPrice: unitPrice,
+        finalPrice: unitPrice,
+        unitPrice
+      };
+    })
+    .filter((item) => item.quantity > 0);
+  if (!concessionItems.length) {
+    throw Object.assign(new Error("Selecione pelo menos um item da bomboniere."), { statusCode: 422, code: "CONCESSION_ITEMS_REQUIRED" });
+  }
+  const totalPrice = Number(concessionItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0).toFixed(2));
+  if (totalPrice <= 0) {
+    throw Object.assign(new Error("A venda precisa ter valor maior que zero."), { statusCode: 422, code: "CONCESSION_TOTAL_REQUIRED" });
+  }
+  const sessionTime = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(new Date());
+  return {
+    ...order,
+    movieId: "",
+    sessionId: "",
+    movieTitle: "Venda presencial da bomboniere",
+    sessionDate: todayIsoDate(),
+    sessionTime,
+    sessionFormat: "",
+    sessionRoom: "Balcao da bomboniere",
+    ticketItems: [],
+    fullTicketsCount: 0,
+    halfTicketsCount: 0,
+    concessionItems,
+    includeComboUpsell: true,
+    comboUpsellQuantity: concessionItems.reduce((sum, item) => sum + item.quantity, 0),
+    discountValue: 0,
+    totalPrice
+  };
 }
 
 function assertClientPricingMatches(input, pricedOrder) {
@@ -9866,16 +9999,17 @@ async function handleApi(req, res, pathname) {
       if (!financiallyConfirmed) continue;
       const session = sessionForOrder(db, order);
       const movie = (db.movies || []).find((item) => item.id === (session?.movieId || order.movieId));
-      const key = session?.id || order.archivedSessionId || `${order.movieId || "avulso"}-${order.sessionDate || ""}-${order.sessionTime || ""}`;
+      const counterSale = order.saleMode === "concession_counter";
+      const key = counterSale ? `counter-sales-${selectedDate}` : session?.id || order.archivedSessionId || `${order.movieId || "avulso"}-${order.sessionDate || ""}-${order.sessionTime || ""}`;
       const start = session ? sessionStartsAt(session) : null;
       const end = session ? finishedSessionEndsAt(movie, session) : null;
       if (!groups.has(key)) groups.set(key, {
         id: key,
-        title: movie?.title || order.movieTitle || "Venda sem sessao",
+        title: counterSale ? "Balcão da bomboniere" : movie?.title || order.movieTitle || "Venda sem sessao",
         date: session?.date || order.sessionDate || "",
-        time: session?.time || order.sessionTime || "",
-        room: session?.room || order.sessionRoom || "",
-        status: !session ? "Historico / sem sessao ativa" : end && end.getTime() <= Date.now() ? "Encerrada" : start && start.getTime() <= Date.now() ? "Em andamento" : "Programada",
+        time: counterSale ? "" : session?.time || order.sessionTime || "",
+        room: counterSale ? "Venda presencial" : session?.room || order.sessionRoom || "",
+        status: counterSale ? "Atendimento no balcão" : !session ? "Historico / sem sessao ativa" : end && end.getTime() <= Date.now() ? "Encerrada" : start && start.getTime() <= Date.now() ? "Em andamento" : "Programada",
         orders: []
       });
       const breakdown = orderFinancialBreakdown(db, order);
@@ -13412,6 +13546,29 @@ async function handleApi(req, res, pathname) {
     }
   }
 
+  const concessionCounterPrintMatch = pathname.match(/^\/api\/admin\/concession-sales\/([^/]+)\/print$/);
+  if (concessionCounterPrintMatch && method === "GET") {
+    const order = (db.orders || []).find((item) => item.id === decodeURIComponent(concessionCounterPrintMatch[1]));
+    if (!order || order.saleMode !== "concession_counter" || !(order.concessionItems || []).length) {
+      sendJson(res, 404, { error: { code: "CONCESSION_SALE_NOT_FOUND", message: "Venda presencial da bomboniere não encontrada." } });
+      return;
+    }
+    const payment = orderPayment(db, order.id);
+    const pdf = concessionThermalPdf(order, payment);
+    res.writeHead(200, {
+      ...securityHeaders({
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'inline; filename="cine-cruzeiro-bomboniere-pdv.pdf"',
+        "Cache-Control": "no-store"
+      }),
+      "Access-Control-Allow-Origin": responseCorsOrigin(req),
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
+    });
+    res.end(pdf);
+    return;
+  }
+
   const adminTicketPrintMatch = pathname.match(/^\/api\/admin\/tickets\/([^/]+)\/print$/);
   const adminOrderPrintMatch = pathname.match(/^\/api\/admin\/orders\/([^/]+)\/print$/);
   if ((adminTicketPrintMatch || adminOrderPrintMatch) && method === "GET") {
@@ -13551,13 +13708,13 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if ((pathname === "/api/box-office/sales" || pathname === "/api/tickets/manual") && method === "POST") {
+  if ((pathname === "/api/box-office/sales" || pathname === "/api/tickets/manual" || pathname === "/api/admin/concession-counter-sales") && method === "POST") {
     const body = await readBody(req);
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const adminUser = getAdminUser(req, lockedDb);
       if (!adminUser) {
-        sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para vender na bilheteria." } });
+        sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: pathname === "/api/admin/concession-counter-sales" ? "Entre no painel para vender na bomboniere." : "Entre no painel para vender na bilheteria." } });
         return;
       }
       const methodMap = {
@@ -13583,20 +13740,24 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 404, { error: { code: "BOX_OFFICE_CUSTOMER_NOT_FOUND", message: "O usuário selecionado não está mais disponível. Busque o cliente novamente." } });
         return;
       }
-      const saleMode = body.saleMode || (selectedCustomer ? "registered" : body.customerName ? "guest" : "quick");
+      const saleMode = pathname === "/api/admin/concession-counter-sales"
+        ? "concession_counter"
+        : body.saleMode || (selectedCustomer ? "registered" : body.customerName ? "guest" : "quick");
+      const concessionCounterSale = saleMode === "concession_counter";
+      const saleOrigin = concessionCounterSale ? "concession_counter" : "box_office";
       const ticketDeliveryMethod = boxOfficeTicketDeliveryMethod(saleMode, body.ticketDeliveryMethod);
       const guestDeliveryEmail = String(body.customerEmail || "").trim().toLowerCase();
       if (saleMode === "guest" && ticketDeliveryMethod === "online" && (guestDeliveryEmail.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDeliveryEmail))) {
         sendJson(res, 422, { error: { code: "BOX_OFFICE_DELIVERY_EMAIL_INVALID", message: "Informe um e-mail válido para entregar o ingresso online." } });
         return;
       }
-      const requestedSales = Array.isArray(body.saleItems) && body.saleItems.length ? body.saleItems : [body];
+      const requestedSales = concessionCounterSale ? [body] : Array.isArray(body.saleItems) && body.saleItems.length ? body.saleItems : [body];
       if (requestedSales.length > 20) {
         sendJson(res, 400, { error: { code: "BOX_OFFICE_BATCH_LIMIT", message: "Finalize no máximo 20 filmes por venda." } });
         return;
       }
       const saleKeys = requestedSales.map((item) => `${String(item?.movieId || "").trim()}::${String(item?.sessionId || "").trim()}`);
-      if (new Set(saleKeys).size !== saleKeys.length) {
+      if (!concessionCounterSale && new Set(saleKeys).size !== saleKeys.length) {
         sendJson(res, 409, { error: { code: "BOX_OFFICE_DUPLICATE_SESSION", message: "A mesma sessão foi adicionada mais de uma vez. Ajuste as quantidades no item existente." } });
         return;
       }
@@ -13604,7 +13765,7 @@ async function handleApi(req, res, pathname) {
       const batchId = `venda-lote-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
       const customerData = {
         customerUserId: selectedCustomer?.id || "",
-        customerName: selectedCustomer?.name || body.customerName || (saleMode === "quick" ? "Venda rápida de balcão" : "Cliente avulso"),
+        customerName: selectedCustomer?.name || body.customerName || (concessionCounterSale ? "Venda presencial da bomboniere" : saleMode === "quick" ? "Venda rápida de balcão" : "Cliente avulso"),
         customerEmail: selectedCustomer?.email || body.customerEmail || "",
         customerPhone: selectedCustomer?.phone || body.customerPhone || "",
         customerCpf: selectedCustomer?.cpf || body.customerCpf || ""
@@ -13613,7 +13774,7 @@ async function handleApi(req, res, pathname) {
       // Valida e precifica o lote inteiro antes de emitir qualquer ingresso.
       const sharedConcessionItems = Array.isArray(body.concessionItems) ? body.concessionItems : [];
       const preparedOrders = requestedSales.map((saleItem, index) => {
-        const order = repriceOrderFromCatalog(lockedDb, normalizePaymentOrder({
+        const normalizedOrder = normalizePaymentOrder({
           ...body,
           ...saleItem,
           concessionItems: index === 0 ? sharedConcessionItems : (Array.isArray(saleItem.concessionItems) ? saleItem.concessionItems : []),
@@ -13624,7 +13785,10 @@ async function handleApi(req, res, pathname) {
           status: pointPayment ? "pending_payment" : "paid",
           paymentStatus: pointPayment ? "pending" : "approved",
           autoAssignSeats: saleItem.autoAssignSeats !== false
-        }));
+        });
+        const order = concessionCounterSale
+          ? repriceConcessionCounterOrder(lockedDb, normalizedOrder)
+          : repriceOrderFromCatalog(lockedDb, normalizedOrder);
         if (paymentMethod === "courtesy") {
           order.discountValue = Number(order.totalPrice || 0);
           order.totalPrice = 0;
@@ -13632,8 +13796,10 @@ async function handleApi(req, res, pathname) {
         if (!selectedCustomer && !body.customerEmail) order.customerEmail = "";
         return order;
       });
-      for (const order of preparedOrders) {
-        await claimSeatHoldsForOrder(lockedDb, order);
+      if (!concessionCounterSale) {
+        for (const order of preparedOrders) {
+          await claimSeatHoldsForOrder(lockedDb, order);
+        }
       }
 
       if (pointPayment) {
@@ -13653,7 +13819,9 @@ async function handleApi(req, res, pathname) {
         const providerPayment = await cardTerminalProvider.createPayment({
           id: externalReference,
           totalPrice,
-          description: preparedOrders.length === 1
+          description: concessionCounterSale
+            ? "Venda presencial da bomboniere"
+            : preparedOrders.length === 1
             ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
             : `${preparedOrders.length} filmes - Cine Cruzeiro`
         }, mercadoPagoConfig, {
@@ -13666,7 +13834,9 @@ async function handleApi(req, res, pathname) {
             point_debit: "debit_card",
             card_terminal: "debit_card"
           }[paymentMethod],
-          description: preparedOrders.length === 1
+          description: concessionCounterSale
+            ? "Venda presencial da bomboniere - Cine Cruzeiro"
+            : preparedOrders.length === 1
             ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
             : `Venda de ${preparedOrders.length} filmes - Cine Cruzeiro`
         });
@@ -13676,7 +13846,7 @@ async function handleApi(req, res, pathname) {
           ...order,
           batchId,
           status: "pending_payment",
-          origin: "box_office",
+          origin: saleOrigin,
           saleMode,
           ticketDeliveryMethod,
           paymentMethod,
@@ -13688,7 +13858,7 @@ async function handleApi(req, res, pathname) {
           createdAt: order.createdAt || timestamp,
           reservationExpiresAt: pointPaymentRecord.status === "approved" ? "" : pointReservationExpiresAt(mercadoPagoConfig),
           audit: {
-            origin: "box_office",
+            origin: saleOrigin,
             batchId,
             paymentMethod,
             ticketDeliveryMethod,
@@ -13713,7 +13883,7 @@ async function handleApi(req, res, pathname) {
           : { requested: false, status: "not_requested", message: "" };
         await writeDb(lockedDb);
         for (const order of orders) await releaseOrderSeatHolds(order);
-        logEvent("info", "box_office_point_sale.created", {
+        logEvent("info", concessionCounterSale ? "concession_counter_point_sale.created" : "box_office_point_sale.created", {
           paymentId: pointPaymentRecord.id,
           providerPaymentId: pointPaymentRecord.providerPaymentId,
           orderIds: orders.map((order) => order.id),
@@ -13749,7 +13919,7 @@ async function handleApi(req, res, pathname) {
           id: order.id,
           batchId,
           status: "paid",
-          origin: "box_office",
+          origin: saleOrigin,
           saleMode,
           ticketDeliveryMethod,
           paymentMethod,
@@ -13761,7 +13931,7 @@ async function handleApi(req, res, pathname) {
           createdAt: order.createdAt || timestamp,
           paidAt: timestamp,
           audit: {
-            origin: "box_office",
+            origin: saleOrigin,
             batchId,
             paymentMethod,
             ticketDeliveryMethod,
@@ -13789,11 +13959,11 @@ async function handleApi(req, res, pathname) {
       });
       await writeDb(lockedDb);
       for (const order of orders) await releaseOrderSeatHolds(order);
-      logEvent("info", "box_office_sale.created", {
+      logEvent("info", concessionCounterSale ? "concession_counter_sale.created" : "box_office_sale.created", {
         orderId: orders[0].id,
         orderIds: orders.map((order) => order.id),
         batchId,
-        movies: orders.length,
+        movies: concessionCounterSale ? 0 : orders.length,
         tickets: tickets.length,
         paymentMethod,
         createdBy: adminUser.id,

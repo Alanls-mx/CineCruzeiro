@@ -1191,9 +1191,73 @@
 
           <div class="box-office-tabs concession-tabs" aria-label="Áreas da bomboniere">
             <button class="active" type="button" data-concession-tab="todaySales" data-permission="concessions.manage">Vendas de hoje</button>
+            <button type="button" data-concession-tab="counterSale" data-permission="concessions.manage">Venda presencial</button>
             <button type="button" data-concession-tab="products" data-permission="concessions.manage">Cardápio / Categorias</button>
             <button type="button" data-concession-tab="finance" data-permission="concessions.manage">Financeiro</button>
             <button type="button" data-concession-tab="validateQr" data-permission="tickets.validate">Validar retirada (QR Code)</button>
+          </div>
+
+          <div id="concessionCounterSaleTab" class="box-office-tab-panel concession-tab-panel">
+            <div id="concessionCounterWorkspace" class="concession-counter-workspace">
+              <form id="concessionCounterForm" class="surface form-grid concession-counter-form">
+                <div class="surface-head">
+                  <div>
+                    <div class="section-title">Venda no balcão da bomboniere</div>
+                    <p>Venda somente produtos, dê baixa no estoque e emita uma via para impressão PDV.</p>
+                  </div>
+                  <span class="status-pill muted">Impressão presencial</span>
+                </div>
+                <div class="concession-counter-toolbar">
+                  <label class="table-search">
+                    Buscar produto
+                    <input id="concessionCounterSearch" placeholder="Nome, SKU ou categoria" autocomplete="off" />
+                  </label>
+                  <label class="compact-select-label">
+                    <span>Categoria</span>
+                    <select id="concessionCounterCategory">
+                      <option value="all">Todas as categorias</option>
+                      <option value="combo">Combos</option>
+                      <option value="pipoca">Pipocas</option>
+                      <option value="bebida">Bebidas</option>
+                      <option value="doce">Doces</option>
+                      <option value="promocao">Promoções</option>
+                      <option value="outro">Outros</option>
+                    </select>
+                  </label>
+                </div>
+                <div id="concessionCounterProducts" class="concession-counter-products" aria-live="polite"></div>
+                <div id="concessionCounterPager" class="table-pagination-bar"></div>
+                <fieldset class="payment-options concession-counter-payments">
+                  <legend>Forma de pagamento</legend>
+                  <label><input name="concessionCounterPaymentMethod" type="radio" value="cash" checked /> Dinheiro</label>
+                  <label><input name="concessionCounterPaymentMethod" type="radio" value="point_debit" /> Débito na Point</label>
+                  <label><input name="concessionCounterPaymentMethod" type="radio" value="point_credit" /> Crédito na Point</label>
+                  <label><input name="concessionCounterPaymentMethod" type="radio" value="point_qr" /> Pix na Point</label>
+                </fieldset>
+                <div class="concession-counter-actions">
+                  <button id="concessionCounterClearButton" class="ghost-button" type="button">Limpar seleção</button>
+                  <button id="concessionCounterSubmitButton" class="primary-button" type="submit">Finalizar e imprimir</button>
+                </div>
+              </form>
+              <aside id="concessionCounterSummary" class="surface concession-counter-summary" aria-live="polite"></aside>
+            </div>
+            <section id="concessionCounterPaymentPanel" class="surface concession-counter-payment-panel" hidden aria-live="polite">
+              <div>
+                <span id="concessionCounterPaymentStatus" class="status-pill muted">Aguardando no terminal</span>
+                <h2 id="concessionCounterPaymentTitle">Pagamento enviado à Point</h2>
+                <p id="concessionCounterPaymentMessage">Oriente o cliente a concluir o pagamento na maquininha.</p>
+              </div>
+              <dl>
+                <div><dt>Valor</dt><dd id="concessionCounterPaymentAmount">R$ 0,00</dd></div>
+                <div><dt>Referência</dt><dd id="concessionCounterPaymentReference">-</dd></div>
+              </dl>
+              <div class="button-row">
+                <button id="concessionCounterPaymentRetryButton" class="ghost-button" type="button">Consultar pagamento</button>
+                <button id="concessionCounterPaymentCancelButton" class="danger-button" type="button">Cancelar cobrança</button>
+                <button id="concessionCounterPrintButton" class="ghost-button" type="button" hidden>Abrir comprovante PDV</button>
+                <button id="concessionCounterNewSaleButton" class="primary-button" type="button" hidden>Nova venda</button>
+              </div>
+            </section>
           </div>
 
           <!-- 1. Vendas de hoje -->

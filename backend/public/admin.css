@@ -4323,6 +4323,248 @@ input[type="file"]::file-selector-button {
   }
 }
 
+.concession-counter-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  align-items: start;
+  gap: 24px;
+}
+
+.concession-counter-form {
+  min-width: 0;
+}
+
+.concession-counter-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(190px, 260px);
+  align-items: end;
+  gap: 12px;
+}
+
+.concession-counter-products {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.concession-counter-product {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 14px;
+  padding: 12px;
+  background: #0b1424;
+}
+
+.concession-counter-product.unavailable {
+  opacity: 0.52;
+}
+
+.concession-counter-product-copy {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.concession-counter-product-copy img {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  object-fit: contain;
+  background: #070d18;
+}
+
+.concession-counter-product-copy > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.concession-counter-product-copy strong,
+.concession-counter-product-copy span {
+  overflow-wrap: anywhere;
+}
+
+.concession-counter-product-copy span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.concession-counter-product .stepper {
+  flex: 0 0 auto;
+}
+
+.concession-counter-payments {
+  margin: 0;
+}
+
+.concession-counter-payments legend {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.concession-counter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.concession-counter-summary {
+  position: sticky;
+  top: 102px;
+  display: grid;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.concession-counter-summary-head,
+.concession-counter-summary-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.concession-counter-summary-head {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.concession-counter-summary-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.concession-counter-summary-head span,
+.concession-counter-summary-total span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.concession-counter-summary-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.concession-counter-summary-items {
+  display: grid;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.concession-counter-summary-items > div:not(.manual-sale-empty) {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  font-size: 12px;
+}
+
+.concession-counter-summary-items strong,
+.concession-counter-summary-total strong {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.concession-counter-summary-total strong {
+  color: var(--gold);
+  font-size: 24px;
+}
+
+.concession-counter-payment-panel {
+  display: grid;
+  max-width: 760px;
+  gap: 20px;
+}
+
+.concession-counter-payment-panel[hidden] {
+  display: none;
+}
+
+.concession-counter-payment-panel h2 {
+  margin: 10px 0 6px;
+}
+
+.concession-counter-payment-panel p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.concession-counter-payment-panel dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.concession-counter-payment-panel dl div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  background: #0b1424;
+}
+
+.concession-counter-payment-panel dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.concession-counter-payment-panel dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
+@media (max-width: 1180px) {
+  .concession-counter-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .concession-counter-summary {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .concession-counter-toolbar,
+  .concession-counter-products,
+  .concession-counter-payment-panel dl {
+    grid-template-columns: 1fr;
+  }
+
+  .concession-counter-product {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .concession-counter-product .stepper {
+    align-self: flex-end;
+  }
+
+  .concession-counter-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+}
+
 @media (max-width: 640px) {
   .concession-finance-kpis {
     grid-template-columns: 1fr;

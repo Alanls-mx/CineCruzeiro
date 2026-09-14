@@ -128,6 +128,11 @@ async function run() {
   assert.ok(printContent.includes("2x Pipoca Grande - R$ 36,00"));
   assert.ok(printContent.includes("1x Coca-Cola 500ML - R$ 9,00"));
 
+  const concessionOnlyContent = point.ticketPrintContent([], printOrders);
+  assert.ok(concessionOnlyContent.includes("BOMBONIERE - VIA PDV"));
+  assert.ok(concessionOnlyContent.includes("2x Pipoca Grande - R$ 36,00"));
+  assert.ok(concessionOnlyContent.includes("Venda presencial concluida"));
+
   const printed = await point.createTicketPrint([{
     movieTitle: "Filme de Teste",
     sessionDate: "2026-08-27",
