@@ -7373,7 +7373,7 @@ function renderMarketingOverview() {
     </section>
     <section class="surface marketing-performance-panel">
       <div class="surface-head"><div><div class="section-title">Desempenho dos anúncios</div><p>Exibições e acessos registrados nas posições publicadas do site.</p></div></div>
-      <div class="marketing-rank-list">${adRows.length ? adRows.map((item) => `<div><span><strong>${escapeHtml(item.title || "Anúncio")}</strong><small>${escapeHtml(humanizeEnum(item.placement || "home"))} · ${Number(item.impressions || 0).toLocaleString("pt-BR")} impressões</small></span><strong>${Number(item.clicks || 0).toLocaleString("pt-BR")} cliques</strong></div>`).join("") : '<div class="empty-state compact"><strong>Nenhuma interação registrada</strong><span>Publique um anúncio para começar a medir exibições e cliques.</span></div>'}</div>
+      <div class="marketing-rank-list">${adRows.length ? adRows.map((item) => `<div><span><strong>${escapeHtml(item.title || "Anúncio")}</strong><small>Páginas dos filmes · ${Number(item.impressions || 0).toLocaleString("pt-BR")} impressões</small></span><strong>${Number(item.clicks || 0).toLocaleString("pt-BR")} cliques</strong></div>`).join("") : '<div class="empty-state compact"><strong>Nenhuma interação registrada</strong><span>Publique um anúncio para começar a medir exibições e cliques.</span></div>'}</div>
     </section>
   `;
 }
@@ -9269,7 +9269,7 @@ async function deletePromotion() {
 function renderAds() {
   const items = state.content?.ads || [];
   if (state.creating.ad) {
-    $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem por upload e defina onde o anúncio será exibido.");
+    $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem que será exibida abaixo das sessões dos filmes.");
     fillAdForm(null);
     return;
   }
@@ -9284,7 +9284,7 @@ function renderAds() {
         <button class="list-item ${item.id === state.selectedAdId ? "active" : ""}" type="button" onclick="selectAd('${item.id}')">
           <span>
             <span class="list-title">${escapeHtml(item.title)}</span>
-            <span class="list-meta">${escapeHtml(humanizeEnum(item.placement || "home"))} • ${status} • ${Number(item.impressions || 0).toLocaleString("pt-BR")} impressões • ${Number(item.clicks || 0).toLocaleString("pt-BR")} cliques</span>
+            <span class="list-meta">Páginas dos filmes • ${status} • ${Number(item.impressions || 0).toLocaleString("pt-BR")} impressões • ${Number(item.clicks || 0).toLocaleString("pt-BR")} cliques</span>
           </span>
           <span class="badge">Ad</span>
         </button>
@@ -9304,7 +9304,7 @@ function newAd() {
   setAdminSubtab("marketing", "ads");
   state.creating.ad = true;
   state.selectedAdId = "";
-  $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem por upload e defina onde o anúncio será exibido.");
+  $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem que será exibida abaixo das sessões dos filmes.");
   fillAdForm(null);
 }
 
@@ -9314,7 +9314,7 @@ function fillAdForm(item) {
   $("adId").value = item?.id || "";
   $("adTitle").value = item?.title || "";
   $("adDescription").value = item?.description || "";
-  $("adPlacement").value = item?.placement || "home";
+  $("adPlacement").value = "movie";
   $("adImageUrl").value = item?.imageUrl || "";
   $("adLinkUrl").value = item?.linkUrl || "";
   $("adCtaLabel").value = item?.ctaLabel || "";

@@ -1590,7 +1590,7 @@ function normalizeDb(db) {
     {
       id: "banner-whatsapp-pix",
       title: "Compre pelo WhatsApp e pague no Pix",
-      placement: "home",
+      placement: "movie",
       imageUrl: "",
       linkUrl: "",
       active: true
@@ -6763,7 +6763,7 @@ function normalizeAd(input, existing = {}) {
     id: String(input.id || existing.id || slugify(title) || `anuncio-${Date.now()}`),
     title,
     description: String(input.description ?? existing.description ?? "").trim().slice(0, 500),
-    placement: input.placement || existing.placement || "home",
+    placement: "movie",
     imageUrl: input.imageUrl !== undefined ? storedLocalUploadUrl(input.imageUrl) : storedLocalUploadUrl(existing.imageUrl || ""),
     linkUrl: input.linkUrl || existing.linkUrl || "",
     ctaLabel: String(input.ctaLabel ?? existing.ctaLabel ?? "Saiba mais").trim().slice(0, 60),

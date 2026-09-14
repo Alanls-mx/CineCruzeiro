@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { availableCalendarDays, filterLabel, filtersForMovies, MovieSessionSelector, SessionFilter } from "@/components/MovieSessionSelector";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { MovieMetadata } from "@/components/MovieMetadata";
+import { MarketingAd } from "@/components/MarketingAd";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { TrailerModal } from "@/components/TrailerModal";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
@@ -26,6 +27,7 @@ export default function FilmeDetalhePage() {
   const days = useMemo(() => availableCalendarDays(movie ? [movie] : [], calendarDays, filter), [calendarDays, filter, movie]);
   const selectedDay = Math.max(0, days.findIndex((day) => day.isoDate === selectedDate));
   const filters = useMemo(() => filtersForMovies(movie ? [movie] : []), [movie]);
+  const movieAd = content?.ads.find((ad) => ad.placement === "movie") || null;
 
   useEffect(() => {
     if (!movie) return;
@@ -133,6 +135,11 @@ export default function FilmeDetalhePage() {
                 </div>
               ) : (
                 <p className="mt-5 text-slate-400">Nenhuma sessão disponível para este formato.</p>
+              )}
+              {movieAd && (
+                <div className="mt-12 border-t border-white/10 pt-10">
+                  <MarketingAd ad={movieAd} />
+                </div>
               )}
             </section>
           </>

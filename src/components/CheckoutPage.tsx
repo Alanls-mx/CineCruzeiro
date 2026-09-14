@@ -7,7 +7,6 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import QRCode from "qrcode";
 import { Accessibility, Check, CircleUserRound, TriangleAlert } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
-import { MarketingAd } from "@/components/MarketingAd";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { useSeatRealtime } from "@/hooks/useSeatRealtime";
 import { AccountSubscription, ClubBenefitsPreviewResult, CouponPreviewResult, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap, previewCheckoutClubBenefits, previewCheckoutCoupon } from "@/services/cinemaApi";
@@ -763,9 +762,6 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Checkout</p>
         <h1 className="mt-3 font-display text-4xl font-black sm:text-5xl">{found.movie.title}</h1>
         <p className="mt-2 text-slate-300">{found.session.time} • {found.session.format}</p>
-      </div>
-      <div className="mb-8">
-        <MarketingAd ad={content?.ads.find((ad) => ad.placement === "checkout")} />
       </div>
       <div className="grid gap-10 lg:grid-cols-[1fr_360px]">
         <section className="min-w-0">

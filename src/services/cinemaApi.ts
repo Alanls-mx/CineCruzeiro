@@ -185,7 +185,7 @@ export interface MarketingAd {
   id: string;
   title: string;
   description?: string;
-  placement: "home" | "club" | "checkout" | string;
+  placement: "movie" | string;
   imageUrl?: string;
   linkUrl?: string;
   ctaLabel?: string;
@@ -405,7 +405,7 @@ export function normalizeCinemaContent(data: Record<string, any>): CinemaContent
           ...item,
           id: String(item.id || ""),
           title: String(item.title || "Destaque"),
-          placement: String(item.placement || "home"),
+          placement: String(item.placement || "movie"),
           imageUrl: publicAssetPath(String(item.imageUrl || ""))
         })) as MarketingAd[]
       : [],
