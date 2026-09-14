@@ -144,7 +144,7 @@ let state = {
   clubPlansPageSize: 8,
   clubSubscriptionsSearch: "",
   boxOfficeTab: "newSale",
-  concessionTab: "todaySales",
+  concessionTab: localStorage.getItem("cine_admin_concession_tab") || "todaySales",
   concessionCategoryFilter: "all",
   concessionStatusFilter: "all",
   concessionSalesData: null,
@@ -749,6 +749,7 @@ function renderAll() {
   renderOrders();
   renderPaymentsCenter();
   renderConcessions();
+  renderConcessionCounterSale();
     renderMarketingOverview();
     renderEmailCampaignControls();
     renderEmailCampaigns();
@@ -6204,7 +6205,7 @@ function renderConcessionCounterSale() {
     if (quantity) state.concessionCounterQuantities[item.id] = quantity;
     return `<article class="concession-counter-product ${max === 0 ? "unavailable" : ""}">
       <div class="concession-counter-product-copy">
-        ${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" />` : ""}
+        ${item.imageUrl ? `<img src="${escapeHtml(adminAssetUrl(item.imageUrl))}" alt="${escapeHtml(item.name)}" loading="lazy" />` : ""}
         <div><strong>${escapeHtml(item.name)}</strong><span>${money(item.price)} · ${escapeHtml(formatConcessionStock(item))}</span></div>
       </div>
       <div class="stepper">
@@ -6604,6 +6605,7 @@ function mountScanner(target) {
 
 function setConcessionTab(tab) {
   state.concessionTab = tab;
+  localStorage.setItem("cine_admin_concession_tab", tab);
   document.querySelectorAll("[data-concession-tab]").forEach((button) => {
     button.classList.toggle("active", button.dataset.concessionTab === tab);
   });
