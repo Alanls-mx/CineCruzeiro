@@ -1,4 +1,4 @@
-import { ConcessionItem, Movie, TicketOrder } from "@/types";
+import { ConcessionItem, Movie, Session, TicketOrder } from "@/types";
 import { publicAssetPath } from "@/utils/cinema";
 
 const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
@@ -375,8 +375,14 @@ function normalizeMovie(movie: Partial<Movie> & { status?: string }): Movie {
     autoPublish: Boolean(movie.autoPublish),
     publishedAt: movie.publishedAt,
     tag: movie.tag,
-    sessions: Array.isArray(movie.sessions) ? movie.sessions : [],
+    sessions: Array.isArray(movie.sessions) ? [...movie.sessions].sort(compareSessionsChronologically) : [],
   };
+}
+
+function compareSessionsChronologically(a: Session, b: Session) {
+  const first = `${a.date || "9999-12-31"}T${a.time || "23:59"}`;
+  const second = `${b.date || "9999-12-31"}T${b.time || "23:59"}`;
+  return first.localeCompare(second) || String(a.id || "").localeCompare(String(b.id || ""));
 }
 
 export function normalizeCinemaContent(data: Record<string, any>): CinemaContent {

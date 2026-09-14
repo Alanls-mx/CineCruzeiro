@@ -2926,15 +2926,21 @@ function renderSessions(sessions) {
     return;
   }
 
+  const sortedSessions = [...sessions].sort((a, b) => {
+    const byDate = String(a.date || "9999-12-31").localeCompare(String(b.date || "9999-12-31"));
+    if (byDate) return byDate;
+    const byTime = String(a.time || "23:59").localeCompare(String(b.time || "23:59"));
+    return byTime || String(a.id || "").localeCompare(String(b.id || ""));
+  });
   const pageSize = state.movieSessionsPageSize || 5;
-  const totalPages = Math.max(1, Math.ceil(sessions.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(sortedSessions.length / pageSize));
   state.movieSessionsPage = Math.min(Math.max(1, state.movieSessionsPage || 1), totalPages);
   const start = (state.movieSessionsPage - 1) * pageSize;
-  const pageItems = sessions.slice(start, start + pageSize);
+  const pageItems = sortedSessions.slice(start, start + pageSize);
 
   const pagerMarkup = `
     <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
-      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, sessions.length)}</strong> de <strong>${sessions.length}</strong> sessão(ões)</span>
+      <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, sortedSessions.length)}</strong> de <strong>${sortedSessions.length}</strong> sessão(ões)</span>
       <div class="pager-controls">
         <button class="ghost-button" type="button" ${state.movieSessionsPage <= 1 ? "disabled" : ""} onclick="changeMovieSessionsPage(-1)">← Anterior</button>
         <span class="pager-page-indicator">Página ${state.movieSessionsPage} de ${totalPages}</span>

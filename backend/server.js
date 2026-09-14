@@ -5163,7 +5163,7 @@ function normalizeMovie(input, existing = {}) {
   const id = String(input.id || existing.id || slugify(title) || `filme-${Date.now()}`);
   const workflowStatus = normalizeMovieWorkflow(input, existing);
   const slug = String(input.slug || existing.slug || slugify(title) || id).trim();
-  const sessions = Array.isArray(input.sessions)
+  const sessions = (Array.isArray(input.sessions)
     ? input.sessions.map((session, index) => ({
         id: String(session.id || `${id}-sessao-${index + 1}`),
         date: session.date || session.sessionDate || "",
@@ -5176,7 +5176,8 @@ function normalizeMovie(input, existing = {}) {
         priceHalf: Number(session.priceHalf ?? 10),
         status: session.status || "available"
       }))
-    : existing.sessions || [];
+    : (existing.sessions || []).map((session) => ({ ...session })))
+    .sort((a, b) => (sessionStartsAt(a)?.getTime() || Number.MAX_SAFE_INTEGER) - (sessionStartsAt(b)?.getTime() || Number.MAX_SAFE_INTEGER));
   const hasInputTag = Object.prototype.hasOwnProperty.call(input, "tag");
   const tag = hasInputTag
     ? String(input.tag || "").trim()
