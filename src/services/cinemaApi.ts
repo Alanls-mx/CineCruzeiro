@@ -214,6 +214,7 @@ export interface CinemaContent {
   promotions: Array<Record<string, unknown>>;
   ads: MarketingAd[];
   settings: {
+    adsEnabled?: boolean;
     cinemaName?: string;
     defaultTicketPrice?: number;
     announcementEnabled?: boolean;

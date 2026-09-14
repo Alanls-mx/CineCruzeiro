@@ -9021,6 +9021,34 @@ th {
   margin-top: var(--sp-16);
 }
 
+.ads-master-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-20);
+  margin-bottom: var(--sp-16);
+  padding: var(--sp-20);
+}
+
+.ads-master-control p {
+  max-width: 70ch;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ads-master-control-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--sp-12);
+}
+
+.ads-master-control .status-label {
+  gap: 8px;
+}
+
 .marketing-performance-panel {
   min-width: 0;
   padding: var(--sp-20);
@@ -9075,6 +9103,16 @@ th {
 }
 
 @media (max-width: 680px) {
+  .ads-master-control,
+  .ads-master-control-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ads-master-control .status-label {
+    align-self: flex-start;
+  }
+
   .concession-stock-row {
     grid-template-columns: 1fr;
   }

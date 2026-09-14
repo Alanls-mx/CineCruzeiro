@@ -7452,11 +7452,11 @@ function getContent(db, options = {}) {
       ? (db.promotions || []).map((item) => ({ ...assetRecord(item, ["imageUrl"]), ...couponUsageSummary(db, item) }))
       : (db.promotions || []).filter((item) => !item.couponCode).map(({ couponCode, usageLimit, perCustomerLimit, ...item }) => assetRecord(item, ["imageUrl"])),
     ads: (db.ads || [])
-      .filter((item) => includePrivate || (
+      .filter((item) => includePrivate || (db.settings?.adsEnabled !== false && (
         item.active !== false &&
         (!item.startsAt || new Date(item.startsAt).getTime() <= now.getTime()) &&
         (!item.endsAt || new Date(item.endsAt).getTime() > now.getTime())
-      ))
+      )))
       .map((item) => {
         const withAsset = assetRecord(item, ["imageUrl"]);
         if (includePrivate) return withAsset;
@@ -9612,7 +9612,7 @@ async function handleApi(req, res, pathname) {
     const metric = publicAdMetricMatch[2];
     let found = false;
     const currentAd = (db.ads || []).find((item) => item.id === adId);
-    if (currentAd && adIsVisible(currentAd)) {
+    if (db.settings?.adsEnabled !== false && currentAd && adIsVisible(currentAd)) {
       found = true;
       if (postgresEnabled()) {
         await adMetricRepository.increment(adId, metric);
@@ -9620,7 +9620,7 @@ async function handleApi(req, res, pathname) {
         await withCriticalMutation(async () => {
           const currentDb = await readDb();
           const ad = (currentDb.ads || []).find((item) => item.id === adId);
-          if (!ad || !adIsVisible(ad)) return;
+          if (currentDb.settings?.adsEnabled === false || !ad || !adIsVisible(ad)) return;
           const now = new Date().toISOString();
           if (metric === "impression") {
             ad.impressions = Math.max(0, Number(ad.impressions || 0)) + 1;
@@ -9932,8 +9932,9 @@ async function handleApi(req, res, pathname) {
     sendJson(res, 200, {
       email: emailMetrics,
       ads: {
+        enabled: db.settings?.adsEnabled !== false,
         total: ads.length,
-        active: ads.filter((ad) => adIsVisible(ad)).length,
+        active: db.settings?.adsEnabled === false ? 0 : ads.filter((ad) => adIsVisible(ad)).length,
         impressions: adImpressions,
         clicks: adClicks,
         ctr: adImpressions ? Number(((adClicks / adImpressions) * 100).toFixed(2)) : 0
@@ -12856,6 +12857,24 @@ async function handleApi(req, res, pathname) {
     db.ads.push(item);
     await writeDb(db);
     sendJson(res, 201, item);
+    return;
+  }
+
+  if (pathname === "/api/ads/status" && method === "PUT") {
+    const body = await readBody(req);
+    if (typeof body.enabled !== "boolean") {
+      sendJson(res, 422, { error: { code: "ADS_STATUS_INVALID", message: "Informe se os anúncios devem ficar ligados ou desligados." } });
+      return;
+    }
+    const previous = { adsEnabled: db.settings?.adsEnabled !== false };
+    const patch = { adsEnabled: body.enabled };
+    db.settings = { ...(db.settings || {}), ...patch };
+    if (postgresEnabled()) {
+      await settingsRepository.patchAppSettings(patch, { audit: repositoryAudit(req, "settings", "ads", previous, patch) });
+    } else {
+      await writeDb(db);
+    }
+    sendJson(res, 200, { enabled: body.enabled, updatedAt: new Date().toISOString() });
     return;
   }
 

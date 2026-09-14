@@ -28,6 +28,7 @@ let state = {
   promotionUsageLoading: false,
   promotionUsageRequestToken: 0,
   selectedAdId: "",
+  adsStatusUpdating: false,
   selectedUserId: "",
   selectedIntegrationKey: "",
   selectedClubPlanId: "",
@@ -7622,7 +7623,7 @@ function renderMarketingOverview() {
   $("marketingOverview").innerHTML = `
     <div class="mini-insight"><span>E-mails enviados</span><strong>${Number(email.sent || 0).toLocaleString("pt-BR")}</strong><small>${deliveryRate}% entregues</small></div>
     <div class="mini-insight"><span>Cliques em e-mail</span><strong>${email.clickedSupported ? Number(email.clicked || 0).toLocaleString("pt-BR") : "Indisponível"}</strong><small>${clickRate === null ? "Provider sem rastreamento" : `${clickRate}% das entregas`}</small></div>
-    <div class="mini-insight"><span>Anúncios ativos</span><strong>${Number(advertising.active ?? ads.filter((item) => item.active !== false).length)}</strong><small>${Number(advertising.impressions || 0).toLocaleString("pt-BR")} impressões</small></div>
+    <div class="mini-insight"><span>Anúncios ativos</span><strong>${settings.adsEnabled === false ? 0 : Number(advertising.active ?? ads.filter((item) => item.active !== false).length)}</strong><small>${settings.adsEnabled === false ? "Exibição geral desligada" : `${Number(advertising.impressions || 0).toLocaleString("pt-BR")} impressões`}</small></div>
     <div class="mini-insight"><span>Cliques em anúncios</span><strong>${Number(advertising.clicks || 0).toLocaleString("pt-BR")}</strong><small>CTR de ${adCtr}%</small></div>
     <div class="mini-insight"><span>Cupons ativos</span><strong>${Number(metrics.coupons?.active ?? coupons.filter((item) => item.active !== false).length)}</strong><small>${Number(metrics.coupons?.uses || 0).toLocaleString("pt-BR")} uso(s)</small></div>
     <div class="mini-insight"><span>Faixa da home</span><strong>${settings.announcementEnabled === false ? "Oculta" : "Visível"}</strong><small>Canal institucional</small></div>
@@ -9571,6 +9572,7 @@ async function deletePromotion() {
 
 function renderAds() {
   const items = state.content?.ads || [];
+  renderAdsMasterControl();
   if (state.creating.ad) {
     $("adsList").innerHTML = creationPlaceholder("Novo anúncio", "Envie a imagem que será exibida abaixo das sessões dos filmes.");
     fillAdForm(null);
@@ -9595,6 +9597,50 @@ function renderAds() {
       }).join("") + renderAdminListPager("ads", pagination, "anúncio(s)")
     : `<div class="empty-state"><strong>Nenhum anuncio</strong><span>Crie banners e destaques comerciais.</span></div>`;
   fillAdForm(currentAd());
+}
+
+function renderAdsMasterControl() {
+  const enabled = state.content?.settings?.adsEnabled !== false;
+  const status = $("adsMasterStatus");
+  const button = $("adsMasterToggle");
+  if (status) {
+    status.className = `status-label ${enabled ? "ok" : "muted"}`;
+    status.innerHTML = `<span class="status-dot" aria-hidden="true"></span>${enabled ? "Em exibição" : "Desligados"}`;
+  }
+  if (button) {
+    button.setAttribute("aria-checked", String(enabled));
+    button.disabled = state.adsStatusUpdating;
+    button.textContent = state.adsStatusUpdating
+      ? (enabled ? "Desligando..." : "Ligando...")
+      : (enabled ? "Desligar anúncios" : "Ligar anúncios");
+  }
+}
+
+async function toggleAdsStatus() {
+  if (state.adsStatusUpdating) return;
+  const enabled = state.content?.settings?.adsEnabled !== false;
+  state.adsStatusUpdating = true;
+  renderAdsMasterControl();
+  try {
+    const result = await api("/api/ads/status", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: !enabled })
+    });
+    state.content.settings = { ...(state.content.settings || {}), adsEnabled: result.enabled !== false };
+    state.marketingOverviewData = await api("/api/admin/marketing/overview").catch(() => state.marketingOverviewData);
+    renderMarketingOverview();
+    showSuccess(
+      result.enabled === false ? "Anúncios desligados" : "Anúncios ligados",
+      result.enabled === false
+        ? "A exibição e a coleta de novas métricas foram suspensas no site."
+        : "Os anúncios ativos e dentro do agendamento voltaram a ser exibidos."
+    );
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    state.adsStatusUpdating = false;
+    renderAdsMasterControl();
+  }
 }
 
 function selectAd(id) {
@@ -11842,6 +11888,7 @@ function bindEvents() {
   });
   $("deletePromotionButton").addEventListener("click", deletePromotion);
   $("newAdButton").addEventListener("click", newAd);
+  $("adsMasterToggle")?.addEventListener("click", toggleAdsStatus);
   $("cancelAdCreateButton").addEventListener("click", () => cancelCreation("ad"));
   $("adForm").addEventListener("submit", saveAd);
   $("deleteAdButton").addEventListener("click", deleteAd);

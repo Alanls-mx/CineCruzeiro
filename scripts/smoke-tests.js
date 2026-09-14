@@ -398,6 +398,29 @@ async function run() {
     let cookie = registered.cookie;
     const targetCookie = target.cookie;
     let adminCookie = await loginAdmin();
+    const adsDisabled = await request("/api/ads/status", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ enabled: false })
+    });
+    assert.equal(adsDisabled.response.status, 200);
+    assert.equal(adsDisabled.payload.enabled, false);
+    const publicContentWithoutAds = await request("/api/content");
+    assert.equal(publicContentWithoutAds.payload.ads.length, 0);
+    const privateContentWithDisabledAds = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.ok(privateContentWithDisabledAds.payload.ads.length > 0);
+    assert.equal(privateContentWithDisabledAds.payload.settings.adsEnabled, false);
+    const blockedAdMetric = await request(`/api/marketing/ads/${encodeURIComponent(privateContentWithDisabledAds.payload.ads[0].id)}/impression`, { method: "POST" });
+    assert.equal(blockedAdMetric.response.status, 404);
+    const adsEnabled = await request("/api/ads/status", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ enabled: true })
+    });
+    assert.equal(adsEnabled.response.status, 200);
+    assert.equal(adsEnabled.payload.enabled, true);
+    const publicContentWithAds = await request("/api/content");
+    assert.ok(publicContentWithAds.payload.ads.length > 0);
     const performance = await request("/api/admin/logs/performance", { headers: jsonHeaders(adminCookie) });
     assert.equal(performance.response.status, 200);
     assert.ok(performance.payload.current.vcores > 0);
