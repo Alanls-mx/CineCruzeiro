@@ -860,7 +860,7 @@
                 </label>
                 <div id="manualCustomerResults" class="customer-results"></div>
                 <div id="manualSelectedCustomer" class="selected-customer-state empty" role="status" aria-live="polite">
-                  <span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar e adicionar.</span>
+                  <span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar.</span>
                 </div>
               </div>
 
@@ -917,7 +917,7 @@
               <div id="manualTicketTypes" class="manual-ticket-types" aria-label="Tipos de ingresso disponíveis"></div>
 
               <div class="manual-sale-add-row">
-                <p>Adicione uma sessão por vez. Com mais de um cliente, distribua cada ingresso antes de finalizar.</p>
+                <p>Adicione uma sessão por vez. Todos os ingressos serão vinculados ao mesmo cliente.</p>
                 <button id="manualAddMovieButton" class="ghost-button" type="button">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
                   Adicionar filme à venda
@@ -952,18 +952,6 @@
                   <div id="manualSeatMap" class="manual-seat-map" aria-label="Mapa de poltronas"></div>
                 </div>
                 <p id="manualSeatSelectionSummary" class="manual-seat-selection-summary"></p>
-              </section>
-
-              <section id="manualTicketAssignmentsSection" class="manual-ticket-assignments-section" aria-labelledby="manualTicketAssignmentsTitle" hidden>
-                <div class="manual-ticket-assignments-heading">
-                  <div>
-                    <strong id="manualTicketAssignmentsTitle">Distribuição dos ingressos</strong>
-                    <span>Defina em qual conta cada ingresso digital ficará disponível.</span>
-                  </div>
-                  <span id="manualTicketAssignmentsCount" class="status-pill muted">0 ingressos</span>
-                </div>
-                <div id="manualTicketAssignments" class="manual-ticket-assignments"></div>
-                <p id="manualTicketAssignmentsNote" class="manual-ticket-assignments-note"></p>
               </section>
 
               <section id="manualConcessionsSection" class="manual-concessions-section" aria-labelledby="manualConcessionsTitle">

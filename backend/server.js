@@ -1803,9 +1803,6 @@ function normalizePaymentOrder(input) {
           }))
           .filter((item) => item.id && item.quantity > 0)
       : [],
-    ticketCustomerUserIds: Array.isArray(input.ticketCustomerUserIds)
-      ? input.ticketCustomerUserIds.map((value) => String(value || "").trim()).filter(Boolean).slice(0, 400)
-      : [],
     concessionItems: Array.isArray(input.concessionItems)
       ? input.concessionItems.map((item) => ({
           id: String(item.id || ""),
@@ -1819,9 +1816,6 @@ function normalizePaymentOrder(input) {
     autoAssignSeats: Boolean(input.autoAssignSeats),
     couponCode: String(input.couponCode || "").trim().toUpperCase(),
     customerUserId: String(input.customerUserId || input.userId || "").trim(),
-    customerUserIds: Array.isArray(input.customerUserIds)
-      ? [...new Set(input.customerUserIds.map((value) => String(value || "").trim()).filter(Boolean))].slice(0, 20)
-      : [],
     customerName,
     customerEmail: String(input.customerEmail || `cliente-${Date.now()}@cinecruzeiro.local`).trim(),
     customerPhone: String(input.customerPhone || "").trim(),
@@ -2201,10 +2195,8 @@ function enrichTicket(db, ticket) {
   const orderTickets = orderTicketsSorted(db, ticket.orderId);
   const orderTicketIndex = Math.max(0, orderTickets.findIndex((item) => item.id === ticket.id));
   const orderTicketCount = orderTickets.length || 1;
-  const multiCustomerOrder = Array.isArray(order?.customerUserIds) && order.customerUserIds.length > 1;
-  const carriesOrderConcessions = !multiCustomerOrder || String(ticket.customerUserId || "") === String(order?.customerUserId || "");
-  const concessionOrders = carriesOrderConcessions ? concessionOrdersForTicket(db, ticket) : [];
-  const pendingConcessionOrders = carriesOrderConcessions ? pendingConcessionOrdersForTicket(db, ticket) : [];
+  const concessionOrders = concessionOrdersForTicket(db, ticket);
+  const pendingConcessionOrders = pendingConcessionOrdersForTicket(db, ticket);
   const orderExtras = concessionOrders.flatMap((sourceOrder) =>
     (sourceOrder.concessionItems || []).map((item) => ({
       ...assetRecord(item, ["imageUrl"]),
@@ -2298,17 +2290,8 @@ function buildTicketsForOrder(order, db, source = "online") {
   const pushTicket = (ticketType, index) => {
     const code = createTicketCode([...(db.tickets || []), ...tickets]);
     const selectedSeat = Array.isArray(order.selectedSeats) ? order.selectedSeats[index - 1] : null;
-    const assignedUserId = String(order.ticketCustomerUserIds?.[index - 1] || order.customerUserId || "");
-    const assignedCustomer = assignedUserId
-      ? (db.users || []).find((user) => String(user.id) === assignedUserId && user.active !== false)
-      : null;
     tickets.push({
       ...base,
-      customerName: assignedCustomer?.name || base.customerName,
-      customerPhone: assignedCustomer?.phone || base.customerPhone,
-      customerEmail: String(assignedCustomer?.email || base.customerEmail || "").trim().toLowerCase(),
-      customerCpf: String(assignedCustomer?.cpf || base.customerCpf || "").replace(/\D/g, ""),
-      customerUserId: assignedCustomer?.id || base.customerUserId,
       id: `ticket-${Date.now()}-${index}-${crypto.randomBytes(2).toString("hex")}`,
       code,
       qrPayload: ticketQrPayload(code),
@@ -13593,27 +13576,14 @@ async function handleApi(req, res, pathname) {
       };
       const paymentMethod = methodMap[String(body.paymentMethod || "cash").trim()] || "cash";
       const pointPayment = ["card_terminal", "point_debit", "point_credit", "point_qr"].includes(paymentMethod);
-      const requestedCustomerIds = [...new Set([
-        String(body.customerUserId || "").trim(),
-        ...(Array.isArray(body.customerUserIds) ? body.customerUserIds.map((value) => String(value || "").trim()) : [])
-      ].filter(Boolean))];
-      if (requestedCustomerIds.length > 20) {
-        sendJson(res, 422, { error: { code: "BOX_OFFICE_CUSTOMER_LIMIT", message: "Selecione no máximo 20 clientes por venda." } });
+      const selectedCustomer = body.customerUserId
+        ? (lockedDb.users || []).find((user) => user.id === body.customerUserId && user.active !== false && ["customer", ...adminRoles()].includes(user.role))
+        : null;
+      if (body.customerUserId && !selectedCustomer) {
+        sendJson(res, 404, { error: { code: "BOX_OFFICE_CUSTOMER_NOT_FOUND", message: "O usuário selecionado não está mais disponível. Busque o cliente novamente." } });
         return;
       }
-      const selectedCustomers = requestedCustomerIds.map((customerId) => (
-        (lockedDb.users || []).find((user) => user.id === customerId && user.active !== false && ["customer", ...adminRoles()].includes(user.role))
-      )).filter(Boolean);
-      if (selectedCustomers.length !== requestedCustomerIds.length) {
-        sendJson(res, 404, { error: { code: "BOX_OFFICE_CUSTOMER_NOT_FOUND", message: "Um dos usuários selecionados não está mais disponível. Revise os clientes da venda." } });
-        return;
-      }
-      const selectedCustomer = selectedCustomers[0] || null;
       const saleMode = body.saleMode || (selectedCustomer ? "registered" : body.customerName ? "guest" : "quick");
-      if (saleMode === "registered" && !selectedCustomer) {
-        sendJson(res, 422, { error: { code: "BOX_OFFICE_CUSTOMER_REQUIRED", message: "Selecione ao menos um usuário para receber os ingressos." } });
-        return;
-      }
       const ticketDeliveryMethod = boxOfficeTicketDeliveryMethod(saleMode, body.ticketDeliveryMethod);
       const guestDeliveryEmail = String(body.customerEmail || "").trim().toLowerCase();
       if (saleMode === "guest" && ticketDeliveryMethod === "online" && (guestDeliveryEmail.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestDeliveryEmail))) {
@@ -13634,7 +13604,6 @@ async function handleApi(req, res, pathname) {
       const batchId = `venda-lote-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
       const customerData = {
         customerUserId: selectedCustomer?.id || "",
-        customerUserIds: selectedCustomers.map((customer) => customer.id),
         customerName: selectedCustomer?.name || body.customerName || (saleMode === "quick" ? "Venda rápida de balcão" : "Cliente avulso"),
         customerEmail: selectedCustomer?.email || body.customerEmail || "",
         customerPhone: selectedCustomer?.phone || body.customerPhone || "",
@@ -13643,7 +13612,6 @@ async function handleApi(req, res, pathname) {
 
       // Valida e precifica o lote inteiro antes de emitir qualquer ingresso.
       const sharedConcessionItems = Array.isArray(body.concessionItems) ? body.concessionItems : [];
-      const selectedCustomerIds = new Set(selectedCustomers.map((customer) => String(customer.id)));
       const preparedOrders = requestedSales.map((saleItem, index) => {
         const order = repriceOrderFromCatalog(lockedDb, normalizePaymentOrder({
           ...body,
@@ -13657,19 +13625,6 @@ async function handleApi(req, res, pathname) {
           paymentStatus: pointPayment ? "pending" : "approved",
           autoAssignSeats: saleItem.autoAssignSeats !== false
         }));
-        const issuedTicketCount = ticketUnitsForOrder(order).length;
-        if (selectedCustomers.length > 1) {
-          if (order.ticketCustomerUserIds.length !== issuedTicketCount) {
-            throw Object.assign(new Error("Distribua todos os ingressos entre os clientes selecionados."), { statusCode: 422, code: "BOX_OFFICE_TICKET_ASSIGNMENT_INCOMPLETE" });
-          }
-          if (order.ticketCustomerUserIds.some((customerId) => !selectedCustomerIds.has(String(customerId)))) {
-            throw Object.assign(new Error("A distribuição contém um cliente que não faz parte desta venda."), { statusCode: 422, code: "BOX_OFFICE_TICKET_ASSIGNMENT_INVALID" });
-          }
-        } else if (selectedCustomer) {
-          order.ticketCustomerUserIds = Array.from({ length: issuedTicketCount }, () => selectedCustomer.id);
-        } else {
-          order.ticketCustomerUserIds = [];
-        }
         if (paymentMethod === "courtesy") {
           order.discountValue = Number(order.totalPrice || 0);
           order.totalPrice = 0;
@@ -13739,8 +13694,7 @@ async function handleApi(req, res, pathname) {
             ticketDeliveryMethod,
             createdBy: adminUser.id,
             createdAt: timestamp,
-            customerId: selectedCustomer?.id || "",
-            customerIds: selectedCustomers.map((customer) => customer.id)
+            customerId: selectedCustomer?.id || ""
           }
         }));
         lockedDb.orders.unshift(...orders);
@@ -13813,8 +13767,7 @@ async function handleApi(req, res, pathname) {
             ticketDeliveryMethod,
             createdBy: adminUser.id,
             createdAt: timestamp,
-            customerId: selectedCustomer?.id || "",
-            customerIds: selectedCustomers.map((customer) => customer.id)
+            customerId: selectedCustomer?.id || ""
           }
         };
         const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, paymentMethod === "courtesy" ? "courtesy" : "box_office");
@@ -13844,8 +13797,7 @@ async function handleApi(req, res, pathname) {
         tickets: tickets.length,
         paymentMethod,
         createdBy: adminUser.id,
-        customerId: selectedCustomer?.id || "",
-        customerIds: selectedCustomers.map((customer) => customer.id)
+        customerId: selectedCustomer?.id || ""
       });
       sendJson(res, 201, {
         order: orders[0],

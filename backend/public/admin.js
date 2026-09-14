@@ -151,8 +151,6 @@ let state = {
   selectedConcessionOrderId: null,
   saleMode: "registered",
   selectedCustomer: null,
-  selectedCustomers: [],
-  manualTicketCustomerAssignments: {},
   customerSearchResults: [],
   customerSearchTimer: null,
   customerSearchRequestId: 0,
@@ -5706,7 +5704,6 @@ function renderManualSaleItems() {
       ? `Finalizar venda de ${count} filmes`
       : state.saleMode === "quick" ? "Finalizar venda rápida" : "Finalizar venda";
   }
-  renderManualTicketAssignments();
   renderManualSaleSummary();
 }
 
@@ -5757,89 +5754,9 @@ function financialStatusEventHtml(record = {}, related = {}) {
   return `<span class="list-meta financial-event-time">${escapeHtml(event.label)} ${new Date(event.at).toLocaleString("pt-BR")}</span>`;
 }
 
-function manualSaleTicketUnits(saleItems = null) {
-  const draft = manualSaleDraft();
-  const items = saleItems || (state.manualSaleItems.length ? state.manualSaleItems : draft ? [draft] : []);
-  let globalIndex = 0;
-  return items.flatMap((saleItem) => {
-    let seatIndex = 0;
-    return (saleItem.ticketSummary || []).flatMap((ticket) => {
-      const issuedQuantity = Math.max(0, Number(ticket.quantity || 0) * Math.max(1, Number(ticket.bundleQuantity || 1)));
-      return Array.from({ length: issuedQuantity }, (_, index) => {
-        const unit = {
-          key: `${saleItem.sessionId}:${ticket.id}:${index}`,
-          sessionId: saleItem.sessionId,
-          movieTitle: saleItem.movieTitle,
-          ticketTypeId: ticket.id,
-          ticketTypeName: ticket.name || "Ingresso",
-          seatLabel: saleItem.selectedSeatLabels?.[seatIndex] || "Lugar livre",
-          globalIndex
-        };
-        seatIndex += 1;
-        globalIndex += 1;
-        return unit;
-      });
-    });
-  });
-}
-
-function renderManualTicketAssignments() {
-  const section = $("manualTicketAssignmentsSection");
-  const target = $("manualTicketAssignments");
-  if (!section || !target) return;
-  const customers = selectedBoxOfficeCustomers();
-  const units = manualSaleTicketUnits();
-  section.hidden = state.saleMode !== "registered" || customers.length < 2 || !units.length;
-  if (section.hidden) {
-    target.innerHTML = "";
-    return;
-  }
-  const customerIds = new Set(customers.map((customer) => String(customer.id)));
-  const activeKeys = new Set(units.map((unit) => unit.key));
-  Object.keys(state.manualTicketCustomerAssignments || {}).forEach((key) => {
-    if (!activeKeys.has(key)) delete state.manualTicketCustomerAssignments[key];
-  });
-  units.forEach((unit) => {
-    if (!customerIds.has(String(state.manualTicketCustomerAssignments[unit.key] || ""))) {
-      state.manualTicketCustomerAssignments[unit.key] = customers[unit.globalIndex % customers.length].id;
-    }
-  });
-  $("manualTicketAssignmentsCount").textContent = `${units.length} ${units.length === 1 ? "ingresso" : "ingressos"}`;
-  target.innerHTML = units.map((unit) => `
-    <label class="manual-ticket-assignment-row">
-      <span>
-        <strong>${escapeHtml(unit.movieTitle || "Filme")}</strong>
-        <small>${escapeHtml(unit.ticketTypeName)} · ${escapeHtml(unit.seatLabel)}</small>
-      </span>
-      <select data-ticket-customer-assignment="${escapeHtml(unit.key)}" aria-label="Cliente de ${escapeHtml(unit.ticketTypeName)} ${escapeHtml(unit.seatLabel)}">
-        ${customers.map((customer) => `<option value="${escapeHtml(customer.id)}" ${String(state.manualTicketCustomerAssignments[unit.key]) === String(customer.id) ? "selected" : ""}>${escapeHtml(customer.name || customer.email || "Cliente")}</option>`).join("")}
-      </select>
-    </label>`).join("");
-  target.querySelectorAll("[data-ticket-customer-assignment]").forEach((select) => {
-    select.addEventListener("change", () => {
-      state.manualTicketCustomerAssignments[select.dataset.ticketCustomerAssignment] = select.value;
-      renderManualSaleSummary();
-    });
-  });
-  const primary = customers[0];
-  $("manualTicketAssignmentsNote").textContent = `Produtos da bomboniere e comprovante da compra permanecem vinculados a ${primary.name || primary.email || "titular principal"}.`;
-}
-
-function ticketCustomerUserIdsForSaleItem(saleItem) {
-  const customers = selectedBoxOfficeCustomers();
-  if (customers.length < 2) return [];
-  return manualSaleTicketUnits([saleItem]).map((unit, index) => (
-    state.manualTicketCustomerAssignments[unit.key] || customers[index % customers.length].id
-  ));
-}
-
 function manualSaleSummaryCustomer() {
   if (state.saleMode === "quick") return "Venda rápida";
-  if (state.saleMode === "registered") {
-    const customers = selectedBoxOfficeCustomers();
-    if (customers.length > 1) return `${customers.length} clientes · titular ${customers[0].name || customers[0].email}`;
-    return customers[0]?.name || "Cliente não selecionado";
-  }
+  if (state.saleMode === "registered") return state.selectedCustomer?.name || "Cliente não selecionado";
   return $("manualCustomerName")?.value.trim() || "Cliente avulso";
 }
 
@@ -5894,14 +5811,6 @@ function renderManualSaleSummary() {
   const concessionsTotal = concessions.reduce((sum, item) => sum + item.quantity * Number(item.product.price || 0), 0);
   const total = ticketsTotal + concessionsTotal;
   const isDraft = !state.manualSaleItems.length && Boolean(draft);
-  const selectedCustomers = selectedBoxOfficeCustomers();
-  const assignmentCounts = selectedCustomers.length > 1
-    ? manualSaleTicketUnits(saleItems).reduce((counts, unit) => {
-      const customerId = state.manualTicketCustomerAssignments[unit.key];
-      counts[customerId] = Number(counts[customerId] || 0) + 1;
-      return counts;
-    }, {})
-    : {};
 
   const saleItemsMarkup = saleItems.length ? saleItems.map((item) => {
     const date = item.sessionDate ? manualSessionDateDisplay(item.sessionDate) : "";
@@ -5949,16 +5858,6 @@ function renderManualSaleSummary() {
         `).join("")}
       </div>
     </section>` : "";
-  const customerDistributionMarkup = selectedCustomers.length > 1 ? `
-    <section class="manual-sale-summary-section">
-      <div class="manual-sale-summary-section-title"><span>Destinatários</span><strong>${selectedCustomers.length} contas</strong></div>
-      <div class="manual-sale-summary-lines">
-        ${selectedCustomers.map((customer, index) => `
-          <div><span>${escapeHtml(customer.name || customer.email || "Cliente")}${index === 0 ? " · titular" : ""}</span><strong>${Number(assignmentCounts[customer.id] || 0)} ingresso(s)</strong></div>
-        `).join("")}
-      </div>
-    </section>` : "";
-
   target.innerHTML = `
     <div class="manual-sale-summary-heading">
       <div>
@@ -5979,7 +5878,6 @@ function renderManualSaleSummary() {
       </div>
       <div class="manual-sale-summary-sessions">${saleItemsMarkup}</div>
     </section>
-    ${customerDistributionMarkup}
     ${concessionsMarkup}
     <div class="manual-sale-summary-footer">
       <div>
@@ -6003,20 +5901,9 @@ async function createManualTicket(event) {
     showToast(`Complete a seleção de poltronas para ${incompleteSeatItem.movieTitle}.`, "error");
     return;
   }
-  const selectedCustomers = selectedBoxOfficeCustomers();
-  if (state.saleMode === "registered" && !selectedCustomers.length) {
-    showToast("Selecione ao menos um usuário para receber os ingressos.", "error");
+  if (state.saleMode === "registered" && !$("manualCustomerUserId").value) {
+    showToast("Selecione o usuário que receberá os ingressos.", "error");
     return;
-  }
-  renderManualTicketAssignments();
-  if (state.saleMode === "registered" && selectedCustomers.length > 1) {
-    const selectedIds = new Set(selectedCustomers.map((customer) => String(customer.id)));
-    const invalidAssignment = manualSaleTicketUnits(saleItems).find((unit) => !selectedIds.has(String(state.manualTicketCustomerAssignments[unit.key] || "")));
-    if (invalidAssignment) {
-      showToast("Revise a distribuição dos ingressos entre os clientes selecionados.", "error");
-      $("manualTicketAssignmentsSection")?.scrollIntoView({ behavior: "smooth", block: "center" });
-      return;
-    }
   }
 
   const submitButton = $("manualSaleSubmitButton");
@@ -6041,7 +5928,6 @@ async function createManualTicket(event) {
         ticketItems: item.ticketItems,
         selectedSeatIds: item.selectedSeatIds || [],
         seatHoldToken: item.seatHoldToken || "",
-        ticketCustomerUserIds: saleMode === "registered" ? ticketCustomerUserIdsForSaleItem(item) : [],
         autoAssignSeats: false
       })),
       concessionItems: manualConcessionItems(),
@@ -6049,7 +5935,6 @@ async function createManualTicket(event) {
       ticketDeliveryMethod,
       paymentMethod,
       customerUserId: saleMode === "registered" ? $("manualCustomerUserId").value : "",
-      customerUserIds: saleMode === "registered" ? selectedCustomers.map((customer) => customer.id) : [],
       customerName: saleMode === "quick" ? "" : $("manualCustomerName").value,
       customerEmail: saleMode === "quick" ? "" : $("manualCustomerEmail").value,
       customerPhone: saleMode === "quick" ? "" : $("manualCustomerPhone").value,
@@ -6060,7 +5945,6 @@ async function createManualTicket(event) {
     const orders = result.orders || (result.order ? [result.order] : []);
     state.manualSaleItems = [];
     state.manualConcessionQuantities = {};
-    state.manualTicketCustomerAssignments = {};
     state.manualSelectedSeatIds = [];
     closeManualSeatRealtime();
     renderManualSaleItems();
@@ -6276,64 +6160,13 @@ function renderSaleMode() {
   renderManualSaleSummary();
 }
 
-function selectedBoxOfficeCustomers() {
-  return Array.isArray(state.selectedCustomers) ? state.selectedCustomers : [];
-}
-
-function syncPrimaryBoxOfficeCustomer() {
-  const customers = selectedBoxOfficeCustomers();
-  const primary = customers[0] || null;
-  state.selectedCustomer = primary;
-  $("manualCustomerUserId").value = primary?.id || "";
-  $("manualCustomerName").value = primary?.name || "";
-  $("manualCustomerEmail").value = primary?.email || "";
-  $("manualCustomerPhone").value = primary?.phone || "";
-  $("manualCustomerCpf").value = primary?.cpf || "";
-}
-
-function renderSelectedBoxOfficeCustomers() {
-  const customers = selectedBoxOfficeCustomers();
-  const target = $("manualSelectedCustomer");
-  $("registeredCustomerBox")?.classList.toggle("has-selected-customer", customers.length > 0);
-  if (!customers.length) {
-    target.className = "selected-customer-state empty";
-    target.innerHTML = `<span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar e adicionar.</span>`;
-    renderManualTicketAssignments();
-    renderManualSaleSummary();
-    return;
-  }
-  target.className = "selected-customer-state confirmed multiple";
-  target.innerHTML = `
-    <div class="selected-customers-heading">
-      <span><strong>${customers.length}</strong> ${customers.length === 1 ? "cliente selecionado" : "clientes selecionados"}</span>
-      <button class="text-button" type="button" onclick="changeBoxOfficeCustomer()">Limpar todos</button>
-    </div>
-    <div class="selected-customers-list">
-      ${customers.map((customer, index) => `
-        <div class="selected-customer-row">
-          <span class="selected-customer-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
-          </span>
-          <span class="selected-customer-copy">
-            <span class="selected-customer-label">${index === 0 ? "Titular da compra" : "Receberá ingresso"}</span>
-            <strong>${escapeHtml(customer.name || "Cliente")}</strong>
-            <small>${escapeHtml([customer.email, customer.phone].filter(Boolean).join(" · ") || "Conta cadastrada")}</small>
-          </span>
-          <button class="icon-button" type="button" aria-label="Remover ${escapeHtml(customer.name || "cliente")}" onclick="removeBoxOfficeCustomer('${escapeHtml(customer.id)}')">${trashIcon}</button>
-        </div>`).join("")}
-    </div>
-    <p>${customers.length > 1 ? "Distribua os ingressos abaixo. A bomboniere ficará no pedido do titular da compra." : "Ingressos e itens serão associados a esta conta."}</p>`;
-  renderManualTicketAssignments();
-  renderManualSaleSummary();
-}
-
 function clearSelectedCustomer() {
   state.selectedCustomer = null;
-  state.selectedCustomers = [];
-  state.manualTicketCustomerAssignments = {};
   $("manualCustomerUserId").value = "";
-  syncPrimaryBoxOfficeCustomer();
-  renderSelectedBoxOfficeCustomers();
+  $("registeredCustomerBox")?.classList.remove("has-selected-customer");
+  $("manualSelectedCustomer").className = "selected-customer-state empty";
+  $("manualSelectedCustomer").innerHTML = `<span>Nenhum cliente selecionado. Digite pelo menos 2 caracteres para buscar.</span>`;
+  renderManualSaleSummary();
 }
 
 function paginateAdminItems(items, key, selectedKey = "") {
@@ -6395,27 +6228,28 @@ function changeAdminListPage(key, delta) {
 }
 
 function selectBoxOfficeCustomer(customer) {
-  const customers = selectedBoxOfficeCustomers();
-  if (customers.some((item) => String(item.id) === String(customer.id))) return;
-  if (customers.length >= 20) {
-    showToast("Selecione no máximo 20 clientes por venda.", "error");
-    return;
-  }
-  state.selectedCustomers = [...customers, customer];
-  syncPrimaryBoxOfficeCustomer();
-  $("manualCustomerSearch").value = "";
+  state.selectedCustomer = customer;
+  $("manualCustomerUserId").value = customer.id;
+  $("manualCustomerName").value = customer.name || "";
+  $("manualCustomerEmail").value = customer.email || "";
+  $("manualCustomerPhone").value = customer.phone || "";
+  $("manualCustomerCpf").value = customer.cpf || "";
+  $("manualCustomerSearch").value = customer.name || customer.email || "";
+  $("registeredCustomerBox")?.classList.add("has-selected-customer");
+  $("manualSelectedCustomer").className = "selected-customer-state confirmed";
+  $("manualSelectedCustomer").innerHTML = `
+    <span class="selected-customer-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
+    </span>
+    <span class="selected-customer-copy">
+      <span class="selected-customer-label">Cliente selecionado</span>
+      <strong>${escapeHtml(customer.name || "Cliente")}</strong>
+      <small>${escapeHtml([customer.email, customer.phone].filter(Boolean).join(" · ") || "Conta cadastrada")}</small>
+      <span>Ingressos e itens vinculados serão associados a esta conta.</span>
+    </span>
+    <button class="ghost-button compact-button" type="button" onclick="changeBoxOfficeCustomer()">Trocar</button>`;
   $("manualCustomerResults").innerHTML = "";
-  renderSelectedBoxOfficeCustomers();
-  $("manualCustomerSearch").focus();
-}
-
-function removeBoxOfficeCustomer(customerId) {
-  state.selectedCustomers = selectedBoxOfficeCustomers().filter((customer) => String(customer.id) !== String(customerId));
-  Object.entries(state.manualTicketCustomerAssignments || {}).forEach(([key, value]) => {
-    if (String(value) === String(customerId)) delete state.manualTicketCustomerAssignments[key];
-  });
-  syncPrimaryBoxOfficeCustomer();
-  renderSelectedBoxOfficeCustomers();
+  renderManualSaleSummary();
 }
 
 function changeBoxOfficeCustomer() {
@@ -6436,6 +6270,16 @@ async function searchBoxOfficeCustomers() {
   const query = $("manualCustomerSearch").value.trim();
   const target = $("manualCustomerResults");
   const searchableLength = query.replace(/\s/g, "").length;
+  const keepSelection = state.selectedCustomer && (
+    query === state.selectedCustomer.name ||
+    query === state.selectedCustomer.email ||
+    query === state.selectedCustomer.phone
+  );
+  if (keepSelection) {
+    target.innerHTML = "";
+    return;
+  }
+  clearSelectedCustomer();
   state.customerSearchRequestId += 1;
   const requestId = state.customerSearchRequestId;
   if (searchableLength < 2) {
@@ -6452,16 +6296,12 @@ async function searchBoxOfficeCustomers() {
     const customers = result.customers || [];
     state.customerSearchResults = customers;
     target.innerHTML = customers.length
-      ? customers.map((customer) => {
-        const selected = selectedBoxOfficeCustomers().some((item) => String(item.id) === String(customer.id));
-        return `
-          <button type="button" class="customer-result ${selected ? "selected" : ""}" onclick="selectBoxOfficeCustomerById('${escapeHtml(customer.id)}')" ${selected ? "disabled" : ""}>
+      ? customers.map((customer) => `
+          <button type="button" class="customer-result" onclick="selectBoxOfficeCustomerById('${escapeHtml(customer.id)}')">
             <strong>${escapeHtml(customer.name)}</strong>
             <span>${escapeHtml(customer.email || "")} ${customer.phone ? `- ${escapeHtml(customer.phone)}` : ""} ${customer.role ? `- ${escapeHtml(adminRoleLabel(customer.role))}` : ""}</span>
-            <small>${selected ? "Já selecionado" : "Adicionar à venda"}</small>
           </button>
-        `;
-      }).join("")
+        `).join("")
       : `<div class="empty-state compact"><strong>Nenhum cliente encontrado</strong><span>Use Cliente avulso ou Venda rapida.</span></div>`;
   } catch (error) {
     if (requestId !== state.customerSearchRequestId) return;
@@ -6480,14 +6320,12 @@ function updateManualTotal() {
   if (state.manualSaleItems.length) {
     const total = state.manualSaleItems.reduce((sum, item) => sum + Number(item.subtotal || 0), 0) + concessionsTotal;
     if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
-    renderManualTicketAssignments();
     renderManualSaleSummary();
     return;
   }
   const types = new Map(currentManualTicketTypes().map((ticketType) => [ticketType.id, ticketType]));
   const total = manualTicketItems().reduce((sum, item) => sum + item.quantity * Number(types.get(item.id)?.price || 0), 0) + concessionsTotal;
   if ($("manualTotalDisplay")) $("manualTotalDisplay").textContent = money(total);
-  renderManualTicketAssignments();
   renderManualSaleSummary();
 }
 

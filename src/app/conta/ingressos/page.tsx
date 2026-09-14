@@ -366,11 +366,11 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
         </div>
       )}
       <div className="grid gap-0 lg:grid-cols-[280px_1fr]">
-        <div className="self-start bg-brand-950">
+        <div className="bg-brand-950">
           {ticket.posterUrl ? (
-            <img src={ticket.posterUrl} alt={`Poster de ${ticket.movieTitle}`} className="aspect-[2/3] w-full object-cover" />
+            <img src={ticket.posterUrl} alt={`Poster de ${ticket.movieTitle}`} className="aspect-[2/3] h-full w-full object-cover" />
           ) : (
-            <div className="flex aspect-[2/3] w-full items-center justify-center bg-brand-900 text-sm font-black text-slate-500">Poster</div>
+            <div className="flex aspect-[2/3] h-full w-full items-center justify-center bg-brand-900 text-sm font-black text-slate-500">Poster</div>
           )}
         </div>
 
