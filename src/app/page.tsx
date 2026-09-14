@@ -9,6 +9,7 @@ import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { CinemaContent, normalizeCinemaContent } from "@/services/cinemaApi";
 import { Movie } from "@/types";
 import { isUploadedAsset, movieSlug, money } from "@/utils/cinema";
+import { normalizeMovieTag } from "@/utils/movieTags";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export default async function HomePage() {
               <div className="relative mx-auto grid min-h-[620px] max-w-[1320px] items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8">
                 <div className="max-w-3xl">
                   <MovieTagBadge tag={featured.tag} className="mb-4" />
-                  <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Cinema de bairro • Sala única laser 4K</p>
+                  <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">{featuredMovieEyebrow(featured)}</p>
                   <h1 className="mt-5 font-display text-5xl font-black leading-none tracking-tight sm:text-6xl lg:text-7xl">{featured.title}</h1>
                   <p className="mt-5 max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">{featured.synopsis}</p>
                   <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm font-semibold text-slate-300">
@@ -114,6 +115,22 @@ export default async function HomePage() {
       <SiteFooter />
     </div>
   );
+}
+
+function featuredMovieEyebrow(movie: Movie) {
+  const labels: Record<string, string> = {
+    "pre-estreia": "Pré-estreia no Cine Cruzeiro",
+    estreia: "Estreia no Cine Cruzeiro",
+    "destaque da semana": "Destaque da semana no Cine Cruzeiro",
+    "ultimos dias": "Últimos dias no Cine Cruzeiro",
+    "em breve": "Em breve no Cine Cruzeiro",
+    "sessao familia": "Sessão família no Cine Cruzeiro",
+    "sessao especial": "Sessão especial no Cine Cruzeiro",
+    classico: "Clássico no Cine Cruzeiro",
+    reexibicao: "De volta ao Cine Cruzeiro",
+  };
+
+  return labels[normalizeMovieTag(movie.tag)] || "Novidade no Cine Cruzeiro";
 }
 
 function MovieStrip({ title, movies, muted = false }: { title: string; movies: Movie[]; muted?: boolean }) {
