@@ -54,6 +54,14 @@ const { moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
 const { buildSessionAutocorrectPlan } = require("./services/sessionScheduleAutocorrectService");
 const {
+  ADMIN_PERMISSION_KEYS,
+  adminHasPermission,
+  effectiveAdminPermissions,
+  expandAdminPermissions,
+  roleAlias
+} = require("./services/adminPermissionService");
+const { calculateTicketDistributorReport, normalizeRules: normalizeTicketDistributorRules } = require("./services/ticketDistributorReportService");
+const {
   assignConcessionsToTicket,
   concessionOrdersForTicket,
   orderTicketsSorted,
@@ -1132,51 +1140,6 @@ function adminRoles() {
   return new Set(["owner", "master", "manager", "operator", "seller"]);
 }
 
-const ADMIN_PERMISSION_KEYS = [
-  "dashboard.view",
-  "movies.manage",
-  "rooms.manage",
-  "ticket_types.manage",
-  "box_office.manage",
-  "tickets.validate",
-  "orders.manage",
-  "concessions.manage",
-  "marketing.manage",
-  "club.manage",
-  "integrations.manage",
-  "logs.view",
-  "settings.manage",
-  "media.manage"
-];
-
-function roleAdminPermissions(role) {
-  const normalized = roleAlias(role);
-  if (normalized === "owner") return [...ADMIN_PERMISSION_KEYS];
-  if (normalized === "manager") return ADMIN_PERMISSION_KEYS.filter((permission) => !["integrations.manage", "settings.manage"].includes(permission));
-  if (normalized === "operator") return ["dashboard.view", "box_office.manage", "tickets.validate", "orders.manage"];
-  return [];
-}
-
-function effectiveAdminPermissions(user) {
-  if (!user) return [];
-  if (roleAlias(user.role) === "owner") return [...ADMIN_PERMISSION_KEYS];
-  if (user.useCustomPermissions === true) {
-    return [...new Set((Array.isArray(user.adminPermissions) ? user.adminPermissions : []).filter((permission) => ADMIN_PERMISSION_KEYS.includes(permission)))];
-  }
-  return roleAdminPermissions(user.role);
-}
-
-function adminHasPermission(user, permission) {
-  return roleAlias(user?.role) === "owner" || effectiveAdminPermissions(user).includes(permission);
-}
-
-function roleAlias(role) {
-  const value = String(role || "").trim();
-  if (value === "master") return "owner";
-  if (value === "seller") return "operator";
-  return value;
-}
-
 function getAdminUser(req, db) {
   const session = verifySignedValue(parseCookies(req).cine_admin);
   if (!session?.sub) return null;
@@ -1305,28 +1268,42 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
-  if (pathname === "/api/admin/concession-counter-sales") return "concessions.manage";
-  if (pathname.startsWith("/api/admin/concession-sales")) return "concessions.manage";
-  if (pathname.startsWith("/api/admin/marketing")) return "marketing.manage";
-  if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "box_office.manage";
+  if (pathname === "/api/admin/concession-counter-sales") return "concessions.sell";
+  if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
+  if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
+  if (pathname.startsWith("/api/admin/concession-sales")) return method === "GET" ? "concessions.view" : "concessions.edit";
+  if (pathname.startsWith("/api/admin/marketing")) return method === "GET" ? "marketing.view" : "marketing.manage";
+  if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "orders.print";
   if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
+  if (pathname === "/api/admin/security-policy") return method === "GET" ? "settings.view" : "settings.manage";
   if (pathname === "/api/admin/content") return "";
-  if (pathname.startsWith("/api/admin/logs")) return "logs.view";
-  if (pathname.startsWith("/api/admin/integrations") || pathname.startsWith("/api/integrations")) return "integrations.manage";
-  if (pathname.startsWith("/api/admin/email") || /^\/api\/(promotions|ads)(\/|$)/.test(pathname)) return "marketing.manage";
+  if (pathname === "/api/admin/sessions/autocorrect") return "sessions.autocorrect";
+  if (pathname.startsWith("/api/admin/logs")) return method === "DELETE" ? "logs.delete" : "logs.view";
+  if (pathname.startsWith("/api/admin/integrations") || pathname.startsWith("/api/integrations")) return method === "GET" ? "integrations.view" : "integrations.manage";
+  if (pathname.startsWith("/api/admin/email") || /^\/api\/(promotions|ads)(\/|$)/.test(pathname)) return method === "GET" ? "marketing.view" : "marketing.manage";
+  if (pathname.startsWith("/api/admin/reports/ticket-distributor/settings")) return "ticket_finance.configure";
+  if (pathname.startsWith("/api/admin/reports/ticket-distributor")) return "ticket_finance.view";
   if (pathname.startsWith("/api/admin/reports")) return "dashboard.view";
-  if (pathname.startsWith("/api/admin/payments") || pathname.startsWith("/api/dashboard")) return "dashboard.view";
-  if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return "club.manage";
-  if (pathname.startsWith("/api/box-office/") || pathname === "/api/tickets/manual") return "box_office.manage";
+  if (pathname.startsWith("/api/admin/payments")) return "payments.view";
+  if (pathname.startsWith("/api/dashboard") || pathname === "/api/admin/dashboard") return "dashboard.view";
+  if (/^\/api\/admin\/subscriptions\/[^/]+\/credits/.test(pathname)) return "club.credits";
+  if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return method === "GET" ? "club.view" : "club.manage";
+  if (pathname.startsWith("/api/box-office/") || pathname === "/api/tickets/manual") return "box_office.sell";
   if (pathname === "/api/tickets/validate") return "tickets.validate";
   if (pathname.startsWith("/api/uploads/")) return "media.manage";
-  if (pathname === "/api/content" && method === "PUT" || pathname === "/api/settings") return "settings.manage";
-  if (/^\/api\/movies(\/|$)/.test(pathname)) return "movies.manage";
-  if (/^\/api\/rooms(\/|$)/.test(pathname)) return "rooms.manage";
-  if (/^\/api\/ticket-types(\/|$)/.test(pathname)) return "ticket_types.manage";
-  if (/^\/api\/concessions(\/|$)/.test(pathname)) return "concessions.manage";
-  if (/^\/api\/orders(\/|$)/.test(pathname)) return "orders.manage";
-  if (/^\/api\/users(\/|$)/.test(pathname)) return "settings.manage";
+  if (pathname === "/api/content" && method === "PUT" || pathname === "/api/settings" && method !== "GET") return "settings.manage";
+  if (pathname === "/api/settings") return "settings.view";
+  if (/^\/api\/movies\/[^/]+\/sessions/.test(pathname)) return "sessions.manage";
+  if (pathname === "/api/movies/order") return "movies.edit";
+  if (/^\/api\/movies(\/|$)/.test(pathname)) return method === "GET" ? "movies.view" : method === "POST" ? "movies.create" : method === "DELETE" ? "movies.delete" : "movies.edit";
+  if (/^\/api\/rooms(\/|$)/.test(pathname)) return method === "GET" ? "rooms.view" : method === "POST" ? "rooms.create" : method === "DELETE" ? "rooms.delete" : "rooms.edit";
+  if (/^\/api\/ticket-types(\/|$)/.test(pathname)) return method === "GET" ? "ticket_types.view" : method === "POST" ? "ticket_types.create" : method === "DELETE" ? "ticket_types.delete" : "ticket_types.edit";
+  if (/^\/api\/concessions(\/|$)/.test(pathname)) return method === "GET" ? "concessions.view" : method === "POST" ? "concessions.edit" : method === "DELETE" ? "concessions.delete" : "concessions.edit";
+  if (/^\/api\/orders\/[^/]+\/refund-(tickets|concessions)$/.test(pathname)) return "orders.refund";
+  if (/^\/api\/orders\/[^/]+\/resend-ticket-email$/.test(pathname)) return "orders.resend";
+  if (/^\/api\/orders\/[^/]+\/permanent$/.test(pathname)) return "orders.delete";
+  if (/^\/api\/orders(\/|$)/.test(pathname)) return method === "GET" || method === "PATCH" ? "orders.view" : method === "DELETE" ? "orders.delete" : "orders.edit";
+  if (/^\/api\/users(\/|$)/.test(pathname)) return "users.manage";
   return "dashboard.view";
 }
 
@@ -1360,6 +1337,12 @@ function ensureAdmin(req, res, db, pathname, method, allowedRoles = null) {
     if (!req.repositoryMutation) store.beforeDb ||= structuredCloneSafe(db);
   }
   return true;
+}
+
+function ensureAdminAction(req, res, permission, message = "Seu usuario nao tem permissao para esta acao.") {
+  if (adminHasPermission(req.adminUser, permission)) return true;
+  sendJson(res, 403, { error: { code: "ADMIN_FORBIDDEN", message } });
+  return false;
 }
 
 function repositoryAudit(req, entityType, entityId, before, after) {
@@ -1465,8 +1448,14 @@ function normalizeDb(db) {
     eventGalleryImageUrl: "",
     eventStartingPrice: 450,
     adminTwoFactorRequired: true,
+    ticketDistributorRules: {
+      distributorPercent: 50,
+      courtesyPercent: 50,
+      clubTicketFee: 10
+    },
     ...db.settings
   };
+  db.settings.ticketDistributorRules = normalizeTicketDistributorRules(db.settings.ticketDistributorRules);
   [
     "clubHeroImageUrl",
     "clubBannerImageUrl",
@@ -6381,8 +6370,8 @@ function permanentlyDeleteOrder(db, orderId, body = {}, adminUser = {}) {
   if (orderPayment(db, orderId)?.metadata?.cancellationRefund) {
     throw refundError("REFUND_HISTORY_PROTECTED", "Pedidos com devolucao devem ser arquivados para preservar a conciliacao financeira.");
   }
-  if (!["owner", "master"].includes(adminUser.role)) {
-    const error = new Error("Somente owner/master pode excluir pedido permanentemente.");
+  if (!adminHasPermission(adminUser, "orders.delete")) {
+    const error = new Error("Esta conta não possui permissão para excluir pedidos permanentemente.");
     error.statusCode = 403;
     throw error;
   }
@@ -6987,7 +6976,7 @@ function normalizeUser(input, existing = {}) {
     twoFactorUpdatedAt: input.twoFactorUpdatedAt !== undefined ? input.twoFactorUpdatedAt : existing.twoFactorUpdatedAt || "",
     useCustomPermissions: role === "owner" ? false : input.useCustomPermissions !== undefined ? Boolean(input.useCustomPermissions) : Boolean(existing.useCustomPermissions),
     adminPermissions: input.adminPermissions !== undefined
-      ? [...new Set((Array.isArray(input.adminPermissions) ? input.adminPermissions : []).filter((permission) => ADMIN_PERMISSION_KEYS.includes(permission)))]
+      ? expandAdminPermissions(input.adminPermissions)
       : Array.isArray(existing.adminPermissions) ? existing.adminPermissions : [],
     sessionVersion: Number(existing.sessionVersion || 0),
     role: ["owner", "master", "manager", "operator", "seller", "customer"].includes(role) ? role : "customer",
@@ -7055,7 +7044,7 @@ function sanitizeUser(user) {
     twoFactorSetupPending: Boolean(user.twoFactorPendingSecret),
     twoFactorRecoveryCodesRemaining: Array.isArray(user.twoFactorRecoveryCodes) ? user.twoFactorRecoveryCodes.length : 0,
     useCustomPermissions: Boolean(user.useCustomPermissions),
-    adminPermissions: Array.isArray(user.adminPermissions) ? user.adminPermissions : [],
+    adminPermissions: expandAdminPermissions(user.adminPermissions),
     effectivePermissions: effectiveAdminPermissions(user),
     twoFactorSetupRequired: Boolean(user.twoFactorSetupRequired)
   };
@@ -7537,27 +7526,27 @@ function getAdminContent(db, adminUser) {
   const content = getContent(db, { includePrivate: true });
   const isOwner = roleAlias(adminUser?.role) === "owner";
 
-  content.emailCustomers = adminHasPermission(adminUser, "marketing.manage")
+  content.emailCustomers = adminHasPermission(adminUser, "marketing.view")
     ? campaignCustomerPool(db).map(({ emailUnsubscribeToken, ...customer }) => customer)
     : [];
-  content.emailCampaigns = adminHasPermission(adminUser, "marketing.manage")
+  content.emailCampaigns = adminHasPermission(adminUser, "marketing.view")
     ? (db.emailCampaigns || []).map(publicCampaign)
     : [];
 
+  if (!adminHasPermission(adminUser, "users.manage")) content.users = [];
   if (!isOwner) {
-    content.users = [];
     content.subscriptionAccountingRules = [];
     content.subscriptionPlans = (content.subscriptionPlans || []).map(({ accounting, ...plan }) => plan);
   }
-  if (!adminHasPermission(adminUser, "orders.manage")) {
+  if (!adminHasPermission(adminUser, "orders.view")) {
     content.orders = [];
-    content.payments = [];
-    content.tickets = [];
   }
+  if (!adminHasPermission(adminUser, "payments.view")) content.payments = [];
+  if (!adminHasPermission(adminUser, "tickets.view")) content.tickets = [];
   if (!adminHasPermission(adminUser, "logs.view")) {
     content.auditLogs = [];
   }
-  if (!adminHasPermission(adminUser, "club.manage")) {
+  if (!adminHasPermission(adminUser, "club.view")) {
     content.subscriptionPlans = [];
     content.subscriptions = [];
     content.subscriptionCredits = [];
@@ -8346,6 +8335,68 @@ function orderFinancialBreakdown(db, order = {}) {
     refundTotal: refunds.refundTotal,
     totalRevenue: Number((ticketNet + concessionNet).toFixed(2)),
     discount: Number(Math.max(0, ticketGross + concessionGross - orderTotal).toFixed(2))
+  };
+}
+
+function ticketDistributorReport(db, options = {}) {
+  const today = todayIsoDate();
+  const period = options.period || { start: today, end: today };
+  const rules = normalizeTicketDistributorRules(db.settings?.ticketDistributorRules);
+  const entries = [];
+  const eligibleOrders = (db.orders || []).filter((order) => {
+    const payment = orderPayment(db, order.id);
+    const recognized = isOrderFinanciallySettled(order, payment) || String(order.paymentMethod || "") === "courtesy";
+    return recognized
+      && inDateRange(recognitionDate(order, payment) || order.paidAt || order.createdAt, period.start, period.end)
+      && (!options.movieId || String(order.movieId || "") === String(options.movieId));
+  });
+
+  for (const order of eligibleOrders) {
+    const tickets = orderTickets(db, order.id).filter((ticket) => !["cancelled", "refunded", "expired"].includes(String(ticket.status || "")));
+    if (!tickets.length) continue;
+    const breakdown = orderFinancialBreakdown(db, order);
+    const session = sessionForOrder(db, order);
+    const standardFullPrice = Math.max(0, Number(session?.priceFull ?? db.settings?.defaultTicketPrice ?? 0));
+    const serviceByTicketId = new Map((db.orderServiceItems || [])
+      .filter((item) => item.orderId === order.id && item.ticketId)
+      .map((item) => [String(item.ticketId), item]));
+    const paidTickets = tickets.filter((ticket) => !["subscription_credit", "courtesy"].includes(String(ticket.paymentSource || "standard")));
+    const weights = paidTickets.map((ticket) => {
+      const serviceItem = serviceByTicketId.get(String(ticket.id));
+      return Math.max(0, Number(serviceItem?.basePrice ?? serviceItem?.unitPrice ?? ticket.basePrice ?? standardFullPrice));
+    });
+    const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+    let allocatedCents = 0;
+    const revenueCents = Math.max(0, Math.round(Number(breakdown.ticketRevenue || 0) * 100));
+    const paidIndex = new Map(paidTickets.map((ticket, index) => [ticket.id, index]));
+
+    tickets.forEach((ticket) => {
+      const source = String(ticket.paymentSource || "standard");
+      const category = source === "subscription_credit" ? "club" : source === "courtesy" ? "courtesy" : "paid";
+      let paidAmount = 0;
+      if (category === "paid") {
+        const index = paidIndex.get(ticket.id);
+        const last = index === paidTickets.length - 1;
+        const cents = last
+          ? Math.max(0, revenueCents - allocatedCents)
+          : Math.max(0, Math.round(revenueCents * (weightTotal > 0 ? weights[index] / weightTotal : 1 / Math.max(1, paidTickets.length))));
+        allocatedCents += cents;
+        paidAmount = cents / 100;
+      }
+      entries.push({
+        type: ticket.ticketType || (category === "club" ? "Clube de assinatura" : category === "courtesy" ? "Indicação / Cortesia" : "Ingresso"),
+        category,
+        paidAmount,
+        standardFullPrice
+      });
+    });
+  }
+
+  return {
+    period: { start: period.start, end: period.end },
+    movieId: options.movieId || "",
+    movies: (db.movies || []).map((movie) => ({ id: movie.id, title: movie.title })).sort((a, b) => a.title.localeCompare(b.title, "pt-BR")),
+    ...calculateTicketDistributorReport(entries, rules)
   };
 }
 
@@ -9812,13 +9863,11 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/security-policy" && method === "GET") {
-    if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
     sendJson(res, 200, { adminTwoFactorRequired: db.settings?.adminTwoFactorRequired !== false });
     return;
   }
 
   if (pathname === "/api/admin/security-policy" && method === "PUT") {
-    if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
     const body = await readBody(req);
     db.settings.adminTwoFactorRequired = Boolean(body.adminTwoFactorRequired);
     if (postgresEnabled()) {
@@ -9928,7 +9977,7 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/content" && method === "GET") {
     const content = getAdminContent(db, req.adminUser);
-    if (postgresEnabled() && adminHasPermission(req.adminUser, "marketing.manage")) {
+    if (postgresEnabled() && adminHasPermission(req.adminUser, "marketing.view")) {
       const history = await emailCampaignRepository.listCampaigns({ page: 1, pageSize: 25 });
       content.emailCampaigns = history.campaigns.map(publicCampaign);
       content.emailCampaignPagination = { page: history.page, pages: history.pages, pageSize: history.pageSize, total: history.total, totals: history.totals };
@@ -10015,6 +10064,32 @@ async function handleApi(req, res, pathname) {
         ["Sessões em andamento", dashboard.capacity?.inProgress || 0, period.start, period.end]
       ]
     );
+    return;
+  }
+
+  if (pathname === "/api/admin/reports/ticket-distributor" && method === "GET") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const period = parseAdminPeriod(url);
+    sendJson(res, 200, ticketDistributorReport(db, {
+      period,
+      movieId: String(url.searchParams.get("movieId") || "").trim()
+    }));
+    return;
+  }
+
+  if (pathname === "/api/admin/reports/ticket-distributor/settings" && method === "PUT") {
+    const body = await readBody(req);
+    const rules = normalizeTicketDistributorRules(body);
+    const previous = db.settings?.ticketDistributorRules || {};
+    db.settings.ticketDistributorRules = rules;
+    if (postgresEnabled()) {
+      await settingsRepository.patchAppSettings({ ticketDistributorRules: rules }, {
+        audit: repositoryAudit(req, "settings", "ticket-distributor-rules", previous, rules)
+      });
+    } else {
+      await writeDb(db);
+    }
+    sendJson(res, 200, rules);
     return;
   }
 
@@ -13052,8 +13127,11 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/users" && method === "POST") {
-    if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
     const body = await readBody(req);
+    if (roleAlias(body.role) === "owner" && roleAlias(req.adminUser?.role) !== "owner") {
+      sendJson(res, 403, { error: { code: "OWNER_ROLE_PROTECTED", message: "Somente o dono pode criar outra conta de dono." } });
+      return;
+    }
     const user = normalizeUser(adminUserPayload(body));
     if (postgresEnabled() ? await userRepository.emailExists(user.email) : db.users.some((existing) => existing.email === user.email)) {
       sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
@@ -13070,7 +13148,6 @@ async function handleApi(req, res, pathname) {
 
   const userMatch = pathname.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch) {
-    if (!ensureAdmin(req, res, db, pathname, method, ["owner"])) return;
     const id = decodeURIComponent(userMatch[1]);
     const index = db.users.findIndex((item) => item.id === id);
     const repositoryUser = postgresEnabled() ? await userRepository.findById(id) : null;
@@ -13082,11 +13159,19 @@ async function handleApi(req, res, pathname) {
     if (method === "PUT") {
       const body = await readBody(req);
       const existingUser = repositoryUser || db.users[index];
+      if (roleAlias(req.adminUser?.role) !== "owner" && roleAlias(existingUser?.role) === "owner") {
+        sendJson(res, 403, { error: { code: "OWNER_ROLE_PROTECTED", message: "Somente o dono pode excluir outra conta de dono." } });
+        return;
+      }
       if (!existingUser) {
         sendJson(res, 404, { error: "Usuario nao encontrado" });
         return;
       }
       const nextRole = roleAlias(body.role || existingUser.role);
+      if (roleAlias(req.adminUser?.role) !== "owner" && (roleAlias(existingUser.role) === "owner" || nextRole === "owner")) {
+        sendJson(res, 403, { error: { code: "OWNER_ROLE_PROTECTED", message: "Somente o dono pode alterar contas com acesso de dono." } });
+        return;
+      }
       const activeOwnerCount = postgresEnabled()
         ? await userRepository.countActiveOwners()
         : db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false).length;
@@ -13877,6 +13962,8 @@ async function handleApi(req, res, pathname) {
 
   if ((pathname === "/api/box-office/sales" || pathname === "/api/tickets/manual" || pathname === "/api/admin/concession-counter-sales") && method === "POST") {
     const body = await readBody(req);
+    if (["courtesy", "cortesia"].includes(String(body.paymentMethod || "").trim().toLowerCase())
+      && !ensureAdminAction(req, res, "box_office.courtesy", "Esta conta pode vender na bilheteria, mas não pode emitir cortesias.")) return;
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const adminUser = getAdminUser(req, lockedDb);
@@ -14703,18 +14790,27 @@ async function handleApi(req, res, pathname) {
   if (adminOrderMatch && method === "PATCH") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
     const body = await readBody(req);
+    if (["archive", "unarchive"].includes(body.action)
+      && !ensureAdminAction(req, res, "orders.archive", "Esta conta não pode arquivar ou restaurar pedidos.")) return;
     if (body.action === "cancel") {
+      if (!ensureAdminAction(req, res, "orders.cancel", "Esta conta não pode cancelar pedidos.")) return;
+      const currentOrder = (db.orders || []).find((item) => item.id === orderId);
+      if (currentOrder && isOrderFinanciallySettled(currentOrder, orderPayment(db, orderId))
+        && !ensureAdminAction(req, res, "orders.refund", "O cancelamento exige reembolso e esta conta não possui essa permissão.")) return;
       sendJson(res, 200, await cancelOrderWithRefund(orderId, body.reason, req.adminUser));
       return;
     }
     if (body.action === "refund_tickets") {
+      if (!ensureAdminAction(req, res, "orders.refund", "Esta conta não pode reembolsar ingressos.")) return;
       sendJson(res, 200, await refundOrderTickets(orderId, body.reason, req.adminUser));
       return;
     }
     if (body.action === "refund_concessions") {
+      if (!ensureAdminAction(req, res, "orders.refund", "Esta conta não pode reembolsar itens de bomboniere.")) return;
       sendJson(res, 200, await refundOrderConcessions(orderId, body.reason, req.adminUser));
       return;
     }
+    if (!ensureAdminAction(req, res, "orders.edit", "Esta conta pode consultar pedidos, mas não pode alterá-los.")) return;
     if (postgresEnabled() && !["cancel"].includes(body.action)) {
       const order = await orderRepository.findById(orderId);
       if (!order) {
@@ -14780,6 +14876,9 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const currentOrder = (db.orders || []).find((item) => item.id === orderId);
     if (currentOrder && !removableDraftOrder(currentOrder, orderPayment(db, orderId), orderTickets(db, orderId))) {
+      if (!ensureAdminAction(req, res, "orders.cancel", "Esta conta não pode cancelar pedidos.")) return;
+      if (isOrderFinanciallySettled(currentOrder, orderPayment(db, orderId))
+        && !ensureAdminAction(req, res, "orders.refund", "O cancelamento exige reembolso e esta conta não possui essa permissão.")) return;
       sendJson(res, 200, { deleted: false, ...await cancelOrderWithRefund(orderId, body.reason, req.adminUser) });
       return;
     }

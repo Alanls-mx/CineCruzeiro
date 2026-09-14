@@ -6206,6 +6206,10 @@ input[type="file"]::file-selector-button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px 14px;
+  max-height: 620px;
+  padding-right: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .permission-grid label {
@@ -6245,6 +6249,22 @@ input[type="file"]::file-selector-button {
 
 .permission-grid.is-readonly {
   opacity: .58;
+}
+
+.permission-group {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.permission-group h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .account-security-layout {
@@ -8776,6 +8796,188 @@ th {
 
 .dashboard-block {
   margin-bottom: 28px;
+}
+
+.ticket-finance-report {
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+}
+
+.ticket-finance-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.section-kicker {
+  display: block;
+  margin-bottom: 5px;
+  color: #facc15;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ticket-finance-toolbar,
+.ticket-finance-rules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 190px)) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: end;
+  margin: 15px 0;
+}
+
+.ticket-finance-toolbar label,
+.ticket-finance-rules label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.ticket-finance-rules {
+  grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(130px, 170px)) auto;
+  align-items: end;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.ticket-finance-rules-copy {
+  display: grid;
+  gap: 3px;
+  align-self: center;
+}
+
+.ticket-finance-rules-copy strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.ticket-finance-rules-copy span,
+.ticket-finance-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ticket-finance-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 18px 0;
+  background: rgba(15, 27, 46, .72);
+  border-radius: 6px;
+}
+
+.ticket-finance-summary > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+}
+
+.ticket-finance-summary > div:last-child {
+  border-right: 0;
+}
+
+.ticket-finance-summary span,
+.ticket-finance-summary small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.ticket-finance-summary strong {
+  color: var(--text);
+  font-size: 20px;
+}
+
+.ticket-finance-summary strong.negative,
+.ticket-finance-table .negative {
+  color: #fda4af;
+}
+
+.ticket-finance-table .positive {
+  color: #45d6a1;
+}
+
+.ticket-finance-table-wrap {
+  overflow-x: auto;
+}
+
+.ticket-finance-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.ticket-finance-table th,
+.ticket-finance-table td {
+  padding: 13px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  font-size: 12px;
+}
+
+.ticket-finance-table th:first-child,
+.ticket-finance-table td:first-child {
+  text-align: left;
+}
+
+.ticket-finance-table th {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.ticket-finance-table td {
+  color: var(--text-soft);
+}
+
+.ticket-finance-table td small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.ticket-finance-note {
+  margin: 12px 0 0;
+}
+
+@media (max-width: 1050px) {
+  .ticket-finance-rules {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+  }
+
+  .ticket-finance-rules-copy {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .ticket-finance-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ticket-finance-toolbar,
+  .ticket-finance-rules,
+  .ticket-finance-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-finance-summary > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .ticket-finance-summary > div:last-child {
+    border-bottom: 0;
+  }
 }
 
 .dashboard-block-header {

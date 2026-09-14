@@ -81,7 +81,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Contas
         </button>
-        <button class="nav-button" type="button" data-panel="integrationsPanel" data-owner-only="true">
+        <button class="nav-button" type="button" data-panel="integrationsPanel" data-permission="integrations.view">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
           Integrações
         </button>
@@ -329,6 +329,45 @@
               <div id="dashLatestOrders" class="metric-list recent-orders-grid"></div>
             </div>
           </section>
+
+          <section class="dashboard-block ticket-finance-report" data-permission="ticket_finance.view">
+            <div class="dashboard-block-header ticket-finance-heading">
+              <div>
+                <span class="section-kicker">Somente ingressos</span>
+                <h2>Repasse da bilheteria</h2>
+                <p>Apuração de valores pagos, custo da distribuidora e retenção do cinema. Bomboniere não entra neste relatório.</p>
+              </div>
+              <button id="ticketFinanceRefresh" class="ghost-button" type="button">Atualizar relatório</button>
+            </div>
+            <div class="ticket-finance-toolbar" aria-label="Filtros do relatório de ingressos">
+              <label>De<input id="ticketFinanceFrom" type="date" /></label>
+              <label>Até<input id="ticketFinanceTo" type="date" /></label>
+              <label>Filme<select id="ticketFinanceMovie"><option value="">Todos os filmes</option></select></label>
+            </div>
+            <form id="ticketFinanceRulesForm" class="ticket-finance-rules" data-permission="ticket_finance.configure">
+              <div class="ticket-finance-rules-copy">
+                <strong>Regras de repasse</strong>
+                <span>Percentuais aplicados sobre o valor efetivamente pago. A taxa do Clube é fixa por bilhete.</span>
+              </div>
+              <label>Ingressos pagos (%)<input id="ticketFinanceDistributorPercent" type="number" min="0" max="100" step="0.01" required /></label>
+              <label>Cortesia (%)<input id="ticketFinanceCourtesyPercent" type="number" min="0" max="100" step="0.01" required /></label>
+              <label>Clube por bilhete (R$)<input id="ticketFinanceClubFee" type="number" min="0" step="0.01" required /></label>
+              <button class="primary-button" type="submit">Salvar regras</button>
+            </form>
+            <div class="ticket-finance-summary" aria-label="Totais da bilheteria">
+              <div><span>Ingressos considerados</span><strong id="ticketFinanceQuantity">0</strong></div>
+              <div><span>Faturamento bruto</span><strong id="ticketFinanceGross">R$ 0,00</strong></div>
+              <div><span>Repasse às distribuidoras</span><strong id="ticketFinanceDistributor">R$ 0,00</strong></div>
+              <div><span>Retenção do cinema</span><strong id="ticketFinanceNet">R$ 0,00</strong><small id="ticketFinanceMargin">0%</small></div>
+            </div>
+            <div class="ticket-finance-table-wrap">
+              <table class="ticket-finance-table">
+                <thead><tr><th>Tipo de ingresso</th><th>Qtd</th><th>Pago pelo cliente</th><th>Repasse</th><th>Resultado do cinema</th></tr></thead>
+                <tbody id="ticketFinanceRows"><tr><td colspan="5">Carregando apuração...</td></tr></tbody>
+              </table>
+            </div>
+            <p class="ticket-finance-note">Ingressos do Clube ficam neutros no resultado desta linha porque a receita da mensalidade é contabilizada no setor do Clube. Cortesias aparecem como custo de marketing.</p>
+          </section>
         </section>
 
         <section id="moviesPanel" class="panel">
@@ -337,7 +376,7 @@
               <h1>Filmes em Cartaz</h1>
               <p>Controle catálogo, destaque da home, status e sessões exibidas no site.</p>
             </div>
-            <button id="newMovieButton" class="primary-button icon-label" type="button">
+            <button id="newMovieButton" class="primary-button icon-label" type="button" data-permission="movies.create">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Novo Filme
             </button>
@@ -364,7 +403,7 @@
                 </div>
                 <div class="form-head-actions">
                   <button id="cancelMovieCreateButton" class="ghost-button" type="button" hidden>Cancelar cadastro</button>
-                  <button id="deleteMovieButton" class="danger-button" type="button">Excluir</button>
+                  <button id="deleteMovieButton" class="danger-button" type="button" data-permission="movies.delete">Excluir</button>
                 </div>
               </div>
 
@@ -652,7 +691,7 @@
               <h1>Salas</h1>
               <p>Acompanhe a programação global e configure a estrutura de cada sala.</p>
             </div>
-            <button id="newRoomButton" class="primary-button icon-label" type="button">
+            <button id="newRoomButton" class="primary-button icon-label" type="button" data-permission="rooms.create">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Nova Sala
             </button>
@@ -693,7 +732,7 @@
               <label class="check-field room-conflict-filter"><input id="globalSessionsConflictsOnly" type="checkbox" />Somente conflitos</label>
             </div>
             <div id="globalSessionsSummary" class="room-schedule-summary" aria-live="polite"></div>
-            <section class="session-autocorrect" aria-labelledby="sessionAutocorrectTitle">
+            <section class="session-autocorrect" aria-labelledby="sessionAutocorrectTitle" data-permission="sessions.autocorrect">
               <div class="session-autocorrect-head">
                 <div>
                   <div id="sessionAutocorrectTitle" class="section-title">Autocorreção da programação</div>
@@ -810,7 +849,7 @@
                 </div>
               </section>
               <div class="button-row">
-                <button id="deleteRoomButton" class="danger-button" type="button">Excluir</button>
+                <button id="deleteRoomButton" class="danger-button" type="button" data-permission="rooms.delete">Excluir</button>
                 <button id="cancelRoomCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
                 <button class="primary-button" type="submit">Salvar Sala</button>
               </div>
@@ -825,12 +864,12 @@
               <h1>Ingressos e Precos</h1>
               <p>Controle tipos de ingresso e preço base usado nas sessões.</p>
             </div>
-            <button id="newTicketButton" class="primary-button icon-label" type="button" data-permission="ticket_types.manage">
+            <button id="newTicketButton" class="primary-button icon-label" type="button" data-permission="ticket_types.create">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Novo Tipo
             </button>
           </div>
-          <div class="split-grid compact" data-permission="ticket_types.manage">
+          <div class="split-grid compact" data-permission="ticket_types.view">
             <div class="surface">
               <div class="section-title">Tipos de ingresso</div>
               <div id="ticketsList" class="list"></div>
@@ -859,7 +898,7 @@
                 Ativo para venda
               </label>
               <div class="button-row">
-                <button id="deleteTicketButton" class="danger-button" type="button">Excluir</button>
+                <button id="deleteTicketButton" class="danger-button" type="button" data-permission="ticket_types.delete">Excluir</button>
                 <button id="cancelTicketCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
                 <button class="primary-button" type="submit">Salvar Ingresso</button>
               </div>
@@ -915,9 +954,9 @@
           </div>
 
           <div class="box-office-tabs" aria-label="Areas da bilheteria">
-            <button class="active" type="button" data-box-office-tab="newSale" data-permission="box_office.manage">Nova venda</button>
-            <button type="button" data-box-office-tab="todaySales" data-permission="orders.manage">Vendas de hoje</button>
-            <button type="button" data-box-office-tab="allOrders" data-permission="orders.manage">Pedidos</button>
+            <button class="active" type="button" data-box-office-tab="newSale" data-permission="box_office.sell">Nova venda</button>
+            <button type="button" data-box-office-tab="todaySales" data-permission="orders.view">Vendas de hoje</button>
+            <button type="button" data-box-office-tab="allOrders" data-permission="orders.view">Pedidos</button>
             <button type="button" data-box-office-tab="payments" data-permission="dashboard.view">Financeiro / Pagamentos</button>
             <button type="button" data-box-office-tab="validateTicket" data-permission="tickets.validate">Validar ingresso</button>
           </div>
@@ -1051,7 +1090,7 @@
                 <label><input name="manualPaymentMethod" type="radio" value="point_debit" /> Débito na Point</label>
                 <label><input name="manualPaymentMethod" type="radio" value="point_credit" /> Crédito na Point</label>
                 <label><input name="manualPaymentMethod" type="radio" value="point_qr" /> Pix na Point</label>
-                <label><input name="manualPaymentMethod" type="radio" value="courtesy" /> Cortesia</label>
+                <label data-permission="box_office.courtesy"><input name="manualPaymentMethod" type="radio" value="courtesy" /> Cortesia</label>
               </div>
 
               <div class="box-office-total">
@@ -1264,17 +1303,17 @@
               <h1>Bomboniere</h1>
               <p>Vendas de balcão e online, catálogo por categoria, financeiro e validação por QR Code.</p>
             </div>
-            <button id="newConcessionButton" class="primary-button icon-label" type="button">
+            <button id="newConcessionButton" class="primary-button icon-label" type="button" data-permission="concessions.edit">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
               Novo Produto
             </button>
           </div>
 
           <div class="box-office-tabs concession-tabs" aria-label="Áreas da bomboniere">
-            <button class="active" type="button" data-concession-tab="todaySales" data-permission="concessions.manage">Vendas de hoje</button>
-            <button type="button" data-concession-tab="counterSale" data-permission="concessions.manage">Venda presencial</button>
-            <button type="button" data-concession-tab="products" data-permission="concessions.manage">Cardápio / Categorias</button>
-            <button type="button" data-concession-tab="finance" data-permission="concessions.manage">Financeiro</button>
+            <button class="active" type="button" data-concession-tab="todaySales" data-permission="concessions.view">Vendas de hoje</button>
+            <button type="button" data-concession-tab="counterSale" data-permission="concessions.sell">Venda presencial</button>
+            <button type="button" data-concession-tab="products" data-permission="concessions.edit">Cardápio / Categorias</button>
+            <button type="button" data-concession-tab="finance" data-permission="concessions.view">Financeiro</button>
             <button type="button" data-concession-tab="validateQr" data-permission="tickets.validate">Validar retirada (QR Code)</button>
           </div>
 
@@ -1314,7 +1353,7 @@
                   <label><input name="concessionCounterPaymentMethod" type="radio" value="point_debit" /> Débito na Point</label>
                   <label><input name="concessionCounterPaymentMethod" type="radio" value="point_credit" /> Crédito na Point</label>
                   <label><input name="concessionCounterPaymentMethod" type="radio" value="point_qr" /> Pix na Point</label>
-                  <label><input name="concessionCounterPaymentMethod" type="radio" value="courtesy" /> Cortesia</label>
+                  <label data-permission="box_office.courtesy"><input name="concessionCounterPaymentMethod" type="radio" value="courtesy" /> Cortesia</label>
                 </fieldset>
                 <div class="concession-counter-actions">
                   <button id="concessionCounterClearButton" class="ghost-button" type="button">Limpar seleção</button>
@@ -1505,7 +1544,7 @@
                 </div>
 
                 <div class="button-row concession-form-actions">
-                  <button id="deleteConcessionButton" class="danger-button" type="button">Excluir</button>
+                  <button id="deleteConcessionButton" class="danger-button" type="button" data-permission="concessions.delete">Excluir</button>
                   <button id="cancelConcessionCreateButton" class="ghost-button" type="button" hidden>Cancelar</button>
                   <button class="primary-button" type="submit">Salvar Produto</button>
                 </div>
@@ -2235,11 +2274,11 @@
             </div>
           </div>
           <nav class="admin-subtabs" aria-label="Configurações de contas" data-admin-tablist="accounts">
-            <button class="active" type="button" data-admin-tab="team" data-owner-only="true">Equipe e permissões</button>
-            <button type="button" data-admin-tab="customers" data-owner-only="true">Clientes</button>
+            <button class="active" type="button" data-admin-tab="team" data-permission="users.manage">Equipe e permissões</button>
+            <button type="button" data-admin-tab="customers" data-permission="users.manage">Clientes</button>
             <button type="button" data-admin-tab="security">Minha segurança</button>
           </nav>
-          <div class="admin-tab-panel active" data-admin-tab-panel="accounts:team" data-owner-only="true">
+          <div class="admin-tab-panel active" data-admin-tab-panel="accounts:team" data-permission="users.manage">
           <div class="split-grid compact accounts-grid">
             <div class="surface">
               <div class="account-list-heading">
@@ -2288,20 +2327,70 @@
                   </span>
                 </label>
                 <div id="userPermissions" class="permission-grid" aria-label="Permissões personalizadas">
-                  <label><input type="checkbox" value="dashboard.view" /><span><strong>Dashboard e indicadores</strong><small>Visualiza receita, vendas, ocupação e resumos operacionais.</small></span></label>
-                  <label><input type="checkbox" value="movies.manage" /><span><strong>Filmes e sessões</strong><small>Cria, edita e remove filmes, programação e horários de sessão.</small></span></label>
-                  <label><input type="checkbox" value="rooms.manage" /><span><strong>Salas</strong><small>Configura salas, capacidade e recursos de exibição.</small></span></label>
-                  <label><input type="checkbox" value="ticket_types.manage" /><span><strong>Tipos de ingresso</strong><small>Define ingressos disponíveis, preços e quantidades fornecidas.</small></span></label>
-                  <label><input type="checkbox" value="box_office.manage" /><span><strong>Bilheteria e venda rápida</strong><small>Realiza vendas presenciais, cortesias e atribuições de ingressos.</small></span></label>
-                  <label><input type="checkbox" value="tickets.validate" /><span><strong>Validar ingressos e bomboniere</strong><small>Lê ou digita códigos para liberar entradas e retirar produtos.</small></span></label>
-                  <label><input type="checkbox" value="orders.manage" /><span><strong>Pedidos e pagamentos</strong><small>Consulta pedidos, pagamentos e ingressos emitidos e executa ações permitidas.</small></span></label>
-                  <label><input type="checkbox" value="concessions.manage" /><span><strong>Bomboniere</strong><small>Gerencia produtos, preços, imagens, estoque e disponibilidade.</small></span></label>
-                  <label><input type="checkbox" value="marketing.manage" /><span><strong>Marketing e e-mails</strong><small>Gerencia anúncios, promoções, campanhas e modelos de e-mail.</small></span></label>
-                  <label><input type="checkbox" value="club.manage" /><span><strong>Clube e assinaturas</strong><small>Configura planos, acompanha assinaturas e ajusta créditos.</small></span></label>
-                  <label><input type="checkbox" value="integrations.manage" /><span><strong>Integrações</strong><small>Visualiza e altera credenciais e serviços externos do cinema.</small></span></label>
-                  <label><input type="checkbox" value="logs.view" /><span><strong>Logs do sistema</strong><small>Consulta o histórico simplificado de ações e ocorrências.</small></span></label>
-                  <label><input type="checkbox" value="settings.manage" /><span><strong>Configurações gerais e contas</strong><small>Altera configurações globais e gerencia contas do sistema.</small></span></label>
-                  <label><input type="checkbox" value="media.manage" /><span><strong>Uploads e imagens</strong><small>Envia e gerencia arquivos usados pelo site e pelo painel.</small></span></label>
+                  <section class="permission-group"><h3>Dashboard e financeiro</h3>
+                    <label><input type="checkbox" value="dashboard.view" /><span><strong>Visualizar dashboard</strong><small>Consulta indicadores gerais e operacionais.</small></span></label>
+                    <label><input type="checkbox" value="ticket_finance.view" /><span><strong>Ver repasse de ingressos</strong><small>Acessa faturamento, repasse e retenção da bilheteria.</small></span></label>
+                    <label><input type="checkbox" value="ticket_finance.configure" /><span><strong>Configurar regras de repasse</strong><small>Altera percentuais e taxa fixa do Clube.</small></span></label>
+                  </section>
+                  <section class="permission-group"><h3>Filmes e sessões</h3>
+                    <label><input type="checkbox" value="movies.view" /><span><strong>Visualizar filmes</strong><small>Consulta catálogo e programação.</small></span></label>
+                    <label><input type="checkbox" value="movies.create" /><span><strong>Criar filmes</strong><small>Adiciona títulos ao catálogo.</small></span></label>
+                    <label><input type="checkbox" value="movies.edit" /><span><strong>Editar filmes</strong><small>Altera dados, publicação e prioridade.</small></span></label>
+                    <label><input type="checkbox" value="movies.delete" /><span><strong>Excluir filmes</strong><small>Remove títulos do catálogo.</small></span></label>
+                    <label><input type="checkbox" value="sessions.manage" /><span><strong>Gerenciar sessões</strong><small>Cria, altera e remove horários.</small></span></label>
+                    <label><input type="checkbox" value="sessions.autocorrect" /><span><strong>Autocorrigir sessões</strong><small>Gera e aplica sugestões na agenda global.</small></span></label>
+                  </section>
+                  <section class="permission-group"><h3>Salas e ingressos</h3>
+                    <label><input type="checkbox" value="rooms.view" /><span><strong>Visualizar salas</strong><small>Consulta estrutura e capacidade.</small></span></label>
+                    <label><input type="checkbox" value="rooms.create" /><span><strong>Criar salas</strong><small>Adiciona novas salas.</small></span></label>
+                    <label><input type="checkbox" value="rooms.edit" /><span><strong>Editar salas</strong><small>Altera mapa e recursos.</small></span></label>
+                    <label><input type="checkbox" value="rooms.delete" /><span><strong>Excluir salas</strong><small>Remove salas cadastradas.</small></span></label>
+                    <label><input type="checkbox" value="ticket_types.view" /><span><strong>Visualizar tipos de ingresso</strong><small>Consulta preços e regras.</small></span></label>
+                    <label><input type="checkbox" value="ticket_types.create" /><span><strong>Criar tipos de ingresso</strong><small>Adiciona categorias de venda.</small></span></label>
+                    <label><input type="checkbox" value="ticket_types.edit" /><span><strong>Editar tipos de ingresso</strong><small>Altera preços e disponibilidade.</small></span></label>
+                    <label><input type="checkbox" value="ticket_types.delete" /><span><strong>Excluir tipos de ingresso</strong><small>Remove categorias cadastradas.</small></span></label>
+                  </section>
+                  <section class="permission-group"><h3>Bilheteria e validação</h3>
+                    <label><input type="checkbox" value="box_office.sell" /><span><strong>Realizar vendas</strong><small>Opera venda rápida e balcão.</small></span></label>
+                    <label><input type="checkbox" value="box_office.courtesy" /><span><strong>Emitir cortesias</strong><small>Autoriza vendas presenciais sem cobrança.</small></span></label>
+                    <label><input type="checkbox" value="tickets.view" /><span><strong>Visualizar ingressos</strong><small>Consulta ingressos emitidos.</small></span></label>
+                    <label><input type="checkbox" value="tickets.validate" /><span><strong>Validar QR Codes</strong><small>Libera entrada e retirada de produtos.</small></span></label>
+                  </section>
+                  <section class="permission-group"><h3>Pedidos e pagamentos</h3>
+                    <label><input type="checkbox" value="orders.view" /><span><strong>Visualizar pedidos</strong><small>Consulta pedidos sem autorizar alterações.</small></span></label>
+                    <label><input type="checkbox" value="payments.view" /><span><strong>Visualizar pagamentos</strong><small>Consulta transações e seus horários.</small></span></label>
+                    <label><input type="checkbox" value="orders.edit" /><span><strong>Editar pedidos</strong><small>Corrige dados operacionais permitidos.</small></span></label>
+                    <label><input type="checkbox" value="orders.cancel" /><span><strong>Cancelar pedidos</strong><small>Autoriza cancelamentos; reembolsos exigem permissão própria.</small></span></label>
+                    <label><input type="checkbox" value="orders.refund" /><span><strong>Reembolsar pedidos</strong><small>Autoriza devoluções financeiras de ingressos e itens.</small></span></label>
+                    <label><input type="checkbox" value="orders.archive" /><span><strong>Arquivar pedidos</strong><small>Arquiva e restaura registros.</small></span></label>
+                    <label><input type="checkbox" value="orders.print" /><span><strong>Imprimir ingressos</strong><small>Abre vias de impressão.</small></span></label>
+                    <label><input type="checkbox" value="orders.resend" /><span><strong>Reenviar ingressos</strong><small>Envia novamente o e-mail ao cliente.</small></span></label>
+                    <label><input type="checkbox" value="orders.delete" /><span><strong>Excluir pedidos</strong><small>Autoriza exclusão permanente com confirmação.</small></span></label>
+                  </section>
+                  <section class="permission-group"><h3>Bomboniere</h3>
+                    <label><input type="checkbox" value="concessions.view" /><span><strong>Visualizar bomboniere</strong><small>Consulta produtos, estoque e vendas.</small></span></label>
+                    <label><input type="checkbox" value="concessions.sell" /><span><strong>Vender no balcão</strong><small>Realiza venda presencial de produtos.</small></span></label>
+                    <label><input type="checkbox" value="concessions.edit" /><span><strong>Editar produtos e vendas</strong><small>Altera catálogo, estoque e registros.</small></span></label>
+                    <label><input type="checkbox" value="concessions.refund" /><span><strong>Reembolsar bomboniere</strong><small>Autoriza devolução financeira de produtos.</small></span></label>
+                    <label><input type="checkbox" value="concessions.delete" /><span><strong>Excluir registros</strong><small>Remove vendas canceladas da visão financeira.</small></span></label>
+                  </section>
+                  <section class="permission-group"><h3>Relacionamento</h3>
+                    <label><input type="checkbox" value="marketing.view" /><span><strong>Visualizar marketing</strong><small>Consulta anúncios, e-mails e cupons.</small></span></label>
+                    <label><input type="checkbox" value="marketing.manage" /><span><strong>Gerenciar marketing</strong><small>Cria, envia, edita e exclui campanhas.</small></span></label>
+                    <label><input type="checkbox" value="club.view" /><span><strong>Visualizar Clube</strong><small>Consulta planos, assinaturas e faturamento.</small></span></label>
+                    <label><input type="checkbox" value="club.manage" /><span><strong>Gerenciar Clube</strong><small>Altera planos e assinaturas.</small></span></label>
+                    <label><input type="checkbox" value="club.credits" /><span><strong>Ajustar créditos do Clube</strong><small>Concede ou remove créditos de assinantes.</small></span></label>
+                  </section>
+                  <section class="permission-group"><h3>Sistema</h3>
+                    <label><input type="checkbox" value="integrations.view" /><span><strong>Visualizar integrações</strong><small>Consulta estado e diagnóstico dos serviços.</small></span></label>
+                    <label><input type="checkbox" value="integrations.manage" /><span><strong>Gerenciar integrações</strong><small>Altera credenciais e ativa serviços.</small></span></label>
+                    <label><input type="checkbox" value="logs.view" /><span><strong>Visualizar logs</strong><small>Consulta ações e ocorrências.</small></span></label>
+                    <label><input type="checkbox" value="logs.delete" /><span><strong>Excluir logs</strong><small>Limpa registros conforme a política definida.</small></span></label>
+                    <label><input type="checkbox" value="users.manage" /><span><strong>Gerenciar equipe</strong><small>Cria, edita e exclui contas administrativas.</small></span></label>
+                    <label><input type="checkbox" value="settings.view" /><span><strong>Visualizar configurações</strong><small>Consulta políticas e preferências globais.</small></span></label>
+                    <label><input type="checkbox" value="settings.manage" /><span><strong>Alterar configurações</strong><small>Atualiza políticas e preferências globais.</small></span></label>
+                    <label><input type="checkbox" value="media.manage" /><span><strong>Gerenciar uploads</strong><small>Envia imagens e arquivos ao sistema.</small></span></label>
+                  </section>
                 </div>
                 <p class="helper-text">A conta do dono mantém acesso total para evitar o bloqueio administrativo.</p>
               </fieldset>
@@ -2313,7 +2402,7 @@
             </form>
           </div>
           </div>
-          <div class="admin-tab-panel" data-admin-tab-panel="accounts:customers" data-owner-only="true" hidden>
+          <div class="admin-tab-panel" data-admin-tab-panel="accounts:customers" data-permission="users.manage" hidden>
             <div class="split-grid compact accounts-grid">
               <section class="surface">
                 <div class="account-list-heading">
@@ -2375,7 +2464,7 @@
                 <div id="accountSecuritySummary" class="account-security-summary"></div>
                 <button id="accountTwoFactorButton" class="primary-button" type="button">Gerenciar meu 2FA</button>
               </section>
-              <form id="adminSecurityPolicyForm" class="surface" data-owner-only="true">
+              <form id="adminSecurityPolicyForm" class="surface" data-permission="settings.manage">
                 <div class="section-title">Política da equipe</div>
                 <label class="check-field security-policy-toggle">
                   <input id="adminTwoFactorRequired" type="checkbox" />

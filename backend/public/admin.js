@@ -34,6 +34,7 @@ let state = {
   selectedClubPlanId: "",
   selectedOrderId: "",
   dashboard: null,
+  ticketFinanceReport: null,
   marketingOverviewData: null,
   integrations: null,
   logs: null,
@@ -699,13 +700,14 @@ async function loadContent(options = {}) {
   }
   if (!silent && !state.content) renderLoading();
   try {
-    const [content, dashboard, payments, integrations, templateLibrary, marketingOverview] = await Promise.all([
+    const [content, dashboard, payments, integrations, templateLibrary, marketingOverview, ticketFinanceReport] = await Promise.all([
       api("/api/admin/content"),
       api(`/api/admin/dashboard?${dashboardQuery()}`).catch(() => null),
-      api(`/api/admin/payments?${dashboardQuery()}`).catch(() => null),
-      isOwnerAdmin() ? api("/api/integrations").catch(() => null) : Promise.resolve(null),
-      api("/api/admin/email/template-library?page=1&pageSize=18").catch(() => null),
-      api("/api/admin/marketing/overview").catch(() => null)
+      adminCan("payments.view") ? api(`/api/admin/payments?${dashboardQuery()}`).catch(() => null) : Promise.resolve(null),
+      adminCan("integrations.view") ? api("/api/integrations").catch(() => null) : Promise.resolve(null),
+      adminCan("marketing.view") ? api("/api/admin/email/template-library?page=1&pageSize=18").catch(() => null) : Promise.resolve(null),
+      adminCan("marketing.view") ? api("/api/admin/marketing/overview").catch(() => null) : Promise.resolve(null),
+      adminCan("ticket_finance.view") ? api(`/api/admin/reports/ticket-distributor?${dashboardQuery()}`).catch(() => null) : Promise.resolve(null)
     ]);
     state.content = cleanAdminContentAssets(content);
     state.emailCampaignHistoryMeta = content.emailCampaignPagination || state.emailCampaignHistoryMeta;
@@ -714,6 +716,7 @@ async function loadContent(options = {}) {
     state.integrations = integrations;
     state.emailTemplateLibrary = templateLibrary;
     state.marketingOverviewData = marketingOverview;
+    state.ticketFinanceReport = ticketFinanceReport;
     if (!state.creating.movie && !state.content.movies.some((movie) => movie.id === state.selectedMovieId)) {
       state.selectedMovieId = state.content.movies[0]?.id || "";
     }
@@ -748,6 +751,7 @@ async function loadContent(options = {}) {
 function renderAll() {
   applyRbacVisibility();
   renderDashboard();
+  renderTicketFinanceReport();
   renderInsights();
   renderMovies();
   renderRooms();
@@ -773,6 +777,7 @@ function renderAll() {
   renderValidationSessionScope();
   if ($("adminTwoFactorRequired")) $("adminTwoFactorRequired").checked = state.content?.settings?.adminTwoFactorRequired !== false;
   renderAccountSecuritySummary();
+  applyRbacVisibility();
   document.querySelectorAll("form[data-dirty-track]").forEach((form) => markFormClean(form));
 }
 
@@ -1343,7 +1348,7 @@ function openConcessionOrderDetail(orderId) {
   if (refundBtn) {
     const eligibility = order.refundEligibility || {};
     const fullyDelivered = fulfilledItems >= totalItems && totalItems > 0;
-    if (eligibility.allowed && !isCancelled && !fullyDelivered) {
+    if (adminCan("concessions.refund") && eligibility.allowed && !isCancelled && !fullyDelivered) {
       refundBtn.hidden = false;
       const amt = Number(eligibility.amount || 0);
       refundBtn.textContent = amt > 0 ? `Reembolsar ${money(amt)}` : "Cancelar bomboniere";
@@ -1354,16 +1359,96 @@ function openConcessionOrderDetail(orderId) {
   }
 
   if (archiveBtn) {
+    archiveBtn.hidden = !adminCan("concessions.edit");
     archiveBtn.textContent = order.archived ? "Desarquivar pedido" : "Arquivar pedido";
     archiveBtn.onclick = () => toggleConcessionArchive(order.id, order.archived);
   }
 
   if (deleteBtn) {
-    deleteBtn.hidden = !isCancelled;
+    deleteBtn.hidden = !adminCan("concessions.delete") || !isCancelled;
     deleteBtn.onclick = () => deleteConcessionOrder(order.id);
   }
 
   overlay.hidden = false;
+}
+
+function ticketFinanceQuery() {
+  const params = new URLSearchParams({
+    period: "custom",
+    from: $("ticketFinanceFrom")?.value || state.dashboardFrom || new Date().toISOString().slice(0, 10),
+    to: $("ticketFinanceTo")?.value || state.dashboardTo || new Date().toISOString().slice(0, 10)
+  });
+  const movieId = $("ticketFinanceMovie")?.value || "";
+  if (movieId) params.set("movieId", movieId);
+  return params.toString();
+}
+
+async function loadTicketFinanceReport() {
+  if (!adminCan("ticket_finance.view")) return;
+  const button = $("ticketFinanceRefresh");
+  if (button) button.disabled = true;
+  try {
+    state.ticketFinanceReport = await api(`/api/admin/reports/ticket-distributor?${ticketFinanceQuery()}`);
+    renderTicketFinanceReport();
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderTicketFinanceReport() {
+  if (!$("ticketFinanceRows") || !adminCan("ticket_finance.view")) return;
+  const report = state.ticketFinanceReport;
+  if (!report) {
+    $("ticketFinanceRows").innerHTML = `<tr><td colspan="5">Não foi possível carregar a apuração neste momento.</td></tr>`;
+    return;
+  }
+  if ($("ticketFinanceFrom") && !$("ticketFinanceFrom").value) $("ticketFinanceFrom").value = report.period?.start || "";
+  if ($("ticketFinanceTo") && !$("ticketFinanceTo").value) $("ticketFinanceTo").value = report.period?.end || "";
+  if ($("ticketFinanceMovie")) {
+    const selected = $("ticketFinanceMovie").value || report.movieId || "";
+    $("ticketFinanceMovie").innerHTML = `<option value="">Todos os filmes</option>${(report.movies || []).map((movie) => `<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join("")}`;
+    $("ticketFinanceMovie").value = selected;
+  }
+  if ($("ticketFinanceDistributorPercent")) $("ticketFinanceDistributorPercent").value = Number(report.rules?.distributorPercent ?? 50);
+  if ($("ticketFinanceCourtesyPercent")) $("ticketFinanceCourtesyPercent").value = Number(report.rules?.courtesyPercent ?? 50);
+  if ($("ticketFinanceClubFee")) $("ticketFinanceClubFee").value = Number(report.rules?.clubTicketFee ?? 10).toFixed(2);
+  const totals = report.totals || {};
+  $("ticketFinanceQuantity").textContent = Number(totals.quantity || 0);
+  $("ticketFinanceGross").textContent = money(totals.grossRevenue || 0);
+  $("ticketFinanceDistributor").textContent = money(totals.distributorCost || 0);
+  $("ticketFinanceNet").textContent = money(totals.cinemaNet || 0);
+  $("ticketFinanceNet").classList.toggle("negative", Number(totals.cinemaNet || 0) < 0);
+  $("ticketFinanceMargin").textContent = `${Number(totals.retentionPercent || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% do faturamento`;
+  $("ticketFinanceRows").innerHTML = (report.rows || []).length
+    ? report.rows.map((row) => `<tr>
+        <td><strong>${escapeHtml(row.type)}</strong><small>${row.category === "club" ? "Receita reconhecida no Clube" : row.category === "courtesy" ? "Custo de indicação / marketing" : "Ingresso pago"}</small></td>
+        <td>${Number(row.quantity || 0)}</td>
+        <td>${money(row.grossRevenue || 0)}</td>
+        <td>${money(row.distributorCost || 0)}</td>
+        <td class="${Number(row.cinemaNet || 0) < 0 ? "negative" : "positive"}">${money(row.cinemaNet || 0)}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="5">Nenhum ingresso reconhecido no período selecionado.</td></tr>`;
+}
+
+async function saveTicketFinanceRules(event) {
+  event.preventDefault();
+  if (!adminCan("ticket_finance.configure")) return;
+  try {
+    await api("/api/admin/reports/ticket-distributor/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        distributorPercent: Number($("ticketFinanceDistributorPercent").value),
+        courtesyPercent: Number($("ticketFinanceCourtesyPercent").value),
+        clubTicketFee: Number($("ticketFinanceClubFee").value)
+      })
+    });
+    await loadTicketFinanceReport();
+    showToast("Regras de repasse atualizadas.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 function closeConcessionOrderOverlay() {
@@ -2470,6 +2555,10 @@ function currentCustomerAccount() {
 
 function isOwnerAdmin() {
   return ["owner", "master"].includes(state.adminUser?.role);
+}
+
+function adminCan(permission) {
+  return isOwnerAdmin() || new Set(state.adminUser?.effectivePermissions || ADMIN_PERMISSION_PRESETS[state.adminUser?.role] || []).has(permission);
 }
 
 function currentOrder() {
@@ -4953,12 +5042,13 @@ function orderDetailHtml(order) {
 }
 
 function fillOrderEditor(order, mode) {
+  if (mode === "edit" && !adminCan("orders.edit")) mode = "view";
   state.selectedOrderId = order?.id || "";
   $("orderOverlayTitle").textContent = mode === "edit" ? "Editar pedido" : "Visualizar pedido";
   $("orderOverlaySubtitle").textContent = order ? `${orderReference(order)} • ${orderStatusLabel(order.status)}` : "Pedido não encontrado.";
   $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
   $("orderEditFields").hidden = mode !== "edit";
-  $("orderSaveButton").hidden = mode !== "edit";
+  $("orderSaveButton").hidden = mode !== "edit" || !adminCan("orders.edit");
 
   const isArchived = isOrderEffectivelyArchived(order);
   const isCancelledOrRefunded = !order || ["cancelled", "refunded"].includes(order.status);
@@ -5016,7 +5106,13 @@ function fillOrderEditor(order, mode) {
     if (refundConcessionsBtn) refundConcessionsBtn.hidden = true;
   }
 
-  $("orderPermanentDeleteButton").hidden = !order || !isOwnerAdmin();
+  if (!adminCan("orders.cancel")) cancelBtn.hidden = true;
+  if (!adminCan("orders.refund")) {
+    if (refundTicketsBtn) refundTicketsBtn.hidden = true;
+    if (refundConcessionsBtn) refundConcessionsBtn.hidden = true;
+  }
+
+  $("orderPermanentDeleteButton").hidden = !order || !adminCan("orders.delete");
   if (order) {
     $("orderCustomerName").value = order.customerName || "";
     $("orderCustomerPhone").value = order.customerPhone || "";
@@ -5215,16 +5311,16 @@ function toggleOrderMenu(orderId, event) {
   floating.dataset.orderId = orderId;
   floating.innerHTML = `
     <button type="button" onclick="openOrderView('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Visualizar</button>
-    ${terminated ? "" : `<button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>
-    <button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>
-    <button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>`}
-    ${isArchived || terminated ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
-    ${order.archived
+    ${!terminated && adminCan("orders.edit") ? `<button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>` : ""}
+    ${!terminated && adminCan("orders.print") ? `<button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>` : ""}
+    ${!terminated && adminCan("orders.resend") ? `<button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>` : ""}
+    ${isArchived || terminated || !adminCan("orders.cancel") ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
+    ${!adminCan("orders.archive") ? "" : order.archived
       ? `<button type="button" onclick="restoreOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Restaurar pedido</button>`
       : isArchived
       ? ""
       : `<button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>`}
-    <button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>
+    ${adminCan("orders.delete") ? `<button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>` : ""}
   `;
   positionFloatingMenu(anchor, floating);
 }
@@ -10067,10 +10163,22 @@ async function deleteAd() {
   }
 }
 
+const ALL_ADMIN_PERMISSIONS = [
+  "dashboard.view", "ticket_finance.view", "ticket_finance.configure",
+  "movies.view", "movies.create", "movies.edit", "movies.delete", "sessions.manage",
+  "rooms.view", "rooms.create", "rooms.edit", "rooms.delete", "sessions.autocorrect",
+  "ticket_types.view", "ticket_types.create", "ticket_types.edit", "ticket_types.delete",
+  "box_office.sell", "box_office.courtesy", "tickets.view", "tickets.validate",
+  "orders.view", "orders.edit", "orders.cancel", "orders.archive", "orders.delete", "orders.refund", "orders.print", "orders.resend", "payments.view",
+  "concessions.view", "concessions.sell", "concessions.edit", "concessions.delete", "concessions.refund",
+  "marketing.view", "marketing.manage", "club.view", "club.manage", "club.credits",
+  "integrations.view", "integrations.manage", "logs.view", "logs.delete", "users.manage", "settings.view", "settings.manage", "media.manage"
+];
+
 const ADMIN_PERMISSION_PRESETS = {
-  owner: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "integrations.manage", "logs.view", "settings.manage", "media.manage"],
-  manager: ["dashboard.view", "movies.manage", "rooms.manage", "ticket_types.manage", "box_office.manage", "tickets.validate", "orders.manage", "concessions.manage", "marketing.manage", "club.manage", "logs.view", "media.manage"],
-  operator: ["dashboard.view", "box_office.manage", "tickets.validate", "orders.manage"]
+  owner: [...ALL_ADMIN_PERMISSIONS],
+  manager: ALL_ADMIN_PERMISSIONS.filter((permission) => !["integrations.view", "integrations.manage", "settings.manage", "users.manage", "logs.delete"].includes(permission)),
+  operator: ["dashboard.view", "movies.view", "rooms.view", "tickets.view", "tickets.validate", "orders.view", "orders.print", "payments.view", "box_office.sell", "concessions.view", "concessions.sell"]
 };
 
 function selectedUserPermissions() {
@@ -10137,7 +10245,7 @@ function fillUserForm(item) {
   $("userRole").value = item?.role === "editor" ? "manager" : item?.role || "operator";
   $("userActive").checked = item?.active !== false;
   $("userUseCustomPermissions").checked = Boolean(item?.useCustomPermissions);
-  syncUserPermissionEditor(item?.useCustomPermissions ? item.adminPermissions : null);
+  syncUserPermissionEditor(item?.useCustomPermissions ? (item.effectivePermissions || item.adminPermissions) : null);
 }
 
 async function saveUser(event) {
@@ -11383,16 +11491,16 @@ function applyRbacVisibility() {
   const permissions = new Set(state.adminUser?.effectivePermissions || ADMIN_PERMISSION_PRESETS[role] || []);
   const has = (permission) => owner || permissions.has(permission);
   const allowedPanels = new Set([
-    has("dashboard.view") && "dashboardPanel",
-    has("movies.manage") && "moviesPanel",
-    has("rooms.manage") && "roomsPanel",
-    (has("ticket_types.manage") || has("orders.manage")) && "ticketsPanel",
-    (has("box_office.manage") || has("orders.manage") || has("tickets.validate") || has("dashboard.view")) && "ordersPanel",
-    has("concessions.manage") && "concessionsPanel",
-    has("marketing.manage") && "marketingPanel",
-    has("club.manage") && "clubPanel",
+    (has("dashboard.view") || has("ticket_finance.view")) && "dashboardPanel",
+    has("movies.view") && "moviesPanel",
+    has("rooms.view") && "roomsPanel",
+    (has("ticket_types.view") || has("tickets.view")) && "ticketsPanel",
+    (has("box_office.sell") || has("orders.view") || has("tickets.validate") || has("payments.view")) && "ordersPanel",
+    has("concessions.view") && "concessionsPanel",
+    has("marketing.view") && "marketingPanel",
+    has("club.view") && "clubPanel",
     "usersPanel",
-    has("integrations.manage") && "integrationsPanel",
+    has("integrations.view") && "integrationsPanel",
     has("logs.view") && "logsPanel"
   ].filter(Boolean));
   document.querySelectorAll(".nav-button[data-panel]").forEach((button) => {
@@ -11408,10 +11516,48 @@ function applyRbacVisibility() {
     element.hidden = !owner;
   });
   const teamTab = document.querySelector('[data-admin-tablist="accounts"] [data-admin-tab="team"]');
-  if (teamTab) teamTab.hidden = !owner;
-  if (!owner && state.adminSubtabs.accounts !== "security") setAdminSubtab("accounts", "security");
+  if (teamTab) teamTab.hidden = !has("users.manage");
+  const customersTab = document.querySelector('[data-admin-tablist="accounts"] [data-admin-tab="customers"]');
+  if (customersTab) customersTab.hidden = !has("users.manage");
+  if (!has("users.manage") && state.adminSubtabs.accounts !== "security") setAdminSubtab("accounts", "security");
   document.querySelectorAll("[data-permission]").forEach((element) => {
     element.hidden = !has(element.dataset.permission);
+  });
+  const setFormAccess = (id, allowed) => {
+    const form = $(id);
+    if (!form) return;
+    form.classList.toggle("is-readonly", !allowed);
+    form.querySelectorAll("input, select, textarea, button[type='submit']").forEach((control) => {
+      control.disabled = !allowed;
+    });
+  };
+  setFormAccess("movieForm", state.creating.movie ? has("movies.create") : has("movies.edit"));
+  setFormAccess("roomForm", state.creating.room ? has("rooms.create") : has("rooms.edit"));
+  setFormAccess("ticketForm", state.creating.ticket ? has("ticket_types.create") : has("ticket_types.edit"));
+  setFormAccess("manualTicketForm", has("box_office.sell"));
+  setFormAccess("concessionCounterForm", has("concessions.sell"));
+  setFormAccess("concessionForm", has("concessions.edit"));
+  setFormAccess("settingsForm", has("settings.manage"));
+  setFormAccess("emailCampaignForm", has("marketing.manage"));
+  setFormAccess("promotionForm", has("marketing.manage"));
+  setFormAccess("adForm", has("marketing.manage"));
+  setFormAccess("userForm", has("users.manage"));
+  setFormAccess("customerUserForm", has("users.manage"));
+  setFormAccess("clubVisualForm", has("club.manage"));
+  setFormAccess("clubPlanForm", has("club.manage"));
+  setFormAccess("clubAssignForm", has("club.manage"));
+  setFormAccess("integrationForm", has("integrations.manage"));
+  [
+    ["newPromotionButton", "marketing.manage"],
+    ["newAdButton", "marketing.manage"],
+    ["adsMasterToggle", "marketing.manage"],
+    ["emailBrandSaveButton", "marketing.manage"],
+    ["newClubPlanButton", "club.manage"],
+    ["newUserButton", "users.manage"],
+    ["newCustomerUserButton", "users.manage"]
+  ].forEach(([id, permission]) => {
+    const element = $(id);
+    if (element) element.hidden = !has(permission);
   });
   const activeBoxOfficeTab = document.querySelector("[data-box-office-tab].active");
   if (activeBoxOfficeTab?.hidden) {
@@ -11437,6 +11583,9 @@ function bindEvents() {
   setupResponsiveSelects();
 
   $("dashboardReportButton")?.addEventListener("click", () => window.open(`${API_BASE}/api/admin/reports/dashboard.csv?${dashboardQuery()}`, "_blank", "noopener"));
+  $("ticketFinanceRefresh")?.addEventListener("click", loadTicketFinanceReport);
+  $("ticketFinanceRulesForm")?.addEventListener("submit", saveTicketFinanceRules);
+  $("ticketFinanceMovie")?.addEventListener("change", loadTicketFinanceReport);
 
   document.addEventListener("click", (event) => {
     const floating = $("floatingActionMenu");
