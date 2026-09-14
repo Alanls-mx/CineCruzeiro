@@ -2696,6 +2696,7 @@ function renderMoviePublishSummary() {
     <div><span>Título</span><strong>${escapeHtml($("movieTitle").value || "Sem título")}</strong></div>
     <div><span>Página</span><strong>/filmes/${escapeHtml($("movieSlug").value || slugify($("movieTitle").value) || "novo-filme")}</strong></div>
     <div><span>Status no site</span><strong>${publicMovieStatusLabel($("movieStatus").value)}</strong></div>
+    <div><span>Posição no catálogo</span><strong>${escapeHtml($("movieCatalogPosition").value || "1")} de ${$("movieCatalogPosition").options.length || 1}</strong></div>
     <div><span>Sessões cadastradas</span><strong>${sessions.length}</strong></div>
     <div><span>Destaque da home</span><strong>${$("movieHighlight").checked ? "Sim" : "Não"}</strong></div>
   `;
@@ -2819,11 +2820,7 @@ function fillMovieForm(movie) {
   state.movieDraftMetadata = structuredClone(movie?.metadata || {});
   $("movieDirector").value = movie?.director || "";
   $("movieTag").value = movie?.tag ?? "";
-  const catalogPosition = movie
-    ? orderedMovies().findIndex((item) => item.id === movie.id) + 1
-    : orderedMovies().length + 1;
-  $("movieCatalogPosition").max = String(Math.max(1, orderedMovies().length + (movie ? 0 : 1)));
-  $("movieCatalogPosition").value = String(Math.max(1, catalogPosition));
+  populateMovieCatalogPositions(movie);
   $("movieGenre").value = (movie?.genre || []).join(", ");
   $("movieSynopsis").value = movie?.synopsis || "";
   $("movieTrailer").value = movie?.trailerYoutubeId || "";
@@ -3027,6 +3024,47 @@ function selectMovie(id) {
 
 function orderedMovies() {
   return [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
+}
+
+function movieCatalogNeighbors(movieId = "") {
+  return orderedMovies().filter((movie) => movie.id !== movieId);
+}
+
+function movieCatalogPositionLabel(position, movies) {
+  const above = movies[position - 2];
+  const below = movies[position - 1];
+  if (!above && !below) return "1 - Primeiro filme do catálogo";
+  if (!above) return `1 - Primeiro, antes de ${below.title}`;
+  if (!below) return `${position} - Último, depois de ${above.title}`;
+  return `${position} - Entre ${above.title} e ${below.title}`;
+}
+
+function populateMovieCatalogPositions(movie) {
+  const movies = movieCatalogNeighbors(movie?.id || "");
+  const currentPosition = movie
+    ? orderedMovies().findIndex((item) => item.id === movie.id) + 1
+    : movies.length + 1;
+  $("movieCatalogPosition").innerHTML = Array.from({ length: movies.length + 1 }, (_, index) => {
+    const position = index + 1;
+    return `<option value="${position}">${escapeHtml(movieCatalogPositionLabel(position, movies))}</option>`;
+  }).join("");
+  $("movieCatalogPosition").value = String(Math.max(1, currentPosition));
+  renderMovieCatalogPositionPreview();
+}
+
+function renderMovieCatalogPositionPreview() {
+  const movieId = $("movieId").value || state.selectedMovieId || "";
+  const movies = movieCatalogNeighbors(movieId);
+  const position = Math.min(Math.max(1, Number($("movieCatalogPosition").value || 1)), movies.length + 1);
+  const above = movies[position - 2];
+  const below = movies[position - 1];
+  const currentTitle = $("movieTitle").value.trim() || "Novo filme";
+  $("movieCatalogPositionPreview").innerHTML = `
+    <div><span>Imediatamente acima</span><strong>${escapeHtml(above?.title || "Nenhum filme")}</strong></div>
+    <div class="current"><span>Posição ${position} de ${movies.length + 1}</span><strong>${escapeHtml(currentTitle)}</strong></div>
+    <div><span>Imediatamente abaixo</span><strong>${escapeHtml(below?.title || "Nenhum filme")}</strong></div>
+  `;
+  if (state.movieWizardStep === 4) renderMoviePublishSummary();
 }
 
 function upsertAdminCollection(collection, item) {
@@ -11413,7 +11451,9 @@ function bindEvents() {
   });
   $("movieTitle").addEventListener("input", () => {
     if (!$("movieId").value && !$("movieSlug").dataset.touched) $("movieSlug").value = slugify($("movieTitle").value);
+    renderMovieCatalogPositionPreview();
   });
+  $("movieCatalogPosition").addEventListener("change", renderMovieCatalogPositionPreview);
   $("movieSlug").addEventListener("input", () => {
     $("movieSlug").dataset.touched = "true";
     $("movieSlug").value = slugify($("movieSlug").value);

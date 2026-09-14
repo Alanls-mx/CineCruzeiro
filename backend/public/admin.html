@@ -596,9 +596,10 @@
 
                 <label>
                   Posição no catálogo
-                  <input id="movieCatalogPosition" type="number" min="1" step="1" inputmode="numeric" />
-                  <small>1 aparece primeiro. A posição considera todos os filmes, inclusive os que estão em outras páginas.</small>
+                  <select id="movieCatalogPosition"></select>
+                  <small>Escolha pelo contexto. A posição considera todos os filmes, inclusive os que estão em outras páginas.</small>
                 </label>
+                <div id="movieCatalogPositionPreview" class="movie-position-preview" aria-live="polite"></div>
 
                 <label class="check-field">
                   <input id="movieHighlight" type="checkbox" />

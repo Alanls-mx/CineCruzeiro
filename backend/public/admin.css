@@ -2905,6 +2905,49 @@ input[type="file"]::file-selector-button {
   text-align: right;
 }
 
+.movie-position-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  margin: -2px 0 4px;
+  border-radius: var(--radius);
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.movie-position-preview > div {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  min-height: 68px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.movie-position-preview span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.movie-position-preview strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movie-position-preview .current {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.movie-position-preview .current span {
+  color: #93c5fd;
+}
+
 .tmdb-result strong,
 .tmdb-result small {
   display: block;
@@ -6892,6 +6935,7 @@ th {
   }
 
   .field-row,
+  .movie-position-preview,
   .session-editor,
   .session-row,
   .search-row,
