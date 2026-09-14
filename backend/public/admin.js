@@ -59,7 +59,8 @@ let state = {
   adminSubtabs: {
     marketing: "overview",
     club: "overview",
-    accounts: "team"
+    accounts: "team",
+    rooms: "registered"
   },
   dashboardPeriod: "today",
   dashboardFrom: "",
@@ -134,6 +135,7 @@ let state = {
   globalSessionsPage: 1,
   globalSessionsPageSize: 12,
   globalSessionFilters: { from: "", to: "", roomId: "", movieId: "", status: "active", conflictsOnly: false },
+  sessionAutocorrectPlan: null,
   ticketTypesPage: 1,
   ticketTypesPageSize: 8,
   concessionsPage: 1,
@@ -4218,6 +4220,7 @@ function updateGlobalSessionFilters() {
     conflictsOnly: $("globalSessionsConflictsOnly").checked
   };
   state.globalSessionsPage = 1;
+  clearSessionAutocorrectPreview();
   renderGlobalSessions();
 }
 
@@ -4226,9 +4229,99 @@ function openGlobalSessionEditor(movieId, sessionId = "") {
   state.creating.movie = false;
   state.selectedMovieId = movieId;
   activatePanel("moviesPanel", { scroll: true });
-  renderMovies();
+  selectMovie(movieId);
   setMovieWizardStep(3);
   openSessionEditor(sessionId);
+}
+
+function sessionAutocorrectPayload() {
+  return {
+    from: state.globalSessionFilters.from,
+    to: state.globalSessionFilters.to,
+    roomId: state.globalSessionFilters.roomId,
+    movieId: state.globalSessionFilters.movieId,
+    turnaroundMinutes: Number($("sessionAutocorrectTurnaround")?.value || 20),
+    includeSales: Boolean($("sessionAutocorrectIncludeSales")?.checked)
+  };
+}
+
+function clearSessionAutocorrectPreview() {
+  state.sessionAutocorrectPlan = null;
+  const preview = $("sessionAutocorrectPreview");
+  if (preview) {
+    preview.hidden = true;
+    preview.innerHTML = "";
+  }
+}
+
+function renderSessionAutocorrectPreview(plan) {
+  const preview = $("sessionAutocorrectPreview");
+  if (!preview) return;
+  const changes = plan.changes || [];
+  const unresolved = plan.unresolved || [];
+  preview.hidden = false;
+  preview.innerHTML = `
+    <div class="session-autocorrect-result-head">
+      <div><strong>${changes.length ? `${changes.length} ajuste(s) sugerido(s)` : "Programação sem ajustes automáticos"}</strong><span>Intervalo operacional considerado: ${Number(plan.turnaroundMinutes || 0)} minutos.</span></div>
+      <button class="icon-only-sm ghost-button" type="button" onclick="clearSessionAutocorrectPreview()" aria-label="Fechar sugestão"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    ${changes.length ? `<div class="session-autocorrect-changes">${changes.map((change) => `
+      <article>
+        <div><strong>${escapeHtml(change.movieTitle)}</strong><span>${escapeHtml(change.room)} · ${Number(change.durationMinutes)} min${change.hasSales ? " · possui vendas" : ""}</span></div>
+        <div class="session-time-change"><span>${new Date(`${change.from.date}T12:00:00`).toLocaleDateString("pt-BR")} · ${escapeHtml(change.from.time)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><strong>${new Date(`${change.to.date}T12:00:00`).toLocaleDateString("pt-BR")} · ${escapeHtml(change.to.time)}</strong></div>
+      </article>`).join("")}</div>` : `<div class="empty-state compact"><strong>Nenhuma sessão precisa ser movida.</strong><span>Os horários consultados já respeitam a duração dos filmes e o intervalo escolhido.</span></div>`}
+    ${unresolved.length ? `<div class="session-autocorrect-unresolved"><strong>${unresolved.length} conflito(s) exigem revisão manual</strong>${unresolved.map((item) => `<span>${escapeHtml(item.movieTitle)} · ${escapeHtml(item.date)} às ${escapeHtml(item.time)} · ${escapeHtml(item.reason)}</span>`).join("")}</div>` : ""}
+    <div class="button-row session-autocorrect-footer">
+      <button class="ghost-button" type="button" onclick="clearSessionAutocorrectPreview()">Descartar sugestão</button>
+      ${changes.length ? `<button id="sessionAutocorrectApplyButton" class="primary-button" type="button" onclick="applySessionAutocorrect()">Aplicar ${changes.length} correção(ões)</button>` : ""}
+    </div>`;
+}
+
+async function previewSessionAutocorrect() {
+  const button = $("sessionAutocorrectPreviewButton");
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.textContent = "Calculando horários...";
+  try {
+    const plan = await api("/api/admin/sessions/autocorrect", { method: "POST", body: JSON.stringify(sessionAutocorrectPayload()) });
+    state.sessionAutocorrectPlan = plan;
+    renderSessionAutocorrectPreview(plan);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+  }
+}
+
+async function applySessionAutocorrect() {
+  const plan = state.sessionAutocorrectPlan;
+  if (!plan?.hash || !plan.changes?.length) return;
+  const includesSales = plan.changes.some((change) => change.hasSales);
+  const message = includesSales
+    ? "Esta correção altera sessões com vendas e atualizará os dados dos ingressos emitidos. Deseja aplicar a sugestão?"
+    : `Aplicar ${plan.changes.length} correção(ões) na programação?`;
+  if (!confirm(message)) return;
+  const button = $("sessionAutocorrectApplyButton");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Aplicando correções...";
+  }
+  try {
+    const result = await api("/api/admin/sessions/autocorrect", {
+      method: "POST",
+      body: JSON.stringify({ ...sessionAutocorrectPayload(), apply: true, previewHash: plan.hash, confirmSalesImpact: includesSales })
+    });
+    clearSessionAutocorrectPreview();
+    await loadContent({ silent: true });
+    setAdminSubtab("rooms", "schedule");
+    showSuccess("Programação corrigida", `${Number(result.applied || 0)} sessão(ões) foram reposicionadas sem criar novas sobreposições.`);
+  } catch (error) {
+    showToast(error.message, "error");
+    if (error.code === "SESSION_AUTOCORRECT_PREVIEW_EXPIRED") clearSessionAutocorrectPreview();
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function renderRooms() {
@@ -7955,6 +8048,7 @@ function setAdminSubtab(group, tab, options = {}) {
     item.hidden = !active;
     item.classList.toggle("active", active);
   });
+  if (group === "rooms" && $("newRoomButton")) $("newRoomButton").hidden = tab !== "registered";
   if (options.focus) panel.querySelector("input:not([type=hidden]), button, select, textarea")?.focus();
 }
 
@@ -11649,11 +11743,16 @@ function bindEvents() {
     }
   });
 
-  $("newRoomButton").addEventListener("click", newRoom);
+  $("newRoomButton").addEventListener("click", () => {
+    setAdminSubtab("rooms", "registered");
+    newRoom();
+  });
   ["globalSessionsFrom", "globalSessionsTo", "globalSessionsRoom", "globalSessionsMovie", "globalSessionsStatus", "globalSessionsConflictsOnly"].forEach((id) => {
     $(id)?.addEventListener("change", updateGlobalSessionFilters);
   });
   $("globalSessionCreateButton")?.addEventListener("click", () => openGlobalSessionEditor($("globalSessionCreateMovie").value));
+  $("sessionAutocorrectPreviewButton")?.addEventListener("click", previewSessionAutocorrect);
+  ["sessionAutocorrectTurnaround", "sessionAutocorrectIncludeSales"].forEach((id) => $(id)?.addEventListener("change", clearSessionAutocorrectPreview));
   $("cancelRoomCreateButton").addEventListener("click", () => cancelCreation("room"));
   $("roomForm").addEventListener("submit", saveRoom);
   $("deleteRoomButton").addEventListener("click", deleteRoom);
@@ -12332,6 +12431,8 @@ window.handleMovieDragEnd = handleMovieDragEnd;
 window.handleMovieDrop = handleMovieDrop;
 window.selectRoom = selectRoom;
 window.openGlobalSessionEditor = openGlobalSessionEditor;
+window.clearSessionAutocorrectPreview = clearSessionAutocorrectPreview;
+window.applySessionAutocorrect = applySessionAutocorrect;
 window.selectTicket = selectTicket;
 window.showSessionTickets = showSessionTickets;
 window.selectConcession = selectConcession;

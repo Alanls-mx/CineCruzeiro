@@ -990,6 +990,16 @@ h1 {
   min-width: 180px;
 }
 
+.room-schedule-create .primary-button {
+  flex: 0 0 auto;
+  min-width: 142px;
+  white-space: nowrap;
+}
+
+#roomsPanel > .admin-subtabs {
+  margin-bottom: 18px;
+}
+
 .room-schedule-filters {
   display: grid;
   grid-template-columns: repeat(5, minmax(125px, 1fr)) minmax(150px, auto);
@@ -1062,6 +1072,124 @@ h1 {
 
 .global-sessions-list {
   display: grid;
+}
+
+.session-autocorrect {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  box-shadow: inset 0 1px rgba(148, 163, 184, .16), inset 0 -1px rgba(148, 163, 184, .16);
+}
+
+.session-autocorrect-head,
+.session-autocorrect-actions,
+.session-autocorrect-result-head,
+.session-time-change {
+  display: flex;
+  align-items: center;
+}
+
+.session-autocorrect-head,
+.session-autocorrect-result-head {
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.session-autocorrect-head p,
+.session-autocorrect-result-head span {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.session-autocorrect-actions {
+  align-items: end;
+  gap: 8px;
+}
+
+.session-autocorrect-actions label {
+  min-width: 150px;
+}
+
+.session-autocorrect-sales {
+  justify-self: start;
+  color: #cbd5e1;
+}
+
+.session-autocorrect-preview {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, .72);
+}
+
+.session-autocorrect-preview[hidden] {
+  display: none;
+}
+
+.session-autocorrect-result-head > div {
+  display: grid;
+}
+
+.session-autocorrect-changes {
+  display: grid;
+}
+
+.session-autocorrect-changes article {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(310px, auto);
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0;
+  box-shadow: inset 0 -1px rgba(148, 163, 184, .12);
+}
+
+.session-autocorrect-changes article > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.session-autocorrect-changes article span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.session-time-change {
+  justify-content: flex-end;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-time-change svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.8;
+}
+
+.session-time-change strong {
+  color: #6ee7b7;
+}
+
+.session-autocorrect-unresolved {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: rgba(251, 113, 133, .09);
+  color: #fecdd3;
+}
+
+.session-autocorrect-unresolved span {
+  font-size: 11px;
+}
+
+.session-autocorrect-footer {
+  justify-content: flex-end;
 }
 
 .global-session-date {
@@ -1179,6 +1307,15 @@ h1 {
     flex-direction: column;
   }
 
+  .session-autocorrect-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .session-autocorrect-actions {
+    justify-content: flex-start;
+  }
+
   .room-schedule-create {
     flex-basis: auto;
     justify-content: flex-start;
@@ -1213,6 +1350,22 @@ h1 {
 
   .room-schedule-create {
     display: grid;
+  }
+
+  .room-schedule-create .primary-button,
+  .session-autocorrect-actions > * {
+    width: 100%;
+  }
+
+  .session-autocorrect-actions,
+  .session-autocorrect-changes article,
+  .session-time-change {
+    display: grid;
+  }
+
+  .session-time-change {
+    justify-content: start;
+    grid-template-columns: 1fr auto 1fr;
   }
 
   .room-schedule-summary {

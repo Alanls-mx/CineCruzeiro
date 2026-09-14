@@ -52,6 +52,7 @@ const {
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
 const { moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
+const { buildSessionAutocorrectPlan } = require("./services/sessionScheduleAutocorrectService");
 const {
   assignConcessionsToTicket,
   concessionOrdersForTicket,
@@ -12338,6 +12339,106 @@ async function handleApi(req, res, pathname) {
       await writeDb(db);
     }
     sendJson(res, 200, { movies: db.movies });
+    return;
+  }
+
+  if (pathname === "/api/admin/sessions/autocorrect" && method === "POST") {
+    const body = await readBody(req);
+    const filters = {
+      from: String(body.from || "").slice(0, 10),
+      to: String(body.to || "").slice(0, 10),
+      roomId: String(body.roomId || ""),
+      movieId: String(body.movieId || "")
+    };
+    const historyOrders = (db.orders || []).flatMap((order) => [
+      order.sessionId ? { sessionId: order.sessionId } : null,
+      ...(order.items || []).map((item) => item.sessionId ? { sessionId: item.sessionId } : null)
+    ]).filter(Boolean);
+    const plan = buildSessionAutocorrectPlan({
+      movies: db.movies || [],
+      rooms: db.rooms || [],
+      tickets: db.tickets || [],
+      orders: historyOrders,
+      filters,
+      turnaroundMinutes: body.turnaroundMinutes,
+      includeSales: body.includeSales === true
+    });
+
+    if (body.apply !== true) {
+      sendJson(res, 200, plan);
+      return;
+    }
+    if (!body.previewHash || body.previewHash !== plan.hash) {
+      sendJson(res, 409, {
+        error: {
+          code: "SESSION_AUTOCORRECT_PREVIEW_EXPIRED",
+          message: "A programação mudou desde a prévia. Gere uma nova sugestão antes de aplicar."
+        }
+      });
+      return;
+    }
+    if (!plan.changes.length) {
+      sendJson(res, 200, { ...plan, applied: 0 });
+      return;
+    }
+    if (plan.changes.some((change) => change.hasSales) && body.confirmSalesImpact !== true) {
+      sendJson(res, 409, {
+        error: {
+          code: "SESSION_AUTOCORRECT_SALES_CONFIRMATION_REQUIRED",
+          message: "A sugestão altera sessões com vendas. Confirme o impacto comercial antes de aplicar."
+        }
+      });
+      return;
+    }
+
+    const updates = plan.changes.map((change) => {
+      const movie = (db.movies || []).find((item) => item.id === change.movieId);
+      const sessionIndex = movie?.sessions?.findIndex((item) => item.id === change.sessionId) ?? -1;
+      if (!movie || sessionIndex < 0) return null;
+      const previous = movie.sessions[sessionIndex];
+      const session = { ...previous, date: change.to.date, time: change.to.time };
+      return { movie, sessionIndex, previous, session };
+    });
+    if (updates.some((update) => !update)) {
+      sendJson(res, 409, {
+        error: {
+          code: "SESSION_AUTOCORRECT_DATA_CHANGED",
+          message: "Uma das sessões da sugestão não existe mais. Gere uma nova prévia."
+        }
+      });
+      return;
+    }
+
+    const reason = "Autocorreção da agenda global";
+    for (const update of updates) {
+      update.movie.sessions[update.sessionIndex] = update.session;
+      const synchronized = syncSessionSnapshotRecords(db, update.movie, update.session, { reason });
+      update.movie.sessions.sort((a, b) => (sessionStartsAt(a)?.getTime() || 0) - (sessionStartsAt(b)?.getTime() || 0));
+      update.movie.updatedAt = new Date().toISOString();
+      if (postgresEnabled()) {
+        await sessionRepository.update(update.movie, update.session, {
+          reason,
+          audit: repositoryAudit(req, "session", update.session.id, update.previous, update.session)
+        });
+      } else {
+        db.auditLogs ||= [];
+        db.auditLogs.unshift({
+          id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+          userId: req.adminUser?.id || "",
+          userEmail: req.adminUser?.email || "",
+          action: "session.autocorrected",
+          entityType: "session",
+          entityId: update.session.id,
+          before: update.previous,
+          after: update.session,
+          metadata: { reason, ...synchronized },
+          createdAt: synchronized.timestamp
+        });
+      }
+      seatRealtimeService?.broadcastSessionRefresh(update.session.id);
+    }
+    if (!postgresEnabled()) await writeDb(db);
+    sendJson(res, 200, { ...plan, applied: updates.length });
     return;
   }
 

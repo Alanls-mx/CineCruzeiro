@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="admin/favicon-admin.svg" />
-    <link rel="stylesheet" href="admin/admin.css?v=20260831-plans-fix" />
+    <link rel="stylesheet" href="admin/admin.css?v=20260914-session-planner" />
     <link rel="stylesheet" href="admin/admin-premium.css?v=20260911-ai-prompt-models" />
   </head>
   <body class="admin-booting">
@@ -657,6 +657,11 @@
               Nova Sala
             </button>
           </div>
+          <nav class="admin-subtabs" aria-label="Seções de Salas" data-admin-tablist="rooms">
+            <button class="active" type="button" data-admin-tab="registered">Salas cadastradas</button>
+            <button type="button" data-admin-tab="schedule">Agenda de sessões</button>
+          </nav>
+          <div class="admin-tab-panel" data-admin-tab-panel="rooms:schedule" hidden>
           <section class="surface room-schedule-manager" aria-labelledby="globalSessionsTitle">
             <div class="room-schedule-head">
               <div>
@@ -665,7 +670,10 @@
               </div>
               <div class="room-schedule-create">
                 <select id="globalSessionCreateMovie" aria-label="Filme para nova sessão"></select>
-                <button id="globalSessionCreateButton" class="primary-button" type="button">Nova sessão</button>
+                <button id="globalSessionCreateButton" class="primary-button icon-label" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  Nova sessão
+                </button>
               </div>
             </div>
             <div class="room-schedule-filters" aria-label="Filtros da agenda">
@@ -685,8 +693,35 @@
               <label class="check-field room-conflict-filter"><input id="globalSessionsConflictsOnly" type="checkbox" />Somente conflitos</label>
             </div>
             <div id="globalSessionsSummary" class="room-schedule-summary" aria-live="polite"></div>
+            <section class="session-autocorrect" aria-labelledby="sessionAutocorrectTitle">
+              <div class="session-autocorrect-head">
+                <div>
+                  <div id="sessionAutocorrectTitle" class="section-title">Autocorreção da programação</div>
+                  <p>Recalcula sessões sobrepostas no primeiro horário livre, considerando a duração de cada filme e o intervalo operacional.</p>
+                </div>
+                <div class="session-autocorrect-actions">
+                  <label>Intervalo entre sessões
+                    <select id="sessionAutocorrectTurnaround">
+                      <option value="10">10 minutos</option>
+                      <option value="15">15 minutos</option>
+                      <option value="20" selected>20 minutos</option>
+                      <option value="30">30 minutos</option>
+                      <option value="45">45 minutos</option>
+                    </select>
+                  </label>
+                  <button id="sessionAutocorrectPreviewButton" class="ghost-button icon-label" type="button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 1 0 2 5.5M20 4v7h-7"/></svg>
+                    Sugerir correção
+                  </button>
+                </div>
+              </div>
+              <label class="check-field session-autocorrect-sales"><input id="sessionAutocorrectIncludeSales" type="checkbox" />Incluir sessões com vendas na sugestão</label>
+              <div id="sessionAutocorrectPreview" class="session-autocorrect-preview" aria-live="polite" hidden></div>
+            </section>
             <div id="globalSessionsList" class="global-sessions-list"></div>
           </section>
+          </div>
+          <div class="admin-tab-panel active" data-admin-tab-panel="rooms:registered">
           <div class="split-grid compact">
             <div class="surface">
               <div class="section-title">Salas cadastradas</div>
@@ -772,6 +807,7 @@
                 <button class="primary-button" type="submit">Salvar Sala</button>
               </div>
             </form>
+          </div>
           </div>
         </section>
 
@@ -3014,6 +3050,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="admin/jsQR.js?v=20260823"></script>
-    <script src="admin/admin.js?v=20260913-email-models"></script>
+    <script src="admin/admin.js?v=20260914-session-planner"></script>
   </body>
 </html>

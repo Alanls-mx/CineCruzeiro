@@ -49,4 +49,10 @@ function findSessionRoomConflicts({ movies = [], candidateMovie = {}, candidate 
   });
 }
 
-module.exports = { findSessionRoomConflicts, _test: { movieDurationMinutes, normalizedStatus, roomIdentity, sessionStartsAt } };
+module.exports = {
+  findSessionRoomConflicts,
+  movieDurationMinutes,
+  roomIdentity,
+  sessionStartsAt,
+  _test: { movieDurationMinutes, normalizedStatus, roomIdentity, sessionStartsAt }
+};
