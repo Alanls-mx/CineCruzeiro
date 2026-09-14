@@ -50,7 +50,7 @@ const {
   recognitionDate
 } = require("./services/financialRecognitionService");
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
-const { shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
+const { moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
 const {
   assignConcessionsToTicket,
   concessionOrdersForTicket,
@@ -835,14 +835,25 @@ function applyScheduledPremieres(db) {
   db.movies = db.movies.map((movie) => {
     if (shouldPublishUpcomingMovie(movie, today, now)) {
       changed = true;
-      const tag = movie.tag === "Em Breve" ? "Estreia" : movie.tag;
+      const timing = moviePremiereTiming(movie, now);
+      const usesAutomatedPremiereTag = ["", "Normal", "Em Breve", "Pré-Estreia", "Estreia"].includes(String(movie.tag || ""));
+      const tag = usesAutomatedPremiereTag
+        ? (timing?.tag || (movie.tag === "Em Breve" ? "Estreia" : movie.tag))
+        : movie.tag;
+      const metadata = timing && usesAutomatedPremiereTag
+        ? {
+            ...startMovieTagTransition(movie.metadata, timing.prePremiereAt, "Pré-Estreia"),
+            movieTagSessionId: timing.session.id,
+            movieTagSessionStartsAt: timing.startsAt.toISOString()
+          }
+        : tag === "Estreia"
+          ? startMovieTagTransition(movie.metadata, now, "Estreia")
+          : movie.metadata;
       return {
         ...movie,
         status: "now_playing",
         tag,
-        metadata: tag === "Estreia"
-          ? startMovieTagTransition(movie.metadata, new Date(), "Estreia")
-          : movie.metadata,
+        metadata,
         sessions: movie.sessions?.length ? movie.sessions : defaultPremiereSessions(movie, db),
         publishedAt: movie.publishedAt || new Date().toISOString()
       };
