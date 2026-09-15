@@ -108,6 +108,15 @@ function cleanMovie(row, index) {
   };
 }
 
+function sanitizeBrandReferences(value, cinemaName) {
+  if (typeof value === "string") return value.replace(/Cine\s+Cruzeiro/gi, cinemaName);
+  if (Array.isArray(value)) return value.map((item) => sanitizeBrandReferences(item, cinemaName));
+  if (!value || typeof value !== "object" || value instanceof Date || Buffer.isBuffer(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, sanitizeBrandReferences(item, cinemaName)])
+  );
+}
+
 async function main() {
   const sourceUrl = required("SOURCE_DATABASE_URL");
   const targetUrl = required("DATABASE_URL");
@@ -153,16 +162,20 @@ async function main() {
       marketingAdsEnabled: false,
       demoInstallation: true,
     };
-    const rooms = roomsResult.rows.map((row, index) => ({
-      ...row,
+    const rooms = roomsResult.rows.map((sourceRow, index) => ({
+      ...sanitizeBrandReferences(sourceRow, cinemaName),
       name: index === 0 ? "Sala Principal" : `Sala ${index + 1}`,
       created_at: new Date(),
       updated_at: new Date(),
     }));
-    const ticketTypes = ticketTypesResult.rows.map((row) => ({ ...row, created_at: new Date(), updated_at: new Date() }));
-    const movies = moviesResult.rows.map(cleanMovie);
+    const ticketTypes = ticketTypesResult.rows.map((row) => ({
+      ...sanitizeBrandReferences(row, cinemaName),
+      created_at: new Date(),
+      updated_at: new Date(),
+    }));
+    const movies = moviesResult.rows.map((row, index) => cleanMovie(sanitizeBrandReferences(row, cinemaName), index));
     const concessions = concessionsResult.rows.map((row) => ({
-      ...row,
+      ...sanitizeBrandReferences(row, cinemaName),
       image_url: "",
       created_at: new Date(),
       updated_at: new Date(),
@@ -181,7 +194,7 @@ async function main() {
       };
     });
     const plans = plansResult.rows.map((row) => ({
-      ...row,
+      ...sanitizeBrandReferences(row, cinemaName),
       provider_plan_id: "",
       mercado_pago_plan_id: "",
       image_url: "",
