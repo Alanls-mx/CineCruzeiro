@@ -2533,6 +2533,13 @@ h1 {
   background: #080f1b;
 }
 
+.room-seat-map-content {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  justify-items: center;
+}
+
 .room-seat-screen {
   width: min(72%, 620px);
   margin: 0 auto 28px;
@@ -5408,6 +5415,13 @@ input[type="file"]::file-selector-button {
   scrollbar-color: #334155 #080f1b;
 }
 
+.manual-seat-map-content {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  justify-items: center;
+}
+
 .manual-seat-screen {
   width: min(72%, 620px);
   margin: 0 auto 28px;
@@ -5424,7 +5438,6 @@ input[type="file"]::file-selector-button {
   display: grid;
   justify-content: center;
   width: max-content;
-  min-width: 100%;
   gap: 8px;
 }
 

@@ -1056,10 +1056,10 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
               <span className="inline-flex items-center gap-2"><CircleUserRound className="h-4 w-4" />Pessoa obesa</span>
             </div>
             <div className="mt-5 overflow-x-auto rounded-lg bg-[#080f1b] px-4 pb-6 pt-5">
-              <div className="mx-auto mb-7 w-[min(620px,75%)] border-t-[3px] border-gold-400 pt-2 text-center text-xs font-black uppercase tracking-[.16em] text-slate-500">
-                {seatMap.screenLabel || "TELA"}
-              </div>
-              <div className="mx-auto grid w-max gap-2">
+              <div className="mx-auto grid w-max min-w-full gap-2">
+                <div className="mb-5 w-[min(620px,75%)] justify-self-center border-t-[3px] border-gold-400 pt-2 text-center text-xs font-black uppercase tracking-[.16em] text-slate-500">
+                  {seatMap.screenLabel || "TELA"}
+                </div>
                 {seatMap.rows.map((row) => (
                   <div key={row.id} className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-1.5">
                     <span className="w-6 text-center text-[11px] font-black text-slate-500">{row.label}</span>
