@@ -12699,7 +12699,7 @@ window.stopPerformanceStream = stopPerformanceStream;
 
 async function initAdmin() {
   const logo = $("adminLogoImg");
-  if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp`;
+  if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp?brand=cinecruzeiro-v2`;
   bindEvents();
   setupPerformanceControls();
   setBoxOfficeTab("newSale");
