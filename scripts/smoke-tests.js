@@ -42,6 +42,17 @@ async function request(pathname, options = {}) {
   return { response, payload };
 }
 
+async function rawHttpRequest(pathname, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ hostname: "localhost", port: PORT, path: pathname, method: "GET", headers }, (res) => {
+      res.resume();
+      res.on("end", () => resolve({ statusCode: res.statusCode, headers: res.headers }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 async function holdSeat(sessionId, seatId, ownerToken) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(`ws://localhost:${PORT}/api/realtime/seats`);
@@ -2103,6 +2114,14 @@ async function run() {
     assert.equal(contentAfterPermanentDelete.payload.payments.some((payment) => payment.orderId === deletionSale.payload.order.id), false);
     assert.equal(contentAfterPermanentDelete.payload.tickets.some((ticket) => ticket.orderId === deletionSale.payload.order.id), false);
     assert.ok((contentAfterPermanentDelete.payload.auditLogs || []).some((log) => log.action === "order.permanently_deleted"));
+
+    const directTicketsNavigation = await rawHttpRequest("/api/me/tickets", {
+      Cookie: cookie,
+      Accept: "text/html",
+      "Sec-Fetch-Mode": "navigate"
+    });
+    assert.equal(directTicketsNavigation.statusCode, 303);
+    assert.match(directTicketsNavigation.headers.location || "", /\/conta\/ingressos$/);
 
     const accountTickets = await request("/api/me/tickets", { headers: { Cookie: cookie } });
     assert.equal(accountTickets.response.status, 200);

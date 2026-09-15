@@ -13926,6 +13926,16 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/me/tickets" && method === "GET") {
+    const isDocumentNavigation = req.headers["sec-fetch-mode"] === "navigate"
+      && String(req.headers.accept || "").includes("text/html");
+    if (isDocumentNavigation) {
+      res.writeHead(303, securityHeaders({
+        Location: `${appFrontendUrl()}/conta/ingressos`,
+        "Cache-Control": "private, no-store, max-age=0"
+      }));
+      res.end();
+      return;
+    }
     const user = requireCustomerAuth(req, res, db);
     if (!user) return;
     const enrichedTickets = findAccountTickets(db, user);
