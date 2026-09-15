@@ -46,6 +46,17 @@ Esses diretórios são sobrepostos à release depois que o código é extraído.
 
 As cinco instalações planejadas já aparecem desabilitadas no arquivo de exemplo. Elas só devem receber `enabled: true` depois que banco, ambiente, processos, Nginx e os três recursos obrigatórios de logo estiverem prontos. Isso impede a publicação acidental de uma demo com a marca do cinema-base.
 
+## Bootstrap seguro de uma demonstração
+
+O bootstrap cria um banco vazio, usuário PostgreSQL exclusivo, segredos próprios, credencial administrativa aleatória e configuração PM2. A carga demonstrativa consulta apenas tabelas de catálogo permitidas e gera sessões futuras novas. Usuários, pedidos, pagamentos, ingressos, campanhas, logs, webhooks, tokens e integrações não são copiados.
+
+```bash
+CINEMA_INSTANCES_FILE=/home/ubuntu/projects/cinema-instances.json \
+  node scripts/bootstrap-demo-instance-vps.mjs <slug> /tmp/<slug>-branding
+```
+
+As credenciais iniciais ficam, com permissão `0600`, em `shared/demo-admin.txt` dentro da instalação. Imagens de produtos não são herdadas porque podem conter a marca do cinema-base. Apenas arquivos de pôster e backdrop efetivamente referenciados no catálogo são copiados para os uploads independentes.
+
 ## Comandos
 
 Validar o formato local:

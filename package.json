@@ -18,6 +18,7 @@
     "start": "next start",
     "deploy:validate": "node scripts/cinema-instance-registry.mjs validate config/cinema-instances.example.json",
     "deploy:plan": "node scripts/cinema-instance-registry.mjs plan config/cinema-instances.example.json",
+    "demo:seed": "node scripts/seed-demo-instance.mjs",
     "test:deployment": "node --test tests/deploy-instance-registry.test.mjs",
     "lint": "tsc --noEmit",
     "test:e2e": "playwright test",

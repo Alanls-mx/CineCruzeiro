@@ -237,7 +237,9 @@ function main() {
       ensureInstanceLayout(instance);
       const env = runtimeEnvironment(instance);
       const releaseDir = materializeRelease(archivePath, instance, tag, env);
-      prepared.push({ instance, env, releaseDir, previous: fs.realpathSync(path.join(instance.baseDir, "current")) });
+      const currentPath = path.join(instance.baseDir, "current");
+      const previous = fs.existsSync(currentPath) ? fs.realpathSync(currentPath) : "";
+      prepared.push({ instance, env, releaseDir, previous });
     }
 
     for (const item of prepared) {
@@ -255,16 +257,24 @@ function main() {
     console.error(`DEPLOY_ALL_ERROR: ${error.message}`);
     for (const item of switched.reverse()) {
       try {
-        console.error(`Rollback de ${item.instance.slug} para ${item.previous}`);
-        switchCurrent(item.instance, item.previous);
-        reloadAndCheck(item.instance, item.env);
+        if (item.previous) {
+          console.error(`Rollback de ${item.instance.slug} para ${item.previous}`);
+          switchCurrent(item.instance, item.previous);
+          reloadAndCheck(item.instance, item.env);
+        } else {
+          console.error(`Rollback da primeira publicacao de ${item.instance.slug}`);
+          fs.rmSync(path.join(item.instance.baseDir, "current"), { force: true });
+          spawnSync("pm2", ["delete", item.instance.backendProcess], { stdio: "ignore" });
+          spawnSync("pm2", ["delete", item.instance.frontendProcess], { stdio: "ignore" });
+        }
       } catch (rollbackError) {
         console.error(`ROLLBACK_ERROR ${item.instance.slug}: ${rollbackError.message}`);
       }
     }
     for (const item of prepared) {
       try {
-        const current = fs.realpathSync(path.join(item.instance.baseDir, "current"));
+        const currentPath = path.join(item.instance.baseDir, "current");
+        const current = fs.existsSync(currentPath) ? fs.realpathSync(currentPath) : "";
         if (path.resolve(item.releaseDir) !== path.resolve(current)) {
           fs.rmSync(item.releaseDir, { recursive: true, force: true });
         }
