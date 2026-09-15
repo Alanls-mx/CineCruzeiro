@@ -138,8 +138,13 @@ function backupAndMigrate(instance, releaseDir, env) {
   fs.mkdirSync(backupDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   const backup = path.join(backupDir, `${instance.slug}-${stamp}-pre-deploy.dump`);
-  run("pg_dump", ["--format=custom", "--file", backup], { env: postgresEnvironment(databaseUrl, env) });
-  if (!fs.statSync(backup).size) throw new Error(`${instance.slug}: backup vazio.`);
+  try {
+    run("pg_dump", ["--format=custom", "--file", backup], { env: postgresEnvironment(databaseUrl, env) });
+    if (!fs.statSync(backup).size) throw new Error(`${instance.slug}: backup vazio.`);
+  } catch (error) {
+    fs.rmSync(backup, { force: true });
+    throw error;
+  }
   run("npm", ["run", "db:migrate"], { cwd: releaseDir, env: { ...env, DATABASE_URL: databaseUrl } });
 }
 
