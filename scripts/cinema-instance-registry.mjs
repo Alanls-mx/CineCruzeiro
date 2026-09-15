@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ROUTE_PATTERN = /^\/projects\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -136,7 +136,14 @@ function main() {
   process.exitCode = 2;
 }
 
-const isCli = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const isCli = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
 if (isCli) {
   try {
     main();
