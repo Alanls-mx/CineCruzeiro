@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { loadRegistry } from "./cinema-instance-registry.mjs";
 
 function run(command, args, options = {}) {
@@ -47,6 +48,29 @@ function runtimeEnvironment(instance) {
   const env = { ...process.env, ...runtime, ...local };
   if (!env.DATABASE_URL && !env.POSTGRES_URL) throw new Error(`${instance.slug}: DATABASE_URL ausente.`);
   return env;
+}
+
+export function postgresEnvironment(databaseUrl, env = {}) {
+  let parsed;
+  try {
+    parsed = new URL(databaseUrl);
+  } catch {
+    throw new Error("DATABASE_URL precisa usar o formato postgresql://usuario:senha@host:porta/banco.");
+  }
+  if (!/^postgres(?:ql)?:$/.test(parsed.protocol)) throw new Error("DATABASE_URL nao e uma URL PostgreSQL.");
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+  if (!parsed.hostname || !parsed.username || !database) throw new Error("DATABASE_URL PostgreSQL incompleta.");
+  const pgEnv = {
+    ...env,
+    PGHOST: parsed.hostname,
+    PGPORT: parsed.port || "5432",
+    PGUSER: decodeURIComponent(parsed.username),
+    PGPASSWORD: decodeURIComponent(parsed.password),
+    PGDATABASE: database,
+  };
+  const sslMode = parsed.searchParams.get("sslmode");
+  if (sslMode) pgEnv.PGSSLMODE = sslMode;
+  return pgEnv;
 }
 
 function ensureInstanceLayout(instance) {
@@ -114,7 +138,7 @@ function backupAndMigrate(instance, releaseDir, env) {
   fs.mkdirSync(backupDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
   const backup = path.join(backupDir, `${instance.slug}-${stamp}-pre-deploy.dump`);
-  run("pg_dump", ["--format=custom", "--file", backup], { env: { ...env, PGDATABASE: databaseUrl } });
+  run("pg_dump", ["--format=custom", "--file", backup], { env: postgresEnvironment(databaseUrl, env) });
   if (!fs.statSync(backup).size) throw new Error(`${instance.slug}: backup vazio.`);
   run("npm", ["run", "db:migrate"], { cwd: releaseDir, env: { ...env, DATABASE_URL: databaseUrl } });
 }
@@ -233,15 +257,28 @@ function main() {
         console.error(`ROLLBACK_ERROR ${item.instance.slug}: ${rollbackError.message}`);
       }
     }
+    for (const item of prepared) {
+      try {
+        const current = fs.realpathSync(path.join(item.instance.baseDir, "current"));
+        if (path.resolve(item.releaseDir) !== path.resolve(current)) {
+          fs.rmSync(item.releaseDir, { recursive: true, force: true });
+        }
+      } catch (cleanupError) {
+        console.error(`CLEANUP_ERROR ${item.instance.slug}: ${cleanupError.message}`);
+      }
+    }
     process.exitCode = 1;
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`DEPLOY_ALL_ERROR: ${error.message}`);
-  process.exitCode = 1;
+const isCli = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (isCli) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`DEPLOY_ALL_ERROR: ${error.message}`);
+    process.exitCode = 1;
+  }
 }

@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { validateRegistry } from "../scripts/cinema-instance-registry.mjs";
+import { postgresEnvironment } from "../scripts/deploy-all-vps.mjs";
 
 function instance(overrides = {}) {
   return {
@@ -64,6 +65,17 @@ test("rejeita siteUrl que nao corresponde a rota publica", () => {
     repository: "https://github.com/example/cinema.git",
     instances: [instance({ siteUrl: "https://lumixengine.com/projects/outra-rota" })],
   }), /siteUrl deve terminar/);
+});
+
+test("converte DATABASE_URL sem colocar credenciais nos argumentos do pg_dump", () => {
+  const env = postgresEnvironment("postgresql://cinema:senha%20forte@127.0.0.1:5433/cinema_demo?sslmode=require", { KEEP: "yes" });
+  assert.equal(env.PGHOST, "127.0.0.1");
+  assert.equal(env.PGPORT, "5433");
+  assert.equal(env.PGUSER, "cinema");
+  assert.equal(env.PGPASSWORD, "senha forte");
+  assert.equal(env.PGDATABASE, "cinema_demo");
+  assert.equal(env.PGSSLMODE, "require");
+  assert.equal(env.KEEP, "yes");
 });
 
 test("aplica marca apenas nos arquivos operacionais e sobrepoe recursos aprovados", () => {
