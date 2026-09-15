@@ -218,7 +218,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
   };
 
   const handleTicketValidated = (updatedTicket: TicketRecord) => {
-    setTickets((current) => current.map((ticket) => (ticket.code === updatedTicket.code ? updatedTicket : ticket)));
+    setTickets((current) => current.map((ticket) => (ticket.id === updatedTicket.id ? updatedTicket : ticket)));
   };
 
   if (!isOpen) return null;
@@ -570,7 +570,9 @@ function AccountTicketCard({
           <p className="mt-1 text-xs font-semibold text-brand-300">
             {ticket.sessionDate} • {ticket.sessionTime} • {ticket.ticketType} • {ticket.seat || ticket.seatLabel || "Lugar livre"}
           </p>
-          <p className="mt-2 font-mono text-xs font-black text-gold-400">{ticket.displayCode || ticket.code}</p>
+          {ticket.status === "active" && (
+            <p className="mt-2 font-mono text-xs font-black text-gold-400">{ticket.displayCode || ticket.code}</p>
+          )}
         </div>
       </div>
 

@@ -65,7 +65,7 @@ export interface CustomerUser {
 export interface TicketRecord {
   id: string;
   orderId?: string;
-  code: string;
+  code?: string;
   qrPayload?: string;
   displayCode?: string;
   displayQrPayload?: string;
@@ -108,7 +108,7 @@ export interface TicketRecord {
   transferBlockedReason?: string;
   transferredAt?: string;
   usedAt?: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface RoomRecord {
@@ -894,7 +894,6 @@ function normalizeTicketAssets(ticket: TicketRecord): TicketRecord {
   return {
     ...ticket,
     posterUrl: publicAssetPath(ticket.posterUrl),
-    backdropUrl: publicAssetPath(ticket.backdropUrl),
   };
 }
 

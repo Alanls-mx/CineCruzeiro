@@ -76,6 +76,7 @@ const {
 const { brazilianDate } = require("./utils/dateFormat");
 const { requireRuntimeSecret } = require("./services/runtimeSecretService");
 const ticketCodeService = require("./services/ticketCodeService");
+const { toCustomerTicketDto } = require("./services/customerTicketDtoService");
 const movieRepository = require("./repositories/movieRepository");
 const sessionRepository = require("./repositories/sessionRepository");
 const roomRepository = require("./repositories/roomRepository");
@@ -2213,42 +2214,6 @@ function requireCustomerAuth(req, res, db) {
   return user;
 }
 
-function toCustomerTicketDto(ticket) {
-  if (!ticket) return null;
-  return {
-    id: ticket.id,
-    code: ticket.displayCode || ticket.code,
-    movieTitle: ticket.movieTitle || "",
-    sessionDate: ticket.sessionDate || "",
-    sessionTime: ticket.sessionTime || "",
-    sessionRoom: ticket.sessionRoom || "",
-    sessionFormat: ticket.sessionFormat || "",
-    seat: ticket.seat || ticket.seatLabel || "Lugar livre",
-    seatLabel: ticket.seatLabel || ticket.seat || "Lugar livre",
-    ticketType: ticket.ticketType || "Ingresso",
-    status: ticket.status || "active",
-    posterUrl: ticket.posterUrl || "",
-    backdropUrl: ticket.backdropUrl || "",
-    extras: (ticket.extras || []).map((item) => ({
-      id: item.id || "",
-      name: item.name || "",
-      quantity: Number(item.quantity || 0),
-      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : undefined,
-      imageUrl: item.imageUrl || ""
-    })),
-    extrasSharedByOrder: Boolean(ticket.extrasSharedByOrder),
-    extrasAttachedToTicket: Boolean(ticket.extrasAttachedToTicket),
-    orderTicketIndex: ticket.orderTicketIndex ?? 0,
-    orderTicketCount: ticket.orderTicketCount ?? 1,
-    archived: Boolean(ticket.archived),
-    archiveAt: ticket.archiveAt || "",
-    canTransfer: Boolean(ticket.canTransfer),
-    transferBlockedReason: ticket.transferBlockedReason || "",
-    transferredAt: ticket.transferredAt || "",
-    createdAt: ticket.createdAt || ""
-  };
-}
-
 function enrichTicket(db, ticket) {
   const order = orderForTicket(db, ticket);
   const movie = movieForTicket(db, ticket);
@@ -3933,7 +3898,7 @@ function concessionThermalPdf(order, payment) {
 
 async function ticketDownloadPdf(db, ticket) {
   const enriched = enrichTicket(db, ticket);
-  const showTicketCode = enriched.status !== "expired";
+  const showTicketAccess = enriched.status === "active";
   const sessionDate = brazilianDate(enriched.sessionDate);
   const seatLabel = enriched.seat || "Lugar livre";
   const extras = (enriched.extras || []).map((item) => `${item.name} x${Number(item.quantity || 0)}`).join(" - ");
@@ -3973,9 +3938,15 @@ async function ticketDownloadPdf(db, ticket) {
   }
   page1 += pdfLine(78, enriched.paymentSource === "subscription_credit" ? 330 : 354, 517, enriched.paymentSource === "subscription_credit" ? 330 : 354, "#334155", 1);
   page1 += pdfWriteText("QR Code de entrada", 214, enriched.paymentSource === "subscription_credit" ? 306 : 324, 10, { bold: true, color: "#bfdbfe" });
-  page1 += pdfQr(enriched.displayQrPayload || enriched.qrPayload || enriched.code, 222, 148, 164);
-  if (showTicketCode) page1 += pdfWriteCenteredText(enriched.displayCode || enriched.code, 304, 126, 10, { bold: true, color: "#facc15" });
-  page1 += pdfWriteCenteredText("Apresente este codigo na entrada.", 304, 103, 11, { bold: true, color: "#ffffff" });
+  if (showTicketAccess) {
+    page1 += pdfQr(enriched.displayQrPayload || enriched.qrPayload || enriched.code, 222, 148, 164);
+    page1 += pdfWriteCenteredText(enriched.displayCode || enriched.code, 304, 126, 10, { bold: true, color: "#facc15" });
+    page1 += pdfWriteCenteredText("Apresente este codigo na entrada.", 304, 103, 11, { bold: true, color: "#ffffff" });
+  } else {
+    page1 += pdfRect(222, 148, 164, 164, "#e2e8f0");
+    page1 += pdfWriteCenteredText(ticketStatusLabel(enriched.status).toUpperCase(), 304, 232, 14, { bold: true, color: "#334155" });
+    page1 += pdfWriteCenteredText("QR Code desativado", 304, 208, 10, { color: "#64748b" });
+  }
   page1 += pdfWriteText("Pagina 1 de 2", 462, 76, 9, { color: "#94a3b8" });
 
   let page2 = "";
@@ -3989,7 +3960,7 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteMultiline(enriched.movieTitle, 78, 672, 20, { bold: true, color: "#ffffff", maxChars: 34, maxLines: 2, lineHeight: 24 });
   page2 += pdfWriteText(`${sessionDate} as ${enriched.sessionTime}`, 78, 608, 14, { bold: true, color: "#facc15" });
   page2 += pdfLine(78, 574, 517, 574, "#334155", 1);
-  if (showTicketCode) page2 += pdfWriteValueBlock("CODIGO", enriched.displayCode || enriched.code, 78, 538, { valueSize: 12, maxChars: 16, maxLines: 1 });
+  if (showTicketAccess) page2 += pdfWriteValueBlock("CODIGO", enriched.displayCode || enriched.code, 78, 538, { valueSize: 12, maxChars: 16, maxLines: 1 });
   page2 += pdfWriteValueBlock("PEDIDO", enriched.orderReference || enriched.orderId || "-", 78, 462, { valueSize: 10, maxChars: 48, maxLines: 3, boldValue: false });
   page2 += pdfWriteValueBlock("TIPO", enriched.ticketType || "Ingresso", 338, 538, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
@@ -4002,7 +3973,7 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteText("BOMBONIERE", 78, 306, 9, { bold: true, color: "#facc15" });
   page2 += pdfWriteMultiline(extras || "Sem extras comprados neste pedido.", 78, 282, 11, { color: "#cbd5e1", maxChars: 72, maxLines: 5, lineHeight: 15 });
   page2 += pdfWriteText("INFORMACOES UTEIS", 78, 178, 9, { bold: true, color: "#60a5fa" });
-  page2 += pdfWriteText("Apresente o QR Code da primeira pagina na entrada.", 78, 152, 10, { color: "#ffffff" });
+  page2 += pdfWriteText(showTicketAccess ? "Apresente o QR Code da primeira pagina na entrada." : "O QR Code deste ingresso nao esta mais disponivel.", 78, 152, 10, { color: "#ffffff" });
   page2 += pdfWriteText("Chegue com 15 minutos de antecedencia.", 78, 134, 10, { color: "#cbd5e1" });
   page2 += pdfWriteText("A validade depende do status real no servidor do Cine Cruzeiro.", 78, 116, 10, { color: "#cbd5e1" });
   page2 += pdfWriteText("Pagina 2 de 2", 462, 86, 9, { color: "#94a3b8" });
@@ -13963,7 +13934,7 @@ async function handleApi(req, res, pathname) {
       tickets,
       upcoming: enrichedTickets.filter((ticket) => !ticket.archived).map(toCustomerTicketDto),
       archived: enrichedTickets.filter((ticket) => ticket.archived).map(toCustomerTicketDto)
-    });
+    }, { "Cache-Control": "private, no-store, max-age=0" });
     return;
   }
 
@@ -13980,7 +13951,9 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
         return;
       }
-      sendJson(res, 200, { ticket: toCustomerTicketDto(enrichTicket(db, ticket)) });
+      sendJson(res, 200, { ticket: toCustomerTicketDto(enrichTicket(db, ticket)) }, {
+        "Cache-Control": "private, no-store, max-age=0"
+      });
       return;
     }
 
@@ -14062,11 +14035,15 @@ async function handleApi(req, res, pathname) {
       }
       const url = new URL(req.url, `http://${req.headers.host}`);
       const disposition = url.searchParams.get("view") === "1" ? "inline" : "attachment";
+      const enrichedTicket = enrichTicket(db, ticket);
       const pdf = await ticketDownloadPdf(db, ticket);
+      const downloadName = enrichedTicket.status === "active"
+        ? `cine-cruzeiro-${ticket.code}.pdf`
+        : `cine-cruzeiro-ingresso-${ticket.id}.pdf`;
       res.writeHead(200, {
         ...securityHeaders({
           "Content-Type": "application/pdf",
-          "Content-Disposition": `${disposition}; filename="cine-cruzeiro-${ticket.code}.pdf"`,
+          "Content-Disposition": `${disposition}; filename="${downloadName}"`,
           "Cache-Control": "no-store"
         }),
         "Access-Control-Allow-Origin": responseCorsOrigin(req),

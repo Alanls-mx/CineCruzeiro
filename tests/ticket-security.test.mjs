@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const ticketCodeService = require("../backend/services/ticketCodeService");
+const { toCustomerTicketDto } = require("../backend/services/customerTicketDtoService");
 
 test("ticketCodeService: gera tokens criptográficos seguros de 192 bits", () => {
   const token1 = ticketCodeService.generateQrToken();
@@ -107,7 +108,6 @@ test("Segurança de DTO e Proteção de Dados Pessoais (Princípio de Menor Priv
     createdAt: "2026-10-01T10:00:00.000Z"
   };
 
-  // Importar toCustomerTicketDto através da extração ou reexecução dos campos esperados
   // Verificamos que a lista de campos proibidos NUNCA deve estar presente no retorno ao frontend
   const sensitiveFields = [
     "customerEmail",
@@ -130,45 +130,12 @@ test("Segurança de DTO e Proteção de Dados Pessoais (Princípio de Menor Priv
     "usedBy",
     "qrPayload",
     "displayQrPayload",
-    "qrToken"
+    "qrToken",
+    "backdropUrl",
+    "archiveAt",
+    "transferredAt",
+    "createdAt"
   ];
-
-  // Simulação exata da toCustomerTicketDto definida no backend
-  function toCustomerTicketDto(ticket) {
-    if (!ticket) return null;
-    return {
-      id: ticket.id,
-      code: ticket.displayCode || ticket.code,
-      movieTitle: ticket.movieTitle || "",
-      sessionDate: ticket.sessionDate || "",
-      sessionTime: ticket.sessionTime || "",
-      sessionRoom: ticket.sessionRoom || "",
-      sessionFormat: ticket.sessionFormat || "",
-      seat: ticket.seat || ticket.seatLabel || "Lugar livre",
-      seatLabel: ticket.seatLabel || ticket.seat || "Lugar livre",
-      ticketType: ticket.ticketType || "Ingresso",
-      status: ticket.status || "active",
-      posterUrl: ticket.posterUrl || "",
-      backdropUrl: ticket.backdropUrl || "",
-      extras: (ticket.extras || []).map((item) => ({
-        id: item.id || "",
-        name: item.name || "",
-        quantity: Number(item.quantity || 0),
-        unitPrice: item.unitPrice != null ? Number(item.unitPrice) : undefined,
-        imageUrl: item.imageUrl || ""
-      })),
-      extrasSharedByOrder: Boolean(ticket.extrasSharedByOrder),
-      extrasAttachedToTicket: Boolean(ticket.extrasAttachedToTicket),
-      orderTicketIndex: ticket.orderTicketIndex ?? 0,
-      orderTicketCount: ticket.orderTicketCount ?? 1,
-      archived: Boolean(ticket.archived),
-      archiveAt: ticket.archiveAt || "",
-      canTransfer: Boolean(ticket.canTransfer),
-      transferBlockedReason: ticket.transferBlockedReason || "",
-      transferredAt: ticket.transferredAt || "",
-      createdAt: ticket.createdAt || ""
-    };
-  }
 
   const dto = toCustomerTicketDto(rawTicketFromDb);
 
@@ -189,12 +156,27 @@ test("Segurança de DTO e Proteção de Dados Pessoais (Princípio de Menor Priv
   assert.equal(dto.sessionTime, "20:30");
   assert.equal(dto.sessionRoom, "Sala 1");
   assert.equal(dto.sessionFormat, "IMAX 2D");
-  assert.equal(dto.seatLabel, "F12");
+  assert.equal(dto.seat, "F12");
   assert.equal(dto.ticketType, "Inteira");
   assert.equal(dto.status, "active");
   assert.equal(dto.posterUrl, "/uploads/interestelar.jpg");
   assert.equal(dto.extras.length, 1);
   assert.equal(dto.extras[0].name, "Pipoca Grande");
+  assert.equal(dto.extras[0].unitPrice, undefined);
+  assert.equal(dto.extras[0].imageUrl, undefined);
+});
+
+test("DTO omite o código de qualquer ingresso que não esteja ativo", () => {
+  for (const status of ["used", "cancelled", "refunded", "expired", "archived", "pending_payment"]) {
+    const dto = toCustomerTicketDto({
+      id: `ticket-${status}`,
+      code: "CC-99887766",
+      displayCode: "CC-99887766",
+      status
+    });
+
+    assert.equal(Object.prototype.hasOwnProperty.call(dto, "code"), false, `status ${status}`);
+  }
 });
 
 test("Autorização: verificação estrita de posse (Anti-IDOR / Anti-BOLA)", () => {

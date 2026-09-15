@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const http = require("http");
 const WebSocket = require("ws");
 const adminTwoFactorService = require("../backend/services/adminTwoFactorService");
+const ticketCodeService = require("../backend/services/ticketCodeService");
 
 const DATA_FILE = "backend/data/db.json";
 const PORT = 4199;
@@ -2110,6 +2111,17 @@ async function run() {
     assert.ok(Array.isArray(accountTickets.payload.archived));
     assert.equal(accountTickets.payload.upcoming.some((ticket) => ticket.id === "smoke-expired-history-ticket"), false);
     assert.equal(accountTickets.payload.archived.some((ticket) => ticket.id === "smoke-expired-history-ticket"), true);
+    const expiredAccountTicket = accountTickets.payload.archived.find((ticket) => ticket.id === "smoke-expired-history-ticket");
+    assert.equal(Object.prototype.hasOwnProperty.call(expiredAccountTicket, "code"), false);
+
+    const expiredDownload = await fetch(`${BASE_URL}/api/me/tickets/${encodeURIComponent(expiredAccountTicket.id)}/download`, {
+      headers: { Cookie: cookie }
+    });
+    assert.equal(expiredDownload.status, 200);
+    assert.equal(expiredDownload.headers.get("content-disposition").includes(ticketCodeService.displayCode(maintainedTicket)), false);
+    const expiredPdfText = Buffer.from(await expiredDownload.arrayBuffer()).toString("latin1");
+    assert.match(expiredPdfText, /QR Code desativado/);
+    assert.equal(expiredPdfText.includes(ticketCodeService.displayCode(maintainedTicket)), false);
 
     const manualTicket = accountTickets.payload.tickets.find((ticket) => ticket.id === boxOfficeSale.payload.tickets[0].id);
     for (const [path, options] of [

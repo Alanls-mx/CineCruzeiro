@@ -301,7 +301,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
-  const showTicketCode = ticket.status !== "expired";
+  const showTicketCode = ticket.status === "active";
   const statusClassName = ticket.status === "active"
     ? "bg-emerald-400/15 text-emerald-200"
     : "bg-white/8 text-slate-300";
@@ -418,7 +418,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               <Info label="Poltrona" value={ticket.seat || ticket.seatLabel || "Lugar livre"} />
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
-              {showTicketCode && <Info label="Código do ingresso" value={ticket.displayCode || ticket.code} />}
+              {showTicketCode && <Info label="Código do ingresso" value={ticket.displayCode || ticket.code || ""} />}
             </dl>
             <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-slate-950">
               {ticket.status === "active" ? (

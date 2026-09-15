@@ -4,6 +4,11 @@ const BACKEND_URL =
   process.env.CINE_BACKEND_URL ||
   process.env.NEXT_PUBLIC_CINE_API_URL ||
   "http://localhost:4000";
+const APP_BASE_PATH = (
+  process.env.NEXT_PUBLIC_BASE_PATH ||
+  process.env.NEXT_BASE_PATH ||
+  (process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "")
+).replace(/\/+$/, "");
 
 type RouteContext = {
   params: Promise<{
@@ -15,6 +20,14 @@ async function proxy(request: NextRequest, context: RouteContext) {
   const params = await context.params;
   const path = (params.path || []).map(encodeURIComponent).join("/");
   const sourceUrl = new URL(request.url);
+  const documentNavigation = request.method === "GET"
+    && path === "me/tickets"
+    && request.headers.get("sec-fetch-mode") === "navigate"
+    && request.headers.get("accept")?.includes("text/html");
+  if (documentNavigation) {
+    const accountPath = `${APP_BASE_PATH}/conta/ingressos`;
+    return NextResponse.redirect(new URL(accountPath, sourceUrl.origin), 303);
+  }
   const targetUrl = new URL(`/api/${path}${sourceUrl.search}`, BACKEND_URL);
   const headers = new Headers();
 
