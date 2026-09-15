@@ -5455,8 +5455,7 @@ input[type="file"]::file-selector-button {
   gap: 6px;
 }
 
-.manual-seat-row-label,
-.manual-seat-row-spacer {
+.manual-seat-row-label {
   width: 24px;
   color: var(--muted);
   font-size: 10px;

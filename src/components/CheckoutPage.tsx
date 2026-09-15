@@ -1076,7 +1076,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                         );
                       })}
                     </div>
-                    <span className="w-6" aria-hidden="true" />
+                    <span className="w-6 text-center text-[11px] font-black text-slate-500" aria-hidden="true">{row.label}</span>
                   </div>
                 ))}
               </div>

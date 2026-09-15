@@ -59,10 +59,7 @@ function hasAvailableSession(movie = {}, nowValue = new Date()) {
 function shouldPublishUpcomingMovie(movie = {}, todayKey = "", nowValue = new Date()) {
   if (normalizedStatus(movie.status) !== "upcoming") return false;
   const premiereTiming = moviePremiereTiming(movie, nowValue);
-  if (premiereTiming?.publish) return true;
-  const releaseDate = String(movie.releaseDate || "").slice(0, 10);
-  if (!releaseDate || !todayKey || releaseDate > todayKey) return false;
-  return Boolean(movie.autoPublish);
+  return Boolean(premiereTiming?.publish);
 }
 
 module.exports = {

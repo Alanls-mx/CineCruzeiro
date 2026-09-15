@@ -15,6 +15,7 @@ test("publica filme em breve após a estreia quando existe sessão disponível",
 test("não publica antes da estreia nem sem sessão disponível", () => {
   assert.equal(shouldPublishUpcomingMovie({ status: "upcoming", releaseDate: "2026-09-13", sessions: [{ date: "2026-09-13", time: "19:00" }] }, "2026-09-12", NOW), false);
   assert.equal(shouldPublishUpcomingMovie({ status: "upcoming", releaseDate: "2026-09-12", sessions: [] }, "2026-09-12", NOW), false);
+  assert.equal(shouldPublishUpcomingMovie({ status: "upcoming", releaseDate: "2026-09-12", autoPublish: true, sessions: [] }, "2026-09-12", NOW), false);
 });
 
 test("publica pela sessão mais próxima nas 24 horas anteriores com selo de pré-estreia", () => {

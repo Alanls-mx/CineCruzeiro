@@ -51,6 +51,7 @@ const {
 } = require("./services/financialRecognitionService");
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
 const { moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
+const { calendarDateKey } = require("./services/calendarDateService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
 const { buildSessionAutocorrectPlan } = require("./services/sessionScheduleAutocorrectService");
 const {
@@ -821,25 +822,6 @@ function buildCalendarDaysForMovies(movies = [], minimumDays = 7) {
   });
 }
 
-function defaultPremiereSessions(movie, db) {
-  const room = db.rooms?.find((item) => item.status === "active") || db.rooms?.[0];
-  const roomName = room ? roomDisplayLabel(room) : "Sala Cruzeiro (Laser 4K)";
-  const price = Number(db.settings?.defaultTicketPrice ?? db.ticketTypes?.[0]?.price ?? 10);
-  return [
-    {
-      id: `${movie.id}-estreia-1`,
-      time: "19:00",
-      format: "2D Dublado",
-      room: roomName,
-      roomId: room?.id || "",
-      ticketTypeIds: (db.ticketTypes || []).filter((ticketType) => ticketType.active !== false).map((ticketType) => ticketType.id),
-      priceFull: price,
-      priceHalf: price,
-      status: "available"
-    }
-  ];
-}
-
 function applyScheduledPremieres(db) {
   let changed = false;
   const now = new Date();
@@ -866,7 +848,7 @@ function applyScheduledPremieres(db) {
         status: "now_playing",
         tag,
         metadata,
-        sessions: movie.sessions?.length ? movie.sessions : defaultPremiereSessions(movie, db),
+        sessions: movie.sessions || [],
         publishedAt: movie.publishedAt || new Date().toISOString()
       };
     }
@@ -5338,7 +5320,7 @@ function normalizeMovie(input, existing = {}) {
     highlightTrailerBackground: input.highlightTrailerBackground !== undefined
       ? Boolean(input.highlightTrailerBackground)
       : existing.highlightTrailerBackground !== false,
-    releaseDate: input.releaseDate !== undefined ? input.releaseDate : existing.releaseDate || "",
+    releaseDate: input.releaseDate !== undefined ? calendarDateKey(input.releaseDate) : calendarDateKey(existing.releaseDate),
     autoPublish: input.autoPublish !== undefined ? Boolean(input.autoPublish) : Boolean(existing.autoPublish),
     publishedAt: workflowStatus === "published" ? (input.publishedAt || existing.publishedAt || new Date().toISOString()) : input.publishedAt || existing.publishedAt || "",
     tag,

@@ -17,3 +17,9 @@ test("venda manual não exibe numeração redundante abaixo das poltronas", () =
   assert.doesNotMatch(adminSource, /manual-seat-column-footer|manual-seat-column-labels|Numeração das fileiras/);
   assert.doesNotMatch(adminStyles, /\.manual-seat-column-footer|\.manual-seat-column-labels/);
 });
+
+test("os dois seletores repetem a letra da fileira nos lados esquerdo e direito", () => {
+  assert.match(checkoutSource, /aria-hidden="true">\{row\.label\}<\/span>/);
+  assert.match(adminSource, /manual-seat-row-label" aria-hidden="true">\$\{escapeHtml\(row\.label\)\}<\/span>/);
+  assert.doesNotMatch(adminSource, /manual-seat-row-spacer/);
+});

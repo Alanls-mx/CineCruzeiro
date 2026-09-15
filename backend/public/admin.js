@@ -56,6 +56,7 @@ let state = {
   editingSessionId: "",
   editingSessionOriginalDate: "",
   editingSessionDateChanged: false,
+  sessionTimeManuallyEdited: false,
   dashboardMetric: "revenue",
   adminSubtabs: {
     marketing: "overview",
@@ -3447,9 +3448,11 @@ function openSessionEditor(sessionId = "") {
   state.editingSessionId = session?.id || "";
   state.editingSessionOriginalDate = session?.date || "";
   state.editingSessionDateChanged = false;
+  state.sessionTimeManuallyEdited = Boolean(session);
   $("sessionId").value = session?.id || "";
-  $("sessionDate").value = session?.date || "";
-  $("sessionTime").value = session?.time || "19:00";
+  const releaseDate = String($("movieReleaseDate").value || currentMovie()?.releaseDate || "").slice(0, 10);
+  $("sessionDate").value = session?.date || (releaseDate >= adminTodayKey() ? releaseDate : adminTodayKey());
+  $("sessionTime").value = session?.time || "";
   $("sessionFormat").value = session?.format || "2D Dublado";
   if (session?.room && [...$("sessionRoom").options].some((option) => option.value === session.room)) {
     $("sessionRoom").value = session.room;
@@ -3461,6 +3464,7 @@ function openSessionEditor(sessionId = "") {
   $("sessionEditorTitle").textContent = session ? "Editar sessão" : "Nova sessão";
   $("sessionEditor").hidden = false;
   syncSessionCreationMode();
+  updateSessionScheduleSuggestion({ apply: !session });
   renderSessionLinkedTickets(session?.id || "");
   $("sessionDate").focus();
 }
@@ -4196,6 +4200,73 @@ function globalSessionDuration(movie = {}) {
   if (hours || minutes) return Math.max(1, Math.round(hours * 60 + minutes));
   const numeric = Number(raw.replace(/[^\d.,]/g, "").replace(",", "."));
   return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 100;
+}
+
+function sessionTimeMinutes(value = "") {
+  const match = String(value).match(/^(\d{2}):(\d{2})$/);
+  if (!match) return Number.NaN;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function minutesAsSessionTime(value) {
+  const hours = String(Math.floor(value / 60)).padStart(2, "0");
+  const minutes = String(value % 60).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function suggestedSessionSchedule() {
+  const date = String($("sessionDate")?.value || "").slice(0, 10);
+  const room = String($("sessionRoom")?.value || "").trim();
+  const movie = currentMovie();
+  if (!movie || !date || !room) return null;
+
+  const duration = globalSessionDuration(movie);
+  const turnaround = 20;
+  const roomKey = globalSessionRoomKey({ room });
+  const occupied = globalSessionEntries()
+    .filter((entry) => entry.session.id !== state.editingSessionId
+      && entry.session.date === date
+      && entry.roomKey === roomKey
+      && !["cancelled", "hidden", "archived"].includes(String(entry.session.status || "").toLowerCase()))
+    .map((entry) => ({
+      start: sessionTimeMinutes(entry.session.time),
+      end: sessionTimeMinutes(entry.session.time) + globalSessionDuration(entry.movie)
+    }))
+    .filter((slot) => Number.isFinite(slot.start) && Number.isFinite(slot.end));
+
+  const candidates = [];
+  for (let minute = 19 * 60; minute <= (24 * 60) - duration; minute += 5) candidates.push(minute);
+  for (let minute = 14 * 60; minute < 19 * 60 && minute <= (24 * 60) - duration; minute += 5) candidates.push(minute);
+  const suggested = candidates.find((start) => !occupied.some((slot) => (
+    start < slot.end + turnaround && start + duration + turnaround > slot.start
+  )));
+  return {
+    date,
+    time: Number.isFinite(suggested) ? minutesAsSessionTime(suggested) : "",
+    duration,
+    turnaround
+  };
+}
+
+function updateSessionScheduleSuggestion({ apply = false } = {}) {
+  const target = $("sessionScheduleSuggestion");
+  if (!target) return;
+  if (state.editingSessionId) {
+    target.textContent = "O horário existente será mantido até que você o altere.";
+    return;
+  }
+  const suggestion = suggestedSessionSchedule();
+  if (!suggestion) {
+    target.textContent = "Escolha a data e a sala para calcular um horário livre.";
+    return;
+  }
+  if (!suggestion.time) {
+    target.textContent = "Não foi encontrada uma janela livre entre 14:00 e 00:00. Consulte a agenda global de sessões.";
+    return;
+  }
+  if (apply && !state.sessionTimeManuallyEdited) $("sessionTime").value = suggestion.time;
+  const dateLabel = new Date(`${suggestion.date}T12:00:00`).toLocaleDateString("pt-BR");
+  target.textContent = `Sugestão: ${suggestion.time} em ${dateLabel}, considerando ${suggestion.duration} min de filme e ${suggestion.turnaround} min de intervalo na sala.`;
 }
 
 function globalSessionTime(session = {}) {
@@ -5966,7 +6037,7 @@ function renderManualSeatMap(errorMessage = "") {
           >${seat.accessibility === "wheelchair" ? accessibilityIcon : seat.accessibility === "obese" ? obeseSeatIcon : ""}<span>${escapeHtml(seat.label)}</span></button>`;
         }).join("")}
       </div>
-      <span class="manual-seat-row-spacer" aria-hidden="true"></span>
+      <span class="manual-seat-row-label" aria-hidden="true">${escapeHtml(row.label)}</span>
     </div>
   `).join("");
   $("manualSeatMap").innerHTML = seatRowsMarkup;
@@ -11850,6 +11921,11 @@ function bindEvents() {
     if ($("sessionCreationMode").value === "range" && (!$("sessionDateEnd").value || $("sessionDateEnd").value < $("sessionDate").value)) {
       $("sessionDateEnd").value = $("sessionDate").value;
     }
+    updateSessionScheduleSuggestion({ apply: !state.sessionTimeManuallyEdited });
+  });
+  $("sessionRoom").addEventListener("change", () => updateSessionScheduleSuggestion({ apply: !state.sessionTimeManuallyEdited }));
+  $("sessionTime").addEventListener("input", () => {
+    state.sessionTimeManuallyEdited = true;
   });
   $("saveSessionButton").addEventListener("click", saveSession);
   $("cancelSessionButton").addEventListener("click", closeSessionEditor);

@@ -1,5 +1,6 @@
 const { timedQuery, runMutation } = require("./repositorySupport");
 const { insertSession, mapSession } = require("./sessionRepository");
+const { calendarDateKey } = require("../services/calendarDateService");
 
 function mapMovie(row, sessions = []) {
   if (!row) return null;
@@ -27,7 +28,7 @@ function mapMovie(row, sessions = []) {
     trailerCacheError: row.trailer_cache_error || "",
     isHighlight: Boolean(row.is_highlight),
     highlightTrailerBackground: row.highlight_trailer_background !== false,
-    releaseDate: row.release_date ? String(row.release_date).slice(0, 10) : "",
+    releaseDate: calendarDateKey(row.release_date),
     autoPublish: Boolean(row.auto_publish),
     publishedAt: row.published_at ? new Date(row.published_at).toISOString() : "",
     tag: row.tag || "",
