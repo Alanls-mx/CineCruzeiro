@@ -19,29 +19,53 @@ function normalizeRules(input = {}) {
   };
 }
 
-function calculateTicketDistributorReport(entries = [], inputRules = {}) {
+function calculateTicketDistributorEntry(entry = {}, rules = normalizeRules()) {
+  const category = ["club", "courtesy"].includes(entry.category) ? entry.category : "paid";
+  const paidAmount = money(entry.paidAmount);
+  const standardFullPrice = money(entry.standardFullPrice);
+  let distributorCost = 0;
+  let cinemaNet = 0;
+  let ruleLabel = `${rules.distributorPercent}% do valor pago`;
+  let appliedPercent = rules.distributorPercent;
+  let appliedFixedFee = 0;
+
+  if (category === "club") {
+    distributorCost = rules.clubTicketFee;
+    cinemaNet = 0;
+    ruleLabel = `Taxa fixa de R$ ${rules.clubTicketFee.toFixed(2).replace(".", ",")}`;
+    appliedPercent = 0;
+    appliedFixedFee = rules.clubTicketFee;
+  } else if (category === "courtesy") {
+    distributorCost = money(standardFullPrice * rules.courtesyPercent / 100);
+    cinemaNet = -distributorCost;
+    ruleLabel = `${rules.courtesyPercent}% da inteira padrão`;
+    appliedPercent = rules.courtesyPercent;
+  } else {
+    distributorCost = money(paidAmount * rules.distributorPercent / 100);
+    cinemaNet = signedMoney(paidAmount - distributorCost);
+  }
+
+  return {
+    ...entry,
+    category,
+    paidAmount,
+    standardFullPrice,
+    distributorCost,
+    cinemaNet,
+    ruleLabel,
+    appliedPercent,
+    appliedFixedFee
+  };
+}
+
+function calculateTicketDistributorReport(entries = [], inputRules = {}, options = {}) {
   const rules = normalizeRules(inputRules);
   const grouped = new Map();
+  const details = entries.map((entry) => calculateTicketDistributorEntry(entry, rules));
 
-  for (const entry of entries) {
-    const category = ["club", "courtesy"].includes(entry.category) ? entry.category : "paid";
-    const paidAmount = money(entry.paidAmount);
-    const standardFullPrice = money(entry.standardFullPrice);
-    let distributorCost = 0;
-    let cinemaNet = 0;
-
-    if (category === "club") {
-      distributorCost = rules.clubTicketFee;
-      cinemaNet = 0;
-    } else if (category === "courtesy") {
-      distributorCost = money(standardFullPrice * rules.courtesyPercent / 100);
-      cinemaNet = -distributorCost;
-    } else {
-      distributorCost = money(paidAmount * rules.distributorPercent / 100);
-      cinemaNet = signedMoney(paidAmount - distributorCost);
-    }
-
-    const label = String(entry.type || (category === "club" ? "Clube de assinatura" : category === "courtesy" ? "Indicação / Cortesia" : "Ingresso pago"));
+  for (const entry of details) {
+    const label = String(entry.type || (entry.category === "club" ? "Clube de assinatura" : entry.category === "courtesy" ? "Indicação / Cortesia" : "Ingresso pago"));
+    const category = entry.category;
     const key = `${category}:${label}`;
     const current = grouped.get(key) || {
       category,
@@ -52,9 +76,9 @@ function calculateTicketDistributorReport(entries = [], inputRules = {}) {
       cinemaNet: 0
     };
     current.quantity += 1;
-    current.grossRevenue = money(current.grossRevenue + paidAmount);
-    current.distributorCost = money(current.distributorCost + distributorCost);
-    current.cinemaNet = signedMoney(current.cinemaNet + cinemaNet);
+    current.grossRevenue = money(current.grossRevenue + entry.paidAmount);
+    current.distributorCost = money(current.distributorCost + entry.distributorCost);
+    current.cinemaNet = signedMoney(current.cinemaNet + entry.cinemaNet);
     grouped.set(key, current);
   }
 
@@ -69,7 +93,12 @@ function calculateTicketDistributorReport(entries = [], inputRules = {}) {
     ? Number((totals.cinemaNet / totals.grossRevenue * 100).toFixed(2))
     : 0;
 
-  return { rules, rows, totals };
+  return {
+    rules,
+    rows,
+    totals,
+    ...(options.includeDetails ? { details } : {})
+  };
 }
 
-module.exports = { calculateTicketDistributorReport, normalizeRules };
+module.exports = { calculateTicketDistributorEntry, calculateTicketDistributorReport, normalizeRules };

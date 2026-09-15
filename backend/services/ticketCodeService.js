@@ -47,12 +47,49 @@ function createTicketCode(existingTickets = []) {
   return code;
 }
 
-function qrPayload(code) {
-  return `CINECRUZEIRO:TICKET:${normalizeCode(code)}`;
+function generateQrToken() {
+  return crypto.randomBytes(24).toString("hex");
+}
+
+function parseQrPayload(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^CINECRUZEIRO:TICKET:V3:(CC-[A-Z0-9]{8,32}):([a-f0-9]{16,128})$/i);
+  if (!match) return null;
+  return {
+    version: 3,
+    code: normalizeCode(match[1]),
+    token: match[2].toLowerCase()
+  };
+}
+
+function qrPayload(code, token = "") {
+  const normalized = normalizeCode(code);
+  const cleanToken = String(token || "").trim().toLowerCase();
+  if (cleanToken) {
+    return `CINECRUZEIRO:TICKET:V3:${normalized}:${cleanToken}`;
+  }
+  return `CINECRUZEIRO:TICKET:${normalized}`;
 }
 
 function findTicketByCode(tickets = [], input) {
-  const normalized = normalizeCode(input);
+  const raw = String(input || "").trim();
+  if (raw.toUpperCase().startsWith("CINECRUZEIRO:TICKET:V3:")) {
+    const parsedV3 = parseQrPayload(raw);
+    if (!parsedV3) return null;
+    const ticket = (tickets || []).find((item) => {
+      const stored = normalizeCode(item?.code);
+      return stored === parsedV3.code
+        || normalizeCode(item?.shortCode) === parsedV3.code
+        || displayCode(item) === parsedV3.code;
+    });
+    if (!ticket) return null;
+    if (ticket.qrToken && String(ticket.qrToken).toLowerCase() !== parsedV3.token) {
+      return null;
+    }
+    return ticket;
+  }
+
+  const normalized = normalizeCode(raw);
   const matches = (tickets || []).filter((ticket) => {
     const stored = normalizeCode(ticket?.code);
     return stored === normalized
@@ -67,6 +104,8 @@ module.exports = {
   createTicketCode,
   displayCode,
   findTicketByCode,
+  generateQrToken,
   normalizeCode,
+  parseQrPayload,
   qrPayload
 };

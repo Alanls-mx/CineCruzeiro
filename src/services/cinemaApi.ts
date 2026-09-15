@@ -66,7 +66,7 @@ export interface TicketRecord {
   id: string;
   orderId?: string;
   code: string;
-  qrPayload: string;
+  qrPayload?: string;
   displayCode?: string;
   displayQrPayload?: string;
   movieId?: string;
@@ -926,6 +926,19 @@ export async function fetchAccountTicket(ticketId: string) {
     throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível carregar as informações do ingresso."));
   }
   return normalizeTicketAssets(payload.ticket as TicketRecord);
+}
+
+export async function fetchTicketQr(ticketId: string): Promise<{ ticketId: string; code: string; qrPayload: string; status: string }> {
+  const response = await fetch(`${API_BASE}/api/me/tickets/${encodeURIComponent(ticketId)}/qr`, {
+    cache: "no-store",
+    credentials: "include",
+    headers: authHeaders(),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(apiErrorMessage(payload, "QR Code indisponível para este ingresso."));
+  }
+  return payload as { ticketId: string; code: string; qrPayload: string; status: string };
 }
 
 export function ticketDownloadUrl(ticketId: string, options: { view?: boolean } = {}) {

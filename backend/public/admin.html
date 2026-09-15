@@ -337,7 +337,17 @@
                 <h2>Repasse da bilheteria</h2>
                 <p>Apuração de valores pagos, custo da distribuidora e retenção do cinema. Bomboniere não entra neste relatório.</p>
               </div>
-              <button id="ticketFinanceRefresh" class="ghost-button" type="button">Atualizar relatório</button>
+              <div class="ticket-finance-heading-actions">
+                <button id="ticketFinanceRefresh" class="ghost-button" type="button">Atualizar relatório</button>
+                <button id="ticketFinanceExportCsv" class="ghost-button icon-label" type="button" data-permission="ticket_finance.export" title="Baixar memória de cálculo em CSV">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+                  CSV detalhado
+                </button>
+                <button id="ticketFinanceExportPdf" class="primary-button icon-label" type="button" data-permission="ticket_finance.export" title="Baixar demonstrativo em PDF">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+                  PDF para distribuidora
+                </button>
+              </div>
             </div>
             <div class="ticket-finance-toolbar" aria-label="Filtros do relatório de ingressos">
               <label>De<input id="ticketFinanceFrom" type="date" /></label>
@@ -366,7 +376,7 @@
                 <tbody id="ticketFinanceRows"><tr><td colspan="5">Carregando apuração...</td></tr></tbody>
               </table>
             </div>
-            <p class="ticket-finance-note">Ingressos do Clube ficam neutros no resultado desta linha porque a receita da mensalidade é contabilizada no setor do Clube. Cortesias aparecem como custo de marketing.</p>
+            <p class="ticket-finance-note">Ingressos do Clube ficam neutros no resultado desta linha porque a receita da mensalidade é contabilizada no setor do Clube. Cortesias aparecem como custo de marketing. As exportações não incluem dados pessoais dos clientes.</p>
           </section>
         </section>
 
@@ -2330,6 +2340,7 @@
                   <section class="permission-group"><h3>Dashboard e financeiro</h3>
                     <label><input type="checkbox" value="dashboard.view" /><span><strong>Visualizar dashboard</strong><small>Consulta indicadores gerais e operacionais.</small></span></label>
                     <label><input type="checkbox" value="ticket_finance.view" /><span><strong>Ver repasse de ingressos</strong><small>Acessa faturamento, repasse e retenção da bilheteria.</small></span></label>
+                    <label><input type="checkbox" value="ticket_finance.export" /><span><strong>Exportar repasse</strong><small>Baixa demonstrativos financeiros para envio à distribuidora.</small></span></label>
                     <label><input type="checkbox" value="ticket_finance.configure" /><span><strong>Configurar regras de repasse</strong><small>Altera percentuais e taxa fixa do Clube.</small></span></label>
                   </section>
                   <section class="permission-group"><h3>Filmes e sessões</h3>

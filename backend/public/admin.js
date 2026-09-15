@@ -1451,6 +1451,18 @@ async function saveTicketFinanceRules(event) {
   }
 }
 
+function downloadTicketFinanceReport(format) {
+  if (!adminCan("ticket_finance.export")) return;
+  const extension = format === "csv" ? "csv" : "pdf";
+  const link = document.createElement("a");
+  link.href = `${API_BASE}/api/admin/reports/ticket-distributor.${extension}?${ticketFinanceQuery()}`;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast(extension === "pdf" ? "Preparando demonstrativo para a distribuidora." : "Preparando memória de cálculo detalhada.");
+}
+
 function closeConcessionOrderOverlay() {
   const overlay = $("concessionOrderOverlay");
   if (overlay) overlay.hidden = true;
@@ -10164,7 +10176,7 @@ async function deleteAd() {
 }
 
 const ALL_ADMIN_PERMISSIONS = [
-  "dashboard.view", "ticket_finance.view", "ticket_finance.configure",
+  "dashboard.view", "ticket_finance.view", "ticket_finance.export", "ticket_finance.configure",
   "movies.view", "movies.create", "movies.edit", "movies.delete", "sessions.manage",
   "rooms.view", "rooms.create", "rooms.edit", "rooms.delete", "sessions.autocorrect",
   "ticket_types.view", "ticket_types.create", "ticket_types.edit", "ticket_types.delete",
@@ -11584,6 +11596,8 @@ function bindEvents() {
 
   $("dashboardReportButton")?.addEventListener("click", () => window.open(`${API_BASE}/api/admin/reports/dashboard.csv?${dashboardQuery()}`, "_blank", "noopener"));
   $("ticketFinanceRefresh")?.addEventListener("click", loadTicketFinanceReport);
+  $("ticketFinanceExportPdf")?.addEventListener("click", () => downloadTicketFinanceReport("pdf"));
+  $("ticketFinanceExportCsv")?.addEventListener("click", () => downloadTicketFinanceReport("csv"));
   $("ticketFinanceRulesForm")?.addEventListener("submit", saveTicketFinanceRules);
   $("ticketFinanceMovie")?.addEventListener("change", loadTicketFinanceReport);
 

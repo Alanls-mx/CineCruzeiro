@@ -502,7 +502,7 @@ function redactLogValue(value) {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => {
-      if (/password|hash|token|secret|authorization|cookie|pixCode|qrCode|card|cvv|access/i.test(key)) {
+      if (/password|hash|token|secret|authorization|cookie|pixCode|qrCode|qrPayload|qrToken|phone|cellphone|cpf|card|cvv|access/i.test(key)) {
         return [key, "[redacted]"];
       }
       return [key, redactLogValue(item)];
@@ -941,7 +941,7 @@ const RATE_LIMIT_RULES = [
   { id: "subscriptions", limit: 10, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/subscriptions/subscribe" },
   { id: "coupon-preview", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/coupons/preview" },
   { id: "ticket-transfer", limit: 8, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/me\/tickets\/[^/]+\/transfer$/.test(path) },
-  { id: "ticket-artifacts", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => /^\/api\/me\/tickets\/[^/]+\/(download|google-wallet)$/.test(path) },
+  { id: "ticket-artifacts", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => /^\/api\/me\/tickets\/[^/]+\/(download|google-wallet|qr)$/.test(path) },
   { id: "ticket-validation", limit: 180, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/tickets/validate" },
   { id: "uploads", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path.startsWith("/api/uploads/") },
   { id: "email-attachments", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/email/attachments" },
@@ -1841,8 +1841,16 @@ function createTicketCode(existingTickets = []) {
   return ticketCodeService.createTicketCode(existingTickets);
 }
 
-function ticketQrPayload(code) {
-  return ticketCodeService.qrPayload(code);
+function ticketQrPayload(code, token = "") {
+  return ticketCodeService.qrPayload(code, token);
+}
+
+function ensureTicketQrToken(ticket) {
+  if (!ticket) return "";
+  if (!ticket.qrToken) {
+    ticket.qrToken = ticketCodeService.generateQrToken();
+  }
+  return ticket.qrToken;
 }
 
 function ticketSessionStartsAt(ticket, db = null) {
@@ -2187,6 +2195,58 @@ function ticketBelongsToUser(db, ticket, user) {
   return (ticketEmail && ticketEmail === user.email) || (ticketCpf && user.cpf && ticketCpf === String(user.cpf).replace(/\D/g, ""));
 }
 
+function getOwnedTicket(db, ticketId, user) {
+  if (!ticketId || !user) return null;
+  const ticket = (db.tickets || []).find((item) => item.id === ticketId);
+  if (!ticket || !ticketBelongsToUser(db, ticket, user)) return null;
+  return ticket;
+}
+
+function requireCustomerAuth(req, res, db) {
+  const user = getCustomerUser(req, db);
+  if (!user) {
+    sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para consultar ingressos." } });
+    return null;
+  }
+  return user;
+}
+
+function toCustomerTicketDto(ticket) {
+  if (!ticket) return null;
+  return {
+    id: ticket.id,
+    code: ticket.displayCode || ticket.code,
+    movieTitle: ticket.movieTitle || "",
+    sessionDate: ticket.sessionDate || "",
+    sessionTime: ticket.sessionTime || "",
+    sessionRoom: ticket.sessionRoom || "",
+    sessionFormat: ticket.sessionFormat || "",
+    seat: ticket.seat || ticket.seatLabel || "Lugar livre",
+    seatLabel: ticket.seatLabel || ticket.seat || "Lugar livre",
+    ticketType: ticket.ticketType || "Ingresso",
+    status: ticket.status || "active",
+    posterUrl: ticket.posterUrl || "",
+    backdropUrl: ticket.backdropUrl || "",
+    extras: (ticket.extras || []).map((item) => ({
+      id: item.id || "",
+      name: item.name || "",
+      quantity: Number(item.quantity || 0),
+      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : undefined,
+      imageUrl: item.imageUrl || ""
+    })),
+    extrasSharedByOrder: Boolean(ticket.extrasSharedByOrder),
+    extrasAttachedToTicket: Boolean(ticket.extrasAttachedToTicket),
+    orderTicketIndex: ticket.orderTicketIndex ?? 0,
+    orderTicketCount: ticket.orderTicketCount ?? 1,
+    archived: Boolean(ticket.archived),
+    archiveAt: ticket.archiveAt || "",
+    canTransfer: Boolean(ticket.canTransfer),
+    transferBlockedReason: ticket.transferBlockedReason || "",
+    transferredAt: ticket.transferredAt || "",
+    createdAt: ticket.createdAt || ""
+  };
+}
+
 function enrichTicket(db, ticket) {
   const order = orderForTicket(db, ticket);
   const movie = movieForTicket(db, ticket);
@@ -2297,12 +2357,14 @@ function buildTicketsForOrder(order, db, source = "online") {
 
   const pushTicket = (ticketType, index) => {
     const code = createTicketCode([...(db.tickets || []), ...tickets]);
+    const qrToken = ticketCodeService.generateQrToken();
     const selectedSeat = Array.isArray(order.selectedSeats) ? order.selectedSeats[index - 1] : null;
     tickets.push({
       ...base,
       id: `ticket-${Date.now()}-${index}-${crypto.randomBytes(2).toString("hex")}`,
       code,
-      qrPayload: ticketQrPayload(code),
+      qrToken,
+      qrPayload: ticketQrPayload(code, qrToken),
       ticketType,
       ticketNumber: Math.max(0, ...(db.tickets || []).map((item) => Number(item.ticketNumber || 0)), ...tickets.map((item) => Number(item.ticketNumber || 0))) + 1,
       basePrice: 0,
@@ -2330,19 +2392,15 @@ function buildTicketsForOrder(order, db, source = "online") {
   return tickets;
 }
 
-function findAccountTickets(db, query) {
-  const email = String(query.get("email") || "").trim().toLowerCase();
-  const cpf = String(query.get("cpf") || "").replace(/\D/g, "");
-  const userId = String(query.get("userId") || "").trim();
-  if (!email && !cpf && !userId) return [];
+function findAccountTickets(db, userOrQuery) {
+  if (!userOrQuery) return [];
+  const user = typeof userOrQuery.get === "function"
+    ? (userOrQuery.get("userId") ? (db.users || []).find((item) => item.id === String(userOrQuery.get("userId")).trim()) : null)
+    : userOrQuery;
+  if (!user) return [];
 
-  const user = userId ? (db.users || []).find((item) => item.id === userId) : null;
   return (db.tickets || [])
-    .filter((ticket) => user ? ticketBelongsToUser(db, ticket, user) : (() => {
-      const ticketEmail = String(ticket.customerEmail || "").trim().toLowerCase();
-      const ticketCpf = String(ticket.customerCpf || "").replace(/\D/g, "");
-      return (email && ticketEmail === email) || (cpf && ticketCpf === cpf);
-    })())
+    .filter((ticket) => ticketBelongsToUser(db, ticket, user))
     .map((ticket) => enrichTicket(db, ticket))
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
@@ -2449,8 +2507,7 @@ function checkAndAutoArchiveOrder(db, order, adminUser, reason = "Todos os itens
 }
 
 function inspectTicket(db, code, expectedSessionId = "") {
-  const ticketCode = extractTicketCode(code);
-  const ticket = ticketCodeService.findTicketByCode(db.tickets || [], ticketCode);
+  const ticket = ticketCodeService.findTicketByCode(db.tickets || [], code);
   if (!ticket) {
     const error = new Error("Ingresso nao encontrado.");
     error.statusCode = 404;
@@ -2481,8 +2538,8 @@ function inspectTicket(db, code, expectedSessionId = "") {
     }
   }
   const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
-  if (status === "used") {
-    const error = new Error(`Ingresso ja validado em ${new Date(ticket.usedAt).toLocaleString("pt-BR")}.`);
+  if (status === "used" || ticket.status === "used" || ticket.usedAt) {
+    const error = new Error(`Ingresso ja validado em ${new Date(ticket.usedAt || Date.now()).toLocaleString("pt-BR")}.`);
     error.statusCode = 409;
     error.code = "TICKET_ALREADY_USED";
     error.ticket = ticket;
@@ -2493,6 +2550,13 @@ function inspectTicket(db, code, expectedSessionId = "") {
     error.statusCode = 409;
     error.code = "TICKET_PAYMENT_PENDING";
     error.ticket = ticket;
+    throw error;
+  }
+  if (["cancelled", "refunded"].includes(status) || ["cancelled", "refunded"].includes(ticket.status)) {
+    const error = new Error("Ingresso indisponivel para validacao.");
+    error.statusCode = 409;
+    error.code = "TICKET_CANCELLED";
+    error.ticket = enrichTicket(db, ticket);
     throw error;
   }
   if (status !== "active") {
@@ -2508,6 +2572,13 @@ function inspectTicket(db, code, expectedSessionId = "") {
 function validateTicket(db, code, adminUser, expectedSessionId = "") {
   const ticket = inspectTicket(db, code, expectedSessionId);
   const order = (db.orders || []).find((item) => item.id === ticket.orderId);
+  if (ticket.status !== "active" || ticket.usedAt) {
+    const error = new Error(`Ingresso ja validado em ${new Date(ticket.usedAt || Date.now()).toLocaleString("pt-BR")}.`);
+    error.statusCode = 409;
+    error.code = "TICKET_ALREADY_USED";
+    error.ticket = ticket;
+    throw error;
+  }
   ticket.status = "used";
   ticket.usedAt = new Date().toISOString();
   ticket.usedBy = adminUser?.id || "";
@@ -2518,8 +2589,7 @@ function validateTicket(db, code, adminUser, expectedSessionId = "") {
 }
 
 function inspectTicketConcessions(db, code) {
-  const ticketCode = extractTicketCode(code);
-  const ticket = ticketCodeService.findTicketByCode(db.tickets || [], ticketCode);
+  const ticket = ticketCodeService.findTicketByCode(db.tickets || [], code);
   if (!ticket) {
     const error = new Error("Ingresso não encontrado.");
     error.statusCode = 404;
@@ -4890,8 +4960,7 @@ function sanitizeCheckoutPayment(payment) {
 
 function sanitizeCheckoutTicket(ticket) {
   if (!ticket) return null;
-  const { customerName, customerEmail, customerPhone, customerCpf, qrPayload, metadata, ...safeTicket } = ticket;
-  return safeTicket;
+  return toCustomerTicketDto(ticket);
 }
 
 function checkoutResponse(db, order, payment, tickets = []) {
@@ -13552,47 +13621,108 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/me/tickets" && method === "GET") {
-    const user = getCustomerUser(req, db);
-    if (!user) {
-      sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para consultar ingressos." } });
-      return;
-    }
-    const query = new URLSearchParams();
-    query.set("userId", user.id);
-    query.set("email", user.email);
-    if (user.cpf) query.set("cpf", user.cpf);
-    const tickets = findAccountTickets(db, query);
+    const user = requireCustomerAuth(req, res, db);
+    if (!user) return;
+    const enrichedTickets = findAccountTickets(db, user);
+    const tickets = enrichedTickets.map(toCustomerTicketDto);
     sendJson(res, 200, {
       tickets,
-      upcoming: tickets.filter((ticket) => !ticket.archived),
-      archived: tickets.filter((ticket) => ticket.archived)
+      upcoming: enrichedTickets.filter((ticket) => !ticket.archived).map(toCustomerTicketDto),
+      archived: enrichedTickets.filter((ticket) => ticket.archived).map(toCustomerTicketDto)
     });
     return;
   }
 
   const accountTicketMatch = pathname.match(/^\/api\/me\/tickets\/([^/]+)(?:\/([^/]+))?$/);
   if (accountTicketMatch) {
-    const user = getCustomerUser(req, db);
-    if (!user) {
-      sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para consultar ingressos." } });
-      return;
-    }
+    const user = requireCustomerAuth(req, res, db);
+    if (!user) return;
     const ticketId = decodeURIComponent(accountTicketMatch[1]);
     const action = accountTicketMatch[2] ? decodeURIComponent(accountTicketMatch[2]) : "";
 
     if (method === "GET" && !action) {
-      const ticket = (db.tickets || []).find((item) => item.id === ticketId);
-      if (!ticket || !ticketBelongsToUser(db, ticket, user)) {
+      const ticket = getOwnedTicket(db, ticketId, user);
+      if (!ticket) {
         sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
         return;
       }
-      sendJson(res, 200, { ticket: enrichTicket(db, ticket) });
+      sendJson(res, 200, { ticket: toCustomerTicketDto(enrichTicket(db, ticket)) });
+      return;
+    }
+
+    if (method === "GET" && action === "qr") {
+      const ticket = getOwnedTicket(db, ticketId, user);
+      if (!ticket) {
+        sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
+        return;
+      }
+      const order = orderForTicket(db, ticket);
+      const session = sessionForTicket(db, ticket);
+      const status = effectiveTicketStatus(ticket, order, session, db);
+      if (status === "used" || ticket.status === "used" || ticket.usedAt) {
+        sendJson(res, 409, { error: { code: "TICKET_ALREADY_USED", message: "Este ingresso ja foi utilizado e nao possui QR Code ativo." } }, {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          "Pragma": "no-cache"
+        });
+        return;
+      }
+      if (["cancelled", "refunded"].includes(status) || ["cancelled", "refunded"].includes(ticket.status)) {
+        sendJson(res, 409, { error: { code: "TICKET_CANCELLED", message: "Este ingresso foi cancelado e nao possui QR Code ativo." } }, {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          "Pragma": "no-cache"
+        });
+        return;
+      }
+      if (status === "expired" || ticketIsExpired(ticket, db)) {
+        sendJson(res, 409, { error: { code: "TICKET_EXPIRED", message: "Este ingresso expirou e nao possui QR Code ativo." } }, {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          "Pragma": "no-cache"
+        });
+        return;
+      }
+      if (status !== "active") {
+        sendJson(res, 409, { error: { code: "TICKET_UNAVAILABLE", message: "Este ingresso nao esta disponivel para uso." } }, {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          "Pragma": "no-cache"
+        });
+        return;
+      }
+      if (!ticket.qrToken) {
+        await withCriticalMutation(async () => {
+          const lockedDb = await readDb();
+          const lockedTicket = (lockedDb.tickets || []).find((item) => item.id === ticket.id);
+          if (lockedTicket) {
+            ensureTicketQrToken(lockedTicket);
+            await writeDb(lockedDb);
+            ticket.qrToken = lockedTicket.qrToken;
+          }
+        });
+      }
+      const qrPayload = ticketCodeService.qrPayload(ticket.code, ticket.qrToken);
+      res.writeHead(200, {
+        ...securityHeaders({
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0",
+          "Surrogate-Control": "no-store"
+        }),
+        "Access-Control-Allow-Origin": responseCorsOrigin(req),
+        "Access-Control-Allow-Credentials": "true",
+        "Vary": "Origin"
+      });
+      res.end(JSON.stringify({
+        ticketId: ticket.id,
+        code: ticketCodeService.displayCode(ticket),
+        qrPayload,
+        status: "active"
+      }));
       return;
     }
 
     if (method === "GET" && action === "download") {
-      const ticket = (db.tickets || []).find((item) => item.id === ticketId);
-      if (!ticket || !ticketBelongsToUser(db, ticket, user)) {
+      const ticket = getOwnedTicket(db, ticketId, user);
+      if (!ticket) {
         sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
         return;
       }
@@ -13614,8 +13744,8 @@ async function handleApi(req, res, pathname) {
     }
 
     if (method === "POST" && action === "google-wallet") {
-      const ticket = (db.tickets || []).find((item) => item.id === ticketId);
-      if (!ticket || !ticketBelongsToUser(db, ticket, user)) {
+      const ticket = getOwnedTicket(db, ticketId, user);
+      if (!ticket) {
         sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
         return;
       }
@@ -13652,8 +13782,8 @@ async function handleApi(req, res, pathname) {
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
         const freshUser = getCustomerUser(req, lockedDb);
-        const ticket = (lockedDb.tickets || []).find((item) => item.id === ticketId);
-        if (!freshUser || !ticket || !ticketBelongsToUser(lockedDb, ticket, freshUser)) {
+        const ticket = getOwnedTicket(lockedDb, ticketId, freshUser);
+        if (!freshUser || !ticket) {
           sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
           return;
         }
@@ -13710,13 +13840,15 @@ async function handleApi(req, res, pathname) {
         }
         const oldCode = ticket.code;
         const newCode = createTicketCode(lockedDb.tickets || []);
+        const newQrToken = ticketCodeService.generateQrToken();
         ticket.customerUserId = targetUser.id;
         ticket.customerName = targetUser.name || ticket.customerName;
         ticket.customerEmail = targetUser.email;
         ticket.customerPhone = targetUser.phone || "";
         ticket.customerCpf = targetUser.cpf || "";
         ticket.code = newCode;
-        ticket.qrPayload = ticketQrPayload(newCode);
+        ticket.qrToken = newQrToken;
+        ticket.qrPayload = ticketQrPayload(newCode, newQrToken);
         ticket.transferredAt = new Date().toISOString();
         ticket.transferredFromUserId = freshUser.id;
         ticket.updatedAt = new Date().toISOString();
@@ -13763,11 +13895,6 @@ async function handleApi(req, res, pathname) {
         } catch (error) {
           logEvent("warn", "ticket_transfer_pdf.failed", { ticketId: ticket.id, message: error.message });
         }
-        try {
-          enrichedTransferTicket.googleWalletUrl = await googleWalletSaveUrl(lockedDb, ticket, targetUser, null);
-        } catch {
-          enrichedTransferTicket.googleWalletUrl = "";
-        }
         await writeDb(lockedDb);
         emailService.sendTicketTransfer(lockedDb, {
           ticket: enrichedTransferTicket,
@@ -13776,6 +13903,8 @@ async function handleApi(req, res, pathname) {
           accountUrl: `${appFrontendUrl()}/conta/ingressos`,
           logoUrl: `${appFrontendUrl()}/images/favicon-email.png`,
           siteUrl: appFrontendUrl(),
+          concessionsTransferred: transferRecord.concessionsTransferred,
+          concessionTargetTicketId: transferRecord.concessionTargetTicketId,
           attachments: transferAttachment ? [transferAttachment] : []
         }).catch((error) => {
           logEvent("warn", "ticket_transfer_email.failed", { ticketId: ticket.id, message: error.message });
@@ -13789,7 +13918,7 @@ async function handleApi(req, res, pathname) {
         });
         sendJson(res, 200, {
           ok: true,
-          ticket: enrichTicket(lockedDb, ticket),
+          ticket: toCustomerTicketDto(enrichTicket(lockedDb, ticket)),
           concessionsTransferred: transferRecord.concessionsTransferred,
           concessionTargetTicketId: transferRecord.concessionTargetTicketId
         });

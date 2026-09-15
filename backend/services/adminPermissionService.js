@@ -1,6 +1,7 @@
 const ADMIN_PERMISSION_KEYS = [
   "dashboard.view",
   "ticket_finance.view",
+  "ticket_finance.export",
   "ticket_finance.configure",
   "movies.view",
   "movies.create",

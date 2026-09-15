@@ -8810,6 +8810,19 @@ th {
   gap: 18px;
 }
 
+.ticket-finance-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ticket-finance-heading-actions .icon-label svg {
+  width: 16px;
+  height: 16px;
+}
+
 .section-kicker {
   display: block;
   margin-bottom: 5px;
@@ -8962,6 +8975,16 @@ th {
   .ticket-finance-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .ticket-finance-heading-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-finance-heading-actions button {
+    justify-content: center;
+    width: 100%;
   }
 
   .ticket-finance-toolbar,

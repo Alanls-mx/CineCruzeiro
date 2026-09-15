@@ -2080,13 +2080,13 @@ async function run() {
 
     const accountTickets = await request("/api/me/tickets", { headers: { Cookie: cookie } });
     assert.equal(accountTickets.response.status, 200);
-    assert.ok(accountTickets.payload.tickets.some((ticket) => ticket.orderId === boxOfficeSale.payload.order.id));
+    assert.ok(accountTickets.payload.tickets.some((ticket) => ticket.id === boxOfficeSale.payload.tickets[0].id));
     assert.ok(Array.isArray(accountTickets.payload.upcoming));
     assert.ok(Array.isArray(accountTickets.payload.archived));
     assert.equal(accountTickets.payload.upcoming.some((ticket) => ticket.id === "smoke-expired-history-ticket"), false);
     assert.equal(accountTickets.payload.archived.some((ticket) => ticket.id === "smoke-expired-history-ticket"), true);
 
-    const manualTicket = accountTickets.payload.tickets.find((ticket) => ticket.orderId === boxOfficeSale.payload.order.id);
+    const manualTicket = accountTickets.payload.tickets.find((ticket) => ticket.id === boxOfficeSale.payload.tickets[0].id);
     for (const [path, options] of [
       [`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/download`, { headers: { Cookie: targetCookie } }],
       [`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/google-wallet`, { method: "POST", headers: jsonHeaders(targetCookie) }],
@@ -2173,7 +2173,7 @@ async function run() {
     assert.equal(walletPayload.payload.eventTicketObjects[0].state, "ACTIVE");
     assert.equal(walletPayload.payload.eventTicketObjects[0].eventName, undefined);
     assert.equal(walletPayload.payload.eventTicketObjects[0].ticketType.defaultValue.value, manualTicket.ticketType);
-    assert.equal(walletPayload.payload.eventTicketObjects[0].reservationInfo.confirmationCode, manualTicket.orderId);
+    assert.equal(walletPayload.payload.eventTicketObjects[0].reservationInfo.confirmationCode, boxOfficeSale.payload.order.id);
     assert.equal(walletPayload.payload.eventTicketObjects[0].seatInfo.seat.defaultValue.value, manualTicket.seat);
 
     const transfer = await request(`/api/me/tickets/${encodeURIComponent(manualTicket.id)}/transfer`, {
@@ -2182,7 +2182,7 @@ async function run() {
       body: JSON.stringify({ email: target.user.email })
     });
     assert.equal(transfer.response.status, 200);
-    assert.equal(transfer.payload.ticket.customerUserId, target.user.id);
+    assert.equal(transfer.payload.ticket.customerUserId, undefined);
     assert.notEqual(transfer.payload.ticket.code, manualTicket.code);
     assert.equal(transfer.payload.ticket.canTransfer, false);
     assert.match(transfer.payload.ticket.transferBlockedReason, /Aguarde/i);

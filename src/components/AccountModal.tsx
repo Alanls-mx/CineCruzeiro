@@ -8,6 +8,7 @@ import {
   TicketRecord,
   fetchAccountTickets,
   fetchCurrentCustomer,
+  fetchTicketQr,
   googleLoginUrl,
   loginCustomer,
   logoutCustomer,
@@ -491,12 +492,30 @@ function AccountTicketCard({
   const isUsed = ticket.status === "used";
 
   useEffect(() => {
-    QRCode.toDataURL(ticket.displayQrPayload || ticket.qrPayload || ticket.code, {
-      margin: 1,
-      width: 160,
-      color: { dark: "#020617", light: "#ffffff" },
-    }).then(setQrDataUrl);
-  }, [ticket.code, ticket.displayQrPayload, ticket.qrPayload]);
+    let active = true;
+    if (ticket.status !== "active") {
+      setQrDataUrl("");
+      return;
+    }
+    fetchTicketQr(ticket.id)
+      .then((qr) => {
+        if (!active) return;
+        return QRCode.toDataURL(qr.qrPayload, {
+          margin: 1,
+          width: 160,
+          color: { dark: "#020617", light: "#ffffff" },
+        }).then((dataUrl) => {
+          if (active) setQrDataUrl(dataUrl);
+        });
+      })
+      .catch(() => {
+        if (active) setQrDataUrl("");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [ticket.id, ticket.status]);
 
   const pointerX = (event: React.PointerEvent<HTMLDivElement>) => event.clientX;
 

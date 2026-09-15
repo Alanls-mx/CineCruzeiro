@@ -14,4 +14,12 @@ test("operator preset can view orders but cannot refund or delete", () => {
   assert.equal(permissions.adminHasPermission(user, "orders.view"), true);
   assert.equal(permissions.adminHasPermission(user, "orders.refund"), false);
   assert.equal(permissions.adminHasPermission(user, "orders.delete"), false);
+  assert.equal(permissions.adminHasPermission(user, "ticket_finance.export"), false);
+});
+
+test("financial export is independently assignable", () => {
+  const viewer = { role: "operator", useCustomPermissions: true, adminPermissions: ["ticket_finance.view"] };
+  const exporter = { role: "operator", useCustomPermissions: true, adminPermissions: ["ticket_finance.view", "ticket_finance.export"] };
+  assert.equal(permissions.adminHasPermission(viewer, "ticket_finance.export"), false);
+  assert.equal(permissions.adminHasPermission(exporter, "ticket_finance.export"), true);
 });

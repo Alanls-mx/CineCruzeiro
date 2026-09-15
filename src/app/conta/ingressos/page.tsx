@@ -9,6 +9,7 @@ import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import {
   createGoogleWalletPass,
   fetchAccountTicketsGrouped,
+  fetchTicketQr,
   ticketDownloadUrl,
   TicketRecord,
   transferTicket,
@@ -294,6 +295,7 @@ function TicketEmptyState({ tab }: { tab: "upcoming" | "archived" }) {
 
 function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferred }: { ticket: TicketRecord; alternativeTickets: TicketRecord[]; justValidated: boolean; onTransferred: (ticket: TicketRecord, recipientEmail: string, concessionsTransferred: boolean) => void }) {
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrLoading, setQrLoading] = useState(false);
   const [transferEmail, setTransferEmail] = useState("");
   const [concessionTargetTicketId, setConcessionTargetTicketId] = useState("");
   const [message, setMessage] = useState("");
@@ -304,12 +306,35 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
     : "bg-white/8 text-slate-300";
 
   useEffect(() => {
-    QRCode.toDataURL(ticket.displayQrPayload || ticket.qrPayload || ticket.code, {
-      margin: 1,
-      width: 220,
-      color: { dark: "#020617", light: "#f8fafc" },
-    }).then(setQrDataUrl).catch(() => setQrDataUrl(""));
-  }, [ticket.code, ticket.displayQrPayload, ticket.qrPayload]);
+    let active = true;
+    if (ticket.status !== "active") {
+      setQrDataUrl("");
+      setQrLoading(false);
+      return;
+    }
+    setQrLoading(true);
+    fetchTicketQr(ticket.id)
+      .then((qr) => {
+        if (!active) return;
+        return QRCode.toDataURL(qr.qrPayload, {
+          margin: 1,
+          width: 220,
+          color: { dark: "#020617", light: "#f8fafc" },
+        }).then((url) => {
+          if (active) setQrDataUrl(url);
+        });
+      })
+      .catch(() => {
+        if (active) setQrDataUrl("");
+      })
+      .finally(() => {
+        if (active) setQrLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [ticket.id, ticket.status]);
 
   useEffect(() => {
     setTransferEmail("");
@@ -392,10 +417,27 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               <Info label="Poltrona" value={ticket.seat || ticket.seatLabel || "Lugar livre"} />
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
-              <Info label="Pedido" value={ticketHumanReference(ticket)} title={ticket.orderReference || ticket.orderId || ticketHumanReference(ticket)} />
+              <Info label="Código do ingresso" value={ticket.displayCode || ticket.code} />
             </dl>
             <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-slate-950">
-              {qrDataUrl ? <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.displayCode || ticket.code}`} className="mx-auto h-44 w-44 max-w-full" /> : (ticket.displayCode || ticket.code)}
+              {ticket.status === "active" ? (
+                qrDataUrl ? (
+                  <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.displayCode || ticket.code}`} className="mx-auto h-44 w-44 max-w-full" />
+                ) : qrLoading ? (
+                  <div className="flex h-44 w-44 items-center justify-center text-xs font-bold text-slate-500 animate-pulse">
+                    Carregando QR...
+                  </div>
+                ) : (
+                  <div className="flex h-44 w-44 items-center justify-center font-mono text-sm font-bold text-slate-700">
+                    {ticket.displayCode || ticket.code}
+                  </div>
+                )
+              ) : (
+                <div className="flex h-44 w-44 flex-col items-center justify-center gap-2 rounded bg-slate-100 p-2 text-center text-slate-600">
+                  <span className="text-xs font-bold uppercase tracking-wider">{statusLabel(ticket.status)}</span>
+                  <span className="text-[11px] text-slate-500">QR Code desativado</span>
+                </div>
+              )}
               <span className="mt-3 block text-[10px] font-black uppercase tracking-[.12em] text-slate-500">Código</span>
               <strong className="mt-1 block font-mono text-sm font-black tracking-normal text-slate-950">
                 {ticket.displayCode || ticket.code}
