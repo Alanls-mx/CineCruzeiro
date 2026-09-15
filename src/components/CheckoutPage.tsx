@@ -941,34 +941,6 @@ function Steps({ sessionId, step, extrasVisited, ticketsComplete, onContinueToPa
   );
 }
 
-function seatNumberForRow(rowLabel: string, seatLabel: string) {
-  const normalizedRow = String(rowLabel || "").trim();
-  const normalizedSeat = String(seatLabel || "").trim();
-  return normalizedRow && normalizedSeat.toLocaleUpperCase("pt-BR").startsWith(normalizedRow.toLocaleUpperCase("pt-BR"))
-    ? normalizedSeat.slice(normalizedRow.length).trim() || normalizedSeat
-    : normalizedSeat;
-}
-
-function compactRowLabels(labels: string[]) {
-  if (labels.length <= 2) return labels.join(", ");
-  const codes = labels.map((label) => /^[A-Z]$/i.test(label) ? label.toLocaleUpperCase("pt-BR").charCodeAt(0) : -1);
-  const consecutive = codes.every((code, index) => index === 0 || code === codes[index - 1] + 1);
-  return consecutive ? `${labels[0]}–${labels.at(-1)}` : labels.join(", ");
-}
-
-function buildSeatColumnGuides(rows: SessionSeatMap["rows"]) {
-  const guides = new Map<string, { rowLabels: string[]; labels: string[]; aisles: boolean[] }>();
-  rows.forEach((row) => {
-    const labels = row.seats.map((seat) => seatNumberForRow(row.label, seat.label));
-    const aisles = row.seats.map((seat) => Boolean(seat.aisleAfter));
-    const signature = JSON.stringify({ labels, aisles });
-    const guide = guides.get(signature);
-    if (guide) guide.rowLabels.push(row.label);
-    else guides.set(signature, { rowLabels: [row.label], labels, aisles });
-  });
-  return [...guides.values()].map((guide) => ({ ...guide, rowLabel: compactRowLabels(guide.rowLabels) }));
-}
-
 function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, realtimeStatus, onSelectSeat, onReleaseSeat, onRefreshSeatMap }: {
   draft: StoredCheckoutDraft;
   updateDraft: (patch: Partial<StoredCheckoutDraft>) => void;
@@ -985,7 +957,6 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
   const selectedSeatIds = draft.selectedSeatIds || [];
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat]));
   const seatTypesById = new Map((seatMap?.seatTypes || []).map((type) => [type.id, type]));
-  const seatColumnGuides = buildSeatColumnGuides(seatMap?.rows || []);
   const seatSelectionComplete = seatMapStatus === "ready" && (!seatMap?.enabled || selectedSeatIds.length === requiredSeats);
 
   const [seatActionError, setSeatActionError] = useState("");
@@ -1104,23 +1075,6 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                           </button>
                         );
                       })}
-                    </div>
-                    <span className="w-6" aria-hidden="true" />
-                  </div>
-                ))}
-                {seatColumnGuides.map((guide) => (
-                  <div key={`${guide.rowLabel}-${guide.labels.join("-")}`} className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-1.5" aria-label={`Numeração das fileiras ${guide.rowLabel}`}>
-                    <span className="w-6 text-center text-[10px] font-black text-slate-600">{seatColumnGuides.length > 1 ? guide.rowLabel : ""}</span>
-                    <div className="flex items-center justify-center gap-1.5">
-                      {guide.labels.map((label, columnIndex) => (
-                        <span
-                          key={`${guide.rowLabel}-column-${columnIndex + 1}`}
-                          className="w-10 shrink-0 text-center text-[11px] font-black leading-5 text-slate-500"
-                          style={{ marginRight: guide.aisles[columnIndex] ? 24 : 0 }}
-                        >
-                          {label}
-                        </span>
-                      ))}
                     </div>
                     <span className="w-6" aria-hidden="true" />
                   </div>
