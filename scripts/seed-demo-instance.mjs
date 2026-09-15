@@ -182,8 +182,8 @@ async function main() {
     });
     const plans = plansResult.rows.map((row) => ({
       ...row,
-      provider_plan_id: null,
-      mercado_pago_plan_id: null,
+      provider_plan_id: "",
+      mercado_pago_plan_id: "",
       image_url: "",
       eligible_session_ids: [],
       created_at: new Date(),
