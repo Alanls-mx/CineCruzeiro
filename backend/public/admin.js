@@ -6206,6 +6206,8 @@ function orderMatchesStatusFilter(order = {}, filter = "all") {
 }
 
 function financialStatusEvent(record = {}, related = {}) {
+  record = record || {};
+  related = related || {};
   const refund = record.refund || record.concessionRefund || record.ticketRefund || related.refund || related.concessionRefund || related.ticketRefund || {};
   const status = String(record.status || related.status || "").toLowerCase();
   const refundedAt = refund.completedAt || record.refundedAt || related.refundedAt || record.concessionCancelledAt || related.concessionCancelledAt || "";
