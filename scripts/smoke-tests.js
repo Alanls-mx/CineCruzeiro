@@ -918,6 +918,24 @@ async function run() {
     assert.equal(dashboardReport.status, 200);
     assert.doesNotMatch(await dashboardReport.text(), /NFS-e|fiscal/i);
 
+    const distributorCsv = await fetch(`${BASE_URL}/api/admin/reports/ticket-distributor.csv?period=custom&from=2000-01-01&to=2099-12-31`, { headers: { Cookie: adminCookie } });
+    assert.equal(distributorCsv.status, 200);
+    assert.match(distributorCsv.headers.get("content-type") || "", /text\/csv/);
+    assert.match(distributorCsv.headers.get("content-disposition") || "", /repasse-bilheteria-/);
+    const distributorCsvText = await distributorCsv.text();
+    assert.match(distributorCsvText, /Código do ingresso/);
+    assert.match(distributorCsvText, /Repasse à distribuidora/);
+    assert.doesNotMatch(distributorCsvText, /Teste Smoke|@cine\.local|CPF/i);
+
+    const distributorPdf = await fetch(`${BASE_URL}/api/admin/reports/ticket-distributor.pdf?period=custom&from=2000-01-01&to=2099-12-31`, { headers: { Cookie: adminCookie } });
+    assert.equal(distributorPdf.status, 200);
+    assert.match(distributorPdf.headers.get("content-type") || "", /application\/pdf/);
+    assert.match(distributorPdf.headers.get("content-disposition") || "", /repasse-bilheteria-/);
+    const distributorPdfBuffer = Buffer.from(await distributorPdf.arrayBuffer());
+    assert.equal(distributorPdfBuffer.subarray(0, 5).toString("ascii"), "%PDF-");
+    assert.ok(distributorPdfBuffer.length > 1000);
+    assert.doesNotMatch(distributorPdfBuffer.toString("latin1"), /Teste Smoke|@cine\.local/);
+
     const removedFiscalRoute = await request("/api/admin/fiscal-documents", { headers: jsonHeaders(adminCookie) });
     assert.equal(removedFiscalRoute.response.status, 404);
     const adminPayments = await request("/api/admin/payments?period=7d", { headers: jsonHeaders(adminCookie) });
