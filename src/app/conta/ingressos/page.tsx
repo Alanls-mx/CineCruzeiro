@@ -301,6 +301,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
+  const showTicketCode = ticket.status !== "expired";
   const statusClassName = ticket.status === "active"
     ? "bg-emerald-400/15 text-emerald-200"
     : "bg-white/8 text-slate-300";
@@ -417,7 +418,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               <Info label="Poltrona" value={ticket.seat || ticket.seatLabel || "Lugar livre"} />
               <Info label="Formato/idioma" value={ticket.sessionFormat} />
               <Info label="Tipo" value={ticket.ticketType} />
-              <Info label="Código do ingresso" value={ticket.displayCode || ticket.code} />
+              {showTicketCode && <Info label="Código do ingresso" value={ticket.displayCode || ticket.code} />}
             </dl>
             <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-slate-950">
               {ticket.status === "active" ? (
@@ -438,10 +439,14 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
                   <span className="text-[11px] text-slate-500">QR Code desativado</span>
                 </div>
               )}
-              <span className="mt-3 block text-[10px] font-black uppercase tracking-[.12em] text-slate-500">Código</span>
-              <strong className="mt-1 block font-mono text-sm font-black tracking-normal text-slate-950">
-                {ticket.displayCode || ticket.code}
-              </strong>
+              {showTicketCode && (
+                <>
+                  <span className="mt-3 block text-[10px] font-black uppercase tracking-[.12em] text-slate-500">Código</span>
+                  <strong className="mt-1 block font-mono text-sm font-black tracking-normal text-slate-950">
+                    {ticket.displayCode || ticket.code}
+                  </strong>
+                </>
+              )}
             </div>
           </div>
 

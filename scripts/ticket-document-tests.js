@@ -35,5 +35,12 @@ assert.equal(
 const serverSource = fs.readFileSync(path.resolve(__dirname, "../backend/server.js"), "utf8");
 assert.match(serverSource, /pdfWriteCenteredText\(enriched\.displayCode \|\| enriched\.code, 304, 126/);
 assert.match(serverSource, /pdfQr\(enriched\.displayQrPayload \|\| enriched\.qrPayload \|\| enriched\.code, 222, 148, 164\)/);
+assert.match(serverSource, /const showTicketCode = enriched\.status !== "expired"/);
+assert.match(serverSource, /if \(showTicketCode\) page1 \+= pdfWriteCenteredText\(enriched\.displayCode/);
+assert.match(serverSource, /if \(showTicketCode\) page2 \+= pdfWriteValueBlock\("CODIGO"/);
+
+const accountTicketsSource = fs.readFileSync(path.resolve(__dirname, "../src/app/conta/ingressos/page.tsx"), "utf8");
+assert.match(accountTicketsSource, /const showTicketCode = ticket\.status !== "expired"/);
+assert.match(accountTicketsSource, /showTicketCode && <Info label="Código do ingresso"/);
 
 console.log("Ticket document tests passed.");

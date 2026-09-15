@@ -325,9 +325,14 @@ async function run() {
     let raw = "";
     req.on("data", (chunk) => { raw += chunk; });
     req.on("end", () => {
-      deliveredEmails.push(JSON.parse(raw || "{}"));
-      res.writeHead(202, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
+      const delivery = JSON.parse(raw || "{}");
+      deliveredEmails.push(delivery);
+      const finish = () => {
+        res.writeHead(202, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      };
+      if (delivery.event === "payment.approved") setTimeout(finish, 1500);
+      else finish();
     });
   });
 
@@ -1915,6 +1920,7 @@ async function run() {
     assert.equal(guestOnlineWithoutEmail.response.status, 422);
     assert.equal(guestOnlineWithoutEmail.payload.error.code, "BOX_OFFICE_DELIVERY_EMAIL_INVALID");
 
+    const guestOnlineSaleStartedAt = Date.now();
     const guestOnlineSale = await request("/api/box-office/sales", {
       method: "POST",
       headers: jsonHeaders(adminCookie),
@@ -1930,6 +1936,7 @@ async function run() {
       })
     });
     assert.equal(guestOnlineSale.response.status, 201);
+    assert.ok(Date.now() - guestOnlineSaleStartedAt < 1100, "A emissão não deve aguardar o provedor de e-mail");
     assert.equal(guestOnlineSale.payload.order.ticketDeliveryMethod, "online");
     assert.equal(guestOnlineSale.payload.pointPrint.status, "not_requested");
 

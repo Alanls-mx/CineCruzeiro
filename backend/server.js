@@ -101,6 +101,7 @@ const mutationContext = new AsyncLocalStorage();
 const adminTwoFactorChallenges = new Map();
 const memorySeatHolds = new Map();
 const paymentReconciliationAttempts = new Map();
+const pendingTicketEmailDeliveries = new Set();
 let seatRealtimeService = null;
 let jsonMutationQueue = Promise.resolve();
 let movieImageMaintenanceRunning = false;
@@ -3350,6 +3351,72 @@ async function deliverTicketsByEmail(db, order, tickets) {
   return delivered;
 }
 
+async function processQueuedTicketEmailDelivery(orderId) {
+  const startedAt = Date.now();
+  const snapshotDb = await readDb();
+  const order = (snapshotDb.orders || []).find((item) => item.id === orderId);
+  const tickets = order ? orderTickets(snapshotDb, order.id) : [];
+  if (!order || order.status !== "paid" || !tickets.length || !order.customerEmail) {
+    logEvent("info", "ticket_email.background_skipped", {
+      orderId,
+      reason: !order ? "order_not_found" : order?.status !== "paid" ? "order_not_paid" : !tickets.length ? "tickets_not_found" : "customer_email_missing"
+    });
+    return false;
+  }
+  if (order.emailDeliveredAt || order.ticketDelivery?.status === "delivered") {
+    logEvent("info", "ticket_email.background_skipped", { orderId, reason: "already_delivered" });
+    return true;
+  }
+
+  const deliveryOrder = structuredCloneSafe(order);
+  const boxOfficeDelivery = ["box_office", "concession_counter"].includes(String(order.origin || ""));
+  const delivered = boxOfficeDelivery
+    ? (await deliverBoxOfficeTicketsBySelectedMethod(snapshotDb, deliveryOrder, tickets)).status === "delivered"
+    : await deliverTicketsByEmail(snapshotDb, deliveryOrder, tickets);
+
+  if (deliveryOrder.emailDeliveredAt || deliveryOrder.ticketDelivery) {
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const persistedOrder = (lockedDb.orders || []).find((item) => item.id === orderId);
+      if (!persistedOrder) return;
+      if (deliveryOrder.emailDeliveredAt) persistedOrder.emailDeliveredAt = deliveryOrder.emailDeliveredAt;
+      if (deliveryOrder.ticketDelivery) persistedOrder.ticketDelivery = deliveryOrder.ticketDelivery;
+      persistedOrder.updatedAt = new Date().toISOString();
+      await writeDb(lockedDb);
+    });
+  }
+
+  logEvent(delivered ? "info" : "warn", "ticket_email.background_completed", {
+    orderId,
+    tickets: tickets.length,
+    delivered,
+    durationMs: Date.now() - startedAt
+  });
+  return delivered;
+}
+
+function queueTicketEmailDelivery(orderId) {
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!normalizedOrderId || pendingTicketEmailDeliveries.has(normalizedOrderId)) return false;
+  pendingTicketEmailDeliveries.add(normalizedOrderId);
+  logEvent("info", "ticket_email.background_queued", { orderId: normalizedOrderId });
+  setImmediate(() => {
+    requestContext.run({}, () => {
+      mutationContext.run({ active: false }, () => {
+        void processQueuedTicketEmailDelivery(normalizedOrderId)
+          .catch((error) => {
+            logEvent("warn", "ticket_email.background_failed", {
+              orderId: normalizedOrderId,
+              message: error.message
+            });
+          })
+          .finally(() => pendingTicketEmailDeliveries.delete(normalizedOrderId));
+      });
+    });
+  });
+  return true;
+}
+
 function htmlEscape(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -3866,6 +3933,7 @@ function concessionThermalPdf(order, payment) {
 
 async function ticketDownloadPdf(db, ticket) {
   const enriched = enrichTicket(db, ticket);
+  const showTicketCode = enriched.status !== "expired";
   const sessionDate = brazilianDate(enriched.sessionDate);
   const seatLabel = enriched.seat || "Lugar livre";
   const extras = (enriched.extras || []).map((item) => `${item.name} x${Number(item.quantity || 0)}`).join(" - ");
@@ -3906,7 +3974,7 @@ async function ticketDownloadPdf(db, ticket) {
   page1 += pdfLine(78, enriched.paymentSource === "subscription_credit" ? 330 : 354, 517, enriched.paymentSource === "subscription_credit" ? 330 : 354, "#334155", 1);
   page1 += pdfWriteText("QR Code de entrada", 214, enriched.paymentSource === "subscription_credit" ? 306 : 324, 10, { bold: true, color: "#bfdbfe" });
   page1 += pdfQr(enriched.displayQrPayload || enriched.qrPayload || enriched.code, 222, 148, 164);
-  page1 += pdfWriteCenteredText(enriched.displayCode || enriched.code, 304, 126, 10, { bold: true, color: "#facc15" });
+  if (showTicketCode) page1 += pdfWriteCenteredText(enriched.displayCode || enriched.code, 304, 126, 10, { bold: true, color: "#facc15" });
   page1 += pdfWriteCenteredText("Apresente este codigo na entrada.", 304, 103, 11, { bold: true, color: "#ffffff" });
   page1 += pdfWriteText("Pagina 1 de 2", 462, 76, 9, { color: "#94a3b8" });
 
@@ -3921,7 +3989,7 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteMultiline(enriched.movieTitle, 78, 672, 20, { bold: true, color: "#ffffff", maxChars: 34, maxLines: 2, lineHeight: 24 });
   page2 += pdfWriteText(`${sessionDate} as ${enriched.sessionTime}`, 78, 608, 14, { bold: true, color: "#facc15" });
   page2 += pdfLine(78, 574, 517, 574, "#334155", 1);
-  page2 += pdfWriteValueBlock("CODIGO", enriched.displayCode || enriched.code, 78, 538, { valueSize: 12, maxChars: 16, maxLines: 1 });
+  if (showTicketCode) page2 += pdfWriteValueBlock("CODIGO", enriched.displayCode || enriched.code, 78, 538, { valueSize: 12, maxChars: 16, maxLines: 1 });
   page2 += pdfWriteValueBlock("PEDIDO", enriched.orderReference || enriched.orderId || "-", 78, 462, { valueSize: 10, maxChars: 48, maxLines: 3, boldValue: false });
   page2 += pdfWriteValueBlock("TIPO", enriched.ticketType || "Ingresso", 338, 538, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
@@ -6629,7 +6697,6 @@ async function finalizeOrderWithoutCharge(db, order, customerUser) {
   reserveConcessionStock(db, savedOrder);
   const tickets = finalizePaidOrder(db, savedOrder, null, "promotional");
   if (tickets.length) consumePendingClubCredit(db, savedOrder, tickets, customerUser?.id);
-  if (tickets.length) await deliverTicketsByEmail(db, savedOrder, tickets);
   db.orders.unshift(savedOrder);
   logEvent("info", "coupon.order_completed", {
     orderId: savedOrder.id,
@@ -9723,7 +9790,6 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
       tickets = finalizePaidOrder(lockedDb, order, payment, "online");
       if (!wasAlreadyPaid && tickets.length) {
         consumePendingClubCredit(lockedDb, order, tickets, order.customerUserId);
-        await deliverTicketsByEmail(lockedDb, order, tickets);
       }
     } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status) && order.status !== "paid") {
       releaseConcessionReservation(lockedDb, order);
@@ -9732,6 +9798,7 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
     }
 
     await writeDb(lockedDb);
+    if (!wasAlreadyPaid && tickets.length) queueTicketEmailDelivery(order.id);
     logEvent("info", "payment.reconciled", {
       orderId: order.id,
       providerPaymentId: payment.providerPaymentId,
@@ -12347,13 +12414,13 @@ async function handleApi(req, res, pathname) {
       };
       const tickets = finalizePaidOrder(lockedDb, savedOrder, null, "club_credit");
       consumePendingClubCredit(lockedDb, savedOrder, tickets, lockedUser.id);
-      if (tickets.length) await deliverTicketsByEmail(lockedDb, savedOrder, tickets);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
       await releaseOrderSeatHolds(savedOrder);
       sendJson(res, 201, { order: savedOrder, payment: null, tickets, subscription, creditsRemaining: clubDomainService.creditCounts(lockedDb, subscription.id).available }, {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });
+      if (tickets.length) queueTicketEmailDelivery(savedOrder.id);
       });
     } catch (error) {
       sendJson(res, error.statusCode || 400, { error: { code: error.code || "CLUB_CREDIT_ERROR", message: error.message } });
@@ -13696,6 +13763,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 201, checkoutResponse(lockedDb, completed.order, null, completed.tickets), {
           "Set-Cookie": checkoutAccessCookie(req, completed.order.id)
         });
+        if (completed.tickets.length) queueTicketEmailDelivery(completed.order.id);
         return;
       }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
@@ -13720,7 +13788,6 @@ async function handleApi(req, res, pathname) {
       reserveConcessionStock(lockedDb, savedOrder);
       const tickets = payment.status === "approved" ? finalizePaidOrder(lockedDb, savedOrder, payment, "online") : [];
       if (tickets.length) consumePendingClubCredit(lockedDb, savedOrder, tickets, customerUser?.id);
-      if (tickets.length) await deliverTicketsByEmail(lockedDb, savedOrder, tickets);
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
@@ -13737,6 +13804,7 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });
+      if (tickets.length) queueTicketEmailDelivery(savedOrder.id);
     });
     return;
   }
@@ -13790,6 +13858,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 201, checkoutResponse(lockedDb, completed.order, null, completed.tickets), {
           "Set-Cookie": checkoutAccessCookie(req, completed.order.id)
         });
+        if (completed.tickets.length) queueTicketEmailDelivery(completed.order.id);
         return;
       }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
@@ -13821,7 +13890,6 @@ async function handleApi(req, res, pathname) {
       reserveConcessionStock(lockedDb, savedOrder);
       const tickets = payment.status === "approved" ? finalizePaidOrder(lockedDb, savedOrder, payment, "online") : [];
       if (tickets.length) consumePendingClubCredit(lockedDb, savedOrder, tickets, customerUser?.id);
-      if (tickets.length) await deliverTicketsByEmail(lockedDb, savedOrder, tickets);
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
@@ -13838,6 +13906,7 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });
+      if (tickets.length) queueTicketEmailDelivery(savedOrder.id);
     });
     return;
   }
@@ -14291,10 +14360,6 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
-      for (const paidOrder of result.newlyPaidOrders) {
-        const paidTickets = result.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
-        if (paidTickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, paidOrder, paidTickets);
-      }
       const pointPrint = payment.status === "approved"
         ? await queueBoxOfficePointPrint(lockedDb, result.orders, result.tickets, config, {
           batchId: payment.metadata?.batchId,
@@ -14318,6 +14383,9 @@ async function handleApi(req, res, pathname) {
         completed: payment.status === "approved",
         terminal: { id: payment.metadata?.terminalId || "", providerStatus: payment.metadata?.providerStatus || "" }
       });
+      result.newlyPaidOrders
+        .filter((order) => shouldDeliverBoxOfficeTicketsByEmail(order))
+        .forEach((order) => queueTicketEmailDelivery(order.id));
     });
     return;
   }
@@ -14518,10 +14586,6 @@ async function handleApi(req, res, pathname) {
         lockedDb.orders.unshift(...orders);
         lockedDb.payments.unshift(pointPaymentRecord);
         const pointResult = applyPointPaymentStatus(lockedDb, pointPaymentRecord, providerPayment);
-        for (const paidOrder of pointResult.newlyPaidOrders) {
-          const paidTickets = pointResult.tickets.filter((ticket) => ticket.orderId === paidOrder.id);
-          if (paidTickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, paidOrder, paidTickets);
-        }
         const pointPrint = pointPaymentRecord.status === "approved"
           ? await queueBoxOfficePointPrint(lockedDb, orders, pointResult.tickets, mercadoPagoConfig, {
             batchId,
@@ -14556,6 +14620,9 @@ async function handleApi(req, res, pathname) {
             terminalId: pointPaymentRecord.metadata.terminalId
           }
         });
+        pointResult.newlyPaidOrders
+          .filter((order) => shouldDeliverBoxOfficeTicketsByEmail(order))
+          .forEach((order) => queueTicketEmailDelivery(order.id));
         return;
       }
 
@@ -14596,9 +14663,6 @@ async function handleApi(req, res, pathname) {
       const tickets = sales.flatMap((sale) => sale.tickets);
       lockedDb.payments.unshift(...payments);
       lockedDb.orders.unshift(...orders);
-      for (const sale of sales) {
-        if (sale.tickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, sale.order, sale.tickets);
-      }
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
       const pointPrint = await queueBoxOfficePointPrint(lockedDb, orders, tickets, mercadoPagoConfig, {
         batchId,
@@ -14627,6 +14691,9 @@ async function handleApi(req, res, pathname) {
         pointPrint,
         totalPrice: orders.reduce((sum, order) => sum + Number(order.totalPrice || 0), 0)
       });
+      sales
+        .filter((sale) => sale.tickets.length && shouldDeliverBoxOfficeTicketsByEmail(sale.order))
+        .forEach((sale) => queueTicketEmailDelivery(sale.order.id));
     });
     return;
   }
@@ -15043,6 +15110,7 @@ async function handleApi(req, res, pathname) {
       }
       let tickets = [];
       let subscription = null;
+      const emailDeliveryOrderIds = [];
       if (isClubSubscriptionPayment) {
         subscription = (lockedDb.subscriptions || []).find((item) => item.id === payment.metadata?.subscriptionId) || null;
         if (payment.status === "approved") {
@@ -15056,10 +15124,9 @@ async function handleApi(req, res, pathname) {
           status: payment.status
         });
         tickets = pointResult.tickets;
-        for (const paidOrder of pointResult.newlyPaidOrders) {
-          const paidTickets = tickets.filter((ticket) => ticket.orderId === paidOrder.id);
-          if (paidTickets.length) await deliverBoxOfficeTicketsBySelectedMethod(lockedDb, paidOrder, paidTickets);
-        }
+        emailDeliveryOrderIds.push(...pointResult.newlyPaidOrders
+          .filter((paidOrder) => shouldDeliverBoxOfficeTicketsByEmail(paidOrder))
+          .map((paidOrder) => paidOrder.id));
         if (payment.status === "approved") {
           const pointConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
           await queueBoxOfficePointPrint(lockedDb, pointResult.orders, tickets, pointConfig, {
@@ -15071,7 +15138,7 @@ async function handleApi(req, res, pathname) {
         const wasAlreadyPaid = order?.status === "paid";
         tickets = finalizePaidOrder(lockedDb, order, payment, "online");
         if (!wasAlreadyPaid && tickets.length) consumePendingClubCredit(lockedDb, order, tickets, order?.customerUserId);
-        if (!wasAlreadyPaid && tickets.length) await deliverTicketsByEmail(lockedDb, order, tickets);
+        if (!wasAlreadyPaid && tickets.length) emailDeliveryOrderIds.push(order.id);
       } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status) && order?.status !== "paid") {
         releaseConcessionReservation(lockedDb, order);
         order.status = payment.status === "refunded" ? "refunded" : payment.status === "rejected" ? "cancelled" : payment.status;
@@ -15103,6 +15170,7 @@ async function handleApi(req, res, pathname) {
           ticketsCreated: tickets.length
         }
       });
+      emailDeliveryOrderIds.forEach(queueTicketEmailDelivery);
     });
     return;
   }
