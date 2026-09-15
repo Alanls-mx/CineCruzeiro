@@ -85,7 +85,10 @@ test("aplica marca apenas nos arquivos operacionais e sobrepoe recursos aprovado
     fs.mkdirSync(path.join(temp, "backend"), { recursive: true });
     fs.mkdirSync(path.join(temp, "tests"), { recursive: true });
     fs.mkdirSync(path.join(temp, "branding", "public", "images"), { recursive: true });
-    fs.writeFileSync(path.join(temp, "src", "brand.ts"), 'export const brand = "Cine Cruzeiro /projects/cinecruzeiro";');
+    fs.writeFileSync(
+      path.join(temp, "src", "brand.ts"),
+      'export const brand = "Cine Cruzeiro /projects/cinecruzeiro CINECRUZEIRO CineCruzeiro @cinecruzeiro.oficial Rua do Cruzeiro, 450 - Bairro Cruzeiro, São Paulo - SP";',
+    );
     fs.writeFileSync(path.join(temp, "backend", "brand.js"), 'module.exports = "Cine Cruzeiro";');
     fs.writeFileSync(path.join(temp, "tests", "history.txt"), "Cine Cruzeiro");
     fs.writeFileSync(path.join(temp, "branding", "public", "images", "logo-display.webp"), "demo-logo");
@@ -97,10 +100,16 @@ test("aplica marca apenas nos arquivos operacionais e sobrepoe recursos aprovado
       "--old-name", "Cine Cruzeiro",
       "--name", "Cinema Teste",
       "--route", "/projects/cinema-teste",
+      "--city", "Teste - SP",
       "--branding-dir", path.join(temp, "branding"),
     ], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(fs.readFileSync(path.join(temp, "src", "brand.ts"), "utf8"), /Cinema Teste \/projects\/cinema-teste/);
+    const brandedSource = fs.readFileSync(path.join(temp, "src", "brand.ts"), "utf8");
+    assert.match(brandedSource, /Cinema Teste \/projects\/cinema-teste/);
+    assert.match(brandedSource, /CINEMATESTE CinemaTeste/);
+    assert.match(brandedSource, /Instagram em atualizacao/);
+    assert.match(brandedSource, /Atendimento local em Teste - SP/);
+    assert.doesNotMatch(brandedSource, /Cine Cruzeiro|cinecruzeiro|Rua do Cruzeiro/);
     assert.equal(fs.readFileSync(path.join(temp, "tests", "history.txt"), "utf8"), "Cine Cruzeiro");
     assert.equal(fs.readFileSync(path.join(temp, "public", "images", "logo-display.webp"), "utf8"), "demo-logo");
   } finally {

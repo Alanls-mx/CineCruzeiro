@@ -21,6 +21,16 @@ function compact(value) {
   return slugify(value).replace(/-/g, "");
 }
 
+function pascalCase(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join("");
+}
+
 function walk(directory, files = []) {
   if (!fs.existsSync(directory)) return files;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -66,26 +76,31 @@ function main() {
   const newName = String(args.name || "").trim();
   const oldRoute = `/${String(args["old-route"] || "projects/cinecruzeiro").replace(/^\/+|\/+$/g, "")}`;
   const newRoute = `/${String(args.route || "").replace(/^\/+|\/+$/g, "")}`;
-  const oldCity = String(args["old-city"] || "").trim();
+  const oldCity = String(args["old-city"] || "São Paulo - SP").trim();
   const newCity = String(args.city || "").trim();
-  const oldInstagram = String(args["old-instagram"] || "").trim();
+  const oldInstagram = String(args["old-instagram"] || "@cinecruzeiro.oficial").trim();
   const newInstagram = String(args.instagram || "").trim();
   const brandingDir = args["branding-dir"] ? path.resolve(args["branding-dir"]) : "";
   if (!newName || newRoute === "/") throw new Error("Nome e rota da instalacao sao obrigatorios.");
 
   const oldSlug = slugify(oldName);
   const newSlug = slugify(newName);
+  const oldCompact = compact(oldName);
+  const newCompact = compact(newName);
   const replacements = [
     [oldRoute, newRoute],
     [oldRoute.slice(1), newRoute.slice(1)],
+    ["Rua do Cruzeiro, 450 - Bairro Cruzeiro, São Paulo - SP", newCity ? `Atendimento local em ${newCity}` : "Endereco em atualizacao"],
+    [oldInstagram, newInstagram || "Instagram em atualizacao"],
     [oldName, newName],
     [oldName.toUpperCase(), newName.toUpperCase()],
     [oldName.toLowerCase(), newName.toLowerCase()],
     [oldSlug, newSlug],
-    [compact(oldName), compact(newName)],
+    [oldCompact, newCompact],
+    [oldCompact.toUpperCase(), newCompact.toUpperCase()],
+    [pascalCase(oldName), pascalCase(newName)],
   ];
   if (oldCity && newCity) replacements.push([oldCity, newCity]);
-  if (oldInstagram && newInstagram) replacements.push([oldInstagram, newInstagram]);
 
   const files = SOURCE_ROOTS.flatMap((sourceRoot) => walk(path.join(root, sourceRoot)));
   for (const rootFile of ["next.config.mjs"]) {

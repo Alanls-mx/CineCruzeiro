@@ -57,6 +57,15 @@ CINEMA_INSTANCES_FILE=/home/ubuntu/projects/cinema-instances.json \
 
 As credenciais iniciais ficam, com permissão `0600`, em `shared/demo-admin.txt` dentro da instalação. Imagens de produtos não são herdadas porque podem conter a marca do cinema-base. Apenas arquivos de pôster e backdrop efetivamente referenciados no catálogo são copiados para os uploads independentes.
 
+Os blocos Nginx das demonstrações são gerados pelo registro, evitando divergência entre rota e porta:
+
+```bash
+node scripts/render-demo-nginx.mjs /home/ubuntu/projects/cinema-instances.json \
+  cinemax-piraju cine-estacao-amparo cine-gama cinemania-cosmopolis
+```
+
+O resultado deve ser salvo em um snippet incluído dentro do servidor `lumixengine.com`. Sempre faça backup do site ativo, execute `nginx -t` e só então recarregue o Nginx.
+
 ## Comandos
 
 Validar o formato local:
