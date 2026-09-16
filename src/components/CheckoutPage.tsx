@@ -779,7 +779,6 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
               ticketTypes={availableTicketTypes}
               seatMap={seatMap}
               seatMapStatus={seatMapStatus}
-              realtimeStatus={seatRealtime.status}
               onSelectSeat={seatRealtime.selectSeat}
               onReleaseSeat={seatRealtime.releaseSeat}
               onRefreshSeatMap={refreshSeatMap}
@@ -941,13 +940,12 @@ function Steps({ sessionId, step, extrasVisited, ticketsComplete, onContinueToPa
   );
 }
 
-function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, realtimeStatus, onSelectSeat, onReleaseSeat, onRefreshSeatMap }: {
+function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, onSelectSeat, onReleaseSeat, onRefreshSeatMap }: {
   draft: StoredCheckoutDraft;
   updateDraft: (patch: Partial<StoredCheckoutDraft>) => void;
   ticketTypes: TicketTypeRecord[];
   seatMap: SessionSeatMap | null;
   seatMapStatus: "idle" | "loading" | "ready" | "error";
-  realtimeStatus: "connecting" | "connected" | "disconnected";
   onSelectSeat: (seatId: string) => Promise<{ ok: boolean; message?: string }>;
   onReleaseSeat: (seatId: string) => Promise<{ ok: boolean; message?: string }>;
   onRefreshSeatMap: () => Promise<void>;
@@ -1084,11 +1082,6 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
             {selectedSeatIds.length > 0 && (
               <p className="mt-4 text-sm font-bold text-slate-300">
                 Selecionadas: {selectedSeatIds.map((id) => seatsById.get(id)?.label || id).join(", ")}
-              </p>
-            )}
-            {realtimeStatus !== "connected" && (
-              <p className="mt-3 text-xs font-bold text-amber-200" role="status">
-                {realtimeStatus === "connecting" ? "Conectando à reserva de poltronas..." : "Reconectando à reserva de poltronas..."}
               </p>
             )}
             {seatActionError && <p className="mt-2 text-sm font-semibold text-rose-200" role="alert">{seatActionError}</p>}

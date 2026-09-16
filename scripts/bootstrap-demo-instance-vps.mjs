@@ -39,6 +39,10 @@ function randomSecret(bytes = 36) {
   return crypto.randomBytes(bytes).toString("base64url");
 }
 
+function publicOrigin(siteUrl) {
+  return new URL(siteUrl).origin;
+}
+
 function sqlIdentifier(value) {
   if (!/^[a-z][a-z0-9_]*$/.test(value)) throw new Error(`Identificador PostgreSQL invalido: ${value}`);
   return `"${value}"`;
@@ -127,8 +131,8 @@ async function main() {
       `NEXT_PUBLIC_BASE_PATH=${instance.route}`,
       `NEXT_BASE_PATH=${instance.route}`,
       `APP_BASE_PATH=${instance.route}`,
-      `CORS_ORIGIN=${instance.siteUrl}`,
-      `CORS_ALLOWED_ORIGIN=${instance.siteUrl}`,
+      `CORS_ORIGIN=${publicOrigin(instance.siteUrl)}`,
+      `CORS_ALLOWED_ORIGIN=${publicOrigin(instance.siteUrl)}`,
       "PAYMENTS_MODE=test",
       `ADMIN_EMAIL=${adminEmail}`,
       `ADMIN_PASSWORD=${adminPassword}`,

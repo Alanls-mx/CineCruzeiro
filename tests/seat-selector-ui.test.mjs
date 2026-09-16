@@ -24,11 +24,7 @@ test("os dois seletores repetem a letra da fileira nos lados esquerdo e direito"
   assert.doesNotMatch(adminSource, /manual-seat-row-spacer/);
 });
 
-test("checkout mantém a seleção disponível quando o WebSocket demora a conectar", () => {
-  const realtimeHook = fs.readFileSync(path.join(dirname, "../src/hooks/useSeatRealtime.ts"), "utf8");
-  const serverSource = fs.readFileSync(path.join(dirname, "../backend/server.js"), "utf8");
-  assert.match(realtimeHook, /api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}\/seats\/hold/);
-  assert.match(realtimeHook, /sendFallbackRequest\(type, seatId\)/);
-  assert.match(serverSource, /seats\\\/hold/);
-  assert.match(serverSource, /connectionId: "http-fallback"/);
+test("checkout não expõe estados internos de reconexão para quem compra", () => {
+  assert.doesNotMatch(checkoutSource, /Reconectando à reserva de poltronas/);
+  assert.doesNotMatch(checkoutSource, /Conectando à reserva de poltronas/);
 });

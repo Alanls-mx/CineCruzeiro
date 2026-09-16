@@ -180,8 +180,8 @@ function createSeatRealtimeService(server, options) {
   });
 
   return {
-    broadcastSeatStatus(sessionId, seatId, status, ownerToken = "") {
-      broadcast(sessionId, { type: "seat_status_changed", sessionId, seatId, status }, ownerToken);
+    broadcastSeatStatus(sessionId, seatId, status) {
+      broadcast(sessionId, { type: "seat_status_changed", sessionId, seatId, status });
     },
     broadcastSessionRefresh(sessionId) {
       broadcast(sessionId, { type: "session_refresh_required", sessionId });
