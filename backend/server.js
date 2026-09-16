@@ -1995,6 +1995,17 @@ async function selectRealtimeSeat({ sessionId, seatId, ownerToken, connectionId 
   });
 }
 
+function validSeatReservationIdentifier(value, maxLength = 180) {
+  const text = String(value || "").trim();
+  return text.length >= 1 && text.length <= maxLength && /^[a-zA-Z0-9._:-]+$/.test(text) ? text : "";
+}
+
+async function releaseRealtimeSeat({ sessionId, seatId, ownerToken }) {
+  const released = await releaseSeatHold({ sessionId, seatId, ownerToken });
+  if (released) seatRealtimeService?.broadcastSeatStatus(sessionId, seatId, "available");
+  return released;
+}
+
 async function claimSeatHoldsForOrder(db, order) {
   if (!order.seatSelectionEnabled || !(order.selectedSeatIds || []).length) return;
   order.seatHoldToken = order.seatHoldToken || `checkout-${order.id || crypto.randomUUID()}`;
@@ -10418,6 +10429,29 @@ async function handleApi(req, res, pathname) {
       "Pago pelo cliente (R$)", "Regra de repasse", "Percentual aplicado (%)", "Taxa fixa aplicada (R$)",
       "Repasse à distribuidora (R$)", "Resultado do cinema (R$)", "Início do período", "Fim do período", "Relatório emitido em"
     ], rows);
+    return;
+  }
+
+  const sessionSeatHoldMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/seats\/hold$/);
+  if (sessionSeatHoldMatch && ["POST", "DELETE"].includes(method)) {
+    const sessionId = validSeatReservationIdentifier(decodeURIComponent(sessionSeatHoldMatch[1]));
+    const body = await readBody(req);
+    const seatId = validSeatReservationIdentifier(body.seatId);
+    const ownerToken = validSeatReservationIdentifier(body.ownerToken);
+    if (!sessionId || !seatId || !ownerToken) {
+      sendJson(res, 400, { error: { code: "INVALID_SEAT_RESERVATION", message: "Sessão, poltrona ou token de reserva inválido." } });
+      return;
+    }
+
+    if (method === "POST") {
+      const hold = await selectRealtimeSeat({ sessionId, seatId, ownerToken, connectionId: "http-fallback" });
+      seatRealtimeService?.broadcastSeatStatus(sessionId, seatId, "held", ownerToken);
+      sendJson(res, 200, { ok: true, seatId, expiresAt: hold.expiresAt });
+      return;
+    }
+
+    const released = await releaseRealtimeSeat({ sessionId, seatId, ownerToken });
+    sendJson(res, 200, { ok: true, seatId, released: Boolean(released) });
     return;
   }
 

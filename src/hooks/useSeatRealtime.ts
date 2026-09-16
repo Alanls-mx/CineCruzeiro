@@ -25,19 +25,42 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
   selectedRef.current = selectedSeatIds;
   callbacksRef.current = { onSeatChange, onSessionState, onSessionRefresh };
 
+  const sendFallbackRequest = useCallback(async (type: "select_seat" | "release_seat", seatId: string): Promise<SeatResult> => {
+    try {
+      const response = await fetch(`${PUBLIC_BASE_PATH}/api/sessions/${encodeURIComponent(sessionId)}/seats/hold`, {
+        method: type === "select_seat" ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seatId, ownerToken }),
+        credentials: "same-origin"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        return {
+          ok: false,
+          code: String(payload?.error?.code || "SEAT_RESERVATION_FAILED"),
+          message: String(payload?.error?.message || "Não foi possível atualizar esta poltrona.")
+        };
+      }
+      callbacksRef.current.onSessionRefresh?.();
+      return { ok: true };
+    } catch {
+      return { ok: false, code: "SEAT_RESERVATION_NETWORK_ERROR", message: "Não foi possível comunicar com o mapa de poltronas. Tente novamente." };
+    }
+  }, [ownerToken, sessionId]);
+
   const sendRequest = useCallback(async (type: "select_seat" | "release_seat", seatId: string) => {
     let socket = socketRef.current;
     if (socket && socket.readyState === WebSocket.CONNECTING) {
       const start = Date.now();
-      while (socket && socket.readyState === WebSocket.CONNECTING && Date.now() - start < 2500) {
+      while (socket && socket.readyState === WebSocket.CONNECTING && Date.now() - start < 700) {
         await new Promise((r) => window.setTimeout(r, 100));
         socket = socketRef.current;
       }
     }
     if (!socket || socket.readyState !== WebSocket.OPEN) {
-      return { ok: false, code: "REALTIME_DISCONNECTED", message: "Conectando ao sistema de poltronas. Tente novamente em instantes." };
+      return sendFallbackRequest(type, seatId);
     }
-    return new Promise<SeatResult>((resolve) => {
+    const realtimeResult = await new Promise<SeatResult>((resolve) => {
       const requestId = crypto.randomUUID();
       pendingRef.current.set(requestId, resolve);
       socket!.send(JSON.stringify({ type, requestId, seatId }));
@@ -48,7 +71,10 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
         pending({ ok: false, code: "REALTIME_TIMEOUT", message: "A reserva demorou para responder. Tente novamente." });
       }, 8000);
     });
-  }, []);
+    return realtimeResult.ok || realtimeResult.code !== "REALTIME_TIMEOUT"
+      ? realtimeResult
+      : sendFallbackRequest(type, seatId);
+  }, [sendFallbackRequest]);
 
   useEffect(() => {
     if (!enabled || !sessionId || !ownerToken) {

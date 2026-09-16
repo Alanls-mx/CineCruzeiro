@@ -23,3 +23,12 @@ test("os dois seletores repetem a letra da fileira nos lados esquerdo e direito"
   assert.match(adminSource, /manual-seat-row-label" aria-hidden="true">\$\{escapeHtml\(row\.label\)\}<\/span>/);
   assert.doesNotMatch(adminSource, /manual-seat-row-spacer/);
 });
+
+test("checkout mantém a seleção disponível quando o WebSocket demora a conectar", () => {
+  const realtimeHook = fs.readFileSync(path.join(dirname, "../src/hooks/useSeatRealtime.ts"), "utf8");
+  const serverSource = fs.readFileSync(path.join(dirname, "../backend/server.js"), "utf8");
+  assert.match(realtimeHook, /api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}\/seats\/hold/);
+  assert.match(realtimeHook, /sendFallbackRequest\(type, seatId\)/);
+  assert.match(serverSource, /seats\\\/hold/);
+  assert.match(serverSource, /connectionId: "http-fallback"/);
+});
