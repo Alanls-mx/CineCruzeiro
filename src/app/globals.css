@@ -204,6 +204,13 @@ body[data-cinema-theme="cine-estacao-amparo"] [class*="bg-gradient-to-t"] {
   background-color: rgba(26, 6, 9, 0.64) !important;
 }
 
+/* Cabecalho e rodape funcionam como a moldura preta da marca. */
+body[data-cinema-theme="cine-estacao-amparo"] header.sticky,
+body[data-cinema-theme="cine-estacao-amparo"] header.sticky [class*="bg-[#060a12]"],
+body[data-cinema-theme="cine-estacao-amparo"] footer {
+  background-color: #070708 !important;
+}
+
 body[data-cinema-theme="cine-estacao-amparo"] input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
 body[data-cinema-theme="cine-estacao-amparo"] select,
 body[data-cinema-theme="cine-estacao-amparo"] textarea {
