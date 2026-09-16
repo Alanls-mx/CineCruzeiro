@@ -22,6 +22,7 @@ const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).repla
 const publicUrl = `${siteOrigin}${basePath}`;
 const logoUrl = `${basePath}/images/logo-display.webp`;
 const iconUrl = `${basePath}/images/favicon-64.png`;
+const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG === "cine-estacao-amparo" ? "cine-estacao-amparo" : "default";
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
   title: "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
@@ -75,7 +76,7 @@ export default function RootLayout({
           });
         ` }} />
       </head>
-      <body className="min-h-dvh bg-brand-950 text-slate-100 antialiased selection:bg-gold-400 selection:text-slate-950">
+      <body data-cinema-theme={cinemaTheme} className="min-h-dvh bg-brand-950 text-slate-100 antialiased selection:bg-gold-400 selection:text-slate-950">
         {children}
         <TrackingManager />
       </body>

@@ -124,6 +124,7 @@ function materializeRelease(archivePath, instance, tag, env) {
     NODE_ENV: "production",
     NEXT_PUBLIC_BASE_PATH: instance.route,
     NEXT_BASE_PATH: instance.route,
+    NEXT_PUBLIC_CINEMA_SLUG: instance.slug,
     NEXT_PUBLIC_SITE_URL: instance.siteUrl,
     CINE_BACKEND_URL: `http://127.0.0.1:${instance.backendPort}`,
     NEXT_PUBLIC_CINE_API_URL: instance.siteUrl,
