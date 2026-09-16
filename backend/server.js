@@ -116,6 +116,8 @@ const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
 const LATEST_SCHEMA_MIGRATION = "036_concession_mass_inventory_and_marketing.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
+const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
+const TICKET_ARCHIVED_DOCUMENT_RETENTION_MS = TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 const ROOT = __dirname;
 const DATA_FILE = process.env.CINE_DATA_FILE ? path.resolve(process.env.CINE_DATA_FILE) : path.join(ROOT, "data", "db.json");
 const PUBLIC_DIR = path.join(ROOT, "public");
@@ -126,6 +128,7 @@ const storageService = createStorageService({
   rootDir: process.env.CINE_UPLOADS_DIR || ""
 });
 const EMAIL_ATTACHMENT_ROOT = path.resolve(process.env.CINE_EMAIL_ATTACHMENTS_DIR || path.join(ROOT, "data", "email-attachments"));
+const TICKET_DOCUMENT_ROOT = path.resolve(process.env.CINE_TICKET_DOCUMENTS_DIR || path.join(ROOT, "data", "ticket-documents"));
 const EMAIL_ATTACHMENT_TYPES = new Set([
   "application/pdf",
   "text/plain",
@@ -1847,6 +1850,53 @@ function ticketSessionStartsAt(ticket, db = null) {
 function ticketArchiveAt(ticket, db = null) {
   const startsAt = ticketSessionStartsAt(ticket, db);
   return startsAt ? new Date(startsAt.getTime() + 4 * 60 * 60 * 1000) : null;
+}
+
+function ticketDocumentRetentionEndsAt(ticket, db = null) {
+  const archiveAt = ticketArchiveAt(ticket, db);
+  return archiveAt ? new Date(archiveAt.getTime() + TICKET_ARCHIVED_DOCUMENT_RETENTION_MS) : null;
+}
+
+function ticketDocumentDownloadAllowed(ticket, db = null, now = Date.now()) {
+  const order = orderForTicket(db, ticket);
+  const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
+  if (status === "active") return { ok: true, status, retentionEndsAt: null };
+  if (!isTicketArchived(ticket, db)) return { ok: false, status, retentionEndsAt: null };
+  const retentionEndsAt = ticketDocumentRetentionEndsAt(ticket, db);
+  return {
+    ok: Boolean(retentionEndsAt && retentionEndsAt.getTime() > now),
+    status,
+    retentionEndsAt
+  };
+}
+
+async function pruneExpiredTicketPdfArtifacts(db, now = new Date()) {
+  const purgedTicketIds = [];
+  let changed = false;
+
+  for (const ticket of db.tickets || []) {
+    const retentionEndsAt = ticketDocumentRetentionEndsAt(ticket, db);
+    if (!isTicketArchived(ticket, db) || !retentionEndsAt || retentionEndsAt > now) continue;
+    let ticketArtifactPurged = false;
+
+    // PDFs are generated on demand today. This covers any legacy or future
+    // artifact explicitly stored under the dedicated ticket-document directory.
+    for (const field of ["pdfArtifactPath", "generatedPdfPath"]) {
+      const candidate = String(ticket[field] || "").trim();
+      if (!candidate) continue;
+      const artifactPath = path.resolve(candidate);
+      if (pathIsInside(TICKET_DOCUMENT_ROOT, artifactPath)) {
+        await fs.unlink(artifactPath).catch(() => null);
+      }
+      ticket[field] = "";
+      ticketArtifactPurged = true;
+      changed = true;
+    }
+
+    if (ticketArtifactPurged) purgedTicketIds.push(ticket.id);
+  }
+
+  return { changed, purgedTicketIds };
 }
 
 function isTicketArchived(ticket, db = null) {
@@ -14023,6 +14073,16 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
         return;
       }
+      const documentAccess = ticketDocumentDownloadAllowed(ticket, db);
+      if (!documentAccess.ok) {
+        sendJson(res, 410, {
+          error: {
+            code: "TICKET_DOCUMENT_EXPIRED",
+            message: "O PDF deste ingresso arquivado foi removido apos o prazo de 10 dias."
+          }
+        }, { "Cache-Control": "private, no-store, max-age=0" });
+        return;
+      }
       const url = new URL(req.url, `http://${req.headers.host}`);
       const disposition = url.searchParams.get("view") === "1" ? "inline" : "attachment";
       const enrichedTicket = enrichTicket(db, ticket);
@@ -14048,6 +14108,16 @@ async function handleApi(req, res, pathname) {
       const ticket = getOwnedTicket(db, ticketId, user);
       if (!ticket) {
         sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
+        return;
+      }
+      const ticketStatus = effectiveTicketStatus(ticket, orderForTicket(db, ticket), sessionForTicket(db, ticket), db);
+      if (ticketStatus !== "active") {
+        sendJson(res, 410, {
+          error: {
+            code: "TICKET_ARCHIVED",
+            message: "Google Wallet esta disponivel apenas para ingressos ativos."
+          }
+        }, { "Cache-Control": "private, no-store, max-age=0" });
         return;
       }
       try {
@@ -15439,14 +15509,19 @@ async function runSubscriptionMaintenance() {
       const scheduledChanged = applyScheduledPremieres(db);
       const movieTagsChanged = applyAutomatedMovieTags(db);
       const sessionMaintenance = archiveFinishedSessions(db, new Date(), expiredCheckoutOrders);
+      const ticketPdfMaintenance = await pruneExpiredTicketPdfArtifacts(db, new Date());
       const reservationsChanged = expireStaleReservations(db, expiredCheckoutOrders);
       const scheduledCoupons = syncScheduledCampaignCoupons(db, new Date());
       const couponMaintenance = archiveExpiredCoupons(db, new Date());
       const result = await expirePendingPaymentSubscriptions(db);
       const lifecycle = finalizeEndingSubscriptions(db);
-      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || reservationsChanged || scheduledCoupons.changed || couponMaintenance.changed || result.changed || lifecycle.changed) {
+      if (scheduledChanged || movieTagsChanged || sessionMaintenance.changed || ticketPdfMaintenance.changed || reservationsChanged || scheduledCoupons.changed || couponMaintenance.changed || result.changed || lifecycle.changed) {
         await writeDb(db);
         sessionMaintenance.archived.forEach((session) => logEvent("info", "session.finished_archived", session));
+        ticketPdfMaintenance.purgedTicketIds.forEach((ticketId) => logEvent("info", "ticket.pdf_artifacts_pruned", {
+          ticketId,
+          retentionDays: TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS
+        }));
         couponMaintenance.archived.forEach((coupon) => logEvent("info", "coupon.expired_archived", coupon));
         scheduledCoupons.coupons.forEach((coupon) => logEvent("info", coupon.active ? "coupon.scheduled_activated" : "coupon.scheduled_deactivated", coupon));
         logEvent("info", "subscription.pending_payment_maintenance", {
@@ -15455,6 +15530,7 @@ async function runSubscriptionMaintenance() {
           finalized: lifecycle.finalized,
           catalogUpdated: scheduledChanged || movieTagsChanged,
           sessionsArchived: sessionMaintenance.archived.length,
+          ticketPdfArtifactsPurged: ticketPdfMaintenance.purgedTicketIds.length,
           reservationsExpired: reservationsChanged,
           couponsArchived: couponMaintenance.archived.length
         });

@@ -37,9 +37,17 @@ assert.match(serverSource, /const showTicketAccess = enriched\.status === "activ
 assert.match(serverSource, /if \(showTicketAccess\) \{[\s\S]*pdfQr\(enriched\.displayQrPayload \|\| enriched\.qrPayload \|\| enriched\.code, 222, 148, 164\)/);
 assert.match(serverSource, /if \(showTicketAccess\) page2 \+= pdfWriteValueBlock\("CODIGO"/);
 assert.match(serverSource, /QR Code desativado/);
+assert.match(serverSource, /const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10/);
+assert.match(serverSource, /function ticketDocumentDownloadAllowed\(/);
+assert.match(serverSource, /code: "TICKET_DOCUMENT_EXPIRED"/);
+assert.match(serverSource, /code: "TICKET_ARCHIVED"/);
+assert.match(serverSource, /function pruneExpiredTicketPdfArtifacts\(/);
 
 const accountTicketsSource = fs.readFileSync(path.resolve(__dirname, "../src/app/conta/ingressos/page.tsx"), "utf8");
 assert.match(accountTicketsSource, /const showTicketCode = ticket\.status === "active"/);
+assert.match(accountTicketsSource, /const canAccessTicketArtifacts = ticket\.status === "active"/);
 assert.match(accountTicketsSource, /showTicketCode && <Info label="Código do ingresso"/);
+assert.match(accountTicketsSource, /canAccessTicketArtifacts \? \(/);
+assert.match(accountTicketsSource, /PDF, visualização externa e Google Wallet não ficam disponíveis no histórico/);
 
 console.log("Ticket document tests passed.");

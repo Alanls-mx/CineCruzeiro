@@ -2136,11 +2136,9 @@ async function run() {
     const expiredDownload = await fetch(`${BASE_URL}/api/me/tickets/${encodeURIComponent(expiredAccountTicket.id)}/download`, {
       headers: { Cookie: cookie }
     });
-    assert.equal(expiredDownload.status, 200);
-    assert.equal(expiredDownload.headers.get("content-disposition").includes(ticketCodeService.displayCode(maintainedTicket)), false);
-    const expiredPdfText = Buffer.from(await expiredDownload.arrayBuffer()).toString("latin1");
-    assert.match(expiredPdfText, /QR Code desativado/);
-    assert.equal(expiredPdfText.includes(ticketCodeService.displayCode(maintainedTicket)), false);
+    assert.equal(expiredDownload.status, 410);
+    const expiredDownloadPayload = await expiredDownload.json();
+    assert.equal(expiredDownloadPayload.error.code, "TICKET_DOCUMENT_EXPIRED");
 
     const manualTicket = accountTickets.payload.tickets.find((ticket) => ticket.id === boxOfficeSale.payload.tickets[0].id);
     for (const [path, options] of [

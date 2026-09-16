@@ -302,6 +302,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
   const showTicketCode = ticket.status === "active";
+  const canAccessTicketArtifacts = ticket.status === "active";
   const statusClassName = ticket.status === "active"
     ? "bg-emerald-400/15 text-emerald-200"
     : "bg-white/8 text-slate-300";
@@ -403,7 +404,9 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
         <div className="p-6 sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-black uppercase tracking-[.18em] text-brand-300">Visualizar ingresso</p>
+              <p className="text-xs font-black uppercase tracking-[.18em] text-brand-300">
+                {canAccessTicketArtifacts ? "Visualizar ingresso" : "Histórico do ingresso"}
+              </p>
               <h2 className="mt-3 font-display text-3xl font-black leading-none sm:text-4xl">{ticket.movieTitle}</h2>
             </div>
             <span className={`rounded-full px-3 py-1 text-xs font-black ${statusClassName}`}>
@@ -474,23 +477,29 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
             Apresente o QR Code na entrada. Chegue com 15 minutos de antecedência. Ingressos usados ou 4 horas após a sessão seguem disponíveis no histórico.
           </p>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <a href={ticketDownloadUrl(ticket.id, { view: true })} target="_blank" rel="noreferrer" className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
-              <Eye className="h-4 w-4" />
-              Visualizar ingresso
-            </a>
-            <a href={ticketDownloadUrl(ticket.id)} className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
-              <Download className="h-4 w-4" />
-              Baixar ingresso
-            </a>
-            <ActionButton icon={<WalletCards />} label={walletLoading ? "Preparando Google Wallet..." : "Adicionar à Google Wallet"} onClick={addWallet} disabled={walletLoading} />
-            {ticket.canTransfer && (
+          {canAccessTicketArtifacts ? (
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <a href={ticketDownloadUrl(ticket.id, { view: true })} target="_blank" rel="noreferrer" className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
+                <Eye className="h-4 w-4" />
+                Visualizar ingresso
+              </a>
+              <a href={ticketDownloadUrl(ticket.id)} className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
+                <Download className="h-4 w-4" />
+                Baixar ingresso
+              </a>
+              <ActionButton icon={<WalletCards />} label={walletLoading ? "Preparando Google Wallet..." : "Adicionar à Google Wallet"} onClick={addWallet} disabled={walletLoading} />
+              {ticket.canTransfer && (
               <a href="#transferir-ingresso" className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-white/8 px-4 text-sm font-black text-white transition hover:bg-white/12">
                 <Send className="h-4 w-4" />
                 Transferir ingresso
               </a>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            <p className="mt-6 rounded-lg bg-brand-950/70 p-4 text-sm leading-6 text-slate-300">
+              Este ingresso está arquivado. PDF, visualização externa e Google Wallet não ficam disponíveis no histórico.
+            </p>
+          )}
 
           {ticket.canTransfer ? (
           <form id="transferir-ingresso" onSubmit={submitTransfer} className="mt-6 rounded-2xl border border-white/10 bg-brand-950/80 p-5 backdrop-blur-sm sm:p-6">
