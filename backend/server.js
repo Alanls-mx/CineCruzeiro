@@ -2215,6 +2215,16 @@ function effectiveTicketStatus(ticket, order, session = null, db = null) {
   return ticket.status || "active";
 }
 
+function ticketCanRedeemPendingConcessionsToday(ticket, db, now = new Date()) {
+  if (!ticket || ticket.status !== "used" || !ticket.usedAt) return false;
+  const usedAt = new Date(ticket.usedAt);
+  if (Number.isNaN(usedAt.getTime())) return false;
+  const usedDate = datePartsInSaoPaulo(usedAt);
+  const currentDate = datePartsInSaoPaulo(now);
+  if (usedDate.year !== currentDate.year || usedDate.month !== currentDate.month || usedDate.day !== currentDate.day) return false;
+  return pendingConcessionOrdersForTicket(db, ticket).length > 0;
+}
+
 function ticketBelongsToUser(db, ticket, user) {
   if (!ticket || !user) return false;
   const ticketUserId = String(ticket.customerUserId || "").trim();
@@ -2262,6 +2272,7 @@ function enrichTicket(db, ticket) {
   const orderTicketCount = orderTickets.length || 1;
   const concessionOrders = concessionOrdersForTicket(db, ticket);
   const pendingConcessionOrders = pendingConcessionOrdersForTicket(db, ticket);
+  const canRedeemConcessionsToday = ticketCanRedeemPendingConcessionsToday(ticket, db);
   const orderExtras = concessionOrders.flatMap((sourceOrder) =>
     (sourceOrder.concessionItems || []).map((item) => ({
       ...assetRecord(item, ["imageUrl"]),
@@ -2296,6 +2307,7 @@ function enrichTicket(db, ticket) {
     extras: orderExtras,
     extrasSharedByOrder: Boolean((order?.concessionItems || []).length),
     extrasAttachedToTicket: pendingConcessionOrders.length > 0,
+    canRedeemConcessionsToday,
     orderTicketIndex,
     orderTicketCount,
     status,
@@ -14006,7 +14018,8 @@ async function handleApi(req, res, pathname) {
       const order = orderForTicket(db, ticket);
       const session = sessionForTicket(db, ticket);
       const status = effectiveTicketStatus(ticket, order, session, db);
-      if (status === "used" || ticket.status === "used" || ticket.usedAt) {
+      const canRedeemConcessionsToday = ticketCanRedeemPendingConcessionsToday(ticket, db);
+      if ((status === "used" || ticket.status === "used" || ticket.usedAt) && !canRedeemConcessionsToday) {
         sendJson(res, 409, { error: { code: "TICKET_ALREADY_USED", message: "Este ingresso ja foi utilizado e nao possui QR Code ativo." } }, {
           "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
           "Pragma": "no-cache"
@@ -14020,14 +14033,14 @@ async function handleApi(req, res, pathname) {
         });
         return;
       }
-      if (status === "expired" || ticketIsExpired(ticket, db)) {
+      if ((status === "expired" || ticketIsExpired(ticket, db)) && !canRedeemConcessionsToday) {
         sendJson(res, 409, { error: { code: "TICKET_EXPIRED", message: "Este ingresso expirou e nao possui QR Code ativo." } }, {
           "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
           "Pragma": "no-cache"
         });
         return;
       }
-      if (status !== "active") {
+      if (status !== "active" && !canRedeemConcessionsToday) {
         sendJson(res, 409, { error: { code: "TICKET_UNAVAILABLE", message: "Este ingresso nao esta disponivel para uso." } }, {
           "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
           "Pragma": "no-cache"
@@ -14062,7 +14075,7 @@ async function handleApi(req, res, pathname) {
         ticketId: ticket.id,
         code: ticketCodeService.displayCode(ticket),
         qrPayload,
-        status: "active"
+        status: canRedeemConcessionsToday ? "concessions_pending" : "active"
       }));
       return;
     }

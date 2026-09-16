@@ -166,7 +166,7 @@ test("Segurança de DTO e Proteção de Dados Pessoais (Princípio de Menor Priv
   assert.equal(dto.extras[0].imageUrl, undefined);
 });
 
-test("DTO omite o código de qualquer ingresso que não esteja ativo", () => {
+test("DTO omite o código de ingressos inativos, exceto na retirada pendente de bomboniere no mesmo dia", () => {
   for (const status of ["used", "cancelled", "refunded", "expired", "archived", "pending_payment"]) {
     const dto = toCustomerTicketDto({
       id: `ticket-${status}`,
@@ -177,6 +177,16 @@ test("DTO omite o código de qualquer ingresso que não esteja ativo", () => {
 
     assert.equal(Object.prototype.hasOwnProperty.call(dto, "code"), false, `status ${status}`);
   }
+
+  const redemptionDto = toCustomerTicketDto({
+    id: "ticket-used-concession-redemption",
+    code: "CC-11223344",
+    displayCode: "CC-11223344",
+    status: "used",
+    canRedeemConcessionsToday: true
+  });
+  assert.equal(redemptionDto.code, "CC-11223344");
+  assert.equal(redemptionDto.canRedeemConcessionsToday, true);
 });
 
 test("Autorização: verificação estrita de posse (Anti-IDOR / Anti-BOLA)", () => {

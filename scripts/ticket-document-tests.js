@@ -42,12 +42,15 @@ assert.match(serverSource, /function ticketDocumentDownloadAllowed\(/);
 assert.match(serverSource, /code: "TICKET_DOCUMENT_EXPIRED"/);
 assert.match(serverSource, /code: "TICKET_ARCHIVED"/);
 assert.match(serverSource, /function pruneExpiredTicketPdfArtifacts\(/);
+assert.match(serverSource, /function ticketCanRedeemPendingConcessionsToday\(/);
+assert.match(serverSource, /status: canRedeemConcessionsToday \? "concessions_pending" : "active"/);
 
 const accountTicketsSource = fs.readFileSync(path.resolve(__dirname, "../src/app/conta/ingressos/page.tsx"), "utf8");
-assert.match(accountTicketsSource, /const showTicketCode = ticket\.status === "active"/);
+assert.match(accountTicketsSource, /const showTicketCode = ticket\.status === "active" \|\| canRedeemConcessionsToday/);
 assert.match(accountTicketsSource, /const canAccessTicketArtifacts = ticket\.status === "active"/);
 assert.match(accountTicketsSource, /showTicketCode && <Info label="Código do ingresso"/);
 assert.match(accountTicketsSource, /canAccessTicketArtifacts \? \(/);
 assert.match(accountTicketsSource, /PDF, visualização externa e Google Wallet não ficam disponíveis no histórico/);
+assert.match(accountTicketsSource, /O QR Code permanece disponível hoje para a retirada pendente na bomboniere/);
 
 console.log("Ticket document tests passed.");

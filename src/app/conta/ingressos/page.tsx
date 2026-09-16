@@ -301,7 +301,8 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
-  const showTicketCode = ticket.status === "active";
+  const canRedeemConcessionsToday = Boolean(ticket.canRedeemConcessionsToday);
+  const showTicketCode = ticket.status === "active" || canRedeemConcessionsToday;
   const canAccessTicketArtifacts = ticket.status === "active";
   const statusClassName = ticket.status === "active"
     ? "bg-emerald-400/15 text-emerald-200"
@@ -309,7 +310,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
 
   useEffect(() => {
     let active = true;
-    if (ticket.status !== "active") {
+    if (!showTicketCode) {
       setQrDataUrl("");
       setQrLoading(false);
       return;
@@ -336,7 +337,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
     return () => {
       active = false;
     };
-  }, [ticket.id, ticket.status]);
+  }, [ticket.id, showTicketCode]);
 
   useEffect(() => {
     setTransferEmail("");
@@ -424,7 +425,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
               {showTicketCode && <Info label="Código do ingresso" value={ticket.displayCode || ticket.code || ""} />}
             </dl>
             <div className="self-start justify-self-center rounded-lg bg-white p-4 text-center text-slate-950">
-              {ticket.status === "active" ? (
+              {showTicketCode ? (
                 qrDataUrl ? (
                   <img src={qrDataUrl} alt={`QR Code do ingresso ${ticket.displayCode || ticket.code}`} className="mx-auto h-44 w-44 max-w-full" />
                 ) : qrLoading ? (
@@ -473,9 +474,16 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
             )}
           </section>
 
-          <p className="mt-6 rounded-lg bg-brand-950/70 p-4 text-sm leading-6 text-slate-300">
-            Apresente o QR Code na entrada. Chegue com 15 minutos de antecedência. Ingressos usados ou 4 horas após a sessão seguem disponíveis no histórico.
-          </p>
+          {ticket.status === "active" && (
+            <p className="mt-6 rounded-lg bg-brand-950/70 p-4 text-sm leading-6 text-slate-300">
+              Apresente o QR Code na entrada. Chegue com 15 minutos de antecedência. Ingressos usados ou 4 horas após a sessão seguem disponíveis no histórico.
+            </p>
+          )}
+          {canRedeemConcessionsToday && (
+            <p className="mt-6 rounded-lg bg-gold-400/10 p-4 text-sm leading-6 text-gold-100">
+              Entrada validada. O QR Code permanece disponível hoje para a retirada pendente na bomboniere.
+            </p>
+          )}
 
           {canAccessTicketArtifacts ? (
             <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

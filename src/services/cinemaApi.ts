@@ -100,6 +100,7 @@ export interface TicketRecord {
   }>;
   extrasSharedByOrder?: boolean;
   extrasAttachedToTicket?: boolean;
+  canRedeemConcessionsToday?: boolean;
   orderTicketIndex?: number;
   orderTicketCount?: number;
   archived?: boolean;
