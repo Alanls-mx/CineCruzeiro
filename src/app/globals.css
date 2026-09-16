@@ -84,6 +84,40 @@ body[data-cinema-theme="cine-estacao-amparo"] .bg-brand-600 {
   background-color: #85162a !important;
 }
 
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-950,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-950\/70,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-950\/80,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-950\/90 {
+  background-color: #1c080b !important;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-900,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-900\/70,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-900\/80,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-900\/90 {
+  background-color: #310b12 !important;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-800,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-800\/70,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-slate-800\/80 {
+  background-color: #4a111b !important;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .bg-blue-950,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-blue-900,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-blue-800,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-blue-700,
+body[data-cinema-theme="cine-estacao-amparo"] .bg-blue-600 {
+  background-color: #85162a !important;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .hover\:bg-blue-500:hover,
+body[data-cinema-theme="cine-estacao-amparo"] .hover\:bg-blue-600:hover,
+body[data-cinema-theme="cine-estacao-amparo"] .hover\:bg-blue-700:hover {
+  background-color: #a9243c !important;
+}
+
 body[data-cinema-theme="cine-estacao-amparo"] .hover\:bg-brand-600:hover,
 body[data-cinema-theme="cine-estacao-amparo"] .hover\:bg-brand-700:hover,
 body[data-cinema-theme="cine-estacao-amparo"] .hover\:bg-brand-850:hover {
@@ -107,14 +141,23 @@ body[data-cinema-theme="cine-estacao-amparo"] .text-brand-400 {
 
 body[data-cinema-theme="cine-estacao-amparo"] .text-brand-300,
 body[data-cinema-theme="cine-estacao-amparo"] .text-brand-200,
-body[data-cinema-theme="cine-estacao-amparo"] .text-brand-100 {
+body[data-cinema-theme="cine-estacao-amparo"] .text-brand-100,
+body[data-cinema-theme="cine-estacao-amparo"] .text-blue-300,
+body[data-cinema-theme="cine-estacao-amparo"] .text-blue-400 {
   color: #f8dfaa !important;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .text-slate-500,
+body[data-cinema-theme="cine-estacao-amparo"] .text-slate-400 {
+  color: #c9ad93 !important;
 }
 
 body[data-cinema-theme="cine-estacao-amparo"] .border-brand-850,
 body[data-cinema-theme="cine-estacao-amparo"] .border-brand-800,
 body[data-cinema-theme="cine-estacao-amparo"] .border-brand-700,
-body[data-cinema-theme="cine-estacao-amparo"] .border-white\/8 {
+body[data-cinema-theme="cine-estacao-amparo"] .border-white\/8,
+body[data-cinema-theme="cine-estacao-amparo"] .border-slate-800,
+body[data-cinema-theme="cine-estacao-amparo"] .border-slate-700 {
   border-color: rgba(231, 181, 76, 0.2) !important;
 }
 
