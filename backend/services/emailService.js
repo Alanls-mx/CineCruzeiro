@@ -57,11 +57,21 @@ function webhookConfigured(config = {}) {
   return Boolean(config.enabled && config.webhookUrl);
 }
 
+function providerTimeoutMs(config = {}) {
+  const configured = Number(config.timeout);
+  if (!Number.isFinite(configured)) return 7000;
+  return Math.max(3000, Math.min(15000, Math.round(configured)));
+}
+
 function transporter(config) {
+  const timeout = providerTimeoutMs(config);
   return nodemailer.createTransport({
     host: config.smtpHost,
     port: Number(config.smtpPort || 587),
     secure: Boolean(config.smtpSecure),
+    connectionTimeout: timeout,
+    greetingTimeout: timeout,
+    socketTimeout: timeout,
     auth: {
       user: config.smtpUser,
       pass: config.smtpPassword
@@ -129,7 +139,7 @@ async function sendWebhookDetailed(db, message, event, data = {}, correlation = 
   const config = emailConfig(db);
   if (!webhookConfigured(config)) return { status: "unavailable", provider: "webhook", retryable: false, errorCode: "WEBHOOK_NOT_CONFIGURED", errorMessage: "Webhook não configurado." };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), Number(config.timeout || 10000));
+  const timer = setTimeout(() => controller.abort(), providerTimeoutMs(config));
   try {
     const response = await fetch(config.webhookUrl, {
       method: "POST",

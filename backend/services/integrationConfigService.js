@@ -63,7 +63,7 @@ const DEFINITIONS = {
   email: {
     name: "E-mail transacional",
     purpose: "SMTP para recuperação de senha, verificação, entrega de ingressos e campanhas",
-    defaults: { enabled: false, environment: "production", provider: "smtp", fromEmail: "", fromName: "Cine Cruzeiro", replyTo: "", notificationEmail: "", webhookUrl: "", smtpHost: "", smtpPort: 587, smtpSecure: false, smtpUser: "" },
+    defaults: { enabled: false, environment: "production", provider: "smtp", fromEmail: "", fromName: "Cine Cruzeiro", replyTo: "", notificationEmail: "", webhookUrl: "", smtpHost: "", smtpPort: 587, smtpSecure: false, smtpUser: "", timeout: 7000 },
     secrets: ["apiKey", "webhookSecret", "smtpPassword"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
@@ -77,6 +77,7 @@ const DEFINITIONS = {
       { key: "smtpSecure", label: "Usar SSL/TLS direto", type: "boolean" },
       { key: "smtpUser", label: "Usuário SMTP", type: "text" },
       { key: "smtpPassword", label: "Senha SMTP", type: "secret" },
+      { key: "timeout", label: "Tempo limite do provedor (ms)", type: "number", placeholder: "7000" },
       { key: "webhookUrl", label: "Webhook de envio", type: "url" },
       { key: "apiKey", label: "API key", type: "secret" },
       { key: "webhookSecret", label: "Segredo do webhook", type: "secret" }

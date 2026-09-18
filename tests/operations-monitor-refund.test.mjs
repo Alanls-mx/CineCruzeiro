@@ -94,6 +94,25 @@ test("monitor reports host and process separately with bounded samples", async (
   } finally { monitor.close(); }
 });
 
+test("monitor keeps administrative diagnostics out of operational p95 and alerts", async () => {
+  const monitor = createPerformanceMonitor({ diskPath: process.cwd(), intervalMs: 10 });
+  try {
+    for (let i = 0; i < 10; i++) monitor.record(180, 200, { method: "GET", path: "/api/movies" });
+    for (let i = 0; i < 3; i++) monitor.record(30000, 200, { method: "POST", path: "/api/admin/integrations/email/test" });
+    monitor.record(20000, 201, { method: "POST", path: "/api/uploads/images" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const snapshot = monitor.snapshot();
+    assert.equal(snapshot.current.requestP95Ms, 180);
+    assert.equal(snapshot.current.operationalRequestP95Ms, 180);
+    assert.equal(snapshot.current.administrativeRequestCount, 4);
+    assert.equal(snapshot.current.administrativeRequestP95Ms, 30000);
+    assert.equal(snapshot.current.errors5xx, 0);
+    assert.equal(snapshot.current.administrativeErrors5xx, 0);
+    assert.ok(!snapshot.current.alerts.some((alert) => alert.code === "latency"));
+    assert.ok(snapshot.current.slowestRoutes.some((route) => route.route === "POST /api/admin/integrations/email/test" && route.administrativeTask));
+  } finally { monitor.close(); }
+});
+
 test("cancellation commits refund intent before provider I/O and retries without cancelling twice", async () => {
   const source = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
   const functionSource = source.slice(source.indexOf("async function cancelOrderWithRefund("), source.indexOf("\nfunction cancelOrder(db,"));
@@ -208,4 +227,3 @@ test("cancellation is blocked when session has already expired", async () => {
     return true;
   });
 });
-

@@ -43,6 +43,8 @@ let state = {
   logsView: "business",
   logFilters: { search: "", level: "", category: "", from: "", to: "" },
   webhookSimulatorRuns: [],
+  webhookBatchJob: null,
+  webhookBatchPolling: false,
   webhookHistoryPage: 1,
   webhookHistoryPageSize: 8,
   selectedWebhookRunId: "",
@@ -1586,7 +1588,7 @@ function renderPerformanceKpis(metrics, history) {
   const memPercent = Math.round((usedMem / totalMem) * 100);
   const memTone = memPercent >= 90 ? "danger" : memPercent >= 75 ? "amber" : "normal";
 
-  const reqLatency = metrics.requestP95Ms;
+  const reqLatency = metrics.operationalRequestP95Ms ?? metrics.requestP95Ms;
   const latencyVal = reqLatency != null ? `${reqLatency} ms` : "Sem tráfego";
   const latencyTone = reqLatency == null ? "normal" : reqLatency < 250 ? "normal" : reqLatency < 800 ? "amber" : "danger";
   const latencyBadge = reqLatency == null ? "Ocioso" : reqLatency < 250 ? "Normal" : reqLatency < 800 ? "Atenção" : "Crítico";
@@ -1598,9 +1600,11 @@ function renderPerformanceKpis(metrics, history) {
   const diskTone = diskUsedPercent >= 90 ? "danger" : diskUsedPercent >= 75 ? "amber" : "normal";
 
   const errors = Number(metrics.errors5xx) || 0;
-  const reqCount = Number(metrics.requestCount) || 0;
   const externalLatency = metrics.externalRequestP95Ms != null ? `${metrics.externalRequestP95Ms} ms` : "Sem chamadas";
   const externalCount = Number(metrics.externalRequestCount) || 0;
+  const adminTaskLatency = metrics.administrativeRequestP95Ms != null ? `${metrics.administrativeRequestP95Ms} ms` : "Sem tarefas";
+  const adminTaskCount = Number(metrics.administrativeRequestCount) || 0;
+  const adminTaskErrors = Number(metrics.administrativeErrors5xx) || 0;
   const healthBadge = errors === 0 ? "Estável" : `${errors} Falhas`;
   const healthTone = errors === 0 ? "normal" : "danger";
 
@@ -1650,7 +1654,7 @@ function renderPerformanceKpis(metrics, history) {
     <!-- Card 3: Latência HTTP -->
     <div class="perf-kpi-card">
       <div class="perf-kpi-head">
-        <span class="perf-kpi-title">Latência interna HTTP (p95)</span>
+        <span class="perf-kpi-title">Latência da operação HTTP (p95)</span>
         <span class="perf-kpi-badge ${latencyTone}">${latencyBadge}</span>
       </div>
       <div class="perf-kpi-body">
@@ -1664,7 +1668,7 @@ function renderPerformanceKpis(metrics, history) {
       </div>
       <div class="perf-kpi-footer">
         <span>Integrações: <strong>${externalLatency}</strong> em ${externalCount} reqs</span>
-        <span>Tráfego total: <strong>${reqCount} reqs</strong></span>
+        <span>Administração: <strong>${adminTaskLatency}</strong> em ${adminTaskCount} tarefas${adminTaskErrors ? ` · ${adminTaskErrors} falhas` : ""}</span>
       </div>
     </div>
 
@@ -1840,11 +1844,11 @@ function renderPerformanceCharts(history, current) {
     const innerH = height - padT - padB;
     const bottomY = height - padB;
 
-    const maxMs = Math.max(80, ...samples.map((s) => Math.max(Number(s.requestP95Ms) || 0, Number(s.eventLoopP95Ms) || 0))) * 1.15;
+    const maxMs = Math.max(80, ...samples.map((s) => Math.max(Number(s.operationalRequestP95Ms ?? s.requestP95Ms) || 0, Number(s.eventLoopP95Ms) || 0))) * 1.15;
     const x = (i) => padL + (samples.length === 1 ? innerW / 2 : (i / (samples.length - 1)) * innerW);
     const yMs = (ms) => padT + (1 - Math.max(0, Number(ms) || 0) / maxMs) * innerH;
 
-    const latPoints = samples.map((s, i) => ({ x: x(i), y: yMs(s.requestP95Ms || 0), s }));
+    const latPoints = samples.map((s, i) => ({ x: x(i), y: yMs(s.operationalRequestP95Ms ?? s.requestP95Ms ?? 0), s }));
     const loopPoints = samples.map((s, i) => ({ x: x(i), y: yMs(s.eventLoopP95Ms || 0), s }));
 
     const latLine = buildSmoothSvgPath(latPoints, padT, bottomY);
@@ -1897,8 +1901,10 @@ function renderPerformanceCharts(history, current) {
       if (tip && s) {
         tip.style.display = "block";
         const tStr = new Date(s.sampledAt).toLocaleTimeString("pt-BR");
-        const latStr = s.requestP95Ms != null ? `${s.requestP95Ms} ms` : "0 ms";
-        tip.innerHTML = `<strong>${tStr}</strong> • Latência HTTP p95: <span style="color:#f59e0b">${latStr}</span> • Event Loop: <span style="color:#2dd4bf">${s.eventLoopP95Ms} ms</span>`;
+        const operationLatency = s.operationalRequestP95Ms ?? s.requestP95Ms;
+        const latStr = operationLatency != null ? `${operationLatency} ms` : "0 ms";
+        const adminStr = s.administrativeRequestP95Ms != null ? `${s.administrativeRequestP95Ms} ms` : "sem tarefas";
+        tip.innerHTML = `<strong>${tStr}</strong> • Operação HTTP p95: <span style="color:#f59e0b">${latStr}</span> • Administração: <span style="color:#a78bfa">${adminStr}</span> • Event Loop: <span style="color:#2dd4bf">${s.eventLoopP95Ms} ms</span>`;
       }
     };
     latContainer.onmouseleave = () => {
@@ -1949,7 +1955,7 @@ function renderPerformanceSlowRoutes(routes = []) {
       ${items.map((route) => `
         <div class="perf-slow-route-row">
           <code>${escapeHtml(route.route)}</code>
-          <span>${route.externalDependency ? "Integração externa" : "Processamento interno"}</span>
+          <span>${route.administrativeTask ? "Tarefa administrativa" : route.externalDependency ? "Integração externa" : "Operação"}</span>
           <strong>${Number(route.requestP95Ms || 0)} ms</strong>
           <small>${Number(route.requestCount || 0)} reqs${Number(route.errors5xx || 0) ? ` · ${Number(route.errors5xx)} erros` : ""}</small>
         </div>
@@ -11347,11 +11353,66 @@ function showWebhookRun(id) {
   renderWebhookHistory();
 }
 
+function renderWebhookBatchProgress(job) {
+  const target = $("webhookTestResult");
+  if (!target || !job) return;
+  const completed = Number(job.completed || 0);
+  const total = Number(job.total || 8);
+  const label = job.status === "queued" ? "Aguardando início" : `Executando ${completed} de ${total} cenários`;
+  target.innerHTML = `
+    <div class="empty-state compact">
+      <strong>Bateria de webhooks em andamento</strong>
+      <span>${escapeHtml(label)}. A operação continua em segundo plano e não interfere na latência da jornada de compra.</span>
+    </div>
+  `;
+}
+
+async function watchWebhookBatch(job, button = null, originalLabel = "Executar bateria de testes", notifyOnComplete = true) {
+  if (!job || state.webhookBatchPolling) return job;
+  state.webhookBatchPolling = true;
+  let current = job;
+  try {
+    while (["queued", "running"].includes(current.status)) {
+      state.webhookBatchJob = current;
+      renderWebhookBatchProgress(current);
+      if (button) {
+        button.disabled = true;
+        button.textContent = current.status === "queued" ? "Preparando bateria..." : `Executando ${current.completed || 0}/${current.total || 8} testes...`;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const data = await api(`/api/admin/integrations/mercadoPago/webhook-simulations/batch/${encodeURIComponent(current.id)}`);
+      current = data.job;
+    }
+    state.webhookBatchJob = null;
+    await loadWebhookSimulator();
+    if (current.status === "completed" && notifyOnComplete) {
+      showSuccess("Bateria de Webhooks concluída", `${current.total} testes executados, ${current.passed} aprovados e ${current.failed} ${current.failed === 1 ? "falhou" : "falharam"}.`);
+    } else if (current.status !== "completed") {
+      showToast(current.error || "A bateria de webhooks não pôde ser concluída.", "error");
+    }
+  } finally {
+    state.webhookBatchPolling = false;
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+  return current;
+}
+
 async function loadWebhookSimulator() {
   const data = await api("/api/admin/integrations/mercadoPago/webhook-simulations");
   state.webhookSimulatorRuns = data.runs || [];
+  state.webhookBatchJob = data.activeBatch || null;
   renderWebhookHistory();
-  renderWebhookRun(state.webhookSimulatorRuns.find((item) => item.id === state.selectedWebhookRunId) || state.webhookSimulatorRuns[0]);
+  if (state.webhookBatchJob) {
+    renderWebhookBatchProgress(state.webhookBatchJob);
+    if (!state.webhookBatchPolling) {
+      void watchWebhookBatch(state.webhookBatchJob, $("webhookBatchButton"), "Executar bateria de testes", false);
+    }
+  } else {
+    renderWebhookRun(state.webhookSimulatorRuns.find((item) => item.id === state.selectedWebhookRunId) || state.webhookSimulatorRuns[0]);
+  }
 }
 
 function webhookSimulationPayload() {
@@ -11393,17 +11454,19 @@ async function runWebhookBatch() {
   const button = $("webhookBatchButton");
   const original = button.textContent;
   button.disabled = true;
-  button.textContent = "Executando 8 testes...";
+  button.textContent = "Iniciando bateria...";
   try {
     const data = await api("/api/admin/integrations/mercadoPago/webhook-simulations/batch", { method: "POST" });
-    await loadWebhookSimulator();
-    const failed = Number(data.failed || 0);
-    showSuccess("Bateria de Webhooks concluída", `${data.total} testes executados, ${data.passed} aprovados e ${failed} ${failed === 1 ? "falhou" : "falharam"}.`);
+    await watchWebhookBatch(data.job, button, original);
   } catch (error) {
     showToast(error.message, "error");
-  } finally {
     button.disabled = false;
     button.textContent = original;
+  } finally {
+    if (!state.webhookBatchPolling) {
+      button.disabled = false;
+      button.textContent = original;
+    }
   }
 }
 

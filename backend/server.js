@@ -614,6 +614,51 @@ function webhookTesterEnabled() {
   return String(process.env.WEBHOOK_TESTER_ENABLED || "true").toLowerCase() !== "false";
 }
 
+// These checks may intentionally wait for slow or unavailable dependencies. Keep their
+// progress outside the request lifecycle so they never distort operational latency.
+const webhookBatchJobs = new Map();
+
+function webhookBatchJobSnapshot(job = {}) {
+  return {
+    id: job.id,
+    status: job.status,
+    total: job.total,
+    completed: job.completed,
+    passed: job.passed,
+    failed: job.failed,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt || "",
+    completedAt: job.completedAt || "",
+    error: job.error || ""
+  };
+}
+
+function activeWebhookBatchJob() {
+  return [...webhookBatchJobs.values()].find((job) => ["queued", "running"].includes(job.status)) || null;
+}
+
+function createWebhookBatchJob() {
+  const job = {
+    id: `webhook-batch-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    status: "queued",
+    total: 8,
+    completed: 0,
+    passed: 0,
+    failed: 0,
+    createdAt: new Date().toISOString(),
+    startedAt: "",
+    completedAt: "",
+    error: "",
+    runs: []
+  };
+  webhookBatchJobs.set(job.id, job);
+  const completed = [...webhookBatchJobs.values()]
+    .filter((item) => ["completed", "failed"].includes(item.status))
+    .sort((a, b) => String(a.completedAt).localeCompare(String(b.completedAt)));
+  while (webhookBatchJobs.size > 20 && completed.length) webhookBatchJobs.delete(completed.shift().id);
+  return job;
+}
+
 function mercadoPagoWebhookAction(body = {}) {
   return String(body.action || body.type || "unknown").trim().toLowerCase() || "unknown";
 }
@@ -9596,6 +9641,49 @@ async function runMercadoPagoWebhookSimulation(input = {}, options = {}) {
   return run;
 }
 
+async function runWebhookBatchJob(job) {
+  job.status = "running";
+  job.startedAt = new Date().toISOString();
+  const seed = `${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+  const collect = async (input) => {
+    const run = await runMercadoPagoWebhookSimulation(input);
+    job.runs.push(run);
+    job.completed += 1;
+    job.passed += run.passed ? 1 : 0;
+    job.failed += run.passed ? 0 : 1;
+    return run;
+  };
+
+  try {
+    const valid = await collect({
+      scenario: "valid",
+      action: "order.processed",
+      externalReference: `webhook-bateria-${seed}`,
+      resourceId: `ORDTSTBATCH${crypto.randomBytes(10).toString("hex").toUpperCase()}`
+    });
+    await collect({
+      scenario: "duplicate",
+      action: valid.action,
+      externalReference: valid.externalReference,
+      resourceId: valid.resourceId,
+      requestId: valid.requestId,
+      timestamp: valid.replay.timestamp
+    });
+    await collect({ scenario: "invalid_signature", action: "order.processed" });
+    await collect({ scenario: "missing_signature", action: "order.processed" });
+    await collect({ scenario: "unknown_event" });
+    await collect({ scenario: "resource_not_found", action: "order.processed" });
+    await collect({ scenario: "valid", action: "order.action_required", status: "action_required" });
+    await collect({ scenario: "valid", action: "order.processed" });
+    job.status = "completed";
+  } catch (error) {
+    job.status = "failed";
+    job.error = error.message || "A bateria de testes não pôde ser concluída.";
+  } finally {
+    job.completedAt = new Date().toISOString();
+  }
+}
+
 async function serveStatic(req, res, pathname) {
   const uploadPublicPath = stripPublicAssetBase(pathname);
   if (uploadPublicPath.startsWith("/uploads/")) {
@@ -10803,7 +10891,8 @@ async function handleApi(req, res, pathname) {
   if (pathname === webhookSimulationBase && method === "GET") {
     sendJson(res, 200, {
       enabled: webhookTesterEnabled(),
-      runs: (db.settings?.webhookSimulatorRuns || []).slice(0, 60)
+      runs: (db.settings?.webhookSimulatorRuns || []).slice(0, 60),
+      activeBatch: activeWebhookBatchJob() ? webhookBatchJobSnapshot(activeWebhookBatchJob()) : null
     });
     return;
   }
@@ -10816,37 +10905,27 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === `${webhookSimulationBase}/batch` && method === "POST") {
-    const seed = `${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
-    const valid = await runMercadoPagoWebhookSimulation({
-      scenario: "valid",
-      action: "order.processed",
-      externalReference: `webhook-bateria-${seed}`,
-      resourceId: `ORDTSTBATCH${crypto.randomBytes(10).toString("hex").toUpperCase()}`
+    const activeJob = activeWebhookBatchJob();
+    if (activeJob) {
+      sendJson(res, 409, { error: { code: "WEBHOOK_BATCH_IN_PROGRESS", message: "Já existe uma bateria de webhooks em execução." }, job: webhookBatchJobSnapshot(activeJob) });
+      return;
+    }
+    const job = createWebhookBatchJob();
+    sendJson(res, 202, { job: webhookBatchJobSnapshot(job) });
+    setImmediate(() => {
+      void runWebhookBatchJob(job);
     });
-    const duplicate = await runMercadoPagoWebhookSimulation({
-      scenario: "duplicate",
-      action: valid.action,
-      externalReference: valid.externalReference,
-      resourceId: valid.resourceId,
-      requestId: valid.requestId,
-      timestamp: valid.replay.timestamp
-    });
-    const runs = [
-      valid,
-      await runMercadoPagoWebhookSimulation({ scenario: "invalid_signature", action: "order.processed" }),
-      await runMercadoPagoWebhookSimulation({ scenario: "missing_signature", action: "order.processed" }),
-      duplicate,
-      await runMercadoPagoWebhookSimulation({ scenario: "unknown_event" }),
-      await runMercadoPagoWebhookSimulation({ scenario: "resource_not_found", action: "order.processed" }),
-      await runMercadoPagoWebhookSimulation({ scenario: "valid", action: "order.action_required", status: "action_required" }),
-      await runMercadoPagoWebhookSimulation({ scenario: "valid", action: "order.processed" })
-    ];
-    sendJson(res, 200, {
-      total: runs.length,
-      passed: runs.filter((item) => item.passed).length,
-      failed: runs.filter((item) => !item.passed).length,
-      runs
-    });
+    return;
+  }
+
+  const webhookBatchStatusMatch = pathname.match(/^\/api\/admin\/integrations\/mercadoPago\/webhook-simulations\/batch\/([^/]+)$/);
+  if (webhookBatchStatusMatch && method === "GET") {
+    const job = webhookBatchJobs.get(decodeURIComponent(webhookBatchStatusMatch[1]));
+    if (!job) {
+      sendJson(res, 404, { error: { code: "WEBHOOK_BATCH_NOT_FOUND", message: "A bateria de webhooks não está mais disponível." } });
+      return;
+    }
+    sendJson(res, 200, { job: webhookBatchJobSnapshot(job) });
     return;
   }
 

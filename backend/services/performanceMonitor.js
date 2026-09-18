@@ -12,6 +12,15 @@ function isExternalDependencyPath(pathname = "") {
   return /^\/api\/(?:payments|webhooks|subscriptions\/checkout|checkout\/orders\/)/.test(String(pathname));
 }
 
+function isAdministrativeTaskPath(pathname = "") {
+  const path = String(pathname);
+  return path === "/api/uploads/images"
+    || /^\/api\/admin\/integrations\/[^/]+\/test$/.test(path)
+    || /^\/api\/admin\/integrations\/mercadoPago\/webhook-simulations(?:\/|$)/.test(path)
+    || /^\/api\/admin\/email\/campaigns\/(?:preview|test|[^/]+\/(?:send|retry-failures))$/.test(path)
+    || /^\/api\/admin\/reports\/.*\.(?:csv|pdf)$/.test(path);
+}
+
 function routeKey(request) {
   return `${request.method || "GET"} ${String(request.path || "").replace(/\/[0-9a-f-]{16,}/gi, "/:id")}`;
 }
@@ -34,7 +43,8 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       statusCode: Number(statusCode) || 0,
       method: String(metadata.method || "GET").toUpperCase(),
       path: String(metadata.path || ""),
-      externalDependency: metadata.externalDependency === true || isExternalDependencyPath(metadata.path)
+      externalDependency: metadata.externalDependency === true || isExternalDependencyPath(metadata.path),
+      administrativeTask: metadata.administrativeTask === true || isAdministrativeTaskPath(metadata.path)
     });
     if (requests.length > 25000) requests.splice(0, requests.length - 25000);
   }
@@ -58,12 +68,21 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       requests = requests.filter((request) => request.at > now - 300000);
       const totalMemory = os.totalmem();
       const memoryUsed = totalMemory - os.freemem();
-      const internalRequests = requests.filter((request) => !request.externalDependency);
+      const administrativeRequests = requests.filter((request) => request.administrativeTask);
+      const operationalRequests = requests.filter((request) => !request.administrativeTask);
+      const internalRequests = operationalRequests.filter((request) => !request.externalDependency);
       const externalRequests = requests.filter((request) => request.externalDependency);
       const routeGroups = new Map();
       requests.forEach((request) => {
         const key = routeKey(request);
-        const group = routeGroups.get(key) || { route: key, durations: [], requestCount: 0, errors5xx: 0, externalDependency: request.externalDependency };
+        const group = routeGroups.get(key) || {
+          route: key,
+          durations: [],
+          requestCount: 0,
+          errors5xx: 0,
+          externalDependency: request.externalDependency,
+          administrativeTask: request.administrativeTask
+        };
         group.durations.push(request.durationMs);
         group.requestCount += 1;
         if (request.statusCode >= 500) group.errors5xx += 1;
@@ -75,7 +94,8 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
           requestCount: group.requestCount,
           requestP95Ms: percentile(group.durations, 0.95),
           errors5xx: group.errors5xx,
-          externalDependency: group.externalDependency
+          externalDependency: group.externalDependency,
+          administrativeTask: group.administrativeTask
         }))
         .sort((a, b) => b.requestP95Ms - a.requestP95Ms)
         .slice(0, 5);
@@ -93,12 +113,17 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
         requestCount: requests.length,
         sampleCapped: requests.length >= 25000,
         requestP95Ms: percentile(internalRequests.map((request) => request.durationMs), 0.95),
+        operationalRequestP95Ms: percentile(operationalRequests.map((request) => request.durationMs), 0.95),
         overallRequestP95Ms: percentile(requests.map((request) => request.durationMs), 0.95),
         externalRequestP95Ms: percentile(externalRequests.map((request) => request.durationMs), 0.95),
+        administrativeRequestP95Ms: percentile(administrativeRequests.map((request) => request.durationMs), 0.95),
+        operationalRequestCount: operationalRequests.length,
+        administrativeRequestCount: administrativeRequests.length,
         internalRequestCount: internalRequests.length,
         externalRequestCount: externalRequests.length,
         slowestRoutes,
-        errors5xx: requests.filter((r) => r.statusCode >= 500).length,
+        errors5xx: operationalRequests.filter((request) => request.statusCode >= 500).length,
+        administrativeErrors5xx: administrativeRequests.filter((request) => request.statusCode >= 500).length,
         uptimeSeconds: Math.floor(process.uptime())
       };
       delay.reset();
@@ -106,10 +131,10 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       if (sampleData.cpuPercent >= 90) alerts.push({ code: "cpu", message: "CPU do servidor acima de 90%." });
       if (memoryUsed / totalMemory >= 0.9) alerts.push({ code: "memory", message: "Memoria do host acima de 90% (inclui cache do sistema)." });
       if (stat && sampleData.diskAvailable / sampleData.diskTotal < 0.1) alerts.push({ code: "disk", message: "Menos de 10% de disco disponivel." });
-      if (internalRequests.length >= 10 && sampleData.requestP95Ms > 2000) alerts.push({ code: "latency", message: "A latência interna HTTP p95 está acima de 2 segundos." });
+      if (internalRequests.length >= 10 && sampleData.requestP95Ms > 2000) alerts.push({ code: "latency", message: "A latência HTTP interna da operação está acima de 2 segundos." });
       if (externalRequests.length >= 5 && sampleData.externalRequestP95Ms > 5000) alerts.push({ code: "external_latency", message: "Integrações externas estão respondendo acima de 5 segundos no p95." });
       if (sampleData.eventLoopP95Ms > 200) alerts.push({ code: "event_loop", message: "Backend com atraso no processamento acima de 200 ms." });
-      if (sampleData.errors5xx >= 5 && sampleData.errors5xx / requests.length >= 0.05) alerts.push({ code: "http_errors", message: "Falhas internas em pelo menos 5% das requisicoes." });
+      if (sampleData.errors5xx >= 5 && sampleData.errors5xx / Math.max(1, operationalRequests.length) >= 0.05) alerts.push({ code: "http_errors", message: "Falhas HTTP em pelo menos 5% das requisições da operação." });
       for (const alert of alerts) {
         if (!activeAlerts.has(alert.code)) onAlert("warn", "performance.anomaly", { ...alert, metrics: sampleData });
       }
@@ -135,4 +160,4 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
   };
 }
 
-module.exports = { createPerformanceMonitor, percentile };
+module.exports = { createPerformanceMonitor, percentile, isAdministrativeTaskPath };
