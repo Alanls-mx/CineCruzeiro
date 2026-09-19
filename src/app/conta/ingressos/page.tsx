@@ -301,6 +301,7 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
+  const extras = Array.isArray(ticket.extras) ? ticket.extras : [];
   const canRedeemConcessionsToday = Boolean(ticket.canRedeemConcessionsToday);
   const showTicketCode = ticket.status === "active" || canRedeemConcessionsToday;
   const canAccessTicketArtifacts = ticket.status === "active";
@@ -456,9 +457,9 @@ function TicketDetails({ ticket, alternativeTickets, justValidated, onTransferre
 
           <section className="mt-8 border-t border-white/8 pt-6">
             <h3 className="text-sm font-black uppercase tracking-[.16em] text-gold-400">Bomboniere no pedido</h3>
-            {ticket.extras?.length ? (
+            {extras.length ? (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {ticket.extras.map((item) => (
+                {extras.map((item) => (
                   <div key={`${ticket.id}-${item.id || item.name}`} className="rounded-lg bg-brand-950/70 p-3">
                     <strong>{item.name}</strong>
                     <span className="block text-sm text-slate-400">Quantidade: {item.quantity}</span>

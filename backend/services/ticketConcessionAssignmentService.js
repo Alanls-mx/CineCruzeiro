@@ -5,7 +5,7 @@ function orderTicketsSorted(db, orderId) {
 }
 
 function concessionTicketIdForOrder(db, order) {
-  if (!order || !(order.concessionItems || []).length) return "";
+  if (!order || !Array.isArray(order.concessionItems) || !order.concessionItems.length) return "";
   const explicit = String(order.concessionTicketId || "").trim();
   if (explicit && (db.tickets || []).some((ticket) => ticket.id === explicit)) return explicit;
   return orderTicketsSorted(db, order.id)[0]?.id || "";
@@ -14,7 +14,7 @@ function concessionTicketIdForOrder(db, order) {
 function concessionOrdersForTicket(db, ticket) {
   if (!ticket) return [];
   return (db.orders || []).filter((order) =>
-    (order.concessionItems || []).length > 0 && concessionTicketIdForOrder(db, order) === ticket.id
+    Array.isArray(order.concessionItems) && order.concessionItems.length > 0 && concessionTicketIdForOrder(db, order) === ticket.id
   );
 }
 
@@ -30,7 +30,7 @@ function pendingConcessionOrdersForTicket(db, ticket) {
     && order.concessionStatus !== "cancelled"
     && !order.concessionCancelledAt
     && order.concessionRefund?.status !== "completed"
-    && (order.concessionItems || []).some(concessionItemPending)
+    && (Array.isArray(order.concessionItems) ? order.concessionItems : []).some(concessionItemPending)
   );
 }
 

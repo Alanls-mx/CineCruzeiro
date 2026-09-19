@@ -1835,13 +1835,14 @@ function createByteLimitStream(maxBytes) {
 function normalizePaymentOrder(input) {
   const customerName = String(input.customerName || "Cliente Cine Cruzeiro").trim();
   const [firstName, ...lastNameParts] = customerName.split(/\s+/);
+  const id = input.id || input.idempotencyKey || `pedido-${crypto.randomBytes(12).toString("hex")}`;
   const suppliedReference = String(input.reference || input.publicReference || "").trim().toUpperCase();
-  const reference = /^CC-[A-Z0-9]{8}$/.test(suppliedReference)
+  const reference = isFriendlyOrderReference(suppliedReference)
     ? suppliedReference
-    : `CC-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+    : createFriendlyOrderReference(input.movieTitle || input.title || "", id);
 
   return {
-    id: input.id || input.idempotencyKey || `pedido-${crypto.randomBytes(12).toString("hex")}`,
+    id,
     reference,
     idempotencyKey: input.idempotencyKey || input.id || "",
     movieId: String(input.movieId || ""),
@@ -2335,7 +2336,7 @@ function enrichTicket(db, ticket) {
   const pendingConcessionOrders = pendingConcessionOrdersForTicket(db, ticket);
   const canRedeemConcessionsToday = ticketCanRedeemPendingConcessionsToday(ticket, db);
   const orderExtras = concessionOrders.flatMap((sourceOrder) =>
-    (sourceOrder.concessionItems || []).map((item) => ({
+    (Array.isArray(sourceOrder?.concessionItems) ? sourceOrder.concessionItems : []).map((item) => ({
       ...assetRecord(item, ["imageUrl"]),
       sourceOrderId: sourceOrder.id
     }))
@@ -2362,7 +2363,7 @@ function enrichTicket(db, ticket) {
     sessionSold: stats?.sold || 0,
     sessionAvailable: capacity ? Math.max(0, capacity - (stats?.sold || 0)) : null,
     seat: ticket.seat || ticket.seatLabel || ticket.assento || ticket.metadata?.seat || "Lugar livre",
-    orderReference: shortOrderReference(order || { id: ticket.orderId }),
+    orderReference: shortOrderReference(order || { id: ticket.orderId }, movie?.title || ticket.movieTitle || ""),
     orderStatus: order?.status || "",
     paymentStatus: order?.paymentStatus || "",
     extras: orderExtras,
@@ -7033,6 +7034,7 @@ function repriceOrderFromCatalog(db, order, options = {}) {
     couponAllowsClubStacking: couponPricing.coupon?.allowClubStacking === true,
     totalPrice
   };
+  ensureFriendlyOrderReference(db, pricedOrder, movie);
   return options.assignSeats === false ? pricedOrder : assignSeatsToOrder(db, pricedOrder, session);
 }
 
@@ -7078,7 +7080,7 @@ function repriceConcessionCounterOrder(db, order) {
     minute: "2-digit",
     hour12: false
   }).format(new Date());
-  return {
+  const pricedOrder = {
     ...order,
     movieId: "",
     sessionId: "",
@@ -7096,6 +7098,8 @@ function repriceConcessionCounterOrder(db, order) {
     discountValue: 0,
     totalPrice
   };
+  ensureFriendlyOrderReference(db, pricedOrder);
+  return pricedOrder;
 }
 
 function assertClientPricingMatches(input, pricedOrder) {
@@ -7962,12 +7966,61 @@ function compareMetric(current, previous) {
   return Math.round(((Number(current || 0) - Number(previous || 0)) / Number(previous)) * 100);
 }
 
-function shortOrderReference(order) {
+function orderReferencePrefix(movieTitle = "") {
+  const ignoredWords = new Set(["A", "AS", "O", "OS", "DE", "DA", "DAS", "DO", "DOS", "E", "EM", "NO", "NA", "VS", "THE"]);
+  const words = String(movieTitle || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+  const word = words.find((item) => item.length >= 3 && !ignoredWords.has(item)) || words.find((item) => !ignoredWords.has(item));
+  return String(word || "PEDIDO").slice(0, 4);
+}
+
+function orderReferenceDigits(seed = "") {
+  const digest = crypto.createHash("sha256").update(String(seed || "pedido")).digest();
+  return String(digest.readUInt32BE(0) % 100000).padStart(5, "0");
+}
+
+function isFriendlyOrderReference(reference = "") {
+  return /^[A-Z0-9]{2,8}-\d{5}$/.test(String(reference || "").trim().toUpperCase());
+}
+
+function createFriendlyOrderReference(movieTitle = "", seed = "") {
+  return `${orderReferencePrefix(movieTitle)}-${orderReferenceDigits(seed || crypto.randomUUID())}`;
+}
+
+function ensureFriendlyOrderReference(db, order, movie = null) {
+  if (!order) return "";
+  const current = String(order.reference || order.publicReference || "").trim().toUpperCase();
+  const prefix = orderReferencePrefix(movie?.title || order.movieTitle || "");
+  const occupiedByAnotherOrder = (reference) => (db.orders || []).some((item) => (
+    item.id !== order.id && String(item.reference || item.publicReference || "").trim().toUpperCase() === reference
+  ));
+  if (isFriendlyOrderReference(current) && current.startsWith(`${prefix}-`) && !occupiedByAnotherOrder(current)) {
+    order.reference = current;
+    return current;
+  }
+
+  const seed = order.id || order.idempotencyKey || current || crypto.randomUUID();
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const digits = attempt === 0 ? orderReferenceDigits(seed) : String(crypto.randomInt(0, 100000)).padStart(5, "0");
+    const candidate = `${prefix}-${digits}`;
+    if (!occupiedByAnotherOrder(candidate)) {
+      order.reference = candidate;
+      return candidate;
+    }
+  }
+  const fallback = `${prefix}-${String(Date.now() % 100000).padStart(5, "0")}`;
+  order.reference = fallback;
+  return fallback;
+}
+
+function shortOrderReference(order, movieTitle = "") {
   const reference = String(order?.reference || order?.publicReference || "").trim().toUpperCase();
-  if (/^CC-[A-Z0-9]{8}$/.test(reference)) return reference;
-  const raw = String(order?.id || "");
-  const tail = raw.replace(/[^a-zA-Z0-9]/g, "").slice(-8).toUpperCase().padStart(8, "0");
-  return `CC-${tail || "00000000"}`;
+  if (isFriendlyOrderReference(reference)) return reference;
+  return createFriendlyOrderReference(movieTitle || order?.movieTitle || "", order?.id || reference || "pedido");
 }
 
 function movieForOrder(db, order) {

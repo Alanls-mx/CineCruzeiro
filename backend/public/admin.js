@@ -5828,6 +5828,31 @@ function manualSeatColor(value, fallback = "#2563eb") {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
 }
 
+function manualSeatOwnerStorageKey(sessionId) {
+  return `cine_admin_manual_seat_owner:${String(sessionId || "")}`;
+}
+
+function manualSeatOwnerToken(sessionId) {
+  const key = manualSeatOwnerStorageKey(sessionId);
+  try {
+    const stored = window.sessionStorage.getItem(key);
+    if (/^admin-box-office-[a-z0-9-]+$/i.test(String(stored || ""))) return stored;
+    const token = `admin-box-office-${crypto.randomUUID()}`;
+    window.sessionStorage.setItem(key, token);
+    return token;
+  } catch {
+    return `admin-box-office-${crypto.randomUUID()}`;
+  }
+}
+
+function clearManualSeatOwnerToken(sessionId) {
+  try {
+    window.sessionStorage.removeItem(manualSeatOwnerStorageKey(sessionId));
+  } catch {
+    // A reserva ainda será descartada pelo tempo de expiração no servidor.
+  }
+}
+
 function reconcileManualSeatSelection() {
   const required = manualRequestedSeatCount();
   const available = new Set((state.manualSeatMap?.rows || [])
@@ -5862,6 +5887,7 @@ function closeManualSeatRealtime(sessionId = "", releaseSeats = false) {
         seatId
       })));
     }
+    if (releaseSeats) clearManualSeatOwnerToken(id);
     channel.pending.forEach((pending) => pending.resolve({ ok: false, message: "Conexão com as poltronas encerrada." }));
     channel.pending.clear();
     channel.socket?.close();
@@ -5914,7 +5940,7 @@ function connectManualSeatRealtime(sessionId) {
   }
   channel = {
     sessionId,
-    ownerToken: `admin-box-office-${crypto.randomUUID()}`,
+    ownerToken: manualSeatOwnerToken(sessionId),
     socket: null,
     reconnectTimer: null,
     heartbeatTimer: null,
@@ -6044,7 +6070,7 @@ async function toggleManualSeat(seatId) {
   const seat = manualSeatById(seatId);
   const id = String(seatId);
   const selected = state.manualSelectedSeatIds.includes(id);
-  if (!seat || (!selected && seat.status !== "available")) return;
+  if (!seat || (!selected && seat.status !== "available" && !seat.heldByMe)) return;
   const required = manualRequestedSeatCount();
   if (!required) {
     showToast("Selecione ao menos um ingresso antes de escolher as poltronas.", "error");
@@ -6122,6 +6148,7 @@ function renderManualSeatMap(errorMessage = "") {
         ${(row.seats || []).map((seat) => {
           const type = typeById.get(String(seat.typeId));
           const isSelected = state.manualSelectedSeatIds.includes(String(seat.id));
+          const heldByMe = seat.status === "held" && seat.heldByMe;
           const temporarilyReserved = seat.status === "held" && !seat.heldByMe;
           const unavailable = (seat.status !== "available" && !seat.heldByMe) || temporarilyReserved;
           const pending = state.manualSeatRealtimeChannels.get(state.manualSeatMapSessionId)?.pendingSeatIds.has(String(seat.id));
@@ -6131,8 +6158,8 @@ function renderManualSeatMap(errorMessage = "") {
             class="manual-seat-button ${isSelected ? "is-selected" : ""} ${temporarilyReserved ? "is-temporarily-reserved" : unavailable ? "is-unavailable" : ""} ${pending ? "is-pending" : ""} ${accessibility ? "has-accessibility" : ""}"
             style="--manual-seat-color:${manualSeatColor(seat.color || type?.color)};${seat.aisleAfter ? "margin-right:24px" : ""}"
             data-manual-seat-id="${escapeHtml(seat.id)}"
-            aria-label="${escapeHtml(`${seat.label}, ${type?.name || "Padrão"}${accessibility ? `, ${accessibility}` : ""}${temporarilyReserved ? ", reservada temporariamente por outra compra" : unavailable ? ", indisponível" : isSelected ? ", selecionada nesta venda" : ""}`)}"
-            title="${escapeHtml(temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : `${seat.label} • ${type?.name || "Padrão"}`)}"
+            aria-label="${escapeHtml(`${seat.label}, ${type?.name || "Padrão"}${accessibility ? `, ${accessibility}` : ""}${temporarilyReserved ? ", reservada temporariamente por outra compra" : unavailable ? ", indisponível" : heldByMe ? ", reserva retomada nesta venda" : isSelected ? ", selecionada nesta venda" : ""}`)}"
+            title="${escapeHtml(temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : heldByMe ? `${seat.label} • Reserva retomada nesta venda` : `${seat.label} • ${type?.name || "Padrão"}`)}"
             aria-pressed="${isSelected}"
             ${unavailable || pending ? "disabled" : ""}
           >${seat.accessibility === "wheelchair" ? accessibilityIcon : seat.accessibility === "obese" ? obeseSeatIcon : ""}<span>${escapeHtml(seat.label)}</span></button>`;
@@ -6156,6 +6183,8 @@ function manualConcessionItems() {
 function renderManualConcessions() {
   const target = $("manualConcessions");
   if (!target) return;
+  const section = $("manualConcessionsSection");
+  if (section) section.hidden = false;
   const products = (state.content?.concessions || []).filter((item) => item.active !== false);
   const productIds = new Set(products.map((item) => item.id));
   state.manualConcessionQuantities = Object.fromEntries(

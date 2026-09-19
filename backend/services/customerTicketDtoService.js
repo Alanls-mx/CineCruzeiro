@@ -14,7 +14,7 @@ function toCustomerTicketDto(ticket) {
     ticketType: ticket.ticketType || "Ingresso",
     status,
     posterUrl: ticket.posterUrl || "",
-    extras: (ticket.extras || []).map((item) => ({
+    extras: (Array.isArray(ticket.extras) ? ticket.extras : []).map((item) => ({
       name: item.name || "",
       quantity: Number(item.quantity || 0)
     })),
