@@ -1,0 +1,133 @@
+name: lumixengine-whatsapp
+
+services:
+  # ----------------------------------------------------------------------------
+  # LumixEngine PostgreSQL (Core SaaS Database)
+  # ----------------------------------------------------------------------------
+  postgres-lumix:
+    image: postgres:16-alpine
+    container_name: lumix_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LUMIX_DB_USER:-lumix}
+      POSTGRES_PASSWORD: ${LUMIX_DB_PASSWORD:-lumix_secure_password}
+      POSTGRES_DB: ${LUMIX_DB_NAME:-lumix_whatsapp}
+    ports:
+      - "${LUMIX_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_lumix_data:/var/lib/postgresql/data
+    networks:
+      - lumix-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LUMIX_DB_USER:-lumix} -d ${LUMIX_DB_NAME:-lumix_whatsapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # Evolution API PostgreSQL (Isolated Database)
+  # ----------------------------------------------------------------------------
+  postgres-evolution:
+    image: postgres:16-alpine
+    container_name: evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${EVOLUTION_DB_USER:-evolution}
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:-evolution_secure_password}
+      POSTGRES_DB: ${EVOLUTION_DB_NAME:-evolution}
+    ports:
+      - "${EVOLUTION_DB_PORT:-5433}:5432"
+    volumes:
+      - postgres_evolution_data:/var/lib/postgresql/data
+    networks:
+      - lumix-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_DB_USER:-evolution} -d ${EVOLUTION_DB_NAME:-evolution}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # Redis (BullMQ, Locks, Debounce, Rate Limits)
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: lumix_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - lumix-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # Evolution API v2 (WhatsApp Baileys Gateway)
+  # ----------------------------------------------------------------------------
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    container_name: lumix_evolution_api
+    restart: unless-stopped
+    depends_on:
+      postgres-evolution:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8080
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?EVOLUTION_API_KEY must be set}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${EVOLUTION_DB_USER:-evolution}:${EVOLUTION_DB_PASSWORD:-evolution_secure_password}@postgres-evolution:5432/${EVOLUTION_DB_NAME:-evolution}?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/1
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CONFIG_SESSION_PHONE_CLIENT: "LumixEngine WhatsApp"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+    volumes:
+      - evolution_instances:/evolution/store
+    networks:
+      - lumix-network
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # ----------------------------------------------------------------------------
+  # Nginx Reverse Proxy (SSL & Public Gatekeeper)
+  # ----------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: lumix_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - lumix-network
+    depends_on:
+      - postgres-lumix
+      - redis
+
+networks:
+  lumix-network:
+    driver: bridge
+
+volumes:
+  postgres_lumix_data:
+    driver: local
+  postgres_evolution_data:
+    driver: local
+  redis_data:
+    driver: local
+  evolution_instances:
+    driver: local

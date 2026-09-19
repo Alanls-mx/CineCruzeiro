@@ -23,3 +23,14 @@ test("financial export is independently assignable", () => {
   assert.equal(permissions.adminHasPermission(viewer, "ticket_finance.export"), false);
   assert.equal(permissions.adminHasPermission(exporter, "ticket_finance.export"), true);
 });
+
+test("WhatsApp permissions separate reading, replying and administration", () => {
+  const viewer = { role: "operator", useCustomPermissions: true, adminPermissions: ["whatsapp.view"] };
+  const agent = { role: "operator", useCustomPermissions: true, adminPermissions: ["whatsapp.view", "whatsapp.reply"] };
+  const manager = { role: "operator", useCustomPermissions: true, adminPermissions: ["whatsapp.manage"] };
+  assert.equal(permissions.adminHasPermission(viewer, "whatsapp.reply"), false);
+  assert.equal(permissions.adminHasPermission(agent, "whatsapp.reply"), true);
+  assert.equal(permissions.adminHasPermission(agent, "whatsapp.manage"), false);
+  assert.equal(permissions.adminHasPermission(manager, "whatsapp.view"), true);
+  assert.equal(permissions.adminHasPermission(manager, "whatsapp.manage"), true);
+});

@@ -1,0 +1,55 @@
+{
+  "name": "lumixengine-whatsapp-backend",
+  "version": "1.0.0",
+  "description": "LumixEngine WhatsApp Automation Backend with Evolution API, Fastify, Prisma & BullMQ",
+  "main": "dist/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "worker": "tsx watch src/workers/index.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "start:worker": "node dist/workers/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "whatsapp",
+    "evolution-api",
+    "baileys",
+    "fastify",
+    "prisma",
+    "bullmq",
+    "cinema",
+    "lumixengine"
+  ],
+  "author": "LumixEngine Team",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/sensible": "^5.6.0",
+    "@prisma/client": "^5.20.0",
+    "axios": "^1.7.7",
+    "bullmq": "^5.14.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1",
+    "ioredis": "^5.4.1",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2",
+    "uuid": "^10.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.5",
+    "@types/uuid": "^10.0.0",
+    "prisma": "^5.20.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

@@ -1284,6 +1284,7 @@ function customerMutationOriginAllowed(req) {
 }
 
 function requiredAdminRoles(pathname, method) {
+  if (pathname.startsWith("/api/admin/whatsapp")) return ["owner", "manager", "operator"];
   if (pathname === "/api/admin/concession-counter-sales" && method === "POST") return ["owner", "manager", "operator"];
   if (/^\/api\/admin\/concession-sales\/[^/]+\/print$/.test(pathname) && method === "GET") return ["owner", "manager", "operator"];
   if (pathname.startsWith("/api/admin/concession-sales")) return ["owner", "manager"];
@@ -1311,6 +1312,12 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
+  if (pathname.startsWith("/api/admin/whatsapp")) {
+    if (method === "GET") return "whatsapp.view";
+    return /^\/api\/admin\/whatsapp\/api\/whatsapp\/conversations(?:\/|$)/.test(pathname)
+      ? "whatsapp.reply"
+      : "whatsapp.manage";
+  }
   if (pathname === "/api/admin/concession-counter-sales") return "concessions.sell";
   if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
   if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
@@ -1914,6 +1921,75 @@ function ticketSessionStartsAt(ticket, db = null) {
 function ticketArchiveAt(ticket, db = null) {
   const startsAt = ticketSessionStartsAt(ticket, db);
   return startsAt ? new Date(startsAt.getTime() + 4 * 60 * 60 * 1000) : null;
+}
+
+const WHATSAPP_ADMIN_PROXY_PREFIX = "/api/admin/whatsapp";
+
+function whatsappCompanionConfig() {
+  const url = String(process.env.WHATSAPP_SERVICE_URL || "http://127.0.0.1:3335").replace(/\/+$/, "");
+  const token = String(process.env.WHATSAPP_INTERNAL_TOKEN || "").trim();
+  return { url, token };
+}
+
+async function proxyWhatsAppAdminRequest(req, res, pathname, method) {
+  const { url: baseUrl, token } = whatsappCompanionConfig();
+  if (!token || token.length < 32) {
+    sendJson(res, 503, { error: { code: "WHATSAPP_COMPANION_NOT_CONFIGURED", message: "A central do WhatsApp ainda não está configurada no servidor." } });
+    return;
+  }
+
+  const sourceUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  const upstreamPath = pathname.slice(WHATSAPP_ADMIN_PROXY_PREFIX.length) || "/health";
+  const targetUrl = new URL(`${baseUrl}${upstreamPath}`);
+  targetUrl.search = sourceUrl.search;
+  const headers = {
+    "x-lumix-internal-token": token,
+    "x-lumix-admin-user": String(req.adminUser?.id || ""),
+    "x-lumix-admin-role": String(req.adminUser?.role || ""),
+    "x-request-id": requestContext.getStore()?.requestId || ""
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), upstreamPath.endsWith("/events") ? 60 * 60 * 1000 : 20_000);
+
+  try {
+    if (method === "GET" && upstreamPath.endsWith("/events")) {
+      const upstream = await fetch(targetUrl, { headers, signal: controller.signal });
+      if (!upstream.ok || !upstream.body) {
+        const detail = await upstream.text().catch(() => "");
+        sendJson(res, upstream.status || 502, { error: { code: "WHATSAPP_EVENTS_UNAVAILABLE", message: detail || "Não foi possível abrir as atualizações em tempo real." } });
+        return;
+      }
+      res.writeHead(upstream.status, {
+        ...securityHeaders(),
+        "Content-Type": upstream.headers.get("content-type") || "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      await pipeline(Readable.fromWeb(upstream.body), res);
+      return;
+    }
+
+    const requestHeaders = { ...headers };
+    let body;
+    if (!["GET", "HEAD"].includes(method)) {
+      body = JSON.stringify(await readBody(req));
+      requestHeaders["content-type"] = "application/json";
+    }
+    const upstream = await fetch(targetUrl, { method, headers: requestHeaders, body, signal: controller.signal });
+    const payload = await upstream.text();
+    res.writeHead(upstream.status, {
+      ...securityHeaders(),
+      "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+      "Cache-Control": "no-store"
+    });
+    res.end(payload);
+  } catch (error) {
+    const code = error?.name === "AbortError" ? "WHATSAPP_COMPANION_TIMEOUT" : "WHATSAPP_COMPANION_UNAVAILABLE";
+    sendJson(res, 502, { error: { code, message: "A central do WhatsApp não respondeu. Tente novamente em instantes." } });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function ticketDocumentRetentionEndsAt(ticket, db = null) {
@@ -10092,14 +10168,17 @@ async function serveStatic(req, res, pathname) {
   const db = await readDb();
   const wantsAdminShell = pathname === "/admin" || pathname === "/admin/";
   const directAdminHtml = pathname === "/admin/admin.html";
+  const wantsWhatsAppAdmin = pathname === "/admin/whatsapp" || pathname.startsWith("/admin/whatsapp/");
   const authenticatedAdmin = getAdminUser(req, db);
-  if (directAdminHtml && !authenticatedAdmin) {
+  if ((directAdminHtml || wantsWhatsAppAdmin) && (!authenticatedAdmin || authenticatedAdmin.twoFactorSetupRequired || !adminHasPermission(authenticatedAdmin, "whatsapp.view"))) {
     res.writeHead(302, { Location: "/admin" });
     res.end();
     return;
   }
   const relativePath = wantsAdminShell
     ? (authenticatedAdmin ? "admin.html" : "admin-login.html")
+    : wantsWhatsAppAdmin
+      ? `whatsapp/${pathname.replace(/^\/admin\/whatsapp\/?/, "") || "index.html"}`
     : pathname.replace(/^\/admin\//, "");
   const filePath = path.normalize(path.join(PUBLIC_DIR, relativePath));
   if (!pathIsInside(PUBLIC_DIR, filePath)) {
@@ -10506,6 +10585,11 @@ async function handleApi(req, res, pathname) {
   }
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
+
+  if (pathname === WHATSAPP_ADMIN_PROXY_PREFIX || pathname.startsWith(`${WHATSAPP_ADMIN_PROXY_PREFIX}/`)) {
+    await proxyWhatsAppAdminRequest(req, res, pathname, method);
+    return;
+  }
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
     const user = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : (db.users || []).find((item) => item.id === req.adminUser.id);

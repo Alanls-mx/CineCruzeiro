@@ -10359,14 +10359,14 @@ const ALL_ADMIN_PERMISSIONS = [
   "box_office.sell", "box_office.courtesy", "tickets.view", "tickets.validate",
   "orders.view", "orders.edit", "orders.cancel", "orders.archive", "orders.delete", "orders.refund", "orders.print", "orders.resend", "payments.view",
   "concessions.view", "concessions.sell", "concessions.edit", "concessions.delete", "concessions.refund",
-  "marketing.view", "marketing.manage", "club.view", "club.manage", "club.credits",
+  "marketing.view", "marketing.manage", "whatsapp.view", "whatsapp.reply", "whatsapp.manage", "club.view", "club.manage", "club.credits",
   "integrations.view", "integrations.manage", "logs.view", "logs.delete", "users.manage", "settings.view", "settings.manage", "media.manage"
 ];
 
 const ADMIN_PERMISSION_PRESETS = {
   owner: [...ALL_ADMIN_PERMISSIONS],
   manager: ALL_ADMIN_PERMISSIONS.filter((permission) => !["integrations.view", "integrations.manage", "settings.manage", "users.manage", "logs.delete"].includes(permission)),
-  operator: ["dashboard.view", "movies.view", "rooms.view", "tickets.view", "tickets.validate", "orders.view", "orders.print", "payments.view", "box_office.sell", "concessions.view", "concessions.sell"]
+  operator: ["dashboard.view", "movies.view", "rooms.view", "tickets.view", "tickets.validate", "orders.view", "orders.print", "payments.view", "box_office.sell", "concessions.view", "concessions.sell", "whatsapp.view", "whatsapp.reply"]
 };
 
 function selectedUserPermissions() {

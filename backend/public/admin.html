@@ -73,6 +73,10 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13V7a2 2 0 0 1 2-2h5l7-3v18l-7-3H6a2 2 0 0 1-2-2z"/><path d="M11 5v14"/></svg>
           Marketing
         </button>
+        <a class="nav-button" href="/projects/cinecruzeiro/admin/whatsapp/" data-permission="whatsapp.view" title="Central de atendimento via WhatsApp">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a8.38 8.38 0 0 1-9 8.5 9.5 9.5 0 0 1-4.2-1L3 20l1.1-3.4A8.5 8.5 0 1 1 20 11.5z"/><path d="M8.5 9.5c.35 2.2 2.3 4.15 4.5 4.5"/></svg>
+          WhatsApp
+        </a>
         <button class="nav-button" type="button" data-panel="clubPanel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"/></svg>
           Clube
@@ -2410,6 +2414,9 @@
                     <label><input type="checkbox" value="club.credits" /><span><strong>Ajustar créditos do Clube</strong><small>Concede ou remove créditos de assinantes.</small></span></label>
                   </section>
                   <section class="permission-group"><h3>Sistema</h3>
+                    <label><input type="checkbox" value="whatsapp.view" /><span><strong>Visualizar central do WhatsApp</strong><small>Consulta conversas, programação e estado da conexão.</small></span></label>
+                    <label><input type="checkbox" value="whatsapp.reply" /><span><strong>Responder no WhatsApp</strong><small>Assume, devolve e responde atendimentos.</small></span></label>
+                    <label><input type="checkbox" value="whatsapp.manage" /><span><strong>Gerenciar WhatsApp</strong><small>Configura bot, pareamento e conexão.</small></span></label>
                     <label><input type="checkbox" value="integrations.view" /><span><strong>Visualizar integrações</strong><small>Consulta estado e diagnóstico dos serviços.</small></span></label>
                     <label><input type="checkbox" value="integrations.manage" /><span><strong>Gerenciar integrações</strong><small>Altera credenciais e ativa serviços.</small></span></label>
                     <label><input type="checkbox" value="logs.view" /><span><strong>Visualizar logs</strong><small>Consulta ações e ocorrências.</small></span></label>

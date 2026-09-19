@@ -1,0 +1,16 @@
+{
+  "name": "lumixengine-whatsapp-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LumixEngine WhatsApp Automation System",
+  "scripts": {
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "backend:dev": "npm --prefix backend run dev",
+    "backend:worker": "npm --prefix backend run worker",
+    "backend:migrate": "npm --prefix backend run prisma:migrate",
+    "backend:seed": "npm --prefix backend run prisma:seed",
+    "backend:test": "npm --prefix backend run test"
+  }
+}
