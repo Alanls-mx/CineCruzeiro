@@ -107,6 +107,18 @@ const DEFINITIONS = {
       { key: "timeout", label: "Timeout em ms", type: "number" },
       { key: "retryLimit", label: "Tentativas", type: "number" }
     ]
+  },
+  commercialCatalog: {
+    name: "Catálogo comercial externo",
+    purpose: "Link protegido para aplicações parceiras consultarem filmes, programação, bomboniere, promoções e cupons vigentes",
+    defaults: { enabled: false, environment: "production", allowedOrigins: "", cacheSeconds: 60 },
+    secrets: ["accessToken"],
+    fields: [
+      { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
+      { key: "accessToken", label: "Token de acesso", type: "secret", placeholder: "Gere um token seguro para a aplicação parceira" },
+      { key: "allowedOrigins", label: "Origens permitidas (opcional)", type: "text", placeholder: "https://app.parceira.com, https://site.parceiro.com" },
+      { key: "cacheSeconds", label: "Cache do catálogo (segundos)", type: "number", placeholder: "60" }
+    ]
   }
 };
 
@@ -152,6 +164,10 @@ const ENV = {
   crm: {
     url: ["CRM_WEBHOOK_URL", "LUMIX_WEBHOOK_URL"],
     secret: ["CRM_WEBHOOK_SECRET", "LUMIX_WEBHOOK_SECRET"]
+  },
+  commercialCatalog: {
+    accessToken: ["COMMERCIAL_CATALOG_TOKEN", "CATALOG_WEBHOOK_TOKEN"],
+    allowedOrigins: ["COMMERCIAL_CATALOG_ALLOWED_ORIGINS"]
   }
 };
 
@@ -252,6 +268,7 @@ function isConfigured(provider, config) {
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
   if (provider === "analytics") return Boolean(config.googleMeasurementId || config.metaPixelId);
   if (provider === "crm") return Boolean(config.url);
+  if (provider === "commercialCatalog") return Boolean(config.accessToken);
   return false;
 }
 

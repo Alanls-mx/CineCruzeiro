@@ -11216,7 +11216,8 @@ function integrationCategory(key) {
     tmdb: "Catálogo",
     email: "E-mail",
     analytics: "Medição",
-    crm: "CRM"
+    crm: "CRM",
+    commercialCatalog: "Catálogo comercial"
   }[key] || "Integração";
 }
 
@@ -11232,6 +11233,57 @@ function integrationSecurityHint(field, integration) {
   return secret?.hasValue
     ? `<small class="integration-field-hint">Valor salvo com segurança: ${escapeHtml(secret.masked)}. Preencha somente para substituir.</small>`
     : `<small class="integration-field-hint">Campo sensível. O valor será criptografado e ocultado após salvar.</small>`;
+}
+
+function commercialCatalogEndpointUrl() {
+  return new URL(`${API_BASE}/api/commercial/catalog`, window.location.origin).toString();
+}
+
+function commercialCatalogAccessMarkup() {
+  return `
+    <section class="integration-catalog-access">
+      <strong>Link para aplicação externa</strong>
+      <p>Após salvar e ativar, este catálogo disponibiliza filmes, sessões vendáveis, programação, bomboniere, promoções, cupons e datas.</p>
+      <code>${escapeHtml(commercialCatalogEndpointUrl())}</code>
+      <small>Prefira o header <code>Authorization: Bearer TOKEN</code>. Para integrações que exigem uma URL, use também <code>?token=TOKEN</code>.</small>
+      <div id="commercialCatalogLinkPreview" class="integration-catalog-link-preview" aria-live="polite"></div>
+    </section>
+  `;
+}
+
+function updateCommercialCatalogLinkPreview() {
+  const target = $("commercialCatalogLinkPreview");
+  const input = document.querySelector('[data-integration-field="accessToken"]');
+  if (!target || !input) return;
+  const token = String(input.value || "").trim();
+  if (!token) {
+    target.innerHTML = `<span>O token salvo fica oculto por segurança. Gere um novo token apenas para renovar o acesso.</span>`;
+    return;
+  }
+  const link = `${commercialCatalogEndpointUrl()}?token=${encodeURIComponent(token)}`;
+  target.innerHTML = `<code>${escapeHtml(link)}</code><button class="ghost-button" type="button" onclick="copyCommercialCatalogLink()">Copiar link</button>`;
+}
+
+function generateCommercialCatalogToken() {
+  const input = document.querySelector('[data-integration-field="accessToken"]');
+  if (!input) return;
+  const bytes = new Uint8Array(24);
+  window.crypto.getRandomValues(bytes);
+  input.value = `catalog_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  updateCommercialCatalogLinkPreview();
+  showToast("Novo token gerado. Salve a integração para ativá-lo.");
+}
+
+async function copyCommercialCatalogLink() {
+  const input = document.querySelector('[data-integration-field="accessToken"]');
+  const token = String(input?.value || "").trim();
+  if (!token) return;
+  try {
+    await navigator.clipboard.writeText(`${commercialCatalogEndpointUrl()}?token=${encodeURIComponent(token)}`);
+    showToast("Link do catálogo copiado.");
+  } catch {
+    showToast("Não foi possível copiar automaticamente. Copie o link exibido na tela.", "error");
+  }
 }
 
 function integrationDiagnosticsMarkup(checks = [], diagnostics = {}) {
@@ -11303,6 +11355,7 @@ function renderIntegrationContext(integration, testResult = null) {
       </div>
     </dl>
     ${integration.key === "googleWallet" ? integrationDiagnosticsMarkup(testResult?.checks, testResult?.diagnostics) : ""}
+    ${integration.key === "commercialCatalog" ? commercialCatalogAccessMarkup() : ""}
   `;
 }
 
@@ -11358,7 +11411,9 @@ function integrationFieldInput(field, integration) {
     secret: "Cole o segredo de assinatura",
     events: "Ex.: order.created,payment.approved",
     timeout: "Ex.: 8000",
-    retryLimit: "Ex.: 2"
+    retryLimit: "Ex.: 2",
+    allowedOrigins: "Ex.: https://app.parceira.com",
+    cacheSeconds: "Ex.: 60"
   };
   const placeholder = field.secret && secret?.hasValue ? "Valor já salvo; preencha apenas para substituir" : field.placeholder || placeholders[field.key] || "";
   const common = `data-integration-field="${escapeHtml(field.key)}" data-integration-original="${field.secret ? "" : escapeHtml(String(value))}" ${field.secret ? `data-secret="true" autocomplete="off" spellcheck="false"` : ""} placeholder="${escapeHtml(placeholder)}"`;
@@ -11376,6 +11431,7 @@ function integrationFieldInput(field, integration) {
     <label class="integration-field ${field.secret ? "secret-field" : ""}">
       ${escapeHtml(field.label)}
       <input type="${field.secret ? "password" : escapeHtml(field.type || "text")}" value="${field.secret ? "" : escapeHtml(value)}" ${common} />
+      ${integration.key === "commercialCatalog" && field.key === "accessToken" ? `<button class="ghost-button" type="button" onclick="generateCommercialCatalogToken()">Gerar token seguro</button>` : ""}
       ${integrationSecurityHint(field, integration)}
     </label>
   `;
@@ -11625,6 +11681,10 @@ async function openIntegrationConfig(key) {
     const webhookPanel = $("webhookTesterPanel");
     webhookPanel.hidden = integration.key !== "mercadoPago";
     $("integrationOverlay").hidden = false;
+    if (integration.key === "commercialCatalog") {
+      document.querySelector('[data-integration-field="accessToken"]')?.addEventListener("input", updateCommercialCatalogLinkPreview);
+      updateCommercialCatalogLinkPreview();
+    }
     if (integration.key === "mercadoPago") await loadWebhookSimulator();
   } catch (error) {
     showToast(error.message, "error");
