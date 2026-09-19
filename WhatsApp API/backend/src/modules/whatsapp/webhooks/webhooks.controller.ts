@@ -1,19 +1,26 @@
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { WebhooksService } from './webhooks.service.js';
 import { EvolutionWebhookPayload } from './webhooks.types.js';
+import { logger } from '../../../config/logger.js';
 
 export class WebhooksController {
   constructor(private readonly service = new WebhooksService()) {}
 
-  handleEvolution = async (request: FastifyRequest, reply: FastifyReply) => {
+  handleEvolution = (request: FastifyRequest, reply: FastifyReply) => {
     const payload = request.body as EvolutionWebhookPayload;
 
-    // Process asynchronously without holding the HTTP response
-    const result = await this.service.handleEvolutionWebhook(payload);
+    // Evolution retries slow webhooks aggressively. Acknowledge receipt first,
+    // then persist and enqueue the event without keeping its HTTP request open.
+    void this.service.handleEvolutionWebhook(payload).catch((error) => {
+      logger.error(
+        { err: error, instance: payload?.instance, event: payload?.event },
+        'Evolution webhook processing failed after acknowledgement'
+      );
+    });
 
-    return reply.status(200).send({
+    return reply.status(202).send({
       success: true,
-      data: result,
+      data: { received: true, processing: true },
     });
   };
 }

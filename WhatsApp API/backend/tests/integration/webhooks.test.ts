@@ -19,6 +19,15 @@ describe('Evolution Webhooks & Idempotency Pipeline', () => {
     await prisma.$disconnect();
   });
 
+  async function waitFor<T>(check: () => Promise<T | null | undefined>): Promise<T> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const value = await check();
+      if (value) return value;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('Webhook background processing did not finish in time');
+  }
+
   it('should process incoming message webhook and queue it in BullMQ', async () => {
     const messageId = `test_msg_${Date.now()}`;
     const payload = {
@@ -45,16 +54,15 @@ describe('Evolution Webhooks & Idempotency Pipeline', () => {
       payload,
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(202);
     const json = response.json();
     expect(json.success).toBe(true);
-    expect(json.data.queued).toBe(true);
-    expect(json.data.messageId).toBe(messageId);
+    expect(json.data.processing).toBe(true);
 
     // Verify it is recorded in processed_events
-    const event = await prisma.processedEvent.findFirst({
+    const event = await waitFor(() => prisma.processedEvent.findFirst({
       where: { eventId: messageId },
-    });
+    }));
     expect(event).toBeDefined();
     expect(event?.provider).toBe('EVOLUTION');
   });
@@ -85,8 +93,10 @@ describe('Evolution Webhooks & Idempotency Pipeline', () => {
       headers: { 'x-lumix-webhook-secret': env.EVOLUTION_WEBHOOK_SECRET },
       payload,
     });
-    expect(res1.statusCode).toBe(200);
-    expect(res1.json().data.queued).toBe(true);
+    expect(res1.statusCode).toBe(202);
+    expect(res1.json().data.processing).toBe(true);
+
+    await waitFor(() => prisma.processedEvent.findFirst({ where: { eventId: duplicateMessageId } }));
 
     // Second call -> deduplicated!
     const res2 = await app.inject({
@@ -95,8 +105,8 @@ describe('Evolution Webhooks & Idempotency Pipeline', () => {
       headers: { 'x-lumix-webhook-secret': env.EVOLUTION_WEBHOOK_SECRET },
       payload,
     });
-    expect(res2.statusCode).toBe(200);
-    expect(res2.json().data.deduplicated).toBe(true);
+    expect(res2.statusCode).toBe(202);
+    expect(res2.json().data.processing).toBe(true);
   });
 
   it('should ignore outgoing messages sent by ourselves', async () => {
@@ -121,7 +131,7 @@ describe('Evolution Webhooks & Idempotency Pipeline', () => {
       payload,
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json().data.ignored).toBe(true);
+    expect(response.statusCode).toBe(202);
+    expect(response.json().data.processing).toBe(true);
   });
 });
