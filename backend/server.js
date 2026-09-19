@@ -1925,6 +1925,11 @@ function ticketArchiveAt(ticket, db = null) {
 
 const WHATSAPP_ADMIN_PROXY_PREFIX = "/api/admin/whatsapp";
 
+function adminPathForRequest(req, suffix = "") {
+  const forwardedPrefix = String(req.headers["x-forwarded-prefix"] || "").replace(/\/+$/, "");
+  return `${forwardedPrefix}/admin${suffix}`;
+}
+
 function whatsappCompanionConfig() {
   const url = String(process.env.WHATSAPP_SERVICE_URL || "http://127.0.0.1:3335").replace(/\/+$/, "");
   const token = String(process.env.WHATSAPP_INTERNAL_TOKEN || "").trim();
@@ -10171,7 +10176,7 @@ async function serveStatic(req, res, pathname) {
   const wantsWhatsAppAdmin = pathname === "/admin/whatsapp" || pathname.startsWith("/admin/whatsapp/");
   const authenticatedAdmin = getAdminUser(req, db);
   if ((directAdminHtml || wantsWhatsAppAdmin) && (!authenticatedAdmin || authenticatedAdmin.twoFactorSetupRequired || !adminHasPermission(authenticatedAdmin, "whatsapp.view"))) {
-    res.writeHead(302, { Location: "/admin" });
+    res.writeHead(302, { Location: adminPathForRequest(req) });
     res.end();
     return;
   }
