@@ -48,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontWeight: 800, fontSize: '1.15rem', color: '#ffffff', letterSpacing: '-0.02em' }}>
-              LumixEngine
+              Cine Cruzeiro
             </span>
             <span style={{
               background: 'rgba(37, 211, 102, 0.15)',
@@ -59,7 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               borderRadius: '9999px',
               border: '1px solid rgba(37, 211, 102, 0.3)',
             }}>
-              WhatsApp SaaS
+              Central de atendimento
             </span>
           </div>
         </div>
@@ -96,7 +96,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className={`btn btn-sm ${activeTab === 'cinema' ? 'btn-primary' : 'btn-secondary'}`}
         >
           <Clapperboard size={16} />
-          Cinema Lumix
+          Cine Cruzeiro
         </button>
       </nav>
 

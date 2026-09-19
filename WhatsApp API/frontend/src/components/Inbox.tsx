@@ -979,7 +979,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      {isBot && <span>Lumix Bot • </span>}
+                      {isBot && <span>Assistente do cinema • </span>}
                       <span>{new Date(msg.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                       {!isCustomer && <CheckCheck size={13} color={isAgent ? '#FFFFFF' : 'var(--ios-green)'} />}
                     </div>

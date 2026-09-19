@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import type { Company, WhatsAppInstance } from './types/index.js';
 import { api } from './services/api.js';
 import { NavRail, type NavTab } from './components/ui/NavRail.js';
@@ -113,47 +114,35 @@ export function App() {
   }
 
   return (
-    <div
-      style={{
-        height: '100vh',
-        maxHeight: '100vh',
-        width: '100vw',
-        maxWidth: '100vw',
-        display: 'flex',
-        flexDirection: isMobile ? 'column' : 'row',
-        overflow: 'hidden',
-        backgroundColor: 'var(--bg-primary)',
-      }}
-    >
-      {/* 1. Left Nav Rail (Desktop 64px) or Hidden on Mobile if reading chat */}
-      {!isMobile && (
-        <NavRail
-          companies={companies}
-          selectedCompany={selectedCompany}
-          onSelectCompany={setSelectedCompany}
-          activeTab={activeTab}
-          onSelectTab={setActiveTab}
-          whatsappInstance={activeInstance}
-          isMobile={false}
-        />
-      )}
+    <div className="whatsapp-shell">
+      <header className="whatsapp-topbar">
+        <a className="whatsapp-brand" href="/projects/cinecruzeiro/admin/" aria-label="Voltar ao painel do Cine Cruzeiro">
+          <img src="/projects/cinecruzeiro/admin/whatsapp/cine-cruzeiro-logo.webp" alt="Cine Cruzeiro" />
+          <span className="whatsapp-brand-copy">
+            <strong>Console Cine Cruzeiro</strong>
+            <span>Central de atendimento</span>
+          </span>
+        </a>
+        <a className="whatsapp-back-link" href="/projects/cinecruzeiro/admin/" title="Voltar ao painel">
+          <ArrowLeft size={16} />
+          <span>Voltar ao painel</span>
+        </a>
+      </header>
 
-      {/* 2. Main Workspace Surface */}
-      <main
-        style={{
-          flex: 1,
-          height: isMobile ? (hideNavOnMobileChat ? '100%' : 'calc(100% - 56px)') : '100%',
-          maxHeight: isMobile ? (hideNavOnMobileChat ? '100%' : 'calc(100% - 56px)') : '100%',
-          minHeight: 0,
-          width: isMobile ? '100%' : 'calc(100vw - 64px)',
-          maxWidth: isMobile ? '100%' : 'calc(100vw - 64px)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: activeTab === 'inbox' ? 'hidden' : 'auto',
-          position: 'relative',
-          backgroundColor: 'var(--bg-primary)',
-        }}
-      >
+      <div className="whatsapp-workspace">
+        {!isMobile && (
+          <NavRail
+            companies={companies}
+            selectedCompany={selectedCompany}
+            onSelectCompany={setSelectedCompany}
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            whatsappInstance={activeInstance}
+            isMobile={false}
+          />
+        )}
+
+        <main className={`whatsapp-main${activeTab === 'inbox' ? '' : ' is-scrollable'}`}>
         {activeTab === 'inbox' && (
           <Inbox
             company={selectedCompany}
@@ -164,20 +153,20 @@ export function App() {
         {activeTab === 'connection' && <WhatsAppConnection company={selectedCompany} />}
         {activeTab === 'settings' && <BotSettings company={selectedCompany} />}
         {activeTab === 'cinema' && <CinemaPreview company={selectedCompany} />}
-      </main>
+        </main>
 
-      {/* 3. Mobile Bottom Nav Rail (Visible only when not inside open chat) */}
-      {isMobile && !hideNavOnMobileChat && (
-        <NavRail
-          companies={companies}
-          selectedCompany={selectedCompany}
-          onSelectCompany={setSelectedCompany}
-          activeTab={activeTab}
-          onSelectTab={setActiveTab}
-          whatsappInstance={activeInstance}
-          isMobile={true}
-        />
-      )}
+        {isMobile && !hideNavOnMobileChat && (
+          <NavRail
+            companies={companies}
+            selectedCompany={selectedCompany}
+            onSelectCompany={setSelectedCompany}
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            whatsappInstance={activeInstance}
+            isMobile={true}
+          />
+        )}
+      </div>
     </div>
   );
 }

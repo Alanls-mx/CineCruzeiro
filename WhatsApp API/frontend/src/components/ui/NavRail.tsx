@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import type { Company, WhatsAppInstance } from '../../types/index.js';
 import {
+  Building2,
+  Check,
+  Clapperboard,
   MessageSquare,
   QrCode,
   Sliders,
-  Clapperboard,
-  Building2,
-  Check,
 } from 'lucide-react';
 
 export type NavTab = 'inbox' | 'connection' | 'settings' | 'cinema';
@@ -31,308 +31,127 @@ export const NavRail: React.FC<NavRailProps> = ({
   isMobile = false,
 }) => {
   const [showCompanyMenu, setShowCompanyMenu] = useState(false);
-
   const isConnected = whatsappInstance?.status === 'CONNECTED';
-
   const navItems = [
-    {
-      key: 'inbox' as NavTab,
-      label: 'Conversas',
-      icon: MessageSquare,
-      badge: 0,
-    },
-    {
-      key: 'connection' as NavTab,
-      label: 'WhatsApp',
-      icon: QrCode,
-      statusDot: isConnected ? '#30D158' : '#FF453A',
-    },
-    {
-      key: 'settings' as NavTab,
-      label: 'Configurações',
-      icon: Sliders,
-    },
-    {
-      key: 'cinema' as NavTab,
-      label: 'Cinema',
-      icon: Clapperboard,
-    },
+    { key: 'inbox' as NavTab, label: 'Conversas', icon: MessageSquare },
+    { key: 'connection' as NavTab, label: 'Conexão', icon: QrCode },
+    { key: 'settings' as NavTab, label: 'Automação', icon: Sliders },
+    { key: 'cinema' as NavTab, label: 'Programação', icon: Clapperboard },
   ];
 
   return (
-    <aside
-      style={{
-        width: isMobile ? '100%' : '64px',
-        minWidth: isMobile ? '100%' : '64px',
-        maxWidth: isMobile ? '100%' : '64px',
-        height: isMobile ? '56px' : '100%',
-        backgroundColor: '#111113',
-        borderRight: isMobile ? 'none' : '1px solid var(--separator)',
-        borderTop: isMobile ? '1px solid var(--separator)' : 'none',
-        display: 'flex',
-        flexDirection: isMobile ? 'row' : 'column',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: isMobile ? '0 16px' : '16px 0',
-        zIndex: 50,
-        userSelect: 'none',
-        flexShrink: 0,
-      }}
-    >
-      {/* Navigation Section */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'row' : 'column',
-          alignItems: 'center',
-          gap: isMobile ? '8px' : '20px',
-          width: isMobile ? 'auto' : '100%',
-          flex: isMobile ? 1 : 'unset',
-          justifyContent: isMobile ? 'space-around' : 'flex-start',
-        }}
-      >
-        {/* Central de atendimento do Cine Cruzeiro (Desktop only) */}
-        {!isMobile && (
-          <div
-            title="Central do WhatsApp do Cine Cruzeiro"
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '11px',
-              background: 'linear-gradient(135deg, #1C1C1E 0%, #2C2C2E 100%)',
-              border: '1px solid rgba(48, 209, 88, 0.35)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
-              cursor: 'pointer',
-            }}
-            onClick={() => onSelectTab('inbox')}
-          >
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                backgroundColor: 'var(--lumix-green)',
-                boxShadow: '0 0 10px rgba(48, 209, 88, 0.8)',
-              }}
-            />
-          </div>
-        )}
+    <aside className="whatsapp-sidebar" aria-label="Navegação da central do WhatsApp">
+      <div className="whatsapp-sidebar-heading">Atendimento</div>
+      <nav className="whatsapp-nav" aria-label="Seções da central">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.key;
+          const connectionDot = item.key === 'connection';
 
-        {/* Navigation Tabs */}
-        <nav
-          style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'row' : 'column',
-            alignItems: 'center',
-            gap: isMobile ? '4px' : '8px',
-            width: isMobile ? '100%' : '100%',
-            justifyContent: isMobile ? 'space-around' : 'center',
-          }}
-        >
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.key;
-
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onSelectTab(item.key)}
-                title={item.label}
-                style={{
-                  position: 'relative',
-                  width: '44px',
-                  height: '44px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  background: isActive ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-                  color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  transition: 'all 0.16s ease',
-                  outline: 'none',
-                }}
-              >
-                <Icon size={20} strokeWidth={isActive ? 2.3 : 1.8} />
-
-                {/* Status Dot */}
-                {item.statusDot && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: '8px',
-                      right: '8px',
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      backgroundColor: item.statusDot,
-                      boxShadow: `0 0 6px ${item.statusDot}`,
-                    }}
-                  />
-                )}
-
-                {/* Active Indicator Bar */}
-                {isActive && (
-                  <span
-                    style={{
-                      position: 'absolute',
-                      ...(isMobile
-                        ? {
-                            bottom: '2px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            width: '20px',
-                            height: '3px',
-                            borderRadius: '4px 4px 0 0',
-                          }
-                        : {
-                            left: '-10px',
-                            width: '3px',
-                            height: '22px',
-                            borderRadius: '0 4px 4px 0',
-                          }),
-                      backgroundColor: 'var(--ios-blue)',
-                    }}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* Bottom/Right Section: Company Selector & Connectivity Badge */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'row' : 'column',
-          alignItems: 'center',
-          gap: isMobile ? '10px' : '14px',
-          width: isMobile ? 'auto' : '100%',
-          position: 'relative',
-        }}
-      >
-        {/* Company Dropdown / Popover */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            onClick={() => setShowCompanyMenu(!showCompanyMenu)}
-            title={`Empresa ativa: ${selectedCompany?.name || 'Selecione'}`}
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
-              border: '1px solid var(--separator)',
-              background: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'background 0.15s ease',
-            }}
-          >
-            <Building2 size={18} />
-          </button>
-
-          {/* Company Popover Sheet */}
-          {showCompanyMenu && (
-            <div
-              style={{
-                position: 'absolute',
-                ...(isMobile
-                  ? {
-                      bottom: '54px',
-                      right: '0px',
-                    }
-                  : {
-                      bottom: '0px',
-                      left: '52px',
-                    }),
-                width: '240px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--separator)',
-                borderRadius: 'var(--radius-md)',
-                boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6)',
-                backdropFilter: 'blur(20px)',
-                padding: '6px',
-                zIndex: 100,
-              }}
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onSelectTab(item.key)}
+              title={item.label}
+              className={`whatsapp-nav-item${isActive ? ' is-active' : ''}`}
+              aria-current={isActive ? 'page' : undefined}
             >
-              <div style={{ padding: '8px 10px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--separator)' }}>
-                EMPRESAS CADASTRADAS
-              </div>
-              <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '4px' }}>
-                {companies.map((comp) => {
-                  const isCur = selectedCompany?.id === comp.id;
+              <Icon size={18} strokeWidth={isActive ? 2.35 : 1.9} />
+              <span className="whatsapp-nav-label">{item.label}</span>
+              {connectionDot && !isActive && (
+                <span
+                  aria-label={isConnected ? 'WhatsApp conectado' : 'WhatsApp desconectado'}
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    marginLeft: 'auto',
+                    borderRadius: '50%',
+                    backgroundColor: isConnected ? 'var(--ios-green)' : 'var(--ios-red)',
+                  }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {!isMobile && (
+        <div className="whatsapp-sidebar-footer">
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setShowCompanyMenu((value) => !value)}
+              className="whatsapp-company-button"
+              title={`Cinema ativo: ${selectedCompany?.name || 'Selecione'}`}
+              aria-expanded={showCompanyMenu}
+            >
+              <Building2 size={17} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedCompany?.name || 'Selecionar cinema'}
+              </span>
+            </button>
+
+            {showCompanyMenu && (
+              <div className="whatsapp-company-popover" role="menu">
+                <div style={{ padding: '8px 10px', color: 'var(--text-tertiary)', fontSize: '0.69rem', fontWeight: 800, letterSpacing: '0.07em' }}>
+                  CINEMAS CADASTRADOS
+                </div>
+                {companies.map((company) => {
+                  const isCurrent = selectedCompany?.id === company.id;
                   return (
                     <button
-                      key={comp.id}
+                      key={company.id}
                       type="button"
                       onClick={() => {
-                        onSelectCompany(comp);
+                        onSelectCompany(company);
                         setShowCompanyMenu(false);
                       }}
                       style={{
+                        width: '100%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '8px 10px',
+                        gap: '10px',
+                        padding: '10px',
+                        border: 0,
                         borderRadius: '8px',
-                        border: 'none',
-                        background: isCur ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                        color: isCur ? '#FFFFFF' : 'var(--text-secondary)',
-                        fontSize: '0.84rem',
-                        fontWeight: isCur ? 600 : 400,
+                        background: isCurrent ? '#162641' : 'transparent',
+                        color: isCurrent ? 'var(--text-primary)' : 'var(--text-secondary)',
                         cursor: 'pointer',
+                        fontSize: '0.84rem',
+                        fontWeight: isCurrent ? 700 : 500,
                         textAlign: 'left',
                       }}
                     >
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {comp.name}
-                      </span>
-                      {isCur && <Check size={14} color="var(--ios-blue)" />}
+                      <span>{company.name}</span>
+                      {isCurrent && <Check size={15} color="var(--lumix-green)" />}
                     </button>
                   );
                 })}
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* WhatsApp Connection Indicator */}
-        <button
-          type="button"
-          onClick={() => onSelectTab('connection')}
-          title={isConnected ? 'WhatsApp Conectado' : 'WhatsApp Desconectado'}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            padding: '4px',
-          }}
-        >
-          <span
-            style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor: isConnected ? 'var(--ios-green)' : 'var(--ios-red)',
-              boxShadow: isConnected
-                ? '0 0 8px rgba(48, 209, 88, 0.7)'
-                : '0 0 8px rgba(255, 69, 58, 0.7)',
-            }}
-          />
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => onSelectTab('connection')}
+            className="whatsapp-connection-button"
+            title={isConnected ? 'WhatsApp conectado' : 'WhatsApp desconectado'}
+          >
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                flex: '0 0 auto',
+                backgroundColor: isConnected ? 'var(--ios-green)' : 'var(--ios-red)',
+              }}
+            />
+            {isConnected ? 'WhatsApp conectado' : 'WhatsApp desconectado'}
+          </button>
+        </div>
+      )}
     </aside>
   );
 };

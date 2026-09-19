@@ -1,43 +1,39 @@
 :root {
-  /* ========================================================================= */
-  /* Apple iOS Semantic Color System (Dark Mode Primary)                       */
-  /* ========================================================================= */
-  --bg-primary: #000000;
-  --bg-secondary: #1C1C1E;
-  --bg-tertiary: #2C2C2E;
-  --bg-elevated: #242426;
-  --bg-card: rgba(28, 28, 30, 0.75);
-  --bg-card-hover: rgba(44, 44, 46, 0.85);
+  /* Cine Cruzeiro admin console tokens */
+  --bg-primary: #050914;
+  --bg-secondary: #0c1524;
+  --bg-tertiary: #111d31;
+  --bg-elevated: #162338;
+  --bg-card: rgba(12, 21, 36, 0.96);
+  --bg-card-hover: #162338;
 
-  --separator: rgba(255, 255, 255, 0.08);
-  --separator-opaque: #38383A;
-  --separator-subtle: rgba(255, 255, 255, 0.04);
+  --separator: rgba(148, 163, 184, 0.14);
+  --separator-opaque: #26354d;
+  --separator-subtle: rgba(148, 163, 184, 0.08);
 
-  --text-primary: #FFFFFF;
-  --text-secondary: #AEAEB2;
-  --text-tertiary: #8E8E93;
-  --text-quaternary: #636366;
+  --text-primary: #f8fafc;
+  --text-secondary: #b6c3d6;
+  --text-tertiary: #8494aa;
+  --text-quaternary: #637187;
 
-  /* iOS Semantic Accent Palette */
-  --ios-blue: #0A84FF;
-  --ios-blue-rgb: 10, 132, 255;
-  --ios-green: #30D158;
-  --ios-green-rgb: 48, 209, 88;
-  --ios-orange: #FF9F0A;
-  --ios-orange-rgb: 255, 159, 10;
-  --ios-red: #FF453A;
-  --ios-red-rgb: 255, 69, 58;
-  --ios-purple: #BF5AF2;
-  --ios-purple-rgb: 191, 90, 242;
-  --ios-teal: #64D2FF;
-  --ios-yellow: #FFD60A;
+  --ios-blue: #2563eb;
+  --ios-blue-rgb: 37, 99, 235;
+  --ios-green: #34d399;
+  --ios-green-rgb: 52, 211, 153;
+  --ios-orange: #f59e0b;
+  --ios-orange-rgb: 245, 158, 11;
+  --ios-red: #fb7185;
+  --ios-red-rgb: 251, 113, 133;
+  --ios-purple: #a78bfa;
+  --ios-purple-rgb: 167, 139, 250;
+  --ios-teal: #38bdf8;
+  --ios-yellow: #facc15;
 
-  /* Lumix Branding & Chat Bubbles */
-  --lumix-green: #30D158;
-  --lumix-green-glow: rgba(48, 209, 88, 0.2);
-  --bubble-customer: #2C2C2E;
-  --bubble-agent: #0A84FF;
-  --bubble-bot: #1C6E5A;
+  --lumix-green: #facc15;
+  --lumix-green-glow: rgba(250, 204, 21, 0.18);
+  --bubble-customer: #111d31;
+  --bubble-agent: #2563eb;
+  --bubble-bot: #0f766e;
 
   /* Typography Stack */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -46,13 +42,13 @@
   /* Border Radii (iOS standard) */
   --radius-xs: 6px;
   --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
-  --radius-xl: 22px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
 
   /* Layout Dimensions */
-  --nav-rail-width: 68px;
+  --nav-rail-width: 228px;
   --sidebar-width: 380px;
   --details-panel-width: 340px;
 
@@ -209,4 +205,251 @@ button, input, textarea, select {
 }
 .icon-btn:active {
   transform: scale(0.92);
+}
+
+/* Cine Cruzeiro admin shell */
+.whatsapp-shell {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0d192d 0, var(--bg-primary) 280px);
+}
+
+.whatsapp-topbar {
+  min-height: 78px;
+  padding: 12px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background: rgba(5, 9, 20, 0.92);
+  border-bottom: 1px solid var(--separator);
+  backdrop-filter: blur(16px);
+  flex: 0 0 auto;
+}
+
+.whatsapp-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.whatsapp-brand img {
+  width: 118px;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 8px 18px rgba(37, 99, 235, 0.22));
+}
+
+.whatsapp-brand-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.whatsapp-brand-copy strong {
+  font-size: 16px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.whatsapp-brand-copy span {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.whatsapp-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.84rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.whatsapp-back-link:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.whatsapp-workspace {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+}
+
+.whatsapp-sidebar {
+  width: var(--nav-rail-width);
+  min-width: var(--nav-rail-width);
+  height: 100%;
+  padding: 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: rgba(7, 13, 24, 0.88);
+  border-right: 1px solid var(--separator);
+}
+
+.whatsapp-sidebar-heading {
+  padding: 4px 10px 8px;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.whatsapp-nav {
+  display: grid;
+  gap: 4px;
+}
+
+.whatsapp-nav-item {
+  position: relative;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.whatsapp-nav-item:hover {
+  color: var(--text-primary);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.whatsapp-nav-item.is-active {
+  color: var(--text-primary);
+  background: #162641;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.16);
+}
+
+.whatsapp-nav-item.is-active::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--lumix-green);
+}
+
+.whatsapp-nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.whatsapp-sidebar-footer {
+  margin-top: auto;
+  padding: 12px 10px 4px;
+  border-top: 1px solid var(--separator);
+}
+
+.whatsapp-company-button,
+.whatsapp-connection-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.whatsapp-company-button {
+  padding: 8px 0;
+  font-size: 0.83rem;
+  font-weight: 700;
+}
+
+.whatsapp-connection-button {
+  padding: 9px 10px;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.whatsapp-company-popover {
+  position: absolute;
+  bottom: 78px;
+  left: 12px;
+  width: 260px;
+  padding: 6px;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-lg);
+  background: #0c1524;
+  box-shadow: var(--shadow);
+  z-index: 100;
+}
+
+.whatsapp-main {
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.whatsapp-main.is-scrollable {
+  overflow: auto;
+}
+
+@media (max-width: 767px) {
+  .whatsapp-topbar {
+    min-height: 64px;
+    padding: 10px 16px;
+  }
+
+  .whatsapp-brand img { width: 88px; }
+  .whatsapp-brand-copy span { display: none; }
+  .whatsapp-brand-copy strong { font-size: 14px; }
+  .whatsapp-back-link { width: 38px; padding: 0; justify-content: center; font-size: 0; }
+  .whatsapp-back-link svg { width: 18px; height: 18px; }
+
+  .whatsapp-workspace { flex-direction: column; }
+
+  .whatsapp-sidebar {
+    order: 2;
+    width: 100%;
+    min-width: 100%;
+    height: 58px;
+    padding: 6px 10px;
+    flex-direction: row;
+    align-items: center;
+    border-top: 1px solid var(--separator);
+    border-right: 0;
+  }
+
+  .whatsapp-sidebar-heading,
+  .whatsapp-sidebar-footer,
+  .whatsapp-nav-label { display: none; }
+  .whatsapp-nav { width: 100%; grid-template-columns: repeat(4, 1fr); gap: 2px; }
+  .whatsapp-nav-item { min-height: 42px; padding: 0; justify-content: center; }
+  .whatsapp-nav-item.is-active::after { position: absolute; bottom: 2px; margin: 0; }
+  .whatsapp-main { order: 1; }
 }
