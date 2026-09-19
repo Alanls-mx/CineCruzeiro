@@ -158,10 +158,21 @@ function switchCurrent(instance, releaseDir) {
   fs.writeFileSync(path.join(instance.baseDir, "current-release"), `${path.basename(releaseDir)}\n`, "utf8");
 }
 
+function currentRelease(instance) {
+  try {
+    return fs.realpathSync(path.join(instance.baseDir, "current"));
+  } catch {
+    return "";
+  }
+}
+
 function reloadAndCheck(instance, env) {
   const ecosystem = path.join(instance.baseDir, "ecosystem.config.cjs");
-  run("pm2", ["startOrReload", ecosystem, "--only", instance.backendProcess, "--update-env"], { env });
-  run("pm2", ["startOrReload", ecosystem, "--only", instance.frontendProcess, "--update-env"], { env });
+  // Deploys may replace the `current` symlink. PM2 must never inherit that
+  // transient directory as its working directory or Node can fail with uv_cwd.
+  const options = { env, cwd: instance.baseDir };
+  run("pm2", ["startOrReload", ecosystem, "--only", instance.backendProcess, "--update-env"], options);
+  run("pm2", ["startOrReload", ecosystem, "--only", instance.frontendProcess, "--update-env"], options);
   let lastError;
   for (let attempt = 1; attempt <= 12; attempt += 1) {
     const response = spawnSync("curl", ["--fail", "--silent", "--show-error", "--max-time", "10", `${instance.siteUrl}/api/health/ready`], {
@@ -225,6 +236,9 @@ function main() {
   const prepared = [];
   const switched = [];
   try {
+    // The command is commonly invoked through <instance>/current. Detach from
+    // it before the symlink is atomically replaced later in this deployment.
+    process.chdir(workDir);
     run("git", ["clone", "--quiet", registry.repository, sourceDir]);
     const targetCommit = args.commit || run("git", ["rev-parse", "HEAD"], { cwd: sourceDir, capture: true });
     run("git", ["checkout", "--quiet", targetCommit], { cwd: sourceDir });
@@ -238,8 +252,7 @@ function main() {
       ensureInstanceLayout(instance);
       const env = runtimeEnvironment(instance);
       const releaseDir = materializeRelease(archivePath, instance, tag, env);
-      const currentPath = path.join(instance.baseDir, "current");
-      const previous = fs.existsSync(currentPath) ? fs.realpathSync(currentPath) : "";
+      const previous = currentRelease(instance);
       prepared.push({ instance, env, releaseDir, previous });
     }
 
@@ -252,7 +265,7 @@ function main() {
     }
 
     for (const item of prepared) cleanupReleases(item.instance, registry.keepReleases);
-    run("pm2", ["save"]);
+    run("pm2", ["save"], { cwd: os.tmpdir() });
     console.log(`DEPLOY_ALL_OK=${commit};INSTANCES=${instances.length}`);
   } catch (error) {
     console.error(`DEPLOY_ALL_ERROR: ${error.message}`);
@@ -262,27 +275,13 @@ function main() {
           console.error(`Rollback de ${item.instance.slug} para ${item.previous}`);
           switchCurrent(item.instance, item.previous);
           reloadAndCheck(item.instance, item.env);
-        } else {
-          console.error(`Rollback da primeira publicacao de ${item.instance.slug}`);
-          fs.rmSync(path.join(item.instance.baseDir, "current"), { force: true });
-          spawnSync("pm2", ["delete", item.instance.backendProcess], { stdio: "ignore" });
-          spawnSync("pm2", ["delete", item.instance.frontendProcess], { stdio: "ignore" });
-        }
+        } else console.error(`Rollback de ${item.instance.slug} ignorado: não havia release anterior válida.`);
       } catch (rollbackError) {
         console.error(`ROLLBACK_ERROR ${item.instance.slug}: ${rollbackError.message}`);
       }
     }
-    for (const item of prepared) {
-      try {
-        const currentPath = path.join(item.instance.baseDir, "current");
-        const current = fs.existsSync(currentPath) ? fs.realpathSync(currentPath) : "";
-        if (path.resolve(item.releaseDir) !== path.resolve(current)) {
-          fs.rmSync(item.releaseDir, { recursive: true, force: true });
-        }
-      } catch (cleanupError) {
-        console.error(`CLEANUP_ERROR ${item.instance.slug}: ${cleanupError.message}`);
-      }
-    }
+    // Keep prepared releases on a failed deploy. They are useful for recovery
+    // and must not remove the only runnable build for an active process.
     process.exitCode = 1;
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
