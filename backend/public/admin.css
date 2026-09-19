@@ -8981,6 +8981,12 @@ th {
   color: #9fb2d0;
 }
 
+.integration-catalog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .ticket-finance-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

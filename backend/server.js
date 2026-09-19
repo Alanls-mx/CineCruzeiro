@@ -11307,6 +11307,21 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/integrations/commercialCatalog/access-token" && method === "GET") {
+    if (roleAlias(req.adminUser?.role) !== "owner") {
+      sendJson(res, 403, { error: { code: "COMMERCIAL_CATALOG_TOKEN_FORBIDDEN", message: "Somente o proprietário pode revelar o token do catálogo comercial." } }, { "Cache-Control": "no-store" });
+      return;
+    }
+    const catalogConfig = integrationConfigService.resolvedConfig(db, "commercialCatalog") || {};
+    if (!catalogConfig.accessToken) {
+      sendJson(res, 404, { error: { code: "COMMERCIAL_CATALOG_TOKEN_NOT_CONFIGURED", message: "Nenhum token foi configurado para o catálogo comercial." } }, { "Cache-Control": "no-store" });
+      return;
+    }
+    logEvent("warn", "integration.commercial_catalog.token_revealed", { actorUserId: req.adminUser.id });
+    sendJson(res, 200, { token: catalogConfig.accessToken }, { "Cache-Control": "no-store" });
+    return;
+  }
+
   const adminIntegrationMatch = pathname.match(/^\/api\/admin\/integrations\/([^/]+)(?:\/(test|enable|disable))?$/);
   if (adminIntegrationMatch) {
     const key = integrationConfigService.providerKey(decodeURIComponent(adminIntegrationMatch[1]));

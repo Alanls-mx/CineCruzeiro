@@ -11246,6 +11246,10 @@ function commercialCatalogAccessMarkup() {
       <p>Após salvar e ativar, este catálogo disponibiliza filmes, sessões vendáveis, programação, bomboniere, promoções, cupons e datas.</p>
       <code>${escapeHtml(commercialCatalogEndpointUrl())}</code>
       <small>Prefira o header <code>Authorization: Bearer TOKEN</code>. Para integrações que exigem uma URL, use também <code>?token=TOKEN</code>.</small>
+      <div class="integration-catalog-actions">
+        <button class="ghost-button" type="button" onclick="revealCommercialCatalogToken()">Revelar token</button>
+        <button class="ghost-button" type="button" onclick="copyCommercialCatalogToken()">Copiar token</button>
+      </div>
       <div id="commercialCatalogLinkPreview" class="integration-catalog-link-preview" aria-live="polite"></div>
     </section>
   `;
@@ -11264,25 +11268,60 @@ function updateCommercialCatalogLinkPreview() {
   target.innerHTML = `<code>${escapeHtml(link)}</code><button class="ghost-button" type="button" onclick="copyCommercialCatalogLink()">Copiar link</button>`;
 }
 
+async function loadCommercialCatalogToken() {
+  const input = document.querySelector('[data-integration-field="accessToken"]');
+  if (!input) return "";
+  const currentToken = String(input.value || "").trim();
+  if (currentToken) return currentToken;
+  const result = await api("/api/admin/integrations/commercialCatalog/access-token");
+  input.value = String(result.token || "");
+  input.type = "text";
+  updateCommercialCatalogLinkPreview();
+  return String(input.value || "").trim();
+}
+
+async function revealCommercialCatalogToken() {
+  try {
+    const token = await loadCommercialCatalogToken();
+    if (!token) throw new Error("Nenhum token configurado para o catálogo comercial.");
+    const input = document.querySelector('[data-integration-field="accessToken"]');
+    if (input) input.type = "text";
+    showToast("Token revelado somente nesta sessão do painel.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function copyCommercialCatalogToken() {
+  try {
+    const token = await loadCommercialCatalogToken();
+    if (!token) throw new Error("Nenhum token configurado para o catálogo comercial.");
+    await navigator.clipboard.writeText(token);
+    showToast("Token do catálogo copiado.");
+  } catch (error) {
+    showToast(error.message || "Não foi possível copiar o token.", "error");
+  }
+}
+
 function generateCommercialCatalogToken() {
   const input = document.querySelector('[data-integration-field="accessToken"]');
   if (!input) return;
   const bytes = new Uint8Array(24);
   window.crypto.getRandomValues(bytes);
   input.value = `catalog_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  input.type = "text";
   updateCommercialCatalogLinkPreview();
   showToast("Novo token gerado. Salve a integração para ativá-lo.");
 }
 
 async function copyCommercialCatalogLink() {
-  const input = document.querySelector('[data-integration-field="accessToken"]');
-  const token = String(input?.value || "").trim();
-  if (!token) return;
   try {
+    const token = await loadCommercialCatalogToken();
+    if (!token) throw new Error("Nenhum token configurado para o catálogo comercial.");
     await navigator.clipboard.writeText(`${commercialCatalogEndpointUrl()}?token=${encodeURIComponent(token)}`);
     showToast("Link do catálogo copiado.");
-  } catch {
-    showToast("Não foi possível copiar automaticamente. Copie o link exibido na tela.", "error");
+  } catch (error) {
+    showToast(error.message || "Não foi possível copiar automaticamente.", "error");
   }
 }
 

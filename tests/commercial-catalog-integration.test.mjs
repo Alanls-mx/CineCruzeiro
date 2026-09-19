@@ -38,11 +38,14 @@ test("catálogo comercial possui endpoint protegido, CORS opcional e os conjunto
   assert.match(server, /pathname === "\/api\/commercial\/catalog"/);
   assert.match(server, /catalogTokensMatch/);
   assert.match(server, /commercialCatalogCorsHeaders/);
+  assert.match(server, /commercialCatalog\/access-token/);
   assert.match(server, /availableSessions/);
   assert.match(server, /concessions:/);
   assert.match(server, /promotions:/);
   assert.match(server, /coupons:/);
   assert.match(server, /dates/);
   assert.match(admin, /Gerar token seguro/);
+  assert.match(admin, /Revelar token/);
+  assert.match(admin, /Copiar token/);
   assert.match(admin, /Authorization: Bearer TOKEN/);
 });
