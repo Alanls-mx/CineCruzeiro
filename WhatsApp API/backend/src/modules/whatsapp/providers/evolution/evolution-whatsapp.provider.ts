@@ -63,6 +63,7 @@ export class EvolutionWhatsAppProvider implements WhatsAppProvider {
 
   private webhookConfig(webhookUrl: string) {
     return {
+      enabled: true,
       url: webhookUrl,
       byEvents: false,
       base64: true,
