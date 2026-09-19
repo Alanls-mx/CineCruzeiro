@@ -6,5 +6,7 @@ export async function webhooksRoutes(app: FastifyInstance) {
   const controller = new WebhooksController();
 
   // Public webhook route for Evolution API
-  app.post('/evolution', { preHandler: requireEvolutionWebhookSignature }, controller.handleEvolution);
+  app.post('/evolution', {
+    preHandler: async (request) => requireEvolutionWebhookSignature(request),
+  }, controller.handleEvolution);
 }
