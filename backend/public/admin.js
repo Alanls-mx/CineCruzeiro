@@ -139,6 +139,7 @@ let state = {
   globalSessionsPage: 1,
   globalSessionsPageSize: 12,
   globalSessionFilters: { from: "", to: "", roomId: "", movieId: "", status: "active", conflictsOnly: false },
+  selectedOngoingSessionId: "",
   sessionAutocorrectPlan: null,
   ticketTypesPage: 1,
   ticketTypesPageSize: 8,
@@ -4388,6 +4389,99 @@ function renderGlobalSessions() {
   }).join("") + renderAdminListPager("globalSessions", { page: state.globalSessionsPage, pageSize, totalPages, start, pageItems, total: filtered.length }, "sessão(ões)");
 }
 
+function roomForGlobalSession(session = {}) {
+  if (session.roomId) {
+    const byId = (state.content?.rooms || []).find((room) => room.id === session.roomId);
+    if (byId) return byId;
+  }
+  const label = String(session.room || "").toLocaleLowerCase("pt-BR");
+  return (state.content?.rooms || []).find((room) => {
+    const name = String(room.name || "").toLocaleLowerCase("pt-BR");
+    return name && (label === name || label.startsWith(`${name} (`));
+  }) || null;
+}
+
+function sessionTicketRevenue(entry, tickets) {
+  const orderIds = new Set(tickets.map((ticket) => ticket.orderId).filter(Boolean));
+  return (state.content?.orders || []).filter((order) => orderIds.has(order.id) && order.status === "paid").reduce((total, order) => {
+    const clubTicketDiscount = Number(order.clubBenefits?.ticketDiscount || 0);
+    const couponTicketDiscount = Number(order.couponTicketDiscount || 0);
+    return total + Math.max(0, Number(order.serviceSubtotal || 0) - Number(order.clubCreditsApplied || 0) - clubTicketDiscount - couponTicketDiscount);
+  }, 0);
+}
+
+function renderOngoingSessionSeatMap(entry, tickets) {
+  const room = roomForGlobalSession(entry.session);
+  const rows = room?.seatLayout?.rows || [];
+  if (!rows.length) return `<div class="ongoing-seat-empty">Esta sala não usa mapa de poltronas configurado.</div>`;
+  const soldSeats = new Set(tickets.map((ticket) => String(ticket.seat || ticket.seatLabel || "").trim()).filter(Boolean));
+  return `
+    <div class="ongoing-seat-map" aria-label="Mapa da sala ${escapeHtml(room?.name || entry.session.room || "")}">
+      <div class="ongoing-seat-screen">${escapeHtml(room?.seatLayout?.screenLabel || "TELA")}</div>
+      ${(rows || []).map((row) => `
+        <div class="ongoing-seat-row">
+          <span>${escapeHtml(row.label || "")}</span>
+          <div>${(row.seats || []).filter((seat) => seat.enabled !== false).map((seat) => {
+            const sold = soldSeats.has(String(seat.label || ""));
+            return `<i class="${sold ? "is-sold" : ""}" title="${escapeHtml(`${seat.label || "Poltrona"}: ${sold ? "ocupada" : "livre"}`)}">${escapeHtml(seat.label || "")}</i>`;
+          }).join("")}</div>
+          <span aria-hidden="true">${escapeHtml(row.label || "")}</span>
+        </div>
+      `).join("")}
+    </div>`;
+}
+
+function renderOngoingSessions() {
+  const target = $("ongoingSessionsList");
+  if (!target) return;
+  const now = Date.now();
+  const entries = globalSessionEntries().filter((entry) =>
+    entry.startsAt <= now
+    && entry.endsAt > now
+    && !["cancelled", "hidden", "archived"].includes(String(entry.session.status || "").toLowerCase())
+  );
+  if (!entries.length) {
+    target.innerHTML = `<div class="empty-state"><strong>Nenhuma sessão em andamento</strong><span>Quando um filme estiver dentro do horário programado, a operação da sala aparecerá aqui.</span></div>`;
+    return;
+  }
+  if (!entries.some((entry) => entry.session.id === state.selectedOngoingSessionId)) state.selectedOngoingSessionId = entries[0].session.id;
+  const selected = entries.find((entry) => entry.session.id === state.selectedOngoingSessionId) || entries[0];
+  const tickets = (state.content?.tickets || []).filter((ticket) => ticket.sessionId === selected.session.id && !["cancelled", "refunded", "pending_payment"].includes(String(ticket.status || "")));
+  const orders = new Set(tickets.map((ticket) => ticket.orderId).filter(Boolean));
+  const room = roomForGlobalSession(selected.session);
+  target.innerHTML = `
+    <div class="ongoing-session-tabs">
+      ${entries.map((entry) => `<button class="${entry.session.id === selected.session.id ? "active" : ""}" type="button" data-ongoing-session="${escapeHtml(entry.session.id)}">
+        <strong>${escapeHtml(entry.movie.title || "Filme")}</strong><span>${escapeHtml(entry.session.time || "--:--")} · ${escapeHtml(entry.session.room || "Sala")}</span>
+      </button>`).join("")}
+    </div>
+    <article class="ongoing-session-detail">
+      <div class="ongoing-session-summary">
+        <div>
+          <span class="mini-label">Em andamento</span>
+          <h2>${escapeHtml(selected.movie.title || "Filme sem título")}</h2>
+          <p>${escapeHtml(selected.session.room || room?.name || "Sala não informada")} · ${escapeHtml(selected.session.format || "Formato não informado")}</p>
+        </div>
+        <div class="ongoing-session-times"><span>Início<strong>${escapeHtml(selected.session.time || "--:--")}</strong></span><span>Término<strong>${new Date(selected.endsAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</strong></span></div>
+      </div>
+      <div class="ongoing-session-kpis">
+        <div><span>Ingressos emitidos</span><strong>${tickets.length}</strong></div>
+        <div><span>Pedidos pagos</span><strong>${orders.size}</strong></div>
+        <div><span>Receita de ingressos</span><strong>${money(sessionTicketRevenue(selected, tickets))}</strong></div>
+      </div>
+      <div class="ongoing-session-map-wrap">
+        <div><span class="mini-label">Mapa da sala</span><p>Ocupadas: ${tickets.filter((ticket) => ticket.seat || ticket.seatLabel).length} poltrona(s)</p></div>
+        ${renderOngoingSessionSeatMap(selected, tickets)}
+      </div>
+    </article>`;
+  target.querySelectorAll("[data-ongoing-session]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.selectedOngoingSessionId = button.dataset.ongoingSession;
+      renderOngoingSessions();
+    });
+  });
+}
+
 function updateGlobalSessionFilters() {
   state.globalSessionFilters = {
     from: $("globalSessionsFrom").value,
@@ -4509,6 +4603,7 @@ async function applySessionAutocorrect() {
 function renderRooms() {
   const rooms = state.content?.rooms || [];
   renderGlobalSessions();
+  renderOngoingSessions();
   if (state.creating.room) {
     $("roomsList").innerHTML = creationPlaceholder("Nova sala", "Cadastre nome, capacidade e tecnologia no quadro à direita.");
     fillRoomForm(null);

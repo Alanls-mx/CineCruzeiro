@@ -710,6 +710,7 @@
           <nav class="admin-subtabs" aria-label="Seções de Salas" data-admin-tablist="rooms">
             <button class="active" type="button" data-admin-tab="registered">Salas cadastradas</button>
             <button type="button" data-admin-tab="schedule">Agenda de sessões</button>
+            <button type="button" data-admin-tab="ongoing">Em andamento</button>
           </nav>
           <div class="admin-tab-panel" data-admin-tab-panel="rooms:schedule" hidden>
           <section class="surface room-schedule-manager" aria-labelledby="globalSessionsTitle">
@@ -778,6 +779,17 @@
             </section>
             <div id="globalSessionsList" class="global-sessions-list"></div>
           </section>
+          </div>
+          <div class="admin-tab-panel" data-admin-tab-panel="rooms:ongoing" hidden>
+            <section class="surface ongoing-sessions-manager" aria-labelledby="ongoingSessionsTitle">
+              <div class="room-schedule-head">
+                <div>
+                  <div id="ongoingSessionsTitle" class="section-title">Sessões em andamento</div>
+                  <p>Acompanhe a sala ocupada agora, os ingressos emitidos e a janela operacional de cada filme.</p>
+                </div>
+              </div>
+              <div id="ongoingSessionsList" class="ongoing-sessions-list" aria-live="polite"></div>
+            </section>
           </div>
           <div class="admin-tab-panel active" data-admin-tab-panel="rooms:registered">
           <div class="split-grid compact">

@@ -603,24 +603,55 @@ function ClubSubscriptionCard({
       </div>
       <dl className="mt-5 grid gap-3 text-sm text-slate-300 sm:grid-cols-2">
         <Info label="Ciclo" value={`${dateLabel(subscription.cycleStart)} → ${dateLabel(subscription.cycleEnd || subscription.currentPeriodEnd)}`} />
-        <Info label="Próxima renovação" value={subscription.status === "ending" ? "Não haverá renovação" : dateLabel(subscription.nextBillingAt || subscription.cycleEnd)} />
+        <Info
+          label="Renovação"
+          value={subscription.assignedManually
+            ? "Plano atribuído pelo cinema, sem renovação automática"
+            : subscription.status === "ending"
+              ? "Não haverá renovação"
+              : dateLabel(subscription.nextBillingAt || subscription.cycleEnd)}
+        />
         <Info label="Utilizados" value={String(subscription.creditsUsed || 0)} />
         <Info label="Disponíveis" value={String(subscription.creditsRemaining ?? subscription.creditsAvailable ?? 0)} />
       </dl>
+      {subscription.savings && subscription.savings.total > 0 ? (
+        <div className="mt-4 bg-slate-950/55 p-4 text-sm text-slate-200">
+          <strong className="block text-gold-400">Economia acumulada: {currency(subscription.savings.total)}</strong>
+          <span className="mt-1 block text-slate-400">
+            {currency(subscription.savings.clubCredits)} em créditos e {currency(Math.max(0, subscription.savings.total - subscription.savings.clubCredits))} em descontos e itens gratuitos.
+          </span>
+        </div>
+      ) : null}
+      {subscription.freeItems?.length ? (
+        <div className="mt-4">
+          <strong className="text-sm text-slate-100">Itens gratuitos deste ciclo</strong>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {subscription.freeItems.map((item) => (
+              <div key={item.concessionId} className="bg-slate-950/55 p-3 text-sm">
+                <strong className="block text-slate-100">{item.name}</strong>
+                <span className="text-slate-400">{item.remaining} de {item.included} disponível(is) para resgate</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {subscription.usage?.length ? (
         <details className="mt-5">
           <summary className="cursor-pointer text-sm font-black text-gold-400">Ver usos desta assinatura</summary>
           <div className="mt-3 space-y-2 text-sm text-slate-400">
             {subscription.usage.slice(0, 5).map((usage) => (
               <div key={usage.id} className="flex justify-between gap-4 border-t border-white/8 pt-2">
-                <span>{dateTimeLabel(usage.usedAt)}</span>
-                <span>{usage.refundedAt ? "Crédito devolvido" : "Ingresso emitido"}</span>
+                <span>
+                  <strong className="block text-slate-200">{usage.movieTitle || "Ingresso emitido"}</strong>
+                  <span>{[usage.sessionDate ? dateLabel(usage.sessionDate) : "", usage.sessionTime, usage.ticketType, usage.orderReference].filter(Boolean).join(" · ")}</span>
+                </span>
+                <span className="text-right">{usage.refundedAt ? "Crédito devolvido" : usage.savings ? `Economia de ${currency(usage.savings)}` : dateTimeLabel(usage.usedAt)}</span>
               </div>
             ))}
           </div>
         </details>
       ) : null}
-      {!compact && onCancel && !["ending", "cancelled", "ended"].includes(subscription.status) && (
+      {!compact && onCancel && !subscription.assignedManually && !["ending", "cancelled", "ended"].includes(subscription.status) && (
         <div className="mt-5 flex flex-wrap gap-4 text-sm font-black">
           <button type="button" onClick={() => onCancel(subscription.id)} className="text-amber-200 transition hover:text-amber-100">
             Cancelar no fim do ciclo
@@ -690,6 +721,10 @@ function dateLabel(value = "") {
 function dateTimeLabel(value = "") {
   if (!value) return "-";
   return new Date(value).toLocaleString("pt-BR");
+}
+
+function currency(value = 0) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 }
 
 function maskPhone(value = "") {

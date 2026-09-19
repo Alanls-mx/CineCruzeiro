@@ -51,7 +51,7 @@ const {
   recognitionDate
 } = require("./services/financialRecognitionService");
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
-const { moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
+const { PRE_PREMIERE_WINDOW_MS, moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
 const { calendarDateKey } = require("./services/calendarDateService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
 const { buildSessionAutocorrectPlan } = require("./services/sessionScheduleAutocorrectService");
@@ -775,12 +775,21 @@ function sessionSellableUntil(session = {}, fallbackDate = todayIsoDate()) {
   return startsAt ? new Date(startsAt.getTime() + 10 * 60 * 1000) : null;
 }
 
+const PRE_PREMIERE_SALES_WINDOW_MS = PRE_PREMIERE_WINDOW_MS;
+
+function sessionSalesOpenAt(session = {}, fallbackDate = todayIsoDate()) {
+  const startsAt = sessionStartsAt(session, fallbackDate);
+  return startsAt ? new Date(startsAt.getTime() - PRE_PREMIERE_SALES_WINDOW_MS) : null;
+}
+
 function normalizedSessionStatus(session = {}) {
   return String(session?.status || "available").trim().toLowerCase();
 }
 
 function isSessionSellable(session = {}, fallbackDate = todayIsoDate(), now = new Date()) {
   if (!session || ["sold_out", "cancelled", "hidden", "archived"].includes(normalizedSessionStatus(session))) return false;
+  const salesOpenAt = sessionSalesOpenAt(session, fallbackDate);
+  if (salesOpenAt && salesOpenAt.getTime() > now.getTime()) return false;
   const sellableUntil = sessionSellableUntil(session, fallbackDate);
   return sellableUntil ? sellableUntil.getTime() > now.getTime() : true;
 }
@@ -873,6 +882,8 @@ function applyScheduledPremieres(db) {
   const now = new Date();
   const today = todayIsoDate();
   db.movies = db.movies.map((movie) => {
+    const workflowStatus = movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published");
+    if (workflowStatus !== "published") return movie;
     if (shouldPublishUpcomingMovie(movie, today, now)) {
       changed = true;
       const timing = moviePremiereTiming(movie, now);
@@ -1824,9 +1835,14 @@ function createByteLimitStream(maxBytes) {
 function normalizePaymentOrder(input) {
   const customerName = String(input.customerName || "Cliente Cine Cruzeiro").trim();
   const [firstName, ...lastNameParts] = customerName.split(/\s+/);
+  const suppliedReference = String(input.reference || input.publicReference || "").trim().toUpperCase();
+  const reference = /^CC-[A-Z0-9]{8}$/.test(suppliedReference)
+    ? suppliedReference
+    : `CC-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 
   return {
     id: input.id || input.idempotencyKey || `pedido-${crypto.randomBytes(12).toString("hex")}`,
+    reference,
     idempotencyKey: input.idempotencyKey || input.id || "",
     movieId: String(input.movieId || ""),
     sessionId: String(input.sessionId || ""),
@@ -2346,7 +2362,7 @@ function enrichTicket(db, ticket) {
     sessionSold: stats?.sold || 0,
     sessionAvailable: capacity ? Math.max(0, capacity - (stats?.sold || 0)) : null,
     seat: ticket.seat || ticket.seatLabel || ticket.assento || ticket.metadata?.seat || "Lugar livre",
-    orderReference: order?.id || ticket.orderId,
+    orderReference: shortOrderReference(order || { id: ticket.orderId }),
     orderStatus: order?.status || "",
     paymentStatus: order?.paymentStatus || "",
     extras: orderExtras,
@@ -4337,13 +4353,19 @@ function createSubscriptionCreditCycle(db, subscription, plan, now = new Date(),
   subscription.startedAt ||= new Date().toISOString();
   subscription.cycleStart = cycleStart;
   subscription.cycleEnd = cycleEnd;
-  subscription.nextBillingAt = cycleEnd;
+  subscription.nextBillingAt = isManualSubscription(subscription) ? "" : cycleEnd;
   subscription.currentPeriodKey = monthKey(now);
   subscription.currentPeriodStart = cycleStart;
   subscription.currentPeriodEnd = cycleEnd;
   subscription.renewedAt = new Date().toISOString();
   syncSubscriptionCreditMirror(subscription, credit);
   return credit;
+}
+
+function isManualSubscription(subscription = {}) {
+  return ["manual_admin", "migration"].includes(String(subscription.provider || ""))
+    || subscription.billingMode === "manual"
+    || subscription.autoRenew === false;
 }
 
 function ensureDetailedSubscriptionCycle(db, subscription, plan, credit) {
@@ -4365,13 +4387,17 @@ function refreshSubscriptionCredits(db, subscription, now = new Date()) {
   if (!plan) return subscription;
   let credit = currentSubscriptionCredit(db, subscription, now);
   const status = String(subscription.status || "");
-  const manuallyManaged = ["manual_admin", "migration"].includes(String(subscription.provider || ""));
-  const shouldRenew = status === "active" && manuallyManaged && (!subscription.cycleEnd || new Date(subscription.cycleEnd).getTime() <= now.getTime());
-  if (!credit && shouldRenew) {
-    credit = createSubscriptionCreditCycle(db, subscription, plan, now);
-  }
+  const manuallyManaged = isManualSubscription(subscription);
   if (!credit && !db.subscriptionCredits?.some((item) => item.subscriptionId === subscription.id) && status === "active" && manuallyManaged) {
     credit = createSubscriptionCreditCycle(db, subscription, plan, now);
+  }
+  if (!credit && status === "active" && manuallyManaged) {
+    subscription.status = "ended";
+    subscription.endedAt ||= now.toISOString();
+    subscription.creditsAvailable = 0;
+    subscription.nextBillingAt = "";
+    subscription.updatedAt = now.toISOString();
+    return subscription;
   }
   if (!credit && subscription.status === "ending") {
     subscription.status = "ended";
@@ -4424,9 +4450,40 @@ function subscriptionSummary(db, userId) {
       refreshSubscriptionCredits(db, subscription);
       const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
       const credit = currentSubscriptionCredit(db, subscription);
-      const usage = (db.subscriptionUsage || []).filter((item) => item.subscriptionId === subscription.id);
+      const usage = (db.subscriptionUsage || []).filter((item) => item.subscriptionId === subscription.id).map((item) => {
+        const order = (db.orders || []).find((candidate) => candidate.id === item.orderId);
+        const ticket = (db.tickets || []).find((candidate) => candidate.id === item.ticketId)
+          || (db.tickets || []).find((candidate) => candidate.orderId === item.orderId && candidate.movieId === item.movieId);
+        const movie = (db.movies || []).find((candidate) => candidate.id === (item.movieId || order?.movieId));
+        const basePrice = Number(ticket?.basePrice ?? ticket?.metadata?.originalBasePrice ?? 0);
+        const paidAfterBenefits = Number(ticket?.additionalPaymentAmount ?? 0);
+        const fallbackSavings = Number(ticket?.subscriptionCreditAmount ?? order?.clubCreditsApplied ?? 0)
+          + Number(ticket?.metadata?.clubPlanDiscount ?? 0);
+        return {
+          ...item,
+          movieTitle: movie?.title || order?.movieTitle || ticket?.movieTitle || "Filme não identificado",
+          sessionDate: ticket?.sessionDate || order?.sessionDate || "",
+          sessionTime: ticket?.sessionTime || order?.sessionTime || "",
+          ticketType: ticket?.ticketType || "Ingresso",
+          orderReference: shortOrderReference(order),
+          savings: Number(Math.max(0, basePrice - paidAfterBenefits || fallbackSavings).toFixed(2))
+        };
+      });
       const detailedCredits = (db.subscriptionCreditUnits || []).filter((item) => item.subscriptionId === subscription.id);
       const counts = detailedCredits.length ? clubDomainService.creditCounts(db, subscription.id) : null;
+      const freeItems = (plan?.freeConcessionItems || []).map((configured) => {
+        const concession = (db.concessions || []).find((item) => item.id === configured.concessionId);
+        const included = Math.max(0, Number(configured.quantityPerCycle || configured.quantity || 0));
+        const used = reservedFreeConcessionQuantity(db, subscription, configured.concessionId);
+        return {
+          concessionId: configured.concessionId,
+          name: concession?.name || "Item da bomboniere",
+          included,
+          used,
+          remaining: Math.max(0, included - used),
+          imageUrl: concession?.imageUrl || ""
+        };
+      });
       return {
         ...subscription,
         plan,
@@ -4435,8 +4492,14 @@ function subscriptionSummary(db, userId) {
         usage,
         cycleStart: subscription.cycleStart || subscription.currentPeriodStart || credit?.cycleStart || "",
         cycleEnd: subscription.cycleEnd || subscription.currentPeriodEnd || credit?.cycleEnd || "",
-        nextBillingAt: subscription.nextBillingAt || subscription.cycleEnd || "",
+        billingMode: isManualSubscription(subscription) ? "manual" : "automatic",
+        autoRenew: !isManualSubscription(subscription) && subscription.cancelAtPeriodEnd !== true,
+        paymentRequired: !isManualSubscription(subscription),
+        assignedManually: isManualSubscription(subscription),
+        nextBillingAt: isManualSubscription(subscription) ? "" : (subscription.nextBillingAt || subscription.cycleEnd || ""),
         creditCounts: counts,
+        savings: clubSavingsSummary(db, subscription),
+        freeItems,
         creditsTotal: subscriptionCanUseCredit(subscription) ? (detailedCredits.length || Number(credit?.total || 0)) : 0,
         creditsRemaining: subscriptionCanUseCredit(subscription) ? (counts ? Number(counts.available || 0) : Math.max(0, Number(subscription.creditsAvailable || 0))) : 0,
         creditsReserved: counts ? Number(counts.reserved || 0) : 0,
@@ -4459,6 +4522,11 @@ function createSubscription(db, userId, planId, adminUser, status = "pending_pay
     existing.status = status;
     existing.updatedAt = now.toISOString();
     existing.provider = existing.provider || provider;
+    existing.billingMode ||= provider === "manual_admin" ? "manual" : "automatic";
+    if (provider === "manual_admin") {
+      existing.autoRenew = false;
+      if (status === "active") existing.paymentStatus = "not_required";
+    }
     if (status === "pending_payment") {
       existing.paymentStatus = "pending";
       existing.paymentExpiresAt = new Date(now.getTime() + SUBSCRIPTION_PENDING_PAYMENT_TTL_MS).toISOString();
@@ -4480,6 +4548,8 @@ function createSubscription(db, userId, planId, adminUser, status = "pending_pay
     planId,
     status,
     provider,
+    billingMode: provider === "manual_admin" ? "manual" : "automatic",
+    autoRenew: provider !== "manual_admin",
     providerSubscriptionId: "",
     cycleStart: "",
     cycleEnd: "",
@@ -4490,7 +4560,7 @@ function createSubscription(db, userId, planId, adminUser, status = "pending_pay
     currentPeriodEnd: "",
     creditsAvailable: 0,
     creditsUsed: 0,
-    paymentStatus: status === "active" ? "approved" : "pending",
+    paymentStatus: status === "active" ? (provider === "manual_admin" ? "not_required" : "approved") : "pending",
     paymentExpiresAt: status === "pending_payment" ? new Date(now.getTime() + SUBSCRIPTION_PENDING_PAYMENT_TTL_MS).toISOString() : "",
     paymentExpiredAt: "",
     cancelAtPeriodEnd: false,
@@ -5304,8 +5374,11 @@ function normalizeMovieWorkflow(input, existing = {}) {
 }
 
 function publicMovieStatus(input, existing = {}, workflowStatus = "published") {
-  if (workflowStatus === "draft" || workflowStatus === "archived") return "hidden";
+  if (workflowStatus === "archived") return "hidden";
   const value = input.status || existing.status || "upcoming";
+  // Draft is a publication workflow, not a public-status value. Legacy drafts
+  // may still carry "hidden" from the old coupling, so preserve a publishable state.
+  if (workflowStatus === "draft" && value === "hidden") return "upcoming";
   return ["now_playing", "upcoming", "hidden"].includes(value) ? value : "upcoming";
 }
 
@@ -6849,8 +6922,16 @@ function repriceOrderFromCatalog(db, order, options = {}) {
     error.code = session ? "SESSION_SOLD_OUT" : "SESSION_NOT_FOUND";
     throw error;
   }
-  if (!isSessionSellable(session, order.sessionDate || session.date || todayIsoDate())) {
-    const error = new Error("Esta sessao ja iniciou e nao esta mais disponivel para venda.");
+  const sessionDate = order.sessionDate || session.date || todayIsoDate();
+  const salesOpenAt = sessionSalesOpenAt(session, sessionDate);
+  if (salesOpenAt && salesOpenAt.getTime() > Date.now()) {
+    const error = new Error("As vendas desta sessão serão abertas automaticamente 24 horas antes da pré-estreia.");
+    error.statusCode = 409;
+    error.code = "SESSION_SALES_NOT_OPEN";
+    throw error;
+  }
+  if (!isSessionSellable(session, sessionDate)) {
+    const error = new Error("Esta sessão já iniciou e não está mais disponível para venda.");
     error.statusCode = 409;
     error.code = "SESSION_SALES_CLOSED";
     throw error;
@@ -7626,7 +7707,7 @@ function getContent(db, options = {}) {
       sessions: (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session))
     }));
   const visibleMovies = movies
-    .filter((movie) => movie.status !== "hidden")
+    .filter((movie) => (movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published")) === "published" && movie.status !== "hidden")
     .map((movie) => ({
       ...movie,
       sessions: sellableSessions(movie, now).map((session) => ({ ...session, status: publicSessionStatus(db, session) }))
@@ -7882,9 +7963,11 @@ function compareMetric(current, previous) {
 }
 
 function shortOrderReference(order) {
-  const raw = String(order?.reference || order?.id || "");
-  const tail = raw.replace(/[^a-zA-Z0-9]/g, "").slice(-5).toUpperCase() || "00000";
-  return `#CC-${tail}`;
+  const reference = String(order?.reference || order?.publicReference || "").trim().toUpperCase();
+  if (/^CC-[A-Z0-9]{8}$/.test(reference)) return reference;
+  const raw = String(order?.id || "");
+  const tail = raw.replace(/[^a-zA-Z0-9]/g, "").slice(-8).toUpperCase().padStart(8, "0");
+  return `CC-${tail || "00000000"}`;
 }
 
 function movieForOrder(db, order) {

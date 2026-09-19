@@ -290,6 +290,10 @@ export interface AccountSubscription {
   paymentExpiredAt?: string;
   currentPeriodEnd?: string;
   benefitsUntil?: string;
+  billingMode?: "manual" | "automatic";
+  autoRenew?: boolean;
+  paymentRequired?: boolean;
+  assignedManually?: boolean;
   cancelAtPeriodEnd?: boolean;
   cancellationMode?: string;
   reactivationBlocked?: boolean;
@@ -305,10 +309,32 @@ export interface AccountSubscription {
   usage?: Array<{
     id: string;
     orderId?: string;
+    orderReference?: string;
     ticketId?: string;
     sessionId?: string;
+    movieTitle?: string;
+    sessionDate?: string;
+    sessionTime?: string;
+    ticketType?: string;
+    savings?: number;
     usedAt: string;
     refundedAt?: string;
+  }>;
+  savings?: {
+    total: number;
+    tickets: number;
+    concessions: number;
+    freeItems: number;
+    clubCredits: number;
+    benefitedOrders: number;
+  };
+  freeItems?: Array<{
+    concessionId: string;
+    name: string;
+    included: number;
+    used: number;
+    remaining: number;
+    imageUrl?: string;
   }>;
 }
 
