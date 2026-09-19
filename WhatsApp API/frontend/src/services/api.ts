@@ -1,11 +1,11 @@
 import type { Company, Conversation, Message, WhatsAppInstance, WhatsAppSettings } from '../types/index.js';
 
-const API_BASE =
-  import.meta.env.VITE_API_URL !== undefined
-    ? import.meta.env.VITE_API_URL
-    : (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
-        ? '/projects/cinecruzeiro/api/admin/whatsapp'
-        : 'http://localhost:3333');
+// The production panel is served by the Cine Cruzeiro admin gateway. Keeping
+// this value independent from a developer Vite env prevents an old standalone
+// `/whatsapp-api` endpoint from being embedded in a production bundle.
+const API_BASE = typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+  ? '/projects/cinecruzeiro/api/admin/whatsapp'
+  : 'http://localhost:3333';
 
 async function request<T>(path: string, options: RequestInit = {}, _companyId?: string): Promise<T> {
   const headers = new Headers(options.headers || {});
