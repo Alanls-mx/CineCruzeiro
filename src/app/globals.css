@@ -722,6 +722,105 @@ a[href] {
   }
 }
 
+/* Each public cinema receives a distinct rhythm, rather than a logo swap on the same shell. */
+body[data-cinema-theme="cine-estacao-amparo"] header .mx-auto,
+body[data-cinema-theme="cine-estacao-amparo"] footer .mx-auto {
+  max-width: 1180px;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] header nav a {
+  letter-spacing: 0.045em;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] :is(a, button).bg-gold-400 {
+  border-radius: 2px;
+  box-shadow: inset 0 -2px 0 rgba(85, 26, 18, 0.26);
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] main > section.relative.w-full.overflow-hidden {
+  border-bottom: 1px solid rgba(213, 170, 95, 0.38);
+}
+
+body[data-cinema-theme="cinemax-piraju"] header .mx-auto,
+body[data-cinema-theme="cinemax-piraju"] footer .mx-auto {
+  max-width: 1440px;
+}
+
+body[data-cinema-theme="cinemax-piraju"] header nav {
+  gap: 2.25rem;
+}
+
+body[data-cinema-theme="cinemax-piraju"] header nav a {
+  letter-spacing: 0.04em;
+}
+
+body[data-cinema-theme="cinemax-piraju"] :is(a, button).bg-gold-400 {
+  border-radius: 999px;
+  padding-left: 1.6rem;
+  padding-right: 1.6rem;
+  box-shadow: 0 10px 24px rgba(14, 203, 231, 0.2);
+}
+
+body[data-cinema-theme="cinemax-piraju"] main > section.relative.w-full.overflow-hidden {
+  border-bottom: 2px solid rgba(14, 203, 231, 0.38);
+}
+
+body[data-cinema-theme="cine-gama"] header .mx-auto,
+body[data-cinema-theme="cine-gama"] footer .mx-auto {
+  max-width: 1160px;
+}
+
+body[data-cinema-theme="cine-gama"] header nav a,
+body[data-cinema-theme="cine-gama"] :is(a, button).bg-gold-400 {
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+body[data-cinema-theme="cine-gama"] :is(a, button).bg-gold-400 {
+  border-radius: 3px;
+  box-shadow: 4px 4px 0 rgba(255, 123, 0, 0.22);
+}
+
+body[data-cinema-theme="cine-gama"] main > section.relative.w-full.overflow-hidden {
+  border-top: 3px solid #ff7900;
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] header .mx-auto,
+body[data-cinema-theme="cinemania-cosmopolis"] footer .mx-auto {
+  max-width: 1280px;
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] header nav a {
+  position: relative;
+  padding-bottom: 0.4rem;
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] header nav a::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  content: "";
+  background: #f0b11f;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms ease;
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] header nav a:hover::after {
+  transform: scaleX(1);
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] :is(a, button).bg-gold-400 {
+  border-radius: 7px;
+  box-shadow: 0 8px 0 rgba(137, 83, 5, 0.48);
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] main > section.relative.w-full.overflow-hidden {
+  border-bottom: 1px solid rgba(240, 177, 31, 0.5);
+}
+
 /* Selection highlight */
 ::selection {
   background-color: #facc15;

@@ -8,6 +8,57 @@ const PRODUCTION_BASE_PATH = process.env.NODE_ENV === "production" ? "/projects/
 const UPLOAD_ASSET_VERSION = "2";
 export const PUBLIC_BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || PRODUCTION_BASE_PATH).replace(/\/+$/, "");
 
+export type CinemaBrand = {
+  name: string;
+  footerDescription: string;
+  footerSignature: string;
+  clubLabel: string;
+  footerSummary: string;
+};
+
+const CINEMA_BRANDS: Record<string, CinemaBrand> = {
+  "cine-estacao-amparo": {
+    name: "Cine Estação Amparo",
+    footerDescription: "História, cultura e grandes filmes em um encontro especial no coração de Amparo.",
+    footerSignature: "Uma sala para viver histórias juntos.",
+    clubLabel: "Clube Cine Estação",
+    footerSummary: "Programação, ingressos e experiências para Amparo.",
+  },
+  "cinemax-piraju": {
+    name: "Cinemax Piraju",
+    footerDescription: "A tela de Piraju para descobrir estreias, reunir amigos e viver o cinema de perto.",
+    footerSignature: "Mais energia para cada sessão.",
+    clubLabel: "Clube Cinemax",
+    footerSummary: "Programação e ingressos para Piraju.",
+  },
+  "cine-gama": {
+    name: "Cine Gama",
+    footerDescription: "Grandes histórias, conforto e diversão para transformar cada ida ao cinema em um programa especial.",
+    footerSignature: "Cinema feito para Colatina.",
+    clubLabel: "Clube Cine Gama",
+    footerSummary: "Programação e ingressos para Colatina.",
+  },
+  "cinemania-cosmopolis": {
+    name: "CineMania Cosmópolis",
+    footerDescription: "Estreias, encontros e diversão para fazer da programação de Cosmópolis uma experiência completa.",
+    footerSignature: "Sua próxima história começa aqui.",
+    clubLabel: "Clube CineMania",
+    footerSummary: "Programação e ingressos para Cosmópolis.",
+  },
+  default: {
+    name: "Cine Cruzeiro",
+    footerDescription: "Cinema de rua, sala única, preço justo e tecnologia para comprar sem complicação.",
+    footerSignature: "Cultura e lazer no bairro.",
+    clubLabel: "Clube Cine Cruzeiro",
+    footerSummary: "Plataforma de vendas, bilheteria e relacionamento.",
+  },
+};
+
+export function cinemaBrand() {
+  const slug = String(process.env.NEXT_PUBLIC_CINEMA_SLUG || "").trim().toLowerCase();
+  return CINEMA_BRANDS[slug] || CINEMA_BRANDS.default;
+}
+
 export function assetPath(path: string) {
   const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
   return `${PUBLIC_BASE_PATH}${cleanPath}`;

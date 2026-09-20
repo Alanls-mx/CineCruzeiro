@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Menu, UserRound, X } from "lucide-react";
 import { fetchCinemaContent } from "@/services/cinemaApi";
 import type { CinemaContent } from "@/services/cinemaApi";
-import { assetPath, clearObsoleteCheckoutStorage } from "@/utils/cinema";
+import { assetPath, cinemaBrand, clearObsoleteCheckoutStorage } from "@/utils/cinema";
 
 const navItems = [
   { href: "/filmes", label: "Filmes" },
@@ -21,6 +21,7 @@ type SiteHeaderProps = {
 };
 
 export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAction = false }: SiteHeaderProps = {}) {
+  const brand = cinemaBrand();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [remoteContent, setRemoteContent] = useState<CinemaContent | null>(null);
@@ -62,10 +63,10 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
         </div>
       )}
       <div className="mx-auto flex h-20 max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center" aria-label="Cine Cruzeiro">
+        <Link href="/" className="flex items-center" aria-label={brand.name}>
           <img
             src={assetPath("/images/logo-header-compact.webp")}
-            alt="Cine Cruzeiro"
+            alt={brand.name}
             width={112}
             height={64}
             decoding="async"
@@ -120,13 +121,14 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
 }
 
 export function SiteFooter() {
+  const brand = cinemaBrand();
   return (
     <footer className="border-t border-white/8 bg-[#050810] text-xs text-slate-400">
       <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
         <div>
           <img
             src={assetPath("/images/logo-header-compact.webp")}
-            alt="Cine Cruzeiro"
+            alt={brand.name}
             width={112}
             height={64}
             loading="lazy"
@@ -134,14 +136,14 @@ export function SiteFooter() {
             className="h-11 w-auto"
           />
           <p className="mt-3 max-w-sm leading-relaxed">
-            Cinema de rua, sala única, preço justo e tecnologia para comprar sem complicação.
+            {brand.footerDescription}
           </p>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Cultura e lazer no bairro</p>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[.16em] text-slate-400">{brand.footerSignature}</p>
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Programação</h3>
           <Link href="/filmes" className="block hover:text-white">Filmes em cartaz</Link>
-          <Link href="/clube" className="block hover:text-white">Clube Cine Cruzeiro</Link>
+          <Link href="/clube" className="block hover:text-white">{brand.clubLabel}</Link>
           <Link href="/eventos" className="block hover:text-white">Eventos e sala fechada</Link>
         </div>
         <div className="space-y-2">
@@ -157,7 +159,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-white/8">
         <div className="mx-auto flex max-w-[1320px] flex-col gap-2 px-4 py-3 text-xs text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
-          <span>© Cine Cruzeiro. Plataforma de vendas, bilheteria e relacionamento.</span>
+          <span>© {brand.name}. {brand.footerSummary}</span>
           <span className="flex items-center gap-2 md:ml-auto md:justify-end md:text-right">
             <span>Desenvolvido por</span>
             <a href="https://lumixengine.com" target="_blank" rel="noreferrer" className="group inline-flex shrink-0 items-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400" aria-label="Acessar o site da LumixEngine">
