@@ -90,19 +90,21 @@ export default async function HomePage() {
                     {featured.trailerYoutubeId && <HomeTrailerButton youtubeId={featured.trailerYoutubeId} movieTitle={featured.title} />}
                   </div>
                 </div>
-                <Link href={`/filmes/${movieSlug(featured)}`} className="cinema-hero-poster relative block aspect-[2/3] w-full max-w-[260px] justify-self-center overflow-hidden bg-brand-950 shadow-[0_22px_80px_rgba(0,0,0,.45)] sm:max-w-[300px] lg:justify-self-end" aria-label={`Abrir ${featured.title}`}>
-                  {featured.posterUrl && (
-                    <Image
-                      src={featured.posterUrl}
-                      alt={`Poster de ${featured.title}`}
-                      fill
-                      unoptimized={isUploadedAsset(featured.posterUrl)}
-                      quality={68}
-                      sizes="(max-width: 640px) 260px, 300px"
-                      className="object-cover"
-                    />
-                  )}
-                </Link>
+                <div className="cinema-hero-poster-frame relative w-full max-w-[260px] justify-self-center sm:max-w-[300px] lg:justify-self-end">
+                  <Link href={`/filmes/${movieSlug(featured)}`} className="cinema-hero-poster relative z-10 block aspect-[2/3] w-full overflow-hidden bg-brand-950 shadow-[0_22px_80px_rgba(0,0,0,.45)]" aria-label={`Abrir ${featured.title}`}>
+                    {featured.posterUrl && (
+                      <Image
+                        src={featured.posterUrl}
+                        alt={`Poster de ${featured.title}`}
+                        fill
+                        unoptimized={isUploadedAsset(featured.posterUrl)}
+                        quality={68}
+                        sizes="(max-width: 640px) 260px, 300px"
+                        className="object-cover"
+                      />
+                    )}
+                  </Link>
+                </div>
               </div>
             </section>
             <MovieStrip title="Em Cartaz" movies={content.nowPlaying} />

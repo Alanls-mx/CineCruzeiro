@@ -80,16 +80,109 @@ body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster {
   box-shadow: 0 22px 80px rgba(29, 3, 8, 0.55), inset 0 0 0 1px rgba(255, 239, 190, 0.22);
 }
 
-body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster::after {
+/* Brand movement lives behind the hero poster, so the artwork itself remains clean. */
+.cinema-hero-poster-frame {
+  isolation: isolate;
+}
+
+.cinema-hero-poster-frame::before,
+.cinema-hero-poster-frame::after {
   position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
-  width: 13px;
-  height: 100%;
-  border-left: 1px solid rgba(246, 223, 177, 0.52);
+  z-index: 0;
+  pointer-events: none;
   content: "";
-  background: repeating-linear-gradient(180deg, rgba(81, 8, 20, 0.95) 0 11px, rgba(234, 185, 92, 0.92) 11px 20px, rgba(81, 8, 20, 0.95) 20px 31px);
+}
+
+body[data-cinema-theme="default"] .cinema-hero-poster-frame::before {
+  top: 14%;
+  left: -30%;
+  width: 72%;
+  height: 74%;
+  border: 1px solid rgba(67, 136, 255, 0.5);
+  background: repeating-linear-gradient(180deg, rgba(24, 75, 180, 0.54) 0 14px, rgba(6, 10, 18, 0.68) 14px 27px);
+  box-shadow: -14px 0 32px rgba(36, 99, 235, 0.2);
+  transform: rotate(-7deg);
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster-frame::after {
+  right: -22%;
+  bottom: 8%;
+  width: 64%;
+  height: 42px;
+  border-top: 2px solid rgba(247, 216, 133, 0.82);
+  border-bottom: 2px solid rgba(247, 216, 133, 0.68);
+  background: repeating-linear-gradient(90deg, rgba(75, 8, 20, 0.96) 0 18px, rgba(239, 192, 92, 0.9) 18px 31px, rgba(75, 8, 20, 0.96) 31px 46px);
+  box-shadow: 0 0 22px rgba(104, 17, 32, 0.54);
+  opacity: 0.92;
+  transform: rotate(-9deg);
+}
+
+body[data-cinema-theme="cinemax-piraju"] .cinema-hero-poster-frame::before {
+  right: -23%;
+  bottom: 3%;
+  width: 86%;
+  height: 28%;
+  border-top: 3px solid rgba(85, 244, 250, 0.65);
+  border-bottom: 3px solid rgba(10, 117, 215, 0.6);
+  background: repeating-linear-gradient(174deg, transparent 0 17px, rgba(1, 195, 215, 0.56) 18px 28px, transparent 29px 54px);
+  box-shadow: 0 12px 28px rgba(0, 172, 214, 0.24);
+  transform: rotate(-12deg);
+}
+
+body[data-cinema-theme="cinemax-piraju"] .cinema-hero-poster-frame::after {
+  top: -9%;
+  left: -19%;
+  width: 39%;
+  aspect-ratio: 1;
+  border: 2px dashed rgba(105, 238, 250, 0.66);
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle at center, transparent 0 16px, rgba(8, 159, 207, 0.14) 17px 20px, transparent 21px 30px);
+}
+
+body[data-cinema-theme="cine-gama"] .cinema-hero-poster-frame::before {
+  top: 4%;
+  right: -25%;
+  width: 78%;
+  height: 74%;
+  background:
+    linear-gradient(120deg, transparent 20%, rgba(255, 187, 48, 0) 21% 31%, transparent 32%),
+    linear-gradient(120deg, transparent 35%, rgba(255, 139, 0, 0.9) 36% 42%, transparent 43%),
+    linear-gradient(120deg, transparent 49%, rgba(255, 181, 36, 0.9) 50% 56%, transparent 57%),
+    linear-gradient(120deg, transparent 63%, rgba(255, 121, 0, 0.88) 64% 70%, transparent 71%);
+  filter: drop-shadow(0 10px 16px rgba(255, 105, 0, 0.24));
+  transform: skewY(-9deg);
+}
+
+body[data-cinema-theme="cine-gama"] .cinema-hero-poster-frame::after {
+  bottom: -7%;
+  left: -18%;
+  width: 56%;
+  height: 58%;
+  border: 2px solid rgba(163, 142, 255, 0.52);
+  background: repeating-linear-gradient(180deg, rgba(70, 47, 180, 0.54) 0 13px, rgba(21, 12, 53, 0.7) 13px 25px);
+  transform: rotate(12deg);
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] .cinema-hero-poster-frame::before {
+  top: 10%;
+  left: -26%;
+  width: 84%;
+  height: 72%;
+  border-top: 2px solid rgba(245, 198, 71, 0.78);
+  border-bottom: 2px solid rgba(62, 152, 245, 0.66);
+  background: repeating-linear-gradient(180deg, rgba(8, 67, 158, 0.72) 0 14px, rgba(2, 27, 69, 0.66) 14px 28px);
+  box-shadow: -12px 8px 24px rgba(8, 87, 192, 0.26);
+  transform: rotate(-8deg);
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] .cinema-hero-poster-frame::after {
+  top: -9%;
+  right: -18%;
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(90deg, transparent 45%, rgba(255, 224, 122, 0.94) 49% 51%, transparent 55%), linear-gradient(0deg, transparent 45%, rgba(255, 224, 122, 0.94) 49% 51%, transparent 55%);
+  filter: drop-shadow(0 0 12px rgba(240, 177, 31, 0.72));
+  transform: rotate(45deg);
 }
 
 /* Cinemax Piraju: broad water-like blue bands carry the film reel and sunset energy. */
@@ -171,7 +264,14 @@ body[data-cinema-theme="cinemania-cosmopolis"]::after {
 @media (prefers-reduced-motion: no-preference) {
   body[data-cinema-theme="default"]::before { animation: cinemaCruzeiroFilm 48s linear infinite; }
   body[data-cinema-theme="cine-estacao-amparo"]::before { animation: estacaoFilmPass 42s linear infinite; }
-  body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster::after { animation: estacaoPosterFilm 5s linear infinite; }
+  body[data-cinema-theme="default"] .cinema-hero-poster-frame::before { animation: cruzeiroPosterFilm 17s linear infinite alternate; }
+  body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster-frame::after { animation: estacaoPosterFilm 9s linear infinite alternate; }
+  body[data-cinema-theme="cinemax-piraju"] .cinema-hero-poster-frame::before { animation: cinemaxPosterWave 8s ease-in-out infinite alternate; }
+  body[data-cinema-theme="cinemax-piraju"] .cinema-hero-poster-frame::after { animation: cinemaxPosterReel 28s linear infinite; }
+  body[data-cinema-theme="cine-gama"] .cinema-hero-poster-frame::before { animation: gamaPosterStreaks 13s ease-in-out infinite alternate; }
+  body[data-cinema-theme="cine-gama"] .cinema-hero-poster-frame::after { animation: gamaPosterFilm 17s linear infinite alternate; }
+  body[data-cinema-theme="cinemania-cosmopolis"] .cinema-hero-poster-frame::before { animation: cinemaniaPosterFilm 18s linear infinite alternate; }
+  body[data-cinema-theme="cinemania-cosmopolis"] .cinema-hero-poster-frame::after { animation: cinemaniaPosterGlint 5s ease-in-out infinite; }
   body[data-cinema-theme="cinemax-piraju"]::before { animation: cinemaxTide 26s ease-in-out infinite alternate; }
   body[data-cinema-theme="cinemax-piraju"]::after { animation: cinemaxReel 58s linear infinite; }
   body[data-cinema-theme="cine-gama"]::before { animation: gamaSweep 34s ease-in-out infinite alternate; }
@@ -182,7 +282,14 @@ body[data-cinema-theme="cinemania-cosmopolis"]::after {
 
 @keyframes cinemaCruzeiroFilm { to { transform: translateX(18vw) rotate(-8deg); } }
 @keyframes estacaoFilmPass { to { transform: translateX(20vw) rotate(-10deg); } }
-@keyframes estacaoPosterFilm { to { background-position-y: 62px; } }
+@keyframes cruzeiroPosterFilm { to { transform: translateX(-15px) rotate(-4deg); } }
+@keyframes estacaoPosterFilm { to { transform: translateX(-26px) rotate(-6deg); } }
+@keyframes cinemaxPosterWave { to { transform: translateX(-18px) rotate(-7deg); } }
+@keyframes cinemaxPosterReel { to { transform: rotate(360deg); } }
+@keyframes gamaPosterStreaks { to { transform: translateX(-18px) skewY(-4deg); } }
+@keyframes gamaPosterFilm { to { transform: translateX(16px) rotate(7deg); } }
+@keyframes cinemaniaPosterFilm { to { transform: translateX(-16px) rotate(-4deg); } }
+@keyframes cinemaniaPosterGlint { 0%, 100% { opacity: 0.28; transform: rotate(45deg) scale(0.78); } 50% { opacity: 1; transform: rotate(45deg) scale(1.12); } }
 @keyframes cinemaxTide { from { transform: translateX(-2vw) rotate(-7deg); } to { transform: translateX(7vw) rotate(-4deg); } }
 @keyframes cinemaxReel { to { transform: rotate(360deg); } }
 @keyframes gamaSweep { from { transform: translateX(0) skewY(-7deg); } to { transform: translateX(-7vw) skewY(-3deg); } }
