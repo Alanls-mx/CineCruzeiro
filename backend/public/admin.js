@@ -2491,6 +2491,17 @@ function showChartHint(date, revenue, orders, tickets) {
 }
 
 function openSessionDashboardDetail(movieId, sessionId) {
+  const ongoing = globalSessionEntries().find((entry) => entry.session.id === sessionId);
+  if (ongoing && ongoing.startsAt <= Date.now() && ongoing.endsAt > Date.now()) {
+    state.selectedOngoingSessionId = sessionId;
+    activatePanel("roomsPanel", { scroll: true });
+    setAdminSubtab("rooms", "ongoing");
+    renderOngoingSessions();
+    requestAnimationFrame(() => {
+      $("ongoingSessionsList")?.querySelector("[data-ongoing-session].active")?.focus();
+    });
+    return;
+  }
   activatePanel("ordersPanel", { scroll: true });
   setBoxOfficeTab("todaySales");
   showToast(`Sessão selecionada: ${sessionId || movieId}`);
