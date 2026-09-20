@@ -43,6 +43,8 @@ export interface CatalogMovie {
   genres?: string[];
   rating?: string; // e.g. '10', 'L', '12', '14', '16', '18'
   featured?: boolean;
+  priority?: number;
+  sortOrder?: number;
   posterUrl?: string;
   backdropUrl?: string;
   availableSessions?: CatalogSession[];
@@ -105,6 +107,29 @@ export class CommercialCatalogService {
       CommercialCatalogService.instance = new CommercialCatalogService();
     }
     return CommercialCatalogService.instance;
+  }
+
+  private moviePriority(movie: CatalogMovie): number {
+    const candidate = Number(movie.priority ?? movie.sortOrder ?? Number.MAX_SAFE_INTEGER);
+    return Number.isFinite(candidate) && candidate >= 0 ? candidate : Number.MAX_SAFE_INTEGER;
+  }
+
+  private sortMoviesByPriority(movies: CatalogMovie[]): CatalogMovie[] {
+    return [...movies].sort((a, b) =>
+      this.moviePriority(a) - this.moviePriority(b) || a.title.localeCompare(b.title, 'pt-BR')
+    );
+  }
+
+  private sortSessions(sessions: CatalogSession[], movies: CatalogMovie[]): CatalogSession[] {
+    const moviesById = new Map(
+      movies.flatMap((movie) => [[movie.id, movie], [movie.slug, movie]] as const)
+    );
+
+    return [...sessions].sort((a, b) => {
+      const priority = this.moviePriority(moviesById.get(a.movieId) || moviesById.get(a.movieSlug) || { id: '', slug: '', title: '' })
+        - this.moviePriority(moviesById.get(b.movieId) || moviesById.get(b.movieSlug) || { id: '', slug: '', title: '' });
+      return priority || a.date.localeCompare(b.date) || a.time.localeCompare(b.time) || a.movieTitle.localeCompare(b.movieTitle, 'pt-BR');
+    });
   }
 
   /**
@@ -185,7 +210,7 @@ export class CommercialCatalogService {
   async getDates(): Promise<CatalogDate[]> {
     const catalog = await this.getCatalog();
     if (catalog.dates && catalog.dates.length > 0) {
-      return catalog.dates;
+      return [...catalog.dates].sort((a, b) => a.date.localeCompare(b.date));
     }
 
     // Fallback: derive dates from programming
@@ -202,7 +227,7 @@ export class CommercialCatalogService {
       label: val.label,
       sessionCount: val.count,
       availableSessionCount: val.available,
-    }));
+    })).sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /**
@@ -210,7 +235,7 @@ export class CommercialCatalogService {
    */
   async getMovies(): Promise<CatalogMovie[]> {
     const catalog = await this.getCatalog();
-    return catalog.movies || [];
+    return this.sortMoviesByPriority(catalog.movies || []);
   }
 
   /**
@@ -218,9 +243,9 @@ export class CommercialCatalogService {
    */
   async getNowPlayingMovies(): Promise<CatalogMovie[]> {
     const catalog = await this.getCatalog();
-    return (catalog.movies || []).filter(
+    return this.sortMoviesByPriority((catalog.movies || []).filter(
       (m) => m.status === 'now_playing' || (m.status !== 'upcoming' && m.tag !== 'Em Breve')
-    );
+    ));
   }
 
   /**
@@ -228,9 +253,9 @@ export class CommercialCatalogService {
    */
   async getUpcomingMovies(): Promise<CatalogMovie[]> {
     const catalog = await this.getCatalog();
-    return (catalog.movies || []).filter(
+    return this.sortMoviesByPriority((catalog.movies || []).filter(
       (m) => m.status === 'upcoming' || m.tag === 'Em Breve'
-    );
+    ));
   }
 
   /**
@@ -276,10 +301,12 @@ export class CommercialCatalogService {
           rating: 'L',
         } as CatalogMovie);
 
-      results.push({ movie, sessions });
+      results.push({ movie, sessions: this.sortSessions(sessions, catalog.movies || []) });
     }
 
-    return results;
+    return results.sort((a, b) =>
+      this.moviePriority(a.movie) - this.moviePriority(b.movie) || a.movie.title.localeCompare(b.movie.title, 'pt-BR')
+    );
   }
 
   /**
@@ -293,11 +320,11 @@ export class CommercialCatalogService {
     const targetId = movieIdOrSlug.trim().toLowerCase();
     const targetDate = dateStr.slice(0, 10);
 
-    return (catalog.programming || []).filter(
+    return this.sortSessions((catalog.programming || []).filter(
       (s) =>
         (s.movieId.toLowerCase() === targetId || s.movieSlug.toLowerCase() === targetId) &&
         s.date.slice(0, 10) === targetDate
-    );
+    ), catalog.movies || []);
   }
 
   /**
@@ -322,9 +349,9 @@ export class CommercialCatalogService {
       }
     }
 
-    return catalog.movies.filter(
+    return this.sortMoviesByPriority(catalog.movies.filter(
       (m) => availableMovieIds.has(m.id) || availableMovieIds.has(m.slug)
-    );
+    ));
   }
 
   /**
@@ -359,7 +386,7 @@ export class CommercialCatalogService {
       label: val.label,
       sessionCount: val.count,
       availableSessionCount: val.count,
-    }));
+    })).sort((a, b) => a.date.localeCompare(b.date));
   }
 
   /**
@@ -396,7 +423,13 @@ export class CommercialCatalogService {
       sessions = sessions.filter((s) => s.date.slice(0, 10) === targetDate);
     }
 
-    return sessions.sort((a, b) => a.time.localeCompare(b.time));
+    return this.sortSessions(sessions, catalog.movies || []);
+  }
+
+  /** Programming follows the movie order configured in the Cine Cruzeiro panel. */
+  async getProgramming(): Promise<CatalogSession[]> {
+    const catalog = await this.getCatalog();
+    return this.sortSessions(catalog.programming || [], catalog.movies || []);
   }
 
   /**

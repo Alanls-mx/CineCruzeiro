@@ -356,10 +356,35 @@ export class EvolutionWhatsAppProvider implements WhatsAppProvider {
   }
 
   async sendButtons(params: SendButtonsParams): Promise<SendMessageResult> {
-    // Formatted text with numbers is universally supported across all devices
+    try {
+      const formattedPhone = this.sanitizePhone(params.to);
+      const response = await this.client.post(`/message/sendButtons/${params.instanceName}`, {
+        number: formattedPhone,
+        title: params.title,
+        description: params.description,
+        footer: params.footer,
+        buttons: params.buttons.map((button) => button.url
+          ? { type: 'url', displayText: button.displayText, url: button.url }
+          : { type: 'reply', displayText: button.displayText, id: button.id }),
+      });
+
+      return {
+        messageId: response.data?.key?.id || `out_${Date.now()}`,
+        status: 'SENT',
+        timestamp: new Date(),
+        raw: response.data,
+      };
+    } catch (error: any) {
+      logger.warn(
+        { error: error.response?.data || error.message, instanceName: params.instanceName },
+        'Interactive buttons unavailable in Evolution; using compatible text fallback'
+      );
+    }
+
+    // Older Evolution/WhatsApp clients may reject interactive buttons. The flow still remains usable.
     let formatted = `*${params.title}*\n\n${params.description}\n\n`;
     params.buttons.forEach((btn, index) => {
-      formatted += `*${index + 1}.* ${btn.displayText}\n`;
+      formatted += `*${index + 1}.* ${btn.displayText}${btn.url ? `: ${btn.url}` : ''}\n`;
     });
     if (params.footer) {
       formatted += `\n_${params.footer}_\n`;

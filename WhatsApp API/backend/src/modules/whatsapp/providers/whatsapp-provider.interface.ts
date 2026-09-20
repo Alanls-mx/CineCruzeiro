@@ -54,6 +54,8 @@ export interface SendMediaParams {
 export interface SendButtonOption {
   id: string;
   displayText: string;
+  /** Optional CTA destination. Providers may gracefully fall back when unsupported. */
+  url?: string;
 }
 
 export interface SendButtonsParams {

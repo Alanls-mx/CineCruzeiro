@@ -691,15 +691,15 @@ export class BuyTicketFlow implements Flow {
           // Clear cart now that order is created
           this.cartService.clearCart(session.context);
 
-          let msg = `*Continue sua compra no Cine Cruzeiro*\n\n`;
-          msg += `Para escolher seus assentos e realizar o pagamento com segurança, acesse a sessão selecionada:\n\n`;
-          msg += `${checkoutUrl}\n\n`;
-          msg += `Você poderá revisar ingresso, poltronas, bomboniere, descontos e pagamento antes de confirmar.`;
-
-          await provider.sendText({
+          await provider.sendButtons({
             instanceName: session.instanceName,
             to: session.phone,
-            text: msg,
+            title: 'Compra pronta 🎬',
+            description: 'Seu pedido foi preparado. Toque em *Comprar agora* para escolher as poltronas e concluir o pagamento com segurança.',
+            footer: 'Você poderá revisar ingressos, bomboniere e descontos antes de confirmar.',
+            buttons: [
+              { id: 'OPEN_CHECKOUT', displayText: 'Comprar agora', url: checkoutUrl },
+            ],
           });
         } catch (error: any) {
           await provider.sendText({

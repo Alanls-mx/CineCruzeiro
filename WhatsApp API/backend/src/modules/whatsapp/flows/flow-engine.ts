@@ -4,11 +4,67 @@ import { WhatsAppProvider } from '../providers/whatsapp-provider.interface.js';
 import { IncomingWhatsAppMessage } from '../webhooks/webhooks.types.js';
 import { SSEService } from '../realtime/sse.service.js';
 import { IntentNormalizer, StandardIntent } from './intent-normalizer.js';
+import { CommercialCatalogService } from '../../cinema/services/commercial-catalog.service.js';
 import { prisma } from '../../../database/prisma.js';
 import { Conversation, ConversationMode, MessageDirection, MessageSender, MessageType } from '@prisma/client';
 import { logger } from '../../../config/logger.js';
 
 export class FlowEngine {
+  private readonly catalogService = CommercialCatalogService.getInstance();
+
+  private async answerCatalogQuestion(
+    session: FlowSession,
+    message: IncomingWhatsAppMessage,
+    provider: WhatsAppProvider
+  ): Promise<boolean> {
+    const cleaned = IntentNormalizer.clean(message.text);
+    if (!cleaned || message.selectionId || session.currentFlow !== 'MAIN_MENU') return false;
+
+    const asksAboutProgramming = ['filme', 'horario', 'programacao', 'sessao', 'cartaz', 'estreia'].some((term) => cleaned.includes(term));
+    if (!asksAboutProgramming) return false;
+
+    const movies = await this.catalogService.getMovies();
+    const selectedMovie = movies.find((movie) => {
+      const title = IntentNormalizer.clean(movie.title);
+      return title.length >= 3 && (cleaned.includes(title) || title.includes(cleaned));
+    });
+
+    if (selectedMovie) {
+      const sessions = await this.catalogService.getAvailableSessions(selectedMovie.id);
+      const nextSessions = sessions.slice(0, 4);
+      const sessionText = nextSessions.length
+        ? nextSessions.map((item) => {
+          const date = new Date(`${item.date}T12:00:00`).toLocaleDateString('pt-BR');
+          return `• ${date} às *${item.time}*${item.room?.name ? `, ${item.room.name}` : ''}`;
+        }).join('\n')
+        : 'Ainda não há sessões abertas para compra.';
+
+      await provider.sendButtons({
+        instanceName: session.instanceName,
+        to: session.phone,
+        title: `${selectedMovie.title} 🎬`,
+        description: `Encontrei este filme na programação.\n\n*Próximas sessões:*\n${sessionText}`,
+        footer: 'A programação é atualizada pelo painel do cinema.',
+        buttons: [{ id: `BUY_TICKET_MOVIE_${selectedMovie.id}`, displayText: 'Comprar ingressos' }],
+      });
+      return true;
+    }
+
+    const nowPlaying = await this.catalogService.getNowPlayingMovies();
+    const highlights = nowPlaying.slice(0, 4);
+    if (!highlights.length) return false;
+
+    await provider.sendButtons({
+      instanceName: session.instanceName,
+      to: session.phone,
+      title: 'Programação atual 🎬',
+      description: `Os destaques em cartaz agora são:\n${highlights.map((movie) => `• *${movie.title}*`).join('\n')}\n\nPosso mostrar horários e sessões por dia.`,
+      footer: 'Ordem exibida conforme a prioridade definida no painel.',
+      buttons: [{ id: 'PROGRAMMING', displayText: 'Ver programação' }],
+    });
+    return true;
+  }
+
   async processMessage(
     conversation: Conversation,
     rawMessage: IncomingWhatsAppMessage,
@@ -132,7 +188,7 @@ export class FlowEngine {
         const res = await rawProvider.sendButtons(params);
         let btnText = `*${params.title}*\n\n${params.description}\n\n`;
         params.buttons.forEach((btn, index) => {
-          btnText += `*${index + 1}.* ${btn.displayText}\n`;
+          btnText += `*${index + 1}.* ${btn.displayText}${btn.url ? ' (link de compra)' : ''}\n`;
         });
         if (params.footer) {
           btnText += `\n_${params.footer}_\n`;
@@ -225,6 +281,40 @@ export class FlowEngine {
         },
       });
       return;
+    }
+
+    // Natural-language programming questions are answered from the live cinema catalog.
+    if (await this.answerCatalogQuestion(session, message, provider)) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { fallbackCount: 0, lastMessageAt: new Date() },
+      });
+      return;
+    }
+
+    // A contextual purchase keeps the selected film instead of sending the customer back to the full catalog.
+    const selectedMovieId = message.selectionId?.match(/^BUY_TICKET_MOVIE_(.+)$/)?.[1];
+    if (selectedMovieId) {
+      const movie = await this.catalogService.getMovieById(selectedMovieId);
+      if (movie) {
+        const targetFlow = FlowRegistry.getFlow('BUY_TICKET')!;
+        const targetState = targetFlow.states.get('SELECT_DATE')!;
+        session.currentFlow = 'BUY_TICKET';
+        session.currentState = 'SELECT_DATE';
+        session.context = { selectedMovieId: movie.id, selectedMovieTitle: movie.title };
+        await targetState.onEnter?.(session, provider);
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            currentFlow: 'BUY_TICKET',
+            currentState: 'SELECT_DATE',
+            context: session.context,
+            fallbackCount: 0,
+            lastMessageAt: new Date(),
+          },
+        });
+        return;
+      }
     }
 
     // Direct top-level flow triggers via selectionId

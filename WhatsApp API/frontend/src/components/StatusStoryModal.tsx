@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Send, Image as ImageIcon, Type, MessageSquare, AlertCircle, CheckCircle2, Upload } from 'lucide-react';
+import { X, Send, Image as ImageIcon, Type, MessageSquare, AlertCircle, CheckCircle2, Upload, CalendarDays } from 'lucide-react';
 import { api } from '../services/api.js';
 
 interface StatusStoryModalProps {
@@ -18,6 +18,33 @@ const STORY_COLORS = [
   { name: 'Roxo sessão especial', hex: '#e879f9' },
   { name: 'Grafite', hex: '#0f172a' },
   { name: 'Azul escuro', hex: '#162641' },
+];
+
+const STATUS_TEMPLATES = [
+  {
+    id: 'programacao',
+    label: 'Programação',
+    color: '#162641',
+    text: '🎬 Confira a programação do Cine Cruzeiro. Escolha sua sessão e garanta o ingresso antes de chegar.',
+  },
+  {
+    id: 'estreia',
+    label: 'Estreia',
+    color: '#facc15',
+    text: '🎬 Estreia no Cine Cruzeiro. Consulte os horários e garanta sua poltrona para a próxima sessão.',
+  },
+  {
+    id: 'promocao',
+    label: 'Promoção',
+    color: '#2563eb',
+    text: '🍿 Tem novidade no Cine Cruzeiro. Confira a programação e os benefícios disponíveis para a sua próxima visita.',
+  },
+  {
+    id: 'aviso',
+    label: 'Aviso',
+    color: '#0f172a',
+    text: '📌 Aviso importante: consulte os horários atualizados antes de sair de casa.',
+  },
 ];
 
 export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
@@ -107,6 +134,13 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
     }
   };
 
+  const applyTemplate = (template: (typeof STATUS_TEMPLATES)[number]) => {
+    setActiveTab('text');
+    setTextContent(template.text);
+    setSelectedColor(template.color);
+    setError(null);
+  };
+
   return (
     <div
       style={{
@@ -124,7 +158,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
       <div
         style={{
           width: '100%',
-          maxWidth: '680px',
+          maxWidth: '940px',
           background: '#111622',
           border: '1px solid rgba(255, 255, 255, 0.12)',
           borderRadius: '10px',
@@ -176,7 +210,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h2 style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 700 }}>
-                  Publicação no Status
+                  Criar Status
                 </h2>
                 <span
                   style={{
@@ -193,7 +227,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                 </span>
               </div>
               <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '2px' }}>
-                Compartilhe programação, promoções e avisos com os seus contatos
+                Publique uma comunicação clara para os contatos conectados ao WhatsApp
               </p>
             </div>
           </div>
@@ -233,9 +267,9 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
               gap: '8px',
               padding: '10px 16px',
               borderRadius: '10px',
-              border: activeTab === 'text' ? '1px solid #25D366' : '1px solid rgba(255, 255, 255, 0.08)',
-              background: activeTab === 'text' ? 'rgba(37, 211, 102, 0.12)' : 'transparent',
-              color: activeTab === 'text' ? '#25D366' : '#94a3b8',
+              border: activeTab === 'text' ? '1px solid #facc15' : '1px solid rgba(255, 255, 255, 0.08)',
+              background: activeTab === 'text' ? 'rgba(250, 204, 21, 0.10)' : 'transparent',
+              color: activeTab === 'text' ? '#facc15' : '#94a3b8',
               fontWeight: 600,
               fontSize: '0.88rem',
               cursor: 'pointer',
@@ -243,7 +277,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
             }}
           >
             <Type size={18} />
-            Status de Texto (Fundo Colorido)
+            Texto
           </button>
 
           <button
@@ -267,7 +301,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
             }}
           >
             <ImageIcon size={18} />
-            Status de Foto / Imagem
+            Imagem
           </button>
         </div>
 
@@ -277,7 +311,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
             padding: '24px',
             overflowY: 'auto',
             display: 'grid',
-            gridTemplateColumns: '1fr 240px',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
             gap: '24px',
           }}
         >
@@ -324,20 +358,52 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
             {activeTab === 'text' ? (
               <>
                 <div>
-                  <label style={{ display: 'block', color: '#f1f5f9', fontSize: '0.88rem', fontWeight: 600, marginBottom: '8px' }}>
-                    Texto do Status
-                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <label style={{ color: '#f1f5f9', fontSize: '0.88rem', fontWeight: 600 }}>
+                      Modelos rápidos
+                    </label>
+                    <span style={{ color: '#64748b', fontSize: '0.75rem' }}>Edite antes de publicar</span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {STATUS_TEMPLATES.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => applyTemplate(template)}
+                        style={{
+                          border: '1px solid rgba(148, 163, 184, 0.22)',
+                          background: 'rgba(15, 23, 42, 0.7)',
+                          color: '#cbd5e1',
+                          borderRadius: '6px',
+                          padding: '7px 10px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {template.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <label style={{ color: '#f1f5f9', fontSize: '0.88rem', fontWeight: 600 }}>
+                      Texto do Status
+                    </label>
+                    <span style={{ color: textContent.length > 650 ? '#f87171' : '#64748b', fontSize: '0.75rem' }}>{textContent.length}/700</span>
+                  </div>
                   <textarea
                     value={textContent}
                     onChange={(e) => setTextContent(e.target.value)}
-                    placeholder="Ex.: Estreia hoje no Cine Cruzeiro. Consulte horários e garanta seu ingresso pelo WhatsApp."
+                    placeholder="Escreva uma mensagem clara, com uma chamada para a programação."
                     rows={4}
                     style={{
                       width: '100%',
                       padding: '12px 14px',
                       background: 'rgba(255, 255, 255, 0.05)',
                       border: '1px solid rgba(255, 255, 255, 0.12)',
-                      borderRadius: '12px',
+                      borderRadius: '6px',
                       color: '#fff',
                       fontSize: '0.92rem',
                       fontFamily: 'inherit',
@@ -361,11 +427,11 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                         style={{
                           width: '34px',
                           height: '34px',
-                          borderRadius: '50%',
+                          borderRadius: '6px',
                           background: col.hex,
                           border: selectedColor === col.hex ? '3px solid #ffffff' : '2px solid rgba(255, 255, 255, 0.2)',
                           cursor: 'pointer',
-                          transform: selectedColor === col.hex ? 'scale(1.15)' : 'scale(1)',
+                          transform: selectedColor === col.hex ? 'translateY(-2px)' : 'translateY(0)',
                           transition: 'all 0.2s',
                         }}
                       />
@@ -390,7 +456,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                     onClick={() => fileInputRef.current?.click()}
                     style={{
                       border: '2px dashed rgba(56, 189, 248, 0.3)',
-                      borderRadius: '14px',
+                      borderRadius: '6px',
                       padding: '24px',
                       textAlign: 'center',
                       background: 'rgba(56, 189, 248, 0.03)',
@@ -438,17 +504,17 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
             )}
           </div>
 
-          {/* Right Column: Phone Mockup Live Preview */}
+          {/* Right Column: Live Status Preview */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>
-              Pré-visualização
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>
+              <CalendarDays size={13} /> Prévia do Status
             </div>
             <div
               style={{
-                width: '180px',
-                height: '320px',
-                borderRadius: '24px',
-                border: '4px solid #334155',
+                width: '220px',
+                height: '390px',
+                borderRadius: '8px',
+                border: '1px solid #334155',
                 overflow: 'hidden',
                 position: 'relative',
                 background: activeTab === 'text' ? selectedColor : '#000',
@@ -458,16 +524,16 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                 alignItems: 'center',
                 padding: '16px',
                 textAlign: 'center',
-                boxShadow: '0 12px 30px rgba(0, 0, 0, 0.6)',
+                boxShadow: '0 14px 34px rgba(0, 0, 0, 0.45)',
               }}
             >
               {/* WhatsApp Story top progress bar mockup */}
               <div
                 style={{
                   position: 'absolute',
-                  top: '8px',
-                  left: '10px',
-                  right: '10px',
+                  top: '10px',
+                  left: '12px',
+                  right: '12px',
                   height: '3px',
                   background: 'rgba(255, 255, 255, 0.4)',
                   borderRadius: '2px',
@@ -494,8 +560,8 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                 <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <img
                     src={imageDataUrl}
-                    alt="Preview"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '14px' }}
+                    alt="Prévia do Status"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 0 }}
                   />
                   {imageCaption && (
                     <div
@@ -544,7 +610,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
             onClick={onClose}
             style={{
               padding: '10px 18px',
-              borderRadius: '10px',
+              borderRadius: '6px',
               background: 'transparent',
               border: '1px solid rgba(255, 255, 255, 0.12)',
               color: '#94a3b8',
@@ -565,19 +631,19 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
               alignItems: 'center',
               gap: '8px',
               padding: '10px 22px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
+              borderRadius: '6px',
+              background: '#facc15',
               border: 'none',
-              color: '#ffffff',
+              color: '#0b1220',
               fontWeight: 700,
               fontSize: '0.9rem',
               cursor: loading || success ? 'not-allowed' : 'pointer',
               opacity: loading || success ? 0.7 : 1,
-              boxShadow: '0 4px 14px rgba(37, 211, 102, 0.35)',
+              boxShadow: '0 4px 14px rgba(250, 204, 21, 0.2)',
             }}
           >
             <Send size={16} />
-            {loading ? 'Publicando...' : success ? 'Publicado!' : 'Publicar no Status (24h)'}
+            {loading ? 'Publicando...' : success ? 'Publicado!' : 'Publicar por 24 horas'}
           </button>
         </div>
       </div>

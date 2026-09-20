@@ -9,14 +9,12 @@ export async function cinemaRoutes(app: FastifyInstance) {
 
   // Read-only data projection. The primary cinema platform is the source of truth.
   app.get('/cinema/movies', async (_request, reply) => {
-    const catalog = await catalogService.getCatalog();
-    return reply.send({ success: true, data: catalog.movies || [] });
+    return reply.send({ success: true, data: await catalogService.getMovies() });
   });
 
   // List sessions
   app.get('/cinema/sessions', async (_request, reply) => {
-    const catalog = await catalogService.getCatalog();
-    return reply.send({ success: true, data: catalog.programming || [] });
+    return reply.send({ success: true, data: await catalogService.getProgramming() });
   });
 
   // List bomboniere products
@@ -26,9 +24,8 @@ export async function cinemaRoutes(app: FastifyInstance) {
 
   // List cinema rooms
   app.get('/cinema/rooms', async (_request, reply) => {
-    const catalog = await catalogService.getCatalog();
     const rooms = new Map();
-    for (const session of catalog.programming || []) {
+    for (const session of await catalogService.getProgramming()) {
       if (session.room?.id) rooms.set(session.room.id, session.room);
     }
     return reply.send({ success: true, data: [...rooms.values()] });

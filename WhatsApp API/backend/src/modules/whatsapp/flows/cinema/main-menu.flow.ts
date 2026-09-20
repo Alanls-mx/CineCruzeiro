@@ -16,7 +16,7 @@ export class MainMenuFlow implements Flow {
           instanceName: session.instanceName,
           to: session.phone,
           title: session.companyName,
-          description: `Olá! Bem-vindo ao *${session.companyName}*.\nSelecione a opção desejada para continuar:`,
+          description: `Olá! 👋 Bem-vindo ao *${session.companyName}*.\nConsulte a programação, compre ingressos ou fale com a equipe:`,
           buttonText: 'Ver Opções',
           footer: 'Atendimento Digital',
           sections: [
