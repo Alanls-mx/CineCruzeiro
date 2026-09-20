@@ -31,7 +31,7 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"CineCruzeiroDesktopWindow";
 constexpr wchar_t kWindowTitle[] = L"Painel Cine Cruzeiro";
 constexpr wchar_t kAppVersion[] = L"1.1.1";
-constexpr wchar_t kDefaultAdminUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/admin";
+constexpr wchar_t kDefaultAdminUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/admin/";
 constexpr wchar_t kUpdateManifestUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/api/desktop/update/latest.ini";
 constexpr UINT_PTR kReconnectTimer = 1;
 constexpr UINT_PTR kUpdateTimer = 2;
