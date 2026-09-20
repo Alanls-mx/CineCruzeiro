@@ -2502,9 +2502,34 @@ function openSessionDashboardDetail(movieId, sessionId) {
     });
     return;
   }
+
+  const movie = (state.content?.movies || []).find((item) => String(item.id) === String(movieId));
+  const session = (movie?.sessions || []).find((item) => String(item.id) === String(sessionId));
+  if (movie && session && isManualSessionSellable(session)) {
+    activatePanel("ordersPanel", { scroll: true });
+    setBoxOfficeTab("newSale");
+    setSaleMode("quick");
+
+    const dateInput = $("manualSessionDate");
+    if (dateInput) dateInput.value = manualSessionDateDisplay(session.date);
+    renderManualSaleOptions();
+
+    const movieSelect = $("manualMovieSelect");
+    if (movieSelect) movieSelect.value = movie.id;
+    renderManualSessionOptions();
+
+    const sessionSelect = $("manualSessionSelect");
+    if (sessionSelect) sessionSelect.value = session.id;
+    renderManualTicketTypes();
+    void loadManualSeatMap();
+    updateManualTotal();
+    showToast(`Venda rápida pronta para ${movie.title} às ${session.time}.`, "success");
+    return;
+  }
+
   activatePanel("ordersPanel", { scroll: true });
   setBoxOfficeTab("todaySales");
-  showToast(`Sessão selecionada: ${sessionId || movieId}`);
+  showToast("Esta sessão não está disponível para venda rápida.", "error");
 }
 
 function createSessionFromDashboard() {
