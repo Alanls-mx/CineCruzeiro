@@ -16040,6 +16040,15 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      if (pathname === "/admin") {
+        res.writeHead(308, {
+          ...securityHeaders(),
+          Location: adminPathForRequest(req, "/")
+        });
+        res.end();
+        return;
+      }
+
       if (pathname === "/" || pathname === "/admin" || pathname.startsWith("/admin/") || pathname.startsWith("/images/") || pathname.startsWith("/trailers/") || stripPublicAssetBase(pathname).startsWith("/uploads/")) {
         await serveStatic(req, res, pathname === "/" ? "/admin" : pathname);
         return;
