@@ -130,7 +130,7 @@ function ticketPrintContent(tickets = [], orders = []) {
 function normalizeStatus(order = {}) {
   const status = String(order.status || "").toLowerCase();
   const detail = String(order.status_detail || order.statusDetail || "").toLowerCase();
-  if (status === "processed" && ["accredited", "approved", "partially_refunded"].includes(detail)) return "approved";
+  if (status === "processed") return "approved";
   if (["refunded", "charged_back"].includes(status) || ["refunded", "charged_back"].includes(detail)) return "refunded";
   if (["canceled", "cancelled"].includes(status) || ["canceled", "cancelled"].includes(detail)) return "cancelled";
   if (status === "expired" || detail === "expired") return "expired";
@@ -151,7 +151,7 @@ function normalizeOrder(order = {}) {
     amount: Number(order.total_amount || payment.amount || 0),
     paidAmount: Number(order.total_paid_amount || payment.paid_amount || 0),
     terminalId: String(order.config?.point?.terminal_id || ""),
-    paymentId: String(payment.id || ""),
+    paymentId: String(payment.id || payment.reference_id || ""),
     paymentMethod: String(payment.payment_method?.id || payment.payment_method?.type || ""),
     createdAt: order.date_created || order.created_date || "",
     updatedAt: order.last_updated_date || order.last_updated || order.date_last_updated || "",
@@ -162,33 +162,57 @@ function normalizeOrder(order = {}) {
 async function request(pathname, config = {}, options = {}) {
   const token = accessToken(config);
   if (!token) throw providerError("Access Token do Mercado Pago não configurado.", 412, "POINT_ACCESS_TOKEN_MISSING");
-  const response = await fetch(`${API_BASE_URL}${pathname}`, {
-    method: options.method || "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    signal: AbortSignal.timeout(Number(config.timeout || 15000))
-  });
-  const text = await response.text();
-  let payload = {};
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = { message: text };
+  const retries = Math.min(4, Math.max(0, Number(options.retries ?? config.pointRetryLimit ?? 2)));
+  const timeout = Math.min(60000, Math.max(3000, Number(config.pointRequestTimeout || config.timeout || 15000)));
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${pathname}`, {
+        method: options.method || "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          ...(options.headers || {})
+        },
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: AbortSignal.timeout(timeout)
+      });
+      const text = await response.text();
+      let payload = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        payload = { message: text };
+      }
+      if (response.ok) return payload;
+      const message = payload.message || payload.error || payload.cause?.[0]?.description || `Mercado Pago Point respondeu HTTP ${response.status}.`;
+      const error = providerError(message, response.status, payload.code || "POINT_API_REJECTED", payload);
+      if (![408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt >= retries) throw error;
+      lastError = error;
+    } catch (error) {
+      if (error?.statusCode && ![408, 425, 429, 500, 502, 503, 504].includes(error.statusCode)) throw error;
+      lastError = error;
+      if (attempt >= retries) {
+        throw providerError(
+          "A conexão com o Mercado Pago Point foi interrompida. A mesma operação poderá ser retomada sem gerar uma segunda cobrança.",
+          504,
+          "POINT_CONNECTION_LOST",
+          { cause: error?.message || "timeout", attempts: attempt + 1 }
+        );
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(4000, 500 * (2 ** attempt))));
   }
-  if (!response.ok) {
-    const message = payload.message || payload.error || payload.cause?.[0]?.description || `Mercado Pago Point respondeu HTTP ${response.status}.`;
-    throw providerError(message, response.status, payload.code || "POINT_API_REJECTED", payload);
-  }
-  return payload;
+  throw lastError;
 }
 
 async function listTerminals(config = {}) {
   const payload = await request("/terminals/v1/list", config);
-  const terminals = Array.isArray(payload) ? payload : payload.data || payload.terminals || payload.devices || payload.results || [];
+  const terminals = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.data)
+      ? payload.data
+      : payload.data?.terminals || payload.terminals || payload.devices || payload.results || [];
   return terminals.map((terminal) => ({
     id: String(terminal.id || terminal.terminal_id || ""),
     name: String(terminal.name || terminal.description || terminal.id || ""),
@@ -196,6 +220,19 @@ async function listTerminals(config = {}) {
     operatingMode: String(terminal.operating_mode || terminal.operatingMode || ""),
     raw: terminal
   }));
+}
+
+async function terminalConnection(config = {}) {
+  const selectedId = terminalId(config);
+  const terminals = await listTerminals(config);
+  const terminal = terminals.find((item) => item.id === selectedId);
+  if (!terminal) {
+    throw providerError("A maquininha configurada não foi encontrada na conta Mercado Pago.", 412, "POINT_TERMINAL_OFFLINE");
+  }
+  if (terminal.operatingMode && terminal.operatingMode !== "PDV") {
+    throw providerError("A maquininha precisa estar no modo PDV para receber cobranças do sistema.", 409, "POINT_TERMINAL_NOT_PDV", terminal.raw);
+  }
+  return { connected: true, terminal };
 }
 
 async function createPayment(order = {}, config = {}, options = {}) {
@@ -262,6 +299,29 @@ async function createTicketPrint(tickets = [], config = {}, options = {}) {
   };
 }
 
+function normalizePrintAction(payload = {}) {
+  const providerStatus = String(payload.status || "created").toLowerCase();
+  const status = ["finished", "processed", "printed", "completed"].includes(providerStatus)
+    ? "printed"
+    : ["failed", "error", "expired", "canceled", "cancelled"].includes(providerStatus)
+      ? "failed"
+      : "queued";
+  return {
+    id: String(payload.id || ""),
+    status,
+    providerStatus,
+    statusDetail: String(payload.status_detail || payload.statusDetail || ""),
+    externalReference: String(payload.external_reference || ""),
+    terminalId: String(payload.config?.point?.terminal_id || ""),
+    raw: payload
+  };
+}
+
+async function getPrintStatus(actionId, config = {}) {
+  if (!actionId) throw providerError("Action ID da impressão não informado.", 400, "POINT_PRINT_ACTION_ID_MISSING");
+  return normalizePrintAction(await request(`/terminals/v1/actions/${encodeURIComponent(actionId)}`, config));
+}
+
 async function getStatus(providerOrderId, config = {}) {
   if (!providerOrderId) throw providerError("Order ID do Point não informado.", 400, "POINT_ORDER_ID_MISSING");
   return normalizeOrder(await request(`/v1/orders/${encodeURIComponent(providerOrderId)}`, config));
@@ -271,7 +331,10 @@ async function cancelPayment(providerOrderId, config = {}, options = {}) {
   if (!providerOrderId) throw providerError("Order ID do Point não informado.", 400, "POINT_ORDER_ID_MISSING");
   const payload = await request(`/v1/orders/${encodeURIComponent(providerOrderId)}/cancel`, config, {
     method: "POST",
-    headers: { "X-Idempotency-Key": String(options.idempotencyKey || crypto.randomUUID()) },
+    headers: {
+      "X-Idempotency-Key": String(options.idempotencyKey || crypto.randomUUID()),
+      ...(String(options.providerStatus || "").toLowerCase() === "at_terminal" ? { "x-allow-cancelable-status": "at_terminal" } : {})
+    },
     body: {}
   });
   return normalizeOrder(payload);
@@ -304,8 +367,10 @@ module.exports = {
   providerName,
   manualTerminalPaymentMetadata,
   listTerminals,
+  terminalConnection,
   createPayment,
   createTicketPrint,
+  getPrintStatus,
   ticketPrintContent,
   getStatus,
   cancelPayment,

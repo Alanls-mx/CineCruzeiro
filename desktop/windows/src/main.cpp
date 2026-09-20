@@ -30,7 +30,7 @@ namespace {
 
 constexpr wchar_t kWindowClass[] = L"CineCruzeiroDesktopWindow";
 constexpr wchar_t kWindowTitle[] = L"Painel Cine Cruzeiro";
-constexpr wchar_t kAppVersion[] = L"1.1.1";
+constexpr wchar_t kAppVersion[] = L"1.2.0";
 constexpr wchar_t kDefaultAdminUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/admin/";
 constexpr wchar_t kUpdateManifestUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/api/desktop/update/latest.ini";
 constexpr UINT_PTR kReconnectTimer = 1;
@@ -302,6 +302,10 @@ constexpr wchar_t kDesktopBridgeScript[] = LR"JS(
 )JS";
 
 constexpr wchar_t kDesktopBridgeScriptActions[] = LR"JS(
+    window.cineDesktop={
+      isAvailable:true,
+      printUrl:(url,jobId='print')=>chrome.webview.postMessage(`print_url|${jobId}|${new URL(url,location.href).href}`)
+    };
     const tools = document.createElement('div'); tools.id = 'cine-desktop-tools';
     const trigger = document.createElement('button'); trigger.className='cine-desktop-trigger'; trigger.type='button'; trigger.title='Opções do aplicativo'; trigger.setAttribute('aria-label','Abrir opções do aplicativo'); trigger.setAttribute('aria-expanded','false'); trigger.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>';
     const menu = document.createElement('div'); menu.className='cine-desktop-menu'; menu.hidden=true;
@@ -322,6 +326,7 @@ constexpr wchar_t kDesktopBridgeScriptActions[] = LR"JS(
     ensure();
     if(data?.type==='desktop.fullscreen') document.querySelector('#cine-desktop-tools .cine-desktop-menu button:nth-child(2)').textContent=data.active?'Sair da tela cheia':'Tela cheia';
     if(data?.type==='desktop.update'&&data.ready){const button=document.getElementById('cine-desktop-update-ready');button.style.display='block';button.textContent=`Atualizar para ${data.version}`}
+    if(data?.type==='desktop.print_result')window.dispatchEvent(new CustomEvent('cine-desktop-print-result',{detail:data}));
     if(data?.type==='desktop.components'){
       const p=data.payload, backdrop=document.getElementById('cine-device-backdrop'), content=backdrop.querySelector('.cine-device-content');content.replaceChildren();
       const summary=document.createElement('div');summary.className='cine-device-summary';[['Impressoras',p.printers.length],['Câmeras',p.cameras.length],['Monitores',p.monitorCount]].forEach(([label,value])=>{const item=document.createElement('div');item.className='cine-device-stat';const b=document.createElement('b');b.textContent=value;const span=document.createElement('span');span.textContent=label;item.append(b,span);summary.appendChild(item)});content.appendChild(summary);
@@ -370,7 +375,7 @@ class DesktopWindow {
         return 0;
       case kUpdateReadyMessage: HandleUpdateResult(std::unique_ptr<UpdateResult>(reinterpret_cast<UpdateResult*>(lParam))); return 0;
       case WM_SETFOCUS: if (controller_) controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); return 0;
-      case WM_DESTROY: KillTimer(window_, kUpdateTimer); controller_.Reset(); webView_.Reset(); PostQuitMessage(0); return 0;
+      case WM_DESTROY: KillTimer(window_, kUpdateTimer); if (printController_) printController_->Close(); printController_.Reset(); printWebView_.Reset(); controller_.Reset(); webView_.Reset(); PostQuitMessage(0); return 0;
       default: return DefWindowProcW(window_, message, wParam, lParam);
     }
   }
@@ -462,6 +467,10 @@ class DesktopWindow {
           else if (message == L"discover_components") SendComponents();
           else if (message == L"install_update") InstallReadyUpdate();
           else if (message == L"check_updates") CheckForUpdates();
+          else if (message.rfind(L"print_url|", 0) == 0) {
+            const size_t separator = message.find(L'|', 10);
+            if (separator != std::wstring::npos) StartPrint(message.substr(separator + 1), message.substr(10, separator - 10));
+          }
         }
         return S_OK;
       }).Get(), &messageToken_);
@@ -484,6 +493,77 @@ class DesktopWindow {
       SetWindowPos(window_, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED); fullscreen_ = false;
     }
     SendFullscreenState();
+  }
+
+  void SendPrintResult(const std::wstring& jobId, bool ok, const std::wstring& message) {
+    if (!webView_) return;
+    const std::wstring payload = L"{\"type\":\"desktop.print_result\",\"jobId\":\"" + JsonEscape(jobId) +
+      L"\",\"ok\":" + (ok ? L"true" : L"false") + L",\"message\":\"" + JsonEscape(message) + L"\"}";
+    webView_->PostWebMessageAsJson(payload.c_str());
+  }
+
+  void FinishPrint(bool ok, const std::wstring& message) {
+    const std::wstring jobId = printJobId_;
+    WriteLog((ok ? L"Impressão concluída: " : L"Falha na impressão: ") + jobId + L" " + message);
+    if (printController_) printController_->Close();
+    printController_.Reset(); printWebView_.Reset(); printJobId_.clear(); printUrl_.clear(); printNavigationToken_ = {};
+    SendPrintResult(jobId, ok, message);
+  }
+
+  void PrintLoadedDocument() {
+    ComPtr<ICoreWebView2_16> printable;
+    ComPtr<ICoreWebView2Environment6> environment6;
+    ComPtr<ICoreWebView2PrintSettings> settings;
+    if (!printWebView_ || FAILED(printWebView_.As(&printable)) || FAILED(environment_.As(&environment6)) ||
+        FAILED(environment6->CreatePrintSettings(&settings))) {
+      FinishPrint(false, L"O WebView2 instalado não oferece impressão silenciosa.");
+      return;
+    }
+    std::wstring defaultPrinter;
+    EnumeratePrinters(defaultPrinter);
+    if (defaultPrinter.empty()) {
+      FinishPrint(false, L"Defina uma impressora térmica padrão no Windows.");
+      return;
+    }
+    settings->put_ShouldPrintBackgrounds(TRUE);
+    settings->put_ShouldPrintHeaderAndFooter(FALSE);
+    settings->put_MarginTop(0); settings->put_MarginBottom(0); settings->put_MarginLeft(0); settings->put_MarginRight(0);
+    ComPtr<ICoreWebView2PrintSettings2> settings2;
+    if (SUCCEEDED(settings.As(&settings2))) settings2->put_PrinterName(defaultPrinter.c_str());
+    const HRESULT result = printable->Print(settings.Get(), Callback<ICoreWebView2PrintCompletedHandler>(
+      [this](HRESULT errorCode, COREWEBVIEW2_PRINT_STATUS status)->HRESULT {
+        const bool ok = SUCCEEDED(errorCode) && status == COREWEBVIEW2_PRINT_STATUS_SUCCEEDED;
+        FinishPrint(ok, ok ? L"Documento enviado à impressora padrão." :
+          status == COREWEBVIEW2_PRINT_STATUS_PRINTER_UNAVAILABLE ? L"A impressora padrão está indisponível." : L"O Windows não confirmou a impressão.");
+        return S_OK;
+      }).Get());
+    if (FAILED(result)) FinishPrint(false, L"Não foi possível iniciar a impressão no Windows.");
+  }
+
+  void StartPrint(const std::wstring& url, const std::wstring& jobId) {
+    if (!SameOrigin(url, trustedOrigin_)) {
+      SendPrintResult(jobId, false, L"A impressão foi bloqueada porque a URL não pertence ao painel.");
+      return;
+    }
+    if (printController_) {
+      SendPrintResult(jobId, false, L"A impressora está ocupada com outro ingresso.");
+      return;
+    }
+    printJobId_ = jobId; printUrl_ = url;
+    environment_->CreateCoreWebView2Controller(window_, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+      [this](HRESULT result, ICoreWebView2Controller* controller)->HRESULT {
+        if (FAILED(result) || !controller) { FinishPrint(false, L"Não foi possível preparar o documento para impressão."); return S_OK; }
+        printController_ = controller; printController_->put_IsVisible(FALSE); printController_->get_CoreWebView2(&printWebView_);
+        printWebView_->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>(
+          [this](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args)->HRESULT {
+            BOOL success = FALSE; args->get_IsSuccess(&success);
+            if (!success) FinishPrint(false, L"Não foi possível carregar o ingresso para impressão.");
+            else PrintLoadedDocument();
+            return S_OK;
+          }).Get(), &printNavigationToken_);
+        printWebView_->Navigate(printUrl_.c_str());
+        return S_OK;
+      }).Get());
   }
 
   void SendFullscreenState() {
@@ -550,7 +630,10 @@ class DesktopWindow {
   DWORD previousStyle_ = 0; WINDOWPLACEMENT previousPlacement_{};
   std::unique_ptr<UpdateResult> readyUpdate_;
   ComPtr<ICoreWebView2Environment> environment_; ComPtr<ICoreWebView2Controller> controller_; ComPtr<ICoreWebView2> webView_;
+  ComPtr<ICoreWebView2Controller> printController_; ComPtr<ICoreWebView2> printWebView_;
+  std::wstring printJobId_, printUrl_;
   EventRegistrationToken navigationStartingToken_{}, navigationCompletedToken_{}, newWindowToken_{}, permissionToken_{}, messageToken_{}, processFailedToken_{}, acceleratorToken_{};
+  EventRegistrationToken printNavigationToken_{};
 };
 
 }  // namespace

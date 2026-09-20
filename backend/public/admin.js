@@ -177,6 +177,7 @@ let state = {
   concessionCounterPaymentSnapshot: null,
   concessionCounterPaymentSyncing: false,
   concessionCounterLastOrderId: "",
+  concessionCounterCheckoutKey: "",
   manualSeatMap: null,
   manualSeatMapStatus: "idle",
   manualSeatMapSessionId: "",
@@ -189,6 +190,10 @@ let state = {
   pointPaymentTimer: null,
   pointPaymentSnapshot: null,
   pointPaymentSyncing: false,
+  pointPaymentPollAttempts: 0,
+  pointCheckoutKey: "",
+  localPointPrintJobs: new Set(),
+  localPointPrintStatus: "",
   qrStream: null,
   qrScanTimer: null,
   qrCloseTimer: null,
@@ -6624,6 +6629,12 @@ async function createManualTicket(event) {
       customerCpf: saleMode === "quick" ? "" : $("manualCustomerCpf").value.replace(/\D/g, ""),
       createdAt: new Date().toISOString()
     };
+    const pointPayment = ["point_debit", "point_credit", "point_card", "point_qr"].includes(paymentMethod);
+    if (pointPayment) {
+      state.pointCheckoutKey ||= String(sessionStorage.getItem("cine_admin_point_checkout_key") || "") || crypto.randomUUID();
+      sessionStorage.setItem("cine_admin_point_checkout_key", state.pointCheckoutKey);
+      payload.clientRequestId = state.pointCheckoutKey;
+    }
     const result = await api("/api/box-office/sales", { method: "POST", body: JSON.stringify(payload) });
     const orders = result.orders || (result.order ? [result.order] : []);
     state.manualSaleItems = [];
@@ -6631,7 +6642,9 @@ async function createManualTicket(event) {
     state.manualSelectedSeatIds = [];
     closeManualSeatRealtime();
     renderManualSaleItems();
-    if (["point_debit", "point_credit", "point_card", "point_qr"].includes(paymentMethod)) {
+    if (pointPayment) {
+      state.pointCheckoutKey = "";
+      sessionStorage.removeItem("cine_admin_point_checkout_key");
       startPointPaymentTracking(result);
       return;
     }
@@ -6660,6 +6673,8 @@ async function createManualTicket(event) {
 
 function pointPaymentStatusLabel(status = "") {
   return {
+    connecting: "Conectando à maquininha",
+    reconnecting: "Reconectando à maquininha",
     pending: "Aguardando no terminal",
     approved: "Pagamento aprovado",
     rejected: "Pagamento recusado",
@@ -6674,6 +6689,47 @@ function stopPointPaymentPolling() {
   state.pointPaymentTimer = null;
 }
 
+function pointPaymentPrintUrl(paymentId = state.pointPaymentId) {
+  return `${API_BASE}/api/box-office/point-payments/${encodeURIComponent(paymentId)}/print`;
+}
+
+function desktopThermalPrinterAvailable() {
+  return Boolean(window.cineDesktop?.printUrl);
+}
+
+function requestLocalPointPaymentPrint(paymentId = state.pointPaymentId, { manual = false } = {}) {
+  if (!paymentId) return false;
+  const jobId = `point-${paymentId}`;
+  if (!manual && state.localPointPrintJobs.has(jobId)) return true;
+  if (!desktopThermalPrinterAvailable()) {
+    if (manual) {
+      const popup = window.open(pointPaymentPrintUrl(paymentId), "_blank");
+      if (popup) popup.opener = null;
+      else showToast("O navegador bloqueou a impressão. Permita pop-ups ou use o aplicativo do painel.", "error");
+    }
+    return false;
+  }
+  state.localPointPrintJobs.add(jobId);
+  state.localPointPrintStatus = "printing";
+  window.cineDesktop.printUrl(pointPaymentPrintUrl(paymentId), jobId);
+  return true;
+}
+
+window.addEventListener("cine-desktop-print-result", (event) => {
+  const detail = event.detail || {};
+  if (!String(detail.jobId || "").startsWith("point-")) return;
+  state.localPointPrintStatus = detail.ok ? "printed" : "failed";
+  if (detail.ok) {
+    localStorage.removeItem("cine_admin_active_point_payment");
+    showToast("Ingresso impresso na térmica deste computador.");
+  } else {
+    state.localPointPrintJobs.delete(detail.jobId);
+    showToast(detail.message || "A impressora térmica não confirmou a impressão.", "error");
+  }
+  if (state.pointPaymentSnapshot) renderPointPayment(state.pointPaymentSnapshot);
+  if (state.concessionCounterPaymentSnapshot) renderConcessionCounterPayment(state.concessionCounterPaymentSnapshot);
+});
+
 function renderPointPayment(data = {}) {
   const payment = data.payment || state.pointPaymentSnapshot?.payment || {};
   const orders = data.orders || state.pointPaymentSnapshot?.orders || [];
@@ -6681,9 +6737,9 @@ function renderPointPayment(data = {}) {
   const pointPrint = data.pointPrint || state.pointPaymentSnapshot?.pointPrint || {};
   const ticketDelivery = orders[0]?.ticketDelivery || {};
   const onlineDelivery = orders.some((order) => order.ticketDeliveryMethod === "online");
-  const status = payment.status || "pending";
+  const status = data.reconnecting ? "reconnecting" : payment.status || "pending";
   const finalStatus = ["approved", "rejected", "cancelled", "expired", "refunded"].includes(status);
-  state.pointPaymentSnapshot = { payment, orders, tickets, pointPrint };
+  state.pointPaymentSnapshot = { ...data, payment, orders, tickets, pointPrint };
 
   const panel = $("pointPaymentPanel");
   panel.hidden = false;
@@ -6694,22 +6750,37 @@ function renderPointPayment(data = {}) {
   $("pointPaymentReference").textContent = payment.providerReference || payment.providerPaymentId || "-";
   $("pointPaymentStatus").textContent = pointPaymentStatusLabel(status);
   $("pointPaymentRetryButton").hidden = status === "approved";
-  $("pointPaymentCancelButton").hidden = finalStatus;
+  $("pointPaymentCancelButton").hidden = finalStatus || status === "reconnecting";
   $("pointPaymentNewSaleButton").hidden = !finalStatus;
+
+  const needsLocalPrint = ["local_required", "failed", "timed_out"].includes(String(pointPrint.status || ""));
+  if (payment.status === "approved" && needsLocalPrint && !onlineDelivery) {
+    requestLocalPointPaymentPrint(payment.id || state.pointPaymentId);
+  }
+  if (payment.status === "approved" && (pointPrint.status === "printed" || state.localPointPrintStatus === "printed")) {
+    localStorage.removeItem("cine_admin_active_point_payment");
+  }
 
   const copy = {
     approved: [
       "Pagamento aprovado e ingressos emitidos",
       onlineDelivery
         ? ticketDelivery.message || "Os ingressos digitais estão sendo enviados ao e-mail informado."
-        : pointPrint.status === "queued"
-        ? "A impressão com ingressos e bomboniere foi enviada automaticamente para a Point."
-        : pointPrint.message || "A venda foi confirmada pelo Mercado Pago. Use as opções abaixo para imprimir novamente."
+        : pointPrint.status === "printed"
+        ? "O pagamento e a impressão dos ingressos foram confirmados pela Point."
+        : ["queued", "on_terminal"].includes(pointPrint.status)
+        ? pointPrint.message || "A impressão foi enviada à Point e está sendo confirmada."
+        : state.localPointPrintStatus === "printed"
+        ? "O ingresso foi impresso na térmica conectada a este computador."
+        : state.localPointPrintStatus === "printing"
+        ? "Pagamento confirmado. Enviando o ingresso à impressora térmica deste computador."
+        : pointPrint.message || "A venda foi confirmada. Imprima o ingresso antes de iniciar a próxima venda."
     ],
     rejected: ["Pagamento recusado", "Nenhum ingresso foi emitido. Inicie uma nova venda para tentar outra forma de pagamento."],
     cancelled: ["Cobrança cancelada", "A ordem foi cancelada no terminal e nenhum ingresso foi emitido."],
     expired: ["Tempo de pagamento encerrado", "A cobrança expirou sem aprovação e os ingressos não foram emitidos."],
-    refunded: ["Pagamento estornado", "O Mercado Pago informou o estorno desta cobrança."]
+    refunded: ["Pagamento estornado", "O Mercado Pago informou o estorno desta cobrança."],
+    reconnecting: ["Reconectando à maquininha", payment.metadata?.connectionMessage || "A cobrança continua vinculada à mesma Order. O sistema tentará novamente sem duplicar o pagamento."]
   }[status] || ["Aguardando pagamento na Point", "A cobrança foi enviada. Oriente o cliente a concluir o pagamento no terminal."];
   $("pointPaymentTitle").textContent = copy[0];
   $("pointPaymentMessage").textContent = copy[1];
@@ -6719,9 +6790,10 @@ function renderPointPayment(data = {}) {
     printActions.hidden = false;
     printActions.innerHTML = `
       <strong>Impressão da venda</strong>
-      <p>${pointPrint.status === "queued" ? "A via de balcão já foi enviada à Point. " : ""}${tickets.length} ingresso(s) emitido(s). Os botões abaixo permitem reimprimir pelo PDV ou impressora instalada neste computador.</p>
+      <p>${["queued", "on_terminal", "printed"].includes(pointPrint.status) ? "A impressão pela Point está registrada. " : ""}${tickets.length} ingresso(s) emitido(s). Reimprima a venda completa pela térmica conectada ao computador quando necessário.</p>
       <div class="button-row">
-        ${tickets.map((ticket, index) => `<button class="ghost-button" type="button" onclick="printPhysicalTicket('${escapeHtml(ticket.id)}')">Abrir no PDV · ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
+        <button class="ghost-button" type="button" onclick="requestLocalPointPaymentPrint('${escapeHtml(payment.id || state.pointPaymentId)}', { manual: true })">${desktopThermalPrinterAvailable() ? "Imprimir venda na térmica" : "Abrir venda para impressão"}</button>
+        ${tickets.map((ticket, index) => `<button class="ghost-button" type="button" onclick="printPhysicalTicket('${escapeHtml(ticket.id)}')">Imprimir apenas ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
       </div>
     `;
   } else {
@@ -6744,20 +6816,29 @@ async function pollPointPayment({ manual = false } = {}) {
   try {
     const result = await api(`/api/box-office/point-payments/${encodeURIComponent(state.pointPaymentId)}`);
     renderPointPayment(result);
+    if (result.reconnecting) {
+      state.pointPaymentPollAttempts += 1;
+      schedulePointPaymentPoll(Math.min(15000, Number(result.retryAfterMs || 3500) + state.pointPaymentPollAttempts * 1000));
+      return;
+    }
+    state.pointPaymentPollAttempts = 0;
     if (result.payment?.status === "approved") {
-      stopPointPaymentPolling();
       await loadContent({ silent: true });
       renderPointPayment(result);
-      showToast("Pagamento aprovado. Ingressos liberados para impressão.");
+      if (["queued", "on_terminal"].includes(String(result.pointPrint?.status || ""))) schedulePointPaymentPoll(2500);
+      else stopPointPaymentPolling();
+      showToast("Pagamento aprovado. Finalizando a impressão dos ingressos.");
     } else if (["rejected", "cancelled", "expired", "refunded"].includes(result.payment?.status)) {
       stopPointPaymentPolling();
+      localStorage.removeItem("cine_admin_active_point_payment");
       await loadContent({ silent: true });
     } else {
       schedulePointPaymentPoll();
     }
   } catch (error) {
+    state.pointPaymentPollAttempts += 1;
     $("pointPaymentMessage").textContent = `${error.message} Tentaremos consultar novamente automaticamente.`;
-    schedulePointPaymentPoll(3500);
+    schedulePointPaymentPoll(Math.min(15000, 3000 + state.pointPaymentPollAttempts * 1500));
   } finally {
     state.pointPaymentSyncing = false;
     retryButton.disabled = false;
@@ -6766,9 +6847,12 @@ async function pollPointPayment({ manual = false } = {}) {
 
 function startPointPaymentTracking(result) {
   state.pointPaymentId = result.payment?.id || "";
+  state.pointPaymentPollAttempts = 0;
+  if (state.pointPaymentId) localStorage.setItem("cine_admin_active_point_payment", state.pointPaymentId);
   renderPointPayment(result);
   if (result.payment?.status === "approved") {
     void loadContent({ silent: true }).then(() => renderPointPayment(result));
+    if (["queued", "on_terminal"].includes(String(result.pointPrint?.status || ""))) schedulePointPaymentPoll(2500);
     return;
   }
   schedulePointPaymentPoll(1200);
@@ -6794,6 +6878,11 @@ async function cancelPointPayment() {
 function resetPointPaymentPanel() {
   stopPointPaymentPolling();
   state.pointPaymentId = "";
+  state.pointCheckoutKey = "";
+  sessionStorage.removeItem("cine_admin_point_checkout_key");
+  state.pointPaymentPollAttempts = 0;
+  state.localPointPrintStatus = "";
+  localStorage.removeItem("cine_admin_active_point_payment");
   state.pointPaymentSnapshot = null;
   $("pointPaymentPanel").hidden = true;
   $("manualTicketForm").hidden = false;
@@ -6802,7 +6891,12 @@ function resetPointPaymentPanel() {
 }
 
 function printPhysicalTicket(ticketId) {
-  const popup = window.open(`${API_BASE}/api/admin/tickets/${encodeURIComponent(ticketId)}/print`, "_blank");
+  const url = `${API_BASE}/api/admin/tickets/${encodeURIComponent(ticketId)}/print`;
+  if (desktopThermalPrinterAvailable()) {
+    window.cineDesktop.printUrl(url, `ticket-${ticketId}`);
+    return;
+  }
+  const popup = window.open(url, "_blank");
   if (popup) popup.opener = null;
   else showToast("O navegador bloqueou a abertura do PDF. Permita pop-ups para imprimir.", "error");
 }
@@ -6918,8 +7012,17 @@ function renderConcessionCounterSale() {
 }
 
 function printConcessionCounterReceipt(orderId = state.concessionCounterLastOrderId) {
+  if (state.concessionCounterPaymentId && state.concessionCounterPaymentSnapshot?.payment?.status === "approved") {
+    requestLocalPointPaymentPrint(state.concessionCounterPaymentId, { manual: true });
+    return;
+  }
   if (!orderId) return;
-  const popup = window.open(`${API_BASE}/api/admin/concession-sales/${encodeURIComponent(orderId)}/print`, "_blank");
+  const url = `${API_BASE}/api/admin/concession-sales/${encodeURIComponent(orderId)}/print`;
+  if (desktopThermalPrinterAvailable()) {
+    window.cineDesktop.printUrl(url, `concession-${orderId}`);
+    return;
+  }
+  const popup = window.open(url, "_blank");
   if (popup) popup.opener = null;
   else showToast("O navegador bloqueou o comprovante. Permita pop-ups para imprimir.", "error");
 }
@@ -6933,9 +7036,10 @@ function renderConcessionCounterPayment(data = {}) {
   const payment = data.payment || state.concessionCounterPaymentSnapshot?.payment || {};
   const orders = data.orders || state.concessionCounterPaymentSnapshot?.orders || [];
   const order = orders[0] || data.order || {};
-  const status = payment.status || "pending";
+  const pointPrint = data.pointPrint || state.concessionCounterPaymentSnapshot?.pointPrint || {};
+  const status = data.reconnecting ? "reconnecting" : payment.status || "pending";
   const finalStatus = ["approved", "rejected", "cancelled", "expired", "refunded"].includes(status);
-  state.concessionCounterPaymentSnapshot = { payment, orders, order, pointPrint: data.pointPrint || {} };
+  state.concessionCounterPaymentSnapshot = { ...data, payment, orders, order, pointPrint };
   state.concessionCounterLastOrderId = order.id || state.concessionCounterLastOrderId;
   $("concessionCounterWorkspace").hidden = true;
   const panel = $("concessionCounterPaymentPanel");
@@ -6944,17 +7048,29 @@ function renderConcessionCounterPayment(data = {}) {
   $("concessionCounterPaymentStatus").textContent = pointPaymentStatusLabel(status);
   $("concessionCounterPaymentAmount").textContent = money(payment.amount || order.totalPrice || 0);
   $("concessionCounterPaymentReference").textContent = payment.providerReference || payment.providerPaymentId || "-";
+  const needsLocalPrint = ["local_required", "failed", "timed_out"].includes(String(pointPrint.status || ""));
+  if (payment.status === "approved" && needsLocalPrint) requestLocalPointPaymentPrint(payment.id || state.concessionCounterPaymentId);
+  if (payment.status === "approved" && (pointPrint.status === "printed" || state.localPointPrintStatus === "printed")) {
+    localStorage.removeItem("cine_admin_active_concession_point_payment");
+  }
   const copy = {
-    approved: ["Venda aprovada", data.pointPrint?.status === "queued" ? "O comprovante foi enviado automaticamente para a Point." : "O pagamento foi confirmado. O comprovante pode ser aberto novamente abaixo."],
+    approved: ["Venda aprovada", pointPrint.status === "printed"
+      ? "O pagamento e a impressão foram confirmados pela Point."
+      : ["queued", "on_terminal"].includes(pointPrint.status)
+        ? pointPrint.message || "O comprovante foi enviado automaticamente para a Point."
+        : state.localPointPrintStatus === "printing"
+          ? "Pagamento confirmado. Enviando o comprovante à impressora térmica deste computador."
+          : pointPrint.message || "O pagamento foi confirmado. Imprima o comprovante antes de iniciar a próxima venda."],
     rejected: ["Pagamento recusado", "Nenhum produto foi baixado do estoque. Inicie outra venda para tentar novamente."],
     cancelled: ["Cobrança cancelada", "A venda não foi concluída e o estoque foi liberado."],
     expired: ["Tempo de pagamento encerrado", "A cobrança expirou e o estoque foi liberado."],
-    refunded: ["Pagamento estornado", "O Mercado Pago informou o estorno desta venda."]
+    refunded: ["Pagamento estornado", "O Mercado Pago informou o estorno desta venda."],
+    reconnecting: ["Reconectando à maquininha", payment.metadata?.connectionMessage || "A cobrança permanece vinculada à mesma Order e será consultada novamente sem duplicar o pagamento."]
   }[status] || ["Aguardando pagamento na Point", "Oriente o cliente a concluir o pagamento na maquininha."];
   $("concessionCounterPaymentTitle").textContent = copy[0];
   $("concessionCounterPaymentMessage").textContent = copy[1];
   $("concessionCounterPaymentRetryButton").hidden = status === "approved";
-  $("concessionCounterPaymentCancelButton").hidden = finalStatus;
+  $("concessionCounterPaymentCancelButton").hidden = finalStatus || status === "reconnecting";
   $("concessionCounterPrintButton").hidden = status !== "approved" || !state.concessionCounterLastOrderId;
   $("concessionCounterNewSaleButton").hidden = !finalStatus;
 }
@@ -6973,13 +7089,23 @@ async function pollConcessionCounterPayment({ manual = false } = {}) {
   try {
     const result = await api(`/api/box-office/point-payments/${encodeURIComponent(state.concessionCounterPaymentId)}`);
     renderConcessionCounterPayment(result);
+    if (result.reconnecting) {
+      scheduleConcessionCounterPaymentPoll(Math.min(15000, Number(result.retryAfterMs || 5000)));
+      return;
+    }
     if (result.payment?.status === "approved") {
-      stopConcessionCounterPaymentPolling();
       state.concessionCounterQuantities = {};
       await Promise.all([loadContent({ silent: true }), loadConcessionDailySales()]);
-      showToast("Pagamento aprovado e comprovante enviado para impressão.");
+      renderConcessionCounterPayment(result);
+      if (["queued", "on_terminal"].includes(String(result.pointPrint?.status || ""))) {
+        scheduleConcessionCounterPaymentPoll(2500);
+      } else {
+        stopConcessionCounterPaymentPolling();
+      }
+      showToast("Pagamento aprovado. Finalizando a impressão do comprovante.");
     } else if (["rejected", "cancelled", "expired", "refunded"].includes(result.payment?.status)) {
       stopConcessionCounterPaymentPolling();
+      localStorage.removeItem("cine_admin_active_concession_point_payment");
       await loadContent({ silent: true });
     } else scheduleConcessionCounterPaymentPoll();
   } catch (error) {
@@ -6999,6 +7125,7 @@ async function cancelConcessionCounterPayment() {
     const result = await api(`/api/box-office/point-payments/${encodeURIComponent(state.concessionCounterPaymentId)}/cancel`, { method: "POST" });
     stopConcessionCounterPaymentPolling();
     renderConcessionCounterPayment(result);
+    localStorage.removeItem("cine_admin_active_concession_point_payment");
     await loadContent({ silent: true });
     showToast("Cobrança cancelada no Mercado Pago Point.");
   } catch (error) {
@@ -7013,6 +7140,10 @@ function resetConcessionCounterSale() {
   state.concessionCounterPaymentId = "";
   state.concessionCounterPaymentSnapshot = null;
   state.concessionCounterLastOrderId = "";
+  state.concessionCounterCheckoutKey = "";
+  sessionStorage.removeItem("cine_admin_concession_checkout_key");
+  state.localPointPrintStatus = "";
+  localStorage.removeItem("cine_admin_active_concession_point_payment");
   state.concessionCounterQuantities = {};
   $("concessionCounterPaymentPanel").hidden = true;
   $("concessionCounterWorkspace").hidden = false;
@@ -7033,16 +7164,29 @@ async function createConcessionCounterSale(event) {
   try {
     button.disabled = true;
     button.textContent = pointPayment ? "Enviando à Point..." : "Finalizando venda...";
+    if (pointPayment) {
+      state.concessionCounterCheckoutKey ||= String(sessionStorage.getItem("cine_admin_concession_checkout_key") || "") || crypto.randomUUID();
+      sessionStorage.setItem("cine_admin_concession_checkout_key", state.concessionCounterCheckoutKey);
+    }
     const result = await api("/api/admin/concession-counter-sales", {
       method: "POST",
-      body: JSON.stringify({ saleMode: "concession_counter", paymentMethod, concessionItems, createdAt: new Date().toISOString() })
+      body: JSON.stringify({
+        saleMode: "concession_counter",
+        paymentMethod,
+        concessionItems,
+        createdAt: new Date().toISOString(),
+        ...(pointPayment ? { clientRequestId: state.concessionCounterCheckoutKey } : {})
+      })
     });
     const order = result.orders?.[0] || result.order || {};
     state.concessionCounterLastOrderId = order.id || "";
     if (pointPayment) {
+      state.concessionCounterCheckoutKey = "";
+      sessionStorage.removeItem("cine_admin_concession_checkout_key");
       state.concessionCounterPaymentId = result.payment?.id || "";
+      if (state.concessionCounterPaymentId) localStorage.setItem("cine_admin_active_concession_point_payment", state.concessionCounterPaymentId);
       renderConcessionCounterPayment(result);
-      if (result.payment?.status !== "approved") scheduleConcessionCounterPaymentPoll(1200);
+      if (result.payment?.status !== "approved" || ["queued", "on_terminal"].includes(String(result.pointPrint?.status || ""))) scheduleConcessionCounterPaymentPoll(1200);
       else {
         state.concessionCounterQuantities = {};
         await Promise.all([loadContent({ silent: true }), loadConcessionDailySales()]);
@@ -12991,6 +13135,7 @@ window.closeFloatingActionMenu = closeFloatingActionMenu;
 window.copyTicketCode = copyTicketCode;
 window.printOrderTicket = printOrderTicket;
 window.printPhysicalTicket = printPhysicalTicket;
+window.requestLocalPointPaymentPrint = requestLocalPointPaymentPrint;
 window.resendOrderTicket = resendOrderTicket;
 window.showChartHint = showChartHint;
 window.openSessionDashboardDetail = openSessionDashboardDetail;
@@ -13019,6 +13164,23 @@ window.setPerformanceInterval = setPerformanceInterval;
 window.startPerformanceStream = startPerformanceStream;
 window.stopPerformanceStream = stopPerformanceStream;
 
+function restoreActivePointPayment() {
+  const paymentId = String(localStorage.getItem("cine_admin_active_point_payment") || "").trim();
+  if (paymentId) {
+    state.pointPaymentId = paymentId;
+    activatePanel("ordersPanel", { scroll: false });
+    setBoxOfficeTab("newSale");
+    pollPointPayment({ manual: true });
+    return;
+  }
+  const concessionPaymentId = String(localStorage.getItem("cine_admin_active_concession_point_payment") || "").trim();
+  if (!concessionPaymentId) return;
+  state.concessionCounterPaymentId = concessionPaymentId;
+  activatePanel("concessionsPanel", { scroll: false });
+  setConcessionTab("counterSale");
+  pollConcessionCounterPayment({ manual: true });
+}
+
 async function initAdmin() {
   const logo = $("adminLogoImg");
   if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp?brand=cinecruzeiro-v2`;
@@ -13033,6 +13195,7 @@ async function initAdmin() {
     return;
   }
   await loadContent();
+  restoreActivePointPayment();
   if ($("logsPanel")?.classList.contains("active")) {
     startPerformanceStream();
     void loadPerformance();

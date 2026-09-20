@@ -8,7 +8,7 @@ const DEFINITIONS = {
   mercadoPago: {
     name: "Mercado Pago",
     purpose: "Cartão, Pix, webhooks, assinaturas recorrentes e pagamentos presenciais Point",
-    defaults: { enabled: false, environment: "sandbox", publicKey: "", pointEnabled: false, pointStoreId: "", pointPosId: "", pointDeviceId: "", pointPrintOnTerminal: "seller_ticket", pointExpirationTime: "PT15M", recurringEnabled: false },
+    defaults: { enabled: false, environment: "sandbox", publicKey: "", pointEnabled: false, pointStoreId: "", pointPosId: "", pointDeviceId: "", pointPrintOnTerminal: "seller_ticket", pointTicketPrintEnabled: true, pointExpirationTime: "PT15M", pointRequestTimeout: 15000, pointRetryLimit: 2, pointPrintTimeout: 120000, recurringEnabled: false },
     secrets: ["publicKey", "accessToken", "webhookSecret"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
@@ -19,8 +19,12 @@ const DEFINITIONS = {
       { key: "pointStoreId", label: "Store ID Point (opcional)", type: "text" },
       { key: "pointPosId", label: "POS ID Point (opcional)", type: "text" },
       { key: "pointDeviceId", label: "Terminal ID Point", type: "text", placeholder: "Identificador exibido na lista de terminais" },
-      { key: "pointPrintOnTerminal", label: "Comprovante na maquininha", type: "select", options: ["seller_ticket", "no_ticket"] },
+      { key: "pointPrintOnTerminal", label: "Comprovante do pagamento na Point", type: "select", options: ["seller_ticket", "no_ticket"] },
+      { key: "pointTicketPrintEnabled", label: "Imprimir ingresso na Point após aprovação", type: "boolean" },
       { key: "pointExpirationTime", label: "Tempo limite da cobrança", type: "text", placeholder: "PT15M" },
+      { key: "pointRequestTimeout", label: "Timeout de comunicação (ms)", type: "number", placeholder: "15000" },
+      { key: "pointRetryLimit", label: "Tentativas de reconexão", type: "number", placeholder: "2" },
+      { key: "pointPrintTimeout", label: "Timeout da impressão Point (ms)", type: "number", placeholder: "120000" },
       { key: "recurringEnabled", label: "Assinaturas recorrentes do Clube", type: "boolean" }
     ]
   },

@@ -8,10 +8,19 @@ const calls = [];
 global.fetch = async (url, options = {}) => {
   calls.push({ url, options, body: options.body ? JSON.parse(options.body) : null });
   if (url.endsWith("/terminals/v1/list")) {
-    return new Response(JSON.stringify({ data: [{ id: "PAX_A910__123", name: "Caixa", status: "active", operating_mode: "PDV" }] }), { status: 200 });
+    return new Response(JSON.stringify({ data: { terminals: [{ id: "PAX_A910__123", name: "Caixa", status: "active", operating_mode: "PDV" }] } }), { status: 200 });
   }
   if (url.endsWith("/cancel")) {
     return new Response(JSON.stringify({ id: "ORD_POINT_1", external_reference: "point-venda-1", status: "canceled", total_amount: "35.00" }), { status: 200 });
+  }
+  if (url.endsWith("/terminals/v1/actions/PRINT_ACTION_1")) {
+    return new Response(JSON.stringify({
+      id: "PRINT_ACTION_1",
+      type: "print",
+      external_reference: "print-venda-1",
+      status: "finished",
+      config: { point: { terminal_id: "PAX_A910__123", subtype: "custom" } }
+    }), { status: 200 });
   }
   if (url.endsWith("/terminals/v1/actions")) {
     return new Response(JSON.stringify({
@@ -103,6 +112,9 @@ async function run() {
   const terminals = await point.listTerminals(config);
   assert.deepEqual(terminals.map((terminal) => terminal.id), ["PAX_A910__123"]);
   assert.equal(terminals[0].operatingMode, "PDV");
+  const connection = await point.terminalConnection(config);
+  assert.equal(connection.connected, true);
+  assert.equal(connection.terminal.id, "PAX_A910__123");
 
   const printOrders = [{
     concessionItems: [
@@ -157,10 +169,15 @@ async function run() {
   assert.ok(printCall.body.content.includes("Filme de Teste"));
   assert.ok(printCall.body.content.includes("Pipoca Grande"));
 
-  const cancelled = await point.cancelPayment("ORD_POINT_1", config, { idempotencyKey: "cancel-1" });
+  const printStatus = await point.getPrintStatus("PRINT_ACTION_1", config);
+  assert.equal(printStatus.status, "printed");
+  assert.equal(printStatus.providerStatus, "finished");
+
+  const cancelled = await point.cancelPayment("ORD_POINT_1", config, { idempotencyKey: "cancel-1", providerStatus: "at_terminal" });
   assert.equal(cancelled.status, "cancelled");
   const cancelCall = calls.find((call) => call.url.endsWith("/cancel"));
   assert.equal(cancelCall.options.headers["X-Idempotency-Key"], "cancel-1");
+  assert.equal(cancelCall.options.headers["x-allow-cancelable-status"], "at_terminal");
 
   assert.equal(point.safeReference("Venda balcão: sessão 19:00"), "Venda-balcao-sessao-19-00");
   console.log("Mercado Pago Point tests passed");

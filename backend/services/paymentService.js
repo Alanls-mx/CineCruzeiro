@@ -444,12 +444,12 @@ function normalizeMercadoPagoOrder(data = {}, method) {
   const transaction = extractMercadoPagoTransaction(data);
   const paymentMethod = transaction.payment_method || {};
   const transactionSecurity = paymentMethod.transaction_security || {};
-  const transactionStatus = transaction.status || "pending";
+  const transactionStatus = transaction.status || data.status || "pending";
   const statusDetail = transaction.status_detail || data.status_detail || "";
   const normalizedStatus = statusDetail === "accredited"
     ? "approved"
     : String(transactionStatus).toLowerCase() === "processed"
-      ? "pending"
+      ? "approved"
       : normalizeProviderPaymentStatus(transactionStatus);
   return {
     provider: "mercado_pago",
