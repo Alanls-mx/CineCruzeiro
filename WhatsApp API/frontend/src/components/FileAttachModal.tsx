@@ -198,7 +198,7 @@ export const FileAttachModal: React.FC<FileAttachModalProps> = ({
             type="text"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
-            placeholder="Adicione uma legenda (opcional)..."
+            placeholder="Adicionar legenda (opcional)"
             autoFocus
             style={{
               width: '100%',

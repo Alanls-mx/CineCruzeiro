@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import type { Company, WhatsAppInstance } from './types/index.js';
+import type { AdminUser, Company, WhatsAppInstance } from './types/index.js';
 import { api } from './services/api.js';
 import { NavRail, type NavTab } from './components/ui/NavRail.js';
 import { Inbox } from './components/Inbox.js';
@@ -13,6 +13,7 @@ export function App() {
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>('inbox');
   const [activeInstance, setActiveInstance] = useState<WhatsAppInstance | null>(null);
+  const [currentAdmin, setCurrentAdmin] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(() =>
@@ -33,8 +34,9 @@ export function App() {
   useEffect(() => {
     async function loadCompanies() {
       try {
-        const list = await api.getCompanies();
+        const [list, session] = await Promise.all([api.getCompanies(), api.getCurrentAdmin()]);
         setCompanies(list);
+        setCurrentAdmin(session.user);
         if (list.length > 0) {
           setSelectedCompany(list[0]);
         }
@@ -146,6 +148,7 @@ export function App() {
         {activeTab === 'inbox' && (
           <Inbox
             company={selectedCompany}
+            currentAdmin={currentAdmin}
             isMobile={isMobile}
             onChatOpenChange={setIsChatOpen}
           />

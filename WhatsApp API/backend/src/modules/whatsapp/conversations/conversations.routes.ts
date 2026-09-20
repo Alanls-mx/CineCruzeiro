@@ -13,6 +13,7 @@ export async function conversationsRoutes(app: FastifyInstance) {
   app.post('/conversations/:id/messages', controller.sendMessage);
   app.post('/conversations/:id/takeover', controller.takeover);
   app.post('/conversations/:id/release', controller.release);
+  app.post('/conversations/:id/assign', controller.assign);
   app.post('/conversations/:id/close', controller.close);
   app.post('/status', controller.publishStatus);
   app.post('/contacts/:id/sync-profile-picture', controller.syncProfilePicture);

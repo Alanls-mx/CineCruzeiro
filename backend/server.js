@@ -1314,6 +1314,7 @@ function requiredAdminRoles(pathname, method) {
 function requiredAdminPermission(pathname, method) {
   if (pathname.startsWith("/api/admin/whatsapp")) {
     if (method === "GET") return "whatsapp.view";
+    if (/^\/api\/admin\/whatsapp\/api\/whatsapp\/conversations\/[^/]+\/assign$/.test(pathname)) return "whatsapp.manage";
     return /^\/api\/admin\/whatsapp\/api\/whatsapp\/conversations(?:\/|$)/.test(pathname)
       ? "whatsapp.reply"
       : "whatsapp.manage";
@@ -1950,6 +1951,7 @@ async function proxyWhatsAppAdminRequest(req, res, pathname, method) {
   const headers = {
     "x-lumix-internal-token": token,
     "x-lumix-admin-user": String(req.adminUser?.id || ""),
+    "x-lumix-admin-user-name": String(req.adminUser?.name || req.adminUser?.email || ""),
     "x-lumix-admin-role": String(req.adminUser?.role || ""),
     "x-request-id": requestContext.getStore()?.requestId || ""
   };
@@ -10592,6 +10594,34 @@ async function handleApi(req, res, pathname) {
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
   if (pathname === WHATSAPP_ADMIN_PROXY_PREFIX || pathname.startsWith(`${WHATSAPP_ADMIN_PROXY_PREFIX}/`)) {
+    if (pathname === `${WHATSAPP_ADMIN_PROXY_PREFIX}/api/session` && method === "GET") {
+      sendJson(res, 200, {
+        data: {
+          user: {
+            id: req.adminUser.id,
+            name: req.adminUser.name || req.adminUser.email || "Usuário",
+            role: req.adminUser.role,
+            effectivePermissions: effectiveAdminPermissions(req.adminUser)
+          }
+        }
+      });
+      return;
+    }
+    if (pathname === `${WHATSAPP_ADMIN_PROXY_PREFIX}/api/staff` && method === "GET") {
+      if (!ensureAdminAction(req, res, "whatsapp.manage", "Seu usuário não pode atribuir atendimentos.")) return;
+      const staff = postgresEnabled()
+        ? await userRepository.listActiveStaff()
+        : (db.users || []).filter((user) => user.active !== false && ["owner", "master", "manager", "operator", "seller"].includes(user.role));
+      sendJson(res, 200, {
+        data: staff.map((user) => ({
+          id: user.id,
+          name: user.name || user.email || "Usuário",
+          email: user.email || "",
+          role: roleAlias(user.role)
+        }))
+      });
+      return;
+    }
     await proxyWhatsAppAdminRequest(req, res, pathname, method);
     return;
   }

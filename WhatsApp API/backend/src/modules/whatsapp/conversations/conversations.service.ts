@@ -13,6 +13,13 @@ import {
 } from '@prisma/client';
 import { NotFoundError, ValidationError } from '../../../shared/errors/app-error.js';
 
+type AssignedAgent = { userId: string; userName: string };
+
+function contextWithAssignment(context: unknown, assignedAgent: AssignedAgent | null) {
+  const base = context && typeof context === 'object' && !Array.isArray(context) ? context as Record<string, unknown> : {};
+  return { ...base, assignedAgent };
+}
+
 export class ConversationsService {
   constructor(
     private readonly convRepo = new ConversationsRepository(),
@@ -70,7 +77,7 @@ export class ConversationsService {
     return this.msgRepo.listByConversation(companyId, id, limit);
   }
 
-  async sendAgentMessage(companyId: string, conversationId: string, input: SendAgentMessageInput) {
+  async sendAgentMessage(companyId: string, conversationId: string, input: SendAgentMessageInput, assignedAgent?: AssignedAgent) {
     const conversation = await this.getById(companyId, conversationId);
 
     // Find active WhatsApp instance for company
@@ -135,7 +142,10 @@ export class ConversationsService {
     });
 
     // Update conversation last message timestamp and switch mode to HUMAN if currently BOT
-    const updates: any = { lastMessageAt: new Date() };
+    const updates: any = {
+      lastMessageAt: new Date(),
+      context: assignedAgent ? contextWithAssignment(conversation.context, assignedAgent) : conversation.context,
+    };
     if (conversation.mode === ConversationMode.BOT) {
       updates.mode = ConversationMode.HUMAN;
     }
@@ -147,19 +157,24 @@ export class ConversationsService {
       message,
     });
 
-    if (updates.mode) {
+    if (updates.mode || assignedAgent) {
       SSEService.broadcastToCompany(companyId, 'conversation:update', {
         id: conversation.id,
-        mode: ConversationMode.HUMAN,
+        mode: updates.mode || conversation.mode,
+        context: updates.context,
       });
     }
 
     return message;
   }
 
-  async takeover(companyId: string, id: string) {
+  async takeover(companyId: string, id: string, assignedAgent?: AssignedAgent) {
     const conv = await this.getById(companyId, id);
-    const updated = await this.convRepo.updateMode(conv.id, ConversationMode.HUMAN);
+    const updated = await this.convRepo.updateMode(
+      conv.id,
+      ConversationMode.HUMAN,
+      contextWithAssignment(conv.context, assignedAgent || null)
+    );
 
     SSEService.broadcastToCompany(companyId, 'conversation:update', {
       id: updated.id,
@@ -175,7 +190,7 @@ export class ConversationsService {
       mode: ConversationMode.BOT,
       currentFlow: 'MAIN_MENU',
       currentState: 'SHOW_MENU',
-      context: {},
+      context: contextWithAssignment(conv.context, null),
       fallbackCount: 0,
     });
 
@@ -184,6 +199,29 @@ export class ConversationsService {
       mode: updated.mode,
       currentFlow: 'MAIN_MENU',
       currentState: 'SHOW_MENU',
+    });
+
+    return updated;
+  }
+
+  async assign(companyId: string, id: string, assignment: { userId?: string; userName?: string }) {
+    const conv = await this.getById(companyId, id);
+    const assignedAgent = assignment.userId && assignment.userName
+      ? { userId: assignment.userId, userName: assignment.userName }
+      : null;
+    const updated = await this.convRepo.updateState(conv.id, {
+      mode: assignedAgent ? ConversationMode.HUMAN : ConversationMode.BOT,
+      context: contextWithAssignment(conv.context, assignedAgent),
+      currentFlow: assignedAgent ? conv.currentFlow || 'MAIN_MENU' : 'MAIN_MENU',
+      currentState: assignedAgent ? conv.currentState || 'INITIAL' : 'SHOW_MENU',
+    });
+
+    SSEService.broadcastToCompany(companyId, 'conversation:update', {
+      id: updated.id,
+      mode: updated.mode,
+      context: updated.context,
+      currentFlow: updated.currentFlow,
+      currentState: updated.currentState,
     });
 
     return updated;

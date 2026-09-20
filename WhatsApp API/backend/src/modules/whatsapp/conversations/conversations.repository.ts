@@ -71,13 +71,15 @@ export class ConversationsRepository {
         fallbackCount: update.fallbackCount,
         lastMessageAt: update.lastMessageAt || new Date(),
       },
+      include: { contact: true },
     });
   }
 
-  async updateMode(id: string, mode: ConversationMode): Promise<Conversation> {
+  async updateMode(id: string, mode: ConversationMode, context?: Prisma.InputJsonValue): Promise<Conversation> {
     return prisma.conversation.update({
       where: { id },
-      data: { mode },
+      data: { mode, context: context !== undefined ? context : undefined },
+      include: { contact: true },
     });
   }
 
@@ -88,6 +90,7 @@ export class ConversationsRepository {
         status,
         closedAt: status === ConversationStatus.CLOSED ? new Date() : null,
       },
+      include: { contact: true },
     });
   }
 

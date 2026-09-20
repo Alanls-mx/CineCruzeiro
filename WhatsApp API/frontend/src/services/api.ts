@@ -1,4 +1,4 @@
-import type { Company, Conversation, Message, WhatsAppInstance, WhatsAppSettings } from '../types/index.js';
+import type { AdminUser, AssignableUser, Company, Conversation, Message, WhatsAppInstance, WhatsAppSettings } from '../types/index.js';
 
 // The production panel is served by the Cine Cruzeiro admin gateway. Keeping
 // this value independent from a developer Vite env prevents an old standalone
@@ -39,6 +39,8 @@ async function request<T>(path: string, options: RequestInit = {}, _companyId?: 
 }
 
 export const api = {
+  getCurrentAdmin: () => request<{ user: AdminUser }>('/api/session'),
+  getAssignableUsers: () => request<AssignableUser[]>('/api/staff'),
   // Companies
   getCompanies: () => request<Company[]>('/api/companies'),
 
@@ -96,6 +98,12 @@ export const api = {
     request<Conversation>(`/api/whatsapp/conversations/${conversationId}/takeover`, { method: 'POST' }, companyId),
   releaseConversation: (companyId: string, conversationId: string) =>
     request<Conversation>(`/api/whatsapp/conversations/${conversationId}/release`, { method: 'POST' }, companyId),
+  assignConversation: (companyId: string, conversationId: string, user?: AssignableUser) =>
+    request<Conversation>(
+      `/api/whatsapp/conversations/${conversationId}/assign`,
+      { method: 'POST', body: JSON.stringify(user ? { userId: user.id, userName: user.name } : {}) },
+      companyId
+    ),
   closeConversation: (companyId: string, conversationId: string) =>
     request<Conversation>(`/api/whatsapp/conversations/${conversationId}/close`, { method: 'POST' }, companyId),
 

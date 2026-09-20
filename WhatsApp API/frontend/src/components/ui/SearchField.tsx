@@ -11,7 +11,7 @@ interface SearchFieldProps {
 export const SearchField: React.FC<SearchFieldProps> = ({
   value,
   onChange,
-  placeholder = 'Buscar conversa...',
+  placeholder = 'Buscar por nome ou telefone',
   autoFocus = false,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);

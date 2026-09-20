@@ -136,7 +136,7 @@ export const BotSettings: React.FC<BotSettingsProps> = ({ company }) => {
                 value={settings.welcomeMessage || ''}
                 onChange={(e) => setSettings({ ...settings, welcomeMessage: e.target.value })}
                 rows={3}
-                placeholder="Mensagem enviada quando um novo cliente inicia contato..."
+                placeholder="Digite a mensagem enviada quando um cliente inicia o contato"
                 style={{
                   width: '100%',
                   backgroundColor: 'var(--bg-tertiary)',
@@ -164,7 +164,7 @@ export const BotSettings: React.FC<BotSettingsProps> = ({ company }) => {
                 value={settings.fallbackMessage || ''}
                 onChange={(e) => setSettings({ ...settings, fallbackMessage: e.target.value })}
                 rows={2}
-                placeholder="Mensagem para opções não reconhecidas..."
+                placeholder="Digite a mensagem para opções não reconhecidas"
                 style={{
                   width: '100%',
                   backgroundColor: 'var(--bg-tertiary)',
@@ -192,7 +192,7 @@ export const BotSettings: React.FC<BotSettingsProps> = ({ company }) => {
                 value={settings.outOfHoursMessage || ''}
                 onChange={(e) => setSettings({ ...settings, outOfHoursMessage: e.target.value })}
                 rows={2}
-                placeholder="Mensagem quando o cliente envia mensagem fora do horário..."
+                placeholder="Digite a mensagem enviada fora do horário de atendimento"
                 style={{
                   width: '100%',
                   backgroundColor: 'var(--bg-tertiary)',

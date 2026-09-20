@@ -63,6 +63,14 @@ async function countActiveOwners() {
   return Number(result.rows[0]?.total || 0);
 }
 
+async function listActiveStaff() {
+  const result = await timedQuery(null, `SELECT id,name,email,role,active
+    FROM users
+    WHERE active=true AND role IN ('owner','master','manager','operator','seller')
+    ORDER BY name ASC, email ASC`, [], { repository: "user", operation: "listActiveStaff" });
+  return result.rows.map(mapUser);
+}
+
 const FIELD_COLUMNS = {
   name: "name", email: "email", phone: "phone", cpf: "cpf", passwordHash: "password_hash",
   authProvider: "auth_provider", googleSub: "google_sub", picture: "picture", emailVerified: "email_verified",
@@ -216,6 +224,6 @@ async function remove(id, options = {}) {
 
 module.exports = {
   mapUser, findById, findByEmail, findByGoogleSub, findByPasswordResetHash,
-  findByEmailVerificationHash, emailExists, countActiveOwners, create, updateFields,
+  findByEmailVerificationHash, emailExists, countActiveOwners, listActiveStaff, create, updateFields,
   updateAdmin, incrementSessionVersion, resetPassword, confirmEmail, consumeRecoveryCode, remove
 };

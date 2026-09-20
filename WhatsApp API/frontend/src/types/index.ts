@@ -50,7 +50,29 @@ export interface Conversation {
   createdAt?: string;
   startedAt?: string;
   contact: Contact;
+  context?: {
+    assignedAgent?: {
+      userId: string;
+      userName: string;
+    } | null;
+    [key: string]: unknown;
+  };
   messages?: Message[];
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email?: string;
+  role: string;
+  effectivePermissions: string[];
+}
+
+export interface AssignableUser {
+  id: string;
+  name: string;
+  email?: string;
+  role: string;
 }
 
 export interface WhatsAppSettings {

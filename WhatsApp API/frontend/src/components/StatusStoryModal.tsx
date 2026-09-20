@@ -330,7 +330,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                   <textarea
                     value={textContent}
                     onChange={(e) => setTextContent(e.target.value)}
-                    placeholder="Ex: Estreia hoje no Cine Cruzeiro. Consulte horários e garanta seu ingresso pelo WhatsApp."
+                    placeholder="Ex.: Estreia hoje no Cine Cruzeiro. Consulte horários e garanta seu ingresso pelo WhatsApp."
                     rows={4}
                     style={{
                       width: '100%',
@@ -421,7 +421,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                     type="text"
                     value={imageCaption}
                     onChange={(e) => setImageCaption(e.target.value)}
-                    placeholder="Adicione uma legenda que acompanhará o story..."
+                    placeholder="Adicionar legenda para acompanhar a imagem"
                     style={{
                       width: '100%',
                       padding: '12px 14px',

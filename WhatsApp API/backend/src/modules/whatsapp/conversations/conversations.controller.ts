@@ -2,6 +2,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { ConversationsService } from './conversations.service.js';
 import {
   conversationIdParamSchema,
+  assignConversationSchema,
   listConversationsQuerySchema,
   publishStatusSchema,
   sendAgentMessageSchema,
@@ -11,6 +12,12 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class ConversationsController {
   constructor(private readonly service = new ConversationsService()) {}
+
+  private internalActor(request: FastifyRequest) {
+    const userId = String(request.headers['x-lumix-admin-user'] || '').trim();
+    const name = String(request.headers['x-lumix-admin-user-name'] || '').trim();
+    return userId ? { userId, userName: name || 'Atendente do Cine Cruzeiro' } : undefined;
+  }
 
   list = async (request: FastifyRequest, reply: FastifyReply) => {
     const companyId = request.company!.id;
@@ -50,7 +57,7 @@ export class ConversationsController {
     const { id } = conversationIdParamSchema.parse(request.params);
     const input = sendAgentMessageSchema.parse(request.body);
 
-    const message = await this.service.sendAgentMessage(companyId, id, input);
+    const message = await this.service.sendAgentMessage(companyId, id, input, this.internalActor(request));
     return reply.status(201).send({
       success: true,
       data: message,
@@ -61,7 +68,7 @@ export class ConversationsController {
     const companyId = request.company!.id;
     const { id } = conversationIdParamSchema.parse(request.params);
 
-    const result = await this.service.takeover(companyId, id);
+    const result = await this.service.takeover(companyId, id, this.internalActor(request));
     return reply.send({
       success: true,
       data: result,
@@ -77,6 +84,14 @@ export class ConversationsController {
       success: true,
       data: result,
     });
+  };
+
+  assign = async (request: FastifyRequest, reply: FastifyReply) => {
+    const companyId = request.company!.id;
+    const { id } = conversationIdParamSchema.parse(request.params);
+    const input = assignConversationSchema.parse(request.body);
+    const result = await this.service.assign(companyId, id, input);
+    return reply.send({ success: true, data: result });
   };
 
   close = async (request: FastifyRequest, reply: FastifyReply) => {

@@ -159,6 +159,13 @@ export const ConversationDetailsPanel: React.FC<ConversationDetailsPanelProps> =
               <span style={{ color: '#FFFFFF', fontWeight: 500 }}>{conversation.currentFlow || 'MAIN_MENU'}</span>
             </div>
             <div style={{ height: '1px', backgroundColor: 'var(--separator)' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '0.84rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Responsável</span>
+              <span style={{ color: '#FFFFFF', fontWeight: 500, textAlign: 'right' }}>
+                {conversation.context?.assignedAgent?.userName || 'Não atribuído'}
+              </span>
+            </div>
+            <div style={{ height: '1px', backgroundColor: 'var(--separator)' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Etapa da automação</span>
               <span style={{ color: '#FFFFFF', fontWeight: 500 }}>{conversation.currentState || 'INITIAL'}</span>

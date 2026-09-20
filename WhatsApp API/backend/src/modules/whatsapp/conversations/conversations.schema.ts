@@ -22,6 +22,11 @@ export const sendAgentMessageSchema = z
     { message: 'Mensagem deve conter texto ou anexo de mídia' }
   );
 
+export const assignConversationSchema = z.object({
+  userId: z.string().min(1, 'Selecione um usuário para atribuir o atendimento.').optional(),
+  userName: z.string().trim().min(1).max(120).optional(),
+});
+
 export const publishStatusSchema = z.object({
   type: z.enum(['text', 'image', 'video']).default('text'),
   text: z.string().optional(),
@@ -35,4 +40,5 @@ export const publishStatusSchema = z.object({
 export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema>;
 export type ConversationIdParam = z.infer<typeof conversationIdParamSchema>;
 export type SendAgentMessageInput = z.infer<typeof sendAgentMessageSchema>;
+export type AssignConversationInput = z.infer<typeof assignConversationSchema>;
 export type PublishStatusInput = z.infer<typeof publishStatusSchema>;

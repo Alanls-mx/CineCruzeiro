@@ -302,7 +302,7 @@ export const ConversationStatusModal: React.FC<ConversationStatusModalProps> = (
             }}
           >
             <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#25D366', textTransform: 'uppercase' }}>
-              Ações Rápidas de Controle
+              Ações do atendimento
             </span>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -316,7 +316,7 @@ export const ConversationStatusModal: React.FC<ConversationStatusModalProps> = (
                   className="btn btn-primary"
                   style={{ flex: 1 }}
                 >
-                  <UserCheck size={16} /> Assumir Atendimento (Humano)
+                  <UserCheck size={16} /> Assumir atendimento
                 </button>
               ) : (
                 <button

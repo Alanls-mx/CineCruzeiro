@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Company, Conversation, Message } from '../types/index.js';
+import type { AdminUser, AssignableUser, Company, Conversation, Message } from '../types/index.js';
 import { api } from '../services/api.js';
 import {
   ArrowUp,
@@ -33,11 +33,12 @@ import { StatusStoryModal } from './StatusStoryModal.js';
 
 interface InboxProps {
   company: Company;
+  currentAdmin: AdminUser | null;
   isMobile?: boolean;
   onChatOpenChange?: (open: boolean) => void;
 }
 
-export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatOpenChange }) => {
+export const Inbox: React.FC<InboxProps> = ({ company, currentAdmin, isMobile = false, onChatOpenChange }) => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -45,6 +46,9 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'OPEN' | 'ALL' | 'CLOSED'>('OPEN');
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
+  const [assigning, setAssigning] = useState(false);
+  const canManageAssignments = Boolean(currentAdmin?.effectivePermissions.includes('whatsapp.manage'));
 
   // Modals & Panels state
   const [showCameraModal, setShowCameraModal] = useState(false);
@@ -148,6 +152,16 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
   }, [company.id, statusFilter]);
 
   useEffect(() => {
+    if (!canManageAssignments) {
+      setAssignableUsers([]);
+      return;
+    }
+    api.getAssignableUsers().then(setAssignableUsers).catch((error) => {
+      console.error('Failed loading assignable users', error);
+    });
+  }, [canManageAssignments]);
+
+  useEffect(() => {
     if (selectedConversation) {
       loadMessages(selectedConversation.id);
     } else {
@@ -222,7 +236,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
     if (!selectedConversation) return;
     try {
       const updated = await api.takeoverConversation(company.id, selectedConversation.id);
-      setSelectedConversation(updated);
+      setSelectedConversation((previous) => previous ? { ...previous, ...updated, contact: updated.contact || previous.contact } : updated);
       setShowContextMenu(false);
       loadConversations();
     } catch (err: any) {
@@ -234,11 +248,26 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
     if (!selectedConversation) return;
     try {
       const updated = await api.releaseConversation(company.id, selectedConversation.id);
-      setSelectedConversation(updated);
+      setSelectedConversation((previous) => previous ? { ...previous, ...updated, contact: updated.contact || previous.contact } : updated);
       setShowContextMenu(false);
       loadConversations();
     } catch (err: any) {
       alert(`Erro ao retomar a automação: ${err.message}`);
+    }
+  };
+
+  const handleAssign = async (userId: string) => {
+    if (!selectedConversation || assigning) return;
+    const user = assignableUsers.find((item) => item.id === userId);
+    setAssigning(true);
+    try {
+      const updated = await api.assignConversation(company.id, selectedConversation.id, user);
+      setSelectedConversation((previous) => previous ? { ...previous, ...updated, contact: updated.contact || previous.contact } : updated);
+      setConversations((previous) => previous.map((item) => item.id === updated.id ? { ...item, ...updated, contact: updated.contact || item.contact } : item));
+    } catch (err: any) {
+      alert(`Erro ao atribuir atendimento: ${err.message}`);
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -247,7 +276,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
     if (!confirm('Deseja realmente encerrar este atendimento?')) return;
     try {
       const updated = await api.closeConversation(company.id, selectedConversation.id);
-      setSelectedConversation(updated);
+      setSelectedConversation((previous) => previous ? { ...previous, ...updated, contact: updated.contact || previous.contact } : updated);
       setShowContextMenu(false);
       loadConversations();
     } catch (err: any) {
@@ -443,7 +472,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
           <SearchField
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Buscar conversa..."
+            placeholder="Buscar por nome ou telefone"
           />
 
           <SegmentedControl
@@ -667,6 +696,12 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                     <span>{selectedConversation.contact.phone}</span>
                     <span>•</span>
                     <span>Etapa: {selectedConversation.currentFlow || 'MAIN_MENU'}</span>
+                    {selectedConversation.context?.assignedAgent?.userName && (
+                      <>
+                        <span>•</span>
+                        <span>Responsável: {selectedConversation.context.assignedAgent.userName}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -674,6 +709,31 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
 
             {/* Header Actions */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative' }}>
+              {canManageAssignments && (
+                <select
+                  value={selectedConversation.context?.assignedAgent?.userId || ''}
+                  onChange={(event) => handleAssign(event.target.value)}
+                  disabled={assigning}
+                  aria-label="Atribuir responsável pelo atendimento"
+                  title="Responsável pelo atendimento"
+                  style={{
+                    maxWidth: isMobile ? '118px' : '180px',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--separator)',
+                    borderRadius: '6px',
+                    padding: '7px 26px 7px 9px',
+                    fontSize: '0.78rem',
+                    fontWeight: 650,
+                    cursor: assigning ? 'wait' : 'pointer',
+                  }}
+                >
+                  <option value="">Sem responsável</option>
+                  {assignableUsers.map((user) => (
+                    <option key={user.id} value={user.id}>{user.name}</option>
+                  ))}
+                </select>
+              )}
               {/* Quick Mode Switch Button */}
               {selectedConversation.mode === 'BOT' ? (
                 <button
@@ -1173,7 +1233,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder={
                   selectedConversation.mode === 'HUMAN'
-                    ? 'Digite uma mensagem...'
+                    ? 'Digite uma mensagem'
                     : 'Ao enviar, o atendimento será assumido pela equipe.'
                 }
                 style={{

@@ -177,7 +177,7 @@ export const EmojiPicker: React.FC<EmojiPickerProps> = ({ onSelect, onClose }) =
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Pesquisar emoji..."
+            placeholder="Pesquisar símbolos"
             autoFocus
             style={{
               flex: 1,

@@ -282,7 +282,7 @@ export const CameraCaptureModal: React.FC<CameraCaptureModalProps> = ({
                 type="text"
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
-                placeholder="Adicione uma legenda (opcional)..."
+                placeholder="Adicionar legenda (opcional)"
                 autoFocus
                 style={{
                   width: '100%',
