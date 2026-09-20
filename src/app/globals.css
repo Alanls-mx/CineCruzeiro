@@ -280,6 +280,204 @@ body[data-cinema-theme="cine-estacao-amparo"] .custom-scrollbar::-webkit-scrollb
   background: #e7b54c;
 }
 
+/* Identidades publicas por cinema. O painel administrativo conserva sua paleta operacional. */
+body[data-cinema-theme="cinemax-piraju"] {
+  --background: #02162d;
+  --foreground: #f4fbff;
+  color-scheme: dark;
+  background-color: #02162d;
+  background-image:
+    radial-gradient(ellipse 68% 46% at 82% -10%, rgba(0, 188, 214, 0.22), transparent),
+    radial-gradient(ellipse 52% 36% at 4% 18%, rgba(0, 94, 173, 0.28), transparent),
+    linear-gradient(145deg, #02162d 0%, #03264a 58%, #011120 100%);
+}
+
+body[data-cinema-theme="cine-gama"] {
+  --background: #120b29;
+  --foreground: #fff9f3;
+  color-scheme: dark;
+  background-color: #120b29;
+  background-image:
+    radial-gradient(ellipse 62% 48% at 88% -10%, rgba(255, 106, 0, 0.18), transparent),
+    radial-gradient(ellipse 46% 38% at 2% 24%, rgba(111, 99, 255, 0.26), transparent),
+    linear-gradient(148deg, #120b29 0%, #21134d 55%, #160a2e 100%);
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] {
+  --background: #02152e;
+  --foreground: #f8fbff;
+  color-scheme: dark;
+  background-color: #02152e;
+  background-image:
+    radial-gradient(ellipse 60% 48% at 88% -10%, rgba(234, 184, 56, 0.17), transparent),
+    radial-gradient(ellipse 48% 34% at 3% 18%, rgba(11, 94, 201, 0.26), transparent),
+    linear-gradient(150deg, #02152e 0%, #042960 56%, #011127 100%);
+}
+
+body[data-cinema-theme="cinemax-piraju"] header.sticky,
+body[data-cinema-theme="cine-gama"] header.sticky,
+body[data-cinema-theme="cinemania-cosmopolis"] header.sticky,
+body[data-cinema-theme="cinemax-piraju"] footer,
+body[data-cinema-theme="cine-gama"] footer,
+body[data-cinema-theme="cinemania-cosmopolis"] footer {
+  background-color: #030609 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+body[data-cinema-theme="cinemax-piraju"] header.sticky {
+  box-shadow: 0 12px 32px rgba(0, 11, 25, 0.4);
+}
+
+body[data-cinema-theme="cine-gama"] header.sticky {
+  box-shadow: 0 12px 32px rgba(7, 2, 20, 0.46);
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] header.sticky {
+  box-shadow: 0 12px 32px rgba(0, 9, 25, 0.46);
+}
+
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-950,
+body[data-cinema-theme="cinemax-piraju"] .bg-slate-950,
+body[data-cinema-theme="cinemax-piraju"] [class*="bg-[#060a12]"],
+body[data-cinema-theme="cinemax-piraju"] [class*="bg-[#050810]"] { background-color: #02162d !important; }
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-900,
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-900\/70,
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-900\/80,
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-900\/85,
+body[data-cinema-theme="cinemax-piraju"] .bg-slate-900,
+body[data-cinema-theme="cinemax-piraju"] [class*="bg-[#091122]"],
+body[data-cinema-theme="cinemax-piraju"] [class*="bg-[#0b1425]"] { background-color: #062b52 !important; }
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-850,
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-800,
+body[data-cinema-theme="cinemax-piraju"] .bg-slate-800 { background-color: #074b78 !important; }
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-700,
+body[data-cinema-theme="cinemax-piraju"] .bg-brand-600,
+body[data-cinema-theme="cinemax-piraju"] .bg-blue-700,
+body[data-cinema-theme="cinemax-piraju"] .bg-blue-600 { background-color: #007fb4 !important; }
+body[data-cinema-theme="cinemax-piraju"] .bg-gold-400 { background-color: #ffc431 !important; }
+body[data-cinema-theme="cinemax-piraju"] .hover\:bg-gold-300:hover,
+body[data-cinema-theme="cinemax-piraju"] .hover\:bg-gold-400:hover { background-color: #ffe181 !important; }
+body[data-cinema-theme="cinemax-piraju"] .text-gold-400,
+body[data-cinema-theme="cinemax-piraju"] .text-gold-300 { color: #ffd55d !important; }
+body[data-cinema-theme="cinemax-piraju"] .text-brand-400,
+body[data-cinema-theme="cinemax-piraju"] .text-brand-300,
+body[data-cinema-theme="cinemax-piraju"] .text-brand-200,
+body[data-cinema-theme="cinemax-piraju"] .text-blue-300,
+body[data-cinema-theme="cinemax-piraju"] .text-blue-400 { color: #8aefff !important; }
+body[data-cinema-theme="cinemax-piraju"] .border-brand-850,
+body[data-cinema-theme="cinemax-piraju"] .border-brand-800,
+body[data-cinema-theme="cinemax-piraju"] .border-slate-800,
+body[data-cinema-theme="cinemax-piraju"] .border-slate-700,
+body[data-cinema-theme="cinemax-piraju"] .border-white\/8 { border-color: rgba(74, 208, 231, 0.27) !important; }
+body[data-cinema-theme="cinemax-piraju"] .shadow-glow { box-shadow: 0 16px 34px -18px rgba(255, 196, 49, 0.72) !important; }
+body[data-cinema-theme="cinemax-piraju"] .shadow-glow-blue { box-shadow: 0 18px 38px -22px rgba(0, 199, 223, 0.7) !important; }
+
+body[data-cinema-theme="cine-gama"] .bg-brand-950,
+body[data-cinema-theme="cine-gama"] .bg-slate-950,
+body[data-cinema-theme="cine-gama"] [class*="bg-[#060a12]"],
+body[data-cinema-theme="cine-gama"] [class*="bg-[#050810]"] { background-color: #120b29 !important; }
+body[data-cinema-theme="cine-gama"] .bg-brand-900,
+body[data-cinema-theme="cine-gama"] .bg-brand-900\/70,
+body[data-cinema-theme="cine-gama"] .bg-brand-900\/80,
+body[data-cinema-theme="cine-gama"] .bg-brand-900\/85,
+body[data-cinema-theme="cine-gama"] .bg-slate-900,
+body[data-cinema-theme="cine-gama"] [class*="bg-[#091122]"],
+body[data-cinema-theme="cine-gama"] [class*="bg-[#0b1425]"] { background-color: #25144f !important; }
+body[data-cinema-theme="cine-gama"] .bg-brand-850,
+body[data-cinema-theme="cine-gama"] .bg-brand-800,
+body[data-cinema-theme="cine-gama"] .bg-slate-800 { background-color: #3b2273 !important; }
+body[data-cinema-theme="cine-gama"] .bg-brand-700,
+body[data-cinema-theme="cine-gama"] .bg-brand-600,
+body[data-cinema-theme="cine-gama"] .bg-blue-700,
+body[data-cinema-theme="cine-gama"] .bg-blue-600 { background-color: #6655d8 !important; }
+body[data-cinema-theme="cine-gama"] .bg-gold-400 { background-color: #ff7900 !important; }
+body[data-cinema-theme="cine-gama"] .hover\:bg-gold-300:hover,
+body[data-cinema-theme="cine-gama"] .hover\:bg-gold-400:hover { background-color: #ffc443 !important; }
+body[data-cinema-theme="cine-gama"] .text-gold-400,
+body[data-cinema-theme="cine-gama"] .text-gold-300 { color: #ffb23e !important; }
+body[data-cinema-theme="cine-gama"] .text-brand-400,
+body[data-cinema-theme="cine-gama"] .text-brand-300,
+body[data-cinema-theme="cine-gama"] .text-brand-200,
+body[data-cinema-theme="cine-gama"] .text-blue-300,
+body[data-cinema-theme="cine-gama"] .text-blue-400 { color: #b9afff !important; }
+body[data-cinema-theme="cine-gama"] .border-brand-850,
+body[data-cinema-theme="cine-gama"] .border-brand-800,
+body[data-cinema-theme="cine-gama"] .border-slate-800,
+body[data-cinema-theme="cine-gama"] .border-slate-700,
+body[data-cinema-theme="cine-gama"] .border-white\/8 { border-color: rgba(187, 169, 255, 0.24) !important; }
+body[data-cinema-theme="cine-gama"] .shadow-glow { box-shadow: 0 16px 34px -18px rgba(255, 121, 0, 0.7) !important; }
+body[data-cinema-theme="cine-gama"] .shadow-glow-blue { box-shadow: 0 18px 38px -22px rgba(111, 99, 255, 0.72) !important; }
+
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-950,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-slate-950,
+body[data-cinema-theme="cinemania-cosmopolis"] [class*="bg-[#060a12]"],
+body[data-cinema-theme="cinemania-cosmopolis"] [class*="bg-[#050810]"] { background-color: #02152e !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-900,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-900\/70,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-900\/80,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-900\/85,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-slate-900,
+body[data-cinema-theme="cinemania-cosmopolis"] [class*="bg-[#091122]"],
+body[data-cinema-theme="cinemania-cosmopolis"] [class*="bg-[#0b1425]"] { background-color: #06346e !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-850,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-800,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-slate-800 { background-color: #0755aa !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-700,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-brand-600,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-blue-700,
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-blue-600 { background-color: #1671d6 !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .bg-gold-400 { background-color: #e9b938 !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .hover\:bg-gold-300:hover,
+body[data-cinema-theme="cinemania-cosmopolis"] .hover\:bg-gold-400:hover { background-color: #f7d66f !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .text-gold-400,
+body[data-cinema-theme="cinemania-cosmopolis"] .text-gold-300 { color: #f3cb5c !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .text-brand-400,
+body[data-cinema-theme="cinemania-cosmopolis"] .text-brand-300,
+body[data-cinema-theme="cinemania-cosmopolis"] .text-brand-200,
+body[data-cinema-theme="cinemania-cosmopolis"] .text-blue-300,
+body[data-cinema-theme="cinemania-cosmopolis"] .text-blue-400 { color: #9ccaff !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .border-brand-850,
+body[data-cinema-theme="cinemania-cosmopolis"] .border-brand-800,
+body[data-cinema-theme="cinemania-cosmopolis"] .border-slate-800,
+body[data-cinema-theme="cinemania-cosmopolis"] .border-slate-700,
+body[data-cinema-theme="cinemania-cosmopolis"] .border-white\/8 { border-color: rgba(111, 177, 255, 0.28) !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .shadow-glow { box-shadow: 0 16px 34px -18px rgba(233, 185, 56, 0.68) !important; }
+body[data-cinema-theme="cinemania-cosmopolis"] .shadow-glow-blue { box-shadow: 0 18px 38px -22px rgba(37, 129, 241, 0.7) !important; }
+
+body[data-cinema-theme="cinemax-piraju"] input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
+body[data-cinema-theme="cinemax-piraju"] select,
+body[data-cinema-theme="cinemax-piraju"] textarea { border-color: rgba(108, 226, 242, 0.35); background: #041f3f; color: #f4fbff; }
+body[data-cinema-theme="cine-gama"] input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
+body[data-cinema-theme="cine-gama"] select,
+body[data-cinema-theme="cine-gama"] textarea { border-color: rgba(196, 177, 255, 0.35); background: #1b1040; color: #fff9f3; }
+body[data-cinema-theme="cinemania-cosmopolis"] input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
+body[data-cinema-theme="cinemania-cosmopolis"] select,
+body[data-cinema-theme="cinemania-cosmopolis"] textarea { border-color: rgba(135, 190, 255, 0.36); background: #042653; color: #f8fbff; }
+
+body[data-cinema-theme="cinemax-piraju"] :is(a, button):focus-visible { outline-color: #ffe181; }
+body[data-cinema-theme="cine-gama"] :is(a, button):focus-visible { outline-color: #ffc443; }
+body[data-cinema-theme="cinemania-cosmopolis"] :is(a, button):focus-visible { outline-color: #f3cb5c; }
+
+body[data-cinema-theme="cinemax-piraju"] :is(a.bg-gold-400, button.bg-gold-400),
+body[data-cinema-theme="cine-gama"] :is(a.bg-gold-400, button.bg-gold-400),
+body[data-cinema-theme="cinemania-cosmopolis"] :is(a.bg-gold-400, button.bg-gold-400) {
+  border-radius: 7px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body[data-cinema-theme="cinemax-piraju"] main > * { animation: cinemaPirajuEnter 430ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+  body[data-cinema-theme="cine-gama"] main > * { animation: cinemaGamaEnter 430ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+  body[data-cinema-theme="cinemania-cosmopolis"] main > * { animation: cinemaManiaEnter 430ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+  body[data-cinema-theme="cinemax-piraju"] .group:hover img,
+  body[data-cinema-theme="cine-gama"] .group:hover img,
+  body[data-cinema-theme="cinemania-cosmopolis"] .group:hover img { transform: scale(1.035); }
+}
+
+@keyframes cinemaPirajuEnter { from { opacity: 0; transform: translateY(9px); filter: saturate(0.88); } to { opacity: 1; transform: translateY(0); filter: saturate(1); } }
+@keyframes cinemaGamaEnter { from { opacity: 0; transform: translateY(9px); filter: saturate(0.84); } to { opacity: 1; transform: translateY(0); filter: saturate(1); } }
+@keyframes cinemaManiaEnter { from { opacity: 0; transform: translateY(9px); filter: saturate(0.9); } to { opacity: 1; transform: translateY(0); filter: saturate(1); } }
+
 img,
 video,
 canvas,

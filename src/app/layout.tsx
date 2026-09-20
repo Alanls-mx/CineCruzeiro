@@ -22,7 +22,7 @@ const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).repla
 const publicUrl = `${siteOrigin}${basePath}`;
 const logoUrl = `${basePath}/images/logo-display.webp`;
 const iconUrl = `${basePath}/images/favicon-64.png`;
-const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG === "cine-estacao-amparo" ? "cine-estacao-amparo" : "default";
+const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG || "default";
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
   title: "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
