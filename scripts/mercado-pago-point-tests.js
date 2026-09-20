@@ -13,6 +13,9 @@ global.fetch = async (url, options = {}) => {
   if (url.endsWith("/cancel")) {
     return new Response(JSON.stringify({ id: "ORD_POINT_1", external_reference: "point-venda-1", status: "canceled", total_amount: "35.00" }), { status: 200 });
   }
+  if (url.endsWith("/refund")) {
+    return new Response(JSON.stringify({ id: "ORD_POINT_1", status: "processed", status_detail: "refunded", total_amount: "35.00" }), { status: 200 });
+  }
   if (url.endsWith("/terminals/v1/actions/PRINT_ACTION_1")) {
     return new Response(JSON.stringify({
       id: "PRINT_ACTION_1",
@@ -178,6 +181,12 @@ async function run() {
   const cancelCall = calls.find((call) => call.url.endsWith("/cancel"));
   assert.equal(cancelCall.options.headers["X-Idempotency-Key"], "cancel-1");
   assert.equal(cancelCall.options.headers["x-allow-cancelable-status"], "at_terminal");
+
+  const refunded = await point.refundPayment("ORD_POINT_1", config, { idempotencyKey: "refund-after-print-failure-1" });
+  assert.equal(refunded.status, "refunded");
+  const refundCall = calls.find((call) => call.url.endsWith("/refund"));
+  assert.equal(refundCall.options.headers["X-Idempotency-Key"], "refund-after-print-failure-1");
+  assert.equal(refundCall.options.body, undefined);
 
   assert.equal(point.safeReference("Venda balcão: sessão 19:00"), "Venda-balcao-sessao-19-00");
   console.log("Mercado Pago Point tests passed");

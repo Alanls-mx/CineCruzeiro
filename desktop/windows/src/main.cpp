@@ -30,11 +30,13 @@ namespace {
 
 constexpr wchar_t kWindowClass[] = L"CineCruzeiroDesktopWindow";
 constexpr wchar_t kWindowTitle[] = L"Painel Cine Cruzeiro";
-constexpr wchar_t kAppVersion[] = L"1.2.0";
+constexpr wchar_t kAppVersion[] = L"1.2.1";
 constexpr wchar_t kDefaultAdminUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/admin/";
 constexpr wchar_t kUpdateManifestUrl[] = L"https://lumixengine.com/projects/cinecruzeiro/api/desktop/update/latest.ini";
 constexpr UINT_PTR kReconnectTimer = 1;
 constexpr UINT_PTR kUpdateTimer = 2;
+constexpr UINT_PTR kPrintTimer = 3;
+constexpr UINT kPrintTimeoutMs = 60000;
 constexpr UINT kUpdateReadyMessage = WM_APP + 20;
 constexpr UINT kUpdateIntervalMs = 6 * 60 * 60 * 1000;
 
@@ -372,10 +374,11 @@ class DesktopWindow {
       case WM_TIMER:
         if (wParam == kReconnectTimer) { KillTimer(window_, kReconnectTimer); NavigateHome(); }
         if (wParam == kUpdateTimer) CheckForUpdates();
+        if (wParam == kPrintTimer && !printJobId_.empty()) FinishPrint(false, L"A impressora não confirmou a operação em 60 segundos.");
         return 0;
       case kUpdateReadyMessage: HandleUpdateResult(std::unique_ptr<UpdateResult>(reinterpret_cast<UpdateResult*>(lParam))); return 0;
       case WM_SETFOCUS: if (controller_) controller_->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC); return 0;
-      case WM_DESTROY: KillTimer(window_, kUpdateTimer); if (printController_) printController_->Close(); printController_.Reset(); printWebView_.Reset(); controller_.Reset(); webView_.Reset(); PostQuitMessage(0); return 0;
+      case WM_DESTROY: KillTimer(window_, kUpdateTimer); KillTimer(window_, kPrintTimer); if (printController_) printController_->Close(); printController_.Reset(); printWebView_.Reset(); controller_.Reset(); webView_.Reset(); PostQuitMessage(0); return 0;
       default: return DefWindowProcW(window_, message, wParam, lParam);
     }
   }
@@ -503,6 +506,8 @@ class DesktopWindow {
   }
 
   void FinishPrint(bool ok, const std::wstring& message) {
+    if (printJobId_.empty()) return;
+    KillTimer(window_, kPrintTimer);
     const std::wstring jobId = printJobId_;
     WriteLog((ok ? L"Impressão concluída: " : L"Falha na impressão: ") + jobId + L" " + message);
     if (printController_) printController_->Close();
@@ -511,6 +516,7 @@ class DesktopWindow {
   }
 
   void PrintLoadedDocument() {
+    if (printJobId_.empty()) return;
     ComPtr<ICoreWebView2_16> printable;
     ComPtr<ICoreWebView2Environment6> environment6;
     ComPtr<ICoreWebView2PrintSettings> settings;
@@ -530,8 +536,10 @@ class DesktopWindow {
     settings->put_MarginTop(0); settings->put_MarginBottom(0); settings->put_MarginLeft(0); settings->put_MarginRight(0);
     ComPtr<ICoreWebView2PrintSettings2> settings2;
     if (SUCCEEDED(settings.As(&settings2))) settings2->put_PrinterName(defaultPrinter.c_str());
+    const std::wstring jobId = printJobId_;
     const HRESULT result = printable->Print(settings.Get(), Callback<ICoreWebView2PrintCompletedHandler>(
-      [this](HRESULT errorCode, COREWEBVIEW2_PRINT_STATUS status)->HRESULT {
+      [this, jobId](HRESULT errorCode, COREWEBVIEW2_PRINT_STATUS status)->HRESULT {
+        if (printJobId_ != jobId) return S_OK;
         const bool ok = SUCCEEDED(errorCode) && status == COREWEBVIEW2_PRINT_STATUS_SUCCEEDED;
         FinishPrint(ok, ok ? L"Documento enviado à impressora padrão." :
           status == COREWEBVIEW2_PRINT_STATUS_PRINTER_UNAVAILABLE ? L"A impressora padrão está indisponível." : L"O Windows não confirmou a impressão.");
@@ -545,17 +553,20 @@ class DesktopWindow {
       SendPrintResult(jobId, false, L"A impressão foi bloqueada porque a URL não pertence ao painel.");
       return;
     }
-    if (printController_) {
+    if (!printJobId_.empty()) {
       SendPrintResult(jobId, false, L"A impressora está ocupada com outro ingresso.");
       return;
     }
     printJobId_ = jobId; printUrl_ = url;
+    SetTimer(window_, kPrintTimer, kPrintTimeoutMs, nullptr);
     environment_->CreateCoreWebView2Controller(window_, Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-      [this](HRESULT result, ICoreWebView2Controller* controller)->HRESULT {
+      [this, jobId](HRESULT result, ICoreWebView2Controller* controller)->HRESULT {
+        if (printJobId_ != jobId) { if (controller) controller->Close(); return S_OK; }
         if (FAILED(result) || !controller) { FinishPrint(false, L"Não foi possível preparar o documento para impressão."); return S_OK; }
         printController_ = controller; printController_->put_IsVisible(FALSE); printController_->get_CoreWebView2(&printWebView_);
         printWebView_->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>(
-          [this](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args)->HRESULT {
+          [this, jobId](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args)->HRESULT {
+            if (printJobId_ != jobId) return S_OK;
             BOOL success = FALSE; args->get_IsSuccess(&success);
             if (!success) FinishPrint(false, L"Não foi possível carregar o ingresso para impressão.");
             else PrintLoadedDocument();

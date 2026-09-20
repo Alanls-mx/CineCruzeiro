@@ -130,11 +130,11 @@ function ticketPrintContent(tickets = [], orders = []) {
 function normalizeStatus(order = {}) {
   const status = String(order.status || "").toLowerCase();
   const detail = String(order.status_detail || order.statusDetail || "").toLowerCase();
-  if (status === "processed") return "approved";
   if (["refunded", "charged_back"].includes(status) || ["refunded", "charged_back"].includes(detail)) return "refunded";
   if (["canceled", "cancelled"].includes(status) || ["canceled", "cancelled"].includes(detail)) return "cancelled";
   if (status === "expired" || detail === "expired") return "expired";
   if (["failed", "rejected"].includes(status) || ["failed", "rejected"].includes(detail)) return "rejected";
+  if (status === "processed") return "approved";
   if (["created", "at_terminal", "action_required", "processing"].includes(status)) return "pending";
   return status || "pending";
 }
@@ -345,8 +345,7 @@ async function refundPayment(providerOrderId, config = {}, options = {}) {
   if (options.amount != null) throw providerError("A integracao Point suporta apenas reembolso integral da cobranca.", 422, "POINT_PARTIAL_REFUND_UNSUPPORTED");
   const payload = await request(`/v1/orders/${encodeURIComponent(providerOrderId)}/refund`, config, {
     method: "POST",
-    headers: { "X-Idempotency-Key": String(options.idempotencyKey || crypto.randomUUID()) },
-    body: {}
+    headers: { "X-Idempotency-Key": String(options.idempotencyKey || crypto.randomUUID()) }
   });
   return normalizeOrder(payload);
 }

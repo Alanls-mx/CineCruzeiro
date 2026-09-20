@@ -1340,6 +1340,7 @@ function requiredAdminPermission(pathname, method) {
   if (pathname.startsWith("/api/dashboard") || pathname === "/api/admin/dashboard") return "dashboard.view";
   if (/^\/api\/admin\/subscriptions\/[^/]+\/credits/.test(pathname)) return "club.credits";
   if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return method === "GET" ? "club.view" : "club.manage";
+  if (/^\/api\/box-office\/point-payments\/[^/]+\/resolve-print-failure$/.test(pathname)) return "box_office.sell";
   if (pathname.startsWith("/api/box-office/") || pathname === "/api/tickets/manual") return "box_office.sell";
   if (pathname === "/api/tickets/validate") return "tickets.validate";
   if (pathname.startsWith("/api/uploads/")) return "media.manage";
@@ -2111,7 +2112,7 @@ function roomSeatIdsInActiveUse(db, roomId) {
   const used = new Set();
   const now = Date.now();
   (db.orders || []).forEach((order) => {
-    if (!["pending_payment", "paid"].includes(order.status)) return;
+    if (!["pending_payment", "paid", "paid_pending_print"].includes(order.status)) return;
     if (order.status === "pending_payment" && order.reservationExpiresAt && new Date(order.reservationExpiresAt).getTime() <= now) return;
     const session = sessionForOrder(db, order);
     if (!session || roomForSession(db, session)?.id !== roomId) return;
@@ -2134,7 +2135,7 @@ function occupiedSeatIds(db, sessionId, ignoredOrderId = "") {
   });
   const now = Date.now();
   (db.orders || []).forEach((order) => {
-    if (order.id === ignoredOrderId || order.sessionId !== sessionId || !["pending_payment", "paid"].includes(order.status)) return;
+    if (order.id === ignoredOrderId || order.sessionId !== sessionId || !["pending_payment", "paid", "paid_pending_print"].includes(order.status)) return;
     if (order.status === "pending_payment" && order.reservationExpiresAt && new Date(order.reservationExpiresAt).getTime() <= now) return;
     (order.selectedSeatIds || []).forEach((seatId) => occupied.add(String(seatId)));
   });
@@ -2319,7 +2320,10 @@ function assignSeatsToOrder(db, order, session) {
 
 function sessionTicketStats(db, sessionId) {
   const tickets = (db.tickets || []).filter((ticket) => ticket.sessionId === sessionId);
-  const sold = tickets.filter((ticket) => {
+  const pendingPrintCount = (db.orders || [])
+    .filter((order) => order.sessionId === sessionId && order.status === "paid_pending_print")
+    .reduce((sum, order) => sum + (order.pendingPrintTickets || []).length, 0);
+  const sold = pendingPrintCount + tickets.filter((ticket) => {
     const order = orderForTicket(db, ticket);
     const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
     return !["cancelled", "refunded", "expired", "pending_payment"].includes(status);
@@ -2512,7 +2516,8 @@ function buildTicketsForOrder(order, db, source = "online") {
   };
 
   const pushTicket = (ticketType, index) => {
-    const code = createTicketCode([...(db.tickets || []), ...tickets]);
+    const pendingTickets = (db.orders || []).flatMap((item) => Array.isArray(item.pendingPrintTickets) ? item.pendingPrintTickets : []);
+    const code = createTicketCode([...(db.tickets || []), ...pendingTickets, ...tickets]);
     const qrToken = ticketCodeService.generateQrToken();
     const selectedSeat = Array.isArray(order.selectedSeats) ? order.selectedSeats[index - 1] : null;
     tickets.push({
@@ -2522,7 +2527,7 @@ function buildTicketsForOrder(order, db, source = "online") {
       qrToken,
       qrPayload: ticketQrPayload(code, qrToken),
       ticketType,
-      ticketNumber: Math.max(0, ...(db.tickets || []).map((item) => Number(item.ticketNumber || 0)), ...tickets.map((item) => Number(item.ticketNumber || 0))) + 1,
+      ticketNumber: Math.max(0, ...(db.tickets || []).map((item) => Number(item.ticketNumber || 0)), ...pendingTickets.map((item) => Number(item.ticketNumber || 0)), ...tickets.map((item) => Number(item.ticketNumber || 0))) + 1,
       basePrice: 0,
       subscriptionCreditAmount: 0,
       additionalPaymentAmount: 0,
@@ -2546,6 +2551,35 @@ function buildTicketsForOrder(order, db, source = "online") {
     });
   });
   return tickets;
+}
+
+function orderRequiresConfirmedPrint(order = {}) {
+  if (order.saleMode === "concession_counter") return true;
+  if (order.saleMode === "quick") return true;
+  return order.saleMode === "guest" && String(order.ticketDeliveryMethod || "physical") === "physical";
+}
+
+function stagePaidOrderForPrint(db, order, payment, source = "box_office") {
+  const existingTickets = (db.tickets || []).filter((ticket) => ticket.orderId === order?.id);
+  if (!order || existingTickets.length) return existingTickets;
+  if (payment) {
+    payment.status = "approved";
+    payment.approvedAt ||= new Date().toISOString();
+    payment.updatedAt = new Date().toISOString();
+  }
+  order.status = "paid_pending_print";
+  order.paymentStatus = payment ? "approved" : "not_required";
+  order.paidAt ||= new Date().toISOString();
+  order.pendingPrintTickets = Array.isArray(order.pendingPrintTickets)
+    ? order.pendingPrintTickets
+    : buildTicketsForOrder(order, db, source);
+  order.printFulfillment = {
+    ...(order.printFulfillment || {}),
+    status: ["printed", "completed"].includes(String(order.printFulfillment?.status || "")) ? order.printFulfillment.status : "pending",
+    stagedAt: order.printFulfillment?.stagedAt || new Date().toISOString(),
+    ticketCount: order.pendingPrintTickets.length
+  };
+  return order.pendingPrintTickets;
 }
 
 function findAccountTickets(db, userOrQuery) {
@@ -2635,7 +2669,7 @@ function isOrderEffectivelyArchived(order, tickets = [], db = null) {
 
 function isOrderEffectivelyActive(order, tickets = [], db = null) {
   if (!order) return false;
-  return !isOrderEffectivelyArchived(order, tickets, db) && ["pending", "pending_payment", "processing", "paid"].includes(String(order.status || ""));
+  return !isOrderEffectivelyArchived(order, tickets, db) && ["pending", "pending_payment", "processing", "paid_pending_print", "paid"].includes(String(order.status || ""));
 }
 
 function checkAndAutoArchiveOrder(db, order, adminUser, reason = "Todos os itens validados pelo cinema") {
@@ -3147,6 +3181,7 @@ function createBoxOfficePaymentRecord(order, method, adminUser) {
     approvedAt: now,
     metadata: {
       origin,
+      kind: orderRequiresConfirmedPrint(order) ? "counter_sale" : "counter_sale_completed",
       ...(method === "card_terminal" ? cardTerminalProvider.manualTerminalPaymentMetadata({}, adminUser) : {}),
       manualConfirmation: !cardTerminalProvider.configured() || method !== "card_terminal",
       createdBy: adminUser?.id || "",
@@ -3240,6 +3275,10 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
   const tickets = [];
   for (const order of orders) {
     if (nextStatus === "approved") {
+      if (orderRequiresConfirmedPrint(order)) {
+        tickets.push(...stagePaidOrderForPrint(db, order, payment, payment.method === "courtesy" ? "courtesy" : "box_office"));
+        continue;
+      }
       const wasPaid = order.status === "paid";
       const orderTickets = finalizePaidOrder(db, order, payment, "box_office");
       tickets.push(...orderTickets);
@@ -3248,6 +3287,7 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
     }
     if (["expired", "cancelled", "rejected", "refunded"].includes(nextStatus) && order.status !== "paid") {
       releaseConcessionReservation(db, order);
+      delete order.pendingPrintTickets;
       order.status = nextStatus === "rejected" ? "cancelled" : nextStatus;
       order.paymentStatus = nextStatus;
       order.updatedAt = now;
@@ -3321,22 +3361,28 @@ async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {
   const printableOrders = boxOfficeOrdersForAutomaticPrint(orders);
   const printableOrderIds = new Set(printableOrders.map((order) => order.id));
   const printableTickets = (Array.isArray(tickets) ? tickets : []).filter((ticket) => printableOrderIds.has(ticket.orderId));
-  const existingPrint = printableOrders.find((order) => order.pointPrint?.status === "queued")?.pointPrint;
-  if (existingPrint && printableOrders.every((order) => order.pointPrint?.status === "queued")) {
+  const existingPrint = printableOrders.find((order) => ["queued", "on_terminal", "printed"].includes(String(order.pointPrint?.status || "")))?.pointPrint;
+  if (!context.forceRetry && existingPrint && printableOrders.every((order) => ["queued", "on_terminal", "printed"].includes(String(order.pointPrint?.status || "")))) {
     return { requested: true, ...existingPrint, message: "A impressão desta venda já foi enviada para a Point." };
   }
   const printableConcessionCount = printableOrders.reduce((sum, order) => sum + (order.concessionItems || []).reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0), 0);
   if (!printableOrders.length || (!printableTickets.length && !printableConcessionCount)) {
     return { requested: false, status: "not_requested", terminalId: "", actionId: "", message: "" };
   }
-  if (config?.pointTicketPrintEnabled === false) {
-    return {
+  if (context.forceLocal || config?.pointTicketPrintEnabled === false) {
+    const localPrint = {
       requested: false,
       status: "local_required",
+      mode: "local",
+      jobId: crypto.randomUUID(),
       terminalId: "",
       actionId: "",
-      message: "A impressão de ingressos pela Point está desativada. O aplicativo do painel usará a impressora térmica deste computador."
+      message: context.forceLocal
+        ? "A venda será impressa na impressora térmica padrão deste computador."
+        : "A impressão de ingressos pela Point está desativada. O aplicativo do painel usará a impressora térmica deste computador."
     };
+    printableOrders.forEach((order) => { order.pointPrint = { ...localPrint }; });
+    return localPrint;
   }
   if (!cardTerminalProvider.configured(config)) {
     return {
@@ -3349,6 +3395,11 @@ async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {
   }
 
   const batchId = String(context.batchId || printableOrders[0]?.batchId || Date.now());
+  const previousPrint = printableOrders[0]?.pointPrint || {};
+  const attempt = context.forceRetry && previousPrint.actionId
+    ? Math.max(1, Number(previousPrint.attempt || 0) + 1)
+    : Math.max(0, Number(previousPrint.attempt || 0));
+  const printReference = attempt ? `print-${batchId}-${attempt}` : `print-${batchId}`;
   const paymentMethod = String(context.paymentMethod || printableOrders[0]?.paymentMethod || "");
   try {
     const printAction = await cardTerminalProvider.createTicketPrint(
@@ -3356,13 +3407,15 @@ async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {
       config,
       {
         orders: printableOrders,
-        externalReference: `print-${batchId}`,
-        idempotencyKey: `print-${batchId}`
+        externalReference: printReference,
+        idempotencyKey: printReference
       }
     );
     const pointPrint = {
       requested: true,
       status: "queued",
+      mode: "point",
+      attempt,
       terminalId: printAction.terminalId,
       actionId: printAction.id,
       requestedAt: new Date().toISOString(),
@@ -3387,6 +3440,8 @@ async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {
     const pointPrint = {
       requested: true,
       status: "failed",
+      mode: "point",
+      attempt,
       terminalId: String(config?.pointTerminalId || config?.pointDeviceId || ""),
       actionId: "",
       requestedAt: new Date().toISOString(),
@@ -4043,6 +4098,7 @@ function buildPdf(pages, options = {}) {
 function ticketThermalPdf(db, tickets) {
   const pages = tickets.map((ticket) => {
     const item = enrichTicket(db, ticket);
+    if (item.orderStatus === "paid_pending_print") item.status = "active";
     let y = 545;
     let content = "";
     const text = (value, size = 10, bold = false) => {
@@ -4232,10 +4288,13 @@ function finalizePaidOrder(db, order, payment, source = "online") {
     payment.approvedAt = payment.approvedAt || new Date().toISOString();
     payment.updatedAt = new Date().toISOString();
   }
+  const wasPendingPrint = order.status === "paid_pending_print";
   order.status = "paid";
   order.paymentStatus = payment ? "approved" : "not_required";
   order.paidAt = order.paidAt || new Date().toISOString();
-  const tickets = buildTicketsForOrder(order, db, source);
+  const tickets = Array.isArray(order.pendingPrintTickets)
+    ? order.pendingPrintTickets.map((ticket) => ({ ...ticket, status: "active" }))
+    : buildTicketsForOrder(order, db, source);
   if (!order.clubCreditPending) {
     const unitPrices = ticketUnitPricesForOrder(order);
     const serviceItems = tickets.map((ticket, index) => {
@@ -4276,7 +4335,30 @@ function finalizePaidOrder(db, order, payment, source = "online") {
   }
   confirmConcessionStock(db, order);
   db.tickets.unshift(...tickets);
+  delete order.pendingPrintTickets;
+  if (wasPendingPrint) {
+    order.printFulfillment = {
+      ...(order.printFulfillment || {}),
+      status: "printed",
+      completedAt: new Date().toISOString(),
+      ticketCount: tickets.length
+    };
+  }
   return tickets;
+}
+
+function finalizePrintedOrders(db, orders = [], fallbackPayment = null) {
+  const tickets = [];
+  const newlyPaidOrders = [];
+  for (const order of orders) {
+    const wasPaid = order.status === "paid";
+    const payment = (db.payments || []).find((item) => item.id === order.paymentId) || fallbackPayment || orderPayment(db, order.id);
+    const source = payment?.method === "courtesy" ? "courtesy" : "box_office";
+    const orderTickets = finalizePaidOrder(db, order, payment, source);
+    tickets.push(...orderTickets);
+    if (!wasPaid && order.status === "paid") newlyPaidOrders.push(order);
+  }
+  return { orders, tickets, newlyPaidOrders };
 }
 
 function csvCell(value) {
@@ -5048,7 +5130,7 @@ function reservedFreeConcessionQuantity(db, subscription, concessionId, currentO
   const now = Date.now();
   return (db.orders || []).reduce((sum, existingOrder) => {
     if (existingOrder.id === currentOrderId || existingOrder.clubSubscriptionId !== subscription.id) return sum;
-    if (!["pending_payment", "paid"].includes(existingOrder.status)) return sum;
+    if (!["pending_payment", "paid", "paid_pending_print"].includes(existingOrder.status)) return sum;
     if (existingOrder.concessionRefund?.status === "completed") return sum;
     if (existingOrder.status === "pending_payment" && existingOrder.reservationExpiresAt && new Date(existingOrder.reservationExpiresAt).getTime() <= now) return sum;
     const createdAt = new Date(existingOrder.createdAt || 0).getTime();
@@ -5773,7 +5855,7 @@ function sessionHasAuditHistory(db, sessionId) {
 function sessionHasActiveSeatAssignments(db, sessionId) {
   const activeOrders = (db.orders || []).some((order) =>
     order.sessionId === sessionId
-    && ["pending_payment", "paid"].includes(String(order.status || ""))
+    && ["pending_payment", "paid", "paid_pending_print"].includes(String(order.status || ""))
     && Array.isArray(order.selectedSeatIds)
     && order.selectedSeatIds.length > 0
   );
@@ -6671,6 +6753,7 @@ function cancelOrder(db, order, reason, adminUser) {
   const before = structuredCloneSafe({ order, payment, tickets });
   const now = new Date().toISOString();
   releaseConcessionReservation(db, order);
+  delete order.pendingPrintTickets;
   order.status = "cancelled";
   order.archived = true;
   order.archivedAt = now;
@@ -6931,7 +7014,7 @@ function syncRoomSessionReferences(db, room, linkedSessions = []) {
 
 function couponOrderCounts(db, coupon, order) {
   const customerKey = couponCustomerKey(order);
-  const countedStatuses = new Set(["paid", "pending_payment", "processing"]);
+  const countedStatuses = new Set(["paid", "paid_pending_print", "pending_payment", "processing"]);
   const now = Date.now();
   const matching = (db.orders || []).filter((existing) => {
     if (existing.id === order.id || !countedStatuses.has(existing.status)) return false;
@@ -8185,6 +8268,7 @@ function paymentStatusLabel(status = "") {
 function orderStatusLabel(status = "") {
   return {
     paid: "Pago",
+    paid_pending_print: "Pago; aguardando impressão",
     pending: "Pendente",
     pending_payment: "Aguardando pagamento",
     processing: "Processando",
@@ -15008,14 +15092,17 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const paymentId = decodeURIComponent(pointPaymentPrintMatch[1]);
-    const payment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+    const payment = (db.payments || []).find((item) => item.id === paymentId && ["point_sale", "counter_sale"].includes(item.metadata?.kind));
     if (!payment || payment.status !== "approved") {
       sendJson(res, 409, { error: { code: "POINT_PAYMENT_NOT_PRINTABLE", message: "A venda só pode ser impressa após a confirmação do pagamento." } });
       return;
     }
     const orders = pointPaymentOrders(db, payment);
     const orderIds = new Set(orders.map((order) => order.id));
-    const tickets = (db.tickets || []).filter((ticket) => orderIds.has(ticket.orderId));
+    const issuedTickets = (db.tickets || []).filter((ticket) => orderIds.has(ticket.orderId));
+    const tickets = issuedTickets.length
+      ? issuedTickets
+      : orders.flatMap((order) => Array.isArray(order.pendingPrintTickets) ? order.pendingPrintTickets : []);
     if (!tickets.length && orders[0]?.saleMode !== "concession_counter") {
       sendJson(res, 404, { error: { code: "POINT_TICKETS_NOT_FOUND", message: "Nenhum ingresso emitido foi encontrado para esta venda." } });
       return;
@@ -15035,6 +15122,215 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  const pointPaymentPrintResultMatch = pathname.match(/^\/api\/box-office\/point-payments\/([^/]+)\/print-result$/);
+  if (pointPaymentPrintResultMatch && method === "POST") {
+    const body = await readBody(req);
+    const paymentId = decodeURIComponent(pointPaymentPrintResultMatch[1]);
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId && ["point_sale", "counter_sale"].includes(item.metadata?.kind));
+      if (!payment || payment.status !== "approved") {
+        sendJson(res, 409, { error: { code: "PRINT_CONFIRMATION_INVALID", message: "A venda não está disponível para confirmação de impressão." } });
+        return;
+      }
+      const orders = pointPaymentOrders(lockedDb, payment);
+      if (payment.metadata?.printResolution?.status === "pending" ||
+          !orders.length || orders.some((order) => !["paid_pending_print", "paid"].includes(order.status)) ||
+          orders.some((order) => order.status === "paid_pending_print" && order.pointPrint?.mode !== "local")) {
+        sendJson(res, 409, { error: { code: "PRINT_CONFIRMATION_CONFLICT", message: "Esta venda não está aguardando confirmação da impressora local." } });
+        return;
+      }
+      if (orders.every((order) => order.status === "paid")) {
+        sendJson(res, 200, { payment, orders, tickets: orders.flatMap((order) => orderTickets(lockedDb, order.id)), pointPrint: orders[0]?.pointPrint || { status: "printed" }, completed: true });
+        return;
+      }
+      if (!body.jobId || orders.some((order) => order.pointPrint?.jobId !== String(body.jobId))) {
+        sendJson(res, 409, { error: { code: "PRINT_JOB_STALE", message: "Esta tentativa de impressão não está mais ativa. Consulte a venda antes de prosseguir." } });
+        return;
+      }
+      const now = new Date().toISOString();
+      if (body.ok === true) {
+        orders.forEach((order) => {
+          order.pointPrint = {
+            ...(order.pointPrint || {}),
+            status: "printed",
+            mode: "local",
+            printedAt: now,
+            message: "A impressora térmica deste computador confirmou a impressão."
+          };
+        });
+        const finalized = finalizePrintedOrders(lockedDb, orders, payment);
+        await writeDb(lockedDb);
+        logEvent("info", "box_office_ticket_print.local_confirmed", { paymentId, orderIds: orders.map((order) => order.id), ticketCount: finalized.tickets.length, createdBy: req.adminUser?.id || "" });
+        sendJson(res, 200, { payment, ...finalized, pointPrint: orders[0]?.pointPrint || { status: "printed" }, completed: true });
+        return;
+      }
+      const failedPrint = {
+        ...(orders.find((order) => order.pointPrint)?.pointPrint || {}),
+        status: "failed",
+        mode: "local",
+        failedAt: now,
+        code: "LOCAL_PRINT_FAILED",
+        message: String(body.message || "A impressora térmica não confirmou a impressão.").slice(0, 300)
+      };
+      orders.forEach((order) => {
+        order.pointPrint = { ...failedPrint };
+        order.printFulfillment = { ...(order.printFulfillment || {}), status: "failed", failedAt: now, message: failedPrint.message };
+      });
+      await writeDb(lockedDb);
+      logEvent("warn", "box_office_ticket_print.local_failed", { paymentId, orderIds: orders.map((order) => order.id), message: failedPrint.message, createdBy: req.adminUser?.id || "" });
+      sendJson(res, 200, { payment, orders, tickets: [], pointPrint: failedPrint, completed: false, printFailed: true });
+    });
+    return;
+  }
+
+  const pointPaymentRetryPrintMatch = pathname.match(/^\/api\/box-office\/point-payments\/([^/]+)\/retry-print$/);
+  if (pointPaymentRetryPrintMatch && method === "POST") {
+    const body = await readBody(req);
+    const paymentId = decodeURIComponent(pointPaymentRetryPrintMatch[1]);
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId && ["point_sale", "counter_sale"].includes(item.metadata?.kind));
+      if (!payment || payment.status !== "approved") {
+        sendJson(res, 409, { error: { code: "PRINT_RETRY_INVALID", message: "A venda não está disponível para nova tentativa de impressão." } });
+        return;
+      }
+      const orders = pointPaymentOrders(lockedDb, payment);
+      if (!orders.some((order) => order.status === "paid_pending_print")) {
+        sendJson(res, 409, { error: { code: "PRINT_ALREADY_COMPLETED", message: "Os ingressos desta venda já foram emitidos." } });
+        return;
+      }
+      if (orders.some((order) => !["failed", "timed_out", "local_required"].includes(String(order.pointPrint?.status || "")))) {
+        sendJson(res, 409, { error: { code: "PRINT_STILL_IN_PROGRESS", message: "A impressão anterior ainda pode estar em andamento. Aguarde a confirmação antes de tentar novamente." } });
+        return;
+      }
+      const config = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
+      const previousPointPrint = orders.find((order) => order.pointPrint?.status === "timed_out" && order.pointPrint?.actionId)?.pointPrint;
+      if (previousPointPrint) {
+        let previousAction;
+        try {
+          previousAction = await cardTerminalProvider.getPrintStatus(previousPointPrint.actionId, config);
+        } catch {
+          sendJson(res, 503, { error: { code: "PRINT_STATUS_UNCERTAIN", message: "Não foi possível confirmar se a Point já imprimiu. Reconecte a maquininha antes de tentar outra impressão." } });
+          return;
+        }
+        if (previousAction.status === "printed") {
+          orders.forEach((order) => { order.pointPrint = { ...order.pointPrint, status: "printed", checkedAt: new Date().toISOString() }; });
+          const finalized = finalizePrintedOrders(lockedDb, orders, payment);
+          await writeDb(lockedDb);
+          sendJson(res, 200, { payment, ...finalized, pointPrint: orders[0]?.pointPrint, completed: true });
+          return;
+        }
+        if (previousAction.status !== "failed") {
+          sendJson(res, 409, { error: { code: "PRINT_STILL_IN_PROGRESS", message: "A Point ainda pode imprimir esta venda. Aguarde a conclusão antes de enviar outra via." } });
+          return;
+        }
+      }
+      const tickets = orders.flatMap((order) => Array.isArray(order.pendingPrintTickets) ? order.pendingPrintTickets : []);
+      const usePoint = body.mode === "point" && payment.metadata?.kind === "point_sale" && config.pointTicketPrintEnabled !== false;
+      const pointPrint = await queueBoxOfficePointPrint(lockedDb, orders, tickets, config, {
+        batchId: payment.metadata?.batchId,
+        paymentMethod: payment.method,
+        adminUser: req.adminUser,
+        forceRetry: usePoint,
+        forceLocal: !usePoint
+      });
+      await writeDb(lockedDb);
+      sendJson(res, 200, { payment, orders, tickets: [], pointPrint, completed: false });
+    });
+    return;
+  }
+
+  const pointPaymentResolvePrintMatch = pathname.match(/^\/api\/box-office\/point-payments\/([^/]+)\/resolve-print-failure$/);
+  if (pointPaymentResolvePrintMatch && method === "POST") {
+    const body = await readBody(req);
+    const paymentId = decodeURIComponent(pointPaymentResolvePrintMatch[1]);
+    const snapshotPayment = (db.payments || []).find((item) => item.id === paymentId && ["point_sale", "counter_sale"].includes(item.metadata?.kind));
+    if (snapshotPayment?.status === "refunded" && snapshotPayment.metadata?.printResolution?.status === "pending" &&
+        pointPaymentOrders(db, snapshotPayment).every((order) => order.status === "refunded")) {
+      sendJson(res, 200, { payment: snapshotPayment, orders: pointPaymentOrders(db, snapshotPayment), tickets: [], completed: false, resolved: true, resolution: "refunded" });
+      return;
+    }
+    if (!snapshotPayment || snapshotPayment.status !== "approved") {
+      sendJson(res, 409, { error: { code: "PRINT_FAILURE_NOT_RESOLVABLE", message: "A venda não está disponível para cancelamento ou reembolso." } });
+      return;
+    }
+    const isPointSale = snapshotPayment.metadata?.kind === "point_sale";
+    if (!ensureAdminAction(req, res, isPointSale ? "orders.refund" : "orders.cancel", "Sua conta não tem permissão para desfazer esta venda.")) return;
+    const snapshotOrders = pointPaymentOrders(db, snapshotPayment);
+    const printFailed = snapshotOrders.some((order) => ["failed", "timed_out"].includes(String(order.pointPrint?.status || "")));
+    if (!snapshotOrders.length || snapshotOrders.some((order) => order.status !== "paid_pending_print") || !printFailed) {
+      sendJson(res, 409, { error: { code: "PRINT_FAILURE_NOT_CONFIRMED", message: "O desfazimento só é permitido depois de uma falha de impressão confirmada, antes da emissão do ingresso." } });
+      return;
+    }
+    if (isPointSale) {
+      await withCriticalMutation(async () => {
+        const lockedDb = await readDb();
+        const payment = (lockedDb.payments || []).find((item) => item.id === paymentId);
+        if (!payment || pointPaymentOrders(lockedDb, payment).some((order) => order.status !== "paid_pending_print")) {
+          throw Object.assign(new Error("A venda mudou de estado. Consulte-a novamente antes de reembolsar."), { statusCode: 409, code: "PRINT_RESOLUTION_CONFLICT" });
+        }
+        payment.metadata = {
+          ...(payment.metadata || {}),
+          printResolution: {
+            status: "pending",
+            idempotencyKey: `print-failure-refund-${paymentId}`,
+            requestedAt: payment.metadata?.printResolution?.requestedAt || new Date().toISOString()
+          }
+        };
+        await writeDb(lockedDb);
+      });
+      const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
+      const refund = await cardTerminalProvider.refundPayment(snapshotPayment.providerPaymentId, config, {
+        idempotencyKey: `print-failure-refund-${paymentId}`
+      });
+      if (refund.status !== "refunded") {
+        throw Object.assign(new Error("O Mercado Pago ainda não confirmou o reembolso. O ingresso continua bloqueado; consulte a mesma operação novamente."), { statusCode: 409, code: "PRINT_REFUND_NOT_CONFIRMED" });
+      }
+    }
+    let resolvedOrders = [];
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId);
+      if (!payment) throw Object.assign(new Error("Pagamento não encontrado."), { statusCode: 404, code: "POINT_PAYMENT_NOT_FOUND" });
+      const orders = pointPaymentOrders(lockedDb, payment);
+      if (orders.some((order) => order.status !== "paid_pending_print" && !(isPointSale && payment.status === "refunded" && order.status === "refunded"))) {
+        throw Object.assign(new Error("A venda mudou de estado. Concilie a devolução com o Mercado Pago."), { statusCode: 409, code: "PRINT_RESOLUTION_CONFLICT" });
+      }
+      const now = new Date().toISOString();
+      const finalStatus = isPointSale ? "refunded" : "cancelled";
+      payment.status = finalStatus;
+      payment.updatedAt = now;
+      if (isPointSale) {
+        payment.refundStatus = "completed";
+        payment.refundedAt = now;
+        payment.metadata.printResolution = { ...(payment.metadata.printResolution || {}), status: "completed", completedAt: now };
+      } else {
+        payment.cancelledAt = now;
+      }
+      orders.forEach((order) => {
+        releaseConcessionReservation(lockedDb, order);
+        delete order.pendingPrintTickets;
+        order.status = finalStatus;
+        order.paymentStatus = finalStatus;
+        order.updatedAt = now;
+        order.archived = true;
+        order.archivedAt = now;
+        order.archivedBy = req.adminUser?.id || "system";
+        order.archivedReason = isPointSale ? "Pagamento reembolsado após falha de impressão" : "Pedido cancelado após falha de impressão";
+        order.printFulfillment = { ...(order.printFulfillment || {}), status: finalStatus, resolvedAt: now, resolvedBy: req.adminUser?.id || "" };
+        order.pointPrint = { ...(order.pointPrint || {}), status: finalStatus, resolvedAt: now };
+        appendOrderAudit(order, { action: isPointSale ? "refund_after_print_failure" : "cancel_after_print_failure", reason: String(body.reason || "Falha na impressão do ingresso").slice(0, 240), updatedBy: req.adminUser?.id || "", createdAt: now });
+      });
+      resolvedOrders = orders;
+      await writeDb(lockedDb);
+      logEvent("warn", isPointSale ? "box_office_ticket_print.refunded" : "box_office_ticket_print.cancelled", { paymentId, orderIds: orders.map((order) => order.id), createdBy: req.adminUser?.id || "" });
+      sendJson(res, 200, { payment, orders, tickets: [], completed: false, resolved: true, resolution: finalStatus });
+    });
+    for (const order of resolvedOrders) await broadcastReleasedOrderSeats(order);
+    return;
+  }
+
   const pointPaymentMatch = pathname.match(/^\/api\/box-office\/point-payments\/([^/]+)$/);
   if (pointPaymentMatch && method === "GET") {
     const adminUser = getAdminUser(req, db);
@@ -15043,7 +15339,7 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const paymentId = decodeURIComponent(pointPaymentMatch[1]);
-    const snapshotPayment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+    const snapshotPayment = (db.payments || []).find((item) => item.id === paymentId && ["point_sale", "counter_sale"].includes(item.metadata?.kind));
     if (!snapshotPayment) {
       sendJson(res, 404, { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } });
       return;
@@ -15051,7 +15347,16 @@ async function handleApi(req, res, pathname) {
     const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
     let providerPayment;
     try {
-      if (snapshotPayment.providerPaymentId) {
+      if (snapshotPayment.metadata?.kind === "counter_sale") {
+        providerPayment = {
+          id: snapshotPayment.providerPaymentId,
+          externalReference: snapshotPayment.providerReference,
+          status: snapshotPayment.status,
+          providerStatus: snapshotPayment.status,
+          amount: snapshotPayment.amount,
+          terminalId: ""
+        };
+      } else if (snapshotPayment.providerPaymentId) {
         providerPayment = await cardTerminalProvider.getStatus(snapshotPayment.providerPaymentId, config);
       } else {
         const recovery = snapshotPayment.metadata?.recoveryRequest;
@@ -15082,7 +15387,7 @@ async function handleApi(req, res, pathname) {
         orders,
         tickets,
         pointPrint: orders.find((order) => order.pointPrint)?.pointPrint || { status: "not_requested" },
-        completed: snapshotPayment.status === "approved",
+        completed: snapshotPayment.status === "approved" && orders.every((order) => !orderRequiresConfirmedPrint(order) || order.status === "paid"),
         reconnecting: true,
         retryAfterMs: 5000,
         terminal: { id: snapshotPayment.metadata?.terminalId || "", providerStatus: snapshotPayment.metadata?.providerStatus || "" }
@@ -15099,7 +15404,7 @@ async function handleApi(req, res, pathname) {
     }
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
-      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId && ["point_sale", "counter_sale"].includes(item.metadata?.kind));
       if (!payment) {
         sendJson(res, 404, { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } });
         return;
@@ -15111,16 +15416,23 @@ async function handleApi(req, res, pathname) {
         reconnectAttempts: Number(payment.metadata?.reconnectAttempts || 0) + (snapshotPayment.providerPaymentId ? 0 : 1),
         reconnectedAt: snapshotPayment.providerPaymentId ? payment.metadata?.reconnectedAt || "" : new Date().toISOString()
       };
-      const result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
-      let pointPrint = payment.status === "approved"
+      let result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
+      const existingPointPrint = result.orders.find((order) => order.pointPrint)?.pointPrint;
+      let pointPrint = payment.status === "approved" && ["local_required", "failed", "timed_out"].includes(String(existingPointPrint?.status || ""))
+        ? existingPointPrint
+        : payment.status === "approved"
         ? await queueBoxOfficePointPrint(lockedDb, result.orders, result.tickets, config, {
           batchId: payment.metadata?.batchId,
           paymentMethod: payment.method,
-          adminUser
+          adminUser,
+          forceLocal: payment.metadata?.kind === "counter_sale"
         })
         : { requested: false, status: "not_requested", message: "" };
       if (payment.status === "approved" && ["queued", "on_terminal"].includes(String(pointPrint?.status || ""))) {
         pointPrint = await syncBoxOfficePointPrint(result.orders, config) || pointPrint;
+      }
+      if (payment.status === "approved" && pointPrint?.status === "printed") {
+        result = finalizePrintedOrders(lockedDb, result.orders, payment);
       }
       await writeDb(lockedDb);
       logEvent("info", "box_office_point_sale.synced", {
@@ -15135,7 +15447,7 @@ async function handleApi(req, res, pathname) {
         orders: result.orders,
         tickets: result.tickets,
         pointPrint,
-        completed: payment.status === "approved",
+        completed: payment.status === "approved" && result.orders.every((order) => !orderRequiresConfirmedPrint(order) || order.status === "paid"),
         terminal: { id: payment.metadata?.terminalId || "", providerStatus: payment.metadata?.providerStatus || "" }
       });
       result.newlyPaidOrders
@@ -15471,14 +15783,16 @@ async function handleApi(req, res, pathname) {
         return;
       }
 
+      const stagedOrders = [];
       const sales = preparedOrders.map((order) => {
         const payment = createBoxOfficePaymentRecord(order, paymentMethod, adminUser);
         const timestamp = new Date().toISOString();
+        const requiresPrintConfirmation = orderRequiresConfirmedPrint(order);
         const savedOrder = {
           ...order,
           id: order.id,
           batchId,
-          status: "paid",
+          status: requiresPrintConfirmation ? "paid_pending_print" : "paid",
           origin: saleOrigin,
           saleMode,
           ticketDeliveryMethod,
@@ -15500,20 +15814,30 @@ async function handleApi(req, res, pathname) {
             customerId: selectedCustomer?.id || ""
           }
         };
-        const tickets = finalizePaidOrder(lockedDb, savedOrder, payment, paymentMethod === "courtesy" ? "courtesy" : "box_office");
+        if (requiresPrintConfirmation) reserveConcessionStock(lockedDb, savedOrder);
+        const tickets = requiresPrintConfirmation
+          ? stagePaidOrderForPrint({ ...lockedDb, orders: [...lockedDb.orders, ...stagedOrders] }, savedOrder, payment, paymentMethod === "courtesy" ? "courtesy" : "box_office")
+          : finalizePaidOrder(lockedDb, savedOrder, payment, paymentMethod === "courtesy" ? "courtesy" : "box_office");
+        stagedOrders.push(savedOrder);
         return { order: savedOrder, payment, tickets };
       });
       const orders = sales.map((sale) => sale.order);
       const payments = sales.map((sale) => sale.payment);
       const tickets = sales.flatMap((sale) => sale.tickets);
+      payments.forEach((payment) => {
+        payment.metadata = { ...(payment.metadata || {}), batchId, relatedOrderIds: orders.map((order) => order.id) };
+      });
       lockedDb.payments.unshift(...payments);
       lockedDb.orders.unshift(...orders);
       const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
-      const pointPrint = await queueBoxOfficePointPrint(lockedDb, orders, tickets, mercadoPagoConfig, {
+      const pointPrint = orders.some(orderRequiresConfirmedPrint)
+        ? await queueBoxOfficePointPrint(lockedDb, orders, tickets, mercadoPagoConfig, {
         batchId,
         paymentMethod,
-        adminUser
-      });
+        adminUser,
+        forceLocal: true
+      })
+        : { requested: false, status: "not_requested", message: "" };
       await writeDb(lockedDb);
       for (const order of orders) await releaseOrderSeatHolds(order);
       logEvent("info", concessionCounterSale ? "concession_counter_sale.created" : "box_office_sale.created", {
