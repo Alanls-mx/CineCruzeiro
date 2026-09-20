@@ -42,7 +42,7 @@ export const WhatsAppConnection: React.FC<WhatsAppConnectionProps> = ({ company 
         const updated = await api.getStatus(company.id, activeInstance.id);
         if (updated.status === 'CONNECTED') {
           setQrCodeData(null);
-          setFeedback('🎉 WhatsApp conectado com sucesso!');
+          setFeedback('WhatsApp conectado com sucesso.');
           loadInstances();
           return;
         }
@@ -95,7 +95,7 @@ export const WhatsAppConnection: React.FC<WhatsAppConnectionProps> = ({ company 
 
   const handleDisconnect = async () => {
     if (!activeInstance) return;
-    if (!confirm('Deseja desconectar esta sessão do WhatsApp? O bot e os atendentes não receberão novas mensagens até que seja reconectado.')) return;
+    if (!confirm('Deseja desconectar esta sessão do WhatsApp? A automação e os atendentes não receberão novas mensagens até que ela seja reconectada.')) return;
 
     try {
       setLoading(true);

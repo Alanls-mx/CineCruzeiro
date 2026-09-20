@@ -4,7 +4,7 @@ import {
   X,
   User,
   Phone,
-  Bot,
+  MessageSquare,
   UserCheck,
   RotateCcw,
   Clock,
@@ -58,11 +58,11 @@ export const ConversationStatusModal: React.FC<ConversationStatusModalProps> = (
   const getModeBadge = (mode: string) => {
     switch (mode) {
       case 'BOT':
-        return <span className="badge badge-bot">🤖 Robô Ativo</span>;
+        return <span className="badge badge-bot">Automação ativa</span>;
       case 'HUMAN':
-        return <span className="badge badge-human">👨‍💼 Atendente Humano</span>;
+        return <span className="badge badge-human">Atendente responsável</span>;
       default:
-        return <span className="badge badge-connecting">⏸️ Pausado</span>;
+        return <span className="badge badge-connecting">Pausado</span>;
     }
   };
 
@@ -121,7 +121,7 @@ export const ConversationStatusModal: React.FC<ConversationStatusModalProps> = (
             </div>
             <div>
               <h3 style={{ color: '#fff', fontSize: '1.1rem', fontWeight: 700 }}>
-                Status do Atendimento & WhatsApp
+                Atendimento pelo WhatsApp
               </h3>
               <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
                 Detalhes da sessão, conexão e fluxo ativo
@@ -227,7 +227,7 @@ export const ConversationStatusModal: React.FC<ConversationStatusModalProps> = (
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', marginBottom: '6px' }}>
-                <Layers size={14} /> Fluxo do Robô
+                <Layers size={14} /> Fluxo automático
               </div>
               <div style={{ color: '#fff', fontWeight: 700, fontSize: '0.95rem' }}>
                 {conversation.currentFlow || 'MAIN_MENU'}
@@ -252,7 +252,7 @@ export const ConversationStatusModal: React.FC<ConversationStatusModalProps> = (
                 Ativa (Evolution API)
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
-                Instância: cine-estacao-whatsapp
+                Canal conectado ao Cine Cruzeiro
               </div>
             </div>
 
@@ -328,7 +328,7 @@ export const ConversationStatusModal: React.FC<ConversationStatusModalProps> = (
                   className="btn btn-secondary"
                   style={{ flex: 1, borderColor: '#38bdf8', color: '#38bdf8' }}
                 >
-                  <Bot size={16} /> Devolver Conversa ao Robô
+                  <MessageSquare size={16} /> Retomar automação
                 </button>
               )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Send, Image as ImageIcon, Type, Sparkles, AlertCircle, CheckCircle2, Upload } from 'lucide-react';
+import { X, Send, Image as ImageIcon, Type, MessageSquare, AlertCircle, CheckCircle2, Upload } from 'lucide-react';
 import { api } from '../services/api.js';
 
 interface StatusStoryModalProps {
@@ -10,14 +10,14 @@ interface StatusStoryModalProps {
 }
 
 const STORY_COLORS = [
-  { name: 'Verde WhatsApp', hex: '#128C7E' },
-  { name: 'Verde Esmeralda', hex: '#059669' },
-  { name: 'Roxo Royal', hex: '#7c3aed' },
-  { name: 'Azul Elétrico', hex: '#2563eb' },
-  { name: 'Rosa Vibrante', hex: '#e11d48' },
-  { name: 'Âmbar Dourado', hex: '#d97706' },
-  { name: 'Preto Meia-Noite', hex: '#0f172a' },
-  { name: 'Índigo Profundo', hex: '#312e81' },
+  { name: 'Dourado Cine Cruzeiro', hex: '#facc15' },
+  { name: 'Azul do painel', hex: '#2563eb' },
+  { name: 'Azul programação', hex: '#38bdf8' },
+  { name: 'Verde disponibilidade', hex: '#34d399' },
+  { name: 'Vermelho aviso', hex: '#f43f5e' },
+  { name: 'Roxo sessão especial', hex: '#e879f9' },
+  { name: 'Grafite', hex: '#0f172a' },
+  { name: 'Azul escuro', hex: '#162641' },
 ];
 
 export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
@@ -127,7 +127,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
           maxWidth: '680px',
           background: '#111622',
           border: '1px solid rgba(255, 255, 255, 0.12)',
-          borderRadius: '20px',
+          borderRadius: '10px',
           boxShadow: '0 24px 60px rgba(0, 0, 0, 0.8)',
           overflow: 'hidden',
           display: 'flex',
@@ -151,9 +151,9 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
               style={{
                 width: '40px',
                 height: '40px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #f59e0b 0%, #ec4899 50%, #8b5cf6 100%)',
-                padding: '2px',
+                borderRadius: '8px',
+                background: '#162641',
+                border: '1px solid #2c4a70',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -163,37 +163,37 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                 style={{
                   width: '100%',
                   height: '100%',
-                  borderRadius: '50%',
-                  background: '#111622',
+                  borderRadius: '6px',
+                  background: '#162641',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Sparkles size={20} color="#f59e0b" />
+                <MessageSquare size={20} color="#facc15" />
               </div>
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h2 style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 700 }}>
-                  Status do WhatsApp (Stories)
+                  Publicação no Status
                 </h2>
                 <span
                   style={{
-                    background: 'rgba(245, 158, 11, 0.15)',
-                    color: '#f59e0b',
+                    background: 'rgba(250, 204, 21, 0.15)',
+                    color: '#facc15',
                     fontSize: '0.7rem',
                     fontWeight: 700,
                     padding: '2px 8px',
                     borderRadius: '9999px',
-                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                    border: '1px solid rgba(250, 204, 21, 0.28)',
                   }}
                 >
                   24 HORAS
                 </span>
               </div>
               <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '2px' }}>
-                Publique novidades, promoções e avisos visíveis para todos os seus contatos
+                Compartilhe programação, promoções e avisos com os seus contatos
               </p>
             </div>
           </div>
@@ -330,7 +330,7 @@ export const StatusStoryModal: React.FC<StatusStoryModalProps> = ({
                   <textarea
                     value={textContent}
                     onChange={(e) => setTextContent(e.target.value)}
-                    placeholder="Ex: 🎬 Estreia hoje no Cine Cruzeiro: Superman IMAX! Garanta já seu ingresso pelo nosso WhatsApp!"
+                    placeholder="Ex: Estreia hoje no Cine Cruzeiro. Consulte horários e garanta seu ingresso pelo WhatsApp."
                     rows={4}
                     style={{
                       width: '100%',

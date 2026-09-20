@@ -4,11 +4,9 @@ import { api } from '../services/api.js';
 import {
   Film,
   Clock,
-  Sparkles,
   Popcorn,
   Calendar,
   Layers,
-  Flame,
   CupSoda,
   Candy,
   CheckCircle2,
@@ -22,21 +20,54 @@ interface CinemaPreviewProps {
 }
 
 const RATING_COLORS: Record<string, { bg: string; text: string }> = {
-  L: { bg: '#30D158', text: '#000000' },
-  '10': { bg: '#0A84FF', text: '#FFFFFF' },
-  '12': { bg: '#FFD60A', text: '#000000' },
-  '14': { bg: '#FF9F0A', text: '#FFFFFF' },
-  '16': { bg: '#FF453A', text: '#FFFFFF' },
-  '18': { bg: '#000000', text: '#FFFFFF' },
+  L: { bg: '#00a651', text: '#ffffff' },
+  '10': { bg: '#00a7e1', text: '#ffffff' },
+  '12': { bg: '#f5c400', text: '#111827' },
+  '14': { bg: '#f58220', text: '#111827' },
+  '16': { bg: '#e31b23', text: '#ffffff' },
+  '18': { bg: '#111111', text: '#ffffff' },
 };
+
+const MOVIE_TAG_STYLES: Record<string, { bg: string; color: string }> = {
+  'pre-estreia': { bg: '#22d3ee', color: '#083344' },
+  estreia: { bg: '#facc15', color: '#0f172a' },
+  'ultimos dias': { bg: '#f43f5e', color: '#ffffff' },
+  'destaque da semana': { bg: '#2563eb', color: '#ffffff' },
+  'em breve': { bg: '#38bdf8', color: '#082f49' },
+  'sessao familia': { bg: '#34d399', color: '#052e16' },
+  'sessao especial': { bg: '#e879f9', color: '#4a044e' },
+  classico: { bg: '#fcd34d', color: '#451a03' },
+  reexibicao: { bg: '#5eead4', color: '#042f2e' },
+  'em cartaz': { bg: '#86efac', color: '#052e16' },
+  oculto: { bg: '#cbd5e1', color: '#0f172a' },
+};
+
+function normalizeMovieTag(tag?: string): string {
+  return String(tag || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLocaleLowerCase('pt-BR');
+}
+
+function moviePresentationState(movie: any) {
+  const tag = String(movie?.tag || '').trim();
+  const normalizedTag = normalizeMovieTag(tag);
+  if (tag && normalizedTag !== 'normal') {
+    return { label: tag, style: MOVIE_TAG_STYLES[normalizedTag] || MOVIE_TAG_STYLES['em cartaz'] };
+  }
+  if (String(movie?.status || '').toLowerCase() === 'hidden') return { label: 'Oculto', style: MOVIE_TAG_STYLES.oculto };
+  if (String(movie?.status || '').toLowerCase() === 'now_playing') return { label: 'Em cartaz', style: MOVIE_TAG_STYLES['em cartaz'] };
+  return { label: 'Em breve', style: MOVIE_TAG_STYLES['em breve'] };
+}
 
 const CATEGORY_META: Record<
   string,
   { label: string; icon: React.ComponentType<{ size?: number; color?: string }>; color: string; bg: string; border: string }
 > = {
   COMBO: {
-    label: 'Super Combo',
-    icon: Sparkles,
+    label: 'Combo',
+    icon: Tag,
     color: '#BF5AF2',
     bg: 'rgba(191, 90, 242, 0.15)',
     border: 'rgba(191, 90, 242, 0.35)',
@@ -117,11 +148,11 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
 
   // Movies classification
   const nowPlayingMovies = useMemo(
-    () => movies.filter((m) => m.status === 'now_playing' || (m.status !== 'upcoming' && m.tag !== 'Em Breve')),
+    () => movies.filter((m) => String(m.status || '').toLowerCase() === 'now_playing'),
     [movies]
   );
   const upcomingMovies = useMemo(
-    () => movies.filter((m) => m.status === 'upcoming' || m.tag === 'Em Breve'),
+    () => movies.filter((m) => String(m.status || '').toLowerCase() === 'upcoming' || normalizeMovieTag(m.tag) === 'em breve'),
     [movies]
   );
   const filteredMovies = useMemo(() => {
@@ -151,7 +182,7 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <Sparkles size={20} color="var(--lumix-green)" />
+              <Film size={20} color="var(--lumix-green)" />
               <h1 style={{ fontSize: '1.6rem', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.02em' }}>
                 {company.name || 'Cine Cruzeiro'}
               </h1>
@@ -200,7 +231,7 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
                     cursor: 'pointer',
                     transition: 'all 0.18s ease',
                     border: movieFilter === 'all' ? '1px solid var(--lumix-green)' : '1px solid var(--separator)',
-                    backgroundColor: movieFilter === 'all' ? 'rgba(48, 209, 88, 0.14)' : 'var(--bg-tertiary)',
+                    backgroundColor: movieFilter === 'all' ? 'rgba(250, 204, 21, 0.14)' : 'var(--bg-tertiary)',
                     color: movieFilter === 'all' ? 'var(--lumix-green)' : 'var(--text-secondary)',
                   }}
                 >
@@ -221,12 +252,12 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all 0.18s ease',
-                    border: movieFilter === 'now_playing' ? '1px solid #30D158' : '1px solid var(--separator)',
-                    backgroundColor: movieFilter === 'now_playing' ? 'rgba(48, 209, 88, 0.18)' : 'var(--bg-tertiary)',
-                    color: movieFilter === 'now_playing' ? '#30D158' : 'var(--text-secondary)',
+                    border: movieFilter === 'now_playing' ? '1px solid #34d399' : '1px solid var(--separator)',
+                    backgroundColor: movieFilter === 'now_playing' ? 'rgba(52, 211, 153, 0.16)' : 'var(--bg-tertiary)',
+                    color: movieFilter === 'now_playing' ? '#86efac' : 'var(--text-secondary)',
                   }}
                 >
-                  <CheckCircle2 size={14} color="#30D158" />
+                  <CheckCircle2 size={14} color="#86efac" />
                   <span>Em Cartaz ({nowPlayingMovies.length})</span>
                 </button>
 
@@ -243,12 +274,12 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
                     fontWeight: 600,
                     cursor: 'pointer',
                     transition: 'all 0.18s ease',
-                    border: movieFilter === 'upcoming' ? '1px solid #FF9F0A' : '1px solid var(--separator)',
-                    backgroundColor: movieFilter === 'upcoming' ? 'rgba(255, 159, 10, 0.18)' : 'var(--bg-tertiary)',
-                    color: movieFilter === 'upcoming' ? '#FF9F0A' : 'var(--text-secondary)',
+                    border: movieFilter === 'upcoming' ? '1px solid #38bdf8' : '1px solid var(--separator)',
+                    backgroundColor: movieFilter === 'upcoming' ? 'rgba(56, 189, 248, 0.16)' : 'var(--bg-tertiary)',
+                    color: movieFilter === 'upcoming' ? '#38bdf8' : 'var(--text-secondary)',
                   }}
                 >
-                  <Hourglass size={14} color="#FF9F0A" />
+                  <Hourglass size={14} color="#38bdf8" />
                   <span>Em Breve ({upcomingMovies.length})</span>
                 </button>
               </div>
@@ -263,8 +294,8 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
               {filteredMovies.map((movie) => {
                 const rating = movie.rating || 'L';
                 const ratingStyle = RATING_COLORS[rating] || RATING_COLORS.L;
-                const isUpcoming = movie.status === 'upcoming' || movie.tag === 'Em Breve';
-                const isLastDays = movie.tag === 'Últimos Dias';
+                const presentationState = moviePresentationState(movie);
+                const isUpcoming = normalizeMovieTag(presentationState.label) === 'em breve';
                 const releaseText = movie.releaseDate ? formatReleaseDate(movie.releaseDate) : null;
 
                 return (
@@ -276,7 +307,7 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
                       display: 'flex',
                       flexDirection: 'column',
                       transition: 'transform 0.18s ease, border-color 0.18s ease',
-                      border: isUpcoming ? '1px solid rgba(255, 159, 10, 0.28)' : '1px solid var(--border-color)',
+                      border: isUpcoming ? '1px solid rgba(56, 189, 248, 0.32)' : '1px solid var(--border-color)',
                     }}
                   >
                     {/* Poster Image */}
@@ -311,67 +342,24 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
                         {rating}
                       </span>
 
-                      {/* Classification Status Badge (Top Right) */}
-                      <div style={{ position: 'absolute', top: '10px', right: '10px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
-                        {isUpcoming ? (
-                          <span
-                            style={{
-                              backgroundColor: 'rgba(20, 15, 5, 0.85)',
-                              border: '1px solid #FF9F0A',
-                              color: '#FF9F0A',
-                              fontWeight: 700,
-                              fontSize: '0.72rem',
-                              padding: '3px 8px',
-                              borderRadius: '12px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              backdropFilter: 'blur(4px)',
-                            }}
-                          >
-                            <Hourglass size={11} />
-                            Em Breve
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              backgroundColor: 'rgba(5, 20, 10, 0.85)',
-                              border: '1px solid #30D158',
-                              color: '#30D158',
-                              fontWeight: 700,
-                              fontSize: '0.72rem',
-                              padding: '3px 8px',
-                              borderRadius: '12px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              backdropFilter: 'blur(4px)',
-                            }}
-                          >
-                            <CheckCircle2 size={11} />
-                            Em Cartaz
-                          </span>
-                        )}
-
-                        {isLastDays && (
-                          <span
-                            style={{
-                              backgroundColor: 'rgba(255, 69, 58, 0.9)',
-                              color: '#FFFFFF',
-                              fontWeight: 700,
-                              fontSize: '0.68rem',
-                              padding: '2px 7px',
-                              borderRadius: '10px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '3px',
-                            }}
-                          >
-                            <Flame size={10} />
-                            Últimos Dias
-                          </span>
-                        )}
-                      </div>
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '10px',
+                          right: '10px',
+                          backgroundColor: presentationState.style.bg,
+                          color: presentationState.style.color,
+                          fontWeight: 900,
+                          fontSize: '0.68rem',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          boxShadow: '0 6px 18px rgba(0,0,0,.24)',
+                        }}
+                      >
+                        {presentationState.label}
+                      </span>
                     </div>
 
                     {/* Movie Info */}
@@ -521,8 +509,8 @@ export const CinemaPreview: React.FC<CinemaPreviewProps> = ({ company }) => {
                     color: productCategory === 'COMBO' ? '#BF5AF2' : 'var(--text-secondary)',
                   }}
                 >
-                  <Sparkles size={14} color="#BF5AF2" />
-                  <span>Super Combos ({products.filter((p) => p.category === 'COMBO').length})</span>
+                  <Tag size={14} color="#BF5AF2" />
+                  <span>Combos ({products.filter((p) => p.category === 'COMBO').length})</span>
                 </button>
 
                 <button

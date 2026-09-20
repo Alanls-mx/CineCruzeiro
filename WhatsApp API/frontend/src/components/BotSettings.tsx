@@ -73,7 +73,7 @@ export const BotSettings: React.FC<BotSettingsProps> = ({ company }) => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.02em', marginBottom: '4px' }}>
-              Configurações do Bot
+              Configurações da automação
             </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
               Automação, mensagens e horários de atendimento para {company.name}.
@@ -102,8 +102,8 @@ export const BotSettings: React.FC<BotSettingsProps> = ({ company }) => {
               <Switch
                 checked={settings.autoReplyEnabled}
                 onChange={(checked) => setSettings({ ...settings, autoReplyEnabled: checked })}
-                label="Atendimento Automático do Bot"
-                description="O robô responde instantaneamente às mensagens recebidas no WhatsApp"
+                label="Atendimento automático"
+                description="Responde às mensagens recebidas conforme as regras configuradas."
               />
             </div>
 
@@ -164,7 +164,7 @@ export const BotSettings: React.FC<BotSettingsProps> = ({ company }) => {
                 value={settings.fallbackMessage || ''}
                 onChange={(e) => setSettings({ ...settings, fallbackMessage: e.target.value })}
                 rows={2}
-                placeholder="Mensagem quando o bot não entende a opção digitada..."
+                placeholder="Mensagem para opções não reconhecidas..."
                 style={{
                   width: '100%',
                   backgroundColor: 'var(--bg-tertiary)',

@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Bot } from 'lucide-react';
+import { MessageSquare, User } from 'lucide-react';
 
 interface AvatarProps {
   src?: string | null;
@@ -108,7 +108,7 @@ export const Avatar: React.FC<AvatarProps> = ({
             }}
           />
         ) : isBot ? (
-          <Bot size={config.icon} />
+          <MessageSquare size={config.icon} />
         ) : initials ? (
           initials
         ) : (

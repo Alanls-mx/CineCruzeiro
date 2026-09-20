@@ -4,17 +4,16 @@ import { api } from '../services/api.js';
 import {
   ArrowUp,
   User,
-  Bot,
+  MessageSquare,
   UserCheck,
   RotateCcw,
   CheckCheck,
   MessageCircleOff,
-  Smile,
   Camera,
   Info,
   FileText,
   Download,
-  Sparkles,
+  Megaphone,
   ArrowDown,
   MoreVertical,
   Plus,
@@ -27,7 +26,6 @@ import { Badge } from './ui/Badge.js';
 import { SegmentedControl } from './ui/SegmentedControl.js';
 import { SearchField } from './ui/SearchField.js';
 import { ConversationDetailsPanel } from './ConversationDetailsPanel.js';
-import { EmojiPicker } from './EmojiPicker.js';
 import { CameraCaptureModal } from './CameraCaptureModal.js';
 import { FileAttachModal } from './FileAttachModal.js';
 import { ConversationStatusModal } from './ConversationStatusModal.js';
@@ -49,7 +47,6 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
   const [statusFilter, setStatusFilter] = useState<'OPEN' | 'ALL' | 'CLOSED'>('OPEN');
 
   // Modals & Panels state
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showStatusStoryModal, setShowStatusStoryModal] = useState(false);
@@ -241,7 +238,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
       setShowContextMenu(false);
       loadConversations();
     } catch (err: any) {
-      alert(`Erro ao devolver ao bot: ${err.message}`);
+      alert(`Erro ao retomar a automação: ${err.message}`);
     }
   };
 
@@ -426,7 +423,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                 fontWeight: 600,
               }}
             >
-              <Sparkles size={13} color="var(--ios-orange)" />
+              <Megaphone size={13} color="var(--ios-orange)" />
               Status
             </button>
           </div>
@@ -553,7 +550,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                         <Badge variant={conv.mode === 'BOT' ? 'bot' : 'human'} size="sm">
-                          {conv.mode}
+                          {conv.mode === 'BOT' ? 'Automação' : 'Atendente'}
                         </Badge>
 
                         {conv.unreadCount > 0 && (
@@ -662,14 +659,14 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                       {selectedConversation.contact.name || selectedConversation.contact.phone}
                     </h3>
                     <Badge variant={selectedConversation.mode === 'BOT' ? 'bot' : 'human'} size="sm">
-                      {selectedConversation.mode === 'BOT' ? 'Robô' : 'Humano'}
+                      {selectedConversation.mode === 'BOT' ? 'Automação' : 'Atendente'}
                     </Badge>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                     <span>{selectedConversation.contact.phone}</span>
                     <span>•</span>
-                    <span>Fluxo: {selectedConversation.currentFlow || 'MAIN_MENU'}</span>
+                    <span>Etapa: {selectedConversation.currentFlow || 'MAIN_MENU'}</span>
                   </div>
                 </div>
               </div>
@@ -693,10 +690,10 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                   type="button"
                   onClick={handleRelease}
                   className="btn btn-sm btn-secondary"
-                  title="Devolver conversa ao fluxo automático do bot"
+                  title="Retomar o fluxo automático"
                 >
-                  <Bot size={14} />
-                  Devolver
+                  <MessageSquare size={14} />
+                  Retomar
                 </button>
               )}
 
@@ -979,7 +976,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      {isBot && <span>Assistente do cinema • </span>}
+                      {isBot && <span>Automação do cinema</span>}
                       <span>{new Date(msg.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                       {!isCustomer && <CheckCheck size={13} color={isAgent ? '#FFFFFF' : 'var(--ios-green)'} />}
                     </div>
@@ -1046,16 +1043,6 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
               style={{ display: 'none' }}
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv"
             />
-
-            {/* Emoji Picker Popover */}
-            {showEmojiPicker && (
-              <EmojiPicker
-                onSelect={(emoji) => {
-                  setInputText((prev) => prev + emoji);
-                }}
-                onClose={() => setShowEmojiPicker(false)}
-              />
-            )}
 
             {/* Attachments Popover Menu */}
             {showAttachMenu && (
@@ -1167,15 +1154,6 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
               <Camera size={20} />
             </button>
 
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="icon-btn"
-              title="Emojis"
-            >
-              <Smile size={20} />
-            </button>
-
             {/* Rounded iOS Input Capsule */}
             <form
               onSubmit={handleSendMessage}
@@ -1196,7 +1174,7 @@ export const Inbox: React.FC<InboxProps> = ({ company, isMobile = false, onChatO
                 placeholder={
                   selectedConversation.mode === 'HUMAN'
                     ? 'Digite uma mensagem...'
-                    : 'Aviso: Em modo BOT. Ao enviar, você assumirá a conversa.'
+                    : 'Ao enviar, o atendimento será assumido pela equipe.'
                 }
                 style={{
                   flex: 1,

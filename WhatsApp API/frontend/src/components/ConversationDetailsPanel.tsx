@@ -8,7 +8,7 @@ import {
   Calendar,
   Clock,
   UserCheck,
-  Bot,
+  MessageSquare,
   RotateCcw,
   RefreshCw,
 } from 'lucide-react';
@@ -138,7 +138,7 @@ export const ConversationDetailsPanel: React.FC<ConversationDetailsPanelProps> =
         {/* Status Badges */}
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
           <Badge variant={conversation.mode === 'BOT' ? 'bot' : 'human'}>
-            {conversation.mode === 'BOT' ? 'Modo Robô' : 'Atendente Humano'}
+            {conversation.mode === 'BOT' ? 'Automação ativa' : 'Atendente responsável'}
           </Badge>
           <Badge variant={conversation.status === 'OPEN' ? 'unread' : 'closed'}>
             {conversation.status === 'OPEN' ? 'Atendimento Aberto' : 'Encerrado'}
@@ -160,7 +160,7 @@ export const ConversationDetailsPanel: React.FC<ConversationDetailsPanelProps> =
             </div>
             <div style={{ height: '1px', backgroundColor: 'var(--separator)' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Etapa do Bot</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Etapa da automação</span>
               <span style={{ color: '#FFFFFF', fontWeight: 500 }}>{conversation.currentState || 'INITIAL'}</span>
             </div>
             <div style={{ height: '1px', backgroundColor: 'var(--separator)' }} />
@@ -220,8 +220,8 @@ export const ConversationDetailsPanel: React.FC<ConversationDetailsPanelProps> =
               className="btn btn-secondary"
               style={{ width: '100%', borderRadius: 'var(--radius-md)', padding: '10px' }}
             >
-              <Bot size={16} />
-              Devolver ao Bot
+              <MessageSquare size={16} />
+              Retomar automação
             </button>
           )}
 

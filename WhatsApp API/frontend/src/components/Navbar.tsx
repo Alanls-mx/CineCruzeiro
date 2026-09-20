@@ -72,7 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className={`btn btn-sm ${activeTab === 'inbox' ? 'btn-primary' : 'btn-secondary'}`}
         >
           <MessageSquare size={16} />
-          Conversas & Inbox
+          Conversas
         </button>
 
         <button
@@ -88,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className={`btn btn-sm ${activeTab === 'settings' ? 'btn-primary' : 'btn-secondary'}`}
         >
           <Settings size={16} />
-          Configurações Bot
+          Configurações
         </button>
 
         <button
@@ -96,7 +96,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           className={`btn btn-sm ${activeTab === 'cinema' ? 'btn-primary' : 'btn-secondary'}`}
         >
           <Clapperboard size={16} />
-          Cine Cruzeiro
+          Catálogo
         </button>
       </nav>
 
@@ -123,7 +123,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           {companies.map((comp) => (
             <option key={comp.id} value={comp.id}>
-              🎬 {comp.name}
+              {comp.name}
             </option>
           ))}
         </select>
