@@ -90,7 +90,7 @@ export default async function HomePage() {
                     {featured.trailerYoutubeId && <HomeTrailerButton youtubeId={featured.trailerYoutubeId} movieTitle={featured.title} />}
                   </div>
                 </div>
-                <Link href={`/filmes/${movieSlug(featured)}`} className="relative block aspect-[2/3] w-full max-w-[260px] justify-self-center overflow-hidden bg-brand-950 shadow-[0_22px_80px_rgba(0,0,0,.45)] sm:max-w-[300px] lg:justify-self-end" aria-label={`Abrir ${featured.title}`}>
+                <Link href={`/filmes/${movieSlug(featured)}`} className="cinema-hero-poster relative block aspect-[2/3] w-full max-w-[260px] justify-self-center overflow-hidden bg-brand-950 shadow-[0_22px_80px_rgba(0,0,0,.45)] sm:max-w-[300px] lg:justify-self-end" aria-label={`Abrir ${featured.title}`}>
                   {featured.posterUrl && (
                     <Image
                       src={featured.posterUrl}

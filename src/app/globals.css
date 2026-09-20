@@ -31,7 +31,164 @@ body {
   font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow-x: hidden;
   scroll-behavior: smooth;
+  isolation: isolate;
 }
+
+/* Background signatures are decorative only; page content always remains above them. */
+body::before,
+body::after {
+  position: fixed;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Cine Cruzeiro: a restrained blue film trail, echoing its classic cinema identity. */
+body[data-cinema-theme="default"]::before {
+  top: 30vh;
+  left: -24vw;
+  width: 148vw;
+  height: 84px;
+  border-top: 1px solid rgba(81, 145, 255, 0.28);
+  border-bottom: 1px solid rgba(81, 145, 255, 0.2);
+  background: repeating-linear-gradient(90deg, transparent 0 30px, rgba(61, 119, 232, 0.16) 30px 42px, transparent 42px 70px);
+  opacity: 0.7;
+  transform: rotate(-8deg);
+}
+
+/* Cine Estacao: the burgundy film ribbon from the logo travels at the poster's edge. */
+body[data-cinema-theme="cine-estacao-amparo"]::before {
+  top: 34vh;
+  left: -24vw;
+  width: 150vw;
+  height: 96px;
+  border-top: 2px solid rgba(225, 170, 69, 0.62);
+  border-bottom: 2px solid rgba(225, 170, 69, 0.48);
+  background: repeating-linear-gradient(90deg, transparent 0 25px, rgba(225, 170, 69, 0.3) 25px 39px, transparent 39px 68px);
+  box-shadow: 0 0 42px rgba(109, 17, 34, 0.38);
+  opacity: 0.58;
+  transform: rotate(-10deg);
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster {
+  border: 2px solid rgba(225, 170, 69, 0.72);
+  box-shadow: 0 22px 80px rgba(29, 3, 8, 0.55), inset 0 0 0 1px rgba(255, 239, 190, 0.22);
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster::after {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  width: 13px;
+  height: 100%;
+  border-left: 1px solid rgba(246, 223, 177, 0.52);
+  content: "";
+  background: repeating-linear-gradient(180deg, rgba(81, 8, 20, 0.95) 0 11px, rgba(234, 185, 92, 0.92) 11px 20px, rgba(81, 8, 20, 0.95) 20px 31px);
+}
+
+/* Cinemax Piraju: broad water-like blue bands carry the film reel and sunset energy. */
+body[data-cinema-theme="cinemax-piraju"]::before {
+  top: 12vh;
+  left: -18vw;
+  width: 138vw;
+  height: 34vh;
+  border-top: 3px solid rgba(19, 222, 237, 0.34);
+  border-bottom: 3px solid rgba(31, 133, 210, 0.28);
+  background: repeating-linear-gradient(174deg, transparent 0 34px, rgba(8, 193, 213, 0.16) 34px 48px, transparent 48px 92px);
+  opacity: 0.64;
+  transform: rotate(-7deg);
+}
+
+body[data-cinema-theme="cinemax-piraju"]::after {
+  right: 6vw;
+  bottom: 12vh;
+  width: 240px;
+  height: 240px;
+  border: 1px solid rgba(69, 217, 237, 0.25);
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle at center, transparent 0 25px, rgba(6, 167, 205, 0.1) 26px 28px, transparent 29px 49px);
+  opacity: 0.52;
+}
+
+/* Cine Gama: three warm strokes cross a violet film ribbon, taken from the mark. */
+body[data-cinema-theme="cine-gama"]::before {
+  top: 18vh;
+  right: -10vw;
+  width: 62vw;
+  height: 54vh;
+  background:
+    linear-gradient(121deg, transparent 25%, rgba(255, 119, 0, 0.02) 26% 31%, transparent 32%),
+    linear-gradient(121deg, transparent 37%, rgba(255, 157, 27, 0.13) 38% 43%, transparent 44%),
+    linear-gradient(121deg, transparent 49%, rgba(255, 188, 52, 0.12) 50% 55%, transparent 56%),
+    repeating-linear-gradient(32deg, transparent 0 38px, rgba(137, 118, 255, 0.11) 39px 52px, transparent 53px 92px);
+  border-left: 1px solid rgba(181, 163, 255, 0.18);
+  opacity: 0.8;
+  transform: skewY(-7deg);
+}
+
+body[data-cinema-theme="cine-gama"]::after {
+  bottom: 10vh;
+  left: -8vw;
+  width: 54vw;
+  height: 90px;
+  border-top: 2px solid rgba(119, 100, 232, 0.36);
+  border-bottom: 2px solid rgba(255, 121, 0, 0.28);
+  background: repeating-linear-gradient(90deg, transparent 0 28px, rgba(198, 184, 255, 0.18) 28px 41px, transparent 41px 68px);
+  opacity: 0.65;
+  transform: rotate(9deg);
+}
+
+/* CineMania: a blue reel ribbon with a single gold glint keeps the mark's premium contrast. */
+body[data-cinema-theme="cinemania-cosmopolis"]::before {
+  top: 24vh;
+  left: -18vw;
+  width: 136vw;
+  height: 92px;
+  border-top: 2px solid rgba(240, 177, 31, 0.5);
+  border-bottom: 2px solid rgba(70, 147, 240, 0.38);
+  background: repeating-linear-gradient(90deg, transparent 0 29px, rgba(88, 164, 249, 0.19) 29px 43px, transparent 43px 70px);
+  box-shadow: 0 0 30px rgba(17, 94, 201, 0.2);
+  opacity: 0.65;
+  transform: rotate(8deg);
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"]::after {
+  top: 18vh;
+  right: 8vw;
+  width: 120px;
+  height: 120px;
+  background: linear-gradient(90deg, transparent 44%, rgba(247, 215, 105, 0.66) 49% 51%, transparent 56%), linear-gradient(0deg, transparent 44%, rgba(247, 215, 105, 0.66) 49% 51%, transparent 56%);
+  opacity: 0.48;
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body[data-cinema-theme="default"]::before { animation: cinemaCruzeiroFilm 48s linear infinite; }
+  body[data-cinema-theme="cine-estacao-amparo"]::before { animation: estacaoFilmPass 42s linear infinite; }
+  body[data-cinema-theme="cine-estacao-amparo"] .cinema-hero-poster::after { animation: estacaoPosterFilm 5s linear infinite; }
+  body[data-cinema-theme="cinemax-piraju"]::before { animation: cinemaxTide 26s ease-in-out infinite alternate; }
+  body[data-cinema-theme="cinemax-piraju"]::after { animation: cinemaxReel 58s linear infinite; }
+  body[data-cinema-theme="cine-gama"]::before { animation: gamaSweep 34s ease-in-out infinite alternate; }
+  body[data-cinema-theme="cine-gama"]::after { animation: gamaFilmFlow 44s linear infinite; }
+  body[data-cinema-theme="cinemania-cosmopolis"]::before { animation: cinemaniaFilmPass 46s linear infinite; }
+  body[data-cinema-theme="cinemania-cosmopolis"]::after { animation: cinemaniaGlint 8s ease-in-out infinite; }
+}
+
+@keyframes cinemaCruzeiroFilm { to { transform: translateX(18vw) rotate(-8deg); } }
+@keyframes estacaoFilmPass { to { transform: translateX(20vw) rotate(-10deg); } }
+@keyframes estacaoPosterFilm { to { background-position-y: 62px; } }
+@keyframes cinemaxTide { from { transform: translateX(-2vw) rotate(-7deg); } to { transform: translateX(7vw) rotate(-4deg); } }
+@keyframes cinemaxReel { to { transform: rotate(360deg); } }
+@keyframes gamaSweep { from { transform: translateX(0) skewY(-7deg); } to { transform: translateX(-7vw) skewY(-3deg); } }
+@keyframes gamaFilmFlow { to { transform: translateX(17vw) rotate(9deg); } }
+@keyframes cinemaniaFilmPass { to { transform: translateX(19vw) rotate(8deg); } }
+@keyframes cinemaniaGlint { 0%, 100% { opacity: 0.14; transform: rotate(45deg) scale(0.78); } 50% { opacity: 0.58; transform: rotate(45deg) scale(1.08); } }
 
 /* Cine Estacao: vinho e dourado extraidos da fachada e da pelicula da marca. */
 body[data-cinema-theme="cine-estacao-amparo"] {
