@@ -28,3 +28,9 @@ test("checkout não expõe estados internos de reconexão para quem compra", () 
   assert.doesNotMatch(checkoutSource, /Reconectando à reserva de poltronas/);
   assert.doesNotMatch(checkoutSource, /Conectando à reserva de poltronas/);
 });
+
+test("checkout usa poltronas compactas no mobile e preserva o tamanho no desktop", () => {
+  assert.match(checkoutSource, /h-7 w-8/);
+  assert.match(checkoutSource, /sm:h-9 sm:w-10/);
+  assert.match(checkoutSource, /mr-3 sm:mr-6/);
+});

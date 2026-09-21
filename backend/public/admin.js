@@ -5592,7 +5592,12 @@ async function copyTicketCode(code) {
 }
 
 function printOrderTicket(orderId) {
-  const popup = window.open(`${API_BASE}/api/admin/orders/${encodeURIComponent(orderId)}/print`, "_blank");
+  const url = `${API_BASE}/api/admin/orders/${encodeURIComponent(orderId)}/print`;
+  if (desktopThermalPrinterAvailable()) {
+    window.cineDesktop.printUrl(url, `order-${orderId}`);
+    return;
+  }
+  const popup = window.open(url, "_blank");
   if (popup) popup.opener = null;
   else showToast("Permita pop-ups para abrir a via PDV.", "error");
 }
@@ -6602,6 +6607,19 @@ async function createManualTicket(event) {
     const paymentMethod = document.querySelector("input[name='manualPaymentMethod']:checked")?.value || "cash";
     const saleMode = state.saleMode;
     const ticketDeliveryMethod = manualTicketDeliveryMethod();
+    const requiresLocalPrint = (saleMode === "quick" || (saleMode === "guest" && ticketDeliveryMethod === "physical"))
+      && ["cash", "courtesy"].includes(paymentMethod);
+    if (requiresLocalPrint) {
+      if (!window.cineDesktop?.checkPrinter) {
+        showToast("A impressão física exige o aplicativo desktop atualizado e uma impressora térmica instalada.", "error");
+        return;
+      }
+      const printer = await window.cineDesktop.checkPrinter();
+      if (!printer.ready) {
+        showToast(printer.message || "Configure uma impressora térmica física em Dispositivos antes de vender.", "error");
+        return;
+      }
+    }
     const guestEmail = $("manualCustomerEmail").value.trim();
     if (saleMode === "guest" && ticketDeliveryMethod === "online" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
       showToast("Informe um e-mail válido para entregar o ingresso online.", "error");
@@ -6759,6 +6777,10 @@ async function requestLocalPointPaymentPrint(paymentId = state.pointPaymentId, {
 
 window.addEventListener("cine-desktop-print-result", async (event) => {
   const detail = event.detail || {};
+  if (/^(order-|ticket-)/.test(String(detail.jobId || ""))) {
+    showToast(detail.ok ? "Via enviada à impressora térmica." : detail.message || "A impressora não confirmou a reimpressão.", detail.ok ? undefined : "error");
+    return;
+  }
   if (!String(detail.jobId || "").startsWith("point-")) return;
   const [paymentId, printJobId] = String(detail.jobId).slice("point-".length).split("::");
   let result = null;
@@ -6805,12 +6827,13 @@ function renderPointPayment(data = {}) {
 
   const panel = $("pointPaymentPanel");
   panel.hidden = false;
+  document.querySelector("#boxOfficeNewSale .box-office-sale-workspace").hidden = true;
   panel.dataset.status = status;
-  $("manualTicketForm").hidden = true;
   $("pointPaymentAmount").textContent = money(payment.amount);
-  $("pointPaymentTerminal").textContent = payment.metadata?.terminalId || data.terminal?.id || "Terminal Point";
+  $("pointPaymentTerminal").textContent = payment.metadata?.terminalId || data.terminal?.id || "Impressora local";
   $("pointPaymentReference").textContent = payment.providerReference || payment.providerPaymentId || "-";
-  $("pointPaymentStatus").textContent = pointPaymentStatusLabel(status);
+  $("pointPaymentStatus").textContent = status === "approved" && payment.metadata?.kind === "counter_sale"
+    ? "Recebido" : pointPaymentStatusLabel(status);
   $("pointPaymentRetryButton").hidden = status === "approved";
   $("pointPaymentCancelButton").hidden = status === "approved" || finalStatus || status === "reconnecting";
   $("pointPaymentNewSaleButton").hidden = !finalStatus;
@@ -6825,7 +6848,7 @@ function renderPointPayment(data = {}) {
 
   const copy = {
     approved: [
-      pendingPrint ? "Pagamento aprovado, aguardando impressão" : "Pagamento aprovado e ingressos emitidos",
+      pendingPrint ? "Pagamento registrado, aguardando impressão" : "Venda concluída; ingressos emitidos",
       onlineDelivery
         ? ticketDelivery.message || "Os ingressos digitais estão sendo enviados ao e-mail informado."
         : pointPrint.status === "printed"
@@ -6833,7 +6856,7 @@ function renderPointPayment(data = {}) {
         : ["queued", "on_terminal"].includes(pointPrint.status)
         ? pointPrint.message || "A impressão foi enviada à Point e está sendo confirmada."
         : state.localPointPrintStatus === "printed"
-        ? "O ingresso foi impresso na térmica conectada a este computador."
+        ? "O trabalho foi aceito pela impressora térmica deste computador."
         : state.localPointPrintStatus === "printing"
         ? "Pagamento confirmado. Enviando o ingresso à impressora térmica deste computador."
         : pointPrint.message || (pendingPrint ? "O ingresso só será emitido depois que a impressão for confirmada." : "A venda foi confirmada.")
@@ -7008,6 +7031,7 @@ function resetPointPaymentPanel() {
   localStorage.removeItem("cine_admin_active_point_payment");
   state.pointPaymentSnapshot = null;
   $("pointPaymentPanel").hidden = true;
+  document.querySelector("#boxOfficeNewSale .box-office-sale-workspace").hidden = false;
   $("manualTicketForm").hidden = false;
   renderManualSaleItems();
   $("manualTicketForm").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -10678,7 +10702,8 @@ const ALL_ADMIN_PERMISSIONS = [
   "box_office.sell", "box_office.courtesy", "tickets.view", "tickets.validate",
   "orders.view", "orders.edit", "orders.cancel", "orders.archive", "orders.delete", "orders.refund", "orders.print", "orders.resend", "payments.view",
   "concessions.view", "concessions.sell", "concessions.edit", "concessions.delete", "concessions.refund",
-  "marketing.view", "marketing.manage", "whatsapp.view", "whatsapp.reply", "whatsapp.manage", "club.view", "club.manage", "club.credits",
+  "marketing.view", "marketing.manage", "social_studio.view", "social_studio.create", "social_studio.delete",
+  "whatsapp.view", "whatsapp.reply", "whatsapp.manage", "club.view", "club.manage", "club.credits",
   "integrations.view", "integrations.manage", "logs.view", "logs.delete", "users.manage", "settings.view", "settings.manage", "media.manage"
 ];
 

@@ -1024,15 +1024,15 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
               <span className="inline-flex items-center gap-2"><Accessibility className="h-4 w-4" />Cadeirante</span>
               <span className="inline-flex items-center gap-2"><CircleUserRound className="h-4 w-4" />Pessoa obesa</span>
             </div>
-            <div className="mt-5 overflow-x-auto rounded-lg bg-[#080f1b] px-4 pb-6 pt-5">
-              <div className="mx-auto grid w-max min-w-full gap-2">
-                <div className="mb-5 w-[min(620px,75%)] justify-self-center border-t-[3px] border-gold-400 pt-2 text-center text-xs font-black uppercase tracking-[.16em] text-slate-500">
+            <div className="mt-5 overflow-x-auto rounded-lg bg-[#080f1b] px-2 pb-5 pt-4 sm:px-4 sm:pb-6 sm:pt-5">
+              <div className="mx-auto grid w-max min-w-full gap-1.5 sm:gap-2">
+                <div className="mb-3 w-[min(620px,75%)] justify-self-center border-t-[3px] border-gold-400 pt-2 text-center text-[10px] font-black uppercase tracking-[.16em] text-slate-500 sm:mb-5 sm:text-xs">
                   {seatMap.screenLabel || "TELA"}
                 </div>
                 {seatMap.rows.map((row) => (
-                  <div key={row.id} className="grid grid-cols-[24px_minmax(0,1fr)_24px] items-center gap-1.5">
-                    <span className="w-6 text-center text-[11px] font-black text-slate-500">{row.label}</span>
-                    <div className="flex items-center justify-center gap-1.5">
+                  <div key={row.id} className="grid grid-cols-[18px_minmax(0,1fr)_18px] items-center gap-1 sm:grid-cols-[24px_minmax(0,1fr)_24px] sm:gap-1.5">
+                    <span className="w-[18px] text-center text-[10px] font-black text-slate-500 sm:w-6 sm:text-[11px]">{row.label}</span>
+                    <div className="flex items-center justify-center gap-1 sm:gap-1.5">
                       {row.seats.map((seat) => {
                         const selected = selectedSeatIds.includes(seat.id);
                         const type = seatTypesById.get(seat.typeId);
@@ -1051,20 +1051,19 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                             aria-pressed={selected}
                             aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${temporarilyReserved ? ", reservada temporariamente por outra compra" : unavailable ? ", indisponível" : selected ? ", selecionada por você" : ""}`}
                             title={temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : `${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
-                            className={`relative flex h-9 w-10 shrink-0 items-center justify-center rounded-md border border-white/10 text-xs font-black text-white shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${seatStateClass}`}
+                            className={`relative flex h-7 w-8 shrink-0 items-center justify-center rounded border border-white/10 text-[10px] font-black text-white shadow-[inset_0_-2px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-9 sm:w-10 sm:rounded-md sm:text-xs sm:shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] ${seat.aisleAfter ? "mr-3 sm:mr-6" : ""} ${seatStateClass}`}
                             style={{
                               ...(selected || unavailable || temporarilyReserved || !(seat.color || type?.color) ? {} : { backgroundColor: seat.color || type?.color }),
-                              marginRight: seat.aisleAfter ? 24 : 0,
                             }}
                           >
                             {seat.accessibility === "wheelchair" ? (
                               <span className="flex flex-col items-center justify-center gap-0.5 leading-none">
-                                <Accessibility className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                <Accessibility className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
                                 <span className="font-black leading-none">{seat.label}</span>
                               </span>
                             ) : seat.accessibility === "obese" ? (
                               <span className="flex flex-col items-center justify-center gap-0.5 leading-none">
-                                <CircleUserRound className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                <CircleUserRound className="h-3 w-3 shrink-0 sm:h-3.5 sm:w-3.5" aria-hidden="true" />
                                 <span className="font-black leading-none">{seat.label}</span>
                               </span>
                             ) : (
@@ -1074,7 +1073,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                         );
                       })}
                     </div>
-                    <span className="w-6 text-center text-[11px] font-black text-slate-500" aria-hidden="true">{row.label}</span>
+                    <span className="w-[18px] text-center text-[10px] font-black text-slate-500 sm:w-6 sm:text-[11px]" aria-hidden="true">{row.label}</span>
                   </div>
                 ))}
               </div>

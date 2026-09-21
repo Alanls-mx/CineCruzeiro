@@ -6,12 +6,12 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path (Split-Path $Root -Parent) -Parent
-$Output = Join-Path $Root "build\Release"
+$Output = Join-Path $Root "build\Publish\$Version"
 $PublicRoot = Join-Path $ProjectRoot "backend\public\downloads\desktop"
 $ReleaseRoot = Join-Path $PublicRoot $Version
 $PublicBase = "https://lumixengine.com/projects/cinecruzeiro/api/desktop/update"
 
-& (Join-Path $Root "build.ps1") -Configuration Release
+& (Join-Path $Root "build.ps1") -Configuration Release -OutputDirectory $Output
 if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar a atualização." }
 
 New-Item -ItemType Directory -Force $ReleaseRoot | Out-Null

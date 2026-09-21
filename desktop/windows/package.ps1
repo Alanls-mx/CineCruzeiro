@@ -5,12 +5,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Output = Join-Path $Root "build\$Configuration"
+$Output = Join-Path $Root "build\Package\$Configuration"
 $ArtifactDirectory = Join-Path (Split-Path (Split-Path $Root -Parent) -Parent) "artifacts\desktop"
 $PackageDirectory = Join-Path $ArtifactDirectory "Painel-Cine-Cruzeiro"
 $Archive = Join-Path $ArtifactDirectory "Painel-Cine-Cruzeiro-Windows-x64.zip"
 
-& (Join-Path $Root "build.ps1") -Configuration $Configuration
+& (Join-Path $Root "build.ps1") -Configuration $Configuration -OutputDirectory $Output
 if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar antes do empacotamento." }
 
 New-Item -ItemType Directory -Force $PackageDirectory | Out-Null

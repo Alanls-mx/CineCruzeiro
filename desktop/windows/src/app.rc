@@ -1,10 +1,11 @@
 #include "resource.h"
 
 IDI_APP_ICON ICON "..\\assets\\cine-cruzeiro.ico"
+IDR_SPLASH_LOGO RCDATA "..\\..\\..\\backend\\public\\whatsapp\\cine-cruzeiro-logo.webp"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,1,1,0
- PRODUCTVERSION 1,1,1,0
+ FILEVERSION 1,3,3,0
+ PRODUCTVERSION 1,3,3,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -21,12 +22,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Cine Cruzeiro\0"
       VALUE "FileDescription", "Painel Desktop Cine Cruzeiro\0"
-      VALUE "FileVersion", "1.1.1\0"
+      VALUE "FileVersion", "1.3.3\0"
       VALUE "InternalName", "CineCruzeiroDesktop\0"
       VALUE "LegalCopyright", "Cine Cruzeiro\0"
       VALUE "OriginalFilename", "CineCruzeiroDesktop.exe\0"
       VALUE "ProductName", "Painel Desktop Cine Cruzeiro\0"
-      VALUE "ProductVersion", "1.1.1\0"
+      VALUE "ProductVersion", "1.3.3\0"
     END
   END
   BLOCK "VarFileInfo"

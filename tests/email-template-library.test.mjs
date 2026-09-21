@@ -120,6 +120,9 @@ test("erro inesperado recebe mensagem acionável e código de atendimento", () =
 
 test("erros conhecidos recebem orientação específica", () => {
   assert.equal(publicApiError(Object.assign(new Error("duplicate"), { code: "23505" })).code, "RESOURCE_CONFLICT");
+  const orderState = publicApiError(Object.assign(new Error('violates check constraint "orders_status_check"'), { code: "23514", constraint: "orders_status_check" }));
+  assert.equal(orderState.code, "ORDER_STATE_CONFLICT");
+  assert.equal(orderState.status, 409);
   const validation = publicApiError(Object.assign(new Error("Revise o filme selecionado."), { statusCode: 422, code: "MOVIE_INVALID" }));
   assert.equal(validation.message, "Revise o filme selecionado.");
 });

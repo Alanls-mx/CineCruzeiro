@@ -1,6 +1,7 @@
 param(
   [ValidateSet("Debug", "Release")]
-  [string]$Configuration = "Release"
+  [string]$Configuration = "Release",
+  [string]$OutputDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,8 +24,9 @@ if (-not (Test-Path $NuGet)) {
 & $NuGet restore $Solution -PackagesDirectory (Join-Path $Root "packages") -NonInteractive
 if ($LASTEXITCODE -ne 0) { throw "Falha ao restaurar o SDK WebView2." }
 
-& $MsBuild $Solution /m /p:Configuration=$Configuration /p:Platform=x64 /restore:false
+$Output = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $Root "build\$Configuration" }
+$Output = [IO.Path]::GetFullPath($Output).TrimEnd('\') + '\'
+& $MsBuild $Solution /m /p:Configuration=$Configuration /p:Platform=x64 "/p:OutDir=$Output" /restore:false
 if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar o painel desktop." }
 
-$Output = Join-Path $Root "build\$Configuration"
 Write-Host "Painel compilado em $Output" -ForegroundColor Green

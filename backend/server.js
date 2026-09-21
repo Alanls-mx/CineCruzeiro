@@ -33,6 +33,15 @@ const { archiveExpiredCoupons, couponUsageHistory, couponUsageSummary } = requir
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
 const { buildTemplateLibrary, definitionFor, variantFor, updateLibraryPreference } = require("./services/emailTemplateLibraryService");
 const { publicApiError } = require("./services/publicApiErrorService");
+const {
+  SOCIAL_FORMATS,
+  SOCIAL_TEMPLATES,
+  captionForDraft,
+  createHistoryRecord,
+  normalizeBrand: normalizeSocialBrand,
+  normalizeDraft: normalizeSocialDraft,
+  renderSocialPost
+} = require("./services/socialStudioService");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const adMetricRepository = require("./repositories/adMetricRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
@@ -104,6 +113,7 @@ const mutationContext = new AsyncLocalStorage();
 const adminTwoFactorChallenges = new Map();
 const memorySeatHolds = new Map();
 const paymentReconciliationAttempts = new Map();
+const mobileAuthHandoffs = new Map();
 const pendingTicketEmailDeliveries = new Set();
 let seatRealtimeService = null;
 let jsonMutationQueue = Promise.resolve();
@@ -113,7 +123,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "036_concession_mass_inventory_and_marketing.sql";
+const LATEST_SCHEMA_MIGRATION = "037_orders_print_fulfillment_status.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -978,6 +988,7 @@ const RATE_LIMIT_RULES = [
   { id: "email-verification", limit: 8, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/me/email-verification/request" },
   { id: "email-change", limit: 5, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/me/email-change/request" },
   { id: "oauth-start", limit: 30, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "GET" && path === "/api/auth/google/start" },
+  { id: "oauth-mobile-consume", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "GET" && path === "/api/auth/mobile/google/consume" },
   { id: "events", limit: 5, windowMs: 60 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/events" },
   { id: "payments", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/payments\/(pix|card)$/.test(path) },
   { id: "subscriptions", limit: 10, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/subscriptions/subscribe" },
@@ -1179,6 +1190,39 @@ function googleOAuthCookie(value, maxAge = 60 * 10) {
   ].join("; ");
 }
 
+function mobileGoogleAuthRedirect(state, params = {}) {
+  if (state?.mobileApp !== true) return "";
+  const redirect = new URL("cinelumix://google-auth");
+  const cinemaId = String(state.mobileCinema || "").trim();
+  if (/^[a-z0-9-]{1,48}$/.test(cinemaId)) redirect.searchParams.set("cinema", cinemaId);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) redirect.searchParams.set(key, String(value));
+  });
+  return redirect.toString();
+}
+
+function googleAuthFailureRedirect(config, state, errorCode) {
+  return mobileGoogleAuthRedirect(state, { error: errorCode })
+    || `${config.frontendUrl}/conta?authError=${encodeURIComponent(errorCode)}`;
+}
+
+function issueMobileAuthHandoff(user, state) {
+  const nonce = crypto.randomUUID();
+  const expiresAt = Date.now() + 2 * 60 * 1000;
+  mobileAuthHandoffs.set(nonce, { userId: user.id, expiresAt });
+  for (const [key, handoff] of mobileAuthHandoffs) {
+    if (handoff.expiresAt <= Date.now() || mobileAuthHandoffs.size > 500) mobileAuthHandoffs.delete(key);
+  }
+  return signedValue({
+    type: "mobile_google_handoff",
+    nonce,
+    sub: user.id,
+    sv: Number(user.sessionVersion || 0),
+    returnTo: state.returnTo || "/conta",
+    exp: expiresAt
+  });
+}
+
 function adminRoles() {
   return new Set(["owner", "master", "manager", "operator", "seller"]);
 }
@@ -1323,6 +1367,10 @@ function requiredAdminPermission(pathname, method) {
   if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
   if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
   if (pathname.startsWith("/api/admin/concession-sales")) return method === "GET" ? "concessions.view" : "concessions.edit";
+  if (pathname.startsWith("/api/admin/social-studio")) {
+    if (method === "DELETE") return "social_studio.delete";
+    return method === "GET" ? "social_studio.view" : "social_studio.create";
+  }
   if (pathname.startsWith("/api/admin/marketing")) return method === "GET" ? "marketing.view" : "marketing.manage";
   if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "orders.print";
   if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
@@ -1923,6 +1971,18 @@ function ticketSessionStartsAt(ticket, db = null) {
 function ticketArchiveAt(ticket, db = null) {
   const startsAt = ticketSessionStartsAt(ticket, db);
   return startsAt ? new Date(startsAt.getTime() + 4 * 60 * 60 * 1000) : null;
+}
+
+const ADMIN_SESSION_SECONDS = 60 * 60 * 8;
+const DESKTOP_ADMIN_SESSION_SECONDS = 60 * 60 * 24 * 30;
+
+function isDesktopAdminRequest(req) {
+  const userAgent = String(req?.headers?.["user-agent"] || "");
+  return /CineCruzeiroDesktop\/[\d.]+[\s\S]*CineCruzeiroAdmin/i.test(userAgent);
+}
+
+function adminSessionMaxAge(req) {
+  return isDesktopAdminRequest(req) ? DESKTOP_ADMIN_SESSION_SECONDS : ADMIN_SESSION_SECONDS;
 }
 
 const WHATSAPP_ADMIN_PROXY_PREFIX = "/api/admin/whatsapp";
@@ -7612,7 +7672,8 @@ function readAdminTwoFactorChallenge(token) {
 
 async function sendAdminLoginSuccess(req, res, db, user, twoFactorMethod = "not_required") {
   const methods = twoFactorMethod === "not_required" ? ["pwd"] : ["pwd", "otp"];
-  const session = signedValue({ sub: user.id, role: user.role, sv: Number(user.sessionVersion || 0), exp: Date.now() + 1000 * 60 * 60 * 8, amr: methods });
+  const sessionMaxAge = adminSessionMaxAge(req);
+  const session = signedValue({ sub: user.id, role: user.role, sv: Number(user.sessionVersion || 0), exp: Date.now() + sessionMaxAge * 1000, amr: methods });
   const loginAudit = {
     id: `audit-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
     userId: user.id,
@@ -7621,7 +7682,7 @@ async function sendAdminLoginSuccess(req, res, db, user, twoFactorMethod = "not_
     entityType: "admin_session",
     entityId: user.id,
     before: null,
-    after: { role: user.role, twoFactorMethod },
+    after: { role: user.role, twoFactorMethod, persistentDesktopSession: isDesktopAdminRequest(req) },
     ip: clientIp(req),
     createdAt: new Date().toISOString()
   };
@@ -7634,7 +7695,7 @@ async function sendAdminLoginSuccess(req, res, db, user, twoFactorMethod = "not_
   }
   res.writeHead(200, {
     ...securityHeaders({ "Content-Type": "application/json; charset=utf-8" }),
-    "Set-Cookie": adminCookie(session),
+    "Set-Cookie": adminCookie(session, sessionMaxAge),
     "Access-Control-Allow-Origin": responseCorsOrigin(req),
     "Access-Control-Allow-Credentials": "true",
     "Vary": "Origin"
@@ -8210,6 +8271,166 @@ function buildCommercialCatalog(db, now = new Date()) {
     coupons: activeCoupons.map((item) => commercialCatalogOffer(item, { coupon: true })),
     dates
   };
+}
+
+function socialStudioBrand(db) {
+  const configured = db.settings?.socialStudioBrand || {};
+  const inherited = db.settings?.emailBranding || {};
+  const basePath = configuredAppBasePath();
+  return normalizeSocialBrand({
+    name: configured.name || db.settings?.cinemaName || db.settings?.name || inherited.name,
+    logoUrl: publicAssetUrl(configured.logoUrl || db.settings?.logoUrl || inherited.logoUrl || `${basePath}/images/logo-display.webp`),
+    website: configured.website || appFrontendUrl(),
+    primaryColor: configured.primaryColor || db.settings?.primaryColor,
+    secondaryColor: configured.secondaryColor || db.settings?.secondaryColor,
+    accentColor: configured.accentColor || db.settings?.accentColor,
+    textColor: configured.textColor || db.settings?.textColor
+  });
+}
+
+function socialStudioContext(db) {
+  const catalog = buildCommercialCatalog(db);
+  const movies = (catalog.movies || []).map((movie) => ({
+    ...movie,
+    releaseDate: movie.releaseDate || "",
+    sessions: movie.availableSessions || [],
+    minimumPrice: (movie.availableSessions || [])
+      .flatMap((session) => session.ticketTypes || [])
+      .map((ticketType) => Number(ticketType.price))
+      .filter((price) => Number.isFinite(price) && price > 0)
+      .sort((a, b) => a - b)[0] ?? null
+  }));
+  const premiereMovie = movies.find((movie) => /estreia/i.test(String(movie.tag || ""))) || movies[0] || null;
+  return {
+    brand: socialStudioBrand(db),
+    templates: SOCIAL_TEMPLATES,
+    formats: Object.values(SOCIAL_FORMATS),
+    movies,
+    concessions: catalog.concessions || [],
+    clubPlans: (db.subscriptionPlans || [])
+      .filter((plan) => plan.active !== false)
+      .map((plan) => ({
+        id: String(plan.id || ""),
+        name: String(plan.name || ""),
+        monthlyPrice: Number(plan.monthlyPrice || 0),
+        includedTickets: Number(plan.includedTickets || 0),
+        benefits: Array.isArray(plan.benefits) ? plan.benefits.map(String) : [],
+        imageUrl: publicAssetUrl(plan.imageUrl || "")
+      })),
+    promotions: (catalog.promotions || []).map((promotion) => ({
+      id: promotion.id,
+      title: promotion.title,
+      description: promotion.description,
+      imageUrl: promotion.imageUrl || ""
+    })),
+    recommendedMovieId: premiereMovie?.id || "",
+    history: (db.settings?.socialStudioPosts || []).slice(0, 100)
+  };
+}
+
+function socialStudioPublicPath(value = "") {
+  let pathname = String(value || "").trim();
+  try {
+    pathname = new URL(pathname).pathname;
+  } catch {
+    // Caminhos locais seguem para a validacao abaixo.
+  }
+  const basePath = configuredAppBasePath();
+  if (basePath && pathname.startsWith(`${basePath}/`)) pathname = pathname.slice(basePath.length);
+  return stripPublicAssetBase(pathname);
+}
+
+async function readSocialStudioLocalImage(value = "") {
+  const pathname = socialStudioPublicPath(value);
+  let root = null;
+  let relative = "";
+  if (pathname.startsWith("/uploads/")) {
+    root = storageService.rootDir;
+    relative = pathname.replace(/^\/uploads\//, "");
+  } else if (pathname.startsWith("/images/")) {
+    root = FRONTEND_PUBLIC_DIR;
+    relative = pathname.replace(/^\//, "");
+  }
+  if (!root || !relative) return null;
+  const filePath = path.normalize(path.join(root, relative));
+  if (!pathIsInside(root, filePath)) return null;
+  return fs.readFile(filePath).catch(() => null);
+}
+
+async function validateSocialStudioImageBuffer(buffer) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > 8 * 1024 * 1024) return null;
+  const metadata = await sharp(buffer, { failOn: "error", limitInputPixels: 40_000_000 }).metadata().catch(() => null);
+  if (!metadata || !["jpeg", "png", "webp"].includes(metadata.format) || !metadata.width || !metadata.height) return null;
+  if (metadata.width * metadata.height > 40_000_000) return null;
+  return buffer;
+}
+
+async function readSocialStudioResponseBuffer(response, maxBytes = 8 * 1024 * 1024) {
+  if (!response?.body) return null;
+  const chunks = [];
+  let received = 0;
+  for await (const chunk of response.body) {
+    received += chunk.length;
+    if (received > maxBytes) {
+      await response.body.cancel().catch(() => null);
+      return null;
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function loadSocialStudioImage(value = "") {
+  const local = await readSocialStudioLocalImage(value);
+  if (local) return validateSocialStudioImageBuffer(local);
+  let parsed;
+  try {
+    parsed = new URL(String(value || ""));
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  const configuredHost = (() => {
+    try { return new URL(appFrontendUrl()).hostname; } catch { return ""; }
+  })();
+  const allowedHosts = new Set([configuredHost, "image.tmdb.org", "images.unsplash.com"].filter(Boolean));
+  if (!allowedHosts.has(parsed.hostname)) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(parsed, {
+      signal: controller.signal,
+      redirect: "error",
+      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg" }
+    }).catch(() => null);
+    if (!response?.ok) return null;
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > 8 * 1024 * 1024) return null;
+    const buffer = await readSocialStudioResponseBuffer(response);
+    return validateSocialStudioImageBuffer(buffer);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function persistSocialStudioPosts(db, posts, req, before = null) {
+  const normalized = (Array.isArray(posts) ? posts : []).slice(0, 100);
+  db.settings ||= {};
+  db.settings.socialStudioPosts = normalized;
+  if (postgresEnabled()) {
+    await settingsRepository.updateSection("socialStudioPosts", normalized, {
+      audit: repositoryAudit(req, "settings", "socialStudioPosts", before, normalized)
+    });
+  } else {
+    await writeDb(db);
+  }
+  return normalized;
+}
+
+function socialStudioDownloadName(post = {}) {
+  const title = slugify(post.title || post.templateName || "post") || "post";
+  const extension = post.outputType === "jpg" ? "jpg" : "png";
+  return `${title}-${post.formatId || "social"}.${extension}`;
 }
 
 function getAdminContent(db, adminUser) {
@@ -11069,6 +11290,125 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/social-studio/context" && method === "GET") {
+    sendJson(res, 200, {
+      ...socialStudioContext(db),
+      capabilities: {
+        view: adminHasPermission(req.adminUser, "social_studio.view"),
+        create: adminHasPermission(req.adminUser, "social_studio.create"),
+        delete: adminHasPermission(req.adminUser, "social_studio.delete")
+      }
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/uploads" && method === "POST") {
+    const body = await readBody(req);
+    const uploaded = await storageService.uploadImage({
+      data: body.data || body.base64,
+      filename: body.filename,
+      contentType: body.contentType,
+      folder: "social-studio-source"
+    });
+    sendJson(res, 201, { ...uploaded, publicUrl: publicAssetUrl(uploaded.url) }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/resolve" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    const normalized = normalizeSocialDraft(body, context);
+    const { entities, ...draft } = normalized;
+    sendJson(res, 200, {
+      draft,
+      caption: captionForDraft(normalized, context)
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/preview" && method === "POST") {
+    const body = await readBody(req);
+    const rendered = await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+    res.writeHead(200, {
+      ...securityHeaders({
+        "Content-Type": rendered.contentType,
+        "Content-Length": rendered.buffer.length,
+        "Cache-Control": "no-store",
+        "Content-Disposition": `inline; filename="social-studio-preview${rendered.extension}"`
+      }),
+      "Access-Control-Allow-Origin": responseCorsOrigin(req),
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
+    });
+    res.end(rendered.buffer);
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/posts" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    const rendered = await renderSocialPost(body, context, { loadImage: loadSocialStudioImage });
+    const uploaded = await storageService.uploadImageBuffer({
+      buffer: rendered.buffer,
+      filename: `${slugify(rendered.draft.title || rendered.draft.templateId || "post")}${rendered.extension}`,
+      contentType: rendered.contentType,
+      folder: "social-studio"
+    });
+    const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser?.id || "");
+    post.imageUrl = uploaded.url;
+    const before = db.settings?.socialStudioPosts || [];
+    const history = await persistSocialStudioPosts(db, [post, ...before], req, before);
+    logEvent("info", "social_studio.post_created", {
+      postId: post.id,
+      templateId: post.templateId,
+      formatId: post.formatId,
+      actorUserId: req.adminUser?.id || ""
+    });
+    sendJson(res, 201, { post, history }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  const socialStudioPostMatch = pathname.match(/^\/api\/admin\/social-studio\/posts\/([^/]+)(?:\/(download))?$/);
+  if (socialStudioPostMatch) {
+    const postId = decodeURIComponent(socialStudioPostMatch[1]);
+    const action = socialStudioPostMatch[2] || "";
+    const posts = db.settings?.socialStudioPosts || [];
+    const post = posts.find((item) => String(item.id) === postId);
+    if (!post) {
+      sendJson(res, 404, { error: { code: "SOCIAL_POST_NOT_FOUND", message: "A arte não foi encontrada no histórico." } });
+      return;
+    }
+    if (action === "download" && method === "GET") {
+      const buffer = await loadSocialStudioImage(post.imageUrl);
+      if (!buffer) {
+        sendJson(res, 404, { error: { code: "SOCIAL_POST_FILE_NOT_FOUND", message: "O arquivo desta arte não está mais disponível." } });
+        return;
+      }
+      const contentType = post.outputType === "jpg" ? "image/jpeg" : "image/png";
+      res.writeHead(200, {
+        ...securityHeaders({
+          "Content-Type": contentType,
+          "Content-Length": buffer.length,
+          "Cache-Control": "private, no-store",
+          "Content-Disposition": `attachment; filename="${socialStudioDownloadName(post)}"`
+        }),
+        "Access-Control-Allow-Origin": responseCorsOrigin(req),
+        "Access-Control-Allow-Credentials": "true",
+        Vary: "Origin"
+      });
+      res.end(buffer);
+      return;
+    }
+    if (!action && method === "DELETE") {
+      const history = posts.filter((item) => String(item.id) !== postId);
+      await storageService.deleteByPublicUrl(post.imageUrl).catch(() => false);
+      await persistSocialStudioPosts(db, history, req, posts);
+      logEvent("info", "social_studio.post_deleted", { postId, actorUserId: req.adminUser?.id || "" });
+      sendJson(res, 200, { deleted: true, id: postId, history }, { "Cache-Control": "no-store" });
+      return;
+    }
+  }
+
   if (pathname === "/api/admin/reports/dashboard.csv" && method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const period = parseAdminPeriod(url);
@@ -12712,7 +13052,10 @@ async function handleApi(req, res, pathname) {
     const returnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//")
       ? requestedReturnTo
       : "";
-    const state = signJwt({ type: "google_oauth", nonce: crypto.randomUUID(), returnTo });
+    const mobileApp = startUrl.searchParams.get("mobile") === "cinelumix";
+    const requestedCinema = String(startUrl.searchParams.get("cinema") || "").trim();
+    const mobileCinema = /^[a-z0-9-]{1,48}$/.test(requestedCinema) ? requestedCinema : "";
+    const state = signJwt({ type: "google_oauth", nonce: crypto.randomUUID(), returnTo, mobileApp, mobileCinema });
     const googleUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     googleUrl.searchParams.set("client_id", config.clientId);
     googleUrl.searchParams.set("redirect_uri", config.redirectUri);
@@ -12724,7 +13067,8 @@ async function handleApi(req, res, pathname) {
       redirectPath: (() => {
         try { return new URL(config.redirectUri).pathname; } catch { return "invalid"; }
       })(),
-      hasReturnTo: Boolean(returnTo)
+      hasReturnTo: Boolean(returnTo),
+      mobileApp
     });
     res.writeHead(302, { Location: googleUrl.toString(), "Set-Cookie": googleOAuthCookie(state) });
     res.end();
@@ -12740,7 +13084,7 @@ async function handleApi(req, res, pathname) {
     const config = getGoogleOAuthConfig(req, db);
     if (!code || state?.type !== "google_oauth" || stateParam !== stateCookie) {
       logEvent("warn", "google_oauth.failed", { reason: "invalid_state", codePresent: Boolean(code), statePresent: Boolean(stateParam), cookiePresent: Boolean(stateCookie) });
-      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_oauth`, "Set-Cookie": googleOAuthCookie("", 0) });
+      res.writeHead(302, { Location: googleAuthFailureRedirect(config, state, "google_oauth"), "Set-Cookie": googleOAuthCookie("", 0) });
       res.end();
       return;
     }
@@ -12759,7 +13103,7 @@ async function handleApi(req, res, pathname) {
     const tokenData = await tokenResponse.json().catch(() => ({}));
     if (!tokenResponse.ok || !tokenData.access_token) {
       logEvent("warn", "google_oauth.failed", { reason: "token_exchange", providerError: String(tokenData.error || "unknown").slice(0, 80) });
-      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_token`, "Set-Cookie": googleOAuthCookie("", 0) });
+      res.writeHead(302, { Location: googleAuthFailureRedirect(config, state, "google_token"), "Set-Cookie": googleOAuthCookie("", 0) });
       res.end();
       return;
     }
@@ -12770,7 +13114,7 @@ async function handleApi(req, res, pathname) {
     const profile = await profileResponse.json().catch(() => ({}));
     if (!profileResponse.ok || !profile.email) {
       logEvent("warn", "google_oauth.failed", { reason: "profile_unavailable", status: profileResponse.status });
-      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_profile`, "Set-Cookie": googleOAuthCookie("", 0) });
+      res.writeHead(302, { Location: googleAuthFailureRedirect(config, state, "google_profile"), "Set-Cookie": googleOAuthCookie("", 0) });
       res.end();
       return;
     }
@@ -12786,7 +13130,7 @@ async function handleApi(req, res, pathname) {
       || (emailUser?.googleSub && emailUser.googleSub !== profile.sub);
     if (googleIdentityConflict) {
       logEvent("warn", "google_oauth.failed", { reason: "identity_conflict" });
-      res.writeHead(302, { Location: `${config.frontendUrl}/conta?authError=google_account_conflict`, "Set-Cookie": googleOAuthCookie("", 0) });
+      res.writeHead(302, { Location: googleAuthFailureRedirect(config, state, "google_account_conflict"), "Set-Cookie": googleOAuthCookie("", 0) });
       res.end();
       return;
     }
@@ -12819,6 +13163,18 @@ async function handleApi(req, res, pathname) {
       await writeDb(db);
     }
     logEvent("info", "google_oauth.completed", { userId: user.id, accountCreated: !existingUser });
+
+    if (state.mobileApp === true) {
+      const handoffToken = issueMobileAuthHandoff(user, state);
+      res.writeHead(302, {
+        Location: mobileGoogleAuthRedirect(state, { token: handoffToken }),
+        "Set-Cookie": googleOAuthCookie("", 0),
+        "Cache-Control": "private, no-store, max-age=0",
+        "Referrer-Policy": "no-referrer"
+      });
+      res.end();
+      return;
+    }
 
     const successUrl = new URL(`${config.frontendUrl}${state.returnTo || "/"}`);
     successUrl.searchParams.set("auth", "google_success");
@@ -15081,6 +15437,42 @@ async function handleApi(req, res, pathname) {
     }
     const terminals = await cardTerminalProvider.listTerminals(config);
     sendJson(res, 200, { terminals, selectedTerminalId: config.pointDeviceId || "" });
+    return;
+  }
+
+  if (pathname === "/api/auth/mobile/google/consume" && method === "GET") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = String(url.searchParams.get("token") || "");
+    const handoff = verifySignedValue(token);
+    const pending = handoff?.nonce ? mobileAuthHandoffs.get(handoff.nonce) : null;
+    if (handoff?.nonce) mobileAuthHandoffs.delete(handoff.nonce);
+    const validHandoff = handoff?.type === "mobile_google_handoff"
+      && pending?.userId === handoff.sub
+      && Number(pending?.expiresAt || 0) > Date.now();
+    const user = validHandoff
+      ? (postgresEnabled() ? await userRepository.findById(handoff.sub) : (db.users || []).find((item) => item.id === handoff.sub))
+      : null;
+    if (!user || user.active === false || Number(user.sessionVersion || 0) !== Number(handoff?.sv || 0)) {
+      res.writeHead(303, {
+        Location: `${appFrontendUrl()}/conta?authError=google_oauth`,
+        "Cache-Control": "private, no-store, max-age=0",
+        "Referrer-Policy": "no-referrer"
+      });
+      res.end();
+      return;
+    }
+
+    const returnTo = String(handoff.returnTo || "");
+    const safeReturnTo = returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/conta";
+    const successUrl = new URL(`${appFrontendUrl()}${safeReturnTo}`);
+    successUrl.searchParams.set("auth", "google_success");
+    res.writeHead(303, {
+      Location: successUrl.toString(),
+      "Set-Cookie": customerCookie(customerSessionValue(user)),
+      "Cache-Control": "private, no-store, max-age=0",
+      "Referrer-Policy": "no-referrer"
+    });
+    res.end();
     return;
   }
 

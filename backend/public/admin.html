@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/svg+xml" href="favicon-admin.svg" />
-    <link rel="stylesheet" href="admin.css?v=20260914-session-planner" />
+    <link rel="stylesheet" href="admin.css?v=20260920-print-workflow" />
     <link rel="stylesheet" href="admin-premium.css?v=20260911-ai-prompt-models" />
+    <link rel="stylesheet" href="social-studio.css?v=20260921" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -14,7 +15,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <div class="brand">
-        <img id="adminLogoImg" src="images/logo-display.webp?brand=cinecruzeiro-v2" alt="Cine Cruzeiro" width="320" height="183" />
+        <img id="adminLogoImg" src="../images/logo-display.webp?brand=cinecruzeiro-v2" alt="Cine Cruzeiro" width="320" height="183" />
         <div>
           <strong>Console Cine Cruzeiro</strong>
           <span>Programação, vendas e operação</span>
@@ -674,29 +675,6 @@
               </div>
             </form>
 
-            <section id="pointPaymentPanel" class="surface point-payment-panel" hidden aria-labelledby="pointPaymentTitle" aria-live="polite">
-              <div class="point-payment-status">
-                <div id="pointPaymentIcon" class="point-payment-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>
-                </div>
-                <div>
-                  <h2 id="pointPaymentTitle">Aguardando pagamento na Point</h2>
-                  <p id="pointPaymentMessage">A cobrança foi enviada. Oriente o cliente a concluir o pagamento no terminal.</p>
-                </div>
-              </div>
-              <dl class="point-payment-facts">
-                <div><dt>Total</dt><dd id="pointPaymentAmount">R$ 0,00</dd></div>
-                <div><dt>Terminal</dt><dd id="pointPaymentTerminal">-</dd></div>
-                <div><dt>Referência</dt><dd id="pointPaymentReference">-</dd></div>
-                <div><dt>Status</dt><dd id="pointPaymentStatus">Pendente</dd></div>
-              </dl>
-              <div id="pointPaymentPrintActions" class="point-payment-print-actions" hidden></div>
-              <div class="button-row point-payment-actions">
-                <button id="pointPaymentRetryButton" class="ghost-button" type="button">Atualizar agora</button>
-                <button id="pointPaymentCancelButton" class="danger-button" type="button">Cancelar cobrança</button>
-                <button id="pointPaymentNewSaleButton" class="primary-button" type="button" hidden>Iniciar nova venda</button>
-              </div>
-            </section>
           </div>
         </section>
 
@@ -1145,6 +1123,29 @@
                 </div>
               </aside>
             </div>
+            <section id="pointPaymentPanel" class="surface point-payment-panel" hidden aria-labelledby="pointPaymentTitle" aria-live="polite">
+              <div class="point-payment-status">
+                <div id="pointPaymentIcon" class="point-payment-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+                </div>
+                <div>
+                  <h2 id="pointPaymentTitle">Aguardando pagamento na Point</h2>
+                  <p id="pointPaymentMessage">A cobrança foi enviada. Oriente o cliente a concluir o pagamento no terminal.</p>
+                </div>
+              </div>
+              <dl class="point-payment-facts">
+                <div><dt>Total</dt><dd id="pointPaymentAmount">R$ 0,00</dd></div>
+                <div><dt>Terminal</dt><dd id="pointPaymentTerminal">-</dd></div>
+                <div><dt>Referência</dt><dd id="pointPaymentReference">-</dd></div>
+                <div><dt>Status</dt><dd id="pointPaymentStatus">Pendente</dd></div>
+              </dl>
+              <div id="pointPaymentPrintActions" class="point-payment-print-actions" hidden></div>
+              <div class="button-row point-payment-actions">
+                <button id="pointPaymentRetryButton" class="ghost-button" type="button">Atualizar agora</button>
+                <button id="pointPaymentCancelButton" class="danger-button" type="button">Cancelar cobrança</button>
+                <button id="pointPaymentNewSaleButton" class="primary-button" type="button" hidden>Iniciar nova venda</button>
+              </div>
+            </section>
           </div>
 
           <div id="boxOfficeValidateTicket" class="box-office-tab-panel">
@@ -1638,6 +1639,7 @@
           <nav class="admin-subtabs" aria-label="Seções de Marketing" data-admin-tablist="marketing">
             <button class="active" type="button" data-admin-tab="overview">Visão geral</button>
             <button type="button" data-admin-tab="home">Home</button>
+            <button type="button" data-admin-tab="social" data-permission="social_studio.view">Social Studio</button>
             <button type="button" data-admin-tab="campaigns">Campanhas</button>
             <button type="button" data-admin-tab="promotions">Cupons</button>
             <button type="button" data-admin-tab="ads">Anúncios</button>
@@ -1740,6 +1742,10 @@
             </div>
             <button class="primary-button full" type="submit">Salvar configurações</button>
           </form>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-tab-panel="marketing:social" data-permission="social_studio.view" hidden>
+            <div id="socialStudioRoot" class="social-studio-root" aria-live="polite"></div>
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
@@ -2409,6 +2415,9 @@
                   <section class="permission-group"><h3>Relacionamento</h3>
                     <label><input type="checkbox" value="marketing.view" /><span><strong>Visualizar marketing</strong><small>Consulta anúncios, e-mails e cupons.</small></span></label>
                     <label><input type="checkbox" value="marketing.manage" /><span><strong>Gerenciar marketing</strong><small>Cria, envia, edita e exclui campanhas.</small></span></label>
+                    <label><input type="checkbox" value="social_studio.view" /><span><strong>Visualizar Social Studio</strong><small>Consulta modelos, previews e artes recentes.</small></span></label>
+                    <label><input type="checkbox" value="social_studio.create" /><span><strong>Criar artes sociais</strong><small>Edita, gera, baixa e duplica posts.</small></span></label>
+                    <label><input type="checkbox" value="social_studio.delete" /><span><strong>Excluir artes sociais</strong><small>Remove artes e seus arquivos do histórico.</small></span></label>
                     <label><input type="checkbox" value="club.view" /><span><strong>Visualizar Clube</strong><small>Consulta planos, assinaturas e faturamento.</small></span></label>
                     <label><input type="checkbox" value="club.manage" /><span><strong>Gerenciar Clube</strong><small>Altera planos e assinaturas.</small></span></label>
                     <label><input type="checkbox" value="club.credits" /><span><strong>Ajustar créditos do Clube</strong><small>Concede ou remove créditos de assinantes.</small></span></label>
@@ -3182,6 +3191,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
-    <script src="admin.js?v=20260914-session-planner"></script>
+    <script src="admin.js?v=20260920-print-workflow"></script>
+    <script src="social-studio.js?v=20260921"></script>
   </body>
 </html>
