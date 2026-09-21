@@ -35,13 +35,18 @@ const { buildTemplateLibrary, definitionFor, variantFor, updateLibraryPreference
 const { publicApiError } = require("./services/publicApiErrorService");
 const {
   SOCIAL_FORMATS,
+  SOCIAL_SIGNATURES,
+  SOCIAL_STYLES,
   SOCIAL_TEMPLATES,
+  buildSocialReadyPosts,
   captionForDraft,
   createHistoryRecord,
+  draftNotices: socialDraftNotices,
   normalizeBrand: normalizeSocialBrand,
   normalizeDraft: normalizeSocialDraft,
   renderSocialPost
 } = require("./services/socialStudioService");
+const { SOCIAL_STUDIO_EDITORIAL_MOVIES } = require("./services/socialStudioEditorialCatalog");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const adMetricRepository = require("./repositories/adMetricRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
@@ -8290,8 +8295,9 @@ function socialStudioBrand(db) {
 
 function socialStudioContext(db) {
   const catalog = buildCommercialCatalog(db);
-  const movies = (catalog.movies || []).map((movie) => ({
+  const catalogMovies = (catalog.movies || []).map((movie) => ({
     ...movie,
+    catalogued: true,
     releaseDate: movie.releaseDate || "",
     sessions: movie.availableSessions || [],
     minimumPrice: (movie.availableSessions || [])
@@ -8300,10 +8306,26 @@ function socialStudioContext(db) {
       .filter((price) => Number.isFinite(price) && price > 0)
       .sort((a, b) => a - b)[0] ?? null
   }));
-  const premiereMovie = movies.find((movie) => /estreia/i.test(String(movie.tag || ""))) || movies[0] || null;
-  return {
+  const catalogTitleKeys = new Set(catalogMovies.map((movie) => slugify(movie.title || movie.id)));
+  const editorialMovies = SOCIAL_STUDIO_EDITORIAL_MOVIES
+    .filter((movie) => !catalogTitleKeys.has(slugify(movie.title || movie.id)))
+    .map((movie) => ({
+      ...movie,
+      posterUrl: publicAssetUrl(movie.posterUrl || ""),
+      backdropUrl: publicAssetUrl(movie.backdropUrl || ""),
+      sessions: [],
+      minimumPrice: null
+    }));
+  const movies = [...catalogMovies, ...editorialMovies];
+  const premiereMovie = catalogMovies.find((movie) => /estreia/i.test(String(movie.tag || ""))) || catalogMovies[0] || null;
+  const context = {
     brand: socialStudioBrand(db),
     templates: SOCIAL_TEMPLATES,
+    signatures: SOCIAL_SIGNATURES.map((signature) => ({
+      ...signature,
+      imageUrl: signature.imageUrl ? publicAssetUrl(signature.imageUrl) : ""
+    })),
+    styles: SOCIAL_STYLES,
     formats: Object.values(SOCIAL_FORMATS),
     movies,
     concessions: catalog.concessions || [],
@@ -8325,6 +8347,10 @@ function socialStudioContext(db) {
     })),
     recommendedMovieId: premiereMovie?.id || "",
     history: (db.settings?.socialStudioPosts || []).slice(0, 100)
+  };
+  return {
+    ...context,
+    readyPosts: buildSocialReadyPosts(context)
   };
 }
 
@@ -11321,7 +11347,8 @@ async function handleApi(req, res, pathname) {
     const { entities, ...draft } = normalized;
     sendJson(res, 200, {
       draft,
-      caption: captionForDraft(normalized, context)
+      caption: captionForDraft(normalized, context),
+      notices: socialDraftNotices(normalized, context)
     }, { "Cache-Control": "no-store" });
     return;
   }
@@ -11365,6 +11392,53 @@ async function handleApi(req, res, pathname) {
       actorUserId: req.adminUser?.id || ""
     });
     sendJson(res, 201, { post, history }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/campaigns" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    const formats = Object.keys(SOCIAL_FORMATS);
+    const uploadedUrls = [];
+    const campaignId = `campaign-${Date.now()}`;
+    const imageCache = new Map();
+    const loadCampaignImage = (url) => {
+      const key = String(url || "");
+      if (!imageCache.has(key)) imageCache.set(key, loadSocialStudioImage(key));
+      return imageCache.get(key);
+    };
+    try {
+      const renderedItems = await Promise.all(formats.map((formatId) => renderSocialPost(
+        { ...body, formatId },
+        context,
+        { loadImage: loadCampaignImage }
+      )));
+      const posts = [];
+      for (const rendered of renderedItems) {
+        const uploaded = await storageService.uploadImageBuffer({
+          buffer: rendered.buffer,
+          filename: `${slugify(rendered.draft.title || rendered.draft.templateId || "campanha")}-${rendered.format.id}${rendered.extension}`,
+          contentType: rendered.contentType,
+          folder: "social-studio"
+        });
+        uploadedUrls.push(uploaded.url);
+        const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser?.id || "");
+        post.imageUrl = uploaded.url;
+        post.campaignId = campaignId;
+        posts.push(post);
+      }
+      const before = db.settings?.socialStudioPosts || [];
+      const history = await persistSocialStudioPosts(db, [...posts, ...before], req, before);
+      logEvent("info", "social_studio.campaign_created", {
+        postIds: posts.map((post) => post.id),
+        templateId: body.templateId,
+        actorUserId: req.adminUser?.id || ""
+      });
+      sendJson(res, 201, { posts, history }, { "Cache-Control": "no-store" });
+    } catch (error) {
+      await Promise.all(uploadedUrls.map((url) => storageService.deleteByPublicUrl(url).catch(() => false)));
+      throw error;
+    }
     return;
   }
 
