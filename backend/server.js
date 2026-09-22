@@ -11453,10 +11453,25 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/social-studio/copy" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    const draft = normalizeSocialDraft(body, context);
+    const result = require('./services/social-studio/copy-engine').generateCopy(draft,context,{tone:body.copyTone,density:body.copyDensity,locks:body.copyLocks,seed:Number(body.copySeed)||0});
+    sendJson(res,200,result,{'Cache-Control':'no-store'});
+    return;
+  }
+
   if (pathname === "/api/admin/social-studio/resolve" && method === "POST") {
     const body = await readBody(req);
     const context = socialStudioContext(db);
     const normalized = normalizeSocialDraft(body, context);
+    if(body.generateCopy===true) {
+      const {generateCopy,FIELD_MAP}=require('./services/social-studio/copy-engine');
+      const {bundle}=generateCopy(normalized,context,{tone:body.copyTone,density:body.copyDensity,locks:body.copyLocks});
+      for(const [field,key] of Object.entries(FIELD_MAP)) if(body[key]===undefined && !body.copyLocks?.[field]) normalized[key]=bundle[field];
+      Object.assign(normalized,normalizeSocialDraft(normalized,context));
+    }
     const { entities, ...draft } = normalized;
     sendJson(res, 200, {
       draft,

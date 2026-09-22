@@ -197,6 +197,8 @@
                   <label data-social-field="auxiliaryText">Texto auxiliar<textarea id="socialStudioAuxiliary" rows="3" maxlength="260" data-requires-create></textarea></label>
                   <label data-social-field="cta">Chamada final<input id="socialStudioCta" maxlength="60" data-requires-create /></label>
                   <label>Destino da chamada<input id="socialStudioActionDestination" type="url" placeholder="https://cinema.com.br" data-requires-create /></label>
+                  <label>Tom dos textos<select id="socialStudioCopyTone" data-requires-create><option value="automatic">Automático</option><option value="cinematic">Cinematográfico</option><option value="commercial">Comercial</option><option value="fun">Divertido</option><option value="elegant">Elegante</option><option value="direct">Direto</option></select></label>
+                  <label>Densidade<select id="socialStudioCopyDensity" data-requires-create><option value="short">Curta</option><option value="medium" selected>Média</option><option value="long">Longa</option></select></label>
                 </div>
               </details>
 
@@ -645,6 +647,9 @@
       concessionId: value("socialStudioConcession"),
       clubPlanId: value("socialStudioClub"),
       title: value("socialStudioTitle"),
+      copyTone:value('socialStudioCopyTone','automatic'),
+      copyDensity:value('socialStudioCopyDensity','medium'),
+      copyLocks:Object.fromEntries([...document.querySelectorAll('[data-copy-lock]')].map(el=>[el.dataset.copyLock,el.checked])),
       subtitle: value("socialStudioSubtitle"),
       price: value("socialStudioPrice"),
       date: value("socialStudioDate"),
@@ -718,6 +723,8 @@
       socialStudioConcession: draft.concessionId,
       socialStudioClub: draft.clubPlanId,
       socialStudioTitle: draft.title,
+      socialStudioCopyTone:draft.copyTone || 'automatic',
+      socialStudioCopyDensity:draft.copyDensity || 'medium',
       socialStudioSubtitle: draft.subtitle,
       socialStudioPrice: draft.price,
       socialStudioDate: draft.date,
@@ -746,6 +753,7 @@
       socialStudioCaption: caption || draft.caption
     };
     Object.entries(fields).forEach(([id, nextValue]) => setControl(id, nextValue));
+    document.querySelectorAll('[data-copy-lock]').forEach(el=>{el.checked=draft.copyLocks?.[el.dataset.copyLock]===true;});
     state.compositionAdjustments = { ...draft.composition?.adjustments };
     setControl("socialStudioCompositionPreset", draft.composition?.preset || "automatic");
     setControl("socialStudioCompositionLook", draft.composition?.look || "cinematic");
@@ -1064,7 +1072,10 @@
     try {
       const base = payload();
       if (options.resetCopy !== false) {
-        ["title", "subtitle", "price", "date", "auxiliaryText", "cta", "caption"].forEach((key) => { base[key] = undefined; });
+        const locks={title:'headline',subtitle:'kicker',auxiliaryText:'supportingText',cta:'cta',caption:'caption'};
+        ["title", "subtitle", "price", "date", "auxiliaryText", "cta", "caption"].forEach((key) => { if(!base.copyLocks?.[locks[key]]) base[key] = undefined; });
+        base.generateCopy=true;
+        base.releaseDate=undefined;base.sessionDate=undefined;
       }
       const result = await request("/api/admin/social-studio/resolve", { method: "POST", body: JSON.stringify(base) });
       if (version !== state.resolveVersion) return;
@@ -1251,6 +1262,25 @@
 
   function bindEvents() {
     const form = document.getElementById("socialStudioForm");
+    for(const [field,id] of Object.entries({headline:'socialStudioTitle',kicker:'socialStudioSubtitle',supportingText:'socialStudioAuxiliary',cta:'socialStudioCta',caption:'socialStudioCaption'})) {
+      const control=document.getElementById(id);
+      const row=document.createElement('div');row.className='social-copy-actions';
+      row.innerHTML=`<button type="button" class="ghost-button" data-copy-field="${field}" data-requires-create>Outra sugestão</button><label class="social-toggle"><input type="checkbox" data-copy-lock="${field}" data-requires-create /> Manter texto</label>`;
+      const holder=control.closest('label');
+      if(holder?.dataset.socialField) row.dataset.socialField=holder.dataset.socialField;
+      (holder || control).insertAdjacentElement('afterend',row);
+      row.querySelector('button').addEventListener('click',async event=>{
+        const button=event.currentTarget;
+        if(row.querySelector('input').checked) {setStatus('Este texto está marcado para ser mantido.');return;}
+        button.disabled=true;
+        const original=control.value,entityKey=JSON.stringify([payload().movieId,payload().templateId,payload().concessionId,payload().clubPlanId]);
+        try {
+          const result=await request('/api/admin/social-studio/copy',{method:'POST',body:JSON.stringify({...payload(),copySeed:state.copySeed=(state.copySeed || 0)+1})});
+          if(control.value!==original || row.querySelector('input').checked || entityKey!==JSON.stringify([payload().movieId,payload().templateId,payload().concessionId,payload().clubPlanId])) return;
+          control.value=result.bundle[field];saveDraftLocal();if(field!=='caption')schedulePreview();
+        } catch(error) {setStatus(error.message,'error');} finally {button.disabled=false;}
+      });
+    }
     form.addEventListener("submit", generatePost);
     document.getElementById("socialStudioPreviewButton").addEventListener("click", () => updatePreview({ force: true }));
     document.getElementById("socialStudioCampaignButton").addEventListener("click", generateCampaign);

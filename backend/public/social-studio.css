@@ -1499,3 +1499,7 @@
 .social-studio-root .social-toggle { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
 .social-studio-root .social-toggle input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; padding: 0; flex: 0 0 18px; accent-color: #f4ca12; }
 #socialStudioAnimationOptions { grid-column: 1 / -1; }
+.social-copy-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:6px; }
+.social-copy-actions .ghost-button { padding:5px 8px; font-size:11px; min-height:30px; }
+.social-copy-actions .social-toggle { display:flex; align-items:center; gap:6px; margin:0; font-size:11px; }
+.social-copy-actions input[type="checkbox"] { width:16px; height:16px; flex:0 0 16px; }
