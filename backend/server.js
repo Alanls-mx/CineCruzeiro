@@ -42,10 +42,11 @@ const {
   captionForDraft,
   createHistoryRecord,
   draftNotices: socialDraftNotices,
+  generateSocialCampaign,
   normalizeBrand: normalizeSocialBrand,
   normalizeDraft: normalizeSocialDraft,
   renderSocialPost
-} = require("./services/socialStudioService");
+} = require("./services/socialStudioEngineService");
 const { SOCIAL_STUDIO_EDITORIAL_MOVIES } = require("./services/socialStudioEditorialCatalog");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const adMetricRepository = require("./repositories/adMetricRepository");
@@ -8286,6 +8287,8 @@ function socialStudioBrand(db) {
     name: configured.name || db.settings?.cinemaName || db.settings?.name || inherited.name,
     logoUrl: publicAssetUrl(configured.logoUrl || db.settings?.logoUrl || inherited.logoUrl || `${basePath}/images/logo-display.webp`),
     website: configured.website || appFrontendUrl(),
+    posterWebsite: configured.posterWebsite || "www.cinecruzeiro.com.br",
+    posterLogoUrl: publicAssetUrl(configured.posterLogoUrl || "/images/social-studio/cine-cruzeiro-logo-3d.png"),
     primaryColor: configured.primaryColor || db.settings?.primaryColor,
     secondaryColor: configured.secondaryColor || db.settings?.secondaryColor,
     accentColor: configured.accentColor || db.settings?.accentColor,
@@ -11323,7 +11326,8 @@ async function handleApi(req, res, pathname) {
         view: adminHasPermission(req.adminUser, "social_studio.view"),
         create: adminHasPermission(req.adminUser, "social_studio.create"),
         delete: adminHasPermission(req.adminUser, "social_studio.delete")
-      }
+      },
+      engine: { version: "v2", renderer: "Satori + Sharp", deterministic: true }
     }, { "Cache-Control": "no-store" });
     return;
   }
@@ -11381,7 +11385,7 @@ async function handleApi(req, res, pathname) {
       contentType: rendered.contentType,
       folder: "social-studio"
     });
-    const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser?.id || "");
+    const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser || "");
     post.imageUrl = uploaded.url;
     const before = db.settings?.socialStudioPosts || [];
     const history = await persistSocialStudioPosts(db, [post, ...before], req, before);
@@ -11408,21 +11412,18 @@ async function handleApi(req, res, pathname) {
       return imageCache.get(key);
     };
     try {
-      const renderedItems = await Promise.all(formats.map((formatId) => renderSocialPost(
-        { ...body, formatId },
-        context,
-        { loadImage: loadCampaignImage }
-      )));
+      const campaign = await generateSocialCampaign({ ...body, formats }, context, { loadImage: loadCampaignImage });
+      const renderedItems = campaign.items;
       const posts = [];
       for (const rendered of renderedItems) {
         const uploaded = await storageService.uploadImageBuffer({
           buffer: rendered.buffer,
           filename: `${slugify(rendered.draft.title || rendered.draft.templateId || "campanha")}-${rendered.format.id}${rendered.extension}`,
           contentType: rendered.contentType,
-          folder: "social-studio"
+          folder: "social-studio-campaigns"
         });
         uploadedUrls.push(uploaded.url);
-        const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser?.id || "");
+        const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser || "");
         post.imageUrl = uploaded.url;
         post.campaignId = campaignId;
         posts.push(post);
@@ -11434,7 +11435,7 @@ async function handleApi(req, res, pathname) {
         templateId: body.templateId,
         actorUserId: req.adminUser?.id || ""
       });
-      sendJson(res, 201, { posts, history }, { "Cache-Control": "no-store" });
+      sendJson(res, 201, { posts, history, metrics: campaign.metrics, rendererVersion: campaign.rendererVersion }, { "Cache-Control": "no-store" });
     } catch (error) {
       await Promise.all(uploadedUrls.map((url) => storageService.deleteByPublicUrl(url).catch(() => false)));
       throw error;

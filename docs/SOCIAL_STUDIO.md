@@ -1,117 +1,130 @@
-# Social Studio
+# Social Studio V2
 
-O Social Studio é um módulo independente do painel administrativo para criar artes determinísticas a partir dos dados já cadastrados no cinema. Ele não publica em redes sociais e não altera o módulo de campanhas por e-mail.
+O Social Studio V2 é o motor interno e determinístico de campanhas do cinema. Ele usa os dados já cadastrados no painel e gera peças próprias para Feed vertical (1080 x 1350), quadrado (1080 x 1080) e Story (1080 x 1920), sem Canva, Bannerbear ou cobrança por renderização.
 
-## O que é reutilizado
+O módulo de e-mail é independente e não participa deste fluxo.
 
-- Filmes, pôsteres, backdrops, sessões e tipos de ingresso do catálogo atual.
+## Fluxo do operador
+
+1. O operador escolhe o tipo de divulgação.
+2. Seleciona filme, combo ou plano já cadastrado.
+3. O sistema preenche imagem, título, data, sessões, preço, CTA, logo, site e cores.
+4. O gênero recomenda uma variação visual; o operador pode substituí-la.
+5. O preview é atualizado com debounce de 300 ms, cancelamento de requisições superadas e cache local.
+6. **Gerar arte** salva o formato atual. **Gerar campanha** cria os três formatos, cada um com composição própria.
+
+O editor oferece personalização controlada: origem e enquadramento da imagem, texto, CTA, preço, estilo, alinhamento, overlay e escala tipográfica dentro de limites. Ele não é um editor de posicionamento livre.
+
+## Engine V2
+
+O pipeline é:
+
+```text
+dados existentes -> normalizador -> template React -> Satori (SVG) -> Sharp (PNG/JPG)
+```
+
+- `backend/services/social-studio/engine/renderer.js`: coordena Satori, Sharp, fontes, assets, paleta e métricas.
+- `backend/services/social-studio/engine/normalizer.js`: transforma entidades existentes em um rascunho de renderização.
+- `backend/services/social-studio/engine/assets.js`: valida, carrega, enquadra e armazena imagens em cache.
+- `backend/services/social-studio/engine/palette.js`: extrai cores dominantes e aplica fallback da marca.
+- `backend/services/social-studio/engine/fonts.js`: carrega fontes locais uma única vez.
+- `backend/services/social-studio/engine/typography.js`: auto-fit, datas, URLs e limites tipográficos.
+- `backend/services/social-studio/components/index.js`: componentes visuais reutilizáveis.
+- `backend/services/social-studio/templates/registry.js`: registro estruturado de templates e requisitos.
+- `backend/services/social-studio/services/campaignService.js`: API interna desacoplada da interface.
+- `backend/services/socialStudioEngineService.js`: fachada de compatibilidade entre V2 e funções legadas.
+
+O renderer legado continua disponível para leitura e download de artes antigas. Novos registros recebem `rendererVersion: "v2"`; registros antigos não são regenerados.
+
+## Templates V2
+
+- `movie-premiere`: estreia com data, cinema, sessões, CTA, site e logo.
+- `movie-highlight`: destaque de filme e programação.
+- `movie-price`: comunicação de preço com estado específico quando o valor não existe.
+- `movie-presale`: pré-venda.
+- `concession-combo`: produto ou combo da bomboniere.
+- `club-plan`: plano, benefícios e preço do Clube.
+- `online-ticket`: campanha institucional da bilheteria digital.
+
+Cada template declara id, nome, categoria, formatos, estilos, campos, requisitos e função de renderização. Os estilos `cinematic`, `impact`, `clean` e `minimal` consomem o mesmo rascunho. Os layouts de Feed, quadrado e Story são independentes, não redimensionamentos.
+
+## Recomendação e composição
+
+- Terror e suspense recomendam `cinematic`.
+- Animação e família recomendam `impact`.
+- Ação e aventura recomendam `impact`.
+- Romance recomenda `clean`.
+- Drama recomenda `cinematic`.
+- O operador sempre pode escolher outro estilo.
+
+A paleta deriva cor dominante, secundária e de acento do material do filme. Logo, CTA e elementos institucionais preservam as cores oficiais. Sem imagem ou sem paleta válida, o renderer usa os valores de branding do cinema.
+
+No modo automático, a origem da arte considera formato e disponibilidade de pôster/backdrop. Posição X/Y, zoom e presets `auto`, `center`, `top`, `bottom`, `left` e `right` são aplicados antes do render final.
+
+Gradientes e vinhetas protegem apenas as regiões de conteúdo. Títulos, datas, preços, URLs e CTA usam auto-fit com tamanho mínimo. Ausência de preço troca a hierarquia para sessões disponíveis, sem exibir “Consulte os valores” como se fosse um preço.
+
+## Dados reaproveitados
+
+- Filmes, pôsteres, backdrops, gêneros, datas, sessões e tipos de ingresso.
 - Produtos e combos da bomboniere.
 - Planos e benefícios do Clube.
-- Nome, logo, site e cores configurados para o cinema.
-- Sessão administrativa, armazenamento de uploads, auditoria e permissões já existentes.
-- Componentes visuais básicos do painel, como superfícies, botões, abas e estados de carregamento.
+- Branding, logo, site e cores.
+- Sessão administrativa, autenticação e permissões.
+- Upload e armazenamento já existentes.
+- Histórico em `settings.socialStudioPosts`.
+- Legendas e catálogo editorial de posts prontos.
 
-O módulo de e-mail é apenas uma referência de padrões de uso. Nenhum arquivo, template, endpoint, serviço ou comportamento do módulo de e-mail é chamado ou alterado pelo Social Studio.
+Nenhuma entidade paralela de filme, produto, sessão ou plano foi criada.
 
-## Experiência do editor
+## API e armazenamento
 
-O editor funciona como um pequeno estúdio, organizado em três áreas:
+- `GET /api/admin/social-studio/context`: catálogo, branding, templates e versão da engine.
+- `POST /api/admin/social-studio/resolve`: resolve os defaults do rascunho.
+- `POST /api/admin/social-studio/preview`: render temporário sem persistência.
+- `POST /api/admin/social-studio/posts`: render e persistência de uma arte.
+- `POST /api/admin/social-studio/campaigns`: Feed, quadrado e Story em uma operação.
 
-- Biblioteca visual à esquerda, com modelos agrupados em Filmes, Vendas, Bomboniere e Clube.
-- Preview central dominante, com proporção real, zoom e área segura de Story.
-- Propriedades à direita, com campos condicionais, seções recolhíveis e abas separadas para Arte e Legenda.
+A API interna `generateSocialCampaign({ template, subject, formats, cinema }, context, options)` permite automações futuras sem depender do painel.
 
-O caminho principal é selecionar o que divulgar, escolher o conteúdo e gerar. Ajustes de imagem e composição ficam disponíveis sem transformar a ferramenta em um editor livre.
+Os arquivos usam o storage existente nas pastas lógicas `social-studio` e `social-studio-campaigns`. Se uma campanha falha parcialmente, os arquivos criados naquela operação são removidos e o histórico não fica incompleto.
 
-Acima do editor existe a coleção **Posts prontos para publicar**. Ela separa filmes cadastrados de próximos lançamentos editoriais e permite abrir a composição para revisão ou gerar a arte final em um clique. Cada item já inclui texto da arte, enquadramento, assinatura, legenda e imagem.
+## Cache, fontes e segurança
 
-## Arquitetura
+- Fontes Barlow Condensed locais são carregadas uma vez e compartilhadas pelo Satori.
+- Pôster, backdrop e logo usam caches LRU com TTL.
+- Transformações de enquadramento também são reutilizadas.
+- Paletas são indexadas pelo hash da imagem.
+- O cliente mantém as oito prévias recentes.
 
-- `backend/services/socialStudioService.js`: catálogo de formatos e templates, normalização dos dados, textos padrão, legenda e renderer Sharp/SVG.
-- `backend/services/socialStudioEditorialCatalog.js`: lançamentos futuros ainda fora do catálogo, com fonte, previsão, texto e material visual local.
-- `backend/public/social-studio.js`: biblioteca visual, editor condicional, preview automático, rascunho local, campanha, upload, histórico, duplicação, download e exclusão.
-- `backend/public/social-studio.css`: layout responsivo próprio, integrado aos tokens do painel.
-- `backend/server.js`: contexto de dados, validação de imagens, preview, exportação e persistência do histórico.
-- `backend/services/adminPermissionService.js`: permissões `social_studio.view`, `social_studio.create` e `social_studio.delete`.
-- `tests/social-studio.test.mjs`: contratos dos formatos, templates, renderer, dados e isolamento do e-mail.
+O renderer não aceita requests arbitrários. URLs passam pelo carregador já validado do servidor, com HTTPS, allowlist, bloqueio de redirecionamento, limite de bytes e dimensões. Uploads aceitam apenas os formatos e tamanhos previstos pelo módulo existente.
 
-O histórico fica em `settings.socialStudioPosts`. Os arquivos finais usam o armazenamento de imagens existente, na pasta lógica `social-studio`. Isso evita novas entidades de filmes, sessões, preços, produtos ou planos.
+## Histórico e permissões
 
-## Posts prontos e calendário editorial
+O histórico mostra miniatura, campanha, template, formato, data, autor e versão do renderer. As ações de visualizar, duplicar, baixar e excluir continuam disponíveis conforme `social_studio.view`, `social_studio.create` e `social_studio.delete`.
 
-- Todo filme publicado no catálogo recebe automaticamente uma sugestão pronta usando título, imagem, gênero, classificação, data, sessões e preço disponíveis no painel.
-- Os textos variam entre os filmes e nunca inventam sessão ou valor. Sem venda aberta, a chamada muda para consulta da programação.
-- Lançamentos futuros ficam marcados como **Ainda não cadastrado** e não entram no catálogo público nem na venda de ingressos.
-- Datas futuras são apresentadas como previsão internacional, acompanhadas da fonte consultada e do aviso de que a exibição no Cine Cruzeiro não está confirmada.
-- Os pôsteres editoriais ficam locais em `public/images/social-studio/editorial`, evitando dependência de URLs remotas durante a renderização.
-- A lista editorial deve ser revisada quando estúdios alterarem calendários ou o filme for cadastrado oficialmente. Títulos já presentes no catálogo deixam de aparecer na coleção editorial para evitar duplicidade.
+Duplicar preserva template, variação, formato, textos e ajustes; o operador pode trocar apenas a entidade.
 
-## Fluxo dos dados
+## Qualidade
 
-1. `GET /api/admin/social-studio/context` monta um catálogo de leitura a partir dos dados atuais.
-2. `POST /api/admin/social-studio/resolve` combina template, entidade selecionada e identidade para preencher o rascunho.
-3. `POST /api/admin/social-studio/preview` renderiza uma imagem temporária sem persistência.
-4. `POST /api/admin/social-studio/posts` renderiza, salva o arquivo e adiciona o registro ao histórico.
-5. `POST /api/admin/social-studio/campaigns` adapta e salva Feed, quadrado e Story em uma única operação transacional.
-6. O histórico permite visualizar, baixar, duplicar e excluir conforme as permissões do usuário.
+Os testes cobrem:
 
-As imagens locais são resolvidas somente nas áreas públicas de imagens e uploads. Imagens remotas exigem HTTPS e host permitido, sem redirecionamentos, com limite de 8 MB e 40 megapixels. Uploads do editor aceitam JPG, PNG ou WebP de até 5 MB.
+- os sete templates registrados;
+- Feed, quadrado e Story nas dimensões exatas;
+- PNG e JPG;
+- Terror, Animação, Ação, Drama e Romance;
+- títulos longos;
+- pôster/backdrop ausentes;
+- preço ausente;
+- logos claras, escuras, horizontais e quadradas;
+- bomboniere, Clube, institucional e pré-venda;
+- geração de campanha e métricas;
+- histórico V2 e autoria;
+- compatibilidade do contrato legado.
 
-## Renderer e exportação
+Fixtures reais também são renderizadas para inspeção visual de hierarquia, enquadramento, contraste, assinatura e legibilidade.
 
-O renderer usa `sharp`, dependência já instalada no projeto. Cada composição é construída em SVG com margens seguras, quebra de linha, redução tipográfica e limites de linhas. Pôsteres, backdrops e logos usam `contain` ou `cover` de acordo com seu papel e nunca são distorcidos.
+Medição local de referência em fixture controlada: primeiro post em 359,5 ms, repetição com caches aquecidos em 208,8 ms e campanha paralela com três formatos em 397,5 ms de tempo total. Esses números variam conforme tamanho dos assets, CPU e storage da instalação.
 
-Quando a origem escolhida é um pôster, a composição reserva uma área exclusiva para a imagem e outra para título, data, descrição e CTA. O pôster sempre usa `contain`, sem corte nem texto sobre a arte. O domínio do sistema não é impresso nas imagens; permanece apenas nas legendas quando configurado.
+## Isolamento do e-mail
 
-Os templates de filme possuem quatro estilos que consomem o mesmo rascunho: Cinematográfico, Impacto, Clean e Minimalista. A paleta dinâmica deriva uma base segura da imagem do filme e mantém logo, CTA e elementos institucionais com as cores oficiais do cinema.
-
-O enquadramento armazena origem da imagem, preset, posição horizontal/vertical e escala. Overlay, escurecimento, blur, posição do conteúdo, alinhamento e escala do título também pertencem ao rascunho e são preservados ao duplicar.
-
-Formatos atuais:
-
-- Feed vertical: 1080 x 1350.
-- Quadrado: 1080 x 1080.
-- Story: 1080 x 1920.
-
-Saídas atuais: PNG com compressão sem perda e JPG progressivo em alta qualidade.
-
-## Templates atuais
-
-- `movie-price`: ingresso a partir de um valor real; sem preço, muda a hierarquia para “Confira as sessões e garanta seu lugar”, sem simular um preço.
-- `movie-highlight`: destaque com data, sessões e chamada.
-- `movie-premiere`: estreia ou lançamento recomendado pelo catálogo.
-- `online-ticket`: divulgação institucional da compra digital.
-- `concession-combo`: produto ou combo da bomboniere.
-- `cinema-club`: plano e benefícios do Clube.
-
-## Preview e rascunho
-
-- Alterações de texto, conteúdo, imagem, formato e estilo disparam preview automático com debounce de 460 ms.
-- Requisições superadas são canceladas e as oito prévias mais recentes ficam em cache na sessão.
-- O botão de atualização permanece como fallback explícito.
-- O rascunho é salvo no navegador sem criar registros no histórico e restaurado ao reabrir o módulo.
-- Avisos explicam fallback de pôster, ausência de imagem e ausência de preço.
-
-## Geração de campanha
-
-“Gerar arte” salva somente o formato selecionado. “Gerar campanha” renderiza composições independentes para 1080 × 1350, 1080 × 1080 e 1080 × 1920. Cada formato passa pelo renderer com suas próprias posições e margens; não é apenas redimensionamento do mesmo arquivo.
-
-Se qualquer etapa da campanha falhar, os arquivos já enviados naquela operação são removidos e o histórico não é alterado parcialmente.
-
-## Como adicionar um template
-
-1. Adicione a definição em `SOCIAL_TEMPLATES`, com `id`, `name`, `type`, `category`, `fields`, `styles`, `requiredData` e formatos permitidos.
-2. Acrescente os textos determinísticos em `defaultCopy`.
-3. Defina a fonte de imagem em `sourceImageForDraft`, quando necessário.
-4. Adicione a composição ao `templateSvg`, preservando margens e limites tipográficos.
-5. Inclua a legenda em `captionForDraft`.
-6. Registre a miniatura visual e a categoria no cliente do editor.
-7. Cubra o template no teste do renderer, incluindo os formatos compatíveis e estados sem dados.
-
-A separação entre catálogo, rascunho normalizado e renderer permite adicionar geração em lote ou tarefas agendadas no futuro sem depender do editor e sem tornar IA obrigatória.
-
-## Limite de responsabilidade
-
-O Social Studio gera, revisa e organiza arquivos. Publicação automática, agendamento em redes e geração de texto por IA não fazem parte desta primeira versão.
-
-**O módulo de e-mail existente não foi alterado.**
+**O módulo de e-mail existente não foi alterado.** Nenhum template, endpoint, serviço ou comportamento de e-mail foi modificado ou acoplado ao Social Studio V2.

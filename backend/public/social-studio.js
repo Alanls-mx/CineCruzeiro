@@ -9,7 +9,7 @@
     const adminIndex = pathname.indexOf("/admin");
     return adminIndex > 0 ? pathname.slice(0, adminIndex) : "";
   })();
-  const draftKey = "cinecruzeiro.socialStudio.draft.v2";
+  const draftKey = "cinecruzeiro.socialStudio.draft.v3";
   const state = {
     context: null,
     previewUrl: "",
@@ -28,6 +28,7 @@
     historyPage: 1,
     historyPageSize: 6,
     readyCollection: "catalog",
+    styleManuallySelected: false,
     notices: [],
     previewZoom: 86
   };
@@ -80,7 +81,7 @@
   }
 
   function currentTemplate() {
-    const id = document.querySelector("[name='socialStudioTemplate']:checked")?.value || "movie-price";
+    const id = document.querySelector("[name='socialStudioTemplate']:checked")?.value || "movie-premiere";
     return state.context?.templates?.find((template) => template.id === id) || state.context?.templates?.[0] || null;
   }
 
@@ -98,6 +99,7 @@
             <p>Crie campanhas com os filmes, produtos e planos já cadastrados.</p>
           </div>
           <div class="social-studio-toolbar-actions">
+            <span id="socialStudioEngineState" class="social-engine-state">Engine V2</span>
             <span id="socialStudioAutosaveState" class="social-save-state" data-state="idle">Rascunho local</span>
             <button id="socialStudioPreviewButton" class="ghost-button" type="button" data-requires-create>Atualizar prévia</button>
             <button id="socialStudioCampaignButton" class="ghost-button" type="button" data-requires-create>Gerar campanha</button>
@@ -122,6 +124,7 @@
               <h3 id="socialStudioTemplateTitle">O que divulgar</h3>
               <p>Escolha uma composição profissional.</p>
             </div>
+            <div id="socialStudioRecommendation" class="social-studio-recommendation" hidden></div>
             <div id="socialStudioTemplates" class="social-template-groups"></div>
             <div id="socialStudioBrand" class="social-studio-brand"></div>
           </aside>
@@ -242,6 +245,7 @@
                       <option value="top-left">Superior esquerda</option>
                       <option value="top-center">Superior central</option>
                       <option value="top-right">Superior direita</option>
+                      <option value="bottom-center">Inferior central</option>
                       <option value="bottom-right">Inferior direita</option>
                     </select>
                   </label>
@@ -355,6 +359,33 @@
       <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === selected || (!selected && index === 0) ? "checked" : ""} data-requires-create /><span>${escapeHtml(style.name)}</span></label>`).join("");
   }
 
+  function movieGenreRecommendation() {
+    if (currentTemplate()?.type !== "movie") return null;
+    const movieId = document.getElementById("socialStudioMovie")?.value;
+    const movie = (state.context?.movies || []).find((item) => String(item.id) === String(movieId));
+    const genres = [movie?.genre, ...(movie?.genres || [])].filter(Boolean).join(" ")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    if (/terror|horror|suspense/.test(genres)) return { style: "cinematic", label: "Cinematográfico escuro", reason: "terror ou suspense" };
+    if (/animacao|familia|infantil/.test(genres)) return { style: "impact", label: "Impacto colorido", reason: "animação ou família" };
+    if (/acao|aventura/.test(genres)) return { style: "impact", label: "Impacto", reason: "ação ou aventura" };
+    if (/romance/.test(genres)) return { style: "clean", label: "Clean elegante", reason: "romance" };
+    if (/drama/.test(genres)) return { style: "cinematic", label: "Cinematográfico", reason: "drama" };
+    return { style: "cinematic", label: "Cinematográfico", reason: "composição versátil" };
+  }
+
+  function updateStyleRecommendation({ apply = false } = {}) {
+    const recommendation = movieGenreRecommendation();
+    const container = document.getElementById("socialStudioRecommendation");
+    if (!container) return;
+    container.hidden = !recommendation;
+    if (!recommendation) return;
+    container.innerHTML = `<strong>Recomendação automática</strong><span>${escapeHtml(recommendation.label)} para ${escapeHtml(recommendation.reason)}.</span>`;
+    if (apply && !state.styleManuallySelected) {
+      renderStyles(recommendation.style);
+      setRadio("socialStudioStyle", recommendation.style);
+    }
+  }
+
   function renderSignatures(selected = "automatic") {
     const brand = state.context?.brand || {};
     const signatures = state.context?.signatures || [];
@@ -385,6 +416,8 @@
     document.getElementById("socialStudioBrandSwatches").innerHTML = [brand.primaryColor, brand.secondaryColor, brand.accentColor]
       .filter(Boolean).map((color) => `<i style="--swatch:${escapeHtml(color)}"></i>`).join("");
     renderStyles();
+    document.getElementById("socialStudioEngineState").textContent = context.engine?.version === "v2" ? "Engine V2 · Satori + Sharp" : "Motor clássico";
+    updateStyleRecommendation({ apply: true });
     renderSignatures();
     renderReadyPosts();
     updateFieldVisibility();
@@ -503,6 +536,7 @@
       label.hidden = !movieTemplate && ["backdrop", "poster"].includes(value);
     });
     renderStyles(document.querySelector("[name='socialStudioStyle']:checked")?.value || "");
+    updateStyleRecommendation();
   }
 
   function value(id, fallback = "") {
@@ -516,7 +550,7 @@
 
   function payload() {
     return {
-      templateId: checked("socialStudioTemplate", "movie-price"),
+      templateId: checked("socialStudioTemplate", "movie-premiere"),
       formatId: value("socialStudioFormat", "feed_portrait"),
       outputType: value("socialStudioOutput", "png"),
       style: checked("socialStudioStyle", "cinematic"),
@@ -561,7 +595,8 @@
   }
 
   function applyDraft(draft, caption = "") {
-    setRadio("socialStudioTemplate", draft.templateId);
+    const templateId = draft.templateId === "cinema-club" ? "club-plan" : draft.templateId;
+    setRadio("socialStudioTemplate", templateId);
     updateFieldVisibility();
     renderStyles(draft.style);
     setRadio("socialStudioStyle", draft.style);
@@ -602,6 +637,7 @@
     syncRangeOutputs();
     updateFieldVisibility();
     updatePreviewMeta();
+    updateStyleRecommendation();
   }
 
   function setStatus(message, kind = "") {
@@ -849,10 +885,11 @@
           <img src="${escapeHtml(assetUrl(post.imageUrl))}" alt="" loading="lazy" />
         </button>
         <div class="social-history-copy">
-          <div class="social-history-badges"><span>${escapeHtml(post.templateName || "Arte")}</span><span data-status="ready">${post.status === "draft" ? "Rascunho" : "Pronta"}</span></div>
+          <div class="social-history-badges"><span>${escapeHtml(post.templateName || "Arte")}</span><span>${post.rendererVersion === "v2" ? "Engine V2" : "Legado"}</span><span data-status="ready">${post.status === "draft" ? "Rascunho" : "Pronta"}</span></div>
           <strong>${escapeHtml(post.title || post.templateName)}</strong>
           <span>${escapeHtml(post.contentName || post.title || "")}</span>
           <small>${escapeHtml(post.formatName || post.formatId || "")} · ${String(post.outputType || "png").toUpperCase()}</small>
+          ${post.createdByName ? `<small>Criado por ${escapeHtml(post.createdByName)}</small>` : ""}
           <time>${post.createdAt ? new Date(post.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : ""}</time>
         </div>
         <div class="social-history-actions">
@@ -937,21 +974,33 @@
     });
     document.getElementById("socialStudioTemplates").addEventListener("change", async () => {
       updateFieldVisibility();
+      state.styleManuallySelected = false;
+      updateStyleRecommendation({ apply: true });
       await resolveDefaults({ resetCopy: true });
     });
     ["socialStudioMovie", "socialStudioConcession", "socialStudioClub"].forEach((id) => {
-      document.getElementById(id).addEventListener("change", () => resolveDefaults({ resetCopy: true }));
+      document.getElementById(id).addEventListener("change", () => {
+        if (id === "socialStudioMovie") {
+          state.styleManuallySelected = false;
+          updateStyleRecommendation({ apply: true });
+        }
+        resolveDefaults({ resetCopy: true });
+      });
     });
     form.addEventListener("input", (event) => {
       syncRangeOutputs();
       saveDraftLocal();
-      if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom") schedulePreview(460);
+      if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom") schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
       if (event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) return;
       updatePreviewMeta();
       saveDraftLocal();
-      if (event.target.id !== "socialStudioCaption") schedulePreview(80);
+      if (event.target.name === "socialStudioStyle") {
+        state.styleManuallySelected = true;
+        updateStyleRecommendation();
+      }
+      if (event.target.id !== "socialStudioCaption") schedulePreview(300);
     });
     document.getElementById("socialStudioImageUpload").addEventListener("change", (event) => {
       uploadCustomImage(event.target.files?.[0]).catch((error) => notify(error.message, "error"));

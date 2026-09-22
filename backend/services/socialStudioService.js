@@ -1,5 +1,20 @@
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const sharp = require("sharp");
+
+function fontData(filename) {
+  try {
+    return fs.readFileSync(path.join(__dirname, "..", "..", "public", "fonts", "social-studio", filename)).toString("base64");
+  } catch {
+    return "";
+  }
+}
+
+const SOCIAL_DISPLAY_FONT = fontData("BarlowCondensed-Black.ttf");
+const SOCIAL_TEXT_FONT = fontData("BarlowCondensed-SemiBold.ttf");
+const SOCIAL_DISPLAY_FAMILY = "Social Poster Display, DejaVu Sans Condensed, sans-serif";
+const SOCIAL_TEXT_FAMILY = "Social Poster Text, Arial, sans-serif";
 
 const SOCIAL_FORMATS = Object.freeze({
   feed_portrait: { id: "feed_portrait", name: "Instagram Feed 4:5", width: 1080, height: 1350 },
@@ -27,7 +42,7 @@ const SOCIAL_TEMPLATES = Object.freeze([
 ]);
 
 const SOCIAL_STYLES = Object.freeze([
-  { id: "cinematic", name: "Cinematográfico" },
+  { id: "cinematic", name: "Cartaz cinematográfico" },
   { id: "impact", name: "Impacto" },
   { id: "clean", name: "Clean" },
   { id: "minimal", name: "Minimalista" }
@@ -46,6 +61,8 @@ const FALLBACK_BRAND = Object.freeze({
   name: "Cinema",
   logoUrl: "",
   website: "",
+  posterWebsite: "",
+  posterLogoUrl: "",
   primaryColor: "#07111f",
   secondaryColor: "#1d4ed8",
   accentColor: "#facc15",
@@ -113,6 +130,8 @@ function normalizeBrand(brand = {}) {
     name: String(brand.name || FALLBACK_BRAND.name).trim().slice(0, 80),
     logoUrl: String(brand.logoUrl || "").trim().slice(0, 2000),
     website: String(brand.website || "").trim().slice(0, 500),
+    posterWebsite: String(brand.posterWebsite || "").trim().slice(0, 180),
+    posterLogoUrl: String(brand.posterLogoUrl || "").trim().slice(0, 2000),
     primaryColor: safeHex(brand.primaryColor, FALLBACK_BRAND.primaryColor),
     secondaryColor: safeHex(brand.secondaryColor, FALLBACK_BRAND.secondaryColor),
     accentColor: safeHex(brand.accentColor, FALLBACK_BRAND.accentColor),
@@ -257,7 +276,7 @@ function normalizeDraft(input = {}, context = {}) {
     titleScale: clamp(input.titleScale === undefined ? 100 : input.titleScale, 80, 125),
     paletteMode: ["automatic", "brand", "dynamic"].includes(input.paletteMode) ? input.paletteMode : "automatic",
     signatureId,
-    signaturePosition: ["automatic", "top-left", "top-center", "top-right", "bottom-right"].includes(input.signaturePosition) ? input.signaturePosition : "automatic",
+    signaturePosition: ["automatic", "top-left", "top-center", "top-right", "bottom-center", "bottom-right"].includes(input.signaturePosition) ? input.signaturePosition : "automatic",
     signatureScale: clamp(input.signatureScale === undefined ? 100 : input.signatureScale, 70, 135),
     caption: clean(input.caption, "", 1800),
     entities
@@ -266,8 +285,8 @@ function normalizeDraft(input = {}, context = {}) {
 
 function signatureForDraft(draft = {}, context = {}) {
   const automaticByTemplate = {
-    "movie-price": "wordmark-3d",
-    "movie-highlight": "wordmark-3d",
+    "movie-price": "logo-3d",
+    "movie-highlight": "logo-3d",
     "movie-premiere": "logo-3d",
     "online-ticket": "logo-3d",
     "concession-combo": "icon-3d",
@@ -292,6 +311,7 @@ function sourceImageForDraft(draft) {
     if (draft.imageMode === "backdrop") return movie.backdropUrl || movie.posterUrl || "";
     if (draft.imageMode === "poster") return movie.posterUrl || movie.backdropUrl || "";
     if (draft.imageUrl) return draft.imageUrl;
+    if (draft.style === "cinematic") return movie.posterUrl || movie.backdropUrl || "";
     return draft.formatId === "story"
       ? movie.posterUrl || movie.backdropUrl || ""
       : movie.backdropUrl || movie.posterUrl || "";
@@ -365,10 +385,11 @@ function wrapLines(value, maxChars, maxLines = 3) {
 function fittedText(value, width, preferredSize, options = {}) {
   const minSize = options.minSize || Math.round(preferredSize * 0.58);
   const maxLines = options.maxLines || 3;
+  const widthFactor = options.widthFactor || 0.62;
   let size = preferredSize;
   let lines = [];
   while (size >= minSize) {
-    const maxChars = Math.max(8, Math.floor(width / (size * 0.62)));
+    const maxChars = Math.max(8, Math.floor(width / (size * widthFactor)));
     lines = wrapLines(value, maxChars, maxLines);
     if (lines.join(" ").replace(/…$/, "").length >= String(value || "").length - 1 || size === minSize) break;
     size -= 2;
@@ -376,11 +397,11 @@ function fittedText(value, width, preferredSize, options = {}) {
   return { size, lines, lineHeight: Math.round(size * (options.lineHeight || 1.04)) };
 }
 
-function textBlock({ value, x, y, width, size, color = "#ffffff", weight = 800, maxLines = 3, anchor = "start", uppercase = false, lineHeight = 1.06, opacity = 1 }) {
+function textBlock({ value, x, y, width, size, color = "#ffffff", weight = 800, maxLines = 3, anchor = "start", uppercase = false, lineHeight = 1.06, opacity = 1, fontFamily = "Arial, Helvetica, sans-serif", letterSpacing = 0, filter = "", widthFactor = 0.62 }) {
   const content = uppercase ? String(value || "").toUpperCase() : String(value || "");
-  const fitted = fittedText(content, width, size, { maxLines, lineHeight });
+  const fitted = fittedText(content, width, size, { maxLines, lineHeight, widthFactor });
   const tspans = fitted.lines.map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : fitted.lineHeight}">${xml(line)}</tspan>`).join("");
-  return `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${color}" fill-opacity="${opacity}" font-family="Arial, Helvetica, sans-serif" font-size="${fitted.size}" font-weight="${weight}">${tspans}</text>`;
+  return `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${color}" fill-opacity="${opacity}" font-family="${xml(fontFamily)}" font-size="${fitted.size}" font-weight="${weight}" letter-spacing="${letterSpacing}"${filter ? ` filter="${filter}"` : ""}>${tspans}</text>`;
 }
 
 function rect(x, y, width, height, fill, radius = 0, opacity = 1, stroke = "", strokeWidth = 0) {
@@ -397,6 +418,75 @@ function onlineTicketMediaHeight(format) {
   return 540;
 }
 
+function posterFontDefinitions() {
+  const definitions = [];
+  if (SOCIAL_DISPLAY_FONT) definitions.push(`@font-face{font-family:'Social Poster Display';src:url(data:font/ttf;base64,${SOCIAL_DISPLAY_FONT}) format('truetype');font-weight:900;}`);
+  if (SOCIAL_TEXT_FONT) definitions.push(`@font-face{font-family:'Social Poster Text';src:url(data:font/ttf;base64,${SOCIAL_TEXT_FONT}) format('truetype');font-weight:600;}`);
+  return definitions.length ? `<style>${definitions.join("")}</style>` : "";
+}
+
+function posterWebsiteLabel(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/$/, "")
+    .slice(0, 80);
+}
+
+function compactPosterDate(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/^previst[oa]\s+para\s+/i, "")
+    .replace(/^a\s+partir\s+de\s+/i, "")
+    .toUpperCase();
+}
+
+function cinematicPosterLayout(format) {
+  if (format.id === "story") {
+    return {
+      fadeStart: 720,
+      titleY: 1010,
+      subtitleY: 1100,
+      detailY: 1240,
+      detailSize: 154,
+      ruleY: 1310,
+      cinemaY: 1375,
+      auxiliaryY: 1435,
+      ctaY: 1495,
+      websiteY: 1555,
+      logoBottom: 92
+    };
+  }
+  if (format.id === "square") {
+    return {
+      fadeStart: 335,
+      titleY: 455,
+      subtitleY: 515,
+      detailY: 620,
+      detailSize: 112,
+      ruleY: 676,
+      cinemaY: 720,
+      auxiliaryY: 760,
+      ctaY: 800,
+      websiteY: 840,
+      logoBottom: 18
+    };
+  }
+  return {
+    fadeStart: 500,
+    titleY: 640,
+    subtitleY: 710,
+    detailY: 835,
+    detailSize: 132,
+    ruleY: 895,
+    cinemaY: 950,
+    auxiliaryY: 998,
+    ctaY: 1045,
+    websiteY: 1090,
+    logoBottom: 24
+  };
+}
+
 function posterSafeLayoutForDraft(draft, format = formatById(draft?.formatId)) {
   const movieTemplate = ["movie-price", "movie-highlight", "movie-premiere"].includes(draft?.templateId);
   const movie = draft?.entities?.movie || {};
@@ -405,7 +495,7 @@ function posterSafeLayoutForDraft(draft, format = formatById(draft?.formatId)) {
     || (draft?.imageMode === "automatic" && (format.id === "story" || !movie.backdropUrl))
     || (draft?.imageMode === "backdrop" && !movie.backdropUrl)
   );
-  if (!movieTemplate || !usesPoster) return null;
+  if (!movieTemplate || !usesPoster || draft?.style === "cinematic") return null;
 
   if (format.id === "story") {
     return {
@@ -447,7 +537,10 @@ function templateSvg(draft, context) {
   const story = format.id === "story";
   const margin = story ? 82 : 64;
   const contentWidth = width - margin * 2;
-  const footer = sharedChrome({ width, height, brand: identity, margin });
+  const movieTemplate = ["movie-price", "movie-highlight", "movie-premiere"].includes(draft.templateId);
+  const style = draft.style || "cinematic";
+  const cinematicPoster = movieTemplate && style === "cinematic";
+  const footer = cinematicPoster ? "" : sharedChrome({ width, height, brand: identity, margin });
   const subtitleSize = story ? 34 : 28;
   const titleSize = Math.round((story ? 92 : 78) * (draft.titleScale / 100));
   const bodySize = story ? 34 : 28;
@@ -459,13 +552,58 @@ function templateSvg(draft, context) {
   const ctaWidth = Math.min(story ? 450 : 410, contentWidth * 0.62);
   const ctaX = centered ? (width - ctaWidth) / 2 : margin;
   const positionY = ({ top, center, bottom }) => draft.contentPosition === "top" ? top : draft.contentPosition === "center" ? center : bottom;
-  const movieTemplate = ["movie-price", "movie-highlight", "movie-premiere"].includes(draft.templateId);
   const posterLayout = posterSafeLayoutForDraft(draft, format);
-  const style = draft.style || "cinematic";
   let shapes = "";
   let copy = "";
 
-  if (posterLayout) {
+  if (cinematicPoster) {
+    const layout = cinematicPosterLayout(format);
+    const hasPrice = draft.templateId === "movie-price" && hasCommercialPrice(draft.price);
+    const detail = hasPrice ? draft.price : (compactPosterDate(draft.date) || "EM CARTAZ");
+    const subtitle = String(draft.subtitle || (hasPrice ? "INGRESSOS" : "ESTREIA")).trim();
+    const auxiliary = String(draft.auxiliaryText || "").trim().slice(0, 72);
+    const website = posterWebsiteLabel(identity.posterWebsite || identity.website);
+    const center = width / 2;
+    const textWidth = width - (story ? 150 : 116);
+    const neon = mixHex(identity.secondaryColor, "#76baff", 0.74);
+    const glow = mixHex(neon, "#ffffff", 0.18);
+    const titleColor = mixHex(brand.accentColor, "#ffffff", 0.12);
+    const detailSize = Math.round(layout.detailSize * (draft.titleScale / 100));
+    const fadeOffset = Math.round((layout.fadeStart / height) * 100);
+    shapes = `<defs>
+        <linearGradient id="cinematicFade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="${Math.max(0, fadeOffset - 10)}%" stop-color="#000000" stop-opacity="0"/>
+          <stop offset="${fadeOffset}%" stop-color="#000000" stop-opacity="0.12"/>
+          <stop offset="${Math.min(100, fadeOffset + 18)}%" stop-color="#000000" stop-opacity="0.82"/>
+          <stop offset="100%" stop-color="#000000" stop-opacity="1"/>
+        </linearGradient>
+        <radialGradient id="cinematicVignette" cx="50%" cy="38%" r="78%">
+          <stop offset="44%" stop-color="#000000" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#000000" stop-opacity="0.76"/>
+        </radialGradient>
+        <filter id="posterNeon" x="-30%" y="-30%" width="160%" height="170%">
+          <feGaussianBlur stdDeviation="7" result="blur"/>
+          <feFlood flood-color="${glow}" flood-opacity="0.76" result="glowColor"/>
+          <feComposite in="glowColor" in2="blur" operator="in" result="softGlow"/>
+          <feMerge><feMergeNode in="softGlow"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="posterSoftGlow" x="-20%" y="-30%" width="140%" height="170%">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      ${rect(0, 0, width, height, "url(#cinematicVignette)")}
+      ${rect(0, 0, width, height, "url(#cinematicFade)")}
+      <line x1="${story ? 138 : 126}" y1="${layout.ruleY}" x2="${width - (story ? 138 : 126)}" y2="${layout.ruleY}" stroke="${neon}" stroke-width="3" stroke-opacity="0.92" filter="url(#posterSoftGlow)"/>
+      <line x1="${story ? 138 : 126}" y1="${layout.ruleY + 8}" x2="${width - (story ? 138 : 126)}" y2="${layout.ruleY + 8}" stroke="${neon}" stroke-width="1" stroke-opacity="0.28"/>`;
+    copy = `${textBlock({ value: draft.title, x: center, y: layout.titleY, width: textWidth, size: story ? 52 : 42, color: titleColor, weight: 900, maxLines: 1, anchor: "middle", uppercase: true, fontFamily: SOCIAL_TEXT_FAMILY, letterSpacing: story ? 8 : 7, widthFactor: 0.5 })}
+      ${textBlock({ value: subtitle, x: center, y: layout.subtitleY, width: textWidth, size: story ? 48 : 38, color: neon, weight: 900, maxLines: 1, anchor: "middle", uppercase: true, fontFamily: SOCIAL_TEXT_FAMILY, letterSpacing: story ? 10 : 8, filter: "url(#posterSoftGlow)", widthFactor: 0.48 })}
+      ${textBlock({ value: detail, x: center, y: layout.detailY, width: textWidth, size: detailSize, color: neon, weight: 900, maxLines: 1, anchor: "middle", uppercase: true, fontFamily: SOCIAL_DISPLAY_FAMILY, letterSpacing: 1, filter: "url(#posterNeon)", widthFactor: 0.62 })}
+      ${textBlock({ value: `NO ${identity.name}`, x: center, y: layout.cinemaY, width: textWidth, size: story ? 45 : 35, color: neon, weight: 900, maxLines: 1, anchor: "middle", uppercase: true, fontFamily: SOCIAL_TEXT_FAMILY, letterSpacing: story ? 9 : 7, filter: "url(#posterSoftGlow)", widthFactor: 0.48 })}
+      ${auxiliary ? textBlock({ value: auxiliary, x: center, y: layout.auxiliaryY, width: textWidth, size: story ? 27 : 22, color: "#d9e5f6", weight: 600, maxLines: 1, anchor: "middle", uppercase: true, fontFamily: SOCIAL_TEXT_FAMILY, letterSpacing: 4, opacity: 0.82, widthFactor: 0.48 }) : ""}
+      ${textBlock({ value: draft.cta, x: center, y: layout.ctaY, width: textWidth, size: story ? 31 : 25, color: "#ffffff", weight: 600, maxLines: 1, anchor: "middle", uppercase: true, fontFamily: SOCIAL_TEXT_FAMILY, letterSpacing: story ? 7 : 6, widthFactor: 0.48 })}
+      ${website ? textBlock({ value: website, x: center, y: layout.websiteY, width: textWidth, size: story ? 31 : 25, color: "#ffffff", weight: 600, maxLines: 1, anchor: "middle", fontFamily: SOCIAL_TEXT_FAMILY, letterSpacing: 1, widthFactor: 0.48 }) : ""}`;
+  } else if (posterLayout) {
     const { poster, copy: copyArea, titleY, detailY, auxiliaryY, cta } = posterLayout;
     const hasPrice = draft.templateId === "movie-price" && hasCommercialPrice(draft.price);
     const detail = hasPrice ? draft.price : draft.date;
@@ -574,7 +712,7 @@ function templateSvg(draft, context) {
 
   const darken = !posterLayout && draft.darken > 0 ? rect(0, 0, width, height, "#000000", 0, draft.darken / 100) : "";
   const storyGuidance = movieTemplate && story ? `<rect x="${margin}" y="160" width="${contentWidth}" height="${height - 350}" fill="none" stroke="#ffffff" stroke-opacity="0"/>` : "";
-  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${darken}${shapes}${copy}${footer}${storyGuidance}</svg>`);
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${posterFontDefinitions()}${darken}${shapes}${copy}${footer}${storyGuidance}</svg>`);
 }
 
 function movieOverlaySvg({ width, height, margin, copyY, brand, style, overlay }) {
@@ -610,12 +748,13 @@ async function resizeSignature(buffer, maxWidth, maxHeight) {
 function signatureBounds(signature, draft, format) {
   const story = draft.formatId === "story";
   const scale = draft.signatureScale / 100;
-  const dimensions = {
+  const cinematicMovie = draft.style === "cinematic" && ["movie-price", "movie-highlight", "movie-premiere"].includes(draft.templateId);
+  const dimensions = cinematicMovie && signature.id === "logo-3d" ? [story ? 430 : 360, story ? 260 : 220] : ({
     classic: [story ? 230 : 190, story ? 116 : 96],
     "icon-3d": [story ? 150 : 122, story ? 150 : 122],
     "wordmark-3d": [story ? 390 : 320, story ? 142 : 118],
     "logo-3d": [story ? 360 : 290, story ? 220 : 178]
-  }[signature.id] || [story ? 230 : 190, story ? 116 : 96];
+  }[signature.id] || [story ? 230 : 190, story ? 116 : 96]);
   return {
     maxWidth: Math.min(format.width, Math.round(dimensions[0] * scale)),
     maxHeight: Math.min(format.height, Math.round(dimensions[1] * scale))
@@ -625,11 +764,16 @@ function signatureBounds(signature, draft, format) {
 function signatureCoordinates(signature, draft, format, renderedWidth, renderedHeight) {
   const story = draft.formatId === "story";
   const margin = story ? 82 : 64;
-  const automaticPosition = "top-left";
+  const cinematicMovie = draft.style === "cinematic" && ["movie-price", "movie-highlight", "movie-premiere"].includes(draft.templateId);
+  const automaticPosition = cinematicMovie ? "bottom-center" : "top-left";
   const position = draft.signaturePosition === "automatic" ? automaticPosition : draft.signaturePosition;
   const top = story ? 72 : 54;
   if (position === "top-center") return { top, left: Math.round((format.width - renderedWidth) / 2) };
   if (position === "top-right") return { top, left: format.width - margin - renderedWidth };
+  if (position === "bottom-center") return {
+    top: format.height - renderedHeight - (cinematicMovie ? cinematicPosterLayout(format).logoBottom : (story ? 96 : 42)),
+    left: Math.round((format.width - renderedWidth) / 2)
+  };
   if (position === "bottom-right") return {
     top: format.height - margin - renderedHeight - (story ? 96 : 78),
     left: format.width - margin - renderedWidth
@@ -816,21 +960,21 @@ function buildSocialReadyPosts(context = {}) {
       templateId: editorial ? "movie-premiere" : (movie.status === "upcoming" ? "movie-premiere" : "movie-highlight"),
       formatId: "feed_portrait",
       outputType: "png",
-      style: editorial ? "cinematic" : (["cinematic", "impact", "clean", "minimal"][index % 4]),
+      style: "cinematic",
       movieId: movie.id,
       title: movie.title,
       subtitle: editorial ? "PRÓXIMO LANÇAMENTO" : (movie.status === "upcoming" ? "EM BREVE NO CINE CRUZEIRO" : "NO CINE CRUZEIRO"),
-      date: editorial ? movie.releaseLabel : formatDate(movie.releaseDate || movie.sessions?.[0]?.date),
+      date: editorial ? movie.releaseLabel : formatDate(movie.sessions?.[0]?.date || movie.releaseDate),
       auxiliaryText: editorial ? movie.socialHook : (times.length ? times.join("  •  ") : "Confira a programação atualizada"),
       cta: editorial ? "ACOMPANHE AS NOVIDADES" : (times.length ? "COMPRE AGORA" : "CONFIRA A PROGRAMAÇÃO"),
-      imageMode: movie.backdropUrl ? "automatic" : "poster",
-      imagePreset: editorial ? "top" : "automatic",
+      imageMode: "poster",
+      imagePreset: "top",
       overlayIntensity: editorial ? 78 : 72,
       darken: editorial ? 10 : 8,
       contentPosition: "bottom",
-      signatureId: editorial ? "logo-3d" : "automatic",
-      signaturePosition: editorial ? "top-right" : "automatic",
-      signatureScale: editorial ? 92 : 100,
+      signatureId: "automatic",
+      signaturePosition: "automatic",
+      signatureScale: 100,
       caption: editorial ? movie.editorialCaption : catalogCaption(movie, context, index)
     };
     const normalized = normalizeDraft(rawDraft, context);
@@ -857,8 +1001,10 @@ function buildSocialReadyPosts(context = {}) {
   ];
 }
 
-function createHistoryRecord(rendered, input = {}, context = {}, actorUserId = "") {
+function createHistoryRecord(rendered, input = {}, context = {}, actor = "") {
   const now = new Date().toISOString();
+  const actorUserId = typeof actor === "object" ? actor?.id : actor;
+  const actorName = typeof actor === "object" ? (actor?.name || actor?.email || actor?.id) : actor;
   const entityName = rendered.draft.entities.movie?.title
     || rendered.draft.entities.concession?.name
     || rendered.draft.entities.clubPlan?.name
@@ -866,7 +1012,7 @@ function createHistoryRecord(rendered, input = {}, context = {}, actorUserId = "
   return {
     id: `social-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
     templateId: rendered.draft.templateId,
-    templateName: templateById(rendered.draft.templateId).name,
+    templateName: rendered.template?.name || templateById(rendered.draft.templateId).name,
     formatId: rendered.draft.formatId,
     formatName: rendered.format.name,
     width: rendered.format.width,
@@ -875,9 +1021,11 @@ function createHistoryRecord(rendered, input = {}, context = {}, actorUserId = "
     title: rendered.draft.title,
     contentName: String(entityName || rendered.draft.title || ""),
     status: "ready",
+    rendererVersion: rendered.rendererVersion || "legacy",
     imageUrl: String(input.savedImageUrl || ""),
     caption: captionForDraft(rendered.draft, context),
     payload: {
+      rendererVersion: rendered.rendererVersion || "legacy",
       templateId: rendered.draft.templateId,
       formatId: rendered.draft.formatId,
       outputType: rendered.draft.outputType,
@@ -910,6 +1058,7 @@ function createHistoryRecord(rendered, input = {}, context = {}, actorUserId = "
       caption: rendered.draft.caption
     },
     createdBy: String(actorUserId || ""),
+    createdByName: String(actorName || actorUserId || ""),
     createdAt: now,
     updatedAt: now
   };
@@ -932,6 +1081,7 @@ module.exports = {
   minimumMoviePrice,
   normalizeBrand,
   normalizeDraft,
+  compactPosterDate,
   renderSocialPost,
   posterSafeLayoutForDraft,
   signatureForDraft,

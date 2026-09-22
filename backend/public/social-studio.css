@@ -61,6 +61,34 @@
   gap: 8px;
 }
 
+.social-engine-state {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.social-studio-recommendation {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.social-studio-recommendation strong {
+  color: var(--accent);
+  font-size: 0.78rem;
+}
+
+.social-studio-recommendation span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
 .social-ready-library {
   display: grid;
   gap: 15px;

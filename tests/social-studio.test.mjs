@@ -10,6 +10,7 @@ const {
   SOCIAL_TEMPLATES,
   buildSocialReadyPosts,
   captionForDraft,
+  compactPosterDate,
   createHistoryRecord,
   draftNotices,
   hasCommercialPrice,
@@ -44,6 +45,7 @@ async function fixtureContext() {
       name: "Cinema de Teste",
       logoUrl: "poster://horizontal",
       website: "https://cinema.example",
+      posterWebsite: "www.cinema.example",
       primaryColor: "#07111f",
       secondaryColor: "#1d4ed8",
       accentColor: "#facc15"
@@ -154,6 +156,9 @@ test("biblioteca pronta separa catálogo de lançamentos editoriais sem inventar
   assert.equal(editorial.badge, "Ainda não cadastrado");
   assert.equal(editorial.draft.price, "");
   assert.equal(editorial.draft.cta, "ACOMPANHE AS NOVIDADES");
+  assert.equal(catalog.draft.style, "cinematic");
+  assert.equal(catalog.draft.imageMode, "poster");
+  assert.equal(editorial.draft.signaturePosition, "automatic");
   assert.equal(editorial.caption, "Uma legenda editorial exclusiva para o lançamento futuro.");
   assert.notEqual(catalog.caption, editorial.caption);
 });
@@ -251,12 +256,12 @@ test("renderiza filme sem backdrop e sem poster usando fundo da identidade", asy
   assert.equal(metadata.height, 1920);
 });
 
-test("imagem automática escolhe backdrop no feed, pôster no story e respeita upload", async () => {
+test("modo cinematográfico prioriza pôster em todos os formatos e respeita upload", async () => {
   const context = await fixtureContext();
   const feed = normalizeDraft({ templateId: "movie-highlight", formatId: "feed_portrait", movieId: "filme-longo" }, context);
   const story = normalizeDraft({ templateId: "movie-highlight", formatId: "story", movieId: "filme-longo" }, context);
   const upload = normalizeDraft({ templateId: "movie-highlight", movieId: "filme-longo", imageMode: "upload", imageUrl: "poster://square" }, context);
-  assert.equal(sourceImageForDraft(feed), "backdrop://movie");
+  assert.equal(sourceImageForDraft(feed), "poster://movie");
   assert.equal(sourceImageForDraft(story), "poster://movie");
   assert.equal(sourceImageForDraft(upload), "poster://square");
 });
@@ -268,7 +273,8 @@ test("pôster recebe área exclusiva sem conteúdo sobre a arte", async () => {
       templateId: "movie-premiere",
       formatId,
       movieId: "filme-longo",
-      imageMode: "poster"
+      imageMode: "poster",
+      style: "clean"
     }, context);
     const layout = posterSafeLayoutForDraft(draft, SOCIAL_FORMATS[formatId]);
     assert.ok(layout);
@@ -278,6 +284,20 @@ test("pôster recebe área exclusiva sem conteúdo sobre a arte", async () => {
       assert.ok(layout.poster.left + layout.poster.width < layout.copy.left);
     }
   }
+});
+
+test("cartaz cinematográfico usa tela cheia e compacta chamadas de data", async () => {
+  const context = await fixtureContext();
+  const draft = normalizeDraft({
+    templateId: "movie-premiere",
+    formatId: "feed_portrait",
+    movieId: "filme-longo",
+    imageMode: "poster",
+    style: "cinematic",
+    date: "Previsto para 22 de outubro"
+  }, context);
+  assert.equal(posterSafeLayoutForDraft(draft, SOCIAL_FORMATS.feed_portrait), null);
+  assert.equal(compactPosterDate(draft.date), "22 DE OUTUBRO");
 });
 
 test("ajustes controlados de imagem e composição permanecem no histórico", async () => {
@@ -357,7 +377,7 @@ test("painel registra módulo independente e não o mistura ao formulário de e-
   assert.match(html, /id="socialStudioRoot"/);
   assert.match(client, /\/api\/admin\/social-studio\/preview/);
   assert.match(client, /\/api\/admin\/social-studio\/campaigns/);
-  assert.match(client, /schedulePreview\(460\)/);
+  assert.match(client, /schedulePreview\(300\)/);
   assert.match(client, /socialStudioCopyCaption/);
   assert.doesNotMatch(client, /emailCampaignForm|\/api\/admin\/email/);
 });
