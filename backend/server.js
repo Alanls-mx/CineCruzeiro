@@ -8331,6 +8331,7 @@ function socialStudioContext(db) {
       imageUrl: signature.imageUrl ? publicAssetUrl(signature.imageUrl) : ""
     })),
     styles: SOCIAL_STYLES,
+    palettes: require("./services/social-studio/engine/palette").PALETTES,
     formats: Object.values(SOCIAL_FORMATS),
     movies,
     concessions: catalog.concessions || [],

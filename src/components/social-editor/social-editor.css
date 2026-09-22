@@ -1,6 +1,6 @@
 .se-app { min-height: 100dvh; background: #050910; color: #e8eef8; font-family: var(--font-inter), Arial, sans-serif; }
 .se-app button, .se-app input, .se-app select, .se-app textarea { font: inherit; }
-.se-toolbar { position: sticky; top: 0; z-index: 30; min-height: 68px; display: grid; grid-template-columns: 210px auto minmax(540px, 1fr); align-items: center; gap: 18px; padding: 10px 18px; border-bottom: 1px solid #1d2a3c; background: #08101bcc; backdrop-filter: blur(14px); }
+.se-toolbar { position: sticky; top: 0; z-index: 30; min-height: 68px; display: grid; grid-template-columns: minmax(160px, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #1d2a3c; background: #08101b; }
 .se-toolbar-brand, .se-toolbar-cluster, .se-toolbar-actions, .se-button, .se-zoom-control, .se-export-menu { display: flex; align-items: center; }
 .se-toolbar-brand { gap: 12px; min-width: 0; }
 .se-toolbar-brand div { display: grid; min-width: 0; }
@@ -25,7 +25,7 @@
 .se-save-state { min-width: 82px; color: #8394aa; font-size: 11px; text-align: right; }
 .se-save-state.is-saved { color: #59d9ad; }
 .se-save-state.is-error { color: #ff8592; }
-.se-workspace { height: calc(100dvh - 68px); display: grid; grid-template-columns: 252px minmax(480px, 1fr) 292px; overflow: hidden; }
+.se-workspace { height: calc(100dvh - 68px); display: grid; grid-template-columns: 228px minmax(0, 1fr) 280px; overflow: hidden; }
 .se-panel { min-width: 0; overflow: auto; background: #0a121f; }
 .se-layers { border-right: 1px solid #1b293b; }
 .se-properties { border-left: 1px solid #1b293b; padding-bottom: 30px; }
@@ -33,8 +33,8 @@
 .se-layer-list { padding: 8px; }
 .se-layer { margin-bottom: 5px; border: 1px solid transparent; border-radius: 6px; background: #0e1928; }
 .se-layer.is-selected { border-color: #2d9cff; background: #102944; }
-.se-layer-main { width: 100%; display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 8px; padding: 9px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
-.se-layer-main > span:last-child { display: grid; min-width: 0; }
+.se-layer-main { width: 100%; display: grid; grid-template-columns: 26px minmax(0, 1fr) 12px; align-items: center; gap: 8px; padding: 8px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
+.se-layer-main > span:nth-child(2) { display: grid; min-width: 0; }
 .se-layer-main strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .se-layer-kind { width: 30px; height: 24px; display: grid; place-items: center; border-radius: 4px; background: #192a3f; color: #78bfff; font-size: 9px; font-weight: 900; }
 .se-layer-actions { display: flex; gap: 4px; padding: 0 8px 8px 50px; }
@@ -43,7 +43,7 @@
 .se-canvas-toolbar { z-index: 2; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid #1d2a3a; background: #0b1420; color: #8597ad; font-size: 11px; }
 .se-canvas-toolbar > div { display: flex; gap: 5px; }
 .se-canvas-toolbar button { width: 30px; height: 30px; }
-.se-canvas-scroll { overflow: auto; padding: 36px; }
+.se-canvas-scroll { min-height: 0; overflow: auto; padding: 24px; }
 .se-canvas-frame { width: max-content; min-width: 100%; min-height: 100%; display: grid; place-items: start center; }
 .se-canvas-frame canvas { box-shadow: 0 18px 56px #0009; }
 .se-properties .se-property-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 14px 0; }
@@ -74,15 +74,39 @@
 @media (max-width: 1180px) {
   .se-toolbar { grid-template-columns: minmax(200px, 1fr) auto; }
   .se-toolbar-cluster { order: 3; grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid #1b293b; }
-  .se-workspace { height: calc(100dvh - 112px); grid-template-columns: 210px minmax(430px, 1fr) 260px; }
-  .se-toolbar-actions .se-save-state { display: none; }
+  .se-workspace { height: calc(100dvh - 112px); grid-template-columns: 200px minmax(0, 1fr) 250px; }
+  .se-toolbar-actions .se-save-state { position: absolute; right: 18px; bottom: 20px; }
 }
 
 @media (max-width: 850px) {
   .se-toolbar { position: relative; grid-template-columns: 1fr; }
-  .se-toolbar-actions, .se-toolbar-cluster { grid-column: auto; justify-content: flex-start; overflow-x: auto; }
+  .se-toolbar-actions, .se-toolbar-cluster { grid-column: auto; justify-content: flex-start; flex-wrap: wrap; }
   .se-workspace { height: auto; min-height: calc(100dvh - 180px); grid-template-columns: 1fr; overflow: visible; }
   .se-panel { max-height: 280px; border: 0; border-bottom: 1px solid #1b293b; }
-  .se-canvas-area { min-height: 68dvh; order: -1; }
+  .se-canvas-area { height: 68dvh; min-height: 400px; order: -1; }
   .se-canvas-scroll { padding: 20px; }
 }
+
+.se-app * { box-sizing: border-box; letter-spacing: 0; }
+.se-app :is(button, input, textarea, select):focus-visible { outline: 2px solid #7ac5ff; outline-offset: 2px; }
+.se-app button:disabled { opacity: .4; cursor: not-allowed; }
+.se-layer-children { margin-left: 12px; padding-left: 3px; border-left: 1px solid #34455b; }
+.se-layer.is-hidden .se-layer-main { opacity: .55; }
+.se-property-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.se-property-fields:disabled { opacity: .5; }
+.se-field { font-size: 11px; text-transform: none; }
+.se-field input[type="range"] { padding: 0; accent-color: #69b6f4; }
+.se-checkbox { margin: 18px 14px 0; display: flex; gap: 8px; align-items: center; font-size: 12px; color: #a3b3c6; }
+.se-segmented button { display: grid; place-items: center; }
+.se-panel-heading small { text-transform: none; max-width: 145px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-canvas-area { background: #181c22; }
+.se-canvas-frame { place-items: center; }
+@media (max-width: 850px) {
+  .se-toolbar { padding: 12px; gap: 10px; }
+  .se-toolbar-cluster { padding-top: 0; border-top: 0; }
+  .se-toolbar-actions .se-save-state { position: static; display: block; width: 100%; text-align: left; min-height: 14px; }
+  .se-toolbar-actions .se-button { font-size: 11px; min-height: 40px; padding: 0 10px; }
+  .se-panel { max-height: 340px; }
+  .se-layer-main { min-height: 46px; }
+}
+@media (prefers-reduced-motion: reduce) { .se-loader { animation: none; } }

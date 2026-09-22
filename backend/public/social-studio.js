@@ -28,6 +28,7 @@
     historyPage: 1,
     historyPageSize: 6,
     readyCollection: "catalog",
+    readyPage: 1,
     styleManuallySelected: false,
     notices: [],
     previewZoom: 86,
@@ -97,10 +98,9 @@
         <header class="social-studio-toolbar">
           <div class="social-studio-heading">
             <h2>Social Studio</h2>
-            <p>Crie campanhas com os filmes, produtos e planos já cadastrados.</p>
+            <p>Campanhas do Cine Cruzeiro</p>
           </div>
           <div class="social-studio-toolbar-actions">
-            <span id="socialStudioEngineState" class="social-engine-state">Engine V2</span>
             <span id="socialStudioAutosaveState" class="social-save-state" data-state="idle">Rascunho local</span>
             <button id="socialStudioPreviewButton" class="ghost-button" type="button" data-requires-create>Atualizar prévia</button>
             <button id="socialStudioCampaignButton" class="ghost-button" type="button" data-requires-create>Gerar campanha</button>
@@ -112,18 +112,17 @@
           <header class="social-ready-head">
             <div>
               <h3 id="socialStudioReadyTitle">Posts prontos para publicar</h3>
-              <p>Textos, imagens e legendas já organizados. Abra para ajustar ou gere a arte final em um clique.</p>
             </div>
             <div id="socialStudioReadyFilters" class="social-ready-filters" role="tablist" aria-label="Coleções de posts prontos"></div>
           </header>
           <div id="socialStudioReadyGrid" class="social-ready-grid"></div>
+          <div id="socialStudioReadyPager" class="social-studio-history-pager"></div>
         </section>
 
         <div class="social-studio-workspace">
           <aside class="social-template-library" aria-labelledby="socialStudioTemplateTitle">
             <div class="social-pane-heading">
               <h3 id="socialStudioTemplateTitle">O que divulgar</h3>
-              <p>Escolha uma composição profissional.</p>
             </div>
             <div id="socialStudioRecommendation" class="social-studio-recommendation" hidden></div>
             <div id="socialStudioTemplates" class="social-template-groups"></div>
@@ -175,7 +174,7 @@
                   <label data-social-field="subtitle">Chamada<input id="socialStudioSubtitle" maxlength="120" data-requires-create /></label>
                   <label data-social-field="date">Data<input id="socialStudioDate" maxlength="60" data-requires-create /></label>
                   <label data-social-field="auxiliaryText">Texto auxiliar<textarea id="socialStudioAuxiliary" rows="3" maxlength="260" data-requires-create></textarea></label>
-                  <label data-social-field="cta">Chamada do botão<input id="socialStudioCta" maxlength="60" data-requires-create /></label>
+                  <label data-social-field="cta">Chamada final<input id="socialStudioCta" maxlength="60" data-requires-create /></label>
                 </div>
               </details>
 
@@ -216,18 +215,17 @@
                     </select>
                   </label>
                   <div class="social-range-row">
-                    <label>Zoom da imagem <output id="socialStudioImageScaleValue">100%</output><input id="socialStudioImageScale" type="range" min="100" max="180" step="2" value="100" data-requires-create /></label>
                     <label>Posição horizontal <output id="socialStudioImageXValue">50%</output><input id="socialStudioImageX" type="range" min="0" max="100" step="1" value="50" data-requires-create /></label>
                     <label>Posição vertical <output id="socialStudioImageYValue">50%</output><input id="socialStudioImageY" type="range" min="0" max="100" step="1" value="50" data-requires-create /></label>
                   </div>
                 </div>
               </details>
 
-              <details class="social-property-section" data-social-field="advanced">
-                <summary>Identidade visual</summary>
+              <details class="social-property-section" data-social-field="advanced" open>
+                <summary>Layout e cores</summary>
                 <div class="social-property-body">
                   <fieldset class="social-choice-fieldset">
-                    <legend>Estilo</legend>
+                    <legend>Composição</legend>
                     <div id="socialStudioStyles" class="social-style-grid"></div>
                   </fieldset>
                   <label>Paleta
@@ -237,40 +235,25 @@
                       <option value="dynamic">Cores do filme</option>
                     </select>
                   </label>
+                  <fieldset class="social-choice-fieldset"><legend>Variações de cor</legend><div id="socialStudioPalettes" class="social-palette-grid"></div></fieldset>
                   <fieldset class="social-choice-fieldset">
                     <legend>Assinatura do pôster</legend>
                     <div id="socialStudioSignatures" class="social-signature-grid"></div>
                   </fieldset>
-                  <label>Posição da assinatura
-                    <select id="socialStudioSignaturePosition" data-requires-create>
-                      <option value="automatic">Automática pelo modelo</option>
-                      <option value="top-left">Superior esquerda</option>
-                      <option value="top-center">Superior central</option>
-                      <option value="top-right">Superior direita</option>
-                      <option value="bottom-center">Inferior central</option>
-                      <option value="bottom-right">Inferior direita</option>
-                    </select>
-                  </label>
                   <div class="social-range-row">
                     <label>Tamanho da assinatura <output id="socialStudioSignatureScaleValue">100%</output><input id="socialStudioSignatureScale" type="range" min="70" max="135" step="5" value="100" data-requires-create /></label>
                   </div>
-                  <div class="social-brand-note"><span id="socialStudioBrandSwatches"></span><p>A logo, o botão e os detalhes institucionais permanecem fiéis ao cinema.</p></div>
+                  <div class="social-brand-note"><span id="socialStudioBrandSwatches"></span></div>
                 </div>
               </details>
 
               <details class="social-property-section" data-social-field="advanced">
                 <summary>Configurações avançadas</summary>
                 <div class="social-property-body">
-                  <label>Posição do conteúdo
-                    <select id="socialStudioContentPosition" data-requires-create><option value="bottom">Inferior</option><option value="center">Centro</option><option value="top">Topo</option></select>
-                  </label>
                   <label>Alinhamento
                     <select id="socialStudioAlignment" data-requires-create><option value="left">Esquerda</option><option value="center">Centralizado</option></select>
                   </label>
                   <div class="social-range-row">
-                    <label>Intensidade do overlay <output id="socialStudioOverlayValue">72%</output><input id="socialStudioOverlay" type="range" min="20" max="100" step="2" value="72" data-requires-create /></label>
-                    <label>Escurecimento <output id="socialStudioDarkenValue">8%</output><input id="socialStudioDarken" type="range" min="0" max="55" step="1" value="8" data-requires-create /></label>
-                    <label>Desfoque <output id="socialStudioBlurValue">0</output><input id="socialStudioBlur" type="range" min="0" max="16" step="1" value="0" data-requires-create /></label>
                     <label>Tamanho do título <output id="socialStudioTitleScaleValue">100%</output><input id="socialStudioTitleScale" type="range" min="80" max="125" step="1" value="100" data-requires-create /></label>
                   </div>
                 </div>
@@ -357,8 +340,11 @@
     const template = currentTemplate();
     const allowed = template?.styles || ["clean"];
     const styles = (state.context.styles || []).filter((style) => allowed.includes(style.id));
+    const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
+    const poster = movie?.posterUrl || "";
+    const names = { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
     document.getElementById("socialStudioStyles").innerHTML = styles.map((style, index) => `
-      <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === selected || (!selected && index === 0) ? "checked" : ""} data-requires-create /><span>${escapeHtml(style.name)}</span></label>`).join("");
+      <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === selected || (!selected && index === 0) ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${poster ? `<img src="${escapeHtml(assetUrl(poster))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
   }
 
   function movieGenreRecommendation() {
@@ -418,7 +404,7 @@
     document.getElementById("socialStudioBrandSwatches").innerHTML = [brand.primaryColor, brand.secondaryColor, brand.accentColor]
       .filter(Boolean).map((color) => `<i style="--swatch:${escapeHtml(color)}"></i>`).join("");
     renderStyles();
-    document.getElementById("socialStudioEngineState").textContent = context.engine?.version === "v2" ? "Engine V2 · Satori + Sharp" : "Motor clássico";
+    document.getElementById("socialStudioPalettes").innerHTML = (context.palettes || []).map((palette, index) => `<label title="${escapeHtml(palette.name)}"><input type="radio" name="socialStudioPaletteId" value="${escapeHtml(palette.id)}" ${index === 0 ? "checked" : ""} data-requires-create /><span><i aria-hidden="true">${palette.colors.map((color) => `<b style="background:${escapeHtml(color)}"></b>`).join("")}</i><small>${escapeHtml(palette.name)}</small></span></label>`).join("");
     updateStyleRecommendation({ apply: true });
     renderSignatures();
     renderReadyPosts();
@@ -440,7 +426,11 @@
       <button type="button" role="tab" aria-selected="${state.readyCollection === filter.id ? "true" : "false"}" class="${state.readyCollection === filter.id ? "active" : ""}" data-social-ready-filter="${filter.id}">
         ${escapeHtml(filter.label)} <span>${filter.count}</span>
       </button>`).join("");
-    const visible = posts.filter((post) => post.collection === state.readyCollection);
+    const collection = posts.filter((post) => post.collection === state.readyCollection);
+    const pages = Math.max(1, Math.ceil(collection.length / 3));
+    state.readyPage = Math.min(state.readyPage, pages);
+    const visible = collection.slice((state.readyPage - 1) * 3, state.readyPage * 3);
+    document.getElementById("socialStudioReadyPager").innerHTML = `<button type="button" aria-label="Posts anteriores" data-ready-page="${state.readyPage - 1}" ${state.readyPage === 1 ? "disabled" : ""}>‹</button><span>${state.readyPage} de ${pages}</span><button type="button" aria-label="Próximos posts" data-ready-page="${state.readyPage + 1}" ${state.readyPage === pages ? "disabled" : ""}>›</button>`;
     document.getElementById("socialStudioReadyGrid").innerHTML = visible.length ? visible.map((post) => {
       const caption = String(post.caption || "").replace(/\s+/g, " ").trim();
       return `<article class="social-ready-card">
@@ -582,6 +572,7 @@
       alignment: value("socialStudioAlignment", "left"),
       titleScale: Number(value("socialStudioTitleScale", 100)),
       paletteMode: value("socialStudioPalette", "automatic"),
+      paletteId: checked("socialStudioPaletteId", "automatic"),
       signatureId: checked("socialStudioSignature", "automatic"),
       signaturePosition: value("socialStudioSignaturePosition", "automatic"),
       signatureScale: Number(value("socialStudioSignatureScale", 100)),
@@ -606,6 +597,7 @@
     updateFieldVisibility();
     renderStyles(draft.style);
     setRadio("socialStudioStyle", draft.style);
+    setRadio("socialStudioPaletteId", draft.paletteId || "automatic");
     renderSignatures(draft.signatureId || "automatic");
     setRadio("socialStudioSignature", draft.signatureId || "automatic");
     setRadio("socialStudioImageMode", draft.imageMode || "automatic");
@@ -979,6 +971,14 @@
       const button = event.target.closest("[data-social-ready-filter]");
       if (!button) return;
       state.readyCollection = button.dataset.socialReadyFilter;
+      state.readyPage = 1;
+      renderReadyPosts();
+      applyCapabilities();
+    });
+    document.getElementById("socialStudioReadyPager").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-ready-page]");
+      if (!button || button.disabled) return;
+      state.readyPage = Number(button.dataset.readyPage);
       renderReadyPosts();
       applyCapabilities();
     });
@@ -1090,5 +1090,6 @@
 
   const socialTab = document.querySelector('[data-admin-tablist="marketing"] [data-admin-tab="social"]');
   socialTab?.addEventListener("click", init, { once: true });
+  if (new URLSearchParams(window.location.search).get("studio") === "1") socialTab?.click();
   if (socialTab?.classList.contains("active")) init();
 })();

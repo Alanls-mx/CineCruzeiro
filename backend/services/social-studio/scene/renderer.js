@@ -22,7 +22,7 @@ function elementStyle(element, relative = false) {
     height: element.height,
     opacity: element.opacity,
     display: element.visible === false ? "none" : "flex",
-    transformOrigin: "center center",
+    transformOrigin: "top left",
     overflow: element.type === "group" ? "visible" : "hidden"
   };
   if (!relative) {

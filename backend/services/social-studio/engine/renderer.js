@@ -2,7 +2,7 @@ const { performance } = require("perf_hooks");
 const legacy = require("../../socialStudioService");
 const { loadAsset, sourceUrlForDraft } = require("./assets");
 const { normalizeV2Draft } = require("./normalizer");
-const { extractPalette } = require("./palette");
+const { extractPalette, applyPalette } = require("./palette");
 const { templateById } = require("../templates/registry");
 const { buildEditableScene } = require("../scene/factory");
 const { renderSocialScene } = require("../scene/renderer");
@@ -25,9 +25,9 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
 
   const sourceUrl = sourceUrlForDraft(draft);
   const sourceBuffer = await loadAsset(sourceUrl, loadImage);
-  const palette = draft.paletteMode === "brand"
+  const palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
-    : await extractPalette(sourceBuffer, brand);
+    : await extractPalette(sourceBuffer, brand), draft.paletteId);
   const logoUrl = signatureUrl(draft, context);
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";

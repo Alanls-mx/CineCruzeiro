@@ -1065,6 +1065,7 @@ function createHistoryRecord(rendered, input = {}, context = {}, actor = "") {
       alignment: rendered.draft.alignment,
       titleScale: rendered.draft.titleScale,
       paletteMode: rendered.draft.paletteMode,
+      paletteId: rendered.draft.paletteId || "automatic",
       signatureId: rendered.draft.signatureId,
       signaturePosition: rendered.draft.signaturePosition,
       signatureScale: rendered.draft.signatureScale,

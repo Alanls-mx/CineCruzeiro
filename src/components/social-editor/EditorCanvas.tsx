@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Group, Image as KonvaImage, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
 import type { SceneElement, SocialScene } from "./types";
+import { isElementLocked } from "./SceneSerializer";
 
 type Props = {
   scene: SocialScene;
@@ -34,6 +35,7 @@ function useRemoteImage(src = "") {
   useEffect(() => {
     if (!src) return setImage(null);
     const next = new window.Image();
+    setImage(null);
     next.crossOrigin = "anonymous";
     next.onload = () => setImage(next);
     next.onerror = () => setImage(null);
@@ -82,6 +84,7 @@ function ElementNode({ element, selectedId, onSelect, onChange, canvasWidth, can
     onClick: (event: Konva.KonvaEventObject<MouseEvent>) => { event.cancelBubble = true; onSelect(element.id); },
     onTap: (event: Konva.KonvaEventObject<TouchEvent>) => { event.cancelBubble = true; onSelect(element.id); },
     onDragMove: (event: Konva.KonvaEventObject<DragEvent>) => {
+      event.cancelBubble = true;
       const target = event.target;
       const threshold = 8;
       const guides: Guide[] = [];
@@ -99,8 +102,9 @@ function ElementNode({ element, selectedId, onSelect, onChange, canvasWidth, can
       }
       onGuides(guides);
     },
-    onDragEnd: (event: Konva.KonvaEventObject<DragEvent>) => { onGuides([]); onChange(element.id, { x: event.target.x(), y: event.target.y() }, true); },
+    onDragEnd: (event: Konva.KonvaEventObject<DragEvent>) => { event.cancelBubble = true; onGuides([]); onChange(element.id, { x: event.target.x(), y: event.target.y() }, true); },
     onTransformEnd: (event: Konva.KonvaEventObject<Event>) => {
+      event.cancelBubble = true;
       const target = event.target;
       const width = Math.max(8, target.width() * target.scaleX());
       const height = Math.max(4, target.height() * target.scaleY());
@@ -110,10 +114,16 @@ function ElementNode({ element, selectedId, onSelect, onChange, canvasWidth, can
     },
   };
   if (element.type === "text") {
-    return <Text {...common} text={element.uppercase ? element.text?.toUpperCase() : element.text} fontFamily={element.fontFamily === "Social Display" ? "Impact" : "Arial"} fontSize={element.fontSize} fontStyle={Number(element.fontWeight) >= 700 ? "bold" : "normal"} fill={element.fill} align={element.align} letterSpacing={element.letterSpacing} lineHeight={element.lineHeight} verticalAlign="middle" shadowColor={element.shadowColor} shadowBlur={element.shadowBlur} wrap="word" />;
+    return <Text {...common} text={element.uppercase ? element.text?.toUpperCase() : element.text} fontFamily={element.fontFamily} fontSize={element.fontSize} fontStyle={element.fontFamily === "Social Display" ? "900" : "600"} fill={element.fill} align={element.align} letterSpacing={element.letterSpacing} lineHeight={element.lineHeight} verticalAlign="middle" shadowColor={element.shadowColor} shadowBlur={element.shadowBlur} wrap="word" />;
   }
   if (element.type === "image") {
     const crop = coverCrop(image, element);
+    if (element.fit === "contain" && image) {
+      const scale = Math.min(element.width / image.width, element.height / image.height);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      return <Group {...common}><Rect width={element.width} height={element.height} fill="rgba(0,0,0,0)" /><KonvaImage listening={false} image={image} x={(element.width - width) * (element.focusX ?? 50) / 100} y={(element.height - height) * (element.focusY ?? 50) / 100} width={width} height={height} /></Group>;
+    }
     return <KonvaImage {...common} image={image || undefined} crop={crop} />;
   }
   if (element.type === "gradient") {
@@ -125,8 +135,8 @@ function ElementNode({ element, selectedId, onSelect, onChange, canvasWidth, can
     return <Rect {...common} fill={element.fill} stroke={element.stroke} strokeWidth={element.strokeWidth} cornerRadius={element.radius} />;
   }
   return (
-    <Group {...common} width={undefined} height={undefined}>
-      {(element.children || []).map((child) => <ElementNode key={child.id} element={child} selectedId={selectedId} onSelect={onSelect} onChange={onChange} canvasWidth={element.width} canvasHeight={element.height} onGuides={onGuides} />)}
+    <Group {...common}>
+      {(element.children || []).map((child) => <ElementNode key={child.id} element={element.locked ? { ...child, locked: true } : child} selectedId={selectedId} onSelect={onSelect} onChange={onChange} canvasWidth={element.width} canvasHeight={element.height} onGuides={() => {}} />)}
     </Group>
   );
 }
@@ -135,6 +145,15 @@ export function EditorCanvas({ scene, selectedId, zoom, safeArea, onSelect, onCh
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      new FontFace("Social Display", `url(${BASE_PATH}/fonts/social-studio/BarlowCondensed-Black.ttf)`, { weight: "900" }).load(),
+      new FontFace("Social Text", `url(${BASE_PATH}/fonts/social-studio/BarlowCondensed-SemiBold.ttf)`, { weight: "600" }).load()
+    ]).then((fonts) => { fonts.forEach((font) => document.fonts.add(font)); if (active) setFontsReady(true); }).catch(() => { if (active) setFontsReady(true); });
+    return () => { active = false; };
+  }, []);
   const selected = useMemo(() => {
     const visit = (elements: SceneElement[]): SceneElement | null => {
       for (const element of elements) {
@@ -144,7 +163,8 @@ export function EditorCanvas({ scene, selectedId, zoom, safeArea, onSelect, onCh
       }
       return null;
     };
-    return selectedId ? visit(scene.elements) : null;
+    const found = selectedId ? visit(scene.elements) : null;
+    return found ? { ...found, locked: isElementLocked(scene, found.id) } : null;
   }, [scene.elements, selectedId]);
 
   useEffect(() => {
@@ -157,11 +177,12 @@ export function EditorCanvas({ scene, selectedId, zoom, safeArea, onSelect, onCh
     const target = stage.findOne(`#${selectedId}`);
     transformer.nodes(target ? [target] : []);
     transformer.getLayer()?.batchDraw();
-  }, [selectedId, selected?.locked, scene]);
+  }, [selectedId, selected?.locked, scene, fontsReady]);
 
+  if (!fontsReady) return <div className="se-empty-panel" role="status">Carregando fontes...</div>;
   return (
     <div style={{ width: scene.width * zoom, height: scene.height * zoom }}>
-      <Stage ref={stageRef} width={scene.width} height={scene.height} scaleX={zoom} scaleY={zoom} style={{ width: scene.width * zoom, height: scene.height * zoom }} onMouseDown={(event) => { if (event.target === event.target.getStage()) onSelect(null); }} onTouchStart={(event) => { if (event.target === event.target.getStage()) onSelect(null); }}>
+      <Stage ref={stageRef} width={scene.width * zoom} height={scene.height * zoom} scaleX={zoom} scaleY={zoom} onMouseDown={(event) => { if (event.target === event.target.getStage()) onSelect(null); }} onTouchStart={(event) => { if (event.target === event.target.getStage()) onSelect(null); }}>
         <Layer>
           <Rect width={scene.width} height={scene.height} fill={scene.backgroundColor} listening={false} />
           {scene.elements.map((element) => <ElementNode key={element.id} element={element} selectedId={selectedId} onSelect={onSelect} onChange={onChange} canvasWidth={scene.width} canvasHeight={scene.height} onGuides={setGuides} />)}
@@ -169,7 +190,7 @@ export function EditorCanvas({ scene, selectedId, zoom, safeArea, onSelect, onCh
             ? <Line key={`x-${index}`} points={[guide.value, 0, guide.value, scene.height]} stroke="#f4c400" strokeWidth={1 / zoom} dash={[8 / zoom, 5 / zoom]} listening={false} />
             : <Line key={`y-${index}`} points={[0, guide.value, scene.width, guide.value]} stroke="#f4c400" strokeWidth={1 / zoom} dash={[8 / zoom, 5 / zoom]} listening={false} />)}
           {safeArea && <Rect x={scene.width * 0.07} y={scene.height * 0.06} width={scene.width * 0.86} height={scene.height * 0.88} stroke="#63b3ff" strokeWidth={2 / zoom} dash={[12 / zoom, 8 / zoom]} listening={false} />}
-          {selected && !selected.locked && <Transformer ref={transformerRef} rotateEnabled enabledAnchors={selected.keepRatio ? ["top-left", "top-right", "bottom-left", "bottom-right"] : undefined} keepRatio={selected.keepRatio === true} borderStroke="#39a8ff" anchorFill="#ffffff" anchorStroke="#1275c8" anchorSize={10 / zoom} rotateAnchorOffset={28 / zoom} boundBoxFunc={(oldBox, nextBox) => nextBox.width < 8 || nextBox.height < 4 ? oldBox : nextBox} />}
+          {selected && !selected.locked && <Transformer ref={transformerRef} rotateEnabled flipEnabled={false} enabledAnchors={selected.keepRatio ? ["top-left", "top-right", "bottom-left", "bottom-right"] : undefined} keepRatio={selected.keepRatio === true} borderStroke="#39a8ff" anchorFill="#ffffff" anchorStroke="#1275c8" anchorSize={9} rotateAnchorOffset={28} boundBoxFunc={(oldBox, nextBox) => nextBox.width < 8 || nextBox.height < 4 ? oldBox : nextBox} />}
         </Layer>
         {safeArea && <Layer listening={false}><Line points={[scene.width / 2, 0, scene.width / 2, scene.height]} stroke="rgba(99,179,255,.45)" strokeWidth={1 / zoom} /><Line points={[0, scene.height / 2, scene.width, scene.height / 2]} stroke="rgba(99,179,255,.45)" strokeWidth={1 / zoom} /></Layer>}
       </Stage>

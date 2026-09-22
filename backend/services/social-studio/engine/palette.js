@@ -4,6 +4,20 @@ const { LruTtlCache } = require("./cache");
 
 const paletteCache = new LruTtlCache({ maxEntries: 96, ttlMs: 60 * 60 * 1000 });
 
+const PALETTES = Object.freeze([
+  { id: "automatic", name: "Do filme", colors: ["#151a22", "#ffffff", "#8497ab"] },
+  { id: "arctic", name: "Gelo", colors: ["#101822", "#2867a1", "#80caff"] },
+  { id: "ruby", name: "Rubi", colors: ["#211116", "#9c243c", "#ff7287"] },
+  { id: "jade", name: "Jade", colors: ["#0d201c", "#18765e", "#70e1b9"] },
+  { id: "amber", name: "Ouro", colors: ["#201b11", "#b27b20", "#ffd36a"] },
+  { id: "mono", name: "Prata", colors: ["#171719", "#717780", "#e8ecf1"] }
+]);
+
+function applyPalette(palette, id) {
+  const preset = PALETTES.find((item) => item.id === id && id !== "automatic");
+  return preset ? { dominantColor: preset.colors[0], secondaryColor: preset.colors[1], accentColor: preset.colors[2], textColor: "#ffffff" } : palette;
+}
+
 function safeHex(value, fallback = "#0a1220") {
   const candidate = String(value || "").trim();
   return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate.toLowerCase() : fallback;
@@ -75,13 +89,13 @@ async function extractPalette(buffer, brand = {}) {
         color: { r: entry.r / entry.count, g: entry.g / entry.count, b: entry.b / entry.count }
       }))
       .sort((a, b) => b.count - a.count);
-    const dominant = colors[0]?.color || hexToRgb(fallback.primaryColor);
+    const dominant = colors[0]?.color || hexToRgb(fallback.dominantColor);
     const secondary = colors.find((entry) => distance(entry.color, dominant) > 72)?.color || hexToRgb(fallback.secondaryColor);
     const accent = colors
       .filter((entry) => distance(entry.color, dominant) > 60)
       .sort((a, b) => saturation(b.color) - saturation(a.color) || b.count - a.count)[0]?.color || hexToRgb(fallback.accentColor);
     return {
-      dominantColor: mix(rgbToHex(dominant), fallback.primaryColor, 0.42),
+      dominantColor: mix(rgbToHex(dominant), fallback.dominantColor, 0.42),
       secondaryColor: mix(rgbToHex(secondary), fallback.secondaryColor, 0.28),
       accentColor: mix(rgbToHex(accent), fallback.accentColor, 0.22),
       textColor: fallback.textColor
@@ -89,4 +103,4 @@ async function extractPalette(buffer, brand = {}) {
   });
 }
 
-module.exports = { extractPalette, hexToRgb, mix, paletteCache, rgbToHex, safeHex };
+module.exports = { extractPalette, hexToRgb, mix, paletteCache, rgbToHex, safeHex, PALETTES, applyPalette };

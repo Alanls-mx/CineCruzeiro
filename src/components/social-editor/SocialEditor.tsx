@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Trash2 } from "lucide-react";
 import { EditorCanvas } from "./EditorCanvas";
 import { createHistory, commitHistory, redoHistory, undoHistory, type SceneHistory } from "./HistoryManager";
-import { cloneScene, duplicateElement, findElement, mapElement, moveLayer, removeElement } from "./SceneSerializer";
+import { cloneScene, copyElement, duplicateElement, findElement, isElementLocked, mapElement, moveLayer, patchGeometry, removeElement } from "./SceneSerializer";
 import { LayersPanel } from "./LayersPanel";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
@@ -41,14 +41,40 @@ export default function SocialEditor({ postId }: { postId: string }) {
   const [post, setPost] = useState<SocialPostSummary | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0.5);
-  const [safeArea, setSafeArea] = useState(true);
+  const [autoFit, setAutoFit] = useState(true);
+  const [safeArea, setSafeArea] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
   const clipboard = useRef<SceneElement | null>(null);
+  const canvasArea = useRef<HTMLDivElement>(null);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const latestScene = useRef<SocialScene | null>(null);
+  const operation = useRef(false);
   const scene = history?.present || null;
-  const selected = useMemo(() => scene && selectedId ? findElement(scene, selectedId) : null, [scene, selectedId]);
+  latestScene.current = scene;
+  const selected = useMemo(() => {
+    const element = scene && selectedId ? findElement(scene, selectedId) : null;
+    return element && scene ? { ...element, locked: isElementLocked(scene, element.id) } : null;
+  }, [scene, selectedId]);
+
+  useEffect(() => {
+    if (!scene || !canvasArea.current || !autoFit) return;
+    const container = canvasArea.current;
+    const resize = () => setZoom(Math.max(.1, Math.min(1, (container.clientWidth - 48) / scene.width, (container.clientHeight - 48) / scene.height)));
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize();
+    return () => observer.disconnect();
+  }, [scene?.width, scene?.height, autoFit, Boolean(post)]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   useEffect(() => {
     let active = true;
@@ -72,62 +98,75 @@ export default function SocialEditor({ postId }: { postId: string }) {
     setSaveState("idle");
   }, []);
 
-  const patchElement = useCallback((id: string, patch: Partial<SceneElement>, commit = true) => {
+  const patchElement = useCallback((id: string, patch: Partial<SceneElement>) => {
+    if (operation.current) return;
     setHistory((current) => {
       if (!current) return current;
-      const next = mapElement(current.present, id, (element) => ({ ...element, ...patch }));
-      return commit ? commitHistory(current, next) : { ...current, present: next };
+      if (isElementLocked(current.present, id) && Object.keys(patch).some((key) => key !== "locked")) return current;
+      const next = mapElement(current.present, id, (element) => patchGeometry(element, patch));
+      return commitHistory(current, next);
     });
     setDirty(true);
     setSaveState("idle");
   }, []);
 
-  useEffect(() => {
-    if (!scene || !dirty) return;
-    const timer = window.setTimeout(async () => {
+  const persistDraft = useCallback((snapshot: SocialScene) => {
+    const task = saveQueue.current.catch(() => {}).then(async () => {
       setSaveState("saving");
+      await api(`/api/admin/social-studio/posts/${encodeURIComponent(postId)}/scene-draft`, { method: "PUT", body: JSON.stringify({ scene: snapshot }) });
+      if (JSON.stringify(latestScene.current) === JSON.stringify(snapshot)) { setDirty(false); setSaveState("saved"); }
+    });
+    saveQueue.current = task;
+    return task;
+  }, [postId]);
+
+  useEffect(() => {
+    if (!scene || !dirty || busy) return;
+    const timer = window.setTimeout(async () => {
+      if (operation.current) return;
       try {
-        await api(`/api/admin/social-studio/posts/${encodeURIComponent(postId)}/scene-draft`, { method: "PUT", body: JSON.stringify({ scene }) });
-        setSaveState("saved");
+        await persistDraft(scene);
       } catch (reason) {
         setSaveState("error");
         setError(reason instanceof Error ? reason.message : "Não foi possível salvar o rascunho.");
       }
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [scene, dirty, postId]);
+  }, [scene, dirty, busy, persistDraft]);
 
   const removeSelected = useCallback(() => {
-    if (!scene || !selected) return;
+    if (!scene || !selected || selected.locked || operation.current) return;
     if (selected.required || selected.protected) return setError("Este elemento faz parte da identidade obrigatória da arte e não pode ser excluído.");
     replaceScene(removeElement(scene, selected.id));
     setSelectedId(null);
   }, [replaceScene, scene, selected]);
 
   const duplicateSelected = useCallback(() => {
-    if (!scene || !selectedId) return;
+    if (!scene || !selectedId || selected?.locked || operation.current) return;
     const result = duplicateElement(scene, selectedId);
     if (result.id) { replaceScene(result.scene); setSelectedId(result.id); }
-  }, [replaceScene, scene, selectedId]);
+  }, [replaceScene, scene, selectedId, selected?.locked]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       const typing = ["INPUT", "TEXTAREA", "SELECT"].includes((event.target as HTMLElement)?.tagName);
       const modifier = event.ctrlKey || event.metaKey;
+      if (typing || operation.current) return;
       if (modifier && event.key.toLowerCase() === "z") { event.preventDefault(); setHistory((current) => current ? (event.shiftKey ? redoHistory(current) : undoHistory(current)) : current); setDirty(true); return; }
       if (modifier && event.key.toLowerCase() === "y") { event.preventDefault(); setHistory((current) => current ? redoHistory(current) : current); setDirty(true); return; }
-      if (typing || !scene || !selected) return;
-      if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); removeSelected(); return; }
-      if (modifier && event.key.toLowerCase() === "c") {
-        if (!selected.required && !selected.protected) clipboard.current = cloneScene({ ...scene, elements: [selected] }).elements[0];
-        return;
-      }
+      if (!scene) return;
       if (modifier && event.key.toLowerCase() === "v" && clipboard.current) {
         event.preventDefault();
-        const pasted = { ...cloneScene({ ...scene, elements: [clipboard.current] }).elements[0], id: `${clipboard.current.id}-paste-${Date.now().toString(36)}`, x: clipboard.current.x + 18, y: clipboard.current.y + 18 };
+        const pasted = copyElement(clipboard.current);
         replaceScene({ ...scene, elements: [...scene.elements, pasted] });
         clipboard.current = pasted;
         setSelectedId(pasted.id);
+        return;
+      }
+      if (!selected || selected.locked) return;
+      if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); removeSelected(); return; }
+      if (modifier && event.key.toLowerCase() === "c") {
+        if (!selected.required && !selected.protected) clipboard.current = cloneScene({ ...scene, elements: [selected] }).elements[0];
         return;
       }
       if (modifier && event.key.toLowerCase() === "d") { event.preventDefault(); duplicateSelected(); return; }
@@ -155,13 +194,15 @@ export default function SocialEditor({ postId }: { postId: string }) {
   };
 
   const saveVersion = async () => {
-    if (!scene) return;
+    if (!scene || operation.current) return;
+    operation.current = true;
     setBusy(true); setError("");
     try {
+      await saveQueue.current.catch(() => {});
       const result = await api<{ post: SocialPostSummary; scene: SocialScene }>(`/api/admin/social-studio/posts/${encodeURIComponent(postId)}/scene-versions`, { method: "POST", body: JSON.stringify({ scene, outputType: post?.outputType || "png" }) });
       setPost(result.post); setHistory(createHistory(result.scene)); setDirty(false); setSaveState("saved");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Não foi possível salvar a nova versão."); }
-    finally { setBusy(false); }
+    finally { operation.current = false; setBusy(false); }
   };
 
   const exportScene = async (outputType: "png" | "jpg") => {
@@ -176,13 +217,39 @@ export default function SocialEditor({ postId }: { postId: string }) {
   };
 
   const resetScene = async () => {
-    if (!scene || !originalScene || !window.confirm("Restaurar a composição automática? O rascunho manual atual será descartado, mas as versões já salvas continuarão no histórico.")) return;
+    if (operation.current || !scene || !originalScene || !window.confirm("Restaurar a composição automática? O rascunho manual atual será descartado, mas as versões já salvas continuarão no histórico.")) return;
+    operation.current = true;
     setBusy(true);
     try {
+      await saveQueue.current.catch(() => {});
       const result = await api<{ post: SocialPostSummary; scene: SocialScene }>(`/api/admin/social-studio/posts/${encodeURIComponent(postId)}/scene-reset`, { method: "POST", body: "{}" });
       setPost(result.post); setHistory(createHistory(result.scene)); setSelectedId(null); setDirty(false); setSaveState("saved");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Não foi possível restaurar a arte."); }
-    finally { setBusy(false); }
+    finally { operation.current = false; setBusy(false); }
+  };
+
+  const goBack = async () => {
+    if (operation.current) return;
+    operation.current = true;
+    setBusy(true);
+    try {
+      if (scene && dirty) await persistDraft(scene);
+      else await saveQueue.current;
+      window.location.href = `${BASE_PATH}/admin/?studio=1#marketingPanel`;
+    } catch { setError("O rascunho não foi salvo. Tente novamente antes de sair."); }
+    finally { operation.current = false; setBusy(false); }
+  };
+
+  const addElement = (type: "text" | "shape") => {
+    if (!scene || busy) return;
+    if (scene.elements.length >= 80) return setError("Limite de 80 camadas atingido.");
+    const id = `${type}-${crypto.randomUUID()}`;
+    const element: SceneElement = { id, name: type === "text" ? "Novo texto" : "Nova forma", role: type, type,
+      x: scene.width * .2, y: scene.height * .45, width: scene.width * .6, height: 100,
+      rotation: 0, opacity: 1, visible: true, locked: false, required: false, protected: false,
+      fill: type === "text" ? "#ffffff" : "#1275c8", ...(type === "text" ? { text: "Seu texto", fontFamily: "Social Text", fontSize: 48, fontWeight: 600, align: "center", lineHeight: 1.12 } : {}) };
+    replaceScene({ ...scene, elements: [...scene.elements, element] });
+    setSelectedId(id);
   };
 
   if (error && !scene) return <main className="se-state"><div><strong>Não foi possível abrir o editor</strong><p>{error}</p><button onClick={() => window.location.href = `${BASE_PATH}/admin/`}>Voltar ao painel</button></div></main>;
@@ -190,15 +257,15 @@ export default function SocialEditor({ postId }: { postId: string }) {
 
   return (
     <main className="se-app">
-      <Toolbar title={post.title || post.templateName} format={post.formatName} zoom={zoom} safeArea={safeArea} canUndo={Boolean(history?.past.length)} canRedo={Boolean(history?.future.length)} busy={busy} saveState={saveState} onBack={() => window.location.href = `${BASE_PATH}/admin/`} onUndo={() => { setHistory((current) => current ? undoHistory(current) : current); setDirty(true); }} onRedo={() => { setHistory((current) => current ? redoHistory(current) : current); setDirty(true); }} onZoom={setZoom} onToggleSafeArea={() => setSafeArea((value) => !value)} onSave={saveVersion} onExport={exportScene} onReset={resetScene} />
+      <Toolbar title={post.title || post.templateName} format={post.formatName} zoom={zoom} autoFit={autoFit} safeArea={safeArea} canUndo={Boolean(history?.past.length)} canRedo={Boolean(history?.future.length)} busy={busy} saveState={saveState} onBack={goBack} onAdd={addElement} onUndo={() => { setHistory((current) => current ? undoHistory(current) : current); setDirty(true); }} onRedo={() => { setHistory((current) => current ? redoHistory(current) : current); setDirty(true); }} onZoom={(next) => { setAutoFit(next === 0); if (next) setZoom(next); }} onToggleSafeArea={() => setSafeArea((value) => !value)} onSave={saveVersion} onExport={exportScene} onReset={resetScene} />
       {error && <div className="se-alert" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}>Fechar</button></div>}
-      <div className="se-workspace">
+      <div className="se-workspace" inert={busy}>
         <LayersPanel elements={scene.elements} selectedId={selectedId} onSelect={setSelectedId} onPatch={(id, patch) => patchElement(id, patch)} onMove={(id, delta) => replaceScene(moveLayer(scene, id, delta))} />
         <section className="se-canvas-area" aria-label="Área de edição da arte">
-          <div className="se-canvas-toolbar"><span>{scene.width} × {scene.height} px</span>{selected && <div><button type="button" title="Duplicar elemento" aria-label="Duplicar elemento" onClick={duplicateSelected}><Copy size={16} /></button><button type="button" title="Excluir elemento" aria-label="Excluir elemento" disabled={selected.required || selected.protected} onClick={removeSelected}><Trash2 size={16} /></button></div>}</div>
-          <div className="se-canvas-scroll"><div className="se-canvas-frame"><EditorCanvas scene={scene} selectedId={selectedId} zoom={zoom} safeArea={safeArea} onSelect={setSelectedId} onChange={patchElement} /></div></div>
+          <div className="se-canvas-toolbar"><span>{scene.width} × {scene.height} px · {Math.round(zoom * 100)}%</span>{selected && <div><button type="button" title="Duplicar elemento" aria-label="Duplicar elemento" disabled={selected.locked || selected.required || selected.protected} onClick={duplicateSelected}><Copy size={16} /></button><button type="button" title="Excluir elemento" aria-label="Excluir elemento" disabled={selected.locked || selected.required || selected.protected} onClick={removeSelected}><Trash2 size={16} /></button></div>}</div>
+          <div className="se-canvas-scroll" ref={canvasArea}><div className="se-canvas-frame"><EditorCanvas scene={scene} selectedId={selectedId} zoom={zoom} safeArea={safeArea} onSelect={setSelectedId} onChange={patchElement} /></div></div>
         </section>
-        <PropertiesPanel element={selected} busy={busy} onPatch={(patch, commit) => selectedId && patchElement(selectedId, patch, commit)} onUpload={uploadImage} />
+        <PropertiesPanel element={selected} busy={busy} onPatch={(patch) => selectedId && patchElement(selectedId, patch)} onUpload={uploadImage} />
       </div>
     </main>
   );

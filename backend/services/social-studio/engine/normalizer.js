@@ -1,5 +1,6 @@
 const legacy = require("../../socialStudioService");
 const { templateById } = require("../templates/registry");
+const { PALETTES } = require("./palette");
 
 function entityById(items, id) {
   return (Array.isArray(items) ? items : []).find((item) => String(item.id) === String(id)) || null;
@@ -31,6 +32,7 @@ function normalizeV2Draft(input = {}, context = {}) {
     ...legacyDraft,
     templateId: template.id,
     style,
+    paletteId: PALETTES.some((item) => item.id === input.paletteId) ? input.paletteId : "automatic",
     rendererVersion: "v2",
     genreProfile: profile,
     entities: { movie, concession, clubPlan }

@@ -45,20 +45,57 @@ export function removeElement(scene: SocialScene, elementId: string): SocialScen
 }
 
 export function moveLayer(scene: SocialScene, elementId: string, delta: -1 | 1): SocialScene {
-  const elements = [...scene.elements];
-  const index = elements.findIndex((element) => element.id === elementId);
-  if (index < 0) return scene;
-  const target = Math.max(0, Math.min(elements.length - 1, index + delta));
-  if (target === index) return scene;
-  const [element] = elements.splice(index, 1);
-  elements.splice(target, 0, element);
-  return { ...scene, elements };
+  const visit = (items: SceneElement[]): SceneElement[] => {
+    const elements = [...items];
+    const index = elements.findIndex((element) => element.id === elementId);
+    if (index < 0) return elements.map((element) => element.children ? { ...element, children: visit(element.children) } : element);
+    const target = Math.max(0, Math.min(elements.length - 1, index + delta));
+    const [element] = elements.splice(index, 1);
+    elements.splice(target, 0, element);
+    return elements;
+  };
+  return { ...scene, elements: visit(scene.elements) };
+}
+
+export function copyElement(source: SceneElement): SceneElement {
+  const visit = (element: SceneElement): SceneElement => ({ ...element, id: `copy-${crypto.randomUUID()}`, children: element.children?.map(visit) });
+  return { ...visit(source), name: `${source.name} (cópia)`, x: source.x + 18, y: source.y + 18 };
+}
+
+export function patchGeometry(element: SceneElement, patch: Partial<SceneElement>): SceneElement {
+  const next = { ...element, ...patch };
+  if (element.keepRatio && Boolean(patch.width !== undefined) !== Boolean(patch.height !== undefined)) {
+    if (patch.width !== undefined) next.height = element.height * next.width / element.width;
+    else next.width = element.width * next.height / element.height;
+  }
+  if (element.children && (next.width !== element.width || next.height !== element.height)) {
+    const sx = next.width / element.width;
+    const sy = next.height / element.height;
+    next.children = element.children.map((child) => patchGeometry(child, {
+      x: child.x * sx, y: child.y * sy, width: child.width * sx, height: child.height * sy,
+      ...(child.fontSize ? { fontSize: child.fontSize * Math.min(sx, sy) } : {})
+    }));
+  }
+  return next;
+}
+
+export function isElementLocked(scene: SocialScene, id: string): boolean {
+  const visit = (items: SceneElement[], inherited = false): boolean | undefined => {
+    for (const element of items) {
+      const locked = inherited || element.locked;
+      if (element.id === id) return locked;
+      const nested = element.children && visit(element.children, locked);
+      if (nested !== undefined) return nested;
+    }
+    return undefined;
+  };
+  return visit(scene.elements) === true;
 }
 
 export function duplicateElement(scene: SocialScene, elementId: string): { scene: SocialScene; id: string | null } {
   const source = findElement(scene, elementId);
   if (!source || source.required || source.protected) return { scene, id: null };
-  const id = `${source.id}-copy-${Date.now().toString(36)}`;
-  const copy = { ...JSON.parse(JSON.stringify(source)), id, name: `${source.name} (cópia)`, x: source.x + 18, y: source.y + 18 } as SceneElement;
-  return { scene: { ...scene, elements: [...scene.elements, copy] }, id };
+  const copy = copyElement(source);
+  const visit = (items: SceneElement[]): SceneElement[] => items.flatMap((element) => element.id === elementId ? [element, copy] : [{ ...element, ...(element.children ? { children: visit(element.children) } : {}) }]);
+  return { scene: { ...scene, elements: visit(scene.elements) }, id: copy.id };
 }
