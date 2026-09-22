@@ -85,7 +85,7 @@ test("fixtures de terror, animação, ação, drama e romance renderizam com var
     }, context, { loadImage });
     const metadata = await sharp(rendered.buffer).metadata();
     assert.deepEqual([metadata.width, metadata.height], [1080, 1350]);
-    assert.ok(["cinematic", "impact", "clean"].includes(rendered.draft.style));
+    assert.ok(engine.SOCIAL_TEMPLATES[0].styles.includes(rendered.draft.style));
   }
 });
 

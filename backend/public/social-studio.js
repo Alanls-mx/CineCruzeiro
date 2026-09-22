@@ -34,6 +34,17 @@
     previewZoom: 86,
     activePostId: ""
   };
+  state.compositionAdjustments = {};
+  state.motionVersion = 0;
+  state.directionFrames = { background: {}, hero: {} };
+  state.variations = [];
+  state.variationVersion = 0;
+  const effectControls = [
+    ["blur", "Desfoque do fundo", 0, 80, 1], ["darkening", "Escurecimento", 0, 80, 1],
+    ["saturation", "Saturação", 0, 180, 5], ["contrast", "Contraste", 50, 160, 5],
+    ["vignette", "Vinheta", 0, 80, 1], ["grain", "Granulação", 0, 8, 1],
+    ["glow", "Luz ambiente", 0, 40, 1], ["blend", "Mistura com o fundo", 0, 100, 1], ["colorWash", "Banho de cor", 0, 35, 1]
+  ];
 
   function escapeHtml(value = "") {
     return String(value)
@@ -104,6 +115,7 @@
             <span id="socialStudioAutosaveState" class="social-save-state" data-state="idle">Rascunho local</span>
             <button id="socialStudioPreviewButton" class="ghost-button" type="button" data-requires-create>Atualizar prévia</button>
             <button id="socialStudioCampaignButton" class="ghost-button" type="button" data-requires-create>Gerar campanha</button>
+            <button id="socialStudioVariationsButton" class="ghost-button" type="button" data-requires-create>Gerar variações</button>
             <button id="socialStudioGenerateButton" class="primary-button" type="submit" data-requires-create>Gerar arte</button>
           </div>
         </header>
@@ -153,8 +165,10 @@
               <div id="socialStudioNotices" class="social-studio-notices" aria-live="polite"></div>
               <button id="socialStudioManualEdit" class="primary-button" type="button" disabled>Editar detalhes</button>
               <button id="socialStudioPreviewDownload" class="ghost-button" type="button" disabled>Baixar prévia</button>
+              <button id="socialStudioMotionPlay" class="ghost-button" type="button" data-requires-create>Reproduzir prévia</button>
             </div>
             <p id="socialStudioStatus" class="social-studio-status" role="status"></p>
+            <section id="socialStudioVariations" class="social-variations" aria-label="Variações de composição" hidden></section>
           </main>
 
           <aside class="social-properties-pane">
@@ -228,6 +242,8 @@
                     <legend>Composição</legend>
                     <div id="socialStudioStyles" class="social-style-grid"></div>
                   </fieldset>
+                  <label>Destaque principal<select id="socialStudioEmphasis" data-requires-create><option value="automatic">Automático pela campanha</option><option value="film">Filme dominante</option><option value="date">Data ou preço dominante</option></select></label>
+                  <label>Tratamento do hero<select id="socialStudioHeroMode" data-requires-create><option value="rectangle">Retangular</option><option value="soft-rectangle">Retângulo suave</option><option value="edge-dissolve" selected>Bordas dissolvidas</option><option value="full-blend">Integração completa</option><option value="floating">Flutuante</option></select></label>
                   <label>Paleta
                     <select id="socialStudioPalette" data-requires-create>
                       <option value="automatic">Automática pelo filme</option>
@@ -236,6 +252,21 @@
                     </select>
                   </label>
                   <fieldset class="social-choice-fieldset"><legend>Variações de cor</legend><div id="socialStudioPalettes" class="social-palette-grid"></div></fieldset>
+                  <label>Atmosfera<select id="socialStudioCompositionPreset" data-requires-create><option value="automatic">Automática pelo gênero</option>${Object.entries(state.context.composition?.presets || {}).map(([id, preset]) => `<option value="${id}">${escapeHtml(preset.name)}</option>`).join("")}</select></label>
+                  <label>Visual<select id="socialStudioCompositionLook" data-requires-create>${Object.entries(state.context.composition?.looks || {}).map(([id, look]) => `<option value="${id}" ${id === "cinematic" ? "selected" : ""}>${escapeHtml(look.name)}</option>`).join("")}</select></label>
+                  <details class="social-composition-adjustments"><summary>Ajustes de composição</summary>
+                    <label>Grade<select id="socialStudioDirectionGrid" data-requires-create><option value="automatic">Automática pelo layout</option><option value="thirds">Terços</option><option value="golden">Proporção áurea</option><option value="40-60">40 / 60</option><option value="60-40">60 / 40</option></select></label>
+                    <label>Variação<input id="socialStudioDirectionSeed" type="number" value="0" min="0" max="9999" step="1" data-requires-create /></label>
+                    <label class="social-composition-toggle"><input id="socialStudioSecondaryArtwork" type="checkbox" data-requires-create />Arte secundária</label>
+                    <label>Primeiro plano<select id="socialStudioForeground" data-requires-create><option value="none">Nenhum</option><option value="fog">Névoa</option><option value="light-leak">Luz lateral</option><option value="dust">Partículas sutis</option><option value="gradient-light">Luz direcional</option></select></label>
+                    <label>Sombra ambiente<input id="socialStudioHeroShadow" type="range" min="0" max="60" value="25" data-requires-create /></label>
+                    ${[["background","Enquadramento do fundo"],["hero","Enquadramento do hero"]].map(([frame,label])=>`<details class="social-framing"><summary>${label}</summary><div class="social-framing-grid">${[["focusX","Posição horizontal",0,100],["focusY","Posição vertical",0,100],["scale","Escala (%)",70,150],["cropLeft","Recorte esquerdo (%)",0,40],["cropRight","Recorte direito (%)",0,40],["cropTop","Recorte superior (%)",0,40],["cropBottom","Recorte inferior (%)",0,40]].map(([key,name,min,max])=>`<label>${name}<input type="number" id="socialFrame-${frame}-${key}" data-direction-frame="${frame}" data-direction-key="${key}" placeholder="Automático" min="${min}" max="${max}" step="1" data-requires-create /></label>`).join("")}</div></details>`).join("")}
+                    <label class="social-composition-toggle"><input id="socialStudioCompositionEnabled" type="checkbox" checked data-requires-create />Fundo cinematográfico</label>
+                    ${effectControls.map(([key, label, min, max, step]) => `<label>${label}<output id="socialEffect-${key}-value"></output><input id="socialEffect-${key}" data-composition-effect="${key}" type="range" min="${min}" max="${max}" step="${step}" data-requires-create /></label>`).join("")}
+                    <label>Transição das bordas<select id="socialEffect-mask" data-composition-effect="mask" data-requires-create>${[["cinematic-bottom", "Cinematográfica inferior"], ["fade-all", "Todas as bordas"], ["fade-bottom", "Inferior"], ["fade-top", "Superior"], ["fade-left", "Esquerda"], ["fade-right", "Direita"], ["radial", "Radial"], ["none", "Sem máscara"]].map(([id, label]) => `<option value="${id}">${label}</option>`).join("")}</select></label>
+                    <label>Luz e textura<select id="socialEffect-overlay" data-composition-effect="overlay" data-requires-create>${[["none", "Nenhuma"], ["fog", "Névoa"], ["dust", "Poeira sutil"], ["light-leak", "Luz lateral"], ["gradient-light", "Luz direcional"]].map(([id, label]) => `<option value="${id}">${label}</option>`).join("")}</select></label>
+                    <button id="socialStudioCompositionReset" class="ghost-button" type="button" data-requires-create>Restaurar ajustes do visual</button>
+                  </details>
                   <fieldset class="social-choice-fieldset">
                     <legend>Assinatura do pôster</legend>
                     <div id="socialStudioSignatures" class="social-signature-grid"></div>
@@ -264,6 +295,8 @@
                 <div class="social-property-body social-output-grid">
                   <label>Formato<select id="socialStudioFormat" data-requires-create></select></label>
                   <label>Arquivo<select id="socialStudioOutput" data-requires-create><option value="png">PNG em alta qualidade</option><option value="jpg">JPG em alta qualidade</option></select></label>
+                  <label>Movimento da prévia<select id="socialStudioMotionPreset" data-requires-create><option value="slow-zoom">Aproximação suave</option><option value="pan-zoom">Deslocamento e aproximação</option><option value="reveal">Entrada gradual</option></select></label>
+                  <label>Duração<select id="socialStudioMotionDuration" data-requires-create><option value="5">5 segundos</option><option value="8" selected>8 segundos</option><option value="10">10 segundos</option></select></label>
                 </div>
               </details>
             </div>
@@ -339,12 +372,29 @@
   function renderStyles(selected = "") {
     const template = currentTemplate();
     const allowed = template?.styles || ["clean"];
-    const styles = (state.context.styles || []).filter((style) => allowed.includes(style.id));
+    const styles = [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id))];
     const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
     const poster = movie?.posterUrl || "";
     const names = { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
     document.getElementById("socialStudioStyles").innerHTML = styles.map((style, index) => `
       <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === selected || (!selected && index === 0) ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${poster ? `<img src="${escapeHtml(assetUrl(poster))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
+  }
+
+  function syncCompositionControls() {
+    const config = state.context.composition || {};
+    const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
+    const genre = [movie?.genre, ...(movie?.genres || [])].join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const inferred = /terror|horror|suspense/.test(genre) ? "horror" : /fantasia|fantasy/.test(genre) ? "fantasy" : /animacao|familia|infantil/.test(genre) ? "animation" : /acao|aventura/.test(genre) ? "action" : /romance/.test(genre) ? "romance" : /drama/.test(genre) ? "drama" : "neutral";
+    const preset = value("socialStudioCompositionPreset", "automatic");
+    const fx = { ...config.presets?.[preset === "automatic" ? inferred : preset], ...config.looks?.[value("socialStudioCompositionLook", "cinematic")], ...state.compositionAdjustments };
+    effectControls.forEach(([key]) => {
+      const next = key === "darkening" ? Math.round((1 - (fx.brightness ?? .65)) * 100) : ["contrast", "saturation"].includes(key) ? Math.round((fx[key] ?? 1) * 100) : fx[key] ?? 0;
+      setControl(`socialEffect-${key}`, next);
+      const output = document.getElementById(`socialEffect-${key}-value`);
+      if (output) output.textContent = `${next}${key === "blur" ? " px" : "%"}`;
+    });
+    setControl("socialEffect-mask", fx.mask || "cinematic-bottom");
+    setControl("socialEffect-overlay", fx.overlay || "none");
   }
 
   function movieGenreRecommendation() {
@@ -369,8 +419,8 @@
     if (!recommendation) return;
     container.innerHTML = `<strong>Recomendação automática</strong><span>${escapeHtml(recommendation.label)} para ${escapeHtml(recommendation.reason)}.</span>`;
     if (apply && !state.styleManuallySelected) {
-      renderStyles(recommendation.style);
-      setRadio("socialStudioStyle", recommendation.style);
+      renderStyles("automatic");
+      setRadio("socialStudioStyle", "automatic");
     }
   }
 
@@ -404,6 +454,7 @@
     document.getElementById("socialStudioBrandSwatches").innerHTML = [brand.primaryColor, brand.secondaryColor, brand.accentColor]
       .filter(Boolean).map((color) => `<i style="--swatch:${escapeHtml(color)}"></i>`).join("");
     renderStyles();
+    syncCompositionControls();
     document.getElementById("socialStudioPalettes").innerHTML = (context.palettes || []).map((palette, index) => `<label title="${escapeHtml(palette.name)}"><input type="radio" name="socialStudioPaletteId" value="${escapeHtml(palette.id)}" ${index === 0 ? "checked" : ""} data-requires-create /><span><i aria-hidden="true">${palette.colors.map((color) => `<b style="background:${escapeHtml(color)}"></b>`).join("")}</i><small>${escapeHtml(palette.name)}</small></span></label>`).join("");
     updateStyleRecommendation({ apply: true });
     renderSignatures();
@@ -471,6 +522,7 @@
 
   function showSavedPost(post) {
     if (!post?.imageUrl) return;
+    stopMotion();
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
     state.previewUrl = assetUrl(post.imageUrl);
     state.previewBlob = null;
@@ -550,6 +602,8 @@
       formatId: value("socialStudioFormat", "feed_portrait"),
       outputType: value("socialStudioOutput", "png"),
       style: checked("socialStudioStyle", "cinematic"),
+      automaticStyle: checked("socialStudioStyle", "automatic") === "automatic",
+      artDirection: { enabled:true, heroMode:value("socialStudioHeroMode","edge-dissolve"), emphasis:value("socialStudioEmphasis","automatic"),grid:value("socialStudioDirectionGrid","automatic"),seed:Number(value("socialStudioDirectionSeed",0)),background:{...state.directionFrames.background},hero:{...state.directionFrames.hero},secondary:document.getElementById("socialStudioSecondaryArtwork").checked,foreground:value("socialStudioForeground","none"),shadow:Number(value("socialStudioHeroShadow",25)) },
       movieId: value("socialStudioMovie"),
       concessionId: value("socialStudioConcession"),
       clubPlanId: value("socialStudioClub"),
@@ -573,6 +627,8 @@
       titleScale: Number(value("socialStudioTitleScale", 100)),
       paletteMode: value("socialStudioPalette", "automatic"),
       paletteId: checked("socialStudioPaletteId", "automatic"),
+      composition: { enabled: document.getElementById("socialStudioCompositionEnabled").checked, preset: value("socialStudioCompositionPreset", "automatic"), look: value("socialStudioCompositionLook", "cinematic"), adjustments: { ...state.compositionAdjustments } },
+      motion: { animationPreset: value("socialStudioMotionPreset", "slow-zoom"), duration: Number(value("socialStudioMotionDuration", 8)), easing: "ease-in-out" },
       signatureId: checked("socialStudioSignature", "automatic"),
       signaturePosition: value("socialStudioSignaturePosition", "automatic"),
       signatureScale: Number(value("socialStudioSignatureScale", 100)),
@@ -595,8 +651,8 @@
     const templateId = draft.templateId === "cinema-club" ? "club-plan" : draft.templateId;
     setRadio("socialStudioTemplate", templateId);
     updateFieldVisibility();
-    renderStyles(draft.style);
-    setRadio("socialStudioStyle", draft.style);
+    renderStyles(draft.automaticStyle ? "automatic" : draft.style);
+    setRadio("socialStudioStyle", draft.automaticStyle ? "automatic" : draft.style);
     setRadio("socialStudioPaletteId", draft.paletteId || "automatic");
     renderSignatures(draft.signatureId || "automatic");
     setRadio("socialStudioSignature", draft.signatureId || "automatic");
@@ -630,6 +686,23 @@
       socialStudioCaption: caption || draft.caption
     };
     Object.entries(fields).forEach(([id, nextValue]) => setControl(id, nextValue));
+    state.compositionAdjustments = { ...draft.composition?.adjustments };
+    setControl("socialStudioCompositionPreset", draft.composition?.preset || "automatic");
+    setControl("socialStudioCompositionLook", draft.composition?.look || "cinematic");
+    document.getElementById("socialStudioCompositionEnabled").checked = draft.composition?.enabled !== false;
+    setControl("socialStudioMotionPreset", draft.motion?.animationPreset || "slow-zoom");
+    setControl("socialStudioMotionDuration", draft.motion?.duration || 8);
+    syncCompositionControls();
+    const direction=draft.artDirection || {};
+    setControl("socialStudioHeroMode",direction.heroMode || "edge-dissolve");
+    setControl("socialStudioEmphasis",direction.emphasis || "automatic");
+    setControl("socialStudioDirectionGrid",direction.grid || "automatic");
+    setControl("socialStudioDirectionSeed",direction.seed || 0);
+    setControl("socialStudioForeground",direction.foreground || "none");
+    setControl("socialStudioHeroShadow",direction.shadow ?? 25);
+    document.getElementById("socialStudioSecondaryArtwork").checked=direction.secondary===true;
+    state.directionFrames={background:{...direction.background},hero:{...direction.hero}};
+    document.querySelectorAll("[data-direction-frame]").forEach(field=>{const v=state.directionFrames[field.dataset.directionFrame][field.dataset.directionKey];field.value=v===undefined?"":field.dataset.directionKey==="scale"?Math.round(v*100):v;});
     document.getElementById("socialStudioImageState").textContent = draft.imageUrl ? "Imagem personalizada" : "Imagem automática";
     document.getElementById("socialStudioImageClear").hidden = !draft.imageUrl;
     syncRangeOutputs();
@@ -691,6 +764,7 @@
   }
 
   function displayPreview(blob, alt = "Prévia da arte social") {
+    stopMotion();
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
     state.previewBlob = blob;
     state.previewUrl = URL.createObjectURL(blob);
@@ -702,6 +776,7 @@
   }
 
   async function updatePreview(options = {}) {
+    stopMotion();
     if (state.context?.capabilities?.create === false) return;
     const data = payload();
     const key = previewCacheKey(data);
@@ -733,8 +808,69 @@
   }
 
   function schedulePreview(delay = 420) {
+    stopMotion();
     window.clearTimeout(state.previewTimer);
     state.previewTimer = window.setTimeout(() => updatePreview(), delay);
+  }
+
+  function stopMotion() {
+    state.motionVersion++;
+    state.motionAbort?.abort();
+    state.motionAbort = null;
+    state.motionPlaying = false;
+    document.getElementById("socialStudioMotionPlanes")?.remove();
+    const button = document.getElementById("socialStudioMotionPlay");
+    if (button) { button.textContent = "Reproduzir prévia"; button.disabled = state.context?.capabilities?.create === false; }
+  }
+
+  async function playMotion() {
+    if (state.motionPlaying || state.motionAbort) { stopMotion(); return; }
+    clearTimeout(state.previewTimer);
+    state.previewAbort?.abort();
+    state.previewVersion++;
+    const version = ++state.motionVersion;
+    const controller = new AbortController();
+    state.motionAbort = controller;
+    const button = document.getElementById("socialStudioMotionPlay");
+    button.textContent = "Cancelar preparação";
+    setStatus("Preparando as camadas da prévia animada...", "loading");
+    try {
+      const data = await request("/api/admin/social-studio/motion-preview", { method: "POST", body: JSON.stringify(payload()), signal: controller.signal });
+      if (version !== state.motionVersion) return;
+      const container = document.createElement("div");
+      container.id = "socialStudioMotionPlanes";
+      container.className = `social-motion-planes social-motion--${data.motion.animationPreset}`;
+      container.style.setProperty("--motion-duration", `${data.motion.duration}s`);
+      await Promise.all(data.layers.map(async (layer) => {
+        const img = new Image(); img.alt = ""; img.className = `social-motion-${layer.role}`; img.src = layer.src;
+        container.appendChild(img);
+        await img.decode();
+      }));
+      if (version !== state.motionVersion) return;
+      document.getElementById("socialStudioPreviewStage").classList.remove("is-rendering");
+      document.getElementById("socialStudioPreviewStage").appendChild(container);
+      state.motionPlaying = true;
+      button.textContent = "Parar prévia";
+      setStatus("Prévia animada · download disponível em PNG ou JPG.", "ok");
+    } catch (error) { if (error.name !== "AbortError") { stopMotion(); setStatus(error.message, "error"); } }
+    finally { if (version === state.motionVersion) state.motionAbort = null; }
+  }
+
+  async function generateVariations() {
+    const button=document.getElementById("socialStudioVariationsButton");
+    const version=++state.variationVersion,data=payload(),key=previewCacheKey(data);
+    button.disabled=true;button.textContent="Compondo variações...";
+    const target=document.getElementById("socialStudioVariations");
+    target.hidden=false;target.textContent="Analisando enquadramento, hierarquia e contraste...";
+    try {
+      const result=await request("/api/admin/social-studio/variations",{method:"POST",body:JSON.stringify(data)});
+      if(version!==state.variationVersion)return;
+      if(key!==previewCacheKey(payload())) {target.textContent="A configuração mudou durante a geração. Gere novas variações para comparar.";return;}
+      state.variations=result.variations;
+      target.innerHTML=`<div class="social-variations-head"><h3>Escolha uma composição</h3><span>${result.variations.length} variações</span></div><div class="social-variations-grid">${result.variations.map((v,i)=>`<button class="social-variation" type="button" data-variation-index="${i}"><img src="${escapeHtml(v.image)}" alt="${escapeHtml(v.name)}" /><strong>${escapeHtml(v.name)}</strong><span>Composição: ${v.quality.score}/100</span></button>`).join("")}</div>${result.notices.map(n=>`<p>${escapeHtml(n)}</p>`).join("")}`;
+      target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
+    } catch(error){target.textContent=error.message;}
+    finally {button.disabled=state.context?.capabilities?.create===false;button.textContent="Gerar variações";}
   }
 
   function saveDraftLocal() {
@@ -964,6 +1100,10 @@
     document.getElementById("socialStudioPreviewButton").addEventListener("click", () => updatePreview({ force: true }));
     document.getElementById("socialStudioCampaignButton").addEventListener("click", generateCampaign);
     document.getElementById("socialStudioPreviewDownload").addEventListener("click", downloadPreview);
+    document.getElementById("socialStudioMotionPlay").addEventListener("click", playMotion);
+    document.getElementById("socialStudioVariationsButton").addEventListener("click",generateVariations);
+    document.getElementById("socialStudioVariations").addEventListener("click",event=>{const button=event.target.closest("[data-variation-index]");if(!button)return;const variation=state.variations[Number(button.dataset.variationIndex)];if(!variation)return;state.styleManuallySelected=true;applyDraft({...variation.draft,automaticStyle:false},value("socialStudioCaption"));saveDraftLocal();updatePreview({force:true});document.getElementById("socialStudioVariations").hidden=true;});
+    document.getElementById("socialStudioCompositionReset").addEventListener("click", () => { state.compositionAdjustments = {}; syncCompositionControls(); saveDraftLocal(); schedulePreview(); });
     document.getElementById("socialStudioManualEdit").addEventListener("click", () => {
       if (state.activePostId) window.location.href = `${basePath}/social-editor?postId=${encodeURIComponent(state.activePostId)}`;
     });
@@ -1005,11 +1145,22 @@
       });
     });
     form.addEventListener("input", (event) => {
+      if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
+      const frame=event.target.dataset.directionFrame,frameKey=event.target.dataset.directionKey;
+      if(frame&&frameKey){const next=event.target.valueAsNumber;if(!Number.isFinite(next))delete state.directionFrames[frame][frameKey];else state.directionFrames[frame][frameKey]=frameKey==="scale"?next/100:next;}
+      const key = event.target.dataset.compositionEffect;
+      if (key) {
+        const next = event.target.value;
+        state.compositionAdjustments[key === "darkening" ? "brightness" : key] = key === "darkening" ? 1 - Number(next) / 100 : ["saturation", "contrast"].includes(key) ? Number(next) / 100 : ["mask", "overlay"].includes(key) ? next : Number(next);
+        syncCompositionControls();
+      }
       syncRangeOutputs();
       saveDraftLocal();
       if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom") schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
+      if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
+      if (["socialStudioCompositionPreset", "socialStudioCompositionLook"].includes(event.target.id)) { state.compositionAdjustments = {}; syncCompositionControls(); }
       if (event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) return;
       updatePreviewMeta();
       saveDraftLocal();

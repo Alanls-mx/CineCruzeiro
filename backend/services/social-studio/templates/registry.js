@@ -2,7 +2,7 @@ const { renderMovieTemplate } = require("./movie");
 const { renderClub, renderConcession, renderOnlineTicket } = require("./commercial");
 
 const FORMATS = ["feed_portrait", "square", "story"];
-const MOVIE_STYLES = ["cinematic", "impact", "clean", "minimal"];
+const MOVIE_STYLES = ["cinematic", "impact", "clean", "minimal", ...require("../composition-engine/config").STYLES.map((item) => item.id)];
 const movieFields = ["movie", "title", "subtitle", "date", "auxiliaryText", "cta", "image", "advanced", "caption"];
 
 const V2_TEMPLATES = Object.freeze([

@@ -1,6 +1,7 @@
 const legacy = require("../../socialStudioService");
 const { templateById } = require("../templates/registry");
 const { PALETTES } = require("./palette");
+const { normalizeComposition, normalizeMotion, normalizeDirection } = require("../composition-engine/config");
 
 function entityById(items, id) {
   return (Array.isArray(items) ? items : []).find((item) => String(item.id) === String(id)) || null;
@@ -9,10 +10,12 @@ function entityById(items, id) {
 function genreProfile(movie = {}) {
   const genres = [movie.genre, ...(movie.genres || [])].join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   if (/terror|horror|suspense/.test(genres)) return { id: "horror", recommendedStyle: "cinematic", label: "Cinematográfico escuro" };
+  if (/fantasia|fantasy/.test(genres)) return { id: "fantasy", recommendedStyle: "immersive", label: "Fantasia imersiva" };
   if (/animacao|familia|infantil/.test(genres)) return { id: "family", recommendedStyle: "impact", label: "Impacto colorido" };
   if (/acao|aventura/.test(genres)) return { id: "action", recommendedStyle: "impact", label: "Impacto" };
   if (/romance/.test(genres)) return { id: "romance", recommendedStyle: "clean", label: "Clean elegante" };
   if (/drama/.test(genres)) return { id: "drama", recommendedStyle: "cinematic", label: "Cinematográfico" };
+  if (/comedia|comedy/.test(genres)) return { id: "comedy", recommendedStyle: "split", label: "Comédia editorial" };
   return { id: "cinema", recommendedStyle: "cinematic", label: "Cinematográfico" };
 }
 
@@ -32,9 +35,13 @@ function normalizeV2Draft(input = {}, context = {}) {
     ...legacyDraft,
     templateId: template.id,
     style,
+    automaticStyle: input.style === "automatic" || !input.style || input.automaticStyle === true,
+    artDirection: normalizeDirection(input.artDirection),
     paletteId: PALETTES.some((item) => item.id === input.paletteId) ? input.paletteId : "automatic",
     rendererVersion: "v2",
     genreProfile: profile,
+    composition: normalizeComposition(input.composition, profile.id),
+    motion: normalizeMotion(input.motion),
     entities: { movie, concession, clubPlan }
   };
 

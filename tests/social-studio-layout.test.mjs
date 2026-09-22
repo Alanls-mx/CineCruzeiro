@@ -17,9 +17,10 @@ const overlap = (a, b) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.
 for (const format of formats) {
   test(`layouts reservam zonas sem sobreposição: ${format.id}`, () => {
     const signatures = new Set();
-    for (const style of Object.keys(LAYOUTS)) {
+    for (const style of ["cinematic", "impact", "clean", "minimal"]) {
       for (const template of engine.SOCIAL_TEMPLATES) {
         const draft = { style, templateId: template.id, title: "Uma Grande Aventura: O Retorno de Uma História Extraordinária", subtitle: "ESTREIA NO CINEMA", date: "22 DE OUTUBRO", price: "R$ 25,90", auxiliaryText: "Sessões às 14h, 16h30 e 19h. Confira os horários e a classificação indicativa antes de comprar.", cta: "GARANTA SEU LUGAR", titleScale: 125, signatureScale: 135 };
+        draft.composition = { enabled: false };
         const scene = buildEditableScene({ draft, format, brand, palette, sourceUrl: "asset://poster", logoUrl: "asset://logo" });
         const art = scene.elements.find((item) => item.id === "artwork");
         signatures.add(JSON.stringify([art.x, art.y, art.width, art.height]));

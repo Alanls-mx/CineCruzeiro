@@ -8330,7 +8330,11 @@ function socialStudioContext(db) {
       ...signature,
       imageUrl: signature.imageUrl ? publicAssetUrl(signature.imageUrl) : ""
     })),
-    styles: SOCIAL_STYLES,
+    styles: [...SOCIAL_STYLES, ...require("./services/social-studio/composition-engine/config").STYLES],
+    composition: {
+      presets: require("./services/social-studio/composition-engine/config").PRESETS,
+      looks: require("./services/social-studio/composition-engine/config").LOOKS
+    },
     palettes: require("./services/social-studio/engine/palette").PALETTES,
     formats: Object.values(SOCIAL_FORMATS),
     movies,
@@ -11371,10 +11375,24 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/social-studio/assets" && method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    const buffer = await loadSocialStudioImage(url.searchParams.get("url") || "");
+    const { loadAsset } = require("./services/social-studio/engine/assets");
+    let buffer = await loadAsset(url.searchParams.get("url") || "", loadSocialStudioImage);
     if (!buffer) {
       sendJson(res, 404, { error: { code: "SOCIAL_ASSET_NOT_FOUND", message: "A imagem solicitada não está disponível." } });
       return;
+    }
+    const effectsRequest = url.searchParams.get("render");
+    if (effectsRequest) {
+      let element;
+      try {
+        if (effectsRequest.length > 3000) throw new Error("Invalid effects");
+        element = JSON.parse(effectsRequest);
+        if (!element || typeof element !== "object" || Array.isArray(element)) throw new Error("Invalid effects");
+      } catch {
+        sendJson(res, 400, { error: { code: "SOCIAL_INVALID_EFFECTS", message: "Os ajustes da imagem são inválidos." } });
+        return;
+      }
+      buffer = await require("./services/social-studio/composition-engine/pipeline").createCinematicArtwork(buffer, element);
     }
     const metadata = await sharp(buffer, { failOn: "error" }).metadata();
     const contentType = metadata.format === "jpeg" ? "image/jpeg" : metadata.format === "webp" ? "image/webp" : "image/png";
@@ -11402,6 +11420,21 @@ async function handleApi(req, res, pathname) {
       caption: captionForDraft(normalized, context),
       notices: socialDraftNotices(normalized, context)
     }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/motion-preview" && method === "POST") {
+    const body = await readBody(req);
+    const rendered = await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+    const preview = await require("./services/social-studio/composition-engine/motion").createMotionPreview(rendered.scene, { loadImage: loadSocialStudioImage });
+    sendJson(res, 200, preview, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/variations" && method === "POST") {
+    const body = await readBody(req);
+    const result = await require("./services/social-studio/composition-engine/variations").generateVariations(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+    sendJson(res, 200, result, { "Cache-Control": "no-store" });
     return;
   }
 

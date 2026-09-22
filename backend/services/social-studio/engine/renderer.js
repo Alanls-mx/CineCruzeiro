@@ -6,6 +6,10 @@ const { extractPalette, applyPalette } = require("./palette");
 const { templateById } = require("../templates/registry");
 const { buildEditableScene } = require("../scene/factory");
 const { renderSocialScene } = require("../scene/renderer");
+const sharp = require("sharp");
+const { ensureTextContrast } = require("../composition-engine/contrast");
+const { analyzeArtwork, selectDirection } = require("../composition-engine/direction");
+const { scoreComposition } = require("../composition-engine/score");
 
 function signatureUrl(draft, context = {}) {
   if (draft.signatureId === "none") return "";
@@ -23,15 +27,35 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const brand = legacy.normalizeBrand(context.brand || {});
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
 
-  const sourceUrl = sourceUrlForDraft(draft);
-  const sourceBuffer = await loadAsset(sourceUrl, loadImage);
+  const movie = draft.entities.movie;
+  const automaticPoster = draft.composition.enabled && draft.imageMode === "automatic" && !draft.imageUrl;
+  let sourceUrl = automaticPoster && movie?.posterUrl ? movie.posterUrl : sourceUrlForDraft(draft);
+  let sourceBuffer = await loadAsset(sourceUrl, loadImage);
+  let backgroundUrl = draft.composition.enabled && movie?.backdropUrl && !draft.imageUrl ? movie.backdropUrl : sourceUrl;
+  let backgroundBuffer = await loadAsset(backgroundUrl, loadImage);
+  if (!sourceBuffer && backgroundBuffer) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
+  if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
+  let analysis = draft.artDirection.enabled ? await analyzeArtwork(sourceBuffer) : null;
+  draft.style = selectDirection(draft, analysis);
+  let fullBleed = false;
+  if (draft.style === "full-bleed" && backgroundBuffer && backgroundUrl === movie?.backdropUrl) {
+    const metadata = await sharp(backgroundBuffer).metadata();
+    fullBleed = metadata.width >= 1000 && metadata.width / metadata.height >= 1.3;
+    if(fullBleed) {
+      const frame={focusX:analysis?.focusX>50?23:77,focusY:45,scale:1,...draft.artDirection.background};
+      const raster=await require("../composition-engine/pipeline").createCinematicArtwork(backgroundBuffer,{width:320,height:Math.round(320*format.height/format.width),fit:"cover",focusX:frame.focusX,focusY:frame.focusY,effects:{...frame,layer:"background"}});
+      analysis={...await analyzeArtwork(raster),backgroundFrame:frame};
+    }
+  }
   const palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
     : await extractPalette(sourceBuffer, brand), draft.paletteId);
   const logoUrl = signatureUrl(draft, context);
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
-  const scene = buildEditableScene({ draft, format, palette, brand, sourceUrl, logoUrl });
+  const scene = buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
+  await ensureTextContrast(scene, loadImage);
+  const quality = scoreComposition(scene);
   const rendered = await renderSocialScene(scene, { loadImage, outputType });
   return {
     buffer: rendered.buffer,
@@ -39,16 +63,19 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     draft,
     format,
     palette,
+    quality,
+    analysis: analysis ? { method:analysis.method,quietest:analysis.quietest } : null,
     rendererVersion: "v2",
     template: { id: template.id, name: template.name },
-    notices: require("./normalizer").draftNotices(draft, context),
+    notices: [...require("./normalizer").draftNotices(draft, context), ...(draft.style === "full-bleed" && !fullBleed ? [{ type: "info", code: "BACKDROP_FALLBACK", message: "Sem backdrop horizontal em alta resolução: usando pôster integrado, sem recortar a arte." }] : [])],
     contentType: rendered.contentType,
     extension: rendered.extension,
     metrics: {
       renderMs: Number((performance.now() - startedAt).toFixed(1)),
       bytes: rendered.buffer.length,
       sourceCache: require("./assets").sourceCache.stats(),
-      paletteCache: require("./palette").paletteCache.stats()
+      paletteCache: require("./palette").paletteCache.stats(),
+      compositionCache: require("../composition-engine/pipeline").compositionCacheStats()
     }
   };
 }

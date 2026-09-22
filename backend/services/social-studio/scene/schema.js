@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { clamp } = require("../engine/typography");
+const { normalizeEffects, normalizeMotion } = require("../composition-engine/config");
 
 const SCENE_VERSION = 1;
 const MAX_ELEMENTS = 80;
@@ -64,7 +65,8 @@ function baseElement(input, scene) {
     visible: input.visible !== false,
     locked: input.locked === true,
     protected: input.protected === true,
-    required: input.required === true
+    required: input.required === true,
+    hierarchy: ["primary", "secondary", "tertiary", "branding"].includes(input.hierarchy) ? input.hierarchy : "tertiary"
   };
 }
 
@@ -86,7 +88,8 @@ function normalizeElement(input, scene, depth = 0) {
       lineHeight: clamp(finite(input.lineHeight, 1), 0.75, 2),
       uppercase: input.uppercase === true,
       shadowColor: safeColor(input.shadowColor, "rgba(0,0,0,0)"),
-      shadowBlur: clamp(finite(input.shadowBlur, 0), 0, 60)
+      shadowBlur: clamp(finite(input.shadowBlur, 0), 0, 60),
+      contrastRatio: clamp(finite(input.contrastRatio, 0), 0, 21)
     };
   }
   if (input.type === "image") {
@@ -98,6 +101,7 @@ function normalizeElement(input, scene, depth = 0) {
       focusX: clamp(finite(input.focusX, 50), 0, 100),
       focusY: clamp(finite(input.focusY, 50), 0, 100),
       crop: normalizeCrop(input.crop),
+      ...(input.effects && typeof input.effects === "object" ? { effects: normalizeEffects(input.effects) } : {}),
       keepRatio: input.keepRatio !== false
     };
   }
@@ -149,6 +153,7 @@ function normalizeScene(input = {}) {
     width,
     height,
     backgroundColor: safeColor(input.backgroundColor, "#050b16"),
+    motion: normalizeMotion(input.motion),
     elements,
     sourceDraft: input.sourceDraft && typeof input.sourceDraft === "object" ? JSON.parse(JSON.stringify(input.sourceDraft)) : {},
     createdAt: String(input.createdAt || new Date().toISOString()),

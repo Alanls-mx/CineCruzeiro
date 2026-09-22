@@ -25,9 +25,10 @@ type ElementProps = Pick<Props, "selectedId" | "onSelect" | "onChange"> & {
 
 const BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || (process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "")).replace(/\/$/, "");
 
-function assetProxy(src = "") {
+function assetProxy(src = "", element?: SceneElement) {
   if (!src || src.startsWith("data:") || src.startsWith("blob:")) return src;
-  return `${BASE_PATH}/api/admin/social-studio/assets?url=${encodeURIComponent(src)}`;
+  const render = element?.effects ? `&render=${encodeURIComponent(JSON.stringify({ width: element.width, height: element.height, fit: element.fit, crop: element.crop, focusX: element.focusX, focusY: element.focusY, effects: element.effects }))}` : "";
+  return `${BASE_PATH}/api/admin/social-studio/assets?url=${encodeURIComponent(src)}${render}`;
 }
 
 function useRemoteImage(src = "") {
@@ -39,8 +40,8 @@ function useRemoteImage(src = "") {
     next.crossOrigin = "anonymous";
     next.onload = () => setImage(next);
     next.onerror = () => setImage(null);
-    next.src = assetProxy(src);
-    return () => { next.onload = null; next.onerror = null; };
+    const timer = window.setTimeout(() => { next.src = src; }, src.includes("&render=") ? 180 : 0);
+    return () => { clearTimeout(timer); next.onload = null; next.onerror = null; };
   }, [src]);
   return image;
 }
@@ -70,7 +71,7 @@ function gradientPoints(element: SceneElement) {
 }
 
 function ElementNode({ element, selectedId, onSelect, onChange, canvasWidth, canvasHeight, onGuides }: ElementProps) {
-  const image = useRemoteImage(element.type === "image" ? element.src : "");
+  const image = useRemoteImage(element.type === "image" ? assetProxy(element.src, element) : "");
   const common = {
     id: element.id,
     x: element.x,
@@ -117,6 +118,7 @@ function ElementNode({ element, selectedId, onSelect, onChange, canvasWidth, can
     return <Text {...common} text={element.uppercase ? element.text?.toUpperCase() : element.text} fontFamily={element.fontFamily} fontSize={element.fontSize} fontStyle={element.fontFamily === "Social Display" ? "900" : "600"} fill={element.fill} align={element.align} letterSpacing={element.letterSpacing} lineHeight={element.lineHeight} verticalAlign="middle" shadowColor={element.shadowColor} shadowBlur={element.shadowBlur} wrap="word" />;
   }
   if (element.type === "image") {
+    if (element.effects) return <KonvaImage {...common} image={image || undefined} />;
     const crop = coverCrop(image, element);
     if (element.fit === "contain" && image) {
       const scale = Math.min(element.width / image.width, element.height / image.height);

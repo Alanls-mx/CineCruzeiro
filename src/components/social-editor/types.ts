@@ -1,6 +1,15 @@
 export type SceneElementType = "text" | "image" | "shape" | "gradient" | "group";
 
 export type GradientStop = { offset: number; color: string };
+export type ImageEffects = {
+  layer?: "image" | "background" | "wash" | "glow" | "ambient-shadow" | "contact-shadow" | "atmosphere" | "vignette" | "contrast";
+  featherX?: number; featherY?: number;
+  blur?: number; brightness?: number; saturation?: number; contrast?: number;
+  blend?: number; vignette?: number; glow?: number; grain?: number;
+  colorWash?: number; color?: string; shadow?: number; scale?: number;
+  mask?: string; overlay?: string;
+  cropLeft?: number; cropRight?: number; cropTop?: number; cropBottom?: number;
+};
 
 export type SceneElement = {
   id: string;
@@ -17,6 +26,7 @@ export type SceneElement = {
   locked: boolean;
   protected: boolean;
   required: boolean;
+  hierarchy?: "primary" | "secondary" | "tertiary" | "branding";
   text?: string;
   fontFamily?: "Social Display" | "Social Text";
   fontSize?: number;
@@ -34,6 +44,7 @@ export type SceneElement = {
   focusY?: number;
   crop?: { x: number; y: number; width: number; height: number } | null;
   keepRatio?: boolean;
+  effects?: ImageEffects;
   stroke?: string;
   strokeWidth?: number;
   radius?: number;
@@ -50,6 +61,7 @@ export type SocialScene = {
   width: number;
   height: number;
   backgroundColor: string;
+  motion?: { animationPreset: string; duration: number; easing: string };
   elements: SceneElement[];
   sourceDraft: Record<string, unknown>;
   createdAt: string;

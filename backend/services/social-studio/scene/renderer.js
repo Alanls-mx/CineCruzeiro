@@ -2,6 +2,7 @@ const sharp = require("sharp");
 const { dataUrl, loadAsset } = require("../engine/assets");
 const { socialStudioFonts } = require("../engine/fonts");
 const { normalizeScene } = require("./schema");
+const { createCinematicArtwork } = require("../composition-engine/pipeline");
 
 let satoriPromise = null;
 
@@ -41,6 +42,7 @@ function gradientCss(element) {
 async function imageData(element, loadImage) {
   const buffer = await loadAsset(element.src, loadImage);
   if (!buffer) return "";
+  if (element.effects) return dataUrl(await createCinematicArtwork(buffer, element));
   let pipeline = sharp(buffer, { failOn: "error", limitInputPixels: 40_000_000 }).rotate();
   if (element.crop) {
     const metadata = await pipeline.metadata();
@@ -81,7 +83,7 @@ async function renderElement(element, loadImage, relative = false) {
       src,
       style: {
         ...style,
-        objectFit: element.fit,
+        objectFit: element.effects ? "fill" : element.fit,
         objectPosition: `${element.focusX}% ${element.focusY}%`
       }
     });
@@ -113,7 +115,7 @@ async function renderSocialScene(input = {}, options = {}) {
       width: scene.width,
       height: scene.height,
       overflow: "hidden",
-      background: scene.backgroundColor
+      background: options.transparent ? "rgba(0,0,0,0)" : scene.backgroundColor
     }
   }, children);
   const satori = await satoriRenderer();
