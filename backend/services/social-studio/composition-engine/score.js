@@ -87,15 +87,16 @@ function scoreComposition(scene) {
   const near = (a,b) => a && b && Math.abs(a.x-b.x) < scene.width*.05 && Math.abs(b.y-(a.y+a.height)) < scene.height*.04;
   if(rules.mustKeepDateNearPremiere && !near(find('subtitle'),detail)) add('DATE_DISCONNECTED',25,'detail');
   if(rules.mustShowWebsite && (!find('website')?.text || !near(cta,find('website')))) add('WEBSITE_DISCONNECTED',25,'website');
-  if(rules.mustShowSessions && scene.sourceDraft.schedule?.count && !texts.some(element=>/\d{2}:\d{2}/.test(element.text))) add('MISSING_SESSIONS',30,'detail');
-  if(rules.mustShowMultipleMovies && (scene.sourceDraft.programMovies?.length || 0)<2) add('MISSING_MOVIES',35,'title');
   const coherence = clamp(100-issues.filter(issue=>['DATE_DISCONNECTED','WEBSITE_DISCONNECTED','MISSING_SESSIONS','MISSING_MOVIES'].includes(issue.code)).reduce((sum,issue)=>sum+issue.penalty,0));
-  const score = clamp((contrast * .14 + hierarchyScore * .15 + readability * .17 + balance * .08 + branding * .08 + commercialClarity * .17 + safeArea * .1 + footer * .07 + genreFit * .04)*.85+coherence*.15);
+  const program=['sessions-today','sessions-week','multi-movies'].includes(scene.templateId)?require('../programming/score').scoreProgramming(scene):null;
+  if(program) issues.push(...program.issues);
+  const score = program ? clamp(program.total*.6+contrast*.1+branding*.1+safeArea*.1+coherence*.1) : clamp((contrast * .14 + hierarchyScore * .15 + readability * .17 + balance * .08 + branding * .08 + commercialClarity * .17 + safeArea * .1 + footer * .07 + genreFit * .04)*.85+coherence*.15);
   const strengths = Object.entries({ readability: "boa leitura", contrast: "contraste forte", hierarchy: "hierarquia clara", branding: "marca legível", commercialClarity: "mensagem comercial clara", balance: "equilíbrio entre imagem e texto" }).filter(([key]) => components[key] >= 85).slice(0, 3).map(([, label]) => label);
   return {
     score,
     total: score,
     ...components,
+    ...(program ? {programReadability:program.programReadability,scheduleClarity:program.scheduleClarity,movieSeparation:program.movieSeparation,posterBalance:program.posterBalance,featuredMovieClarity:program.featuredMovieClarity} : {}),
     genreFit,
     coherence,
     explanation: strengths.length ? strengths.join(", ") + "." : "Composição experimental: revise os pontos de atenção antes de publicar.",

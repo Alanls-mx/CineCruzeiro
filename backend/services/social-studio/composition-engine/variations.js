@@ -7,16 +7,18 @@ const { renderSocialScene } = require("../scene/renderer");
 async function generateVariations(input, context, options = {}) {
   const mode = ["similar", "hierarchy"].includes(input.variationMode) ? input.variationMode : "explore";
   const emphasis = campaignHierarchy(input).primary === "detail" ? "date" : "film";
-  const multi = input.templateId==='multi-movies';
-  const multiNames = {grid:'Grade limpa',editorial:'Editorial',summary:'Resumo em lista','poster-footer':'Pôsteres com rodapé',featured:'Destaque + grade'};
-  const styles = multi ? Object.keys(multiNames) : mode === "similar" ? Array(6).fill(input.style || "hero-left") : ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
+  const programLayouts=require('../programming/direction').PROGRAM_LAYOUTS[input.templateId];
+  const multi=Boolean(programLayouts);
+  const multiNames={featured:'Destaque e apoio','cinematic-grid':'Grade cinematográfica',layered:'Pôsteres em camadas',mosaic:'Mosaico editorial','film-strip':'Faixa de filmes',panorama:'Panorama','split-heroes':'Dupla protagonista',collage:'Colagem integrada',lineup:'Seleção de filmes',timeline:'Linha do tempo','hero-schedule':'Filme e horários','poster-list':'Lista de filmes','cinema-board':'Painel de cinema','editorial-schedule':'Agenda editorial','day-cards':'Dias em destaque','week-timeline':'Semana em sequência','poster-calendar':'Pôster e calendário','featured-days':'Dias principais','editorial-week':'Semana editorial'};
+  const styles = multi ? mode==='similar'?Array(6).fill(input.programLayout || 'automatic'):programLayouts : mode === "similar" ? Array(6).fill(input.layoutId || input.style || "hero-left") : ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
   const variations = [],
     rejected = [];
   for (const [index, style] of styles.entries()) {
     const draft = {
       ...input,
       style,
-      ...(multi ? {style:input.style || 'cinematic',multiLayout:style} : {}),
+      layoutId:multi?input.layoutId:style,
+      ...(multi ? {style:input.style || 'cinematic',programLayout:style} : {}),
       automaticStyle: false,
       polish: false,
       artDirection: {
@@ -31,6 +33,7 @@ async function generateVariations(input, context, options = {}) {
       draft.titleScale = Math.max(80, Math.min(120, (input.titleScale || 100) + (index - 2) * 2));
       draft.composition = { ...input.composition, adjustments: { ...input.composition?.adjustments, blend: Math.max(0, Math.min(100, (input.composition?.adjustments?.blend ?? 70) + (index - 2) * 3)) } };
     }
+    if(multi && mode==='similar') draft.programSpacing=(index-2)*.003;
     const raw = await renderSocialPostV2(draft, context, { ...options, skipRaster: true });
     const polished = await renderSocialPostV2({ ...draft, polish: true }, context, { ...options, skipRaster: true });
     const rendered = polished.quality.accepted && polished.quality.total >= raw.quality.total ? polished : raw;
