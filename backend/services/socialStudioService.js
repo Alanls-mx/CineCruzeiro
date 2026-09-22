@@ -16,11 +16,7 @@ const SOCIAL_TEXT_FONT = fontData("BarlowCondensed-SemiBold.ttf");
 const SOCIAL_DISPLAY_FAMILY = "Social Poster Display, DejaVu Sans Condensed, sans-serif";
 const SOCIAL_TEXT_FAMILY = "Social Poster Text, Arial, sans-serif";
 
-const SOCIAL_FORMATS = Object.freeze({
-  feed_portrait: { id: "feed_portrait", name: "Instagram Feed 4:5", width: 1080, height: 1350 },
-  square: { id: "square", name: "Instagram/Facebook quadrado", width: 1080, height: 1080 },
-  story: { id: "story", name: "Instagram Stories", width: 1080, height: 1920 }
-});
+const {SOCIAL_FORMATS} = require('./social-studio/contracts/formats');
 
 const MOVIE_STYLES = Object.freeze(["cinematic", "impact", "clean", "minimal"]);
 const TEMPLATE_FIELDS = Object.freeze({

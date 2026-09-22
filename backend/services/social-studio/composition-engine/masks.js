@@ -24,10 +24,11 @@ function maskAlpha(x, y, mask, blend) {
 }
 
 function alphaMask(width, height, mask, blend) {
-  const data = Buffer.alloc(width * height * 4, 255);
+  const data = require('./procedural-cache').cachedPixels(JSON.stringify(['mask',width,height,mask,blend]),()=>{
+  const pixels = Buffer.alloc(width * height * 4, 255);
   for (let y = 0; y < height; y++)
     for (let x = 0; x < width; x++)
-      data[(y * width + x) * 4 + 3] = Math.round(
+      pixels[(y * width + x) * 4 + 3] = Math.round(
         255 *
           maskAlpha(
             x / Math.max(1, width - 1),
@@ -36,6 +37,8 @@ function alphaMask(width, height, mask, blend) {
             blend,
           ),
       );
+  return pixels;
+  });
   return { input: data, raw: { width, height, channels: 4 }, blend: "dest-in" };
 }
 

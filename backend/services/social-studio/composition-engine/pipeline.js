@@ -52,6 +52,8 @@ async function limited(job) {
 }
 
 function rgbaLayer(width, height, fx) {
+  const params={color:fx.color,layer:fx.layer,...(fx.layer==='wash'?{colorWash:fx.colorWash}:fx.layer==='vignette'?{vignette:fx.vignette}:fx.layer==='glow'?{glow:fx.glow}:fx.layer==='contrast'?{featherX:fx.featherX,featherY:fx.featherY}:{grain:fx.grain,overlay:fx.overlay})};
+  const cached=require('./procedural-cache').cachedPixels(JSON.stringify(['rgba',width,height,params]),()=>{
   const data = Buffer.alloc(width * height * 4);
   const rgb = [1, 3, 5].map((i) => parseInt(fx.color.slice(i, i + 2), 16));
   let seed = 195936478;
@@ -110,7 +112,9 @@ function rgbaLayer(width, height, fx) {
       data[i + 2] = color[2];
       data[i + 3] = Math.round(Math.min(1, alpha) * 255);
     }
-  return sharp(data, { raw: { width, height, channels: 4 } });
+  return data;
+  });
+  return sharp(cached, { raw: { width, height, channels: 4 } });
 }
 
 async function processArtwork(source, request) {
@@ -353,6 +357,7 @@ module.exports = {
   createCinematicArtwork,
   normalizeRequest,
   compositionCacheStats: () => ({
+    procedural:require('./procedural-cache').proceduralCacheStats(),
     entries: cache.size,
     bytes,
     active,

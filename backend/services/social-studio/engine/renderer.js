@@ -24,7 +24,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const startedAt = performance.now();
   const draft = normalizeV2Draft(input, context);
   require('../contracts/content').assertCampaignContent(draft.content);
-  const format = legacy.formatById(draft.formatId);
+  const format = require('../contracts/formats').formatById(draft.formatId);
   const brand = legacy.normalizeBrand(context.brand || {});
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
 

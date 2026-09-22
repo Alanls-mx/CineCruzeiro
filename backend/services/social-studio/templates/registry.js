@@ -1,7 +1,7 @@
 const { renderMovieTemplate } = require("./movie");
 const { renderClub, renderConcession, renderOnlineTicket } = require("./commercial");
 
-const FORMATS = ["feed_portrait", "square", "story"];
+const FORMATS = Object.keys(require('../contracts/formats').SOCIAL_FORMATS);
 const MOVIE_STYLES = ["cinematic", "impact", "clean", "minimal", ...require("../composition-engine/config").STYLES.map((item) => item.id)];
 const movieFields = ["movie", "title", "subtitle", "date", "auxiliaryText", "cta", "image", "advanced", "caption"];
 
