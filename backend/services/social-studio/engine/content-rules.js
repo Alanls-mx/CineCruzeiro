@@ -39,7 +39,17 @@ function applyContentRules(draft, input, context) {
   const allowed = (context.movies || []).filter(movie=>movie.catalogued !== false);
   const ids = Array.isArray(input.movieIds) ? [...new Set(input.movieIds.map(String))].slice(0,6) : [];
   const selected = ids.map(id=>allowed.find(movie=>String(movie.id)===id)).filter(Boolean);
-  draft.movieIds = multi ? selected.map(movie=>movie.id) : [];
+  const program=multi || scheduleCampaign;
+  if(scheduleCampaign && !selected.length && draft.entities.movie) selected.push(draft.entities.movie);
+  draft.movieIds = program ? selected.map(movie=>movie.id) : [];
+  draft.programLayout=clean(input.programLayout) || (input.multiLayout ? '' : 'automatic');
+  draft.featuredMovieId=selected.some(m=>m.id===input.featuredMovieId)?input.featuredMovieId:'';
+  if(program && selected.length) {
+    const {selectFeaturedMovie,analyzeProgramMood}=require('../programming/direction');
+    draft.entities.movie=selectFeaturedMovie(selected,{featuredMovieId:draft.featuredMovieId,now});
+    draft.programMood=analyzeProgramMood(selected);
+    draft.resolvedFeaturedMovieId=draft.entities.movie.id;
+  }
   draft.multiLayout = MULTI_LAYOUTS.includes(input.multiLayout) ? input.multiLayout : 'grid';
   draft.scheduleMode = draft.templateId === 'sessions-today' ? 'today' : draft.templateId === 'sessions-week' ? 'week' : input.scheduleMode === 'today' ? 'today' : 'week';
   draft.periodStart = validDay(input.periodStart) ? input.periodStart : '';
@@ -49,7 +59,7 @@ function applyContentRules(draft, input, context) {
   const schedule = sessionSchedule(draft.entities.movie, draft, now);
   if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = schedule.days.some(day=>day.date===cinemaDay(now)) ? 'HOJE NO CINEMA' : 'EM DESTAQUE';
   draft.schedule = schedule;
-  draft.programMovies = multi ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',schedule:sessionSchedule(movie,{...draft,compact:true,compactDays:selected.length>2?1:3},now)})) : [];
+  draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],featured:movie.id===draft.resolvedFeaturedMovieId,schedule:sessionSchedule(movie,{...draft,compact:multi,compactDays:selected.length>2?1:3},now)})) : [];
   if (scheduleCampaign) {
     if(input.title === undefined) draft.title = draft.entities.movie?.title || 'Programação';
     if(input.subtitle === undefined || /^(HOJE NO|SESSÕES EM)/.test(input.subtitle)) draft.subtitle = draft.scheduleMode === 'today' ? (schedule.from===cinemaDay(now)?`HOJE NO ${context.brand?.name || 'CINEMA'}`.toUpperCase():`SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`) : 'PROGRAMAÇÃO DA SEMANA';

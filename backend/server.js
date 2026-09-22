@@ -8379,6 +8379,7 @@ function socialStudioContext(db) {
       looks: require("./services/social-studio/composition-engine/config").LOOKS
     },
     palettes: require("./services/social-studio/engine/palette").PALETTES,
+    programLayouts: require('./services/social-studio/programming/direction').PROGRAM_LAYOUTS,
     formats: Object.values(SOCIAL_FORMATS),
     movies,
     concessions: catalog.concessions || [],

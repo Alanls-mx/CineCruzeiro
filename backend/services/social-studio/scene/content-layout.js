@@ -102,4 +102,4 @@ function buildProgrammeScene({draft,format,brand,palette,logoUrl,sourceUrl}) {
   const {entities,...sourceDraft}=draft;
   return normalizeScene({id:`scene-${draft.templateId}-${format.id}`,templateId:draft.templateId,formatId:format.id,width:w,height:h,backgroundColor:'#090d14',motion:draft.motion,elements,sourceDraft});
 }
-module.exports={enforceContentLayout,buildProgrammeScene};
+module.exports={enforceContentLayout,buildProgrammeScene,wrapSchedule};

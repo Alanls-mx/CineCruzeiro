@@ -13,6 +13,7 @@ function groupElements(scene, id, ids, role = id) {
 function groupCampaignScene(scene) {
   groupElements(scene,'action-group',['cta','website'],'action');
   if(scene.sourceDraft?.contentRules?.mustShowDate) groupElements(scene,'date-group',['subtitle','detail'],'date');
+  for(let i=0;i<6;i++) groupElements(scene,`movie-group-${i}`,[`movie-art-${i}`,`movie-title-${i}`,`movie-sessions-${i}`],'movie');
   return scene;
 }
 function validateSceneSemantics(scene) {
@@ -22,7 +23,7 @@ function validateSceneSemantics(scene) {
   const errors=[];
   if(content.action.label && !elements.some(e=>e.id==='cta' && e.text)) errors.push({code:'MISSING_ACTION',message:'A cena perdeu a chamada principal.'});
   if(content.action.destination && !elements.some(e=>e.id==='website' && e.text)) errors.push({code:'MISSING_DESTINATION',message:'A cena perdeu o destino da chamada.'});
-  for(const [i,movie] of content.programMovies.entries()) if(!elements.some(e=>e.id===`movie-title-${i}` && e.text)) errors.push({code:'MISSING_MOVIE',movieId:movie.id,message:'Um filme selecionado não foi representado na cena.'});
+  if(content.campaignType==='multi-movies') for(const [i,movie] of content.programMovies.entries()) if(!elements.some(e=>e.id===`movie-title-${i}` && e.text)) errors.push({code:'MISSING_MOVIE',movieId:movie.id,message:'Um filme selecionado não foi representado na cena.'});
   return {valid:!errors.length,errors};
 }
 module.exports={flattenElements,groupElements,groupCampaignScene,validateSceneSemantics};

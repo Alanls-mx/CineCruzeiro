@@ -28,7 +28,7 @@ function buildCampaignContent(draft, input = {}, context = {}) {
     movie:{id:movie.id || '',title:movie.title || '',genres:movie.genres || [],synopsis:movie.synopsis || '',socialHook:movie.socialHook || ''},
     headline:draft.title, kicker:draft.subtitle, supportingText:draft.auxiliaryText,
     releaseDate,presaleStartDate,sessionDate,primaryDateKind,primaryDate,primaryDateLabel:DATE_ROLES[primaryDateKind],
-    sessions:draft.schedule.days.flatMap(group=>group.times.map(time=>({movieId:movie.id,date:group.date,time}))),
+    sessions:draft.programMovies.length ? draft.programMovies.flatMap(m=>m.schedule.days.flatMap(group=>group.times.map(time=>({movieId:m.id,date:group.date,time})))) : draft.schedule.days.flatMap(group=>group.times.map(time=>({movieId:movie.id,date:group.date,time}))),
     availableSessions:upcoming.map(s=>({movieId:movie.id,date:s.date,time:s.time})),
     purchaseAvailable:movie.catalogued !== false && upcoming.length>0,
     price:{value:hasPrice?Number(priceEntity):undefined,formatted:draft.price},

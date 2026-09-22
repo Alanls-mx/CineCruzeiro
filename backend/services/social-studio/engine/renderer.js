@@ -56,7 +56,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
   let scene = buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
-  if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../scene/content-layout').buildProgrammeScene({draft,format,palette,brand,logoUrl,sourceUrl:sourceBuffer ? sourceUrl : ''});
+  if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl,baseScene:scene});
   else {
     if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
     scene = require('../scene/content-layout').enforceContentLayout(scene);

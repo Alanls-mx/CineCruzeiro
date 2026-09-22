@@ -1048,6 +1048,8 @@ function createHistoryRecord(rendered, input = {}, context = {}, actor = "") {
       copyDensity: rendered.draft.copyDensity,
       copyLocks: rendered.draft.copyLocks,
       layoutId: rendered.draft.layoutId,
+      programLayout: rendered.draft.programLayout,
+      featuredMovieId: rendered.draft.featuredMovieId,
       look: rendered.draft.look,
       content: rendered.draft.content,
       primaryDateKind: rendered.draft.primaryDateKind,
