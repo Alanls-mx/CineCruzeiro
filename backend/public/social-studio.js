@@ -40,8 +40,6 @@
   state.variations = [];
   state.variationVersion = 0;
   state.polish = false;
-  state.thumbnailVersion = 0;
-  state.thumbnailCache = new Map();
   state.previewNotices = new Map();
   state.favoriteKey = "cinecruzeiro.socialStudio.favorites.v1";
   try { const saved = JSON.parse(localStorage.getItem(state.favoriteKey) || "[]"); state.favorites = Array.isArray(saved) ? saved.filter(item => item?.draft && item?.quality).slice(0, 8) : []; } catch { state.favorites = []; }
@@ -195,9 +193,10 @@
                   <label id="socialStudioClubField" data-social-field="clubPlan">Plano do clube<select id="socialStudioClub" data-requires-create></select></label>
                   <label data-social-field="title">Título<input id="socialStudioTitle" maxlength="160" data-requires-create /></label>
                   <label data-social-field="subtitle">Chamada<input id="socialStudioSubtitle" maxlength="120" data-requires-create /></label>
-                  <label data-social-field="date">Data<input id="socialStudioDate" maxlength="60" data-requires-create /></label>
+                  <fieldset data-social-field="date" class="social-choice-fieldset"><legend>Data em destaque</legend><label>Significado<select id="socialStudioDateKind" data-requires-create><option value="release">Estreia</option><option value="presale">Abertura da pré-venda</option><option value="session">Sessão</option></select></label><label>Texto da data<input id="socialStudioDate" maxlength="60" data-requires-create /></label><label>Estreia confirmada<input id="socialStudioReleaseDate" type="date" data-requires-create /></label><label>Abertura da pré-venda<input id="socialStudioPresaleDate" type="date" data-requires-create /></label><label>Data da sessão<input id="socialStudioSessionDate" type="date" data-requires-create /></label></fieldset>
                   <label data-social-field="auxiliaryText">Texto auxiliar<textarea id="socialStudioAuxiliary" rows="3" maxlength="260" data-requires-create></textarea></label>
                   <label data-social-field="cta">Chamada final<input id="socialStudioCta" maxlength="60" data-requires-create /></label>
+                  <label>Destino da chamada<input id="socialStudioActionDestination" type="url" placeholder="https://cinema.com.br" data-requires-create /></label>
                 </div>
               </details>
 
@@ -205,7 +204,6 @@
                 <summary>Preço e promoção</summary>
                 <div class="social-property-body">
                   <label>Preço ou condição<input id="socialStudioPrice" maxlength="60" data-requires-create /></label>
-                  <p class="social-field-help">Sem preço cadastrado, o layout muda para uma chamada de sessões.</p>
                 </div>
               </details>
 
@@ -247,6 +245,7 @@
               <details class="social-property-section" data-social-field="advanced" open>
                 <summary>Layout e cores</summary>
                 <div class="social-property-body">
+                  <label>Estilo visual<select id="socialStudioVisualStyle" data-requires-create><option value="cinematic">Cinematográfico</option><option value="impact">Impacto</option><option value="clean">Limpo</option><option value="minimal">Minimalista</option></select></label>
                   <fieldset class="social-choice-fieldset">
                     <legend>Composição</legend>
                     <div id="socialStudioStyles" class="social-style-grid"></div>
@@ -342,55 +341,25 @@
   }
 
   function templateThumb(template) {
-    return `<span class="social-template-thumb" data-template-preview="${escapeHtml(template.id)}" aria-busy="true"><span class="social-thumbnail-status">Preparando prévia</span></span>`;
+    return `<span class="social-template-thumb" data-template-preview="${escapeHtml(template.id)}"><span class="social-thumbnail-status">Sem imagem</span></span>`;
   }
 
   function invalidateThumbnails() {
-    state.thumbnailVersion++;
-    state.thumbnailAbort?.abort();
-    document.querySelectorAll("[data-template-preview]").forEach(target => {
-      target.setAttribute("aria-busy", "true");
-      target.innerHTML = '<span class="social-thumbnail-status">Atualizando</span>';
-    });
+    updateTemplatePreviews(payload());
   }
 
-  async function updateTemplatePreviews(data, activeUrl) {
-    state.thumbnailAbort?.abort();
-    const controller = new AbortController();
-    state.thumbnailAbort = controller;
-    const version = ++state.thumbnailVersion;
-    const draw = (id, url) => {
-      const target = document.querySelector(`[data-template-preview="${CSS.escape(id)}"]`);
-      if (!target) return;
-      target.setAttribute("aria-busy", "false");
-      target.innerHTML = `<img src="${escapeHtml(url)}" alt="Prévia de ${escapeHtml(state.context.templates.find(item => item.id === id)?.name || "campanha")}" />`;
-    };
-    draw(data.templateId, activeUrl);
-    if (state.context?.capabilities?.create === false) return;
-    for (const template of state.context.templates.filter(item => item.id !== data.templateId)) {
-      if (version !== state.thumbnailVersion) return;
-      const key = previewCacheKey({ ...data, templateId: template.id, thumbnail: true });
-      try {
-        let url = state.thumbnailCache.get(key);
-        if (!url) {
-          const alternate = { ...data, templateId: template.id };
-          ["title", "subtitle", "price", "date", "auxiliaryText", "cta", "caption"].forEach(field => { alternate[field] = undefined; });
-          const resolved = await request("/api/admin/social-studio/resolve", { method: "POST", body: JSON.stringify(alternate), signal: controller.signal });
-          const blob = await requestImage("/api/admin/social-studio/preview", resolved.draft, controller.signal);
-          if (version !== state.thumbnailVersion) return;
-          url = URL.createObjectURL(blob);
-          state.thumbnailCache.set(key, url);
-          if (state.thumbnailCache.size > 24) {
-            const oldest = state.thumbnailCache.keys().next().value;
-            URL.revokeObjectURL(state.thumbnailCache.get(oldest)); state.thumbnailCache.delete(oldest);
-          }
-        }
-        if (version === state.thumbnailVersion) draw(template.id, url);
-      } catch (error) {
-        if (version !== state.thumbnailVersion || error.name === "AbortError") return;
-        const target = document.querySelector(`[data-template-preview="${CSS.escape(template.id)}"]`);
-        if (target) { target.setAttribute("aria-busy", "false"); target.innerHTML = '<span class="social-thumbnail-status">Prévia indisponível</span>'; }
-      }
+  function updateTemplatePreviews(data) {
+    if(!state.context) return;
+    const find=(items,id)=>(items || []).find(item=>String(item.id)===String(id));
+    for (const template of state.context.templates) {
+      const movie=find(state.context.movies,template.id==='multi-movies' ? data.movieIds?.[0] || data.movieId : data.movieId);
+      const src=template.id==='concession-combo' ? find(state.context.concessions,data.concessionId)?.imageUrl : template.id==='club-plan' ? find(state.context.clubPlans,data.clubPlanId)?.imageUrl : movie?.posterUrl;
+      const target=document.querySelector(`[data-template-preview="${CSS.escape(template.id)}"]`);
+      const url=src?assetUrl(src):'';
+      if(!target || target.dataset.source===url) continue;
+      target.dataset.source=url;
+      target.innerHTML=url?`<img src="${escapeHtml(url)}" alt="${escapeHtml(template.name)}" loading="lazy" decoding="async" />`:'<span class="social-thumbnail-status">Sem imagem</span>';
+      target.querySelector('img')?.addEventListener('error',()=>{target.innerHTML='<span class="social-thumbnail-status">Sem imagem</span>';},{once:true});
     }
   }
 
@@ -420,7 +389,7 @@
   function renderStyles(selected = "") {
     const template = currentTemplate();
     const allowed = template?.styles || ["clean"];
-    const styles = [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id))];
+    const styles = [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
     const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
     const poster = movie?.posterUrl || "";
     const names = { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
@@ -661,6 +630,9 @@
       formatId: value("socialStudioFormat", "feed_portrait"),
       outputType: value("socialStudioOutput", "png"),
       style: checked("socialStudioStyle", "cinematic"),
+      visualStyle:value('socialStudioVisualStyle','cinematic'),
+      layoutId:checked('socialStudioStyle','automatic')==='automatic' ? undefined : checked('socialStudioStyle'),
+      look:value('socialStudioCompositionLook','cinematic'),
       automaticStyle: checked("socialStudioStyle", "automatic") === "automatic",
       artDirection: { enabled:true, heroMode:value("socialStudioHeroMode","edge-dissolve"), emphasis:value("socialStudioEmphasis","automatic"),grid:value("socialStudioDirectionGrid","automatic"),seed:Number(value("socialStudioDirectionSeed",0)),background:{...state.directionFrames.background},hero:{...state.directionFrames.hero},secondary:document.getElementById("socialStudioSecondaryArtwork").checked,foreground:value("socialStudioForeground","none"),shadow:Number(value("socialStudioHeroShadow",25)) },
       movieId: value("socialStudioMovie"),
@@ -676,6 +648,11 @@
       subtitle: value("socialStudioSubtitle"),
       price: value("socialStudioPrice"),
       date: value("socialStudioDate"),
+      primaryDateKind:value('socialStudioDateKind','release'),
+      releaseDate:value('socialStudioReleaseDate'),
+      presaleStartDate:value('socialStudioPresaleDate'),
+      sessionDate:value('socialStudioSessionDate'),
+      actionDestination:value('socialStudioActionDestination'),
       auxiliaryText: value("socialStudioAuxiliary"),
       cta: value("socialStudioCta"),
       imageUrl: value("socialStudioImageUrl"),
@@ -728,8 +705,8 @@
     const templateId = draft.templateId === "cinema-club" ? "club-plan" : draft.templateId;
     setRadio("socialStudioTemplate", templateId);
     updateFieldVisibility();
-    renderStyles(draft.automaticStyle ? "automatic" : draft.style);
-    setRadio("socialStudioStyle", draft.automaticStyle ? "automatic" : draft.style);
+    renderStyles(draft.automaticStyle ? "automatic" : draft.layoutId || draft.style);
+    setRadio("socialStudioStyle", draft.automaticStyle ? "automatic" : draft.layoutId || draft.style);
     setRadio("socialStudioPaletteId", draft.paletteId || "automatic");
     renderSignatures(draft.signatureId || "automatic");
     setRadio("socialStudioSignature", draft.signatureId || "automatic");
@@ -744,6 +721,12 @@
       socialStudioSubtitle: draft.subtitle,
       socialStudioPrice: draft.price,
       socialStudioDate: draft.date,
+      socialStudioVisualStyle:draft.visualStyle || 'cinematic',
+      socialStudioDateKind:draft.primaryDateKind || 'release',
+      socialStudioReleaseDate:draft.releaseDate || '',
+      socialStudioPresaleDate:draft.presaleStartDate || '',
+      socialStudioSessionDate:draft.sessionDate || '',
+      socialStudioActionDestination:draft.actionDestination || state.context.brand?.posterWebsite || state.context.brand?.website || '',
       socialStudioAuxiliary: draft.auxiliaryText,
       socialStudioCta: draft.cta,
       socialStudioImageUrl: draft.imageUrl,
@@ -786,6 +769,7 @@
     updateFieldVisibility();
     updatePreviewMeta();
     updateStyleRecommendation();
+    updateTemplatePreviews(payload());
   }
 
   function setStatus(message, kind = "") {
@@ -893,7 +877,7 @@
     }
   }
 
-  function schedulePreview(delay = 420) {
+  function schedulePreview(delay = 300) {
     state.animationAbort?.abort();
     stopMotion();
     invalidateThumbnails();
