@@ -1,8 +1,9 @@
 const { wrapText } = require("../scene/factory");
 const { campaignHierarchy } = require("./hierarchy");
 
-function polishComposition(input) {
+function polishComposition(input, layoutPolicy) {
   const scene = structuredClone(input);
+  const policy=layoutPolicy || require('./policies').LAYOUT_POLICIES[scene.sourceDraft.layoutId || scene.sourceDraft.style] || require('./policies').LAYOUT_POLICIES.editorial;
   const margin = scene.width * .065;
   const top = scene.formatId === "story" ? scene.height * .075 : scene.height * .035;
   const bottom = scene.height * (scene.formatId === "story" ? .885 : .965);
@@ -26,10 +27,12 @@ function polishComposition(input) {
     Object.assign(element, { x: margin, y: footerTop + scene.height * offset, width: footerWidth, height: scene.height * .03, align: "left" });
     Object.assign(element, wrapText(element.text, element.width, element.height, size, 1));
   }
-  if (logo) Object.assign(logo, { x: scene.width - margin - scene.width * .25, y: footerTop - scene.height * .013, width: scene.width * .25, height: scene.height * .078, focusX: 100, focusY: 50 });
+  if (logo && policy.branding!=='floating') Object.assign(logo, { x: scene.width - margin - scene.width * policy.logoWidth, y: footerTop - scene.height * .013, width: scene.width * policy.logoWidth, height: scene.height * .078, focusX: 100, focusY: 50 });
+  if(logo && policy.branding==='floating') {logo.x=Math.max(margin,Math.min(scene.width-margin-logo.width,logo.x));logo.y=Math.min(bottom-logo.height,Math.max(top,logo.y));}
+  if(cinema && policy.branding==='minimal' && logo) cinema.visible=false;
   scene.elements = scene.elements.filter(element => element.id !== "divider");
   const dividerY = footerTop - scene.height * .027;
-  scene.elements.push({ id: "divider", name: "Divisor da assinatura", role: "branding", type: "shape", x: margin, y: dividerY, width: scene.width - margin * 2, height: 1, fill: "#c8d1dc", opacity: .3, visible: true, locked: true });
+  if(policy.divider) scene.elements.push({ id: "divider", name: "Divisor da assinatura", role: "branding", type: "shape", x: margin, y: dividerY, width: scene.width - margin * 2, height: 1, fill: "#c8d1dc", opacity: .3, visible: true, locked: true });
   const content = texts.filter(element => !["cinema", "website"].includes(element.id)).sort((a, b) => a.y - b.y);
   for (const element of content) {
     if (element.y + element.height > dividerY - 12) {
