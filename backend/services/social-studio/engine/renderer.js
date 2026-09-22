@@ -54,7 +54,11 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
   let scene = buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
-  if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
+  if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../scene/content-layout').buildProgrammeScene({draft,format,palette,brand,logoUrl,sourceUrl:sourceBuffer ? sourceUrl : ''});
+  else {
+    if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
+    scene = require('../scene/content-layout').enforceContentLayout(scene);
+  }
   await ensureTextContrast(scene, loadImage);
   const quality = scoreComposition(scene);
   const rendered = options.skipRaster ? { scene, buffer: null, contentType: outputType === "jpg" ? "image/jpeg" : "image/png", extension: `.${outputType}` } : await renderSocialScene(scene, { loadImage, outputType });

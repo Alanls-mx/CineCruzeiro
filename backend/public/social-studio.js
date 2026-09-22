@@ -42,6 +42,7 @@
   state.polish = false;
   state.thumbnailVersion = 0;
   state.thumbnailCache = new Map();
+  state.previewNotices = new Map();
   state.favoriteKey = "cinecruzeiro.socialStudio.favorites.v1";
   try { const saved = JSON.parse(localStorage.getItem(state.favoriteKey) || "[]"); state.favorites = Array.isArray(saved) ? saved.filter(item => item?.draft && item?.quality).slice(0, 8) : []; } catch { state.favorites = []; }
   const effectControls = [
@@ -188,6 +189,8 @@
                 <summary>Conteúdo</summary>
                 <div class="social-property-body">
                   <label id="socialStudioMovieField" data-social-field="movie">Filme<select id="socialStudioMovie" data-requires-create></select></label>
+                  <fieldset data-social-field="movies" class="social-choice-fieldset"><legend>Filmes e ordem</legend><div id="socialStudioMovieSelections"></div><label>Composição<select id="socialStudioMultiLayout" data-requires-create><option value="grid">Grade limpa</option><option value="editorial">Editorial</option><option value="summary">Resumo em lista</option><option value="poster-footer">Pôsteres com rodapé</option><option value="featured">Destaque + grade</option></select></label></fieldset>
+                  <fieldset data-social-field="schedule" class="social-choice-fieldset"><legend>Programação</legend><label>Período<select id="socialStudioScheduleMode" data-requires-create><option value="today">Um dia</option><option value="week" selected>Sete dias</option></select></label><label>Data inicial<input id="socialStudioPeriodStart" type="date" data-requires-create /></label><label class="social-toggle"><input id="socialStudioShowSessions" type="checkbox" checked data-requires-create /> Mostrar horários por dia</label></fieldset>
                   <label id="socialStudioConcessionField" data-social-field="concession">Produto ou combo<select id="socialStudioConcession" data-requires-create></select></label>
                   <label id="socialStudioClubField" data-social-field="clubPlan">Plano do clube<select id="socialStudioClub" data-requires-create></select></label>
                   <label data-social-field="title">Título<input id="socialStudioTitle" maxlength="160" data-requires-create /></label>
@@ -303,6 +306,8 @@
                   <label>Arquivo<select id="socialStudioOutput" data-requires-create><option value="png">PNG em alta qualidade</option><option value="jpg">JPG em alta qualidade</option></select></label>
                   <label>Movimento da prévia<select id="socialStudioMotionPreset" data-requires-create><option value="slow-zoom">Aproximação suave</option><option value="pan-zoom">Deslocamento e aproximação</option><option value="reveal">Entrada gradual</option></select></label>
                   <label>Duração<select id="socialStudioMotionDuration" data-requires-create><option value="5">5 segundos</option><option value="8" selected>8 segundos</option><option value="10">10 segundos</option></select></label>
+                  <label class="social-toggle"><input id="socialStudioAnimated" type="checkbox" data-requires-create /> Gerar versão animada</label>
+                  <div id="socialStudioAnimationOptions" hidden><label>Formato animado<select id="socialStudioAnimationFormat" data-requires-create><option value="mp4">MP4</option><option value="webm">WebM</option><option value="gif">GIF</option></select></label><label>Preset<select id="socialStudioAnimationPreset" data-requires-create><option value="cinematic">Cinematográfico</option><option value="commercial">Comercial</option><option value="soft">Suave</option></select></label><label class="social-toggle"><input id="socialStudioAnimationLoop" type="checkbox" checked data-requires-create /> Repetir reprodução</label><button id="socialStudioAnimationExport" type="button" class="primary-button" data-requires-create>Exportar animação</button></div>
                 </div>
               </details>
             </div>
@@ -489,6 +494,7 @@
     renderTemplates();
     fillSelect("socialStudioFormat", context.formats, "Nenhum formato", (item) => `${item.name} · ${item.width} × ${item.height}`);
     fillSelect("socialStudioMovie", context.movies, "Nenhum filme disponível", (item) => `${item.title || "Filme sem título"}${item.catalogued === false ? " · pré-lançamento editorial" : ""}`);
+    document.getElementById('socialStudioMovieSelections').innerHTML = Array.from({length:6},(_,index)=>`<label>Filme ${index+1}<select data-program-movie="${index}" data-requires-create><option value="">${index<2?'Selecionar filme':'Nenhum'}</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>`).join('');
     fillSelect("socialStudioConcession", context.concessions, "Nenhum produto disponível", (item) => item.name || "Produto sem nome");
     fillSelect("socialStudioClub", context.clubPlans, "Nenhum plano disponível", (item) => item.name || "Plano sem nome");
     if (context.recommendedMovieId) document.getElementById("socialStudioMovie").value = context.recommendedMovieId;
@@ -627,6 +633,10 @@
       element.hidden = !fields.has(element.dataset.socialField);
     });
     const movieTemplate = currentTemplate()?.type === "movie";
+    const fixedSchedule=['sessions-today','sessions-week'].includes(currentTemplate()?.id);
+    document.getElementById('socialStudioScheduleMode').disabled=fixedSchedule || state.context?.capabilities?.create===false;
+    document.getElementById('socialStudioShowSessions').disabled=fixedSchedule || state.context?.capabilities?.create===false;
+    if(fixedSchedule) {setControl('socialStudioScheduleMode',currentTemplate().id==='sessions-today'?'today':'week');document.getElementById('socialStudioShowSessions').checked=true;}
     document.getElementById("socialStudioImageModes").querySelectorAll("label").forEach((label) => {
       const value = label.querySelector("input")?.value;
       label.hidden = !movieTemplate && ["backdrop", "poster"].includes(value);
@@ -654,6 +664,12 @@
       automaticStyle: checked("socialStudioStyle", "automatic") === "automatic",
       artDirection: { enabled:true, heroMode:value("socialStudioHeroMode","edge-dissolve"), emphasis:value("socialStudioEmphasis","automatic"),grid:value("socialStudioDirectionGrid","automatic"),seed:Number(value("socialStudioDirectionSeed",0)),background:{...state.directionFrames.background},hero:{...state.directionFrames.hero},secondary:document.getElementById("socialStudioSecondaryArtwork").checked,foreground:value("socialStudioForeground","none"),shadow:Number(value("socialStudioHeroShadow",25)) },
       movieId: value("socialStudioMovie"),
+      movieIds: [...document.querySelectorAll('[data-program-movie]')].map(select=>select.value).filter(Boolean),
+      multiLayout: value('socialStudioMultiLayout','grid'),
+      scheduleMode: value('socialStudioScheduleMode','week'),
+      periodStart: value('socialStudioPeriodStart'),
+      showSessions: document.getElementById('socialStudioShowSessions').checked,
+      animation: {enabled:document.getElementById('socialStudioAnimated').checked,format:value('socialStudioAnimationFormat','mp4'),preset:value('socialStudioAnimationPreset','cinematic'),duration:Number(value('socialStudioMotionDuration',8)),loop:document.getElementById('socialStudioAnimationLoop').checked},
       concessionId: value("socialStudioConcession"),
       clubPlanId: value("socialStudioClub"),
       title: value("socialStudioTitle"),
@@ -697,6 +713,16 @@
   }
 
   function applyDraft(draft, caption = "") {
+    document.querySelectorAll('[data-program-movie]').forEach((select,index)=>{select.value=draft.movieIds?.[index] || '';});
+    setControl('socialStudioMultiLayout',draft.multiLayout || 'grid');
+    setControl('socialStudioScheduleMode',draft.scheduleMode || 'week');
+    setControl('socialStudioPeriodStart',draft.periodStart || '');
+    document.getElementById('socialStudioShowSessions').checked=draft.showSessions!==false;
+    document.getElementById('socialStudioAnimated').checked=draft.animation?.enabled===true;
+    document.getElementById('socialStudioAnimationOptions').hidden=!draft.animation?.enabled;
+    setControl('socialStudioAnimationFormat',draft.animation?.format || 'mp4');
+    setControl('socialStudioAnimationPreset',draft.animation?.preset || 'cinematic');
+    document.getElementById('socialStudioAnimationLoop').checked=draft.animation?.loop!==false;
     state.polish = draft.polish === true;
     invalidateThumbnails();
     const templateId = draft.templateId === "cinema-club" ? "club-plan" : draft.templateId;
@@ -837,6 +863,7 @@
     if (!options.force && state.previewCache.has(key)) {
       state.previewing = false;
       displayPreview(state.previewCache.get(key), data.title);
+      renderNotices(state.previewNotices.get(key) || []);
       setStatus("Prévia atualizada.", "ok");
       return;
     }
@@ -846,6 +873,11 @@
     document.getElementById("socialStudioPreviewStage")?.classList.add("is-rendering");
     setStatus("Atualizando a composição...", "loading");
     try {
+      const resolved = await request('/api/admin/social-studio/resolve',{method:'POST',body:JSON.stringify(data),signal:state.previewAbort.signal});
+      if(version!==state.previewVersion) return;
+      renderNotices(resolved.notices || []);
+      state.previewNotices.set(key,resolved.notices || []);
+      if(state.previewNotices.size>8) state.previewNotices.delete(state.previewNotices.keys().next().value);
       const blob = await requestImage("/api/admin/social-studio/preview", data, state.previewAbort.signal);
       if (version !== state.previewVersion) return;
       cachePreview(key, blob);
@@ -862,6 +894,7 @@
   }
 
   function schedulePreview(delay = 420) {
+    state.animationAbort?.abort();
     stopMotion();
     invalidateThumbnails();
     state.previewVersion++;
@@ -871,6 +904,7 @@
   }
 
   function stopMotion() {
+    document.getElementById('socialStudioEncodedPreview')?.remove();
     state.motionVersion++;
     state.motionAbort?.abort();
     state.motionAbort = null;
@@ -881,6 +915,7 @@
   }
 
   async function playMotion() {
+    if(document.getElementById('socialStudioAnimated').checked) { await generateAnimation(false); return; }
     if (state.motionPlaying || state.motionAbort) { stopMotion(); return; }
     clearTimeout(state.previewTimer);
     state.previewAbort?.abort();
@@ -975,6 +1010,33 @@
       target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
     } catch(error){if(version===state.variationVersion && error.name!=="AbortError")target.textContent=error.message;}
     finally {if(version===state.variationVersion){button.disabled=state.context?.capabilities?.create===false;button.textContent="Gerar variações";}}
+  }
+
+  async function generateAnimation(download = false) {
+    if(state.context?.capabilities?.create===false || state.animationBusy) return;
+    const data=payload(),key=previewCacheKey(data),button=document.getElementById('socialStudioAnimationExport');
+    state.animationBusy=true;button.disabled=true;button.textContent='Preparando animação...';
+    const controller=new AbortController();state.animationAbort=controller;
+    setStatus('Gerando vídeo com tempo de leitura protegido...', 'loading');
+    try {
+      if(state.animationKey!==key || !state.animationUrl) {
+        const blob=await requestImage('/api/admin/social-studio/animation',data,controller.signal);
+        if(key!==previewCacheKey(payload())) {setStatus('A campanha mudou. Gere a animação atualizada.','warning');return;}
+        if(state.animationUrl) URL.revokeObjectURL(state.animationUrl);
+        state.animationUrl=URL.createObjectURL(blob);state.animationKey=key;
+      }
+      document.getElementById('socialStudioEncodedPreview')?.remove();
+      const media=document.createElement(data.animation.format==='gif'?'img':'video');
+      media.id='socialStudioEncodedPreview';media.src=state.animationUrl;
+      if(media.tagName==='VIDEO') {media.controls=true;media.autoplay=true;media.muted=true;media.loop=data.animation.loop;media.playsInline=true;media.poster=state.previewUrl;}
+      else media.alt='Prévia animada da campanha';
+      document.getElementById('socialStudioPreviewStage').appendChild(media);
+      const width=data.animation.format==='gif'?480:720,format=currentFormat();
+      document.getElementById('socialStudioPreviewMeta').textContent=`Prévia animada · ${width} × ${Math.round(width*format.height/format.width/2)*2} · ${data.animation.format.toUpperCase()}`;
+      if(download) {const link=document.createElement('a');link.href=state.animationUrl;link.download=`campanha.${data.animation.format}`;link.click();}
+      setStatus('Animação pronta. A duração pode ser ampliada para preservar a leitura.','ok');
+    } catch(error) {if(error.name!=='AbortError')setStatus(error.message,'error');}
+    finally {state.animationBusy=false;state.animationAbort=null;button.disabled=state.context?.capabilities?.create===false;button.textContent='Exportar animação';}
   }
 
   function saveDraftLocal() {
@@ -1210,6 +1272,13 @@
     document.getElementById("socialStudioCampaignButton").addEventListener("click", generateCampaign);
     document.getElementById("socialStudioPreviewDownload").addEventListener("click", downloadPreview);
     document.getElementById("socialStudioMotionPlay").addEventListener("click", playMotion);
+    document.getElementById('socialStudioAnimationExport').addEventListener('click',()=>generateAnimation(true));
+    document.getElementById('socialStudioAnimated').addEventListener('change',async event=>{
+      const enabled=event.target.checked;
+      document.getElementById('socialStudioAnimationOptions').hidden=!enabled;
+      stopMotion();state.animationAbort?.abort();saveDraftLocal();
+      if(enabled) {clearTimeout(state.previewTimer);await updatePreview({force:true});if(document.getElementById('socialStudioAnimated').checked)await generateAnimation(false);}
+    });
     document.getElementById("socialStudioVariationsButton").addEventListener("click",generateVariations);
     document.getElementById("socialStudioVariations").addEventListener("click", event=>handleCurationAction(event).catch(error=>notify(error.message,"error")));
     document.getElementById("socialStudioFavorites").addEventListener("click", event=>handleCurationAction(event).catch(error=>notify(error.message,"error")));
@@ -1254,6 +1323,7 @@
       });
     });
     form.addEventListener("input", (event) => {
+      if(event.target.id==='socialStudioAnimated') return;
       if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
       const frame=event.target.dataset.directionFrame,frameKey=event.target.dataset.directionKey;
       if(frame&&frameKey){const next=event.target.valueAsNumber;if(!Number.isFinite(next))delete state.directionFrames[frame][frameKey];else state.directionFrames[frame][frameKey]=frameKey==="scale"?next/100:next;}
@@ -1268,6 +1338,7 @@
       if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom" && !event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
+      if(event.target.id==='socialStudioAnimated') return;
       if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
       if (["socialStudioCompositionPreset", "socialStudioCompositionLook"].includes(event.target.id)) { state.compositionAdjustments = {}; syncCompositionControls(); }
       if (event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) return;

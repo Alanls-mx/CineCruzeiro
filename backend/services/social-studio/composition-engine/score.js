@@ -35,7 +35,7 @@ function scoreComposition(scene) {
         add("TEXT_OVERLAP", 25, `${texts[i].id}/${texts[j].id}`);
   const art = elements.find((e) => e.id === "artwork"),
     bg = elements.find((e) => e.id === "background-blur");
-  if (!art && !bg) add("NO_ARTWORK", 15, "artwork");
+  if (!art && !bg && !elements.some(element=>element.id.startsWith('movie-art-'))) add("NO_ARTWORK", 15, "artwork");
   if (art) {
     const protectedZone = {
       x: art.x + art.width * 0.16,
@@ -83,19 +83,27 @@ function scoreComposition(scene) {
   const brightness = scene.visualMetrics?.brightness;
   const chroma = scene.visualMetrics?.chroma || 0;
   const genreFit = brightness === undefined ? 80 : hierarchy.genre === "horror" ? clamp(100 - Math.max(0, brightness - .4) * 160) : brightGenre ? clamp(100 - Math.max(0, .22 - brightness) * 200 - Math.max(0, .12 - chroma) * 100) : hierarchy.genre === "action" ? clamp(contrast * .7 + Math.min(1, chroma / .18) * 30) : 90;
-  const score = clamp(contrast * .14 + hierarchyScore * .15 + readability * .17 + balance * .08 + branding * .08 + commercialClarity * .17 + safeArea * .1 + footer * .07 + genreFit * .04);
+  const rules = scene.sourceDraft?.contentRules || {};
+  const near = (a,b) => a && b && Math.abs(a.x-b.x) < scene.width*.05 && Math.abs(b.y-(a.y+a.height)) < scene.height*.04;
+  if(rules.mustKeepDateNearPremiere && !near(find('subtitle'),detail)) add('DATE_DISCONNECTED',25,'detail');
+  if(rules.mustShowWebsite && (!find('website')?.text || !near(cta,find('website')))) add('WEBSITE_DISCONNECTED',25,'website');
+  if(rules.mustShowSessions && scene.sourceDraft.schedule?.count && !texts.some(element=>/\d{2}:\d{2}/.test(element.text))) add('MISSING_SESSIONS',30,'detail');
+  if(rules.mustShowMultipleMovies && (scene.sourceDraft.programMovies?.length || 0)<2) add('MISSING_MOVIES',35,'title');
+  const coherence = clamp(100-issues.filter(issue=>['DATE_DISCONNECTED','WEBSITE_DISCONNECTED','MISSING_SESSIONS','MISSING_MOVIES'].includes(issue.code)).reduce((sum,issue)=>sum+issue.penalty,0));
+  const score = clamp((contrast * .14 + hierarchyScore * .15 + readability * .17 + balance * .08 + branding * .08 + commercialClarity * .17 + safeArea * .1 + footer * .07 + genreFit * .04)*.85+coherence*.15);
   const strengths = Object.entries({ readability: "boa leitura", contrast: "contraste forte", hierarchy: "hierarquia clara", branding: "marca legível", commercialClarity: "mensagem comercial clara", balance: "equilíbrio entre imagem e texto" }).filter(([key]) => components[key] >= 85).slice(0, 3).map(([, label]) => label);
   return {
     score,
     total: score,
     ...components,
     genreFit,
+    coherence,
     explanation: strengths.length ? strengths.join(", ") + "." : "Composição experimental: revise os pontos de atenção antes de publicar.",
     priority: hierarchy.order,
     accepted:
       score >= 65 &&
       !issues.some((i) =>
-        ["TEXT_OVERLAP", "TEXT_OVERFLOW", "SUBJECT_OVERLAP"].includes(i.code),
+        ["TEXT_OVERLAP", "TEXT_OVERFLOW", "SUBJECT_OVERLAP",'DATE_DISCONNECTED','WEBSITE_DISCONNECTED','MISSING_SESSIONS','MISSING_MOVIES'].includes(i.code),
       ),
     issues,
     method: "commercial-curation-heuristic-v2",

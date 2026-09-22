@@ -7,13 +7,16 @@ const { renderSocialScene } = require("../scene/renderer");
 async function generateVariations(input, context, options = {}) {
   const mode = ["similar", "hierarchy"].includes(input.variationMode) ? input.variationMode : "explore";
   const emphasis = campaignHierarchy(input).primary === "detail" ? "date" : "film";
-  const styles = mode === "similar" ? Array(6).fill(input.style || "hero-left") : ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
+  const multi = input.templateId==='multi-movies';
+  const multiNames = {grid:'Grade limpa',editorial:'Editorial',summary:'Resumo em lista','poster-footer':'Pôsteres com rodapé',featured:'Destaque + grade'};
+  const styles = multi ? Object.keys(multiNames) : mode === "similar" ? Array(6).fill(input.style || "hero-left") : ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
   const variations = [],
     rejected = [];
   for (const [index, style] of styles.entries()) {
     const draft = {
       ...input,
       style,
+      ...(multi ? {style:input.style || 'cinematic',multiLayout:style} : {}),
       automaticStyle: false,
       polish: false,
       artDirection: {
@@ -38,7 +41,7 @@ async function generateVariations(input, context, options = {}) {
     const { entities, ...payload } = rendered.draft;
     variations.push({
       id: `${style}-${draft.artDirection.seed}`,
-      name: STYLES.find((s) => s.id === style)?.name || style,
+      name: multi ? multiNames[style] : STYLES.find((s) => s.id === style)?.name || style,
       intent: draft.artDirection.emphasis === "date" ? "Data ou preço em primeiro plano" : style === "poster-dominant" ? "Artwork em destaque" : "Filme e chamada em destaque",
       draft: payload,
       quality: rendered.quality,

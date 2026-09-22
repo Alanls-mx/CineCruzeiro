@@ -1492,3 +1492,10 @@
 .social-layout-mini--split img { left:4%;top:5%;width:45%;height:67%; }
 .social-layout-mini--poster-dominant img { left:8%;top:0;width:90%;height:77%; }
 .social-layout-mini--typography-dominant img { left:60%;top:0;width:40%;height:45%; }
+#socialStudioMovieSelections { display: grid; gap: 8px; max-height: 330px; overflow-y: auto; }
+#socialStudioAnimationOptions { display: grid; gap: 10px; }
+#socialStudioAnimationOptions[hidden] { display: none; }
+#socialStudioEncodedPreview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #090d14; z-index: 4; }
+.social-studio-root .social-toggle { display: flex; align-items: center; gap: 8px; grid-column: 1 / -1; }
+.social-studio-root .social-toggle input[type="checkbox"] { width: 18px; height: 18px; min-height: 18px; padding: 0; flex: 0 0 18px; accent-color: #f4ca12; }
+#socialStudioAnimationOptions { grid-column: 1 / -1; }

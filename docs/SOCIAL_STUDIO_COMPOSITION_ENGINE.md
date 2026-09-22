@@ -13,7 +13,7 @@ Evolução incremental do Studio V2, com editor Konva e exportação Satori/Shar
 - Modos do hero: retangular, retângulo suave, bordas dissolvidas, integração completa e flutuante.
 - Os ajustes avançados permitem atmosfera, primeiro plano, imagem secundária, sombra, iluminação, vinheta, textura e máscaras.
 - No Konva, desbloqueie a camada para ajustar efeitos, enquadramento ou posição. As imagens processadas são as mesmas usadas na exportação.
-- A reprodução animada é uma prévia de movimento. O download continua sendo PNG/JPG, não MP4/WebM.
+- A prévia em camadas continua disponível. A opção **Gerar versão animada** também exporta MP4, WebM e GIF pelo encoder FFmpeg; veja [conteúdo e animação](SOCIAL_STUDIO_CONTENT_MOTION.md). PNG/JPG e o editor permanecem disponíveis.
 
 ## Pipeline
 
@@ -28,7 +28,7 @@ Arquivos em `backend/services/social-studio/composition-engine/`:
 - `contrast.js`: amostragem da composição, escolha entre texto claro/escuro e proteção localizada.
 - `score.js`: heurística de geometria, contraste, dimensões e visibilidade.
 - `variations.js`: gera propostas diferentes e descarta as que não passam nos critérios mínimos.
-- `motion.js`: planos transparentes e descritor de movimento reutilizáveis por um futuro encoder de vídeo.
+- `motion.js`: planos transparentes para a prévia leve. `animation.js`: planejamento de leitura, planos com entradas sequenciais e exportação FFmpeg.
 
 Ordem: fundo, banho de cor, atmosfera, arte secundária opcional, sombras, luz local, hero, primeiro plano, vinheta, contraste localizado, tipografia e marca. Nem todos os presets usam todas as camadas.
 

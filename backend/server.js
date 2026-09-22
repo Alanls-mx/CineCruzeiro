@@ -11466,6 +11466,25 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/social-studio/animation" && method === "POST") {
+    const body = await readBody(req);
+    require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,socialStudioContext(db)));
+    const controller = new AbortController();
+    const disconnected = () => { if (!res.writableEnded) controller.abort(); };
+    res.on('close', disconnected);
+    try {
+      const rendered = await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+      const animation = await require('./services/social-studio/composition-engine/animation').exportAnimation(rendered.scene, body.animation, {loadImage:loadSocialStudioImage,signal:controller.signal});
+      if (!res.destroyed) {
+        res.writeHead(200, {...securityHeaders({'Content-Type':animation.contentType,'Content-Length':animation.buffer.length,'Cache-Control':'no-store','Content-Disposition':`attachment; filename="campanha${animation.extension}"`,'X-Animation-Duration':String(animation.plan.duration)})});
+        res.end(animation.buffer);
+      }
+    } catch(error) {
+      if(!res.destroyed) sendJson(res,error.statusCode || 503,{error:{code:'SOCIAL_ANIMATION_FAILED',message:error.message}});
+    } finally { res.off('close', disconnected); }
+    return;
+  }
+
   if (pathname === "/api/admin/social-studio/motion-preview" && method === "POST") {
     const body = await readBody(req);
     const rendered = await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
@@ -11502,6 +11521,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/social-studio/posts" && method === "POST") {
     const body = await readBody(req);
     const context = socialStudioContext(db);
+    require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,context));
     const rendered = await renderSocialPost(body, context, { loadImage: loadSocialStudioImage });
     const uploaded = await storageService.uploadImageBuffer({
       buffer: rendered.buffer,
@@ -11526,6 +11546,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/social-studio/campaigns" && method === "POST") {
     const body = await readBody(req);
     const context = socialStudioContext(db);
+    require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,context));
     const formats = Object.keys(SOCIAL_FORMATS);
     const uploadedUrls = [];
     const campaignId = `campaign-${Date.now()}`;

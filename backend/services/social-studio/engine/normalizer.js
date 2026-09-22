@@ -23,7 +23,7 @@ function normalizeV2Draft(input = {}, context = {}) {
   const template = templateById(input.templateId);
   const legacyTemplateId = template.id === "club-plan"
     ? "cinema-club"
-    : template.id === "movie-presale" ? "movie-premiere" : template.id;
+    : template.id === "movie-presale" ? "movie-premiere" : ['sessions-today','sessions-week','multi-movies'].includes(template.id) ? 'movie-highlight' : template.id;
   const legacyDraft = legacy.normalizeDraft({ ...input, templateId: legacyTemplateId }, context);
   const movie = entityById(context.movies, input.movieId) || legacyDraft.entities.movie;
   const concession = entityById(context.concessions, input.concessionId) || legacyDraft.entities.concession;
@@ -53,11 +53,12 @@ function normalizeV2Draft(input = {}, context = {}) {
   if (template.id === "club-plan") {
     draft.clubPlanId = clubPlan?.id || "";
   }
-  return draft;
+  return require('./content-rules').applyContentRules(draft, input, context);
 }
 
 function draftNotices(input = {}, context = {}) {
   const draft = normalizeV2Draft(input, context);
+  if(['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) return draft.contentNotices;
   const legacyId = draft.templateId === "club-plan" ? "cinema-club" : draft.templateId === "movie-presale" ? "movie-premiere" : draft.templateId;
   const notices = legacy.draftNotices({ ...draft, templateId: legacyId }, context);
   if (["movie-premiere", "movie-highlight", "movie-price", "movie-presale"].includes(draft.templateId)) {
@@ -67,7 +68,7 @@ function draftNotices(input = {}, context = {}) {
       message: `${draft.genreProfile.label} recomendado a partir do gênero. Você pode escolher outra variação.`
     });
   }
-  return notices;
+  return [...notices, ...draft.contentNotices];
 }
 
 module.exports = { draftNotices, genreProfile, normalizeV2Draft };
