@@ -2989,6 +2989,51 @@ function fillMovieForm(movie) {
   closeSessionEditor();
   renderSessions(state.movieDraftSessions);
   setMovieWizardStep(0);
+  renderTmdbMissingFields([]);
+}
+
+const TMDB_FIELD_TARGETS = {
+  title: "movieTitle",
+  duration: "movieDuration",
+  director: "movieDirector",
+  genre: "movieGenre",
+  synopsis: "movieSynopsis",
+  rating: "movieRating",
+  posterUrl: "moviePosterUrl",
+  backdropUrl: "movieBackdropUrl",
+  trailerYoutubeId: "movieTrailer",
+  releaseDate: "movieReleaseDate"
+};
+
+function renderTmdbMissingFields(fields = []) {
+  const target = $("tmdbMissingFields");
+  if (!target) return;
+  const missingFields = Array.isArray(fields) ? fields.filter((field) => field?.field && field?.label) : [];
+  target.hidden = missingFields.length === 0;
+  if (!missingFields.length) {
+    target.innerHTML = "";
+    return;
+  }
+  const plural = missingFields.length === 1 ? "dado não foi coletado" : "dados não foram coletados";
+  target.innerHTML = `
+    <div>
+      <strong>Complete ${missingFields.length} ${plural} pelo TMDB</strong>
+      <p>Selecione um campo para ir direto à etapa correspondente e informá-lo manualmente.</p>
+    </div>
+    <div class="tmdb-missing-field-list">
+      ${missingFields.map((field) => `<button class="tmdb-missing-field" type="button" data-tmdb-missing-field="${escapeHtml(field.field)}" data-tmdb-missing-step="${Number(field.step) || 0}">${escapeHtml(field.label)}</button>`).join("")}
+    </div>
+  `;
+  target.querySelectorAll("[data-tmdb-missing-field]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const step = Number(button.dataset.tmdbMissingStep || 0);
+      const fieldId = button.dataset.tmdbMissingField;
+      setMovieWizardStep(step);
+      const input = $(TMDB_FIELD_TARGETS[fieldId]);
+      input?.focus({ preventScroll: true });
+      input?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  });
 }
 
 async function searchTmdb() {
@@ -3002,6 +3047,7 @@ async function searchTmdb() {
   setDisabled("tmdbSearchButton", true);
   $("tmdbMessage").textContent = "Buscando no TMDB...";
   $("tmdbResults").innerHTML = Array.from({ length: 3 }, () => `<div class="skeleton-card"></div>`).join("");
+  renderTmdbMissingFields([]);
 
   try {
     const results = await api(`/api/tmdb/search?query=${encodeURIComponent(query)}`);
@@ -3031,6 +3077,7 @@ async function searchTmdb() {
     $("tmdbMessage").textContent = error.message;
     showToast("TMDB não configurado ou indisponível.", "error");
     $("tmdbResults").innerHTML = "";
+    renderTmdbMissingFields([]);
   } finally {
     setDisabled("tmdbSearchButton", false);
   }
@@ -3057,16 +3104,19 @@ async function importTmdbMovie(tmdbId) {
       $("movieId").value = "";
       $("movieStatus").value = "upcoming";
     }
-    const durationMessage = movie.duration
-      ? ` Duração oficial importada: ${movie.duration}.`
-      : " O TMDB não informou a duração; preencha esse campo antes de publicar.";
+    const missingFields = Array.isArray(movie.tmdbMissingFields) ? movie.tmdbMissingFields : [];
+    const missingMessage = missingFields.length
+      ? ` O TMDB não informou ${missingFields.length} ${missingFields.length === 1 ? "dado" : "dados"}; complete-os manualmente para finalizar o cadastro.`
+      : " O TMDB retornou todos os dados compatíveis com este cadastro.";
     $("tmdbMessage").textContent = (existingId
       ? "Dados importados no filme selecionado. Revise e salve para atualizar."
-      : "Dados importados. Revise o status e salve o filme.") + durationMessage;
-    showToast("Dados oficiais importados para o formulário.");
+      : "Dados importados. Revise o status e salve o filme.") + missingMessage;
+    renderTmdbMissingFields(missingFields);
+    showToast(missingFields.length ? "Alguns dados precisam ser completados manualmente." : "Dados oficiais importados para o formulário.", missingFields.length ? "warning" : "success");
   } catch (error) {
     $("tmdbMessage").textContent = error.message;
     showToast("Não foi possível importar o filme.", "error");
+    renderTmdbMissingFields([]);
   }
 }
 

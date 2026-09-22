@@ -7911,12 +7911,35 @@ function minutesToDuration(runtime) {
   return hours ? `${hours}h ${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
 }
 
-function tmdbCertification(details) {
+function tmdbCertificationValue(details) {
   const releases = details.release_dates?.results || [];
   const br = releases.find((item) => item.iso_3166_1 === "BR");
-  const cert = br?.release_dates?.find((item) => item.certification)?.certification;
+  return br?.release_dates?.find((item) => item.certification)?.certification || "";
+}
+
+function tmdbCertification(details) {
+  const cert = tmdbCertificationValue(details);
   if (!cert) return "L";
   return cert === "Livre" ? "L" : cert;
+}
+
+function tmdbMissingMovieFields({ title, runtimeMinutes, director, genres, synopsis, certification, posterUrl, backdropUrl, trailerYoutubeId, releaseDate }) {
+  const fields = [
+    ["title", "Título", 0, title],
+    ["duration", "Duração", 1, runtimeMinutes],
+    ["director", "Direção", 1, director],
+    ["genre", "Gêneros", 1, genres.length],
+    ["synopsis", "Sinopse", 1, synopsis],
+    ["rating", "Classificação indicativa", 1, certification],
+    ["posterUrl", "Pôster vertical", 2, posterUrl],
+    ["backdropUrl", "Banner horizontal", 2, backdropUrl],
+    ["trailerYoutubeId", "Trailer", 2, trailerYoutubeId],
+    ["releaseDate", "Data de estreia", 3, releaseDate]
+  ];
+
+  return fields
+    .filter(([, , , value]) => !value)
+    .map(([field, label, step]) => ({ field, label, step }));
 }
 
 function tmdbMoviePayload(details) {
@@ -7924,6 +7947,26 @@ function tmdbMoviePayload(details) {
   const runtimeMinutes = Number.isFinite(Number(details.runtime)) && Number(details.runtime) > 0
     ? Math.round(Number(details.runtime))
     : 0;
+  const director = details.credits?.crew?.find((person) => person.job === "Director")?.name || "";
+  const genres = Array.isArray(details.genres) ? details.genres.map((genre) => genre.name).filter(Boolean) : [];
+  const synopsis = details.overview || "";
+  const certification = tmdbCertificationValue(details);
+  const posterUrl = details.poster_path ? `https://image.tmdb.org/t/p/w780${details.poster_path}` : "";
+  const backdropUrl = details.backdrop_path ? `https://image.tmdb.org/t/p/w1280${details.backdrop_path}` : "";
+  const trailerYoutubeId = details.videos?.results?.find((video) => video.site === "YouTube" && video.type === "Trailer")?.key || "";
+  const releaseDate = details.release_date || "";
+  const tmdbMissingFields = tmdbMissingMovieFields({
+    title,
+    runtimeMinutes,
+    director,
+    genres,
+    synopsis,
+    certification,
+    posterUrl,
+    backdropUrl,
+    trailerYoutubeId,
+    releaseDate
+  });
   return {
     id: slugify(title || `tmdb-${details.id}`),
     slug: slugify(title || `tmdb-${details.id}`),
@@ -7932,9 +7975,9 @@ function tmdbMoviePayload(details) {
     workflowStatus: "draft",
     title,
     originalTitle: details.original_title || "",
-    synopsis: details.overview || "",
+    synopsis,
     duration: minutesToDuration(runtimeMinutes),
-    director: details.credits?.crew?.find((person) => person.job === "Director")?.name || "",
+    director,
     metadata: {
       tmdbId: details.id,
       runtimeMinutes,
@@ -7944,12 +7987,11 @@ function tmdbMoviePayload(details) {
       popularity: details.popularity || 0,
       voteAverage: details.vote_average || 0
     },
-    genre: Array.isArray(details.genres) ? details.genres.map((genre) => genre.name) : [],
+    genre: genres,
     rating: tmdbCertification(details),
-    posterUrl: details.poster_path ? `https://image.tmdb.org/t/p/w780${details.poster_path}` : "",
-    backdropUrl: details.backdrop_path ? `https://image.tmdb.org/t/p/w1280${details.backdrop_path}` : "",
-    trailerYoutubeId:
-      details.videos?.results?.find((video) => video.site === "YouTube" && video.type === "Trailer")?.key || "",
+    posterUrl,
+    backdropUrl,
+    trailerYoutubeId,
     trailerVideoUrl: "",
     localTrailerUrl: "",
     trailerSourceUrl: "",
@@ -7958,7 +8000,8 @@ function tmdbMoviePayload(details) {
     trailerCacheError: "",
     isHighlight: false,
     highlightTrailerBackground: true,
-    releaseDate: details.release_date || "",
+    releaseDate,
+    tmdbMissingFields,
     autoPublish: false,
     tag: "Em Breve",
     sessions: []
