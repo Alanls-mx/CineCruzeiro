@@ -61,6 +61,13 @@ async function ensureTextContrast(scene, loadImage) {
   scene.elements = scene.elements.filter(
     (e) => !["copy-contrast", "footer-contrast"].includes(e.id),
   );
+  let brightness = 0, chroma = 0;
+  for (let index = 0; index < data.length; index += 3) {
+    const rgb = [data[index], data[index + 1], data[index + 2]];
+    brightness += (rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722) / 255;
+    chroma += (Math.max(...rgb) - Math.min(...rgb)) / 255;
+  }
+  scene.visualMetrics = { brightness: brightness / (data.length / 3), chroma: chroma / (data.length / 3) };
   const gradients = [];
   for (const text of scene.elements.filter(
     (e) => e.type === "text" && e.text?.trim(),

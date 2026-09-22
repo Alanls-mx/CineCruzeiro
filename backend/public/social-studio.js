@@ -39,6 +39,11 @@
   state.directionFrames = { background: {}, hero: {} };
   state.variations = [];
   state.variationVersion = 0;
+  state.polish = false;
+  state.thumbnailVersion = 0;
+  state.thumbnailCache = new Map();
+  state.favoriteKey = "cinecruzeiro.socialStudio.favorites.v1";
+  try { const saved = JSON.parse(localStorage.getItem(state.favoriteKey) || "[]"); state.favorites = Array.isArray(saved) ? saved.filter(item => item?.draft && item?.quality).slice(0, 8) : []; } catch { state.favorites = []; }
   const effectControls = [
     ["blur", "Desfoque do fundo", 0, 80, 1], ["darkening", "Escurecimento", 0, 80, 1],
     ["saturation", "Saturação", 0, 180, 5], ["contrast", "Contraste", 50, 160, 5],
@@ -169,6 +174,7 @@
             </div>
             <p id="socialStudioStatus" class="social-studio-status" role="status"></p>
             <section id="socialStudioVariations" class="social-variations" aria-label="Variações de composição" hidden></section>
+            <section id="socialStudioFavorites" class="social-variations" aria-label="Composições favoritas" hidden></section>
           </main>
 
           <aside class="social-properties-pane">
@@ -331,19 +337,56 @@
   }
 
   function templateThumb(template) {
-    const movie = state.context?.movies?.find((item) => String(item.id) === String(document.getElementById("socialStudioMovie")?.value))
-      || state.context?.movies?.[0];
-    const concession = state.context?.concessions?.[0];
-    const image = template.type === "movie"
-      ? movie?.backdropUrl || movie?.posterUrl
-      : template.type === "concession" ? concession?.imageUrl : "";
-    const price = template.id === "movie-price" || template.type === "concession";
-    return `<span class="social-template-thumb social-template-thumb--${escapeHtml(template.type)}">
-      ${image ? `<img src="${escapeHtml(assetUrl(image))}" alt="" loading="lazy" />` : ""}
-      <i aria-hidden="true"></i>
-      <b>${escapeHtml(template.id === "movie-premiere" ? "ESTREIA" : template.id === "online-ticket" ? "COMPRE ONLINE" : template.type === "club" ? "CLUBE" : "EM CARTAZ")}</b>
-      <em>${price ? "R$ 14" : "GARANTA SEU LUGAR"}</em>
-    </span>`;
+    return `<span class="social-template-thumb" data-template-preview="${escapeHtml(template.id)}" aria-busy="true"><span class="social-thumbnail-status">Preparando prévia</span></span>`;
+  }
+
+  function invalidateThumbnails() {
+    state.thumbnailVersion++;
+    state.thumbnailAbort?.abort();
+    document.querySelectorAll("[data-template-preview]").forEach(target => {
+      target.setAttribute("aria-busy", "true");
+      target.innerHTML = '<span class="social-thumbnail-status">Atualizando</span>';
+    });
+  }
+
+  async function updateTemplatePreviews(data, activeUrl) {
+    state.thumbnailAbort?.abort();
+    const controller = new AbortController();
+    state.thumbnailAbort = controller;
+    const version = ++state.thumbnailVersion;
+    const draw = (id, url) => {
+      const target = document.querySelector(`[data-template-preview="${CSS.escape(id)}"]`);
+      if (!target) return;
+      target.setAttribute("aria-busy", "false");
+      target.innerHTML = `<img src="${escapeHtml(url)}" alt="Prévia de ${escapeHtml(state.context.templates.find(item => item.id === id)?.name || "campanha")}" />`;
+    };
+    draw(data.templateId, activeUrl);
+    if (state.context?.capabilities?.create === false) return;
+    for (const template of state.context.templates.filter(item => item.id !== data.templateId)) {
+      if (version !== state.thumbnailVersion) return;
+      const key = previewCacheKey({ ...data, templateId: template.id, thumbnail: true });
+      try {
+        let url = state.thumbnailCache.get(key);
+        if (!url) {
+          const alternate = { ...data, templateId: template.id };
+          ["title", "subtitle", "price", "date", "auxiliaryText", "cta", "caption"].forEach(field => { alternate[field] = undefined; });
+          const resolved = await request("/api/admin/social-studio/resolve", { method: "POST", body: JSON.stringify(alternate), signal: controller.signal });
+          const blob = await requestImage("/api/admin/social-studio/preview", resolved.draft, controller.signal);
+          if (version !== state.thumbnailVersion) return;
+          url = URL.createObjectURL(blob);
+          state.thumbnailCache.set(key, url);
+          if (state.thumbnailCache.size > 24) {
+            const oldest = state.thumbnailCache.keys().next().value;
+            URL.revokeObjectURL(state.thumbnailCache.get(oldest)); state.thumbnailCache.delete(oldest);
+          }
+        }
+        if (version === state.thumbnailVersion) draw(template.id, url);
+      } catch (error) {
+        if (version !== state.thumbnailVersion || error.name === "AbortError") return;
+        const target = document.querySelector(`[data-template-preview="${CSS.escape(template.id)}"]`);
+        if (target) { target.setAttribute("aria-busy", "false"); target.innerHTML = '<span class="social-thumbnail-status">Prévia indisponível</span>'; }
+      }
+    }
   }
 
   function renderTemplates() {
@@ -522,6 +565,9 @@
 
   function showSavedPost(post) {
     if (!post?.imageUrl) return;
+    clearTimeout(state.previewTimer);
+    state.previewAbort?.abort();
+    state.previewVersion++;
     stopMotion();
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
     state.previewUrl = assetUrl(post.imageUrl);
@@ -533,6 +579,8 @@
     const editButton = document.getElementById("socialStudioManualEdit");
     editButton.disabled = !post.editable || state.context?.capabilities?.create === false;
     editButton.title = post.editable ? "Abrir o editor visual desta arte" : "Gere uma nova arte com o Engine V2 para editar os elementos";
+    if (post.payload) applyDraft(post.payload, post.caption || "");
+    updateTemplatePreviews(payload(), state.previewUrl);
   }
 
   async function createReadyPost(post, button) {
@@ -599,6 +647,7 @@
   function payload() {
     return {
       templateId: checked("socialStudioTemplate", "movie-premiere"),
+      polish: state.polish,
       formatId: value("socialStudioFormat", "feed_portrait"),
       outputType: value("socialStudioOutput", "png"),
       style: checked("socialStudioStyle", "cinematic"),
@@ -648,6 +697,8 @@
   }
 
   function applyDraft(draft, caption = "") {
+    state.polish = draft.polish === true;
+    invalidateThumbnails();
     const templateId = draft.templateId === "cinema-club" ? "club-plan" : draft.templateId;
     setRadio("socialStudioTemplate", templateId);
     updateFieldVisibility();
@@ -773,6 +824,7 @@
     document.getElementById("socialStudioPreviewDownload").disabled = false;
     state.activePostId = "";
     document.getElementById("socialStudioManualEdit").disabled = true;
+    updateTemplatePreviews(payload(), state.previewUrl);
   }
 
   async function updatePreview(options = {}) {
@@ -780,12 +832,14 @@
     if (state.context?.capabilities?.create === false) return;
     const data = payload();
     const key = previewCacheKey(data);
+    const version = ++state.previewVersion;
+    state.previewAbort?.abort();
     if (!options.force && state.previewCache.has(key)) {
+      state.previewing = false;
       displayPreview(state.previewCache.get(key), data.title);
       setStatus("Prévia atualizada.", "ok");
       return;
     }
-    const version = ++state.previewVersion;
     state.previewing = true;
     state.previewAbort?.abort();
     state.previewAbort = new AbortController();
@@ -809,6 +863,9 @@
 
   function schedulePreview(delay = 420) {
     stopMotion();
+    invalidateThumbnails();
+    state.previewVersion++;
+    state.previewAbort?.abort();
     window.clearTimeout(state.previewTimer);
     state.previewTimer = window.setTimeout(() => updatePreview(), delay);
   }
@@ -856,21 +913,68 @@
     finally { if (version === state.motionVersion) state.motionAbort = null; }
   }
 
-  async function generateVariations() {
+  function variationCard(variation, index, favorite = false) {
+    const quality = variation.quality || {};
+    const source = favorite ? "favorite" : "variation";
+    const favoriteSaved = state.favorites.some(item => previewCacheKey(item.draft) === previewCacheKey(variation.draft));
+    return `<article class="social-variation ${variation.recommended ? "is-recommended" : ""}">
+      <img src="${escapeHtml(variation.image)}" alt="${escapeHtml(variation.name)}" />
+      <strong>${escapeHtml(variation.classification || "Favorita")} · ${quality.total ?? quality.score}/100</strong>
+      <strong>${escapeHtml(variation.name)}</strong><span>${escapeHtml(variation.intent || "")}</span>
+      <span>${escapeHtml(quality.explanation || "")}</span>
+      <span>${variation.refined ? `Acabamento aplicado: ${variation.beforeQuality?.total ?? quality.total} → ${quality.total}` : "Composição avaliada"}</span>
+      <details><summary>Pontuação por critério</summary><dl>${Object.entries({contrast:"Contraste",hierarchy:"Hierarquia",readability:"Leitura",balance:"Equilíbrio",branding:"Marca",commercialClarity:"Clareza comercial",safeArea:"Área segura",footer:"Rodapé"}).map(([key,label])=>`<div><dt>${label}</dt><dd>${quality[key] ?? "—"}</dd></div>`).join("")}</dl></details>
+      <div class="social-variation-actions">${[["use","Usar esta"],["edit","Editar detalhes"],["similar","Gerar parecidas"],["hierarchy","Manter hierarquia"],["favorite",favorite ? "Remover favorita" : favoriteSaved ? "Favorita fixada" : "Fixar como favorita"]].map(([action,label])=>`<button type="button" class="${action === "use" ? "primary-button" : "ghost-button"}" data-curation-source="${source}" data-curation-index="${index}" data-curation-action="${action}" ${action === "favorite" && !favorite && favoriteSaved ? "disabled" : ""}>${label}</button>`).join("")}</div>
+    </article>`;
+  }
+
+  function renderFavorites() {
+    const target = document.getElementById("socialStudioFavorites");
+    target.hidden = !state.favorites.length;
+    target.innerHTML = `<h3>Favoritas neste navegador</h3><div class="social-variations-grid">${state.favorites.map((item,index)=>variationCard(item,index,true)).join("")}</div>`;
+  }
+
+  async function handleCurationAction(event) {
+    const button = event.target.closest("[data-curation-action]");
+    if (!button || button.disabled) return;
+    const index = Number(button.dataset.curationIndex);
+    const favorite = button.dataset.curationSource === "favorite";
+    const variation = (favorite ? state.favorites : state.variations)[index];
+    if (!variation) return;
+    const action = button.dataset.curationAction;
+    if (action === "favorite") {
+      const next = favorite ? state.favorites.filter((_, itemIndex)=>itemIndex !== index) : [variation,...state.favorites].slice(0,8);
+      try { localStorage.setItem(state.favoriteKey,JSON.stringify(next)); state.favorites=next; renderFavorites(); if(!favorite){button.textContent="Favorita fixada";button.disabled=true;} }
+      catch { notify("Não foi possível salvar a favorita neste navegador.","error"); }
+      return;
+    }
+    if (state.context?.capabilities?.create === false) return;
+    if (["similar","hierarchy"].includes(action)) { await generateVariations({ variationMode: action, draft: variation.draft }); return; }
+    if (state.generating) return;
+    state.styleManuallySelected = true;
+    applyDraft({...variation.draft,automaticStyle:false},variation.draft.caption || value("socialStudioCaption"));
+    saveDraftLocal();
+    await updatePreview({force:true});
+    if(action === "edit") { const post = await generatePost(); if(post?.id) window.location.href=`${basePath}/social-editor?postId=${encodeURIComponent(post.id)}`; }
+  }
+
+  async function generateVariations(options = {}) {
     const button=document.getElementById("socialStudioVariationsButton");
-    const version=++state.variationVersion,data=payload(),key=previewCacheKey(data);
+    const version=++state.variationVersion,data={...(options.draft || payload()),variationMode:options.variationMode || "explore"},key=previewCacheKey(payload());
+    state.variationAbort?.abort();
+    state.variationAbort=new AbortController();
     button.disabled=true;button.textContent="Compondo variações...";
     const target=document.getElementById("socialStudioVariations");
     target.hidden=false;target.textContent="Analisando enquadramento, hierarquia e contraste...";
     try {
-      const result=await request("/api/admin/social-studio/variations",{method:"POST",body:JSON.stringify(data)});
+      const result=await request("/api/admin/social-studio/variations",{method:"POST",body:JSON.stringify(data),signal:state.variationAbort.signal});
       if(version!==state.variationVersion)return;
       if(key!==previewCacheKey(payload())) {target.textContent="A configuração mudou durante a geração. Gere novas variações para comparar.";return;}
       state.variations=result.variations;
-      target.innerHTML=`<div class="social-variations-head"><h3>Escolha uma composição</h3><span>${result.variations.length} variações</span></div><div class="social-variations-grid">${result.variations.map((v,i)=>`<button class="social-variation" type="button" data-variation-index="${i}"><img src="${escapeHtml(v.image)}" alt="${escapeHtml(v.name)}" /><strong>${escapeHtml(v.name)}</strong><span>Composição: ${v.quality.score}/100</span></button>`).join("")}</div>${result.notices.map(n=>`<p>${escapeHtml(n)}</p>`).join("")}`;
+      target.innerHTML=`<div class="social-variations-head"><h3>Melhores composições</h3><span>${result.evaluatedCount || result.variations.length} avaliadas · ${result.variations.length} selecionadas</span></div><div class="social-variations-grid">${result.variations.map((v,i)=>variationCard(v,i)).join("")}</div>${result.notices.map(n=>`<p>${escapeHtml(n)}</p>`).join("")}`;
       target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
-    } catch(error){target.textContent=error.message;}
-    finally {button.disabled=state.context?.capabilities?.create===false;button.textContent="Gerar variações";}
+    } catch(error){if(version===state.variationVersion && error.name!=="AbortError")target.textContent=error.message;}
+    finally {if(version===state.variationVersion){button.disabled=state.context?.capabilities?.create===false;button.textContent="Gerar variações";}}
   }
 
   function saveDraftLocal() {
@@ -904,6 +1008,10 @@
   }
 
   async function resolveDefaults(options = {}) {
+    invalidateThumbnails();
+    clearTimeout(state.previewTimer);
+    state.previewVersion++;
+    state.previewAbort?.abort();
     const version = ++state.resolveVersion;
     state.resolving = true;
     setStatus("Carregando dados atuais do painel...", "loading");
@@ -941,6 +1049,7 @@
       showSavedPost(result.post);
       setStatus("Arte adicionada ao histórico.", "ok");
       notify("Arte social gerada com sucesso.");
+      return result.post;
     } catch (error) {
       setStatus(error.message, "error");
       notify(error.message, "error");
@@ -1102,7 +1211,9 @@
     document.getElementById("socialStudioPreviewDownload").addEventListener("click", downloadPreview);
     document.getElementById("socialStudioMotionPlay").addEventListener("click", playMotion);
     document.getElementById("socialStudioVariationsButton").addEventListener("click",generateVariations);
-    document.getElementById("socialStudioVariations").addEventListener("click",event=>{const button=event.target.closest("[data-variation-index]");if(!button)return;const variation=state.variations[Number(button.dataset.variationIndex)];if(!variation)return;state.styleManuallySelected=true;applyDraft({...variation.draft,automaticStyle:false},value("socialStudioCaption"));saveDraftLocal();updatePreview({force:true});document.getElementById("socialStudioVariations").hidden=true;});
+    document.getElementById("socialStudioVariations").addEventListener("click", event=>handleCurationAction(event).catch(error=>notify(error.message,"error")));
+    document.getElementById("socialStudioFavorites").addEventListener("click", event=>handleCurationAction(event).catch(error=>notify(error.message,"error")));
+    renderFavorites();
     document.getElementById("socialStudioCompositionReset").addEventListener("click", () => { state.compositionAdjustments = {}; syncCompositionControls(); saveDraftLocal(); schedulePreview(); });
     document.getElementById("socialStudioManualEdit").addEventListener("click", () => {
       if (state.activePostId) window.location.href = `${basePath}/social-editor?postId=${encodeURIComponent(state.activePostId)}`;
@@ -1131,8 +1242,6 @@
     });
     document.getElementById("socialStudioTemplates").addEventListener("change", async () => {
       updateFieldVisibility();
-      state.styleManuallySelected = false;
-      updateStyleRecommendation({ apply: true });
       await resolveDefaults({ resetCopy: true });
     });
     ["socialStudioMovie", "socialStudioConcession", "socialStudioClub"].forEach((id) => {
@@ -1156,7 +1265,7 @@
       }
       syncRangeOutputs();
       saveDraftLocal();
-      if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom") schedulePreview(300);
+      if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom" && !event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
       if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;

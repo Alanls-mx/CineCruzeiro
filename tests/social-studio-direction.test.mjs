@@ -335,11 +335,28 @@ test("variações entregam quatro estruturas válidas e dados idênticos", async
     },
   );
   assert.equal(result.variations.length, 4);
+  assert.equal(result.evaluatedCount, 8);
+  assert.equal(result.variations[0].recommended, true);
+  assert.deepEqual(result.variations.map(item => item.quality.total), result.variations.map(item => item.quality.total).sort((first, second) => second - first));
   assert.equal(new Set(result.variations.map((v) => v.draft.style)).size, 4);
   for (const v of result.variations) {
     assert.equal(v.draft.movieId, "test");
     assert.equal(v.draft.title, "A grande aventura");
     assert.ok(v.quality.accepted);
     assert.equal(v.draft.automaticStyle, false);
+    if (v.refined) assert.ok(v.quality.total >= v.beforeQuality.total);
+  }
+  for (const variationMode of ["similar", "hierarchy"]) {
+    const chosen = result.variations[0].draft;
+    const regenerated = await generateVariations({ ...chosen, variationMode }, context, { loadImage: async url => url === "asset://direction-logo" ? logo : poster });
+    assert.equal(regenerated.variations.length, 4);
+    assert.equal(regenerated.evaluatedCount, variationMode === "similar" ? 6 : 8);
+    assert.equal(new Set(regenerated.variations.map(item => item.draft.artDirection.seed)).size, 4);
+    for (const item of regenerated.variations) {
+      assert.equal(item.draft.artDirection.emphasis, chosen.artDirection.emphasis);
+      assert.equal(item.draft.title, chosen.title);
+      assert.equal(item.draft.cta, chosen.cta);
+      if (variationMode === "similar") assert.equal(item.draft.style, chosen.style);
+    }
   }
 });

@@ -63,3 +63,14 @@ npm run build
 ```
 
 Os testes cobrem presets, máscaras, alfa de sombras/luz, crop independente, cache, fallback, persistência, equivalência prévia/exportação, hierarquia, análise, grids, score e variações. A revisão visual local inclui terror, animação, ação e comédia, além de desktop e mobile. Os exemplos são campanhas de teste, não confirmação de datas comerciais.
+# Curadoria comercial e acabamento
+
+O gerador avalia oito composições antes de selecionar até quatro opções. A nota inclui leitura, contraste medido, hierarquia de campanha, equilíbrio visual, marca, área segura, rodapé, clareza comercial e adequação ao gênero. A pontuação é uma heurística de composição, não uma previsão de conversão ou vendas.
+
+Cada candidata passa por `polishComposition()`: margens, rodapé, divisor, logo, escala de texto e limites de conteúdo são ajustados; o contraste local é recalculado nas posições finais. A versão refinada só substitui a original quando passa nas verificações e não reduz sua nota. `polish` persiste no rascunho e no histórico, permitindo reproduzir a mesma arte na prévia, exportação e editor manual.
+
+As opções aparecem ordenadas, com justificativa e notas por critério. Favoritas são armazenadas neste navegador (até oito). “Gerar parecidas” avalia seis novas sementes mantendo estilo, hierarquia e enquadramento principal. “Manter hierarquia” explora layouts diferentes preservando o destaque escolhido. O refinamento não modifica texto comercial, datas ou preços.
+
+As miniaturas laterais usam o render real. A selecionada compartilha a imagem da prévia principal; as alternativas são resolvidas e renderizadas com os dados atuais e textos próprios da campanha. Requisições antigas são canceladas e resultados obsoletos são ignorados; o cache local é limitado a 24 imagens.
+
+Verificação de curadoria: `node --test tests/social-studio-curation.test.mjs tests/social-studio-direction.test.mjs`.

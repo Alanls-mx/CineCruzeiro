@@ -278,13 +278,7 @@ function directionPlan(draft, analysis, { fullBleed = false } = {}) {
     plan.logo = [...side.logo];
     plan.footer = [...side.footer];
   }
-  const datePrimary =
-    d.emphasis === "date" ||
-    (d.emphasis !== "film" &&
-      draft.style !== "poster-dominant" &&
-      ["movie-premiere", "movie-presale", "movie-price"].includes(
-        draft.templateId,
-      ));
+  const datePrimary = require("./hierarchy").campaignHierarchy(draft).primary === "detail";
   if (
     datePrimary &&
     ![
@@ -355,6 +349,7 @@ function directionPlan(draft, analysis, { fullBleed = false } = {}) {
     plan.art[2] = heroLeft ? pivot - 0.045 : 0.98 - plan.art[0];
   }
   plan.heroMode = d.heroMode || "edge-dissolve";
+  for (const key of ["subtitle", "title", "detail", "description", "cta"]) plan.slots[key][1] += jitter * .18;
   plan.glowScale = 0.85 + seed * 0.3;
   return plan;
 }

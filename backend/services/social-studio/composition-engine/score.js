@@ -55,19 +55,50 @@ function scoreComposition(scene) {
     (logo.width < scene.width * 0.13 || logo.height < scene.height * 0.04)
   )
     add("SMALL_LOGO", 12, logo.id);
-  const score = Math.max(
-    0,
-    100 - issues.reduce((sum, issue) => sum + issue.penalty, 0),
-  );
+  const { campaignHierarchy } = require("./hierarchy");
+  const clamp = value => Math.round(Math.max(0, Math.min(100, value)));
+  const average = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const hierarchy = campaignHierarchy(scene.sourceDraft);
+  const find = id => texts.find(element => element.id === id);
+  const size = element => (element?.fontSize || 0) * 1080 / scene.width;
+  const title = find("title"), detail = find("detail"), cta = find("cta");
+  const brightGenre = ["family", "comedy"].includes(hierarchy.genre);
+  const important = [title, detail, cta].filter(Boolean);
+  const contrast = clamp(average(important.map(element => Math.min(100, (element.contrastRatio || 4.5) / (brightGenre ? 8 : 7) * 100))));
+  const readability = clamp(average([size(title) / (hierarchy.primary === "title" ? 105 : 76), size(detail) / (hierarchy.primary === "detail" ? 115 : 65), size(cta) / (brightGenre ? 40 : 36)].map(value => Math.min(1, value) * 100)) - issues.filter(issue => ["TEXT_OVERFLOW", "SMALL_TEXT"].includes(issue.code)).length * 20);
+  const primary = find(hierarchy.primary), secondary = hierarchy.primary === "title" ? detail : title;
+  const hierarchyScore = clamp(100 - Math.max(0, size(secondary) / Math.max(1, size(primary)) - .72) * 55 - Math.max(0, size(cta) / Math.max(1, size(primary)) - .5) * 30);
+  const weights = important.map(element => ({ center: element.x + element.width / 2, weight: Math.max(1, element.fontSize) * Math.min(30, element.text.length) }));
+  if (art) weights.push({ center: art.x + art.width / 2, weight: Math.sqrt(art.width * art.height) * 6 });
+  const mass = weights.reduce((sum, item) => sum + item.weight, 0);
+  const center = weights.reduce((sum, item) => sum + item.center * item.weight, 0) / Math.max(1, mass) / scene.width;
+  const artRatio = art ? art.width * art.height / (scene.width * scene.height) : bg ? .5 : 0;
+  const balance = clamp(100 - Math.max(0, Math.abs(center - .5) - .04) * (hierarchy.genre === "horror" ? 140 : 220) - Math.max(0, .25 - artRatio) * 160 - issues.filter(issue => /OVERLAP/.test(issue.code)).length * 25);
+  const brandingText = [find("cinema"), find("website")].filter(Boolean);
+  const branding = clamp((logo ? Math.min(100, logo.width / scene.width / .21 * 100) : scene.sourceDraft?.signatureId === "none" ? 80 : 25) - brandingText.filter(element => size(element) < 20).length * 15 - texts.filter(element => logo && overlap(element, logo) > 4).length * 25);
+  const safeArea = clamp(100 - issues.filter(issue => issue.code === "SAFE_AREA").length * 20 - elements.filter(element => element.role === "logo" && (element.x < scene.width * .025 || element.x + element.width > scene.width * .975 || element.y + element.height > bottom)).length * 25);
+  const footer = clamp(100 - brandingText.filter(element => element.y + element.height > bottom || size(element) < 18).length * 30 - (logo && brandingText.some(element => overlap(element, logo) > 4) ? 35 : 0));
+  const commercialClarity = clamp((title ? 35 : 0) + (cta ? 30 : 0) + (detail ? 20 : 0) + (logo || find("cinema") ? 15 : 0) - (hierarchy.needsDate && !/\d/.test(scene.sourceDraft?.date || "") ? 18 : 0) - (hierarchy.needsPrice && !/\d/.test(scene.sourceDraft?.price || "") ? 18 : 0) - Math.max(0, 28 - size(cta)));
+  const components = { contrast, hierarchy: hierarchyScore, readability, balance, branding, commercialClarity, safeArea, footer };
+  const brightness = scene.visualMetrics?.brightness;
+  const chroma = scene.visualMetrics?.chroma || 0;
+  const genreFit = brightness === undefined ? 80 : hierarchy.genre === "horror" ? clamp(100 - Math.max(0, brightness - .4) * 160) : brightGenre ? clamp(100 - Math.max(0, .22 - brightness) * 200 - Math.max(0, .12 - chroma) * 100) : hierarchy.genre === "action" ? clamp(contrast * .7 + Math.min(1, chroma / .18) * 30) : 90;
+  const score = clamp(contrast * .14 + hierarchyScore * .15 + readability * .17 + balance * .08 + branding * .08 + commercialClarity * .17 + safeArea * .1 + footer * .07 + genreFit * .04);
+  const strengths = Object.entries({ readability: "boa leitura", contrast: "contraste forte", hierarchy: "hierarquia clara", branding: "marca legível", commercialClarity: "mensagem comercial clara", balance: "equilíbrio entre imagem e texto" }).filter(([key]) => components[key] >= 85).slice(0, 3).map(([, label]) => label);
   return {
     score,
+    total: score,
+    ...components,
+    genreFit,
+    explanation: strengths.length ? strengths.join(", ") + "." : "Composição experimental: revise os pontos de atenção antes de publicar.",
+    priority: hierarchy.order,
     accepted:
-      score >= 75 &&
+      score >= 65 &&
       !issues.some((i) =>
         ["TEXT_OVERLAP", "TEXT_OVERFLOW", "SUBJECT_OVERLAP"].includes(i.code),
       ),
     issues,
-    method: "layout-contrast-heuristic-v1",
+    method: "commercial-curation-heuristic-v2",
   };
 }
 module.exports = { scoreComposition };

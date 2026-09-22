@@ -1069,6 +1069,7 @@ function createHistoryRecord(rendered, input = {}, context = {}, actor = "") {
       composition: rendered.draft.composition,
       artDirection: rendered.draft.artDirection,
       automaticStyle: rendered.draft.automaticStyle,
+      polish: rendered.draft.polish === true,
       motion: rendered.draft.motion,
       signatureId: rendered.draft.signatureId,
       signaturePosition: rendered.draft.signaturePosition,

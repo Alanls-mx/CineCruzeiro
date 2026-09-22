@@ -156,7 +156,7 @@ function buildEditableScene({ draft, format, palette, brand, sourceUrl = "", bac
     const bounds = directed?.slots[row.id] ? box(directed.slots[row.id],w,h) : { x: copyBox.x, y, width: copyBox.width, height };
     const primary = directed && (directed.datePrimary ? row.id === "detail" : row.id === "title");
     elements.push(text(row.id, row.name, row.value, bounds, {
-      fontSize: directed ? primary ? 160 : row.id === "title" ? 85 : row.id === "detail" ? 90 : 34 : row.size, fill: row.color, display: row.display, align, lines: primary ? 3 : row.lines,
+      fontSize: directed ? (primary ? 160 : row.id === "title" ? 85 : row.id === "detail" ? 90 : 34) * (row.id === "title" ? (draft.titleScale || 100) / 100 : 1) : row.size, fill: row.color, display: row.display, align, lines: primary ? 3 : row.lines,
       hierarchy:primary?"primary":["title","detail"].includes(row.id)?"secondary":"tertiary",
       required: row.required || row.id === "detail", role: row.id === "detail" ? (priceDetail ? "price" : "date") : row.id
     }));

@@ -435,8 +435,10 @@
 }
 
 .social-template-thumb img {
-  object-fit: cover;
+  object-fit: contain;
 }
+
+.social-thumbnail-status { display:grid;place-items:center;height:100%;padding:6px;text-align:center;color:#b4c5d8;font-size:9px;line-height:1.3; }
 
 .social-template-thumb i {
   background: linear-gradient(180deg, transparent 22%, rgba(3, 7, 18, 0.93) 100%);
@@ -1475,6 +1477,14 @@
 .social-variation strong,.social-variation span { padding:0 10px; }
 .social-variation span { font-size:11px;color:#b4c5d8; }
 .social-variation:hover,.social-variation:focus-visible { border-color:#facc15;outline:2px solid #facc15;outline-offset:2px; }
+.social-variation.is-recommended { border-color:#facc15; }
+.social-variation-actions { display:flex;flex-wrap:wrap;gap:6px;padding:8px; }
+.social-variation-actions button { flex:1 1 100px;min-height:34px;font-size:11px; }
+.social-variation details { margin:4px 10px;font-size:11px; }
+.social-variation dl { margin:8px 0; }
+.social-variation dl div { display:flex;justify-content:space-between;gap:8px;padding:3px 0; }
+.social-variation dd { margin:0;font-variant-numeric:tabular-nums; }
+@media(max-width:520px) { .social-variations-grid { grid-template-columns:1fr; } }
 .social-layout-mini--hero-left img { left:0;top:8%;width:55%;height:76%; }
 .social-layout-mini--hero-right img { left:45%;top:5%;width:55%;height:76%; }
 .social-layout-mini--hero-center img { left:20%;top:0;width:60%;height:60%; }

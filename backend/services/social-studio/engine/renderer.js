@@ -53,10 +53,11 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const logoUrl = signatureUrl(draft, context);
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
-  const scene = buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
+  let scene = buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
+  if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
   await ensureTextContrast(scene, loadImage);
   const quality = scoreComposition(scene);
-  const rendered = await renderSocialScene(scene, { loadImage, outputType });
+  const rendered = options.skipRaster ? { scene, buffer: null, contentType: outputType === "jpg" ? "image/jpeg" : "image/png", extension: `.${outputType}` } : await renderSocialScene(scene, { loadImage, outputType });
   return {
     buffer: rendered.buffer,
     scene: rendered.scene,
@@ -72,7 +73,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     extension: rendered.extension,
     metrics: {
       renderMs: Number((performance.now() - startedAt).toFixed(1)),
-      bytes: rendered.buffer.length,
+      bytes: rendered.buffer?.length || 0,
       sourceCache: require("./assets").sourceCache.stats(),
       paletteCache: require("./palette").paletteCache.stats(),
       compositionCache: require("../composition-engine/pipeline").compositionCacheStats()

@@ -36,6 +36,7 @@ function normalizeV2Draft(input = {}, context = {}) {
     templateId: template.id,
     style,
     automaticStyle: input.style === "automatic" || !input.style || input.automaticStyle === true,
+    polish: input.polish === true,
     artDirection: normalizeDirection(input.artDirection),
     paletteId: PALETTES.some((item) => item.id === input.paletteId) ? input.paletteId : "automatic",
     rendererVersion: "v2",
