@@ -55,6 +55,7 @@ function applyContentRules(draft, input, context) {
   draft.periodStart = validDay(input.periodStart) ? input.periodStart : '';
   draft.showSessions = scheduleCampaign || input.showSessions !== false;
   draft.animation = {enabled:input.animation?.enabled === true,format:['mp4','webm','gif'].includes(input.animation?.format)?input.animation.format:'mp4',duration:[5,8,10].includes(Number(input.animation?.duration))?Number(input.animation.duration):8,preset:['cinematic','commercial','soft'].includes(input.animation?.preset)?input.animation.preset:'cinematic',loop:input.animation?.loop!==false};
+  if(require('../contracts/motion').MOTION_PRESETS.includes(input.animation?.preset)) draft.animation.preset=input.animation.preset;
   draft.website = clean(context.brand?.posterWebsite || context.brand?.website).replace(/^https?:\/\//,'').replace(/\/$/,'');
   const schedule = sessionSchedule(draft.entities.movie, draft, now);
   if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = schedule.days.some(day=>day.date===cinemaDay(now)) ? 'HOJE NO CINEMA' : 'EM DESTAQUE';

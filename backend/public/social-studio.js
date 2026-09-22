@@ -919,37 +919,8 @@
   }
 
   async function playMotion() {
-    if(document.getElementById('socialStudioAnimated').checked) { await generateAnimation(false); return; }
-    if (state.motionPlaying || state.motionAbort) { stopMotion(); return; }
-    clearTimeout(state.previewTimer);
-    state.previewAbort?.abort();
-    state.previewVersion++;
-    const version = ++state.motionVersion;
-    const controller = new AbortController();
-    state.motionAbort = controller;
-    const button = document.getElementById("socialStudioMotionPlay");
-    button.textContent = "Cancelar preparação";
-    setStatus("Preparando as camadas da prévia animada...", "loading");
-    try {
-      const data = await request("/api/admin/social-studio/motion-preview", { method: "POST", body: JSON.stringify(payload()), signal: controller.signal });
-      if (version !== state.motionVersion) return;
-      const container = document.createElement("div");
-      container.id = "socialStudioMotionPlanes";
-      container.className = `social-motion-planes social-motion--${data.motion.animationPreset}`;
-      container.style.setProperty("--motion-duration", `${data.motion.duration}s`);
-      await Promise.all(data.layers.map(async (layer) => {
-        const img = new Image(); img.alt = ""; img.className = `social-motion-${layer.role}`; img.src = layer.src;
-        container.appendChild(img);
-        await img.decode();
-      }));
-      if (version !== state.motionVersion) return;
-      document.getElementById("socialStudioPreviewStage").classList.remove("is-rendering");
-      document.getElementById("socialStudioPreviewStage").appendChild(container);
-      state.motionPlaying = true;
-      button.textContent = "Parar prévia";
-      setStatus("Prévia animada · download disponível em PNG ou JPG.", "ok");
-    } catch (error) { if (error.name !== "AbortError") { stopMotion(); setStatus(error.message, "error"); } }
-    finally { if (version === state.motionVersion) state.motionAbort = null; }
+    if(state.motionPlaying || state.animationAbort) {state.animationAbort?.abort();stopMotion();return;}
+    await generateAnimation(false);
   }
 
   function variationCard(variation, index, favorite = false) {
@@ -1018,14 +989,16 @@
 
   async function generateAnimation(download = false) {
     if(state.context?.capabilities?.create===false || state.animationBusy) return;
-    const data=payload(),key=previewCacheKey(data),button=document.getElementById('socialStudioAnimationExport');
+    const data=payload(),draftKey=previewCacheKey(data),button=document.getElementById('socialStudioAnimationExport');
+    data.animation.quality=download?'final':'preview';
+    const key=previewCacheKey(data);
     state.animationBusy=true;button.disabled=true;button.textContent='Preparando animação...';
     const controller=new AbortController();state.animationAbort=controller;
     setStatus('Gerando vídeo com tempo de leitura protegido...', 'loading');
     try {
       if(state.animationKey!==key || !state.animationUrl) {
         const blob=await requestImage('/api/admin/social-studio/animation',data,controller.signal);
-        if(key!==previewCacheKey(payload())) {setStatus('A campanha mudou. Gere a animação atualizada.','warning');return;}
+        if(draftKey!==previewCacheKey(payload())) {setStatus('A campanha mudou. Gere a animação atualizada.','warning');return;}
         if(state.animationUrl) URL.revokeObjectURL(state.animationUrl);
         state.animationUrl=URL.createObjectURL(blob);state.animationKey=key;
       }
@@ -1035,7 +1008,9 @@
       if(media.tagName==='VIDEO') {media.controls=true;media.autoplay=true;media.muted=true;media.loop=data.animation.loop;media.playsInline=true;media.poster=state.previewUrl;}
       else media.alt='Prévia animada da campanha';
       document.getElementById('socialStudioPreviewStage').appendChild(media);
-      const width=data.animation.format==='gif'?480:720,format=currentFormat();
+      state.motionPlaying=true;
+      document.getElementById('socialStudioMotionPlay').textContent='Parar prévia';
+      const width=download?1080:data.animation.format==='gif'?360:540,format=currentFormat();
       document.getElementById('socialStudioPreviewMeta').textContent=`Prévia animada · ${width} × ${Math.round(width*format.height/format.width/2)*2} · ${data.animation.format.toUpperCase()}`;
       if(download) {const link=document.createElement('a');link.href=state.animationUrl;link.download=`campanha.${data.animation.format}`;link.click();}
       setStatus('Animação pronta. A duração pode ser ampliada para preservar a leitura.','ok');
@@ -1274,6 +1249,8 @@
 
   function bindEvents() {
     const form = document.getElementById("socialStudioForm");
+    const animationPresets={'poster-cascade':'Pôsteres em sequência','film-reveal':'Revelação cinematográfica','spotlight-rotation':'Rotação de destaque','cinema-lineup':'Entrada da programação','crossfade-program':'Transição de filmes','featured-cycle':'Ciclo de filmes e sessões'};
+    for(const [id,name] of Object.entries(animationPresets)) document.getElementById('socialStudioAnimationPreset').add(new Option(name,id));
     for(const [field,id] of Object.entries({headline:'socialStudioTitle',kicker:'socialStudioSubtitle',supportingText:'socialStudioAuxiliary',cta:'socialStudioCta',caption:'socialStudioCaption'})) {
       const control=document.getElementById(id);
       const row=document.createElement('div');row.className='social-copy-actions';
