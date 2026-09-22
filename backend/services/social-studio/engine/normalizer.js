@@ -29,19 +29,21 @@ function normalizeV2Draft(input = {}, context = {}) {
   const concession = entityById(context.concessions, input.concessionId) || legacyDraft.entities.concession;
   const clubPlan = entityById(context.clubPlans, input.clubPlanId) || legacyDraft.entities.clubPlan;
   const profile = genreProfile(movie || {});
+  const design = require('../contracts/campaign').normalizeDesign(input, profile.recommendedStyle);
   const requestedStyle = input.style === "automatic" || !input.style ? profile.recommendedStyle : String(input.style);
   const style = template.styles.includes(requestedStyle) ? requestedStyle : template.styles[0];
   const draft = {
     ...legacyDraft,
+    ...design,
     templateId: template.id,
     style,
-    automaticStyle: input.style === "automatic" || !input.style || input.automaticStyle === true,
+    automaticStyle: !input.layoutId && (input.style === "automatic" || !input.style || input.automaticStyle === true),
     polish: input.polish === true,
     artDirection: normalizeDirection(input.artDirection),
     paletteId: PALETTES.some((item) => item.id === input.paletteId) ? input.paletteId : "automatic",
     rendererVersion: "v2",
     genreProfile: profile,
-    composition: normalizeComposition(input.composition, profile.id),
+    composition: normalizeComposition({...input.composition,look:design.look}, profile.id),
     motion: normalizeMotion(input.motion),
     entities: { movie, concession, clubPlan }
   };
@@ -53,7 +55,19 @@ function normalizeV2Draft(input = {}, context = {}) {
   if (template.id === "club-plan") {
     draft.clubPlanId = clubPlan?.id || "";
   }
-  return require('./content-rules').applyContentRules(draft, input, context);
+  if(input.layoutId) draft.style = design.layoutId;
+  require('./content-rules').applyContentRules(draft, input, context);
+  const {buildCampaignContent,validateCampaignContent} = require('../contracts/content');
+  draft.content = buildCampaignContent(draft,input,context);
+  draft.primaryDateKind = draft.content.primaryDateKind;
+  draft.releaseDate = draft.content.releaseDate;
+  draft.presaleStartDate = draft.content.presaleStartDate;
+  draft.sessionDate = draft.content.sessionDate;
+  draft.actionDestination = draft.content.action.destination;
+  draft.actionDestinationType = draft.content.action.destinationType;
+  draft.semanticValidation = validateCampaignContent(draft.content);
+  draft.contentNotices = [...draft.contentNotices.filter(n=>!draft.semanticValidation.errors.some(e=>e.code===n.code)), ...draft.semanticValidation.errors];
+  return draft;
 }
 
 function draftNotices(input = {}, context = {}) {

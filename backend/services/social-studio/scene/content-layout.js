@@ -24,20 +24,21 @@ function enforceContentLayout(scene) {
   if(rules.mustKeepDateNearPremiere) {
     const callout=get('subtitle'),date=get('detail');
     if(callout && date) {
+      if(draft.content?.primaryDateLabel) callout.text = draft.content.primaryDateLabel;
       const height=date.height, calloutHeight=Math.max(30,Math.min(height*.28,52));
       Object.assign(callout,{x:date.x,y:date.y,width:date.width,height:calloutHeight,align:date.align});
       Object.assign(date,{y:date.y+calloutHeight+8,height:Math.max(24,height-calloutHeight-8)});
       fit(callout,32,2);fit(date,date.fontSize,3);
     }
   }
-  if(rules.mustKeepWebsiteNearCTA && draft.website) {
+  if(rules.mustKeepWebsiteNearCTA && (draft.actionDestination || draft.website)) {
     const cta=get('cta'), website=get('website');
     if(cta && website) {
       const bottom=scene.height*(scene.formatId==='story'?.86:.88);
       const total=Math.max(cta.height,scene.height*.075);
       cta.y=Math.min(cta.y,bottom-total);
       cta.height=total*.48;
-      Object.assign(website,{x:cta.x,y:cta.y+cta.height+6,width:cta.width,height:total*.45,align:cta.align,text:draft.website});
+      Object.assign(website,{x:cta.x,y:cta.y+cta.height+6,width:cta.width,height:total*.45,align:cta.align,text:(draft.actionDestination || draft.website).replace(/^https?:\/\//,'').replace(/\/$/,'')});
       fit(cta,Math.max(32,cta.fontSize),2);fit(website,30,2);
     }
   }

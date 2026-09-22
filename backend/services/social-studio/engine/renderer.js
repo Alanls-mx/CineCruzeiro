@@ -23,6 +23,7 @@ function signatureUrl(draft, context = {}) {
 async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const startedAt = performance.now();
   const draft = normalizeV2Draft(input, context);
+  require('../contracts/content').assertCampaignContent(draft.content);
   const format = legacy.formatById(draft.formatId);
   const brand = legacy.normalizeBrand(context.brand || {});
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
@@ -37,6 +38,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
   let analysis = draft.artDirection.enabled ? await analyzeArtwork(sourceBuffer) : null;
   draft.style = selectDirection(draft, analysis);
+  draft.layoutId = require('../contracts/campaign').normalizeDesign({...draft,layoutId:undefined}).layoutId;
   let fullBleed = false;
   if (draft.style === "full-bleed" && backgroundBuffer && backgroundUrl === movie?.backdropUrl) {
     const metadata = await sharp(backgroundBuffer).metadata();
@@ -60,6 +62,9 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     scene = require('../scene/content-layout').enforceContentLayout(scene);
   }
   await ensureTextContrast(scene, loadImage);
+  require('../scene/groups').groupCampaignScene(scene);
+  const semantics = require('../scene/groups').validateSceneSemantics(scene);
+  if(!semantics.valid) throw Object.assign(new Error(semantics.errors.map(e=>e.message).join(' ')),{statusCode:400,code:'SCENE_SEMANTICS'});
   const quality = scoreComposition(scene);
   const rendered = options.skipRaster ? { scene, buffer: null, contentType: outputType === "jpg" ? "image/jpeg" : "image/png", extension: `.${outputType}` } : await renderSocialScene(scene, { loadImage, outputType });
   return {
@@ -69,6 +74,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     format,
     palette,
     quality,
+    semantics,
     analysis: analysis ? { method:analysis.method,quietest:analysis.quietest } : null,
     rendererVersion: "v2",
     template: { id: template.id, name: template.name },

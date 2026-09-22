@@ -3,7 +3,7 @@ const overlap = (a, b) =>
   Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
 function scoreComposition(scene) {
   const issues = [],
-    elements = scene.elements.filter((e) => e.visible !== false),
+    elements = require('../scene/groups').flattenElements(scene.elements).filter((e) => e.visible !== false),
     texts = elements.filter((e) => e.type === "text" && e.text?.trim());
   const add = (code, penalty, id) =>
     issues.push({ code, penalty, elementId: id });

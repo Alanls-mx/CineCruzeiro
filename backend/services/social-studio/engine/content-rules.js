@@ -47,6 +47,7 @@ function applyContentRules(draft, input, context) {
   draft.animation = {enabled:input.animation?.enabled === true,format:['mp4','webm','gif'].includes(input.animation?.format)?input.animation.format:'mp4',duration:[5,8,10].includes(Number(input.animation?.duration))?Number(input.animation.duration):8,preset:['cinematic','commercial','soft'].includes(input.animation?.preset)?input.animation.preset:'cinematic',loop:input.animation?.loop!==false};
   draft.website = clean(context.brand?.posterWebsite || context.brand?.website).replace(/^https?:\/\//,'').replace(/\/$/,'');
   const schedule = sessionSchedule(draft.entities.movie, draft, now);
+  if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = schedule.days.some(day=>day.date===cinemaDay(now)) ? 'HOJE NO CINEMA' : 'EM DESTAQUE';
   draft.schedule = schedule;
   draft.programMovies = multi ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',schedule:sessionSchedule(movie,{...draft,compact:true,compactDays:selected.length>2?1:3},now)})) : [];
   if (scheduleCampaign) {
@@ -80,5 +81,6 @@ function applyContentRules(draft, input, context) {
 function assertContentReady(draft) {
   const missing=(draft.contentNotices || []).find(notice=>['SELECT_MOVIES','WEBSITE_REQUIRED','DATE_REQUIRED'].includes(notice.code));
   if(missing) throw Object.assign(new Error(missing.message),{statusCode:400,code:missing.code});
+  if(draft.content) require('../contracts/content').assertCampaignContent(draft.content);
 }
 module.exports = {applyContentRules,sessionSchedule,cinemaDay,MULTI_LAYOUTS,assertContentReady};

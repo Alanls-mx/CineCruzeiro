@@ -6,6 +6,7 @@ const sharp = require('sharp');
 const {renderSocialScene} = require('../scene/renderer');
 let active = false;
 function animationPlan(scene, config = {}) {
+  scene = {...scene,elements:require('../scene/groups').flattenElements(scene.elements)};
   const format = ['mp4','webm','gif'].includes(config.format) ? config.format : 'mp4';
   const duration = [5,8,10].includes(Number(config.duration)) ? Number(config.duration) : 8;
   const preset = ['cinematic','commercial','soft'].includes(config.preset) ? config.preset : 'cinematic';
@@ -25,6 +26,7 @@ function runEncoder(args, options={}) {
   });
 }
 async function exportAnimation(scene, config={}, options={}) {
+  scene = {...scene,elements:require('../scene/groups').flattenElements(scene.elements)};
   if(active) throw Object.assign(new Error('Uma animação está sendo processada. Aguarde e tente novamente.'),{statusCode:429});
   active=true;
   let dir;
