@@ -13,14 +13,30 @@ O módulo de e-mail é independente e não participa deste fluxo.
 5. O preview é atualizado com debounce de 300 ms, cancelamento de requisições superadas e cache local.
 6. **Gerar arte** salva o formato atual. **Gerar campanha** cria os três formatos, cada um com composição própria.
 
-O editor oferece personalização controlada: origem e enquadramento da imagem, texto, CTA, preço, estilo, alinhamento, overlay e escala tipográfica dentro de limites. Ele não é um editor de posicionamento livre.
+O editor principal oferece personalização controlada: origem e enquadramento da imagem, texto, CTA, preço, estilo, alinhamento, overlay e escala tipográfica dentro de limites. Depois que a arte é gerada, **Editar detalhes** abre um editor visual opcional para ajustes finos de posição, tamanho, texto, cor, opacidade, imagem e ordem das camadas.
+
+## Editor visual manual
+
+O editor manual usa Konva e preserva a composição automática como versão original. Título, data, preço, CTA, site, logo, imagem e efeitos ficam em elementos serializáveis e independentes. O operador pode:
+
+- selecionar no canvas ou painel de camadas;
+- mover, redimensionar, girar, ocultar e bloquear elementos;
+- ajustar texto, fonte local, tamanho, peso, cor, alinhamento, espaçamento e opacidade;
+- substituir e reenquadrar imagens;
+- alterar a ordem das camadas;
+- usar encaixe no centro e bordas, margem segura e zoom;
+- desfazer, refazer, duplicar e excluir elementos não obrigatórios;
+- salvar rascunhos automaticamente, criar versões e exportar PNG/JPG;
+- restaurar a composição automática original.
+
+Logo, site e demais elementos institucionais obrigatórios são protegidos contra exclusão acidental. Cada formato mantém sua própria cena, portanto uma edição de Story não altera Feed ou quadrado.
 
 ## Engine V2
 
 O pipeline é:
 
 ```text
-dados existentes -> normalizador -> template React -> Satori (SVG) -> Sharp (PNG/JPG)
+dados existentes -> normalizador -> cena serializável -> Satori (SVG) -> Sharp (PNG/JPG)
 ```
 
 - `backend/services/social-studio/engine/renderer.js`: coordena Satori, Sharp, fontes, assets, paleta e métricas.
@@ -32,7 +48,9 @@ dados existentes -> normalizador -> template React -> Satori (SVG) -> Sharp (PNG
 - `backend/services/social-studio/components/index.js`: componentes visuais reutilizáveis.
 - `backend/services/social-studio/templates/registry.js`: registro estruturado de templates e requisitos.
 - `backend/services/social-studio/services/campaignService.js`: API interna desacoplada da interface.
+- `backend/services/social-studio/scene`: schema, fábrica e renderização segura das cenas editáveis.
 - `backend/services/socialStudioEngineService.js`: fachada de compatibilidade entre V2 e funções legadas.
+- `src/components/social-editor`: canvas Konva, histórico, camadas, propriedades e barra de ferramentas.
 
 O renderer legado continua disponível para leitura e download de artes antigas. Novos registros recebem `rendererVersion: "v2"`; registros antigos não são regenerados.
 
@@ -83,6 +101,12 @@ Nenhuma entidade paralela de filme, produto, sessão ou plano foi criada.
 - `POST /api/admin/social-studio/preview`: render temporário sem persistência.
 - `POST /api/admin/social-studio/posts`: render e persistência de uma arte.
 - `POST /api/admin/social-studio/campaigns`: Feed, quadrado e Story em uma operação.
+- `GET /api/admin/social-studio/posts/:id/scene`: cena original, rascunho e versão ativa.
+- `PUT /api/admin/social-studio/posts/:id/scene-draft`: autosave sem renderização final.
+- `POST /api/admin/social-studio/posts/:id/scene-versions`: render e persistência de uma nova versão manual.
+- `POST /api/admin/social-studio/posts/:id/scene-export`: exportação server-side sem alterar o histórico.
+- `POST /api/admin/social-studio/posts/:id/scene-reset`: restauração da arte automática.
+- `GET /api/admin/social-studio/assets`: proxy autenticado e validado de imagens do canvas.
 
 A API interna `generateSocialCampaign({ template, subject, formats, cinema }, context, options)` permite automações futuras sem depender do painel.
 
@@ -96,11 +120,11 @@ Os arquivos usam o storage existente nas pastas lógicas `social-studio` e `soci
 - Paletas são indexadas pelo hash da imagem.
 - O cliente mantém as oito prévias recentes.
 
-O renderer não aceita requests arbitrários. URLs passam pelo carregador já validado do servidor, com HTTPS, allowlist, bloqueio de redirecionamento, limite de bytes e dimensões. Uploads aceitam apenas os formatos e tamanhos previstos pelo módulo existente.
+O renderer não aceita requests arbitrários. URLs passam pelo carregador já validado do servidor, com HTTPS, allowlist, bloqueio de redirecionamento, limite de bytes e dimensões. Uploads aceitam apenas os formatos e tamanhos previstos pelo módulo existente. A cena recebida do navegador passa por schema de tipos, cores, dimensões, profundidade e quantidade antes de qualquer renderização.
 
 ## Histórico e permissões
 
-O histórico mostra miniatura, campanha, template, formato, data, autor e versão do renderer. As ações de visualizar, duplicar, baixar e excluir continuam disponíveis conforme `social_studio.view`, `social_studio.create` e `social_studio.delete`.
+O histórico mostra miniatura, campanha, template, formato, data, autor, versão do renderer e estado automático/editado. As ações de visualizar, editar, duplicar, baixar e excluir continuam disponíveis conforme `social_studio.view`, `social_studio.create` e `social_studio.delete`.
 
 Duplicar preserva template, variação, formato, textos e ajustes; o operador pode trocar apenas a entidade.
 
@@ -120,6 +144,10 @@ Os testes cobrem:
 - geração de campanha e métricas;
 - histórico V2 e autoria;
 - compatibilidade do contrato legado.
+- normalização e segurança da cena editável;
+- preservação da versão automática;
+- renderização server-side de cenas manuais;
+- contratos do autosave, versionamento, exportação e restauração.
 
 Fixtures reais também são renderizadas para inspeção visual de hierarquia, enquadramento, contraste, assinatura e legibilidade.
 

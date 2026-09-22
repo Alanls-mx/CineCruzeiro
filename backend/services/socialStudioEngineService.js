@@ -32,6 +32,8 @@ module.exports = {
   generateSocialCampaign: v2.generateSocialCampaign,
   genreProfile: v2.genreProfile,
   normalizeDraft: v2.normalizeV2Draft,
+  normalizeScene: v2.normalizeScene,
+  renderSocialScene: v2.renderSocialScene,
   renderSocialPost: v2.renderSocialPostV2,
   renderSocialPostLegacy: legacy.renderSocialPost
 };

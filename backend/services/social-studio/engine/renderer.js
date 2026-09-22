@@ -1,18 +1,11 @@
 const { performance } = require("perf_hooks");
-const sharp = require("sharp");
 const legacy = require("../../socialStudioService");
-const { loadAsset, prepareArtwork, prepareLogo, sourceUrlForDraft } = require("./assets");
-const { socialStudioFonts } = require("./fonts");
+const { loadAsset, sourceUrlForDraft } = require("./assets");
 const { normalizeV2Draft } = require("./normalizer");
 const { extractPalette } = require("./palette");
 const { templateById } = require("../templates/registry");
-
-let satoriPromise = null;
-
-async function satoriRenderer() {
-  if (!satoriPromise) satoriPromise = import("satori").then((module) => module.default || module);
-  return satoriPromise;
-}
+const { buildEditableScene } = require("../scene/factory");
+const { renderSocialScene } = require("../scene/renderer");
 
 function signatureUrl(draft, context = {}) {
   if (draft.signatureId === "none") return "";
@@ -21,15 +14,6 @@ function signatureUrl(draft, context = {}) {
   if (draft.signatureId === "classic") return brand.logoUrl || "";
   const signature = legacy.SOCIAL_SIGNATURES.find((item) => item.id === draft.signatureId);
   return signature?.imageUrl || brand.posterLogoUrl || brand.logoUrl || "";
-}
-
-function logoBounds(format, draft) {
-  const story = format.id === "story";
-  const scale = Number(draft.signatureScale || 100) / 100;
-  return {
-    width: Math.round((story ? 460 : 370) * scale),
-    height: Math.round((story ? 270 : 218) * scale)
-  };
 }
 
 async function renderSocialPostV2(input = {}, context = {}, options = {}) {
@@ -44,39 +28,25 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const palette = draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
     : await extractPalette(sourceBuffer, brand);
-  const artwork = sourceBuffer ? await prepareArtwork(sourceBuffer, format, draft) : "";
-
   const logoUrl = signatureUrl(draft, context);
-  const logoBuffer = await loadAsset(logoUrl, loadImage);
-  const logoSize = logoBounds(format, draft);
-  const logo = logoBuffer ? await prepareLogo(logoBuffer, logoSize.width, logoSize.height) : "";
-
   const template = templateById(draft.templateId);
-  const element = template.render({ draft, format, palette, brand, assets: { artwork, logo } });
-  const satori = await satoriRenderer();
-  const svg = await satori(element, {
-    width: format.width,
-    height: format.height,
-    fonts: socialStudioFonts()
-  });
-  let pipeline = sharp(Buffer.from(svg), { failOn: "error", density: 72 });
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
-  const buffer = outputType === "jpg"
-    ? await pipeline.flatten({ background: brand.primaryColor }).jpeg({ quality: 94, chromaSubsampling: "4:4:4", progressive: true }).toBuffer()
-    : await pipeline.png({ compressionLevel: 8, adaptiveFiltering: true }).toBuffer();
+  const scene = buildEditableScene({ draft, format, palette, brand, sourceUrl, logoUrl });
+  const rendered = await renderSocialScene(scene, { loadImage, outputType });
   return {
-    buffer,
+    buffer: rendered.buffer,
+    scene: rendered.scene,
     draft,
     format,
     palette,
     rendererVersion: "v2",
     template: { id: template.id, name: template.name },
     notices: require("./normalizer").draftNotices(draft, context),
-    contentType: outputType === "jpg" ? "image/jpeg" : "image/png",
-    extension: outputType === "jpg" ? ".jpg" : ".png",
+    contentType: rendered.contentType,
+    extension: rendered.extension,
     metrics: {
       renderMs: Number((performance.now() - startedAt).toFixed(1)),
-      bytes: buffer.length,
+      bytes: rendered.buffer.length,
       sourceCache: require("./assets").sourceCache.stats(),
       paletteCache: require("./palette").paletteCache.stats()
     }

@@ -45,7 +45,9 @@ const {
   generateSocialCampaign,
   normalizeBrand: normalizeSocialBrand,
   normalizeDraft: normalizeSocialDraft,
-  renderSocialPost
+  normalizeScene: normalizeSocialScene,
+  renderSocialPost,
+  renderSocialScene
 } = require("./services/socialStudioEngineService");
 const { SOCIAL_STUDIO_EDITORIAL_MOVIES } = require("./services/socialStudioEditorialCatalog");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
@@ -8349,12 +8351,34 @@ function socialStudioContext(db) {
       imageUrl: promotion.imageUrl || ""
     })),
     recommendedMovieId: premiereMovie?.id || "",
-    history: (db.settings?.socialStudioPosts || []).slice(0, 100)
+    history: (db.settings?.socialStudioPosts || []).slice(0, 100).map(publicSocialStudioPost)
   };
   return {
     ...context,
     readyPosts: buildSocialReadyPosts(context)
   };
+}
+
+function publicSocialStudioPost(post = {}) {
+  return {
+    ...post,
+    originalScene: undefined,
+    draftScene: undefined,
+    editedScene: undefined,
+    sceneVersions: Array.isArray(post.sceneVersions)
+      ? post.sceneVersions.map(({ scene, ...version }) => version)
+      : [],
+    editable: post.rendererVersion === "v2" || Boolean(post.originalScene),
+    hasEditedScene: Boolean(post.editedScene),
+    hasDraftScene: Boolean(post.draftScene)
+  };
+}
+
+async function editableSceneForPost(post, db) {
+  if (post.originalScene) return normalizeSocialScene(post.originalScene);
+  if (post.rendererVersion !== "v2" || !post.payload) return null;
+  const rendered = await renderSocialPost(post.payload, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+  return rendered.scene ? normalizeSocialScene(rendered.scene) : null;
 }
 
 function socialStudioPublicPath(value = "") {
@@ -11344,6 +11368,29 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/social-studio/assets" && method === "GET") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const buffer = await loadSocialStudioImage(url.searchParams.get("url") || "");
+    if (!buffer) {
+      sendJson(res, 404, { error: { code: "SOCIAL_ASSET_NOT_FOUND", message: "A imagem solicitada não está disponível." } });
+      return;
+    }
+    const metadata = await sharp(buffer, { failOn: "error" }).metadata();
+    const contentType = metadata.format === "jpeg" ? "image/jpeg" : metadata.format === "webp" ? "image/webp" : "image/png";
+    res.writeHead(200, {
+      ...securityHeaders({
+        "Content-Type": contentType,
+        "Content-Length": buffer.length,
+        "Cache-Control": "private, max-age=300"
+      }),
+      "Access-Control-Allow-Origin": responseCorsOrigin(req),
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
+    });
+    res.end(buffer);
+    return;
+  }
+
   if (pathname === "/api/admin/social-studio/resolve" && method === "POST") {
     const body = await readBody(req);
     const context = socialStudioContext(db);
@@ -11395,7 +11442,7 @@ async function handleApi(req, res, pathname) {
       formatId: post.formatId,
       actorUserId: req.adminUser?.id || ""
     });
-    sendJson(res, 201, { post, history }, { "Cache-Control": "no-store" });
+    sendJson(res, 201, { post: publicSocialStudioPost(post), history: history.map(publicSocialStudioPost) }, { "Cache-Control": "no-store" });
     return;
   }
 
@@ -11435,7 +11482,7 @@ async function handleApi(req, res, pathname) {
         templateId: body.templateId,
         actorUserId: req.adminUser?.id || ""
       });
-      sendJson(res, 201, { posts, history, metrics: campaign.metrics, rendererVersion: campaign.rendererVersion }, { "Cache-Control": "no-store" });
+      sendJson(res, 201, { posts: posts.map(publicSocialStudioPost), history: history.map(publicSocialStudioPost), metrics: campaign.metrics, rendererVersion: campaign.rendererVersion }, { "Cache-Control": "no-store" });
     } catch (error) {
       await Promise.all(uploadedUrls.map((url) => storageService.deleteByPublicUrl(url).catch(() => false)));
       throw error;
@@ -11443,7 +11490,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const socialStudioPostMatch = pathname.match(/^\/api\/admin\/social-studio\/posts\/([^/]+)(?:\/(download))?$/);
+  const socialStudioPostMatch = pathname.match(/^\/api\/admin\/social-studio\/posts\/([^/]+)(?:\/(download|scene|scene-draft|scene-versions|scene-export|scene-reset))?$/);
   if (socialStudioPostMatch) {
     const postId = decodeURIComponent(socialStudioPostMatch[1]);
     const action = socialStudioPostMatch[2] || "";
@@ -11474,12 +11521,127 @@ async function handleApi(req, res, pathname) {
       res.end(buffer);
       return;
     }
+    if (action === "scene" && method === "GET") {
+      const originalScene = await editableSceneForPost(post, db);
+      if (!originalScene) {
+        sendJson(res, 409, { error: { code: "SOCIAL_POST_NOT_EDITABLE", message: "Esta arte antiga não possui uma cena editável. Gere uma nova versão no Social Studio." } });
+        return;
+      }
+      sendJson(res, 200, {
+        editable: true,
+        post: publicSocialStudioPost(post),
+        originalScene,
+        editedScene: post.editedScene ? normalizeSocialScene(post.editedScene) : null,
+        draftScene: post.draftScene ? normalizeSocialScene(post.draftScene) : null,
+        scene: normalizeSocialScene(post.draftScene || post.editedScene || originalScene)
+      }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (action === "scene-draft" && method === "PUT") {
+      const body = await readBody(req);
+      const scene = normalizeSocialScene(body.scene || body);
+      const now = new Date().toISOString();
+      const updated = {
+        ...post,
+        draftScene: scene,
+        draftSavedAt: now,
+        draftSavedBy: String(req.adminUser?.id || ""),
+        updatedAt: now
+      };
+      const history = posts.map((item) => String(item.id) === postId ? updated : item);
+      await persistSocialStudioPosts(db, history, req, posts);
+      sendJson(res, 200, { saved: true, savedAt: now }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (action === "scene-versions" && method === "POST") {
+      const body = await readBody(req);
+      const outputType = body.outputType === "jpg" ? "jpg" : "png";
+      const rendered = await renderSocialScene(body.scene || body, { loadImage: loadSocialStudioImage, outputType });
+      const uploaded = await storageService.uploadImageBuffer({
+        buffer: rendered.buffer,
+        filename: `${slugify(post.title || post.templateName || "post")}-editado${rendered.extension}`,
+        contentType: rendered.contentType,
+        folder: "social-studio-edits"
+      });
+      const now = new Date().toISOString();
+      const versionId = `edit-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      const version = {
+        id: versionId,
+        kind: "manual",
+        imageUrl: uploaded.url,
+        outputType,
+        scene: rendered.scene,
+        createdAt: now,
+        createdBy: String(req.adminUser?.id || "")
+      };
+      const versions = [...(Array.isArray(post.sceneVersions) ? post.sceneVersions : []), version].slice(-12);
+      const updated = {
+        ...post,
+        originalImageUrl: post.originalImageUrl || post.imageUrl,
+        originalScene: post.originalScene || await editableSceneForPost(post, db),
+        imageUrl: uploaded.url,
+        outputType,
+        editedScene: rendered.scene,
+        draftScene: null,
+        activeVersion: versionId,
+        sceneVersions: versions,
+        updatedAt: now
+      };
+      const history = posts.map((item) => String(item.id) === postId ? updated : item);
+      await persistSocialStudioPosts(db, history, req, posts);
+      logEvent("info", "social_studio.scene_version_created", { postId, versionId, actorUserId: req.adminUser?.id || "" });
+      sendJson(res, 201, { post: publicSocialStudioPost(updated), scene: rendered.scene, version: { ...version, scene: undefined } }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (action === "scene-export" && method === "POST") {
+      const body = await readBody(req);
+      const outputType = body.outputType === "jpg" ? "jpg" : "png";
+      const rendered = await renderSocialScene(body.scene || body, { loadImage: loadSocialStudioImage, outputType });
+      res.writeHead(200, {
+        ...securityHeaders({
+          "Content-Type": rendered.contentType,
+          "Content-Length": rendered.buffer.length,
+          "Cache-Control": "private, no-store",
+          "Content-Disposition": `attachment; filename="${slugify(post.title || "post")}-editado${rendered.extension}"`
+        }),
+        "Access-Control-Allow-Origin": responseCorsOrigin(req),
+        "Access-Control-Allow-Credentials": "true",
+        Vary: "Origin"
+      });
+      res.end(rendered.buffer);
+      return;
+    }
+    if (action === "scene-reset" && method === "POST") {
+      const originalScene = await editableSceneForPost(post, db);
+      if (!originalScene) {
+        sendJson(res, 409, { error: { code: "SOCIAL_POST_NOT_EDITABLE", message: "A versão automática original não está disponível." } });
+        return;
+      }
+      const updated = {
+        ...post,
+        originalScene: post.originalScene || originalScene,
+        imageUrl: post.originalImageUrl || post.imageUrl,
+        editedScene: null,
+        draftScene: null,
+        activeVersion: "automatic",
+        updatedAt: new Date().toISOString()
+      };
+      const history = posts.map((item) => String(item.id) === postId ? updated : item);
+      await persistSocialStudioPosts(db, history, req, posts);
+      sendJson(res, 200, { post: publicSocialStudioPost(updated), scene: originalScene }, { "Cache-Control": "no-store" });
+      return;
+    }
     if (!action && method === "DELETE") {
       const history = posts.filter((item) => String(item.id) !== postId);
-      await storageService.deleteByPublicUrl(post.imageUrl).catch(() => false);
+      const urls = new Set([
+        post.imageUrl,
+        post.originalImageUrl,
+        ...(Array.isArray(post.sceneVersions) ? post.sceneVersions.map((version) => version.imageUrl) : [])
+      ].filter(Boolean));
+      await Promise.all([...urls].map((url) => storageService.deleteByPublicUrl(url).catch(() => false)));
       await persistSocialStudioPosts(db, history, req, posts);
       logEvent("info", "social_studio.post_deleted", { postId, actorUserId: req.adminUser?.id || "" });
-      sendJson(res, 200, { deleted: true, id: postId, history }, { "Cache-Control": "no-store" });
+      sendJson(res, 200, { deleted: true, id: postId, history: history.map(publicSocialStudioPost) }, { "Cache-Control": "no-store" });
       return;
     }
   }

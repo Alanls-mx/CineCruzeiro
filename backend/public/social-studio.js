@@ -30,7 +30,8 @@
     readyCollection: "catalog",
     styleManuallySelected: false,
     notices: [],
-    previewZoom: 86
+    previewZoom: 86,
+    activePostId: ""
   };
 
   function escapeHtml(value = "") {
@@ -151,6 +152,7 @@
             </div>
             <div class="social-preview-footer">
               <div id="socialStudioNotices" class="social-studio-notices" aria-live="polite"></div>
+              <button id="socialStudioManualEdit" class="primary-button" type="button" disabled>Editar detalhes</button>
               <button id="socialStudioPreviewDownload" class="ghost-button" type="button" disabled>Baixar prévia</button>
             </div>
             <p id="socialStudioStatus" class="social-studio-status" role="status"></p>
@@ -485,6 +487,10 @@
     document.getElementById("socialStudioPreviewStage").innerHTML = `<img src="${escapeHtml(state.previewUrl)}" alt="${escapeHtml(post.title || "Arte social")}" /><div id="socialStudioSafeArea" class="social-story-safe-area" ${post.formatId === "story" ? "" : "hidden"} aria-hidden="true"></div>`;
     document.getElementById("socialStudioPreviewMeta").textContent = `${post.formatName || "Arte"} · ${post.width} × ${post.height} · ${String(post.outputType || "png").toUpperCase()}`;
     document.getElementById("socialStudioPreviewDownload").disabled = false;
+    state.activePostId = String(post.id || "");
+    const editButton = document.getElementById("socialStudioManualEdit");
+    editButton.disabled = !post.editable || state.context?.capabilities?.create === false;
+    editButton.title = post.editable ? "Abrir o editor visual desta arte" : "Gere uma nova arte com o Engine V2 para editar os elementos";
   }
 
   async function createReadyPost(post, button) {
@@ -699,6 +705,8 @@
     const stage = document.getElementById("socialStudioPreviewStage");
     stage.innerHTML = `<img src="${state.previewUrl}" alt="${escapeHtml(alt)}" /><div id="socialStudioSafeArea" class="social-story-safe-area" ${currentFormat()?.id === "story" ? "" : "hidden"} aria-hidden="true"></div><span class="social-preview-progress" aria-hidden="true"></span>`;
     document.getElementById("socialStudioPreviewDownload").disabled = false;
+    state.activePostId = "";
+    document.getElementById("socialStudioManualEdit").disabled = true;
   }
 
   async function updatePreview(options = {}) {
@@ -802,6 +810,7 @@
       state.context.history = result.history || [result.post, ...(state.context.history || [])];
       state.historyPage = 1;
       renderHistory();
+      showSavedPost(result.post);
       setStatus("Arte adicionada ao histórico.", "ok");
       notify("Arte social gerada com sucesso.");
     } catch (error) {
@@ -885,7 +894,7 @@
           <img src="${escapeHtml(assetUrl(post.imageUrl))}" alt="" loading="lazy" />
         </button>
         <div class="social-history-copy">
-          <div class="social-history-badges"><span>${escapeHtml(post.templateName || "Arte")}</span><span>${post.rendererVersion === "v2" ? "Engine V2" : "Legado"}</span><span data-status="ready">${post.status === "draft" ? "Rascunho" : "Pronta"}</span></div>
+          <div class="social-history-badges"><span>${escapeHtml(post.templateName || "Arte")}</span><span>${post.rendererVersion === "v2" ? "Engine V2" : "Legado"}</span><span data-status="ready">${post.hasEditedScene ? "Editada" : post.status === "draft" ? "Rascunho" : "Automática"}</span></div>
           <strong>${escapeHtml(post.title || post.templateName)}</strong>
           <span>${escapeHtml(post.contentName || post.title || "")}</span>
           <small>${escapeHtml(post.formatName || post.formatId || "")} · ${String(post.outputType || "png").toUpperCase()}</small>
@@ -894,6 +903,7 @@
         </div>
         <div class="social-history-actions">
           <button class="ghost-button" type="button" data-social-action="view" data-social-id="${escapeHtml(post.id)}">Visualizar</button>
+          ${state.context.capabilities?.create !== false && post.editable ? `<button class="primary-button" type="button" data-social-action="edit-details" data-social-id="${escapeHtml(post.id)}">Editar detalhes</button>` : ""}
           ${state.context.capabilities?.create !== false ? `<button class="ghost-button" type="button" data-social-action="duplicate" data-social-id="${escapeHtml(post.id)}">Duplicar</button>` : ""}
           <a class="ghost-button" href="${basePath}/api/admin/social-studio/posts/${encodeURIComponent(post.id)}/download">Baixar</a>
           ${state.context.capabilities?.delete ? `<button class="danger-button" type="button" data-social-action="delete" data-social-id="${escapeHtml(post.id)}">Excluir</button>` : ""}
@@ -915,6 +925,10 @@
     if (button.dataset.socialAction === "view") {
       showSavedPost(post);
       document.querySelector(".social-preview-pane")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (button.dataset.socialAction === "edit-details") {
+      window.location.href = `${basePath}/social-editor?postId=${encodeURIComponent(post.id)}`;
       return;
     }
     if (button.dataset.socialAction === "duplicate") {
@@ -958,6 +972,9 @@
     document.getElementById("socialStudioPreviewButton").addEventListener("click", () => updatePreview({ force: true }));
     document.getElementById("socialStudioCampaignButton").addEventListener("click", generateCampaign);
     document.getElementById("socialStudioPreviewDownload").addEventListener("click", downloadPreview);
+    document.getElementById("socialStudioManualEdit").addEventListener("click", () => {
+      if (state.activePostId) window.location.href = `${basePath}/social-editor?postId=${encodeURIComponent(state.activePostId)}`;
+    });
     document.getElementById("socialStudioReadyFilters").addEventListener("click", (event) => {
       const button = event.target.closest("[data-social-ready-filter]");
       if (!button) return;

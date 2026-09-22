@@ -23,6 +23,7 @@
 - Preview para debounce de 300 ms, abort de requisições superadas e cache.
 - Campanha para usar a API interna e salvar três layouts independentes.
 - Recomendação visual por gênero com substituição manual.
+- Cena serializável por formato, preservando a arte automática e versões manuais.
 
 ## SUBSTITUIR
 
@@ -45,8 +46,10 @@ Nada legado foi apagado nesta fase. A V2 virou padrão para novas artes, enquant
 - Tipos: `backend/services/social-studio/types/index.d.ts`.
 - Fachada de migração: `backend/services/socialStudioEngineService.js`.
 - Interface: `backend/public/social-studio.js` e `backend/public/social-studio.css`.
+- Editor visual: `src/components/social-editor` e rota `src/app/social-editor`.
+- Schema e renderer de cenas: `backend/services/social-studio/scene`.
 - API e persistência: `backend/server.js`.
-- Testes: `tests/social-studio-v2.test.mjs` e `tests/social-studio.test.mjs`.
+- Testes: `tests/social-studio-v2.test.mjs`, `tests/social-studio-editor.test.mjs` e `tests/social-studio.test.mjs`.
 
 ## Decisões técnicas
 
@@ -65,6 +68,8 @@ Em fixture local controlada, o primeiro post levou 359,5 ms, a repetição com c
 3. Novos registros recebem `rendererVersion: "v2"`.
 4. Registros antigos preservam URL, download e visualização.
 5. Nenhuma arte antiga é regenerada automaticamente.
+6. Artes V2 anteriores à criação do editor recebem a cena sob demanda a partir do payload salvo.
+7. Registros legados sem payload V2 continuam visualizáveis e baixáveis, mas não são apresentados como editáveis.
 
 ## Pendências futuras possíveis
 

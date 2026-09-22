@@ -1023,6 +1023,19 @@ function createHistoryRecord(rendered, input = {}, context = {}, actor = "") {
     status: "ready",
     rendererVersion: rendered.rendererVersion || "legacy",
     imageUrl: String(input.savedImageUrl || ""),
+    originalImageUrl: String(input.savedImageUrl || ""),
+    originalScene: rendered.scene || null,
+    draftScene: null,
+    editedScene: null,
+    activeVersion: "automatic",
+    sceneVersions: rendered.scene ? [{
+      id: "automatic",
+      kind: "automatic",
+      imageUrl: String(input.savedImageUrl || ""),
+      outputType: rendered.draft.outputType,
+      createdAt: now,
+      createdBy: String(actorUserId || "")
+    }] : [],
     caption: captionForDraft(rendered.draft, context),
     payload: {
       rendererVersion: rendered.rendererVersion || "legacy",
