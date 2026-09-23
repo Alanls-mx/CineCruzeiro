@@ -55,6 +55,10 @@ function applyContentRules(draft, input, context) {
   draft.multiLayout = MULTI_LAYOUTS.includes(input.multiLayout) ? input.multiLayout : 'grid';
   draft.scheduleMode = draft.templateId === 'sessions-today' ? 'today' : draft.templateId === 'sessions-week' ? 'week' : input.scheduleMode === 'today' ? 'today' : 'week';
   draft.periodStart = validDay(input.periodStart) ? input.periodStart : '';
+  if (draft.templateId === 'sessions-today' && !draft.periodStart) {
+    const next = require('./today-correction').nextSession(draft, context);
+    if (next && next.date !== cinemaDay(now)) draft.periodStart = next.date;
+  }
   draft.showSessions = scheduleCampaign || input.showSessions !== false;
   draft.animation = {enabled:input.animation?.enabled === true,format:['mp4','webm','gif'].includes(input.animation?.format)?input.animation.format:'mp4',duration:[5,8,10].includes(Number(input.animation?.duration))?Number(input.animation.duration):8,preset:['cinematic','commercial','soft'].includes(input.animation?.preset)?input.animation.preset:'cinematic',loop:input.animation?.loop!==false};
   if(require('../contracts/motion').MOTION_PRESETS.includes(input.animation?.preset)) draft.animation.preset=input.animation.preset;

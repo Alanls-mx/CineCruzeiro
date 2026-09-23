@@ -867,7 +867,31 @@
     state.notices = notices;
     const container = document.getElementById("socialStudioNotices");
     if (!container) return;
-    container.innerHTML = notices.map((notice) => `<p data-type="${escapeHtml(notice.type || "info")}">${escapeHtml(notice.message)}</p>`).join("");
+    container.innerHTML = notices.map((notice) => `<div class="social-studio-notice"><p data-type="${escapeHtml(notice.type || "info")}">${escapeHtml(notice.message)}</p>${notice.code === 'TODAY_MISMATCH' && notice.correction ? `<button type="button" class="ghost-button" data-social-fix-today>${escapeHtml(notice.correction.label)}</button>` : ''}</div>`).join("");
+  }
+
+  async function applyTodayCorrection() {
+    const correction=state.notices.find(notice=>notice.code==='TODAY_MISMATCH')?.correction;
+    if(!correction || state.context?.capabilities?.create===false) return;
+    const controls={title:'socialStudioTitle',subtitle:'socialStudioSubtitle',auxiliaryText:'socialStudioAuxiliary',cta:'socialStudioCta',date:'socialStudioDate',periodStart:'socialStudioPeriodStart',primaryDateKind:'socialStudioDateKind',sessionDate:'socialStudioSessionDate'};
+    const locks={title:'headline',subtitle:'kicker',auxiliaryText:'supportingText',cta:'cta'};
+    for(const [field,next] of Object.entries(correction.patch)) {
+      if(field==='templateId') {
+        const radio=document.querySelector(`[name='socialStudioTemplate'][value='${next}']`);
+        if(radio) radio.checked=true;
+      } else if(controls[field]) setControl(controls[field],next);
+      if(locks[field]) {
+        const lock=document.querySelector(`[data-copy-lock='${locks[field]}']`);
+        if(lock) lock.checked=false;
+      }
+    }
+    if(/\bhoje\b/i.test(value('socialStudioCaption'))) {
+      setControl('socialStudioCaption','');
+      const lock=document.querySelector("[data-copy-lock='caption']");
+      if(lock) lock.checked=false;
+    }
+    updateFieldVisibility();
+    await resolveDefaults({resetCopy:false});
   }
 
   function updatePreviewMeta() {
@@ -1326,6 +1350,9 @@
 
   function bindEvents() {
     const form = document.getElementById("socialStudioForm");
+    document.getElementById('socialStudioNotices').addEventListener('click',event=>{
+      if(event.target.closest('[data-social-fix-today]')) applyTodayCorrection().catch(error=>setStatus(error.message,'error'));
+    });
     const syncDate=()=>{
       const kind=value('socialStudioDateKind','release');
       const date=value({release:'socialStudioReleaseDate',presale:'socialStudioPresaleDate',session:'socialStudioSessionDate'}[kind]);

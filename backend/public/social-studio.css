@@ -669,6 +669,19 @@
   gap: 5px;
 }
 
+.social-studio-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.social-studio-notice [data-social-fix-today] {
+  min-height: 30px;
+  padding: 4px 10px;
+  white-space: normal;
+}
+
 .social-studio-notices p {
   margin: 0;
   color: #bfdbfe;

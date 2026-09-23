@@ -92,7 +92,9 @@ function normalizeV2Draft(input = {}, context = {}) {
 
 function draftNotices(input = {}, context = {}) {
   const draft = normalizeV2Draft(input, context);
-  if(['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) return draft.contentNotices;
+  const correction=require('./today-correction').todayCorrection(draft,context);
+  const contentNotices=draft.contentNotices.map(notice=>notice.code==='TODAY_MISMATCH' && correction ? {...notice,correction} : notice);
+  if(['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) return contentNotices;
   const legacyId = draft.templateId === "club-plan" ? "cinema-club" : draft.templateId === "movie-presale" ? "movie-premiere" : draft.templateId;
   const notices = legacy.draftNotices({ ...draft, templateId: legacyId }, context);
   if (["movie-premiere", "movie-highlight", "movie-price", "movie-presale"].includes(draft.templateId)) {
@@ -102,7 +104,7 @@ function draftNotices(input = {}, context = {}) {
       message: `${draft.genreProfile.label} recomendado a partir do gênero. Você pode escolher outra variação.`
     });
   }
-  return [...notices, ...draft.contentNotices];
+  return [...notices, ...contentNotices];
 }
 
 module.exports = { draftNotices, genreProfile, normalizeV2Draft };

@@ -14,7 +14,7 @@ test('contratos separam estilo, layout e look e migram style legado',()=>{
 });
 test('validação semântica bloqueia dados incorretos antes de carregar imagens',async()=>{
   for(const [input,ctx,code] of [
-    [{templateId:'sessions-today'},context,'NO_SESSIONS'],
+    [{templateId:'sessions-today',periodStart:'2026-09-22'},context,'NO_SESSIONS'],
     [{templateId:'movie-highlight',subtitle:'HOJE NO CINEMA'},context,'TODAY_MISMATCH'],
     [{templateId:'online-ticket',actionDestination:''},context,'ACTION_DESTINATION_REQUIRED'],
     [{templateId:'multi-movies',movieIds:['film']},context,'SELECT_MOVIES'],

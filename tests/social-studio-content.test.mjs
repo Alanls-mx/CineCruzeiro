@@ -17,6 +17,47 @@ test('programação respeita período, fuso, cancelamento, ordem e deduplicaçã
   assert.equal(week.count,3);assert.match(week.text,/23\/09/);
   assert.doesNotThrow(()=>sessionSchedule(context.movies[0],{periodStart:'2026-99-99'},context.now));
 });
+test('chamada de hoje oferece a próxima sessão real e corrige o rascunho',()=>{
+  const future={...context,movies:context.movies.map(movie=>({...movie,sessions:[{date:'2026-09-22',time:'10:00'},{date:'2026-09-23',time:'19:00',status:'cancelled'},{date:'2026-09-24',time:'20:00'}]}))};
+  const input={templateId:'movie-highlight',movieId:'m0',title:'FILME DE HOJE',subtitle:'HOJE NO CINEMA',auxiliaryText:'Sessão de hoje',cta:'VENHA HOJE'};
+  const notice=engine.draftNotices(input,future).find(item=>item.code==='TODAY_MISMATCH');
+  assert.equal(notice.correction.label,'Usar sessão de 24/09 às 20:00');
+  assert.equal(notice.correction.patch.subtitle,'SESSÕES EM 24/09');
+  assert.equal(notice.correction.patch.primaryDateKind,'session');
+  assert.equal(notice.correction.patch.sessionDate,'2026-09-24');
+  assert.equal(notice.correction.patch.periodStart,'2026-09-24');
+  const corrected=engine.normalizeDraft({...input,...notice.correction.patch},future);
+  assert.equal(corrected.semanticValidation.errors.some(error=>error.code==='TODAY_MISMATCH'),false);
+  assert.equal(corrected.content.primaryDate,'24 DE SETEMBRO');
+});
+test('sem sessão hoje, a correção avança a programação; sem futuras, usa destaque seguro',()=>{
+  const future={...context,movies:context.movies.map(movie=>({...movie,sessions:[{date:'2026-09-22',time:'10:00'},{date:'2026-09-24',time:'19:00',status:'cancelled'},{date:'2026-09-25',time:'20:00'}]}))};
+  const input={templateId:'sessions-today',movieId:'m0',title:'HOJE NO CINEMA',subtitle:'HOJE NO CINEMA'};
+  const fix=engine.draftNotices(input,future).find(item=>item.code==='TODAY_MISMATCH').correction;
+  assert.equal(fix.patch.periodStart,'2026-09-25');
+  assert.equal(fix.label,'Usar sessão de 25/09 às 20:00');
+  const corrected=engine.normalizeDraft({...input,...fix.patch},future);
+  assert.equal(corrected.semanticValidation.valid,true);
+  assert.equal(corrected.schedule.days[0].date,'2026-09-25');
+  const empty={...future,movies:future.movies.map(movie=>({...movie,sessions:[]}))};
+  const noSession=engine.draftNotices(input,empty).find(item=>item.code==='TODAY_MISMATCH').correction;
+  assert.equal(noSession.patch.templateId,'movie-highlight');
+  assert.equal(engine.normalizeDraft({...input,...noSession.patch},empty).semanticValidation.valid,true);
+  const week=engine.draftNotices({...input,templateId:'sessions-week'},empty).find(item=>item.code==='TODAY_MISMATCH').correction;
+  assert.equal(week.patch.templateId,'movie-highlight');
+});
+test('nova campanha de sessões escolhe a próxima data disponível',()=>{
+  const future={...context,movies:context.movies.map(movie=>({...movie,sessions:[{date:'2026-09-22',time:'10:00'},{date:'2026-09-25',time:'20:00'}]}))};
+  const draft=engine.normalizeDraft({templateId:'sessions-today',movieId:'m0'},future);
+  assert.equal(draft.periodStart,'2026-09-25');
+  assert.equal(draft.schedule.days[0].date,'2026-09-25');
+  assert.equal(draft.semanticValidation.valid,true);
+});
+test('sessão de hoje disponível não gera falso alerta fora do filtro da arte',()=>{
+  const input={templateId:'movie-highlight',movieId:'m0',periodStart:'2026-09-23',scheduleMode:'today',subtitle:'HOJE NO CINEMA'};
+  const draft=engine.normalizeDraft(input,context);
+  assert.equal(draft.semanticValidation.errors.some(error=>error.code==='TODAY_MISMATCH'),false);
+});
 test('estreia e CTA têm pares próximos; horário real não é omitido',async()=>{
   const rendered=await engine.renderSocialPost({movieId:'m0',templateId:'movie-premiere',style:'hero-left',cta:'ACESSE O SITE'},context,{loadImage});
   const e=id=>flattenElements(rendered.scene.elements).find(item=>item.id===id);
