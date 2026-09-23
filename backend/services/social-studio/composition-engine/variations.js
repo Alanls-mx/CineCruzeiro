@@ -4,6 +4,36 @@ const { STYLES } = require("./config");
 const { campaignHierarchy } = require("./hierarchy");
 const { renderSocialScene } = require("../scene/renderer");
 
+function variationFamily(style) {
+  if (['hero-left','hero-right','split'].includes(style)) return 'lateral';
+  if (['poster-dominant','hero-center'].includes(style)) return 'poster';
+  if (['cinematic-grid','layered'].includes(style)) return 'grid';
+  if (['featured','split-heroes'].includes(style)) return 'featured';
+  if (style === 'mosaic') return 'editorial';
+  if (['film-strip','lineup','poster-list','editorial-schedule'].includes(style)) return 'list';
+  if (['timeline','week-timeline','cinema-board'].includes(style)) return 'timeline';
+  if (['day-cards','featured-days','poster-calendar','editorial-week'].includes(style)) return 'calendar';
+  return style;
+}
+
+function selectDiverseVariations(ranked, mode) {
+  if (mode === 'similar') return ranked.slice(0, 4);
+  const selected = [], families = new Set();
+  for (const variation of ranked) {
+    const family = variationFamily(variation.styleId);
+    if (families.has(family)) continue;
+    selected.push(variation);
+    families.add(family);
+    if (selected.length === 4) return selected;
+  }
+  for (const variation of ranked) {
+    if (selected.includes(variation)) continue;
+    selected.push(variation);
+    if (selected.length === 4) break;
+  }
+  return selected;
+}
+
 async function generateVariations(input, context, options = {}) {
   const mode = ["similar", "hierarchy"].includes(input.variationMode) ? input.variationMode : "explore";
   const emphasis = campaignHierarchy(input).primary === "detail" ? "date" : "film";
@@ -44,6 +74,7 @@ async function generateVariations(input, context, options = {}) {
     const { entities, ...payload } = rendered.draft;
     variations.push({
       id: `${style}-${draft.artDirection.seed}`,
+      styleId: style,
       name: multi ? multiNames[style] : STYLES.find((s) => s.id === style)?.name || style,
       intent: draft.artDirection.emphasis === "date" ? "Data ou preço em primeiro plano" : style === "poster-dominant" ? "Artwork em destaque" : "Filme e chamada em destaque",
       draft: payload,
@@ -54,7 +85,7 @@ async function generateVariations(input, context, options = {}) {
     });
   }
   variations.sort((first, second) => second.quality.total - first.quality.total || second.quality.commercialClarity - first.quality.commercialClarity);
-  const selected = variations.slice(0, 4).map((variation, index) => ({ ...variation, recommended: index === 0, classification: index === 0 ? "Melhor opção" : variation.quality.total >= 88 ? "Muito boa" : variation.quality.total >= 78 ? "Boa" : "Experimental" }));
+  const selected = selectDiverseVariations(variations, mode).map((variation, index) => ({ ...variation, recommended: index === 0, classification: index === 0 ? "Melhor opção" : variation.quality.total >= 88 ? "Muito boa" : variation.quality.total >= 78 ? "Boa" : "Experimental" }));
   for (const variation of selected) {
     const raster = await renderSocialScene(variation.scene, options);
     const thumb = await sharp(raster.buffer).resize({ width: 400 }).jpeg({ quality: 85 }).toBuffer();
@@ -74,4 +105,4 @@ async function generateVariations(input, context, options = {}) {
         : [],
   };
 }
-module.exports = { generateVariations };
+module.exports = { generateVariations, selectDiverseVariations };

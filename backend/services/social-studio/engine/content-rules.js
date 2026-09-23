@@ -55,9 +55,10 @@ function applyContentRules(draft, input, context) {
   draft.multiLayout = MULTI_LAYOUTS.includes(input.multiLayout) ? input.multiLayout : 'grid';
   draft.scheduleMode = draft.templateId === 'sessions-today' ? 'today' : draft.templateId === 'sessions-week' ? 'week' : input.scheduleMode === 'today' ? 'today' : 'week';
   draft.periodStart = validDay(input.periodStart) ? input.periodStart : '';
-  if (draft.templateId === 'sessions-today' && !draft.periodStart) {
+  if (program && !draft.periodStart) {
     const next = require('./today-correction').nextSession(draft, context);
-    if (next && next.date !== cinemaDay(now)) draft.periodStart = next.date;
+    const currentWeekEnd = new Date(Date.parse(`${cinemaDay(now)}T12:00:00Z`) + 6 * 86400000).toISOString().slice(0,10);
+    if (next && (draft.templateId === 'sessions-today' && next.date !== cinemaDay(now) || draft.templateId !== 'sessions-today' && next.date > currentWeekEnd)) draft.periodStart = next.date;
   }
   draft.showSessions = scheduleCampaign || input.showSessions !== false;
   draft.animation = {enabled:input.animation?.enabled === true,format:['mp4','webm','gif'].includes(input.animation?.format)?input.animation.format:'mp4',duration:[5,8,10].includes(Number(input.animation?.duration))?Number(input.animation.duration):8,preset:['cinematic','commercial','soft'].includes(input.animation?.preset)?input.animation.preset:'cinematic',loop:input.animation?.loop!==false};
@@ -69,11 +70,11 @@ function applyContentRules(draft, input, context) {
   draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],featured:movie.id===draft.resolvedFeaturedMovieId,schedule:sessionSchedule(movie,{...draft,compact:multi,compactDays:selected.length>2?1:3},now)})) : [];
   if (scheduleCampaign) {
     if(input.title === undefined) draft.title = draft.entities.movie?.title || 'Programação';
-    if(input.subtitle === undefined || /^(HOJE NO|SESSÕES EM)/.test(input.subtitle)) draft.subtitle = draft.scheduleMode === 'today' ? (schedule.from===cinemaDay(now)?`HOJE NO ${context.brand?.name || 'CINEMA'}`.toUpperCase():`SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`) : 'PROGRAMAÇÃO DA SEMANA';
+    if(input.subtitle === undefined || /^(HOJE NO|SESSÕES EM)/.test(input.subtitle)) draft.subtitle = draft.scheduleMode === 'today' ? (schedule.from===cinemaDay(now)?`HOJE NO ${context.brand?.name || 'CINEMA'}`.toUpperCase():`SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`) : draft.periodStart ? `SEMANA DE ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}` : 'PROGRAMAÇÃO DA SEMANA';
     if(input.cta === undefined) draft.cta = 'ESCOLHA SUA SESSÃO';
   }
   if(multi) {
-    if(input.title === undefined || /^(ESSA SEMANA NO|HOJE NO) /.test(input.title)) draft.title = `${draft.scheduleMode==='today'?'HOJE':'ESSA SEMANA'} NO ${context.brand?.name || 'CINEMA'}`.toUpperCase();
+    if(input.title === undefined || /^(ESSA SEMANA NO|HOJE NO) /.test(input.title)) draft.title = draft.periodStart ? `PROGRAMAÇÃO EM ${draft.periodStart.slice(8,10)}/${draft.periodStart.slice(5,7)}` : `${draft.scheduleMode==='today'?'HOJE':'ESSA SEMANA'} NO ${context.brand?.name || 'CINEMA'}`.toUpperCase();
     if(input.subtitle === undefined) draft.subtitle = 'FILMES EM CARTAZ';
     if(input.cta === undefined) draft.cta = 'CONFIRA A PROGRAMAÇÃO';
   }

@@ -14,7 +14,7 @@ async function applySignatureGeometry(scene, loadImage) {
   const margin = scene.width * .055;
   const bottom = scene.height * (scene.formatId === 'story' ? .90 : .975);
   const baseWidth = Math.min(scene.width * .24, Math.max(scene.width * .18, logo.width)) * prominence;
-  const blockers = scene.elements.filter(e => e.visible !== false && (e.type === 'text' && e.text?.trim() || e.id === 'artwork' && e.height < scene.height*.8));
+  const blockers = scene.elements.filter(e => e.visible !== false && (e.type === 'text' && e.text?.trim() || (e.id === 'artwork' || e.id.startsWith('movie-art-')) && e.height < scene.height*.8));
   const candidates = [scene.width-margin-baseWidth*1.35, scene.width*.72, margin];
   const slots = candidates.flatMap(x => {
     const right = Math.min(scene.width-margin, x + baseWidth * 1.35);
@@ -28,8 +28,10 @@ async function applySignatureGeometry(scene, loadImage) {
     }
     return gaps;
   }).sort((a,b) => b.maxWidth-a.maxWidth || b.bottom-a.bottom);
-  const slot = slots[0];
-  const width = Math.min(baseWidth, (slot?.maxWidth || 0)/1.35) * scale;
+  const minimumWidth = Math.max(scene.width*.13, scene.height*.04*ratio);
+  const legibleSlots = slots.filter(candidate => candidate.maxWidth >= minimumWidth);
+  const slot = (legibleSlots.length ? legibleSlots : slots).sort((a,b) => b.bottom-a.bottom || b.maxWidth-a.maxWidth)[0];
+  const width = Math.min(baseWidth, slot?.maxWidth || 0) * scale;
   if (width < 16) throw Object.assign(new Error('Sem espaço para a assinatura. Reduza o texto ou escolha outra composição.'), {statusCode:400,code:'SIGNATURE_NO_SPACE'});
   Object.assign(logo, {x:slot.right-width,y:slot.bottom-width/ratio,width,height:width/ratio,fit:'contain',focusX:50,focusY:50,keepRatio:true,locked:false});
   scene.sourceDraft.signatureBounds = {width:logo.width,height:logo.height,aspectRatio:ratio,scale:Math.round(scale*100)};

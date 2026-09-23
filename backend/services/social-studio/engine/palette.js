@@ -42,6 +42,16 @@ function mix(a, b, ratio = 0.5) {
   });
 }
 
+function blendProgramPalettes(featured, others = []) {
+  if (!others.length) return featured;
+  let dominantColor = featured.dominantColor;
+  for (const palette of others.slice(0, 2)) dominantColor = mix(dominantColor, palette.dominantColor, .22);
+  const secondaryColor = others.length > 1
+    ? mix(others[0].secondaryColor, others[1].secondaryColor, .5)
+    : others[0].secondaryColor;
+  return {...featured, dominantColor, secondaryColor};
+}
+
 function distance(a, b) {
   return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2);
 }
@@ -103,4 +113,4 @@ async function extractPalette(buffer, brand = {}) {
   });
 }
 
-module.exports = { extractPalette, hexToRgb, mix, paletteCache, rgbToHex, safeHex, PALETTES, applyPalette };
+module.exports = { extractPalette, blendProgramPalettes, hexToRgb, mix, paletteCache, rgbToHex, safeHex, PALETTES, applyPalette };

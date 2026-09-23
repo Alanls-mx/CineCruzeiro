@@ -46,6 +46,23 @@ function enforceContentLayout(scene) {
       fit(cta,Math.max(32,cta.fontSize),2);fit(website,30,2);
     }
   }
+  const detail=get('detail'),cta=get('cta'),website=get('website');
+  if(detail && cta && detail.y+detail.height>cta.y && detail.x<cta.x+cta.width && cta.x<detail.x+detail.width) {
+    detail.y=Math.max(scene.height*.035,cta.y-detail.height-10);
+  }
+  if(detail && website && detail.y+detail.height>website.y && detail.x<website.x+website.width && website.x<detail.x+detail.width) {
+    detail.y=Math.max(scene.height*.035,website.y-detail.height-10);
+  }
+  const description=get('description');
+  if(detail && description && detail.y<description.y+description.height && description.y<detail.y+detail.height && detail.x<description.x+description.width && description.x<detail.x+detail.width) {
+    if(description.x-detail.x>=scene.width*.16) {
+      detail.width=description.x-detail.x-12;
+      fit(detail,detail.fontSize,3);
+    } else if(detail.x-description.x>=scene.width*.16) {
+      description.width=detail.x-description.x-12;
+      fit(description,description.fontSize,6);
+    }
+  }
   return scene;
 }
 

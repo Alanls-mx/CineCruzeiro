@@ -31,6 +31,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const movie = draft.entities.movie;
   const automaticPoster = draft.composition.enabled && draft.imageMode === "automatic" && !draft.imageUrl;
   let sourceUrl = automaticPoster && movie?.posterUrl ? movie.posterUrl : sourceUrlForDraft(draft);
+  if (!sourceUrl && ['online-ticket', 'club-plan'].includes(draft.templateId)) sourceUrl = brand.posterLogoUrl || brand.logoUrl || '';
   let sourceBuffer = await loadAsset(sourceUrl, loadImage);
   let backgroundUrl = draft.composition.enabled && movie?.backdropUrl && !draft.imageUrl ? movie.backdropUrl : sourceUrl;
   let backgroundBuffer = await loadAsset(backgroundUrl, loadImage);
@@ -60,14 +61,37 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
       analysis={...await analyzeArtwork(raster),backgroundFrame:frame};
     }
   }
-  const palette = applyPalette(draft.paletteMode === "brand"
+  let palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
     : await extractPalette(sourceBuffer, brand), draft.paletteId);
+  const backgroundMovieUrls = [];
+  const backgroundMovieColors = [];
+  if (draft.templateId === 'multi-movies') {
+    const otherPalettes = [];
+    const featuredId = String(draft.entities.movie?.id || '');
+    for (const item of draft.programMovies.filter(item => String(item.id) !== featuredId)) {
+      if (backgroundMovieUrls.length >= 2) break;
+      const candidates = [item.backdropUrl, item.posterUrl].filter(Boolean);
+      for (const url of candidates) {
+        if (url === backgroundUrl || backgroundMovieUrls.includes(url)) continue;
+        const buffer = await loadAsset(url, loadImage);
+        if (!buffer) continue;
+        backgroundMovieUrls.push(url);
+        if (draft.paletteMode !== 'brand' && draft.paletteId === 'automatic') {
+          const color = await extractPalette(buffer, brand);
+          otherPalettes.push(color);
+          backgroundMovieColors.push(color.dominantColor);
+        }
+        break;
+      }
+    }
+    if (otherPalettes.length) palette = require('./palette').blendProgramPalettes(palette, otherPalettes);
+  }
   const logoUrl = signatureUrl(draft, context);
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
   let scene = buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
-  if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl,baseScene:scene});
+  if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl,baseScene:scene,backgroundMovieUrls,backgroundMovieColors});
   else {
     if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
     scene = require('../scene/content-layout').enforceContentLayout(scene);

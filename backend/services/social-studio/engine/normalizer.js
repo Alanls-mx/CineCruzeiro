@@ -25,7 +25,7 @@ function normalizeV2Draft(input = {}, context = {}) {
     ? "cinema-club"
     : template.id === "movie-presale" ? "movie-premiere" : ['sessions-today','sessions-week','multi-movies'].includes(template.id) ? 'movie-highlight' : template.id;
   const legacyDraft = legacy.normalizeDraft({ ...input, templateId: legacyTemplateId }, context);
-  const movie = entityById(context.movies, input.movieId) || legacyDraft.entities.movie;
+  const movie = entityById(context.movies, input.movieId) || (template.type === 'movie' ? legacyDraft.entities.movie : null);
   const concession = entityById(context.concessions, input.concessionId) || legacyDraft.entities.concession;
   const clubPlan = entityById(context.clubPlans, input.clubPlanId) || legacyDraft.entities.clubPlan;
   const profile = genreProfile(movie || {});

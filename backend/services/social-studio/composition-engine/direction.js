@@ -256,7 +256,13 @@ function selectDirection(draft, analysis) {
   if (!draft.automaticStyle) return draft.style;
   const genre = draft.genreProfile?.id,
     choices =
-      genre === "horror"
+      draft.templateId === 'concession-combo'
+        ? ['hero-left', 'split', 'poster-dominant', 'hero-right']
+        : draft.templateId === 'club-plan'
+          ? ['typography-dominant', 'editorial', 'hero-center', 'hero-right']
+          : draft.templateId === 'online-ticket'
+            ? ['hero-center', 'typography-dominant', 'editorial']
+            : genre === "horror"
         ? ["hero-right", "full-bleed", "poster-dominant"]
         : genre === "family"
           ? ["hero-left", "poster-dominant", "split"]

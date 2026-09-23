@@ -3,14 +3,15 @@ const clamp=n=>Math.round(Math.max(0,Math.min(100,n)));
 const key=s=>String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 function scoreArtwork(scene) {
   const draft=scene.sourceDraft || {},policy=draft.artworkPolicy || {},elements=flattenElements(scene.elements).filter(e=>e.visible!==false);
+  const programming=['sessions-today','sessions-week','multi-movies'].includes(scene.templateId);
   const texts=elements.filter(e=>e.type==='text' && e.text?.trim());
   const art=elements.find(e=>e.id==='artwork'),bg=elements.find(e=>e.id==='background-blur');
   const title=texts.find(e=>e.id==='title'),date=texts.find(e=>e.id==='detail');
   let redundancy=100;
-  if(policy.embeddedTitleVisible && title) redundancy-=title.fontSize>60?35:10;
+  if(!programming && policy.embeddedTitleVisible && title) redundancy-=title.fontSize>60?35:10;
   if(policy.hideDate && date) redundancy-=30;
-  if(elements.some(e=>e.role==='logo') && texts.some(e=>e.id==='cinema')) redundancy-=12;
-  for(let i=0;i<texts.length;i++) for(let j=i+1;j<texts.length;j++) if(key(texts[i].text).length>5 && key(texts[i].text)===key(texts[j].text)) redundancy-=15;
+  if(!programming && elements.some(e=>e.role==='logo') && texts.some(e=>e.id==='cinema')) redundancy-=12;
+  for(let i=0;i<texts.length;i++) for(let j=i+1;j<texts.length;j++) if(!programming && key(texts[i].text).length>5 && key(texts[i].text)===key(texts[j].text)) redundancy-=15;
   const boxes=texts.map(e=>({...e,height:Math.min(e.height,e.fontSize*(e.lineHeight || 1.12)*e.text.split('\n').length)}));
   const artworkBox=art?{...art}:bg?{...bg}:null;
   if(artworkBox && art?.fit==='contain' && draft.sourceAsset?.width) {
