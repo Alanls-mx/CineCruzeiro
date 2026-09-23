@@ -107,7 +107,7 @@ async function renderElement(element, loadImage, relative = false) {
 
 async function renderSocialScene(input = {}, options = {}) {
   const scene = normalizeScene(input);
-  if(scene.templateId==='ticket-offer') {
+  if(scene.templateId==='ticket-offer' && !options.layerRender) {
     const validation=require('../contracts/ticket-campaign').validateLayoutCollisions(scene);
     if(!validation.valid) throw Object.assign(new Error('Existem elementos sobrepostos ou fora da área segura. Ajuste a composição antes de exportar.'),{statusCode:400,code:'TICKET_LAYOUT_COLLISION',validation});
   }

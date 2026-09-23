@@ -88,7 +88,7 @@ test('grade de 2, 3, 4 e 6 filmes cabe nos três formatos',async()=>{
 });
 test('animação limita formatos, duração e garante intervalo de leitura',()=>{
   const plan=animationPlan({elements:[{type:'text',text:'Palavra '.repeat(42)}]}, {duration:5,format:'exe',preset:'bounce'});
-  assert.equal(plan.format,'mp4');assert.equal(plan.preset,'cinematic');assert.equal(plan.duration,8);assert.ok(plan.readableFrom<1.5);
+  assert.equal(plan.format,'mp4');assert.equal(plan.preset,'cinematic-reveal');assert.ok(plan.duration-plan.readableFrom>=12);
 });
 test('dados obrigatórios impedem exportação incoerente',()=>{
   const {assertContentReady}=require('../backend/services/social-studio/engine/content-rules');

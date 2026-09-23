@@ -193,7 +193,7 @@ export default function SocialEditor({ postId }: { postId: string }) {
     finally { setBusy(false); }
   };
 
-  const saveVersion = async () => {
+  const saveVersion = async (animate = false) => {
     if (!scene || operation.current) return;
     operation.current = true;
     setBusy(true); setError("");
@@ -201,6 +201,7 @@ export default function SocialEditor({ postId }: { postId: string }) {
       await saveQueue.current.catch(() => {});
       const result = await api<{ post: SocialPostSummary; scene: SocialScene }>(`/api/admin/social-studio/posts/${encodeURIComponent(postId)}/scene-versions`, { method: "POST", body: JSON.stringify({ scene, outputType: post?.outputType || "png" }) });
       setPost(result.post); setHistory(createHistory(result.scene)); setDirty(false); setSaveState("saved");
+      if(animate) window.location.href = `${BASE_PATH}/admin/?studio=1&animatePost=${encodeURIComponent(postId)}#marketingPanel`;
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Não foi possível salvar a nova versão."); }
     finally { operation.current = false; setBusy(false); }
   };
@@ -257,7 +258,7 @@ export default function SocialEditor({ postId }: { postId: string }) {
 
   return (
     <main className="se-app">
-      <Toolbar title={post.title || post.templateName} format={post.formatName} zoom={zoom} autoFit={autoFit} safeArea={safeArea} canUndo={Boolean(history?.past.length)} canRedo={Boolean(history?.future.length)} busy={busy} saveState={saveState} onBack={goBack} onAdd={addElement} onUndo={() => { setHistory((current) => current ? undoHistory(current) : current); setDirty(true); }} onRedo={() => { setHistory((current) => current ? redoHistory(current) : current); setDirty(true); }} onZoom={(next) => { setAutoFit(next === 0); if (next) setZoom(next); }} onToggleSafeArea={() => setSafeArea((value) => !value)} onSave={saveVersion} onExport={exportScene} onReset={resetScene} />
+      <Toolbar title={post.title || post.templateName} format={post.formatName} zoom={zoom} autoFit={autoFit} safeArea={safeArea} canUndo={Boolean(history?.past.length)} canRedo={Boolean(history?.future.length)} busy={busy} saveState={saveState} onBack={goBack} onAdd={addElement} onUndo={() => { setHistory((current) => current ? undoHistory(current) : current); setDirty(true); }} onRedo={() => { setHistory((current) => current ? redoHistory(current) : current); setDirty(true); }} onZoom={(next) => { setAutoFit(next === 0); if (next) setZoom(next); }} onToggleSafeArea={() => setSafeArea((value) => !value)} onSave={() => saveVersion()} onAnimate={() => saveVersion(true)} onExport={exportScene} onReset={resetScene} />
       {error && <div className="se-alert" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}>Fechar</button></div>}
       <div className="se-workspace" inert={busy}>
         <LayersPanel elements={scene.elements} selectedId={selectedId} onSelect={setSelectedId} onPatch={(id, patch) => patchElement(id, patch)} onMove={(id, delta) => replaceScene(moveLayer(scene, id, delta))} />

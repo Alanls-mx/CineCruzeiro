@@ -130,6 +130,7 @@ function materializeRelease(archivePath, instance, tag, env) {
     NEXT_PUBLIC_CINE_API_URL: instance.siteUrl,
   };
   run("npm", ["run", "build"], { cwd: releaseDir, env: buildEnv });
+  if(instance.slug==='cinecruzeiro') run('node',['scripts/build-social-motion.cjs','--browser'],{cwd:releaseDir,env:buildEnv});
   return releaseDir;
 }
 

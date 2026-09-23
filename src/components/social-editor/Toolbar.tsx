@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Download, Grid3X3, Redo2, RotateCcw, Save, Undo2, ZoomIn, Type, Square } from "lucide-react";
+import { ArrowLeft, Download, Grid3X3, Redo2, RotateCcw, Save, Undo2, ZoomIn, Type, Square, Clapperboard } from "lucide-react";
 
 type Props = {
   title: string;
@@ -18,6 +18,7 @@ type Props = {
   onZoom: (zoom: number) => void;
   onToggleSafeArea: () => void;
   onSave: () => void;
+  onAnimate: () => void;
   onExport: (type: "png" | "jpg") => void;
   onReset: () => void;
   onAdd: (type: "text" | "shape") => void;
@@ -44,6 +45,7 @@ export function Toolbar(props: Props) {
         <button type="button" className="se-icon-button" title="Restaurar composição automática" aria-label="Restaurar composição automática" disabled={props.busy} onClick={props.onReset}><RotateCcw size={17} /></button>
         <div className="se-export-menu"><button type="button" className="se-button se-button-muted" disabled={props.busy} onClick={() => props.onExport("png")}><Download size={17} />Exportar PNG</button><button type="button" title="Exportar JPG" aria-label="Exportar JPG" disabled={props.busy} onClick={() => props.onExport("jpg")}>JPG</button></div>
         <button type="button" className="se-button se-button-primary" disabled={props.busy} onClick={props.onSave}><Save size={17} />Salvar nova versão</button>
+        <button type="button" className="se-button se-button-muted" disabled={props.busy} onClick={props.onAnimate}><Clapperboard size={17} />Animar esta arte</button>
       </div>
     </header>
   );

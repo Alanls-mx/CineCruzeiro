@@ -274,8 +274,8 @@ test("prévia de movimento reutiliza camadas raster e conserva dimensões", asyn
     loadImage: async () => null,
   });
   assert.ok(preview.motionSpec.duration >= 5);
-  assert.equal(preview.motionSpec.tracks[0].role, "background");
+  assert.equal(preview.motionSpec.tracks[0].id, scene.elements.find(element=>element.visible!==false).id);
   assert.equal(preview.contentType, 'video/mp4');
   assert.equal(Buffer.from(preview.src.split(',')[1], 'base64').toString('ascii',4,8),'ftyp');
-  assert.deepEqual([preview.width,preview.height],[540,540]);
+  assert.deepEqual([preview.width,preview.height],[320,320]);
 });

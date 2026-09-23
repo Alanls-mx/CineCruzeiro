@@ -90,7 +90,9 @@
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error?.message || data.error || "Não foi possível gerar a prévia.");
     }
-    return response.blob();
+    const blob=await response.blob();
+    blob.previewToken=response.headers.get('X-Social-Scene-Id');
+    return blob;
   }
 
   function notify(message, type = "ok") {
@@ -335,10 +337,19 @@
                 <div class="social-property-body social-output-grid">
                   <label>Formato<select id="socialStudioFormat" data-requires-create></select></label>
                   <label>Arquivo<select id="socialStudioOutput" data-requires-create><option value="png">PNG em alta qualidade</option><option value="jpg">JPG em alta qualidade</option></select></label>
-                  <label>Movimento da prévia<select id="socialStudioMotionPreset" data-requires-create><option value="slow-zoom">Aproximação suave</option><option value="pan-zoom">Deslocamento e aproximação</option><option value="reveal">Entrada gradual</option></select></label>
-                  <label>Duração<select id="socialStudioMotionDuration" data-requires-create><option value="5">5 segundos</option><option value="8" selected>8 segundos</option><option value="10">10 segundos</option></select></label>
-                  <label class="social-toggle"><input id="socialStudioAnimated" type="checkbox" data-requires-create /> Gerar versão animada</label>
-                  <div id="socialStudioAnimationOptions" hidden><label>Formato animado<select id="socialStudioAnimationFormat" data-requires-create><option value="mp4">MP4</option><option value="webm">WebM</option><option value="gif">GIF</option></select></label><label>Preset<select id="socialStudioAnimationPreset" data-requires-create><option value="cinematic">Cinematográfico</option><option value="commercial">Comercial</option><option value="soft">Suave</option></select></label><label class="social-toggle"><input id="socialStudioAnimationLoop" type="checkbox" checked data-requires-create /> Repetir reprodução</label><button id="socialStudioAnimationExport" type="button" class="primary-button" data-requires-create>Exportar animação</button></div>
+                  <select id="socialStudioMotionPreset" hidden><option value="slow-zoom">Legado</option></select>
+                  <label class="social-toggle"><input id="socialStudioAnimated" type="checkbox" data-requires-create /> Animar esta arte</label>
+                  <div id="socialStudioAnimationOptions" hidden>
+                    <label>Movimento<select id="socialStudioAnimationPreset" data-requires-create></select></label>
+                    <label>Intensidade<select id="socialStudioAnimationIntensity" data-requires-create><option value="subtle">Sutil</option><option value="balanced" selected>Equilibrada</option><option value="impactful">Impactante</option></select></label>
+                    <label>Duração<select id="socialStudioMotionDuration" data-requires-create><option value="automatic">Automática</option><option value="5">Curta · 5 segundos</option><option value="8">Padrão · 8 segundos</option><option value="10">Longa · 10 segundos</option></select></label>
+                    <label>Vídeo<select id="socialStudioAnimationFormat" data-requires-create><option value="mp4">MP4</option><option value="webm">WebM</option><option value="gif">GIF</option></select></label>
+                    <label class="social-toggle"><input id="socialStudioAnimationLoop" type="checkbox" checked data-requires-create /> Repetir reprodução</label>
+                    <p id="socialStudioAnimationState" role="status" aria-live="polite"></p>
+                    <button id="socialStudioAnimationCancel" type="button" class="ghost-button" hidden>Cancelar renderização</button>
+                    <button id="socialStudioAnimationExport" type="button" class="primary-button" data-requires-create>Exportar animação</button>
+                    <button id="socialStudioAnimationRestart" type="button" class="ghost-button">Reiniciar reprodução</button>
+                  </div>
                 </div>
               </details>
             </div>
@@ -587,6 +598,7 @@
     state.previewAbort?.abort();
     state.previewVersion++;
     stopMotion();
+    state.animationAbort?.abort();state.animationKey=null;
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
     state.previewUrl = assetUrl(post.imageUrl);
     state.previewBlob = null;
@@ -594,6 +606,7 @@
     document.getElementById("socialStudioPreviewMeta").textContent = `${post.formatName || "Arte"} · ${post.width} × ${post.height} · ${String(post.outputType || "png").toUpperCase()}`;
     document.getElementById("socialStudioPreviewDownload").disabled = false;
     state.activePostId = String(post.id || "");
+    state.previewToken=null;
     const editButton = document.getElementById("socialStudioManualEdit");
     editButton.disabled = !post.editable || state.context?.capabilities?.create === false;
     editButton.title = post.editable ? "Abrir o editor visual desta arte" : "Gere uma nova arte com o Engine V2 para editar os elementos";
@@ -604,6 +617,11 @@
       updatePreviewSize(post.width, post.height);
     }
     updateTemplatePreviews(payload(), state.previewUrl);
+    request(`/api/admin/social-studio/animation-jobs?postId=${encodeURIComponent(post.id)}`).then(({jobs})=>{
+      if(state.activePostId!==String(post.id))return;
+      const saved=jobs?.find(job=>job.status==='done' && job.artVersion===(post.activeVersion || 'original'));
+      if(saved){applyAnimationSettings(saved.config);document.getElementById('socialStudioAnimationState').textContent=`Vídeo salvo · ${saved.plan.duration}s`;}
+    }).catch(()=>{});
   }
 
   async function createReadyPost(post, button) {
@@ -746,7 +764,7 @@
       scheduleMode: value('socialStudioScheduleMode','week'),
       periodStart: value('socialStudioPeriodStart'),
       showSessions: document.getElementById('socialStudioShowSessions').checked,
-      animation: {enabled:document.getElementById('socialStudioAnimated').checked,format:value('socialStudioAnimationFormat','mp4'),preset:value('socialStudioAnimationPreset','cinematic'),duration:Number(value('socialStudioMotionDuration',8)),loop:document.getElementById('socialStudioAnimationLoop').checked},
+      animation: {enabled:document.getElementById('socialStudioAnimated').checked,format:value('socialStudioAnimationFormat','mp4'),preset:value('socialStudioAnimationPreset','automatic'),duration:value('socialStudioMotionDuration','automatic'),intensity:value('socialStudioAnimationIntensity','balanced'),loop:document.getElementById('socialStudioAnimationLoop').checked},
       concessionId: value("socialStudioConcession"),
       clubPlanId: value("socialStudioClub"),
       title: value("socialStudioTitle"),
@@ -824,7 +842,7 @@
     document.getElementById('socialStudioAnimated').checked=draft.animation?.enabled===true;
     document.getElementById('socialStudioAnimationOptions').hidden=!draft.animation?.enabled;
     setControl('socialStudioAnimationFormat',draft.animation?.format || 'mp4');
-    setControl('socialStudioAnimationPreset',draft.animation?.preset || 'cinematic');
+    applyAnimationSettings(draft.animation || {});
     document.getElementById('socialStudioAnimationLoop').checked=draft.animation?.loop!==false;
     state.polish = draft.polish === true;
     invalidateThumbnails();
@@ -901,7 +919,7 @@
     setControl("socialStudioCompositionLook", draft.composition?.look || "cinematic");
     document.getElementById("socialStudioCompositionEnabled").checked = draft.composition?.enabled !== false;
     setControl("socialStudioMotionPreset", draft.motion?.animationPreset || "slow-zoom");
-    setControl("socialStudioMotionDuration", draft.motion?.duration || 8);
+    setControl("socialStudioMotionDuration", draft.animation?.duration || 'automatic');
     syncCompositionControls();
     const direction=draft.artDirection || {};
     setControl("socialStudioHeroMode",direction.heroMode || "edge-dissolve");
@@ -1014,6 +1032,7 @@
     stopMotion();
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
     state.previewBlob = blob;
+    state.previewToken=blob.previewToken;
     state.previewUrl = URL.createObjectURL(blob);
     const stage = document.getElementById("socialStudioPreviewStage");
     stage.innerHTML = `<img src="${state.previewUrl}" alt="${escapeHtml(alt)}" /><div id="socialStudioSafeArea" class="social-story-safe-area" ${currentFormat()?.id === "story" ? "" : "hidden"} aria-hidden="true"></div><span class="social-preview-progress" aria-hidden="true"></span>`;
@@ -1064,6 +1083,7 @@
   }
 
   function schedulePreview(delay = 300) {
+    state.activePostId='';state.previewToken=null;
     state.animationAbort?.abort();
     stopMotion();
     invalidateThumbnails();
@@ -1087,6 +1107,14 @@
   async function playMotion() {
     if(state.motionPlaying || state.animationAbort) {state.animationAbort?.abort();stopMotion();return;}
     await generateAnimation(false);
+  }
+
+  function applyAnimationSettings(config) {
+    const aliases={cinematic:'cinematic-reveal',commercial:'commercial-focus',soft:'editorial','film-reveal':'poster-reveal','spotlight-rotation':'spotlight'};
+    setControl('socialStudioAnimationPreset',aliases[config.preset] || config.preset || 'automatic');
+    setControl('socialStudioAnimationIntensity',config.intensity || 'balanced');
+    setControl('socialStudioMotionDuration',config.duration || 'automatic');
+    setControl('socialStudioAnimationFormat',config.format || 'mp4');
   }
 
   function variationCard(variation, index, favorite = false) {
@@ -1160,10 +1188,33 @@
     const key=previewCacheKey(data);
     state.animationBusy=true;button.disabled=true;button.textContent='Preparando animação...';
     const controller=new AbortController();state.animationAbort=controller;
+    let jobId;
+    const cancelJob=()=>{if(jobId)request(`/api/admin/social-studio/animation-jobs/${jobId}/cancel`,{method:'POST',body:'{}'}).catch(()=>{});};
+    controller.signal.addEventListener('abort',cancelJob,{once:true});
+    document.getElementById('socialStudioAnimationCancel').hidden=false;
     setStatus('Gerando vídeo com tempo de leitura protegido...', 'loading');
     try {
       if(state.animationKey!==key || !state.animationUrl) {
-        const blob=await requestImage('/api/admin/social-studio/animation',data,controller.signal);
+        if(!state.activePostId) {
+          if(state.previewing || !state.previewToken)throw new Error('Atualize a prévia e aguarde a arte ficar pronta antes de animar.');
+          const saved=await request('/api/admin/social-studio/posts',{method:'POST',body:JSON.stringify({...data,previewToken:state.previewToken})});
+          if(controller.signal.aborted)throw new DOMException('Cancelado','AbortError');
+          state.activePostId=saved.post.id;state.context.history=saved.history;renderHistory();
+        }
+        let {job}=await request('/api/admin/social-studio/animation-jobs',{method:'POST',body:JSON.stringify({postId:state.activePostId,animation:data.animation})});
+        jobId=job.id;
+        if(controller.signal.aborted){cancelJob();throw new DOMException('Cancelado','AbortError');}
+        while(['waiting','rendering'].includes(job.status)) {
+          document.getElementById('socialStudioAnimationState').textContent=job.status==='waiting'?'Aguardando na fila':`Renderizando · ${Math.round(job.progress*100)}%`;
+          await new Promise(resolve=>setTimeout(resolve,1200));
+          if(controller.signal.aborted)throw new DOMException('Cancelado','AbortError');
+          ({job}=await request(`/api/admin/social-studio/animation-jobs/${jobId}`,{signal:controller.signal}));
+        }
+        if(job.status!=='done')throw new Error(job.error || 'Não foi possível animar. Sua imagem estática continua disponível.');
+        const response=await fetch(`${basePath}/api/admin/social-studio/animation-jobs/${jobId}/file`,{credentials:'include',signal:controller.signal});
+        if(!response.ok)throw new Error('Não foi possível baixar o vídeo. Tente novamente.');
+        const blob=await response.blob();
+        state.animationDuration=job.plan.duration;
         if(draftKey!==previewCacheKey(payload())) {setStatus('A campanha mudou. Gere a animação atualizada.','warning');return;}
         if(state.animationUrl) URL.revokeObjectURL(state.animationUrl);
         state.animationUrl=URL.createObjectURL(blob);state.animationKey=key;
@@ -1171,17 +1222,18 @@
       document.getElementById('socialStudioEncodedPreview')?.remove();
       const media=document.createElement(data.animation.format==='gif'?'img':'video');
       media.id='socialStudioEncodedPreview';media.src=state.animationUrl;
-      if(media.tagName==='VIDEO') {media.controls=true;media.autoplay=true;media.muted=true;media.loop=data.animation.loop;media.playsInline=true;media.poster=state.previewUrl;}
+      if(media.tagName==='VIDEO') {media.controls=true;media.autoplay=!window.matchMedia('(prefers-reduced-motion: reduce)').matches;media.muted=true;media.loop=data.animation.loop;media.playsInline=true;media.poster=state.previewUrl;}
       else media.alt='Prévia animada da campanha';
       document.getElementById('socialStudioPreviewStage').appendChild(media);
       state.motionPlaying=true;
       document.getElementById('socialStudioMotionPlay').textContent='Parar prévia';
+      document.getElementById('socialStudioAnimationState').textContent=`Concluído · ${state.animationDuration}s · ${download?'Resolução final':'Prévia'}`;
       const width=download?1080:data.animation.format==='gif'?360:540,format=currentFormat();
       document.getElementById('socialStudioPreviewMeta').textContent=`Prévia animada · ${width} × ${Math.round(width*format.height/format.width/2)*2} · ${data.animation.format.toUpperCase()}`;
       if(download) {const link=document.createElement('a');link.href=state.animationUrl;link.download=`campanha.${data.animation.format}`;link.click();}
       setStatus('Animação pronta. A duração pode ser ampliada para preservar a leitura.','ok');
-    } catch(error) {if(error.name!=='AbortError')setStatus(error.message,'error');}
-    finally {state.animationBusy=false;state.animationAbort=null;button.disabled=state.context?.capabilities?.create===false;button.textContent='Exportar animação';}
+    } catch(error) {if(error.name!=='AbortError'){setStatus(error.message,'error');document.getElementById('socialStudioAnimationState').textContent=error.message;}else document.getElementById('socialStudioAnimationState').textContent='Renderização cancelada.';}
+    finally {controller.signal.removeEventListener('abort',cancelJob);state.animationBusy=false;state.animationAbort=null;document.getElementById('socialStudioAnimationCancel').hidden=true;button.disabled=state.context?.capabilities?.create===false;button.textContent='Exportar animação';}
   }
 
   function saveDraftLocal() {
@@ -1437,7 +1489,7 @@
       if(date) setControl('socialStudioDate',new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`)).toUpperCase());
     };
     for(const id of ['socialStudioDateKind','socialStudioReleaseDate','socialStudioPresaleDate','socialStudioSessionDate']) document.getElementById(id).addEventListener('change',syncDate);
-    const animationPresets={'poster-cascade':'Pôsteres em sequência','film-reveal':'Revelação cinematográfica','spotlight-rotation':'Rotação de destaque','cinema-lineup':'Entrada da programação','crossfade-program':'Transição de filmes','featured-cycle':'Ciclo de filmes e sessões'};
+    const animationPresets={'automatic':'Direção automática','cinematic-reveal':'Revelação cinematográfica','slow-parallax':'Profundidade suave','dark-reveal':'Revelação escura','commercial-focus':'Foco comercial','poster-reveal':'Revelação do pôster','editorial':'Editorial','poster-cascade':'Pôsteres em sequência','spotlight':'Destaque por filme','cinema-lineup':'Entrada da programação','crossfade-program':'Transição de filmes','featured-cycle':'Ciclo de filmes e sessões','simultaneous':'Entrada simultânea'};
     for(const [id,name] of Object.entries(animationPresets)) document.getElementById('socialStudioAnimationPreset').add(new Option(name,id));
     for(const [field,id] of Object.entries({headline:'socialStudioTitle',kicker:'socialStudioSubtitle',supportingText:'socialStudioAuxiliary',cta:'socialStudioCta',caption:'socialStudioCaption'})) {
       const control=document.getElementById(id);
@@ -1464,11 +1516,14 @@
     document.getElementById("socialStudioPreviewDownload").addEventListener("click", downloadPreview);
     document.getElementById("socialStudioMotionPlay").addEventListener("click", playMotion);
     document.getElementById('socialStudioAnimationExport').addEventListener('click',()=>generateAnimation(true));
+    document.getElementById('socialStudioAnimationCancel').addEventListener('click',()=>state.animationAbort?.abort());
+    document.getElementById('socialStudioAnimationRestart').addEventListener('click',()=>{const video=document.getElementById('socialStudioEncodedPreview');if(video?.tagName==='VIDEO'){video.currentTime=0;video.play().catch(()=>{});}else generateAnimation(false);});
+    for(const id of ['socialStudioAnimationPreset','socialStudioAnimationIntensity','socialStudioMotionDuration','socialStudioAnimationFormat','socialStudioAnimationLoop'])document.getElementById(id).addEventListener('change',()=>{state.animationAbort?.abort();stopMotion();saveDraftLocal();});
     document.getElementById('socialStudioAnimated').addEventListener('change',async event=>{
       const enabled=event.target.checked;
       document.getElementById('socialStudioAnimationOptions').hidden=!enabled;
       stopMotion();state.animationAbort?.abort();saveDraftLocal();
-      if(enabled) {clearTimeout(state.previewTimer);await updatePreview({force:true});if(document.getElementById('socialStudioAnimated').checked)await generateAnimation(false);}
+      if(enabled) await generateAnimation(false);
     });
     document.getElementById("socialStudioVariationsButton").addEventListener("click",generateVariations);
     for(const id of ['socialStudioTicketCampaignMode','socialStudioCampaignRecurrence','socialStudioCampaignDays','socialStudioCampaignAudience','socialStudioOfferHeadline','socialStudioOfferTerms']) {
@@ -1522,6 +1577,7 @@
       });
     });
     form.addEventListener("input", (event) => {
+      if(event.target.closest('#socialStudioAnimationOptions'))return;
       if(event.target.id==='socialStudioAnimated') return;
       if(event.target.id==='socialStudioSignatureScale') document.getElementById('socialStudioSignatureAutomatic').checked=false;
       if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) {syncTicketPrice();resolveDefaults({resetCopy:false,resetPriceCopy:true});return;}
@@ -1541,6 +1597,7 @@
       if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom" && !event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
+      if(event.target.closest('#socialStudioAnimationOptions'))return;
       if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) return;
       if(event.target.id==='socialStudioAnimated') return;
       if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
@@ -1610,6 +1667,9 @@
       renderContext();
       bindEvents();
       state.initialized = true;
+      const requestedPost=new URLSearchParams(window.location.search).get('animatePost');
+      const savedPost=state.context.history?.find(post=>post.id===requestedPost);
+      if(savedPost){showSavedPost(savedPost);document.getElementById('socialStudioAnimated').checked=true;document.getElementById('socialStudioAnimationOptions').hidden=false;return;}
       if (state.context?.capabilities?.create === false) {
         setStatus("Você pode consultar o histórico, mas não possui permissão para criar artes.", "");
         return;

@@ -147,6 +147,26 @@ const storageService = createStorageService({
 });
 const EMAIL_ATTACHMENT_ROOT = path.resolve(process.env.CINE_EMAIL_ATTACHMENTS_DIR || path.join(ROOT, "data", "email-attachments"));
 const TICKET_DOCUMENT_ROOT = path.resolve(process.env.CINE_TICKET_DOCUMENTS_DIR || path.join(ROOT, "data", "ticket-documents"));
+let socialAnimationJobs;
+function getSocialAnimationJobs() {
+  if(!socialAnimationJobs) socialAnimationJobs=new (require('./services/social-studio/remotion/jobs').AnimationJobs)(
+    process.env.SOCIAL_STUDIO_ANIMATION_DIR || path.join(process.env.CINE_UPLOADS_DIR?path.dirname(storageService.rootDir):path.dirname(DATA_FILE),'social-animation'),{loadImage:loadSocialStudioImage});
+  return socialAnimationJobs;
+}
+async function renderSocialAnimationJob(req,res,scene,config,postId) {
+  const jobs=getSocialAnimationJobs(),owner=String(req.adminUser.id);
+  let job=await jobs.create({scene,animation:config,owner,postId:postId || `legacy-${crypto.createHash('sha256').update(JSON.stringify(scene.elements)).digest('hex')}`,artVersion:'original'});
+  const cancel=()=>{if(!res.writableEnded)jobs.cancel(job.id,owner).catch(()=>{});};
+  res.on('close',cancel);
+  try {
+    while(['waiting','rendering'].includes(job.status)) {
+      if(res.destroyed){await jobs.cancel(job.id,owner);throw new Error('Renderização cancelada.');}
+      await new Promise(resolve=>setTimeout(resolve,500));job=await jobs.get(job.id,owner);
+    }
+    if(job.status!=='done')throw new Error(job.error || 'Não foi possível animar esta arte.');
+    const file=await jobs.file(job.id,owner);return {...file,extension:`.${file.extension}`,plan:job.plan};
+  }finally{res.off('close',cancel);}
+}
 const EMAIL_ATTACHMENT_TYPES = new Set([
   "application/pdf",
   "text/plain",
@@ -11485,6 +11505,28 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/social-studio/animation-jobs" && method === "POST") {
+    const body=await readBody(req);
+    const post=(db.settings?.socialStudioPosts || []).find(item=>String(item.id)===String(body.postId));
+    if(!post){sendJson(res,404,{error:{message:'Salve a arte antes de animar.'}});return;}
+    const scene=normalizeSocialScene(post.editedScene || await editableSceneForPost(post,db));
+    const job=await getSocialAnimationJobs().create({scene,animation:body.animation,owner:String(req.adminUser.id),postId:String(post.id),artVersion:post.activeVersion || 'original'});
+    sendJson(res,202,{job},{'Cache-Control':'no-store'});return;
+  }
+  if (pathname === "/api/admin/social-studio/animation-jobs" && method === "GET") {
+    const postId=new URL(req.url,'http://localhost').searchParams.get('postId');
+    sendJson(res,200,{jobs:await getSocialAnimationJobs().list(postId,String(req.adminUser.id))},{'Cache-Control':'no-store'});return;
+  }
+  const animationJobMatch=pathname.match(/^\/api\/admin\/social-studio\/animation-jobs\/([a-f0-9-]{36})(?:\/(cancel|file))?$/);
+  if(animationJobMatch) {
+    const [,id,action]=animationJobMatch,jobs=getSocialAnimationJobs(),owner=String(req.adminUser.id);
+    if(action==='cancel' && method==='POST'){sendJson(res,200,{job:await jobs.cancel(id,owner)});return;}
+    if(action==='file' && method==='GET'){
+      const file=await jobs.file(id,owner);
+      res.writeHead(200,securityHeaders({'Content-Type':file.contentType,'Content-Length':file.buffer.length,'Cache-Control':'private, no-store','Content-Disposition':`inline; filename="campanha.${file.extension}"`}));res.end(file.buffer);return;
+    }
+    if(!action && method==='GET'){sendJson(res,200,{job:await jobs.get(id,owner)},{'Cache-Control':'no-store'});return;}
+  }
   if (pathname === "/api/admin/social-studio/animation" && method === "POST") {
     const body = await readBody(req);
     require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,socialStudioContext(db)));
@@ -11493,7 +11535,7 @@ async function handleApi(req, res, pathname) {
     res.on('close', disconnected);
     try {
       const rendered = await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
-      const animation = await require('./services/social-studio/composition-engine/animation').exportAnimation(rendered.scene, body.animation, {loadImage:loadSocialStudioImage,signal:controller.signal});
+      const animation = await renderSocialAnimationJob(req,res,rendered.scene,body.animation,body.postId);
       if (!res.destroyed) {
         res.writeHead(200, {...securityHeaders({'Content-Type':animation.contentType,'Content-Length':animation.buffer.length,'Cache-Control':'no-store','Content-Disposition':`attachment; filename="campanha${animation.extension}"`,'X-Animation-Duration':String(animation.plan.duration)})});
         res.end(animation.buffer);
@@ -11507,7 +11549,8 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/social-studio/motion-preview" && method === "POST") {
     const body = await readBody(req);
     const rendered = await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
-    const preview = await require("./services/social-studio/composition-engine/motion").createMotionPreview(rendered.scene, { loadImage: loadSocialStudioImage });
+    const animation=await renderSocialAnimationJob(req,res,rendered.scene,{...body.animation,quality:'preview',format:'mp4'},body.postId);
+    const preview={src:`data:${animation.contentType};base64,${animation.buffer.toString('base64')}`,contentType:animation.contentType,width:animation.plan.width,height:animation.plan.height,motionSpec:animation.plan.motionSpec,duration:animation.plan.duration};
     sendJson(res, 200, preview, { "Cache-Control": "no-store" });
     return;
   }
@@ -11526,6 +11569,7 @@ async function handleApi(req, res, pathname) {
       ...securityHeaders({
         "Content-Type": rendered.contentType,
         "Content-Length": rendered.buffer.length,
+        "X-Social-Scene-Id": require('./services/social-studio/remotion/snapshots').remember(String(req.adminUser.id),rendered),
         "Cache-Control": "no-store",
         "Content-Disposition": `inline; filename="social-studio-preview${rendered.extension}"`
       }),
@@ -11541,7 +11585,10 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const context = socialStudioContext(db);
     require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,context));
-    const rendered = await renderSocialPost(body, context, { loadImage: loadSocialStudioImage });
+    const rendered = body.previewToken
+      ? require('./services/social-studio/remotion/snapshots').read(String(req.adminUser.id),body.previewToken)
+      : await renderSocialPost(body, context, { loadImage: loadSocialStudioImage });
+    require('./services/social-studio/engine/content-rules').assertContentReady(rendered.draft);
     const uploaded = await storageService.uploadImageBuffer({
       buffer: rendered.buffer,
       filename: `${slugify(rendered.draft.title || rendered.draft.templateId || "post")}${rendered.extension}`,
@@ -11758,6 +11805,7 @@ async function handleApi(req, res, pathname) {
       await Promise.all([...urls].map((url) => storageService.deleteByPublicUrl(url).catch(() => false)));
       await persistSocialStudioPosts(db, history, req, posts);
       logEvent("info", "social_studio.post_deleted", { postId, actorUserId: req.adminUser?.id || "" });
+      await getSocialAnimationJobs().removePost(postId);
       sendJson(res, 200, { deleted: true, id: postId, history: history.map(publicSocialStudioPost) }, { "Cache-Control": "no-store" });
       return;
     }
