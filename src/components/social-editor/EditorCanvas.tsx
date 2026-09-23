@@ -134,6 +134,7 @@ function ElementNode({ element, selectedId, onSelect, onChange, canvasWidth, can
     return <Rect {...common} fillLinearGradientStartPoint={points.start} fillLinearGradientEndPoint={points.end} fillLinearGradientColorStops={stops} />;
   }
   if (element.type === "shape") {
+    if (element.points) return <Line {...common} points={element.points.map((value, index) => value * (index % 2 ? element.height : element.width))} closed fill={element.fill} stroke={element.stroke} strokeWidth={element.strokeWidth} />;
     return <Rect {...common} fill={element.fill} stroke={element.stroke} strokeWidth={element.strokeWidth} cornerRadius={element.radius} />;
   }
   return (

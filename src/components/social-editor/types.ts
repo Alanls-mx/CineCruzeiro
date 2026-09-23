@@ -48,6 +48,7 @@ export type SceneElement = {
   stroke?: string;
   strokeWidth?: number;
   radius?: number;
+  points?: number[];
   direction?: "bottom" | "top" | "left" | "right";
   stops?: GradientStop[];
   children?: SceneElement[];

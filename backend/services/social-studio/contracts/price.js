@@ -10,16 +10,17 @@ function resolvePriceSelection(input, movie, now) {
   // A persisted legacy price is kept as an explicit legacy snapshot, never inferred for a new blank campaign.
   const legacy=!supplied && typeof input.price==='string' && /\d/.test(input.price);
   const selection=supplied && typeof supplied==='object' ? supplied : legacy ? {mode:'legacy',formatted:input.price} : {mode:'ticket-type'};
-  const mode=['ticket-type','minimum','manual','legacy'].includes(selection.mode)?selection.mode:'ticket-type';
+  const mode=['ticket-type','minimum','full','half','promotional','manual','campaign','legacy'].includes(selection.mode)?selection.mode:'ticket-type';
   const ticketTypeId=String(selection.ticketTypeId || '');
   const sessionId=String(selection.sessionId || '');
-  const rows=options.filter(o=>(!sessionId || o.sessionId===sessionId) && (mode!=='ticket-type' || o.ticketTypeId===ticketTypeId));
-  let value=mode==='manual'?amount(selection.value):mode==='legacy'?amount(String(selection.formatted || input.price || '').replace(/[^\d,.]/g,'').replace(/\./g,'').replace(',','.')):rows.length?Math.min(...rows.map(o=>o.value)):undefined;
+  const kinds={full:/inteira|normal|padr[aã]o/i,half:/meia/i,promotional:/promoc|promo/i};
+  const rows=options.filter(o=>(!sessionId || o.sessionId===sessionId) && (mode!=='ticket-type' || o.ticketTypeId===ticketTypeId) && (!kinds[mode] || kinds[mode].test(o.name)));
+  let value=['manual','campaign'].includes(mode)?amount(selection.value):mode==='legacy'?amount(String(selection.formatted || input.price || '').replace(/[^\d,.]/g,'').replace(/\./g,'').replace(',','.')):rows.length?Math.min(...rows.map(o=>o.value)):undefined;
   const variable=rows.some(o=>o.value!==value);
-  const from=mode==='minimum' || mode==='ticket-type' && variable;
-  const name=mode==='ticket-type'?rows[0]?.name || '':mode==='manual'?'INGRESSO':'INGRESSOS';
+  const from=mode==='minimum' || ['ticket-type','full','half','promotional'].includes(mode) && variable;
+  const name=['ticket-type','full','half','promotional'].includes(mode)?rows[0]?.name || '':mode==='campaign'?'INGRESSO DA CAMPANHA':'INGRESSOS';
   const label=mode==='legacy'?String(input.subtitle || 'INGRESSOS'):from?`${name || 'INGRESSOS'} A PARTIR DE`:name;
   const formatted=mode==='legacy'?String(selection.formatted || input.price):value===undefined?'':money(value);
-  return {selection:{mode,ticketTypeId,sessionId,...(mode==='manual'?{value}:{}),...(mode==='legacy'?{formatted}: {})},options,value,formatted,label,from,variable,ticketType:name,valid:value!==undefined && (mode!=='ticket-type' || Boolean(ticketTypeId))};
+  return {selection:{mode,ticketTypeId,sessionId,...(['manual','campaign'].includes(mode)?{value}:{}),...(mode==='legacy'?{formatted}: {})},options,value,formatted,label,from,variable,ticketType:name,valid:value!==undefined && (mode!=='ticket-type' || Boolean(ticketTypeId)) && (!kinds[mode] || rows.length>0)};
 }
 module.exports={ticketOptions,resolvePriceSelection};

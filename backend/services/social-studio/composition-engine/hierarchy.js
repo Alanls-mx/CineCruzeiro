@@ -1,7 +1,7 @@
 function campaignHierarchy(draft = {}) {
   const campaign = draft.templateId || "movie-premiere";
   const emphasis = draft.artDirection?.emphasis;
-  const price = ["movie-price", "concession-combo", "club-plan"].includes(campaign);
+  const price = ["movie-price", "ticket-offer", "concession-combo", "club-plan"].includes(campaign);
   const premiere = ["movie-premiere", "movie-presale"].includes(campaign);
   const sessions = ['sessions-today','sessions-week'].includes(campaign);
   const primary = sessions ? 'detail' : campaign === 'multi-movies' ? 'title' : emphasis === "film" ? "title" : emphasis === "date" || price || premiere ? "detail" : "title";

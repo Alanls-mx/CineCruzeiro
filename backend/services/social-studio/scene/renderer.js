@@ -89,6 +89,7 @@ async function renderElement(element, loadImage, relative = false) {
     });
   }
   if (element.type === "shape") {
+    if(element.points) return node('svg',{width:element.width,height:element.height,viewBox:'0 0 100 100',preserveAspectRatio:'none',style},node('polygon',{points:element.points.map(value=>value*100).join(' '),fill:element.fill,stroke:element.stroke,strokeWidth:element.strokeWidth}));
     const shapeStyle = {
         ...style,
         background: element.fill,
@@ -106,6 +107,10 @@ async function renderElement(element, loadImage, relative = false) {
 
 async function renderSocialScene(input = {}, options = {}) {
   const scene = normalizeScene(input);
+  if(scene.templateId==='ticket-offer') {
+    const validation=require('../contracts/ticket-campaign').validateLayoutCollisions(scene);
+    if(!validation.valid) throw Object.assign(new Error('Existem elementos sobrepostos ou fora da área segura. Ajuste a composição antes de exportar.'),{statusCode:400,code:'TICKET_LAYOUT_COLLISION',validation});
+  }
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
   const children = (await Promise.all(scene.elements.map((element) => renderElement(element, loadImage)))).filter(Boolean);
   const tree = node("div", {

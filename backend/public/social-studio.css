@@ -1500,6 +1500,28 @@
 .social-layout-mini--split img { left:4%;top:5%;width:45%;height:67%; }
 .social-layout-mini--poster-dominant img { left:8%;top:0;width:90%;height:77%; }
 .social-layout-mini--typography-dominant img { left:60%;top:0;width:40%;height:45%; }
+.social-layout-mini--price-impact { background:#10233a; }
+.social-layout-mini--price-impact img { left:74%;top:10%;width:20%;height:32%; }
+.social-layout-mini--price-impact b { left:8%;top:14%;width:60%;height:20%;background:#ffffff; }
+.social-layout-mini--price-impact em { left:8%;top:44%;width:80%;height:28%;background:#ffda38; }
+.social-layout-mini--campaign-led { background:#1468bd; }
+.social-layout-mini--campaign-led img { left:76%;top:32%;width:20%;height:34%; }
+.social-layout-mini--campaign-led b { left:7%;top:12%;width:86%;height:24%;background:#ffda38;transform:rotate(-2deg); }
+.social-layout-mini--campaign-led em { left:10%;top:54%;width:63%;height:29%;background:#ffda38; }
+.social-layout-mini--offer-counter { background:#0b1b31; }
+.social-layout-mini--offer-counter img { left:76%;top:5%;width:18%;height:28%; }
+.social-layout-mini--offer-counter b { left:9%;top:37%;width:82%;height:47%;background:#ffda38;transform:rotate(-2deg); }
+.social-layout-mini--offer-counter em { left:13%;top:46%;width:32%;height:5%;background:#0b1b31; }
+.social-layout-mini--ticket-burst { background:#081c36; }
+.social-layout-mini--ticket-burst b { left:8%;top:35%;width:84%;height:45%;background:#ffda38;clip-path:polygon(50% 0,58% 12%,76% 3%,78% 20%,98% 22%,88% 39%,100% 50%,88% 62%,98% 78%,77% 80%,75% 98%,58% 89%,50% 100%,41% 88%,24% 97%,22% 80%,2% 77%,12% 60%,0 50%,12% 38%,2% 22%,22% 20%,24% 3%,41% 12%); }
+.social-layout-mini--ticket-burst em { left:25%;top:47%;width:52%;height:17%;background:#081c36; }
+.social-layout-mini--promo-editorial { background:#ffda38; }
+.social-layout-mini--promo-editorial b { left:7%;top:12%;width:52%;height:20%;background:#081c36; }
+.social-layout-mini--promo-editorial em { left:8%;top:43%;width:82%;height:30%;background:#081c36; }
+.social-layout-mini--cinema-pop { background:#1468bd; }
+.social-layout-mini--cinema-pop b { left:0;top:35%;width:100%;height:37%;background:#081c36;transform:rotate(-5deg); }
+.social-layout-mini--cinema-pop em { left:12%;top:41%;width:77%;height:24%;background:#ffda38; }
+.social-layout-mini--ticket-burst img,.social-layout-mini--promo-editorial img,.social-layout-mini--cinema-pop img { left:76%;top:8%;width:18%;height:23%; }
 #socialStudioMovieSelections { display: grid; gap: 8px; max-height: 330px; overflow-y: auto; }
 #socialStudioAnimationOptions { display: grid; gap: 10px; }
 #socialStudioAnimationOptions[hidden] { display: none; }

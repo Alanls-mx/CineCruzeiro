@@ -35,7 +35,8 @@ function scoreComposition(scene) {
         add("TEXT_OVERLAP", 25, `${texts[i].id}/${texts[j].id}`);
   const art = elements.find((e) => e.id === "artwork"),
     bg = elements.find((e) => e.id === "background-blur");
-  if (!art && !bg && !elements.some(element=>element.id.startsWith('movie-art-'))) add("NO_ARTWORK", 15, "artwork");
+  const graphicCampaign=scene.templateId==='ticket-offer';
+  if (!graphicCampaign && !art && !bg && !elements.some(element=>element.id.startsWith('movie-art-'))) add("NO_ARTWORK", 15, "artwork");
   if (art) {
     const protectedZone = {
       x: art.x + art.width * 0.16,
@@ -46,7 +47,7 @@ function scoreComposition(scene) {
     for (const text of texts)
       if (overlap(protectedZone, text) > text.width * text.height * 0.12)
         add("SUBJECT_OVERLAP", 20, text.id);
-    if (art.width * art.height < scene.width * scene.height * 0.1)
+    if (!graphicCampaign && art.width * art.height < scene.width * scene.height * 0.1)
       add("SMALL_ARTWORK", 15, art.id);
   }
   const logo = elements.find((e) => e.role === "logo");

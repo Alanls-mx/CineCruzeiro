@@ -2,7 +2,7 @@ const { normalizeScene } = require('./schema');
 const { wrapText } = require('./factory');
 const { compactWebsite } = require('../engine/typography');
 
-function buildOfferScene({draft,format,brand,logoUrl,sourceUrl}) {
+function buildConcessionOfferScene({draft,format,brand,logoUrl,sourceUrl}) {
   const w=format.width, h=format.height;
   const ticket=draft.templateId==='ticket-offer';
   const flip=['hero-right'].includes(draft.style);
@@ -64,4 +64,7 @@ function buildOfferScene({draft,format,brand,logoUrl,sourceUrl}) {
   return normalizeScene({id:`scene-${draft.templateId}-${format.id}`,templateId:draft.templateId,formatId:format.id,width:w,height:h,backgroundColor:background,motion:draft.motion,elements,sourceDraft});
 }
 
+const {buildTicketOfferScene}=require('./ticket-offer');
+
+function buildOfferScene(args){return args.draft.templateId==='ticket-offer'?buildTicketOfferScene(args):buildConcessionOfferScene(args);}
 module.exports={buildOfferScene};

@@ -109,6 +109,7 @@ function normalizeElement(input, scene, depth = 0) {
     return {
       ...base,
       type: "shape",
+      ...(Array.isArray(input.points) && input.points.length>=6 && input.points.length%2===0 && input.points.every(Number.isFinite) ? {points:input.points.slice(0,128).map(value=>clamp(value,0,1))} : {}),
       fill: safeColor(input.fill, "#ffffff"),
       stroke: safeColor(input.stroke, "rgba(0,0,0,0)"),
       strokeWidth: clamp(finite(input.strokeWidth, 0), 0, 30),

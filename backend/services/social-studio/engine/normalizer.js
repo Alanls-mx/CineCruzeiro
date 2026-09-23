@@ -25,7 +25,7 @@ function normalizeV2Draft(input = {}, context = {}) {
     ? "cinema-club"
     : template.id === "ticket-offer" ? "movie-price" : template.id === "concession-offer" ? "concession-combo" : template.id === "movie-presale" ? "movie-premiere" : ['sessions-today','sessions-week','multi-movies'].includes(template.id) ? 'movie-highlight' : template.id;
   const legacyDraft = legacy.normalizeDraft({ ...input, templateId: legacyTemplateId }, context);
-  const movie = entityById(context.movies, input.movieId) || (template.type === 'movie' ? legacyDraft.entities.movie : null);
+  const movie = template.id==='ticket-offer' && input.movieId==='' ? null : entityById(context.movies, input.movieId) || (template.type === 'movie' ? legacyDraft.entities.movie : null);
   const concession = entityById(context.concessions, input.concessionId) || legacyDraft.entities.concession;
   const clubPlan = entityById(context.clubPlans, input.clubPlanId) || legacyDraft.entities.clubPlan;
   const profile = genreProfile(movie || {});
@@ -47,11 +47,18 @@ function normalizeV2Draft(input = {}, context = {}) {
     copyBrief: String(input.copyBrief || '').trim().slice(0,500),
     offerTerms: String(input.offerTerms || '').trim().slice(0,300),
     offerHeadline: String(input.offerHeadline || '').trim().slice(0,100),
+    offerBadge: String(input.offerBadge || '').trim().slice(0,44),
+    oldPrice: input.oldPrice === '' || input.oldPrice == null ? undefined : Number(input.oldPrice),
+    ticketCampaignMode: input.ticketCampaignMode==='promotional'?'promotional':'standard',
+    campaignRecurrence: input.campaignRecurrence==='weekly'?'weekly':'none',
+    campaignDays: String(input.campaignDays || '').trim().slice(0,90),
+    campaignAudience: input.campaignAudience==='all'?'all':'selected',
     copyLocks:Object.fromEntries(Object.keys(require('../copy-engine').FIELD_MAP).map(field=>[field,input.copyLocks?.[field]===true])),
     genreProfile: profile,
     composition: normalizeComposition({...input.composition,look:design.look}, profile.id),
     motion: normalizeMotion(input.motion),
-    entities: { movie, concession, clubPlan }
+    entities: { movie, concession, clubPlan },
+    movieId: movie?.id || ''
   };
 
   if (template.id === "movie-presale") {
@@ -62,12 +69,19 @@ function normalizeV2Draft(input = {}, context = {}) {
     draft.clubPlanId = clubPlan?.id || "";
   }
   if(input.layoutId) draft.style = design.layoutId;
+  if(template.id==='ticket-offer') {
+    if(!input.layoutId && (input.style==='automatic' || !input.style)) draft.style='price-impact';
+    if(['impact','hero-left','hero-right','typography-dominant'].includes(draft.style)) draft.style='price-impact';
+  }
   require('./content-rules').applyContentRules(draft, input, context);
   draft.signatureScaleMode=input.signatureScaleMode==='automatic' || input.signatureScale===undefined ? 'automatic' : 'manual';
+  if(template.id==='ticket-offer') draft.signatureScale=Math.max(70,Math.min(180,Number(input.signatureScale)||100));
   draft.brandProminence=['subtle','normal','strong'].includes(input.brandProminence)?input.brandProminence:'normal';
   Object.assign(draft,require('../composition-engine/artwork-policy').normalizeArtwork(input,movie));
   if(['movie-price','ticket-offer'].includes(template.id)) {
-    draft.priceInfo=require('../contracts/price').resolvePriceSelection(input,draft.entities.movie,context.now);
+    const priceInput=template.id==='ticket-offer' && !input.priceSelection && !input.price ? {...input,priceSelection:{mode:'full'}} : input;
+    const priceMovie=template.id==='ticket-offer' && !movie ? {sessions:(context.movies || []).filter(item=>item.catalogued!==false).flatMap(item=>item.sessions || [])} : draft.entities.movie;
+    draft.priceInfo=require('../contracts/price').resolvePriceSelection(priceInput,priceMovie,context.now);
     draft.priceSelection=draft.priceInfo.selection;
     draft.price=draft.priceInfo.formatted;
     if(template.id==='movie-price') draft.subtitle=draft.priceInfo.label || 'SELECIONE O TIPO DE INGRESSO';
@@ -76,6 +90,11 @@ function normalizeV2Draft(input = {}, context = {}) {
   if(template.id==='concession-offer') {
     const price=Number(draft.entities.concession?.price);
     draft.price=Number.isFinite(price) && price>0 ? price.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '';
+  }
+  if(template.id==='ticket-offer') {
+    draft.campaignConcept=require('../contracts/ticket-campaign').ticketCampaignConcept(draft);
+    draft.style=require('../contracts/ticket-campaign').selectTicketFamily(draft,Boolean(input.imageUrl || movie?.posterUrl));
+    if(!movie) {draft.title=input.title || draft.campaignConcept.headline;draft.imageUrl=input.imageUrl || '';}
   }
   if(draft.programMood) {
     draft.genreProfile={...draft.genreProfile,id:draft.programMood};

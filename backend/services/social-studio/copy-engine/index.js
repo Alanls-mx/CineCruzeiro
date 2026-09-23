@@ -81,7 +81,7 @@ function excerpt(value, limit) {
 }
 
 function copyContext(draft, context) {
-  return {...draft.content,cinemaName:context.brand?.name || 'Cinema',genre:draft.genreProfile?.id || 'cinema',concession:draft.entities.concession,clubPlan:draft.entities.clubPlan,history:context.history || [],schedule:draft.schedule};
+  return {...draft.content,campaignConcept:draft.campaignConcept,cinemaName:context.brand?.name || 'Cinema',genre:draft.genreProfile?.id || 'cinema',concession:draft.entities.concession,clubPlan:draft.entities.clubPlan,history:context.history || [],schedule:draft.schedule};
 }
 function scoreCopy(bundle, context, options = {}) {
   const limits=options.density==='short'?{headline:60,kicker:32,supportingText:80,cta:30}:{headline:110,kicker:65,supportingText:180,cta:55};
@@ -108,12 +108,23 @@ class RuleBasedCopyProvider {
     const subject=['concession-combo','concession-offer'].includes(type)?context.concession?.name:type==='club-plan'?context.clubPlan?.name:context.movie?.title;
     const candidates=Array.from({length:8},(_,i)=>{
       let kicker=pool[i%pool.length];
-      if(['movie-price','ticket-offer'].includes(type)) kicker=context.price.label || 'SELECIONE O INGRESSO';
+      if(type==='movie-price') kicker=context.price.label || 'SELECIONE O INGRESSO';
+      if(type==='ticket-offer') kicker=context.offerHeadline || (context.price.from?['INGRESSO A PARTIR DE','SESSÕES COM VALOR ESPECIAL','ESCOLHA SUA SESSÃO'][i%3]:context.price.mode==='promotional'?['INGRESSO PROMOCIONAL','VALOR ESPECIAL PARA SUA SESSÃO','PROMOÇÃO EM CARTAZ'][i%3]:['INGRESSOS EM DESTAQUE','SEU LUGAR NO CINEMA','CONFIRA OS VALORES'][i%3]);
+      if(type==='ticket-offer' && context.campaignConcept) kicker=context.campaignConcept.eyebrow;
       if(context.releaseScope==='international') kicker=['NO RADAR DO CINEMA','UMA HISTÓRIA NO HORIZONTE','LANÇAMENTO INTERNACIONAL','PARA SUA LISTA DE FILMES'][i%4];
       if(type==='sessions-today' && context.period.from!==context.today) kicker='PROGRAMAÇÃO DO DIA';
       if(type==='movie-presale') kicker=context.purchaseAvailable && (!context.presaleStartDate || context.presaleStartDate<=context.today)?(i%2?'SEU LUGAR JÁ PODE SER GARANTIDO':'PRÉ-VENDA ABERTA'):'PRÉ-VENDA A PARTIR DE';
       const angle=movieAngle(context,i,tone,genreLines);
       let supportingText=angle.line;
+      if(type==='ticket-offer') {
+        const lines=context.price.mode==='half' ? ['Meia-entrada para a sessão escolhida. Consulte as condições.','Escolha uma sessão e confira as regras da meia-entrada.']
+          : context.price.mode==='full' ? ['Ingresso inteiro para a sessão escolhida.','Confira o valor da inteira e garanta seu lugar.']
+          : context.price.mode==='minimum' || context.price.from ? ['Valores a partir do anunciado. Confira a sessão antes de comprar.','Escolha a sessão e confirme o valor disponível.']
+          : ['Confira as sessões participantes e as condições da campanha.','Escolha sua sessão e confirme as regras da oferta.'];
+        supportingText=lines[i%lines.length];
+        if(context.campaignConcept?.allHalf) supportingText=['A campanha de meia-entrada é para todos os clientes, conforme as condições anunciadas.','Escolha sua sessão entre as participantes da campanha. O valor anunciado vale para todos os clientes.'][i%2];
+        if(subject) supportingText=`${subject} na tela grande. ${supportingText}`;
+      }
       if(['concession-combo','concession-offer'].includes(type)) {
         const description=String(context.concession?.description || '').trim();
         supportingText=[description,CONCESSION_LINES[i%CONCESSION_LINES.length]].filter(Boolean).join(' ');
@@ -125,13 +136,13 @@ class RuleBasedCopyProvider {
       if(/^sessions-/.test(type)) supportingText=context.schedule.text;
       if(type==='multi-movies') supportingText=context.programMovies.map(movie=>movie.title).join(' • ');
       if(context.releaseScope==='international') supportingText=context.movie?.socialHook || angle.line;
-      const headline=['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject && /^movie-/.test(type) && i%4===3?`${subject} NO CINEMA`:subject || context.cinemaName;
+      const headline=type==='ticket-offer'?(context.campaignConcept?.headline || context.offerHeadline || 'INGRESSOS EM DESTAQUE'):['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject && /^movie-/.test(type) && i%4===3?`${subject} NO CINEMA`:subject || context.cinemaName;
       const cta=ctas[i%ctas.length];
       const detail=['movie-price','ticket-offer','concession-offer'].includes(type)?context.price.formatted:context.primaryDate || '';
       const destinationText=(context.action.destination || '').replace(/^https?:\/\//,'').replace(/\/$/,'');
       const priceLine=['concession-combo','concession-offer','club-plan','ticket-offer'].includes(type) && context.price.formatted ? `${type==='club-plan'?'Mensalidade':'Valor'}: ${context.price.formatted}` : '';
       const scheduleLine=context.programMovies.length?context.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text}`).join('\n\n'):'';
-      const detailLine=detail && `${['movie-price','ticket-offer'].includes(type)?context.price.label:type==='concession-offer'?'PREÇO':context.primaryDateLabel}: ${detail}`;
+      const detailLine=type!=='ticket-offer' && detail && `${['movie-price','ticket-offer'].includes(type)?context.price.label:type==='concession-offer'?'PREÇO':context.primaryDateLabel}: ${detail}`;
       const editorialDetail=/^movie-/.test(type) && density!=='short' ? angle.available.filter(item=>!supportingText.includes(item.text)).slice(0,density==='long'?3:1).map(item=>item.text).join(' ') : '';
       const clubBenefits=type==='club-plan' && density==='long' ? (context.clubPlan?.benefits || []).map(item=>typeof item==='string'?item:item?.label || item?.name || '').filter(Boolean).join(' • ') : '';
       const opening=i%2===0?`${kicker}\n${headline}`:`${headline}\n${kicker}`;

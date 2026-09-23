@@ -28,14 +28,18 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const format = require('../contracts/formats').formatById(draft.formatId);
   const brand = legacy.normalizeBrand(context.brand || {});
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
+  const loadArtwork=async url=>{
+    if(draft.templateId!=='ticket-offer') return loadAsset(url,loadImage);
+    try {const buffer=await loadAsset(url,loadImage);if(buffer) await sharp(buffer,{limitInputPixels:40_000_000}).metadata();return buffer;} catch {return null;}
+  };
 
   const movie = draft.entities.movie;
   const automaticPoster = draft.composition.enabled && draft.imageMode === "automatic" && !draft.imageUrl;
   let sourceUrl = automaticPoster && movie?.posterUrl ? movie.posterUrl : sourceUrlForDraft(draft);
   if (!sourceUrl && ['online-ticket', 'club-plan'].includes(draft.templateId)) sourceUrl = brand.posterLogoUrl || brand.logoUrl || '';
-  let sourceBuffer = await loadAsset(sourceUrl, loadImage);
+  let sourceBuffer = await loadArtwork(sourceUrl);
   let backgroundUrl = draft.composition.enabled && movie?.backdropUrl && !draft.imageUrl ? movie.backdropUrl : sourceUrl;
-  let backgroundBuffer = await loadAsset(backgroundUrl, loadImage);
+  let backgroundBuffer = await loadArtwork(backgroundUrl);
   if (!sourceBuffer && backgroundBuffer) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
   if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
   let analysis = draft.artDirection.enabled ? await analyzeArtwork(sourceBuffer) : null;
@@ -53,6 +57,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     if(draft.automaticStyle && ['LOGO_DOMINANT','SYMBOL_DOMINANT','FULL_POSTER'].includes(draft.artworkPolicy.strategy)) draft.style='hero-center';
     if(draft.automaticStyle && draft.artworkPolicy.dryArtwork && draft.artworkPolicy.strategy==='POSTER_BLEND') draft.style='poster-dominant';
   }
+  if(draft.templateId==='ticket-offer') draft.style=require('../contracts/ticket-campaign').selectTicketFamily(draft,Boolean(sourceBuffer));
   draft.layoutId = require('../contracts/campaign').normalizeDesign({...draft,layoutId:undefined}).layoutId;
   let fullBleed = false;
   if (draft.style === "full-bleed" && backgroundBuffer && backgroundUrl === movie?.backdropUrl) {
@@ -90,7 +95,12 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     }
     if (otherPalettes.length) palette = require('./palette').blendProgramPalettes(palette, otherPalettes);
   }
-  const logoUrl = signatureUrl(draft, context);
+  let logoUrl = signatureUrl(draft, context);
+  if(draft.templateId==='ticket-offer' && logoUrl) {
+    const logo=await loadArtwork(logoUrl);
+    if(!logo) logoUrl='';
+    else {const metadata=await sharp(logo).metadata();draft.signatureAsset={width:metadata.width,height:metadata.height};}
+  }
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
   const offerTemplate=['ticket-offer','concession-offer'].includes(draft.templateId);
@@ -99,11 +109,11 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     : buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
   if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl,baseScene:scene,backgroundMovieUrls,backgroundMovieColors});
   else {
-    if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
+    if (draft.polish && !offerTemplate) scene = require("../composition-engine/polish").polishComposition(scene);
     if(!offerTemplate) scene = require('../scene/content-layout').enforceContentLayout(scene);
   }
   const visualStyle=draft.visualStyle;
-  for(const element of scene.elements.filter(e=>e.type==='text')) {
+  for(const element of scene.elements.filter(e=>e.type==='text' && !offerTemplate)) {
     if(visualStyle==='clean') {element.fontFamily='Social Text';element.fontWeight=element.hierarchy==='primary'?800:600;}
     if(visualStyle==='impact' && ['title','detail'].includes(element.id)) element.fill=palette.accentColor;
     if(visualStyle==='minimal' && !['title','detail'].includes(element.id)) element.fontWeight=500;
@@ -111,11 +121,12 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   policy.applyArtworkPolicy(scene);
   await ensureTextContrast(scene, loadImage);
   if(!offerTemplate) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
+  if(draft.templateId==='ticket-offer') require('../scene/groups').groupElements(scene,'price-hero',['currency','detail'],'price');
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);
   if(!semantics.valid) throw Object.assign(new Error(semantics.errors.map(e=>e.message).join(' ')),{statusCode:400,code:'SCENE_SEMANTICS'});
   const quality = scoreComposition(scene);
-  if(draft.automaticStyle && !options.directionRetried && quality.issues.some(issue=>issue.code==='DRY_COMPOSITION')) {
+  if(!offerTemplate && draft.automaticStyle && !options.directionRetried && quality.issues.some(issue=>issue.code==='DRY_COMPOSITION')) {
     const alternative=await renderSocialPostV2({...input,layoutId:'hero-center',automaticStyle:false,artworkStrategy:movie?.backdropUrl?'BACKDROP_HERO':'CROPPED_POSTER'},context,{...options,directionRetried:true});
     if(alternative.quality.accepted && alternative.quality.total>quality.total) return alternative;
   }

@@ -194,6 +194,13 @@
                   <label id="socialStudioClubField" data-social-field="clubPlan">Plano do clube<select id="socialStudioClub" data-requires-create></select></label>
                   <label data-social-field="title">Título<input id="socialStudioTitle" maxlength="160" data-requires-create /></label>
                   <label data-social-field="offerHeadline">Chamada principal da oferta<input id="socialStudioOfferHeadline" maxlength="100" placeholder="Ex.: especial de fim de semana" data-requires-create /></label>
+                  <label data-social-field="offerHeadline">Selo da oferta<input id="socialStudioOfferBadge" maxlength="44" placeholder="Ex.: valor especial" data-requires-create /></label>
+                  <fieldset id="socialStudioTicketConcept" data-social-field="offerHeadline" class="social-choice-fieldset"><legend>Conceito da campanha</legend>
+                    <label>Modo<select id="socialStudioTicketCampaignMode" data-requires-create><option value="standard">Ingresso em destaque</option><option value="promotional">Promoção confirmada</option></select></label>
+                    <label>Recorrência<select id="socialStudioCampaignRecurrence" data-requires-create><option value="none">Sem recorrência anunciada</option><option value="weekly">Semanal</option></select></label>
+                    <label>Dias confirmados<input id="socialStudioCampaignDays" maxlength="90" placeholder="Ex.: segunda, terça" data-requires-create /></label>
+                    <label>Abrangência<select id="socialStudioCampaignAudience" data-requires-create><option value="selected">Tipo de ingresso selecionado</option><option value="all">Todos os clientes</option></select></label>
+                  </fieldset>
                   <label data-social-field="subtitle">Chamada<input id="socialStudioSubtitle" maxlength="120" data-requires-create /></label>
                   <fieldset data-social-field="date" class="social-choice-fieldset"><legend>Data em destaque</legend><label>Significado<select id="socialStudioDateKind" data-requires-create><option value="release">Estreia</option><option value="presale">Abertura da pré-venda</option><option value="session">Sessão</option></select></label><label>Texto da data<input id="socialStudioDate" maxlength="60" data-requires-create /></label><label>Estreia confirmada<input id="socialStudioReleaseDate" type="date" data-requires-create /></label><label>Abertura da pré-venda<input id="socialStudioPresaleDate" type="date" data-requires-create /></label><label>Data da sessão<input id="socialStudioSessionDate" type="date" data-requires-create /></label></fieldset>
                   <label data-social-field="auxiliaryText">Texto auxiliar<textarea id="socialStudioAuxiliary" rows="3" maxlength="260" data-requires-create></textarea></label>
@@ -211,6 +218,7 @@
                 <div class="social-property-body">
                   <fieldset id="socialStudioTicketPrice" class="social-choice-fieldset"><legend>Ingresso anunciado</legend>
                     <label>Tipo de preço<select id="socialStudioPriceMode" data-requires-create><option value="ticket-type">Tipo de ingresso</option><option value="minimum">Menor preço disponível</option><option value="manual">Personalizado</option><option value="legacy" hidden>Valor da campanha antiga</option></select></label>
+                    <label id="socialStudioOldPriceField">Preço anterior confirmado (R$)<input id="socialStudioOldPrice" type="number" min="0" step="0.01" placeholder="Opcional" data-requires-create /></label>
                     <label id="socialStudioTicketTypeField">Tipo de ingresso<select id="socialStudioTicketType" data-requires-create><option value="">Selecione</option></select></label>
                     <label id="socialStudioPriceSessionField">Sessão<select id="socialStudioPriceSession" data-requires-create><option value="">Todas as sessões</option></select></label>
                     <label id="socialStudioManualPriceField" hidden>Valor personalizado (R$)<input id="socialStudioManualPrice" type="number" min="0" step="0.01" data-requires-create /></label>
@@ -304,7 +312,7 @@
                   <label>Presença da marca<select id="socialStudioBrandProminence" data-requires-create><option value="subtle">Discreta</option><option value="normal" selected>Normal</option><option value="strong">Forte</option></select></label>
                   <label class="social-toggle"><input id="socialStudioSignatureAutomatic" type="checkbox" checked data-requires-create /> Tamanho automático da assinatura</label>
                   <div class="social-range-row">
-                    <label>Tamanho da assinatura <output id="socialStudioSignatureScaleValue">100%</output><input id="socialStudioSignatureScale" type="range" min="70" max="135" step="5" value="100" data-requires-create /></label>
+                    <label>Tamanho da assinatura <output id="socialStudioSignatureScaleValue">100%</output><input id="socialStudioSignatureScale" type="range" min="70" max="180" step="5" value="100" data-requires-create /></label>
                   </div>
                   <div class="social-brand-note"><span id="socialStudioBrandSwatches"></span></div>
                 </div>
@@ -413,7 +421,9 @@
   function renderStyles(selected = "") {
     const template = currentTemplate();
     const allowed = template?.styles || ["clean"];
-    const styles = [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
+    const styles = template?.id==='ticket-offer'
+      ? [{id:'automatic',name:'Direção automática'},{id:'price-impact',name:'Preço gigante'},{id:'campaign-led',name:'Campanha em foco'},{id:'offer-counter',name:'Comparativo'},{id:'ticket-burst',name:'Ingresso pop'},{id:'promo-editorial',name:'Editorial promocional'},{id:'cinema-pop',name:'Cinema vibrante'}]
+      : [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
     const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
     const concession = state.context.concessions?.find((item) => String(item.id) === value("socialStudioConcession"));
     const plan = state.context.clubPlans?.find((item) => String(item.id) === value("socialStudioClub"));
@@ -494,6 +504,7 @@
     renderTemplates();
     fillSelect("socialStudioFormat", context.formats, "Nenhum formato", (item) => `${item.name} · ${item.width} × ${item.height}`);
     fillSelect("socialStudioMovie", context.movies, "Nenhum filme disponível", (item) => `${item.title || "Filme sem título"}${item.catalogued === false ? " · pré-lançamento editorial" : ""}`);
+    document.getElementById('socialStudioMovie').add(new Option('Campanha geral do cinema (sem filme)',''),0);
     document.getElementById('socialStudioMovieSelections').innerHTML = Array.from({length:6},(_,index)=>`<label>Filme ${index+1}<select data-program-movie="${index}" data-requires-create><option value="">${index<2?'Selecionar filme':'Nenhum'}</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>`).join('');
     document.getElementById('socialStudioFeaturedMovie').innerHTML=`<option value="">Seleção automática</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}`;
     fillSelect("socialStudioConcession", context.concessions, "Nenhum produto disponível", (item) => item.name || "Produto sem nome");
@@ -636,11 +647,19 @@
   function updateFieldVisibility() {
     const fields = new Set(currentTemplate()?.fields || []);
     const templateId = currentTemplate()?.id;
+    const signatureScale=document.getElementById('socialStudioSignatureScale');
+    signatureScale.max=templateId==='ticket-offer'?'180':'135';
+    signatureScale.value=String(Math.min(Number(signatureScale.value),Number(signatureScale.max)));
     document.querySelector('#socialStudioEmphasis option[value="film"]').textContent = ['concession-combo','concession-offer'].includes(templateId) ? 'Produto dominante' : templateId === 'club-plan' ? 'Plano dominante' : 'Filme dominante';
     document.querySelector('#socialStudioEmphasis option[value="date"]').textContent = templateId === 'club-plan' ? 'Mensalidade dominante' : ['concession-combo','concession-offer','ticket-offer'].includes(templateId) ? 'Preço dominante' : 'Data ou preço dominante';
     document.querySelectorAll("[data-social-field]").forEach((element) => {
       element.hidden = !fields.has(element.dataset.socialField);
     });
+    document.getElementById('socialStudioTicketConcept').hidden=templateId!=='ticket-offer';
+    const movieField=document.getElementById('socialStudioMovie');
+    const general=movieField.querySelector('option[value=""]');
+    if(general) {general.hidden=templateId!=='ticket-offer';general.disabled=templateId!=='ticket-offer';}
+    if(templateId!=='ticket-offer' && !movieField.value) movieField.value=state.context?.movies?.[0]?.id || '';
     const movieTemplate = currentTemplate()?.type === "movie";
     const fixedSchedule=['sessions-today','sessions-week'].includes(currentTemplate()?.id);
     const programSelect=document.getElementById('socialStudioProgramLayout');
@@ -675,11 +694,17 @@
     document.getElementById('socialStudioTicketPrice').hidden=!active;
     document.getElementById('socialStudioPrice').readOnly=active || templateId==='concession-offer';
     if(!active) return;
-    document.querySelector('#socialStudioPriceMode option[value="manual"]').hidden=templateId==='ticket-offer';
+    const modeField=document.getElementById('socialStudioPriceMode');
+    for(const [id,label] of [['full','Inteira'],['half','Meia'],['promotional','Promocional cadastrado'],['campaign','Preço de campanha']]) {
+      let option=modeField.querySelector(`option[value="${id}"]`);
+      if(!option){option=new Option(label,id);modeField.add(option);}
+      option.hidden=templateId!=='ticket-offer';
+    }
+    modeField.querySelector('option[value="manual"]').textContent=templateId==='ticket-offer'?'Valor manual confirmado':'Personalizado';
     document.querySelector('#socialStudioPriceMode option[value="legacy"]').hidden=templateId==='ticket-offer';
-    const selection=draft ? draft.priceSelection || (/\d/.test(draft.price || '')?{mode:'legacy',formatted:draft.price}:{mode:'ticket-type'}) : {mode:value('socialStudioPriceMode'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')};
+    const selection=draft ? draft.priceSelection || (/\d/.test(draft.price || '')?{mode:'legacy',formatted:draft.price}:{mode:templateId==='ticket-offer'?'full':'ticket-type'}) : {mode:value('socialStudioPriceMode'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')};
     const movie=state.context.movies.find(m=>m.id===value('socialStudioMovie'));
-    const sessions=movie?.sessions || [];
+    const sessions=movie?.sessions || (templateId==='ticket-offer'?(state.context.movies || []).filter(item=>item.catalogued!==false).flatMap(item=>item.sessions || []):[]);
     const options=(draft?.priceInfo?.options || sessions.flatMap(s=>(s.ticketTypes || []).map(t=>({sessionId:s.id,sessionLabel:[s.date,s.time].join(' • '),ticketTypeId:t.id,name:t.name,value:t.price}))));
     const types=[...new Map(options.map(t=>[t.ticketTypeId,t])).values()];
     const sessionOptions=[...new Map(options.map(t=>[t.sessionId,t])).values()];
@@ -692,11 +717,12 @@
     const money=n=>Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
     populate('socialStudioTicketType',types,'ticketTypeId',t=>{const prices=options.filter(o=>o.ticketTypeId===t.ticketTypeId && (!selection.sessionId || o.sessionId===selection.sessionId)).map(o=>Number(o.value));return `${t.name}${prices.length?' — '+(Math.min(...prices)!==Math.max(...prices)?'a partir de ':'')+money(Math.min(...prices)):''}`;},selection.ticketTypeId,'Selecione o tipo de ingresso');
     populate('socialStudioPriceSession',sessionOptions,'sessionId',s=>s.sessionLabel,selection.sessionId,'Todas as sessões');
-    setControl('socialStudioPriceMode',templateId==='ticket-offer' && ['manual','legacy'].includes(selection.mode)?'ticket-type':selection.mode || 'ticket-type');
+    setControl('socialStudioPriceMode',templateId==='ticket-offer' && selection.mode==='legacy'?'ticket-type':selection.mode || 'ticket-type');
     setControl('socialStudioManualPrice',selection.value ?? '');
     document.getElementById('socialStudioTicketTypeField').hidden=selection.mode!=='ticket-type';
-    document.getElementById('socialStudioPriceSessionField').hidden=['manual','legacy'].includes(selection.mode);
-    document.getElementById('socialStudioManualPriceField').hidden=selection.mode!=='manual';
+    document.getElementById('socialStudioPriceSessionField').hidden=['manual','campaign','legacy'].includes(selection.mode);
+    document.getElementById('socialStudioManualPriceField').hidden=!['manual','campaign'].includes(selection.mode);
+    document.getElementById('socialStudioOldPriceField').hidden=templateId!=='ticket-offer';
     document.getElementById('socialStudioPriceSummary').textContent=draft?.priceInfo?.valid ? `${draft.priceInfo.label}: ${draft.priceInfo.formatted}` : selection.mode==='legacy'?`Valor salvo: ${selection.formatted || value('socialStudioPrice')}`:draft?'Selecione o preço anunciado.':'Calculando valor...';
   }
 
@@ -729,6 +755,12 @@
       copyBrief:value('socialStudioCopyBrief'),
       offerTerms:value('socialStudioOfferTerms'),
       offerHeadline:value('socialStudioOfferHeadline'),
+      offerBadge:value('socialStudioOfferBadge'),
+      oldPrice:value('socialStudioOldPrice')===''?undefined:Number(value('socialStudioOldPrice')),
+      ticketCampaignMode:value('socialStudioTicketCampaignMode','standard'),
+      campaignRecurrence:value('socialStudioCampaignRecurrence','none'),
+      campaignDays:value('socialStudioCampaignDays'),
+      campaignAudience:value('socialStudioCampaignAudience','selected'),
       copyLocks:Object.fromEntries([...document.querySelectorAll('[data-copy-lock]')].map(el=>[el.dataset.copyLock,el.checked])),
       subtitle: value("socialStudioSubtitle"),
       price: value("socialStudioPrice"),
@@ -818,6 +850,12 @@
       socialStudioCopyBrief:draft.copyBrief || '',
       socialStudioOfferTerms:draft.offerTerms || '',
       socialStudioOfferHeadline:draft.offerHeadline || '',
+      socialStudioOfferBadge:draft.offerBadge || '',
+      socialStudioOldPrice:draft.oldPrice ?? '',
+      socialStudioTicketCampaignMode:draft.ticketCampaignMode || 'standard',
+      socialStudioCampaignRecurrence:draft.campaignRecurrence || 'none',
+      socialStudioCampaignDays:draft.campaignDays || '',
+      socialStudioCampaignAudience:draft.campaignAudience || 'selected',
       socialStudioSubtitle: draft.subtitle,
       socialStudioPrice: draft.price,
       socialStudioDate: draft.date,
@@ -1433,6 +1471,11 @@
       if(enabled) {clearTimeout(state.previewTimer);await updatePreview({force:true});if(document.getElementById('socialStudioAnimated').checked)await generateAnimation(false);}
     });
     document.getElementById("socialStudioVariationsButton").addEventListener("click",generateVariations);
+    for(const id of ['socialStudioTicketCampaignMode','socialStudioCampaignRecurrence','socialStudioCampaignDays','socialStudioCampaignAudience','socialStudioOfferHeadline','socialStudioOfferTerms']) {
+      document.getElementById(id).addEventListener('change',()=>{
+        if(checked('socialStudioTemplate')==='ticket-offer') resolveDefaults({resetCopy:false,resetPriceCopy:true});
+      });
+    }
     document.getElementById("socialStudioVariations").addEventListener("click", event=>handleCurationAction(event).catch(error=>notify(error.message,"error")));
     document.getElementById("socialStudioFavorites").addEventListener("click", event=>handleCurationAction(event).catch(error=>notify(error.message,"error")));
     renderFavorites();
