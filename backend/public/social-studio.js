@@ -32,6 +32,7 @@
     styleManuallySelected: false,
     notices: [],
     previewZoom: 86,
+    previewDimensions: null,
     activePostId: ""
   };
   state.compositionAdjustments = {};
@@ -411,10 +412,17 @@
     const allowed = template?.styles || ["clean"];
     const styles = [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
     const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
-    const poster = movie?.posterUrl || "";
-    const names = { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
-    document.getElementById("socialStudioStyles").innerHTML = styles.map((style, index) => `
-      <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === selected || (!selected && index === 0) ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${poster ? `<img src="${escapeHtml(assetUrl(poster))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
+    const concession = state.context.concessions?.find((item) => String(item.id) === value("socialStudioConcession"));
+    const plan = state.context.clubPlans?.find((item) => String(item.id) === value("socialStudioClub"));
+    const artwork = template?.id === "concession-combo" ? concession?.imageUrl : template?.id === "club-plan" ? plan?.imageUrl : movie?.posterUrl;
+    const names = template?.id === "concession-combo"
+      ? {"hero-left":"Produto + oferta", "hero-right":"Oferta + produto", "poster-dominant":"Produto em destaque", split:"Vitrine", automatic:"Direção automática"}
+      : template?.id === "club-plan"
+        ? {"typography-dominant":"Benefícios em destaque", editorial:"Plano editorial", "hero-center":"Plano em destaque", "hero-right":"Clube + plano", automatic:"Direção automática"}
+        : { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
+    const chosen = styles.some(style => style.id === selected) ? selected : "automatic";
+    document.getElementById("socialStudioStyles").innerHTML = styles.map((style) => `
+      <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === chosen ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${artwork ? `<img src="${escapeHtml(assetUrl(artwork))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
   }
 
   function syncCompositionControls() {
@@ -576,6 +584,11 @@
     editButton.disabled = !post.editable || state.context?.capabilities?.create === false;
     editButton.title = post.editable ? "Abrir o editor visual desta arte" : "Gere uma nova arte com o Engine V2 para editar os elementos";
     if (post.payload) applyDraft(post.payload, post.caption || "");
+    if (post.width && post.height) {
+      state.previewDimensions = {width: post.width, height: post.height};
+      document.getElementById("socialStudioPreviewStage").style.setProperty("--social-preview-ratio", `${post.width} / ${post.height}`);
+      updatePreviewSize(post.width, post.height);
+    }
     updateTemplatePreviews(payload(), state.previewUrl);
   }
 
@@ -619,6 +632,9 @@
 
   function updateFieldVisibility() {
     const fields = new Set(currentTemplate()?.fields || []);
+    const templateId = currentTemplate()?.id;
+    document.querySelector('#socialStudioEmphasis option[value="film"]').textContent = templateId === 'concession-combo' ? 'Produto dominante' : templateId === 'club-plan' ? 'Plano dominante' : 'Filme dominante';
+    document.querySelector('#socialStudioEmphasis option[value="date"]').textContent = templateId === 'club-plan' ? 'Mensalidade dominante' : templateId === 'concession-combo' ? 'Preço dominante' : 'Data ou preço dominante';
     document.querySelectorAll("[data-social-field]").forEach((element) => {
       element.hidden = !fields.has(element.dataset.socialField);
     });
@@ -898,11 +914,23 @@
     const format = currentFormat();
     const output = value("socialStudioOutput", "png").toUpperCase();
     if (format) {
+      state.previewDimensions = {width: format.width, height: format.height};
       document.getElementById("socialStudioPreviewMeta").textContent = `${format.name} · ${format.width} × ${format.height} · ${output}`;
       const stage = document.getElementById("socialStudioPreviewStage");
       stage.style.setProperty("--social-preview-ratio", `${format.width} / ${format.height}`);
       document.getElementById("socialStudioSafeArea").hidden = format.id !== "story";
+      updatePreviewSize(format.width, format.height);
     }
+  }
+
+  function updatePreviewSize(width = state.previewDimensions?.width || currentFormat()?.width || 1080, height = state.previewDimensions?.height || currentFormat()?.height || 1350) {
+    const canvas = document.querySelector(".social-preview-canvas");
+    const stage = document.getElementById("socialStudioPreviewStage");
+    if (!canvas || !stage || !width || !height) return;
+    const availableWidth = Math.max(180, canvas.clientWidth - 44);
+    const availableHeight = Math.max(140, window.innerHeight * .7);
+    const fitWidth = Math.min(580, availableWidth, availableHeight * width / height);
+    stage.style.setProperty("--social-preview-width", `${Math.floor(fitWidth * state.previewZoom / 100)}px`);
   }
 
   function syncRangeOutputs() {
@@ -1487,8 +1515,9 @@
     document.getElementById("socialStudioPreviewZoom").addEventListener("input", (event) => {
       state.previewZoom = Number(event.target.value);
       document.getElementById("socialStudioPreviewZoomValue").textContent = `${state.previewZoom}%`;
-      document.getElementById("socialStudioPreviewStage").style.setProperty("--social-preview-zoom", `${state.previewZoom}%`);
+      updatePreviewSize();
     });
+    window.addEventListener("resize", () => updatePreviewSize());
     document.querySelector(".social-editor-tabs").addEventListener("click", (event) => {
       const button = event.target.closest("[data-social-editor-tab]");
       if (button) switchEditorTab(button.dataset.socialEditorTab);

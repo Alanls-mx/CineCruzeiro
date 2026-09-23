@@ -573,11 +573,10 @@
 
 .social-studio-preview-stage {
   --social-preview-ratio: 4 / 5;
-  --social-preview-zoom: 86%;
+  --social-preview-width: 460px;
   position: relative;
   display: grid;
-  width: min(var(--social-preview-zoom), 580px);
-  max-height: 72vh;
+  width: min(var(--social-preview-width), 100%);
   aspect-ratio: var(--social-preview-ratio);
   place-items: center;
   overflow: hidden;
@@ -1380,10 +1379,6 @@
 
   .social-preview-zoom input {
     width: 100%;
-  }
-
-  .social-studio-preview-stage {
-    width: min(100%, 480px);
   }
 
   .social-history-item {

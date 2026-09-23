@@ -5,7 +5,7 @@ import {createRequire} from 'node:module';
 
 const require = createRequire(import.meta.url);
 const engine = require('../backend/services/socialStudioEngineService');
-const {selectDiverseVariations} = require('../backend/services/social-studio/composition-engine/variations');
+const {selectDiverseVariations, generateVariations} = require('../backend/services/social-studio/composition-engine/variations');
 const {flattenElements} = require('../backend/services/social-studio/scene/groups');
 
 async function fixture() {
@@ -87,10 +87,39 @@ test('preço, benefícios e chamada final não se cruzam nas composições', asy
   }
 });
 
+test('bomboniere e clube usam hierarquias visuais próprias', async () => {
+  const {context, loadImage} = await fixture();
+  for (const [input, artWidth] of [
+    [{templateId: 'concession-combo', concessionId: 'combo', style: 'poster-dominant'}, .7],
+    [{templateId: 'club-plan', clubPlanId: 'club', style: 'typography-dominant'}, .3]
+  ]) {
+    const rendered = await engine.renderSocialPost(input, context, {loadImage, skipRaster: true});
+    const elements = flattenElements(rendered.scene.elements);
+    const artwork = elements.find(element => element.id === 'artwork');
+    const detail = elements.find(element => element.id === 'detail');
+    assert.ok(artwork.width / rendered.scene.width > artWidth, input.templateId);
+    assert.ok(detail?.y > artwork.y, input.templateId);
+    assert.equal(rendered.quality.issues.some(issue => issue.code === 'TEXT_OVERLAP'), false, input.templateId);
+  }
+});
+
 test('exploração escolhe famílias diferentes sem perder a opção de variações similares', () => {
   const ranked = ['hero-left','hero-right','split','poster-dominant','full-bleed','editorial'].map(styleId => ({styleId}));
   assert.deepEqual(selectDiverseVariations(ranked, 'explore').map(variation => variation.styleId), ['hero-left','poster-dominant','full-bleed','editorial']);
   assert.deepEqual(selectDiverseVariations(ranked, 'similar').map(variation => variation.styleId), ['hero-left','hero-right','split','poster-dominant']);
   const programming = ['film-strip','lineup','panorama','featured','mosaic','cinematic-grid'].map(styleId => ({styleId}));
   assert.deepEqual(selectDiverseVariations(programming, 'explore').map(variation => variation.styleId), ['film-strip','panorama','featured','mosaic']);
+});
+
+test('variações comerciais permanecem na linguagem de cada categoria', async () => {
+  const {context, loadImage} = await fixture();
+  for (const [input, allowed] of [
+    [{templateId: 'concession-combo', concessionId: 'combo'}, ['poster-dominant','hero-left','hero-right','split']],
+    [{templateId: 'club-plan', clubPlanId: 'club'}, ['typography-dominant','editorial','hero-center','hero-right']]
+  ]) {
+    const result = await generateVariations({formatId: 'feed_portrait', ...input}, context, {loadImage});
+    assert.ok(result.variations.length >= 2, input.templateId);
+    assert.ok(result.variations.every(variation => allowed.includes(variation.styleId)), input.templateId);
+    assert.ok(result.variations.every(variation => variation.draft.templateId === input.templateId), input.templateId);
+  }
 });

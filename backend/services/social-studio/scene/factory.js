@@ -95,7 +95,7 @@ function buildEditableScene({ draft, format, palette, brand, sourceUrl = "", bac
   const focus = presets[draft.imagePreset] || [draft.imagePositionX ?? 50, draft.imagePositionY ?? 50];
   const framing = directed?.framing || { background: { focusX: 75, focusY: 35, scale: 1.4, ...draft.artDirection?.background }, hero: { focusX:focus[0], focusY:focus[1], scale:1, ...draft.artDirection?.hero } };
   if (directed && (presets[draft.imagePreset] || draft.imagePositionX !== undefined && draft.imagePositionX !== 50 || draft.imagePositionY !== undefined && draft.imagePositionY !== 50)) framing.hero={...framing.hero,focusX:focus[0],focusY:focus[1],...draft.artDirection?.hero};
-  const mode = draft.artDirection?.heroMode || "edge-dissolve";
+  const mode = directed?.heroMode || draft.artDirection?.heroMode || "edge-dissolve";
   const mask = mode === "rectangle" ? "none" : mode === "soft-rectangle" || mode === "floating" ? "fade-all" : mode === "full-blend" ? "fade-all" : composition.mask;
   const blend = mode === "rectangle" ? 0 : mode === "soft-rectangle" ? 15 : mode === "floating" ? 22 : mode === "full-blend" ? 95 : composition.blend;
 

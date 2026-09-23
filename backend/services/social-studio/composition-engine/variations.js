@@ -40,7 +40,12 @@ async function generateVariations(input, context, options = {}) {
   const programLayouts=require('../programming/direction').PROGRAM_LAYOUTS[input.templateId];
   const multi=Boolean(programLayouts);
   const multiNames={featured:'Destaque e apoio','cinematic-grid':'Grade cinematográfica',layered:'Pôsteres em camadas',mosaic:'Mosaico editorial','film-strip':'Faixa de filmes',panorama:'Panorama','split-heroes':'Dupla protagonista',collage:'Colagem integrada',lineup:'Seleção de filmes',timeline:'Linha do tempo','hero-schedule':'Filme e horários','poster-list':'Lista de filmes','cinema-board':'Painel de cinema','editorial-schedule':'Agenda editorial','day-cards':'Dias em destaque','week-timeline':'Semana em sequência','poster-calendar':'Pôster e calendário','featured-days':'Dias principais','editorial-week':'Semana editorial'};
-  const styles = multi ? mode==='similar'?Array(6).fill(input.programLayout || 'automatic'):programLayouts : mode === "similar" ? Array(6).fill(input.layoutId || input.style || "hero-left") : ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
+  const commercialStyles = input.templateId === 'concession-combo'
+    ? ['poster-dominant','hero-left','hero-right','split']
+    : input.templateId === 'club-plan'
+      ? ['typography-dominant','editorial','hero-center','hero-right']
+      : null;
+  const styles = multi ? mode==='similar'?Array(6).fill(input.programLayout || 'automatic'):programLayouts : mode === "similar" ? Array(6).fill(input.layoutId || input.style || commercialStyles?.[0] || "hero-left") : commercialStyles || ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
   const variations = [],
     rejected = [];
   for (const [index, style] of styles.entries()) {
@@ -76,7 +81,7 @@ async function generateVariations(input, context, options = {}) {
       id: `${style}-${draft.artDirection.seed}`,
       styleId: style,
       name: multi ? multiNames[style] : STYLES.find((s) => s.id === style)?.name || style,
-      intent: draft.artDirection.emphasis === "date" ? "Data ou preço em primeiro plano" : style === "poster-dominant" ? "Artwork em destaque" : "Filme e chamada em destaque",
+      intent: input.templateId === 'concession-combo' ? 'Produto, preço e chamada organizados para a bomboniere' : input.templateId === 'club-plan' ? 'Plano, benefícios e mensalidade em destaque' : draft.artDirection.emphasis === "date" ? "Data ou preço em primeiro plano" : style === "poster-dominant" ? "Artwork em destaque" : "Filme e chamada em destaque",
       draft: payload,
       quality: rendered.quality,
       beforeQuality: raw.quality,

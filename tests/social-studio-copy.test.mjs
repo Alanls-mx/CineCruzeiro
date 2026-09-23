@@ -13,7 +13,8 @@ test('dez campanhas e seis gêneros geram candidatos factuais e pontuados',()=>{
     assert.ok(result.candidates.every(x=>x.score>=0 && x.score<=100));
     assert.ok(result.bundle.caption.includes('cinema.example'));
     if(type==='concession-combo') assert.doesNotMatch(result.bundle.supportingText,/pipoca/i);
-    if(type==='club-plan') assert.equal(result.bundle.supportingText,'Um ingresso por mês');
+    if(type==='club-plan') assert.match(result.bundle.supportingText,/Um ingresso por mês/);
+    assert.ok(new Set(result.candidates.map(candidate=>candidate.bundle.caption)).size>=6,`${type}: legendas distintas`);
   }
   for(const genre of ['Terror','Animação','Ação','Romance','Drama','Comédia']) {
     const context={...ctx,movies:[{...ctx.movies[0],genre}]};
@@ -33,5 +34,5 @@ test('histórico recente penaliza frases e sugestões respeitam tom/densidade',(
   const repeated=first.candidates[0].bundle;
   const second=generateCopy(draft,{...ctx,history:[{payload:{subtitle:repeated.kicker,cta:repeated.cta}}]},{tone:'direct'});
   assert.notEqual(second.bundle.kicker,first.bundle.kicker);
-  assert.equal(second.bundle.supportingText,'Consulte a programação.');
+  assert.ok(['Consulte a programação.','Confira as sessões disponíveis.','Veja os detalhes antes de escolher sua sessão.'].includes(second.bundle.supportingText));
 });

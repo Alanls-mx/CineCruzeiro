@@ -272,9 +272,54 @@ function selectDirection(draft, analysis) {
               ? ["split", "hero-left", "editorial"]
               : ["editorial", "hero-left", "hero-right"];
   const chosen = choices[Math.floor(seedValue(draft) * choices.length)];
-  if (chosen.startsWith("hero-") && analysis)
+  if (chosen.startsWith("hero-") && analysis && !["concession-combo", "club-plan"].includes(draft.templateId))
     return analysis.quietest === "left" ? "hero-right" : "hero-left";
   return chosen;
+}
+
+function applyCommercialDirection(draft, plan) {
+  if (draft.templateId === "concession-combo") {
+    const centered = draft.style === "poster-dominant";
+    const right = draft.style === "hero-right";
+    plan.grid = centered ? "thirds" : right ? "40-60" : "60-40";
+    plan.art = centered ? [.09, .055, .82, .48] : right ? [.51, .11, .42, .6] : [.07, .11, .46, .6];
+    plan.copy = centered ? [.08, .57, .84, .27] : right ? [.07, .14, .39, .69] : [.58, .14, .35, .69];
+    plan.slots = centered ? {
+      subtitle: [.08, .55, .84, .04], title: [.08, .61, .84, .1],
+      description: [.08, .725, .84, .055], detail: [.56, .79, .36, .09], cta: [.08, .81, .42, .05],
+    } : {
+      subtitle: [plan.copy[0], .14, plan.copy[2], .05],
+      title: [plan.copy[0], .22, plan.copy[2], .16],
+      detail: [plan.copy[0], .43, plan.copy[2], .13],
+      description: [plan.copy[0], .6, plan.copy[2], .1],
+      cta: [plan.copy[0], .78, plan.copy[2], .05],
+    };
+    plan.footer = [.08, .91, .84, .06];
+    plan.logo = [.72, .91, .2, .06];
+    if (!draft.artDirection?.heroMode) plan.heroMode = "rectangle";
+    plan.glowScale = .5;
+  } else if (draft.templateId === "club-plan") {
+    const centered = draft.style === "hero-center";
+    const artLeft = draft.style === "editorial";
+    plan.grid = centered ? "thirds" : artLeft ? "40-60" : "60-40";
+    plan.art = centered ? [.32, .065, .36, .34] : artLeft ? [.075, .17, .35, .47] : [.56, .15, .35, .43];
+    plan.copy = centered ? [.08, .43, .84, .42] : artLeft ? [.5, .13, .43, .72] : [.075, .13, .43, .72];
+    plan.slots = centered ? {
+      subtitle: [.08, .43, .84, .045], title: [.08, .5, .84, .1],
+      description: [.08, .635, .84, .085], detail: [.08, .75, .47, .105], cta: [.61, .79, .31, .05],
+    } : {
+      subtitle: [plan.copy[0], .13, plan.copy[2], .05],
+      title: [plan.copy[0], .21, plan.copy[2], .17],
+      description: [plan.copy[0], .43, plan.copy[2], .16],
+      detail: [plan.copy[0], .655, plan.copy[2], .12],
+      cta: [plan.copy[0], .81, plan.copy[2], .05],
+    };
+    plan.footer = [.08, .91, .84, .06];
+    plan.logo = [.72, .91, .2, .06];
+    if (!draft.artDirection?.heroMode) plan.heroMode = "soft-rectangle";
+    plan.glowScale = .45;
+  }
+  return plan;
 }
 
 function directionPlan(draft, analysis, { fullBleed = false } = {}) {
@@ -374,7 +419,7 @@ function directionPlan(draft, analysis, { fullBleed = false } = {}) {
   plan.heroMode = d.heroMode || "edge-dissolve";
   for (const key of ["subtitle", "title", "detail", "description", "cta"]) plan.slots[key][1] += jitter * .18;
   plan.glowScale = 0.85 + seed * 0.3;
-  return plan;
+  return applyCommercialDirection(draft, plan);
 }
 
 module.exports = {

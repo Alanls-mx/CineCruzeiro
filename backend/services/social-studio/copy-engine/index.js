@@ -20,8 +20,21 @@ const GENRES = {
   drama:['Há histórias que ficam com a gente.','Dê tempo a uma nova história.','Um novo olhar na tela grande.'],
   cinema:['Veja essa história na tela grande.','Escolha seu próximo encontro com o cinema.','O cinema espera pela sua próxima escolha.'],
 };
-const TONE_LINES = {cinematic:'Uma história ganha outra dimensão na tela grande.',commercial:'Consulte os horários e escolha sua sessão.',fun:'Chame a turma para o cinema.',elegant:'Um momento para viver o cinema.',direct:'Consulte a programação.'};
+const TONE_LINES = {
+  cinematic:['Uma história ganha outra dimensão na tela grande.','Luzes baixas, tela acesa: a história começa aqui.','Uma experiência para acompanhar do primeiro ao último minuto.'],
+  commercial:['Consulte os horários e escolha sua sessão.','Encontre uma sessão que combine com sua agenda.','Veja a programação e escolha como viver esta história.'],
+  fun:['Chame a turma para o cinema.','A próxima boa história merece companhia.','Escolha a sessão e aproveite o passeio.'],
+  elegant:['Um momento para viver o cinema.','Uma história para apreciar na tela grande.','Reserve um tempo para uma nova experiência.'],
+  direct:['Consulte a programação.','Confira as sessões disponíveis.','Veja os detalhes antes de escolher sua sessão.']
+};
+const CONCESSION_LINES = ['Escolha esta opção na bomboniere.','Um acompanhamento para a sua sessão.','Confira os detalhes do produto antes do filme.','Mais uma opção para completar o passeio.'];
+const CLUB_LINES = ['Conheça os benefícios deste plano.','Veja o que está incluído antes de escolher.','Compare os benefícios e escolha seu plano.','Confira as condições do clube no site.'];
 const FIELD_MAP={headline:'title',kicker:'subtitle',supportingText:'auxiliaryText',cta:'cta',caption:'caption'};
+function excerpt(value, limit) {
+  const text=String(value || '').replace(/\s+/g,' ').trim();
+  if(text.length<=limit) return text;
+  return `${text.slice(0,limit).replace(/\s+\S*$/,'').trim()}…`;
+}
 
 function copyContext(draft, context) {
   return {...draft.content,cinemaName:context.brand?.name || 'Cinema',genre:draft.genreProfile?.id || 'cinema',concession:draft.entities.concession,clubPlan:draft.entities.clubPlan,history:context.history || [],schedule:draft.schedule};
@@ -53,18 +66,31 @@ class RuleBasedCopyProvider {
       if(context.releaseScope==='international') kicker=['NO RADAR DO CINEMA','UMA HISTÓRIA NO HORIZONTE','LANÇAMENTO INTERNACIONAL','PARA SUA LISTA DE FILMES'][i%4];
       if(type==='sessions-today' && context.period.from!==context.today) kicker='PROGRAMAÇÃO DO DIA';
       if(type==='movie-presale') kicker=context.purchaseAvailable && (!context.presaleStartDate || context.presaleStartDate<=context.today)?(i%2?'SEU LUGAR JÁ PODE SER GARANTIDO':'PRÉ-VENDA ABERTA'):'PRÉ-VENDA A PARTIR DE';
-      let supportingText=tone!=='automatic' && TONE_LINES[tone] || genreLines[i%genreLines.length];
-      if(type==='concession-combo') supportingText=context.concession?.description || context.concession?.name || '';
-      if(type==='club-plan') supportingText=(context.clubPlan?.benefits || []).slice(0,density==='short'?1:3).join(' • ');
+      let supportingText=tone!=='automatic' ? TONE_LINES[tone][i%TONE_LINES[tone].length] : genreLines[i%genreLines.length];
+      if(type==='concession-combo') {
+        const description=String(context.concession?.description || '').trim();
+        supportingText=[description,CONCESSION_LINES[i%CONCESSION_LINES.length]].filter(Boolean).join(' ');
+      }
+      if(type==='club-plan') {
+        const benefits=(context.clubPlan?.benefits || []).map(item=>typeof item==='string'?item:item?.label || item?.name || '').filter(Boolean);
+        supportingText=[benefits.slice(0,density==='short'?1:2).join(' • '),CLUB_LINES[i%CLUB_LINES.length]].filter(Boolean).join(' ');
+      }
       if(/^sessions-/.test(type)) supportingText=context.schedule.text;
       if(type==='multi-movies') supportingText=context.programMovies.map(movie=>movie.title).join(' • ');
+      if(/^movie-/.test(type) && context.movie?.synopsis && i%3===2) supportingText=excerpt(context.movie.synopsis,density==='short'?90:145);
       if(context.movie?.socialHook && i===7 && !/^sessions-|multi-movies|concession|club/.test(type)) supportingText=context.movie.socialHook;
       if(context.releaseScope==='international') supportingText=context.movie?.socialHook || 'Exibição no cinema ainda não confirmada.';
-      const headline=['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject || context.cinemaName;
+      const headline=['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject && /^movie-/.test(type) && i%4===3?`${subject} NO CINEMA`:subject || context.cinemaName;
       const cta=ctas[i%ctas.length];
       const detail=type==='movie-price'?context.price.formatted:context.primaryDate || '';
       const destinationText=(context.action.destination || '').replace(/^https?:\/\//,'').replace(/\/$/,'');
-      const caption=[kicker,headline,supportingText,detail && `${type==='movie-price'?context.price.label:context.primaryDateLabel}: ${detail}`,density==='long'?context.movie?.synopsis:'',context.releaseScope==='international'?'A exibição no cinema ainda não está confirmada.':'',context.programMovies.length?context.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text}`).join('\n\n'):'',`${cta}\n${destinationText}`].filter(Boolean).join('\n\n');
+      const priceLine=['concession-combo','club-plan'].includes(type) && context.price.formatted ? `${type==='club-plan'?'Mensalidade':'Valor'}: ${context.price.formatted}` : '';
+      const scheduleLine=context.programMovies.length?context.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text}`).join('\n\n'):'';
+      const detailLine=detail && `${type==='movie-price'?context.price.label:context.primaryDateLabel}: ${detail}`;
+      const synopsis=/^movie-/.test(type) && (density==='long' || density==='medium' && i%3===1) && supportingText!==excerpt(context.movie?.synopsis,density==='short'?90:145) ? excerpt(context.movie?.synopsis,density==='long'?460:260) : '';
+      const clubBenefits=type==='club-plan' && density==='long' ? (context.clubPlan?.benefits || []).map(item=>typeof item==='string'?item:item?.label || item?.name || '').filter(Boolean).join(' • ') : '';
+      const opening=i%2===0?`${kicker}\n${headline}`:`${headline}\n${kicker}`;
+      const caption=[opening,supportingText,priceLine,detailLine,synopsis,clubBenefits,context.releaseScope==='international'?'A exibição no cinema ainda não está confirmada.':'',scheduleLine,`${cta}\n${destinationText}`].filter(Boolean).join('\n\n');
       const bundle={headline,kicker,supportingText,detail,cta,destinationText,caption};
       return {id:`rules-${i}`,bundle,score:scoreCopy(bundle,context,{...options,density})};
     });
