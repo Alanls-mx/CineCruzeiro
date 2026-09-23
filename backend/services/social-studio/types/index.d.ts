@@ -4,7 +4,7 @@ export type SocialLayoutId = "hero-left" | "hero-right" | "hero-center" | "full-
 export type SocialLook = "natural" | "cinematic" | "immersive" | "dramatic" | "vibrant";
 /** Compatibility only: new drafts use visualStyle, layoutId and look separately. */
 export type SocialVariantId = SocialVisualStyle | SocialLayoutId | "immersive" | "poster-blend" | "hero-cinematic" | "split-cinematic";
-export type SocialCampaignType = "movie-premiere" | "movie-highlight" | "movie-price" | "movie-presale" | "online-ticket" | "concession-combo" | "club-plan" | "sessions-today" | "sessions-week" | "multi-movies";
+export type SocialCampaignType = "movie-premiere" | "movie-highlight" | "movie-price" | "movie-presale" | "ticket-offer" | "online-ticket" | "concession-combo" | "concession-offer" | "club-plan" | "sessions-today" | "sessions-week" | "multi-movies";
 export interface SessionContent { movieId: string; date: string; time: string }
 export interface PriceSelection { mode: 'ticket-type' | 'minimum' | 'manual' | 'legacy'; ticketTypeId?: string; sessionId?: string; value?: number; formatted?: string }
 export type ArtworkStrategy = 'automatic' | 'FULL_POSTER' | 'CROPPED_POSTER' | 'BACKDROP_HERO' | 'LOGO_DOMINANT' | 'SYMBOL_DOMINANT' | 'CHARACTER_DOMINANT' | 'POSTER_BLEND' | 'FULL_BLEED';
@@ -15,6 +15,8 @@ export interface CampaignContent {
   version: 1;
   campaignType: SocialCampaignType;
   copyBrief?: string;
+  offerTerms?: string;
+  offerHeadline?: string;
   movie?: {id: string; title: string; genres: string[]; synopsis?: string; socialHook?: string; director?: string; originalTitle?: string; duration?: string; rating?: string; tag?: string};
   headline: string; kicker: string; supportingText: string;
   releaseDate: string; presaleStartDate: string; sessionDate: string;

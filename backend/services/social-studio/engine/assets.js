@@ -63,7 +63,7 @@ async function prepareLogo(buffer, maxWidth, maxHeight) {
 
 function sourceUrlForDraft(draft = {}) {
   if (draft.imageMode === "upload" && draft.imageUrl) return draft.imageUrl;
-  const movieTemplates = ["movie-premiere", "movie-highlight", "movie-price", "movie-presale"];
+  const movieTemplates = ["movie-premiere", "movie-highlight", "movie-price", "movie-presale", "ticket-offer"];
   if (movieTemplates.includes(draft.templateId)) {
     const movie = draft.entities?.movie || {};
     if (draft.imageMode === "poster") return movie.posterUrl || movie.backdropUrl || "";
@@ -75,7 +75,7 @@ function sourceUrlForDraft(draft = {}) {
     return movie.backdropUrl || movie.posterUrl || "";
   }
   if (draft.imageUrl) return draft.imageUrl;
-  if (draft.templateId === "concession-combo") return draft.entities?.concession?.imageUrl || "";
+  if (["concession-combo", "concession-offer"].includes(draft.templateId)) return draft.entities?.concession?.imageUrl || "";
   if (["club-plan", "cinema-club"].includes(draft.templateId)) return draft.entities?.clubPlan?.imageUrl || "";
   return "";
 }

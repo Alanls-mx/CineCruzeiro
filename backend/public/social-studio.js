@@ -193,9 +193,11 @@
                   <label id="socialStudioConcessionField" data-social-field="concession">Produto ou combo<select id="socialStudioConcession" data-requires-create></select></label>
                   <label id="socialStudioClubField" data-social-field="clubPlan">Plano do clube<select id="socialStudioClub" data-requires-create></select></label>
                   <label data-social-field="title">Título<input id="socialStudioTitle" maxlength="160" data-requires-create /></label>
+                  <label data-social-field="offerHeadline">Chamada principal da oferta<input id="socialStudioOfferHeadline" maxlength="100" placeholder="Ex.: especial de fim de semana" data-requires-create /></label>
                   <label data-social-field="subtitle">Chamada<input id="socialStudioSubtitle" maxlength="120" data-requires-create /></label>
                   <fieldset data-social-field="date" class="social-choice-fieldset"><legend>Data em destaque</legend><label>Significado<select id="socialStudioDateKind" data-requires-create><option value="release">Estreia</option><option value="presale">Abertura da pré-venda</option><option value="session">Sessão</option></select></label><label>Texto da data<input id="socialStudioDate" maxlength="60" data-requires-create /></label><label>Estreia confirmada<input id="socialStudioReleaseDate" type="date" data-requires-create /></label><label>Abertura da pré-venda<input id="socialStudioPresaleDate" type="date" data-requires-create /></label><label>Data da sessão<input id="socialStudioSessionDate" type="date" data-requires-create /></label></fieldset>
                   <label data-social-field="auxiliaryText">Texto auxiliar<textarea id="socialStudioAuxiliary" rows="3" maxlength="260" data-requires-create></textarea></label>
+                  <label data-social-field="offerTerms">Condições confirmadas<textarea id="socialStudioOfferTerms" rows="3" maxlength="300" placeholder="Informe apenas regras confirmadas para esta oferta" data-requires-create></textarea></label>
                   <label data-social-field="cta">Chamada final<input id="socialStudioCta" maxlength="60" data-requires-create /></label>
                   <label>Destino da chamada<input id="socialStudioActionDestination" type="url" placeholder="https://cinema.com.br" data-requires-create /></label>
                   <label>Tom dos textos<select id="socialStudioCopyTone" data-requires-create><option value="automatic">Automático</option><option value="cinematic">Cinematográfico</option><option value="commercial">Comercial</option><option value="fun">Divertido</option><option value="elegant">Elegante</option><option value="direct">Direto</option></select></label>
@@ -375,7 +377,7 @@
     const find=(items,id)=>(items || []).find(item=>String(item.id)===String(id));
     for (const template of state.context.templates) {
       const movie=find(state.context.movies,template.id==='multi-movies' ? data.movieIds?.[0] || data.movieId : data.movieId);
-      const src=template.id==='concession-combo' ? find(state.context.concessions,data.concessionId)?.imageUrl : template.id==='club-plan' ? find(state.context.clubPlans,data.clubPlanId)?.imageUrl : movie?.posterUrl;
+      const src=['concession-combo','concession-offer'].includes(template.id) ? find(state.context.concessions,data.concessionId)?.imageUrl : template.id==='club-plan' ? find(state.context.clubPlans,data.clubPlanId)?.imageUrl : movie?.posterUrl;
       const target=document.querySelector(`[data-template-preview="${CSS.escape(template.id)}"]`);
       const url=src?assetUrl(src):'';
       if(!target || target.dataset.source===url) continue;
@@ -415,8 +417,8 @@
     const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
     const concession = state.context.concessions?.find((item) => String(item.id) === value("socialStudioConcession"));
     const plan = state.context.clubPlans?.find((item) => String(item.id) === value("socialStudioClub"));
-    const artwork = template?.id === "concession-combo" ? concession?.imageUrl : template?.id === "club-plan" ? plan?.imageUrl : movie?.posterUrl;
-    const names = template?.id === "concession-combo"
+    const artwork = ['concession-combo','concession-offer'].includes(template?.id) ? concession?.imageUrl : template?.id === "club-plan" ? plan?.imageUrl : movie?.posterUrl;
+    const names = ['concession-combo','concession-offer'].includes(template?.id)
       ? {"hero-left":"Produto + oferta", "hero-right":"Oferta + produto", "poster-dominant":"Produto em destaque", split:"Vitrine", automatic:"Direção automática"}
       : template?.id === "club-plan"
         ? {"typography-dominant":"Benefícios em destaque", editorial:"Plano editorial", "hero-center":"Plano em destaque", "hero-right":"Clube + plano", automatic:"Direção automática"}
@@ -634,8 +636,8 @@
   function updateFieldVisibility() {
     const fields = new Set(currentTemplate()?.fields || []);
     const templateId = currentTemplate()?.id;
-    document.querySelector('#socialStudioEmphasis option[value="film"]').textContent = templateId === 'concession-combo' ? 'Produto dominante' : templateId === 'club-plan' ? 'Plano dominante' : 'Filme dominante';
-    document.querySelector('#socialStudioEmphasis option[value="date"]').textContent = templateId === 'club-plan' ? 'Mensalidade dominante' : templateId === 'concession-combo' ? 'Preço dominante' : 'Data ou preço dominante';
+    document.querySelector('#socialStudioEmphasis option[value="film"]').textContent = ['concession-combo','concession-offer'].includes(templateId) ? 'Produto dominante' : templateId === 'club-plan' ? 'Plano dominante' : 'Filme dominante';
+    document.querySelector('#socialStudioEmphasis option[value="date"]').textContent = templateId === 'club-plan' ? 'Mensalidade dominante' : ['concession-combo','concession-offer','ticket-offer'].includes(templateId) ? 'Preço dominante' : 'Data ou preço dominante';
     document.querySelectorAll("[data-social-field]").forEach((element) => {
       element.hidden = !fields.has(element.dataset.socialField);
     });
@@ -668,10 +670,13 @@
   }
 
   function syncTicketPrice(draft) {
-    const active=checked('socialStudioTemplate')==='movie-price';
+    const templateId=checked('socialStudioTemplate');
+    const active=['movie-price','ticket-offer'].includes(templateId);
     document.getElementById('socialStudioTicketPrice').hidden=!active;
-    document.getElementById('socialStudioPrice').readOnly=active;
+    document.getElementById('socialStudioPrice').readOnly=active || templateId==='concession-offer';
     if(!active) return;
+    document.querySelector('#socialStudioPriceMode option[value="manual"]').hidden=templateId==='ticket-offer';
+    document.querySelector('#socialStudioPriceMode option[value="legacy"]').hidden=templateId==='ticket-offer';
     const selection=draft ? draft.priceSelection || (/\d/.test(draft.price || '')?{mode:'legacy',formatted:draft.price}:{mode:'ticket-type'}) : {mode:value('socialStudioPriceMode'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')};
     const movie=state.context.movies.find(m=>m.id===value('socialStudioMovie'));
     const sessions=movie?.sessions || [];
@@ -687,7 +692,7 @@
     const money=n=>Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
     populate('socialStudioTicketType',types,'ticketTypeId',t=>{const prices=options.filter(o=>o.ticketTypeId===t.ticketTypeId && (!selection.sessionId || o.sessionId===selection.sessionId)).map(o=>Number(o.value));return `${t.name}${prices.length?' — '+(Math.min(...prices)!==Math.max(...prices)?'a partir de ':'')+money(Math.min(...prices)):''}`;},selection.ticketTypeId,'Selecione o tipo de ingresso');
     populate('socialStudioPriceSession',sessionOptions,'sessionId',s=>s.sessionLabel,selection.sessionId,'Todas as sessões');
-    setControl('socialStudioPriceMode',selection.mode || 'ticket-type');
+    setControl('socialStudioPriceMode',templateId==='ticket-offer' && ['manual','legacy'].includes(selection.mode)?'ticket-type':selection.mode || 'ticket-type');
     setControl('socialStudioManualPrice',selection.value ?? '');
     document.getElementById('socialStudioTicketTypeField').hidden=selection.mode!=='ticket-type';
     document.getElementById('socialStudioPriceSessionField').hidden=['manual','legacy'].includes(selection.mode);
@@ -722,10 +727,12 @@
       copyTone:value('socialStudioCopyTone','automatic'),
       copyDensity:value('socialStudioCopyDensity','medium'),
       copyBrief:value('socialStudioCopyBrief'),
+      offerTerms:value('socialStudioOfferTerms'),
+      offerHeadline:value('socialStudioOfferHeadline'),
       copyLocks:Object.fromEntries([...document.querySelectorAll('[data-copy-lock]')].map(el=>[el.dataset.copyLock,el.checked])),
       subtitle: value("socialStudioSubtitle"),
       price: value("socialStudioPrice"),
-      priceSelection: checked('socialStudioTemplate')==='movie-price' ? {mode:value('socialStudioPriceMode','ticket-type'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')===''?undefined:Number(value('socialStudioManualPrice')),formatted:value('socialStudioPrice')} : undefined,
+      priceSelection: ['movie-price','ticket-offer'].includes(checked('socialStudioTemplate')) ? {mode:value('socialStudioPriceMode','ticket-type'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')===''?undefined:Number(value('socialStudioManualPrice')),formatted:value('socialStudioPrice')} : undefined,
       date: value("socialStudioDate"),
       primaryDateKind:value('socialStudioDateKind','release'),
       releaseDate:value('socialStudioReleaseDate'),
@@ -809,6 +816,8 @@
       socialStudioCopyTone:draft.copyTone || 'automatic',
       socialStudioCopyDensity:draft.copyDensity || 'medium',
       socialStudioCopyBrief:draft.copyBrief || '',
+      socialStudioOfferTerms:draft.offerTerms || '',
+      socialStudioOfferHeadline:draft.offerHeadline || '',
       socialStudioSubtitle: draft.subtitle,
       socialStudioPrice: draft.price,
       socialStudioDate: draft.date,

@@ -87,7 +87,7 @@ function applyContentRules(draft, input, context) {
   const sessionPromise = scheduleCampaign || /sess[õo]es|programa[çc][ãa]o|hoje no/i.test(`${draft.subtitle} ${draft.auxiliaryText} ${draft.cta}`);
   if (!multi && (scheduleCampaign || sessionPromise && schedule.count)) draft.auxiliaryText = schedule.text || 'Sessões disponíveis no site';
   const mustShowWebsite = online || multi || scheduleCampaign || premiere || /site|online|programa[çc][ãa]o|sess[ãa]o|sess[õo]es|compr|garanta/i.test(draft.cta);
-  draft.contentRules = {mustShowDate:premiere,mustShowSessions:scheduleCampaign || sessionPromise && schedule.count>0,mustShowWebsite,mustShowPrice:['movie-price','concession-combo','club-plan'].includes(draft.templateId),mustShowMultipleMovies:multi,mustKeepDateNearPremiere:premiere,mustKeepWebsiteNearCTA:mustShowWebsite};
+  draft.contentRules = {mustShowDate:premiere,mustShowSessions:scheduleCampaign || sessionPromise && schedule.count>0,mustShowWebsite,mustShowPrice:['movie-price','ticket-offer','concession-combo','concession-offer','club-plan'].includes(draft.templateId),mustShowMultipleMovies:multi,mustKeepDateNearPremiere:premiere,mustKeepWebsiteNearCTA:mustShowWebsite};
   draft.contentNotices = [];
   if(multi && selected.length < 2) draft.contentNotices.push({type:'warning',code:'SELECT_MOVIES',message:'Selecione entre 2 e 6 filmes do catálogo para montar a programação.'});
   if(mustShowWebsite && !draft.website) draft.contentNotices.push({type:'warning',code:'WEBSITE_REQUIRED',message:'Configure o site oficial do cinema antes de exportar esta campanha.'});

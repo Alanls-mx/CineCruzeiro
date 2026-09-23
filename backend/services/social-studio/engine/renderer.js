@@ -47,10 +47,12 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   draft.primaryElement=draft.artworkPolicy.primaryElement;
   if(['BACKDROP_HERO','FULL_BLEED'].includes(draft.artworkPolicy.strategy)) {sourceUrl=backgroundUrl;sourceBuffer=backgroundBuffer;}
   if(sourceBuffer) {const meta=await sharp(sourceBuffer).metadata();draft.sourceAsset={width:meta.width,height:meta.height};}
-  draft.style = selectDirection(draft, analysis);
-  if(draft.artworkPolicy.strategy==='FULL_BLEED') draft.style='full-bleed';
-  if(draft.automaticStyle && ['LOGO_DOMINANT','SYMBOL_DOMINANT','FULL_POSTER'].includes(draft.artworkPolicy.strategy)) draft.style='hero-center';
-  if(draft.automaticStyle && draft.artworkPolicy.dryArtwork && draft.artworkPolicy.strategy==='POSTER_BLEND') draft.style='poster-dominant';
+  if(!['ticket-offer','concession-offer'].includes(draft.templateId)) {
+    draft.style = selectDirection(draft, analysis);
+    if(draft.artworkPolicy.strategy==='FULL_BLEED') draft.style='full-bleed';
+    if(draft.automaticStyle && ['LOGO_DOMINANT','SYMBOL_DOMINANT','FULL_POSTER'].includes(draft.artworkPolicy.strategy)) draft.style='hero-center';
+    if(draft.automaticStyle && draft.artworkPolicy.dryArtwork && draft.artworkPolicy.strategy==='POSTER_BLEND') draft.style='poster-dominant';
+  }
   draft.layoutId = require('../contracts/campaign').normalizeDesign({...draft,layoutId:undefined}).layoutId;
   let fullBleed = false;
   if (draft.style === "full-bleed" && backgroundBuffer && backgroundUrl === movie?.backdropUrl) {
@@ -91,11 +93,14 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const logoUrl = signatureUrl(draft, context);
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
-  let scene = buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
+  const offerTemplate=['ticket-offer','concession-offer'].includes(draft.templateId);
+  let scene = offerTemplate
+    ? require('../scene/offer').buildOfferScene({draft,format,brand,logoUrl,sourceUrl:sourceBuffer ? sourceUrl : ''})
+    : buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
   if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl,baseScene:scene,backgroundMovieUrls,backgroundMovieColors});
   else {
     if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
-    scene = require('../scene/content-layout').enforceContentLayout(scene);
+    if(!offerTemplate) scene = require('../scene/content-layout').enforceContentLayout(scene);
   }
   const visualStyle=draft.visualStyle;
   for(const element of scene.elements.filter(e=>e.type==='text')) {
@@ -105,7 +110,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   }
   policy.applyArtworkPolicy(scene);
   await ensureTextContrast(scene, loadImage);
-  await require('../scene/branding').applySignatureGeometry(scene,loadImage);
+  if(!offerTemplate) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);
   if(!semantics.valid) throw Object.assign(new Error(semantics.errors.map(e=>e.message).join(' ')),{statusCode:400,code:'SCENE_SEMANTICS'});

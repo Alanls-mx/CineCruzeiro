@@ -23,7 +23,7 @@ function normalizeV2Draft(input = {}, context = {}) {
   const template = templateById(input.templateId);
   const legacyTemplateId = template.id === "club-plan"
     ? "cinema-club"
-    : template.id === "movie-presale" ? "movie-premiere" : ['sessions-today','sessions-week','multi-movies'].includes(template.id) ? 'movie-highlight' : template.id;
+    : template.id === "ticket-offer" ? "movie-price" : template.id === "concession-offer" ? "concession-combo" : template.id === "movie-presale" ? "movie-premiere" : ['sessions-today','sessions-week','multi-movies'].includes(template.id) ? 'movie-highlight' : template.id;
   const legacyDraft = legacy.normalizeDraft({ ...input, templateId: legacyTemplateId }, context);
   const movie = entityById(context.movies, input.movieId) || (template.type === 'movie' ? legacyDraft.entities.movie : null);
   const concession = entityById(context.concessions, input.concessionId) || legacyDraft.entities.concession;
@@ -45,6 +45,8 @@ function normalizeV2Draft(input = {}, context = {}) {
     copyTone: require('../copy-engine').TONES.includes(input.copyTone) ? input.copyTone : 'automatic',
     copyDensity: ['short','medium','long'].includes(input.copyDensity) ? input.copyDensity : 'medium',
     copyBrief: String(input.copyBrief || '').trim().slice(0,500),
+    offerTerms: String(input.offerTerms || '').trim().slice(0,300),
+    offerHeadline: String(input.offerHeadline || '').trim().slice(0,100),
     copyLocks:Object.fromEntries(Object.keys(require('../copy-engine').FIELD_MAP).map(field=>[field,input.copyLocks?.[field]===true])),
     genreProfile: profile,
     composition: normalizeComposition({...input.composition,look:design.look}, profile.id),
@@ -64,11 +66,16 @@ function normalizeV2Draft(input = {}, context = {}) {
   draft.signatureScaleMode=input.signatureScaleMode==='automatic' || input.signatureScale===undefined ? 'automatic' : 'manual';
   draft.brandProminence=['subtle','normal','strong'].includes(input.brandProminence)?input.brandProminence:'normal';
   Object.assign(draft,require('../composition-engine/artwork-policy').normalizeArtwork(input,movie));
-  if(template.id==='movie-price') {
+  if(['movie-price','ticket-offer'].includes(template.id)) {
     draft.priceInfo=require('../contracts/price').resolvePriceSelection(input,draft.entities.movie,context.now);
     draft.priceSelection=draft.priceInfo.selection;
     draft.price=draft.priceInfo.formatted;
-    draft.subtitle=draft.priceInfo.label || 'SELECIONE O TIPO DE INGRESSO';
+    if(template.id==='movie-price') draft.subtitle=draft.priceInfo.label || 'SELECIONE O TIPO DE INGRESSO';
+    else if(input.subtitle===undefined) draft.subtitle='INGRESSOS EM DESTAQUE';
+  }
+  if(template.id==='concession-offer') {
+    const price=Number(draft.entities.concession?.price);
+    draft.price=Number.isFinite(price) && price>0 ? price.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '';
   }
   if(draft.programMood) {
     draft.genreProfile={...draft.genreProfile,id:draft.programMood};

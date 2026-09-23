@@ -4,7 +4,7 @@ const v2 = require("./social-studio");
 function captionForDraft(input = {}, context = {}) {
   const draft = v2.normalizeV2Draft(input, context);
   if (draft.caption) return draft.caption;
-  if(draft.content?.releaseScope==='international' || draft.templateId==='movie-price') return require('./social-studio/copy-engine').generateCopy(draft,context).bundle.caption;
+  if(draft.content?.releaseScope==='international' || ['movie-price','ticket-offer','concession-offer'].includes(draft.templateId)) return require('./social-studio/copy-engine').generateCopy(draft,context).bundle.caption;
   if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) {
     const programme = draft.templateId === 'multi-movies' ? draft.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text || 'Horários no site'}`).join('\n\n') : `${draft.title}\n${draft.schedule.text || 'Sessões disponíveis no site'}`;
     return `${draft.subtitle}\n\n${programme}\n\n${draft.cta}\n${draft.website}`;

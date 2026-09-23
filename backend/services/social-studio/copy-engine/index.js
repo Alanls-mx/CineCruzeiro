@@ -4,11 +4,13 @@ const CAMPAIGNS = {
   'movie-presale':['A CONTAGEM REGRESSIVA COMEÇOU','ANTES DA PRIMEIRA SESSÃO','PREPARE-SE PARA A ESTREIA','O PRÓXIMO ENCONTRO JÁ TEM DATA','SEU PRÓXIMO FILME','UMA ESTREIA PARA ACOMPANHAR'],
   'movie-highlight':['NA TELA GRANDE','SEU PRÓXIMO FILME','UMA HISTÓRIA PARA VER NO CINEMA','O FILME DA SUA VEZ','CINEMA NO SEU RITMO','EM DESTAQUE'],
   'movie-price':['INGRESSOS A PARTIR DE','ESCOLHA SUA SESSÃO','SEU PRÓXIMO INGRESSO','CINEMA NA SUA AGENDA','O VALOR DA SUA SESSÃO','ENCONTRE SEU HORÁRIO'],
+  'ticket-offer':['INGRESSOS EM DESTAQUE','SEU LUGAR NO CINEMA','ESCOLHA SUA SESSÃO','INGRESSO PARA A TELA GRANDE','CINEMA NA SUA AGENDA','O PREÇO DA SUA SESSÃO'],
   'sessions-today':['HOJE TEM CINEMA','ESCOLHA SUA SESSÃO DE HOJE','SEU FILME É HOJE','A PROGRAMAÇÃO DE HOJE','HOJE NA TELA GRANDE','O CINEMA TE ESPERA HOJE'],
   'sessions-week':['PROGRAME SUA SEMANA','SUA SEMANA PEDE CINEMA','ESCOLHA O DIA E O FILME','SETE DIAS DE CINEMA','RESERVE UM TEMPO PARA O CINEMA','SUA PRÓXIMA SESSÃO'],
   'multi-movies':['ESCOLHA SUA PRÓXIMA HISTÓRIA','FILMES PARA A SUA AGENDA','A TELA GRANDE TEM MAIS HISTÓRIAS','PROGRAME SEU CINEMA','UM ENCONTRO COM O CINEMA','CONHEÇA A PROGRAMAÇÃO'],
   'online-ticket':['BILHETERIA DIGITAL','SEU INGRESSO ONLINE','ESCOLHA O FILME E A SESSÃO','SEU CINEMA EM POUCOS PASSOS','PROGRAME SUA IDA AO CINEMA','O CINEMA COMEÇA NA SUA ESCOLHA'],
   'concession-combo':['COMPLETE SUA SESSÃO','UMA PAUSA NA BOMBONIERE','ESCOLHA SEU ACOMPANHAMENTO','ANTES DO FILME','SABOR PARA O SEU CINEMA','O COMPLEMENTO DA SUA SESSÃO'],
+  'concession-offer':['OFERTA DA BOMBONIERE','BOMBONIERE EM DESTAQUE','O SABOR DA SESSÃO','ANTES DO FILME','ESCOLHA SEU ACOMPANHAMENTO','DESTAQUE DA BOMBONIERE'],
   'club-plan':['CONHEÇA O CLUBE','SEU CINEMA COM BENEFÍCIOS','CINEMA NA SUA ROTINA','SEU PLANO PARA MAIS CINEMA','DESCUBRA OS BENEFÍCIOS','FAÇA PARTE DO CLUBE'],
 };
 const GENRES = {
@@ -101,18 +103,18 @@ class RuleBasedCopyProvider {
     const tone=TONES.includes(options.tone)?options.tone:'automatic';
     const density=['short','medium','long'].includes(options.density)?options.density:'medium';
     const saleOpen=context.purchaseAvailable && (type!=='movie-presale' || !context.presaleStartDate || context.presaleStartDate<=context.today);
-    const ctas=type==='club-plan'?['CONHEÇA O CLUBE','VEJA OS BENEFÍCIOS','CONSULTE OS PLANOS']:type==='concession-combo'?['CONHEÇA A BOMBONIERE','VEJA AS OPÇÕES','COMPLETE SUA SESSÃO']:saleOpen?['ESCOLHA SUA SESSÃO','VEJA OS HORÁRIOS','COMPRE SEU INGRESSO','CONFIRA AS SESSÕES']:['CONHEÇA A HISTÓRIA','DESCUBRA O FILME','SAIBA MAIS SOBRE O LANÇAMENTO','VEJA O QUE VEM POR AÍ'];
+    const ctas=type==='club-plan'?['CONHEÇA O CLUBE','VEJA OS BENEFÍCIOS','CONSULTE OS PLANOS']:['concession-combo','concession-offer'].includes(type)?['CONHEÇA A BOMBONIERE','VEJA AS OPÇÕES','COMPLETE SUA SESSÃO']:saleOpen?['ESCOLHA SUA SESSÃO','VEJA OS HORÁRIOS','COMPRE SEU INGRESSO','CONFIRA AS SESSÕES']:['CONHEÇA A HISTÓRIA','DESCUBRA O FILME','SAIBA MAIS SOBRE O LANÇAMENTO','VEJA O QUE VEM POR AÍ'];
     const genreLines=GENRES[context.genre] || GENRES.cinema;
-    const subject=type==='concession-combo'?context.concession?.name:type==='club-plan'?context.clubPlan?.name:context.movie?.title;
+    const subject=['concession-combo','concession-offer'].includes(type)?context.concession?.name:type==='club-plan'?context.clubPlan?.name:context.movie?.title;
     const candidates=Array.from({length:8},(_,i)=>{
       let kicker=pool[i%pool.length];
-      if(type==='movie-price') kicker=context.price.label || 'SELECIONE O INGRESSO';
+      if(['movie-price','ticket-offer'].includes(type)) kicker=context.price.label || 'SELECIONE O INGRESSO';
       if(context.releaseScope==='international') kicker=['NO RADAR DO CINEMA','UMA HISTÓRIA NO HORIZONTE','LANÇAMENTO INTERNACIONAL','PARA SUA LISTA DE FILMES'][i%4];
       if(type==='sessions-today' && context.period.from!==context.today) kicker='PROGRAMAÇÃO DO DIA';
       if(type==='movie-presale') kicker=context.purchaseAvailable && (!context.presaleStartDate || context.presaleStartDate<=context.today)?(i%2?'SEU LUGAR JÁ PODE SER GARANTIDO':'PRÉ-VENDA ABERTA'):'PRÉ-VENDA A PARTIR DE';
       const angle=movieAngle(context,i,tone,genreLines);
       let supportingText=angle.line;
-      if(type==='concession-combo') {
+      if(['concession-combo','concession-offer'].includes(type)) {
         const description=String(context.concession?.description || '').trim();
         supportingText=[description,CONCESSION_LINES[i%CONCESSION_LINES.length]].filter(Boolean).join(' ');
       }
@@ -125,15 +127,15 @@ class RuleBasedCopyProvider {
       if(context.releaseScope==='international') supportingText=context.movie?.socialHook || angle.line;
       const headline=['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject && /^movie-/.test(type) && i%4===3?`${subject} NO CINEMA`:subject || context.cinemaName;
       const cta=ctas[i%ctas.length];
-      const detail=type==='movie-price'?context.price.formatted:context.primaryDate || '';
+      const detail=['movie-price','ticket-offer','concession-offer'].includes(type)?context.price.formatted:context.primaryDate || '';
       const destinationText=(context.action.destination || '').replace(/^https?:\/\//,'').replace(/\/$/,'');
-      const priceLine=['concession-combo','club-plan'].includes(type) && context.price.formatted ? `${type==='club-plan'?'Mensalidade':'Valor'}: ${context.price.formatted}` : '';
+      const priceLine=['concession-combo','concession-offer','club-plan','ticket-offer'].includes(type) && context.price.formatted ? `${type==='club-plan'?'Mensalidade':'Valor'}: ${context.price.formatted}` : '';
       const scheduleLine=context.programMovies.length?context.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text}`).join('\n\n'):'';
-      const detailLine=detail && `${type==='movie-price'?context.price.label:context.primaryDateLabel}: ${detail}`;
+      const detailLine=detail && `${['movie-price','ticket-offer'].includes(type)?context.price.label:type==='concession-offer'?'PREÇO':context.primaryDateLabel}: ${detail}`;
       const editorialDetail=/^movie-/.test(type) && density!=='short' ? angle.available.filter(item=>!supportingText.includes(item.text)).slice(0,density==='long'?3:1).map(item=>item.text).join(' ') : '';
       const clubBenefits=type==='club-plan' && density==='long' ? (context.clubPlan?.benefits || []).map(item=>typeof item==='string'?item:item?.label || item?.name || '').filter(Boolean).join(' • ') : '';
       const opening=i%2===0?`${kicker}\n${headline}`:`${headline}\n${kicker}`;
-      const caption=[opening,supportingText,editorialDetail,priceLine,detailLine,clubBenefits,context.releaseScope==='international'?'A exibição no cinema ainda não está confirmada.':'',scheduleLine,`${cta}\n${destinationText}`].filter(Boolean).join('\n\n');
+      const caption=[opening,supportingText,editorialDetail,priceLine,detailLine,context.offerTerms,clubBenefits,context.releaseScope==='international'?'A exibição no cinema ainda não está confirmada.':'',scheduleLine,`${cta}\n${destinationText}`].filter(Boolean).join('\n\n');
       const bundle={headline,kicker,supportingText,detail,cta,destinationText,caption};
       return {id:`rules-${i}`,bundle,score:scoreCopy(bundle,context,{...options,density})};
     });
