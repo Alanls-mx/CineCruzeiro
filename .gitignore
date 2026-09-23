@@ -15,6 +15,7 @@ test-results/
 .codex-tmp/
 .next-codex/
 artifacts/
+Images/Social Studio - Campanhas Geradas*/
 desktop/windows/packages/
 
 .env
