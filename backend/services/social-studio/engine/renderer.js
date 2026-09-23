@@ -37,7 +37,18 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   if (!sourceBuffer && backgroundBuffer) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
   if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
   let analysis = draft.artDirection.enabled ? await analyzeArtwork(sourceBuffer) : null;
+  if(!draft.artworkMetadata.contentBounds && ['logo','symbol'].includes(draft.artworkMetadata.dominantAsset) && analysis?.contentBounds) {
+    draft.artworkMetadata.contentBounds=analysis.contentBounds;
+  }
+  const policy=require('../composition-engine/artwork-policy');
+  draft.artworkPolicy=policy.resolveArtworkPolicy(draft,analysis,Boolean(movie?.backdropUrl && backgroundBuffer));
+  draft.primaryElement=draft.artworkPolicy.primaryElement;
+  if(['BACKDROP_HERO','FULL_BLEED'].includes(draft.artworkPolicy.strategy)) {sourceUrl=backgroundUrl;sourceBuffer=backgroundBuffer;}
+  if(sourceBuffer) {const meta=await sharp(sourceBuffer).metadata();draft.sourceAsset={width:meta.width,height:meta.height};}
   draft.style = selectDirection(draft, analysis);
+  if(draft.artworkPolicy.strategy==='FULL_BLEED') draft.style='full-bleed';
+  if(draft.automaticStyle && ['LOGO_DOMINANT','SYMBOL_DOMINANT','FULL_POSTER'].includes(draft.artworkPolicy.strategy)) draft.style='hero-center';
+  if(draft.automaticStyle && draft.artworkPolicy.dryArtwork && draft.artworkPolicy.strategy==='POSTER_BLEND') draft.style='poster-dominant';
   draft.layoutId = require('../contracts/campaign').normalizeDesign({...draft,layoutId:undefined}).layoutId;
   let fullBleed = false;
   if (draft.style === "full-bleed" && backgroundBuffer && backgroundUrl === movie?.backdropUrl) {
@@ -67,11 +78,17 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     if(visualStyle==='impact' && ['title','detail'].includes(element.id)) element.fill=palette.accentColor;
     if(visualStyle==='minimal' && !['title','detail'].includes(element.id)) element.fontWeight=500;
   }
+  policy.applyArtworkPolicy(scene);
   await ensureTextContrast(scene, loadImage);
+  await require('../scene/branding').applySignatureGeometry(scene,loadImage);
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);
   if(!semantics.valid) throw Object.assign(new Error(semantics.errors.map(e=>e.message).join(' ')),{statusCode:400,code:'SCENE_SEMANTICS'});
   const quality = scoreComposition(scene);
+  if(draft.automaticStyle && !options.directionRetried && quality.issues.some(issue=>issue.code==='DRY_COMPOSITION')) {
+    const alternative=await renderSocialPostV2({...input,layoutId:'hero-center',automaticStyle:false,artworkStrategy:movie?.backdropUrl?'BACKDROP_HERO':'CROPPED_POSTER'},context,{...options,directionRetried:true});
+    if(alternative.quality.accepted && alternative.quality.total>quality.total) return alternative;
+  }
   const rendered = options.skipRaster ? { scene, buffer: null, contentType: outputType === "jpg" ? "image/jpeg" : "image/png", extension: `.${outputType}` } : await renderSocialScene(scene, { loadImage, outputType });
   return {
     buffer: rendered.buffer,

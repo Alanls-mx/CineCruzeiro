@@ -28,11 +28,11 @@ function buildCampaignContent(draft, input = {}, context = {}) {
     version:1, campaignType:type,
     movie:{id:movie.id || '',title:movie.title || '',genres:movie.genres || [],synopsis:movie.synopsis || '',socialHook:movie.socialHook || ''},
     headline:draft.title, kicker:draft.subtitle, supportingText:draft.auxiliaryText,
-    releaseDate,presaleStartDate,sessionDate,primaryDateKind,primaryDate,primaryDateLabel:DATE_ROLES[primaryDateKind],
+    releaseDate,presaleStartDate,sessionDate,primaryDateKind,primaryDate,releaseScope:movie.catalogued===false?'international':'cinema',primaryDateLabel:primaryDateKind==='release' && movie.catalogued===false?'LANÇAMENTO INTERNACIONAL':DATE_ROLES[primaryDateKind],
     sessions:draft.programMovies.length ? draft.programMovies.flatMap(m=>m.schedule.days.flatMap(group=>group.times.map(time=>({movieId:m.id,date:group.date,time})))) : draft.schedule.days.flatMap(group=>group.times.map(time=>({movieId:movie.id,date:group.date,time}))),
     availableSessions:upcoming.map(s=>({movieId:movie.id,date:s.date,time:s.time})),
     purchaseAvailable:movie.catalogued !== false && upcoming.length>0,
-    price:{value:hasPrice?Number(priceEntity):undefined,formatted:draft.price},
+    price:draft.priceInfo ? {value:draft.priceInfo.value,formatted:draft.price,label:draft.priceInfo.label,mode:draft.priceSelection.mode,ticketType:draft.priceInfo.ticketType,from:draft.priceInfo.from,valid:draft.priceInfo.valid} : {value:hasPrice?Number(priceEntity):undefined,formatted:draft.price},
     action:{label:draft.cta,destinationType:input.actionDestinationType || (type==='club-plan'?'club':type==='online-ticket'?'purchase':'website'),destination:actionDestination},
     brandWebsite:destination(context.brand?.website), programMovies:draft.programMovies,
     today:cinemaDay(now),period:{from:draft.schedule.from,until:draft.schedule.until},
@@ -43,7 +43,9 @@ function validateCampaignContent(content) {
   const errors = [];
   const add = (code,field,message) => errors.push({code,field,message,type:'error'});
   const type = content.campaignType;
+  if(type==='movie-price' && content.price.valid===false) add('TICKET_TYPE_REQUIRED','priceSelection','Selecione um tipo de ingresso e uma sessão válida, o menor preço disponível ou informe um valor personalizado.');
   const text = `${content.headline} ${content.kicker} ${content.supportingText}`;
+  if(content.releaseScope==='international' && /estreia confirmada|estreia no|sess[ãa]o confirmada|compre|garanta|reserve/i.test(`${text} ${content.action.label}`)) add('EDITORIAL_UNCONFIRMED','subtitle','Este lançamento não tem exibição confirmada no cinema. Use uma chamada editorial, sem promessa de estreia local ou compra.');
   if (['sessions-today','sessions-week'].includes(type) && !content.sessions.length) add('NO_SESSIONS','periodStart','Não há sessões disponíveis no período. Escolha outro período ou filme.');
   if (/\bhoje\b/i.test(text) && !content.sessions.some(s=>s.date===content.today) && !content.programMovies.some(m=>m.schedule.days.some(d=>d.date===content.today))) add('TODAY_MISMATCH','subtitle','A chamada diz hoje, mas não há sessões para hoje. Ajuste a chamada ou a programação.');
   if (type === 'multi-movies' && content.programMovies.length<2) add('SELECT_MOVIES','movieIds','Selecione entre 2 e 6 filmes.');

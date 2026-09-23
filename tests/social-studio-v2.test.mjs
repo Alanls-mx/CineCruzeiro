@@ -137,7 +137,7 @@ test("templates V2 reagem a imagem e preço ausentes sem quebrar", async () => {
   });
   const withoutPoster = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-3", formatId: "feed_portrait" }, context, { loadImage });
   const withoutArtwork = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-no-art", formatId: "square" }, context, { loadImage });
-  await assert.rejects(engine.renderSocialPost({ templateId: "movie-price", movieId: "movie-1", formatId: "feed_portrait", price: "" }, context, { loadImage }),e=>e.code==='PRICE_REQUIRED');
+  await assert.rejects(engine.renderSocialPost({ templateId: "movie-price", movieId: "movie-1", formatId: "feed_portrait", price: "" }, context, { loadImage }),e=>e.code==='TICKET_TYPE_REQUIRED');
   assert.deepEqual([
     (await sharp(withoutPoster.buffer).metadata()).width,
     (await sharp(withoutArtwork.buffer).metadata()).width

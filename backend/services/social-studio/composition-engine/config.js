@@ -79,6 +79,11 @@ const PRESETS = {
     colorWash: 10,
     overlay: "none",
   },
+  comedy: {
+    name: "Comédia", blur: 38, brightness: 0.86, saturation: 1.04,
+    contrast: 1.02, vignette: 10, grain: 0, glow: 7, blend: 62,
+    colorWash: 8, overlay: "none",
+  },
   romance: {
     name: "Romance",
     blur: 62,
@@ -107,6 +112,8 @@ const PRESETS = {
   },
 };
 const LOOKS = {
+  cold: { name: "Atmosfera fria", color: "#76bddd", colorWash: 18, brightness: 0.74, saturation: 0.9, overlay: "dust", glow: 12 },
+  velocity: { name: "Movimento", blur: 34, contrast: 1.14, saturation: 1.1, overlay: "gradient-light", glow: 18 },
   natural: {
     name: "Natural",
     blur: 32,

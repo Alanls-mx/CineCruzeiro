@@ -21,7 +21,7 @@ function LayerRows({ elements, selectedId, onSelect, onPatch, onMove, parentLock
     return <div key={element.id} className={`se-layer ${selected ? "is-selected" : ""} ${!element.visible ? "is-hidden" : ""}`}>
       <button type="button" className="se-layer-main" aria-pressed={selected} onClick={() => onSelect(element.id)}>
         <span className="se-layer-kind"><Icon size={17} /></span>
-        <span><strong>{element.name}</strong><small>{names[element.type]}{locked ? " · bloqueada" : ""}</small></span>
+        <span><strong>{element.name}</strong><small>{names[element.type]}{element.hierarchy === "primary" ? " · protagonista" : ""}{locked ? " · bloqueada" : ""}</small></span>
         {locked ? <Lock size={12} /> : !element.visible ? <EyeOff size={12} /> : null}
       </button>
       {selected && <div className="se-layer-actions">

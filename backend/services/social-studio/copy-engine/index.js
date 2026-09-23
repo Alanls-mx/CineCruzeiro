@@ -44,11 +44,13 @@ class RuleBasedCopyProvider {
     const type=context.campaignType, pool=CAMPAIGNS[type] || CAMPAIGNS['movie-highlight'];
     const tone=TONES.includes(options.tone)?options.tone:'automatic';
     const density=['short','medium','long'].includes(options.density)?options.density:'medium';
-    const ctas=type==='club-plan'?['CONHEÇA O CLUBE','VEJA OS BENEFÍCIOS','CONSULTE OS PLANOS']:type==='concession-combo'?['CONHEÇA A BOMBONIERE','VEJA AS OPÇÕES','COMPLETE SUA SESSÃO']:context.purchaseAvailable?['ESCOLHA SUA SESSÃO','VEJA OS HORÁRIOS','COMPRE SEU INGRESSO','CONFIRA AS SESSÕES']:['ACOMPANHE AS NOVIDADES','ACESSE O SITE','CONHEÇA O FILME'];
+    const ctas=type==='club-plan'?['CONHEÇA O CLUBE','VEJA OS BENEFÍCIOS','CONSULTE OS PLANOS']:type==='concession-combo'?['CONHEÇA A BOMBONIERE','VEJA AS OPÇÕES','COMPLETE SUA SESSÃO']:context.purchaseAvailable?['ESCOLHA SUA SESSÃO','VEJA OS HORÁRIOS','COMPRE SEU INGRESSO','CONFIRA AS SESSÕES']:['CONHEÇA A HISTÓRIA','DESCUBRA O FILME','SAIBA MAIS SOBRE O LANÇAMENTO','VEJA O QUE VEM POR AÍ'];
     const genreLines=GENRES[context.genre] || GENRES.cinema;
     const subject=type==='concession-combo'?context.concession?.name:type==='club-plan'?context.clubPlan?.name:context.movie?.title;
     const candidates=Array.from({length:8},(_,i)=>{
       let kicker=pool[i%pool.length];
+      if(type==='movie-price') kicker=context.price.label || 'SELECIONE O INGRESSO';
+      if(context.releaseScope==='international') kicker=['NO RADAR DO CINEMA','UMA HISTÓRIA NO HORIZONTE','LANÇAMENTO INTERNACIONAL','PARA SUA LISTA DE FILMES'][i%4];
       if(type==='sessions-today' && context.period.from!==context.today) kicker='PROGRAMAÇÃO DO DIA';
       if(type==='movie-presale') kicker=context.purchaseAvailable && (!context.presaleStartDate || context.presaleStartDate<=context.today)?(i%2?'SEU LUGAR JÁ PODE SER GARANTIDO':'PRÉ-VENDA ABERTA'):'PRÉ-VENDA A PARTIR DE';
       let supportingText=tone!=='automatic' && TONE_LINES[tone] || genreLines[i%genreLines.length];
@@ -57,11 +59,12 @@ class RuleBasedCopyProvider {
       if(/^sessions-/.test(type)) supportingText=context.schedule.text;
       if(type==='multi-movies') supportingText=context.programMovies.map(movie=>movie.title).join(' • ');
       if(context.movie?.socialHook && i===7 && !/^sessions-|multi-movies|concession|club/.test(type)) supportingText=context.movie.socialHook;
+      if(context.releaseScope==='international') supportingText=context.movie?.socialHook || 'Exibição no cinema ainda não confirmada.';
       const headline=['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject || context.cinemaName;
       const cta=ctas[i%ctas.length];
       const detail=type==='movie-price'?context.price.formatted:context.primaryDate || '';
       const destinationText=(context.action.destination || '').replace(/^https?:\/\//,'').replace(/\/$/,'');
-      const caption=[kicker,headline,supportingText,detail && `${context.primaryDateLabel}: ${detail}`,density==='long'?context.movie?.synopsis:'',context.programMovies.length?context.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text}`).join('\n\n'):'',`${cta}\n${destinationText}`].filter(Boolean).join('\n\n');
+      const caption=[kicker,headline,supportingText,detail && `${type==='movie-price'?context.price.label:context.primaryDateLabel}: ${detail}`,density==='long'?context.movie?.synopsis:'',context.releaseScope==='international'?'A exibição no cinema ainda não está confirmada.':'',context.programMovies.length?context.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text}`).join('\n\n'):'',`${cta}\n${destinationText}`].filter(Boolean).join('\n\n');
       const bundle={headline,kicker,supportingText,detail,cta,destinationText,caption};
       return {id:`rules-${i}`,bundle,score:scoreCopy(bundle,context,{...options,density})};
     });

@@ -8275,6 +8275,7 @@ function buildCommercialCatalog(db, now = new Date()) {
       releaseDate: String(movie.releaseDate || ""),
       duration: String(movie.duration || ""),
       genres: Array.isArray(movie.genre) ? movie.genre.map(String) : [],
+      artworkMetadata: movie.artworkMetadata || {},
       rating: String(movie.rating || ""),
       featured: Boolean(movie.isHighlight),
       posterUrl: commercialCatalogAssetUrl(publicAssetUrl(movie.posterUrl || "")),

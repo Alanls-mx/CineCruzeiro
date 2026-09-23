@@ -65,8 +65,8 @@ function text(id, name, value, bounds, options = {}) {
 
 function movieCopy(draft) {
   if (draft.templateId === "movie-presale") return { label: draft.subtitle || "PRÉ-VENDA", detail: compactDate(draft.date) || "EM BREVE" };
-  if (draft.templateId === "movie-price") return { label: draft.subtitle || "INGRESSOS", detail: legacy.hasCommercialPrice(draft.price) ? draft.price : "CONFIRA AS SESSÕES" };
-  if (draft.templateId === "movie-highlight") return { label: draft.subtitle || "EM CARTAZ", detail: draft.date || "CONFIRA AS SESSÕES" };
+  if (draft.templateId === "movie-price") return { label: draft.subtitle || "INGRESSOS", detail: draft.priceInfo?.valid || legacy.hasCommercialPrice(draft.price) ? draft.price : "CONFIRA AS SESSÕES" };
+  if (draft.templateId === "movie-highlight") return { label: draft.subtitle || "EM CARTAZ", detail: draft.date || (draft.content?.releaseScope==='international' ? '' : "CONFIRA AS SESSÕES") };
   return { label: draft.subtitle || "ESTREIA", detail: compactDate(draft.date) || "EM BREVE" };
 }
 
@@ -172,7 +172,7 @@ function buildEditableScene({ draft, format, palette, brand, sourceUrl = "", bac
 
   const footer = box(directed?.footer || [.07, .885, .86, .085], w, h);
   if (!directed) elements.push(base("divider", "shape", { x: footer.x, y: footer.y - 18, width: footer.width, height: 2 }, { name: "Divisor", fill: accent, locked: true }));
-  const logoWidth = Math.round(Math.min(footer.width * .35, 250 * (draft.signatureScale || 100) / 100));
+  const logoWidth = Math.round(Math.min(footer.width * .35, 250));
   if (logoUrl) elements.push(base("logo", "image", directed ? box(directed.logo,w,h) : {
     x: footer.x + footer.width - logoWidth, y: footer.y, width: logoWidth, height: footer.height
   }, { name: "Assinatura do cinema", role: "logo", src: logoUrl, fit: "contain", focusX: directed ? 50 : 100, focusY: 50, protected: true, required: true, keepRatio: true,hierarchy:"branding" }));

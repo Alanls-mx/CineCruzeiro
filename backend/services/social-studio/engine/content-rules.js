@@ -73,7 +73,11 @@ function applyContentRules(draft, input, context) {
     if(input.subtitle === undefined) draft.subtitle = 'FILMES EM CARTAZ';
     if(input.cta === undefined) draft.cta = 'CONFIRA A PROGRAMAÇÃO';
   }
-  if(premiere && input.subtitle === undefined && draft.templateId !== 'movie-presale') draft.subtitle = 'ESTREIA';
+  if(premiere && input.subtitle === undefined && draft.templateId !== 'movie-presale') draft.subtitle = draft.entities.movie?.catalogued===false?'NO RADAR DO CINEMA':'ESTREIA';
+  if(draft.entities.movie?.catalogued===false && /^movie-/.test(draft.templateId)) {
+    if(input.cta===undefined) draft.cta='CONHEÇA A HISTÓRIA';
+    if(input.auxiliaryText===undefined) draft.auxiliaryText=draft.entities.movie.socialHook || 'Exibição no cinema ainda não confirmada.';
+  }
   if(online && input.cta === undefined) draft.cta = 'ESCOLHA SUA SESSÃO';
   const sessionPromise = scheduleCampaign || /sess[õo]es|programa[çc][ãa]o|hoje no/i.test(`${draft.subtitle} ${draft.auxiliaryText} ${draft.cta}`);
   if (!multi && (scheduleCampaign || sessionPromise && schedule.count)) draft.auxiliaryText = schedule.text || 'Sessões disponíveis no site';

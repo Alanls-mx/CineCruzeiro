@@ -226,7 +226,21 @@ async function analyzeArtwork(buffer) {
         xSum += v * x;
         ySum += v * y;
       }
+    const axisBounds = horizontal => {
+      const mass=Array.from({length:96},(_,n)=>{
+        let sum=0;
+        for(let i=0;i<96;i++) sum+=horizontal?edges[i*96+n]:edges[n*96+i];
+        return sum;
+      });
+      const total=mass.reduce((sum,v)=>sum+v,0);
+      let lo=0,hi=95,left=0,right=0;
+      while(lo<94 && left+mass[lo]<total*.015) left+=mass[lo++];
+      while(hi>lo && right+mass[hi]<total*.015) right+=mass[hi--];
+      return [Math.max(0,lo-4)/96,Math.min(96,hi+5)/96];
+    };
+    const [left,right]=axisBounds(true),[top,bottom]=axisBounds(false);
     return {
+      contentBounds: weight>1 && (right-left)*(bottom-top)<.8 ? {x:left,y:top,width:right-left,height:bottom-top} : null,
       zones,
       quietest: zones[0].id,
       focusX: weight ? (xSum / weight / 95) * 100 : 50,
@@ -261,6 +275,9 @@ function directionPlan(draft, analysis, { fullBleed = false } = {}) {
   if (draft.artDirection?.enabled === false || !DIRECTIONS[draft.style])
     return null;
   const plan = JSON.parse(JSON.stringify(DIRECTIONS[draft.style]));
+  if(['LOGO_DOMINANT','SYMBOL_DOMINANT'].includes(draft.artworkPolicy?.strategy)) {
+    Object.assign(plan,{art:[.06,.055,.88,.57],copy:[.08,.65,.84,.19],align:'left',logo:[.71,.88,.22,.07],footer:[.07,.90,.55,.045],slots:{subtitle:[.07,.65,.86,.04],title:[.07,.695,.86,.04],detail:[.07,.735,.48,.09],description:[.60,.735,.33,.075],cta:[.07,.835,.58,.04]}});
+  }
   const d = draft.artDirection || {},
     seed = seedValue(draft),
     jitter = (seed - 0.5) * 0.022;

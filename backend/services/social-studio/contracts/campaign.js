@@ -1,6 +1,6 @@
 const VISUAL_STYLES = ['cinematic', 'impact', 'clean', 'minimal'];
 const LAYOUT_IDS = ['hero-left', 'hero-right', 'hero-center', 'full-bleed', 'editorial', 'poster-dominant', 'typography-dominant', 'split', 'diagonal'];
-const LOOKS = ['natural', 'cinematic', 'immersive', 'dramatic', 'vibrant'];
+const LOOKS = ['natural', 'cinematic', 'immersive', 'dramatic', 'vibrant', 'cold', 'velocity'];
 const LEGACY_LAYOUTS = {cinematic:'poster-dominant', impact:'typography-dominant', clean:'editorial', minimal:'hero-center', immersive:'full-bleed'};
 
 function normalizeDesign(input, recommended = 'cinematic') {

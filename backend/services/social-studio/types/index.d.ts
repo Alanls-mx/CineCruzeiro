@@ -6,6 +6,10 @@ export type SocialLook = "natural" | "cinematic" | "immersive" | "dramatic" | "v
 export type SocialVariantId = SocialVisualStyle | SocialLayoutId | "immersive" | "poster-blend" | "hero-cinematic" | "split-cinematic";
 export type SocialCampaignType = "movie-premiere" | "movie-highlight" | "movie-price" | "movie-presale" | "online-ticket" | "concession-combo" | "club-plan" | "sessions-today" | "sessions-week" | "multi-movies";
 export interface SessionContent { movieId: string; date: string; time: string }
+export interface PriceSelection { mode: 'ticket-type' | 'minimum' | 'manual' | 'legacy'; ticketTypeId?: string; sessionId?: string; value?: number; formatted?: string }
+export type ArtworkStrategy = 'automatic' | 'FULL_POSTER' | 'CROPPED_POSTER' | 'BACKDROP_HERO' | 'LOGO_DOMINANT' | 'SYMBOL_DOMINANT' | 'CHARACTER_DOMINANT' | 'POSTER_BLEND' | 'FULL_BLEED';
+export interface ArtworkMetadata { sourceUrl?: string; containsTitle?: boolean; containsMovieLogo?: boolean; containsReleaseDate?: boolean; containsBillingBlock?: boolean; dominantAsset?: 'logo' | 'symbol' | 'character' | 'poster'; embeddedReleaseDate?: string; releaseDateVerified?: boolean; contentBounds?: {x:number;y:number;width:number;height:number} }
+export interface ArtworkDirection { artworkStrategy: ArtworkStrategy; artworkMetadata: ArtworkMetadata; primaryElement: 'artwork' | 'movieLogo' | 'symbol' | 'title' | 'date' | 'price' | 'sessions'; brandProminence: 'subtle' | 'normal' | 'strong'; signatureScale: number; signatureScaleMode: 'automatic' | 'manual'; priceSelection?: PriceSelection }
 export interface ProgramMovieContent { id: string; title: string; posterUrl: string; backdropUrl?: string; featured?: boolean; schedule: { from: string; until: string; count: number; text: string; days: {date: string; times: string[]}[] } }
 export interface CampaignContent {
   version: 1;
@@ -16,7 +20,8 @@ export interface CampaignContent {
   primaryDateKind: "release" | "presale" | "session";
   primaryDate: string; primaryDateLabel: string;
   sessions: SessionContent[]; availableSessions: SessionContent[];
-  price: {value?: number; formatted: string};
+  price: {value?: number; formatted: string; label?: string; ticketType?: string; mode?: PriceSelection['mode']; from?: boolean; valid?: boolean};
+  releaseScope: 'international' | 'cinema';
   action: {label: string; destinationType: "website" | "sessions" | "purchase" | "club" | "none"; destination: string};
   brandWebsite: string; purchaseAvailable: boolean; today: string;
   programMovies: ProgramMovieContent[]; period: {from: string; until: string};

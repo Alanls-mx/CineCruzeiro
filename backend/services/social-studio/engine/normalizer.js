@@ -60,6 +60,15 @@ function normalizeV2Draft(input = {}, context = {}) {
   }
   if(input.layoutId) draft.style = design.layoutId;
   require('./content-rules').applyContentRules(draft, input, context);
+  draft.signatureScaleMode=input.signatureScaleMode==='automatic' || input.signatureScale===undefined ? 'automatic' : 'manual';
+  draft.brandProminence=['subtle','normal','strong'].includes(input.brandProminence)?input.brandProminence:'normal';
+  Object.assign(draft,require('../composition-engine/artwork-policy').normalizeArtwork(input,movie));
+  if(template.id==='movie-price') {
+    draft.priceInfo=require('../contracts/price').resolvePriceSelection(input,draft.entities.movie,context.now);
+    draft.priceSelection=draft.priceInfo.selection;
+    draft.price=draft.priceInfo.formatted;
+    draft.subtitle=draft.priceInfo.label || 'SELECIONE O TIPO DE INGRESSO';
+  }
   if(draft.programMood) {
     draft.genreProfile={...draft.genreProfile,id:draft.programMood};
     draft.composition=normalizeComposition({...input.composition,look:design.look},draft.programMood);

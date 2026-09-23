@@ -203,8 +203,15 @@
               </details>
 
               <details class="social-property-section" data-social-field="price">
-                <summary>Preço e promoção</summary>
+                <summary>Preço do post</summary>
                 <div class="social-property-body">
+                  <fieldset id="socialStudioTicketPrice" class="social-choice-fieldset"><legend>Ingresso anunciado</legend>
+                    <label>Tipo de preço<select id="socialStudioPriceMode" data-requires-create><option value="ticket-type">Tipo de ingresso</option><option value="minimum">Menor preço disponível</option><option value="manual">Personalizado</option><option value="legacy" hidden>Valor da campanha antiga</option></select></label>
+                    <label id="socialStudioTicketTypeField">Tipo de ingresso<select id="socialStudioTicketType" data-requires-create><option value="">Selecione</option></select></label>
+                    <label id="socialStudioPriceSessionField">Sessão<select id="socialStudioPriceSession" data-requires-create><option value="">Todas as sessões</option></select></label>
+                    <label id="socialStudioManualPriceField" hidden>Valor personalizado (R$)<input id="socialStudioManualPrice" type="number" min="0" step="0.01" data-requires-create /></label>
+                    <output id="socialStudioPriceSummary" aria-live="polite"></output>
+                  </fieldset>
                   <label>Preço ou condição<input id="socialStudioPrice" maxlength="60" data-requires-create /></label>
                 </div>
               </details>
@@ -230,6 +237,15 @@
                     <button id="socialStudioImageClear" class="ghost-button" type="button" hidden data-requires-create>Remover upload</button>
                   </div>
                   <input id="socialStudioImageUrl" type="hidden" />
+                  <label>Ativo visual principal<select id="socialStudioAssetStrategy" data-requires-create>${[['automatic','Automático'],['FULL_POSTER','Pôster completo'],['CROPPED_POSTER','Pôster recortado'],['BACKDROP_HERO','Backdrop protagonista'],['LOGO_DOMINANT','Logo do filme'],['SYMBOL_DOMINANT','Símbolo'],['CHARACTER_DOMINANT','Personagem'],['POSTER_BLEND','Pôster integrado'],['FULL_BLEED','Imagem inteira']].map(([id,label])=>`<option value="${id}">${label}</option>`).join('')}</select></label>
+                  <details><summary>Conteúdo da imagem</summary>
+                    ${[['containsTitle','Título incorporado'],['containsMovieLogo','Logo oficial incorporada'],['containsReleaseDate','Data incorporada'],['containsBillingBlock','Créditos incorporados']].map(([key,label])=>`<label>${label}<select data-artwork-metadata="${key}" data-requires-create><option value="">Não informado</option><option value="true">Sim</option><option value="false">Não</option></select></label>`).join('')}
+                    <label>Protagonista da imagem<select id="socialStudioDominantAsset" data-requires-create><option value="poster">Pôster</option><option value="logo">Logo do filme</option><option value="symbol">Símbolo</option><option value="character">Personagem</option></select></label>
+                    <label>Título adicional<select id="socialStudioTitleVisibility" data-requires-create><option value="automatic">Automático</option><option value="show">Exibir</option><option value="support">Texto de apoio</option><option value="hide">Ocultar</option></select></label>
+                    <label>Data adicional<select id="socialStudioDateVisibility" data-requires-create><option value="automatic">Automática</option><option value="show">Sempre exibir</option><option value="embedded">Usar data verificada na imagem</option></select></label>
+                    <label>Data contida na imagem<input id="socialStudioEmbeddedDate" type="date" data-requires-create /></label>
+                    <label class="social-toggle"><input id="socialStudioEmbeddedDateVerified" type="checkbox" data-requires-create /> Data da imagem conferida</label>
+                  </details>
                   <label>Enquadramento
                     <select id="socialStudioImagePreset" data-requires-create>
                       <option value="automatic">Automático</option><option value="center">Centro</option>
@@ -281,6 +297,8 @@
                     <legend>Assinatura do pôster</legend>
                     <div id="socialStudioSignatures" class="social-signature-grid"></div>
                   </fieldset>
+                  <label>Presença da marca<select id="socialStudioBrandProminence" data-requires-create><option value="subtle">Discreta</option><option value="normal" selected>Normal</option><option value="strong">Forte</option></select></label>
+                  <label class="social-toggle"><input id="socialStudioSignatureAutomatic" type="checkbox" checked data-requires-create /> Tamanho automático da assinatura</label>
                   <div class="social-range-row">
                     <label>Tamanho da assinatura <output id="socialStudioSignatureScaleValue">100%</output><input id="socialStudioSignatureScale" type="range" min="70" max="135" step="5" value="100" data-requires-create /></label>
                   </div>
@@ -632,6 +650,34 @@
     return document.querySelector(`[name='${name}']:checked`)?.value || fallback;
   }
 
+  function syncTicketPrice(draft) {
+    const active=checked('socialStudioTemplate')==='movie-price';
+    document.getElementById('socialStudioTicketPrice').hidden=!active;
+    document.getElementById('socialStudioPrice').readOnly=active;
+    if(!active) return;
+    const selection=draft ? draft.priceSelection || (/\d/.test(draft.price || '')?{mode:'legacy',formatted:draft.price}:{mode:'ticket-type'}) : {mode:value('socialStudioPriceMode'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')};
+    const movie=state.context.movies.find(m=>m.id===value('socialStudioMovie'));
+    const sessions=movie?.sessions || [];
+    const options=(draft?.priceInfo?.options || sessions.flatMap(s=>(s.ticketTypes || []).map(t=>({sessionId:s.id,sessionLabel:[s.date,s.time].join(' • '),ticketTypeId:t.id,name:t.name,value:t.price}))));
+    const types=[...new Map(options.map(t=>[t.ticketTypeId,t])).values()];
+    const sessionOptions=[...new Map(options.map(t=>[t.sessionId,t])).values()];
+    const populate=(id,list,key,label,selected,placeholder)=>{
+      const field=document.getElementById(id);
+      field.innerHTML=`<option value="">${placeholder}</option>`+list.map(o=>`<option value="${escapeHtml(o[key])}">${escapeHtml(label(o))}</option>`).join('');
+      if(selected && !list.some(o=>String(o[key])===String(selected))) field.add(new Option('Seleção indisponível',selected));
+      field.value=selected || '';
+    };
+    const money=n=>Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+    populate('socialStudioTicketType',types,'ticketTypeId',t=>{const prices=options.filter(o=>o.ticketTypeId===t.ticketTypeId && (!selection.sessionId || o.sessionId===selection.sessionId)).map(o=>Number(o.value));return `${t.name}${prices.length?' — '+(Math.min(...prices)!==Math.max(...prices)?'a partir de ':'')+money(Math.min(...prices)):''}`;},selection.ticketTypeId,'Selecione o tipo de ingresso');
+    populate('socialStudioPriceSession',sessionOptions,'sessionId',s=>s.sessionLabel,selection.sessionId,'Todas as sessões');
+    setControl('socialStudioPriceMode',selection.mode || 'ticket-type');
+    setControl('socialStudioManualPrice',selection.value ?? '');
+    document.getElementById('socialStudioTicketTypeField').hidden=selection.mode!=='ticket-type';
+    document.getElementById('socialStudioPriceSessionField').hidden=['manual','legacy'].includes(selection.mode);
+    document.getElementById('socialStudioManualPriceField').hidden=selection.mode!=='manual';
+    document.getElementById('socialStudioPriceSummary').textContent=draft?.priceInfo?.valid ? `${draft.priceInfo.label}: ${draft.priceInfo.formatted}` : selection.mode==='legacy'?`Valor salvo: ${selection.formatted || value('socialStudioPrice')}`:draft?'Selecione o preço anunciado.':'Calculando valor...';
+  }
+
   function payload() {
     return {
       templateId: checked("socialStudioTemplate", "movie-premiere"),
@@ -661,6 +707,7 @@
       copyLocks:Object.fromEntries([...document.querySelectorAll('[data-copy-lock]')].map(el=>[el.dataset.copyLock,el.checked])),
       subtitle: value("socialStudioSubtitle"),
       price: value("socialStudioPrice"),
+      priceSelection: checked('socialStudioTemplate')==='movie-price' ? {mode:value('socialStudioPriceMode','ticket-type'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')===''?undefined:Number(value('socialStudioManualPrice')),formatted:value('socialStudioPrice')} : undefined,
       date: value("socialStudioDate"),
       primaryDateKind:value('socialStudioDateKind','release'),
       releaseDate:value('socialStudioReleaseDate'),
@@ -670,6 +717,10 @@
       auxiliaryText: value("socialStudioAuxiliary"),
       cta: value("socialStudioCta"),
       imageUrl: value("socialStudioImageUrl"),
+      artworkStrategy:value('socialStudioAssetStrategy','automatic'),
+      artworkMetadata:{...state.artworkMetadata,...Object.fromEntries([...document.querySelectorAll('[data-artwork-metadata]')].filter(e=>e.value!=='').map(e=>[e.dataset.artworkMetadata,e.value==='true'])),dominantAsset:value('socialStudioDominantAsset','poster'),embeddedReleaseDate:value('socialStudioEmbeddedDate'),releaseDateVerified:document.getElementById('socialStudioEmbeddedDateVerified').checked},
+      titleVisibility:value('socialStudioTitleVisibility','automatic'),
+      dateVisibility:value('socialStudioDateVisibility','automatic'),
       imageMode: checked("socialStudioImageMode", "automatic"),
       imagePreset: value("socialStudioImagePreset", "automatic"),
       imagePositionX: Number(value("socialStudioImageX", 50)),
@@ -688,6 +739,8 @@
       signatureId: checked("socialStudioSignature", "automatic"),
       signaturePosition: value("socialStudioSignaturePosition", "automatic"),
       signatureScale: Number(value("socialStudioSignatureScale", 100)),
+      signatureScaleMode:document.getElementById('socialStudioSignatureAutomatic').checked?'automatic':'manual',
+      brandProminence:value('socialStudioBrandProminence','normal'),
       caption: value("socialStudioCaption")
     };
   }
@@ -765,6 +818,17 @@
       socialStudioCaption: caption || draft.caption
     };
     Object.entries(fields).forEach(([id, nextValue]) => setControl(id, nextValue));
+    state.artworkMetadata={...draft.artworkMetadata};
+    document.querySelectorAll('[data-artwork-metadata]').forEach(e=>{e.value=typeof draft.artworkMetadata?.[e.dataset.artworkMetadata]==='boolean'?String(draft.artworkMetadata[e.dataset.artworkMetadata]):'';});
+    setControl('socialStudioAssetStrategy',draft.artworkStrategy || 'automatic');
+    setControl('socialStudioDominantAsset',draft.artworkMetadata?.dominantAsset || 'poster');
+    setControl('socialStudioTitleVisibility',draft.titleVisibility || 'automatic');
+    setControl('socialStudioDateVisibility',draft.dateVisibility || 'automatic');
+    setControl('socialStudioEmbeddedDate',draft.artworkMetadata?.embeddedReleaseDate || '');
+    document.getElementById('socialStudioEmbeddedDateVerified').checked=draft.artworkMetadata?.releaseDateVerified===true;
+    setControl('socialStudioBrandProminence',draft.brandProminence || 'normal');
+    document.getElementById('socialStudioSignatureAutomatic').checked=draft.signatureScaleMode==='automatic' || draft.signatureScale===undefined;
+    syncTicketPrice(draft);
     document.querySelectorAll('[data-copy-lock]').forEach(el=>{el.checked=draft.copyLocks?.[el.dataset.copyLock]===true;});
     state.compositionAdjustments = { ...draft.composition?.adjustments };
     setControl("socialStudioCompositionPreset", draft.composition?.preset || "automatic");
@@ -933,7 +997,7 @@
       <strong>${escapeHtml(variation.name)}</strong><span>${escapeHtml(variation.intent || "")}</span>
       <span>${escapeHtml(quality.explanation || "")}</span>
       <span>${variation.refined ? `Acabamento aplicado: ${variation.beforeQuality?.total ?? quality.total} → ${quality.total}` : "Composição avaliada"}</span>
-      <details><summary>Pontuação por critério</summary><dl>${Object.entries({contrast:"Contraste",hierarchy:"Hierarquia",readability:"Leitura",balance:"Equilíbrio",branding:"Marca",commercialClarity:"Clareza comercial",safeArea:"Área segura",footer:"Rodapé"}).map(([key,label])=>`<div><dt>${label}</dt><dd>${quality[key] ?? "—"}</dd></div>`).join("")}</dl></details>
+      <details><summary>Pontuação por critério</summary><dl>${Object.entries({contrast:"Contraste",hierarchy:"Hierarquia",readability:"Leitura",balance:"Equilíbrio",branding:"Marca",commercialClarity:"Clareza comercial",safeArea:"Área segura",redundancy:"Conteúdo sem repetição",compositionDensity:"Ocupação visual",visualContinuity:"Integração da arte",artworkUtilization:"Aproveitamento da imagem",primaryElementClarity:"Protagonista visual",semanticCoherence:"Coerência",genreFit:"Adequação ao gênero"}).map(([key,label])=>`<div><dt>${label}</dt><dd>${quality[key] ?? "—"}</dd></div>`).join("")}</dl></details>
       <div class="social-variation-actions">${[["use","Usar esta"],["edit","Editar detalhes"],["similar","Gerar parecidas"],["hierarchy","Manter hierarquia"],["favorite",favorite ? "Remover favorita" : favoriteSaved ? "Favorita fixada" : "Fixar como favorita"]].map(([action,label])=>`<button type="button" class="${action === "use" ? "primary-button" : "ghost-button"}" data-curation-source="${source}" data-curation-index="${index}" data-curation-action="${action}" ${action === "favorite" && !favorite && favoriteSaved ? "disabled" : ""}>${label}</button>`).join("")}</div>
     </article>`;
   }
@@ -1058,6 +1122,10 @@
     setStatus("Carregando dados atuais do painel...", "loading");
     try {
       const base = payload();
+      if(options.resetPriceCopy) {
+        if(!base.copyLocks?.caption) base.caption=undefined;
+        base.generateCopy=true;
+      }
       if (options.resetCopy !== false) {
         const locks={title:'headline',subtitle:'kicker',auxiliaryText:'supportingText',cta:'cta',caption:'caption'};
         ["title", "subtitle", "price", "date", "auxiliaryText", "cta", "caption"].forEach((key) => { if(!base.copyLocks?.[locks[key]]) base[key] = undefined; });
@@ -1137,6 +1205,14 @@
     link.click();
   }
 
+  function resetArtworkMetadata() {
+    state.artworkMetadata={};
+    document.querySelectorAll('[data-artwork-metadata]').forEach(e=>{e.value='';});
+    setControl('socialStudioDominantAsset','poster');
+    setControl('socialStudioEmbeddedDate','');
+    document.getElementById('socialStudioEmbeddedDateVerified').checked=false;
+  }
+
   async function uploadCustomImage(file) {
     if (!file) return;
     if (!/^image\/(jpeg|png|webp)$/i.test(file.type) || file.size > 5 * 1024 * 1024) {
@@ -1155,6 +1231,7 @@
       body: JSON.stringify({ data, filename: file.name, contentType: file.type })
     });
     setControl("socialStudioImageUrl", result.url);
+    resetArtworkMetadata();
     setRadio("socialStudioImageMode", "upload");
     document.getElementById("socialStudioImageState").textContent = file.name;
     document.getElementById("socialStudioImageClear").hidden = false;
@@ -1320,11 +1397,14 @@
     });
     document.getElementById("socialStudioTemplates").addEventListener("change", async () => {
       updateFieldVisibility();
+      syncTicketPrice({});
       await resolveDefaults({ resetCopy: true });
     });
     ["socialStudioMovie", "socialStudioConcession", "socialStudioClub"].forEach((id) => {
       document.getElementById(id).addEventListener("change", () => {
         if (id === "socialStudioMovie") {
+          resetArtworkMetadata();
+          syncTicketPrice({});
           state.styleManuallySelected = false;
           updateStyleRecommendation({ apply: true });
         }
@@ -1333,10 +1413,14 @@
     });
     form.addEventListener("input", (event) => {
       if(event.target.id==='socialStudioAnimated') return;
+      if(event.target.id==='socialStudioSignatureScale') document.getElementById('socialStudioSignatureAutomatic').checked=false;
+      if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) {syncTicketPrice();resolveDefaults({resetCopy:false,resetPriceCopy:true});return;}
+      if(event.target.name==='socialStudioImageMode' || event.target.id==='socialStudioImageUrl') resetArtworkMetadata();
       if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
       const frame=event.target.dataset.directionFrame,frameKey=event.target.dataset.directionKey;
       if(frame&&frameKey){const next=event.target.valueAsNumber;if(!Number.isFinite(next))delete state.directionFrames[frame][frameKey];else state.directionFrames[frame][frameKey]=frameKey==="scale"?next/100:next;}
       const key = event.target.dataset.compositionEffect;
+      if(event.target.dataset.artworkMetadata) {state.artworkMetadata ||= {};delete state.artworkMetadata[event.target.dataset.artworkMetadata];}
       if (key) {
         const next = event.target.value;
         state.compositionAdjustments[key === "darkening" ? "brightness" : key] = key === "darkening" ? 1 - Number(next) / 100 : ["saturation", "contrast"].includes(key) ? Number(next) / 100 : ["mask", "overlay"].includes(key) ? next : Number(next);
@@ -1347,6 +1431,7 @@
       if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom" && !event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
+      if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) return;
       if(event.target.id==='socialStudioAnimated') return;
       if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
       if (["socialStudioCompositionPreset", "socialStudioCompositionLook"].includes(event.target.id)) { state.compositionAdjustments = {}; syncCompositionControls(); }
@@ -1363,6 +1448,7 @@
       uploadCustomImage(event.target.files?.[0]).catch((error) => notify(error.message, "error"));
     });
     document.getElementById("socialStudioImageClear").addEventListener("click", async () => {
+      resetArtworkMetadata();
       setControl("socialStudioImageUrl", "");
       setControl("socialStudioImageUpload", "");
       setRadio("socialStudioImageMode", "automatic");
