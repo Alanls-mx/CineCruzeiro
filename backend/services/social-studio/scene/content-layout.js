@@ -24,7 +24,11 @@ function enforceContentLayout(scene) {
   if(rules.mustKeepDateNearPremiere) {
     const callout=get('subtitle'),date=get('detail');
     if(callout && date) {
-      if(draft.content?.primaryDateLabel) callout.text = draft.content.primaryDateLabel;
+      if(draft.content?.primaryDateLabel) {
+        const label=draft.content.primaryDateLabel;
+        const message=String(draft.subtitle || '').trim();
+        callout.text=message && message.toUpperCase()!==label ? `${message} • ${label}` : label;
+      }
       const height=date.height, calloutHeight=Math.max(30,Math.min(height*.28,52));
       Object.assign(callout,{x:date.x,y:date.y,width:date.width,height:calloutHeight,align:date.align});
       Object.assign(date,{y:date.y+calloutHeight+8,height:Math.max(24,height-calloutHeight-8)});
