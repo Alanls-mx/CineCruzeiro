@@ -68,6 +68,14 @@
   }
 
   async function request(path, options = {}) {
+    const tracked = {
+      '/api/admin/social-studio/posts': ['save', 'Gerar arte', 'Salvando a arte no histórico', 'Arte salva no histórico.'],
+      '/api/admin/social-studio/campaigns': ['campaign', 'Gerar campanha', 'Compondo Feed, quadrado e Story', 'Campanha criada em três formatos.'],
+      '/api/admin/social-studio/copy': ['copy', 'Criar texto', 'Preparando uma nova sugestão', 'Sugestão de texto recebida.'],
+      '/api/admin/social-studio/uploads': ['upload', 'Enviar imagem', 'Enviando e validando a imagem', 'Imagem recebida.']
+    }[path];
+    const operation = options.method === 'POST' && tracked ? beginOperation(tracked[0], tracked[1], tracked[2]) : null;
+    try {
     const response = await fetch(`${basePath}${path}`, {
       ...options,
       credentials: "include",
@@ -75,7 +83,12 @@
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error?.message || data.error || "Não foi possível concluir a operação.");
+    operation?.finish(tracked[3]);
     return data;
+    } catch (error) {
+      operation?.fail(error);
+      throw error;
+    }
   }
 
   async function requestImage(path, body, signal) {
@@ -126,6 +139,7 @@
             <button id="socialStudioGenerateButton" class="primary-button" type="submit" data-requires-create>Gerar arte</button>
           </div>
         </header>
+        <section id="socialStudioOperations" class="social-operations" aria-label="Atividade do Studio" hidden></section>
 
         <section class="social-ready-library" aria-labelledby="socialStudioReadyTitle">
           <header class="social-ready-head">
@@ -160,6 +174,7 @@
               </label>
             </div>
             <div id="socialStudioPreviewCanvas" class="social-preview-canvas">
+              <div id="socialStudioLoadingOverlay" class="social-loading-overlay" hidden aria-hidden="true"></div>
               <div id="socialStudioPreviewStage" class="social-studio-preview-stage">
                 <div class="social-studio-preview-empty">
                   <strong>Preparando sua primeira composição</strong>
@@ -173,6 +188,8 @@
               <button id="socialStudioManualEdit" class="primary-button" type="button" disabled>Editar detalhes</button>
               <button id="socialStudioPreviewDownload" class="ghost-button" type="button" disabled>Baixar prévia</button>
               <button id="socialStudioMotionPlay" class="ghost-button" type="button" data-requires-create>Reproduzir prévia</button>
+              <button type="button" class="ghost-button" data-studio-open="animation">Animação</button>
+              <button type="button" class="ghost-button" data-studio-open="export">Exportação</button>
             </div>
             <p id="socialStudioStatus" class="social-studio-status" role="status"></p>
             <section id="socialStudioVariations" class="social-variations" aria-label="Variações de composição" hidden></section>
@@ -181,12 +198,13 @@
 
           <aside class="social-properties-pane">
             <div class="social-editor-tabs" role="tablist" aria-label="Edição da campanha">
-              <button class="active" type="button" role="tab" aria-selected="true" data-social-editor-tab="art">Arte</button>
-              <button type="button" role="tab" aria-selected="false" data-social-editor-tab="caption">Legenda</button>
+              <button id="socialTabContent" class="active" type="button" role="tab" aria-selected="true" aria-controls="socialInspectorContent" data-social-editor-tab="content">Conteúdo</button>
+              <button id="socialTabImage" type="button" role="tab" aria-selected="false" aria-controls="socialInspectorImage" tabindex="-1" data-social-editor-tab="image">Imagem</button>
+              <button id="socialTabLook" type="button" role="tab" aria-selected="false" aria-controls="socialInspectorLook" tabindex="-1" data-social-editor-tab="look">Ajustes</button>
             </div>
 
             <div id="socialStudioArtPanel" class="social-editor-panel">
-              <details class="social-property-section" open>
+              <details id="socialStudioContentSection" class="social-property-section" open>
                 <summary>Conteúdo</summary>
                 <div class="social-property-body">
                   <label id="socialStudioMovieField" data-social-field="movie">Filme<select id="socialStudioMovie" data-requires-create></select></label>
@@ -208,14 +226,14 @@
                   <label data-social-field="auxiliaryText">Texto auxiliar<textarea id="socialStudioAuxiliary" rows="3" maxlength="260" data-requires-create></textarea></label>
                   <label data-social-field="offerTerms">Condições confirmadas<textarea id="socialStudioOfferTerms" rows="3" maxlength="300" placeholder="Informe apenas regras confirmadas para esta oferta" data-requires-create></textarea></label>
                   <label data-social-field="cta">Chamada final<input id="socialStudioCta" maxlength="60" data-requires-create /></label>
-                  <label>Destino da chamada<input id="socialStudioActionDestination" type="url" placeholder="https://cinema.com.br" data-requires-create /></label>
+                  <label>Destino da chamada<input id="socialStudioActionDestination" type="text" inputmode="url" placeholder="https://cinema.com.br" data-requires-create /></label>
                   <label>Tom dos textos<select id="socialStudioCopyTone" data-requires-create><option value="automatic">Automático</option><option value="cinematic">Cinematográfico</option><option value="commercial">Comercial</option><option value="fun">Divertido</option><option value="elegant">Elegante</option><option value="direct">Direto</option></select></label>
                   <label>Densidade<select id="socialStudioCopyDensity" data-requires-create><option value="short">Curta</option><option value="medium" selected>Média</option><option value="long">Longa</option></select></label>
                   <label data-social-field="movie">Referências confirmadas para o texto<textarea id="socialStudioCopyBrief" rows="3" maxlength="500" placeholder="Um fato por linha: elenco, tema ou diferencial da campanha" data-requires-create></textarea></label>
                 </div>
               </details>
 
-              <details class="social-property-section" data-social-field="price">
+              <details id="socialStudioPriceSection" class="social-property-section" data-social-field="price">
                 <summary>Preço do post</summary>
                 <div class="social-property-body">
                   <fieldset id="socialStudioTicketPrice" class="social-choice-fieldset"><legend>Ingresso anunciado</legend>
@@ -230,7 +248,7 @@
                 </div>
               </details>
 
-              <details class="social-property-section" data-social-field="image">
+              <details id="socialStudioImageSection" class="social-property-section" data-social-field="image" open>
                 <summary>Imagem principal</summary>
                 <div class="social-property-body">
                   <fieldset class="social-choice-fieldset">
@@ -274,7 +292,7 @@
                 </div>
               </details>
 
-              <details class="social-property-section" data-social-field="advanced" open>
+              <details id="socialStudioLookSection" class="social-property-section" data-social-field="advanced" open>
                 <summary>Layout e cores</summary>
                 <div class="social-property-body">
                   <label>Estilo visual<select id="socialStudioVisualStyle" data-requires-create><option value="cinematic">Cinematográfico</option><option value="impact">Impacto</option><option value="clean">Limpo</option><option value="minimal">Minimalista</option></select></label>
@@ -332,7 +350,7 @@
                 </div>
               </details>
 
-              <details class="social-property-section">
+              <details id="socialStudioOutputSection" class="social-property-section">
                 <summary>Arquivo final</summary>
                 <div class="social-property-body social-output-grid">
                   <label>Formato<select id="socialStudioFormat" data-requires-create></select></label>
@@ -357,12 +375,18 @@
             <div id="socialStudioCaptionPanel" class="social-editor-panel" hidden>
               <div class="social-caption-editor">
                 <div><h3>Legenda sugerida</h3><p>Revise o texto antes de publicar na rede social.</p></div>
-                <textarea id="socialStudioCaption" rows="14" maxlength="1800" data-requires-create></textarea>
+                <textarea id="socialStudioCaption" aria-label="Legenda da campanha" rows="14" maxlength="1800" data-requires-create></textarea>
                 <button id="socialStudioCopyCaption" class="ghost-button" type="button">Copiar legenda</button>
               </div>
             </div>
           </aside>
         </div>
+        <section class="social-production-dock" aria-label="Produção da campanha">
+          <div class="social-production-tabs" role="tablist" aria-label="Produção">
+            ${[['composition','Composições'],['animation','Animação'],['caption','Legenda'],['export','Exportação']].map(([key,label],index)=>`<button id="socialDockTab-${key}" type="button" role="tab" data-studio-dock="${key}" aria-controls="socialDock-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${label}</button>`).join('')}
+          </div>
+          ${['composition','animation','caption','export'].map((key,index)=>`<div id="socialDock-${key}" class="social-production-panel" role="tabpanel" aria-labelledby="socialDockTab-${key}" ${index?'hidden':''}></div>`).join('')}
+        </section>
       </form>
 
       <section class="social-studio-history" aria-labelledby="socialStudioHistoryTitle">
@@ -373,6 +397,46 @@
         <div id="socialStudioHistoryGrid" class="social-studio-history-grid"></div>
         <div id="socialStudioHistoryPager" class="social-studio-history-pager"></div>
       </section>`;
+    organizeWorkspace();
+  }
+
+  function organizeWorkspace() {
+    const byId = id => document.getElementById(id);
+    const art = byId('socialStudioArtPanel');
+    const advanced = [...art.children].find(node => node.querySelector('summary')?.textContent === 'Configurações avançadas');
+    for (const [key, nodes] of [
+      ['Content', [byId('socialStudioContentSection'), byId('socialStudioPriceSection')]],
+      ['Image', [byId('socialStudioImageSection')]],
+      ['Look', [byId('socialStudioLookSection'), advanced]]
+    ]) {
+      const panel = document.createElement('div');
+      panel.id = `socialInspector${key}`;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', `socialTab${key}`);
+      panel.hidden = key !== 'Content';
+      panel.append(...nodes.filter(Boolean));
+      art.append(panel);
+    }
+    byId('socialDock-composition').append(byId('socialStudioStyles').closest('fieldset'));
+    const output = byId('socialStudioOutputSection');
+    byId('socialDock-animation').append(byId('socialStudioAnimated').closest('label'), byId('socialStudioAnimationOptions'));
+    byId('socialDock-export').append(output.querySelector('.social-output-grid'));
+    output.remove();
+    const exportActions = document.createElement('div');
+    exportActions.className = 'social-export-actions';
+    exportActions.append(byId('socialStudioGenerateButton'), byId('socialStudioCampaignButton'), byId('socialStudioPreviewDownload'));
+    byId('socialDock-export').append(exportActions);
+    const exportShortcut = document.createElement('button');
+    exportShortcut.type = 'button'; exportShortcut.className = 'primary-button';
+    exportShortcut.dataset.studioOpen = 'export'; exportShortcut.textContent = 'Exportar campanha';
+    root.querySelector('.social-studio-toolbar-actions').append(exportShortcut);
+    byId('socialDock-caption').append(byId('socialStudioCaptionPanel'));
+    byId('socialStudioCaptionPanel').hidden = false;
+    byId('socialStudioCaption').rows = 7;
+    const motionActions = document.createElement('div');
+    motionActions.className = 'social-animation-actions';
+    motionActions.append(byId('socialStudioAnimationState'), byId('socialStudioAnimationCancel'), byId('socialStudioAnimationExport'), byId('socialStudioAnimationRestart'));
+    byId('socialStudioAnimationOptions').append(motionActions);
   }
 
   function fillSelect(id, items, emptyLabel, label) {
@@ -947,6 +1011,74 @@
     status.dataset.state = kind;
   }
 
+  // Handles belong to a specific run; a superseded request cannot finish its replacement.
+  const operations = new Map();
+  let operationSequence = 0;
+  function beginOperation(key, title, message, cancel) {
+    const item = { key, title, message, cancel, id: ++operationSequence, status: 'running', percent: null };
+    operations.set(key, item);
+    const update = patch => {
+      if (operations.get(key) !== item || item.status !== 'running') return;
+      Object.assign(item, patch);
+      if (item.status !== 'running') item.completedOrder = ++operationSequence;
+      renderOperations();
+    };
+    renderOperations();
+    return {
+      stage: message => update({ message, percent: null }),
+      progress: (percent, message) => update({ message, percent: Number.isFinite(percent) ? Math.max(0, Math.min(99, Math.round(percent))) : null }),
+      finish: message => update({ status: 'done', percent: 100, message }),
+      cancel: () => update({ status: 'cancelled', percent: null, message: 'Operação cancelada.' }),
+      fail: error => update({ status: error.name === 'AbortError' ? 'cancelled' : 'error', percent: null, message: error.name === 'AbortError' ? 'Operação cancelada.' : error.message })
+    };
+  }
+
+  function renderOperations() {
+    const container = document.getElementById('socialStudioOperations');
+    if (!container) return;
+    const all = [...operations.values()].sort((a,b) => b.id-a.id);
+    const latestCompleted = all.filter(item => item.status !== 'running').sort((a,b) => b.completedOrder-a.completedOrder)[0];
+    for (const item of all) if (item.status !== 'running' && item !== latestCompleted) operations.delete(item.key);
+    const visible = [...operations.values()];
+    container.hidden = !visible.length;
+    for (const row of container.children) if (!visible.some(item => String(item.id) === row.dataset.operationId)) row.remove();
+    for (const item of visible) {
+      let row = container.querySelector(`[data-operation-id="${item.id}"]`);
+      if (!row) {
+        row = document.createElement('div'); row.className = 'social-operation'; row.dataset.operationId = item.id;
+        row.innerHTML = '<span class="social-operation-marker" aria-hidden="true"></span><div class="social-operation-copy"><strong></strong><span role="status" aria-live="polite" aria-atomic="true"></span></div><output></output><button type="button" class="ghost-button">Cancelar</button><div class="social-operation-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"><span></span></div>';
+        row.querySelector('button').addEventListener('click', () => {
+          if (item.status === 'running') item.cancel?.();
+          else { operations.delete(item.key); renderOperations(); }
+        });
+        container.append(row);
+      }
+      row.dataset.state = item.status;
+      row.querySelector('strong').textContent = item.title;
+      const message = row.querySelector('[role=status]');
+      if (message.textContent !== item.message) message.textContent = item.message;
+      row.querySelector('output').textContent = item.percent !== null ? `${item.percent}%` : {running:'Em andamento',error:'Falhou',cancelled:'Cancelado'}[item.status] || '';
+      const button = row.querySelector('button');
+      button.hidden = item.status === 'running' && !item.cancel;
+      button.textContent = item.status === 'running' ? 'Cancelar' : 'Dispensar';
+      const meter = row.querySelector('[role=progressbar]');
+      meter.setAttribute('aria-label', item.title);
+      meter.setAttribute('aria-valuetext', item.percent === null ? item.message : `${item.percent}% · ${item.message}`);
+      meter.hidden = ['error','cancelled'].includes(item.status);
+      meter.classList.toggle('is-indeterminate', item.percent === null);
+      if (item.percent === null) meter.removeAttribute('aria-valuenow');
+      else meter.setAttribute('aria-valuenow', item.percent);
+      meter.firstElementChild.style.setProperty('--operation-scale', String((item.percent ?? 35) / 100));
+    }
+    const overlay = document.getElementById('socialStudioLoadingOverlay');
+    const active = all.find(item => item.status === 'running' && ['preview','animation'].includes(item.key));
+    if (overlay) {
+      overlay.hidden = !active;
+      if (active) overlay.innerHTML = `<span class="loading-spinner"></span><strong>${escapeHtml(active.title)}</strong><span>${escapeHtml(active.message)}</span>${active.percent!==null?`<b>${active.percent}%</b>`:''}`;
+    }
+    document.getElementById('socialStudioPreviewCanvas')?.setAttribute('aria-busy', String(Boolean(active)));
+  }
+
   function renderNotices(notices = []) {
     state.notices = notices;
     const container = document.getElementById("socialStudioNotices");
@@ -1035,6 +1167,7 @@
     state.previewToken=blob.previewToken;
     state.previewUrl = URL.createObjectURL(blob);
     const stage = document.getElementById("socialStudioPreviewStage");
+    stage.classList.remove('is-rendering');
     stage.innerHTML = `<img src="${state.previewUrl}" alt="${escapeHtml(alt)}" /><div id="socialStudioSafeArea" class="social-story-safe-area" ${currentFormat()?.id === "story" ? "" : "hidden"} aria-hidden="true"></div><span class="social-preview-progress" aria-hidden="true"></span>`;
     document.getElementById("socialStudioPreviewDownload").disabled = false;
     state.activePostId = "";
@@ -1059,6 +1192,8 @@
     state.previewing = true;
     state.previewAbort?.abort();
     state.previewAbort = new AbortController();
+    const previewController = state.previewAbort;
+    const operation = beginOperation('preview', 'Atualizar prévia', 'Conferindo dados da campanha', () => previewController.abort());
     document.getElementById("socialStudioPreviewStage")?.classList.add("is-rendering");
     setStatus("Atualizando a composição...", "loading");
     try {
@@ -1067,14 +1202,18 @@
       renderNotices(resolved.notices || []);
       state.previewNotices.set(key,resolved.notices || []);
       if(state.previewNotices.size>8) state.previewNotices.delete(state.previewNotices.keys().next().value);
+      operation.stage('Compondo e renderizando a imagem');
       const blob = await requestImage("/api/admin/social-studio/preview", data, state.previewAbort.signal);
       if (version !== state.previewVersion) return;
       cachePreview(key, blob);
       displayPreview(blob, data.title);
+      operation.finish('Prévia pronta para revisão.');
       setStatus("Prévia atualizada automaticamente.", "ok");
     } catch (error) {
-      if (error.name !== "AbortError" && version === state.previewVersion) setStatus(error.message, "error");
+      operation.fail(error);
+      if (version === state.previewVersion) setStatus(error.name === 'AbortError' ? 'Atualização cancelada. A prévia anterior foi mantida.' : error.message, error.name === 'AbortError' ? '' : 'error');
     } finally {
+      operation.cancel();
       if (version === state.previewVersion) {
         state.previewing = false;
         document.getElementById("socialStudioPreviewStage")?.classList.remove("is-rendering");
@@ -1167,6 +1306,8 @@
     const version=++state.variationVersion,data={...(options.draft || payload()),variationMode:options.variationMode || "explore"},key=previewCacheKey(payload());
     state.variationAbort?.abort();
     state.variationAbort=new AbortController();
+    const variationController = state.variationAbort;
+    const operation = beginOperation('variations', 'Gerar variações', 'Avaliando composição, hierarquia e contraste', () => variationController.abort());
     button.disabled=true;button.textContent="Compondo variações...";
     const target=document.getElementById("socialStudioVariations");
     target.hidden=false;target.textContent="Analisando enquadramento, hierarquia e contraste...";
@@ -1175,10 +1316,11 @@
       if(version!==state.variationVersion)return;
       if(key!==previewCacheKey(payload())) {target.textContent="A configuração mudou durante a geração. Gere novas variações para comparar.";return;}
       state.variations=result.variations;
+      operation.finish(`${result.variations.length} variações prontas para comparar.`);
       target.innerHTML=`<div class="social-variations-head"><h3>Melhores composições</h3><span>${result.evaluatedCount || result.variations.length} avaliadas · ${result.variations.length} selecionadas</span></div><div class="social-variations-grid">${result.variations.map((v,i)=>variationCard(v,i)).join("")}</div>${result.notices.map(n=>`<p>${escapeHtml(n)}</p>`).join("")}`;
       target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
-    } catch(error){if(version===state.variationVersion && error.name!=="AbortError")target.textContent=error.message;}
-    finally {if(version===state.variationVersion){button.disabled=state.context?.capabilities?.create===false;button.textContent="Gerar variações";}}
+    } catch(error){operation.fail(error);if(version===state.variationVersion)target.textContent=error.name==='AbortError'?'Geração de variações cancelada.':error.message;}
+    finally {operation.cancel();if(version===state.variationVersion){button.disabled=state.context?.capabilities?.create===false;button.textContent="Gerar variações";}}
   }
 
   async function generateAnimation(download = false) {
@@ -1188,6 +1330,7 @@
     const key=previewCacheKey(data);
     state.animationBusy=true;button.disabled=true;button.textContent='Preparando animação...';
     const controller=new AbortController();state.animationAbort=controller;
+    const operation = beginOperation('animation', download ? 'Exportar animação' : 'Prévia animada', 'Preparando a arte aprovada', () => controller.abort());
     let jobId;
     const cancelJob=()=>{if(jobId)request(`/api/admin/social-studio/animation-jobs/${jobId}/cancel`,{method:'POST',body:'{}'}).catch(()=>{});};
     controller.signal.addEventListener('abort',cancelJob,{once:true});
@@ -1205,12 +1348,15 @@
         jobId=job.id;
         if(controller.signal.aborted){cancelJob();throw new DOMException('Cancelado','AbortError');}
         while(['waiting','rendering'].includes(job.status)) {
+          if(job.status==='waiting') operation.stage('Aguardando vaga na fila de renderização');
+          else operation.progress(job.progress*100, 'Renderizando quadros do vídeo');
           document.getElementById('socialStudioAnimationState').textContent=job.status==='waiting'?'Aguardando na fila':`Renderizando · ${Math.round(job.progress*100)}%`;
           await new Promise(resolve=>setTimeout(resolve,1200));
           if(controller.signal.aborted)throw new DOMException('Cancelado','AbortError');
           ({job}=await request(`/api/admin/social-studio/animation-jobs/${jobId}`,{signal:controller.signal}));
         }
         if(job.status!=='done')throw new Error(job.error || 'Não foi possível animar. Sua imagem estática continua disponível.');
+        operation.progress(99, 'Recebendo o arquivo de vídeo');
         const response=await fetch(`${basePath}/api/admin/social-studio/animation-jobs/${jobId}/file`,{credentials:'include',signal:controller.signal});
         if(!response.ok)throw new Error('Não foi possível baixar o vídeo. Tente novamente.');
         const blob=await response.blob();
@@ -1233,8 +1379,9 @@
       document.getElementById('socialStudioPreviewMeta').textContent=`${download?'Vídeo final':'Prévia animada'} · ${width} × ${height} · ${data.animation.format.toUpperCase()}`;
       if(download) {const link=document.createElement('a');link.href=state.animationUrl;link.download=`campanha.${data.animation.format}`;link.click();}
       setStatus('Animação pronta. A duração pode ser ampliada para preservar a leitura.','ok');
-    } catch(error) {if(error.name!=='AbortError'){setStatus(error.message,'error');document.getElementById('socialStudioAnimationState').textContent=error.message;}else document.getElementById('socialStudioAnimationState').textContent='Renderização cancelada.';}
-    finally {controller.signal.removeEventListener('abort',cancelJob);state.animationBusy=false;state.animationAbort=null;document.getElementById('socialStudioAnimationCancel').hidden=true;button.disabled=state.context?.capabilities?.create===false;button.textContent='Exportar animação';}
+      operation.finish(download ? 'Vídeo pronto. Download solicitado ao navegador.' : 'Animação pronta para reproduzir.');
+    } catch(error) {operation.fail(error);if(error.name!=='AbortError'){setStatus(error.message,'error');document.getElementById('socialStudioAnimationState').textContent=error.message;}else document.getElementById('socialStudioAnimationState').textContent='Renderização cancelada.';}
+    finally {operation.cancel();controller.signal.removeEventListener('abort',cancelJob);state.animationBusy=false;state.animationAbort=null;document.getElementById('socialStudioAnimationCancel').hidden=true;button.disabled=state.context?.capabilities?.create===false;button.textContent='Exportar animação';}
   }
 
   function saveDraftLocal() {
@@ -1274,6 +1421,7 @@
     state.previewAbort?.abort();
     const version = ++state.resolveVersion;
     state.resolving = true;
+    const operation = beginOperation('resolve', 'Carregar conteúdo', 'Consultando programação, preços e textos');
     setStatus("Carregando dados atuais do painel...", "loading");
     try {
       const base = payload();
@@ -1292,10 +1440,13 @@
       applyDraft(result.draft, result.caption);
       renderNotices(result.notices || []);
       saveDraftLocal();
+      operation.finish('Conteúdo atualizado.');
       await updatePreview({ force: true });
     } catch (error) {
+      operation.fail(error);
       if (version === state.resolveVersion) setStatus(error.message, "error");
     } finally {
+      operation.cancel();
       if (version === state.resolveVersion) state.resolving = false;
     }
   }
@@ -1474,13 +1625,50 @@
       const active = button.dataset.socialEditorTab === tab;
       button.classList.toggle("active", active);
       button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
     });
-    document.getElementById("socialStudioArtPanel").hidden = tab !== "art";
-    document.getElementById("socialStudioCaptionPanel").hidden = tab !== "caption";
+    for (const key of ['Content','Image','Look']) document.getElementById(`socialInspector${key}`).hidden = key.toLowerCase() !== tab;
+  }
+
+  function switchProductionTab(tab, navigate = false) {
+    root.querySelectorAll('[data-studio-dock]').forEach(button => {
+      const active = button.dataset.studioDock === tab;
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+      document.getElementById(`socialDock-${button.dataset.studioDock}`).hidden = !active;
+    });
+    if (navigate) {
+      const button = document.getElementById(`socialDockTab-${tab}`);
+      button.focus({preventScroll:true});
+      button.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'center'});
+    }
   }
 
   function bindEvents() {
     const form = document.getElementById("socialStudioForm");
+    form.addEventListener('invalid', event => {
+      const panel = event.target.closest('[role=tabpanel]');
+      if (panel?.id.startsWith('socialInspector')) switchEditorTab(panel.id.replace('socialInspector','').toLowerCase());
+      if (panel?.id.startsWith('socialDock-')) switchProductionTab(panel.id.replace('socialDock-',''));
+      for (let parent = event.target.parentElement; parent && parent !== form; parent = parent.parentElement) if (parent.tagName === 'DETAILS') parent.open = true;
+    }, true);
+    form.addEventListener('click', event => {
+      const shortcut = event.target.closest('[data-studio-open]');
+      const tab = event.target.closest('[data-studio-dock]');
+      if (shortcut) switchProductionTab(shortcut.dataset.studioOpen, true);
+      if (tab) switchProductionTab(tab.dataset.studioDock);
+    });
+    for (const selector of ['.social-editor-tabs','.social-production-tabs']) {
+      root.querySelector(selector).addEventListener('keydown', event => {
+        if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+        const tabs = [...event.currentTarget.querySelectorAll('[role=tab]')];
+        const index = tabs.indexOf(document.activeElement);
+        if (index < 0) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length-1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        tabs[next].click(); tabs[next].focus();
+      });
+    }
     document.getElementById('socialStudioNotices').addEventListener('click',event=>{
       if(event.target.closest('[data-social-fix-today]')) applyTodayCorrection().catch(error=>setStatus(error.message,'error'));
     });
@@ -1661,7 +1849,7 @@
   async function init() {
     if (state.loading || state.initialized) return;
     state.loading = true;
-    root.innerHTML = `<div class="social-studio-loading"><span class="loading-spinner"></span><strong>Preparando o Social Studio</strong><small>Carregando programação, produtos e identidade do cinema.</small></div>`;
+    root.innerHTML = `<div class="social-studio-loading" role="status" aria-live="polite"><span class="loading-spinner" aria-hidden="true"></span><strong>Preparando o Social Studio</strong><small>Carregando programação, produtos e identidade do cinema.</small></div>`;
     try {
       state.context = await request("/api/admin/social-studio/context");
       renderShell();
