@@ -88,7 +88,7 @@ class AnimationJobs {
       if(!Buffer.isBuffer(buffer))throw new Error('Uma imagem da arte não está disponível. Atualize a prévia antes de animar.');
       assets[src]=buffer;digests.push([src,hash(buffer)]);
     }
-    const key=hash(JSON.stringify({engine:'remotion-v2.1',owner,postId,artVersion,sceneVersion,config,digests}));
+    const key=hash(JSON.stringify({engine:'remotion-v2.2',owner,postId,artVersion,sceneVersion,config,digests}));
     const cached=[...this.jobs.values()].find(j=>j.key===key && ['waiting','rendering','done'].includes(j.status));
     if(cached)return publicJob(cached);
     const id=crypto.randomUUID(),dir=path.join(this.root,id);

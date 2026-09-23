@@ -19,7 +19,7 @@ async function getBundle(){
 }
 async function renderRemotion(scene,input={},options={}) {
   const started=performance.now(),cpu=process.cpuUsage(),config=normalizeAnimation(input),spec=createSpec(scene,config);
-  const width=config.quality==='preview'?Math.min(540,scene.width):scene.width,height=Math.round(width*scene.height/scene.width/2)*2;
+  const width=config.quality==='preview'?Math.min(540,scene.width):scene.width,height=Math.floor(width*scene.height/scene.width/2)*2;
   const dir=await fs.mkdtemp(path.join(options.tempRoot || os.tmpdir(),'cine-remotion-'));
   let server;
   const cancelState=require('@remotion/renderer').makeCancelSignal();
@@ -60,12 +60,15 @@ async function renderRemotion(scene,input={},options={}) {
     if(config.format==='gif') {
       const {runEncoder}=require('../composition-engine/ffmpeg-support');
       const gif=path.join(dir,'animation.gif');
-      await runEncoder(['-y','-i',output,'-vf',`fps=12,scale=${config.quality==='preview'?360:width}:-1`,'-loop',config.loop?'0':'-1',gif],options);
+      const gifWidth=config.quality==='preview'?Math.min(360,scene.width):width;
+      await runEncoder(['-y','-i',output,'-vf',`fps=12,scale=${gifWidth}:${Math.round(gifWidth*scene.height/scene.width)}`,'-loop',config.loop?'0':'-1',gif],options);
       buffer=await fs.readFile(gif);
     }
     if(buffer.length>60*1024*1024)throw new Error('O vídeo excedeu 60 MB. Reduza a duração.');
     const used=process.cpuUsage(cpu);
-    return {buffer,extension:`.${config.format}`,contentType:{mp4:'video/mp4',webm:'video/webm',gif:'image/gif'}[config.format],plan:{...spec,motionSpec:spec,width,height,quality:config.quality,format:config.format,engine:fallback?'ffmpeg':'remotion'},metrics:{renderMs:Math.round(performance.now()-started),cpuMs:Math.round((used.user+used.system)/1000),nodeRssBytes:process.memoryUsage().rss,bytes:buffer.length}};
+    const outputWidth=config.format==='gif' && config.quality==='preview'?Math.min(360,scene.width):width;
+    const outputHeight=config.format==='gif'?Math.round(outputWidth*scene.height/scene.width):height;
+    return {buffer,extension:`.${config.format}`,contentType:{mp4:'video/mp4',webm:'video/webm',gif:'image/gif'}[config.format],plan:{...spec,motionSpec:spec,width:outputWidth,height:outputHeight,quality:config.quality,format:config.format,engine:fallback?'ffmpeg':'remotion'},metrics:{renderMs:Math.round(performance.now()-started),cpuMs:Math.round((used.user+used.system)/1000),nodeRssBytes:process.memoryUsage().rss,bytes:buffer.length}};
   } finally {
     options.signal?.removeEventListener('abort',cancel);
     if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}

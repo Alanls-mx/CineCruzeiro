@@ -8,8 +8,13 @@ const require=createRequire(import.meta.url);
 const {createSpec,planesForScene}=require('../backend/services/social-studio/remotion/spec');
 const {frameState}=require('../backend/services/social-studio/remotion/timeline');
 const {AnimationJobs}=require('../backend/services/social-studio/remotion/jobs');
+const {animationPlan}=require('../backend/services/social-studio/composition-engine/animation');
 const snapshots=require('../backend/services/social-studio/remotion/snapshots');
 const scene={width:1080,height:1350,backgroundColor:'#070a12',elements:[{id:'bg',type:'shape',x:0,y:0,width:1080,height:1350},{id:'title',type:'text',x:80,y:100,width:900,height:130,text:'Sua próxima sessão'},{id:'artwork',type:'image',x:80,y:300,width:500,height:700,src:'asset://poster'},{id:'action-group',type:'group',x:80,y:1100,width:900,height:120,children:[{id:'cta',type:'text',x:0,y:0,width:900,height:50,text:'Compre agora'},{id:'website',type:'text',x:0,y:60,width:900,height:50,text:'cinecruzeiro.com.br'}]}]};
+test('resolução da prévia considera arredondamento par do H.264',()=>{
+  const plan=animationPlan(scene,{quality:'preview'});assert.equal(plan.width,540);assert.equal(plan.height,674);
+  assert.equal(animationPlan(scene,{quality:'final'}).height,1350);
+});
 test('todos os presets chegam à mesma arte aprovada, com leitura final e ação agrupada',()=>{
   for(const preset of ['cinematic-reveal','slow-parallax','dark-reveal','commercial-focus','poster-reveal','editorial']) {
     const spec=createSpec(scene,{preset,duration:5});
@@ -57,4 +62,12 @@ test('falha não remove campanha; reinício sinaliza job interrompido',async()=>
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'cine-motion-failure-'));
   const jobs=new AnimationJobs(root,{loadImage:async()=>Buffer.from('x'),runner:async()=>{throw new Error('Codificador indisponível');}});
   try{const job=await jobs.create({scene,owner:'a',postId:'saved-static',animation:{}});const failed=await waitDone(jobs,job.id,'a');assert.equal(failed.status,'failed');assert.equal(failed.postId,'saved-static');assert.match(failed.error,/Codificador/);}finally{clearInterval(jobs.cleanupTimer);await fs.rm(root,{recursive:true,force:true});}
+});
+test('reinício marca render interrompido e limpa apenas seu diretório temporário',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'cine-motion-restart-'));
+  const id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  await fs.mkdir(path.join(root,id));await fs.writeFile(path.join(root,id,'partial'),'x');
+  await fs.writeFile(path.join(root,`${id}.json`),JSON.stringify({id,owner:'a',postId:'p',status:'rendering',config:{format:'mp4',quality:'preview'},createdAt:new Date().toISOString()}));
+  const jobs=new AnimationJobs(root,{loadImage:async()=>null});
+  try{const job=await jobs.get(id,'a');assert.equal(job.status,'failed');assert.match(job.error,/reinício/);assert.equal(await fs.access(path.join(root,id)).then(()=>true,()=>false),false);}finally{clearInterval(jobs.cleanupTimer);await fs.rm(root,{recursive:true,force:true});}
 });

@@ -4,7 +4,7 @@ function animationPlan(scene,input={}) {
   scene={width:1080,height:1350,...scene};
   const config=normalizeAnimation(input),spec=createSpec(scene,config);
   const width=config.quality==='preview'?Math.min(540,scene.width):scene.width;
-  return {...spec,motionSpec:spec,format:config.format,quality:config.quality,width,height:Math.round(width*scene.height/scene.width/2)*2,fps:24};
+  return {...spec,motionSpec:spec,format:config.format,quality:config.quality,width,height:Math.floor(width*scene.height/scene.width/2)*2,fps:24};
 }
 async function exportAnimation(scene,config={},options={}) {
   const release=await animationQueue.acquire(options.signal);

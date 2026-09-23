@@ -1215,6 +1215,7 @@
         if(!response.ok)throw new Error('Não foi possível baixar o vídeo. Tente novamente.');
         const blob=await response.blob();
         state.animationDuration=job.plan.duration;
+        state.animationDimensions={width:job.plan.width,height:job.plan.height};
         if(draftKey!==previewCacheKey(payload())) {setStatus('A campanha mudou. Gere a animação atualizada.','warning');return;}
         if(state.animationUrl) URL.revokeObjectURL(state.animationUrl);
         state.animationUrl=URL.createObjectURL(blob);state.animationKey=key;
@@ -1228,8 +1229,8 @@
       state.motionPlaying=true;
       document.getElementById('socialStudioMotionPlay').textContent='Parar prévia';
       document.getElementById('socialStudioAnimationState').textContent=`Concluído · ${state.animationDuration}s · ${download?'Resolução final':'Prévia'}`;
-      const width=download?1080:data.animation.format==='gif'?360:540,format=currentFormat();
-      document.getElementById('socialStudioPreviewMeta').textContent=`Prévia animada · ${width} × ${Math.round(width*format.height/format.width/2)*2} · ${data.animation.format.toUpperCase()}`;
+      const width=state.animationDimensions?.width || 540,height=state.animationDimensions?.height || 674;
+      document.getElementById('socialStudioPreviewMeta').textContent=`${download?'Vídeo final':'Prévia animada'} · ${width} × ${height} · ${data.animation.format.toUpperCase()}`;
       if(download) {const link=document.createElement('a');link.href=state.animationUrl;link.download=`campanha.${data.animation.format}`;link.click();}
       setStatus('Animação pronta. A duração pode ser ampliada para preservar a leitura.','ok');
     } catch(error) {if(error.name!=='AbortError'){setStatus(error.message,'error');document.getElementById('socialStudioAnimationState').textContent=error.message;}else document.getElementById('socialStudioAnimationState').textContent='Renderização cancelada.';}
