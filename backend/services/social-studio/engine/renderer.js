@@ -14,6 +14,7 @@ const { scoreComposition } = require("../composition-engine/score");
 function signatureUrl(draft, context = {}) {
   if (draft.signatureId === "none") return "";
   const brand = context.brand || {};
+  if (draft.signatureId === "icon-3d") return brand.posterLogoUrl || brand.logoUrl || "";
   if (draft.signatureId === "automatic") return brand.posterLogoUrl || brand.logoUrl || "";
   if (draft.signatureId === "classic") return brand.logoUrl || "";
   const signature = legacy.SOCIAL_SIGNATURES.find((item) => item.id === draft.signatureId);

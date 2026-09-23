@@ -14,7 +14,8 @@ export interface ProgramMovieContent { id: string; title: string; posterUrl: str
 export interface CampaignContent {
   version: 1;
   campaignType: SocialCampaignType;
-  movie?: {id: string; title: string; genres: string[]; synopsis?: string; socialHook?: string};
+  copyBrief?: string;
+  movie?: {id: string; title: string; genres: string[]; synopsis?: string; socialHook?: string; director?: string; originalTitle?: string; duration?: string; rating?: string; tag?: string};
   headline: string; kicker: string; supportingText: string;
   releaseDate: string; presaleStartDate: string; sessionDate: string;
   primaryDateKind: "release" | "presale" | "session";

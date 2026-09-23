@@ -34,5 +34,27 @@ test('histórico recente penaliza frases e sugestões respeitam tom/densidade',(
   const repeated=first.candidates[0].bundle;
   const second=generateCopy(draft,{...ctx,history:[{payload:{subtitle:repeated.kicker,cta:repeated.cta}}]},{tone:'direct'});
   assert.notEqual(second.bundle.kicker,first.bundle.kicker);
-  assert.ok(['Consulte a programação.','Confira as sessões disponíveis.','Veja os detalhes antes de escolher sua sessão.'].includes(second.bundle.supportingText));
+  assert.match(second.bundle.supportingText,/sess[ãõ](?:o|es)|programação|detalhes|cinema/i);
+});
+test('referências confirmadas do operador entram nas sugestões',()=>{
+  const draft=normalizeV2Draft({templateId:'movie-highlight',copyBrief:'Elenco liderado por Ana Lima\nBaseado em uma peça teatral'},ctx);
+  const result=generateCopy(draft,ctx,{density:'medium'});
+  assert.ok(result.candidates.some(x=>x.bundle.caption.includes('Ana Lima')));
+  assert.ok(result.candidates.some(x=>x.bundle.caption.includes('peça teatral')));
+});
+test('pré-venda futura não convida à compra antecipada',()=>{
+  const draft=normalizeV2Draft({templateId:'movie-presale',presaleStartDate:'2026-09-25'},ctx);
+  const result=generateCopy(draft,ctx);
+  assert.ok(result.candidates.every(x=>!/compre|garanta/i.test(x.bundle.cta)));
+});
+test('copy usa referências do filme sem copiar a sinopse e separa ângulos editoriais',()=>{
+  const synopsis='Uma amizade inesperada reúne duas famílias durante uma viagem cheia de mistérios.';
+  const context={...ctx,movies:[{...ctx.movies[0],synopsis,director:'Ana Silva',duration:'2h 10m',rating:'12',genre:['Aventura','Drama'],socialHook:'Uma viagem que aproxima pessoas improváveis.'}]};
+  const draft=normalizeV2Draft({templateId:'movie-highlight'},context);
+  const result=generateCopy(draft,context,{density:'long'});
+  assert.ok(result.candidates.some(x=>x.bundle.caption.includes('Ana Silva')));
+  assert.ok(result.candidates.some(x=>x.bundle.caption.includes('amizade')));
+  assert.ok(result.candidates.some(x=>x.bundle.caption.includes('2h 10m')));
+  assert.ok(result.candidates.every(x=>!x.bundle.caption.includes(synopsis)));
+  assert.ok(new Set(result.candidates.map(x=>x.bundle.supportingText)).size>=5);
 });

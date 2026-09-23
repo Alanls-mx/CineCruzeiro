@@ -200,6 +200,7 @@
                   <label>Destino da chamada<input id="socialStudioActionDestination" type="url" placeholder="https://cinema.com.br" data-requires-create /></label>
                   <label>Tom dos textos<select id="socialStudioCopyTone" data-requires-create><option value="automatic">Automático</option><option value="cinematic">Cinematográfico</option><option value="commercial">Comercial</option><option value="fun">Divertido</option><option value="elegant">Elegante</option><option value="direct">Direto</option></select></label>
                   <label>Densidade<select id="socialStudioCopyDensity" data-requires-create><option value="short">Curta</option><option value="medium" selected>Média</option><option value="long">Longa</option></select></label>
+                  <label data-social-field="movie">Referências confirmadas para o texto<textarea id="socialStudioCopyBrief" rows="3" maxlength="500" placeholder="Um fato por linha: elenco, tema ou diferencial da campanha" data-requires-create></textarea></label>
                 </div>
               </details>
 
@@ -720,6 +721,7 @@
       title: value("socialStudioTitle"),
       copyTone:value('socialStudioCopyTone','automatic'),
       copyDensity:value('socialStudioCopyDensity','medium'),
+      copyBrief:value('socialStudioCopyBrief'),
       copyLocks:Object.fromEntries([...document.querySelectorAll('[data-copy-lock]')].map(el=>[el.dataset.copyLock,el.checked])),
       subtitle: value("socialStudioSubtitle"),
       price: value("socialStudioPrice"),
@@ -806,6 +808,7 @@
       socialStudioTitle: draft.title,
       socialStudioCopyTone:draft.copyTone || 'automatic',
       socialStudioCopyDensity:draft.copyDensity || 'medium',
+      socialStudioCopyBrief:draft.copyBrief || '',
       socialStudioSubtitle: draft.subtitle,
       socialStudioPrice: draft.price,
       socialStudioDate: draft.date,

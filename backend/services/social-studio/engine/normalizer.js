@@ -44,6 +44,7 @@ function normalizeV2Draft(input = {}, context = {}) {
     rendererVersion: "v2",
     copyTone: require('../copy-engine').TONES.includes(input.copyTone) ? input.copyTone : 'automatic',
     copyDensity: ['short','medium','long'].includes(input.copyDensity) ? input.copyDensity : 'medium',
+    copyBrief: String(input.copyBrief || '').trim().slice(0,500),
     copyLocks:Object.fromEntries(Object.keys(require('../copy-engine').FIELD_MAP).map(field=>[field,input.copyLocks?.[field]===true])),
     genreProfile: profile,
     composition: normalizeComposition({...input.composition,look:design.look}, profile.id),

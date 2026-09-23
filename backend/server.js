@@ -8346,6 +8346,8 @@ function socialStudioContext(db) {
   const catalog = buildCommercialCatalog(db);
   const catalogMovies = (catalog.movies || []).map((movie) => ({
     ...movie,
+    director: String(db.movies?.find((source) => String(source.id) === String(movie.id))?.director || ""),
+    originalTitle: String(db.movies?.find((source) => String(source.id) === String(movie.id))?.originalTitle || ""),
     catalogued: true,
     releaseDate: movie.releaseDate || "",
     sessions: movie.availableSessions || [],

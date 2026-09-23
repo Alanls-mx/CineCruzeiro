@@ -92,12 +92,11 @@ test("Social Studio expõe os seis templates e os três formatos solicitados", (
   ]);
 });
 
-test("assinaturas 3D ficam disponíveis e o modo automático respeita o tipo de pôster", async () => {
+test("assinaturas disponíveis não incluem o símbolo 3D", async () => {
   const context = await fixtureContext();
   assert.deepEqual(SOCIAL_SIGNATURES.map((item) => item.id), [
     "automatic",
     "classic",
-    "icon-3d",
     "wordmark-3d",
     "logo-3d",
     "none"
@@ -105,7 +104,8 @@ test("assinaturas 3D ficam disponíveis e o modo automático respeita o tipo de 
   const premiere = normalizeDraft({ templateId: "movie-premiere", movieId: "filme-longo" }, context);
   const concession = normalizeDraft({ templateId: "concession-combo", concessionId: "combo" }, context);
   assert.equal(signatureForDraft(premiere, context).id, "logo-3d");
-  assert.equal(signatureForDraft(concession, context).id, "icon-3d");
+  assert.equal(signatureForDraft(concession, context).id, "logo-3d");
+  assert.equal(normalizeDraft({ templateId: "concession-combo", signatureId: "icon-3d" }, context).signatureId, "automatic");
 });
 
 test("assinatura escolhida aparece na arte e permanece no histórico", async () => {

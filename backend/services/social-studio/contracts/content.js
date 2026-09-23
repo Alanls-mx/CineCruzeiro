@@ -25,8 +25,8 @@ function buildCampaignContent(draft, input = {}, context = {}) {
   const hasPrice = priceEntity !== null && priceEntity !== undefined && Number.isFinite(Number(priceEntity)) && Number(priceEntity) >= 0;
   const actionDestination = destination(input.actionDestination === undefined ? context.brand?.posterWebsite || context.brand?.website : input.actionDestination);
   const content = {
-    version:1, campaignType:type,
-    movie:{id:movie.id || '',title:movie.title || '',genres:movie.genres || [],synopsis:movie.synopsis || '',socialHook:movie.socialHook || ''},
+    version:1, campaignType:type, copyBrief:draft.copyBrief || '',
+    movie:{id:movie.id || '',title:movie.title || '',genres:movie.genres || [],synopsis:movie.synopsis || '',socialHook:movie.socialHook || '',director:movie.director || '',originalTitle:movie.originalTitle || '',duration:movie.duration || '',rating:movie.rating || '',tag:movie.tag || ''},
     headline:draft.title, kicker:draft.subtitle, supportingText:draft.auxiliaryText,
     releaseDate,presaleStartDate,sessionDate,primaryDateKind,primaryDate,releaseScope:movie.catalogued===false?'international':'cinema',primaryDateLabel:primaryDateKind==='release' && movie.catalogued===false?'LANÇAMENTO INTERNACIONAL':DATE_ROLES[primaryDateKind],
     sessions:draft.programMovies.length ? draft.programMovies.flatMap(m=>m.schedule.days.flatMap(group=>group.times.map(time=>({movieId:m.id,date:group.date,time})))) : draft.schedule.days.flatMap(group=>group.times.map(time=>({movieId:movie.id,date:group.date,time}))),

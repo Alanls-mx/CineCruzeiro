@@ -47,7 +47,6 @@ const SOCIAL_STYLES = Object.freeze([
 const SOCIAL_SIGNATURES = Object.freeze([
   { id: "automatic", name: "Automática", description: "Escolhe a assinatura mais adequada ao modelo.", imageUrl: "" },
   { id: "classic", name: "Marca clássica", description: "Mantém a logo já usada pelo Cine Cruzeiro.", imageUrl: "" },
-  { id: "icon-3d", name: "Símbolo 3D", description: "Assinatura compacta para ofertas e chamadas diretas.", imageUrl: "/images/social-studio/cine-cruzeiro-icon-3d.png" },
   { id: "wordmark-3d", name: "Assinatura horizontal", description: "Nome completo com boa leitura sobre imagens.", imageUrl: "/images/social-studio/cine-cruzeiro-wordmark-3d.png" },
   { id: "logo-3d", name: "Logo completa 3D", description: "Versão institucional com Cultura e Lazer.", imageUrl: "/images/social-studio/cine-cruzeiro-logo-3d.png" },
   { id: "none", name: "Sem assinatura", description: "Oculta a marca desta composição.", imageUrl: "" }
@@ -285,7 +284,7 @@ function signatureForDraft(draft = {}, context = {}) {
     "movie-highlight": "logo-3d",
     "movie-premiere": "logo-3d",
     "online-ticket": "logo-3d",
-    "concession-combo": "icon-3d",
+    "concession-combo": "logo-3d",
     "cinema-club": "logo-3d"
   };
   const requestedId = draft.signatureId === "automatic"
