@@ -207,6 +207,7 @@ test("fundo usa backdrop; sem backdrop duplica poster; full bleed exige resoluç
       {
         id: "one",
         title: "Teste",
+        releaseDate: "2026-10-22",
         genres: ["Drama"],
         posterUrl: "asset://cmp-poster",
         backdropUrl: "asset://cmp-backdrop",
@@ -272,12 +273,9 @@ test("prévia de movimento reutiliza camadas raster e conserva dimensões", asyn
   const preview = await createMotionPreview(scene, {
     loadImage: async () => null,
   });
-  assert.equal(preview.motion.duration, 5);
-  assert.equal(preview.layers[0].role, "background");
-  for (const layer of preview.layers) {
-    const info = await sharp(
-      Buffer.from(layer.src.split(",")[1], "base64"),
-    ).metadata();
-    assert.deepEqual([info.width, info.height], [320, 320]);
-  }
+  assert.ok(preview.motionSpec.duration >= 5);
+  assert.equal(preview.motionSpec.tracks[0].role, "background");
+  assert.equal(preview.contentType, 'video/mp4');
+  assert.equal(Buffer.from(preview.src.split(',')[1], 'base64').toString('ascii',4,8),'ftyp');
+  assert.deepEqual([preview.width,preview.height],[540,540]);
 });

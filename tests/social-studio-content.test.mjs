@@ -6,6 +6,7 @@ const require=createRequire(import.meta.url);
 const {sessionSchedule}=require('../backend/services/social-studio/engine/content-rules');
 const engine=require('../backend/services/socialStudioEngineService');
 const {animationPlan}=require('../backend/services/social-studio/composition-engine/animation');
+const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const context={now:'2026-09-22T12:00:00-03:00',brand:{name:'Cine Cruzeiro',posterWebsite:'www.cinecruzeiro.com.br',logoUrl:'asset://logo'},movies:Array.from({length:6},(_,i)=>({id:`m${i}`,title:`Filme ${i+1}`,genre:'Animação',posterUrl:`asset://poster${i}`,releaseDate:'2026-09-24',sessions:[{date:'2026-09-22',time:'10:00'},{date:'2026-09-22',time:'14:00'},{date:'2026-09-22',time:'16:30'},{date:'2026-09-23',time:'19:00'},{date:'2026-09-23',time:'20:00',status:'cancelled'}]}))};
 const poster=await sharp({create:{width:240,height:360,channels:3,background:'#376077'}}).png().toBuffer();
 const loadImage=async()=>poster;
@@ -18,12 +19,12 @@ test('programação respeita período, fuso, cancelamento, ordem e deduplicaçã
 });
 test('estreia e CTA têm pares próximos; horário real não é omitido',async()=>{
   const rendered=await engine.renderSocialPost({movieId:'m0',templateId:'movie-premiere',style:'hero-left',cta:'ACESSE O SITE'},context,{loadImage});
-  const e=id=>rendered.scene.elements.find(item=>item.id===id);
+  const e=id=>flattenElements(rendered.scene.elements).find(item=>item.id===id);
   assert.ok(Math.abs(e('detail').y-e('subtitle').y-e('subtitle').height)<15);
   assert.ok(Math.abs(e('website').y-e('cta').y-e('cta').height)<15);
   assert.equal(e('website').text.replace(/\s/g,''),'www.cinecruzeiro.com.br');
   const schedule=await engine.renderSocialPost({movieId:'m0',templateId:'sessions-week'},context,{loadImage});
-  assert.match(schedule.scene.elements.find(item=>item.id==='detail').text,/14:00/);
+  assert.ok(flattenElements(schedule.scene.elements).some(item=>/14:00/.test(item.text || '')));
 });
 test('multi-filmes normaliza seleção, ordem e histórico; não usa filmes editoriais',async()=>{
   const input={templateId:'multi-movies',movieIds:['m2','m0','m2','missing'],animation:{enabled:true,format:'webm',duration:5}};
@@ -38,7 +39,7 @@ test('multi-filmes normaliza seleção, ordem e histórico; não usa filmes edit
 test('grade de 2, 3, 4 e 6 filmes cabe nos três formatos',async()=>{
   for(const count of [2,3,4,6]) for(const formatId of ['square','feed_portrait','story']) {
     const render=await engine.renderSocialPost({templateId:'multi-movies',movieIds:context.movies.slice(0,count).map(m=>m.id),formatId},context,{loadImage});
-    assert.equal(render.scene.elements.filter(item=>item.id.startsWith('movie-art-')).length,count);
+    assert.equal(flattenElements(render.scene.elements).filter(item=>item.id.startsWith('movie-art-')).length,count);
     for(const item of render.scene.elements) {assert.ok(item.x>=0 && item.y>=0);assert.ok(item.x+item.width<=render.scene.width+1);assert.ok(item.y+item.height<=render.scene.height+1);}
     const overlaps=render.quality.issues.filter(issue=>['TEXT_OVERLAP','TEXT_OVERFLOW'].includes(issue.code));
     assert.deepEqual(overlaps,[],`${count}/${formatId}`);

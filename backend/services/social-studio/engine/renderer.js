@@ -61,6 +61,12 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     if (draft.polish) scene = require("../composition-engine/polish").polishComposition(scene);
     scene = require('../scene/content-layout').enforceContentLayout(scene);
   }
+  const visualStyle=draft.visualStyle;
+  for(const element of scene.elements.filter(e=>e.type==='text')) {
+    if(visualStyle==='clean') {element.fontFamily='Social Text';element.fontWeight=element.hierarchy==='primary'?800:600;}
+    if(visualStyle==='impact' && ['title','detail'].includes(element.id)) element.fill=palette.accentColor;
+    if(visualStyle==='minimal' && !['title','detail'].includes(element.id)) element.fontWeight=500;
+  }
   await ensureTextContrast(scene, loadImage);
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);

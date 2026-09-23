@@ -43,10 +43,12 @@ function applyContentRules(draft, input, context) {
   if(scheduleCampaign && !selected.length && draft.entities.movie) selected.push(draft.entities.movie);
   draft.movieIds = program ? selected.map(movie=>movie.id) : [];
   draft.programLayout=clean(input.programLayout) || (input.multiLayout ? '' : 'automatic');
+  draft.programSpacing=Math.max(-.006,Math.min(.009,Number(input.programSpacing)||0));
   draft.featuredMovieId=selected.some(m=>m.id===input.featuredMovieId)?input.featuredMovieId:'';
   if(program && selected.length) {
     const {selectFeaturedMovie,analyzeProgramMood}=require('../programming/direction');
     draft.entities.movie=selectFeaturedMovie(selected,{featuredMovieId:draft.featuredMovieId,now});
+    draft.movieId=draft.entities.movie.id;
     draft.programMood=analyzeProgramMood(selected);
     draft.resolvedFeaturedMovieId=draft.entities.movie.id;
   }

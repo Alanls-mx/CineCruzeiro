@@ -3,7 +3,8 @@ const clean = value => String(value ?? '').trim().slice(0, 1800);
 const DATE_ROLES = {release:'ESTREIA', presale:'PRÉ-VENDA A PARTIR DE', session:'SESSÃO'};
 function day(value) {
   const text = clean(value).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(text)) ? text : '';
+  const parsed=new Date(`${text}T12:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0,10)===text ? text : '';
 }
 function destination(value) {
   const text = clean(value);
@@ -14,7 +15,7 @@ function buildCampaignContent(draft, input = {}, context = {}) {
   const movie = draft.entities.movie || {};
   const type = draft.templateId;
   const now = context.now || new Date();
-  const upcoming = (movie.sessions || []).filter(s => s.active !== false && s.available !== false && !['cancelled','canceled','hidden','expired','sold_out','disabled'].includes(s.status) && Date.parse(`${s.date}T${s.time}:00-03:00`) >= new Date(now).getTime()).sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+  const upcoming = (movie.sessions || []).filter(s => s.active !== false && s.available !== false && s.availableForPurchase !== false && !['cancelled','canceled','hidden','expired','sold_out','disabled'].includes(s.status) && Date.parse(`${String(s.date).slice(0,10)}T${String(s.time).slice(0,5)}:00-03:00`) >= new Date(now).getTime()).sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
   const primaryDateKind = Object.hasOwn(DATE_ROLES, input.primaryDateKind) ? input.primaryDateKind : type === 'movie-presale' && input.presaleStartDate ? 'presale' : type === 'movie-premiere' || type === 'movie-presale' ? 'release' : 'session';
   const releaseDate = day(input.releaseDate || movie.releaseDate);
   const presaleStartDate = day(input.presaleStartDate || movie.presaleStartDate);

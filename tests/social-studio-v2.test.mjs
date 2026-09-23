@@ -137,13 +137,11 @@ test("templates V2 reagem a imagem e preço ausentes sem quebrar", async () => {
   });
   const withoutPoster = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-3", formatId: "feed_portrait" }, context, { loadImage });
   const withoutArtwork = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-no-art", formatId: "square" }, context, { loadImage });
-  const withoutPrice = await engine.renderSocialPost({ templateId: "movie-price", movieId: "movie-1", formatId: "feed_portrait", price: "" }, context, { loadImage });
+  await assert.rejects(engine.renderSocialPost({ templateId: "movie-price", movieId: "movie-1", formatId: "feed_portrait", price: "" }, context, { loadImage }),e=>e.code==='PRICE_REQUIRED');
   assert.deepEqual([
     (await sharp(withoutPoster.buffer).metadata()).width,
-    (await sharp(withoutArtwork.buffer).metadata()).width,
-    (await sharp(withoutPrice.buffer).metadata()).width
-  ], [1080, 1080, 1080]);
-  assert.equal(engine.hasCommercialPrice(withoutPrice.draft.price), false);
+    (await sharp(withoutArtwork.buffer).metadata()).width
+  ], [1080, 1080]);
 });
 
 test("bomboniere, clube, institucional e pré-venda usam entidades existentes", async () => {

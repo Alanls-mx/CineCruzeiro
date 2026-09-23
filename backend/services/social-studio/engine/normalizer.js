@@ -37,7 +37,7 @@ function normalizeV2Draft(input = {}, context = {}) {
     ...design,
     templateId: template.id,
     style,
-    automaticStyle: !input.layoutId && (input.style === "automatic" || !input.style || input.automaticStyle === true),
+    automaticStyle: input.automaticStyle === true || (!input.layoutId && (input.style === "automatic" || !input.style)),
     polish: input.polish === true,
     artDirection: normalizeDirection(input.artDirection),
     paletteId: PALETTES.some((item) => item.id === input.paletteId) ? input.paletteId : "automatic",
@@ -60,12 +60,20 @@ function normalizeV2Draft(input = {}, context = {}) {
   }
   if(input.layoutId) draft.style = design.layoutId;
   require('./content-rules').applyContentRules(draft, input, context);
+  if(draft.programMood) {
+    draft.genreProfile={...draft.genreProfile,id:draft.programMood};
+    draft.composition=normalizeComposition({...input.composition,look:design.look},draft.programMood);
+  }
   const {buildCampaignContent,validateCampaignContent} = require('../contracts/content');
   draft.content = buildCampaignContent(draft,input,context);
   draft.primaryDateKind = draft.content.primaryDateKind;
   draft.releaseDate = draft.content.releaseDate;
   draft.presaleStartDate = draft.content.presaleStartDate;
   draft.sessionDate = draft.content.sessionDate;
+  if(input.date===undefined) {
+    const value=draft.content.primaryDate;
+    draft.date=/^\d{4}-\d{2}-\d{2}$/.test(value)?new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${value}T12:00:00Z`)).toUpperCase():value;
+  }
   draft.actionDestination = draft.content.action.destination;
   draft.actionDestinationType = draft.content.action.destinationType;
   draft.semanticValidation = validateCampaignContent(draft.content);

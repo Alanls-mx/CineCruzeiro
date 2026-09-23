@@ -1249,6 +1249,12 @@
 
   function bindEvents() {
     const form = document.getElementById("socialStudioForm");
+    const syncDate=()=>{
+      const kind=value('socialStudioDateKind','release');
+      const date=value({release:'socialStudioReleaseDate',presale:'socialStudioPresaleDate',session:'socialStudioSessionDate'}[kind]);
+      if(date) setControl('socialStudioDate',new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`)).toUpperCase());
+    };
+    for(const id of ['socialStudioDateKind','socialStudioReleaseDate','socialStudioPresaleDate','socialStudioSessionDate']) document.getElementById(id).addEventListener('change',syncDate);
     const animationPresets={'poster-cascade':'Pôsteres em sequência','film-reveal':'Revelação cinematográfica','spotlight-rotation':'Rotação de destaque','cinema-lineup':'Entrada da programação','crossfade-program':'Transição de filmes','featured-cycle':'Ciclo de filmes e sessões'};
     for(const [id,name] of Object.entries(animationPresets)) document.getElementById('socialStudioAnimationPreset').add(new Option(name,id));
     for(const [field,id] of Object.entries({headline:'socialStudioTitle',kicker:'socialStudioSubtitle',supportingText:'socialStudioAuxiliary',cta:'socialStudioCta',caption:'socialStudioCaption'})) {

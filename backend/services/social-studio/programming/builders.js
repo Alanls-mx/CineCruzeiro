@@ -4,7 +4,7 @@ const {wrapSchedule}=require('../scene/content-layout');
 const {programLayout}=require('./direction');
 
 function shell({draft,format,brand,palette,logoUrl,baseScene}) {
-  const w=format.width,h=format.height,m=w*.06;
+  const w=format.width,h=format.height,m=w*(.06+(draft.programSpacing || 0));
   const top=h*(format.id==='story'?.075:.045),bottom=h*(format.id==='story'?.89:.955);
   const elements=(baseScene?.elements || []).filter(e=>['background-blur','background-wash','atmosphere','vignette'].includes(e.id)).map(e=>({...e,width:w,height:h}));
   if(!elements.some(e=>e.id==='background-blur')) {
@@ -39,15 +39,16 @@ function scheduleSummary(movie, maxDays=2, maxTimes=3) {
 }
 
 function movieBlock(s,movie,index,box,{horizontal=false,reverse=false,mask='cinematic-bottom',prominent=false,showSessions=true,overlap=false}={}) {
+  reverse=horizontal && reverse;
   const {x,y,width,height}=box;
   const titleH=horizontal?height*.32:Math.max(42,Math.min(76,height*.20));
   const sessionsH=showSessions?(horizontal?height*.60:Math.max(54,Math.min(90,height*.25))):0;
   const artH=horizontal?height:height-titleH-sessionsH-14;
-  const artW=horizontal?width*.25:width;
-  const textX=horizontal && !reverse?x+width*.30:x;
-  const textW=horizontal?width*.70:width;
+  const artW=horizontal?width*.34:width;
+  const textX=horizontal && !reverse?x+width*.39:x;
+  const textW=horizontal?width*.61:width;
   const textY=horizontal?y:y+artH+6;
-  s.im(`movie-art-${index}`,movie.posterUrl,reverse?x+width*.75:x,y,artW,artH,{effects:{layer:'hero',mask,blend:mask==='none'?0:55,brightness:1,scale:1},rotation:overlap?(index%2?-3:3):0});
+  s.im(`movie-art-${index}`,movie.posterUrl,reverse?x+width*.66:x,y,artW,artH,{effects:{layer:'image',mask,blend:mask==='none'?0:35,brightness:1,scale:s.heroScale || 1},rotation:overlap?(index%2?-3:3):0});
   s.tx(`movie-title-${index}`,movie.title,textX,textY,textW,titleH,prominent?52:36,{fontFamily:'Social Display',fontWeight:900,hierarchy:'secondary'});
   if(showSessions) {
     let text=scheduleSummary(movie,horizontal && height>220?2:1,3);
@@ -63,6 +64,7 @@ function finish(s,draft,format) {
 
 function buildMultiMovieScene(args) {
   const {draft,format}=args,s=shell(args),movies=draft.programMovies,count=movies.length;
+  s.heroScale=draft.artDirection?.hero?.scale || 1;
   const layout=programLayout(draft,count);draft.resolvedProgramLayout=layout;
   const gap=s.w*.022,slots=Array(count),featured=Math.max(0,movies.findIndex(m=>m.featured));
   const remaining=movies.map((_,i)=>i).filter(i=>i!==featured);
@@ -119,7 +121,7 @@ function buildScheduleScene(args,week) {
     visible.forEach((row,index)=>{
       const width=(contentW-gap*(columns-1))/columns,x=contentX+index%columns*(width+gap),y=s.y+Math.floor(index/columns)*(rowH+gap);
       const dayLabel=week?new Intl.DateTimeFormat('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',timeZone:'UTC'}).format(new Date(`${row.date}T12:00:00Z`)).toUpperCase():row.times.slice(0,3).join(' • ');
-      const labelH=Math.min(rowH*.28,50),titleH=Math.min(rowH*.30,66),timeH=Math.max(24,rowH-labelH-titleH-12);
+      const labelH=Math.min(rowH*.28,50),titleH=Math.min(rowH*.30,66),timeH=Math.min(76,Math.max(24,rowH-labelH-titleH-12));
       if(layout==='timeline' || layout==='week-timeline') s.elements.push({id:`timeline-rule-${index}`,type:'shape',x,y:y+rowH-2,width,height:1,fill:args.palette.accentColor,opacity:.5});
       s.tx(`program-day-${index}`,dayLabel,x,y,width,labelH,posterColumn?32:42,{fill:args.palette.accentColor,fontFamily:'Social Display',fontWeight:900});
       s.tx(`program-film-${index}`,row.movie.title,x,y+labelH+6,width,titleH,32,{fontFamily:'Social Display',hierarchy:'secondary'});
