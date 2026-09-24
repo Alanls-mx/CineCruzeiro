@@ -14,7 +14,7 @@ function sessionSchedule(movie, input = {}, now = new Date()) {
   const groups = new Map();
   for (const session of movie?.sessions || []) {
     const date = clean(session.date).slice(0,10), time = clean(session.time).slice(0,5);
-    if (!validDay(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time) || date < from || date > until || session.active === false || session.available === false || ['cancelled','canceled','expired','disabled','hidden','sold_out'].includes(session.status)) continue;
+    if (!validDay(date) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time) || date < from || date > until || session.active === false || session.available === false || session.availableForPurchase === false || ['cancelled','canceled','expired','disabled','hidden','sold_out'].includes(session.status)) continue;
     const start = Date.parse(`${date}T${time}:00-03:00`);
     if (start < new Date(now).getTime()) continue;
     if (!groups.has(date)) groups.set(date, new Set());
@@ -44,6 +44,9 @@ function applyContentRules(draft, input, context) {
   draft.movieIds = program ? selected.map(movie=>movie.id) : [];
   draft.programLayout=clean(input.programLayout) || (input.multiLayout ? '' : 'automatic');
   draft.programSpacing=Math.max(-.006,Math.min(.009,Number(input.programSpacing)||0));
+  draft.programColumns=[1,2,3].includes(Number(input.programColumns))?Number(input.programColumns):0;
+  draft.programGap=Math.max(12,Math.min(36,Number(input.programGap)||24));
+  draft.programDays=[1,2,3,7].includes(Number(input.programDays))?Number(input.programDays):1;
   draft.featuredMovieId=selected.some(m=>m.id===input.featuredMovieId)?input.featuredMovieId:'';
   if(program && selected.length) {
     const {selectFeaturedMovie,analyzeProgramMood}=require('../programming/direction');
@@ -68,7 +71,7 @@ function applyContentRules(draft, input, context) {
   draft.schedule = schedule;
   draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],featured:movie.id===draft.resolvedFeaturedMovieId,schedule:sessionSchedule(movie,{...draft,compact:multi,compactDays:selected.length>2?1:3},now)})) : [];
   if (scheduleCampaign) {
-    if(input.title === undefined) draft.title = draft.entities.movie?.title || 'Programação';
+    if(input.title === undefined) draft.title = selected.length>1 ? 'Programação' : draft.entities.movie?.title || 'Programação';
     if(input.subtitle === undefined || /^(HOJE NO|SESSÕES EM)/.test(input.subtitle)) draft.subtitle = draft.scheduleMode === 'today' ? (schedule.from===cinemaDay(now)?`HOJE NO ${context.brand?.name || 'CINEMA'}`.toUpperCase():`SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`) : draft.periodStart ? `SEMANA DE ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}` : 'PROGRAMAÇÃO DA SEMANA';
     if(input.cta === undefined) draft.cta = 'ESCOLHA SUA SESSÃO';
   }
@@ -84,14 +87,14 @@ function applyContentRules(draft, input, context) {
   }
   if(online && input.cta === undefined) draft.cta = 'ESCOLHA SUA SESSÃO';
   const sessionPromise = scheduleCampaign || /sess[õo]es|programa[çc][ãa]o|hoje no/i.test(`${draft.subtitle} ${draft.auxiliaryText} ${draft.cta}`);
-  if (!multi && (scheduleCampaign || sessionPromise && schedule.count)) draft.auxiliaryText = schedule.text || 'Sessões disponíveis no site';
+  if (!multi && (scheduleCampaign || /^movie-/.test(draft.templateId) && sessionPromise && schedule.count)) draft.auxiliaryText = schedule.text || 'Sessões disponíveis no site';
   const mustShowWebsite = online || multi || scheduleCampaign || premiere || /site|online|programa[çc][ãa]o|sess[ãa]o|sess[õo]es|compr|garanta/i.test(draft.cta);
-  draft.contentRules = {mustShowDate:premiere,mustShowSessions:scheduleCampaign || sessionPromise && schedule.count>0,mustShowWebsite,mustShowPrice:['movie-price','ticket-offer','concession-combo','concession-offer','club-plan'].includes(draft.templateId),mustShowMultipleMovies:multi,mustKeepDateNearPremiere:premiere,mustKeepWebsiteNearCTA:mustShowWebsite};
+  draft.contentRules = {mustShowDate:premiere,mustShowSessions:scheduleCampaign || /^movie-/.test(draft.templateId) && sessionPromise && schedule.count>0,mustShowWebsite,mustShowPrice:['movie-price','ticket-offer','concession-combo','concession-offer','club-plan'].includes(draft.templateId),mustShowMultipleMovies:multi,mustKeepDateNearPremiere:premiere,mustKeepWebsiteNearCTA:mustShowWebsite};
   draft.contentNotices = [];
   if(multi && selected.length < 2) draft.contentNotices.push({type:'warning',code:'SELECT_MOVIES',message:'Selecione entre 2 e 6 filmes do catálogo para montar a programação.'});
   if(mustShowWebsite && !draft.website) draft.contentNotices.push({type:'warning',code:'WEBSITE_REQUIRED',message:'Configure o site oficial do cinema antes de exportar esta campanha.'});
   if(premiere && !draft.date) draft.contentNotices.push({type:'warning',code:'DATE_REQUIRED',message:'A estreia ainda não tem data. Informe uma data confirmada ou use Filme em destaque.'});
-  if(scheduleCampaign && !schedule.count) draft.contentNotices.push({type:'warning',code:'NO_SESSIONS',message:'Não há sessões disponíveis no período selecionado. A arte indicará a consulta ao site.'});
+  if(scheduleCampaign && !draft.programMovies.some(movie=>movie.schedule.count)) draft.contentNotices.push({type:'warning',code:'NO_SESSIONS',message:'Não há sessões disponíveis no período selecionado. A arte indicará a consulta ao site.'});
   if(draft.templateId==='movie-presale' && !(draft.entities.movie?.sessions || []).length) {
     if(input.subtitle===undefined) draft.subtitle='PRÉ-VENDA EM BREVE';
     if(input.cta===undefined) draft.cta='ACOMPANHE AS NOVIDADES';

@@ -11,7 +11,8 @@ const logo = await fs.readFile('public/images/social-studio/cine-cruzeiro-logo-3
 const context = {
   brand: {name:'Cine Cruzeiro',logoUrl:'/logo.png',posterLogoUrl:'/logo.png',primaryColor:'#07111f',secondaryColor:'#267be6',accentColor:'#facc15',textColor:'#ffffff',posterWebsite:'www.cinecruzeiro.com.br'},
   movies: [{id:'movie',title:'Campanha de teste',genre:'Animação',posterUrl:'/poster.webp',releaseDate:'2026-10-22',sessions:[]}],
-  concessions:[],clubPlans:[],templates:engine.SOCIAL_TEMPLATES,styles:[...engine.SOCIAL_STYLES,...STYLES],formats:Object.values(engine.SOCIAL_FORMATS),
+  concessions:[{id:'combo',name:'Combo Clássico',price:25,imageUrl:'/poster.webp'}],clubPlans:[],templates:engine.SOCIAL_TEMPLATES,styles:[...engine.SOCIAL_STYLES,...STYLES],formats:Object.values(engine.SOCIAL_FORMATS),
+  programLayouts:require('../backend/services/social-studio/programming/direction').PROGRAM_LAYOUTS,
   signatures:engine.SOCIAL_SIGNATURES,palettes:require('../backend/services/social-studio/engine/palette').PALETTES,
   composition:{presets:PRESETS,looks:LOOKS},capabilities:{create:true,delete:true},history:[],readyPosts:[]
 };
@@ -41,6 +42,7 @@ try {
         return route.fulfill({contentType:'image/webp',body:poster,headers:{'X-Social-Scene-Id':'approved-preview'}});
       }
       if(url.pathname.endsWith('/copy')) return route.fulfill({json:{bundle:{caption:'Uma nova legenda de teste.'}}});
+      if(url.pathname.endsWith('/uploads')) return route.fulfill({json:{url:'/poster.webp'}});
       if(url.pathname.endsWith('/posts')) {
         post={id:'post',imageUrl:'/poster.webp',payload:input,editable:true,width:1080,height:1350,formatId:'feed_portrait',title:'Arte aprovada'};
         return route.fulfill({json:{post,history:[post]}});
@@ -122,6 +124,42 @@ try {
     await expect(page.locator('#socialStudioStatus')).toContainText('Arte social gerada');
     await page.locator('#socialStudioCampaignButton').click();
     await expect(page.locator('.social-operation[data-state=done]')).toContainText('três formatos');
+    await page.locator('#socialDockTab-animation').click();
+    await page.locator('#socialStudioAnimated').uncheck();
+    await page.locator('label').filter({has:page.locator('[name=socialStudioTemplate][value=online-ticket]')}).click();
+    await expect(page.locator('#socialStudioStatus')).toContainText('Prévia atualizada');
+    await page.locator('#socialTabImage').click();
+    await page.locator('#socialStudioBackgroundMode').selectOption('catalog');
+    await page.locator('#socialStudioBackgroundGenre').selectOption('Animação');
+    await page.locator('[data-background-movie=movie]').check();
+    await expect(page.locator('#socialStudioBackgroundMovie')).toBeHidden();
+    await page.locator('#socialStudioPreviewButton').click();
+    assert.equal(lastDraft.background.mode,'catalog');
+    assert.deepEqual(lastDraft.background.movieIds,['movie']);
+    assert.equal(lastDraft.entities.movie,null);
+    await page.locator('#socialStudioBackgroundMode').scrollIntoViewIfNeeded();
+    await page.screenshot({path:`artifacts/studio-workspace/${name}-background.png`});
+    await page.locator('#socialStudioBackgroundMode').selectOption('upload');
+    await page.locator('#socialStudioBackgroundUpload').setInputFiles({name:'background.webp',mimeType:'image/webp',buffer:poster});
+    await expect.poll(()=>lastDraft.background.imageUrl).toBe('/poster.webp');
+    assert.equal(lastDraft.imageUrl,'');
+    await page.locator('#socialTabLook').click();
+    await page.locator('#socialStudioSignaturePosition').evaluate(select=>select.closest('details')?.setAttribute('open',''));
+    await page.locator('#socialStudioSignaturePosition').selectOption('manual');
+    await page.locator('#socialStudioSignatureX').fill('5');
+    await page.locator('#socialStudioPreviewButton').click();
+    assert.equal(lastDraft.signaturePosition.x,5);
+    await page.locator('label').filter({has:page.locator('[name=socialStudioTemplate][value=concession-combo]')}).click();
+    await page.locator('#socialTabContent').click();
+    await page.locator('#socialStudioRelatedMovie').selectOption('movie');
+    await expect.poll(()=>lastDraft.relatedMovieId).toBe('movie');
+    await page.locator('label').filter({has:page.locator('[name=socialStudioTemplate][value=sessions-week]')}).click();
+    await page.locator('#socialDockTab-composition').click();
+    await page.locator('label').filter({has:page.locator('[name=socialStudioStyle][value=day-cards]')}).click();
+    await page.locator('#socialStudioPreviewButton').click();
+    assert.equal(lastDraft.programLayout,'day-cards');
+    await page.locator('#socialDockTab-composition').scrollIntoViewIfNeeded();
+    await page.screenshot({path:`artifacts/studio-workspace/${name}-programming.png`});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No horizontal overflow');
     assert.deepEqual(errors,[]);
     console.log(`${name}: tabs, keyboard, progress, completion, cancel, error, retry, copy, variations and export OK`);

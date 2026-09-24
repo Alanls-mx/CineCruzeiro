@@ -25,7 +25,9 @@ function normalizeV2Draft(input = {}, context = {}) {
     ? "cinema-club"
     : template.id === "ticket-offer" ? "movie-price" : template.id === "concession-offer" ? "concession-combo" : template.id === "movie-presale" ? "movie-premiere" : ['sessions-today','sessions-week','multi-movies'].includes(template.id) ? 'movie-highlight' : template.id;
   const legacyDraft = legacy.normalizeDraft({ ...input, templateId: legacyTemplateId }, context);
-  const movie = template.id==='ticket-offer' && input.movieId==='' ? null : entityById(context.movies, input.movieId) || (template.type === 'movie' ? legacyDraft.entities.movie : null);
+  const commercial = ['concession-combo','concession-offer','online-ticket','club-plan'].includes(template.id);
+  const relatedMovie = commercial && template.id!=='club-plan' ? entityById((context.movies || []).filter(movie=>movie.catalogued!==false), input.relatedMovieId) : null;
+  const movie = commercial ? relatedMovie : template.id==='ticket-offer' && input.movieId==='' ? null : entityById(context.movies, input.movieId) || (template.type === 'movie' ? legacyDraft.entities.movie : null);
   const concession = entityById(context.concessions, input.concessionId) || legacyDraft.entities.concession;
   const clubPlan = entityById(context.clubPlans, input.clubPlanId) || legacyDraft.entities.clubPlan;
   const profile = genreProfile(movie || {});
@@ -35,6 +37,9 @@ function normalizeV2Draft(input = {}, context = {}) {
   const draft = {
     ...legacyDraft,
     ...design,
+    ...require('../scene/customization').normalizeCustomization(input,context),
+    relatedMovieId:relatedMovie?.id || '',
+    dateTextMode:input.dateTextMode==='automatic'?'automatic':'manual',
     templateId: template.id,
     style,
     automaticStyle: input.automaticStyle === true || (!input.layoutId && (input.style === "automatic" || !input.style)),
@@ -60,6 +65,7 @@ function normalizeV2Draft(input = {}, context = {}) {
     entities: { movie, concession, clubPlan },
     movieId: movie?.id || ''
   };
+  if(template.id==='online-ticket' && (!input.signatureId || input.signatureId==='automatic')) draft.signatureId='classic';
 
   if (template.id === "movie-presale") {
     if (input.subtitle === undefined) draft.subtitle = "PRÉ-VENDA ABERTA";
@@ -77,7 +83,7 @@ function normalizeV2Draft(input = {}, context = {}) {
   draft.signatureScaleMode=input.signatureScaleMode==='automatic' || input.signatureScale===undefined ? 'automatic' : 'manual';
   if(template.id==='ticket-offer') draft.signatureScale=Math.max(70,Math.min(180,Number(input.signatureScale)||100));
   draft.brandProminence=['subtle','normal','strong'].includes(input.brandProminence)?input.brandProminence:'normal';
-  Object.assign(draft,require('../composition-engine/artwork-policy').normalizeArtwork(input,movie));
+  Object.assign(draft,require('../composition-engine/artwork-policy').normalizeArtwork(input,commercial && template.id!=='online-ticket' ? null : movie));
   if(['movie-price','ticket-offer'].includes(template.id)) {
     const priceInput=template.id==='ticket-offer' && !input.priceSelection && !input.price ? {...input,priceSelection:{mode:'full'}} : input;
     const priceMovie=template.id==='ticket-offer' && !movie ? {sessions:(context.movies || []).filter(item=>item.catalogued!==false).flatMap(item=>item.sessions || [])} : draft.entities.movie;
@@ -106,12 +112,20 @@ function normalizeV2Draft(input = {}, context = {}) {
   draft.releaseDate = draft.content.releaseDate;
   draft.presaleStartDate = draft.content.presaleStartDate;
   draft.sessionDate = draft.content.sessionDate;
-  if(input.date===undefined) {
+  if(template.id==='movie-highlight' && draft.dateTextMode==='automatic' && draft.content.primaryDate) {
+    draft.contentRules.mustShowDate=true;
+    draft.contentRules.mustKeepDateNearPremiere=true;
+  }
+  if(input.date===undefined || draft.dateTextMode==='automatic') {
     const value=draft.content.primaryDate;
     draft.date=/^\d{4}-\d{2}-\d{2}$/.test(value)?new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${value}T12:00:00Z`)).toUpperCase():value;
   }
   draft.actionDestination = draft.content.action.destination;
   draft.actionDestinationType = draft.content.action.destinationType;
+  if(draft.dateTextMode==='automatic' && /^movie-/.test(template.id) && !draft.copyLocks.kicker && /^(ESTREIA|SESSÃO|PRÉ-VENDA|LANÇAMENTO INTERNACIONAL)/i.test(draft.subtitle || '')) {
+    draft.subtitle=draft.content.primaryDateLabel;
+    draft.content.kicker=draft.subtitle;
+  }
   draft.semanticValidation = validateCampaignContent(draft.content);
   draft.contentNotices = [...draft.contentNotices.filter(n=>!draft.semanticValidation.errors.some(e=>e.code===n.code)), ...draft.semanticValidation.errors];
   return draft;

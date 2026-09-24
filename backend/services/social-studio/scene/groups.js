@@ -14,6 +14,7 @@ function groupCampaignScene(scene) {
   groupElements(scene,'action-group',['cta','website'],'action');
   if(scene.sourceDraft?.contentRules?.mustShowDate) groupElements(scene,'date-group',['subtitle','detail'],'date');
   for(let i=0;i<6;i++) groupElements(scene,`movie-group-${i}`,[`movie-art-${i}`,`movie-title-${i}`,`movie-sessions-${i}`],'movie');
+  for(let i=0;i<7;i++) groupElements(scene,`session-group-${i}`,[`program-panel-${i}`,`timeline-rule-${i}`,`program-day-${i}`,`program-film-${i}`,`program-time-${i}`],'session');
   return scene;
 }
 function validateSceneSemantics(scene) {

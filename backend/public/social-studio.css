@@ -1556,6 +1556,17 @@
 .social-production-panel .social-output-grid { padding: 0; grid-template-columns: repeat(2, minmax(0, 300px)); }
 .social-production-panel label { display: grid; gap: 8px; min-width: 0; color: #bdcadd; font-size: 12px; }
 .social-production-panel :is(input, select, textarea) { max-width: 100%; min-width: 0; }
+.social-background-movies { display: grid; gap: 8px; max-height: 240px; overflow-y: auto; }
+.social-background-movies label { font-weight: 500; }
+.social-program-controls { display: grid; gap: 12px; margin-top: 12px; }
+.social-property-body input[type="color"] { width: 100%; height: 36px; padding: 3px; }
+.social-layout-mini--poster-list img, .social-layout-mini--editorial-schedule img, .social-layout-mini--editorial-week img { width: 30%; height: 85%; left: 4%; top: 6%; }
+.social-layout-mini--poster-list b, .social-layout-mini--editorial-schedule b, .social-layout-mini--editorial-week b { left: 42%; width: 48%; top: 18%; height: 24%; }
+.social-layout-mini--day-cards b, .social-layout-mini--cinema-board b { top: 10%; left: 8%; width: 35%; height: 32%; }
+.social-layout-mini--day-cards em, .social-layout-mini--cinema-board em { top: 54%; left: 55%; width: 35%; height: 32%; }
+.social-layout-mini--timeline img, .social-layout-mini--week-timeline img { display: none; }
+.social-layout-mini--timeline b, .social-layout-mini--week-timeline b { top: 15%; height: 24%; width: 80%; left: 10%; }
+.social-layout-mini--timeline em, .social-layout-mini--week-timeline em { top: 55%; height: 24%; width: 80%; left: 10%; }
 .social-production-panel #socialStudioAnimationOptions { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
 .social-export-actions, .social-animation-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; grid-column: 1 / -1; }
 .social-animation-actions { margin-top: 0; border-top: 1px solid var(--line); padding-top: 14px; }

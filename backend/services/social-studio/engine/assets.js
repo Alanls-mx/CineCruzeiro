@@ -63,7 +63,7 @@ async function prepareLogo(buffer, maxWidth, maxHeight) {
 
 function sourceUrlForDraft(draft = {}) {
   if (draft.imageMode === "upload" && draft.imageUrl) return draft.imageUrl;
-  const movieTemplates = ["movie-premiere", "movie-highlight", "movie-price", "movie-presale", "ticket-offer"];
+  const movieTemplates = ["movie-premiere", "movie-highlight", "movie-price", "movie-presale", "ticket-offer", "online-ticket"];
   if (movieTemplates.includes(draft.templateId)) {
     const movie = draft.entities?.movie || {};
     if (draft.imageMode === "poster") return movie.posterUrl || movie.backdropUrl || "";

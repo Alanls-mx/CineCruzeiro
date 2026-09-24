@@ -14,6 +14,10 @@ async function applySignatureGeometry(scene, loadImage) {
   const margin = scene.width * .055;
   const bottom = scene.height * (scene.formatId === 'story' ? .90 : .975);
   const baseWidth = Math.min(scene.width * .24, Math.max(scene.width * .18, logo.width)) * prominence;
+  if(draft.signaturePosition?.mode==='manual') {
+    Object.assign(logo,{width:baseWidth*scale,height:baseWidth*scale/ratio,fit:'contain',focusX:50,focusY:50,locked:false});
+    return scene;
+  }
   const blockers = scene.elements.filter(e => e.visible !== false && (e.type === 'text' && e.text?.trim() || (e.id === 'artwork' || e.id.startsWith('movie-art-')) && e.height < scene.height*.8));
   const candidates = [scene.width-margin-baseWidth*1.35, scene.width*.72, margin];
   const slots = candidates.flatMap(x => {

@@ -212,6 +212,7 @@
                   <fieldset data-social-field="schedule" class="social-choice-fieldset"><legend>Programação</legend><label>Período<select id="socialStudioScheduleMode" data-requires-create><option value="today">Um dia</option><option value="week" selected>Sete dias</option></select></label><label>Data inicial<input id="socialStudioPeriodStart" type="date" data-requires-create /></label><label class="social-toggle"><input id="socialStudioShowSessions" type="checkbox" checked data-requires-create /> Mostrar horários por dia</label></fieldset>
                   <label id="socialStudioConcessionField" data-social-field="concession">Produto ou combo<select id="socialStudioConcession" data-requires-create></select></label>
                   <label id="socialStudioClubField" data-social-field="clubPlan">Plano do clube<select id="socialStudioClub" data-requires-create></select></label>
+                  <label id="socialStudioRelatedMovieField">Filme vinculado<select id="socialStudioRelatedMovie" data-requires-create><option value="">Sem vínculo com filme</option>${(state.context.movies || []).filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>
                   <label data-social-field="title">Título<input id="socialStudioTitle" maxlength="160" data-requires-create /></label>
                   <label data-social-field="offerHeadline">Chamada principal da oferta<input id="socialStudioOfferHeadline" maxlength="100" placeholder="Ex.: especial de fim de semana" data-requires-create /></label>
                   <label data-social-field="offerHeadline">Selo da oferta<input id="socialStudioOfferBadge" maxlength="44" placeholder="Ex.: valor especial" data-requires-create /></label>
@@ -437,6 +438,45 @@
     motionActions.className = 'social-animation-actions';
     motionActions.append(byId('socialStudioAnimationState'), byId('socialStudioAnimationCancel'), byId('socialStudioAnimationExport'), byId('socialStudioAnimationRestart'));
     byId('socialStudioAnimationOptions').append(motionActions);
+    const customization = document.createElement('details');
+    customization.className='social-property-section'; customization.open=true;
+    const movies=(state.context.movies || []).filter(movie=>movie.catalogued!==false);
+    const genres=[...new Set(movies.flatMap(movie=>[movie.genre,...(movie.genres || [])]).filter(Boolean))].sort();
+    customization.innerHTML=`<summary>Plano de fundo</summary><div class="social-property-body">
+      <label>Origem do fundo<select id="socialStudioBackgroundMode" data-requires-create>${[['automatic','Automático da campanha'],['solid','Cor sólida'],['gradient','Duas cores'],['upload','Imagem personalizada'],['movie','Arte de um filme'],['catalog','Catálogo de filmes']].map(([id,label])=>`<option value="${id}">${label}</option>`).join('')}</select></label>
+      <label data-background-control="solid gradient">Cor principal<input id="socialStudioBackgroundColor" type="color" value="#07111f" data-requires-create /></label>
+      <label data-background-control="gradient">Segunda cor<input id="socialStudioBackgroundSecondary" type="color" value="#165bb5" data-requires-create /></label>
+      <label data-background-control="upload">Imagem do fundo<input id="socialStudioBackgroundUpload" type="file" accept="image/jpeg,image/png,image/webp" data-requires-create /><span id="socialStudioBackgroundState">Nenhuma imagem enviada</span></label><input id="socialStudioBackgroundUrl" type="hidden" />
+      <label data-background-control="movie">Filme do fundo<select id="socialStudioBackgroundMovie" data-requires-create><option value="">Selecione um filme</option>${movies.map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>
+      <label data-background-control="catalog">Gênero<select id="socialStudioBackgroundGenre" data-requires-create><option value="">Todos os gêneros</option>${genres.map(genre=>`<option>${escapeHtml(genre)}</option>`).join('')}</select></label>
+      <fieldset data-background-control="catalog" class="social-choice-fieldset"><legend>Filmes do fundo (até 6)</legend><div class="social-background-movies">${movies.map(movie=>`<label class="social-toggle"><input type="checkbox" data-background-movie="${escapeHtml(movie.id)}" data-requires-create />${escapeHtml(movie.title)}</label>`).join('')}</div></fieldset>
+      <label data-background-control="upload movie catalog">Desfoque<input id="socialStudioBackgroundBlur" type="range" min="0" max="60" value="12" data-requires-create /></label>
+      <label data-background-control="upload movie catalog">Escurecimento<input id="socialStudioBackgroundDarken" type="range" min="0" max="85" value="45" data-requires-create /></label>
+      <label data-background-control="upload movie">Posição horizontal<input id="socialStudioBackgroundX" type="range" min="0" max="100" value="50" data-requires-create /></label>
+      <label data-background-control="upload movie">Posição vertical<input id="socialStudioBackgroundY" type="range" min="0" max="100" value="50" data-requires-create /></label>
+    </div>`;
+    byId('socialInspectorImage').append(customization);
+    const position=document.createElement('fieldset');position.className='social-choice-fieldset';
+    position.innerHTML='<legend>Posição da assinatura</legend><label>Posicionamento<select id="socialStudioSignaturePosition" data-requires-create><option value="automatic">Automático</option><option value="manual">Personalizado</option></select></label><label>Horizontal<input id="socialStudioSignatureX" type="range" min="0" max="100" value="85" data-requires-create /></label><label>Vertical<input id="socialStudioSignatureY" type="range" min="0" max="100" value="92" data-requires-create /></label>';
+    byId('socialStudioSignatures').closest('fieldset').after(position);
+    const dateMode=document.createElement('label');
+    dateMode.innerHTML='Texto da data<select id="socialStudioDateTextMode" data-requires-create><option value="automatic">Automático pelo significado</option><option value="manual">Texto personalizado</option></select>';
+    byId('socialStudioDate').closest('label').before(dateMode);
+    const programControls=document.createElement('div');programControls.className='social-program-controls';
+    programControls.innerHTML='<label>Colunas<select id="socialStudioProgramColumns" data-requires-create><option value="0">Automático</option><option value="1">1 coluna</option><option value="2">2 colunas</option><option value="3">3 colunas</option></select></label><label>Espaçamento<input id="socialStudioProgramGap" type="range" min="12" max="36" value="24" data-requires-create /></label><label>Resumo por filme<select id="socialStudioProgramDays" data-requires-create><option value="1">1 dia</option><option value="2">2 dias</option><option value="3">3 dias</option><option value="7">Semana completa</option></select></label>';
+    byId('socialStudioProgramLayout').closest('label').after(programControls);
+  }
+
+  function syncCustomizationControls() {
+    const mode=value('socialStudioBackgroundMode','automatic');
+    root.querySelectorAll('[data-background-control]').forEach(element=>{element.hidden=!element.dataset.backgroundControl.split(' ').includes(mode);});
+    const genre=value('socialStudioBackgroundGenre');
+    root.querySelectorAll('[data-background-movie]').forEach(input=>{
+      const movie=state.context.movies.find(movie=>String(movie.id)===input.dataset.backgroundMovie);
+      input.closest('label').hidden=Boolean(genre && ![movie?.genre,...(movie?.genres || [])].includes(genre));
+    });
+    for(const id of ['socialStudioSignatureX','socialStudioSignatureY']) document.getElementById(id).closest('label').hidden=value('socialStudioSignaturePosition')!=='manual';
+    document.getElementById('socialStudioDate').readOnly=value('socialStudioDateTextMode')==='automatic';
   }
 
   function fillSelect(id, items, emptyLabel, label) {
@@ -493,13 +533,22 @@
       </section>`).join("");
   }
 
+  function artworkMovie() {
+    const type=currentTemplate()?.id;
+    const id=['concession-combo','concession-offer','online-ticket'].includes(type)?value('socialStudioRelatedMovie'):type==='club-plan'?'':value('socialStudioMovie');
+    return state.context.movies?.find(movie=>String(movie.id)===id);
+  }
+
   function renderStyles(selected = "") {
     const template = currentTemplate();
     const allowed = template?.styles || ["clean"];
-    const styles = template?.id==='ticket-offer'
+    const programLayouts=state.context?.programLayouts?.[template?.id];
+    const styles = programLayouts?.length
+      ? [{id:'automatic',name:'Direção automática'},...programLayouts.map(id=>({id,name:document.querySelector(`#socialStudioProgramLayout option[value="${id}"]`)?.textContent || id}))]
+      : template?.id==='ticket-offer'
       ? [{id:'automatic',name:'Direção automática'},{id:'price-impact',name:'Preço gigante'},{id:'campaign-led',name:'Campanha em foco'},{id:'offer-counter',name:'Comparativo'},{id:'ticket-burst',name:'Ingresso pop'},{id:'promo-editorial',name:'Editorial promocional'},{id:'cinema-pop',name:'Cinema vibrante'}]
       : [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
-    const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
+    const movie = artworkMovie();
     const concession = state.context.concessions?.find((item) => String(item.id) === value("socialStudioConcession"));
     const plan = state.context.clubPlans?.find((item) => String(item.id) === value("socialStudioClub"));
     const artwork = ['concession-combo','concession-offer'].includes(template?.id) ? concession?.imageUrl : template?.id === "club-plan" ? plan?.imageUrl : movie?.posterUrl;
@@ -508,6 +557,7 @@
       : template?.id === "club-plan"
         ? {"typography-dominant":"Benefícios em destaque", editorial:"Plano editorial", "hero-center":"Plano em destaque", "hero-right":"Clube + plano", automatic:"Direção automática"}
         : { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
+    if(programLayouts?.length) selected=value('socialStudioProgramLayout','automatic');
     const chosen = styles.some(style => style.id === selected) ? selected : "automatic";
     document.getElementById("socialStudioStyles").innerHTML = styles.map((style) => `
       <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === chosen ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${artwork ? `<img src="${escapeHtml(assetUrl(artwork))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
@@ -515,7 +565,7 @@
 
   function syncCompositionControls() {
     const config = state.context.composition || {};
-    const movie = state.context.movies?.find((item) => String(item.id) === value("socialStudioMovie"));
+    const movie = artworkMovie();
     const genre = [movie?.genre, ...(movie?.genres || [])].join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const inferred = /terror|horror|suspense/.test(genre) ? "horror" : /fantasia|fantasy/.test(genre) ? "fantasy" : /animacao|familia|infantil/.test(genre) ? "animation" : /acao|aventura/.test(genre) ? "action" : /romance/.test(genre) ? "romance" : /drama/.test(genre) ? "drama" : "neutral";
     const preset = value("socialStudioCompositionPreset", "automatic");
@@ -729,6 +779,7 @@
   function updateFieldVisibility() {
     const fields = new Set(currentTemplate()?.fields || []);
     const templateId = currentTemplate()?.id;
+    document.getElementById('socialStudioRelatedMovieField').hidden=!['online-ticket','concession-combo','concession-offer'].includes(templateId);
     const signatureScale=document.getElementById('socialStudioSignatureScale');
     signatureScale.max=templateId==='ticket-offer'?'180':'135';
     signatureScale.value=String(Math.min(Number(signatureScale.value),Number(signatureScale.max)));
@@ -742,7 +793,7 @@
     const general=movieField.querySelector('option[value=""]');
     if(general) {general.hidden=templateId!=='ticket-offer';general.disabled=templateId!=='ticket-offer';}
     if(templateId!=='ticket-offer' && !movieField.value) movieField.value=state.context?.movies?.[0]?.id || '';
-    const movieTemplate = currentTemplate()?.type === "movie";
+    const movieTemplate = currentTemplate()?.type === "movie" || templateId==='online-ticket' && Boolean(value('socialStudioRelatedMovie'));
     const fixedSchedule=['sessions-today','sessions-week'].includes(currentTemplate()?.id);
     const programSelect=document.getElementById('socialStudioProgramLayout');
     const selected=programSelect.value;
@@ -758,6 +809,7 @@
       label.hidden = !movieTemplate && ["backdrop", "poster"].includes(value);
     });
     renderStyles(document.querySelector("[name='socialStudioStyle']:checked")?.value || "");
+    syncCustomizationControls();
     updateStyleRecommendation();
   }
 
@@ -816,14 +868,17 @@
       outputType: value("socialStudioOutput", "png"),
       style: checked("socialStudioStyle", "cinematic"),
       visualStyle:value('socialStudioVisualStyle','cinematic'),
-      layoutId:checked('socialStudioStyle','automatic')==='automatic' ? undefined : checked('socialStudioStyle'),
+      layoutId:state.context?.programLayouts?.[currentTemplate()?.id] || checked('socialStudioStyle','automatic')==='automatic' ? undefined : checked('socialStudioStyle'),
       look:value('socialStudioCompositionLook','cinematic'),
       automaticStyle: checked("socialStudioStyle", "automatic") === "automatic",
       artDirection: { enabled:true, heroMode:value("socialStudioHeroMode","edge-dissolve"), emphasis:value("socialStudioEmphasis","automatic"),grid:value("socialStudioDirectionGrid","automatic"),seed:Number(value("socialStudioDirectionSeed",0)),background:{...state.directionFrames.background},hero:{...state.directionFrames.hero},secondary:document.getElementById("socialStudioSecondaryArtwork").checked,foreground:value("socialStudioForeground","none"),shadow:Number(value("socialStudioHeroShadow",25)) },
       movieId: value("socialStudioMovie"),
+      relatedMovieId:value('socialStudioRelatedMovie'),
+      background:{mode:value('socialStudioBackgroundMode','automatic'),color:value('socialStudioBackgroundColor'),secondaryColor:value('socialStudioBackgroundSecondary'),imageUrl:value('socialStudioBackgroundUrl'),movieId:value('socialStudioBackgroundMovie'),genre:value('socialStudioBackgroundGenre'),movieIds:[...root.querySelectorAll('[data-background-movie]:checked')].map(input=>input.dataset.backgroundMovie),blur:Number(value('socialStudioBackgroundBlur',12)),darken:Number(value('socialStudioBackgroundDarken',45)),focusX:Number(value('socialStudioBackgroundX',50)),focusY:Number(value('socialStudioBackgroundY',50))},
       movieIds: [...document.querySelectorAll('[data-program-movie]')].map(select=>select.value).filter(Boolean),
       multiLayout: value('socialStudioMultiLayout','grid'),
       programLayout:value('socialStudioProgramLayout','automatic'),
+      programColumns:Number(value('socialStudioProgramColumns',0)),programGap:Number(value('socialStudioProgramGap',24)),programDays:Number(value('socialStudioProgramDays',1)),
       featuredMovieId:value('socialStudioFeaturedMovie'),
       scheduleMode: value('socialStudioScheduleMode','week'),
       periodStart: value('socialStudioPeriodStart'),
@@ -848,6 +903,7 @@
       price: value("socialStudioPrice"),
       priceSelection: ['movie-price','ticket-offer'].includes(checked('socialStudioTemplate')) ? {mode:value('socialStudioPriceMode','ticket-type'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')===''?undefined:Number(value('socialStudioManualPrice')),formatted:value('socialStudioPrice')} : undefined,
       date: value("socialStudioDate"),
+      dateTextMode:value('socialStudioDateTextMode','automatic'),
       primaryDateKind:value('socialStudioDateKind','release'),
       releaseDate:value('socialStudioReleaseDate'),
       presaleStartDate:value('socialStudioPresaleDate'),
@@ -876,7 +932,7 @@
       composition: { enabled: document.getElementById("socialStudioCompositionEnabled").checked, preset: value("socialStudioCompositionPreset", "automatic"), look: value("socialStudioCompositionLook", "cinematic"), adjustments: { ...state.compositionAdjustments } },
       motion: { animationPreset: value("socialStudioMotionPreset", "slow-zoom"), duration: Number(value("socialStudioMotionDuration", 8)), easing: "ease-in-out" },
       signatureId: checked("socialStudioSignature", "automatic"),
-      signaturePosition: value("socialStudioSignaturePosition", "automatic"),
+      signaturePosition: {mode:value('socialStudioSignaturePosition','automatic'),x:Number(value('socialStudioSignatureX',85)),y:Number(value('socialStudioSignatureY',92))},
       signatureScale: Number(value("socialStudioSignatureScale", 100)),
       signatureScaleMode:document.getElementById('socialStudioSignatureAutomatic').checked?'automatic':'manual',
       brandProminence:value('socialStudioBrandProminence','normal'),
@@ -896,6 +952,10 @@
   }
 
   function applyDraft(draft, caption = "") {
+    const background=draft.background || {};
+    for(const [id,next] of Object.entries({socialStudioRelatedMovie:draft.relatedMovieId || '',socialStudioDateTextMode:draft.dateTextMode || 'automatic',socialStudioBackgroundMode:background.mode || 'automatic',socialStudioBackgroundColor:background.color || '#07111f',socialStudioBackgroundSecondary:background.secondaryColor || '#165bb5',socialStudioBackgroundUrl:background.imageUrl || '',socialStudioBackgroundMovie:background.movieId || '',socialStudioBackgroundGenre:background.genre || '',socialStudioBackgroundBlur:background.blur ?? 12,socialStudioBackgroundDarken:background.darken ?? 45,socialStudioBackgroundX:background.focusX ?? 50,socialStudioBackgroundY:background.focusY ?? 50,socialStudioSignatureX:draft.signaturePosition?.x ?? 85,socialStudioSignatureY:draft.signaturePosition?.y ?? 92,socialStudioProgramColumns:draft.programColumns || 0,socialStudioProgramGap:draft.programGap || 24,socialStudioProgramDays:draft.programDays || 1})) setControl(id,next);
+    root.querySelectorAll('[data-background-movie]').forEach(input=>{input.checked=background.movieIds?.includes(input.dataset.backgroundMovie) || false;});
+    document.getElementById('socialStudioBackgroundState').textContent=background.imageUrl?'Imagem personalizada selecionada':'Nenhuma imagem enviada';
     document.querySelectorAll('[data-program-movie]').forEach((select,index)=>{select.value=draft.movieIds?.[index] || '';});
     setControl('socialStudioMultiLayout',draft.multiLayout || 'grid');
     setControl('socialStudioProgramLayout',draft.programLayout || 'automatic');
@@ -961,7 +1021,7 @@
       socialStudioAlignment: draft.alignment,
       socialStudioTitleScale: draft.titleScale,
       socialStudioPalette: draft.paletteMode,
-      socialStudioSignaturePosition: draft.signaturePosition,
+      socialStudioSignaturePosition: draft.signaturePosition?.mode || 'automatic',
       socialStudioSignatureScale: draft.signatureScale,
       socialStudioCaption: caption || draft.caption
     };
@@ -1519,7 +1579,7 @@
     document.getElementById('socialStudioEmbeddedDateVerified').checked=false;
   }
 
-  async function uploadCustomImage(file) {
+  async function uploadCustomImage(file, background = false) {
     if (!file) return;
     if (!/^image\/(jpeg|png|webp)$/i.test(file.type) || file.size > 5 * 1024 * 1024) {
       notify("Use uma imagem JPG, PNG ou WebP de até 5 MB.", "error");
@@ -1536,6 +1596,11 @@
       method: "POST",
       body: JSON.stringify({ data, filename: file.name, contentType: file.type })
     });
+    if(background) {
+      setControl('socialStudioBackgroundUrl',result.url);setControl('socialStudioBackgroundMode','upload');
+      document.getElementById('socialStudioBackgroundState').textContent=file.name;
+      syncCustomizationControls();saveDraftLocal();await updatePreview({force:true});return;
+    }
     setControl("socialStudioImageUrl", result.url);
     resetArtworkMetadata();
     setRadio("socialStudioImageMode", "upload");
@@ -1673,11 +1738,15 @@
       if(event.target.closest('[data-social-fix-today]')) applyTodayCorrection().catch(error=>setStatus(error.message,'error'));
     });
     const syncDate=()=>{
+      if(value('socialStudioDateTextMode')!=='automatic') return;
       const kind=value('socialStudioDateKind','release');
       const date=value({release:'socialStudioReleaseDate',presale:'socialStudioPresaleDate',session:'socialStudioSessionDate'}[kind]);
-      if(date) setControl('socialStudioDate',new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`)).toUpperCase());
+      setControl('socialStudioDate',date?new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${date}T12:00:00Z`)).toUpperCase():'');
+      if(!root.querySelector('[data-copy-lock=kicker]')?.checked) setControl('socialStudioSubtitle',{release:'ESTREIA',presale:'PRÉ-VENDA A PARTIR DE',session:'SESSÃO'}[kind]);
     };
-    for(const id of ['socialStudioDateKind','socialStudioReleaseDate','socialStudioPresaleDate','socialStudioSessionDate']) document.getElementById(id).addEventListener('change',syncDate);
+    for(const id of ['socialStudioDateKind','socialStudioReleaseDate','socialStudioPresaleDate','socialStudioSessionDate','socialStudioDateTextMode']) document.getElementById(id).addEventListener('change',syncDate);
+    document.getElementById('socialStudioRelatedMovie').addEventListener('change',()=>resolveDefaults({resetCopy:true}));
+    document.getElementById('socialStudioBackgroundUpload').addEventListener('change',event=>uploadCustomImage(event.target.files?.[0],true).catch(error=>notify(error.message,'error')));
     const animationPresets={'automatic':'Direção automática','cinematic-reveal':'Revelação cinematográfica','slow-parallax':'Profundidade suave','dark-reveal':'Revelação escura','commercial-focus':'Foco comercial','poster-reveal':'Revelação do pôster','editorial':'Editorial','poster-cascade':'Pôsteres em sequência','spotlight':'Destaque por filme','cinema-lineup':'Entrada da programação','crossfade-program':'Transição de filmes','featured-cycle':'Ciclo de filmes e sessões','simultaneous':'Entrada simultânea'};
     for(const [id,name] of Object.entries(animationPresets)) document.getElementById('socialStudioAnimationPreset').add(new Option(name,id));
     for(const [field,id] of Object.entries({headline:'socialStudioTitle',kicker:'socialStudioSubtitle',supportingText:'socialStudioAuxiliary',cta:'socialStudioCta',caption:'socialStudioCaption'})) {
@@ -1766,6 +1835,7 @@
       });
     });
     form.addEventListener("input", (event) => {
+      if(['socialStudioBackgroundUpload','socialStudioRelatedMovie'].includes(event.target.id))return;
       if(event.target.closest('#socialStudioAnimationOptions'))return;
       if(event.target.id==='socialStudioAnimated') return;
       if(event.target.id==='socialStudioSignatureScale') document.getElementById('socialStudioSignatureAutomatic').checked=false;
@@ -1786,6 +1856,12 @@
       if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom" && !event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
+      if(['socialStudioBackgroundUpload','socialStudioRelatedMovie'].includes(event.target.id))return;
+      if(event.target.dataset.backgroundMovie && root.querySelectorAll('[data-background-movie]:checked').length>6) {event.target.checked=false;notify('Selecione até 6 filmes para o fundo.','error');}
+      if(event.target.id==='socialStudioBackgroundGenre') root.querySelectorAll('[data-background-movie]').forEach(input=>{input.checked=false;});
+      if(event.target.name==='socialStudioStyle' && state.context?.programLayouts?.[currentTemplate()?.id]) setControl('socialStudioProgramLayout',event.target.value);
+      if(event.target.id==='socialStudioProgramLayout') renderStyles(event.target.value);
+      syncCustomizationControls();
       if(event.target.closest('#socialStudioAnimationOptions'))return;
       if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) return;
       if(event.target.id==='socialStudioAnimated') return;

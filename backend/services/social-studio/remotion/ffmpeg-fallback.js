@@ -13,8 +13,9 @@ async function renderFallback({scene,spec,layers,dir,width,height,config,output,
     const content=images.map((image,i)=>{
       const track=spec.tracks.find(t=>t.id===image.id),state=frameState(track,frame/spec.fps,spec),light=state.brightness+state.light;
       const x=state.x+track.originX*(1-state.scale),y=state.y+track.originY*(1-state.scale);
-      const edge=state.reveal<1?track.bounds.y+track.bounds.height*state.reveal:scene.height;
-      return `<defs><clipPath id="c${i}"><rect width="${scene.width}" height="${edge}"/></clipPath><filter id="f${i}" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncR type="linear" slope="${light}"/><feFuncG type="linear" slope="${light}"/><feFuncB type="linear" slope="${light}"/></feComponentTransfer></filter></defs><g opacity="${state.opacity}" transform="translate(${x} ${y}) scale(${state.scale})" clip-path="url(#c${i})" filter="url(#f${i})"><image width="${scene.width}" height="${scene.height}" href="data:image/png;base64,${image.data}"/></g>`;
+      const edge=state.reveal<1 && track.revealAxis!=='x'?track.bounds.y+track.bounds.height*state.reveal:scene.height;
+      const edgeX=state.reveal<1 && track.revealAxis==='x'?track.bounds.x+track.bounds.width*state.reveal:scene.width;
+      return `<defs><clipPath id="c${i}"><rect width="${edgeX}" height="${edge}"/></clipPath><filter id="f${i}" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncR type="linear" slope="${light}"/><feFuncG type="linear" slope="${light}"/><feFuncB type="linear" slope="${light}"/></feComponentTransfer></filter></defs><g opacity="${state.opacity}" transform="translate(${x} ${y}) scale(${state.scale})" clip-path="url(#c${i})" filter="url(#f${i})"><image width="${scene.width}" height="${scene.height}" href="data:image/png;base64,${image.data}"/></g>`;
     }).join('');
     const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${scene.width} ${scene.height}"><rect width="100%" height="100%" fill="${scene.backgroundColor}"/>${content}</svg>`;
     await sharp(Buffer.from(svg)).png().toFile(path.join(dir,`frame-${String(frame).padStart(5,'0')}.png`));

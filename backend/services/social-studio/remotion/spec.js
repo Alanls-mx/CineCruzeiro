@@ -7,10 +7,10 @@ function normalizeAnimation(input={}) {
 function roleFor(element) {
   if(element.role==='logo' || ['logo','cinema','divider'].includes(element.id))return 'brand';
   if(element.id==='action-group' || ['cta','website'].includes(element.id))return 'cta';
-  if(/^movie-group-\d+$/.test(element.id))return 'movie';
+  if(/^movie-group-\d+$/.test(element.id) || element.role==='session')return 'movie';
   if(element.id==='price-hero' || /^(detail|currency|price-label|savings|sessions-|program-time-|program-day-|program-film-|movie-sessions-)/.test(element.id))return 'detail';
   if(element.id==='date-group')return 'detail';
-  if(element.type==='text')return element.id==='subtitle'?'kicker':'heading';
+  if(element.type==='text')return element.id==='subtitle'?'kicker':element.id==='description'?'support':'heading';
   if(element.id==='artwork' || /^movie-art-/.test(element.id))return 'hero';
   if(['poster-glow','ambient-shadow','contact-shadow'].includes(element.id))return 'hero';
   if(element.role==='contrast' || /foreground|vignette/.test(element.id))return 'veil';
@@ -36,7 +36,8 @@ function createSpec(scene,input={}) {
   const movies=planes.filter(p=>p.role==='movie').length;
   const genre=scene.sourceDraft?.genreProfile?.id || 'cinema';
   const commercial=['ticket-offer','movie-price','concession-offer','concession-combo','club-plan'].includes(scene.templateId);
-  const preset=config.preset==='automatic'?movies>1?'poster-cascade':commercial?'commercial-focus':genre==='horror'?'dark-reveal':genre==='drama' || genre==='romance'?'editorial':genre==='action'?'slow-parallax':'cinematic-reveal':config.preset;
+  const category=/^sessions-|multi-movies/.test(scene.templateId)?'programming':/^concession-/.test(scene.templateId)?'concession':scene.templateId==='club-plan'?'club':commercial || scene.templateId==='online-ticket'?'promotion':'movie';
+  const preset=config.preset==='automatic'?category==='programming'?(movies>1?'poster-cascade':'cinema-lineup'):category==='club'?'editorial':category==='concession'?'poster-reveal':commercial || category==='promotion'?'commercial-focus':genre==='horror'?'dark-reveal':genre==='drama' || genre==='romance'?'editorial':genre==='action'?'slow-parallax':'cinematic-reveal':config.preset;
   const cycle=movies>1 && ['featured-cycle','crossfade-program','spotlight'].includes(preset);
   const intensity={subtle:.55,balanced:1,impactful:1.4}[config.intensity];
   const readingHold=Math.max(2.5,Math.ceil(wordCount/3.5));
@@ -47,24 +48,40 @@ function createSpec(scene,input={}) {
   if(duration>30)throw Object.assign(new Error('Há texto demais para leitura em 30 segundos. Reduza os textos ou a programação exibida.'),{statusCode:400});
   const summaryStart=entrance+cycleDuration;
   const readableFrom=cycle?summaryStart+.65:entrance;
-  const starts={background:0,veil:0,hero:.45,kicker:.85,heading:1.1,detail:1.5,decoration:1.35,movie:.5,cta:2.1,brand:2.35};
+  const starts={background:0,veil:0,hero:.45,kicker:.85,heading:1.1,support:1.6,detail:1.5,decoration:1.35,movie:.5,cta:2.1,brand:2.35};
+  if(category==='promotion') Object.assign(starts,{detail:.2,decoration:.15,hero:1.05,heading:.8});
+  if(category==='concession') Object.assign(starts,{hero:.15,heading:.9,detail:1.4,support:1.7});
+  if(category==='club') Object.assign(starts,{brand:.15,heading:.4,support:.95,hero:1.35,detail:1.7});
   const speed=preset==='commercial-focus'?.6:preset==='editorial'?.75:1;
   const tracks=planes.map(plane=>{
     const stagger=['poster-cascade','cinema-lineup'].includes(preset)?.2:.09;
     const start=preset==='simultaneous'?0:Math.min(2.35,(starts[plane.role] || 0)+(plane.role==='movie' || plane.role==='detail'?plane.index*stagger:0))*speed;
     const artwork=['hero','background','movie','veil'].includes(plane.role);
     const box=plane.elements[0];
-    return {id:plane.id,role:plane.role,start:cycle && ['cta','brand'].includes(plane.role)?summaryStart:start,end:duration,fade:plane.role==='background'?1.3:plane.role==='hero'?.95*speed:.65*speed,
-      x:preset==='editorial'?0:plane.role==='hero'?scene.width*.012*intensity:0,
-      y:['heading','kicker','detail','cta','brand','movie'].includes(plane.role)?scene.height*.008*intensity:0,
-      scale:artwork?(plane.role==='background'?.018:.012)*intensity:preset==='commercial-focus' && plane.role==='detail'?-.025*intensity:0,
-      driftX:preset==='slow-parallax' && artwork?(plane.role==='background'?-1:1)*scene.width*.004*intensity:0,
+    const side=(box.x || 0)+(box.width || scene.width)/2>scene.width/2?1:-1;
+    const main=['hero','movie'].includes(plane.role),text=['heading','kicker','detail','support','cta'].includes(plane.role);
+    const motion={x:0,y:text?scene.height*.025*intensity:0,scale:0,driftX:0};
+    if(preset==='cinematic-reveal') Object.assign(motion,{scale:artwork?.09*intensity:0,y:text?scene.height*.04*intensity:0});
+    if(preset==='slow-parallax') Object.assign(motion,{scale:artwork?.14*intensity:0,driftX:artwork?(plane.role==='background'?-side:side)*scene.width*.07*intensity:0,y:text?scene.height*.035*intensity:0});
+    if(preset==='dark-reveal') Object.assign(motion,{scale:main?.12*intensity:0,y:text?scene.height*.02*intensity:0});
+    if(preset==='commercial-focus') Object.assign(motion,{scale:plane.role==='detail'?-.45*intensity:plane.role==='decoration'?-.3*intensity:0,x:main?side*scene.width*.12*intensity:0});
+    if(preset==='poster-reveal') Object.assign(motion,{x:0,y:text?scene.height*.065*intensity:0});
+    if(preset==='editorial') Object.assign(motion,{x:(main?side*.14:text?-side*.05:0)*scene.width*intensity,y:0});
+    if(preset==='poster-cascade') Object.assign(motion,{x:(plane.index%2?1:-1)*(main?.22:text?.035:0)*scene.width*intensity,y:main?scene.height*.04*intensity:0});
+    if(preset==='cinema-lineup') Object.assign(motion,{y:(main?.22:text?.09:0)*scene.height*intensity});
+    if(preset==='simultaneous') Object.assign(motion,{x:0,y:0,scale:plane.role==='background'?.06:-.08});
+    if(preset==='featured-cycle') Object.assign(motion,{scale:main?-.18*intensity:0,x:text?-side*scene.width*.06*intensity:0});
+    if(preset==='crossfade-program') Object.assign(motion,{y:0,scale:main?.04*intensity:0});
+    if(preset==='spotlight') Object.assign(motion,{scale:main?.08*intensity:0,y:0});
+    return {id:plane.id,role:plane.role,start:cycle && ['cta','brand'].includes(plane.role)?summaryStart:start,end:duration,fade:preset==='editorial'?1.15:plane.role==='background'?1.3:plane.role==='hero'?.95*speed:.65*speed,
+      ...motion,
       driftY:0,reveal:['poster-reveal','cinematic-reveal','dark-reveal'].includes(preset) && ['hero','heading'].includes(plane.role),
-      darken:preset==='dark-reveal' && artwork?.72:0,light:preset==='dark-reveal' && plane.role==='hero'?.08:0,
+      revealAxis:preset==='poster-reveal'?'x':'y',pop:preset==='commercial-focus' && plane.role==='detail',
+      darken:(preset==='dark-reveal' || preset==='spotlight') && artwork?(preset==='spotlight'?.8:.94):0,light:(preset==='dark-reveal' || preset==='spotlight') && plane.role==='hero'?(preset==='spotlight'?.45:.2):0,
       originX:(box.x || 0)+(box.width || scene.width)/2,originY:(box.y || 0)+(box.height || scene.height)/2,
       bounds:{x:box.x || 0,y:box.y || 0,width:box.width || scene.width,height:box.height || scene.height},
       ...(cycle && plane.role==='movie'?{cycle:{start:entrance+movieDurations.slice(0,plane.index).reduce((a,b)=>a+b,0),end:entrance+movieDurations.slice(0,plane.index+1).reduce((a,b)=>a+b,0)+.4}}:{})};
   });
-  return {version:2,preset,duration,intensity:config.intensity,loop:config.loop,wordCount,readingHold,durationChoice:config.duration,readableFrom,summaryStart,fps:24,tracks,audio:{enabled:false}};
+  return {version:3,category,preset,duration,intensity:config.intensity,loop:config.loop,wordCount,readingHold,durationChoice:config.duration,readableFrom,summaryStart,fps:24,tracks,audio:{enabled:false}};
 }
 module.exports={PRESETS,normalizeAnimation,planesForScene,createSpec};

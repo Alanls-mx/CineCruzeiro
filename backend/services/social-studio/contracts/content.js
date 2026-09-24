@@ -20,7 +20,8 @@ function buildCampaignContent(draft, input = {}, context = {}) {
   const releaseDate = day(input.releaseDate || movie.releaseDate);
   const presaleStartDate = day(input.presaleStartDate || movie.presaleStartDate);
   const sessionDate = day(input.sessionDate || upcoming[0]?.date);
-  const primaryDate = input.date !== undefined ? clean(input.date) : ({release:releaseDate,presale:presaleStartDate,session:sessionDate}[primaryDateKind] || draft.date);
+  const structuredDate={release:releaseDate,presale:presaleStartDate,session:sessionDate}[primaryDateKind];
+  const primaryDate = input.dateTextMode==='automatic' ? structuredDate : input.date !== undefined ? clean(input.date) : (structuredDate || draft.date);
   const priceEntity = ['concession-combo','concession-offer'].includes(type) ? draft.entities.concession?.price : type === 'club-plan' ? draft.entities.clubPlan?.monthlyPrice : movie.minimumPrice ?? movie.minPrice ?? Math.min(...upcoming.flatMap(s => [s.price, s.fullPrice, ...(s.ticketTypes || []).map(t=>t.price)]).filter(v=>v!==null && v!==undefined && Number.isFinite(Number(v))).map(Number));
   const hasPrice = priceEntity !== null && priceEntity !== undefined && Number.isFinite(Number(priceEntity)) && Number(priceEntity) >= 0;
   const actionDestination = destination(input.actionDestination === undefined ? context.brand?.posterWebsite || context.brand?.website : input.actionDestination);

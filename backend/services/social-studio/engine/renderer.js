@@ -34,9 +34,9 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   };
 
   const movie = draft.entities.movie;
-  const automaticPoster = draft.composition.enabled && draft.imageMode === "automatic" && !draft.imageUrl;
+  const automaticPoster = (draft.templateId.startsWith('movie-') || ['sessions-today','sessions-week','multi-movies','online-ticket'].includes(draft.templateId)) && draft.composition.enabled && draft.imageMode === "automatic" && !draft.imageUrl;
   let sourceUrl = automaticPoster && movie?.posterUrl ? movie.posterUrl : sourceUrlForDraft(draft);
-  if (!sourceUrl && ['online-ticket', 'club-plan'].includes(draft.templateId)) sourceUrl = brand.posterLogoUrl || brand.logoUrl || '';
+  if (!sourceUrl && draft.templateId==='club-plan') sourceUrl = brand.logoUrl || '';
   let sourceBuffer = await loadArtwork(sourceUrl);
   let backgroundUrl = draft.composition.enabled && movie?.backdropUrl && !draft.imageUrl ? movie.backdropUrl : sourceUrl;
   let backgroundBuffer = await loadArtwork(backgroundUrl);
@@ -47,7 +47,8 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     draft.artworkMetadata.contentBounds=analysis.contentBounds;
   }
   const policy=require('../composition-engine/artwork-policy');
-  draft.artworkPolicy=policy.resolveArtworkPolicy(draft,analysis,Boolean(movie?.backdropUrl && backgroundBuffer));
+  const productArtwork=['concession-combo','concession-offer','club-plan'].includes(draft.templateId);
+  draft.artworkPolicy=policy.resolveArtworkPolicy(draft,analysis,Boolean(!productArtwork && movie?.backdropUrl && backgroundBuffer));
   draft.primaryElement=draft.artworkPolicy.primaryElement;
   if(['BACKDROP_HERO','FULL_BLEED'].includes(draft.artworkPolicy.strategy)) {sourceUrl=backgroundUrl;sourceBuffer=backgroundBuffer;}
   if(sourceBuffer) {const meta=await sharp(sourceBuffer).metadata();draft.sourceAsset={width:meta.width,height:meta.height};}
@@ -74,7 +75,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     : await extractPalette(sourceBuffer, brand), draft.paletteId);
   const backgroundMovieUrls = [];
   const backgroundMovieColors = [];
-  if (draft.templateId === 'multi-movies') {
+  if (['multi-movies','sessions-today','sessions-week'].includes(draft.templateId)) {
     const otherPalettes = [];
     const featuredId = String(draft.entities.movie?.id || '');
     for (const item of draft.programMovies.filter(item => String(item.id) !== featuredId)) {
@@ -113,6 +114,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     if(!offerTemplate) scene = require('../scene/content-layout').enforceContentLayout(scene);
   }
   const visualStyle=draft.visualStyle;
+  await require('../scene/customization').applyBackground(scene,draft,context,loadImage);
   for(const element of scene.elements.filter(e=>e.type==='text' && !offerTemplate)) {
     if(visualStyle==='clean') {element.fontFamily='Social Text';element.fontWeight=element.hierarchy==='primary'?800:600;}
     if(visualStyle==='impact' && ['title','detail'].includes(element.id)) element.fill=palette.accentColor;
@@ -121,6 +123,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   policy.applyArtworkPolicy(scene);
   await ensureTextContrast(scene, loadImage);
   if(!offerTemplate) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
+  require('../scene/customization').positionSignature(scene);
   if(draft.templateId==='ticket-offer') require('../scene/groups').groupElements(scene,'price-hero',['currency','detail'],'price');
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);

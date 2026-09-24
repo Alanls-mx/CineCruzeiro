@@ -28,7 +28,7 @@ test('artes comerciais usam apenas ativos do produto, plano ou cinema', async ()
   for (const [input, source] of [
     [{templateId: 'concession-combo', concessionId: 'combo'}, 'asset://product'],
     [{templateId: 'club-plan', clubPlanId: 'club'}, 'asset://logo'],
-    [{templateId: 'online-ticket'}, 'asset://logo']
+    [{templateId: 'online-ticket'}, undefined]
   ]) {
     const rendered = await engine.renderSocialPost(input, context, {loadImage, skipRaster: true});
     assert.equal(rendered.draft.entities.movie, null);

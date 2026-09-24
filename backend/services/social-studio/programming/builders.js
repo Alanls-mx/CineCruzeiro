@@ -12,7 +12,7 @@ function shell({draft,format,brand,palette,logoUrl,baseScene,backgroundMovieUrls
     const movie=draft.programMovies.find(m=>m.featured) || draft.programMovies[0];
     if(movie?.posterUrl) elements.push({id:'background-blur',type:'image',src:movie.backdropUrl || movie.posterUrl,x:0,y:0,width:w,height:h,fit:'cover',effects:{layer:'background',blur:28,brightness:.45,saturation:.8,scale:1.25},locked:true});
   }
-  if(draft.templateId==='multi-movies') backgroundMovieUrls.slice(0,2).forEach((src,index)=>{
+  backgroundMovieUrls.slice(0,2).forEach((src,index)=>{
     elements.push({id:`program-background-${index+1}`,name:'Atmosfera dos filmes',role:'ambient',type:'image',src,x:0,y:0,width:w,height:h,fit:'cover',focusX:index?72:28,focusY:42,opacity:index?.18:.27,locked:true,effects:{layer:'background',blur:64,brightness:.56,saturation:.86,contrast:1.02,mask:'fade-all',blend:95,scale:1.24}});
   });
   if(draft.templateId==='multi-movies' && backgroundMovieColors.length) {
@@ -50,7 +50,7 @@ function movieBlock(s,movie,index,box,{horizontal=false,reverse=false,mask='cine
   reverse=horizontal && reverse;
   const {x,y,width,height}=box;
   const titleH=horizontal?height*.32:Math.max(42,Math.min(76,height*.20));
-  const sessionsH=showSessions?(horizontal?height*.60:Math.max(54,Math.min(90,height*.25))):0;
+  const sessionsH=showSessions?(horizontal?height*.60:Math.max(54,Math.min((s.programDays || 1)*42+24,height*.38))):0;
   const artH=horizontal?height:height-titleH-sessionsH-14;
   const artW=horizontal?width*.34:width;
   const textX=horizontal && !reverse?x+width*.39:x;
@@ -59,8 +59,7 @@ function movieBlock(s,movie,index,box,{horizontal=false,reverse=false,mask='cine
   s.im(`movie-art-${index}`,movie.posterUrl || movie.backdropUrl,reverse?x+width*.66:x,y,artW,artH,{effects:{layer:'image',mask,blend:mask==='none'?0:35,brightness:1,scale:s.heroScale || 1},rotation:overlap?(index%2?-3:3):0});
   s.tx(`movie-title-${index}`,movie.title,textX,textY,textW,titleH,prominent?52:36,{fontFamily:'Social Display',fontWeight:900,hierarchy:'secondary'});
   if(showSessions) {
-    let text=scheduleSummary(movie,horizontal && height>220?2:1,3);
-    if(sessionsH<80 && text.includes('\n')) text=text.split('\n')[0];
+    const text=scheduleSummary(movie,Math.min(s.programDays || 1,Math.max(1,Math.floor(sessionsH/28))),3);
     s.tx(`movie-sessions-${index}`,text,textX,textY+titleH+6,textW,sessionsH,prominent?34:26,{hierarchy:'primary'});
   }
 }
@@ -72,13 +71,15 @@ function finish(s,draft,format) {
 
 function buildMultiMovieScene(args) {
   const {draft,format}=args,s=shell(args),movies=draft.programMovies,count=movies.length;
+  s.programDays=draft.programDays;
   s.heroScale=draft.artDirection?.hero?.scale || 1;
   const layout=programLayout(draft,count);draft.resolvedProgramLayout=layout;
-  const gap=s.w*.022,slots=Array(count),featured=Math.max(0,movies.findIndex(m=>m.featured));
+  const gap=s.w*(draft.programGap || 24)/1080,slots=Array(count),featured=Math.max(0,movies.findIndex(m=>m.featured));
   const remaining=movies.map((_,i)=>i).filter(i=>i!==featured);
   const grid=(indices,box,columns)=>{
+    columns=Math.min(indices.length, draft.programColumns || columns);
     const rows=Math.ceil(indices.length/columns),width=(box.width-gap*(columns-1))/columns,height=(box.height-gap*(rows-1))/rows;
-    indices.forEach((index,i)=>{slots[index]={x:box.x+i%columns*(width+gap),y:box.y+Math.floor(i/columns)*(height+gap),width,height};});
+    indices.forEach((index,i)=>{slots[index]={x:box.x+i%columns*(width+gap),y:box.y+Math.floor(i/columns)*(height+gap),width,height,horizontal:height<190};});
   };
   const region={x:s.x,y:s.y,width:s.width,height:s.height};
   if(layout==='lineup' || layout==='film-strip') {
@@ -108,31 +109,33 @@ function buildMultiMovieScene(args) {
 
 function buildScheduleScene(args,week) {
   const {draft,format}=args,s=shell(args),movies=draft.programMovies;
+  s.programDays=draft.programDays;
   const layout=programLayout(draft,movies.length);draft.resolvedProgramLayout=layout;
   const feature=Math.max(0,movies.findIndex(m=>m.featured)),movie=movies[feature];
-  const gap=s.w*.025;
+  const gap=s.w*(draft.programGap || 24)/1080;
   const rows=[];
   for(const [i,m] of movies.entries()) for(const day of m.schedule.days) rows.push({movie:m,index:i,date:day.date,times:day.times});
   rows.sort((a,b)=>a.date.localeCompare(b.date) || a.times[0].localeCompare(b.times[0]) || a.movie.title.localeCompare(b.movie.title));
-  if(layout==='poster-list' || layout==='editorial-schedule') {
+  if(['poster-list','editorial-schedule','editorial-week'].includes(layout)) {
     const rowH=(s.height-gap*(movies.length-1))/movies.length;
-    movies.forEach((m,i)=>movieBlock(s,m,i,{x:s.x,y:s.y+i*(rowH+gap),width:s.width,height:rowH},{horizontal:true,reverse:layout==='editorial-schedule' && i%2===1,showSessions:true}));
+    movies.forEach((m,i)=>movieBlock(s,m,i,{x:s.x,y:s.y+i*(rowH+gap),width:s.width,height:rowH},{horizontal:true,reverse:layout!=='poster-list' && i%2===1,showSessions:true}));
   } else {
     const posterColumn=['hero-schedule','poster-calendar','featured-days'].includes(layout);
     const contentX=posterColumn?s.x+s.width*.44:s.x,contentW=posterColumn?s.width*.56:s.width;
     if(posterColumn && movie) s.im('artwork',movie.posterUrl,s.x,s.y,s.width*.40,s.height,{effects:{layer:'hero',mask:'cinematic-bottom',blend:60}});
     const dayCards=layout==='day-cards' || layout==='featured-days';
-    const columns=dayCards?(posterColumn?1:format.id==='story'?2:3):1;
-    const maximum=dayCards?6:week?6:5;
+    const columns=draft.programColumns || (dayCards?(posterColumn?1:format.id==='story'?2:3):layout==='cinema-board'?2:1);
+    const maximum=dayCards?7:week?7:6;
     const visible=rows.slice(0,maximum),gridRows=Math.ceil(visible.length/columns);
     const rowH=(s.height-(gridRows-1)*gap-(rows.length>maximum?36:0))/Math.max(1,gridRows);
     visible.forEach((row,index)=>{
       const width=(contentW-gap*(columns-1))/columns,x=contentX+index%columns*(width+gap),y=s.y+Math.floor(index/columns)*(rowH+gap);
+      if(dayCards || layout==='cinema-board') s.elements.push({id:`program-panel-${index}`,type:'shape',role:'ambient',x:x-8,y:y-5,width:width+16,height:rowH-4,fill:layout==='cinema-board'?'#102336':'#0c1520',opacity:.85});
       const dayLabel=week?new Intl.DateTimeFormat('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',timeZone:'UTC'}).format(new Date(`${row.date}T12:00:00Z`)).toUpperCase():row.times.slice(0,3).join(' • ');
       const labelH=Math.min(rowH*.28,50),titleH=Math.min(rowH*.30,66),timeH=Math.min(76,Math.max(24,rowH-labelH-titleH-12));
       if(layout==='timeline' || layout==='week-timeline') s.elements.push({id:`timeline-rule-${index}`,type:'shape',x,y:y+rowH-2,width,height:1,fill:args.palette.accentColor,opacity:.5});
-      s.tx(`program-day-${index}`,dayLabel,x,y,width,labelH,posterColumn?32:42,{fill:args.palette.accentColor,fontFamily:'Social Display',fontWeight:900});
-      s.tx(`program-film-${index}`,row.movie.title,x,y+labelH+6,width,titleH,32,{fontFamily:'Social Display',hierarchy:'secondary'});
+      s.tx(`program-day-${index}`,dayLabel,x,y,width,labelH,posterColumn?32:Math.min(48,labelH),{fill:args.palette.accentColor,fontFamily:'Social Display',fontWeight:900});
+      s.tx(`program-film-${index}`,row.movie.title,x,y+labelH+6,width,titleH,Math.min(44,titleH),{fontFamily:'Social Display',hierarchy:'secondary'});
       s.tx(`program-time-${index}`,week?row.times.slice(0,3).join(' • '):row.times.length>3?`${row.times.slice(3,6).join(' • ')}${row.times.length>6?' +':''}`:'',x,y+labelH+titleH+12,width,timeH,34,{hierarchy:'primary'});
     });
     if(rows.length>maximum) s.tx('more-sessions','+ mais sessões no site',contentX,s.y+s.height-32,contentW,32,24);
