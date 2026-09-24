@@ -81,7 +81,7 @@ function excerpt(value, limit) {
 }
 
 function copyContext(draft, context) {
-  return {...draft.content,relatedMovieId:draft.relatedMovieId,campaignConcept:draft.campaignConcept,cinemaName:context.brand?.name || 'Cinema',genre:draft.genreProfile?.id || 'cinema',concession:draft.entities.concession,clubPlan:draft.entities.clubPlan,history:context.history || [],schedule:draft.schedule};
+  return {...draft.content,concessionDirection:draft.concessionDirection,relatedMovieId:draft.relatedMovieId,campaignConcept:draft.campaignConcept,cinemaName:context.brand?.name || 'Cinema',genre:draft.genreProfile?.id || 'cinema',concession:draft.entities.concession,clubPlan:draft.entities.clubPlan,history:context.history || [],schedule:draft.schedule};
 }
 function scoreCopy(bundle, context, options = {}) {
   const limits=options.density==='short'?{headline:60,kicker:32,supportingText:80,cta:30}:{headline:110,kicker:65,supportingText:180,cta:55};
@@ -99,6 +99,15 @@ function scoreCopy(bundle, context, options = {}) {
 }
 class RuleBasedCopyProvider {
   generate(context, options={}) {
+    if(['concession-combo','concession-offer'].includes(context.campaignType)) {
+      const {concessionCopy,normalizeConcession}=require('../contracts/concession-campaign');
+      const direction=context.concessionDirection || normalizeConcession({templateId:context.campaignType},context.concession);
+      return Array.from({length:8},(_,i)=>{
+        const index=(i+(Number(options.seed)||0))%8;
+        const bundle=concessionCopy(context.concession,direction,index,{...context,density:options.density});
+        return {id:`product-${index}`,bundle,score:scoreCopy(bundle,context,options)};
+      }).sort((a,b)=>b.score-a.score);
+    }
     const type=context.campaignType, pool=CAMPAIGNS[type] || CAMPAIGNS['movie-highlight'];
     const tone=TONES.includes(options.tone)?options.tone:'automatic';
     const density=['short','medium','long'].includes(options.density)?options.density:'medium';
@@ -139,7 +148,7 @@ class RuleBasedCopyProvider {
       if(context.releaseScope==='international') supportingText=context.movie?.socialHook || angle.line;
       const headline=type==='ticket-offer'?(context.campaignConcept?.headline || context.offerHeadline || 'INGRESSOS EM DESTAQUE'):['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject && /^movie-/.test(type) && i%4===3?`${subject} NO CINEMA`:subject || context.cinemaName;
       if(type==='online-ticket') supportingText=context.relatedMovieId?`Confira as sessões de ${context.movie.title} no site do cinema.`:['Escolha o filme, confira os horários e compre seu ingresso no site.','Programe sua ida ao cinema com a bilheteria online.','Encontre o filme e o horário que combinam com sua agenda.'][i%3];
-      const cta=type==='online-ticket'?['CONFIRA A PROGRAMAÇÃO','ACESSE A BILHETERIA','ESCOLHA SUA SESSÃO'][i%3]:ctas[i%ctas.length];
+      const cta=/^movie-/.test(type)?(!saleOpen?'EM BREVE':['movie-price','movie-presale'].includes(type)?'COMPRE SEU INGRESSO':'ESCOLHA SUA SESSÃO'):/^sessions-|multi-movies/.test(type)?'VEJA A PROGRAMAÇÃO':type==='online-ticket'?['CONFIRA A PROGRAMAÇÃO','ACESSE A BILHETERIA','ESCOLHA SUA SESSÃO'][i%3]:ctas[i%ctas.length];
       const detail=['movie-price','ticket-offer','concession-offer'].includes(type)?context.price.formatted:/^movie-/.test(type)?context.primaryDate || '':'';
       const destinationText=(context.action.destination || '').replace(/^https?:\/\//,'').replace(/\/$/,'');
       const priceLine=['concession-combo','concession-offer','club-plan','ticket-offer'].includes(type) && context.price.formatted ? `${type==='club-plan'?'Mensalidade':'Valor'}: ${context.price.formatted}` : '';

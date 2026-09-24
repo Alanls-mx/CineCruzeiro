@@ -64,10 +64,13 @@ test("renderização manual permanece no servidor e respeita tamanho e formato",
   const title = automatic.scene.elements.find((element) => element.role === "title");
   title.text = "Título ajustado pelo operador";
   title.x += 15;
+  await assert.rejects(engine.renderSocialScene(automatic.scene, {loadImage}), {code:'ARTWORK_QUALITY'});
+  const {wrapText}=require('../backend/services/social-studio/scene/factory');
+  Object.assign(title,wrapText(title.text,title.width,title.height,title.fontSize,4));
   const rendered = await engine.renderSocialScene(automatic.scene, { loadImage, outputType: "jpg" });
   const metadata = await sharp(rendered.buffer).metadata();
   assert.deepEqual([metadata.width, metadata.height, metadata.format], [1080, 1080, "jpeg"]);
-  assert.equal(rendered.scene.elements.find((element) => element.role === "title").text, "Título ajustado pelo operador");
+  assert.equal(rendered.scene.elements.find((element) => element.role === "title").text.replace(/\s+/g,' '), "Título ajustado pelo operador");
 });
 
 test("histórico mantém original automático separado da futura edição", async () => {

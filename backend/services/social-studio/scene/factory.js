@@ -71,6 +71,7 @@ function movieCopy(draft) {
 }
 
 function buildEditableScene({ draft, format, palette, brand, sourceUrl = "", backgroundUrl = "", fullBleed = false, logoUrl = "", analysis = null }) {
+  if(draft.movieFamily) return require('./movie-editorial').buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl});
   const w = format.width;
   const h = format.height * (format.id === "story" ? .86 : 1);
   const topInset = format.id === "story" ? format.height * .04 : 0;

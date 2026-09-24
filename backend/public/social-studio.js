@@ -105,6 +105,7 @@
     }
     const blob=await response.blob();
     blob.previewToken=response.headers.get('X-Social-Scene-Id');
+    try {blob.reviewNotices=JSON.parse(decodeURIComponent(response.headers.get('X-Social-Review') || '%5B%5D'));} catch {blob.reviewNotices=[];}
     return blob;
   }
 
@@ -211,6 +212,12 @@
                   <fieldset data-social-field="movies" class="social-choice-fieldset"><legend>Filmes e ordem</legend><div id="socialStudioMovieSelections"></div><label>Composição da programação<select id="socialStudioProgramLayout" data-requires-create><option value="automatic">Automática pela quantidade</option></select></label><label>Filme em destaque<select id="socialStudioFeaturedMovie" data-requires-create><option value="">Seleção automática</option></select></label><input id="socialStudioMultiLayout" type="hidden" value="grid" /></fieldset>
                   <fieldset data-social-field="schedule" class="social-choice-fieldset"><legend>Programação</legend><label>Período<select id="socialStudioScheduleMode" data-requires-create><option value="today">Um dia</option><option value="week" selected>Sete dias</option></select></label><label>Data inicial<input id="socialStudioPeriodStart" type="date" data-requires-create /></label><label class="social-toggle"><input id="socialStudioShowSessions" type="checkbox" checked data-requires-create /> Mostrar horários por dia</label></fieldset>
                   <label id="socialStudioConcessionField" data-social-field="concession">Produto ou combo<select id="socialStudioConcession" data-requires-create></select></label>
+                  <fieldset data-social-field="concession" class="social-choice-fieldset"><legend>Direção da campanha</legend>
+                    <label>Tratamento visual<select id="socialStudioProductTreatment" data-requires-create><option value="automatic">Automático pelo produto</option><option value="commercial-vibrant">Comercial vibrante</option><option value="cinematic-product">Produto cinematográfico</option><option value="clean-premium">Clean premium</option><option value="dark-snack">Dark food / snack</option></select></label>
+                    <label>Objetivo<select id="socialStudioConcessionObjective" data-requires-create><option value="sell">Vender o produto</option><option value="price">Destacar preço</option><option value="introduce">Apresentar produto</option><option value="desire">Despertar vontade</option><option value="brand">Reforçar a bomboniere</option><option value="offer">Divulgar oferta</option><option value="new">Novidade confirmada</option></select></label>
+                    <label>Categoria<select id="socialStudioConcessionCategory" data-requires-create><option value="automatic">Identificar pelo cadastro</option><option value="popcorn">Pipoca</option><option value="soda">Bebida</option><option value="chocolate">Chocolate</option><option value="individual">Combo individual</option><option value="couple">Combo para dois</option><option value="family">Combo família</option><option value="product">Outro produto</option></select></label>
+                    <label class="social-toggle"><input id="socialStudioProductBranded" type="checkbox" data-requires-create /> A embalagem já mostra a marca do cinema</label>
+                  </fieldset>
                   <label id="socialStudioClubField" data-social-field="clubPlan">Plano do clube<select id="socialStudioClub" data-requires-create></select></label>
                   <label id="socialStudioRelatedMovieField">Filme vinculado<select id="socialStudioRelatedMovie" data-requires-create><option value="">Sem vínculo com filme</option>${(state.context.movies || []).filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>
                   <label data-social-field="title">Título<input id="socialStudioTitle" maxlength="160" data-requires-create /></label>
@@ -545,6 +552,10 @@
     const programLayouts=state.context?.programLayouts?.[template?.id];
     const styles = programLayouts?.length
       ? [{id:'automatic',name:'Direção automática'},...programLayouts.map(id=>({id,name:document.querySelector(`#socialStudioProgramLayout option[value="${id}"]`)?.textContent || id}))]
+      : template?.type==='concession'
+      ? [{id:'automatic',name:'Direção automática'},{id:'product-price',name:'Produto + preço'},{id:'product-lateral',name:'Produto lateral'},{id:'hero-product',name:'Hero product'}]
+      : /^movie-/.test(template?.id || '')
+      ? [{id:'automatic',name:'Direção automática'},{id:'poster-lateral',name:'Pôster lateral'},{id:'poster-editorial',name:'Pôster e rodapé editorial'},{id:'cinematic-blend',name:'Cinematic blend'},{id:'cinematic-story',name:'Story cinematográfico'}]
       : template?.id==='ticket-offer'
       ? [{id:'automatic',name:'Direção automática'},{id:'price-impact',name:'Preço gigante'},{id:'campaign-led',name:'Campanha em foco'},{id:'offer-counter',name:'Comparativo'},{id:'ticket-burst',name:'Ingresso pop'},{id:'promo-editorial',name:'Editorial promocional'},{id:'cinema-pop',name:'Cinema vibrante'}]
       : [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
@@ -558,6 +569,7 @@
         ? {"typography-dominant":"Benefícios em destaque", editorial:"Plano editorial", "hero-center":"Plano em destaque", "hero-right":"Clube + plano", automatic:"Direção automática"}
         : { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
     if(programLayouts?.length) selected=value('socialStudioProgramLayout','automatic');
+    if(selected && selected!=='automatic' && allowed.includes(selected) && !styles.some(style=>style.id===selected)) styles.push({id:selected,name:'Composição legada'});
     const chosen = styles.some(style => style.id === selected) ? selected : "automatic";
     document.getElementById("socialStudioStyles").innerHTML = styles.map((style) => `
       <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === chosen ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${artwork ? `<img src="${escapeHtml(assetUrl(artwork))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
@@ -874,6 +886,7 @@
       artDirection: { enabled:true, heroMode:value("socialStudioHeroMode","edge-dissolve"), emphasis:value("socialStudioEmphasis","automatic"),grid:value("socialStudioDirectionGrid","automatic"),seed:Number(value("socialStudioDirectionSeed",0)),background:{...state.directionFrames.background},hero:{...state.directionFrames.hero},secondary:document.getElementById("socialStudioSecondaryArtwork").checked,foreground:value("socialStudioForeground","none"),shadow:Number(value("socialStudioHeroShadow",25)) },
       movieId: value("socialStudioMovie"),
       relatedMovieId:value('socialStudioRelatedMovie'),
+      concessionDirection:{family:value('socialStudioProductTreatment','automatic'),category:value('socialStudioConcessionCategory','automatic'),objective:value('socialStudioConcessionObjective','sell'),brandedProduct:document.getElementById('socialStudioProductBranded').checked},
       background:{mode:value('socialStudioBackgroundMode','automatic'),color:value('socialStudioBackgroundColor'),secondaryColor:value('socialStudioBackgroundSecondary'),imageUrl:value('socialStudioBackgroundUrl'),movieId:value('socialStudioBackgroundMovie'),genre:value('socialStudioBackgroundGenre'),movieIds:[...root.querySelectorAll('[data-background-movie]:checked')].map(input=>input.dataset.backgroundMovie),blur:Number(value('socialStudioBackgroundBlur',12)),darken:Number(value('socialStudioBackgroundDarken',45)),focusX:Number(value('socialStudioBackgroundX',50)),focusY:Number(value('socialStudioBackgroundY',50))},
       movieIds: [...document.querySelectorAll('[data-program-movie]')].map(select=>select.value).filter(Boolean),
       multiLayout: value('socialStudioMultiLayout','grid'),
@@ -952,6 +965,10 @@
   }
 
   function applyDraft(draft, caption = "") {
+    setControl('socialStudioProductTreatment',draft.concessionDirection?.familyMode==='manual'?draft.concessionDirection.family:'automatic');
+    setControl('socialStudioConcessionCategory',draft.concessionDirection?.categoryMode==='manual'?draft.concessionDirection.category:'automatic');
+    setControl('socialStudioConcessionObjective',draft.concessionDirection?.objective || 'sell');
+    document.getElementById('socialStudioProductBranded').checked=draft.concessionDirection?.brandedProduct===true;
     const background=draft.background || {};
     for(const [id,next] of Object.entries({socialStudioRelatedMovie:draft.relatedMovieId || '',socialStudioDateTextMode:draft.dateTextMode || 'automatic',socialStudioBackgroundMode:background.mode || 'automatic',socialStudioBackgroundColor:background.color || '#07111f',socialStudioBackgroundSecondary:background.secondaryColor || '#165bb5',socialStudioBackgroundUrl:background.imageUrl || '',socialStudioBackgroundMovie:background.movieId || '',socialStudioBackgroundGenre:background.genre || '',socialStudioBackgroundBlur:background.blur ?? 12,socialStudioBackgroundDarken:background.darken ?? 45,socialStudioBackgroundX:background.focusX ?? 50,socialStudioBackgroundY:background.focusY ?? 50,socialStudioSignatureX:draft.signaturePosition?.x ?? 85,socialStudioSignatureY:draft.signaturePosition?.y ?? 92,socialStudioProgramColumns:draft.programColumns || 0,socialStudioProgramGap:draft.programGap || 24,socialStudioProgramDays:draft.programDays || 1})) setControl(id,next);
     root.querySelectorAll('[data-background-movie]').forEach(input=>{input.checked=background.movieIds?.includes(input.dataset.backgroundMovie) || false;});
@@ -1266,6 +1283,11 @@
       const blob = await requestImage("/api/admin/social-studio/preview", data, state.previewAbort.signal);
       if (version !== state.previewVersion) return;
       cachePreview(key, blob);
+      if(blob.reviewNotices?.length) {
+        const notices=[...(resolved.notices || []),...blob.reviewNotices];
+        state.previewNotices.set(key,notices);
+        renderNotices(notices);
+      }
       displayPreview(blob, data.title);
       operation.finish('Prévia pronta para revisão.');
       setStatus("Prévia atualizada automaticamente.", "ok");

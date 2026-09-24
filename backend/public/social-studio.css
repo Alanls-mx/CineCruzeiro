@@ -1420,6 +1420,38 @@
 .social-layout-mini--impact b { left: 6%; top: 18%; width: 28%; height: 32%; }
 .social-layout-mini--impact em { left: 6%; top: 78%; width: 88%; background: #f2c252; }
 .social-layout-mini--clean { background: #edf1f5; }
+.social-layout-mini--product-price { background: #ffda38; }
+.social-layout-mini--product-price img { left: 45%; top: 28%; width: 50%; height: 48%; }
+.social-layout-mini--product-price b { left: 6%; top: 9%; width: 86%; background: #16202b; }
+.social-layout-mini--product-price em { left: 6%; top: 49%; width: 32%; height: 18%; background: #16202b; }
+.social-layout-mini--product-lateral img { left: 7%; top: 24%; width: 50%; height: 52%; }
+.social-layout-mini--product-lateral b { left: 61%; top: 26%; width: 34%; }
+.social-layout-mini--product-lateral em { left: 61%; top: 55%; width: 32%; height: 14%; }
+.social-layout-mini--hero-product img { left: 20%; top: 7%; width: 60%; height: 47%; }
+.social-layout-mini--hero-product b { left: 6%; top: 60%; width: 47%; }
+.social-layout-mini--hero-product em { left: 60%; top: 62%; width: 34%; height: 13%; }
+.social-layout-mini--poster-lateral img, .social-layout-mini--cinematic-blend img { left: 5%; top: 6%; width: 47%; height: 74%; object-fit: contain; }
+.social-layout-mini--poster-lateral b, .social-layout-mini--cinematic-blend b { left: 58%; top: 22%; width: 37%; }
+.social-layout-mini--poster-lateral em, .social-layout-mini--cinematic-blend em { left: 58%; top: 50%; width: 32%; }
+.social-layout-mini--poster-editorial img, .social-layout-mini--cinematic-story img { left: 14%; top: 3%; width: 72%; height: 62%; object-fit: contain; }
+.social-layout-mini--poster-editorial b, .social-layout-mini--cinematic-story b { left: 7%; top: 72%; width: 86%; }
+.social-layout-mini--poster-editorial em, .social-layout-mini--cinematic-story em { left: 7%; top: 85%; width: 60%; }
+.social-layout-mini--commercial-vibrant { background: #ffda38; }
+.social-layout-mini--commercial-vibrant img { left: 45%; top: 28%; width: 50%; height: 48%; }
+.social-layout-mini--commercial-vibrant b { left: 6%; top: 9%; width: 86%; background: #16202b; }
+.social-layout-mini--commercial-vibrant em { left: 6%; top: 49%; width: 32%; height: 18%; background: #16202b; }
+.social-layout-mini--cinematic-product { background: #080f16; }
+.social-layout-mini--cinematic-product img { left: 7%; top: 28%; width: 54%; height: 48%; }
+.social-layout-mini--cinematic-product b { left: 6%; top: 9%; width: 86%; }
+.social-layout-mini--cinematic-product em { left: 65%; top: 46%; width: 29%; height: 15%; background: #ffda83; }
+.social-layout-mini--clean-premium { background: #d3e7ff; }
+.social-layout-mini--clean-premium img { left: 53%; top: 10%; width: 42%; height: 63%; }
+.social-layout-mini--clean-premium b { left: 6%; top: 15%; width: 40%; background: #123b66; }
+.social-layout-mini--clean-premium em { left: 6%; top: 50%; width: 38%; height: 12%; background: #123b66; }
+.social-layout-mini--dark-snack { background: #180d10; }
+.social-layout-mini--dark-snack img { left: 20%; top: 7%; width: 60%; height: 47%; }
+.social-layout-mini--dark-snack b { left: 6%; top: 60%; width: 47%; }
+.social-layout-mini--dark-snack em { left: 60%; top: 62%; width: 34%; height: 13%; background: #ffc96c; }
 .social-layout-mini--clean img { left: 5%; top: 5%; height: 76%; width: 46%; }
 .social-layout-mini--clean b { left: 58%; top: 18%; width: 35%; height: 22%; background: #172b40; }
 .social-layout-mini--clean em { left: 58%; top: 52%; width: 30%; height: 9%; background: #33628b; }

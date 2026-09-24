@@ -1,5 +1,5 @@
 const VISUAL_STYLES = ['cinematic', 'impact', 'clean', 'minimal'];
-const LAYOUT_IDS = ['hero-left', 'hero-right', 'hero-center', 'full-bleed', 'editorial', 'poster-dominant', 'typography-dominant', 'split', 'diagonal', 'price-impact', 'campaign-led', 'offer-counter', 'ticket-burst', 'promo-editorial', 'cinema-pop'];
+const LAYOUT_IDS = ['hero-left', 'hero-right', 'hero-center', 'full-bleed', 'editorial', 'poster-dominant', 'typography-dominant', 'split', 'diagonal', 'price-impact', 'campaign-led', 'offer-counter', 'ticket-burst', 'promo-editorial', 'cinema-pop', ...Object.keys(require('./concession-campaign').FAMILIES),...Object.keys(require('./artwork-layout').MOVIE_FAMILIES),...Object.keys(require('./artwork-layout').PRODUCT_LAYOUTS)];
 const LOOKS = ['natural', 'cinematic', 'immersive', 'dramatic', 'vibrant', 'cold', 'velocity'];
 const LEGACY_LAYOUTS = {cinematic:'poster-dominant', impact:'typography-dominant', clean:'editorial', minimal:'hero-center', immersive:'full-bleed'};
 

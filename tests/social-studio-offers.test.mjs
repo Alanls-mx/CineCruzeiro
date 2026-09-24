@@ -25,7 +25,7 @@ test('modelos adicionais usam preço cadastrado e preservam a marca',async()=>{
   for(const formatId of ['feed_portrait','square','story']) {
     for(const [templateId,selection,expected] of [
       ['ticket-offer',{movieId:'m',priceSelection:{mode:'ticket-type',ticketTypeId:'meia',sessionId:'s'}},'12'],
-      ['concession-offer',{concessionId:'p'},'18,00']
+      ['concession-offer',{concessionId:'p'},'R$ 18,00']
     ]) {
       const result=await engine.renderSocialPost({templateId,formatId,...selection,offerTerms:'Condições confirmadas no balcão.'},context,{loadImage});
       const elements=flattenElements(result.scene.elements);

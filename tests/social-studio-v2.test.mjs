@@ -63,12 +63,11 @@ test("Engine V2 preserva os templates e inclui programação e multi-filmes", ()
   }
 });
 
-test("recomendação por gênero permanece substituível pelo administrador", async () => {
+test("famílias editoriais são padrão e layouts legados continuam selecionáveis", async () => {
   const { context } = await fixture();
-  const expected = ["cinematic", "impact", "impact", "cinematic", "clean"];
-  context.movies.forEach((movie, index) => {
+  context.movies.forEach((movie) => {
     const draft = engine.normalizeDraft({ templateId: "movie-premiere", movieId: movie.id, style: "automatic" }, context);
-    assert.equal(draft.style, expected[index]);
+    assert.equal(draft.style, 'poster-editorial');
   });
   const manual = engine.normalizeDraft({ templateId: "movie-premiere", movieId: "movie-0", style: "clean" }, context);
   assert.equal(manual.style, "clean");

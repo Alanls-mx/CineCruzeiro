@@ -335,7 +335,7 @@ test("variações entregam quatro estruturas válidas e dados idênticos", async
     },
   );
   assert.equal(result.variations.length, 4);
-  assert.equal(result.evaluatedCount, 8);
+  assert.equal(result.evaluatedCount, 4);
   assert.equal(result.variations[0].recommended, true);
   assert.deepEqual(result.variations.map(item => item.quality.total), result.variations.map(item => item.quality.total).sort((first, second) => second - first));
   assert.equal(new Set(result.variations.map((v) => v.draft.style)).size, 4);
@@ -350,7 +350,7 @@ test("variações entregam quatro estruturas válidas e dados idênticos", async
     const chosen = result.variations[0].draft;
     const regenerated = await generateVariations({ ...chosen, variationMode }, context, { loadImage: async url => url === "asset://direction-logo" ? logo : poster });
     assert.equal(regenerated.variations.length, 4);
-    assert.equal(regenerated.evaluatedCount, variationMode === "similar" ? 6 : 8);
+    assert.equal(regenerated.evaluatedCount, variationMode === "similar" ? 6 : 4);
     assert.equal(new Set(regenerated.variations.map(item => item.draft.artDirection.seed)).size, 4);
     for (const item of regenerated.variations) {
       assert.equal(item.draft.artDirection.emphasis, chosen.artDirection.emphasis);

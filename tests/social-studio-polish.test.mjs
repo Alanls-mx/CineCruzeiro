@@ -90,7 +90,7 @@ test('preço, benefícios e chamada final não se cruzam nas composições', asy
 test('bomboniere e clube usam hierarquias visuais próprias', async () => {
   const {context, loadImage} = await fixture();
   for (const [input, artWidth] of [
-    [{templateId: 'concession-combo', concessionId: 'combo', style: 'poster-dominant'}, .7],
+    [{templateId: 'concession-combo', concessionId: 'combo', style: 'poster-dominant'}, .4],
     [{templateId: 'club-plan', clubPlanId: 'club', style: 'typography-dominant'}, .3]
   ]) {
     const rendered = await engine.renderSocialPost(input, context, {loadImage, skipRaster: true});
@@ -114,7 +114,7 @@ test('exploração escolhe famílias diferentes sem perder a opção de variaç�
 test('variações comerciais permanecem na linguagem de cada categoria', async () => {
   const {context, loadImage} = await fixture();
   for (const [input, allowed] of [
-    [{templateId: 'concession-combo', concessionId: 'combo'}, ['poster-dominant','hero-left','hero-right','split']],
+    [{templateId: 'concession-combo', concessionId: 'combo'}, ['product-price','product-lateral','hero-product']],
     [{templateId: 'club-plan', clubPlanId: 'club'}, ['typography-dominant','editorial','hero-center','hero-right']]
   ]) {
     const result = await generateVariations({formatId: 'feed_portrait', ...input}, context, {loadImage});

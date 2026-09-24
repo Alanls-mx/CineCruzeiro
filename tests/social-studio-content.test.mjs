@@ -12,7 +12,7 @@ const poster=await sharp({create:{width:240,height:360,channels:3,background:'#3
 const loadImage=async()=>poster;
 test('programação respeita período, fuso, cancelamento, ordem e deduplicação',()=>{
   const today=sessionSchedule(context.movies[0],{scheduleMode:'today'},context.now);
-  assert.equal(today.count,2);assert.match(today.text,/Hoje: 14:00 • 16:30/);assert.doesNotMatch(today.text,/10:00|19:00|20:00/);
+  assert.equal(today.count,2);assert.equal(today.text,'TER • 22/09 • 14H00 / 16H30');assert.doesNotMatch(today.text,/10H00|19H00|20H00|Hoje/);
   const week=sessionSchedule(context.movies[0],{scheduleMode:'week'},context.now);
   assert.equal(week.count,3);assert.match(week.text,/23\/09/);
   assert.doesNotThrow(()=>sessionSchedule(context.movies[0],{periodStart:'2026-99-99'},context.now));
@@ -65,7 +65,7 @@ test('estreia e CTA têm pares próximos; horário real não é omitido',async()
   assert.ok(Math.abs(e('website').y-e('cta').y-e('cta').height)<15);
   assert.equal(e('website').text.replace(/\s/g,''),'www.cinecruzeiro.com.br');
   const schedule=await engine.renderSocialPost({movieId:'m0',templateId:'sessions-week'},context,{loadImage});
-  assert.ok(flattenElements(schedule.scene.elements).some(item=>/14:00/.test(item.text || '')));
+  assert.ok(flattenElements(schedule.scene.elements).some(item=>/14H00/.test(item.text || '')));
 });
 test('multi-filmes normaliza seleção, ordem e histórico; não usa filmes editoriais',async()=>{
   const input={templateId:'multi-movies',movieIds:['m2','m0','m2','missing'],animation:{enabled:true,format:'webm',duration:5}};

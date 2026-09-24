@@ -66,6 +66,16 @@ function normalizeV2Draft(input = {}, context = {}) {
     movieId: movie?.id || ''
   };
   if(template.id==='online-ticket' && (!input.signatureId || input.signatureId==='automatic')) draft.signatureId='classic';
+  if(require('../contracts/concession-campaign').isConcession(draft)) {
+    const campaign=require('../contracts/concession-campaign');
+    draft.concessionDirection=campaign.normalizeConcession(input,concession || {});
+    const copy=campaign.concessionCopy(concession || {},draft.concessionDirection,draft.concessionDirection.seed,{relatedMovieId:draft.relatedMovieId,movie, density:'short'});
+    if(input.subtitle===undefined)draft.subtitle=copy.kicker;
+    if(input.auxiliaryText===undefined)draft.auxiliaryText=copy.supportingText;
+    if(input.cta===undefined)draft.cta=copy.cta;
+    draft.price=copy.detail;
+    if(!input.signatureId || input.signatureId==='automatic')draft.signatureId='classic';
+  }
 
   if (template.id === "movie-presale") {
     if (input.subtitle === undefined) draft.subtitle = "PRÉ-VENDA ABERTA";
@@ -121,6 +131,13 @@ function normalizeV2Draft(input = {}, context = {}) {
     draft.date=/^\d{4}-\d{2}-\d{2}$/.test(value)?new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(new Date(`${value}T12:00:00Z`)).toUpperCase():value;
   }
   draft.actionDestination = draft.content.action.destination;
+  const editorial=require('../contracts/artwork-layout');
+  draft.movieFamily=editorial.isMovie(draft)?editorial.movieFamily(input,draft.formatId):'';
+  if(draft.movieFamily) {draft.style=draft.movieFamily;draft.layoutId=draft.movieFamily;}
+  if((editorial.isMovie(draft) || editorial.isProgramme(draft)) && !draft.copyLocks.cta) {
+    draft.cta=editorial.campaignCTA(draft);
+    draft.content.action.label=draft.cta;
+  }
   draft.actionDestinationType = draft.content.action.destinationType;
   if(draft.dateTextMode==='automatic' && /^movie-/.test(template.id) && !draft.copyLocks.kicker && /^(ESTREIA|SESSÃO|PRÉ-VENDA|LANÇAMENTO INTERNACIONAL)/i.test(draft.subtitle || '')) {
     draft.subtitle=draft.content.primaryDateLabel;

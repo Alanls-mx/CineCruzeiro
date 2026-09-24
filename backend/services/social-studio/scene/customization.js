@@ -22,8 +22,10 @@ function normalizeCustomization(input, context) {
 
 async function applyBackground(scene, draft, context, loadImage) {
   let config=draft.background;
+  const product=require('../contracts/concession-campaign').isConcession(draft);
   if(!config || config.mode==='automatic') {
-    if(!['concession-combo','online-ticket'].includes(draft.templateId)) return scene;
+    if(product && !draft.relatedMovieId) return scene;
+    if(!product && !['online-ticket'].includes(draft.templateId)) return scene;
     config={...config,mode:draft.relatedMovieId?'movie':'gradient',movieId:draft.relatedMovieId};
   }
   const candidates=(context.movies || []).filter(movie=>movie.catalogued!==false);
@@ -38,11 +40,16 @@ async function applyBackground(scene, draft, context, loadImage) {
   const images=[];
   for(const url of urls.filter(Boolean)) if(await loadAsset(url,loadImage)) images.push(url);
   if(['upload','movie','catalog'].includes(config.mode) && !images.length) throw Object.assign(new Error('O fundo selecionado não tem uma imagem disponível. Escolha outro filme, catálogo ou envie uma imagem.'),{statusCode:400,code:'BACKGROUND_REQUIRED'});
-  scene.elements=scene.elements.filter(element=>!['background-blur','background-wash','atmosphere','vignette','program-wash','program-color-wash'].includes(element.id) && !element.id.startsWith('program-background-'));
+  scene.elements=scene.elements.filter(element=>!['background-blur','background-wash','atmosphere','vignette','program-wash','program-color-wash',...(product?['product-atmosphere','product-texture','premium-field','product-ribbon']:[])].includes(element.id) && !element.id.startsWith('program-background-'));
   scene.backgroundColor=config.color;
   const elements=[];
   if(config.mode==='gradient') elements.push({id:'custom-background-gradient',type:'gradient',role:'ambient',x:0,y:0,width:scene.width,height:scene.height,direction:'bottom',stops:[{offset:0,color:config.secondaryColor},{offset:1,color:config.color}],locked:true});
   images.forEach((src,index)=>{
+    if(product || /^movie-/.test(draft.templateId) || ['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) {
+      // Catalog imagery forms one continuous backdrop, never arbitrary vertical strips.
+      elements.push({id:`custom-background-${index}`,type:'image',role:'ambient',src,x:0,y:0,width:scene.width,height:scene.height,fit:'cover',focusX:config.focusX,focusY:config.focusY,opacity:index?Math.min(.24,1/images.length):1,locked:true,effects:{layer:'background',blur:config.blur,brightness:1-config.darken/100,saturation:.65,scale:1.15+index*.12}});
+      return;
+    }
     const columns=images.length>3?3:images.length,rows=Math.ceil(images.length/columns);
     elements.push({id:`custom-background-${index}`,type:'image',role:'ambient',src,x:index%columns*scene.width/columns,y:Math.floor(index/columns)*scene.height/rows,width:scene.width/columns,height:scene.height/rows,fit:'cover',focusX:config.focusX,focusY:config.focusY,locked:true,effects:{layer:'background',blur:config.blur,brightness:1-config.darken/100,saturation:.9,scale:1.08}});
   });

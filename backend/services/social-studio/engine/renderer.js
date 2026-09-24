@@ -24,6 +24,7 @@ function signatureUrl(draft, context = {}) {
 async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const startedAt = performance.now();
   const draft = normalizeV2Draft(input, context);
+  const concession = require('../contracts/concession-campaign').isConcession(draft);
   require('../contracts/content').assertCampaignContent(draft.content);
   const format = require('../contracts/formats').formatById(draft.formatId);
   const brand = legacy.normalizeBrand(context.brand || {});
@@ -34,13 +35,13 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   };
 
   const movie = draft.entities.movie;
-  const automaticPoster = (draft.templateId.startsWith('movie-') || ['sessions-today','sessions-week','multi-movies','online-ticket'].includes(draft.templateId)) && draft.composition.enabled && draft.imageMode === "automatic" && !draft.imageUrl;
+  const automaticPoster = (draft.movieFamily || (draft.templateId.startsWith('movie-') || ['sessions-today','sessions-week','multi-movies','online-ticket'].includes(draft.templateId)) && draft.composition.enabled) && draft.imageMode === "automatic" && !draft.imageUrl;
   let sourceUrl = automaticPoster && movie?.posterUrl ? movie.posterUrl : sourceUrlForDraft(draft);
   if (!sourceUrl && draft.templateId==='club-plan') sourceUrl = brand.logoUrl || '';
   let sourceBuffer = await loadArtwork(sourceUrl);
   let backgroundUrl = draft.composition.enabled && movie?.backdropUrl && !draft.imageUrl ? movie.backdropUrl : sourceUrl;
   let backgroundBuffer = await loadArtwork(backgroundUrl);
-  if (!sourceBuffer && backgroundBuffer) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
+  if (!sourceBuffer && backgroundBuffer && !concession) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
   if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
   let analysis = draft.artDirection.enabled ? await analyzeArtwork(sourceBuffer) : null;
   if(!draft.artworkMetadata.contentBounds && ['logo','symbol'].includes(draft.artworkMetadata.dominantAsset) && analysis?.contentBounds) {
@@ -50,9 +51,9 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const productArtwork=['concession-combo','concession-offer','club-plan'].includes(draft.templateId);
   draft.artworkPolicy=policy.resolveArtworkPolicy(draft,analysis,Boolean(!productArtwork && movie?.backdropUrl && backgroundBuffer));
   draft.primaryElement=draft.artworkPolicy.primaryElement;
-  if(['BACKDROP_HERO','FULL_BLEED'].includes(draft.artworkPolicy.strategy)) {sourceUrl=backgroundUrl;sourceBuffer=backgroundBuffer;}
+  if(!concession && !draft.movieFamily && ['BACKDROP_HERO','FULL_BLEED'].includes(draft.artworkPolicy.strategy)) {sourceUrl=backgroundUrl;sourceBuffer=backgroundBuffer;}
   if(sourceBuffer) {const meta=await sharp(sourceBuffer).metadata();draft.sourceAsset={width:meta.width,height:meta.height};}
-  if(!['ticket-offer','concession-offer'].includes(draft.templateId)) {
+  if(!concession && !draft.movieFamily && !['ticket-offer','concession-offer'].includes(draft.templateId)) {
     draft.style = selectDirection(draft, analysis);
     if(draft.artworkPolicy.strategy==='FULL_BLEED') draft.style='full-bleed';
     if(draft.automaticStyle && ['LOGO_DOMINANT','SYMBOL_DOMINANT','FULL_POSTER'].includes(draft.artworkPolicy.strategy)) draft.style='hero-center';
@@ -97,7 +98,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     if (otherPalettes.length) palette = require('./palette').blendProgramPalettes(palette, otherPalettes);
   }
   let logoUrl = signatureUrl(draft, context);
-  if(draft.templateId==='ticket-offer' && logoUrl) {
+  if((draft.templateId==='ticket-offer' || concession || draft.movieFamily) && logoUrl) {
     const logo=await loadArtwork(logoUrl);
     if(!logo) logoUrl='';
     else {const metadata=await sharp(logo).metadata();draft.signatureAsset={width:metadata.width,height:metadata.height};}
@@ -105,31 +106,83 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
   const offerTemplate=['ticket-offer','concession-offer'].includes(draft.templateId);
-  let scene = offerTemplate
+  let scene = concession ? null : offerTemplate
     ? require('../scene/offer').buildOfferScene({draft,format,brand,logoUrl,sourceUrl:sourceBuffer ? sourceUrl : ''})
     : buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
+  if(concession) {
+    const {buildConcessionScene,productBounds}=require('../scene/concession');
+    const assetBounds=await productBounds(sourceBuffer);
+    if(!assetBounds) throw Object.assign(new Error('Selecione uma imagem válida do produto antes de gerar a campanha.'),{statusCode:422,code:'PRODUCT_IMAGE_REQUIRED'});
+    draft.style=draft.concessionDirection.layout;
+    draft.layoutId=draft.style;
+    scene=buildConcessionScene({draft,format,brand,sourceUrl,logoUrl,assetBounds});
+  }
   if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl,baseScene:scene,backgroundMovieUrls,backgroundMovieColors});
-  else {
+  else if(!concession && !draft.movieFamily) {
     if (draft.polish && !offerTemplate) scene = require("../composition-engine/polish").polishComposition(scene);
     if(!offerTemplate) scene = require('../scene/content-layout').enforceContentLayout(scene);
   }
   const visualStyle=draft.visualStyle;
   await require('../scene/customization').applyBackground(scene,draft,context,loadImage);
-  for(const element of scene.elements.filter(e=>e.type==='text' && !offerTemplate)) {
+  for(const element of scene.elements.filter(e=>e.type==='text' && !offerTemplate && !concession && !draft.movieFamily)) {
     if(visualStyle==='clean') {element.fontFamily='Social Text';element.fontWeight=element.hierarchy==='primary'?800:600;}
     if(visualStyle==='impact' && ['title','detail'].includes(element.id)) element.fill=palette.accentColor;
     if(visualStyle==='minimal' && !['title','detail'].includes(element.id)) element.fontWeight=500;
   }
-  policy.applyArtworkPolicy(scene);
-  await ensureTextContrast(scene, loadImage);
-  if(!offerTemplate) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
+  if(!concession && !draft.movieFamily) policy.applyArtworkPolicy(scene);
+  if(!concession && !draft.movieFamily) await ensureTextContrast(scene, loadImage);
+  if(!offerTemplate && !concession && !draft.movieFamily) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
   require('../scene/customization').positionSignature(scene);
+  let artworkQuality;
+  const artworkGate=require('../composition-engine/artwork-quality');
+  if(artworkGate.applies(scene)) {
+    try {
+      await artworkGate.reserveSignature(scene,loadImage);
+      await artworkGate.repairContrast(scene,loadImage);
+      artworkQuality=await artworkGate.assessArtwork(scene,loadImage);
+      if(!artworkQuality.accepted)throw artworkGate.failure(artworkQuality);
+    } catch(error) {
+      if(error.code!=='ARTWORK_QUALITY' || options.artworkRetried)throw error;
+      const isMovie=require('../contracts/artwork-layout').isMovie(draft);
+      const layouts=isMovie?['poster-lateral','poster-editorial','cinematic-story']:draft.templateId==='multi-movies'?['cinematic-grid','lineup']:['poster-list','cinema-board'];
+      for(const layout of layouts) {
+        try {
+          const alternative=await renderSocialPostV2({...input,...(isMovie?{layoutId:layout,style:layout,automaticStyle:false}:{programLayout:layout}),signaturePosition:{mode:'automatic'}},context,{...options,artworkRetried:true});
+          alternative.notices.push({type:'info',code:'ARTWORK_REFLOW',message:'A composição foi reorganizada para preservar imagem, leitura e assinatura.'});
+          if(draft.style==='full-bleed' && !fullBleed)alternative.notices.push({type:'info',code:'BACKDROP_FALLBACK',message:'Sem backdrop adequado: o pôster foi preservado em uma composição editorial.'});
+          return alternative;
+        } catch(next) {if(next.code!=='ARTWORK_QUALITY')throw next;}
+      }
+      throw error;
+    }
+  }
+  let concessionQuality;
+  if(concession) {
+    const gate=require('../composition-engine/concession-quality');
+    const logo=scene.elements.find(e=>e.role==='logo');
+    if(logo && gate.inspectConcessionLayout(scene).issues.some(i=>i.elementId?.includes('logo'))) Object.assign(logo,scene.sourceDraft.concessionLogoBounds);
+    await gate.repairConcessionContrast(scene,loadImage);
+    concessionQuality=await gate.assessConcession(scene,loadImage);
+    if(!concessionQuality.accepted) {
+      if(!options.concessionRetried) {
+        const alternatives=Object.keys(require('../contracts/artwork-layout').PRODUCT_LAYOUTS).filter(layout=>layout!==draft.concessionDirection.layout);
+        for(const layout of alternatives) {
+          try {
+            const alternative=await renderSocialPostV2({...input,layoutId:layout,concessionDirection:{...draft.concessionDirection,layout}},context,{...options,concessionRetried:true});
+            alternative.notices.push({type:'info',code:'CONCESSION_REFLOW',message:'A direção foi ajustada para preservar a leitura e evitar sobreposições.'});
+            return alternative;
+          } catch(error) {if(error.code!=='CONCESSION_QUALITY')throw error;}
+        }
+      }
+      throw gate.qualityError(concessionQuality);
+    }
+  }
   if(draft.templateId==='ticket-offer') require('../scene/groups').groupElements(scene,'price-hero',['currency','detail'],'price');
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);
   if(!semantics.valid) throw Object.assign(new Error(semantics.errors.map(e=>e.message).join(' ')),{statusCode:400,code:'SCENE_SEMANTICS'});
-  const quality = scoreComposition(scene);
-  if(!offerTemplate && draft.automaticStyle && !options.directionRetried && quality.issues.some(issue=>issue.code==='DRY_COMPOSITION')) {
+  const quality = {...scoreComposition(scene),...(concessionQuality || artworkQuality || {})};
+  if(!concession && !offerTemplate && draft.automaticStyle && !options.directionRetried && quality.issues.some(issue=>issue.code==='DRY_COMPOSITION')) {
     const alternative=await renderSocialPostV2({...input,layoutId:'hero-center',automaticStyle:false,artworkStrategy:movie?.backdropUrl?'BACKDROP_HERO':'CROPPED_POSTER'},context,{...options,directionRetried:true});
     if(alternative.quality.accepted && alternative.quality.total>quality.total) return alternative;
   }

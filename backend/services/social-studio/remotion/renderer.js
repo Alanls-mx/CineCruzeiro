@@ -28,6 +28,8 @@ async function renderRemotion(scene,input={},options={}) {
   try {
     if(options.signal?.aborted)throw Object.assign(new Error('Exportação cancelada.'),{name:'AbortError'});
     if(scene.templateId==='ticket-offer' && !require('../contracts/ticket-campaign').validateLayoutCollisions(scene).valid) throw new Error('Ajuste as colisões da arte antes de animar.');
+    await require('../composition-engine/concession-quality').assertConcessionQuality(scene,options.loadImage || (async()=>null));
+    await require('../composition-engine/artwork-quality').assertArtworkQuality(scene,options.loadImage || (async()=>null));
     const layers=[];
     for(const plane of planesForScene(scene)) {
       if(options.signal?.aborted)throw Object.assign(new Error('Exportação cancelada.'),{name:'AbortError'});

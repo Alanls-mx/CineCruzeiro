@@ -23,9 +23,8 @@ function sessionSchedule(movie, input = {}, now = new Date()) {
   const days = [...groups].sort(([a],[b])=>a.localeCompare(b)).map(([date,times])=>({date,times:[...times].sort()}));
   const maximum = input.compact ? (input.compactDays || 3) : 7;
   const lines = days.slice(0,maximum).map(day=>{
-    const label = day.date === today ? 'Hoje' : new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC',weekday:'short',day:'2-digit',month:'2-digit'}).format(new Date(`${day.date}T12:00:00Z`)).replaceAll('.','');
     const limit = input.compact ? 3 : 5;
-    return `${label}: ${day.times.slice(0,limit).join(' • ')}${day.times.length > limit ? ` (+${day.times.length-limit})` : ''}`;
+    return require('../contracts/artwork-layout').scheduleLabel(day,limit);
   });
   if(days.length > maximum) lines.push(`+${days.length-maximum} dias no site`);
   return {from,until,days,text:lines.join('\n'),count:days.reduce((sum,day)=>sum+day.times.length,0)};
@@ -67,16 +66,16 @@ function applyContentRules(draft, input, context) {
   draft.animation = require('../remotion/spec').normalizeAnimation(input.animation);
   draft.website = clean(context.brand?.posterWebsite || context.brand?.website).replace(/^https?:\/\//,'').replace(/\/$/,'');
   const schedule = sessionSchedule(draft.entities.movie, draft, now);
-  if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = schedule.days.some(day=>day.date===cinemaDay(now)) ? 'HOJE NO CINEMA' : 'EM DESTAQUE';
+  if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = 'EM DESTAQUE';
   draft.schedule = schedule;
   draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],featured:movie.id===draft.resolvedFeaturedMovieId,schedule:sessionSchedule(movie,{...draft,compact:multi,compactDays:selected.length>2?1:3},now)})) : [];
   if (scheduleCampaign) {
     if(input.title === undefined) draft.title = selected.length>1 ? 'Programação' : draft.entities.movie?.title || 'Programação';
-    if(input.subtitle === undefined || /^(HOJE NO|SESSÕES EM)/.test(input.subtitle)) draft.subtitle = draft.scheduleMode === 'today' ? (schedule.from===cinemaDay(now)?`HOJE NO ${context.brand?.name || 'CINEMA'}`.toUpperCase():`SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`) : draft.periodStart ? `SEMANA DE ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}` : 'PROGRAMAÇÃO DA SEMANA';
+    if(input.subtitle === undefined) draft.subtitle = draft.scheduleMode === 'today' ? `SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}` : `SEMANA DE ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`;
     if(input.cta === undefined) draft.cta = 'ESCOLHA SUA SESSÃO';
   }
   if(multi) {
-    if(input.title === undefined || /^(ESSA SEMANA NO|HOJE NO) /.test(input.title)) draft.title = draft.periodStart ? `PROGRAMAÇÃO EM ${draft.periodStart.slice(8,10)}/${draft.periodStart.slice(5,7)}` : `${draft.scheduleMode==='today'?'HOJE':'ESSA SEMANA'} NO ${context.brand?.name || 'CINEMA'}`.toUpperCase();
+    if(input.title === undefined) draft.title = `PROGRAMAÇÃO EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`;
     if(input.subtitle === undefined) draft.subtitle = 'FILMES EM CARTAZ';
     if(input.cta === undefined) draft.cta = 'CONFIRA A PROGRAMAÇÃO';
   }
@@ -107,4 +106,4 @@ function assertContentReady(draft) {
   if(missing) throw Object.assign(new Error(missing.message),{statusCode:400,code:missing.code});
   if(draft.content) require('../contracts/content').assertCampaignContent(draft.content);
 }
-module.exports = {applyContentRules,sessionSchedule,cinemaDay,MULTI_LAYOUTS,assertContentReady};
+module.exports = {applyContentRules,sessionSchedule,cinemaDay,MULTI_LAYOUTS,assertContentReady,validDay};

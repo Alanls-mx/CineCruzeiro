@@ -43,14 +43,14 @@ test('campanha antiga mantém snapshot e nova seleção é preservada no histór
   assert.equal(record.originalScene.sourceDraft.priceSelection.sessionId,'b');
   assert.equal(record.payload.signatureScale,120);
 });
-test('70, 100, 120 e 135 mudam bounds e pixels igualmente em PNG, JPG, cena e motion',async()=>{
+test('escala da assinatura respeita teto seguro e pixels em PNG, JPG, cena e motion',async()=>{
   for(const polish of [false,true]) {
-    let baseline;
+    let previous=0;
     for(const signatureScale of [70,100,120,135]) {
       const r=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'m',layoutId:'hero-right',signatureScale,polish},context,{loadImage});
       const logo=flattenElements(r.scene.elements).find(e=>e.id==='logo');
-      baseline ??= logo.width/0.7;
-      assert.ok(Math.abs(logo.width/baseline-signatureScale/100)<.005);
+      assert.ok(logo.width>=previous && logo.width<=r.scene.width*.19+1);
+      previous=logo.width;
       assert.ok(Math.abs(logo.width/logo.height-2)<.001);
       assert.ok(logo.x>=0 && logo.y+logo.height<=r.scene.height*.975+1);
       for(const e of flattenElements(r.scene.elements).filter(e=>e.visible!==false && e.type==='text')) assert.ok(Math.min(e.x+e.width,logo.x+logo.width)<=Math.max(e.x,logo.x) || Math.min(e.y+e.height,logo.y+logo.height)<=Math.max(e.y,logo.y));
@@ -75,14 +75,14 @@ test('metadata troca estratégia e suprime duplicação sem interferir em outro 
   const draft=engine.normalizeDraft({movieId:'m',imageUrl:'asset://new',artworkMetadata:{sourceUrl:'asset://old',containsTitle:true}},context);
   assert.equal(draft.artworkMetadata.containsTitle,undefined);
 });
-test('assinatura também cresce sem direção automática e com formatos diferentes',async()=>{
+test('escala manual permanece limitada à zona de assinatura nos três formatos',async()=>{
  for(const formatId of ['square','story','feed_portrait']) {
   const sizes=[];
   for(const signatureScale of [100,135]) {
    const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'m',formatId,style:'clean',artDirection:{enabled:false},signatureScale},context,{loadImage,skipRaster:true});
    sizes.push(flattenElements(r.scene.elements).find(e=>e.id==='logo').width);
   }
-  assert.ok(Math.abs(sizes[1]/sizes[0]-1.35)<.001);
+  assert.ok(sizes[1]>=sizes[0] && sizes[1]<=1080*.19+1);
  }
 });
 test('data embutida só substitui data editorial idêntica conferida',async()=>{

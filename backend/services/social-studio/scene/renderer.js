@@ -112,6 +112,8 @@ async function renderSocialScene(input = {}, options = {}) {
     if(!validation.valid) throw Object.assign(new Error('Existem elementos sobrepostos ou fora da área segura. Ajuste a composição antes de exportar.'),{statusCode:400,code:'TICKET_LAYOUT_COLLISION',validation});
   }
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
+  if(!options.layerRender) await require('../composition-engine/concession-quality').assertConcessionQuality(scene,loadImage);
+  if(!options.layerRender) await require('../composition-engine/artwork-quality').assertArtworkQuality(scene,loadImage);
   const children = (await Promise.all(scene.elements.map((element) => renderElement(element, loadImage)))).filter(Boolean);
   const tree = node("div", {
     style: {
@@ -131,6 +133,7 @@ async function renderSocialScene(input = {}, options = {}) {
   });
   const outputType = options.outputType === "jpg" ? "jpg" : "png";
   const pipeline = sharp(Buffer.from(svg), { failOn: "error", density: 72 });
+  if(options.layerRender && options.rasterWidth) pipeline.resize({width:Math.max(128,Math.min(scene.width,Math.round(options.rasterWidth)))});
   const buffer = outputType === "jpg"
     ? await pipeline.flatten({ background: scene.backgroundColor }).jpeg({ quality: 94, chromaSubsampling: "4:4:4", progressive: true }).toBuffer()
     : await pipeline.png({ compressionLevel: 8, adaptiveFiltering: true }).toBuffer();

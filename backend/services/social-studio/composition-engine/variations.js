@@ -41,17 +41,21 @@ async function generateVariations(input, context, options = {}) {
   const multi=Boolean(programLayouts);
   const multiNames={featured:'Destaque e apoio','cinematic-grid':'Grade cinematográfica',layered:'Pôsteres em camadas',mosaic:'Mosaico editorial','film-strip':'Faixa de filmes',panorama:'Panorama','split-heroes':'Dupla protagonista',collage:'Colagem integrada',lineup:'Seleção de filmes',timeline:'Linha do tempo','hero-schedule':'Filme e horários','poster-list':'Lista de filmes','cinema-board':'Painel de cinema','editorial-schedule':'Agenda editorial','day-cards':'Dias em destaque','week-timeline':'Semana em sequência','poster-calendar':'Pôster e calendário','featured-days':'Dias principais','editorial-week':'Semana editorial'};
   const ticketNames={'price-impact':'Preço gigante','campaign-led':'Selo de campanha','offer-counter':'Impacto comercial','ticket-burst':'Ingresso em destaque','promo-editorial':'Editorial promocional','cinema-pop':'Cinema pop'};
-  const commercialStyles = input.templateId === 'ticket-offer' ? Object.keys(ticketNames) : input.templateId === 'concession-combo'
-    ? ['poster-dominant','hero-left','hero-right','split']
+  const {isConcession,FAMILIES}=require('../contracts/concession-campaign');
+  const product=isConcession(input);
+  const {MOVIE_FAMILIES,PRODUCT_LAYOUTS,isMovie}=require('../contracts/artwork-layout');
+  const commercialStyles = input.templateId === 'ticket-offer' ? Object.keys(ticketNames) : product
+    ? Object.keys(PRODUCT_LAYOUTS)
     : input.templateId === 'club-plan'
       ? ['typography-dominant','editorial','hero-center','hero-right']
-      : null;
+      : isMovie(input)?Object.keys(MOVIE_FAMILIES):null;
   const styles = multi ? mode==='similar'?Array(6).fill(input.programLayout || 'automatic'):programLayouts : mode === "similar" ? Array(6).fill(input.layoutId || input.style || commercialStyles?.[0] || "hero-left") : commercialStyles || ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
   const variations = [],
     rejected = [];
   for (const [index, style] of styles.entries()) {
     const draft = {
       ...input,
+      ...(product?{concessionDirection:{...input.concessionDirection,layout:style}}:{}),
       style,
       layoutId:multi?input.layoutId:style,
       ...(multi ? {style:input.style || 'cinematic',programLayout:style} : {}),
@@ -70,8 +74,10 @@ async function generateVariations(input, context, options = {}) {
       draft.composition = { ...input.composition, adjustments: { ...input.composition?.adjustments, blend: Math.max(0, Math.min(100, (input.composition?.adjustments?.blend ?? 70) + (index - 2) * 3)) } };
     }
     if(multi && mode==='similar') draft.programSpacing=(index-2)*.003;
-    const raw = await renderSocialPostV2(draft, context, { ...options, skipRaster: true });
-    const polished = await renderSocialPostV2({ ...draft, polish: true }, context, { ...options, skipRaster: true });
+    let raw;
+    try {raw=await renderSocialPostV2(draft, context, { ...options, artworkRetried:true,concessionRetried:product, skipRaster: true });}
+    catch(error) {if(!['CONCESSION_QUALITY','ARTWORK_QUALITY'].includes(error.code))throw error;rejected.push({style,quality:error.quality});continue;}
+    const polished = product || isMovie(input) ? raw : await renderSocialPostV2({ ...draft, polish: true }, context, { ...options, skipRaster: true });
     const rendered = polished.quality.accepted && polished.quality.total >= raw.quality.total ? polished : raw;
     if (!rendered.quality.accepted) {
       rejected.push({ style, quality: rendered.quality });
@@ -81,9 +87,10 @@ async function generateVariations(input, context, options = {}) {
     variations.push({
       id: `${style}-${draft.artDirection.seed}`,
       styleId: style,
-      name: multi ? multiNames[style] : ticketNames[style] || STYLES.find((s) => s.id === style)?.name || style,
+      name: multi ? multiNames[style] : PRODUCT_LAYOUTS[style] || MOVIE_FAMILIES[style] || FAMILIES[style] || ticketNames[style] || STYLES.find((s) => s.id === style)?.name || style,
       intent: input.templateId==='ticket-offer'?'Conceito da oferta, preço e compra em destaque':input.templateId === 'concession-combo' ? 'Produto, preço e chamada organizados para a bomboniere' : input.templateId === 'club-plan' ? 'Plano, benefícios e mensalidade em destaque' : draft.artDirection.emphasis === "date" ? "Data ou preço em primeiro plano" : style === "poster-dominant" ? "Artwork em destaque" : "Filme e chamada em destaque",
       draft: payload,
+      ...(product?{intent:`${rendered.draft.entities.concession.name} · ${rendered.format.width} × ${rendered.format.height}`} : {}),
       quality: rendered.quality,
       beforeQuality: raw.quality,
       refined: rendered === polished,

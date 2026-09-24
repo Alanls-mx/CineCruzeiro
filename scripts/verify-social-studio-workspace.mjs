@@ -151,6 +151,14 @@ try {
     assert.equal(lastDraft.signaturePosition.x,5);
     await page.locator('label').filter({has:page.locator('[name=socialStudioTemplate][value=concession-combo]')}).click();
     await page.locator('#socialTabContent').click();
+    await page.locator('#socialStudioConcessionCategory').selectOption('family');
+    await page.locator('#socialStudioConcessionObjective').selectOption('desire');
+    await page.locator('#socialStudioProductBranded').check();
+    await page.locator('#socialStudioPreviewButton').click();
+    assert.equal(lastDraft.concessionDirection.category,'family');
+    assert.equal(lastDraft.concessionDirection.objective,'desire');
+    assert.equal(lastDraft.concessionDirection.brandedProduct,true);
+    await page.screenshot({path:`artifacts/studio-workspace/${name}-product-direction.png`});
     await page.locator('#socialStudioRelatedMovie').selectOption('movie');
     await expect.poll(()=>lastDraft.relatedMovieId).toBe('movie');
     await page.locator('label').filter({has:page.locator('[name=socialStudioTemplate][value=sessions-week]')}).click();
