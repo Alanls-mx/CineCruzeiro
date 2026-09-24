@@ -30,6 +30,7 @@ test('seleção considera áreas livres, material e gênero sem alegar detecçã
   assert.equal(movieDirection(draft,{layoutId:'movie-full-bleed'},analysis,false).family,'cinematic-blend');
   const families=new Set(['horror','family','action','comedy','drama'].map(id=>movieDirection({...draft,genreProfile:{id}},{},analysis,true).family));
   assert.ok(families.size>=3);
+  for(const genre of ['family','comedy','drama'])assert.ok(!['poster-lateral','poster-editorial','cinematic-story'].includes(movieDirection({...draft,genreProfile:{id:genre}},{},analysis,true).family));
 });
 test('estreia comunica a data uma vez e conserva todos os horários',async()=>{
   const result=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'movie',layoutId:'movie-spotlight'},context,{loadImage,skipRaster:true});
@@ -37,6 +38,16 @@ test('estreia comunica a data uma vez e conserva todos os horários',async()=>{
   assert.equal(description.text,'13:00 • 18:30');
   assert.ok(['film-wash','film-atmosphere','hero-light','film-vignette'].every(id=>result.scene.elements.some(e=>e.id===id)));
   assert.ok(flattenElements(result.scene.elements).find(e=>e.id==='detail').fontSize>=80);
+});
+test('editorial integrado dissolve o pôster em fundo derivado e mantém ação e assinatura',async()=>{
+  const result=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',formatId:'feed_portrait',layoutId:'movie-editorial-light'},context,{loadImage,skipRaster:true});
+  const elements=flattenElements(result.scene.elements);
+  assert.ok(result.quality.accepted);
+  assert.equal(result.scene.sourceDraft.movieFamily,'movie-editorial-light');
+  assert.equal(elements.find(e=>e.id==='artwork').effects.mask,'fade-all');
+  assert.ok(elements.some(e=>e.id==='editorial-brand-band'));
+  assert.ok(elements.find(e=>e.id==='logo').x<result.scene.width*.2);
+  assert.ok(elements.find(e=>e.id==='website').text.includes('cinecruzeiro.com.br'));
 });
 test('exportação manual preserva horários e não permite trocar poster por recorte',async()=>{
   const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',layoutId:'movie-asymmetric'},context,{loadImage,skipRaster:true,artworkRetried:true});

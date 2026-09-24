@@ -5,6 +5,7 @@ const {SAFE,scheduleLabel}=require('../contracts/artwork-layout');
 const {visualLength}=require('../engine/typography');
 
 function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl}) {
+  if(draft.movieFamily==='movie-editorial-light')return require('./movie-editorial-light').buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl});
   if(draft.movieFamily?.startsWith('movie-') || draft.movieFamily==='cinematic-blend')return require('./movie-cinematic').buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl});
   const w=format.width,h=format.height,safe=SAFE[format.id],top=safe.top*h,bottom=safe.bottom*h,area=bottom-top;
   let family=draft.movieFamily;

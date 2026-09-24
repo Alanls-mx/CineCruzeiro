@@ -19,6 +19,18 @@ for(const movie of movies)for(const url of [movie.posterUrl,movie.backdropUrl].f
 }
 const context={now:'2026-09-24T09:00:00-03:00',brand:{name:'Cine Cruzeiro',logoUrl:'/qa/movie-logo',website:'https://cinecruzeiro.com.br'},movies:movies.map(m=>({...m,sessions:[{id:`test-${m.id}`,date:'2026-09-25',time:'13:00'},{id:`test2-${m.id}`,date:'2026-09-25',time:'18:30'}]}))};
 const report=[];
+for(const layoutId of ['automatic','movie-spotlight','movie-asymmetric','cinematic-blend']) {
+  const movie=movies.find(m=>m.title==='Coyote vs. ACME');
+  const result=await engine.renderSocialPost({templateId:'movie-highlight',movieId:movie.id,formatId:'feed_portrait',layoutId,signatureId:'classic'},context,{loadImage:async url=>images.get(url)||null});
+  await fs.writeFile(path.join(output,`coyote-${layoutId}.png`),result.buffer);
+  console.log('Coyote',layoutId,result.scene.sourceDraft.movieFamily,result.notices?.map(n=>n.code));
+}
+for(const formatId of ['square','story']) {
+  const movie=movies.find(m=>m.title==='Coyote vs. ACME');
+  const result=await engine.renderSocialPost({templateId:'movie-highlight',movieId:movie.id,formatId,signatureId:'classic'},context,{loadImage:async url=>images.get(url)||null});
+  assert.ok(result.quality.accepted);
+  await fs.writeFile(path.join(output,`coyote-automatic-${formatId}.png`),result.buffer);
+}
 for(const movie of movies.slice(0,4)) {
   const tiles=[];
   for(const [index,layoutId] of ['automatic',...Object.keys(MOVIE_FAMILIES)].entries()) {

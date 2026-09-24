@@ -5,10 +5,10 @@ function movieDirection(draft,input,analysis,backdrop,backdropAnalysis) {
   const manual=MOVIE_FAMILIES[selected] && input.automaticStyle!==true;
   const genre=draft.genreProfile?.id;
   const choices=genre==='horror'?['movie-character','movie-full-bleed','cinematic-blend']
-    :genre==='family'?['movie-immersive','movie-asymmetric','cinematic-story']
+    :genre==='family'?['movie-immersive','movie-asymmetric','movie-editorial-light']
     :genre==='action'?['movie-full-bleed','movie-asymmetric','movie-character']
-    :genre==='comedy'?['movie-asymmetric','poster-lateral','movie-immersive']
-    :['poster-lateral','cinematic-blend','poster-editorial','movie-immersive'];
+    :genre==='comedy'?['movie-asymmetric','movie-editorial-light','movie-immersive']
+    :['movie-asymmetric','cinematic-blend','movie-editorial-light','movie-immersive'];
   const seed=crypto.createHash('sha256').update(`${draft.movieId}:${draft.artDirection?.seed || 0}`).digest().readUInt32LE(0);
   let family=manual?selected:choices[seed%choices.length];
   if(!manual && draft.templateId==='movie-premiere')family='movie-spotlight';

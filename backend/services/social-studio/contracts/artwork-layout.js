@@ -7,7 +7,8 @@ const MOVIE_FAMILIES=Object.freeze({
   'movie-character':'Foco no personagem',
   'movie-asymmetric':'Editorial assimétrico',
   'movie-immersive':'Fundo imersivo',
-  'movie-spotlight':'Estreia em destaque'
+  'movie-spotlight':'Estreia em destaque',
+  'movie-editorial-light':'Editorial integrado'
 });
 const PRODUCT_LAYOUTS=Object.freeze({'product-price':'Produto + preço','product-lateral':'Produto lateral','hero-product':'Hero product'});
 const SAFE={square:{left:.055,right:.945,top:.045,bottom:.95},feed_portrait:{left:.055,right:.945,top:.045,bottom:.95},story:{left:.065,right:.935,top:.085,bottom:.89}};

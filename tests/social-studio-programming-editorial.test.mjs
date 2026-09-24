@@ -71,6 +71,10 @@ test('tratamentos de cor preservam a programação com e sem imagens',async()=>{
     backgrounds.add(rendered.scene.backgroundColor);
     assert.equal(flattenElements(rendered.scene.elements).filter(e=>e.id.startsWith('movie-art-')).length,programPosterMode==='none'?0:2);
     assert.equal(rendered.scene.sourceDraft.programSessionCount,2);
+    if(programStyle==='vibrant') {
+      assert.equal(rendered.scene.backgroundColor,'#ffda38');
+      assert.ok(rendered.scene.elements.some(e=>e.id==='program-cross-band-one'));
+    }
   }
   assert.ok(backgrounds.size>=4);
 });
@@ -79,8 +83,8 @@ test('agenda por dias reage à opção de imagens sem alterar horários',async()
   const enabled=await engine.renderSocialPost({templateId:'sessions-week',movieIds:['p0','p1'],programPosterMode:'equal'},varied,{loadImage,skipRaster:true});
   const disabled=await engine.renderSocialPost({templateId:'sessions-week',movieIds:['p0','p1'],programPosterMode:'none'},varied,{loadImage,skipRaster:true});
   assert.equal(enabled.scene.sourceDraft.programSessionCount,disabled.scene.sourceDraft.programSessionCount);
-  assert.ok(enabled.scene.elements.some(e=>e.id.startsWith('program-atmosphere-')));
-  assert.ok(!disabled.scene.elements.some(e=>e.id.startsWith('program-atmosphere-')));
+  assert.equal(enabled.scene.elements.filter(e=>e.id.startsWith('movie-art-')).length,2);
+  assert.equal(disabled.scene.elements.filter(e=>e.id.startsWith('movie-art-')).length,0);
 });
 test('filme sem sessões é avisado e bloqueado antes de carregar imagens',async()=>{
   const ctx={...context,movies:[...movies,{id:'empty',title:'Sem programação',sessions:[]}]};

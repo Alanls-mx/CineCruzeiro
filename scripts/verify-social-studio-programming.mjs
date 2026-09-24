@@ -43,5 +43,11 @@ for(const style of ['editorial','cinematic','posters']) {
 const weekly={...context,movies:context.movies.slice(0,3).map(m=>({...m,sessions:[...m.sessions,{...m.sessions[0],id:`next-${m.id}`,date:'2026-09-25'}]}))};
 const result=await engine.renderSocialPost({templateId:'sessions-week',movieIds:ids.slice(0,3),formatId:'story'},weekly,{loadImage:async url=>images.get(url)||null});
 await fs.writeFile(path.join(out,'agenda-por-dia.png'),result.buffer);
+const split={...context,movies:context.movies.slice(0,3).map((m,i)=>({...m,sessions:[{...m.sessions[0],date:i===2?'2026-09-25':'2026-09-24'}]}))};
+for(const programPosterMode of ['equal','none']) {
+  const preview=await engine.renderSocialPost({templateId:'multi-movies',movieIds:ids.slice(0,3),formatId:'feed_portrait',programPosterMode},split,{loadImage:async url=>images.get(url)||null});
+  assert.ok(preview.quality.accepted);
+  await fs.writeFile(path.join(out,`agenda-mista-${programPosterMode}.png`),preview.buffer);
+}
 await fs.writeFile(path.join(out,'report.json'),JSON.stringify(report,null,2));
 console.log(out);
