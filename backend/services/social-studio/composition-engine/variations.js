@@ -52,7 +52,9 @@ async function generateVariations(input, context, options = {}) {
   const styles = multi ? mode==='similar'?Array(6).fill(input.programLayout || 'automatic'):programLayouts : mode === "similar" ? Array(6).fill(input.layoutId || input.style || commercialStyles?.[0] || "hero-left") : commercialStyles || ["hero-left", "hero-right", "full-bleed", "editorial", "poster-dominant", "typography-dominant", "split", "hero-center"];
   const variations = [],
     rejected = [];
-  for (const [index, style] of styles.entries()) {
+  const workspace = require('../contracts/workspace');
+  const candidates = input.workspaceVersion === 2 ? workspace.LAYOUTS[workspace.category(input.templateId)] || styles : styles;
+  for (const [index, style] of candidates.entries()) {
     const draft = {
       ...input,
       ...(product?{concessionDirection:{...input.concessionDirection,layout:style}}:{}),
@@ -84,7 +86,7 @@ async function generateVariations(input, context, options = {}) {
       continue;
     }
     const { entities, ...payload } = rendered.draft;
-    if(multi && variations.some(v=>v.draft.resolvedProgramLayout===payload.resolvedProgramLayout && v.draft.programStyle===payload.programStyle))continue;
+    if(multi && variations.some(v=>v.draft.resolvedProgramLayout===payload.resolvedProgramLayout && (input.workspaceVersion===2 || v.draft.programStyle===payload.programStyle)))continue;
     if(isMovie(input) && mode!=='similar' && variations.some(v=>v.draft.movieFamily===payload.movieFamily))continue;
     variations.push({
       id: `${style}-${draft.artDirection.seed}`,

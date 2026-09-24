@@ -60,6 +60,14 @@ const nextConfig = {
         headers: publicSecurityHeaders,
       },
       {
+        source: "/social-editor",
+        headers: [
+          {key:"Content-Security-Policy",value:publicContentSecurityPolicy.replace("frame-ancestors 'none'", "frame-ancestors 'self'")},
+          {key:"X-Frame-Options",value:"SAMEORIGIN"},
+          {key:"Cache-Control",value:"private, no-store"},
+        ],
+      },
+      {
         source: "/conta/:path*",
         headers: [
           { key: "Cache-Control", value: "private, no-cache, no-store, max-age=0, must-revalidate" },

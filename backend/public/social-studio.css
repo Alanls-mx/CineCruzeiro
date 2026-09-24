@@ -1647,3 +1647,21 @@
   .social-operation-marker, .social-operation-meter.is-indeterminate > span, .social-loading-overlay .loading-spinner, .social-studio-loading .loading-spinner { animation: none; }
   .social-operation-meter > span { transition: none; }
 }
+.social-workspace-focused [hidden] { display:none !important; }
+.social-workspace-focused .social-studio-workspace { grid-template-columns:160px minmax(0,1fr) 290px; }
+.social-workspace-focused .social-template-library { padding:12px; }
+.social-workspace-focused #socialStudioCategory { width:100%; margin:12px 0; min-height:40px; background:#111a25; color:var(--text); border:1px solid var(--line); border-radius:4px; }
+.social-workspace-focused .social-template-thumb, .social-workspace-focused .social-template-group > h4, .social-workspace-focused #socialStudioRecommendation, .social-workspace-focused #socialStudioBrand { display:none; }
+.social-workspace-focused .social-template-option > span { display:block; min-height:44px; padding:12px; }
+.social-workspace-focused .social-template-option small { display:none; }
+.social-workspace-focused .social-preview-canvas { min-height:420px; padding:0; }
+#socialStudioInlineEditor { width:100%; height: min(760px, 76vh); min-height:420px; border:0; display:block; }
+.social-workspace-focused .social-preview-canvas:has(#socialStudioInlineEditor:not([hidden])) { display:block; }
+.social-workspace-focused .social-preview-toolbar { flex-wrap:wrap; gap:10px; }
+.social-workspace-focused .social-toolbar-format { display:grid; gap:4px; font-size:11px; }
+.social-toolbar-format select { max-width:175px; padding:6px; background:#111a25; border:1px solid var(--line); border-radius:4px; color:var(--text); }
+.social-context-summary { color:var(--muted); font-size:12px; line-height:1.5; margin:0; }
+.social-workspace-focused .social-property-section > summary { font-size:13px; }
+.social-workspace-focused .social-preview-footer { flex-wrap:wrap; }
+@media(max-width:1160px) { .social-workspace-focused .social-studio-workspace { grid-template-columns:150px minmax(0,1fr); } .social-workspace-focused .social-properties-pane { grid-column:1/-1; } }
+@media(max-width:700px) { .social-workspace-focused .social-studio-workspace { grid-template-columns:minmax(0,1fr); } .social-workspace-focused .social-template-library { position:static; max-height:none; } .social-workspace-focused .social-template-grid { display:flex; flex-wrap:wrap; gap:6px; } .social-workspace-focused .social-template-option { flex:1 1 130px; } #socialStudioInlineEditor { height:640px; } }

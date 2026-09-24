@@ -11418,6 +11418,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/admin/social-studio/context" && method === "GET") {
     sendJson(res, 200, {
       ...socialStudioContext(db),
+      workspaceLayouts: require('./services/social-studio/contracts/workspace').LAYOUTS,
       capabilities: {
         view: adminHasPermission(req.adminUser, "social_studio.view"),
         create: adminHasPermission(req.adminUser, "social_studio.create"),
@@ -11562,9 +11563,20 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/social-studio/preview-scene" && method === "POST") {
+    const body = await readBody(req);
+    const snapshot = require('./services/social-studio/remotion/snapshots').read(String(req.adminUser.id), body.previewToken);
+    sendJson(res, 200, {scene:snapshot.scene}, {'Cache-Control':'no-store'});
+    return;
+  }
+
   if (pathname === "/api/admin/social-studio/preview" && method === "POST") {
     const body = await readBody(req);
-    const rendered = await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+    const rendered = body.scene
+      ? await require('./services/social-studio/scene/preview-edit').renderPreviewEdit(
+        require('./services/social-studio/remotion/snapshots').read(String(req.adminUser.id), body.previewToken), body.scene,
+        {loadImage:loadSocialStudioImage, outputType:body.outputType})
+      : await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
     res.writeHead(200, {
       ...securityHeaders({
         "Content-Type": rendered.contentType,

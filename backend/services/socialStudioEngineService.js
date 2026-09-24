@@ -31,7 +31,7 @@ function buildSocialReadyPosts(context = {}) {
 
 module.exports = {
   ...legacy,
-  SOCIAL_TEMPLATES: v2.V2_TEMPLATES.map(({ render, variants, requirements, ...template }) => ({
+  SOCIAL_TEMPLATES: v2.V2_TEMPLATES.filter(template => template.id !== 'club-plan').map(({ render, variants, requirements, ...template }) => ({
     ...template,
     variants,
     requiredData: Object.keys(requirements || {}).filter((key) => requirements[key])

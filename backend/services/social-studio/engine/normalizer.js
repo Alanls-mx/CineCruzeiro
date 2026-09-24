@@ -20,6 +20,7 @@ function genreProfile(movie = {}) {
 }
 
 function normalizeV2Draft(input = {}, context = {}) {
+  input = require('../contracts/workspace').normalizeWorkspace(input);
   const template = templateById(input.templateId);
   const legacyTemplateId = template.id === "club-plan"
     ? "cinema-club"

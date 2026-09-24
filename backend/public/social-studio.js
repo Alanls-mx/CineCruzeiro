@@ -124,6 +124,88 @@
     return state.context?.formats?.find((format) => format.id === id) || state.context?.formats?.[0] || null;
   }
 
+  function campaignKind() {
+    const id=currentTemplate()?.id || '';
+    return ['sessions-today','sessions-week','multi-movies'].includes(id)?'programming':id==='ticket-offer'?'ticket':id==='online-ticket'?'online':id.startsWith('concession-')?'concession':'movie';
+  }
+  const workspaceLayouts={movie:['movie-editorial-light','movie-immersive','movie-spotlight'],programming:['program-cards','program-grid','program-days'],concession:['product-price','product-lateral','hero-product'],ticket:['price-impact','campaign-led','ticket-burst'],online:['hero-left','hero-center','typography-dominant']};
+  const layoutNames={'automatic':'Automática','movie-editorial-light':'Imagem e texto','movie-immersive':'Imagem imersiva','movie-spotlight':'Data em destaque','program-cards':'Cartazes e horários','program-grid':'Grade de filmes','program-days':'Agenda por dia','product-price':'Produto e preço','product-lateral':'Produto lateral','hero-product':'Produto em destaque','price-impact':'Preço em destaque','campaign-led':'Campanha em foco','ticket-burst':'Ingresso promocional','hero-left':'Imagem e chamada','hero-center':'Imagem central','typography-dominant':'Texto em destaque'};
+
+  function simplifyWorkspace() {
+    const byId=id=>document.getElementById(id);
+    root.classList.add('social-workspace-focused');
+    const reserve=document.createElement('div');reserve.hidden=true;reserve.id='socialStudioLegacyControls';
+    byId('socialStudioForm').append(reserve);
+    const moveControl=id=>{const control=byId(id);if(control)reserve.append(control.closest('label') || control);};
+    ['socialStudioAssetStrategy','socialStudioImagePreset','socialStudioCompositionPreset','socialStudioCompositionLook','socialStudioHeroMode','socialStudioEmphasis','socialStudioVisualStyle','socialStudioProductTreatment','socialStudioConcessionCategory','socialStudioCopyDensity','socialStudioBrandProminence'].forEach(moveControl);
+    root.querySelectorAll('.social-composition-adjustments,.social-framing').forEach(node=>reserve.append(node));
+    const advanced=[...root.querySelectorAll('details')].find(node=>node.querySelector('summary')?.textContent==='Configurações avançadas');
+    if(advanced)reserve.append(advanced);
+    byId('socialStudioProgramLayout').closest('label').hidden=true;
+    byId('socialStudioCampaignButton').textContent='Salvar nos 3 formatos';
+    byId('socialStudioGenerateButton').textContent='Salvar arte';
+    byId('socialStudioManualEdit').textContent='Editar na prévia';
+    byId('socialStudioMotionPlay').hidden=true;
+    byId('socialStudioVariationsButton').textContent='Comparar 3 composições';
+    const texts=document.createElement('details');texts.className='social-property-section';texts.innerHTML='<summary>Personalizar textos</summary><div class="social-property-body"></div>';
+    const target=texts.lastElementChild;
+    for(const id of ['socialStudioTitle','socialStudioSubtitle','socialStudioAuxiliary','socialStudioCta','socialStudioActionDestination','socialStudioCopyTone','socialStudioCopyBrief']) {
+      const label=byId(id).closest('label'),row=label.nextElementSibling;
+      target.append(label);if(row?.classList.contains('social-copy-actions'))target.append(row);
+    }
+    byId('socialInspectorContent').append(texts);
+    const programVisual=document.createElement('details');programVisual.id='socialProgramVisual';programVisual.className='social-property-section';programVisual.open=true;
+    programVisual.innerHTML='<summary>Cartazes e cores</summary><div class="social-property-body"></div>';
+    ['socialStudioProgramStyle','socialStudioProgramUseImages','socialStudioProgramPosterMode','socialStudioFeaturedMovie'].forEach(id=>programVisual.lastElementChild.append(byId(id).closest('label')));
+    byId('socialInspectorImage').prepend(programVisual);
+    const auto=document.createElement('label');auto.className='social-toggle';auto.innerHTML='<input id="socialStudioAutoProgram" type="checkbox" checked /> Selecionar filmes automaticamente';
+    byId('socialStudioMovieSelections').before(auto);
+    const summary=document.createElement('p');summary.id='socialStudioProgramSummary';summary.className='social-context-summary';auto.after(summary);
+    byId('socialStudioAutoProgram').addEventListener('change',()=>{state.programSelectionTouched=!byId('socialStudioAutoProgram').checked;if(!state.programSelectionTouched){root.querySelectorAll('[data-program-movie]').forEach(node=>node.value='');fillProgramFromSchedule();}syncFocusedControls();resolveDefaults({resetCopy:true});});
+    const category=document.createElement('select');category.id='socialStudioCategory';category.setAttribute('aria-label','Tipo de campanha');
+    category.innerHTML=[['FILMES','Filmes'],['PROGRAMAÇÃO','Programação'],['BOMBONIERE','Bomboniere'],['VENDAS','Ingressos']].map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
+    byId('socialStudioTemplates').before(category);
+    category.addEventListener('change',()=>{const first=state.context.templates.find(item=>item.category===category.value);if(first){setRadio('socialStudioTemplate',first.id);byId('socialStudioTemplates').dispatchEvent(new Event('change',{bubbles:true}));}});
+    const format=byId('socialStudioFormat').closest('label');format.classList.add('social-toolbar-format');root.querySelector('.social-preview-toolbar').prepend(format);
+    const iframe=document.createElement('iframe');iframe.id='socialStudioInlineEditor';iframe.title='Editor visual da campanha';iframe.hidden=true;
+    iframe.src=`${basePath}/social-editor?inline=1`;byId('socialStudioPreviewCanvas').append(iframe);
+    window.addEventListener('message',event=>{
+      if(event.origin!==window.location.origin || event.source!==iframe.contentWindow)return;
+      if(event.data?.type==='studio:ready'){state.inlineReady=true;sendInlineScene();}
+      if(event.data?.type==='studio:changed' && event.data.revision===state.inlineRevision && state.inlineScene) {
+        window.clearTimeout(state.previewTimer);
+        state.previewVersion++;
+        state.previewAbort?.abort();
+        state.manualScene=event.data.scene;state.inlineEdited=true;state.activePostId='';state.animationKey=null;
+        setStatus('Alterações visuais no rascunho.','ok');saveDraftLocal();
+      }
+    });
+    syncFocusedControls();
+  }
+
+  function syncFocusedControls() {
+    if(!root.classList.contains('social-workspace-focused'))return;
+    const kind=campaignKind(),program=kind==='programming',byId=id=>document.getElementById(id);
+    byId('socialStudioCategory').value=currentTemplate().category;
+    root.querySelectorAll('.social-template-group').forEach(group=>group.hidden=group.querySelector('h4')?.textContent!==currentTemplate().category);
+    // Keep fallback for the existing library heading tag.
+    root.querySelectorAll('.social-template-group').forEach(group=>{group.hidden=![...group.querySelectorAll('[name=socialStudioTemplate]')].some(input=>input.checked);});
+    byId('socialStudioMovieField').hidden=program || !currentTemplate().fields.includes('movie');
+    byId('socialStudioImageSection').hidden=program;
+    byId('socialProgramVisual').hidden=!program;
+    byId('socialStudioMovieSelections').hidden=byId('socialStudioAutoProgram').checked;
+    const count=[...root.querySelectorAll('[data-program-movie]')].filter(node=>node.value).length;
+    byId('socialStudioProgramSummary').textContent=`${count} filmes selecionados pela programação`;
+    byId('socialStudioProgramLayout').closest('label').hidden=true;
+    byId('socialStudioShowSessions').closest('label').hidden=program;
+    byId('socialStudioFeaturedMovie').closest('label').hidden=!byId('socialStudioProgramUseImages').checked || value('socialStudioProgramPosterMode')!=='featured';
+    for(const [id,meaning] of [['socialStudioReleaseDate','release'],['socialStudioPresaleDate','presale'],['socialStudioSessionDate','session']])byId(id).closest('label').hidden=value('socialStudioDateKind')!==meaning;
+    byId('socialStudioDate').closest('label').hidden=value('socialStudioDateTextMode')==='automatic';
+    const animations=program?['automatic','poster-cascade','cinema-lineup','featured-cycle']:kind==='movie'?['automatic','cinematic-reveal','slow-parallax','poster-reveal']:['automatic','commercial-focus','editorial'];
+    const select=byId('socialStudioAnimationPreset');[...select.options].forEach(option=>{option.hidden=!animations.includes(option.value);option.disabled=option.hidden;});
+    if(!animations.includes(select.value))select.value='automatic';
+  }
+
   function renderShell() {
     root.innerHTML = `
       <form id="socialStudioForm" class="social-studio-shell">
@@ -547,15 +629,10 @@
     const template = currentTemplate();
     const allowed = template?.styles || ["clean"];
     const programLayouts=state.context?.programLayouts?.[template?.id];
-    const styles = programLayouts?.length
-      ? [{id:'automatic',name:'Direção automática'},...programLayouts.map(id=>({id,name:document.querySelector(`#socialStudioProgramLayout option[value="${id}"]`)?.textContent || id}))]
-      : template?.type==='concession'
-      ? [{id:'automatic',name:'Direção automática'},{id:'product-price',name:'Produto + preço'},{id:'product-lateral',name:'Produto lateral'},{id:'hero-product',name:'Hero product'}]
-      : /^movie-/.test(template?.id || '')
-      ? [{id:'automatic',name:'Direção automática'},{id:'movie-editorial-light',name:'Editorial integrado'},{id:'poster-lateral',name:'Split cinematográfico'},{id:'poster-editorial',name:'Pôster editorial'},{id:'cinematic-blend',name:'Pôster + atmosfera'},{id:'cinematic-story',name:'Poster hero'},{id:'movie-full-bleed',name:'Full bleed'},{id:'movie-character',name:'Foco no personagem'},{id:'movie-asymmetric',name:'Assimétrico'},{id:'movie-immersive',name:'Fundo imersivo'},{id:'movie-spotlight',name:'Estreia em destaque'}]
-      : template?.id==='ticket-offer'
-      ? [{id:'automatic',name:'Direção automática'},{id:'price-impact',name:'Preço gigante'},{id:'campaign-led',name:'Campanha em foco'},{id:'offer-counter',name:'Comparativo'},{id:'ticket-burst',name:'Ingresso pop'},{id:'promo-editorial',name:'Editorial promocional'},{id:'cinema-pop',name:'Cinema vibrante'}]
-      : [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
+    const count=[...root.querySelectorAll('[data-program-movie]')].filter(node=>node.value).length;
+    const available=(state.context.workspaceLayouts || workspaceLayouts)[campaignKind()] || [];
+    const choices=available.filter(id=>id==='program-cards'?count>=3 && count<=4:id==='program-grid'?count>=3 && count<=6:true);
+    const styles=[{id:'automatic',name:'Automática'},...choices.map(id=>({id,name:layoutNames[id]}))];
     const movie = artworkMovie();
     const concession = state.context.concessions?.find((item) => String(item.id) === value("socialStudioConcession"));
     const plan = state.context.clubPlans?.find((item) => String(item.id) === value("socialStudioClub"));
@@ -566,7 +643,6 @@
         ? {"typography-dominant":"Benefícios em destaque", editorial:"Plano editorial", "hero-center":"Plano em destaque", "hero-right":"Clube + plano", automatic:"Direção automática"}
         : { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
     if(programLayouts?.length) selected=value('socialStudioProgramLayout','automatic');
-    if(selected && selected!=='automatic' && allowed.includes(selected) && !styles.some(style=>style.id===selected)) styles.push({id:selected,name:'Composição legada'});
     const chosen = styles.some(style => style.id === selected) ? selected : "automatic";
     document.getElementById("socialStudioStyles").innerHTML = styles.map((style) => `
       <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === chosen ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${artwork ? `<img src="${escapeHtml(assetUrl(artwork))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
@@ -717,6 +793,7 @@
 
   function showSavedPost(post) {
     if (!post?.imageUrl) return;
+    state.inlineScene=null;state.manualScene=null;state.inlineEdited=false;state.inlineDirtyKey=null;showInlineEditor(false);
     clearTimeout(state.previewTimer);
     state.previewAbort?.abort();
     state.previewVersion++;
@@ -822,6 +899,7 @@
     renderStyles(document.querySelector("[name='socialStudioStyle']:checked")?.value || "");
     syncCustomizationControls();
     updateStyleRecommendation();
+    syncFocusedControls();
   }
 
   function syncProgramImageControls() {
@@ -842,7 +920,7 @@
     const end=new Date(Date.parse(`${start}T12:00:00Z`)+6*86400000).toISOString().slice(0,10);
     let current=available.filter(item=>item.date>=start && (day?item.date===start:item.date<=end));
     if(!current.length)current=available.filter(item=>item.date===available[0].date);
-    const movies=[...new Map(current.map(item=>[String(item.movie.id),item.movie])).values()].slice(0,4);
+    const movies=[...new Map(current.map(item=>[String(item.movie.id),item.movie])).values()].slice(0,selectors.length);
     movies.forEach((movie,index)=>{selectors[index].value=String(movie.id);});
     if(!state.programDateTouched)setControl('socialStudioPeriodStart',current[0].date===start?start:current[0].date);
     if(movies.length)setControl('socialStudioFeaturedMovie',String(movies[0].id));
@@ -897,6 +975,7 @@
 
   function payload() {
     return {
+      workspaceVersion:2,
       templateId: checked("socialStudioTemplate", "movie-premiere"),
       polish: state.polish,
       formatId: value("socialStudioFormat", "feed_portrait"),
@@ -1265,7 +1344,44 @@
     if (state.previewCache.size > 8) state.previewCache.delete(state.previewCache.keys().next().value);
   }
 
-  function displayPreview(blob, alt = "Prévia da arte social") {
+  function sendInlineScene() {
+    if(!state.inlineReady || !state.inlineScene)return;
+    const frame=document.getElementById('socialStudioInlineEditor');
+    frame.contentWindow.postMessage({type:'studio:scene',revision:state.inlineRevision,scene:state.manualScene || state.inlineScene},window.location.origin);
+  }
+  function showInlineEditor(show=true) {
+    const frame=document.getElementById('socialStudioInlineEditor');
+    if(!frame)return;
+    frame.hidden=!show || !state.inlineScene;
+    document.getElementById('socialStudioPreviewStage').hidden=!frame.hidden;
+    document.querySelector('.social-preview-zoom').hidden=!frame.hidden;
+    document.getElementById('socialStudioManualEdit').textContent=frame.hidden?'Editar na prévia':'Ver imagem final';
+  }
+  async function loadInlineScene(blob) {
+    const token=blob.previewToken;
+    if(!token || state.context?.capabilities?.create===false)return;
+    try {
+      const result=await request('/api/admin/social-studio/preview-scene',{method:'POST',body:JSON.stringify({previewToken:token})});
+      if(state.previewToken!==token)return;
+      state.inlineScene=result.scene;state.inlineRevision=(state.inlineRevision || 0)+1;
+      state.manualScene=state.pendingInlineRestore || null;state.pendingInlineRestore=null;
+      state.inlineEdited=Boolean(state.manualScene);state.inlineKey=previewCacheKey(payload());
+      state.inlineDirtyKey=null;
+      document.getElementById('socialStudioManualEdit').disabled=false;
+      sendInlineScene();showInlineEditor();
+    } catch(error){setStatus(`Prévia disponível. Editor: ${error.message}`,'error');}
+  }
+  async function prepareEditedPreview() {
+    if(state.inlineDirtyKey || state.manualScene && state.inlineKey!==previewCacheKey(payload()))throw new Error('Os dados da campanha mudaram. Clique em Atualizar prévia para recompor antes de exportar.');
+    if(!state.manualScene)return;
+    const scene=state.manualScene,token=state.previewToken;
+    const blob=await requestImage('/api/admin/social-studio/preview',{scene,previewToken:token,outputType:value('socialStudioOutput','png')});
+    if(state.manualScene!==scene)throw new Error('A arte mudou durante a revisão. Tente exportar novamente.');
+    displayPreview(blob, payload().title, true);
+    state.manualScene=null;state.inlineScene=scene;saveDraftLocal();
+  }
+
+  function displayPreview(blob, alt = "Prévia da arte social", edited = false) {
     stopMotion();
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
     state.previewBlob = blob;
@@ -1278,9 +1394,16 @@
     state.activePostId = "";
     document.getElementById("socialStudioManualEdit").disabled = true;
     updateTemplatePreviews(payload(), state.previewUrl);
+    if(!edited) {showInlineEditor(false);loadInlineScene(blob);}
+    else document.getElementById('socialStudioManualEdit').disabled=false;
   }
 
   async function updatePreview(options = {}) {
+    if(state.manualScene && !options.discardManual) {
+      state.inlineDirtyKey=previewCacheKey(payload());
+      setStatus('Atualizar prévia recompõe a campanha e substitui os ajustes visuais atuais. Seus ajustes continuam no canvas.','warning');
+      return;
+    }
     stopMotion();
     if (state.context?.capabilities?.create === false) return;
     const data = payload();
@@ -1332,6 +1455,11 @@
   }
 
   function schedulePreview(delay = 300) {
+    if(state.manualScene) {
+      state.inlineDirtyKey=previewCacheKey(payload());
+      setStatus('Os dados mudaram. Atualizar prévia recompõe a arte e substitui os ajustes visuais atuais.','warning');
+      return;
+    }
     state.activePostId='';state.previewToken=null;
     state.animationAbort?.abort();
     stopMotion();
@@ -1447,6 +1575,8 @@
     document.getElementById('socialStudioAnimationCancel').hidden=false;
     setStatus('Gerando vídeo com tempo de leitura protegido...', 'loading');
     try {
+      await prepareEditedPreview();
+      showInlineEditor(false);
       if(state.animationKey!==key || !state.animationUrl) {
         if(!state.activePostId) {
           if(state.previewing || !state.previewToken)throw new Error('Atualize a prévia e aguarde a arte ficar pronta antes de animar.');
@@ -1502,7 +1632,7 @@
     window.clearTimeout(state.autosaveTimer);
     state.autosaveTimer = window.setTimeout(() => {
       try {
-        localStorage.setItem(draftKey, JSON.stringify(payload()));
+        localStorage.setItem(draftKey, JSON.stringify({...payload(),inlineScene:state.manualScene || (state.inlineEdited?state.inlineScene:undefined)}));
         label.textContent = "Rascunho salvo";
         label.dataset.state = "saved";
       } catch {
@@ -1517,6 +1647,7 @@
       const saved = JSON.parse(localStorage.getItem(draftKey) || "null");
       if (!saved || !state.context.templates.some((template) => template.id === saved.templateId)) return false;
       applyDraft(saved, saved.caption || "");
+      state.pendingInlineRestore=saved.inlineScene || null;
       setStatus("Rascunho local restaurado.", "ok");
       return true;
     } catch {
@@ -1570,11 +1701,14 @@
     button.textContent = "Gerando...";
     setStatus("Gerando e salvando o arquivo final...", "loading");
     try {
-      const result = await request("/api/admin/social-studio/posts", { method: "POST", body: JSON.stringify(payload()) });
+      await prepareEditedPreview();
+      const result = await request("/api/admin/social-studio/posts", { method: "POST", body: JSON.stringify({...payload(),previewToken:state.previewToken}) });
       state.context.history = result.history || [result.post, ...(state.context.history || [])];
       state.historyPage = 1;
       renderHistory();
+      const inline={scene:state.inlineScene,token:state.previewToken,edited:state.inlineEdited};
       showSavedPost(result.post);
+      if(inline.scene){state.inlineScene=inline.scene;state.previewToken=inline.token;state.inlineEdited=inline.edited;state.inlineKey=previewCacheKey(payload());sendInlineScene();showInlineEditor();}
       setStatus("Arte adicionada ao histórico.", "ok");
       notify("Arte social gerada com sucesso.");
       return result.post;
@@ -1584,11 +1718,15 @@
     } finally {
       state.generating = false;
       button.disabled = state.context?.capabilities?.create === false;
-      button.textContent = "Gerar arte";
+      button.textContent = "Salvar arte";
     }
   }
 
   async function generateCampaign() {
+    if(state.manualScene || state.inlineEdited) {
+      setStatus('Para conservar os ajustes visuais, salve esta arte. Os outros formatos precisam de uma composição própria.','warning');
+      return;
+    }
     if (state.generating) return;
     state.generating = true;
     const button = document.getElementById("socialStudioCampaignButton");
@@ -1612,7 +1750,8 @@
     }
   }
 
-  function downloadPreview() {
+  async function downloadPreview() {
+    try {await prepareEditedPreview();} catch(error){setStatus(error.message,'error');return;}
     if (!state.previewUrl) return;
     const extension = value("socialStudioOutput") === "jpg" ? "jpg" : "png";
     const link = document.createElement("a");
@@ -1819,7 +1958,7 @@
       });
     }
     form.addEventListener("submit", generatePost);
-    document.getElementById("socialStudioPreviewButton").addEventListener("click", () => updatePreview({ force: true }));
+    document.getElementById("socialStudioPreviewButton").addEventListener("click", () => updatePreview({ force: true, discardManual:true }));
     document.getElementById("socialStudioCampaignButton").addEventListener("click", generateCampaign);
     document.getElementById("socialStudioPreviewDownload").addEventListener("click", downloadPreview);
     document.getElementById("socialStudioMotionPlay").addEventListener("click", playMotion);
@@ -1844,7 +1983,11 @@
     renderFavorites();
     document.getElementById("socialStudioCompositionReset").addEventListener("click", () => { state.compositionAdjustments = {}; syncCompositionControls(); saveDraftLocal(); schedulePreview(); });
     document.getElementById("socialStudioManualEdit").addEventListener("click", () => {
-      if (state.activePostId) window.location.href = `${basePath}/social-editor?postId=${encodeURIComponent(state.activePostId)}`;
+      if(state.inlineScene) {
+        const show=document.getElementById('socialStudioInlineEditor').hidden;
+        if(show){sendInlineScene();showInlineEditor();}
+        else prepareEditedPreview().then(()=>showInlineEditor(false)).catch(error=>setStatus(error.message,'error'));
+      } else if (state.activePostId) window.location.href = `${basePath}/social-editor?postId=${encodeURIComponent(state.activePostId)}`;
     });
     document.getElementById("socialStudioReadyFilters").addEventListener("click", (event) => {
       const button = event.target.closest("[data-social-ready-filter]");
@@ -1869,6 +2012,11 @@
       if (button.dataset.socialReadyAction === "create") createReadyPost(post, button);
     });
     document.getElementById("socialStudioTemplates").addEventListener("change", async () => {
+      if(!state.manualScene){state.inlineScene=null;state.inlineDirtyKey=null;showInlineEditor(false);}
+      state.styleManuallySelected=false;setRadio('socialStudioStyle','automatic');
+      setControl('socialStudioProgramLayout','automatic');state.programSelectionTouched=false;
+      root.querySelectorAll('[data-program-movie]').forEach(node=>node.value='');
+      if(document.getElementById('socialStudioAutoProgram'))document.getElementById('socialStudioAutoProgram').checked=true;
       updateFieldVisibility();
       fillProgramFromSchedule();
       syncTicketPrice({});
@@ -1920,6 +2068,7 @@
       if(event.target.name==='socialStudioStyle' && state.context?.programLayouts?.[currentTemplate()?.id]) setControl('socialStudioProgramLayout',event.target.value);
       if(event.target.id==='socialStudioProgramLayout') renderStyles(event.target.value);
       syncCustomizationControls();
+      syncFocusedControls();
       if(event.target.closest('#socialStudioAnimationOptions'))return;
       if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) return;
       if(event.target.id==='socialStudioAnimated') return;
@@ -1986,9 +2135,11 @@
     root.innerHTML = `<div class="social-studio-loading" role="status" aria-live="polite"><span class="loading-spinner" aria-hidden="true"></span><strong>Preparando o Social Studio</strong><small>Carregando programação, produtos e identidade do cinema.</small></div>`;
     try {
       state.context = await request("/api/admin/social-studio/context");
+      state.context.templates=state.context.templates.filter(template=>template.id!=='club-plan');
       renderShell();
       renderContext();
       bindEvents();
+      simplifyWorkspace();
       state.initialized = true;
       const requestedPost=new URLSearchParams(window.location.search).get('animatePost');
       const savedPost=state.context.history?.find(post=>post.id===requestedPost);

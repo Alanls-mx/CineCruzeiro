@@ -51,10 +51,10 @@ async function fixture() {
   };
 }
 
-test("Engine V2 preserva os templates e inclui programação e multi-filmes", () => {
+test("Engine V2 oferece os templates ativos sem clube e inclui programação e multi-filmes", () => {
   assert.deepEqual(engine.SOCIAL_TEMPLATES.map((template) => template.id), [
     "movie-premiere", "movie-highlight", "movie-price", "movie-presale",
-    "ticket-offer", "online-ticket", "concession-combo", "concession-offer", "club-plan", "sessions-today", "sessions-week", "multi-movies"
+    "ticket-offer", "online-ticket", "concession-combo", "concession-offer", "sessions-today", "sessions-week", "multi-movies"
   ]);
   for (const template of engine.SOCIAL_TEMPLATES) {
     assert.ok(template.formats.length === 3);
