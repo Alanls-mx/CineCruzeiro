@@ -46,7 +46,7 @@ function applyContentRules(draft, input, context) {
   draft.programColumns=[1,2,3].includes(Number(input.programColumns))?Number(input.programColumns):0;
   draft.programGap=Math.max(12,Math.min(36,Number(input.programGap)||24));
   draft.programDays=[1,2,3,7].includes(Number(input.programDays))?Number(input.programDays):1;
-  draft.programStyle=['editorial','cinematic','posters'].includes(input.programStyle)?input.programStyle:'posters';
+  draft.programStyle=['automatic','vibrant','premium','noir','editorial','cinematic','posters'].includes(input.programStyle)?input.programStyle:'automatic';
   draft.programPosterMode=['none','equal','featured'].includes(input.programPosterMode)?input.programPosterMode:'equal';
   draft.featuredMovieId=selected.some(m=>m.id===input.featuredMovieId)?input.featuredMovieId:'';
   if(program && selected.length) {

@@ -10,7 +10,7 @@ const poster = await fs.readFile('public/images/social-studio/editorial/shrek-5.
 const logo = await fs.readFile('public/images/social-studio/cine-cruzeiro-logo-3d.png');
 const context = {
   brand: {name:'Cine Cruzeiro',logoUrl:'/logo.png',posterLogoUrl:'/logo.png',primaryColor:'#07111f',secondaryColor:'#267be6',accentColor:'#facc15',textColor:'#ffffff',posterWebsite:'www.cinecruzeiro.com.br'},
-  movies: [{id:'movie',title:'Campanha de teste',genre:'Animação',posterUrl:'/poster.webp',releaseDate:'2026-10-22',sessions:[]}],
+  movies: [{id:'movie',title:'Campanha de teste',genre:'Animação',posterUrl:'/poster.webp',releaseDate:'2026-10-22',sessions:[{id:'session',date:new Date(Date.now()+86400000).toISOString().slice(0,10),time:'19:00',active:true}]}],
   concessions:[{id:'combo',name:'Combo Clássico',price:25,imageUrl:'/poster.webp'}],clubPlans:[],templates:engine.SOCIAL_TEMPLATES,styles:[...engine.SOCIAL_STYLES,...STYLES],formats:Object.values(engine.SOCIAL_FORMATS),
   programLayouts:require('../backend/services/social-studio/programming/direction').PROGRAM_LAYOUTS,
   signatures:engine.SOCIAL_SIGNATURES,palettes:require('../backend/services/social-studio/engine/palette').PALETTES,
@@ -162,14 +162,16 @@ try {
     await page.locator('#socialStudioRelatedMovie').selectOption('movie');
     await expect.poll(()=>lastDraft.relatedMovieId).toBe('movie');
     await page.locator('label').filter({has:page.locator('[name=socialStudioTemplate][value=sessions-week]')}).click();
+    await expect(page.locator('[data-program-movie="0"]')).toHaveValue('movie');
+    await expect(page.locator('#socialStudioPeriodStart')).not.toHaveValue('');
     await page.locator('#socialDockTab-composition').click();
     await page.locator('label').filter({has:page.locator('[name=socialStudioStyle][value=program-days]')}).click();
     await page.locator('#socialStudioPreviewButton').click();
     assert.equal(lastDraft.programLayout,'program-days');
     await page.locator('#socialTabContent').click();
-    await page.locator('#socialStudioProgramStyle').selectOption('editorial');
-    await page.locator('#socialStudioProgramPosterMode').selectOption('none');
-    await expect.poll(()=>lastDraft.programStyle).toBe('editorial');
+    await page.locator('#socialStudioProgramStyle').selectOption('premium');
+    await page.locator('#socialStudioProgramUseImages').uncheck();
+    await expect.poll(()=>lastDraft.programStyle).toBe('premium');
     await expect.poll(()=>lastDraft.programPosterMode).toBe('none');
     await page.locator('#socialDockTab-composition').scrollIntoViewIfNeeded();
     await page.screenshot({path:`artifacts/studio-workspace/${name}-programming.png`});

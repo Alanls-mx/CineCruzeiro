@@ -133,9 +133,13 @@ async function repairContrast(scene,loadImage) {
     return;
   }
   if(scene.sourceDraft.officialProgramLayout && (await contrastReadings(scene,loadImage)).some(r=>r.ratio<4.5)) {
-    scene.elements=scene.elements.filter(e=>e.role!=='ambient' && !e.id.startsWith('custom-background-'));
-    scene.backgroundColor='#101216';
+    scene.elements=scene.elements.filter(e=>e.id!=='program-color-field' && !e.id.startsWith('custom-background-'));
     scene.sourceDraft.programSolidFallback=true;
+    for(const reading of await contrastReadings(scene,loadImage))if(reading.ratio<4.5) {
+      const element=scene.elements.find(e=>e.id===reading.id);
+      if(element)element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
+    }
+    if((await contrastReadings(scene,loadImage)).some(r=>r.ratio<4.5))scene.elements=scene.elements.filter(e=>e.role!=='ambient');
   }
   await repairConcessionContrast(scene,loadImage);
 }

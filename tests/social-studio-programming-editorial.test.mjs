@@ -63,6 +63,25 @@ test('pôsteres iguais, sem pôster e destaque explícito conservam a agenda',as
     if(programPosterMode==='featured')assert.equal(art[0].id,'movie-art-1');
   }
 });
+test('tratamentos de cor preservam a programação com e sem imagens',async()=>{
+  const backgrounds=new Set();
+  for(const programStyle of ['vibrant','premium','noir','cinematic','editorial'])for(const programPosterMode of ['equal','none']) {
+    const rendered=await engine.renderSocialPost({templateId:'sessions-today',movieIds:['p0','p1'],programStyle,programPosterMode},context,{loadImage,skipRaster:true});
+    assert.ok(rendered.quality.accepted,`${programStyle} ${programPosterMode}: ${JSON.stringify(rendered.quality.issues)}`);
+    backgrounds.add(rendered.scene.backgroundColor);
+    assert.equal(flattenElements(rendered.scene.elements).filter(e=>e.id.startsWith('movie-art-')).length,programPosterMode==='none'?0:2);
+    assert.equal(rendered.scene.sourceDraft.programSessionCount,2);
+  }
+  assert.ok(backgrounds.size>=4);
+});
+test('agenda por dias reage à opção de imagens sem alterar horários',async()=>{
+  const varied={...context,movies:movies.slice(0,2).map((movie,index)=>({...movie,sessions:[{...movie.sessions[0],date:index?'2026-09-25':'2026-09-24'}]}))};
+  const enabled=await engine.renderSocialPost({templateId:'sessions-week',movieIds:['p0','p1'],programPosterMode:'equal'},varied,{loadImage,skipRaster:true});
+  const disabled=await engine.renderSocialPost({templateId:'sessions-week',movieIds:['p0','p1'],programPosterMode:'none'},varied,{loadImage,skipRaster:true});
+  assert.equal(enabled.scene.sourceDraft.programSessionCount,disabled.scene.sourceDraft.programSessionCount);
+  assert.ok(enabled.scene.elements.some(e=>e.id.startsWith('program-atmosphere-')));
+  assert.ok(!disabled.scene.elements.some(e=>e.id.startsWith('program-atmosphere-')));
+});
 test('filme sem sessões é avisado e bloqueado antes de carregar imagens',async()=>{
   const ctx={...context,movies:[...movies,{id:'empty',title:'Sem programação',sessions:[]}]};
   const input={templateId:'multi-movies',movieIds:['p0','empty']};
