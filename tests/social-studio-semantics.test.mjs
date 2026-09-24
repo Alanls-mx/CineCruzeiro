@@ -17,7 +17,7 @@ test('validação semântica bloqueia dados incorretos antes de carregar imagens
     [{templateId:'sessions-today',periodStart:'2026-09-22'},context,'NO_SESSIONS'],
     [{templateId:'movie-highlight',subtitle:'HOJE NO CINEMA'},context,'TODAY_MISMATCH'],
     [{templateId:'online-ticket',actionDestination:''},context,'ACTION_DESTINATION_REQUIRED'],
-    [{templateId:'multi-movies',movieIds:['film']},context,'SELECT_MOVIES'],
+    [{templateId:'multi-movies',movieIds:[]},context,'SELECT_MOVIES'],
     [{templateId:'movie-price'}, {...context,movies:[{...context.movies[0],sessions:[]}]},'PRICE_REQUIRED'],
     [{templateId:'movie-presale'}, {...context,movies:[{...context.movies[0],sessions:[]}]},'PRESALE_UNCONFIRMED'],
   ]) {

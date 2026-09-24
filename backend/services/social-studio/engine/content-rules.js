@@ -36,7 +36,7 @@ function applyContentRules(draft, input, context) {
   const premiere = ['movie-premiere','movie-presale'].includes(draft.templateId);
   const online = draft.templateId === 'online-ticket';
   const allowed = (context.movies || []).filter(movie=>movie.catalogued !== false);
-  const ids = Array.isArray(input.movieIds) ? [...new Set(input.movieIds.map(String))].slice(0,6) : [];
+  const ids = Array.isArray(input.movieIds) ? [...new Set(input.movieIds.map(String))].slice(0,12) : [];
   const selected = ids.map(id=>allowed.find(movie=>String(movie.id)===id)).filter(Boolean);
   const program=multi || scheduleCampaign;
   if(scheduleCampaign && !selected.length && draft.entities.movie) selected.push(draft.entities.movie);
@@ -46,6 +46,8 @@ function applyContentRules(draft, input, context) {
   draft.programColumns=[1,2,3].includes(Number(input.programColumns))?Number(input.programColumns):0;
   draft.programGap=Math.max(12,Math.min(36,Number(input.programGap)||24));
   draft.programDays=[1,2,3,7].includes(Number(input.programDays))?Number(input.programDays):1;
+  draft.programStyle=['editorial','cinematic','posters'].includes(input.programStyle)?input.programStyle:'posters';
+  draft.programPosterMode=['none','equal','featured'].includes(input.programPosterMode)?input.programPosterMode:'equal';
   draft.featuredMovieId=selected.some(m=>m.id===input.featuredMovieId)?input.featuredMovieId:'';
   if(program && selected.length) {
     const {selectFeaturedMovie,analyzeProgramMood}=require('../programming/direction');
@@ -68,7 +70,7 @@ function applyContentRules(draft, input, context) {
   const schedule = sessionSchedule(draft.entities.movie, draft, now);
   if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = 'EM DESTAQUE';
   draft.schedule = schedule;
-  draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],featured:movie.id===draft.resolvedFeaturedMovieId,schedule:sessionSchedule(movie,{...draft,compact:multi,compactDays:selected.length>2?1:3},now)})) : [];
+  draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],featured:movie.id===draft.featuredMovieId,schedule:sessionSchedule(movie,{...draft,compact:false},now)})) : [];
   if (scheduleCampaign) {
     if(input.title === undefined) draft.title = selected.length>1 ? 'Programação' : draft.entities.movie?.title || 'Programação';
     if(input.subtitle === undefined) draft.subtitle = draft.scheduleMode === 'today' ? `SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}` : `SEMANA DE ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`;
@@ -78,6 +80,15 @@ function applyContentRules(draft, input, context) {
     if(input.title === undefined) draft.title = `PROGRAMAÇÃO EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`;
     if(input.subtitle === undefined) draft.subtitle = 'FILMES EM CARTAZ';
     if(input.cta === undefined) draft.cta = 'CONFIRA A PROGRAMAÇÃO';
+  }
+  if(program) {
+    const {programData,programTitle}=require('../programming/schedule');
+    const model=programData(draft.programMovies);
+    draft.programMovies=model.movies;
+    draft.title=programTitle(model,cinemaDay(now),context.brand?.name || 'CINEMA',draft.templateId);
+    draft.subtitle='';
+    // All session facts stay in the model; layout is never allowed to truncate them.
+    draft.showSessions=true;
   }
   if(premiere && input.subtitle === undefined && draft.templateId !== 'movie-presale') draft.subtitle = draft.entities.movie?.catalogued===false?'NO RADAR DO CINEMA':'ESTREIA';
   if(draft.entities.movie?.catalogued===false && /^movie-/.test(draft.templateId)) {
@@ -90,10 +101,12 @@ function applyContentRules(draft, input, context) {
   const mustShowWebsite = online || multi || scheduleCampaign || premiere || /site|online|programa[çc][ãa]o|sess[ãa]o|sess[õo]es|compr|garanta/i.test(draft.cta);
   draft.contentRules = {mustShowDate:premiere,mustShowSessions:scheduleCampaign || /^movie-/.test(draft.templateId) && sessionPromise && schedule.count>0,mustShowWebsite,mustShowPrice:['movie-price','ticket-offer','concession-combo','concession-offer','club-plan'].includes(draft.templateId),mustShowMultipleMovies:multi,mustKeepDateNearPremiere:premiere,mustKeepWebsiteNearCTA:mustShowWebsite};
   draft.contentNotices = [];
-  if(multi && selected.length < 2) draft.contentNotices.push({type:'warning',code:'SELECT_MOVIES',message:'Selecione entre 2 e 6 filmes do catálogo para montar a programação.'});
+  if(program && Array.isArray(input.movieIds) && new Set(input.movieIds).size>12)draft.contentNotices.push({type:'warning',code:'PROGRAM_SELECTION_LIMIT',message:'Selecione no máximo 12 filmes por arte. Divida a programação em mais de uma peça.'});
+  if(program && draft.programMovies.some(movie=>!movie.schedule.count))draft.contentNotices.push({type:'warning',code:'PROGRAM_EMPTY_MOVIE',message:`Sem sessões no período: ${draft.programMovies.filter(movie=>!movie.schedule.count).map(movie=>movie.title).join(', ')}. Ajuste o período ou remova esses filmes.`});
+  if(multi && !selected.length) draft.contentNotices.push({type:'warning',code:'SELECT_MOVIES',message:'Selecione entre 1 e 12 filmes do catálogo para montar a programação.'});
   if(mustShowWebsite && !draft.website) draft.contentNotices.push({type:'warning',code:'WEBSITE_REQUIRED',message:'Configure o site oficial do cinema antes de exportar esta campanha.'});
   if(premiere && !draft.date) draft.contentNotices.push({type:'warning',code:'DATE_REQUIRED',message:'A estreia ainda não tem data. Informe uma data confirmada ou use Filme em destaque.'});
-  if(scheduleCampaign && !draft.programMovies.some(movie=>movie.schedule.count)) draft.contentNotices.push({type:'warning',code:'NO_SESSIONS',message:'Não há sessões disponíveis no período selecionado. A arte indicará a consulta ao site.'});
+  if(scheduleCampaign && !draft.programMovies.some(movie=>movie.schedule.count)) draft.contentNotices.push({type:'warning',code:'NO_SESSIONS',message:'Não há sessões disponíveis no período selecionado. Ajuste a programação antes de exportar.'});
   if(draft.templateId==='movie-presale' && !(draft.entities.movie?.sessions || []).length) {
     if(input.subtitle===undefined) draft.subtitle='PRÉ-VENDA EM BREVE';
     if(input.cta===undefined) draft.cta='ACOMPANHE AS NOVIDADES';
@@ -102,8 +115,10 @@ function applyContentRules(draft, input, context) {
   return draft;
 }
 function assertContentReady(draft) {
-  const missing=(draft.contentNotices || []).find(notice=>['SELECT_MOVIES','WEBSITE_REQUIRED','DATE_REQUIRED'].includes(notice.code));
+  const missing=(draft.contentNotices || []).find(notice=>['SELECT_MOVIES','WEBSITE_REQUIRED','DATE_REQUIRED','PROGRAM_SELECTION_LIMIT'].includes(notice.code));
   if(missing) throw Object.assign(new Error(missing.message),{statusCode:400,code:missing.code});
   if(draft.content) require('../contracts/content').assertCampaignContent(draft.content);
+  const empty=draft.contentNotices?.find(n=>n.code==='PROGRAM_EMPTY_MOVIE');
+  if(empty)throw Object.assign(new Error(empty.message),{statusCode:422,code:empty.code});
 }
 module.exports = {applyContentRules,sessionSchedule,cinemaDay,MULTI_LAYOUTS,assertContentReady,validDay};

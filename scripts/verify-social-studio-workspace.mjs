@@ -163,9 +163,14 @@ try {
     await expect.poll(()=>lastDraft.relatedMovieId).toBe('movie');
     await page.locator('label').filter({has:page.locator('[name=socialStudioTemplate][value=sessions-week]')}).click();
     await page.locator('#socialDockTab-composition').click();
-    await page.locator('label').filter({has:page.locator('[name=socialStudioStyle][value=day-cards]')}).click();
+    await page.locator('label').filter({has:page.locator('[name=socialStudioStyle][value=program-days]')}).click();
     await page.locator('#socialStudioPreviewButton').click();
-    assert.equal(lastDraft.programLayout,'day-cards');
+    assert.equal(lastDraft.programLayout,'program-days');
+    await page.locator('#socialTabContent').click();
+    await page.locator('#socialStudioProgramStyle').selectOption('editorial');
+    await page.locator('#socialStudioProgramPosterMode').selectOption('none');
+    await expect.poll(()=>lastDraft.programStyle).toBe('editorial');
+    await expect.poll(()=>lastDraft.programPosterMode).toBe('none');
     await page.locator('#socialDockTab-composition').scrollIntoViewIfNeeded();
     await page.screenshot({path:`artifacts/studio-workspace/${name}-programming.png`});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No horizontal overflow');

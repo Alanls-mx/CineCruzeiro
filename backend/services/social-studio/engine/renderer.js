@@ -24,8 +24,10 @@ function signatureUrl(draft, context = {}) {
 async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const startedAt = performance.now();
   const draft = normalizeV2Draft(input, context);
+  const programming=['sessions-today','sessions-week','multi-movies'].includes(draft.templateId);
   const concession = require('../contracts/concession-campaign').isConcession(draft);
   require('../contracts/content').assertCampaignContent(draft.content);
+  if(programming)require('./content-rules').assertContentReady(draft);
   const format = require('../contracts/formats').formatById(draft.formatId);
   const brand = legacy.normalizeBrand(context.brand || {});
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
@@ -44,6 +46,14 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   if (!sourceBuffer && backgroundBuffer && !concession) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
   if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
   let analysis = draft.artDirection.enabled ? await analyzeArtwork(sourceBuffer) : null;
+  if(draft.movieFamily) {
+    const hasBackdrop=Boolean(movie?.backdropUrl && backgroundBuffer && backgroundUrl!==sourceUrl);
+    const backdropAnalysis=hasBackdrop?await analyzeArtwork(backgroundBuffer):null;
+    draft.movieDirection=require('../composition-engine/movie-direction').movieDirection(draft,input,analysis,hasBackdrop,backdropAnalysis);
+    draft.movieFamily=draft.movieDirection.family;
+    draft.style=draft.movieFamily;
+    draft.layoutId=draft.movieFamily;
+  }
   if(!draft.artworkMetadata.contentBounds && ['logo','symbol'].includes(draft.artworkMetadata.dominantAsset) && analysis?.contentBounds) {
     draft.artworkMetadata.contentBounds=analysis.contentBounds;
   }
@@ -51,6 +61,10 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const productArtwork=['concession-combo','concession-offer','club-plan'].includes(draft.templateId);
   draft.artworkPolicy=policy.resolveArtworkPolicy(draft,analysis,Boolean(!productArtwork && movie?.backdropUrl && backgroundBuffer));
   draft.primaryElement=draft.artworkPolicy.primaryElement;
+  if(draft.movieFamily && (draft.artworkPolicy.hideTitle || draft.artworkPolicy.hideDate) && ['movie-full-bleed','movie-character','movie-spotlight'].includes(draft.movieFamily)) {
+    draft.movieFamily='cinematic-blend';draft.style=draft.movieFamily;draft.layoutId=draft.movieFamily;
+    draft.movieDirection.family=draft.movieFamily;
+  }
   if(!concession && !draft.movieFamily && ['BACKDROP_HERO','FULL_BLEED'].includes(draft.artworkPolicy.strategy)) {sourceUrl=backgroundUrl;sourceBuffer=backgroundBuffer;}
   if(sourceBuffer) {const meta=await sharp(sourceBuffer).metadata();draft.sourceAsset={width:meta.width,height:meta.height};}
   if(!concession && !draft.movieFamily && !['ticket-offer','concession-offer'].includes(draft.templateId)) {
@@ -74,29 +88,6 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   let palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
     : await extractPalette(sourceBuffer, brand), draft.paletteId);
-  const backgroundMovieUrls = [];
-  const backgroundMovieColors = [];
-  if (['multi-movies','sessions-today','sessions-week'].includes(draft.templateId)) {
-    const otherPalettes = [];
-    const featuredId = String(draft.entities.movie?.id || '');
-    for (const item of draft.programMovies.filter(item => String(item.id) !== featuredId)) {
-      if (backgroundMovieUrls.length >= 2) break;
-      const candidates = [item.backdropUrl, item.posterUrl].filter(Boolean);
-      for (const url of candidates) {
-        if (url === backgroundUrl || backgroundMovieUrls.includes(url)) continue;
-        const buffer = await loadAsset(url, loadImage);
-        if (!buffer) continue;
-        backgroundMovieUrls.push(url);
-        if (draft.paletteMode !== 'brand' && draft.paletteId === 'automatic') {
-          const color = await extractPalette(buffer, brand);
-          otherPalettes.push(color);
-          backgroundMovieColors.push(color.dominantColor);
-        }
-        break;
-      }
-    }
-    if (otherPalettes.length) palette = require('./palette').blendProgramPalettes(palette, otherPalettes);
-  }
   let logoUrl = signatureUrl(draft, context);
   if((draft.templateId==='ticket-offer' || concession || draft.movieFamily) && logoUrl) {
     const logo=await loadArtwork(logoUrl);
@@ -117,22 +108,22 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     draft.layoutId=draft.style;
     scene=buildConcessionScene({draft,format,brand,sourceUrl,logoUrl,assetBounds});
   }
-  if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl,baseScene:scene,backgroundMovieUrls,backgroundMovieColors});
+  if (programming) scene = require('../programming/builders').buildProgrammingScene({draft,format,palette,brand,logoUrl});
   else if(!concession && !draft.movieFamily) {
     if (draft.polish && !offerTemplate) scene = require("../composition-engine/polish").polishComposition(scene);
     if(!offerTemplate) scene = require('../scene/content-layout').enforceContentLayout(scene);
   }
   const visualStyle=draft.visualStyle;
   await require('../scene/customization').applyBackground(scene,draft,context,loadImage);
-  for(const element of scene.elements.filter(e=>e.type==='text' && !offerTemplate && !concession && !draft.movieFamily)) {
+  for(const element of scene.elements.filter(e=>e.type==='text' && !offerTemplate && !concession && !draft.movieFamily && !scene.sourceDraft.officialProgramLayout)) {
     if(visualStyle==='clean') {element.fontFamily='Social Text';element.fontWeight=element.hierarchy==='primary'?800:600;}
     if(visualStyle==='impact' && ['title','detail'].includes(element.id)) element.fill=palette.accentColor;
     if(visualStyle==='minimal' && !['title','detail'].includes(element.id)) element.fontWeight=500;
   }
-  if(!concession && !draft.movieFamily) policy.applyArtworkPolicy(scene);
-  if(!concession && !draft.movieFamily) await ensureTextContrast(scene, loadImage);
-  if(!offerTemplate && !concession && !draft.movieFamily) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
-  require('../scene/customization').positionSignature(scene);
+  if(!concession && !draft.movieFamily && !scene.sourceDraft.officialProgramLayout) policy.applyArtworkPolicy(scene);
+  if(!concession && !draft.movieFamily && !scene.sourceDraft.officialProgramLayout) await ensureTextContrast(scene, loadImage);
+  if(!offerTemplate && !concession && !draft.movieFamily && !scene.sourceDraft.officialProgramLayout) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
+  if(!scene.sourceDraft.officialProgramLayout)require('../scene/customization').positionSignature(scene);
   let artworkQuality;
   const artworkGate=require('../composition-engine/artwork-quality');
   if(artworkGate.applies(scene)) {
@@ -144,7 +135,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     } catch(error) {
       if(error.code!=='ARTWORK_QUALITY' || options.artworkRetried)throw error;
       const isMovie=require('../contracts/artwork-layout').isMovie(draft);
-      const layouts=isMovie?['poster-lateral','poster-editorial','cinematic-story']:draft.templateId==='multi-movies'?['cinematic-grid','lineup']:['poster-list','cinema-board'];
+      const layouts=isMovie?['poster-lateral','poster-editorial','cinematic-story']:['program-list','program-days'];
       for(const layout of layouts) {
         try {
           const alternative=await renderSocialPostV2({...input,...(isMovie?{layoutId:layout,style:layout,automaticStyle:false}:{programLayout:layout}),signaturePosition:{mode:'automatic'}},context,{...options,artworkRetried:true});

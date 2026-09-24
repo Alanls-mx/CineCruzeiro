@@ -5,10 +5,9 @@ const {SAFE,scheduleLabel}=require('../contracts/artwork-layout');
 const {visualLength}=require('../engine/typography');
 
 function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl}) {
+  if(draft.movieFamily?.startsWith('movie-') || draft.movieFamily==='cinematic-blend')return require('./movie-cinematic').buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl});
   const w=format.width,h=format.height,safe=SAFE[format.id],top=safe.top*h,bottom=safe.bottom*h,area=bottom-top;
   let family=draft.movieFamily;
-  // Without a backdrop and a separate intact poster, blend has no safe visual advantage.
-  if(family==='cinematic-blend' && (!draft.entities.movie?.backdropUrl || sourceUrl===backgroundUrl))family='poster-lateral';
   if(family==='poster-lateral' && format.id==='story')family='cinematic-story';
   const lateral=family==='poster-lateral' || family==='cinematic-blend';
   const flip=(draft.artDirection?.seed || 0)%2===1;
@@ -22,7 +21,7 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
   };
   if(backgroundUrl)elements.push({id:'background-blur',type:'image',role:'background',src:backgroundUrl,x:0,y:0,width:w,height:h,fit:'cover',focusX:flip?70:30,focusY:45,opacity:family==='cinematic-blend'?.40:.22,effects:{layer:'background',blur:family==='cinematic-blend'?8:16,brightness:.55,saturation:.70,scale:1.08,mask:'none'}});
   elements.push({id:'editorial-veil',type:'gradient',role:'ambient',x:0,y:0,width:w,height:h,direction:flip?'left':'right',stops:[{offset:0,color:'rgba(0,0,0,0.1)'},{offset:1,color:bg}]});
-  const withPriceAndSessions=draft.templateId==='movie-price' && draft.schedule?.days?.length && draft.showSessions!==false;
+  const withPriceAndSessions=['movie-price','movie-premiere','movie-presale'].includes(draft.templateId) && draft.schedule?.days?.length && draft.showSessions!==false;
   const artHeight=withPriceAndSessions?.55:format.id==='square'?.61:.65;
   let artRect=lateral?[flip?.435:.055,.012,.51,.80]:[.065,.0,.87,artHeight];
   const titleX=sourceUrl && lateral?(flip?.065:.59):.065,titleW=sourceUrl && lateral?.35:.87;
@@ -40,7 +39,7 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
   const sessionPrimary=draft.templateId==='movie-highlight' && draft.schedule?.days?.length && draft.showSessions!==false;
   const showDate=Boolean(date && date!=='EM BREVE' && !sessionPrimary);
   const dateLabel=draft.templateId==='movie-price'?'INGRESSOS':draft.content?.primaryDateLabel || '';
-  const showSessions=sessionPrimary || draft.templateId==='movie-price';
+  const showSessions=sessionPrimary || withPriceAndSessions;
   let headline=draft.title || draft.entities.movie?.title || '';
   // A verified embedded title can reduce repetition, but never remove all identification.
   const titleSize=draft.artworkPolicy?.supportTitle?42:lateral && headline.length<=22?Math.max(42,Math.min(94,titleW*w/visualLength(headline))):lateral?94:72;
@@ -51,11 +50,11 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
       tx('subtitle',dateLabel || draft.subtitle,[titleX,.41,titleW,.04],30,1);
       tx('detail',date,[titleX,.47,titleW,.105],66,2);
     } else if(draft.subtitle && !/HOJE|EM DESTAQUE|NA TELA GRANDE/i.test(draft.subtitle))tx('subtitle',draft.subtitle,[titleX,.40,titleW,.06],30,2);
-    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',scheduleLabel(draft.schedule.days[0],3),[titleX,showDate?.63:.44,titleW,.14],40,4);
+    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',scheduleLabel(draft.schedule.days[0],99),[titleX,showDate?.63:.44,titleW,.14],40,4);
   } else {
     const row=y+titleHeight+.023;
     if(showDate)tx('detail',`${dateLabel} ${date}`.trim(),[.065,row,.87,.06],44,2);
-    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',scheduleLabel(draft.schedule.days[0],4),[.065,row+(showDate?.075:0),.87,.045],38,2);
+    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',scheduleLabel(draft.schedule.days[0],99),[.065,row+(showDate?.075:0),.87,.045],38,2);
   }
   const footer=.885;
   elements.push({id:'editorial-footer',type:'shape',role:'ambient',x:0,y:top+area*(footer-.02),width:w,height:h-(top+area*(footer-.02)),fill:bg});

@@ -15,10 +15,10 @@ test('famílias oficiais preservam o pôster e contraste em todos os formatos',a
     const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'m',formatId,layoutId},context,{loadImage,skipRaster:true});
     assert.ok(r.quality.accepted);
     const elements=flattenElements(r.scene.elements),art=elements.find(e=>e.id==='artwork');
-    assert.equal(art.fit,'contain');assert.ok(!art.crop && !art.effects);
+    assert.equal(art.fit,r.scene.sourceDraft.heroUsesPosterCrop?'cover':'contain');assert.ok(!art.crop && !art.effects?.blur && !(art.effects?.scale>1));
     assert.ok(elements.filter(e=>e.type==='text' && e.visible!==false).every(e=>e.contrastRatio>=4.5));
     assert.equal(r.draft.cta,'ESCOLHA SUA SESSÃO');
-    assert.ok(elements.some(e=>e.text?.includes('13H00')));
+    assert.ok(elements.some(e=>/13[H:]00/.test(e.text || '')));
   }
 });
 test('datas são absolutas e CTA explícito travado é preservado',()=>{

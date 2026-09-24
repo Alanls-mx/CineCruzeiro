@@ -30,21 +30,15 @@ test('chamada de hoje oferece a próxima sessão real e corrige o rascunho',()=>
   assert.equal(corrected.semanticValidation.errors.some(error=>error.code==='TODAY_MISMATCH'),false);
   assert.equal(corrected.content.primaryDate,'24 DE SETEMBRO');
 });
-test('sem sessão hoje, a correção avança a programação; sem futuras, usa destaque seguro',()=>{
+test('a programação calcula a chamada real e bloqueia um período sem sessões',()=>{
   const future={...context,movies:context.movies.map(movie=>({...movie,sessions:[{date:'2026-09-22',time:'10:00'},{date:'2026-09-24',time:'19:00',status:'cancelled'},{date:'2026-09-25',time:'20:00'}]}))};
   const input={templateId:'sessions-today',movieId:'m0',title:'HOJE NO CINEMA',subtitle:'HOJE NO CINEMA'};
-  const fix=engine.draftNotices(input,future).find(item=>item.code==='TODAY_MISMATCH').correction;
-  assert.equal(fix.patch.periodStart,'2026-09-25');
-  assert.equal(fix.label,'Usar sessão de 25/09 às 20:00');
-  const corrected=engine.normalizeDraft({...input,...fix.patch},future);
+  const corrected=engine.normalizeDraft(input,future);
   assert.equal(corrected.semanticValidation.valid,true);
   assert.equal(corrected.schedule.days[0].date,'2026-09-25');
+  assert.equal(corrected.title,'PROGRAMAÇÃO • 25/09');
   const empty={...future,movies:future.movies.map(movie=>({...movie,sessions:[]}))};
-  const noSession=engine.draftNotices(input,empty).find(item=>item.code==='TODAY_MISMATCH').correction;
-  assert.equal(noSession.patch.templateId,'movie-highlight');
-  assert.equal(engine.normalizeDraft({...input,...noSession.patch},empty).semanticValidation.valid,true);
-  const week=engine.draftNotices({...input,templateId:'sessions-week'},empty).find(item=>item.code==='TODAY_MISMATCH').correction;
-  assert.equal(week.patch.templateId,'movie-highlight');
+  for(const templateId of ['sessions-today','sessions-week'])assert.ok(engine.draftNotices({...input,templateId},empty).some(n=>n.code==='NO_SESSIONS'));
 });
 test('nova campanha de sessões escolhe a próxima data disponível',()=>{
   const future={...context,movies:context.movies.map(movie=>({...movie,sessions:[{date:'2026-09-22',time:'10:00'},{date:'2026-09-25',time:'20:00'}]}))};
@@ -71,7 +65,7 @@ test('multi-filmes normaliza seleção, ordem e histórico; não usa filmes edit
   const input={templateId:'multi-movies',movieIds:['m2','m0','m2','missing'],animation:{enabled:true,format:'webm',duration:5}};
   const draft=engine.normalizeDraft(input,context);
   assert.deepEqual(draft.movieIds,['m2','m0']);
-  assert.equal(draft.programMovies[0].title,'Filme 3');
+  assert.equal(draft.programMovies[0].title,'Filme 1');
   const rendered=await engine.renderSocialPost(input,context,{loadImage});
   const record=engine.createHistoryRecord(rendered,{},context);
   assert.deepEqual(record.payload.movieIds,['m2','m0']);
@@ -80,7 +74,8 @@ test('multi-filmes normaliza seleção, ordem e histórico; não usa filmes edit
 test('grade de 2, 3, 4 e 6 filmes cabe nos três formatos',async()=>{
   for(const count of [2,3,4,6]) for(const formatId of ['square','feed_portrait','story']) {
     const render=await engine.renderSocialPost({templateId:'multi-movies',movieIds:context.movies.slice(0,count).map(m=>m.id),formatId},context,{loadImage});
-    assert.equal(flattenElements(render.scene.elements).filter(item=>item.id.startsWith('movie-art-')).length,count);
+    assert.equal(flattenElements(render.scene.elements).filter(item=>item.id.startsWith('movie-title-')).length,count);
+    assert.equal(render.scene.sourceDraft.programSessionCount,count*3);
     for(const item of render.scene.elements) {assert.ok(item.x>=0 && item.y>=0);assert.ok(item.x+item.width<=render.scene.width+1);assert.ok(item.y+item.height<=render.scene.height+1);}
     const overlaps=render.quality.issues.filter(issue=>['TEXT_OVERLAP','TEXT_OVERFLOW'].includes(issue.code));
     assert.deepEqual(overlaps,[],`${count}/${formatId}`);
@@ -92,7 +87,7 @@ test('animação limita formatos, duração e garante intervalo de leitura',()=>
 });
 test('dados obrigatórios impedem exportação incoerente',()=>{
   const {assertContentReady}=require('../backend/services/social-studio/engine/content-rules');
-  assert.throws(()=>assertContentReady(engine.normalizeDraft({templateId:'multi-movies',movieIds:['m0']},context)),/Selecione/);
+  assert.throws(()=>assertContentReady(engine.normalizeDraft({templateId:'multi-movies',movieIds:[]},context)),/Selecione/);
   assert.throws(()=>assertContentReady(engine.normalizeDraft({templateId:'online-ticket'}, {...context,brand:{name:'Cinema'}})),/site oficial/);
   assert.throws(()=>assertContentReady(engine.normalizeDraft({templateId:'movie-premiere',date:''},context)),/data/);
 });

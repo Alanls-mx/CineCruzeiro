@@ -209,7 +209,7 @@
                 <summary>Conteúdo</summary>
                 <div class="social-property-body">
                   <label id="socialStudioMovieField" data-social-field="movie">Filme<select id="socialStudioMovie" data-requires-create></select></label>
-                  <fieldset data-social-field="movies" class="social-choice-fieldset"><legend>Filmes e ordem</legend><div id="socialStudioMovieSelections"></div><label>Composição da programação<select id="socialStudioProgramLayout" data-requires-create><option value="automatic">Automática pela quantidade</option></select></label><label>Filme em destaque<select id="socialStudioFeaturedMovie" data-requires-create><option value="">Seleção automática</option></select></label><input id="socialStudioMultiLayout" type="hidden" value="grid" /></fieldset>
+                  <fieldset data-social-field="movies" class="social-choice-fieldset"><legend>Filmes da programação</legend><div id="socialStudioMovieSelections"></div><label>Composição da programação<select id="socialStudioProgramLayout" data-requires-create><option value="automatic">Automática pela quantidade</option></select></label><label>Estilo editorial<select id="socialStudioProgramStyle" data-requires-create><option value="posters">Pôsteres</option><option value="editorial">Editorial clean</option><option value="cinematic">Cinematográfico</option></select></label><label>Pôsteres<select id="socialStudioProgramPosterMode" data-requires-create><option value="equal">Equivalentes</option><option value="none">Sem pôsteres</option><option value="featured">Destaque escolhido</option></select></label><label>Filme em destaque<select id="socialStudioFeaturedMovie" data-requires-create><option value="">Nenhum destaque</option></select></label><input id="socialStudioMultiLayout" type="hidden" value="grid" /></fieldset>
                   <fieldset data-social-field="schedule" class="social-choice-fieldset"><legend>Programação</legend><label>Período<select id="socialStudioScheduleMode" data-requires-create><option value="today">Um dia</option><option value="week" selected>Sete dias</option></select></label><label>Data inicial<input id="socialStudioPeriodStart" type="date" data-requires-create /></label><label class="social-toggle"><input id="socialStudioShowSessions" type="checkbox" checked data-requires-create /> Mostrar horários por dia</label></fieldset>
                   <label id="socialStudioConcessionField" data-social-field="concession">Produto ou combo<select id="socialStudioConcession" data-requires-create></select></label>
                   <fieldset data-social-field="concession" class="social-choice-fieldset"><legend>Direção da campanha</legend>
@@ -469,9 +469,6 @@
     const dateMode=document.createElement('label');
     dateMode.innerHTML='Texto da data<select id="socialStudioDateTextMode" data-requires-create><option value="automatic">Automático pelo significado</option><option value="manual">Texto personalizado</option></select>';
     byId('socialStudioDate').closest('label').before(dateMode);
-    const programControls=document.createElement('div');programControls.className='social-program-controls';
-    programControls.innerHTML='<label>Colunas<select id="socialStudioProgramColumns" data-requires-create><option value="0">Automático</option><option value="1">1 coluna</option><option value="2">2 colunas</option><option value="3">3 colunas</option></select></label><label>Espaçamento<input id="socialStudioProgramGap" type="range" min="12" max="36" value="24" data-requires-create /></label><label>Resumo por filme<select id="socialStudioProgramDays" data-requires-create><option value="1">1 dia</option><option value="2">2 dias</option><option value="3">3 dias</option><option value="7">Semana completa</option></select></label>';
-    byId('socialStudioProgramLayout').closest('label').after(programControls);
   }
 
   function syncCustomizationControls() {
@@ -555,7 +552,7 @@
       : template?.type==='concession'
       ? [{id:'automatic',name:'Direção automática'},{id:'product-price',name:'Produto + preço'},{id:'product-lateral',name:'Produto lateral'},{id:'hero-product',name:'Hero product'}]
       : /^movie-/.test(template?.id || '')
-      ? [{id:'automatic',name:'Direção automática'},{id:'poster-lateral',name:'Pôster lateral'},{id:'poster-editorial',name:'Pôster e rodapé editorial'},{id:'cinematic-blend',name:'Cinematic blend'},{id:'cinematic-story',name:'Story cinematográfico'}]
+      ? [{id:'automatic',name:'Direção automática'},{id:'poster-lateral',name:'Split cinematográfico'},{id:'poster-editorial',name:'Pôster editorial'},{id:'cinematic-blend',name:'Pôster + atmosfera'},{id:'cinematic-story',name:'Poster hero'},{id:'movie-full-bleed',name:'Full bleed'},{id:'movie-character',name:'Foco no personagem'},{id:'movie-asymmetric',name:'Assimétrico'},{id:'movie-immersive',name:'Fundo imersivo'},{id:'movie-spotlight',name:'Estreia em destaque'}]
       : template?.id==='ticket-offer'
       ? [{id:'automatic',name:'Direção automática'},{id:'price-impact',name:'Preço gigante'},{id:'campaign-led',name:'Campanha em foco'},{id:'offer-counter',name:'Comparativo'},{id:'ticket-burst',name:'Ingresso pop'},{id:'promo-editorial',name:'Editorial promocional'},{id:'cinema-pop',name:'Cinema vibrante'}]
       : [{id:"automatic",name:"Direção automática"},...(state.context.styles || []).filter((style) => allowed.includes(style.id) && ['hero-left','hero-right','hero-center','full-bleed','editorial','poster-dominant','typography-dominant','split','diagonal'].includes(style.id))];
@@ -642,8 +639,8 @@
     fillSelect("socialStudioFormat", context.formats, "Nenhum formato", (item) => `${item.name} · ${item.width} × ${item.height}`);
     fillSelect("socialStudioMovie", context.movies, "Nenhum filme disponível", (item) => `${item.title || "Filme sem título"}${item.catalogued === false ? " · pré-lançamento editorial" : ""}`);
     document.getElementById('socialStudioMovie').add(new Option('Campanha geral do cinema (sem filme)',''),0);
-    document.getElementById('socialStudioMovieSelections').innerHTML = Array.from({length:6},(_,index)=>`<label>Filme ${index+1}<select data-program-movie="${index}" data-requires-create><option value="">${index<2?'Selecionar filme':'Nenhum'}</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>`).join('');
-    document.getElementById('socialStudioFeaturedMovie').innerHTML=`<option value="">Seleção automática</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}`;
+    document.getElementById('socialStudioMovieSelections').innerHTML = Array.from({length:12},(_,index)=>`<label>Filme ${index+1}<select data-program-movie="${index}" data-requires-create><option value="">${index===0?'Selecionar filme':'Nenhum'}</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>`).join('');
+    document.getElementById('socialStudioFeaturedMovie').innerHTML=`<option value="">Nenhum destaque</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}`;
     fillSelect("socialStudioConcession", context.concessions, "Nenhum produto disponível", (item) => item.name || "Produto sem nome");
     fillSelect("socialStudioClub", context.clubPlans, "Nenhum plano disponível", (item) => item.name || "Plano sem nome");
     if (context.recommendedMovieId) document.getElementById("socialStudioMovie").value = context.recommendedMovieId;
@@ -809,12 +806,13 @@
     const fixedSchedule=['sessions-today','sessions-week'].includes(currentTemplate()?.id);
     const programSelect=document.getElementById('socialStudioProgramLayout');
     const selected=programSelect.value;
-    const names={timeline:'Linha do tempo','hero-schedule':'Filme e horários','poster-list':'Lista de filmes','cinema-board':'Painel de cinema','editorial-schedule':'Agenda editorial','day-cards':'Dias em destaque','week-timeline':'Semana em sequência','poster-calendar':'Pôster e calendário','featured-days':'Dias principais','editorial-week':'Semana editorial',featured:'Destaque e apoio','cinematic-grid':'Grade cinematográfica',layered:'Pôsteres em camadas',mosaic:'Mosaico editorial','film-strip':'Faixa de filmes',panorama:'Panorama','split-heroes':'Dupla protagonista',collage:'Colagem integrada',lineup:'Seleção de filmes'};
+    const names={'program-hero':'Um filme','program-duo':'Dupla','program-cards':'Cards editoriais','program-grid':'Grade compacta','program-list':'Lista compacta','program-days':'Agenda por dia'};
     const layouts=state.context?.programLayouts?.[currentTemplate()?.id] || [];
     programSelect.innerHTML='<option value="automatic">Automática pela quantidade</option>'+layouts.map(id=>`<option value="${escapeHtml(id)}">${escapeHtml(names[id] || id)}</option>`).join('');
     programSelect.value=layouts.includes(selected)?selected:'automatic';
     document.getElementById('socialStudioScheduleMode').disabled=fixedSchedule || state.context?.capabilities?.create===false;
-    document.getElementById('socialStudioShowSessions').disabled=fixedSchedule || state.context?.capabilities?.create===false;
+    document.getElementById('socialStudioShowSessions').disabled=Boolean(layouts.length) || state.context?.capabilities?.create===false;
+    if(layouts.length)document.getElementById('socialStudioShowSessions').checked=true;
     if(fixedSchedule) {setControl('socialStudioScheduleMode',currentTemplate().id==='sessions-today'?'today':'week');document.getElementById('socialStudioShowSessions').checked=true;}
     document.getElementById("socialStudioImageModes").querySelectorAll("label").forEach((label) => {
       const value = label.querySelector("input")?.value;
@@ -891,6 +889,7 @@
       movieIds: [...document.querySelectorAll('[data-program-movie]')].map(select=>select.value).filter(Boolean),
       multiLayout: value('socialStudioMultiLayout','grid'),
       programLayout:value('socialStudioProgramLayout','automatic'),
+      programStyle:value('socialStudioProgramStyle','posters'),programPosterMode:value('socialStudioProgramPosterMode','equal'),
       programColumns:Number(value('socialStudioProgramColumns',0)),programGap:Number(value('socialStudioProgramGap',24)),programDays:Number(value('socialStudioProgramDays',1)),
       featuredMovieId:value('socialStudioFeaturedMovie'),
       scheduleMode: value('socialStudioScheduleMode','week'),
@@ -976,6 +975,8 @@
     document.querySelectorAll('[data-program-movie]').forEach((select,index)=>{select.value=draft.movieIds?.[index] || '';});
     setControl('socialStudioMultiLayout',draft.multiLayout || 'grid');
     setControl('socialStudioProgramLayout',draft.programLayout || 'automatic');
+    setControl('socialStudioProgramStyle',draft.programStyle || 'posters');
+    setControl('socialStudioProgramPosterMode',draft.programPosterMode || 'equal');
     setControl('socialStudioFeaturedMovie',draft.featuredMovieId || '');
     setControl('socialStudioScheduleMode',draft.scheduleMode || 'week');
     setControl('socialStudioPeriodStart',draft.periodStart || '');

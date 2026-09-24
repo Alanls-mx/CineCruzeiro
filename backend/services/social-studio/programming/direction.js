@@ -1,8 +1,5 @@
-const PROGRAM_LAYOUTS = {
-  'sessions-today':['timeline','hero-schedule','poster-list','cinema-board','editorial-schedule'],
-  'sessions-week':['day-cards','week-timeline','poster-calendar','featured-days','editorial-week'],
-  'multi-movies':['featured','cinematic-grid','layered','mosaic','film-strip','panorama','split-heroes','collage','lineup'],
-};
+const EDITORIAL_LAYOUTS=['program-hero','program-duo','program-cards','program-grid','program-list','program-days'];
+const PROGRAM_LAYOUTS=Object.fromEntries(['sessions-today','sessions-week','multi-movies'].map(id=>[id,EDITORIAL_LAYOUTS]));
 function selectFeaturedMovie(movies, options={}) {
   const now=new Date(options.now || Date.now()).getTime();
   const nearest=m=>Math.min(...(m.sessions || []).map(s=>Date.parse(`${s.date}T${s.time}:00-03:00`)).filter(t=>Number.isFinite(t) && t>=now));
@@ -17,12 +14,13 @@ function analyzeProgramMood(movies) {
   return count>movies.length/2?genre:'cinema';
 }
 function programLayout(draft,count) {
-  const layouts=PROGRAM_LAYOUTS[draft.templateId] || [];
-  const requested=draft.programLayout || draft.multiLayout;
-  const aliases={grid:'cinematic-grid',editorial:'mosaic',summary:'lineup','poster-footer':'film-strip'};
-  if(layouts.includes(requested)) return requested;
-  if(aliases[requested] && draft.programLayout!=='automatic') return aliases[requested];
-  if(draft.templateId==='multi-movies') return count===2?'split-heroes':count<=4?'featured':'mosaic';
-  return draft.templateId==='sessions-today'?'hero-schedule':'poster-calendar';
+  const model=require('./schedule').programData(draft.programMovies);
+  const requested=draft.programLayout;
+  const aliases={timeline:'program-list','hero-schedule':'program-hero','poster-list':'program-list','cinema-board':'program-cards','editorial-schedule':'program-list','day-cards':'program-days','week-timeline':'program-days','poster-calendar':'program-days','featured-days':'program-days','editorial-week':'program-days',featured:'program-cards','cinematic-grid':'program-grid',layered:'program-grid',mosaic:'program-cards','film-strip':'program-list',panorama:'program-grid','split-heroes':'program-duo',collage:'program-grid',lineup:'program-list'};
+  const selected=aliases[requested] || requested;
+  if(selected==='program-days' || selected==='program-list')return selected;
+  if(selected==='program-hero' && count===1 || selected==='program-duo' && count===2 || selected==='program-cards' && count>=3 && count<=4 || selected==='program-grid' && count>=3 && count<=6)return selected;
+  if(model.days.length>=3 || model.rows.length>count+2)return 'program-days';
+  return count===1?'program-hero':count===2?'program-duo':count<=4?'program-cards':count<=6?'program-grid':'program-list';
 }
 module.exports={PROGRAM_LAYOUTS,selectFeaturedMovie,analyzeProgramMood,programLayout};

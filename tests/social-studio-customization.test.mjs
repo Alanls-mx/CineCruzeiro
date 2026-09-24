@@ -61,15 +61,13 @@ test('significado automático escolhe a data estruturada e mantém texto manual 
   assert.equal(highlight.contentRules.mustKeepDateNearPremiere,true);
 });
 
-test('programação oferece estruturas distintas e legenda de todos os filmes',async()=>{
-  const shapes=[];
+test('programação migra layouts antigos para a agenda cronológica e preserva a legenda',async()=>{
   for(const programLayout of ['week-timeline','day-cards','poster-calendar','editorial-week']) {
     const result=await engine.renderSocialPost({templateId:'sessions-week',movieIds:['one','two','three'],programLayout},context,options);
-    assert.equal(result.draft.resolvedProgramLayout,programLayout);
+    assert.equal(result.draft.resolvedProgramLayout,'program-days');
     assert.match(engine.captionForDraft(result.draft,context),/Filme 2/);
-    shapes.push(JSON.stringify(layers(result).filter(e=>e.id.startsWith('program-') || e.id.startsWith('movie-')).map(e=>[e.id,e.x,e.y,e.width,e.height])));
+    assert.equal(result.scene.sourceDraft.programSessionCount,6);
   }
-  assert.equal(new Set(shapes).size,shapes.length);
   for(const programColumns of [1,2,3]) {
     const result=await engine.renderSocialPost({templateId:'multi-movies',movieIds:['one','two','three'],formatId:'square',programLayout:'cinematic-grid',programColumns,programDays:7},context,options);
     for(const element of layers(result).filter(e=>e.id.startsWith('movie-art-'))) assert.ok(element.height>=50);

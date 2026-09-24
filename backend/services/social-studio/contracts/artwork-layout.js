@@ -1,8 +1,13 @@
 const MOVIE_FAMILIES=Object.freeze({
   'poster-lateral':'Pôster lateral',
   'poster-editorial':'Pôster e rodapé editorial',
-  'cinematic-blend':'Cinematic blend',
-  'cinematic-story':'Story cinematográfico'
+  'cinematic-blend':'Pôster + atmosfera',
+  'cinematic-story':'Poster hero',
+  'movie-full-bleed':'Full bleed cinematográfico',
+  'movie-character':'Foco no personagem',
+  'movie-asymmetric':'Editorial assimétrico',
+  'movie-immersive':'Fundo imersivo',
+  'movie-spotlight':'Estreia em destaque'
 });
 const PRODUCT_LAYOUTS=Object.freeze({'product-price':'Produto + preço','product-lateral':'Produto lateral','hero-product':'Hero product'});
 const SAFE={square:{left:.055,right:.945,top:.045,bottom:.95},feed_portrait:{left:.055,right:.945,top:.045,bottom:.95},story:{left:.065,right:.935,top:.085,bottom:.89}};
@@ -15,7 +20,7 @@ function movieFamily(input,formatId) {
   return formatId==='story'?'cinematic-story':formatId==='square'?'poster-lateral':'poster-editorial';
 }
 function campaignCTA(draft) {
-  if(isProgramme(draft))return 'VEJA A PROGRAMAÇÃO';
+  if(isProgramme(draft))return draft.templateId==='sessions-today'?'ESCOLHA SUA SESSÃO':'CONFIRA A PROGRAMAÇÃO';
   if(!isMovie(draft))return draft.cta;
   const content=draft.content;
   const available=content?.purchaseAvailable && !(draft.templateId==='movie-presale' && content.presaleStartDate>content.today);

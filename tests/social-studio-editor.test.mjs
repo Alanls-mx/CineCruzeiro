@@ -64,7 +64,10 @@ test("renderização manual permanece no servidor e respeita tamanho e formato",
   const title = automatic.scene.elements.find((element) => element.role === "title");
   title.text = "Título ajustado pelo operador";
   title.x += 15;
+  const originalHeight=title.height;
+  title.height=8;
   await assert.rejects(engine.renderSocialScene(automatic.scene, {loadImage}), {code:'ARTWORK_QUALITY'});
+  title.height=originalHeight;
   const {wrapText}=require('../backend/services/social-studio/scene/factory');
   Object.assign(title,wrapText(title.text,title.width,title.height,title.fontSize,4));
   const rendered = await engine.renderSocialScene(automatic.scene, { loadImage, outputType: "jpg" });

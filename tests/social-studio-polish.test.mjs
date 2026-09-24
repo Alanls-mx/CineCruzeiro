@@ -37,22 +37,19 @@ test('artes comerciais usam apenas ativos do produto, plano ou cinema', async ()
   }
 });
 
-test('programação avança ao primeiro período real e mistura fundos de filmes diferentes', async () => {
+test('programação avança ao primeiro período real e mantém fundo editorial discreto', async () => {
   const {context, loadImage} = await fixture();
   const input = {templateId: 'multi-movies', movieIds: context.movies.map(movie => movie.id)};
   const draft = engine.normalizeDraft(input, context);
   assert.equal(draft.periodStart, '2026-10-22');
   assert.match(draft.title, /22\/10/);
   assert.ok(draft.programMovies.every(movie => movie.schedule.count === 1));
-  const rendered = await engine.renderSocialPost(input, context, {loadImage, skipRaster: true});
-  const backgrounds = rendered.scene.elements.filter(element => element.id.startsWith('program-background'));
-  assert.equal(backgrounds.length, 2);
-  assert.equal(new Set(backgrounds.map(element => element.src)).size, 2);
+  const rendered = await engine.renderSocialPost({...input,programStyle:'cinematic'}, context, {loadImage, skipRaster: true});
+  const backgrounds = rendered.scene.elements.filter(element => element.id==='program-atmosphere');
+  assert.equal(backgrounds.length, 1);
   assert.ok(backgrounds.every(element => element.x === 0 && element.width === rendered.scene.width));
-  const colorWash = rendered.scene.elements.find(element => element.id === 'program-color-wash');
-  assert.equal(colorWash?.direction, 'right');
-  assert.notEqual(colorWash.stops[0].color, colorWash.stops[2].color);
-  assert.notEqual(rendered.palette.dominantColor, (await engine.renderSocialPost({templateId: 'movie-highlight', movieId: rendered.draft.movieId}, context, {loadImage, skipRaster: true})).palette.dominantColor);
+  assert.ok(backgrounds[0].opacity<=.2);
+  assert.ok(!rendered.scene.elements.some(element=>element.id==='program-color-wash'));
   assert.ok(rendered.quality.accepted);
   assert.equal(rendered.quality.issues.some(issue => issue.code === 'REDUNDANT_CONTENT'), false);
   const week = engine.normalizeDraft({templateId: 'sessions-week', movieId: 'one'}, context);

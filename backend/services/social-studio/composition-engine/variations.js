@@ -58,7 +58,7 @@ async function generateVariations(input, context, options = {}) {
       ...(product?{concessionDirection:{...input.concessionDirection,layout:style}}:{}),
       style,
       layoutId:multi?input.layoutId:style,
-      ...(multi ? {style:input.style || 'cinematic',programLayout:style} : {}),
+      ...(multi ? {style:input.style || 'cinematic',programLayout:style,programStyle:['posters','editorial','cinematic'][index%3]} : {}),
       automaticStyle: false,
       polish: false,
       artDirection: {
@@ -76,18 +76,20 @@ async function generateVariations(input, context, options = {}) {
     if(multi && mode==='similar') draft.programSpacing=(index-2)*.003;
     let raw;
     try {raw=await renderSocialPostV2(draft, context, { ...options, artworkRetried:true,concessionRetried:product, skipRaster: true });}
-    catch(error) {if(!['CONCESSION_QUALITY','ARTWORK_QUALITY'].includes(error.code))throw error;rejected.push({style,quality:error.quality});continue;}
-    const polished = product || isMovie(input) ? raw : await renderSocialPostV2({ ...draft, polish: true }, context, { ...options, skipRaster: true });
+    catch(error) {if(!['CONCESSION_QUALITY','ARTWORK_QUALITY','PROGRAM_CAPACITY'].includes(error.code))throw error;rejected.push({style,quality:error.quality});continue;}
+    const polished = product || isMovie(input) || multi ? raw : await renderSocialPostV2({ ...draft, polish: true }, context, { ...options, skipRaster: true });
     const rendered = polished.quality.accepted && polished.quality.total >= raw.quality.total ? polished : raw;
     if (!rendered.quality.accepted) {
       rejected.push({ style, quality: rendered.quality });
       continue;
     }
     const { entities, ...payload } = rendered.draft;
+    if(multi && variations.some(v=>v.draft.resolvedProgramLayout===payload.resolvedProgramLayout && v.draft.programStyle===payload.programStyle))continue;
+    if(isMovie(input) && mode!=='similar' && variations.some(v=>v.draft.movieFamily===payload.movieFamily))continue;
     variations.push({
       id: `${style}-${draft.artDirection.seed}`,
-      styleId: style,
-      name: multi ? multiNames[style] : PRODUCT_LAYOUTS[style] || MOVIE_FAMILIES[style] || FAMILIES[style] || ticketNames[style] || STYLES.find((s) => s.id === style)?.name || style,
+      styleId: isMovie(input)?payload.movieFamily || style:style,
+      name: multi ? ({posters:'Pôsteres',editorial:'Editorial clean',cinematic:'Cinematográfico'}[payload.programStyle] || multiNames[style]) : PRODUCT_LAYOUTS[style] || MOVIE_FAMILIES[payload.movieFamily || style] || FAMILIES[style] || ticketNames[style] || STYLES.find((s) => s.id === style)?.name || style,
       intent: input.templateId==='ticket-offer'?'Conceito da oferta, preço e compra em destaque':input.templateId === 'concession-combo' ? 'Produto, preço e chamada organizados para a bomboniere' : input.templateId === 'club-plan' ? 'Plano, benefícios e mensalidade em destaque' : draft.artDirection.emphasis === "date" ? "Data ou preço em primeiro plano" : style === "poster-dominant" ? "Artwork em destaque" : "Filme e chamada em destaque",
       draft: payload,
       ...(product?{intent:`${rendered.draft.entities.concession.name} · ${rendered.format.width} × ${rendered.format.height}`} : {}),

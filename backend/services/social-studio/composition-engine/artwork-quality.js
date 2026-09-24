@@ -40,6 +40,30 @@ function validateArtworkLayout(scene) {
   const art=elements.filter(e=>e.id==='artwork' || e.id.startsWith('movie-art-'));
   const logo=elements.find(e=>e.role==='logo');
   const add=(code,id,message)=>issues.push({code,elementId:id,message,penalty:25});
+  if(scene.sourceDraft.creativeMovieLayout)for(const expected of scene.sourceDraft.movieManifest || []) {
+    const actual=text.find(e=>e.id===expected.id);
+    if(!actual || expected.id!=='title' && actual.text.replace(/\s+/g,' ').replace(/-\s+/g,'-').trim()!==expected.text.replace(/-\s+/g,'-'))add('MOVIE_CONTENT',expected.id,'Mantenha os dados completos da campanha.');
+  }
+  if(scene.sourceDraft.officialProgramLayout) {
+    for(const expected of scene.sourceDraft.programManifest || []) {
+      const actual=text.find(e=>e.id===expected.id);
+      if(!actual || actual.text.replace(/\s+/g,' ').trim()!==expected.text)add('PROGRAM_CONTENT',expected.id,'A programação perdeu ou alterou informação. Gere a arte novamente a partir das sessões.');
+    }
+    if(elements.filter(e=>e.role==='logo').length>1)add('DUPLICATE_LOGO','logo','Use uma única assinatura na programação.');
+    for(const e of text.filter(e=>/^movie-title-|^program-film-/.test(e.id))) {
+      if(e.text.split('\n').length>2 || e.fontSize<28*w/1080)add('PROGRAM_TITLE',e.id,'O título precisa caber em até duas linhas legíveis.');
+    }
+    if(art.some(e=>e.fit!=='contain' || e.rotation || e.effects?.scale>1))add('PROGRAM_POSTER','artwork','Preserve o formato e o alinhamento dos pôsteres.');
+    if(scene.sourceDraft.programPosterMode!=='featured' && art.some(e=>Math.abs(e.width-art[0].width)>2 || Math.abs(e.height-art[0].height)>2))add('PROGRAM_POSTER_EQUALITY','artwork','Use pôsteres equivalentes ou escolha explicitamente um filme em destaque.');
+    if(logo && (logo.x<w*.75 || logo.y<h*.75))add('PROGRAM_LOGO','logo','Mantenha a assinatura no rodapé direito.');
+    for(const binding of scene.sourceDraft.programBindings || []) {
+      const anchor=elements.find(e=>e.id===binding.anchorId),item=elements.find(e=>e.id===binding.id);
+      if(anchor && item && (Math.abs(item.x-anchor.x-binding.dx)>2 || Math.abs(item.y-anchor.y-binding.dy)>2))add('PROGRAM_ASSOCIATION',binding.id,'O horário precisa permanecer junto do filme correspondente.');
+    }
+    const expected=scene.sourceDraft.programReadingOrder || [];
+    const ordered=elements.filter(e=>expected.includes(e.id)).sort((a,b)=>scene.sourceDraft.programReadingColumns?a.x-b.x || a.y-b.y:a.y-b.y || a.x-b.x).map(e=>e.id);
+    if(JSON.stringify(ordered)!==JSON.stringify(expected))add('PROGRAM_ORDER','program','Mantenha os filmes na ordem cronológica da programação.');
+  }
   const visit=nodes=>nodes.forEach(e=>{if(e.type==='group' && (e.opacity<.95 || e.rotation))add('GROUP_TRANSFORM',e.id,'Mantenha o grupo de conteúdo opaco e sem rotação.');if(e.children)visit(e.children);});
   visit(scene.elements);
   if(scene.sourceDraft.editorialSource && !art.length)add('MISSING_ARTWORK','artwork','Mantenha a imagem principal da campanha.');
@@ -48,7 +72,7 @@ function validateArtworkLayout(scene) {
     if(b.x<w*.025-1 || b.x+b.width>w*.975+1 || b.y<h*(scene.formatId==='story'?.065:.025)-1 || b.y+b.height>h*(scene.formatId==='story'?.91:.985)+1) add('SAFE_AREA',e.id,'Conteúdo fora da área segura.');
     if(e.opacity<.95)add('HIDDEN_CONTENT',e.id,'Conteúdo essencial pouco visível.');
     if(e.type==='text') {
-      const min=/website|cinema|movie-sessions|program-/.test(e.id)?22:/description|subtitle/.test(e.id)?26:30;
+      const min=/movie-day-/.test(e.id)?28:/website|cinema|movie-sessions|program-/.test(e.id)?22:/description|subtitle/.test(e.id)?26:30;
       if(e.fontSize<min*w/1080)add('SMALL_TEXT',e.id,'Texto pequeno demais.');
       const lines=e.text.split('\n');
       if(lines.length*e.fontSize*e.lineHeight>e.height+2 || lines.some(l=>visualLength(l)*e.fontSize>e.width+2))add('TEXT_OVERFLOW',e.id,'Texto não cabe integralmente na área reservada.');
@@ -63,7 +87,7 @@ function validateArtworkLayout(scene) {
   for(const poster of art) {
     const protectedBox=poster.fit==='contain'?boxOf(poster):{x:poster.x+poster.width*.2,y:poster.y+poster.height*.12,width:poster.width*.6,height:poster.height*.68};
     if(text.some(t=>overlap(protectedBox,boxOf(t))>4))add('SUBJECT_OVERLAP',poster.id,'O texto invade a área protegida da imagem.');
-    if(scene.sourceDraft.officialMovieLayout && (poster.fit!=='contain' || poster.crop || poster.effects?.scale>1 || poster.effects?.blur>0))add('POSTER_CROP',poster.id,'Preserve o pôster principal inteiro e nítido.');
+    if(scene.sourceDraft.officialMovieLayout && (!scene.sourceDraft.heroUsesBackdrop && !scene.sourceDraft.heroUsesPosterCrop && poster.fit!=='contain' || poster.crop || poster.effects?.scale>1 || poster.effects?.blur>0))add('POSTER_CROP',poster.id,'Preserve o pôster principal inteiro e nítido.');
   }
   if(logo) {
     const atLeft=logo.x<=w*.11,atRight=logo.x+logo.width>=w*.89;
@@ -93,4 +117,26 @@ async function assertArtworkQuality(scene,loadImage) {
   if(!quality.accepted)throw failure(quality);
   return quality;
 }
-module.exports={applies,reserveSignature,validateArtworkLayout,assessArtwork,assertArtworkQuality,repairContrast:repairConcessionContrast,failure};
+async function repairContrast(scene,loadImage) {
+  if(scene.sourceDraft.creativeMovieLayout) {
+    let readings=await contrastReadings(scene,loadImage);
+    const selectInk=()=>readings.forEach(r=>{const e=scene.elements.find(e=>e.id===r.id);if(e && r.ratio<4.5 && Math.max(r.white,r.dark)>=4.5)e.fill=r.white>=r.dark?'#ffffff':'#101820';});
+    selectInk();
+    if(readings.some(r=>Math.max(r.white,r.dark)<4.5)) {
+      const side=['movie-character','cinematic-blend','movie-asymmetric'].includes(scene.sourceDraft.movieFamily);
+      const left=scene.sourceDraft.movieFamily==='movie-asymmetric' || scene.sourceDraft.movieDirection?.copySide==='left';
+      const veil={id:'movie-reading-veil',role:'ambient',type:'gradient',x:0,y:0,width:scene.width,height:scene.height,opacity:1,direction:side?(left?'right':'left'):'bottom',stops:side?[{offset:0,color:'rgba(0,0,0,0.94)'},{offset:.34,color:'rgba(0,0,0,0.94)'},{offset:.58,color:'rgba(0,0,0,0)'},{offset:1,color:'rgba(0,0,0,0)'}]:[{offset:0,color:'rgba(0,0,0,0)'},{offset:.46,color:'rgba(0,0,0,0)'},{offset:.61,color:'rgba(0,0,0,0.94)'},{offset:1,color:'rgba(0,0,0,0.94)'}]};
+      scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,veil);
+      if(side)scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,{...veil,id:'movie-footer-veil',direction:'bottom',stops:[{offset:0,color:'rgba(0,0,0,0)'},{offset:.65,color:'rgba(0,0,0,0)'},{offset:.74,color:'rgba(0,0,0,0.94)'},{offset:1,color:'rgba(0,0,0,0.94)'}]});
+      readings=await contrastReadings(scene,loadImage);selectInk();
+    }
+    return;
+  }
+  if(scene.sourceDraft.officialProgramLayout && (await contrastReadings(scene,loadImage)).some(r=>r.ratio<4.5)) {
+    scene.elements=scene.elements.filter(e=>e.role!=='ambient' && !e.id.startsWith('custom-background-'));
+    scene.backgroundColor='#101216';
+    scene.sourceDraft.programSolidFallback=true;
+  }
+  await repairConcessionContrast(scene,loadImage);
+}
+module.exports={applies,reserveSignature,validateArtworkLayout,assessArtwork,assertArtworkQuality,repairContrast,failure};
