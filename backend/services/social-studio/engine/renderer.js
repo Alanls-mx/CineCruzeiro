@@ -189,7 +189,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     analysis: analysis ? { method:analysis.method,quietest:analysis.quietest } : null,
     rendererVersion: "v2",
     template: { id: template.id, name: template.name },
-    notices: [...require("./normalizer").draftNotices(draft, context), ...(draft.style === "full-bleed" && !fullBleed ? [{ type: "info", code: "BACKDROP_FALLBACK", message: "Sem backdrop horizontal em alta resolução: usando pôster integrado, sem recortar a arte." }] : [])],
+    notices: [...require("./normalizer").draftNotices(draft, context), ...(draft.copyMovedToCaption?.length ? [{type:'info',code:'COPY_MOVED_TO_CAPTION',message:'O texto complementar foi reservado para a legenda por não caber com tamanho legível na arte.'}] : []), ...(draft.style === "full-bleed" && !fullBleed ? [{ type: "info", code: "BACKDROP_FALLBACK", message: "Sem backdrop horizontal em alta resolução: usando pôster integrado, sem recortar a arte." }] : [])],
     contentType: rendered.contentType,
     extension: rendered.extension,
     metrics: {

@@ -3,8 +3,13 @@ const v2 = require("./social-studio");
 
 function captionForDraft(input = {}, context = {}) {
   const draft = v2.normalizeV2Draft(input, context);
-  if (draft.caption) return draft.caption;
-  if(draft.content?.releaseScope==='international' || ['movie-price','ticket-offer','concession-offer','concession-combo','online-ticket'].includes(draft.templateId)) return require('./social-studio/copy-engine').generateCopy(draft,context).bundle.caption;
+  const manualText=['concession-offer','concession-combo'].includes(draft.templateId) && input.auxiliaryText ? String(input.auxiliaryText).trim() : '';
+  const preserveManualText=caption=>manualText && !caption.includes(manualText) ? `${caption}\n\n${manualText}` : caption;
+  if (draft.caption) return preserveManualText(draft.caption);
+  if(draft.content?.releaseScope==='international' || ['movie-price','ticket-offer','concession-offer','concession-combo','online-ticket'].includes(draft.templateId)) {
+    const caption=require('./social-studio/copy-engine').generateCopy(draft,context).bundle.caption;
+    return preserveManualText(caption);
+  }
   if (['sessions-today','sessions-week','multi-movies'].includes(draft.templateId)) {
     const programme = draft.programMovies.length ? draft.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text || 'Horários no site'}`).join('\n\n') : `${draft.title}\n${draft.schedule.text || 'Sessões disponíveis no site'}`;
     return `${draft.subtitle}\n\n${programme}\n\n${draft.cta}\n${draft.website}`;

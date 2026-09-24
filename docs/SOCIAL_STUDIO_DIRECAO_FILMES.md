@@ -16,7 +16,7 @@ Revisão de 24/09/2026. Evolução do motor atual, sem recriar o Studio ou mudar
 
 O modo automático considera gênero, material disponível, áreas de menor complexidade e um identificador estável da campanha. A análise usa luminância e densidade de bordas: estima foco visual e espaço para texto, mas **não reconhece rostos nem a direção real do olhar**. Quando o hero usa uma cena do filme, o enquadramento deriva da análise dessa cena, não do pôster.
 
-Pôster e ambiente têm enquadramentos independentes. As composições criativas preservam cor e atmosfera do filme, usam máscaras nas bordas e gradientes contínuos para legibilidade. Não aplicam retângulos de fundo por texto. Sombras são reservadas aos pôsteres flutuantes, não às cenas full bleed.
+Pôster e ambiente têm enquadramentos independentes. As composições criativas recuperam as camadas do motor cinematográfico anterior: lavagem de cor, textura atmosférica, luz local e vinheta. Preservam cor e atmosfera do filme, usam máscaras nas bordas e gradientes contínuos para legibilidade. Não aplicam retângulos de fundo por texto. Sombras são reservadas aos pôsteres flutuantes, não às cenas full bleed.
 
 Full bleed e foco usam backdrop quando disponível; na ausência dele passam para pôster + atmosfera. Estreia em destaque permite enquadramento ampliado do pôster, preservando a zona principal sem texto sobre ela. O controle manual permanece disponível. A referência visual não é copiada como uma arte final fixa.
 
@@ -40,8 +40,10 @@ Limitação: sem segmentação semântica de personagens, o enquadramento autom�
 
 ## Verificação desta revisão
 
-- Suíte Social Studio: 160 de 161 testes aprovados. A falha de largura de `concession-combo` em `social-studio-polish.test.mjs` foi reproduzida no commit anterior, sem estas alterações; permanece fora do escopo de filmes/programação.
+- Revisão final: 162 de 162 testes Social Studio aprovados.
+- A composição de produto `dark-snack` ganhou área suficiente para o packshot. Textos complementares que não cabem com tamanho legível passam para a legenda; o erro restante identifica o campo problemático.
 - Tipagem (`npm run lint`) aprovada.
 - Workspace verificado em desktop, tablet e mobile.
-- 40 variações raster aprovadas, mais a estreia de referência; programação validada em 15 combinações de quantidade/formato e exemplos de estilos.
+- 40 variações raster aprovadas, mais a estreia de referência; títulos longos conferidos em 54 combinações de formato, campanha e direção; programação validada em 15 combinações de quantidade/formato e exemplos de estilos.
+- Cinco produtos reais da bomboniere foram conferidos nas quatro direções e nos três formatos (60 artes aprovadas).
 - Os exemplos locais usam horários de teste e não devem ser publicados como programação real.

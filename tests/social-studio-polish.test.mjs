@@ -100,6 +100,16 @@ test('bomboniere e clube usam hierarquias visuais próprias', async () => {
   }
 });
 
+test('texto complementar extenso sai da arte pequena e permanece na legenda', async () => {
+  const {context, loadImage}=await fixture();
+  const auxiliaryText='Uma opção para acompanhar o filme, com mais detalhes da composição e das condições disponíveis na bomboniere do cinema.';
+  const rendered=await engine.renderSocialPost({templateId:'concession-combo',concessionId:'combo',formatId:'square',auxiliaryText},context,{loadImage,skipRaster:true});
+  assert.ok(rendered.quality.accepted);
+  assert.ok(rendered.notices.some(notice=>notice.code==='COPY_MOVED_TO_CAPTION'));
+  assert.ok(!flattenElements(rendered.scene.elements).some(element=>element.id==='support'));
+  assert.match(engine.captionForDraft({templateId:'concession-combo',concessionId:'combo',auxiliaryText},context),/Uma opção para acompanhar o filme/);
+});
+
 test('exploração escolhe famílias diferentes sem perder a opção de variações similares', () => {
   const ranked = ['hero-left','hero-right','split','poster-dominant','full-bleed','editorial'].map(styleId => ({styleId}));
   assert.deepEqual(selectDiverseVariations(ranked, 'explore').map(variation => variation.styleId), ['hero-left','poster-dominant','full-bleed','editorial']);

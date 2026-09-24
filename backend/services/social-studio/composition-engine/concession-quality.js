@@ -124,7 +124,9 @@ async function assessConcession(scene,loadImage) {
   return {accepted:!issues.length,total,score:total,contrast:Math.round(contrast),commercialClarity:issues.length?50:100,issues,method:'concession-raster-quality-v1',explanation:issues.length?'A composição precisa de ajustes.':'Produto, preço, marca e chamada legíveis; áreas seguras conferidas.',family:scene.sourceDraft?.concessionDirection?.family};
 }
 function qualityError(quality) {
-  return Object.assign(new Error(`Esta composição não passou na revisão: ${[...new Set(quality.issues.map(i=>i.message))].join(' ')} Reduza os textos ou escolha outra direção.`),{statusCode:422,code:'CONCESSION_QUALITY',quality});
+  const fields={title:'título',subtitle:'chamada',subject:'nome do produto',detail:'preço',support:'texto complementar',description:'condições',cta:'chamada final',website:'endereço do site'};
+  const messages=[...new Set(quality.issues.map(issue=>issue.code==='SMALL_TEXT'?`O campo ${fields[issue.elementId] || issue.elementId} ficou pequeno demais para publicação.`:issue.message))];
+  return Object.assign(new Error(`Esta composição não passou na revisão: ${messages.join(' ')} Ajuste o campo indicado ou escolha outra direção.`),{statusCode:422,code:'CONCESSION_QUALITY',quality});
 }
 async function assertConcessionQuality(scene,loadImage) {
   if(!isConcession(scene))return null;

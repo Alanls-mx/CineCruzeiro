@@ -65,7 +65,11 @@ test('editor não exporta sobreposição, baixo contraste, transparência ou pre
 });
 test('não mostra produto ausente, transparente ou descrição longa ilegível',async()=>{
   await assert.rejects(engine.renderSocialPost({...input,imageUrl:'/missing-product'},context,{loadImage:async()=>null}),{code:'PRODUCT_IMAGE_REQUIRED'});
-  await assert.rejects(engine.renderSocialPost({...input,auxiliaryText:'Descrição extensa '.repeat(30)},context,{loadImage,skipRaster:true}),{code:'CONCESSION_QUALITY'});
+  const longText='Descrição extensa '.repeat(30).trim();
+  const rendered=await engine.renderSocialPost({...input,auxiliaryText:longText},context,{loadImage,skipRaster:true});
+  assert.ok(rendered.quality.accepted);
+  assert.ok(!rendered.scene.elements.some(element=>element.id==='support'));
+  assert.ok(engine.captionForDraft({...input,auxiliaryText:longText},context).includes(longText));
 });
 test('variações aprovadas representam famílias realmente diferentes',async()=>{
   const result=await generateVariations(input,context,{loadImage});

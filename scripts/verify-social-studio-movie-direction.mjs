@@ -10,7 +10,7 @@ const output=path.resolve('artifacts/studio-movie-direction');
 await fs.mkdir(output,{recursive:true});
 const response=await fetch('https://lumixengine.com/projects/cinecruzeiro/api/content');assert.ok(response.ok);
 const data=await response.json();
-const movies=['cara-de-barro','toy-story-5','resident-evil','minha-melhor-amiga'].map(id=>data.movies.find(m=>m.id===id));
+const movies=['cara-de-barro','toy-story-5','resident-evil','minha-melhor-amiga','superman','vingadores-doutor-destino','harry-potter-e-a-pedra-filosofal'].map(id=>data.movies.find(m=>m.id===id));
 assert.ok(movies.every(Boolean));
 const images=new Map([['/qa/movie-logo',await fs.readFile('public/images/logo-display.webp')]]);
 for(const movie of movies)for(const url of [movie.posterUrl,movie.backdropUrl].filter(Boolean)) {
@@ -19,7 +19,7 @@ for(const movie of movies)for(const url of [movie.posterUrl,movie.backdropUrl].f
 }
 const context={now:'2026-09-24T09:00:00-03:00',brand:{name:'Cine Cruzeiro',logoUrl:'/qa/movie-logo',website:'https://cinecruzeiro.com.br'},movies:movies.map(m=>({...m,sessions:[{id:`test-${m.id}`,date:'2026-09-25',time:'13:00'},{id:`test2-${m.id}`,date:'2026-09-25',time:'18:30'}]}))};
 const report=[];
-for(const movie of movies) {
+for(const movie of movies.slice(0,4)) {
   const tiles=[];
   for(const [index,layoutId] of ['automatic',...Object.keys(MOVIE_FAMILIES)].entries()) {
     const name=`${movie.id}-${layoutId}`;
@@ -35,8 +35,26 @@ for(const movie of movies) {
   await sharp({create:{width:810,height:Math.ceil((Object.keys(MOVIE_FAMILIES).length+1)/3)*338,channels:3,background:'#30343a'}}).composite(tiles).png().toFile(path.join(output,`${movie.id}-comparison.png`));
   console.log(movie.title,report.filter(r=>r.name.startsWith(movie.id)&&r.accepted).length,'/',Object.keys(MOVIE_FAMILIES).length+1);
 }
+const matrixFailures=[];
+if(process.argv.includes('--matrix'))for(const movie of movies.slice(4))for(const formatId of ['feed_portrait','square','story'])for(const templateId of ['movie-highlight','movie-premiere'])for(const layoutId of ['automatic','movie-asymmetric','movie-spotlight']) {
+  try {
+    const result=await engine.renderSocialPost({templateId,movieId:movie.id,formatId,layoutId},context,{loadImage:async url=>images.get(url)||null,skipRaster:true,artworkRetried:true});
+    assert.ok(result.quality.accepted);
+  } catch(error) {
+    matrixFailures.push({movie:movie.id,formatId,templateId,layoutId});
+    console.log('MATRIX_FAIL',movie.id,formatId,templateId,layoutId,JSON.stringify(error.quality?.issues || error.message));
+  }
+}
+if(process.argv.includes('--matrix'))for(const movie of movies.slice(4)) {
+  const result=await engine.renderSocialPost({templateId:'movie-highlight',movieId:movie.id,formatId:'feed_portrait',signatureId:'classic'},context,{loadImage:async url=>images.get(url)||null});
+  await fs.writeFile(path.join(output,`${movie.id}-automatic-long-title.png`),result.buffer);
+}
 const premiere=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'cara-de-barro',formatId:'feed_portrait',layoutId:'movie-spotlight'},context,{loadImage:async url=>images.get(url)||null});
 await fs.writeFile(path.join(output,'cara-de-barro-estreia.png'),premiere.buffer);
+const classic=require('../backend/services/social-studio/scene/factory').buildEditableScene({draft:{...premiere.draft,movieFamily:'',style:'poster-blend'},format:premiere.format,palette:premiere.palette,brand:context.brand,sourceUrl:movies[0].posterUrl,backgroundUrl:movies[0].backdropUrl,logoUrl:'/qa/movie-logo'});
+const classicRendered=await engine.renderSocialScene(classic,{loadImage:async url=>images.get(url)||null,layerRender:true});
+await fs.writeFile(path.join(output,'cara-de-barro-original-engine.png'),classicRendered.buffer);
 await fs.writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));
 assert.ok(report.every(r=>r.accepted));
+assert.equal(matrixFailures.length,0,'Long titles must pass every selected format and direction.');
 console.log(output);
