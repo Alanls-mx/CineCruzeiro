@@ -14,8 +14,11 @@ mkdir -p "$backup"
 docker compose config > "$backup/compose.resolved.yaml"
 if docker compose ps --status running --quiet | grep -q .; then
   container="$(docker compose ps -q n8n)"
-  docker compose exec -T n8n sh -lc 'rm -rf /tmp/n8n-workflows && n8n export:workflow --backup --output=/tmp/n8n-workflows' >/dev/null
-  docker cp "$container:/tmp/n8n-workflows" "$backup/workflows" >/dev/null
+  if docker compose exec -T n8n sh -lc 'rm -rf /tmp/n8n-workflows && n8n export:workflow --backup --output=/tmp/n8n-workflows' >/dev/null 2>&1; then
+    docker cp "$container:/tmp/n8n-workflows" "$backup/workflows" >/dev/null
+  else
+    printf '%s\n' 'Nenhum workflow existente para incluir no backup.' > "$backup/workflows.empty"
+  fi
 fi
 
 docker compose pull
