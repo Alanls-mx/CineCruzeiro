@@ -66,11 +66,13 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       previous = cpus;
       const stat = await fs.statfs(diskPath).catch(() => null);
       requests = requests.filter((request) => request.at > now - 300000);
+      const latencyRequests = requests.filter((request) => request.at > now - 60000);
       const totalMemory = os.totalmem();
       const memoryUsed = totalMemory - os.freemem();
       const administrativeRequests = requests.filter((request) => request.administrativeTask);
       const operationalRequests = requests.filter((request) => !request.administrativeTask);
       const internalRequests = operationalRequests.filter((request) => !request.externalDependency);
+      const recentInternalRequests = latencyRequests.filter((request) => !request.administrativeTask && !request.externalDependency);
       const externalRequests = requests.filter((request) => request.externalDependency);
       const routeGroups = new Map();
       requests.forEach((request) => {
@@ -120,6 +122,9 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
         operationalRequestCount: operationalRequests.length,
         administrativeRequestCount: administrativeRequests.length,
         internalRequestCount: internalRequests.length,
+        latencyWindowSeconds: 60,
+        latencyRequestCount: recentInternalRequests.length,
+        latencyRequestP95Ms: percentile(recentInternalRequests.map((request) => request.durationMs), 0.95),
         externalRequestCount: externalRequests.length,
         slowestRoutes,
         errors5xx: operationalRequests.filter((request) => request.statusCode >= 500).length,
@@ -131,7 +136,7 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       if (sampleData.cpuPercent >= 90) alerts.push({ code: "cpu", message: "CPU do servidor acima de 90%." });
       if (memoryUsed / totalMemory >= 0.9) alerts.push({ code: "memory", message: "Memoria do host acima de 90% (inclui cache do sistema)." });
       if (stat && sampleData.diskAvailable / sampleData.diskTotal < 0.1) alerts.push({ code: "disk", message: "Menos de 10% de disco disponivel." });
-      if (internalRequests.length >= 10 && sampleData.requestP95Ms > 2000) alerts.push({ code: "latency", message: "A latência HTTP interna da operação está acima de 2 segundos." });
+      if (recentInternalRequests.length >= 10 && sampleData.latencyRequestP95Ms > 2000) alerts.push({ code: "latency", message: "A latência HTTP interna da operação está acima de 2 segundos." });
       if (externalRequests.length >= 5 && sampleData.externalRequestP95Ms > 5000) alerts.push({ code: "external_latency", message: "Integrações externas estão respondendo acima de 5 segundos no p95." });
       if (sampleData.eventLoopP95Ms > 200) alerts.push({ code: "event_loop", message: "Backend com atraso no processamento acima de 200 ms." });
       if (sampleData.errors5xx >= 5 && sampleData.errors5xx / Math.max(1, operationalRequests.length) >= 0.05) alerts.push({ code: "http_errors", message: "Falhas HTTP em pelo menos 5% das requisições da operação." });

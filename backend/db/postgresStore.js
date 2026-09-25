@@ -599,10 +599,13 @@ async function loadDbFromPostgres() {
   }
 }
 
-const configuredSnapshotCacheTtlMs = Number(process.env.POSTGRES_SNAPSHOT_CACHE_TTL_MS || 2000);
+// The compatibility snapshot spans the full relational model. Every repository
+// mutation invalidates it, so a longer read TTL avoids rebuilding the same
+// snapshot during normal navigation without serving stale writes.
+const configuredSnapshotCacheTtlMs = Number(process.env.POSTGRES_SNAPSHOT_CACHE_TTL_MS || 30000);
 const SNAPSHOT_CACHE_TTL_MS = Number.isFinite(configuredSnapshotCacheTtlMs)
-  ? Math.min(10000, Math.max(500, configuredSnapshotCacheTtlMs))
-  : 2000;
+  ? Math.min(60000, Math.max(2000, configuredSnapshotCacheTtlMs))
+  : 30000;
 let snapshotCache = null;
 let snapshotCacheExpiresAt = 0;
 let snapshotLoadPromise = null;

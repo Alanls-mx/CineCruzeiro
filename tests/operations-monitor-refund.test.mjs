@@ -81,6 +81,9 @@ test("monitor reports host and process separately with bounded samples", async (
     const snapshot = monitor.snapshot();
     assert.equal(snapshot.current.requestCount, 15);
     assert.equal(snapshot.current.internalRequestCount, 10);
+    assert.equal(snapshot.current.latencyWindowSeconds, 60);
+    assert.equal(snapshot.current.latencyRequestCount, 10);
+    assert.equal(snapshot.current.latencyRequestP95Ms, 2500);
     assert.equal(snapshot.current.externalRequestCount, 5);
     assert.equal(snapshot.current.requestP95Ms, 2500);
     assert.equal(snapshot.current.externalRequestP95Ms, 6200);
