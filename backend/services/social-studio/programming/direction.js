@@ -19,8 +19,8 @@ function programLayout(draft,count) {
   const aliases={timeline:'program-list','hero-schedule':'program-hero','poster-list':'program-list','cinema-board':'program-cards','editorial-schedule':'program-list','day-cards':'program-days','week-timeline':'program-days','poster-calendar':'program-days','featured-days':'program-days','editorial-week':'program-days',featured:'program-cards','cinematic-grid':'program-grid',layered:'program-grid',mosaic:'program-cards','film-strip':'program-list',panorama:'program-grid','split-heroes':'program-duo',collage:'program-grid',lineup:'program-list'};
   const selected=aliases[requested] || requested;
   if(selected==='program-days' || selected==='program-list')return selected;
-  if(selected==='program-hero' && count===1 || selected==='program-duo' && count===2 || selected==='program-cards' && count>=3 && count<=4 || selected==='program-grid' && count>=3 && count<=6)return selected;
+  if(selected==='program-hero' && count===1 || selected==='program-duo' && count===2 || selected==='program-cards' && count>=1 && count<=4 || selected==='program-grid' && count>=2 && count<=6)return selected;
   if(model.days.length>=3 || model.rows.length>count+2)return 'program-days';
-  return count===1?'program-hero':count===2?'program-duo':count<=4?'program-cards':count<=6?'program-grid':'program-list';
+  return count===1?'program-hero':count===2?'program-duo':count===3?'program-grid':count===4?'program-cards':count<=6?'program-grid':'program-list';
 }
 module.exports={PROGRAM_LAYOUTS,selectFeaturedMovie,analyzeProgramMood,programLayout};

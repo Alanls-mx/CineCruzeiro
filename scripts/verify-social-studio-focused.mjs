@@ -15,8 +15,9 @@ const css=await fs.readFile('backend/public/admin.css','utf8')+await fs.readFile
 const browser=await chromium.launch();
 await fs.mkdir('artifacts/studio-focused',{recursive:true});
 try {
-  for(const [name,viewport] of Object.entries({desktop:{width:1500,height:1000},mobile:{width:390,height:844}})){
-    const page=await browser.newPage({viewport});const errors=[],snapshots=new Map();let saved;
+  for(const [name,viewport] of Object.entries({desktop:{width:1500,height:1000},laptop:{width:1280,height:800},tablet:{width:820,height:1180},mobile:{width:390,height:844}})){
+    const page=await browser.newPage({viewport});const errors=[],snapshots=new Map();let saved,saves=0,copyStatus=200;
+    page.on('dialog',dialog=>dialog.accept());
     page.on('pageerror',error=>errors.push(error.message));
     await page.route('**/poster.webp',route=>route.fulfill({contentType:'image/webp',body:poster}));
     await page.route('**/logo.png',route=>route.fulfill({contentType:'image/png',body:logo}));
@@ -24,6 +25,7 @@ try {
       try {
         const url=new URL(route.request().url()),input=route.request().postDataJSON() || {};
         if(url.pathname.endsWith('/context'))return route.fulfill({json:context});
+        if(url.pathname.endsWith('/copy'))return route.fulfill({status:copyStatus,json:{error:{message:'Falha simulada'}}});
         if(url.pathname.endsWith('/resolve')){const draft=engine.normalizeDraft(input,context);return route.fulfill({json:{draft,caption:engine.captionForDraft(draft,context),notices:engine.draftNotices(draft,context)}});}
         if(url.pathname.endsWith('/preview-scene'))return route.fulfill({json:{scene:snapshots.get(input.previewToken).scene}});
         if(url.pathname.endsWith('/preview')){
@@ -36,7 +38,7 @@ try {
           if(url.searchParams.get('render'))image=await require('../backend/services/social-studio/composition-engine/pipeline').createCinematicArtwork(image,JSON.parse(url.searchParams.get('render')));
           return route.fulfill({contentType:'image/png',body:image});
         }
-        if(url.pathname.endsWith('/posts')){saved=snapshots.get(input.previewToken);return route.fulfill({json:{post:{id:'saved',editable:true,imageUrl:'/poster.webp',payload:input,formatId:'feed_portrait',width:1080,height:1350},history:[]}});}
+        if(url.pathname.endsWith('/posts')){saves++;saved=snapshots.get(input.previewToken);return route.fulfill({json:{post:{id:'saved',editable:true,imageUrl:'/poster.webp',payload:input,formatId:'feed_portrait',width:1080,height:1350},history:[]}});}
         return route.fulfill({json:{jobs:[]}});
       }catch(error){return route.fulfill({status:400,json:{error:{message:error.message}}});}
     });
@@ -60,18 +62,45 @@ try {
     await page.screenshot({path:`artifacts/studio-focused/${name}-editor.png`});
     await page.locator('[data-studio-open=export]').first().click();
     await page.locator('#socialStudioGenerateButton').click();
-    await expect(page.locator('#socialStudioStatus')).toContainText('sucesso',{timeout:30000});
+    await expect(page.locator('#socialStudioStatus')).toContainText('Arte salva',{timeout:30000});
     const flatten=items=>items.flatMap(item=>item.children?flatten(item.children):[item]);
     assert.equal(flatten(saved.scene.elements).find(e=>e.id==='title').text,'Uma noite de cinema');
+    await page.locator('#socialStudioOutput').selectOption('jpg');
+    await page.locator('#socialStudioGenerateButton').click();
+    await expect(page.locator('#socialStudioStatus')).toContainText('campanha mudou');
+    assert.equal(saves,1,'Stale preview must not be saved');
+    await expect(page.locator('#socialStudioStatus')).toContainText('Prévia atualizada',{timeout:30000});
+    await page.locator('#socialStudioRecoverEdits').click();
+    await expect(page.locator('#socialStudioStatus')).toContainText('Prévia atualizada',{timeout:30000});
+    await editor.getByRole('combobox',{name:'Selecionar elemento'}).selectOption('title');
+    await expect(editor.getByRole('textbox',{name:'Texto do elemento'})).toHaveValue('Uma noite de cinema');
+    await page.locator('#socialStudioCategory').selectOption('BOMBONIERE');
+    await expect(page.locator('#socialStudioStatus')).toContainText('Prévia atualizada',{timeout:30000});
+    assert.equal([...snapshots.values()].at(-1).draft.templateId,'concession-combo');
+    await page.locator('[data-studio-dock=composition]').click();
+    await page.locator('[name=socialStudioStyle][value=product-lateral]').locator('..').click();
+    await expect.poll(()=>[...snapshots.values()].at(-1)?.draft.layoutId,{timeout:30000}).toBe('product-lateral');
     await page.locator('#socialStudioCategory').selectOption('PROGRAMAÇÃO');
     await expect(page.locator('#socialStudioStatus')).toContainText('Prévia atualizada',{timeout:30000});
     await expect(page.locator('#socialStudioMovieField')).toBeHidden();
     await expect(page.locator('#socialStudioMovieSelections')).toBeHidden();
+    await expect(page.locator('#socialStudioProgramUseImages')).toHaveCount(0);
     await page.locator('#socialTabImage').click();
     await expect(page.locator('#socialStudioImageSection')).toBeHidden();
     await expect(page.locator('#socialProgramVisual')).toBeVisible();
     assert.ok((await page.locator('[name=socialStudioStyle]').evaluateAll(nodes=>nodes.map(node=>node.value))).every(value=>value==='automatic' || value.startsWith('program-')));
     await page.screenshot({path:`artifacts/studio-focused/${name}-programming.png`});
+    if(name==='desktop') {
+      await page.locator('#socialTabContent').click();
+      await page.getByText('Personalizar textos',{exact:true}).click();
+      copyStatus=401;
+      await page.locator('[data-copy-field=headline]').click();
+      await expect(page.locator('#socialStudioStatus')).toContainText('sessão expirou');
+      assert.ok(page.url().endsWith('/admin/qa'),'Expired session must preserve the editing page');
+      copyStatus=403;
+      await page.locator('[data-copy-field=headline]').click();
+      await expect(page.locator('#socialStudioStatus')).toContainText('não tem permissão');
+    }
     assert.deepEqual(errors,[]);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),'No page overflow');
     await page.close();console.log(`${name}: inline editing, undo/redo, edited export and category isolation passed`);

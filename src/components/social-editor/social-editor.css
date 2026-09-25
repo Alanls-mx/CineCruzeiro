@@ -111,7 +111,8 @@
 }
 @media (prefers-reduced-motion: reduce) { .se-loader { animation: none; } }
 /* The embedded canvas shares the editor renderer and has one contextual toolbar. */
-.se-inline { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: #080d15; color: #eef2f7; font-family: Arial, sans-serif; }
+.se-inline { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: #080d15; color: #eef2f7; font-family: var(--font-inter), Arial, sans-serif; }
+.se-inline button, .se-inline input, .se-inline select, .se-inline textarea { font:inherit; }
 .se-inline-tools { display:flex; align-items:center; gap:6px; padding:8px; border-bottom:1px solid #293240; flex-wrap:wrap; }
 .se-inline-tools button { display:grid; place-items:center; width:34px; height:34px; padding:0; border:1px solid #344151; border-radius:4px; background:#161f2c; color:#eef2f7; }
 .se-inline-tools button:hover:not(:disabled) { background:#334055; }
@@ -125,3 +126,9 @@
 .se-inline-properties .se-inline-text { flex:1 1 200px; }
 .se-inline-properties textarea { width:100%; resize:vertical; font-size:13px; }
 .se-inline-properties input[type=color] { width:48px; height:32px; padding:2px; }
+.se-inline-properties input[type=range] { accent-color:#f5d24a; }
+.se-inline ::selection { background:#f5d24a; color:#101820; }
+@media (pointer:coarse) {
+  .se-inline-tools button { width:44px; height:44px; }
+  .se-inline :is(select,input:not([type=range]),textarea) { min-height:44px; }
+}

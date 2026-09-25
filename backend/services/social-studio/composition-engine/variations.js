@@ -60,7 +60,7 @@ async function generateVariations(input, context, options = {}) {
       ...(product?{concessionDirection:{...input.concessionDirection,layout:style}}:{}),
       style,
       layoutId:multi?input.layoutId:style,
-      ...(multi ? {style:input.style || 'cinematic',programLayout:style,programStyle:['posters','editorial','cinematic'][index%3]} : {}),
+      ...(multi ? {style:input.style || 'cinematic',programLayout:style,programStyle:input.programStyle || 'automatic',programPosterMode:'equal'} : {}),
       automaticStyle: false,
       polish: false,
       artDirection: {
@@ -86,12 +86,14 @@ async function generateVariations(input, context, options = {}) {
       continue;
     }
     const { entities, ...payload } = rendered.draft;
-    if(multi && variations.some(v=>v.draft.resolvedProgramLayout===payload.resolvedProgramLayout && (input.workspaceVersion===2 || v.draft.programStyle===payload.programStyle)))continue;
+    const programGeometry=multi?JSON.stringify(require('../scene/groups').flattenElements(rendered.scene.elements).filter(e=>e.id.startsWith('movie-art-')).map(e=>[e.id,e.x,e.y,e.width,e.height])):'';
+    if(multi && variations.some(v=>v.programGeometry===programGeometry))continue;
     if(isMovie(input) && mode!=='similar' && variations.some(v=>v.draft.movieFamily===payload.movieFamily))continue;
     variations.push({
       id: `${style}-${draft.artDirection.seed}`,
+      ...(multi?{programGeometry}:{}),
       styleId: isMovie(input)?payload.movieFamily || style:style,
-      name: multi ? ({posters:'Pôsteres',editorial:'Editorial clean',cinematic:'Cinematográfico'}[payload.programStyle] || multiNames[style]) : PRODUCT_LAYOUTS[style] || MOVIE_FAMILIES[payload.movieFamily || style] || FAMILIES[style] || ticketNames[style] || STYLES.find((s) => s.id === style)?.name || style,
+      name: multi ? ({'program-cards':'Cartazes editoriais','program-grid':'Destaque e mosaico','program-days':'Agenda por dia','program-list':'Lista premium','program-hero':'Filme protagonista','program-duo':'Dupla de cartazes'}[payload.resolvedProgramLayout] || multiNames[style]) : PRODUCT_LAYOUTS[style] || MOVIE_FAMILIES[payload.movieFamily || style] || FAMILIES[style] || ticketNames[style] || STYLES.find((s) => s.id === style)?.name || style,
       intent: input.templateId==='ticket-offer'?'Conceito da oferta, preço e compra em destaque':input.templateId === 'concession-combo' ? 'Produto, preço e chamada organizados para a bomboniere' : input.templateId === 'club-plan' ? 'Plano, benefícios e mensalidade em destaque' : draft.artDirection.emphasis === "date" ? "Data ou preço em primeiro plano" : style === "poster-dominant" ? "Artwork em destaque" : "Filme e chamada em destaque",
       draft: payload,
       ...(product?{intent:`${rendered.draft.entities.concession.name} · ${rendered.format.width} × ${rendered.format.height}`} : {}),
@@ -108,10 +110,11 @@ async function generateVariations(input, context, options = {}) {
     const thumb = await sharp(raster.buffer).resize({ width: 400 }).jpeg({ quality: 85 }).toBuffer();
     variation.image = `data:image/jpeg;base64,${thumb.toString("base64")}`;
     delete variation.scene;
+    delete variation.programGeometry;
   }
   return {
     variations: selected,
-    evaluatedCount: styles.length,
+    evaluatedCount: candidates.length,
     ranking: variations.map(({ name, quality, beforeQuality, refined }) => ({ name, score: quality.total, before: beforeQuality.total, refined })),
     rejectedCount: rejected.length,
     notices:

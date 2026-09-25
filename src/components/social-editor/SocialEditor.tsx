@@ -15,10 +15,8 @@ const BASE_PATH = (process.env.NEXT_PUBLIC_BASE_PATH || (process.env.NODE_ENV ==
 
 async function api<T>(url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${BASE_PATH}${url}`, { credentials: "include", cache: "no-store", ...init, headers: { "Content-Type": "application/json", ...(init.headers || {}) } });
-  if (response.status === 401 || response.status === 403) {
-    window.location.href = `${BASE_PATH}/admin/`;
-    throw new Error("Sessão administrativa expirada.");
-  }
+  if (response.status === 401) throw new Error("Sua sessão expirou. Entre novamente no painel em outra aba para preservar esta edição.");
+  if (response.status === 403) throw new Error("Você não tem permissão para esta ação. Solicite acesso ao administrador.");
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload?.error?.message || "Não foi possível concluir esta operação.");
   return payload as T;
@@ -183,7 +181,7 @@ export default function SocialEditor({ postId }: { postId: string }) {
 
   const uploadImage = async (file: File) => {
     if (!selectedId || !file.type.match(/^image\/(png|jpeg|webp)$/)) return;
-    if (file.size > 8 * 1024 * 1024) return setError("A imagem deve ter no máximo 8 MB.");
+    if (file.size > 5 * 1024 * 1024) return setError("Use uma imagem JPG, PNG ou WebP de até 5 MB.");
     setBusy(true);
     try {
       const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || "")); reader.onerror = reject; reader.readAsDataURL(file); });
@@ -207,14 +205,15 @@ export default function SocialEditor({ postId }: { postId: string }) {
   };
 
   const exportScene = async (outputType: "png" | "jpg") => {
-    if (!scene) return;
+    if (!scene || operation.current) return;
+    operation.current = true;
     setBusy(true); setError("");
     try {
       const response = await fetch(`${BASE_PATH}/api/admin/social-studio/posts/${encodeURIComponent(postId)}/scene-export`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scene, outputType }) });
       if (!response.ok) throw new Error((await response.json().catch(() => ({})))?.error?.message || "Não foi possível exportar a arte.");
       downloadBlob(await response.blob(), `${(post?.title || "post").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-editado.${outputType}`);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Não foi possível exportar a arte."); }
-    finally { setBusy(false); }
+    finally { operation.current = false; setBusy(false); }
   };
 
   const resetScene = async () => {

@@ -15,7 +15,7 @@ const titles=['Coyote vs. ACME','O Fim da Rua','Toy Story 5','Minha Melhor Amiga
 const movies=titles.map((title,i)=>({id:`p${i}`,title,posterUrl:'/program-poster',sessions:[{id:`s${i}`,date:'2026-09-24',time:`${13+i}:00`}]}));
 const context={now:'2026-09-24T09:00:00-03:00',brand:{name:'Cine Cruzeiro',logoUrl:'/program-logo',website:'https://cinecruzeiro.com.br'},movies};
 test('agenda escolhe seis estruturas por conteúdo, sem destaque implícito',()=>{
-  for(const [count,layout] of [[1,'program-hero'],[2,'program-duo'],[3,'program-cards'],[5,'program-grid'],[8,'program-list']]) {
+  for(const [count,layout] of [[1,'program-hero'],[2,'program-duo'],[3,'program-grid'],[5,'program-grid'],[8,'program-list']]) {
     const draft=engine.normalizeDraft({templateId:'multi-movies',movieIds:movies.slice(0,count).map(m=>m.id).reverse()},context);
     assert.equal(programLayout(draft,count),layout);
     assert.ok(draft.programMovies.every(m=>!m.featured));
@@ -26,7 +26,7 @@ test('1, 2, 3, 5 e 8 filmes preservam conteúdo e geometria nos três formatos',
   for(const count of [1,2,3,5,8])for(const formatId of ['square','feed_portrait','story']) {
     const rendered=await engine.renderSocialPost({templateId:'multi-movies',movieIds:movies.slice(0,count).map(m=>m.id).reverse(),formatId},context,{loadImage,skipRaster:true});
     assert.ok(rendered.quality.accepted,`${count} ${formatId}`);
-    assert.equal(rendered.draft.resolvedProgramLayout,({1:'program-hero',2:'program-duo',3:'program-cards',5:'program-grid',8:'program-list'})[count]);
+    assert.equal(rendered.draft.resolvedProgramLayout,({1:'program-hero',2:'program-duo',3:'program-grid',5:'program-grid',8:'program-list'})[count],`${count} ${formatId}`);
     const elements=flattenElements(rendered.scene.elements),text=elements.filter(e=>e.type==='text').map(e=>e.text.replace(/\s+/g,' ')).join(' ');
     for(const movie of movies.slice(0,count)) {assert.ok(text.includes(movie.title));assert.ok(text.includes(movie.sessions[0].time.replace(':','H')));}
     assert.equal(rendered.scene.sourceDraft.programSessionCount,count);
@@ -54,22 +54,22 @@ test('não exporta horários alterados, conteúdo oculto nem ordem invertida',as
     await assert.rejects(engine.renderSocialScene(scene,{loadImage}),{code:'ARTWORK_QUALITY'});
   }
 });
-test('pôsteres iguais, sem pôster e destaque explícito conservam a agenda',async()=>{
+test('pôsteres são obrigatórios inclusive em pedidos antigos sem imagem e no destaque',async()=>{
   for(const programPosterMode of ['equal','none','featured']) {
     const r=await engine.renderSocialPost({templateId:'sessions-today',movieIds:['p0','p1'],programPosterMode,featuredMovieId:programPosterMode==='featured'?'p1':''},context,{loadImage,skipRaster:true});
     const art=flattenElements(r.scene.elements).filter(e=>e.id.startsWith('movie-art-'));
-    assert.equal(art.length,programPosterMode==='none'?0:programPosterMode==='featured'?1:2);
+    assert.equal(art.length,2);
     assert.equal(r.scene.sourceDraft.programSessionCount,2);
     if(programPosterMode==='featured')assert.equal(art[0].id,'movie-art-1');
   }
 });
-test('tratamentos de cor preservam a programação com e sem imagens',async()=>{
+test('tratamentos de cor preservam a programação sempre com imagens',async()=>{
   const backgrounds=new Set();
   for(const programStyle of ['vibrant','premium','noir','cinematic','editorial'])for(const programPosterMode of ['equal','none']) {
     const rendered=await engine.renderSocialPost({templateId:'sessions-today',movieIds:['p0','p1'],programStyle,programPosterMode},context,{loadImage,skipRaster:true});
     assert.ok(rendered.quality.accepted,`${programStyle} ${programPosterMode}: ${JSON.stringify(rendered.quality.issues)}`);
     backgrounds.add(rendered.scene.backgroundColor);
-    assert.equal(flattenElements(rendered.scene.elements).filter(e=>e.id.startsWith('movie-art-')).length,programPosterMode==='none'?0:2);
+    assert.equal(flattenElements(rendered.scene.elements).filter(e=>e.id.startsWith('movie-art-')).length,2);
     assert.equal(rendered.scene.sourceDraft.programSessionCount,2);
     if(programStyle==='vibrant') {
       assert.equal(rendered.scene.backgroundColor,'#ffda38');
@@ -78,13 +78,22 @@ test('tratamentos de cor preservam a programação com e sem imagens',async()=>{
   }
   assert.ok(backgrounds.size>=4);
 });
-test('agenda por dias reage à opção de imagens sem alterar horários',async()=>{
+test('agenda por dias migra a opção antiga sem imagens preservando horários',async()=>{
   const varied={...context,movies:movies.slice(0,2).map((movie,index)=>({...movie,sessions:[{...movie.sessions[0],date:index?'2026-09-25':'2026-09-24'}]}))};
   const enabled=await engine.renderSocialPost({templateId:'sessions-week',movieIds:['p0','p1'],programPosterMode:'equal'},varied,{loadImage,skipRaster:true});
   const disabled=await engine.renderSocialPost({templateId:'sessions-week',movieIds:['p0','p1'],programPosterMode:'none'},varied,{loadImage,skipRaster:true});
   assert.equal(enabled.scene.sourceDraft.programSessionCount,disabled.scene.sourceDraft.programSessionCount);
-  assert.equal(enabled.scene.elements.filter(e=>e.id.startsWith('movie-art-')).length,2);
-  assert.equal(disabled.scene.elements.filter(e=>e.id.startsWith('movie-art-')).length,0);
+  assert.equal(flattenElements(enabled.scene.elements).filter(e=>e.id.startsWith('movie-art-')).length,2);
+  assert.equal(flattenElements(disabled.scene.elements).filter(e=>e.id.startsWith('movie-art-')).length,2);
+});
+
+test('programação identifica filme sem imagem e impede remoção de cartazes na edição',async()=>{
+  const missing={...context,movies:[{...movies[0],posterUrl:'',backdropUrl:''}]};
+  await assert.rejects(engine.renderSocialPost({templateId:'sessions-today',movieIds:['p0']},missing,{loadImage,skipRaster:true}),error=>error.code==='PROGRAM_IMAGES_REQUIRED' && error.message.includes('Coyote vs. ACME'));
+  const rendered=await engine.renderSocialPost({templateId:'sessions-today',movieIds:['p0','p1']},context,{loadImage,skipRaster:true});
+  const removePosters=elements=>elements.filter(e=>!e.id.startsWith('movie-art-')).map(e=>e.children?{...e,children:removePosters(e.children)}:e);
+  rendered.scene.elements=removePosters(rendered.scene.elements);
+  assert.ok(validateArtworkLayout(rendered.scene).issues.some(issue=>issue.code==='PROGRAM_IMAGES_REQUIRED'));
 });
 test('filme sem sessões é avisado e bloqueado antes de carregar imagens',async()=>{
   const ctx={...context,movies:[...movies,{id:'empty',title:'Sem programação',sessions:[]}]};
@@ -97,4 +106,48 @@ test('filme sem sessões é avisado e bloqueado antes de carregar imagens',async
 test('programação extensa bloqueia em vez de omitir sessões',async()=>{
   const dense={...context,movies:movies.map(m=>({...m,sessions:Array.from({length:7},(_,i)=>({...m.sessions[0],id:`${m.id}-${i}`,date:`2026-09-${24+i}`}))}))};
   await assert.rejects(engine.renderSocialPost({templateId:'sessions-week',movieIds:movies.map(m=>m.id),formatId:'square'},dense,{loadImage,skipRaster:true}),{code:'PROGRAM_CAPACITY'});
+});
+
+test('campanha concentra o dia no cabeçalho e agrupa todos os horários',async()=>{
+  const ctx={...context,movies:movies.slice(0,3).map(m=>({...m,sessions:[...m.sessions,{...m.sessions[0],id:`extra-${m.id}`,time:'22:30'}]}))};
+  for(const programLayout of ['program-cards','program-grid','program-days']) {
+    const r=await engine.renderSocialPost({templateId:'multi-movies',movieIds:['p0','p1','p2'],programLayout},ctx,{loadImage,skipRaster:true});
+    const elements=flattenElements(r.scene.elements);
+    assert.equal(elements.filter(e=>e.type==='text' && /24\/09/.test(e.text)).length,1,programLayout);
+    assert.equal(elements.filter(e=>e.type==='text' && /22H30/.test(e.text)).length,3,programLayout);
+    assert.equal(r.scene.sourceDraft.programSessionCount,6);
+    assert.equal(r.scene.sourceDraft.programSolidFallback,undefined);
+    assert.ok(elements.some(e=>e.id==='program-atmosphere'));
+    assert.ok(validateArtworkLayout(r.scene).valid);
+  }
+});
+
+test('três direções de campanha alteram a geometria, não apenas a cor',async()=>{
+  const geometries=new Set();
+  for(const programLayout of ['program-cards','program-grid','program-days']) {
+    const r=await engine.renderSocialPost({templateId:'multi-movies',movieIds:['p0','p1','p2'],programLayout},context,{loadImage,skipRaster:true,artworkRetried:true});
+    const posters=flattenElements(r.scene.elements).filter(e=>e.id.startsWith('movie-art-'));
+    assert.equal(posters.length,3);
+    geometries.add(JSON.stringify(posters.map(e=>[e.x,e.y,e.width,e.height])));
+    if(programLayout==='program-grid')assert.ok(posters[0].width*posters[0].height>posters[1].width*posters[1].height*2);
+  }
+  assert.equal(geometries.size,3);
+});
+
+test('duas datas preservam mosaico e associações de cada horário',async()=>{
+  const ctx={...context,movies:movies.slice(0,3).map((m,i)=>({...m,sessions:i===0?[...m.sessions,{...m.sessions[0],id:'tomorrow',date:'2026-09-25'}]:m.sessions}))};
+  const r=await engine.renderSocialPost({templateId:'multi-movies',movieIds:['p0','p1','p2'],programLayout:'program-grid'},ctx,{loadImage,skipRaster:true,artworkRetried:true});
+  assert.equal(r.draft.resolvedProgramLayout,'program-grid');
+  assert.equal(r.scene.sourceDraft.programSessionCount,4);
+  assert.equal(r.scene.sourceDraft.programBindings.length,4);
+  assert.equal(new Set(r.scene.sourceDraft.programBindings.map(b=>b.id)).size,4);
+  assert.ok(validateArtworkLayout(r.scene).valid);
+});
+
+test('comparação do workspace retorna três estruturas com nomes próprios',async()=>{
+  const {generateVariations}=require('../backend/services/social-studio/composition-engine/variations');
+  const result=await generateVariations({templateId:'multi-movies',movieIds:['p0','p1','p2'],workspaceVersion:2,formatId:'feed_portrait',programStyle:'cinematic'},context,{loadImage});
+  assert.equal(result.variations.length,3);
+  assert.equal(new Set(result.variations.map(v=>v.draft.resolvedProgramLayout)).size,3);
+  assert.deepEqual(new Set(result.variations.map(v=>v.name)),new Set(['Cartazes editoriais','Destaque e mosaico','Agenda por dia']));
 });

@@ -88,6 +88,21 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   let palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
     : await extractPalette(sourceBuffer, brand), draft.paletteId);
+  if(programming && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
+    const palettes=[];
+    for(const film of draft.programMovies) {
+      const buffer=await loadArtwork(film.posterUrl || film.backdropUrl);
+      if(buffer)palettes.push(await extractPalette(buffer,brand));
+    }
+    if(palettes.length) {
+      palette={...palettes[0]};
+      const {mix}=require('./palette');
+      for(const [index,colors] of palettes.slice(1).entries()) {
+        palette.dominantColor=mix(palette.dominantColor,colors.dominantColor,1/(index+2));
+        palette.secondaryColor=mix(palette.secondaryColor,colors.secondaryColor,1/(index+2));
+      }
+    }
+  }
   let logoUrl = signatureUrl(draft, context);
   if((draft.templateId==='ticket-offer' || concession || draft.movieFamily) && logoUrl) {
     const logo=await loadArtwork(logoUrl);

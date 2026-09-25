@@ -45,6 +45,10 @@ function validateArtworkLayout(scene) {
     if(!actual || expected.id!=='title' && actual.text.replace(/\s+/g,' ').replace(/-\s+/g,'-').trim()!==expected.text.replace(/-\s+/g,'-'))add('MOVIE_CONTENT',expected.id,'Mantenha os dados completos da campanha.');
   }
   if(scene.sourceDraft.officialProgramLayout) {
+    if(scene.sourceDraft.programImagesRequired) {
+      const expected=scene.sourceDraft.programImageIds || [];
+      if(!expected.length || expected.some(id=>!art.some(e=>e.id===id && e.src && e.opacity>=.95)))add('PROGRAM_IMAGES_REQUIRED','artwork','Mantenha as imagens dos filmes na programação.');
+    }
     for(const expected of scene.sourceDraft.programManifest || []) {
       const actual=text.find(e=>e.id===expected.id);
       if(!actual || actual.text.replace(/\s+/g,' ').trim()!==expected.text)add('PROGRAM_CONTENT',expected.id,'A programação perdeu ou alterou informação. Gere a arte novamente a partir das sessões.');
@@ -54,7 +58,7 @@ function validateArtworkLayout(scene) {
       if(e.text.split('\n').length>2 || e.fontSize<28*w/1080)add('PROGRAM_TITLE',e.id,'O título precisa caber em até duas linhas legíveis.');
     }
     if(art.some(e=>e.fit!=='contain' || e.rotation || e.effects?.scale>1))add('PROGRAM_POSTER','artwork','Preserve o formato e o alinhamento dos pôsteres.');
-    if(scene.sourceDraft.programPosterMode!=='featured' && art.some(e=>Math.abs(e.width-art[0].width)>2 || Math.abs(e.height-art[0].height)>2))add('PROGRAM_POSTER_EQUALITY','artwork','Use pôsteres equivalentes ou escolha explicitamente um filme em destaque.');
+    if(!scene.sourceDraft.programArtworkHierarchy && scene.sourceDraft.programPosterMode!=='featured' && art.some(e=>Math.abs(e.width-art[0].width)>2 || Math.abs(e.height-art[0].height)>2))add('PROGRAM_POSTER_EQUALITY','artwork','Use pôsteres equivalentes ou escolha explicitamente um filme em destaque.');
     if(logo && (logo.x<w*.75 || logo.y<h*.75))add('PROGRAM_LOGO','logo','Mantenha a assinatura no rodapé direito.');
     for(const binding of scene.sourceDraft.programBindings || []) {
       const anchor=elements.find(e=>e.id===binding.anchorId),item=elements.find(e=>e.id===binding.id);
@@ -118,6 +122,15 @@ async function assertArtworkQuality(scene,loadImage) {
   return quality;
 }
 async function repairContrast(scene,loadImage) {
+  if(scene.sourceDraft.programCampaignVersion===2) {
+    for(const reading of await contrastReadings(scene,loadImage)) {
+      const element=scene.elements.find(e=>e.id===reading.id);
+      if(element && reading.ratio<4.5 && Math.max(reading.white,reading.dark)>=4.5)element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
+    }
+    // Repair only the reading areas; never discard the entire campaign background.
+    await repairConcessionContrast(scene,loadImage);
+    return;
+  }
   if(scene.sourceDraft.creativeMovieLayout) {
     let readings=await contrastReadings(scene,loadImage);
     const selectInk=()=>readings.forEach(r=>{const e=scene.elements.find(e=>e.id===r.id);if(e && r.ratio<4.5 && Math.max(r.white,r.dark)>=4.5)e.fill=r.white>=r.dark?'#ffffff':'#101820';});

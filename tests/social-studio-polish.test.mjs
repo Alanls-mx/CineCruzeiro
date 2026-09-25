@@ -37,7 +37,7 @@ test('artes comerciais usam apenas ativos do produto, plano ou cinema', async ()
   }
 });
 
-test('programação avança ao primeiro período real e mantém fundo editorial discreto', async () => {
+test('programação avança ao primeiro período real e deriva atmosfera dos cartazes', async () => {
   const {context, loadImage} = await fixture();
   const input = {templateId: 'multi-movies', movieIds: context.movies.map(movie => movie.id)};
   const draft = engine.normalizeDraft(input, context);
@@ -48,7 +48,10 @@ test('programação avança ao primeiro período real e mantém fundo editorial 
   const backgrounds = rendered.scene.elements.filter(element => element.id==='program-atmosphere');
   assert.equal(backgrounds.length, 1);
   assert.ok(backgrounds.every(element => element.x === 0 && element.width === rendered.scene.width));
-  assert.ok(backgrounds[0].opacity<=.2);
+  assert.ok(backgrounds[0].opacity>.2 && backgrounds[0].opacity<1);
+  assert.ok(backgrounds[0].effects.blur>0 && backgrounds[0].effects.vignette>0);
+  assert.equal(backgrounds[0].src,context.movies[0].posterUrl);
+  assert.ok(rendered.scene.elements.some(element=>element.id==='program-reading-wash'));
   assert.ok(!rendered.scene.elements.some(element=>element.id==='program-color-wash'));
   assert.ok(rendered.quality.accepted);
   assert.equal(rendered.quality.issues.some(issue => issue.code === 'REDUNDANT_CONTENT'), false);

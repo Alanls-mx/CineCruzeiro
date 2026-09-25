@@ -37,6 +37,7 @@ export default function InlineEditor() {
     const receive = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.source !== window.parent) return;
       if (event.data?.type !== 'studio:scene' || !Array.isArray(event.data.scene?.elements)) return;
+      if (revision.current === event.data.revision && current.current && JSON.stringify(current.current.present) === JSON.stringify(event.data.scene)) return;
       revision.current = event.data.revision;
       const next = createHistory(event.data.scene);
       current.current = next; setHistory(next); select(null);

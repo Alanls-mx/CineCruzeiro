@@ -10,6 +10,47 @@
     return adminIndex > 0 ? pathname.slice(0, adminIndex) : "";
   })();
   const draftKey = "cinecruzeiro.socialStudio.draft.v3";
+  const messages = {
+    stalePreview: 'A campanha mudou. Atualize a prévia e aguarde a conclusão antes de salvar ou baixar.',
+    expiredSession: 'Sua sessão expirou. Entre novamente no painel; mantenha esta página aberta para preservar o rascunho.',
+    forbidden: 'Você não tem permissão para esta ação. Solicite acesso ao administrador.',
+    network: 'A conexão foi interrompida. Seu rascunho continua nesta página. Verifique a internet e tente novamente.',
+    timeout: 'O serviço demorou para responder. Seu rascunho foi mantido. Confira o histórico antes de repetir um salvamento.',
+    invalidResponse: 'O serviço retornou uma resposta inesperada. Seu rascunho foi mantido. Tente novamente.',
+    saved: 'Arte salva no histórico.',
+  };
+
+  async function fetchStudio(path, options = {}, image = false) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const abort = () => controller.abort();
+    if (options.signal?.aborted) abort();
+    options.signal?.addEventListener('abort', abort, {once:true});
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120000);
+    try {
+      const response = await fetch(`${basePath}${path}`, {...options, signal:controller.signal, credentials:'include', cache:'no-store', headers:{'Content-Type':'application/json', ...options.headers}});
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        const detail = data.error?.message || (typeof data.error === 'string' ? data.error : '');
+        throw Object.assign(new Error(response.status===401?messages.expiredSession:response.status===403?messages.forbidden:detail || messages.invalidResponse), {status:response.status});
+      }
+      if (image) {
+        if (!/^image\/(png|jpeg)/i.test(response.headers.get('Content-Type') || '')) throw new Error(messages.invalidResponse);
+        const blob = await response.blob();
+        blob.previewToken = response.headers.get('X-Social-Scene-Id');
+        try { blob.reviewNotices = JSON.parse(decodeURIComponent(response.headers.get('X-Social-Review') || '%5B%5D')); } catch { blob.reviewNotices=[]; }
+        return blob;
+      }
+      return await response.json().catch(() => { throw new Error(messages.invalidResponse); });
+    } catch (error) {
+      if (timedOut) throw new Error(messages.timeout);
+      if (error instanceof TypeError) throw new Error(messages.network);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
+    }
+  }
   const state = {
     context: null,
     previewUrl: "",
@@ -69,20 +110,14 @@
 
   async function request(path, options = {}) {
     const tracked = {
-      '/api/admin/social-studio/posts': ['save', 'Gerar arte', 'Salvando a arte no histórico', 'Arte salva no histórico.'],
-      '/api/admin/social-studio/campaigns': ['campaign', 'Gerar campanha', 'Compondo Feed, quadrado e Story', 'Campanha criada em três formatos.'],
+      '/api/admin/social-studio/posts': ['save', 'Salvar arte', 'Salvando a arte no histórico', messages.saved],
+      '/api/admin/social-studio/campaigns': ['campaign', 'Salvar nos 3 formatos', 'Compondo Feed, quadrado e Story', 'Campanha criada em três formatos.'],
       '/api/admin/social-studio/copy': ['copy', 'Criar texto', 'Preparando uma nova sugestão', 'Sugestão de texto recebida.'],
       '/api/admin/social-studio/uploads': ['upload', 'Enviar imagem', 'Enviando e validando a imagem', 'Imagem recebida.']
     }[path];
     const operation = options.method === 'POST' && tracked ? beginOperation(tracked[0], tracked[1], tracked[2]) : null;
     try {
-    const response = await fetch(`${basePath}${path}`, {
-      ...options,
-      credentials: "include",
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) }
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error?.message || data.error || "Não foi possível concluir a operação.");
+    const data = await fetchStudio(path, options);
     operation?.finish(tracked[3]);
     return data;
     } catch (error) {
@@ -92,21 +127,7 @@
   }
 
   async function requestImage(path, body, signal) {
-    const response = await fetch(`${basePath}${path}`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error?.message || data.error || "Não foi possível gerar a prévia.");
-    }
-    const blob=await response.blob();
-    blob.previewToken=response.headers.get('X-Social-Scene-Id');
-    try {blob.reviewNotices=JSON.parse(decodeURIComponent(response.headers.get('X-Social-Review') || '%5B%5D'));} catch {blob.reviewNotices=[];}
-    return blob;
+    return fetchStudio(path, {method:'POST', body:JSON.stringify(body), signal}, true);
   }
 
   function notify(message, type = "ok") {
@@ -129,7 +150,7 @@
     return ['sessions-today','sessions-week','multi-movies'].includes(id)?'programming':id==='ticket-offer'?'ticket':id==='online-ticket'?'online':id.startsWith('concession-')?'concession':'movie';
   }
   const workspaceLayouts={movie:['movie-editorial-light','movie-immersive','movie-spotlight'],programming:['program-cards','program-grid','program-days'],concession:['product-price','product-lateral','hero-product'],ticket:['price-impact','campaign-led','ticket-burst'],online:['hero-left','hero-center','typography-dominant']};
-  const layoutNames={'automatic':'Automática','movie-editorial-light':'Imagem e texto','movie-immersive':'Imagem imersiva','movie-spotlight':'Data em destaque','program-cards':'Cartazes e horários','program-grid':'Grade de filmes','program-days':'Agenda por dia','product-price':'Produto e preço','product-lateral':'Produto lateral','hero-product':'Produto em destaque','price-impact':'Preço em destaque','campaign-led':'Campanha em foco','ticket-burst':'Ingresso promocional','hero-left':'Imagem e chamada','hero-center':'Imagem central','typography-dominant':'Texto em destaque'};
+  const layoutNames={'automatic':'Automática','movie-editorial-light':'Imagem e texto','movie-immersive':'Imagem imersiva','movie-spotlight':'Data em destaque','program-cards':'Cartazes editoriais','program-grid':'Destaque e mosaico','program-days':'Agenda por dia','product-price':'Produto e preço','product-lateral':'Produto lateral','hero-product':'Produto em destaque','price-impact':'Preço em destaque','campaign-led':'Campanha em foco','ticket-burst':'Ingresso promocional','hero-left':'Imagem e chamada','hero-center':'Imagem central','typography-dominant':'Texto em destaque'};
 
   function simplifyWorkspace() {
     const byId=id=>document.getElementById(id);
@@ -156,7 +177,8 @@
     byId('socialInspectorContent').append(texts);
     const programVisual=document.createElement('details');programVisual.id='socialProgramVisual';programVisual.className='social-property-section';programVisual.open=true;
     programVisual.innerHTML='<summary>Cartazes e cores</summary><div class="social-property-body"></div>';
-    ['socialStudioProgramStyle','socialStudioProgramUseImages','socialStudioProgramPosterMode','socialStudioFeaturedMovie'].forEach(id=>programVisual.lastElementChild.append(byId(id).closest('label')));
+    ['socialStudioProgramStyle','socialStudioProgramPosterMode','socialStudioFeaturedMovie'].forEach(id=>programVisual.lastElementChild.append(byId(id).closest('label')));
+    byId('socialStudioProgramUseImages').closest('label').remove();
     byId('socialInspectorImage').prepend(programVisual);
     const auto=document.createElement('label');auto.className='social-toggle';auto.innerHTML='<input id="socialStudioAutoProgram" type="checkbox" checked /> Selecionar filmes automaticamente';
     byId('socialStudioMovieSelections').before(auto);
@@ -169,6 +191,17 @@
     const format=byId('socialStudioFormat').closest('label');format.classList.add('social-toolbar-format');root.querySelector('.social-preview-toolbar').prepend(format);
     const iframe=document.createElement('iframe');iframe.id='socialStudioInlineEditor';iframe.title='Editor visual da campanha';iframe.hidden=true;
     iframe.src=`${basePath}/social-editor?inline=1`;byId('socialStudioPreviewCanvas').append(iframe);
+    const recover=document.createElement('button');recover.type='button';recover.id='socialStudioRecoverEdits';recover.className='ghost-button';recover.textContent='Restaurar ajustes anteriores';recover.hidden=true;
+    byId('socialStudioManualEdit').after(recover);
+    recover.addEventListener('click',async()=>{
+      const saved=state.previousManual;
+      if(!saved)return;
+      preserveManualEdits();
+      applyDraft(saved.draft,saved.draft.caption || '');
+      state.pendingInlineRestore=saved.scene;
+      saveDraftLocal();
+      await updatePreview({force:true});
+    });
     window.addEventListener('message',event=>{
       if(event.origin!==window.location.origin || event.source!==iframe.contentWindow)return;
       if(event.data?.type==='studio:ready'){state.inlineReady=true;sendInlineScene();}
@@ -176,6 +209,7 @@
         window.clearTimeout(state.previewTimer);
         state.previewVersion++;
         state.previewAbort?.abort();
+        state.previewing=false;
         state.manualScene=event.data.scene;state.inlineEdited=true;state.activePostId='';state.animationKey=null;
         setStatus('Alterações visuais no rascunho.','ok');saveDraftLocal();
       }
@@ -198,7 +232,7 @@
     byId('socialStudioProgramSummary').textContent=`${count} filmes selecionados pela programação`;
     byId('socialStudioProgramLayout').closest('label').hidden=true;
     byId('socialStudioShowSessions').closest('label').hidden=program;
-    byId('socialStudioFeaturedMovie').closest('label').hidden=!byId('socialStudioProgramUseImages').checked || value('socialStudioProgramPosterMode')!=='featured';
+    byId('socialStudioFeaturedMovie').closest('label').hidden=value('socialStudioProgramPosterMode')!=='featured';
     for(const [id,meaning] of [['socialStudioReleaseDate','release'],['socialStudioPresaleDate','presale'],['socialStudioSessionDate','session']])byId(id).closest('label').hidden=value('socialStudioDateKind')!==meaning;
     byId('socialStudioDate').closest('label').hidden=value('socialStudioDateTextMode')==='automatic';
     const animations=program?['automatic','poster-cascade','cinema-lineup','featured-cycle']:kind==='movie'?['automatic','cinematic-reveal','slow-parallax','poster-reveal']:['automatic','commercial-focus','editorial'];
@@ -631,12 +665,14 @@
     const programLayouts=state.context?.programLayouts?.[template?.id];
     const count=[...root.querySelectorAll('[data-program-movie]')].filter(node=>node.value).length;
     const available=(state.context.workspaceLayouts || workspaceLayouts)[campaignKind()] || [];
-    const choices=available.filter(id=>id==='program-cards'?count>=3 && count<=4:id==='program-grid'?count>=3 && count<=6:true);
+    const choices=available.filter(id=>id==='program-cards'?count>=1 && count<=4:id==='program-grid'?count>=2 && count<=6:true);
     const styles=[{id:'automatic',name:'Automática'},...choices.map(id=>({id,name:layoutNames[id]}))];
     const movie = artworkMovie();
     const concession = state.context.concessions?.find((item) => String(item.id) === value("socialStudioConcession"));
     const plan = state.context.clubPlans?.find((item) => String(item.id) === value("socialStudioClub"));
     const artwork = ['concession-combo','concession-offer'].includes(template?.id) ? concession?.imageUrl : template?.id === "club-plan" ? plan?.imageUrl : movie?.posterUrl;
+    const programArtwork=programLayouts?[...root.querySelectorAll('[data-program-movie]')].map(node=>state.context.movies?.find(movie=>String(movie.id)===node.value)).filter(Boolean).slice(0,3).map(movie=>movie.posterUrl || movie.backdropUrl).filter(Boolean):[];
+    const miniArtwork=(programLayouts?programArtwork:artwork?[artwork]:[]).map(src=>`<img src="${escapeHtml(assetUrl(src))}" alt="" />`).join('');
     const names = ['concession-combo','concession-offer'].includes(template?.id)
       ? {"hero-left":"Produto + oferta", "hero-right":"Oferta + produto", "poster-dominant":"Produto em destaque", split:"Vitrine", automatic:"Direção automática"}
       : template?.id === "club-plan"
@@ -645,7 +681,7 @@
     if(programLayouts?.length) selected=value('socialStudioProgramLayout','automatic');
     const chosen = styles.some(style => style.id === selected) ? selected : "automatic";
     document.getElementById("socialStudioStyles").innerHTML = styles.map((style) => `
-      <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === chosen ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}" aria-hidden="true">${artwork ? `<img src="${escapeHtml(assetUrl(artwork))}" alt="" />` : ""}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
+      <label><input type="radio" name="socialStudioStyle" value="${escapeHtml(style.id)}" ${style.id === chosen ? "checked" : ""} data-requires-create /><span><i class="social-layout-mini social-layout-mini--${escapeHtml(style.id)}${programLayouts?' social-layout-mini--program':''}" aria-hidden="true">${miniArtwork}<b></b><em></em></i>${escapeHtml(names[style.id] || style.name)}</span></label>`).join("");
   }
 
   function syncCompositionControls() {
@@ -783,6 +819,7 @@
 
   async function openReadyPost(post) {
     if (!post) return;
+    preserveManualEdits();
     applyDraft({ ...post.draft, caption: post.caption }, post.caption);
     renderNotices(post.notices || []);
     saveDraftLocal();
@@ -797,6 +834,7 @@
     clearTimeout(state.previewTimer);
     state.previewAbort?.abort();
     state.previewVersion++;
+    state.previewing=false;state.resolving=false;state.resolveVersion++;
     stopMotion();
     state.animationAbort?.abort();state.animationKey=null;
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
@@ -811,6 +849,7 @@
     editButton.disabled = !post.editable || state.context?.capabilities?.create === false;
     editButton.title = post.editable ? "Abrir o editor visual desta arte" : "Gere uma nova arte com o Engine V2 para editar os elementos";
     if (post.payload) applyDraft(post.payload, post.caption || "");
+    state.previewKey=previewCacheKey(payload());
     if (post.width && post.height) {
       state.previewDimensions = {width: post.width, height: post.height};
       document.getElementById("socialStudioPreviewStage").style.setProperty("--social-preview-ratio", `${post.width} / ${post.height}`);
@@ -883,7 +922,7 @@
     const fixedSchedule=['sessions-today','sessions-week'].includes(currentTemplate()?.id);
     const programSelect=document.getElementById('socialStudioProgramLayout');
     const selected=programSelect.value;
-    const names={'program-hero':'Um filme','program-duo':'Dupla','program-cards':'Cards editoriais','program-grid':'Grade compacta','program-list':'Lista compacta','program-days':'Agenda por dia'};
+    const names={'program-hero':'Filme protagonista','program-duo':'Dupla de cartazes','program-cards':'Cartazes editoriais','program-grid':'Destaque e mosaico','program-list':'Lista premium','program-days':'Agenda por dia'};
     const layouts=state.context?.programLayouts?.[currentTemplate()?.id] || [];
     programSelect.innerHTML='<option value="automatic">Automática pela quantidade</option>'+layouts.map(id=>`<option value="${escapeHtml(id)}">${escapeHtml(names[id] || id)}</option>`).join('');
     programSelect.value=layouts.includes(selected)?selected:'automatic';
@@ -903,9 +942,8 @@
   }
 
   function syncProgramImageControls() {
-    const enabled=document.getElementById('socialStudioProgramUseImages').checked;
-    document.getElementById('socialStudioProgramPosterMode').disabled=!enabled || state.context?.capabilities?.create===false;
-    document.getElementById('socialStudioFeaturedMovie').disabled=!enabled || state.context?.capabilities?.create===false;
+    document.getElementById('socialStudioProgramPosterMode').disabled=state.context?.capabilities?.create===false;
+    document.getElementById('socialStudioFeaturedMovie').disabled=state.context?.capabilities?.create===false;
   }
 
   function fillProgramFromSchedule() {
@@ -993,7 +1031,7 @@
       movieIds: [...document.querySelectorAll('[data-program-movie]')].map(select=>select.value).filter(Boolean),
       multiLayout: value('socialStudioMultiLayout','grid'),
       programLayout:value('socialStudioProgramLayout','automatic'),
-      programStyle:value('socialStudioProgramStyle','automatic'),programPosterMode:document.getElementById('socialStudioProgramUseImages').checked?value('socialStudioProgramPosterMode','equal'):'none',
+      programStyle:value('socialStudioProgramStyle','automatic'),programPosterMode:value('socialStudioProgramPosterMode','equal'),
       programColumns:Number(value('socialStudioProgramColumns',0)),programGap:Number(value('socialStudioProgramGap',24)),programDays:Number(value('socialStudioProgramDays',1)),
       featuredMovieId:value('socialStudioFeaturedMovie'),
       scheduleMode: value('socialStudioScheduleMode','week'),
@@ -1080,7 +1118,6 @@
     setControl('socialStudioMultiLayout',draft.multiLayout || 'grid');
     setControl('socialStudioProgramLayout',draft.programLayout || 'automatic');
     setControl('socialStudioProgramStyle',draft.programStyle==='posters'?'automatic':draft.programStyle || 'automatic');
-    document.getElementById('socialStudioProgramUseImages').checked=draft.programPosterMode!=='none';
     setControl('socialStudioProgramPosterMode',draft.programPosterMode==='featured'?'featured':'equal');
     setControl('socialStudioFeaturedMovie',draft.featuredMovieId || '');
     setControl('socialStudioScheduleMode',draft.scheduleMode || 'week');
@@ -1336,12 +1373,27 @@
   }
 
   function previewCacheKey(data) {
-    return JSON.stringify({ ...data, caption: undefined });
+    return JSON.stringify({ ...data, caption: undefined, animation: undefined });
   }
 
   function cachePreview(key, blob) {
     state.previewCache.set(key, blob);
     if (state.previewCache.size > 8) state.previewCache.delete(state.previewCache.keys().next().value);
+  }
+
+  function preserveManualEdits() {
+    if(state.manualScene && state.inlineDraft) {
+      state.previousManual={scene:state.manualScene,draft:state.inlineDraft};
+      const recover=document.getElementById('socialStudioRecoverEdits');
+      if(recover)recover.hidden=false;
+    }
+    state.manualScene=null;state.manualRenderedScene=null;state.inlineEdited=false;state.inlineDirtyKey=null;
+    state.inlineScene=null;state.inlineRevision=(state.inlineRevision || 0)+1;
+    showInlineEditor(false);
+  }
+
+  function assertPreviewCurrent() {
+    if (state.resolving || state.previewing || state.previewKey!==previewCacheKey(payload()) || (!state.previewToken && !state.activePostId)) throw new Error(messages.stalePreview);
   }
 
   function sendInlineScene() {
@@ -1365,20 +1417,23 @@
       if(state.previewToken!==token)return;
       state.inlineScene=result.scene;state.inlineRevision=(state.inlineRevision || 0)+1;
       state.manualScene=state.pendingInlineRestore || null;state.pendingInlineRestore=null;
+      state.manualRenderedScene=null;
       state.inlineEdited=Boolean(state.manualScene);state.inlineKey=previewCacheKey(payload());
+      state.inlineDraft=payload();
       state.inlineDirtyKey=null;
       document.getElementById('socialStudioManualEdit').disabled=false;
       sendInlineScene();showInlineEditor();
     } catch(error){setStatus(`Prévia disponível. Editor: ${error.message}`,'error');}
   }
   async function prepareEditedPreview() {
+    assertPreviewCurrent();
     if(state.inlineDirtyKey || state.manualScene && state.inlineKey!==previewCacheKey(payload()))throw new Error('Os dados da campanha mudaram. Clique em Atualizar prévia para recompor antes de exportar.');
-    if(!state.manualScene)return;
+    if(!state.manualScene || state.manualScene===state.manualRenderedScene)return;
     const scene=state.manualScene,token=state.previewToken;
     const blob=await requestImage('/api/admin/social-studio/preview',{scene,previewToken:token,outputType:value('socialStudioOutput','png')});
     if(state.manualScene!==scene)throw new Error('A arte mudou durante a revisão. Tente exportar novamente.');
     displayPreview(blob, payload().title, true);
-    state.manualScene=null;state.inlineScene=scene;saveDraftLocal();
+    state.manualRenderedScene=scene;state.inlineScene=scene;saveDraftLocal();
   }
 
   function displayPreview(blob, alt = "Prévia da arte social", edited = false) {
@@ -1386,6 +1441,7 @@
     if (state.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(state.previewUrl);
     state.previewBlob = blob;
     state.previewToken=blob.previewToken;
+    state.previewKey=previewCacheKey(payload());
     state.previewUrl = URL.createObjectURL(blob);
     const stage = document.getElementById("socialStudioPreviewStage");
     stage.classList.remove('is-rendering');
@@ -1399,11 +1455,7 @@
   }
 
   async function updatePreview(options = {}) {
-    if(state.manualScene && !options.discardManual) {
-      state.inlineDirtyKey=previewCacheKey(payload());
-      setStatus('Atualizar prévia recompõe a campanha e substitui os ajustes visuais atuais. Seus ajustes continuam no canvas.','warning');
-      return;
-    }
+    if(state.manualScene)preserveManualEdits();
     stopMotion();
     if (state.context?.capabilities?.create === false) return;
     const data = payload();
@@ -1426,13 +1478,13 @@
     setStatus("Atualizando a composição...", "loading");
     try {
       const resolved = await request('/api/admin/social-studio/resolve',{method:'POST',body:JSON.stringify(data),signal:state.previewAbort.signal});
-      if(version!==state.previewVersion) return;
+      if(version!==state.previewVersion || key!==previewCacheKey(payload())) return;
       renderNotices(resolved.notices || []);
       state.previewNotices.set(key,resolved.notices || []);
       if(state.previewNotices.size>8) state.previewNotices.delete(state.previewNotices.keys().next().value);
       operation.stage('Compondo e renderizando a imagem');
       const blob = await requestImage("/api/admin/social-studio/preview", data, state.previewAbort.signal);
-      if (version !== state.previewVersion) return;
+      if (version !== state.previewVersion || key!==previewCacheKey(payload())) return;
       cachePreview(key, blob);
       if(blob.reviewNotices?.length) {
         const notices=[...(resolved.notices || []),...blob.reviewNotices];
@@ -1455,11 +1507,7 @@
   }
 
   function schedulePreview(delay = 300) {
-    if(state.manualScene) {
-      state.inlineDirtyKey=previewCacheKey(payload());
-      setStatus('Os dados mudaram. Atualizar prévia recompõe a arte e substitui os ajustes visuais atuais.','warning');
-      return;
-    }
+    if(state.manualScene)preserveManualEdits();
     state.activePostId='';state.previewToken=null;
     state.animationAbort?.abort();
     stopMotion();
@@ -1532,6 +1580,7 @@
     if (state.context?.capabilities?.create === false) return;
     if (["similar","hierarchy"].includes(action)) { await generateVariations({ variationMode: action, draft: variation.draft }); return; }
     if (state.generating) return;
+    preserveManualEdits();
     state.styleManuallySelected = true;
     applyDraft({...variation.draft,automaticStyle:false},variation.draft.caption || value("socialStudioCaption"));
     saveDraftLocal();
@@ -1558,14 +1607,14 @@
       target.innerHTML=`<div class="social-variations-head"><h3>Melhores composições</h3><span>${result.evaluatedCount || result.variations.length} avaliadas · ${result.variations.length} selecionadas</span></div><div class="social-variations-grid">${result.variations.map((v,i)=>variationCard(v,i)).join("")}</div>${result.notices.map(n=>`<p>${escapeHtml(n)}</p>`).join("")}`;
       target.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});
     } catch(error){operation.fail(error);if(version===state.variationVersion)target.textContent=error.name==='AbortError'?'Geração de variações cancelada.':error.message;}
-    finally {operation.cancel();if(version===state.variationVersion){button.disabled=state.context?.capabilities?.create===false;button.textContent="Gerar variações";}}
+    finally {operation.cancel();if(version===state.variationVersion){button.disabled=state.context?.capabilities?.create===false;button.textContent="Comparar 3 composições";}}
   }
 
   async function generateAnimation(download = false) {
     if(state.context?.capabilities?.create===false || state.animationBusy) return;
     const data=payload(),draftKey=previewCacheKey(data),button=document.getElementById('socialStudioAnimationExport');
     data.animation.quality=download?'final':'preview';
-    const key=previewCacheKey(data);
+    const key=JSON.stringify({draft:previewCacheKey(data),animation:data.animation});
     state.animationBusy=true;button.disabled=true;button.textContent='Preparando animação...';
     const controller=new AbortController();state.animationAbort=controller;
     const operation = beginOperation('animation', download ? 'Exportar animação' : 'Prévia animada', 'Preparando a arte aprovada', () => controller.abort());
@@ -1632,7 +1681,7 @@
     window.clearTimeout(state.autosaveTimer);
     state.autosaveTimer = window.setTimeout(() => {
       try {
-        localStorage.setItem(draftKey, JSON.stringify({...payload(),inlineScene:state.manualScene || (state.inlineEdited?state.inlineScene:undefined)}));
+        localStorage.setItem(draftKey, JSON.stringify({...payload(),inlineScene:state.manualScene || state.pendingInlineRestore || (state.inlineEdited?state.inlineScene:undefined),previousManual:state.previousManual}));
         label.textContent = "Rascunho salvo";
         label.dataset.state = "saved";
       } catch {
@@ -1648,6 +1697,8 @@
       if (!saved || !state.context.templates.some((template) => template.id === saved.templateId)) return false;
       applyDraft(saved, saved.caption || "");
       state.pendingInlineRestore=saved.inlineScene || null;
+      state.previousManual=saved.previousManual || null;
+      document.getElementById('socialStudioRecoverEdits').hidden=!state.previousManual;
       setStatus("Rascunho local restaurado.", "ok");
       return true;
     } catch {
@@ -1661,6 +1712,7 @@
     state.previewVersion++;
     state.previewAbort?.abort();
     const version = ++state.resolveVersion;
+    const inputKey=previewCacheKey(payload());
     state.resolving = true;
     const operation = beginOperation('resolve', 'Carregar conteúdo', 'Consultando programação, preços e textos');
     setStatus("Carregando dados atuais do painel...", "loading");
@@ -1677,7 +1729,7 @@
         base.releaseDate=undefined;base.sessionDate=undefined;
       }
       const result = await request("/api/admin/social-studio/resolve", { method: "POST", body: JSON.stringify(base) });
-      if (version !== state.resolveVersion) return;
+      if (version !== state.resolveVersion || inputKey!==previewCacheKey(payload())) return;
       applyDraft(result.draft, result.caption);
       renderNotices(result.notices || []);
       saveDraftLocal();
@@ -1698,19 +1750,22 @@
     state.generating = true;
     const button = document.getElementById("socialStudioGenerateButton");
     button.disabled = true;
-    button.textContent = "Gerando...";
-    setStatus("Gerando e salvando o arquivo final...", "loading");
+    button.textContent = "Salvando...";
+    setStatus("Salvando a arte revisada...", "loading");
     try {
       await prepareEditedPreview();
+      const key=previewCacheKey(payload()),revision=state.manualScene;
       const result = await request("/api/admin/social-studio/posts", { method: "POST", body: JSON.stringify({...payload(),previewToken:state.previewToken}) });
       state.context.history = result.history || [result.post, ...(state.context.history || [])];
       state.historyPage = 1;
       renderHistory();
-      const inline={scene:state.inlineScene,token:state.previewToken,edited:state.inlineEdited};
-      showSavedPost(result.post);
-      if(inline.scene){state.inlineScene=inline.scene;state.previewToken=inline.token;state.inlineEdited=inline.edited;state.inlineKey=previewCacheKey(payload());sendInlineScene();showInlineEditor();}
-      setStatus("Arte adicionada ao histórico.", "ok");
-      notify("Arte social gerada com sucesso.");
+      if(key===previewCacheKey(payload()) && revision===state.manualScene) {
+        const inline={scene:state.inlineScene,token:state.previewToken,edited:state.inlineEdited};
+        showSavedPost(result.post);
+        if(inline.scene){state.inlineScene=inline.scene;state.previewToken=inline.token;state.inlineEdited=inline.edited;state.manualScene=inline.edited?inline.scene:null;state.manualRenderedScene=state.manualScene;state.inlineKey=previewCacheKey(payload());state.inlineDraft=payload();sendInlineScene();showInlineEditor();}
+      }
+      setStatus(messages.saved, "ok");
+      notify(messages.saved);
       return result.post;
     } catch (error) {
       setStatus(error.message, "error");
@@ -1746,18 +1801,22 @@
     } finally {
       state.generating = false;
       button.disabled = state.context?.capabilities?.create === false;
-      button.textContent = "Gerar campanha";
+      button.textContent = "Salvar nos 3 formatos";
     }
   }
 
   async function downloadPreview() {
     try {await prepareEditedPreview();} catch(error){setStatus(error.message,'error');return;}
     if (!state.previewUrl) return;
-    const extension = value("socialStudioOutput") === "jpg" ? "jpg" : "png";
+    if(state.activePostId && !state.previewToken) {
+      const link=document.createElement('a');link.href=`${basePath}/api/admin/social-studio/posts/${encodeURIComponent(state.activePostId)}/download`;link.click();return;
+    }
+    const extension = state.previewBlob?.type === 'image/jpeg' ? 'jpg' : 'png';
     const link = document.createElement("a");
     link.href = state.previewUrl;
     link.download = `previa-${value("socialStudioFormat")}.${extension}`;
     link.click();
+    setStatus('Arquivo pronto. Download solicitado ao navegador.','ok');
   }
 
   function resetArtworkMetadata() {
@@ -1774,6 +1833,9 @@
       notify("Use uma imagem JPG, PNG ou WebP de até 5 MB.", "error");
       return;
     }
+    const uploadKey=previewCacheKey(payload());
+    const slot=background?'backgroundUploadVersion':'imageUploadVersion';
+    const version=state[slot]=(state[slot] || 0)+1;
     setStatus("Enviando imagem personalizada...", "loading");
     const data = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1785,6 +1847,7 @@
       method: "POST",
       body: JSON.stringify({ data, filename: file.name, contentType: file.type })
     });
+    if(version!==state[slot] || uploadKey!==previewCacheKey(payload())) {setStatus('A criação mudou durante o envio. Selecione a imagem novamente na campanha desejada.','warning');return;}
     if(background) {
       setControl('socialStudioBackgroundUrl',result.url);setControl('socialStudioBackgroundMode','upload');
       document.getElementById('socialStudioBackgroundState').textContent=file.name;
@@ -1841,6 +1904,7 @@
     const post = findPost(button.dataset.socialId);
     if (!post) return;
     if (button.dataset.socialAction === "view") {
+      preserveManualEdits();
       showSavedPost(post);
       document.querySelector(".social-preview-pane")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
@@ -1850,6 +1914,7 @@
       return;
     }
     if (button.dataset.socialAction === "duplicate") {
+      preserveManualEdits();
       const postPayload = post.payload || {};
       applyDraft({ ...postPayload, formatId: postPayload.formatId || post.formatId, outputType: postPayload.outputType || post.outputType }, post.caption || "");
       renderNotices([]);
@@ -1949,10 +2014,10 @@
         const button=event.currentTarget;
         if(row.querySelector('input').checked) {setStatus('Este texto está marcado para ser mantido.');return;}
         button.disabled=true;
-        const original=control.value,entityKey=JSON.stringify([payload().movieId,payload().templateId,payload().concessionId,payload().clubPlanId]);
+        const original=control.value,entityKey=previewCacheKey(payload());
         try {
           const result=await request('/api/admin/social-studio/copy',{method:'POST',body:JSON.stringify({...payload(),copySeed:state.copySeed=(state.copySeed || 0)+1})});
-          if(control.value!==original || row.querySelector('input').checked || entityKey!==JSON.stringify([payload().movieId,payload().templateId,payload().concessionId,payload().clubPlanId])) return;
+          if(control.value!==original || row.querySelector('input').checked || entityKey!==previewCacheKey(payload())) return;
           control.value=result.bundle[field];saveDraftLocal();if(field!=='caption')schedulePreview();
         } catch(error) {setStatus(error.message,'error');} finally {button.disabled=false;}
       });
@@ -2012,7 +2077,7 @@
       if (button.dataset.socialReadyAction === "create") createReadyPost(post, button);
     });
     document.getElementById("socialStudioTemplates").addEventListener("change", async () => {
-      if(!state.manualScene){state.inlineScene=null;state.inlineDirtyKey=null;showInlineEditor(false);}
+      preserveManualEdits();
       state.styleManuallySelected=false;setRadio('socialStudioStyle','automatic');
       setControl('socialStudioProgramLayout','automatic');state.programSelectionTouched=false;
       root.querySelectorAll('[data-program-movie]').forEach(node=>node.value='');
@@ -2057,7 +2122,6 @@
     form.addEventListener("change", (event) => {
       if(event.target.matches('[data-program-movie]'))state.programSelectionTouched=true;
       if(event.target.id==='socialStudioPeriodStart')state.programDateTouched=true;
-      if(event.target.id==='socialStudioProgramUseImages')syncProgramImageControls();
       if((event.target.matches('[data-program-movie]') || event.target.id==='socialStudioPeriodStart') && state.context?.programLayouts?.[currentTemplate()?.id]) {
         resolveDefaults({resetCopy:false});
         return;
@@ -2113,13 +2177,13 @@
         notify("Legenda copiada.");
       } catch {
         document.getElementById("socialStudioCaption").select();
-        document.execCommand("copy");
-        notify("Legenda copiada.");
+        const copied=document.execCommand("copy");
+        notify(copied?"Legenda copiada.":"Não foi possível copiar. A legenda foi selecionada para cópia manual.",copied?'ok':'error');
       }
     });
     document.getElementById("socialStudioHistoryGrid").addEventListener("click", (event) => {
       const button = event.target.closest("[data-social-action]");
-      if (button) handleHistoryAction(button);
+      if (button) handleHistoryAction(button).catch(error=>notify(error.message,'error'));
     });
     document.getElementById("socialStudioHistoryPager").addEventListener("click", (event) => {
       const button = event.target.closest("[data-social-page]");

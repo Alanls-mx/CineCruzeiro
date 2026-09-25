@@ -11599,7 +11599,7 @@ async function handleApi(req, res, pathname) {
     const context = socialStudioContext(db);
     require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,context));
     const rendered = body.previewToken
-      ? require('./services/social-studio/remotion/snapshots').read(String(req.adminUser.id),body.previewToken)
+      ? require('./services/social-studio/scene/preview-edit').withCaption(require('./services/social-studio/remotion/snapshots').read(String(req.adminUser.id),body.previewToken),body.caption)
       : await renderSocialPost(body, context, { loadImage: loadSocialStudioImage });
     require('./services/social-studio/engine/content-rules').assertContentReady(rendered.draft);
     const uploaded = await storageService.uploadImageBuffer({
@@ -11716,7 +11716,8 @@ async function handleApi(req, res, pathname) {
     }
     if (action === "scene-draft" && method === "PUT") {
       const body = await readBody(req);
-      const scene = normalizeSocialScene(body.scene || body);
+      const trustedScene=await editableSceneForPost(post,db);
+      const scene = normalizeSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body));
       const now = new Date().toISOString();
       const updated = {
         ...post,
@@ -11733,7 +11734,8 @@ async function handleApi(req, res, pathname) {
     if (action === "scene-versions" && method === "POST") {
       const body = await readBody(req);
       const outputType = body.outputType === "jpg" ? "jpg" : "png";
-      const rendered = await renderSocialScene(body.scene || body, { loadImage: loadSocialStudioImage, outputType });
+      const trustedScene=await editableSceneForPost(post,db);
+      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType });
       const uploaded = await storageService.uploadImageBuffer({
         buffer: rendered.buffer,
         filename: `${slugify(post.title || post.templateName || "post")}-editado${rendered.extension}`,
@@ -11773,7 +11775,8 @@ async function handleApi(req, res, pathname) {
     if (action === "scene-export" && method === "POST") {
       const body = await readBody(req);
       const outputType = body.outputType === "jpg" ? "jpg" : "png";
-      const rendered = await renderSocialScene(body.scene || body, { loadImage: loadSocialStudioImage, outputType });
+      const trustedScene=await editableSceneForPost(post,db);
+      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType });
       res.writeHead(200, {
         ...securityHeaders({
           "Content-Type": rendered.contentType,

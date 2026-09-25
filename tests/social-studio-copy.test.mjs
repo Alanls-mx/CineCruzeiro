@@ -58,3 +58,12 @@ test('copy usa referências do filme sem copiar a sinopse e separa ângulos edit
   assert.ok(result.candidates.every(x=>!x.bundle.caption.includes(synopsis)));
   assert.ok(new Set(result.candidates.map(x=>x.bundle.supportingText)).size>=5);
 });
+
+test('CTAs variam sem inventar compra e duração numérica recebe unidade',()=>{
+  const context={...ctx,movies:[{...ctx.movies[0],duration:120}]};
+  const result=generateCopy(normalizeV2Draft({templateId:'movie-highlight'},context),context);
+  assert.ok(new Set(result.candidates.map(x=>x.bundle.cta)).size>=3);
+  assert.ok(result.candidates.some(x=>x.bundle.caption.includes('120 minutos')));
+  const week=generateCopy(normalizeV2Draft({templateId:'sessions-week'},context),context);
+  assert.ok(week.candidates.every(x=>!x.bundle.caption.includes('SETE DIAS DE CINEMA')));
+});
