@@ -23,6 +23,19 @@ fi
 
 docker compose pull
 docker compose up -d --remove-orphans
+
+for attempt in $(seq 1 60); do
+  container="$(docker compose ps -q n8n)"
+  status="$(docker inspect --format '{{.State.Health.Status}}' "$container" 2>/dev/null || true)"
+  [[ "$status" == healthy ]] && break
+  if [[ "$status" == unhealthy || "$attempt" == 60 ]]; then
+    docker compose logs --tail=80 n8n >&2
+    echo "O n8n não ficou saudável a tempo; os workflows não foram importados." >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 for workflow in workflows/*.json; do
   docker compose exec -T n8n n8n import:workflow --input="/workflows/$(basename "$workflow")"
 done

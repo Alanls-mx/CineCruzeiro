@@ -13,7 +13,7 @@ Esta pasta contém a camada opcional de automação. O Social Studio continua ge
 
 O serviço escuta apenas em `127.0.0.1:5678`. Credenciais ficam no volume do n8n e em variáveis de ambiente; nenhum token deve ser enviado ao navegador ou salvo nos workflows.
 
-A imagem está fixada em `2.40.6`, versão estável validada para este provisionamento. Atualizações futuras devem passar pelo mesmo backup e teste dos workflows antes da troca da tag.
+A imagem está fixada em `2.40.6`, versão estável validada para este provisionamento. O JavaScript dos workflows roda em um task runner externo com a mesma versão, isolado do processo principal. Atualizações futuras devem passar pelo mesmo backup e teste dos workflows antes da troca da tag.
 
 Sem um domínio administrativo aprovado, acesse o editor somente por túnel SSH:
 
