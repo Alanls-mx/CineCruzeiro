@@ -3,7 +3,7 @@ const LAYOUTS = {
   movie: ['movie-editorial-light', 'movie-immersive', 'movie-spotlight'],
   programming: ['program-cards', 'program-grid', 'program-days'],
   concession: ['product-price', 'product-lateral', 'hero-product'],
-  ticket: ['price-impact', 'campaign-led', 'ticket-burst'],
+  ticket: ['price-impact', 'ticket-burst', 'promo-editorial'],
   online: ['hero-left', 'hero-center', 'typography-dominant']
 };
 function category(id) {

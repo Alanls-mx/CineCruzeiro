@@ -149,8 +149,8 @@
     const id=currentTemplate()?.id || '';
     return ['sessions-today','sessions-week','multi-movies'].includes(id)?'programming':id==='ticket-offer'?'ticket':id==='online-ticket'?'online':id.startsWith('concession-')?'concession':'movie';
   }
-  const workspaceLayouts={movie:['movie-editorial-light','movie-immersive','movie-spotlight'],programming:['program-cards','program-grid','program-days'],concession:['product-price','product-lateral','hero-product'],ticket:['price-impact','campaign-led','ticket-burst'],online:['hero-left','hero-center','typography-dominant']};
-  const layoutNames={'automatic':'Automática','movie-editorial-light':'Imagem e texto','movie-immersive':'Imagem imersiva','movie-spotlight':'Data em destaque','program-cards':'Cartazes editoriais','program-grid':'Destaque e mosaico','program-days':'Agenda por dia','product-price':'Produto e preço','product-lateral':'Produto lateral','hero-product':'Produto em destaque','price-impact':'Preço em destaque','campaign-led':'Campanha em foco','ticket-burst':'Ingresso promocional','hero-left':'Imagem e chamada','hero-center':'Imagem central','typography-dominant':'Texto em destaque'};
+  const workspaceLayouts={movie:['movie-editorial-light','movie-immersive','movie-spotlight'],programming:['program-cards','program-grid','program-days'],concession:['product-price','product-lateral','hero-product'],ticket:['price-impact','ticket-burst','promo-editorial'],online:['hero-left','hero-center','typography-dominant']};
+  const layoutNames={'automatic':'Automática','movie-editorial-light':'Imagem e texto','movie-immersive':'Imagem imersiva','movie-spotlight':'Data em destaque','program-cards':'Cartazes editoriais','program-grid':'Destaque e mosaico','program-days':'Agenda por dia','product-price':'Produto e preço','product-lateral':'Produto lateral','hero-product':'Produto em destaque','price-impact':'Preço protagonista','campaign-led':'Campanha gráfica','ticket-burst':'Explosão promocional','promo-editorial':'Editorial com filme','hero-left':'Imagem e chamada','hero-center':'Imagem central','typography-dominant':'Texto em destaque'};
 
   function simplifyWorkspace() {
     const byId=id=>document.getElementById(id);
@@ -184,6 +184,12 @@
     byId('socialStudioMovieSelections').before(auto);
     const summary=document.createElement('p');summary.id='socialStudioProgramSummary';summary.className='social-context-summary';auto.after(summary);
     byId('socialStudioAutoProgram').addEventListener('change',()=>{state.programSelectionTouched=!byId('socialStudioAutoProgram').checked;if(!state.programSelectionTouched){root.querySelectorAll('[data-program-movie]').forEach(node=>node.value='');fillProgramFromSchedule();}syncFocusedControls();resolveDefaults({resetCopy:true});});
+    const ticketConcept=byId('socialStudioTicketConcept');
+    ticketConcept.querySelector('legend').textContent='Campanha de ingressos';
+    ticketConcept.prepend(byId('socialStudioOfferHeadline').closest('label'));
+    ticketConcept.append(byId('socialStudioOfferTerms').closest('label'));
+    byId('socialStudioPriceSection').querySelector('summary').textContent='Preço e disponibilidade';
+    byId('socialStudioPriceMode').querySelector('option[value="minimum"]').textContent='Automático (menor disponível)';
     const category=document.createElement('select');category.id='socialStudioCategory';category.setAttribute('aria-label','Tipo de campanha');
     category.innerHTML=[['FILMES','Filmes'],['PROGRAMAÇÃO','Programação'],['BOMBONIERE','Bomboniere'],['VENDAS','Ingressos']].map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
     byId('socialStudioTemplates').before(category);
@@ -987,7 +993,7 @@
     }
     modeField.querySelector('option[value="manual"]').textContent=templateId==='ticket-offer'?'Valor manual confirmado':'Personalizado';
     document.querySelector('#socialStudioPriceMode option[value="legacy"]').hidden=templateId==='ticket-offer';
-    const selection=draft ? draft.priceSelection || (/\d/.test(draft.price || '')?{mode:'legacy',formatted:draft.price}:{mode:templateId==='ticket-offer'?'full':'ticket-type'}) : {mode:value('socialStudioPriceMode'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')};
+    const selection=draft ? draft.priceSelection || (/\d/.test(draft.price || '')?{mode:'legacy',formatted:draft.price}:{mode:templateId==='ticket-offer'?'minimum':'ticket-type'}) : {mode:value('socialStudioPriceMode',templateId==='ticket-offer'?'minimum':'ticket-type'),ticketTypeId:value('socialStudioTicketType'),sessionId:value('socialStudioPriceSession'),value:value('socialStudioManualPrice')};
     const movie=state.context.movies.find(m=>m.id===value('socialStudioMovie'));
     const sessions=movie?.sessions || (templateId==='ticket-offer'?(state.context.movies || []).filter(item=>item.catalogued!==false).flatMap(item=>item.sessions || []):[]);
     const options=(draft?.priceInfo?.options || sessions.flatMap(s=>(s.ticketTypes || []).map(t=>({sessionId:s.id,sessionLabel:[s.date,s.time].join(' • '),ticketTypeId:t.id,name:t.name,value:t.price}))));
@@ -1009,6 +1015,23 @@
     document.getElementById('socialStudioManualPriceField').hidden=!['manual','campaign'].includes(selection.mode);
     document.getElementById('socialStudioOldPriceField').hidden=templateId!=='ticket-offer';
     document.getElementById('socialStudioPriceSummary').textContent=draft?.priceInfo?.valid ? `${draft.priceInfo.label}: ${draft.priceInfo.formatted}` : selection.mode==='legacy'?`Valor salvo: ${selection.formatted || value('socialStudioPrice')}`:draft?'Selecione o preço anunciado.':'Calculando valor...';
+    syncTicketWorkspace();
+  }
+
+  function syncTicketWorkspace() {
+    const ticket=checked('socialStudioTemplate')==='ticket-offer';
+    const promotional=value('socialStudioTicketCampaignMode','standard')==='promotional';
+    const weekly=value('socialStudioCampaignRecurrence','none')==='weekly';
+    const toggle=(id,visible)=>{const control=document.getElementById(id);if(control?.closest('label'))control.closest('label').hidden=!visible;};
+    toggle('socialStudioCampaignRecurrence',ticket&&promotional);
+    toggle('socialStudioCampaignDays',ticket&&promotional&&weekly);
+    toggle('socialStudioCampaignAudience',ticket&&promotional);
+    toggle('socialStudioOfferTerms',ticket&&promotional);
+    toggle('socialStudioOldPrice',ticket&&promotional);
+    if(ticket) {
+      document.getElementById('socialStudioTicketConcept').classList.toggle('is-promotional',promotional);
+      document.getElementById('socialStudioPriceSection').open=true;
+    }
   }
 
   function payload() {
@@ -1301,6 +1324,9 @@
   }
 
   function renderNotices(notices = []) {
+    if(checked('socialStudioTemplate')==='ticket-offer' && notices.some(notice=>['TICKET_TYPE_REQUIRED','PRICE_REQUIRED','TICKET_SALE_UNAVAILABLE'].includes(notice.code))) {
+      notices=[{type:'info',code:'TICKET_DRAFT',message:'Prévia de rascunho pronta. Escolha um preço disponível antes de salvar ou exportar.'},...notices.filter(notice=>!['TICKET_TYPE_REQUIRED','PRICE_REQUIRED','TICKET_SALE_UNAVAILABLE'].includes(notice.code))];
+    }
     state.notices = notices;
     const container = document.getElementById("socialStudioNotices");
     if (!container) return;
@@ -1477,20 +1503,13 @@
     document.getElementById("socialStudioPreviewStage")?.classList.add("is-rendering");
     setStatus("Atualizando a composição...", "loading");
     try {
-      const resolved = await request('/api/admin/social-studio/resolve',{method:'POST',body:JSON.stringify(data),signal:state.previewAbort.signal});
-      if(version!==state.previewVersion || key!==previewCacheKey(payload())) return;
-      renderNotices(resolved.notices || []);
-      state.previewNotices.set(key,resolved.notices || []);
-      if(state.previewNotices.size>8) state.previewNotices.delete(state.previewNotices.keys().next().value);
-      operation.stage('Compondo e renderizando a imagem');
       const blob = await requestImage("/api/admin/social-studio/preview", data, state.previewAbort.signal);
       if (version !== state.previewVersion || key!==previewCacheKey(payload())) return;
       cachePreview(key, blob);
-      if(blob.reviewNotices?.length) {
-        const notices=[...(resolved.notices || []),...blob.reviewNotices];
-        state.previewNotices.set(key,notices);
-        renderNotices(notices);
-      }
+      const notices=blob.reviewNotices || [];
+      state.previewNotices.set(key,notices);
+      if(state.previewNotices.size>8) state.previewNotices.delete(state.previewNotices.keys().next().value);
+      renderNotices(notices);
       displayPreview(blob, data.title);
       operation.finish('Prévia pronta para revisão.');
       setStatus("Prévia atualizada automaticamente.", "ok");
@@ -2040,7 +2059,7 @@
     document.getElementById("socialStudioVariationsButton").addEventListener("click",generateVariations);
     for(const id of ['socialStudioTicketCampaignMode','socialStudioCampaignRecurrence','socialStudioCampaignDays','socialStudioCampaignAudience','socialStudioOfferHeadline','socialStudioOfferTerms']) {
       document.getElementById(id).addEventListener('change',()=>{
-        if(checked('socialStudioTemplate')==='ticket-offer') resolveDefaults({resetCopy:false,resetPriceCopy:true});
+        if(checked('socialStudioTemplate')==='ticket-offer') {syncTicketWorkspace();saveDraftLocal();schedulePreview(120);}
       });
     }
     document.getElementById("socialStudioVariations").addEventListener("click", event=>handleCurationAction(event).catch(error=>notify(error.message,"error")));
@@ -2103,7 +2122,7 @@
       if(event.target.closest('#socialStudioAnimationOptions'))return;
       if(event.target.id==='socialStudioAnimated') return;
       if(event.target.id==='socialStudioSignatureScale') document.getElementById('socialStudioSignatureAutomatic').checked=false;
-      if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) {syncTicketPrice();resolveDefaults({resetCopy:false,resetPriceCopy:true});return;}
+      if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) {syncTicketPrice();saveDraftLocal();schedulePreview(120);return;}
       if(event.target.name==='socialStudioImageMode' || event.target.id==='socialStudioImageUrl') resetArtworkMetadata();
       if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
       const frame=event.target.dataset.directionFrame,frameKey=event.target.dataset.directionKey;

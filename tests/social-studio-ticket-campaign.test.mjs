@@ -68,6 +68,15 @@ test('campanha geral recusa sessão cancelada e preços inexistentes',()=>{
   assert.equal(draft.content.purchaseAvailable,false);
 });
 
+test('prévia incompleta continua visível sem inventar preço',async()=>{
+  const unavailable=structuredClone(context);unavailable.movies[0].sessions=[];
+  const result=await engine.renderSocialPost({...base,movieId:'m'},unavailable,{loadImage:async()=>null,skipRaster:true,allowIncompleteTicket:true});
+  const elements=flattenElements(result.scene.elements);
+  assert.equal(elements.some(element=>element.id==='price-hero'),false);
+  assert.equal(elements.find(element=>element.id==='price-draft')?.text,'CONSULTE OS VALORES');
+  assert.equal(result.draft.semanticValidation.valid,false);
+});
+
 test('gerar variações explora famílias comerciais reais',async()=>{
   const result=await require('../backend/services/social-studio/composition-engine/variations').generateVariations(base,context,{loadImage:async()=>null});
   assert.equal(result.variations.length,4);

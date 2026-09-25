@@ -21,7 +21,16 @@ function buildTicketOfferScene({draft,format,brand,logoUrl,sourceUrl},fallback=f
   const ink=brand.primaryColor || '#081c36',gold=brand.accentColor || '#ffda38',blue=brand.secondaryColor || '#1468bd';
   const background=editorial?gold:mode==='cinema-pop'?blue:ink;
   const foreground=editorial?ink:'#ffffff',accent=editorial?ink:gold;
-  const top=story?.115:.075, priceTop=story?.37:.355, priceH=story?.245:.29;
+  const top=story?.115:.075;
+  const geometry={
+    'price-impact':{priceTop:story?.37:.355,priceH:story?.245:.29},
+    'campaign-led':{priceTop:story?.46:.445,priceH:story?.20:.23},
+    'ticket-burst':{priceTop:story?.385:.37,priceH:story?.27:.31},
+    'promo-editorial':{priceTop:story?.47:.455,priceH:story?.18:.205},
+    'offer-counter':{priceTop:story?.40:.385,priceH:story?.235:.27},
+    'cinema-pop':{priceTop:story?.39:.375,priceH:story?.25:.285}
+  }[mode] || {priceTop:story?.37:.355,priceH:story?.245:.29};
+  const priceTop=geometry.priceTop,priceH=geometry.priceH;
   const concept=ticketCampaignConcept(draft), elements=[];
   const shape=(id,x,y,width,height,fill,extra={})=>elements.push({id,name:id,role:'ambient',type:'shape',x,y,width,height,fill,locked:true,...extra});
   const tx=(id,value,x,y,width,height,fontSize,extra={})=>{
@@ -42,10 +51,10 @@ function buildTicketOfferScene({draft,format,brand,logoUrl,sourceUrl},fallback=f
   const art=Boolean(sourceUrl);
   const titleY=h*(story?top+.046:family.title);
   const hasGraphic=!art && concept.mode==='promotional' && ['cinema-pop','campaign-led'].includes(mode);
-  const titleWidth=art && !editorial || hasGraphic?w*.62:w*.87;
+  const titleWidth=art && !editorial || hasGraphic?w*.62:mode==='campaign-led'?w*.76:w*.87;
   const titleHeight=h*(story?.15:.17);
   tx('subtitle',concept.eyebrow,m,h*top,w*.87,h*.035,36,{fill:accent,lines:1});
-  if(mode==='campaign-led') shape('headline-stripe',m-w*.014,titleY-h*.008,titleWidth+w*.018,titleHeight+h*.012,gold,{rotation:-1.5});
+  if(mode==='campaign-led') shape('headline-stripe',-w*.04,titleY-h*.012,w*.86,titleHeight+h*.025,gold,{rotation:-3});
   tx('title',concept.headline,m,titleY,titleWidth,titleHeight,110,{display:true,fill:mode==='campaign-led'?ink:foreground,lines:3,align:mode==='ticket-burst' && !art?'center':'left'});
   if(art) image('artwork',sourceUrl,editorial?m:w*.74,editorial?h*.38:titleY,editorial?w*.24:w*.195,editorial?h*.25:titleHeight,'artwork');
   else if(editorial) elements.push(...graphics.TicketIcon('editorial-ticket',[m,h*.44,w*.23,h*.105],ink,gold));
@@ -64,11 +73,12 @@ function buildTicketOfferScene({draft,format,brand,logoUrl,sourceUrl},fallback=f
     elements.push(graphics.PriceBurst('price-burst',[w*.035,py-h*.045,w*.93,ph+h*.075],gold));
     priceFill=ink;
   }
-  const old=Number(draft.oldPrice),value=Number(draft.priceInfo?.value);
+  const old=Number(draft.oldPrice),value=Number(draft.priceInfo?.value),hasPrice=draft.priceInfo?.valid===true && Number.isFinite(value);
   const priceLabel=old>value?`ANTES ${old.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`:concept.pricePrompt;
-  tx('price-label',priceLabel,mode==='ticket-burst'?w*.30:px,py+h*.006,mode==='ticket-burst'?w*.40:pw,h*.035,32,{fill:priceFill,lines:1,align:mode==='ticket-burst'?'center':'left'});
-  elements.push(...PriceHero({value,x:px,y:py+h*.043,width:pw,height:ph-h*.075,fill:priceFill,variant:family.variant}));
-  if(old>value) tx('savings',`ECONOMIZE ${(old-value).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`,px,py+ph-h*.03,pw,h*.025,25,{fill:priceFill,lines:1});
+  if(hasPrice) tx('price-label',priceLabel,mode==='ticket-burst'?w*.30:px,py+h*.006,mode==='ticket-burst'?w*.40:pw,h*.035,32,{fill:priceFill,lines:1,align:mode==='ticket-burst'?'center':'left'});
+  if(hasPrice) elements.push(...PriceHero({value,x:px,y:py+h*.043,width:pw,height:ph-h*.075,fill:priceFill,variant:family.variant}));
+  else tx('price-draft','CONSULTE OS VALORES',px,py+h*.035,pw,ph-h*.055,editorial?66:82,{display:true,fill:priceFill,lines:2,align:mode==='ticket-burst'?'center':'left',hierarchy:'primary'});
+  if(hasPrice && old>value) tx('savings',`ECONOMIZE ${(old-value).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`,px,py+ph-h*.03,pw,h*.025,25,{fill:priceFill,lines:1});
   else if(draft.offerBadge && !concept.headline.toUpperCase().includes(draft.offerBadge.toUpperCase())) tx('badge',draft.offerBadge,mode==='ticket-burst'?w*.30:px,py+ph-h*.029,mode==='ticket-burst'?w*.40:pw,h*.025,25,{fill:priceFill,lines:1,align:mode==='ticket-burst'?'center':'left'});
   const movie=draft.entities.movie;
   const session=movie?.sessions?.find(s=>String(s.id)===String(draft.priceInfo?.selection?.sessionId));

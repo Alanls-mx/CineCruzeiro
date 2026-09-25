@@ -26,7 +26,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const draft = normalizeV2Draft(input, context);
   const programming=['sessions-today','sessions-week','multi-movies'].includes(draft.templateId);
   const concession = require('../contracts/concession-campaign').isConcession(draft);
-  require('../contracts/content').assertCampaignContent(draft.content);
+  if(!(options.allowIncompleteTicket && draft.templateId==='ticket-offer')) require('../contracts/content').assertCampaignContent(draft.content);
   if(programming)require('./content-rules').assertContentReady(draft);
   const format = require('../contracts/formats').formatById(draft.formatId);
   const brand = legacy.normalizeBrand(context.brand || {});
@@ -183,7 +183,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
       throw gate.qualityError(concessionQuality);
     }
   }
-  if(draft.templateId==='ticket-offer') require('../scene/groups').groupElements(scene,'price-hero',['currency','detail'],'price');
+  if(draft.templateId==='ticket-offer' && scene.elements.some(element=>['currency','detail'].includes(element.id))) require('../scene/groups').groupElements(scene,'price-hero',['currency','detail'],'price');
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);
   if(!semantics.valid) throw Object.assign(new Error(semantics.errors.map(e=>e.message).join(' ')),{statusCode:400,code:'SCENE_SEMANTICS'});

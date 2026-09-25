@@ -1679,5 +1679,13 @@
 .social-workspace-focused .social-toolbar-format select { max-width:210px; }
 .social-workspace-focused .social-copy-actions { flex-wrap:wrap; }
 .social-workspace-focused #socialStudioStatus { overflow-wrap:anywhere; }
+.social-workspace-focused #socialStudioTicketConcept { gap:12px; padding:14px; border-color:#334155; background:#0b1420; }
+.social-workspace-focused #socialStudioTicketConcept > legend { color:#f5d24a; font-size:12px; }
+.social-workspace-focused #socialStudioTicketConcept:not(.is-promotional) { padding-bottom:10px; }
+.social-workspace-focused #socialStudioPriceSection[open] > summary { color:#eef4fb; }
+.social-workspace-focused #socialStudioPriceSummary { display:block; min-height:32px; padding:8px 10px; border-radius:4px; background:#111d2b; color:#d7e5f4; font-size:12px; line-height:1.4; }
+.social-workspace-focused #socialStudioPriceSummary:empty { display:none; }
+.social-workspace-focused #socialStudioTicketPrice { gap:10px; }
+.social-workspace-focused #socialStudioCategory { position:relative; z-index:2; }
 @media(max-width:1160px) { .social-workspace-focused .social-studio-workspace { grid-template-columns:150px minmax(0,1fr); } .social-workspace-focused .social-properties-pane { grid-column:1/-1; } }
 @media(max-width:700px) { .social-workspace-focused .social-studio-workspace { grid-template-columns:minmax(0,1fr); } .social-workspace-focused .social-template-library { position:static; max-height:none; } .social-workspace-focused .social-template-grid { display:flex; flex-wrap:wrap; gap:6px; } .social-workspace-focused .social-template-option { flex:1 1 130px; } #socialStudioInlineEditor { height:640px; } }
