@@ -20,7 +20,7 @@ fi
 
 docker compose pull
 docker compose up -d --remove-orphans
-for workflow in /workflows/*.json; do
-  docker compose exec -T n8n n8n import:workflow --input="$workflow"
+for workflow in workflows/*.json; do
+  docker compose exec -T n8n n8n import:workflow --input="/workflows/$(basename "$workflow")"
 done
 docker compose ps
