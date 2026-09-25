@@ -1,4 +1,5 @@
 {
+  "id": "cineStudioCreate",
   "name": "Social Studio - Criar campanha",
   "active": false,
   "settings": {"executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "none"},
