@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import sharp from 'sharp';
 const require=createRequire(import.meta.url);
 const engine=require('../backend/services/socialStudioEngineService');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
@@ -50,6 +51,21 @@ test('falha ao carregar arte redistribui título e remove reserva de assinatura'
   assert.equal(elements.some(e=>['artwork','artwork-mat','logo'].includes(e.id)),false);
   assert.equal(elements.find(e=>e.id==='title').width,result.scene.width*.87);
   assert.equal(elements.find(e=>e.id==='cta').width,result.scene.width*.87);
+});
+
+test('arte do filme entra como hero integrado e não como miniatura solta',async()=>{
+  const poster=await sharp({create:{width:700,height:1000,channels:4,background:'#6f411f'}}).png().toBuffer();
+  const result=await engine.renderSocialPost({...base,movieId:'m',style:'price-impact',layoutId:'price-impact'},context,{loadImage:async url=>url==='missing://poster'?poster:null,skipRaster:true});
+  const elements=flattenElements(result.scene.elements);
+  const artwork=elements.find(e=>e.id==='artwork');
+  assert.ok(artwork.width>=result.scene.width*.34);
+  assert.ok(artwork.height>=result.scene.height*.24);
+  assert.equal(artwork.fit,'cover');
+  assert.equal(artwork.effects.mask,'fade-all');
+  assert.ok(elements.some(e=>e.id==='artwork-atmosphere' && e.fit==='cover'));
+  assert.ok(elements.some(e=>e.id==='ambient-shadow'));
+  assert.ok(elements.some(e=>e.id==='artwork-veil'));
+  assert.equal(validateLayoutCollisions(result.scene).valid,true);
 });
 
 test('exportação manual bloqueia colisão e texto fora da área segura',async()=>{

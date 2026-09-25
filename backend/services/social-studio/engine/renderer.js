@@ -113,7 +113,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";
   const offerTemplate=['ticket-offer','concession-offer'].includes(draft.templateId);
   let scene = concession ? null : offerTemplate
-    ? require('../scene/offer').buildOfferScene({draft,format,brand,logoUrl,sourceUrl:sourceBuffer ? sourceUrl : ''})
+    ? require('../scene/offer').buildOfferScene({draft,format,brand,logoUrl,sourceUrl:sourceBuffer ? sourceUrl : '',backgroundUrl:backgroundBuffer ? backgroundUrl : ''})
     : buildEditableScene({ draft, format, palette, brand, sourceUrl: sourceBuffer ? sourceUrl : "", backgroundUrl, fullBleed, logoUrl, analysis });
   if(concession) {
     const {buildConcessionScene,productBounds}=require('../scene/concession');

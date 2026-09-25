@@ -103,6 +103,8 @@ const ticketTypeRepository = require("./repositories/ticketTypeRepository");
 const promotionRepository = require("./repositories/promotionRepository");
 const concessionRepository = require("./repositories/concessionRepository");
 const settingsRepository = require("./repositories/settingsRepository");
+const { SocialStudioAutomationRepository } = require("./repositories/socialStudioAutomationRepository");
+const { CampaignOrchestrator } = require("./services/social-studio/automation/orchestrator");
 const userRepository = require("./repositories/userRepository");
 const orderRepository = require("./repositories/orderRepository");
 const { createPerformanceMonitor } = require("./services/performanceMonitor");
@@ -131,7 +133,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "037_orders_print_fulfillment_status.sql";
+const LATEST_SCHEMA_MIGRATION = "038_social_studio_automation.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -148,10 +150,32 @@ const storageService = createStorageService({
 const EMAIL_ATTACHMENT_ROOT = path.resolve(process.env.CINE_EMAIL_ATTACHMENTS_DIR || path.join(ROOT, "data", "email-attachments"));
 const TICKET_DOCUMENT_ROOT = path.resolve(process.env.CINE_TICKET_DOCUMENTS_DIR || path.join(ROOT, "data", "ticket-documents"));
 let socialAnimationJobs;
+let socialStudioAutomationRepository;
+let socialStudioAutomationOrchestrator;
 function getSocialAnimationJobs() {
   if(!socialAnimationJobs) socialAnimationJobs=new (require('./services/social-studio/remotion/jobs').AnimationJobs)(
     process.env.SOCIAL_STUDIO_ANIMATION_DIR || path.join(process.env.CINE_UPLOADS_DIR?path.dirname(storageService.rootDir):path.dirname(DATA_FILE),'social-animation'),{loadImage:loadSocialStudioImage});
   return socialAnimationJobs;
+}
+function getSocialStudioAutomationRepository() {
+  if(!socialStudioAutomationRepository) socialStudioAutomationRepository=new SocialStudioAutomationRepository({
+    readJson:readDb,
+    mutateJson:callback=>withCriticalMutation(async()=>{const db=await readDb();const result=await callback(db);await writeDb(db);return result;})
+  });
+  return socialStudioAutomationRepository;
+}
+function getSocialStudioAutomationOrchestrator() {
+  if(!socialStudioAutomationOrchestrator) socialStudioAutomationOrchestrator=new CampaignOrchestrator({
+    repository:getSocialStudioAutomationRepository(),
+    contextProvider:async()=>socialStudioContext(await readDb()),
+    loadImage:loadSocialStudioImage,
+    savePreview:async(rendered,{campaignId,variationIndex,formatId})=>{
+      const uploaded=await storageService.uploadImageBuffer({buffer:rendered.buffer,filename:`${campaignId}-${variationIndex+1}-${formatId}${rendered.extension}`,contentType:rendered.contentType,folder:'social-studio-automation'});
+      return uploaded.url;
+    },
+    logger:(level,event,metadata)=>logEvent(level,event,metadata)
+  });
+  return socialStudioAutomationOrchestrator;
 }
 async function renderSocialAnimationJob(req,res,scene,config,postId) {
   const jobs=getSocialAnimationJobs(),owner=String(req.adminUser.id);
@@ -1007,6 +1031,7 @@ const LOGIN_FAILURE_MAX_ENTRIES = 20000;
 const ticketTransferLimits = transferLimits();
 
 const RATE_LIMIT_RULES = [
+  { id: "studio-automation", limit: 40, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/studio/campaigns/generate" },
   { id: "customer-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/auth/login" },
   { id: "admin-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/login" },
   { id: "admin-2fa", limit: 6, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/login/2fa" },
@@ -1284,6 +1309,7 @@ function getCustomerUser(req, db) {
 
 function adminAuthRequired(pathname, method) {
   if (pathname.startsWith("/api/webhooks/")) return false;
+  if (pathname.startsWith("/api/studio/")) return false;
   if (pathname === "/api/admin/login" || pathname === "/api/admin/login/2fa") return false;
   if (pathname.startsWith("/api/admin/")) return true;
   if (pathname.startsWith("/api/dashboard")) return true;
@@ -1297,6 +1323,15 @@ function adminAuthRequired(pathname, method) {
   if (/^\/api\/orders(\/|$)/.test(pathname) && ["GET", "PATCH", "DELETE"].includes(method)) return true;
   if (pathname === "/api/tickets/manual" || pathname === "/api/tickets/validate") return true;
   return false;
+}
+
+function studioAutomationAuthorized(req) {
+  const expected=String(process.env.STUDIO_AUTOMATION_TOKEN || process.env.N8N_STUDIO_SHARED_SECRET || '').trim();
+  if(!expected)return false;
+  const authorization=String(req.headers.authorization || '');
+  const supplied=String(authorization.match(/^Bearer\s+(.+)$/i)?.[1] || req.headers['x-studio-automation-token'] || '').trim();
+  const left=Buffer.from(expected),right=Buffer.from(supplied);
+  return left.length===right.length && left.length>0 && crypto.timingSafeEqual(left,right);
 }
 
 function mutatesState(method) {
@@ -10872,6 +10907,30 @@ async function handleApi(req, res, pathname) {
 
   const db = await readDb();
 
+  if (pathname.startsWith("/api/studio/") && !studioAutomationAuthorized(req)) {
+    const configured=Boolean(process.env.STUDIO_AUTOMATION_TOKEN || process.env.N8N_STUDIO_SHARED_SECRET);
+    sendJson(res,configured?401:503,{error:{code:'STUDIO_AUTOMATION_UNAVAILABLE',message:configured?'Credencial de automação inválida.':'A integração de automação ainda não foi configurada.'}});
+    return;
+  }
+  if (pathname === "/api/studio/context" && method === "GET") {
+    const studio=socialStudioContext(db);
+    sendJson(res,200,{cinema:studio.brand,movies:studio.movies,concessions:studio.concessions,clubPlans:studio.clubPlans,formats:studio.formats.map(({id,name,width,height})=>({id,name,width,height})),templates:studio.templates.map(({id,name,category})=>({id,name,category}))},{'Cache-Control':'no-store'});
+    return;
+  }
+  if (pathname === "/api/studio/campaigns/generate" && method === "POST") {
+    const body=await readBody(req);
+    body.idempotencyKey ||= String(req.headers['idempotency-key'] || '');
+    const campaign=await getSocialStudioAutomationOrchestrator().create({...body,source:'n8n',triggerType:body.triggerType || 'webhook'},{createdBy:'n8n'});
+    sendJson(res,campaign.duplicate?200:202,{campaign,statusUrl:`${publicBackendUrl()}/api/studio/campaigns/${campaign.id}`},{'Cache-Control':'no-store'});
+    return;
+  }
+  const studioAutomationMatch=pathname.match(/^\/api\/studio\/campaigns\/([a-f0-9-]{36})$/);
+  if(studioAutomationMatch && method==='GET') {
+    const campaign=await getSocialStudioAutomationOrchestrator().get(studioAutomationMatch[1]);
+    if(!campaign){sendJson(res,404,{error:{code:'STUDIO_CAMPAIGN_NOT_FOUND',message:'Campanha automática não encontrada.'}});return;}
+    sendJson(res,200,{campaign},{'Cache-Control':'no-store'});return;
+  }
+
   if (pathname === "/api/commercial/catalog" && method === "GET") {
     const catalogConfig = integrationConfigService.resolvedConfig(db, "commercialCatalog") || {};
     if (!catalogConfig.enabled || !catalogConfig.configured) {
@@ -11416,8 +11475,11 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/social-studio/context" && method === "GET") {
+    const studioBrand=socialStudioBrand(db);
+    const automation=await getSocialStudioAutomationOrchestrator().list({cinemaId:studioBrand.id || studioBrand.slug || studioBrand.name || '',limit:8});
     sendJson(res, 200, {
       ...socialStudioContext(db),
+      automation:{enabled:Boolean(process.env.STUDIO_AUTOMATION_TOKEN || process.env.N8N_STUDIO_SHARED_SECRET),campaigns:automation},
       workspaceLayouts: require('./services/social-studio/contracts/workspace').LAYOUTS,
       capabilities: {
         view: adminHasPermission(req.adminUser, "social_studio.view"),
@@ -11427,6 +11489,25 @@ async function handleApi(req, res, pathname) {
       engine: { version: "v2", renderer: "Satori + Sharp", deterministic: true }
     }, { "Cache-Control": "no-store" });
     return;
+  }
+
+  if (pathname === "/api/admin/social-studio/automation/campaigns" && method === "GET") {
+    sendJson(res,200,{campaigns:await getSocialStudioAutomationOrchestrator().list({limit:30})},{'Cache-Control':'no-store'});return;
+  }
+  if (pathname === "/api/admin/social-studio/automation/campaigns" && method === "POST") {
+    const body=await readBody(req);
+    const campaign=await getSocialStudioAutomationOrchestrator().create({...body,source:'studio',triggerType:body.triggerType || 'manual'},{createdBy:req.adminUser.id});
+    sendJson(res,campaign.duplicate?200:202,{campaign},{'Cache-Control':'no-store'});return;
+  }
+  const adminAutomationMatch=pathname.match(/^\/api\/admin\/social-studio\/automation\/campaigns\/([a-f0-9-]{36})(?:\/(reprocess))?$/);
+  if(adminAutomationMatch) {
+    const [,campaignId,action]=adminAutomationMatch;
+    if(action==='reprocess' && method==='POST'){sendJson(res,202,{campaign:await getSocialStudioAutomationOrchestrator().reprocess(campaignId)},{'Cache-Control':'no-store'});return;}
+    if(!action && method==='GET'){
+      const campaign=await getSocialStudioAutomationOrchestrator().get(campaignId);
+      if(!campaign){sendJson(res,404,{error:{code:'STUDIO_CAMPAIGN_NOT_FOUND',message:'Campanha automática não encontrada.'}});return;}
+      sendJson(res,200,{campaign},{'Cache-Control':'no-store'});return;
+    }
   }
 
   if (pathname === "/api/admin/social-studio/uploads" && method === "POST") {
@@ -17623,6 +17704,7 @@ loadEnvFiles().then(() => {
     void runSubscriptionMaintenance();
     void runMovieImageMaintenance();
     void runEmailAttachmentMaintenance();
+    void getSocialStudioAutomationOrchestrator().resumePending().then(count=>{if(count)logEvent('info','social_studio.automation.resumed',{count});}).catch(error=>logEvent('warn','social_studio.automation.resume_failed',{message:error.message}));
     if (postgresEnabled()) {
       emailCampaignWorker = buildEmailCampaignWorker();
       emailCampaignWorker?.start();

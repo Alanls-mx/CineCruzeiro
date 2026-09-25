@@ -257,12 +257,17 @@
           <div class="social-studio-toolbar-actions">
             <span id="socialStudioAutosaveState" class="social-save-state" data-state="idle">Rascunho local</span>
             <button id="socialStudioPreviewButton" class="ghost-button" type="button" data-requires-create>Atualizar prévia</button>
+            <button id="socialStudioAutomateButton" class="ghost-button" type="button" data-requires-create>Automatizar</button>
             <button id="socialStudioCampaignButton" class="ghost-button" type="button" data-requires-create>Gerar campanha</button>
             <button id="socialStudioVariationsButton" class="ghost-button" type="button" data-requires-create>Gerar variações</button>
             <button id="socialStudioGenerateButton" class="primary-button" type="submit" data-requires-create>Gerar arte</button>
           </div>
         </header>
         <section id="socialStudioOperations" class="social-operations" aria-label="Atividade do Studio" hidden></section>
+        <section id="socialStudioAutomation" class="social-automation" aria-labelledby="socialStudioAutomationTitle" hidden>
+          <header><div><h3 id="socialStudioAutomationTitle">Campanhas automáticas</h3><p>Acompanhe a preparação e revise o resultado antes de usar.</p></div><button id="socialStudioAutomationRefresh" class="ghost-button" type="button">Atualizar</button></header>
+          <div id="socialStudioAutomationList" class="social-automation-list" aria-live="polite"></div>
+        </section>
 
         <section class="social-ready-library" aria-labelledby="socialStudioReadyTitle">
           <header class="social-ready-head">
@@ -775,7 +780,54 @@
     updateFieldVisibility();
     applyCapabilities();
     renderHistory();
+    renderAutomation(state.context?.automation?.campaigns || []);
     updatePreviewMeta();
+  }
+
+  const automationLabels={queued:'Na fila',processing:'Em preparação',qa:'Verificando qualidade',ready:'Pronto para revisão',failed:'Precisa de atenção'};
+  function renderAutomation(campaigns=[]) {
+    const section=document.getElementById('socialStudioAutomation'),list=document.getElementById('socialStudioAutomationList');
+    if(!section || !list)return;
+    section.hidden=!campaigns.length;
+    list.innerHTML=campaigns.map(campaign=>{
+      const warningCount=(campaign.warnings || []).length+Number(campaign.qa?.warnings || 0);
+      const first=campaign.result?.compositions?.[0];
+      const progress=Math.max(0,Math.min(100,Number(campaign.progress)||0));
+      return `<article class="social-automation-item" data-state="${escapeHtml(campaign.status)}">
+        <div class="social-automation-main"><strong>${escapeHtml(campaign.objective || campaign.campaignType || 'Campanha')}</strong><span>${escapeHtml(automationLabels[campaign.status] || campaign.stage || campaign.status)} · ${progress}%</span></div>
+        <div class="social-automation-meter" role="progressbar" aria-label="${escapeHtml(campaign.objective || 'Campanha')}" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100"><span style="--automation-progress:${progress/100}"></span></div>
+        <div class="social-automation-meta"><span>Origem: ${escapeHtml(campaign.source==='n8n'?'Automação':'Studio')}</span><span>${campaign.result?.compositions?.length || 0} composição(ões)</span>${warningCount?`<span>${warningCount} aviso(s)</span>`:''}</div>
+        ${campaign.error?.message?`<p class="social-automation-error">${escapeHtml(campaign.error.message)}</p>`:''}
+        <div class="social-automation-actions">${first?`<button type="button" class="ghost-button" data-automation-use="${escapeHtml(campaign.id)}">Usar composição</button>`:''}${campaign.status==='failed'?`<button type="button" class="ghost-button" data-automation-reprocess="${escapeHtml(campaign.id)}">Reprocessar</button>`:''}<button type="button" class="ghost-button" data-automation-detail="${escapeHtml(campaign.id)}">Ver avisos</button></div>
+      </article>`;
+    }).join('');
+  }
+
+  async function refreshAutomation() {
+    const result=await request('/api/admin/social-studio/automation/campaigns');
+    state.context.automation={...(state.context.automation || {}),campaigns:result.campaigns || []};
+    renderAutomation(state.context.automation.campaigns);
+    return state.context.automation.campaigns;
+  }
+
+  function automationType() {const kind=campaignKind();return kind==='programming'?'schedule':kind==='concession'?'concession':kind==='movie'?'movie':'custom';}
+  async function createAutomation() {
+    const button=document.getElementById('socialStudioAutomateButton');button.disabled=true;
+    const operation=beginOperation('automation','Preparar campanha','Organizando contexto e histórico');
+    try {
+      const current=payload();
+      const response=await request('/api/admin/social-studio/automation/campaigns',{method:'POST',body:JSON.stringify({campaignType:automationType(),objective:current.title || current.subtitle || current.templateId,formats:['feed_portrait','story'],templateId:current.templateId,subject:current,variationCount:3})});
+      state.context.automation ||= {campaigns:[]};state.context.automation.campaigns=[response.campaign,...state.context.automation.campaigns.filter(item=>item.id!==response.campaign.id)];renderAutomation(state.context.automation.campaigns);
+      for(let attempt=0;attempt<90;attempt++) {
+        await new Promise(resolve=>setTimeout(resolve,2000));
+        const detail=await request(`/api/admin/social-studio/automation/campaigns/${encodeURIComponent(response.campaign.id)}`);
+        const campaign=detail.campaign;state.context.automation.campaigns=[campaign,...state.context.automation.campaigns.filter(item=>item.id!==campaign.id)];renderAutomation(state.context.automation.campaigns);
+        operation.progress(campaign.progress,automationLabels[campaign.status] || campaign.stage);
+        if(campaign.status==='ready'){operation.finish('Campanha pronta para revisão.');notify('Campanha automática pronta para revisão.');return;}
+        if(campaign.status==='failed')throw new Error(campaign.error?.message || 'Não foi possível concluir a campanha.');
+      }
+      throw new Error('A campanha continua em processamento. Ela permanecerá disponível nesta área.');
+    } catch(error){operation.fail(error);notify(error.message,'error');} finally {button.disabled=state.context?.capabilities?.create===false;}
   }
 
   function renderReadyPosts() {
@@ -2043,6 +2095,16 @@
     }
     form.addEventListener("submit", generatePost);
     document.getElementById("socialStudioPreviewButton").addEventListener("click", () => updatePreview({ force: true, discardManual:true }));
+    document.getElementById("socialStudioAutomateButton").addEventListener("click",createAutomation);
+    document.getElementById("socialStudioAutomationRefresh").addEventListener("click",()=>refreshAutomation().catch(error=>notify(error.message,'error')));
+    document.getElementById("socialStudioAutomationList").addEventListener("click",async event=>{
+      const use=event.target.closest('[data-automation-use]'),retry=event.target.closest('[data-automation-reprocess]'),detail=event.target.closest('[data-automation-detail]');
+      const id=use?.dataset.automationUse || retry?.dataset.automationReprocess || detail?.dataset.automationDetail;if(!id)return;
+      const campaign=state.context.automation.campaigns.find(item=>item.id===id);
+      if(use){const composition=campaign?.result?.compositions?.[0];if(composition){applyDraft(composition.draft,composition.caption || '');await updatePreview({force:true});document.querySelector('.social-studio-workspace')?.scrollIntoView({behavior:'smooth',block:'start'});}}
+      if(retry){await request(`/api/admin/social-studio/automation/campaigns/${encodeURIComponent(id)}/reprocess`,{method:'POST',body:'{}'});await refreshAutomation();notify('Campanha enviada novamente para processamento.');}
+      if(detail){const messages=[...(campaign?.warnings || []).map(item=>item.message),...(campaign?.qa?.items || []).flatMap(item=>item.findings || []).map(item=>item.message),campaign?.error?.message].filter(Boolean);window.alert(messages.length?messages.join('\n\n'):'Nenhum aviso nesta campanha.');}
+    });
     document.getElementById("socialStudioCampaignButton").addEventListener("click", generateCampaign);
     document.getElementById("socialStudioPreviewDownload").addEventListener("click", downloadPreview);
     document.getElementById("socialStudioMotionPlay").addEventListener("click", playMotion);

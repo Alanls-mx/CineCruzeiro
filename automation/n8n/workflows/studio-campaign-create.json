@@ -1,0 +1,14 @@
+{
+  "name": "Social Studio - Criar campanha",
+  "active": false,
+  "settings": {"executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "none"},
+  "nodes": [
+    {"id":"trigger","name":"Solicitação de campanha","type":"n8n-nodes-base.webhook","typeVersion":2,"position":[0,0],"parameters":{"httpMethod":"POST","path":"social-studio/campaigns","responseMode":"responseNode","options":{}}},
+    {"id":"context","name":"Buscar contexto do cinema","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[240,0],"parameters":{"url":"={{ $env.STUDIO_BASE_URL + '/api/studio/context' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.STUDIO_AUTOMATION_TOKEN }}"}]},"options":{"timeout":15000}}},
+    {"id":"prepare","name":"Preparar campanha","type":"n8n-nodes-base.code","typeVersion":2,"position":[480,0],"parameters":{"jsCode":"const incoming = $('Solicitação de campanha').first().json.body || $('Solicitação de campanha').first().json;\nconst context = $input.first().json;\nreturn [{json:{...incoming,cinemaId:incoming.cinemaId || context.cinema?.id || context.cinema?.slug || context.cinema?.name,source:'n8n',triggerType:incoming.triggerType || 'webhook',formats:incoming.formats?.length?incoming.formats:['feed_portrait','story'],context:{availableMovieIds:(context.movies || []).map(movie=>movie.id)}}}];"}},
+    {"id":"generate","name":"Solicitar geração","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[720,0],"parameters":{"method":"POST","url":"={{ $env.STUDIO_BASE_URL + '/api/studio/campaigns/generate' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.STUDIO_AUTOMATION_TOKEN }}"},{"name":"Idempotency-Key","value":"={{ $json.idempotencyKey || '' }}"}]},"sendBody":true,"contentType":"raw","rawContentType":"application/json","body":"={{ JSON.stringify($json) }}","options":{"timeout":30000}}},
+    {"id":"respond","name":"Confirmar recebimento","type":"n8n-nodes-base.respondToWebhook","typeVersion":1.4,"position":[960,0],"parameters":{"respondWith":"json","responseBody":"={{ $json }}","options":{"responseCode":202}}}
+  ],
+  "connections":{"Solicitação de campanha":{"main":[[{"node":"Buscar contexto do cinema","type":"main","index":0}]]},"Buscar contexto do cinema":{"main":[[{"node":"Preparar campanha","type":"main","index":0}]]},"Preparar campanha":{"main":[[{"node":"Solicitar geração","type":"main","index":0}]]},"Solicitar geração":{"main":[[{"node":"Confirmar recebimento","type":"main","index":0}]]}},
+  "pinData":{},"meta":{"templateCredsSetupCompleted":false},"versionId":"893d5848-a53c-4b51-b31d-87ae4f433702"
+}

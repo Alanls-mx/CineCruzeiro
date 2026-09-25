@@ -1,0 +1,13 @@
+{
+  "name": "Social Studio - Programação alterada",
+  "active": false,
+  "settings": {"executionOrder":"v1","saveDataErrorExecution":"all","saveDataSuccessExecution":"none"},
+  "nodes": [
+    {"id":"trigger","name":"Programação alterada","type":"n8n-nodes-base.webhook","typeVersion":2,"position":[0,0],"parameters":{"httpMethod":"POST","path":"social-studio/schedule-changed","responseMode":"responseNode","options":{}}},
+    {"id":"prepare","name":"Normalizar evento","type":"n8n-nodes-base.code","typeVersion":2,"position":[260,0],"parameters":{"jsCode":"const event = $input.first().json.body || $input.first().json;\nconst version = event.version || event.updatedAt || new Date().toISOString().slice(0,10);\nreturn [{json:{cinemaId:event.cinemaId,campaignType:'schedule',objective:event.objective || 'Programação da semana',formats:event.formats || ['feed_portrait','story'],triggerType:'schedule.changed',eventVersion:String(version),idempotencyKey:[event.cinemaId || 'cinema','schedule',version,event.periodStart || 'current'].join(':'),subject:{templateId:event.templateId || 'sessions-week',periodStart:event.periodStart,programMovieIds:event.movieIds || []}}}];"}},
+    {"id":"generate","name":"Criar campanha","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[520,0],"parameters":{"method":"POST","url":"={{ $env.STUDIO_BASE_URL + '/api/studio/campaigns/generate' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.STUDIO_AUTOMATION_TOKEN }}"}]},"sendBody":true,"contentType":"raw","rawContentType":"application/json","body":"={{ JSON.stringify($json) }}","options":{"timeout":30000}}},
+    {"id":"respond","name":"Confirmar evento","type":"n8n-nodes-base.respondToWebhook","typeVersion":1.4,"position":[780,0],"parameters":{"respondWith":"json","responseBody":"={{ $json }}","options":{"responseCode":202}}}
+  ],
+  "connections":{"Programação alterada":{"main":[[{"node":"Normalizar evento","type":"main","index":0}]]},"Normalizar evento":{"main":[[{"node":"Criar campanha","type":"main","index":0}]]},"Criar campanha":{"main":[[{"node":"Confirmar evento","type":"main","index":0}]]}},
+  "pinData":{},"meta":{"templateCredsSetupCompleted":false},"versionId":"d5381657-797c-49c6-aa14-7f1681ed2a4e"
+}

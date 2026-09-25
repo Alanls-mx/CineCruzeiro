@@ -38,6 +38,7 @@ Produção:
 | Google Wallet | Implementação oficial, dependente de credenciais externas |
 | E-mail | SMTP ou webhook de entrega configurável no Admin |
 | Social Studio V2 | Criação de campanhas com composição cinematográfica, editor visual e exportação PNG/JPG |
+| Automação do Social Studio | API assíncrona e idempotente, memória de campanhas, QA, retry e workflows n8n opcionais |
 | Logs operacionais | Consulta, filtros e retenção administrável |
 | Eventos privados | Formulário envia solicitação e confirmação automática |
 | TMDB | Importação assistida de dados de filmes |
@@ -75,6 +76,8 @@ Nginx da VPS
 ```
 
 O frontend nunca é fonte de verdade para preço, disponibilidade, pagamento, ticket ou status de assinatura. Esses dados são recalculados ou confirmados pelo backend.
+
+O Social Studio também expõe uma API de automação protegida para o n8n. O orquestrador prepara contexto e gatilhos; composição, renderização, editor e exportação continuam no Studio e permanecem disponíveis quando o n8n estiver offline. Consulte [`docs/SOCIAL_STUDIO_AUTOMATION_N8N.md`](docs/SOCIAL_STUDIO_AUTOMATION_N8N.md).
 
 ## 4. Stack tecnológica
 
