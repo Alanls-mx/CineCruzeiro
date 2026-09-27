@@ -81,6 +81,20 @@ test('atmosfera editorial deriva as cores do pôster sem vermelho ou cor de marc
   }
   assert.equal(await extractEditorialAtmosphere(null),null);
 });
+
+test('rodape preserva uma segunda tonalidade escura real sem achatar o laranja em marrom',async()=>{
+  const {extractEditorialAtmosphere,hexToRgb}=require('../backend/services/social-studio/engine/palette');
+  const shadow=await sharp({create:{width:32,height:8,channels:3,background:'#941b08'}}).png().toBuffer();
+  const poster=await sharp({create:{width:32,height:48,channels:3,background:'#cc550d'}}).composite([{input:shadow,left:0,top:37}]).png().toBuffer();
+  const palette=await extractEditorialAtmosphere(poster),shade=hexToRgb(palette.shadow);
+  assert.equal(palette.color,'#cc550d');
+  assert.ok(shade.r>60 && shade.g<shade.r*.15);
+  const scene=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',layoutId:'movie-editorial-light'},context,{loadImage,skipRaster:true});
+  const texture=scene.scene.elements.find(e=>e.id==='editorial-brand-texture');
+  assert.equal(texture.src,context.movies[0].posterUrl);
+  assert.equal(texture.effects.mask,'fade-top');
+  assert.ok(texture.opacity<=.1);
+});
 test('exportação manual preserva horários e não permite trocar poster por recorte',async()=>{
   const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',layoutId:'movie-asymmetric'},context,{loadImage,skipRaster:true,artworkRetried:true});
   const altered=structuredClone(r.scene);

@@ -115,7 +115,7 @@ async function extractPalette(buffer, brand = {}) {
 
 async function extractEditorialAtmosphere(buffer) {
   if(!Buffer.isBuffer(buffer) || !buffer.length)return null;
-  const key=`editorial:${crypto.createHash('sha1').update(buffer).digest('hex')}`;
+  const key=`editorial-v2:${crypto.createHash('sha1').update(buffer).digest('hex')}`;
   return paletteCache.getOrLoad(key,async()=>{
     const {data,info}=await sharp(buffer).rotate().resize(32,48,{fit:'fill'}).removeAlpha().raw().toBuffer({resolveWithObject:true});
     const buckets=new Map();
@@ -123,7 +123,7 @@ async function extractEditorialAtmosphere(buffer) {
     for(let y=28;y<46;y++)for(let x=2;x<30;x++) {
       const i=(y*info.width+x)*info.channels,color={r:data[i],g:data[i+1],b:data[i+2]};
       const light=(color.r+color.g+color.b)/3;
-      if(light<65 || light>225)continue;
+      if(light<18 || light>225)continue;
       const key=[color.r>>5,color.g>>5,color.b>>5].join(',');
       const bin=buckets.get(key)||{r:0,g:0,b:0,count:0};
       bin.r+=color.r;bin.g+=color.g;bin.b+=color.b;bin.count++;
@@ -133,10 +133,26 @@ async function extractEditorialAtmosphere(buffer) {
       const color={r:bin.r/bin.count,g:bin.g/bin.count,b:bin.b/bin.count};
       return Math.sqrt(bin.count)*(1+saturation(color)**2/Math.max(color.r,color.g,color.b,1));
     };
-    const best=[...buckets.values()].sort((a,b)=>score(b)-score(a))[0];
+    const average=bin=>({r:bin.r/bin.count,g:bin.g/bin.count,b:bin.b/bin.count});
+    const best=[...buckets.values()].filter(bin=>{const c=average(bin);return (c.r+c.g+c.b)/3>=65;}).sort((a,b)=>score(b)-score(a))[0];
     if(!best)return null;
     const color=rgbToHex({r:best.r/best.count,g:best.g/best.count,b:best.b/best.count});
-    return {color,shadow:mix(color,'#000000',.48),highlight:mix(color,'#ffffff',.58)};
+    const hue=c=>{
+      const max=Math.max(c.r,c.g,c.b),min=Math.min(c.r,c.g,c.b),delta=max-min;
+      if(!delta)return 0;
+      return ((max===c.r?(c.g-c.b)/delta:max===c.g?(c.b-c.r)/delta+2:(c.r-c.g)/delta+4)*60+360)%360;
+    };
+    const main=hexToRgb(color),mainHue=hue(main);
+    // Preserve a related shadow hue actually present in the artwork, rather
+    // than flattening every darker stop into the same accent mixed with black.
+    const shadows=[...buckets.values()].map(bin=>{
+      const c=average(bin),max=Math.max(c.r,c.g,c.b),delta=Math.abs(hue(c)-mainHue);
+      const separation=Math.min(delta,360-delta),chroma=saturation(c)/Math.max(max,1);
+      return {c,max,separation,score:Math.pow(bin.count,.25)*chroma**3*(1+separation/20)};
+    }).filter(item=>item.separation>=8 && item.separation<=45 && item.max<Math.max(main.r,main.g,main.b)*.9 && saturation(item.c)>45).sort((a,b)=>b.score-a.score);
+    const shadow=shadows[0];
+    const shade=shadow?rgbToHex(Object.fromEntries(Object.entries(shadow.c).map(([k,v])=>[k,Math.pow(v/shadow.max,1.6)*Math.min(shadow.max*.85,110)]))):mix(color,'#000000',.48);
+    return {color,shadow:shade,highlight:mix(color,'#ffffff',.58)};
   });
 }
 

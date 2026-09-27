@@ -28,7 +28,8 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   image('ambient-shadow',sourceUrl,{...hero,x:hero.x+12*u,y:hero.y+14*u},{role:'ambient',effects:{layer:'ambient-shadow',mask:'fade-all',blend:58,shadow:28,scale:1}});
   image('artwork',sourceUrl,hero,{role:'artwork',keepRatio:true,locked:true,hierarchy:'primary',effects:{layer:'hero',mask:'fade-all',blend:26,brightness:1,scale:1}});
   const bandY=top+area*.73;
-  elements.push({id:'editorial-brand-band',role:'ambient',type:'gradient',x:0,y:bandY,width:w,height:h-bandY,direction:'bottom',stops:[{offset:0,color:rgba(glow,0)},{offset:.12,color:rgba(glow,.85)},{offset:.26,color:ribbon},{offset:1,color:mix(ribbon,'#000000',.25)}]});
+  elements.push({id:'editorial-brand-band',role:'ambient',type:'gradient',x:0,y:bandY,width:w,height:h-bandY,direction:'bottom',stops:[{offset:0,color:rgba(glow,0)},{offset:.19,color:rgba(glow,.82)},{offset:.48,color:rgba(ribbon,.97)},{offset:1,color:mix(ribbon,'#000000',.20)}]});
+  image('editorial-brand-texture',sourceUrl,{x:0,y:bandY,width:w,height:h-bandY},{role:'ambient',fit:'cover',focusX:50,focusY:90,opacity:.10,effects:{layer:'background',blur:65,brightness:.65,saturation:1.2,scale:1.1,mask:'fade-top',blend:80}});
   const movieTitle=draft.title || draft.entities.movie?.title || '';
   const label=draft.subtitle && !/^(INGRESSOS )?EM DESTAQUE$/i.test(draft.subtitle)?draft.subtitle:'O FILME DA SUA VEZ';
   if(!/^(ESTREIA|PRÉ-VENDA|SESSÃO)$/i.test(label))text('subtitle',label,box([.62,.045,.315,.07]),29,{lines:2,fill:accent});
