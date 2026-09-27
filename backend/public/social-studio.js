@@ -1500,7 +1500,9 @@
       state.inlineDraft=payload();
       state.inlineDirtyKey=null;
       document.getElementById('socialStudioManualEdit').disabled=false;
-      sendInlineScene();showInlineEditor();
+      // Prepare the editor without replacing the final preview. Entering edit mode
+      // is an explicit user action so the workspace does not jump during startup.
+      sendInlineScene();showInlineEditor(false);
     } catch(error){setStatus(`Prévia disponível. Editor: ${error.message}`,'error');}
   }
   async function prepareEditedPreview() {
@@ -1833,7 +1835,7 @@
       if(key===previewCacheKey(payload()) && revision===state.manualScene) {
         const inline={scene:state.inlineScene,token:state.previewToken,edited:state.inlineEdited};
         showSavedPost(result.post);
-        if(inline.scene){state.inlineScene=inline.scene;state.previewToken=inline.token;state.inlineEdited=inline.edited;state.manualScene=inline.edited?inline.scene:null;state.manualRenderedScene=state.manualScene;state.inlineKey=previewCacheKey(payload());state.inlineDraft=payload();sendInlineScene();showInlineEditor();}
+        if(inline.scene){state.inlineScene=inline.scene;state.previewToken=inline.token;state.inlineEdited=inline.edited;state.manualScene=inline.edited?inline.scene:null;state.manualRenderedScene=state.manualScene;state.inlineKey=previewCacheKey(payload());state.inlineDraft=payload();sendInlineScene();showInlineEditor(false);}
       }
       setStatus(messages.saved, "ok");
       notify(messages.saved);

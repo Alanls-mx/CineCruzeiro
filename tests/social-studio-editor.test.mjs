@@ -98,3 +98,13 @@ test("painel expõe editor opcional e API cobre rascunho, versão, exportação 
   assert.match(editor, /Ctrl\+Z|keydown/);
   assert.doesNotMatch(editor, /email/i);
 });
+
+test("editor embutido não substitui a prévia automaticamente ao abrir o Studio", () => {
+  const admin = fs.readFileSync(new URL("../backend/public/social-studio.js", import.meta.url), "utf8");
+  const styles = fs.readFileSync(new URL("../backend/public/social-studio.css", import.meta.url), "utf8");
+  const loadScene = admin.slice(admin.indexOf("async function loadInlineScene"), admin.indexOf("async function prepareEditedPreview"));
+
+  assert.match(loadScene, /sendInlineScene\(\);showInlineEditor\(false\)/);
+  assert.doesNotMatch(loadScene, /showInlineEditor\(\);/);
+  assert.match(styles, /#socialStudioInlineEditor\[hidden\]\s*\{\s*display:none;\s*\}/);
+});
