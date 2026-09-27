@@ -66,6 +66,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     draft.movieDirection.family=draft.movieFamily;
   }
   if(!concession && !draft.movieFamily && ['BACKDROP_HERO','FULL_BLEED'].includes(draft.artworkPolicy.strategy)) {sourceUrl=backgroundUrl;sourceBuffer=backgroundBuffer;}
+  draft.availableArtwork = Boolean(sourceBuffer);
   if(sourceBuffer) {const meta=await sharp(sourceBuffer).metadata();draft.sourceAsset={width:meta.width,height:meta.height};}
   if(!concession && !draft.movieFamily && !['ticket-offer','concession-offer'].includes(draft.templateId)) {
     draft.style = selectDirection(draft, analysis);
@@ -190,11 +191,25 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   require('../scene/groups').groupCampaignScene(scene);
   const semantics = require('../scene/groups').validateSceneSemantics(scene);
   if(!semantics.valid) throw Object.assign(new Error(semantics.errors.map(e=>e.message).join(' ')),{statusCode:400,code:'SCENE_SEMANTICS'});
-  const quality = {...scoreComposition(scene),...(concessionQuality || artworkQuality || {})};
-  if(!concession && !offerTemplate && draft.automaticStyle && !options.directionRetried && quality.issues.some(issue=>issue.code==='DRY_COMPOSITION')) {
+  const quality = require('../composition-engine/editorial-review').mergeQuality(scene,scoreComposition(scene),concessionQuality || artworkQuality);
+  if(!concession && !offerTemplate && !artworkQuality?.accepted && draft.automaticStyle && !options.directionRetried && quality.issues.some(issue=>issue.code==='DRY_COMPOSITION')) {
     const alternative=await renderSocialPostV2({...input,layoutId:'hero-center',automaticStyle:false,artworkStrategy:movie?.backdropUrl?'BACKDROP_HERO':'CROPPED_POSTER'},context,{...options,directionRetried:true});
     if(alternative.quality.accepted && alternative.quality.total>quality.total) return alternative;
   }
+  if(!quality.accepted && quality.editorial.issues.some(issue=>issue.blocking) && !options.editorialRetried) {
+    const kind=require('../contracts/workspace').category(draft.templateId);
+    const layouts=require('../contracts/workspace').LAYOUTS[kind] || [];
+    for(const layout of layouts.filter(id=>id!==(programming?draft.resolvedProgramLayout:draft.layoutId)).slice(0,3)) {
+      try {
+        const alternative=await renderSocialPostV2({...input,...(programming?{programLayout:layout}:{layoutId:layout,style:layout,automaticStyle:false})},context,{...options,editorialRetried:true,directionRetried:true});
+        if(alternative.quality.accepted) {
+          alternative.notices.push({type:'info',code:'EDITORIAL_REFLOW',message:'A composição foi ajustada para aproveitar melhor o formato e preservar a leitura.'});
+          return alternative;
+        }
+      } catch(error) {if(!['EDITORIAL_QUALITY','ARTWORK_QUALITY','CONCESSION_QUALITY','PROGRAM_CAPACITY'].includes(error.code))throw error;}
+    }
+  }
+  if(quality.editorial.issues.some(issue=>issue.blocking)) throw Object.assign(new Error(quality.editorial.issues.filter(i=>i.blocking).map(i=>i.message).join(' ')),{code:'EDITORIAL_QUALITY',statusCode:422,quality});
   const rendered = options.skipRaster ? { scene, buffer: null, contentType: outputType === "jpg" ? "image/jpeg" : "image/png", extension: `.${outputType}` } : await renderSocialScene(scene, { loadImage, outputType });
   return {
     buffer: rendered.buffer,

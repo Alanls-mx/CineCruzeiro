@@ -23,7 +23,7 @@ test('conceito semanal e meia para todos dependem de confirmações explícitas'
 });
 
 test('data de campanha valida calendário e horário sem vazar ISO',()=>{
-  assert.equal(formatCampaignSession({date:'2026-09-24',time:'19:00'}),'24 DE SETEMBRO • 19H');
+  assert.equal(formatCampaignSession({date:'2026-09-24',time:'19:00'}),'24 DE SETEMBRO • 19:00');
   assert.equal(formatCampaignSession({date:'2026-09-24',time:'19:30'},true),'24/09 • 19:30');
   assert.equal(formatCampaignSession({date:'2026-02-30',time:'19:00'}),'');
   assert.equal(formatCampaignSession({date:'2026-09-24',time:'99:99'}),'24 DE SETEMBRO');
@@ -66,6 +66,11 @@ test('arte do filme entra como hero integrado e não como miniatura solta',async
   assert.ok(elements.some(e=>e.id==='ambient-shadow'));
   assert.ok(elements.some(e=>e.id==='artwork-veil'));
   assert.equal(validateLayoutCollisions(result.scene).valid,true);
+  const story=await engine.renderSocialPost({...base,movieId:'m',style:'price-impact',layoutId:'price-impact',formatId:'story'},context,{loadImage:async url=>url==='missing://poster'?poster:null,skipRaster:true});
+  const storyElements=flattenElements(story.scene.elements),hero=storyElements.find(e=>e.id==='artwork'),price=storyElements.find(e=>e.id==='detail');
+  assert.ok(hero.height>=story.scene.height*.5);
+  assert.ok(price.x+price.width<hero.x);
+  assert.equal(validateLayoutCollisions(story.scene).valid,true);
 });
 
 test('exportação manual bloqueia colisão e texto fora da área segura',async()=>{

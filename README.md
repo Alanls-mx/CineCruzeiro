@@ -533,6 +533,12 @@ Recursos principais:
 
 O score verifica contraste, área segura, tamanho mínimo, sobreposição de texto, legibilidade da marca e visibilidade do pôster antes de oferecer uma variação. A análise visual é heurística: ela não usa reconhecimento semântico de rostos, personagens ou logotipos e, por isso, o operador continua podendo ajustar a arte no editor antes da publicação.
 
+A revisão editorial combina os validadores raster existentes com ocupação visual, faixas vazias, proximidade entre CTA e endereço, presença da arte disponível e semântica do preço mínimo. Problemas editoriais graves acionam até três alternativas de composição antes de impedir a geração. Avisos menores reduzem a pontuação sem reprovar automaticamente a arte; fundos atmosféricos não contam como conteúdo principal, enquanto artwork nítido em full bleed conta.
+
+Na comparação, opções com geometria praticamente igual são descartadas e as direções recebem intenção cinematográfica, editorial ou comercial. O histórico de campanhas salvas oferece um bônus limitado de preferência, sem substituir qualidade nem diversidade. Não há treinamento de IA ou inferência de aprovação a partir de uma simples prévia. Os horários usam `HH:mm` e a copy mantém o contexto de sessão, disponibilidade e preço mínimo.
+
+Na bomboniere, a origem da imagem pode ser registrada como imagem cadastrada, ativo oficial confirmado ou mockup promocional. Imagens cadastradas e oficiais preservam sua fonte e suas cores na composição; o modo mockup apenas identifica a natureza do ativo, não gera novas embalagens nem certifica marcas de terceiros.
+
 O processamento de imagem usa cache limitado e fila com concorrência controlada no backend. Os mesmos assets rasterizados são usados na prévia, no editor Konva e na exportação, reduzindo divergências entre o que o operador vê e o arquivo final. A documentação técnica detalhada está em [`docs/SOCIAL_STUDIO_COMPOSITION_ENGINE.md`](docs/SOCIAL_STUDIO_COMPOSITION_ENGINE.md).
 
 ## 14. Formulário de eventos

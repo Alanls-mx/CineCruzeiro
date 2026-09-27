@@ -3,6 +3,7 @@ const { renderSocialPostV2 } = require("../engine/renderer");
 const { STYLES } = require("./config");
 const { campaignHierarchy } = require("./hierarchy");
 const { renderSocialScene } = require("../scene/renderer");
+const {geometry,geometryDistance,creativeIntent,preferenceBonus}=require('./editorial-review');
 
 function variationFamily(style) {
   if (['hero-left','hero-right','split'].includes(style)) return 'lateral';
@@ -16,22 +17,29 @@ function variationFamily(style) {
   return style;
 }
 
-function selectDiverseVariations(ranked, mode) {
-  if (mode === 'similar') return ranked.slice(0, 4);
+function selectDiverseVariations(ranked, mode, limit = 4) {
+  if (mode === 'similar') return ranked.slice(0, limit);
   const selected = [], families = new Set();
+  for(const intent of ['Cinematográfica','Editorial','Comercial']) {
+    const candidate=ranked.find(v=>v.creativeIntent===intent && !selected.some(s=>s.geometry && v.geometry && geometryDistance(s.geometry,v.geometry)<.045));
+    if(candidate) {selected.push(candidate);families.add(variationFamily(candidate.styleId));}
+  }
   for (const variation of ranked) {
+    if (selected.length >= limit) break;
+    if(selected.includes(variation) || selected.some(s=>s.geometry && variation.geometry && geometryDistance(s.geometry,variation.geometry)<.045))continue;
     const family = variationFamily(variation.styleId);
     if (families.has(family)) continue;
     selected.push(variation);
     families.add(family);
-    if (selected.length === 4) return selected;
+    if (selected.length === limit) return selected.sort((a,b)=>ranked.indexOf(a)-ranked.indexOf(b));
   }
   for (const variation of ranked) {
-    if (selected.includes(variation)) continue;
+    if (selected.length >= limit) break;
+    if (selected.includes(variation) || selected.some(s=>s.geometry && variation.geometry && geometryDistance(s.geometry,variation.geometry)<.045)) continue;
     selected.push(variation);
-    if (selected.length === 4) break;
+    if (selected.length === limit) break;
   }
-  return selected;
+  return selected.sort((a,b)=>ranked.indexOf(a)-ranked.indexOf(b));
 }
 
 async function generateVariations(input, context, options = {}) {
@@ -78,7 +86,7 @@ async function generateVariations(input, context, options = {}) {
     if(multi && mode==='similar') draft.programSpacing=(index-2)*.003;
     let raw;
     try {raw=await renderSocialPostV2(draft, context, { ...options, artworkRetried:true,concessionRetried:product, skipRaster: true });}
-    catch(error) {if(!['CONCESSION_QUALITY','ARTWORK_QUALITY','PROGRAM_CAPACITY'].includes(error.code))throw error;rejected.push({style,quality:error.quality});continue;}
+    catch(error) {if(!['CONCESSION_QUALITY','ARTWORK_QUALITY','PROGRAM_CAPACITY','EDITORIAL_QUALITY'].includes(error.code))throw error;rejected.push({style,quality:error.quality});continue;}
     const polished = product || isMovie(input) || multi ? raw : await renderSocialPostV2({ ...draft, polish: true }, context, { ...options, skipRaster: true });
     const rendered = polished.quality.accepted && polished.quality.total >= raw.quality.total ? polished : raw;
     if (!rendered.quality.accepted) {
@@ -101,16 +109,20 @@ async function generateVariations(input, context, options = {}) {
       beforeQuality: raw.quality,
       refined: rendered === polished,
       scene: rendered.scene,
+      geometry:geometry(rendered.scene),
+      creativeIntent:creativeIntent(payload.resolvedProgramLayout || payload.movieFamily || style),
+      preference:preferenceBonus(payload,context.history),
     });
   }
-  variations.sort((first, second) => second.quality.total - first.quality.total || second.quality.commercialClarity - first.quality.commercialClarity);
-  const selected = selectDiverseVariations(variations, mode).map((variation, index) => ({ ...variation, recommended: index === 0, classification: index === 0 ? "Melhor opção" : variation.quality.total >= 88 ? "Muito boa" : variation.quality.total >= 78 ? "Boa" : "Experimental" }));
+  variations.sort((first, second) => (second.quality.total+second.preference) - (first.quality.total+first.preference) || second.quality.commercialClarity - first.quality.commercialClarity);
+  const selected = selectDiverseVariations(variations, mode, input.workspaceVersion===2?3:4).map((variation, index) => ({ ...variation, recommended: index === 0, classification: index === 0 ? "Melhor opção" : variation.quality.total >= 88 ? "Muito boa" : variation.quality.total >= 78 ? "Boa" : "Experimental" }));
   for (const variation of selected) {
     const raster = await renderSocialScene(variation.scene, options);
     const thumb = await sharp(raster.buffer).resize({ width: 400 }).jpeg({ quality: 85 }).toBuffer();
     variation.image = `data:image/jpeg;base64,${thumb.toString("base64")}`;
     delete variation.scene;
     delete variation.programGeometry;
+    delete variation.geometry;
   }
   return {
     variations: selected,

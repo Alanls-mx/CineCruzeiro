@@ -41,6 +41,8 @@ function inspectConcessionLayout(scene) {
   }
   for(const id of ['title','detail','cta','artwork']) if(!elements.some(e=>e.id===id)) add('MISSING_CONTENT',id,'A campanha perdeu uma informação essencial.');
   const art=elements.find(e=>e.id==='artwork');
+  const asset=scene.sourceDraft?.productAsset;
+  if(art && asset?.preservePackaging && (art.src!==asset.source || art.effects && (art.effects.blur>0 || Math.abs((art.effects.brightness ?? 1)-1)>.01 || Math.abs((art.effects.saturation ?? 1)-1)>.01))) add('PRODUCT_ASSET_INTEGRITY','artwork','Preserve a imagem e as cores da embalagem cadastrada, ou escolha explicitamente Mockup promocional.');
   const logo=elements.find(e=>e.role==='logo');
   if(logo) {
     const atLeft=logo.x<=w*.11,atRight=logo.x+logo.width>=w*.89;

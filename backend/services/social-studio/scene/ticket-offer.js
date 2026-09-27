@@ -49,7 +49,8 @@ function buildTicketOfferScene({draft,format,brand,logoUrl,sourceUrl,backgroundU
     'promo-editorial':{x:.57,y:.07,width:.385,height:.315,focusX:50,focusY:40,mask:'fade-all',blend:50},
     'cinema-pop':{x:.615,y:.052,width:.34,height:.285,focusX:50,focusY:40,mask:'fade-all',blend:48}
   };
-  const artPlan=artPlans[mode] || artPlans['price-impact'];
+  const storyPair=story && art && mode==='price-impact';
+  const artPlan=storyPair?{...artPlans['price-impact'],x:.55,y:.105,width:.40,height:.53}:artPlans[mode] || artPlans['price-impact'];
   const artBox={x:w*artPlan.x,y:h*Math.max(artPlan.y,story?.105:.045),width:w*artPlan.width,height:h*artPlan.height};
   if(art) {
     image('artwork-atmosphere',backgroundUrl || sourceUrl,0,0,w,h,'ambient',{fit:'cover',focusX:artPlan.focusX,focusY:artPlan.focusY,opacity:editorial?.12:.18,effects:{layer:'background',blur:48,brightness:editorial?.72:.42,saturation:.78,scale:1.22,mask:'none'}});
@@ -78,7 +79,7 @@ function buildTicketOfferScene({draft,format,brand,logoUrl,sourceUrl,backgroundU
     shape('ticket-decoration',w*.79,h*.30,w*.14,h*.035,gold,{rotation:-8});
     for(let i=0;i<4;i++) shape(`ticket-perforation-${i}`,w*.814,h*(.304+i*.006),3,3,ink,{radius:2});
   }
-  const px=editorial?w*.365:w*family.priceX,pw=editorial?w*.57:w*family.priceW,py=h*priceTop,ph=h*priceH;
+  const px=editorial?w*.365:w*family.priceX,pw=storyPair?w*.43:editorial?w*.57:w*family.priceW,py=h*priceTop,ph=h*priceH;
   let priceFill=accent;
   if(mode==='offer-counter') {
     shape('price-panel',px-w*.025,py-h*.012,pw+w*.05,ph+h*.025,gold,{rotation:mode==='offer-counter'?1:-1});

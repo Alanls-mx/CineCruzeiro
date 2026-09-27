@@ -27,7 +27,7 @@ function campaignCTA(draft) {
   const available=content?.purchaseAvailable && !(draft.templateId==='movie-presale' && content.presaleStartDate>content.today);
   return !available?'EM BREVE':['movie-price','movie-presale'].includes(draft.templateId)?'COMPRE SEU INGRESSO':'ESCOLHA SUA SESSÃO';
 }
-function timeLabel(value) {return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))?String(value).replace(':','H'):'';}
+function timeLabel(value) {return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))?String(value):'';}
 function dayLabel(value) {
   if(!require('../engine/content-rules').validDay(value))return '';
   const weekday=new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC',weekday:'short'}).format(new Date(`${value}T12:00:00Z`)).replace('.','').toUpperCase();

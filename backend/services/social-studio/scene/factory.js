@@ -124,7 +124,10 @@ function buildEditableScene({ draft, format, palette, brand, sourceUrl = "", bac
     focusX: framing.hero.focusX, focusY: framing.hero.focusY, locked: true, required: true, keepRatio: true,hierarchy:"primary"
   }));
   if (cinematic) {
-    if (fullBleed) elements.find((item) => item.id === "artwork").visible = false;
+    if (fullBleed) {
+      elements.find((item) => item.id === "artwork").visible = false;
+      elements.find((item) => item.id === "background-blur").role = 'artwork';
+    }
     if(draft.artDirection?.foreground && draft.artDirection.foreground!=="none") elements.push(base("foreground-atmosphere","image",fullBounds,{name:"Primeiro plano",role:"ambient",src:sourceUrl,locked:true,opacity:.65,effects:{...ambientFx,layer:"atmosphere",overlay:draft.artDirection.foreground}}));
     elements.push(base("vignette", "image", fullBounds, { name: "Vinheta", role: "ambient", src: sourceUrl, locked: true, effects: { ...ambientFx, layer: "vignette", vignette: composition.vignette } }));
     // Localized contrast zone. The renderer measures the image to tune its opacity.

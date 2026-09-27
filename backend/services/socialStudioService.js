@@ -1063,6 +1063,7 @@ function createHistoryRecord(rendered, input = {}, context = {}, actor = "") {
       priceSelection: rendered.draft.priceSelection,
       signatureScaleMode: rendered.draft.signatureScaleMode,
       brandProminence: rendered.draft.brandProminence,
+      concessionDirection: rendered.draft.concessionDirection,
       artworkMetadata: rendered.draft.artworkMetadata,
       artworkStrategy: rendered.draft.artworkStrategy,
       primaryElement: rendered.draft.primaryElement,

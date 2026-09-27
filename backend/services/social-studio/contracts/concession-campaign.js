@@ -30,6 +30,7 @@ function normalizeConcession(input, product = {}) {
   const family = FAMILIES[requested] ? requested : legacy[requested] || (input.relatedMovieId ? 'cinematic-product' : ['offer','price','new'].includes(objective) ? 'commercial-vibrant' : ['introduce','brand'].includes(objective) || category === 'soda' ? 'clean-premium' : category === 'chocolate' || objective==='desire' ? 'dark-snack' : category === 'family' ? 'commercial-vibrant' : 'cinematic-product');
   const layout=layouts[requestedLayout]?requestedLayout:family==='commercial-vibrant'?'product-price':family==='dark-snack'?'hero-product':'product-lateral';
   return { category, objective, family, layout, familyMode:FAMILIES[requested] || legacy[requested]?'manual':'automatic',categoryMode:source.categoryMode!=='automatic' && CATEGORIES.includes(source.category)?'manual':'automatic',
+    assetMode:['registered','official','mockup'].includes(source.assetMode)?source.assetMode:'registered',
     brandedProduct:source.brandedProduct === true || product.containsCinemaBranding === true,
     seed:Math.max(0,Math.min(9999,Number(input.artDirection?.seed) || 0)) };
 }

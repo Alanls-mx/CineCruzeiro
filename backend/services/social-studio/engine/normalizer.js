@@ -93,7 +93,7 @@ function normalizeV2Draft(input = {}, context = {}) {
   require('./content-rules').applyContentRules(draft, input, context);
   draft.signatureScaleMode=input.signatureScaleMode==='automatic' || input.signatureScale===undefined ? 'automatic' : 'manual';
   if(template.id==='ticket-offer') draft.signatureScale=Math.max(70,Math.min(180,Number(input.signatureScale)||100));
-  draft.brandProminence=['subtle','normal','strong'].includes(input.brandProminence)?input.brandProminence:'normal';
+  draft.brandProminence=['subtle','normal','strong'].includes(input.brandProminence)?input.brandProminence:template.id.startsWith('movie-')?'subtle':['concession-combo','concession-offer','club-plan'].includes(template.id)?'strong':'normal';
   Object.assign(draft,require('../composition-engine/artwork-policy').normalizeArtwork(input,commercial && template.id!=='online-ticket' ? null : movie));
   if(['movie-price','ticket-offer'].includes(template.id)) {
     const priceInput=template.id==='ticket-offer' && !input.priceSelection && !input.price ? {...input,priceSelection:{mode:'full'}} : input;

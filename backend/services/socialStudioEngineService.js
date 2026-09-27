@@ -6,7 +6,7 @@ function captionForDraft(input = {}, context = {}) {
   const manualText=['concession-offer','concession-combo'].includes(draft.templateId) && input.auxiliaryText ? String(input.auxiliaryText).trim() : '';
   const preserveManualText=caption=>manualText && !caption.includes(manualText) ? `${caption}\n\n${manualText}` : caption;
   if (draft.caption) return preserveManualText(draft.caption);
-  if(draft.content?.releaseScope==='international' || ['movie-price','ticket-offer','concession-offer','concession-combo','online-ticket'].includes(draft.templateId)) {
+  if(draft.templateId.startsWith('movie-') || draft.content?.releaseScope==='international' || ['ticket-offer','concession-offer','concession-combo','online-ticket'].includes(draft.templateId)) {
     const caption=require('./social-studio/copy-engine').generateCopy(draft,context).bundle.caption;
     return preserveManualText(caption);
   }

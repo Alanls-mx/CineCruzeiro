@@ -110,12 +110,12 @@ function buildConcessionScene({draft,format,brand,sourceUrl,logoUrl,assetBounds}
   tx('website',compactWebsite(draft.actionDestination || brand.posterWebsite || brand.website),[.065,footer+.060,.60,.03],26,{fill:'#ffffff',lines:1,required:Boolean(draft.actionDestination)});
   tx('description',draft.offerTerms,[.065,footer+.105,.87,.035],24,{fill:'#ffffff',lines:2});
   const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
-  const logoHeight=Math.min(h*.07,w*(profile.brandedProduct?.16:.19)/ratio),logoWidth=logoHeight*ratio;
+  const logoHeight=Math.min(h*.085,w*(profile.brandedProduct?.16:.21)/ratio),logoWidth=logoHeight*ratio;
   const logoBox={x:w*.935-logoWidth,y:rect([0,footer,1,0]).y,width:logoWidth,height:logoHeight};
   image('logo',logoUrl,logoBox);
   if(!logoUrl && draft.signatureId!=='none') tx('cinema',brand.name,[.72,footer,.215,.075],28,{fill:'#ffffff',hierarchy:'branding',lines:3});
   const {entities,...sourceDraft}=draft;
   return normalizeScene({id:`scene-${draft.templateId}-${format.id}`,templateId:draft.templateId,formatId:format.id,width:w,height:h,backgroundColor:colors.bg,motion:draft.motion,elements,
-    sourceDraft:{...sourceDraft,concessionDirection:profile,concessionLogoBounds:logoBox,concessionSurface:colors.surface,productBounds:assetBounds,productName:draft.entities.concession.name,productPrice:fullPrice}});
+    sourceDraft:{...sourceDraft,concessionDirection:profile,productAsset:{source:sourceUrl,mode:profile.assetMode,preservePackaging:profile.assetMode!=='mockup'},concessionLogoBounds:logoBox,concessionSurface:colors.surface,productBounds:assetBounds,productName:draft.entities.concession.name,productPrice:fullPrice}});
 }
 module.exports={buildConcessionScene,productBounds};

@@ -28,7 +28,7 @@ test('1, 2, 3, 5 e 8 filmes preservam conteúdo e geometria nos três formatos',
     assert.ok(rendered.quality.accepted,`${count} ${formatId}`);
     assert.equal(rendered.draft.resolvedProgramLayout,({1:'program-hero',2:'program-duo',3:'program-grid',5:'program-grid',8:'program-list'})[count],`${count} ${formatId}`);
     const elements=flattenElements(rendered.scene.elements),text=elements.filter(e=>e.type==='text').map(e=>e.text.replace(/\s+/g,' ')).join(' ');
-    for(const movie of movies.slice(0,count)) {assert.ok(text.includes(movie.title));assert.ok(text.includes(movie.sessions[0].time.replace(':','H')));}
+    for(const movie of movies.slice(0,count)) {assert.ok(text.includes(movie.title));assert.ok(text.includes(movie.sessions[0].time));}
     assert.equal(rendered.scene.sourceDraft.programSessionCount,count);
     assert.equal(elements.filter(e=>e.role==='logo').length,1);
     assert.doesNotMatch(text,/\d{4}-\d{2}-\d{2}|mais sessões|no site$/);
@@ -114,7 +114,7 @@ test('campanha concentra o dia no cabeçalho e agrupa todos os horários',async(
     const r=await engine.renderSocialPost({templateId:'multi-movies',movieIds:['p0','p1','p2'],programLayout},ctx,{loadImage,skipRaster:true});
     const elements=flattenElements(r.scene.elements);
     assert.equal(elements.filter(e=>e.type==='text' && /24\/09/.test(e.text)).length,1,programLayout);
-    assert.equal(elements.filter(e=>e.type==='text' && /22H30/.test(e.text)).length,3,programLayout);
+    assert.equal(elements.filter(e=>e.type==='text' && /22:30/.test(e.text)).length,3,programLayout);
     assert.equal(r.scene.sourceDraft.programSessionCount,6);
     assert.equal(r.scene.sourceDraft.programSolidFallback,undefined);
     assert.ok(elements.some(e=>e.id==='program-atmosphere'));

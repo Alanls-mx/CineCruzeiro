@@ -13,7 +13,7 @@ function formatCampaignSession(session,compact=false) {
   const time=/^([01]\d|2[0-3]):[0-5]\d$/.test(session.time || '')?session.time:'';
   if(compact) return `${new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',timeZone:'UTC'}).format(date)}${time?` • ${time}`:''}`;
   const long=new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'long',timeZone:'UTC'}).format(date).toLocaleUpperCase('pt-BR');
-  const hour=time?.endsWith(':00')?`${Number(time.slice(0,2))}H`:time?.replace(':','H');
+  const hour=require('./artwork-layout').timeLabel(time);
   return `${long}${hour?` • ${hour}`:''}`;
 }
 
@@ -26,7 +26,7 @@ function ticketCampaignConcept(draft) {
   const dayLine=weekly?`TODA ${days.map(day=>DAYS[day]).join(' E ')}`:'';
   const headline=draft.offerHeadline || (allHalf?'TODO MUNDO PAGA MEIA':weekly?'SESSÕES COM PREÇO ESPECIAL':from?'INGRESSOS A PARTIR DE':'INGRESSOS EM DESTAQUE');
   const eyebrow=dayLine || (mode==='promotional'?'OFERTA CONFIRMADA':'NA TELA GRANDE');
-  const pricePrompt=from?(headline.includes('A PARTIR DE')?'VALOR POR INGRESSO':'A PARTIR DE'):allHalf?'VALOR POR INGRESSO':draft.priceInfo?.ticketType || 'INGRESSO';
+  const pricePrompt=from?(headline.includes('A PARTIR DE')?'':'A PARTIR DE'):allHalf?'VALOR POR INGRESSO':draft.priceInfo?.ticketType || 'INGRESSO';
   return {headline,eyebrow,pricePrompt,mode,weekly,allHalf,days,from};
 }
 

@@ -22,7 +22,7 @@ test('famílias oficiais preservam o pôster e contraste em todos os formatos',a
   }
 });
 test('datas são absolutas e CTA explícito travado é preservado',()=>{
-  assert.equal(scheduleLabel({date:'2026-09-24',times:['13:00','19:30']}),'QUI • 24/09 • 13H00 / 19H30');
+  assert.equal(scheduleLabel({date:'2026-09-24',times:['13:00','19:30']}),'QUI • 24/09 • 13:00 / 19:30');
   const draft=engine.normalizeDraft({templateId:'movie-highlight',movieId:'m',cta:'CONFIRA AS SESSÕES',copyLocks:{cta:true}},context);
   assert.equal(draft.cta,'CONFIRA AS SESSÕES');
 });

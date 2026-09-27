@@ -149,12 +149,18 @@ class RuleBasedCopyProvider {
       if(/^sessions-/.test(type)) supportingText=context.schedule.text;
       if(type==='multi-movies') supportingText=context.programMovies.map(movie=>movie.title).join(' • ');
       if(context.releaseScope==='international') supportingText=context.movie?.socialHook || angle.line;
-      const headline=type==='ticket-offer'?(context.campaignConcept?.headline || context.offerHeadline || 'INGRESSOS EM DESTAQUE'):['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject && /^movie-/.test(type) && i%4===3?`${subject} NO CINEMA`:subject || context.cinemaName;
-      if(type==='online-ticket') supportingText=context.relatedMovieId?`Confira as sessões de ${context.movie.title} no site do cinema.`:['Escolha o filme, confira os horários e compre seu ingresso no site.','Programe sua ida ao cinema com a bilheteria online.','Encontre o filme e o horário que combinam com sua agenda.'][i%3];
+      const headline=type==='ticket-offer'?(context.campaignConcept?.headline || context.offerHeadline || 'INGRESSOS EM DESTAQUE'):['online-ticket','multi-movies'].includes(type)?pool[(i+2)%pool.length]:subject || context.cinemaName;
+      if(/^movie-/.test(type) && type==='movie-highlight' && saleOpen) {
+        const today=context.sessions.some(s=>s.date===context.today);
+        kicker=(today?['HOJE TEM CINEMA','ESCOLHA SEU HORÁRIO','SUA PRÓXIMA SESSÃO','NA TELA GRANDE']:['ESCOLHA SUA SESSÃO','SEU PRÓXIMO FILME','UMA HISTÓRIA ESPERA POR VOCÊ','NA TELA GRANDE'])[i%4];
+      }
+      if(type==='online-ticket') supportingText=context.relatedMovieId
+        ? saleOpen?`Escolha sua sessão de ${context.movie.title} e garanta seu lugar.`:`Acompanhe a programação de ${context.movie.title} no site do cinema.`
+        : (saleOpen?['Escolha o filme, confira os horários e compre seu ingresso no site.','Seu lugar no cinema começa pela escolha da sessão.','Encontre seu filme, escolha o horário e garanta seu ingresso.']:['Confira a programação e planeje sua próxima sessão.','Acompanhe os próximos filmes na bilheteria online.','Veja os horários disponíveis no site do cinema.'])[i%3];
       const cta=/^movie-/.test(type)?(!saleOpen?['EM BREVE','CONHEÇA O FILME','ACOMPANHE A ESTREIA'][i%3]:['movie-price','movie-presale'].includes(type)?['COMPRE SEU INGRESSO','ESCOLHA SUA SESSÃO','ACESSE A BILHETERIA'][i%3]:['ESCOLHA SUA SESSÃO','ENCONTRE SEU HORÁRIO','PROGRAME SEU CINEMA'][i%3]):/^sessions-|multi-movies/.test(type)?['VEJA A PROGRAMAÇÃO','ESCOLHA DIA E HORÁRIO','PROGRAME SUA SESSÃO'][i%3]:type==='online-ticket'?['CONFIRA A PROGRAMAÇÃO','ACESSE A BILHETERIA','ESCOLHA SUA SESSÃO'][i%3]:ctas[i%ctas.length];
       const detail=['movie-price','ticket-offer','concession-offer'].includes(type)?context.price.formatted:/^movie-/.test(type)?context.primaryDate || '':'';
       const destinationText=(context.action.destination || '').replace(/^https?:\/\//,'').replace(/\/$/,'');
-      const priceLine=['concession-combo','concession-offer','club-plan','ticket-offer'].includes(type) && context.price.formatted ? `${type==='club-plan'?'Mensalidade':'Valor'}: ${context.price.formatted}` : '';
+      const priceLine=['concession-combo','concession-offer','club-plan','ticket-offer'].includes(type) && context.price.formatted ? `${type==='club-plan'?'Mensalidade':context.price.from?'A partir de':'Valor'}: ${context.price.formatted}` : '';
       const scheduleLine=context.programMovies.length?context.programMovies.map(movie=>`${movie.title}\n${movie.schedule.text}`).join('\n\n'):'';
       const detailLine=type!=='ticket-offer' && detail && `${['movie-price','ticket-offer'].includes(type)?context.price.label:type==='concession-offer'?'PREÇO':context.primaryDateLabel}: ${detail}`;
       const editorialDetail=/^movie-/.test(type) && density!=='short' ? angle.available.filter(item=>!supportingText.includes(item.text)).slice(0,density==='long'?3:1).map(item=>item.text).join(' ') : '';
