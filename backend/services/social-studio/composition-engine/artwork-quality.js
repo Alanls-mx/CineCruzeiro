@@ -122,6 +122,12 @@ async function assertArtworkQuality(scene,loadImage) {
   return quality;
 }
 async function repairContrast(scene,loadImage) {
+  if(scene.sourceDraft.movieFamily==='movie-editorial-light') {
+    // The editorial layout has separate light copy and dark branding zones.
+    // A full-frame veil would destroy that separation and hide the artwork.
+    await repairConcessionContrast(scene,loadImage);
+    return;
+  }
   if(scene.sourceDraft.programCampaignVersion===2) {
     for(const reading of await contrastReadings(scene,loadImage)) {
       const element=scene.elements.find(e=>e.id===reading.id);

@@ -113,4 +113,31 @@ async function extractPalette(buffer, brand = {}) {
   });
 }
 
-module.exports = { extractPalette, blendProgramPalettes, hexToRgb, mix, paletteCache, rgbToHex, safeHex, PALETTES, applyPalette };
+async function extractEditorialAtmosphere(buffer) {
+  if(!Buffer.isBuffer(buffer) || !buffer.length)return null;
+  const key=`editorial:${crypto.createHash('sha1').update(buffer).digest('hex')}`;
+  return paletteCache.getOrLoad(key,async()=>{
+    const {data,info}=await sharp(buffer).rotate().resize(32,48,{fit:'fill'}).removeAlpha().raw().toBuffer({resolveWithObject:true});
+    const buckets=new Map();
+    // Sample the lower artwork, not letterboxed edges or a brand-biased palette.
+    for(let y=28;y<46;y++)for(let x=2;x<30;x++) {
+      const i=(y*info.width+x)*info.channels,color={r:data[i],g:data[i+1],b:data[i+2]};
+      const light=(color.r+color.g+color.b)/3;
+      if(light<65 || light>225)continue;
+      const key=[color.r>>5,color.g>>5,color.b>>5].join(',');
+      const bin=buckets.get(key)||{r:0,g:0,b:0,count:0};
+      bin.r+=color.r;bin.g+=color.g;bin.b+=color.b;bin.count++;
+      buckets.set(key,bin);
+    }
+    const score=bin=>{
+      const color={r:bin.r/bin.count,g:bin.g/bin.count,b:bin.b/bin.count};
+      return Math.sqrt(bin.count)*(1+saturation(color)**2/Math.max(color.r,color.g,color.b,1));
+    };
+    const best=[...buckets.values()].sort((a,b)=>score(b)-score(a))[0];
+    if(!best)return null;
+    const color=rgbToHex({r:best.r/best.count,g:best.g/best.count,b:best.b/best.count});
+    return {color,shadow:mix(color,'#000000',.48),highlight:mix(color,'#ffffff',.58)};
+  });
+}
+
+module.exports = { extractEditorialAtmosphere, extractPalette, blendProgramPalettes, hexToRgb, mix, paletteCache, rgbToHex, safeHex, PALETTES, applyPalette };

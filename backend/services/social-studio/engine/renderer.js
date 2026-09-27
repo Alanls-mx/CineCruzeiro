@@ -88,6 +88,9 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   let palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
     : await extractPalette(sourceBuffer, brand), draft.paletteId);
+  if(draft.movieFamily==='movie-editorial-light' && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
+    palette.editorialAtmosphere=await require('./palette').extractEditorialAtmosphere(sourceBuffer);
+  }
   if(programming && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
     const palettes=[];
     for(const film of draft.programMovies) {

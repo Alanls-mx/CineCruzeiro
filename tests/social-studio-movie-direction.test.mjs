@@ -49,6 +49,38 @@ test('editorial integrado dissolve o pôster em fundo derivado e mantém ação 
   assert.ok(elements.find(e=>e.id==='logo').x<result.scene.width*.2);
   assert.ok(elements.find(e=>e.id==='website').text.includes('cinecruzeiro.com.br'));
 });
+test('estreia automática preserva pôster inteiro e usa editorial mesmo sem backdrop',()=>{
+  for(const backdrop of [false,true]) {
+    const draft={templateId:'movie-premiere',movieId:'one',genreProfile:{id:'family'}};
+    assert.equal(movieDirection(draft,{}, {zones:[{id:'bottom',complexity:.8}]},backdrop).family,'movie-editorial-light');
+    assert.equal(movieDirection(draft,{layoutId:'movie-spotlight'},null,backdrop).family,'movie-spotlight');
+  }
+});
+test('editorial mantém imagem, data e horários sem recorrer a outro layout',async()=>{
+  for(const formatId of ['feed_portrait','square','story'])for(const templateId of ['movie-premiere','movie-highlight','movie-price','movie-presale']) {
+    const result=await engine.renderSocialPost({templateId,movieId:'movie',formatId,layoutId:'movie-editorial-light',priceSelection:{mode:'full'}},context,{loadImage,skipRaster:true,artworkRetried:true});
+    assert.equal(result.scene.sourceDraft.movieFamily,'movie-editorial-light');
+    const elements=flattenElements(result.scene.elements),art=elements.find(e=>e.id==='artwork');
+    assert.equal(art.fit,'contain');
+    assert.ok(art.effects.blend<40);
+    assert.ok(elements.find(e=>e.id==='title').x>art.x+art.width);
+    if(['movie-premiere','movie-presale'].includes(templateId))assert.ok(elements.find(e=>e.id==='detail').y>art.y+art.height);
+    assert.ok(!elements.some(e=>e.id==='movie-reading-veil'));
+  }
+});
+test('atmosfera editorial deriva as cores do pôster sem vermelho ou cor de marca fixos',async()=>{
+  const {extractEditorialAtmosphere,hexToRgb}=require('../backend/services/social-studio/engine/palette');
+  for(const color of ['#e87b18','#157cdc','#31b65a']) {
+    const buffer=await sharp({create:{width:64,height:96,channels:3,background:color}}).png().toBuffer();
+    const atmosphere=await extractEditorialAtmosphere(buffer);
+    assert.equal(atmosphere.color,color);
+    const source=hexToRgb(color),shadow=hexToRgb(atmosphere.shadow);
+    assert.ok(Math.abs(shadow.r-source.r*.52)<=1);
+    assert.ok(Math.abs(shadow.g-source.g*.52)<=1);
+    assert.ok(Math.abs(shadow.b-source.b*.52)<=1);
+  }
+  assert.equal(await extractEditorialAtmosphere(null),null);
+});
 test('exportação manual preserva horários e não permite trocar poster por recorte',async()=>{
   const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',layoutId:'movie-asymmetric'},context,{loadImage,skipRaster:true,artworkRetried:true});
   const altered=structuredClone(r.scene);
