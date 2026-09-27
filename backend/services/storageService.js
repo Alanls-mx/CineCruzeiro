@@ -1,6 +1,7 @@
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
+const sharp = require("sharp");
 
 const SUPPORTED_IMAGE_TYPES = new Map([
   ["image/jpeg", ".jpg"],
@@ -10,6 +11,60 @@ const SUPPORTED_IMAGE_TYPES = new Map([
 ]);
 
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_PIXELS = 40_000_000;
+const AI_FILENAME_PREFIX = /^(?:ai|ia|dall[-_ ]?e|midjourney|chatgpt|openai|gemini|imagegen|generated(?:[-_ ]by[-_ ]ai)?)(?=$|[-_. ])[\s_.-]*/i;
+
+function hasAiFilenamePrefix(filename) {
+  const baseName = path.basename(String(filename || ""), path.extname(String(filename || "")));
+  return AI_FILENAME_PREFIX.test(baseName);
+}
+
+function normalizeImageBaseName(filename) {
+  const original = path.basename(String(filename || "imagem"), path.extname(String(filename || "")));
+  const hasAiPrefix = hasAiFilenamePrefix(filename);
+  const withoutPrefix = hasAiPrefix ? original.replace(AI_FILENAME_PREFIX, "") : original;
+  const safeRemainder = withoutPrefix
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, hasAiPrefix ? 34 : 48);
+  if (!hasAiPrefix) return safeRemainder || "imagem";
+  return `cine-cruzeiro${safeRemainder ? `-${safeRemainder}` : "-imagem"}`.slice(0, 48).replace(/-+$/g, "");
+}
+
+function cineCruzeiroXmp() {
+  const year = new Date().getUTCFullYear();
+  return `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xmp="http://ns.adobe.com/xap/1.0/">
+      <dc:title><rdf:Alt><rdf:li xml:lang="x-default">Imagem oficial do Cine Cruzeiro</rdf:li></rdf:Alt></dc:title>
+      <dc:creator><rdf:Seq><rdf:li>Cine Cruzeiro</rdf:li></rdf:Seq></dc:creator>
+      <dc:rights><rdf:Alt><rdf:li xml:lang="x-default">Copyright ${year} Cine Cruzeiro</rdf:li></rdf:Alt></dc:rights>
+      <xmp:CreatorTool>Cine Cruzeiro Media Pipeline</xmp:CreatorTool>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+}
+
+async function sanitizeImageBuffer(buffer, contentType) {
+  let pipeline = sharp(buffer, { failOn: "error", limitInputPixels: MAX_IMAGE_PIXELS }).rotate();
+  if (contentType === "image/jpeg") pipeline = pipeline.jpeg({ quality: 92, chromaSubsampling: "4:4:4", progressive: true });
+  else if (contentType === "image/png") pipeline = pipeline.png({ compressionLevel: 9, adaptiveFiltering: true });
+  else pipeline = pipeline.webp({ quality: 92, alphaQuality: 100, smartSubsample: true });
+  return pipeline
+    .withExif({ IFD0: {
+      Artist: "Cine Cruzeiro",
+      Copyright: `Copyright ${new Date().getUTCFullYear()} Cine Cruzeiro`,
+      ImageDescription: "Imagem oficial do Cine Cruzeiro",
+      Software: "Cine Cruzeiro Media Pipeline"
+    } })
+    .withXmp(cineCruzeiroXmp())
+    .toBuffer();
+}
 
 function sanitizeFolder(value) {
   return String(value || "general")
@@ -82,8 +137,21 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
       throw error;
     }
 
-    const baseName = path.basename(String(filename || "imagem"), path.extname(String(filename || "")));
-    const safeName = baseName.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "imagem";
+    let sanitizedBuffer;
+    try {
+      sanitizedBuffer = await sanitizeImageBuffer(imageBuffer, detectedType);
+    } catch {
+      const error = new Error("Não foi possível processar a imagem enviada.");
+      error.statusCode = 415;
+      throw error;
+    }
+    if (sanitizedBuffer.length > maxBytes) {
+      const error = new Error(`A imagem processada excede o limite de ${Math.round(maxBytes / 1024 / 1024)} MB.`);
+      error.statusCode = 413;
+      throw error;
+    }
+
+    const safeName = normalizeImageBaseName(filename);
     const targetFolder = sanitizeFolder(folder);
     const targetDir = path.resolve(rootDir, targetFolder);
     if (!insideRoot(rootDir, targetDir)) {
@@ -100,13 +168,13 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
       error.statusCode = 400;
       throw error;
     }
-    await fs.writeFile(filePath, imageBuffer);
+    await fs.writeFile(filePath, sanitizedBuffer);
 
     return {
       path: filePath,
       url: `${publicBasePath}/${targetFolder}/${fileName}`,
       contentType: detectedType,
-      size: imageBuffer.length
+      size: sanitizedBuffer.length
     };
   }
 
@@ -139,4 +207,4 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
   };
 }
 
-module.exports = { createStorageService, SUPPORTED_IMAGE_TYPES };
+module.exports = { createStorageService, SUPPORTED_IMAGE_TYPES, hasAiFilenamePrefix, normalizeImageBaseName, sanitizeImageBuffer };
