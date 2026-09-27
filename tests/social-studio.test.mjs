@@ -38,7 +38,8 @@ async function fixtureContext() {
     ["product://combo", await image(1000, 1000, "#be123c")],
     ["/images/social-studio/cine-cruzeiro-icon-3d.png", await image(224, 224, "#0ea5e9")],
     ["/images/social-studio/cine-cruzeiro-wordmark-3d.png", await image(720, 240, "#2563eb")],
-    ["/images/social-studio/cine-cruzeiro-logo-3d.png", await image(520, 297, "#1d4ed8")]
+    ["/images/social-studio/cine-cruzeiro-logo-3d.png", await image(520, 297, "#1d4ed8")],
+    ["/images/social-studio/cine-cruzeiro-assinatura-oficial.png", await image(720, 520, "#f1f1f1")]
   ]);
   return {
     brand: {
@@ -105,6 +106,8 @@ test("assinaturas disponíveis não incluem o símbolo 3D", async () => {
   const concession = normalizeDraft({ templateId: "concession-combo", concessionId: "combo" }, context);
   assert.equal(signatureForDraft(premiere, context).id, "logo-3d");
   assert.equal(signatureForDraft(concession, context).id, "logo-3d");
+  assert.equal(signatureForDraft(normalizeDraft({templateId:"movie-highlight",signatureId:"automatic"},context),context).imageUrl,"/images/social-studio/cine-cruzeiro-assinatura-oficial.png");
+  assert.equal(signatureForDraft(normalizeDraft({templateId:"movie-highlight",signatureId:"classic"},context),context).imageUrl,"/images/social-studio/cine-cruzeiro-assinatura-oficial.png");
   assert.equal(normalizeDraft({ templateId: "concession-combo", signatureId: "icon-3d" }, context).signatureId, "automatic");
 });
 

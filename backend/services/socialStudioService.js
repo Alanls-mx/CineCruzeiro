@@ -46,9 +46,9 @@ const SOCIAL_STYLES = Object.freeze([
 
 const SOCIAL_SIGNATURES = Object.freeze([
   { id: "automatic", name: "Automática", description: "Escolhe a assinatura mais adequada ao modelo.", imageUrl: "" },
-  { id: "classic", name: "Marca clássica", description: "Mantém a logo já usada pelo Cine Cruzeiro.", imageUrl: "" },
+  { id: "classic", name: "Assinatura oficial", description: "Assinatura principal do Cine Cruzeiro para as campanhas do Studio.", imageUrl: "/images/social-studio/cine-cruzeiro-assinatura-oficial.png" },
   { id: "wordmark-3d", name: "Assinatura horizontal", description: "Nome completo com boa leitura sobre imagens.", imageUrl: "/images/social-studio/cine-cruzeiro-wordmark-3d.png" },
-  { id: "logo-3d", name: "Logo completa 3D", description: "Versão institucional com Cultura e Lazer.", imageUrl: "/images/social-studio/cine-cruzeiro-logo-3d.png" },
+  { id: "logo-3d", name: "Assinatura oficial", description: "Assinatura principal do Cine Cruzeiro para as campanhas do Studio.", imageUrl: "/images/social-studio/cine-cruzeiro-assinatura-oficial.png" },
   { id: "none", name: "Sem assinatura", description: "Oculta a marca desta composição.", imageUrl: "" }
 ]);
 
@@ -293,8 +293,7 @@ function signatureForDraft(draft = {}, context = {}) {
   const signature = SOCIAL_SIGNATURES.find((item) => item.id === requestedId) || SOCIAL_SIGNATURES[1];
   if (signature.id === "none") return null;
   if (signature.id === "classic") {
-    const imageUrl = String(context.brand?.logoUrl || "").trim();
-    return imageUrl ? { ...signature, imageUrl } : SOCIAL_SIGNATURES.find((item) => item.id === "wordmark-3d");
+    return signature;
   }
   return signature;
 }
