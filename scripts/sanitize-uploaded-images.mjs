@@ -109,26 +109,32 @@ console.log(JSON.stringify({ mode: apply ? "apply" : "dry-run", uploadsRoot, ima
 if (!apply) process.exit(0);
 
 const completedRenames = [];
+const failedImages = [];
 let appliedReplacements = [];
 try {
   for (const plan of plans) {
-    const buffer = await fs.readFile(plan.source);
-    const sanitized = await sanitizeImageBuffer(buffer, plan.contentType);
-    const temporary = `${plan.source}.sanitize-${process.pid}.tmp`;
-    await fs.writeFile(temporary, sanitized, { mode: 0o644 });
-    await fs.rename(temporary, plan.source);
-    if (plan.source !== plan.target) {
-      await fs.access(plan.target).then(() => { throw new Error(`Destino já existe: ${plan.target}`); }).catch((error) => {
-        if (error?.code !== "ENOENT") throw error;
-      });
-      await fs.rename(plan.source, plan.target);
-      completedRenames.push(plan);
+    try {
+      const buffer = await fs.readFile(plan.source);
+      const sanitized = await sanitizeImageBuffer(buffer, plan.contentType);
+      const temporary = `${plan.source}.sanitize-${process.pid}.tmp`;
+      await fs.writeFile(temporary, sanitized, { mode: 0o644 });
+      await fs.rename(temporary, plan.source);
+      if (plan.source !== plan.target) {
+        await fs.access(plan.target).then(() => { throw new Error(`Destino já existe: ${plan.target}`); }).catch((error) => {
+          if (error?.code !== "ENOENT") throw error;
+        });
+        await fs.rename(plan.source, plan.target);
+        completedRenames.push(plan);
+      }
+    } catch (error) {
+      await fs.unlink(`${plan.source}.sanitize-${process.pid}.tmp`).catch(() => {});
+      failedImages.push({ file: publicUrl(plan.source), error: error.message });
     }
   }
   appliedReplacements = completedRenames.map((item) => [publicUrl(item.source), publicUrl(item.target)]);
   const postgresRows = await updatePostgresReferences(appliedReplacements);
   const jsonFiles = await updateJsonReferences(appliedReplacements);
-  console.log(JSON.stringify({ sanitized: plans.length, renamed: appliedReplacements.length, postgresRows, jsonFiles }, null, 2));
+  console.log(JSON.stringify({ sanitized: plans.length - failedImages.length, renamed: appliedReplacements.length, postgresRows, jsonFiles, failedImages }, null, 2));
 } catch (error) {
   const reverse = appliedReplacements.map(([before, after]) => [after, before]);
   await updatePostgresReferences(reverse).catch(() => {});
