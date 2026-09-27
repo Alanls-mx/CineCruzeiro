@@ -43,8 +43,8 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   text('cta',draft.cta,box([.62,.635,.315,.05]),30,{lines:2,display:true});
   text('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),box([.62,.695,.315,.035]),27,{lines:1});
   const logoRatio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
-  const logoWidth=Math.min(w*.19,w*.19*(draft.signatureScale || 100)/100);
-  const logoBox={x:w*.065,y:top+area*.88,width:logoWidth,height:Math.min(logoWidth/logoRatio,area*.085)};
+  const {width:logoWidth,height:logoHeight}=require('./branding').signatureDimensions(w,h,logoRatio,draft);
+  const logoBox={x:w*.065,y:top+area*.80,width:logoWidth,height:logoHeight};
   if(logoUrl)image('logo',logoUrl,logoBox,{role:'logo',protected:true,hierarchy:'branding'});
   else if(draft.signatureId!=='none')text('cinema',brand.name,box([.065,.88,.20,.065]),30,{lines:2,fill:'#ffffff'});
   const {entities,...sourceDraft}=draft;

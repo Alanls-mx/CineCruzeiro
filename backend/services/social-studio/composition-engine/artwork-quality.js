@@ -17,14 +17,14 @@ async function reserveSignature(scene,loadImage) {
   const fits=b=>!blockers.some(e=>overlap({...b,x:b.x-10,y:b.y-10,width:b.width+20,height:b.height+20},boxOf(e))>4);
   const reserved=scene.sourceDraft.signatureReserved;
   let selected=reserved && fits(reserved)?reserved:null;
-  const scale=Math.max(.7,Math.min(1.35,(scene.sourceDraft.signatureScale || 100)/100));
-  for(const requestedWidth of [w*.14,w*.13,w*.12].map(value=>Math.min(w*.19,value*scale))) {
+  const scale=require('../scene/branding').signatureDimensions(w,h,ratio,scene.sourceDraft).scale;
+  for(const requestedWidth of [w*.16,w*.145,w*.13].map(value=>Math.min(w*.22,value*scale,h*.145*ratio))) {
     if(selected)break;
-    const height=Math.min(h*(isProgramme(scene)?.045:.07),requestedWidth/ratio),width=height*ratio;
+    const height=requestedWidth/ratio,width=requestedWidth;
     for(const x of [w*safe.right-width,w*safe.left]) {
       for(const y of [h*safe.bottom-height,h*safe.bottom-height-h*.035,...(x===w*safe.left?[h*safe.top]:[])]) {
         const b={x,y,width,height};
-        if(height<=h*.09 && fits(b)) {selected=b;break;}
+        if(height<=h*.15 && fits(b)) {selected=b;break;}
       }
       if(selected)break;
     }
@@ -96,7 +96,7 @@ function validateArtworkLayout(scene) {
   if(logo) {
     const atLeft=logo.x<=w*.11,atRight=logo.x+logo.width>=w*.89;
     if(!(atLeft || atRight) || logo.y<h*.70 && !(atLeft && logo.y<=h*(safe.top+.045)))add('LOGO_POSITION',logo.id,'Use uma assinatura no canto, fora do centro da composição.');
-    if(logo.width>w*.22 || logo.height>h*.10)add('LOGO_DOMINANT',logo.id,'A assinatura não pode dominar a composição.');
+    if(logo.width>w*.22 || logo.height>h*.15)add('LOGO_DOMINANT',logo.id,'A assinatura não pode dominar a composição.');
     if([...text,...art].some(e=>overlap(boxOf(logo),boxOf(e))>4))add('LOGO_OVERLAP',logo.id,'A assinatura cobre conteúdo.');
   }
   const cta=text.find(e=>e.id==='cta'),website=text.find(e=>e.id==='website');

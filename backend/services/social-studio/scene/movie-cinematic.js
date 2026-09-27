@@ -86,8 +86,9 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   tx('cta',draft.cta,footer,34,{lines:1,hierarchy:'tertiary'});
   tx('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),box([.065,.955,.60,.032]),26,{lines:1,hierarchy:'tertiary'});
   const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
-  const lw=Math.min(w*.16,w*.14*(draft.signatureScale || 100)/100),lh=Math.min(lw/ratio,area*.075);
-  const logoBox={x:w*.935-lw,y:footer.y,width:lw,height:lh};
+  const {width:lw,height:lh}=require('./branding').signatureDimensions(w,h,ratio,draft);
+  const safeBottom=h*(format.id==='story'?.91:.985);
+  const logoBox={x:w*.935-lw,y:Math.min(footer.y,safeBottom-lh),width:lw,height:lh};
   image('logo',logoUrl,logoBox,{role:'logo',hierarchy:'branding',protected:true});
   if(!logoUrl && draft.signatureId!=='none')tx('cinema',brand.name,box([.74,.905,.195,.08]),26,{lines:2,hierarchy:'branding'});
   const primaryId={movieLogo:'artwork',symbol:'artwork',artwork:'artwork',date:'detail',price:'detail',title:'title'}[draft.primaryElement] || 'artwork';

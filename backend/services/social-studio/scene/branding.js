@@ -1,6 +1,14 @@
 const sharp = require('sharp');
 const {loadAsset} = require('../engine/assets');
 
+function signatureDimensions(width,height,ratio,draft={}) {
+  const prominence={subtle:.82,normal:1,strong:1.15}[draft.brandProminence] || 1;
+  const requested=draft.signatureScaleMode==='automatic'?prominence:Number(draft.signatureScale || 100)/100;
+  const scale=Math.max(.7,Math.min(1.35,requested));
+  const logoWidth=Math.min(width*.22,width*.16*scale,height*.145*ratio);
+  return {width:logoWidth,height:logoWidth/ratio,scale};
+}
+
 // Raster resolution belongs to the asset; these bounds are the visual size in every renderer.
 async function applySignatureGeometry(scene, loadImage) {
   const logo = scene.elements.find(e => e.role === 'logo' && e.visible !== false);
@@ -9,13 +17,12 @@ async function applySignatureGeometry(scene, loadImage) {
   const metadata = buffer ? await sharp(buffer).metadata() : null;
   const ratio = metadata?.width && metadata?.height ? metadata.width / metadata.height : logo.width / logo.height;
   const draft = scene.sourceDraft;
-  const scale = Math.max(70, Math.min(135, Number(draft.signatureScale) || 100)) / 100;
-  const prominence = draft.signatureScaleMode === 'automatic' ? {subtle:.82,normal:1,strong:1.15}[draft.brandProminence] || 1 : 1;
+  const dimensions=signatureDimensions(scene.width,scene.height,ratio,draft);
   const margin = scene.width * .055;
   const bottom = scene.height * (scene.formatId === 'story' ? .90 : .975);
-  const baseWidth = Math.min(scene.width * .24, Math.max(scene.width * .18, logo.width)) * prominence;
+  const baseWidth = dimensions.width;
   if(draft.signaturePosition?.mode==='manual') {
-    Object.assign(logo,{width:baseWidth*scale,height:baseWidth*scale/ratio,fit:'contain',focusX:50,focusY:50,locked:false});
+    Object.assign(logo,{width:baseWidth,height:dimensions.height,fit:'contain',focusX:50,focusY:50,locked:false});
     return scene;
   }
   const blockers = scene.elements.filter(e => e.visible !== false && (e.type === 'text' && e.text?.trim() || (e.id === 'artwork' || e.id.startsWith('movie-art-')) && e.height < scene.height*.8));
@@ -35,10 +42,10 @@ async function applySignatureGeometry(scene, loadImage) {
   const minimumWidth = Math.max(scene.width*.13, scene.height*.04*ratio);
   const legibleSlots = slots.filter(candidate => candidate.maxWidth >= minimumWidth);
   const slot = (legibleSlots.length ? legibleSlots : slots).sort((a,b) => b.bottom-a.bottom || b.maxWidth-a.maxWidth)[0];
-  const width = Math.min(baseWidth, slot?.maxWidth || 0) * scale;
+  const width = Math.min(baseWidth, slot?.maxWidth || 0);
   if (width < 16) throw Object.assign(new Error('Sem espaço para a assinatura. Reduza o texto ou escolha outra composição.'), {statusCode:400,code:'SIGNATURE_NO_SPACE'});
   Object.assign(logo, {x:slot.right-width,y:slot.bottom-width/ratio,width,height:width/ratio,fit:'contain',focusX:50,focusY:50,keepRatio:true,locked:false});
-  scene.sourceDraft.signatureBounds = {width:logo.width,height:logo.height,aspectRatio:ratio,scale:Math.round(scale*100)};
+  scene.sourceDraft.signatureBounds = {width:logo.width,height:logo.height,aspectRatio:ratio,scale:Math.round(dimensions.scale*100)};
   return scene;
 }
-module.exports = {applySignatureGeometry};
+module.exports = {applySignatureGeometry,signatureDimensions};
