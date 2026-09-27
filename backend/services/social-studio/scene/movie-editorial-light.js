@@ -10,8 +10,6 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   const box=([x,y,width,height])=>({x:x*w,y:top+y*area,width:width*w,height:height*area});
   const bg=mix(palette.dominantColor,'#e9e8e3',.84);
   const atmosphere=palette.editorialAtmosphere;
-  const glow=atmosphere?.color || palette.secondaryColor;
-  const ribbon=atmosphere?.shadow || mix(palette.secondaryColor,'#000000',.62);
   const ink='#17212b',accent='#27323b';
   const elements=[],manifest=[];
   const image=(id,src,bounds,extra={})=>{if(src)elements.push({id,name:id,type:'image',role:id,...bounds,src,fit:'contain',visible:true,opacity:1,...extra});};
@@ -23,13 +21,12 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   };
   image('background-blur',sourceUrl || backgroundUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:75,focusY:45,opacity:.85,effects:{layer:'background',blur:52,brightness:1.05,saturation:1,scale:1.2}});
   elements.push({id:'editorial-color-wash',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:'right',stops:[{offset:0,color:rgba(bg,.35)},{offset:.48,color:rgba(bg,.60)},{offset:1,color:rgba(bg,.90)}]});
-  elements.push({id:'editorial-bottom-glow',role:'ambient',type:'gradient',x:0,y:top+area*.58,width:w,height:area*.42,direction:'bottom',stops:[{offset:0,color:rgba(glow,0)},{offset:.50,color:rgba(glow,.36)},{offset:1,color:rgba(ribbon,.82)}]});
   const hero=box([.025,.005,.565,.735]);
   image('ambient-shadow',sourceUrl,{...hero,x:hero.x+12*u,y:hero.y+14*u},{role:'ambient',effects:{layer:'ambient-shadow',mask:'fade-all',blend:58,shadow:28,scale:1}});
   image('artwork',sourceUrl,hero,{role:'artwork',keepRatio:true,locked:true,hierarchy:'primary',effects:{layer:'hero',mask:'fade-all',blend:26,brightness:1,scale:1}});
   const bandY=top+area*.73;
-  elements.push({id:'editorial-brand-band',role:'ambient',type:'gradient',x:0,y:bandY,width:w,height:h-bandY,direction:'bottom',stops:[{offset:0,color:rgba(glow,0)},{offset:.19,color:rgba(glow,.82)},{offset:.48,color:rgba(ribbon,.97)},{offset:1,color:mix(ribbon,'#000000',.20)}]});
-  image('editorial-brand-texture',sourceUrl,{x:0,y:bandY,width:w,height:h-bandY},{role:'ambient',fit:'cover',focusX:50,focusY:90,opacity:.10,effects:{layer:'background',blur:65,brightness:.65,saturation:1.2,scale:1.1,mask:'fade-top',blend:80}});
+  // Preserve the artwork's spatial color variation rather than flattening it into swatches.
+  image('editorial-brand-band',sourceUrl || backgroundUrl,{x:0,y:bandY,width:w,height:h-bandY},{role:'ambient',fit:'cover',focusX:50,focusY:90,effects:{layer:'background',blur:52,brightness:.85,saturation:1,scale:1,mask:'fade-top',blend:100}});
   const movieTitle=draft.title || draft.entities.movie?.title || '';
   const label=draft.subtitle && !/^(INGRESSOS )?EM DESTAQUE$/i.test(draft.subtitle)?draft.subtitle:'O FILME DA SUA VEZ';
   if(!/^(ESTREIA|PRÉ-VENDA|SESSÃO)$/i.test(label))text('subtitle',label,box([.62,.045,.315,.07]),29,{lines:2,fill:accent});

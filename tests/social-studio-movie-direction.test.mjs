@@ -90,10 +90,12 @@ test('rodape preserva uma segunda tonalidade escura real sem achatar o laranja e
   assert.equal(palette.color,'#cc550d');
   assert.ok(shade.r>60 && shade.g<shade.r*.15);
   const scene=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',layoutId:'movie-editorial-light'},context,{loadImage,skipRaster:true});
-  const texture=scene.scene.elements.find(e=>e.id==='editorial-brand-texture');
+  const texture=scene.scene.elements.find(e=>e.id==='editorial-brand-band');
   assert.equal(texture.src,context.movies[0].posterUrl);
   assert.equal(texture.effects.mask,'fade-top');
-  assert.ok(texture.opacity<=.1);
+  assert.equal(texture.opacity,1);
+  assert.equal(texture.effects.saturation,1);
+  assert.ok(!scene.scene.elements.some(e=>e.id==='editorial-bottom-glow'));
 });
 test('exportação manual preserva horários e não permite trocar poster por recorte',async()=>{
   const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',layoutId:'movie-asymmetric'},context,{loadImage,skipRaster:true,artworkRetried:true});
@@ -102,4 +104,21 @@ test('exportação manual preserva horários e não permite trocar poster por re
   await assert.rejects(engine.renderSocialScene(altered,{loadImage}),{code:'ARTWORK_QUALITY'});
   const crop=structuredClone(r.scene);crop.elements.find(e=>e.id==='artwork').fit='cover';
   await assert.rejects(engine.renderSocialScene(crop,{loadImage}),{code:'ARTWORK_QUALITY'});
+});
+
+test('atmosfera inferior conserva variacao espacial da imagem sem curvas ou faixas pintadas',async()=>{
+  const {buildMovieEditorialLight}=require('../backend/services/social-studio/scene/movie-editorial-light');
+  const {createCinematicArtwork}=require('../backend/services/social-studio/composition-engine/pipeline');
+  const scene=buildMovieEditorialLight({draft:{entities:{},signatureId:'none'},format:{id:'feed_portrait',width:1080,height:1350},palette:{dominantColor:'#aa6622',secondaryColor:'#aa6622'},brand:{name:'Cine Cruzeiro'},sourceUrl:'/poster.png'});
+  const band=scene.elements.find(e=>e.id==='editorial-brand-band');
+  assert.equal(band.src,'/poster.png');
+  assert.equal(band.effects.colorWash,0);
+  const strip=await sharp({create:{width:64,height:192,channels:3,background:'#bb450d'}}).png().toBuffer();
+  const source=await sharp({create:{width:128,height:192,channels:3,background:'#422218'}}).composite([{input:strip,left:0,top:0}]).png().toBuffer();
+  const {data,info}=await sharp(await createCinematicArtwork(source,band)).raw().toBuffer({resolveWithObject:true});
+  const sample=x=>[...data.subarray(((info.height-1)*info.width+x)*info.channels,((info.height-1)*info.width+x)*info.channels+4)];
+  const left=sample(0),right=sample(info.width-1);
+  assert.ok(Math.abs(left[0]-right[0])>40,'real horizontal color variation must remain visible');
+  assert.equal(left[3],255);
+  assert.equal(right[3],255);
 });
