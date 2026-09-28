@@ -884,6 +884,34 @@ function logAdminAction(log) {
   return { title: `${resource} ${operation}`, description: "Uma alteração foi realizada pelo painel administrativo." };
 }
 
+function logPerformanceAlert(log) {
+  const code = String(log.metadata?.code || "");
+  const alerts = {
+    cpu: ["Uso de CPU", "O uso de CPU voltou ao nível normal."],
+    memory: ["Uso de memória", "O uso de memória voltou ao nível normal."],
+    disk: ["Espaço em disco", "O espaço disponível em disco voltou ao nível normal."],
+    latency: ["Tempo de resposta", "O tempo de resposta das operações internas voltou ao nível normal."],
+    external_latency: ["Tempo das integrações", "O tempo de resposta das integrações voltou ao nível normal."],
+    event_loop: ["Atraso no processamento", "O atraso no processamento do backend voltou ao nível normal."],
+    http_errors: ["Falhas nas requisições", "A taxa de falhas nas requisições voltou ao nível normal."]
+  };
+  const [name, recovery] = alerts[code] || ["Desempenho", `O alerta ${code || "de desempenho"} deixou de ser detectado.`];
+  return log.event === "performance.recovered"
+    ? { title: `${name} normalizado`, description: recovery }
+    : { title: `Alerta: ${name}`, description: logFriendlyError(log.message || log.metadata?.message || `O sistema detectou uma alteração em ${name.toLowerCase()}.`) };
+}
+
+function logEventSummary(event) {
+  const known = {
+    "social_studio.campaign_created": "Campanha criada no Studio.",
+    "social_studio.post_created": "Post criado no Studio.",
+    "email_automation.draft_created": "Rascunho de e-mail criado automaticamente.",
+    "subscription.pending_payment_maintenance": "Assinaturas com pagamento pendente foram verificadas.",
+    "session.finished_archived": "Uma sessão encerrada foi arquivada."
+  };
+  return known[event] || `Evento registrado: ${event || "sem identificação"}.`;
+}
+
 function logPresentation(log = {}) {
   const event = String(log.event || "");
   const metadata = log.metadata || {};
@@ -940,12 +968,15 @@ function logPresentation(log = {}) {
     "admin_two_factor.recovery_codes_regenerated": { title: "Códigos de recuperação renovados", description: "Os códigos anteriores foram invalidados e substituídos." }
   };
   if (entries[event]) return entries[event];
+  if (event === "performance.anomaly" || event === "performance.recovered") return logPerformanceAlert(log);
   if (event === "admin.action") return logAdminAction(log);
   if (event === "request.failed") return { title: "Operação não concluída", description: logFriendlyError(log.message || metadata.message) };
   if (/\.failed$|_failed$/.test(event)) return { title: "Operação com falha", description: logFriendlyError(log.message || metadata.message) };
   return {
     title: logCategoryLabel(log.category),
-    description: logFriendlyError(log.message || "Uma atividade foi registrada pelo sistema.")
+    description: log.message
+      ? logFriendlyError(log.message)
+      : logEventSummary(event)
   };
 }
 
