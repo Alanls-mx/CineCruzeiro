@@ -1801,7 +1801,9 @@ function normalizeDb(db) {
   return db;
 }
 
-async function readDb() {
+const readOnlyDbSnapshots = new WeakSet();
+
+async function readDb(options = {}) {
   if (isProduction() && !postgresEnabled()) {
     throw Object.assign(new Error("PostgreSQL deve estar configurado em producao."), {
       code: "POSTGRES_REQUIRED_IN_PRODUCTION",
@@ -1809,12 +1811,15 @@ async function readDb() {
     });
   }
   const db = postgresEnabled()
-    ? await readDbFromPostgres()
+    ? await readDbFromPostgres(options)
     : JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
-  return normalizeDb(db);
+  const normalized = normalizeDb(db);
+  if (postgresEnabled() && options.includeAuditLogs === false) readOnlyDbSnapshots.add(normalized);
+  return normalized;
 }
 
 async function writeDb(db) {
+  if (readOnlyDbSnapshots.has(db)) throw new Error("A leitura sem auditoria não pode ser usada para gravar o estado completo.");
   appendAuditLog(db);
   if (postgresEnabled()) {
     await writeDbToPostgres(normalizeDb(db));
@@ -8607,6 +8612,7 @@ function socialStudioDownloadName(post = {}) {
 
 function getAdminContent(db, adminUser) {
   const content = getContent(db, { includePrivate: true });
+  content.auditLogs = [];
   const isOwner = roleAlias(adminUser?.role) === "owner";
 
   content.emailCustomers = adminHasPermission(adminUser, "marketing.view")
@@ -10925,7 +10931,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const db = await readDb();
+  const db = await readDb({ includeAuditLogs: method !== "GET" && method !== "HEAD" });
 
   if (pathname.startsWith("/api/email-automation/") && !emailAutomationAuthorized(req)) {
     const configured = Boolean(process.env.EMAIL_AUTOMATION_TOKEN || process.env.N8N_EMAIL_SHARED_SECRET);

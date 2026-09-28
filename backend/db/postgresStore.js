@@ -149,7 +149,7 @@ function mapMovie(row, sessions) {
   };
 }
 
-async function loadDbFromPostgres() {
+async function loadDbFromPostgres({ includeAuditLogs = true } = {}) {
   const existingClient = contextClient();
   const client = existingClient || await getPool().connect();
   try {
@@ -181,7 +181,9 @@ async function loadDbFromPostgres() {
     const payments = await client.query("SELECT * FROM payments ORDER BY created_at DESC");
     const tickets = await client.query("SELECT * FROM tickets ORDER BY created_at DESC");
     const webhookEvents = await client.query("SELECT * FROM webhook_events ORDER BY created_at DESC");
-    const auditLogs = await client.query("SELECT * FROM audit_logs ORDER BY created_at DESC");
+    const auditLogs = includeAuditLogs
+      ? await client.query("SELECT * FROM audit_logs ORDER BY created_at DESC")
+      : { rows: [] };
     const subscriptionPlans = await client.query("SELECT * FROM subscription_plans ORDER BY monthly_price, name").catch(() => ({ rows: [] }));
     const subscriptionCredits = await client.query("SELECT * FROM subscription_credits ORDER BY cycle_start DESC").catch(() => ({ rows: [] }));
     const subscriptions = await client.query("SELECT * FROM subscriptions ORDER BY created_at DESC").catch(() => ({ rows: [] }));
@@ -606,40 +608,46 @@ const configuredSnapshotCacheTtlMs = Number(process.env.POSTGRES_SNAPSHOT_CACHE_
 const SNAPSHOT_CACHE_TTL_MS = Number.isFinite(configuredSnapshotCacheTtlMs)
   ? Math.min(60000, Math.max(2000, configuredSnapshotCacheTtlMs))
   : 30000;
-let snapshotCache = null;
-let snapshotCacheExpiresAt = 0;
-let snapshotLoadPromise = null;
+const snapshotCaches = new Map();
+const snapshotLoadPromises = new Map();
+let snapshotGeneration = 0;
 
 function cloneSnapshot(snapshot) {
   return structuredClone(snapshot);
 }
 
 function invalidateSnapshotCache() {
-  snapshotCache = null;
-  snapshotCacheExpiresAt = 0;
+  snapshotGeneration += 1;
+  snapshotCaches.clear();
+  snapshotLoadPromises.clear();
 }
 
-async function readDbFromPostgres() {
+async function readDbFromPostgres({ includeAuditLogs = true } = {}) {
   // Reads made inside a critical mutation must observe the transaction directly.
-  if (contextClient()) return loadDbFromPostgres();
+  if (contextClient()) return loadDbFromPostgres({ includeAuditLogs });
 
-  if (snapshotCache && Date.now() < snapshotCacheExpiresAt) {
-    return cloneSnapshot(snapshotCache);
+  const cacheKey = includeAuditLogs ? "full" : "operational";
+  const cached = snapshotCaches.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cloneSnapshot(cached.snapshot);
   }
 
-  if (!snapshotLoadPromise) {
-    snapshotLoadPromise = loadDbFromPostgres()
+  if (!snapshotLoadPromises.has(cacheKey)) {
+    const generation = snapshotGeneration;
+    const loadPromise = loadDbFromPostgres({ includeAuditLogs })
       .then((snapshot) => {
-        snapshotCache = cloneSnapshot(snapshot);
-        snapshotCacheExpiresAt = Date.now() + SNAPSHOT_CACHE_TTL_MS;
+        if (generation === snapshotGeneration) {
+          snapshotCaches.set(cacheKey, { snapshot: cloneSnapshot(snapshot), expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
+        }
         return snapshot;
       })
       .finally(() => {
-        snapshotLoadPromise = null;
+        if (snapshotLoadPromises.get(cacheKey) === loadPromise) snapshotLoadPromises.delete(cacheKey);
       });
+    snapshotLoadPromises.set(cacheKey, loadPromise);
   }
 
-  return cloneSnapshot(await snapshotLoadPromise);
+  return cloneSnapshot(await snapshotLoadPromises.get(cacheKey));
 }
 
 async function query(client, text, params = []) {
