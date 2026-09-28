@@ -12259,6 +12259,12 @@ function applyRbacVisibility() {
   if (customersTab) customersTab.hidden = !has("users.manage");
   if (!has("users.manage") && state.adminSubtabs.accounts !== "security") setAdminSubtab("accounts", "security");
   document.querySelectorAll("[data-permission]").forEach((element) => {
+    if (element.matches("[data-admin-tab-panel]")) {
+      const [group, tab] = String(element.dataset.adminTabPanel || "").split(":");
+      // Permission grants access, not selection of an inactive tab.
+      element.hidden = !has(element.dataset.permission) || state.adminSubtabs[group] !== tab;
+      return;
+    }
     element.hidden = !has(element.dataset.permission);
   });
   const setFormAccess = (id, allowed) => {
