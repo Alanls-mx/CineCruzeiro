@@ -1,0 +1,13 @@
+{
+  "id": "cineEmailRelationship",
+  "name": "E-mail - Relacionamento diário",
+  "active": false,
+  "settings": {"executionOrder":"v1","timezone":"America/Sao_Paulo","saveDataErrorExecution":"all","saveDataSuccessExecution":"none"},
+  "nodes": [
+    {"id":"schedule","name":"Diariamente às 11h","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[0,0],"parameters":{"rule":{"interval":[{"field":"cronExpression","expression":"0 11 * * *"}]}}},
+    {"id":"scenarios","name":"Cenários do dia","type":"n8n-nodes-base.code","typeVersion":2,"position":[260,0],"parameters":{"jsCode":"return [{json:{type:'birthday',triggerType:'schedule.daily'}},{json:{type:'reactivation',reactivationDays:90,triggerType:'schedule.daily'}}];"}},
+    {"id":"campaign","name":"Preparar relacionamento","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[520,0],"parameters":{"method":"POST","url":"={{ $env.EMAIL_AUTOMATION_BASE_URL + '/api/email-automation/campaigns' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.EMAIL_AUTOMATION_TOKEN }}"}]},"sendBody":true,"contentType":"raw","rawContentType":"application/json","body":"={{ JSON.stringify($json) }}","options":{"timeout":30000}}}
+  ],
+  "connections":{"Diariamente às 11h":{"main":[[{"node":"Cenários do dia","type":"main","index":0}]]},"Cenários do dia":{"main":[[{"node":"Preparar relacionamento","type":"main","index":0}]]}},
+  "pinData":{},"meta":{"templateCredsSetupCompleted":false},"versionId":"2ad84f0f-8edf-4319-aee9-c2860ce7f588"
+}

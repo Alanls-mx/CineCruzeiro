@@ -32,6 +32,7 @@ const { armCampaignCoupon, syncCampaignCouponSchedule, syncScheduledCampaignCoup
 const { archiveExpiredCoupons, couponUsageHistory, couponUsageSummary } = require("./services/couponLifecycleService");
 const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, validTemplate: validCampaignTemplate } = require("./services/emailCampaignTemplateResolver");
 const { buildTemplateLibrary, definitionFor, variantFor, updateLibraryPreference } = require("./services/emailTemplateLibraryService");
+const { buildEmailAutomationPlan, emailAutomationContext } = require("./services/emailAutomationService");
 const { publicApiError } = require("./services/publicApiErrorService");
 const {
   SOCIAL_FORMATS,
@@ -1310,6 +1311,7 @@ function getCustomerUser(req, db) {
 function adminAuthRequired(pathname, method) {
   if (pathname.startsWith("/api/webhooks/")) return false;
   if (pathname.startsWith("/api/studio/")) return false;
+  if (pathname.startsWith("/api/email-automation/")) return false;
   if (pathname === "/api/admin/login" || pathname === "/api/admin/login/2fa") return false;
   if (pathname.startsWith("/api/admin/")) return true;
   if (pathname.startsWith("/api/dashboard")) return true;
@@ -1332,6 +1334,16 @@ function studioAutomationAuthorized(req) {
   const supplied=String(authorization.match(/^Bearer\s+(.+)$/i)?.[1] || req.headers['x-studio-automation-token'] || '').trim();
   const left=Buffer.from(expected),right=Buffer.from(supplied);
   return left.length===right.length && left.length>0 && crypto.timingSafeEqual(left,right);
+}
+
+function emailAutomationAuthorized(req) {
+  const expected = String(process.env.EMAIL_AUTOMATION_TOKEN || process.env.N8N_EMAIL_SHARED_SECRET || "").trim();
+  if (!expected) return false;
+  const authorization = String(req.headers.authorization || "");
+  const supplied = String(authorization.match(/^Bearer\s+(.+)$/i)?.[1] || req.headers["x-email-automation-token"] || "").trim();
+  const left = Buffer.from(expected);
+  const right = Buffer.from(supplied);
+  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
 }
 
 function mutatesState(method) {
@@ -10906,6 +10918,60 @@ async function handleApi(req, res, pathname) {
   }
 
   const db = await readDb();
+
+  if (pathname.startsWith("/api/email-automation/") && !emailAutomationAuthorized(req)) {
+    const configured = Boolean(process.env.EMAIL_AUTOMATION_TOKEN || process.env.N8N_EMAIL_SHARED_SECRET);
+    sendJson(res, configured ? 401 : 503, { error: { code: "EMAIL_AUTOMATION_UNAVAILABLE", message: configured ? "Credencial de automação de e-mail inválida." : "A automação de e-mail ainda não foi configurada." } });
+    return;
+  }
+  if (pathname === "/api/email-automation/context" && method === "GET") {
+    sendJson(res, 200, { context: emailAutomationContext(db) }, { "Cache-Control": "no-store" });
+    return;
+  }
+  if (pathname === "/api/email-automation/campaigns" && method === "POST") {
+    const body = await readBody(req);
+    const recent = await listPersistedCampaigns({ page: 1, pageSize: 30, order: "desc" });
+    const plan = buildEmailAutomationPlan(db, body, { history: recent.campaigns || [], siteUrl: appFrontendUrl() });
+    if (plan.skipped) {
+      logEvent("info", "email_automation.skipped", { type: plan.type, reason: plan.reason });
+      sendJson(res, 200, { plan, created: false }, { "Cache-Control": "no-store" });
+      return;
+    }
+    const campaign = normalizeCampaignInput(plan.campaign, { brand: db.settings?.emailBranding || {} });
+    const eligibility = eligibleCampaignRecipients(db, campaign);
+    applyCampaignTemplateResolution(campaign, eligibility.templateResolution);
+    const configuredMode = String(process.env.EMAIL_AUTOMATION_MODE || "draft").toLowerCase() === "send" ? "send" : "draft";
+    const emailConfig = integrationConfigService.resolvedConfig(db, "email");
+    const deliveryReady = Boolean(emailConfig?.enabled && emailConfig?.configured);
+    const shouldSend = configuredMode === "send" && deliveryReady;
+    campaign.status = shouldSend ? "queued" : "draft";
+    campaign.createdBy = "n8n";
+    campaign.recipientCount = eligibility.recipients.length;
+    campaign.eligibility = eligibility.report;
+    if (!eligibility.recipients.length) {
+      logEvent("info", "email_automation.skipped", { type: plan.type, reason: "no_recipients" });
+      sendJson(res, 200, { plan: { ...plan, skipped: true, reason: "Nenhum destinatário elegível para esta automação." }, created: false }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (shouldSend) campaign.queuedAt = new Date().toISOString();
+    const persisted = await createPersistedCampaign(campaign);
+    if (persisted.created && postgresEnabled() && shouldSend) await emailCampaignRepository.snapshotRecipients(campaign.id, eligibility.recipients);
+    logEvent("info", shouldSend ? "email_automation.queued" : "email_automation.draft_created", {
+      campaignId: persisted.campaign.id,
+      type: plan.type,
+      recipients: eligibility.recipients.length,
+      idempotent: !persisted.created
+    });
+    sendJson(res, persisted.created ? 201 : 200, {
+      plan: { type: plan.type, warnings: plan.warnings, signals: plan.signals },
+      campaign: publicCampaign(persisted.campaign),
+      created: persisted.created,
+      idempotent: !persisted.created,
+      deliveryMode: shouldSend ? "queued" : "draft",
+      deliveryReady
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
 
   if (pathname.startsWith("/api/studio/") && !studioAutomationAuthorized(req)) {
     const configured=Boolean(process.env.STUDIO_AUTOMATION_TOKEN || process.env.N8N_STUDIO_SHARED_SECRET);

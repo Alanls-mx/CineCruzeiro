@@ -1,0 +1,14 @@
+{
+  "id": "cineEmailMovieEvent",
+  "name": "E-mail - Evento de filme",
+  "active": false,
+  "settings": {"executionOrder":"v1","saveDataErrorExecution":"all","saveDataSuccessExecution":"none"},
+  "nodes": [
+    {"id":"trigger","name":"Filme publicado","type":"n8n-nodes-base.webhook","typeVersion":2,"position":[0,0],"parameters":{"httpMethod":"POST","path":"email/movie-published","responseMode":"responseNode","options":{}}},
+    {"id":"prepare","name":"Normalizar filme","type":"n8n-nodes-base.code","typeVersion":2,"position":[250,0],"parameters":{"jsCode":"const event=$input.first().json.body||$input.first().json; if(!event.movieId) throw new Error('movieId é obrigatório'); return [{json:{type:'premiere',movieId:String(event.movieId),triggerType:event.type||'movie.published'}}];"}},
+    {"id":"campaign","name":"Preparar estreia","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[500,0],"parameters":{"method":"POST","url":"={{ $env.EMAIL_AUTOMATION_BASE_URL + '/api/email-automation/campaigns' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.EMAIL_AUTOMATION_TOKEN }}"}]},"sendBody":true,"contentType":"raw","rawContentType":"application/json","body":"={{ JSON.stringify($json) }}","options":{"timeout":30000}}},
+    {"id":"respond","name":"Confirmar criação","type":"n8n-nodes-base.respondToWebhook","typeVersion":1.4,"position":[750,0],"parameters":{"respondWith":"json","responseBody":"={{ $json }}","options":{"responseCode":202}}}
+  ],
+  "connections":{"Filme publicado":{"main":[[{"node":"Normalizar filme","type":"main","index":0}]]},"Normalizar filme":{"main":[[{"node":"Preparar estreia","type":"main","index":0}]]},"Preparar estreia":{"main":[[{"node":"Confirmar criação","type":"main","index":0}]]}},
+  "pinData":{},"meta":{"templateCredsSetupCompleted":false},"versionId":"36a4f8c2-6f31-49ad-b024-931034ed33d5"
+}

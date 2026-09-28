@@ -219,6 +219,18 @@ As rotas administrativas exigem sessão, `marketing.manage`, origem aceita e rat
 - `GET /api/admin/email/campaigns/:id/recipients`
 - `POST /api/admin/email/campaigns/:id/retry-failures`
 
+### Automação com n8n
+
+O n8n atua como agenda e orquestrador; seleção de catálogo, copy, elegibilidade, consentimento, idempotência e entrada na fila continuam validados pelo backend.
+
+- `GET /api/email-automation/context`: retorna somente indicadores agregados e os cenários suportados.
+- `POST /api/email-automation/campaigns`: planeja e cria uma campanha idempotente para `weekly`, `premiere`, `birthday` ou `reactivation`.
+- `EMAIL_AUTOMATION_TOKEN`: segredo exclusivo usado entre n8n e backend.
+- `EMAIL_AUTOMATION_MODE=draft`: modo padrão, cria rascunhos automáticos para revisão.
+- `EMAIL_AUTOMATION_MODE=send`: permite enfileirar automaticamente somente quando a integração de e-mail está ativa e há destinatários elegíveis.
+
+Os workflows importáveis ficam em `automation/n8n/workflows`. Programação semanal roda às segundas, relacionamento avalia diariamente aniversários e reativação, e estreias entram por webhook de evento. Execuções sem conteúdo ou público são encerradas como `skipped`, sem criar campanhas vazias.
+
 A listagem aceita página, tamanho, estado, template, origem, criador, datas, item associado, busca e ordem. O conteúdo pesado só vem no detalhe.
 
 ## 15. Interface

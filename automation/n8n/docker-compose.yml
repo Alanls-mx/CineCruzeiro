@@ -38,6 +38,8 @@ services:
       TZ: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
       STUDIO_BASE_URL: ${STUDIO_BASE_URL}
       STUDIO_AUTOMATION_TOKEN: ${STUDIO_AUTOMATION_TOKEN}
+      EMAIL_AUTOMATION_BASE_URL: ${EMAIL_AUTOMATION_BASE_URL}
+      EMAIL_AUTOMATION_TOKEN: ${EMAIL_AUTOMATION_TOKEN}
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/workflows:ro
