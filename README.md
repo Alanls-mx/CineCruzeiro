@@ -968,6 +968,17 @@ npm run db:seed
 
 As variáveis de conexão devem estar disponíveis no ambiente do processo que executa a migration.
 
+### Desempenho e capacidade do banco
+
+A persistência de compatibilidade grava somente entidades alteradas, preservando IDs e relações.
+Conflitos concorrentes são detectados antes da gravação. O cache operacional não carrega o histórico
+de auditoria e recebe invalidação entre processos por `LISTEN/NOTIFY`. O pool tem limites e timeouts
+defensivos; o painel de desempenho inclui métricas de conexões e cache.
+
+Use `npm run db:diagnostics` para diagnóstico somente de leitura e `npm run test:database` para
+validar persistência, concorrência e cache. Regras de escalamento, limites e operação estão em
+[Operação do banco de dados](docs/DATABASE_OPERATIONS.md).
+
 ## 28. Validação e testes
 
 TypeScript:

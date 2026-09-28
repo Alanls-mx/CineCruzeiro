@@ -1,8 +1,14 @@
 const { Pool } = require("pg");
 const { AsyncLocalStorage } = require("async_hooks");
 const { calendarDateKey } = require("../services/calendarDateService");
+const { randomUUID } = require("node:crypto");
+const { captureSnapshot, rememberSnapshot, snapshotBaseline, changesBetween, assertCurrent, deleteRemovedRows, createSnapshotWriter } = require("./snapshotChanges");
+const { poolConfiguration } = require("./databasePolicy");
+const { createSnapshotCache } = require("./snapshotCache");
+const { startCacheInvalidation } = require("./cacheInvalidation");
 
 let pool;
+let cacheInvalidation;
 const transactionContext = new AsyncLocalStorage();
 const CINEMA_TIME_ZONE = process.env.CINEMA_TIME_ZONE || "America/Sao_Paulo";
 
@@ -16,7 +22,8 @@ function postgresEnabled() {
 
 function getPool() {
   if (!pool) {
-    pool = new Pool({ connectionString: databaseUrl() });
+    pool = new Pool(poolConfiguration());
+    pool.on("error", (error) => console.warn(JSON.stringify({ level: "warn", event: "database.pool_error", code: error.code || "CONNECTION_ERROR" })));
   }
   return pool;
 }
@@ -36,7 +43,8 @@ async function withPostgresTransaction(callback) {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const result = await transactionContext.run({ client }, () => callback(client));
+    await client.query("SELECT pg_advisory_xact_lock_shared(318642901, 20260823)");
+    const result = await transactionContext.run({ client, lockMode: "shared" }, () => callback(client));
     await client.query("COMMIT");
     return result;
   } catch (error) {
@@ -153,6 +161,7 @@ async function loadDbFromPostgres({ includeAuditLogs = true } = {}) {
   const existingClient = contextClient();
   const client = existingClient || await getPool().connect();
   try {
+    if (!existingClient) await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     // A single pg client must execute queries sequentially. Promise.all here only
     // queued work on the same socket and emits a deprecation warning in pg 8.
     const settings = await client.query("SELECT value FROM settings WHERE key = 'app'");
@@ -184,18 +193,18 @@ async function loadDbFromPostgres({ includeAuditLogs = true } = {}) {
     const auditLogs = includeAuditLogs
       ? await client.query("SELECT * FROM audit_logs ORDER BY created_at DESC")
       : { rows: [] };
-    const subscriptionPlans = await client.query("SELECT * FROM subscription_plans ORDER BY monthly_price, name").catch(() => ({ rows: [] }));
-    const subscriptionCredits = await client.query("SELECT * FROM subscription_credits ORDER BY cycle_start DESC").catch(() => ({ rows: [] }));
-    const subscriptions = await client.query("SELECT * FROM subscriptions ORDER BY created_at DESC").catch(() => ({ rows: [] }));
-    const subscriptionUsage = await client.query("SELECT * FROM subscription_usage ORDER BY used_at DESC").catch(() => ({ rows: [] }));
-    const subscriptionCycles = await client.query("SELECT * FROM subscription_cycles ORDER BY cycle_start DESC").catch(() => ({ rows: [] }));
-    const subscriptionPayments = await client.query("SELECT * FROM subscription_payments ORDER BY created_at DESC").catch(() => ({ rows: [] }));
-    const subscriptionCreditUnits = await client.query("SELECT * FROM subscription_credit_units ORDER BY issued_at DESC").catch(() => ({ rows: [] }));
-    const subscriptionCreditRedemptions = await client.query("SELECT * FROM subscription_credit_redemptions ORDER BY created_at DESC").catch(() => ({ rows: [] }));
-    const subscriptionAccountingRules = await client.query("SELECT * FROM subscription_accounting_rule_versions ORDER BY effective_from DESC").catch(() => ({ rows: [] }));
-    const orderServiceItems = await client.query("SELECT * FROM order_service_items ORDER BY created_at").catch(() => ({ rows: [] }));
-    const orderGoodsItems = await client.query("SELECT * FROM order_goods_items ORDER BY created_at").catch(() => ({ rows: [] }));
-    const goodsFiscalDocuments = await client.query("SELECT * FROM goods_fiscal_documents ORDER BY created_at DESC").catch(() => ({ rows: [] }));
+    const subscriptionPlans = await client.query("SELECT * FROM subscription_plans ORDER BY monthly_price, name");
+    const subscriptionCredits = await client.query("SELECT * FROM subscription_credits ORDER BY cycle_start DESC");
+    const subscriptions = await client.query("SELECT * FROM subscriptions ORDER BY created_at DESC");
+    const subscriptionUsage = await client.query("SELECT * FROM subscription_usage ORDER BY used_at DESC");
+    const subscriptionCycles = await client.query("SELECT * FROM subscription_cycles ORDER BY cycle_start DESC");
+    const subscriptionPayments = await client.query("SELECT * FROM subscription_payments ORDER BY created_at DESC");
+    const subscriptionCreditUnits = await client.query("SELECT * FROM subscription_credit_units ORDER BY issued_at DESC");
+    const subscriptionCreditRedemptions = await client.query("SELECT * FROM subscription_credit_redemptions ORDER BY created_at DESC");
+    const subscriptionAccountingRules = await client.query("SELECT * FROM subscription_accounting_rule_versions ORDER BY effective_from DESC");
+    const orderServiceItems = await client.query("SELECT * FROM order_service_items ORDER BY created_at");
+    const orderGoodsItems = await client.query("SELECT * FROM order_goods_items ORDER BY created_at");
+    const goodsFiscalDocuments = await client.query("SELECT * FROM goods_fiscal_documents ORDER BY created_at DESC");
 
     const inventoryById = new Map(inventory.rows.map((item) => [item.concession_id, item]));
     const sessionsByMovie = new Map();
@@ -213,7 +222,7 @@ async function loadDbFromPostgres({ includeAuditLogs = true } = {}) {
 
     const appSettings = settings.rows[0]?.value || {};
 
-    return {
+    const snapshot = {
       settings: appSettings,
       integrations: appSettings.integrations || {},
       emailCampaigns: [],
@@ -596,6 +605,11 @@ async function loadDbFromPostgres({ includeAuditLogs = true } = {}) {
         createdAt: row.created_at?.toISOString?.() || "", updatedAt: row.updated_at?.toISOString?.() || ""
       }))
     };
+    if (!existingClient) await client.query("COMMIT");
+    return snapshot;
+  } catch (error) {
+    if (!existingClient) await client.query("ROLLBACK").catch(() => {});
+    throw error;
   } finally {
     if (!existingClient) client.release();
   }
@@ -608,46 +622,42 @@ const configuredSnapshotCacheTtlMs = Number(process.env.POSTGRES_SNAPSHOT_CACHE_
 const SNAPSHOT_CACHE_TTL_MS = Number.isFinite(configuredSnapshotCacheTtlMs)
   ? Math.min(60000, Math.max(2000, configuredSnapshotCacheTtlMs))
   : 30000;
-const snapshotCaches = new Map();
-const snapshotLoadPromises = new Map();
-let snapshotGeneration = 0;
+const snapshotCache = createSnapshotCache({
+  ttlMs: SNAPSHOT_CACHE_TTL_MS,
+  load: (key) => loadDbFromPostgres({ includeAuditLogs: key === "full" }),
+  clone: cloneSnapshot
+});
 
 function cloneSnapshot(snapshot) {
-  return structuredClone(snapshot);
+  return rememberSnapshot(structuredClone(snapshot));
 }
 
 function invalidateSnapshotCache() {
-  snapshotGeneration += 1;
-  snapshotCaches.clear();
-  snapshotLoadPromises.clear();
+  snapshotCache.invalidate();
+}
+
+function enablePostgresCacheInvalidation() {
+  if (postgresEnabled() && !cacheInvalidation) cacheInvalidation = startCacheInvalidation(poolConfiguration(), invalidateSnapshotCache);
+}
+
+function postgresDiagnostics() {
+  return {
+    pool: { max: pool?.options.max || poolConfiguration().max, total: pool?.totalCount || 0, idle: pool?.idleCount || 0, waiting: pool?.waitingCount || 0 },
+    cache: { ...snapshotCache.metrics(), notificationsConnected: cacheInvalidation?.connected() || false }
+  };
+}
+
+async function closePostgres() {
+  await cacheInvalidation?.close();
+  if (pool) await pool.end();
 }
 
 async function readDbFromPostgres({ includeAuditLogs = true } = {}) {
   // Reads made inside a critical mutation must observe the transaction directly.
-  if (contextClient()) return loadDbFromPostgres({ includeAuditLogs });
+  if (contextClient()) return rememberSnapshot(await loadDbFromPostgres({ includeAuditLogs }));
 
-  const cacheKey = includeAuditLogs ? "full" : "operational";
-  const cached = snapshotCaches.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) {
-    return cloneSnapshot(cached.snapshot);
-  }
-
-  if (!snapshotLoadPromises.has(cacheKey)) {
-    const generation = snapshotGeneration;
-    const loadPromise = loadDbFromPostgres({ includeAuditLogs })
-      .then((snapshot) => {
-        if (generation === snapshotGeneration) {
-          snapshotCaches.set(cacheKey, { snapshot: cloneSnapshot(snapshot), expiresAt: Date.now() + SNAPSHOT_CACHE_TTL_MS });
-        }
-        return snapshot;
-      })
-      .finally(() => {
-        if (snapshotLoadPromises.get(cacheKey) === loadPromise) snapshotLoadPromises.delete(cacheKey);
-      });
-    snapshotLoadPromises.set(cacheKey, loadPromise);
-  }
-
-  return cloneSnapshot(await snapshotLoadPromises.get(cacheKey));
+  if (cacheInvalidation && !cacheInvalidation.connected()) invalidateSnapshotCache();
+  return snapshotCache.read(includeAuditLogs ? "full" : "operational");
 }
 
 async function query(client, text, params = []) {
@@ -655,6 +665,7 @@ async function query(client, text, params = []) {
 }
 
 async function withPostgresMutationLock(callback) {
+  if (transactionContext.getStore()?.lockMode === "shared") throw new Error("A gravação de compatibilidade requer uma transação exclusiva desde o início.");
   if (contextClient()) return callback();
   const client = await getPool().connect();
   try {
@@ -667,7 +678,7 @@ async function withPostgresMutationLock(callback) {
       durationMs: Math.round((performance.now() - lockStartedAt) * 100) / 100,
       scope: "legacy_snapshot_mutation"
     }));
-    const result = await transactionContext.run({ client }, callback);
+    const result = await transactionContext.run({ client, lockMode: "exclusive" }, callback);
     await client.query("COMMIT");
     invalidateSnapshotCache();
     return result;
@@ -680,55 +691,39 @@ async function withPostgresMutationLock(callback) {
 }
 
 /**
- * LEGACY SNAPSHOT PERSISTENCE
- *
- * Reconstroi o estado relacional completo para manter compatibilidade com
- * fluxos ainda nao migrados. Novos endpoints CRUD devem usar repositories
- * direcionados e invalidar o snapshot apos o commit.
+ * Compatibility persistence applies only changes since the tracked read.
+ * Existing rows keep their identities and dependent records. New endpoints
+ * should continue using targeted repositories.
  */
-async function writeDbToPostgres(db) {
+async function writeDbToPostgres(db, { normalize = (value) => value, importSnapshot = false } = {}) {
+  if (transactionContext.getStore()?.lockMode === "shared") throw new Error("Não é permitido converter uma transação compartilhada em gravação de compatibilidade.");
   const existingClient = contextClient();
   const client = existingClient || await getPool().connect();
   try {
     if (!existingClient) await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(318642901, 20260823)");
+    const current = normalize(await transactionContext.run({ client }, () => loadDbFromPostgres({ includeAuditLogs: false })));
+    const baseline = snapshotBaseline(db);
+    if (!baseline && !importSnapshot) throw new Error("A gravação requer uma leitura rastreada ou uma importação explícita.");
+    const before = baseline || captureSnapshot(current);
+    const changes = changesBetween(before, captureSnapshot(db));
+    if (baseline) assertCurrent(before, captureSnapshot(current), changes);
+    const persist = createSnapshotWriter(client, changes);
     const settingsPayload = {
       ...(db.settings || {}),
       integrations: db.integrations || db.settings?.integrations || {}
     };
     delete settingsPayload.emailCampaigns;
-    await query(client, "INSERT INTO settings (key, value, updated_at) VALUES ('app', $1, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()", [settingsPayload]);
-
-    await query(client, "DELETE FROM subscription_credit_redemptions").catch(() => null);
-    await query(client, "DELETE FROM subscription_credit_units").catch(() => null);
-    await query(client, "DELETE FROM subscription_payments").catch(() => null);
-    await query(client, "DELETE FROM subscription_cycles").catch(() => null);
-    await query(client, "DELETE FROM subscription_accounting_rule_versions").catch(() => null);
-    await query(client, "DELETE FROM goods_fiscal_documents").catch(() => null);
-    await query(client, "DELETE FROM order_service_items").catch(() => null);
-    await query(client, "DELETE FROM order_goods_items").catch(() => null);
-    await query(client, "DELETE FROM subscription_usage").catch(() => null);
-    await query(client, "DELETE FROM subscription_credits").catch(() => null);
-    await query(client, "DELETE FROM subscriptions").catch(() => null);
-    await query(client, "DELETE FROM subscription_plans").catch(() => null);
-    await query(client, "DELETE FROM order_items");
-    await query(client, "DELETE FROM tickets");
-    await query(client, "DELETE FROM payments");
-    await query(client, "DELETE FROM orders");
-    await query(client, "DELETE FROM sessions");
-    await query(client, "DELETE FROM session_ticket_types");
-    await query(client, "DELETE FROM concession_inventory");
-    await query(client, "DELETE FROM concessions");
-    await query(client, "DELETE FROM promotions");
-    await query(client, "DELETE FROM ads");
-    await query(client, "DELETE FROM audit_logs");
-    await query(client, "DELETE FROM webhook_events");
-    await query(client, "DELETE FROM ticket_types");
-    await query(client, "DELETE FROM movies");
-    await query(client, "DELETE FROM rooms");
-    await query(client, "DELETE FROM users");
+    if (changes.settingsChanged.length || changes.settingsRemoved.length) {
+      const patch = Object.fromEntries(changes.settingsChanged.map((name) => [name, settingsPayload[name]]));
+      await client.query(`INSERT INTO settings (key,value,updated_at) VALUES ('app',$1::jsonb,now())
+        ON CONFLICT (key) DO UPDATE SET value=(settings.value - $2::text[]) || EXCLUDED.value,updated_at=now()`,
+      [JSON.stringify(patch), changes.settingsRemoved]);
+    }
+    await deleteRemovedRows(client, changes);
 
     for (const user of asArray(db.users)) {
-      await query(client, `INSERT INTO users (id, name, email, phone, cpf, password_hash, auth_provider, google_sub, picture, email_verified, pending_email, email_verification_hash, email_verification_expires_at, email_verification_requested_at, password_reset_hash, password_reset_expires_at, password_reset_requested_at, email_unsubscribed_at, email_unsubscribe_token, two_factor_enabled, two_factor_secret, two_factor_pending_secret, two_factor_recovery_codes, two_factor_confirmed_at, two_factor_updated_at, admin_permissions, use_custom_permissions, session_version, role, active, created_at, updated_at)
+      await persist(client, `INSERT INTO users (id, name, email, phone, cpf, password_hash, auth_provider, google_sub, picture, email_verified, pending_email, email_verification_hash, email_verification_expires_at, email_verification_requested_at, password_reset_hash, password_reset_expires_at, password_reset_requested_at, email_unsubscribed_at, email_unsubscribe_token, two_factor_enabled, two_factor_secret, two_factor_pending_secret, two_factor_recovery_codes, two_factor_confirmed_at, two_factor_updated_at, admin_permissions, use_custom_permissions, session_version, role, active, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,NULLIF($12,''),NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,NULLIF($15,''),NULLIF($16,'')::timestamptz,NULLIF($17,'')::timestamptz,NULLIF($18,'')::timestamptz,NULLIF($19,''),$20,NULLIF($21,''),NULLIF($22,''),$23::jsonb,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26::jsonb,$27,$28,$29,$30,COALESCE(NULLIF($31,'')::timestamptz, now()),COALESCE(NULLIF($32,'')::timestamptz, now()))`, [
         user.id,
         user.name,
@@ -766,7 +761,7 @@ async function writeDbToPostgres(db) {
     }
 
     for (const room of asArray(db.rooms)) {
-      await query(client, "INSERT INTO rooms (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)", [
+      await persist(client, "INSERT INTO rooms (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)", [
         room.id,
         room.name,
         Number(room.capacity || 120),
@@ -781,7 +776,7 @@ async function writeDbToPostgres(db) {
     const firstRoomId = asArray(db.rooms)[0]?.id || "sala-cruzeiro";
 
     for (const ticket of asArray(db.ticketTypes)) {
-      await query(client, "INSERT INTO ticket_types (id, name, price, description, active, bundle_quantity) VALUES ($1,$2,$3,$4,$5,$6)", [
+      await persist(client, "INSERT INTO ticket_types (id, name, price, description, active, bundle_quantity) VALUES ($1,$2,$3,$4,$5,$6)", [
         ticket.id,
         ticket.name,
         num(ticket.price, 10),
@@ -792,7 +787,7 @@ async function writeDbToPostgres(db) {
     }
 
     for (const movie of asArray(db.movies)) {
-      await query(client, `INSERT INTO movies (id, slug, workflow_status, sort_order, status, title, original_title, synopsis, duration, director, metadata, genre, rating, poster_url, backdrop_url, trailer_youtube_id, trailer_video_url, local_trailer_url, trailer_source_url, trailer_cache_status, trailer_cache_error, is_highlight, highlight_trailer_background, release_date, auto_publish, published_at, tag)
+      await persist(client, `INSERT INTO movies (id, slug, workflow_status, sort_order, status, title, original_title, synopsis, duration, director, metadata, genre, rating, poster_url, backdrop_url, trailer_youtube_id, trailer_video_url, local_trailer_url, trailer_source_url, trailer_cache_status, trailer_cache_error, is_highlight, highlight_trailer_background, release_date, auto_publish, published_at, tag)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,NULLIF($24,'')::date,$25,NULLIF($26,'')::timestamptz,$27)`, [
         movie.id,
         movie.slug || movie.id,
@@ -831,7 +826,7 @@ async function writeDbToPostgres(db) {
       const matchedRoom = asArray(db.rooms).find((room) => String(room.name || "").trim().toLowerCase() === roomName)
         || roomsById.get(String(session.roomId || ""));
       const sessionRoomId = matchedRoom?.id || firstRoomId;
-      await query(client, `INSERT INTO sessions (id, movie_id, room_id, starts_at, time_label, room_label, format, price_full, price_half, status)
+      await persist(client, `INSERT INTO sessions (id, movie_id, room_id, starts_at, time_label, room_label, format, price_full, price_half, status)
           VALUES ($1,$2,$3,NULLIF($4,'')::timestamptz,$5,$6,$7,$8,$9,$10)`, [
           session.id,
           movie.id,
@@ -846,7 +841,7 @@ async function writeDbToPostgres(db) {
         ]);
         for (const [position, ticketTypeId] of asArray(session.ticketTypeIds).entries()) {
           if (!asArray(db.ticketTypes).some((ticketType) => ticketType.id === ticketTypeId)) continue;
-          await query(client, `INSERT INTO session_ticket_types (session_id, ticket_type_id, position)
+          await persist(client, `INSERT INTO session_ticket_types (session_id, ticket_type_id, position)
             VALUES ($1,$2,$3) ON CONFLICT (session_id, ticket_type_id) DO UPDATE SET position = EXCLUDED.position`, [
             session.id,
             ticketTypeId,
@@ -857,7 +852,7 @@ async function writeDbToPostgres(db) {
     }
 
     for (const item of asArray(db.concessions)) {
-      await query(client, `INSERT INTO concessions (id, sku, name, description, image_url, badge, price, compare_at, category, max_per_order, featured, sort_order, tags, combo_items, active, stock_unit, usage_per_sale)
+      await persist(client, `INSERT INTO concessions (id, sku, name, description, image_url, badge, price, compare_at, category, max_per_order, featured, sort_order, tags, combo_items, active, stock_unit, usage_per_sale)
         VALUES ($1,NULLIF($2,''),$3,$4,$5,$6,$7,NULLIF($8,'')::numeric,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, [
         item.id,
         item.sku || "",
@@ -877,7 +872,7 @@ async function writeDbToPostgres(db) {
         item.stockUnit || "unit",
         Number(item.usagePerSale || 1)
       ]);
-      await query(client, "INSERT INTO concession_inventory (concession_id, available, reserved, sold) VALUES ($1,$2,$3,$4)", [
+      await persist(client, "INSERT INTO concession_inventory (concession_id, available, reserved, sold) VALUES ($1,$2,$3,$4)", [
         item.id,
         item.stock === "" || item.stock === undefined ? null : Number(item.stock || 0),
         Number(item.reserved || 0),
@@ -886,7 +881,7 @@ async function writeDbToPostgres(db) {
     }
 
     for (const item of asArray(db.promotions)) {
-      await query(client, `INSERT INTO promotions (id, title, description, discount_type, value, coupon_code, starts_at, ends_at, active, metadata)
+      await persist(client, `INSERT INTO promotions (id, title, description, discount_type, value, coupon_code, starts_at, ends_at, active, metadata)
         VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::timestamptz,NULLIF($8,'')::timestamptz,$9,$10)`, [
         item.id,
         item.title,
@@ -902,7 +897,7 @@ async function writeDbToPostgres(db) {
     }
 
     for (const item of asArray(db.ads)) {
-      await query(client, "INSERT INTO ads (id, title, description, image_url, cta_label, cta_url, placement, active, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", [
+      await persist(client, "INSERT INTO ads (id, title, description, image_url, cta_label, cta_url, placement, active, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", [
         item.id,
         item.title,
         item.description || "",
@@ -919,7 +914,7 @@ async function writeDbToPostgres(db) {
     const sessionIds = new Set(asArray(db.movies).flatMap((movie) => asArray(movie.sessions).map((session) => session.id)));
     const userIds = new Set(asArray(db.users).map((user) => user.id));
     for (const order of asArray(db.orders)) {
-      await query(client, `INSERT INTO orders (id, customer_user_id, customer_name, customer_email, customer_phone, customer_cpf, movie_id, session_id, status, subtotal, discount_total, total, currency, reservation_expires_at, idempotency_key, service_subtotal, goods_subtotal, club_credits_applied, club_discount, additional_payment, service_fiscal_status, goods_fiscal_status, goods_fiscal_trigger, metadata, created_at, updated_at)
+      await persist(client, `INSERT INTO orders (id, customer_user_id, customer_name, customer_email, customer_phone, customer_cpf, movie_id, session_id, status, subtotal, discount_total, total, currency, reservation_expires_at, idempotency_key, service_subtotal, goods_subtotal, club_credits_applied, club_discount, additional_payment, service_fiscal_status, goods_fiscal_status, goods_fiscal_trigger, metadata, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'BRL',NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,$16,$17,$18,$19,$20,$21,$22,$23,COALESCE(NULLIF($24,'')::timestamptz, now()),now())`, [
         order.id,
         userIds.has(order.customerUserId) ? order.customerUserId : null,
@@ -948,7 +943,7 @@ async function writeDbToPostgres(db) {
       ]);
 
       for (const item of asArray(order.concessionItems)) {
-        await query(client, "INSERT INTO order_items (order_id, item_type, item_id, name, quantity, unit_price, total_price, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [
+        await persist(client, "INSERT INTO order_items (order_id, item_type, item_id, name, quantity, unit_price, total_price, metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [
           order.id,
           item.category === "promocao" ? "promotion" : "concession",
           item.id,
@@ -960,7 +955,7 @@ async function writeDbToPostgres(db) {
         ]);
       }
       for (const item of asArray(order.ticketItems)) {
-        await query(client, "INSERT INTO order_items (order_id, item_type, item_id, name, quantity, unit_price, total_price, metadata) VALUES ($1,'ticket',$2,$3,$4,$5,$6,$7)", [
+        await persist(client, "INSERT INTO order_items (order_id, item_type, item_id, name, quantity, unit_price, total_price, metadata) VALUES ($1,'ticket',$2,$3,$4,$5,$6,$7)", [
           order.id,
           item.id,
           item.name || "Ingresso",
@@ -974,7 +969,7 @@ async function writeDbToPostgres(db) {
 
     for (const payment of asArray(db.payments)) {
       if (!asArray(db.orders).some((order) => order.id === payment.orderId)) continue;
-      await query(client, `INSERT INTO payments (id, order_id, method, provider, provider_payment_id, provider_reference, status, amount, currency, created_at, updated_at, approved_at, expired_at, cancelled_at, refunded_at, metadata)
+      await persist(client, `INSERT INTO payments (id, order_id, method, provider, provider_payment_id, provider_reference, status, amount, currency, created_at, updated_at, approved_at, expired_at, cancelled_at, refunded_at, metadata)
         VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),$7,$8,$9,COALESCE(NULLIF($10,'')::timestamptz, now()),COALESCE(NULLIF($11,'')::timestamptz, now()),NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,NULLIF($15,'')::timestamptz,$16)`, [
         payment.id,
         payment.orderId,
@@ -997,7 +992,7 @@ async function writeDbToPostgres(db) {
 
     for (const ticket of asArray(db.tickets)) {
       if (!asArray(db.orders).some((order) => order.id === ticket.orderId)) continue;
-      await query(client, `INSERT INTO tickets (id, order_id, movie_id, session_id, code, qr_payload, ticket_type, status, customer_name, customer_email, customer_phone, customer_cpf, source, used_at, used_by, ticket_number, base_price, subscription_credit_amount, additional_payment_amount, payment_source, subscription_credit_id, metadata, created_at)
+      await persist(client, `INSERT INTO tickets (id, order_id, movie_id, session_id, code, qr_payload, ticket_type, status, customer_name, customer_email, customer_phone, customer_cpf, source, used_at, used_by, ticket_number, base_price, subscription_credit_amount, additional_payment_amount, payment_source, subscription_credit_id, metadata, created_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULLIF($14,'')::timestamptz,$15,$16,$17,$18,$19,$20,$21,$22,COALESCE(NULLIF($23,'')::timestamptz, now()))`, [
         ticket.id,
         ticket.orderId,
@@ -1026,7 +1021,7 @@ async function writeDbToPostgres(db) {
     }
 
     for (const plan of asArray(db.subscriptionPlans)) {
-      await query(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, ticket_discount_percent, concession_discount_percent, free_concession_items, image_url, is_featured, display_order, provider_plan_id, mercado_pago_plan_id, active, credit_reference_value, credit_validity_days, allow_credit_rollover, max_accumulated_credits, grace_period_days, allow_price_difference, excluded_concession_ids, eligible_formats, eligible_session_ids, cancellation_rules, accounting_config, created_at, updated_at)
+      await persist(client, `INSERT INTO subscription_plans (id, name, monthly_price, included_tickets, billing_cycle, benefits, ticket_discount_percent, concession_discount_percent, free_concession_items, image_url, is_featured, display_order, provider_plan_id, mercado_pago_plan_id, active, credit_reference_value, credit_validity_days, allow_credit_rollover, max_accumulated_credits, grace_period_days, allow_price_difference, excluded_concession_ids, eligible_formats, eligible_session_ids, cancellation_rules, accounting_config, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17,0),$18,NULLIF($19,0),$20,$21,$22,$23,$24,$25,$26,COALESCE(NULLIF($27,'')::timestamptz, now()),COALESCE(NULLIF($28,'')::timestamptz, now()))`, [
         plan.id,
         plan.name,
@@ -1063,7 +1058,7 @@ async function writeDbToPostgres(db) {
     const persistedSubscriptionIds = new Set();
     for (const subscription of asArray(db.subscriptions)) {
       if (!userIds.has(subscription.userId) || !planIds.has(subscription.planId)) continue;
-      await query(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, cancel_at_period_end, cancellation_requested_at, billing_cancelled_at, benefits_until, cancellation_mode, reactivation_blocked, ended_at, archived_at, archived_by, history, created_at, updated_at)
+      await persist(client, `INSERT INTO subscriptions (id, user_id, plan_id, status, provider, provider_subscription_id, provider_plan_id, provider_status, provider_payment_id, payment_status, payment_expires_at, payment_expired_at, approved_at, preferred_payment_method, external_billing_pending, checkout_url, last_authorized_payment_id, last_provider_payment_id, cycle_start, cycle_end, next_billing_at, started_at, current_period_key, current_period_start, current_period_end, credits_available, credits_used, assigned_by, assigned_at, renewed_at, cancelled_at, cancel_at_period_end, cancellation_requested_at, billing_cancelled_at, benefits_until, cancellation_mode, reactivation_blocked, ended_at, archived_at, archived_by, history, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,''),$15,NULLIF($16,''),NULLIF($17,''),NULLIF($18,''),NULLIF($19,'')::timestamptz,NULLIF($20,'')::timestamptz,NULLIF($21,'')::timestamptz,NULLIF($22,'')::timestamptz,$23,NULLIF($24,'')::timestamptz,NULLIF($25,'')::timestamptz,$26,$27,$28,NULLIF($29,'')::timestamptz,NULLIF($30,'')::timestamptz,NULLIF($31,'')::timestamptz,$32,NULLIF($33,'')::timestamptz,NULLIF($34,'')::timestamptz,NULLIF($35,'')::timestamptz,NULLIF($36,''),$37,NULLIF($38,'')::timestamptz,NULLIF($39,'')::timestamptz,$40,$41,COALESCE(NULLIF($42,'')::timestamptz, now()),COALESCE(NULLIF($43,'')::timestamptz, now()))`, [
         subscription.id,
         subscription.userId,
@@ -1114,7 +1109,7 @@ async function writeDbToPostgres(db) {
 
     for (const credit of asArray(db.subscriptionCredits)) {
       if (!persistedSubscriptionIds.has(credit.subscriptionId)) continue;
-      await query(client, `INSERT INTO subscription_credits (id, subscription_id, cycle_start, cycle_end, total, used, remaining, rollover_from_id, metadata, created_at, updated_at)
+      await persist(client, `INSERT INTO subscription_credits (id, subscription_id, cycle_start, cycle_end, total, used, remaining, rollover_from_id, metadata, created_at, updated_at)
         VALUES ($1,$2,NULLIF($3,'')::timestamptz,NULLIF($4,'')::timestamptz,$5,$6,$7,NULLIF($8,''),$9,COALESCE(NULLIF($10,'')::timestamptz, now()),COALESCE(NULLIF($11,'')::timestamptz, now()))`, [
         credit.id,
         credit.subscriptionId,
@@ -1134,7 +1129,7 @@ async function writeDbToPostgres(db) {
     const ticketIds = new Set(asArray(db.tickets).map((ticket) => ticket.id));
     for (const usage of asArray(db.subscriptionUsage)) {
       if (!persistedSubscriptionIds.has(usage.subscriptionId) || !userIds.has(usage.userId)) continue;
-      await query(client, `INSERT INTO subscription_usage (id, subscription_id, credit_id, user_id, order_id, ticket_id, movie_id, session_id, month_key, credits_used, idempotency_key, refunded_at, refunded_by, refund_reason, metadata, used_at)
+      await persist(client, `INSERT INTO subscription_usage (id, subscription_id, credit_id, user_id, order_id, ticket_id, movie_id, session_id, month_key, credits_used, idempotency_key, refunded_at, refunded_by, refund_reason, metadata, used_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,'')::timestamptz,NULLIF($13,''),$14,$15,COALESCE(NULLIF($16,'')::timestamptz, now()))`, [
         usage.id,
         usage.subscriptionId,
@@ -1157,7 +1152,7 @@ async function writeDbToPostgres(db) {
 
     for (const rule of asArray(db.subscriptionAccountingRules)) {
       if (!planIds.has(rule.planId)) continue;
-      await query(client, `INSERT INTO subscription_accounting_rule_versions
+      await persist(client, `INSERT INTO subscription_accounting_rule_versions
         (id, plan_id, rule_version, effective_from, ticket_component_value, benefits_component_value, configuration, created_by, created_at)
         VALUES ($1,$2,$3,NULLIF($4,'')::timestamptz,$5,$6,$7,$8,COALESCE(NULLIF($9,'')::timestamptz, now()))`, [
         rule.id, rule.planId, rule.ruleVersion, rule.effectiveFrom || rule.createdAt || new Date().toISOString(),
@@ -1170,7 +1165,7 @@ async function writeDbToPostgres(db) {
     const persistedCycleIds = new Set();
     for (const cycle of asArray(db.subscriptionCycles)) {
       if (!persistedSubscriptionIds.has(cycle.subscriptionId) || !userIds.has(cycle.customerId) || !planIds.has(cycle.planId)) continue;
-      await query(client, `INSERT INTO subscription_cycles
+      await persist(client, `INSERT INTO subscription_cycles
         (id, subscription_id, customer_id, plan_id, cycle_start, cycle_end, status, source_payment_id, idempotency_key, plan_snapshot, accounting_snapshot, created_at, updated_at)
         VALUES ($1,$2,$3,$4,NULLIF($5,'')::timestamptz,NULLIF($6,'')::timestamptz,$7,NULLIF($8,''),$9,$10,$11,COALESCE(NULLIF($12,'')::timestamptz, now()),COALESCE(NULLIF($13,'')::timestamptz, now()))`, [
         cycle.id, cycle.subscriptionId, cycle.customerId, cycle.planId, cycle.cycleStart, cycle.cycleEnd, cycle.status || "active",
@@ -1182,7 +1177,7 @@ async function writeDbToPostgres(db) {
 
     for (const payment of asArray(db.subscriptionPayments)) {
       if (!persistedSubscriptionIds.has(payment.subscriptionId) || !userIds.has(payment.customerId)) continue;
-      await query(client, `INSERT INTO subscription_payments
+      await persist(client, `INSERT INTO subscription_payments
         (id, subscription_id, cycle_id, customer_id, provider, provider_payment_id, amount, currency, status, idempotency_key, approved_at, failed_at, cancelled_at, refunded_at, metadata, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,NULLIF($11,'')::timestamptz,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
         payment.id, payment.subscriptionId, persistedCycleIds.has(payment.cycleId) ? payment.cycleId : null, payment.customerId,
@@ -1195,7 +1190,7 @@ async function writeDbToPostgres(db) {
     const persistedCreditUnitIds = new Set();
     for (const credit of asArray(db.subscriptionCreditUnits)) {
       if (!persistedSubscriptionIds.has(credit.subscriptionId) || !persistedCycleIds.has(credit.cycleId) || !userIds.has(credit.customerId)) continue;
-      await query(client, `INSERT INTO subscription_credit_units
+      await persist(client, `INSERT INTO subscription_credit_units
         (id, subscription_id, customer_id, cycle_id, reference_value, status, issued_at, expires_at, reserved_at, reservation_expires_at, reserved_order_id, redeemed_at, cancelled_at, rollover_from_id, metadata, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::timestamptz,NULLIF($8,'')::timestamptz,NULLIF($9,'')::timestamptz,NULLIF($10,'')::timestamptz,$11,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,$14,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
         credit.id, credit.subscriptionId, credit.customerId, credit.cycleId, num(credit.referenceValue), credit.status || "available",
@@ -1208,13 +1203,13 @@ async function writeDbToPostgres(db) {
 
     for (const ticket of asArray(db.tickets)) {
       if (persistedCreditUnitIds.has(ticket.subscriptionCreditId)) {
-        await query(client, "UPDATE tickets SET subscription_credit_id = $2 WHERE id = $1", [ticket.id, ticket.subscriptionCreditId]);
+        await persist(client, "UPDATE tickets SET subscription_credit_id = $2 WHERE id = $1", [ticket.id, ticket.subscriptionCreditId]);
       }
     }
 
     for (const redemption of asArray(db.subscriptionCreditRedemptions)) {
       if (!persistedCreditUnitIds.has(redemption.subscriptionCreditId) || !orderIds.has(redemption.orderId)) continue;
-      await query(client, `INSERT INTO subscription_credit_redemptions
+      await persist(client, `INSERT INTO subscription_credit_redemptions
         (id, subscription_credit_id, subscription_id, order_id, ticket_id, session_id, status, base_price, credit_amount, additional_payment_amount, idempotency_key, reserved_at, redeemed_at, released_at, metadata, created_at, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULLIF($12,'')::timestamptz,NULLIF($13,'')::timestamptz,NULLIF($14,'')::timestamptz,$15,COALESCE(NULLIF($16,'')::timestamptz, now()),COALESCE(NULLIF($17,'')::timestamptz, now()))`, [
         redemption.id, redemption.subscriptionCreditId, redemption.subscriptionId, redemption.orderId,
@@ -1227,7 +1222,7 @@ async function writeDbToPostgres(db) {
 
     for (const item of asArray(db.orderServiceItems)) {
       if (!orderIds.has(item.orderId)) continue;
-      await query(client, `INSERT INTO order_service_items
+      await persist(client, `INSERT INTO order_service_items
         (id, order_id, ticket_id, item_id, name, quantity, unit_price, base_price, subscription_credit_amount, additional_payment_amount, payment_source, subscription_credit_id, metadata, created_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE(NULLIF($14,'')::timestamptz, now()))`, [
         item.id, item.orderId, ticketIds.has(item.ticketId) ? item.ticketId : null, item.itemId, item.name, Number(item.quantity || 1),
@@ -1238,7 +1233,7 @@ async function writeDbToPostgres(db) {
 
     for (const item of asArray(db.orderGoodsItems)) {
       if (!orderIds.has(item.orderId)) continue;
-      await query(client, `INSERT INTO order_goods_items
+      await persist(client, `INSERT INTO order_goods_items
         (id, order_id, concession_id, sku, name, quantity, original_unit_price, club_discount, final_unit_price, metadata, created_at)
         VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,$9,$10,COALESCE(NULLIF($11,'')::timestamptz, now()))`, [
         item.id, item.orderId, asArray(db.concessions).some((entry) => entry.id === item.concessionId) ? item.concessionId : null,
@@ -1249,7 +1244,7 @@ async function writeDbToPostgres(db) {
 
     for (const document of asArray(db.goodsFiscalDocuments)) {
       if (!orderIds.has(document.orderId)) continue;
-      await query(client, `INSERT INTO goods_fiscal_documents
+      await persist(client, `INSERT INTO goods_fiscal_documents
         (id, order_id, status, trigger, provider, provider_document_id, document_number, series, access_key, protocol, xml_reference, danfe_reference, idempotency_key, issued_at, cancelled_at, error_code, error_message, metadata, created_at, updated_at)
         VALUES ($1,$2,$3,$4,NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),NULLIF($10,''),NULLIF($11,''),NULLIF($12,''),$13,NULLIF($14,'')::timestamptz,NULLIF($15,'')::timestamptz,NULLIF($16,''),NULLIF($17,''),$18,COALESCE(NULLIF($19,'')::timestamptz, now()),COALESCE(NULLIF($20,'')::timestamptz, now()))`, [
         document.id, document.orderId, document.status || "not_required", document.trigger || "goods_delivered", document.provider || "",
@@ -1260,7 +1255,7 @@ async function writeDbToPostgres(db) {
     }
 
     for (const event of asArray(db.webhookEvents)) {
-      await query(client, "INSERT INTO webhook_events (provider, event_id, provider_payment_id, order_id, status, payload, created_at) VALUES ($1,$2,$3,$4,$5,$6,COALESCE(NULLIF($7,'')::timestamptz, now()))", [
+      await persist(client, "INSERT INTO webhook_events (provider, event_id, provider_payment_id, order_id, status, payload, created_at) VALUES ($1,$2,$3,$4,$5,$6,COALESCE(NULLIF($7,'')::timestamptz, now()))", [
         event.provider || "unknown",
         event.eventId || `${event.provider || "event"}-${Date.now()}`,
         event.providerPaymentId || "",
@@ -1272,7 +1267,9 @@ async function writeDbToPostgres(db) {
     }
 
     for (const log of asArray(db.auditLogs)) {
-      await query(client, "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, before, after, ip, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE(NULLIF($8,'')::timestamptz, now()))", [
+      if (before.auditIds.has(log.id)) continue;
+      if (!/^[0-9a-f-]{36}$/i.test(String(log.id || ""))) log.id = randomUUID();
+      await query(client, "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, before, after, ip, created_at, id) VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE(NULLIF($8,'')::timestamptz, now()),$9::uuid) ON CONFLICT (id) DO NOTHING", [
         userIds.has(log.userId) ? log.userId : null,
         log.action || "unknown",
         log.entityType || "system",
@@ -1280,7 +1277,8 @@ async function writeDbToPostgres(db) {
         jsonParam(log.before),
         jsonParam(log.after),
         log.ip || "",
-        log.createdAt || log.at || ""
+        log.createdAt || log.at || "",
+        log.id
       ]);
     }
 
@@ -1288,6 +1286,7 @@ async function writeDbToPostgres(db) {
       await client.query("COMMIT");
       invalidateSnapshotCache();
     }
+    rememberSnapshot(db);
   } catch (error) {
     if (!existingClient) await client.query("ROLLBACK");
     throw error;
@@ -1466,8 +1465,9 @@ async function pruneSystemLogsFromPostgres(options = 90) {
 
 async function checkPostgresReadiness(expectedMigration = "") {
   if (!postgresEnabled()) return { ready: false, database: false, migrations: false };
-  const client = await getPool().connect();
+  let client;
   try {
+    client = await getPool().connect();
     await client.query("SELECT 1");
     if (!expectedMigration) return { ready: true, database: true, migrations: true };
     const result = await client.query(
@@ -1479,7 +1479,7 @@ async function checkPostgresReadiness(expectedMigration = "") {
   } catch {
     return { ready: false, database: false, migrations: false };
   } finally {
-    client.release();
+    client?.release();
   }
 }
 
@@ -1562,6 +1562,10 @@ module.exports = {
   queryPostgres,
   withPostgresTransaction,
   invalidatePostgresSnapshot,
+  rememberSnapshot,
+  enablePostgresCacheInvalidation,
+  postgresDiagnostics,
+  closePostgres,
   readDbFromPostgres,
   writeDbToPostgres,
   withPostgresMutationLock,

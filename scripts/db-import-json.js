@@ -12,7 +12,7 @@ async function main() {
 
   const dbPath = path.join(__dirname, "..", "backend", "data", "db.json");
   const db = JSON.parse(await fs.readFile(dbPath, "utf8"));
-  await writeDbToPostgres(db);
+  await writeDbToPostgres(db, { importSnapshot: true });
   console.log("backend/data/db.json importado para PostgreSQL.");
 }
 

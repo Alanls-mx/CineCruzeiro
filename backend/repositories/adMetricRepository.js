@@ -1,9 +1,9 @@
-const { queryPostgres, invalidatePostgresSnapshot } = require("../db/postgresStore");
+const { withPostgresTransaction, invalidatePostgresSnapshot } = require("../db/postgresStore");
 
 async function increment(id, metric) {
   const counter = metric === "click" ? "clicks" : "impressions";
   const timestamp = metric === "click" ? "lastClickAt" : "lastImpressionAt";
-  const result = await queryPostgres(`
+  const result = await withPostgresTransaction((client) => client.query(`
     UPDATE ads
     SET metadata = COALESCE(metadata, '{}'::jsonb)
       || jsonb_build_object(
@@ -14,7 +14,7 @@ async function increment(id, metric) {
       )
     WHERE id = $1
     RETURNING metadata
-  `, [id, counter, timestamp]);
+  `, [id, counter, timestamp]));
   if (result.rowCount) invalidatePostgresSnapshot();
   return result.rows[0]?.metadata || null;
 }

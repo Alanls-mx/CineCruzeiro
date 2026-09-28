@@ -11,6 +11,10 @@ const sharp = require("sharp");
 const {
   postgresEnabled,
   readDbFromPostgres,
+  rememberSnapshot,
+  enablePostgresCacheInvalidation,
+  postgresDiagnostics,
+  closePostgres,
   writeDbToPostgres,
   withPostgresMutationLock,
   appendAuditLogToPostgres,
@@ -134,7 +138,7 @@ let emailCampaignWorker = null;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "038_social_studio_automation.sql";
+const LATEST_SCHEMA_MIGRATION = "039_database_runtime.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -1364,6 +1368,7 @@ function repositoryMutationRoute(pathname, method) {
     || /^\/api\/admin\/email\/(branding|attachments)$/.test(pathname)
     || /^\/api\/admin\/email\/template-library\/[^/]+$/.test(pathname)
     || /^\/api\/admin\/email\/campaigns(?:\/.*)?$/.test(pathname)
+    || /^\/api\/admin\/social-studio\/(copy|resolve|preview|preview-scene|variations|animation|motion-preview|uploads)$/.test(pathname)
     || /^\/api\/admin\/integrations\/[^/]+(?:\/(test|enable|disable))?$/.test(pathname)
     || /^\/api\/users(?:\/[^/]+)?$/.test(pathname)
     || (/^\/api\/orders\/[^/]+$/.test(pathname) && method === "PATCH")
@@ -1801,8 +1806,6 @@ function normalizeDb(db) {
   return db;
 }
 
-const readOnlyDbSnapshots = new WeakSet();
-
 async function readDb(options = {}) {
   if (isProduction() && !postgresEnabled()) {
     throw Object.assign(new Error("PostgreSQL deve estar configurado em producao."), {
@@ -1811,18 +1814,17 @@ async function readDb(options = {}) {
     });
   }
   const db = postgresEnabled()
-    ? await readDbFromPostgres(options)
+    ? await readDbFromPostgres({ includeAuditLogs: false, ...options })
     : JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
   const normalized = normalizeDb(db);
-  if (postgresEnabled() && options.includeAuditLogs === false) readOnlyDbSnapshots.add(normalized);
+  if (postgresEnabled()) rememberSnapshot(normalized);
   return normalized;
 }
 
 async function writeDb(db) {
-  if (readOnlyDbSnapshots.has(db)) throw new Error("A leitura sem auditoria não pode ser usada para gravar o estado completo.");
   appendAuditLog(db);
   if (postgresEnabled()) {
-    await writeDbToPostgres(normalizeDb(db));
+    await writeDbToPostgres(normalizeDb(db), { normalize: normalizeDb });
     return;
   }
   const tempFile = `${DATA_FILE}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
@@ -8101,6 +8103,11 @@ function getContent(db, options = {}) {
   delete publicSettings.webhookSimulatorRuns;
   delete publicSettings.emailCampaigns;
   delete publicSettings.emailAiPromptTemplates;
+  if (!includePrivate) {
+    for (const name of Object.keys(publicSettings)) {
+      if (name.startsWith("socialStudio") || ["emailAttachments", "emailTemplateLibrary", "emailBranding"].includes(name)) delete publicSettings[name];
+    }
+  }
   if (!includePrivate) delete publicSettings.adminTwoFactorRequired;
   const analyticsConfig = integrationConfigService.resolvedConfig(db, "analytics");
   publicSettings.tracking = {
@@ -10931,7 +10938,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const db = await readDb({ includeAuditLogs: method !== "GET" && method !== "HEAD" });
+  const db = await readDb();
 
   if (pathname.startsWith("/api/email-automation/") && !emailAutomationAuthorized(req)) {
     const configured = Boolean(process.env.EMAIL_AUTOMATION_TOKEN || process.env.N8N_EMAIL_SHARED_SECRET);
@@ -12267,7 +12274,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/logs/performance" && method === "GET") {
-    sendJson(res, 200, performanceMonitor.snapshot());
+    sendJson(res, 200, { ...performanceMonitor.snapshot(), database: postgresEnabled() ? postgresDiagnostics() : null });
     return;
   }
 
@@ -13100,6 +13107,7 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const allowedKeys = new Set(["movies", "rooms", "ticketTypes", "concessions", "promotions", "ads", "settings"]);
     const nextDb = { ...db };
+    if (postgresEnabled()) rememberSnapshot(nextDb);
     Object.entries(body || {}).forEach(([key, value]) => {
       if (allowedKeys.has(key)) nextDb[key] = value;
     });
@@ -17788,6 +17796,7 @@ loadEnvFiles().then(() => {
     console.error("POSTGRES_REQUIRED_IN_PRODUCTION: configure DATABASE_URL ou POSTGRES_URL antes de iniciar em producao.");
     process.exit(1);
   }
+  enablePostgresCacheInvalidation();
   server.listen(PORT, HOST, () => {
     const tmdb = getTmdbCredentials();
     console.log(`Cine Cruzeiro backend: http://${HOST}:${PORT}`);
@@ -17828,7 +17837,7 @@ loadEnvFiles().then(() => {
 for (const signal of ["SIGTERM", "SIGINT"]) {
   process.once(signal, () => {
     emailCampaignWorker?.stop();
-    server.close(() => process.exit(0));
+    server.close(() => { void closePostgres().finally(() => process.exit(0)); });
     setTimeout(() => process.exit(1), 10000).unref?.();
   });
 }

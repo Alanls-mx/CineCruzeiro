@@ -21,6 +21,8 @@ process.env.TEST_PAYMENTS_AUTO_APPROVE = "false";
 process.env.ADMIN_EMAIL = "admin@cinecruzeiro.local";
 process.env.ADMIN_PASSWORD = "admin-pg-test-123456";
 process.env.MERCADO_PAGO_WEBHOOK_SECRET = "postgres-concurrency-webhook-secret";
+const adminSalt = crypto.randomBytes(16).toString("base64url");
+const adminPasswordHash = `pbkdf2_sha256$600000$${adminSalt}$${crypto.pbkdf2Sync(process.env.ADMIN_PASSWORD, adminSalt, 600000, 32, "sha256").toString("base64url")}`;
 
 function jsonHeaders(cookie = "") {
   return {
@@ -48,7 +50,9 @@ async function loginAdmin() {
 function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity = 1 } = {}) {
   const now = new Date().toISOString();
   const cycleEnd = new Date(Date.now() + 30 * 86400000).toISOString();
-  const futureSessionDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const futureSession = new Date(Date.now() + 12 * 3600000);
+  const futureSessionDate = new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'}).format(futureSession);
+  const futureSessionTime = new Intl.DateTimeFormat('en-GB', {timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).format(futureSession);
   return {
     settings: { defaultTicketPrice: 10, currency: "BRL", adminTwoFactorRequired: false },
     ticketTypes: [{ id: "promocional", name: "Promocional", price: 10, bundleQuantity, active: true }],
@@ -56,6 +60,7 @@ function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity =
     movies: [{
       id: "filme-concorrencia",
       status: "now_playing",
+      releaseDate: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
       title: "Filme Concorrencia",
       synopsis: "Teste",
       duration: "1h 30m",
@@ -66,7 +71,7 @@ function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity =
       sessions: [{
         id: "sessao-concorrencia",
         date: futureSessionDate,
-        time: "19:00",
+        time: futureSessionTime,
         format: "2D Dublado",
         room: "Sala Teste",
         priceFull: 10,
@@ -138,7 +143,7 @@ function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity =
       email: process.env.ADMIN_EMAIL,
       role: "owner",
       active: true,
-      passwordHash: "",
+      passwordHash: adminPasswordHash,
       authProvider: "email",
       createdAt: now
     }, {
@@ -161,7 +166,7 @@ function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity =
 
 async function resetDb(db) {
   const { writeDbToPostgres } = require("../backend/db/postgresStore");
-  await writeDbToPostgres(db);
+  await writeDbToPostgres(db, { importSnapshot: true });
 }
 
 function checkoutBody(id, includeProduct = false) {
@@ -288,7 +293,15 @@ async function run() {
 
   try {
     await new Promise((resolve) => setTimeout(resolve, 700));
-    await loginAdmin();
+    const initialAdminCookie = await loginAdmin();
+    const initialContent = await request("/api/admin/content", {headers: jsonHeaders(initialAdminCookie)});
+    const changedContent = await request("/api/content", {
+      method: "PUT", headers: jsonHeaders(initialAdminCookie),
+      body: JSON.stringify({settings: {...initialContent.payload.settings, socialStudioPosts: [{id: "private-test"}]}})
+    });
+    assert.equal(changedContent.response.status, 200, JSON.stringify(changedContent.payload));
+    const publicContent = await request("/api/content");
+    assert.equal(publicContent.payload.settings.socialStudioPosts, undefined);
     let checkoutCookie = await registerCustomer("checkout-seat@postgres.local");
 
     const { acquireSeatHold, releaseSeatHoldsForOwner } = require("../backend/db/postgresStore");
@@ -384,7 +397,7 @@ async function run() {
     const committedOrder = persistedAfterCommit.payload.orders.find((item) => item.id === "webhook-concorrente");
     committedOrder.emailDeliveredAt = "";
     const { writeDbToPostgres } = require("../backend/db/postgresStore");
-    await writeDbToPostgres(persistedAfterCommit.payload);
+    await writeDbToPostgres(persistedAfterCommit.payload, { importSnapshot: true });
     const resend = await request(`/api/orders/${encodeURIComponent(committedOrder.id)}/resend-ticket-email`, {
       method: "POST",
       headers: jsonHeaders(validationCookie),
@@ -441,6 +454,7 @@ async function run() {
     console.log("PostgreSQL concurrency tests passed.");
   } finally {
     await new Promise((resolve) => server.close(resolve));
+    await require("../backend/db/postgresStore").closePostgres();
   }
 }
 
