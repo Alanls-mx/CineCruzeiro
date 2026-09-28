@@ -7,7 +7,7 @@ const COPY = Object.freeze({
   weekly: [
     { subject: "A programação da semana chegou", headline: "Escolha sua próxima história", preheader: "Filmes e horários confirmados no Cine Cruzeiro.", message: "Olá, {{nome}}. Reunimos os filmes e horários confirmados para você planejar sua próxima sessão.", ctaLabel: "Ver programação completa" },
     { subject: "Sua próxima sessão começa aqui", headline: "Uma semana de grandes histórias", preheader: "Confira o que está em cartaz e escolha seu horário.", message: "Olá, {{nome}}. A tela grande está pronta: compare os horários e encontre a sessão que combina com a sua semana.", ctaLabel: "Escolher uma sessão" },
-    { subject: "O que assistir no Cine Cruzeiro esta semana", headline: "Tem cinema para todos os momentos", preheader: "Veja os destaques e horários disponíveis.", message: "Olá, {{nome}}. Estes são os títulos em cartaz e as sessões disponíveis para os próximos dias.", ctaLabel: "Explorar os filmes" }
+    { subject: "O que assistir no Cine Cruzeiro esta semana", headline: "Tem cinema para todos os momentos", preheader: "Veja os destaques e horários disponíveis.", message: "Olá, {{nome}}. Estes são os títulos da programação e as sessões disponíveis para os próximos dias.", ctaLabel: "Explorar os filmes" }
   ],
   premiere: [
     { subject: "Uma nova estreia chega à tela grande", headline: "A próxima grande história começa aqui", preheader: "Confira a estreia e escolha sua sessão.", message: "Olá, {{nome}}. Uma nova história acaba de chegar ao Cine Cruzeiro. Veja os horários confirmados e garanta seu lugar.", ctaLabel: "Ver sessões" },

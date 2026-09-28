@@ -263,6 +263,13 @@ async function getCampaign(id) {
   return result.rows[0] ? campaignFromRow(result.rows[0]) : null;
 }
 
+async function getCampaignByIdempotencyKey(key) {
+  const normalized = String(key || "").trim();
+  if (!normalized) return null;
+  const result = await queryPostgres("SELECT * FROM email_campaigns WHERE idempotency_key = $1 AND archived_at IS NULL", [normalized]);
+  return result.rows[0] ? campaignFromRow(result.rows[0]) : null;
+}
+
 async function listCampaigns(filters = {}) {
   const values = [];
   const where = ["archived_at IS NULL"];
@@ -648,6 +655,7 @@ module.exports = {
   recipientFromRow,
   createCampaign,
   getCampaign,
+  getCampaignByIdempotencyKey,
   listCampaigns,
   aggregateCampaignMetrics,
   updateCampaign,

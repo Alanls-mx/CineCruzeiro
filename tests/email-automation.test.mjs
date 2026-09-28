@@ -35,6 +35,11 @@ test("planejamento evita repetir a copy mais recente", () => {
   const second = buildEmailAutomationPlan(db, { type: "weekly" }, { now, siteUrl: "https://cine.example", history: [{ subject: first.campaign.subject, headline: first.campaign.headline }] });
   assert.notEqual(second.campaign.subject, first.campaign.subject);
   assert.equal(second.campaign.idempotencyKey, first.campaign.idempotencyKey);
+  const third = buildEmailAutomationPlan(db, { type: "weekly" }, { now, siteUrl: "https://cine.example", history: [
+    { subject: first.campaign.subject, headline: first.campaign.headline },
+    { subject: second.campaign.subject, headline: second.campaign.headline }
+  ] });
+  assert.doesNotMatch(third.campaign.message, /em cartaz/i);
 });
 
 test("aniversário seleciona somente clientes do dia", () => {

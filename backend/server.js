@@ -9232,6 +9232,14 @@ async function findPersistedCampaign(id) {
   return (db.emailCampaigns || []).find((item) => item.id === id) || null;
 }
 
+async function findPersistedCampaignByIdempotencyKey(key) {
+  const normalized = String(key || "").trim();
+  if (!normalized) return null;
+  if (postgresEnabled()) return emailCampaignRepository.getCampaignByIdempotencyKey(normalized);
+  const db = await readDb();
+  return (db.emailCampaigns || []).find((item) => item.idempotencyKey === normalized) || null;
+}
+
 async function createPersistedCampaign(campaign) {
   if (postgresEnabled()) return emailCampaignRepository.createCampaign(campaign);
   let result = { campaign, created: true };
@@ -10935,6 +10943,18 @@ async function handleApi(req, res, pathname) {
     if (plan.skipped) {
       logEvent("info", "email_automation.skipped", { type: plan.type, reason: plan.reason });
       sendJson(res, 200, { plan, created: false }, { "Cache-Control": "no-store" });
+      return;
+    }
+    const duplicate = await findPersistedCampaignByIdempotencyKey(plan.campaign.idempotencyKey);
+    if (duplicate) {
+      sendJson(res, 200, {
+        plan: { type: plan.type, warnings: plan.warnings, signals: plan.signals },
+        campaign: publicCampaign(duplicate),
+        created: false,
+        idempotent: true,
+        deliveryMode: duplicate.status === "draft" ? "draft" : "existing",
+        deliveryReady: Boolean(integrationConfigService.resolvedConfig(db, "email")?.configured)
+      }, { "Cache-Control": "no-store" });
       return;
     }
     const campaign = normalizeCampaignInput(plan.campaign, { brand: db.settings?.emailBranding || {} });
