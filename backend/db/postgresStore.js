@@ -629,7 +629,7 @@ const snapshotCache = createSnapshotCache({
 });
 
 function cloneSnapshot(snapshot) {
-  return rememberSnapshot(structuredClone(snapshot));
+  return structuredClone(snapshot);
 }
 
 function invalidateSnapshotCache() {
@@ -652,12 +652,15 @@ async function closePostgres() {
   if (pool) await pool.end();
 }
 
-async function readDbFromPostgres({ includeAuditLogs = true } = {}) {
+async function readDbFromPostgres({ includeAuditLogs = true, trackChanges = true } = {}) {
   // Reads made inside a critical mutation must observe the transaction directly.
-  if (contextClient()) return rememberSnapshot(await loadDbFromPostgres({ includeAuditLogs }));
-
-  if (cacheInvalidation && !cacheInvalidation.connected()) invalidateSnapshotCache();
-  return snapshotCache.read(includeAuditLogs ? "full" : "operational");
+  let snapshot;
+  if (contextClient()) snapshot = await loadDbFromPostgres({ includeAuditLogs });
+  else {
+    if (cacheInvalidation && !cacheInvalidation.connected()) invalidateSnapshotCache();
+    snapshot = await snapshotCache.read(includeAuditLogs ? "full" : "operational");
+  }
+  return trackChanges ? rememberSnapshot(snapshot) : snapshot;
 }
 
 async function query(client, text, params = []) {

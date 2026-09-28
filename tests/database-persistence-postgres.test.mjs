@@ -25,6 +25,8 @@ test("persistência incremental preserva reservas, consentimento, auditoria e al
     const orderItem = await q("INSERT INTO order_items (order_id,item_type,item_id,name,quantity,unit_price,total_price) VALUES ($1,'ticket','test','Ingresso',1,12,12) RETURNING id", [suffix]);
     const audit = await q("INSERT INTO audit_logs (user_id,action,entity_type) VALUES ($1,'polish.test','user') RETURNING id", [suffix]);
     store.invalidatePostgresSnapshot();
+    const untracked = await store.readDbFromPostgres({includeAuditLogs: false, trackChanges: false});
+    await assert.rejects(store.writeDbToPostgres(untracked), /leitura rastreada/);
     const initialVersion = (await q("SELECT xmin::text AS version FROM users WHERE id=$1", [suffix])).rows[0].version;
     const db = await read();
     db.settings[setting] = { value: 1 };

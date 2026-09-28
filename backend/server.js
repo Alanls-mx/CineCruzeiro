@@ -1814,10 +1814,10 @@ async function readDb(options = {}) {
     });
   }
   const db = postgresEnabled()
-    ? await readDbFromPostgres({ includeAuditLogs: false, ...options })
+    ? await readDbFromPostgres({ includeAuditLogs: false, ...options, trackChanges: false })
     : JSON.parse(await fs.readFile(DATA_FILE, "utf8"));
   const normalized = normalizeDb(db);
-  if (postgresEnabled()) rememberSnapshot(normalized);
+  if (postgresEnabled() && options.trackChanges !== false) rememberSnapshot(normalized);
   return normalized;
 }
 
@@ -10938,7 +10938,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const db = await readDb();
+  const db = await readDb({ trackChanges: method !== "GET" && method !== "HEAD" });
 
   if (pathname.startsWith("/api/email-automation/") && !emailAutomationAuthorized(req)) {
     const configured = Boolean(process.env.EMAIL_AUTOMATION_TOKEN || process.env.N8N_EMAIL_SHARED_SECRET);
