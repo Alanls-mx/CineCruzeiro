@@ -44,6 +44,17 @@ test("aniversário seleciona somente clientes do dia", () => {
   assert.deepEqual(plan.campaign.customerIds, ["birthday"]);
 });
 
+test("estreia diária exige sinal de lançamento e não duplica o mesmo filme em dias diferentes", () => {
+  const premiereDb = { ...db, movies: [{ ...db.movies[0], status: "upcoming", releaseDate: "2026-10-01" }] };
+  const first = buildEmailAutomationPlan(premiereDb, { type: "premiere" }, { now, siteUrl: "https://cine.example" });
+  const nextDay = buildEmailAutomationPlan(premiereDb, { type: "premiere" }, { now: new Date(now.getTime() + 86400000), siteUrl: "https://cine.example" });
+  assert.equal(first.skipped, false);
+  assert.equal(first.campaign.movieId, "a");
+  assert.equal(first.campaign.idempotencyKey, nextDay.campaign.idempotencyKey);
+  const ordinary = buildEmailAutomationPlan(db, { type: "premiere" }, { now, siteUrl: "https://cine.example" });
+  assert.equal(ordinary.skipped, true);
+});
+
 test("cenário sem conteúdo é ignorado sem criar campanha vazia", () => {
   const plan = buildEmailAutomationPlan({ movies: [], users: [] }, { type: "weekly" }, { now });
   assert.equal(plan.skipped, true);

@@ -30,7 +30,7 @@ Depois abra `http://127.0.0.1:5678`. Esse modo não exige alteração de Nginx, 
 - `schedule-changed.json`: transforma uma alteração de programação em campanha, sem ativar publicação automática.
 - `email-weekly-programming.json`: toda segunda-feira prepara a programação semanal com filmes e sessões reais.
 - `email-relationship-daily.json`: diariamente avalia aniversariantes e clientes em reativação.
-- `email-movie-event.json`: recebe evento de publicação/estreia e prepara uma campanha específica do filme.
+- `email-movie-event.json`: avalia estreias diariamente e também aceita evento de publicação de um filme.
 
 As automações de e-mail são idempotentes e respeitam descadastro e elegibilidade. `EMAIL_AUTOMATION_MODE=draft` é o padrão do backend e cria rascunhos para revisão. O envio automático só ocorre quando o backend usa `EMAIL_AUTOMATION_MODE=send` e o canal de e-mail está configurado e ativo.
 

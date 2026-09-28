@@ -1,14 +1,14 @@
 {
   "id": "cineEmailMovieEvent",
-  "name": "E-mail - Evento de filme",
+  "name": "E-mail - Estreias e eventos de filme",
   "active": false,
-  "settings": {"executionOrder":"v1","saveDataErrorExecution":"all","saveDataSuccessExecution":"none"},
+  "settings": {"executionOrder":"v1","timezone":"America/Sao_Paulo","saveDataErrorExecution":"all","saveDataSuccessExecution":"none"},
   "nodes": [
-    {"id":"trigger","name":"Filme publicado","type":"n8n-nodes-base.webhook","typeVersion":2,"position":[0,0],"parameters":{"httpMethod":"POST","path":"email/movie-published","responseMode":"responseNode","options":{}}},
-    {"id":"prepare","name":"Normalizar filme","type":"n8n-nodes-base.code","typeVersion":2,"position":[250,0],"parameters":{"jsCode":"const event=$input.first().json.body||$input.first().json; if(!event.movieId) throw new Error('movieId é obrigatório'); return [{json:{type:'premiere',movieId:String(event.movieId),triggerType:event.type||'movie.published'}}];"}},
-    {"id":"campaign","name":"Preparar estreia","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[500,0],"parameters":{"method":"POST","url":"={{ $env.EMAIL_AUTOMATION_BASE_URL + '/api/email-automation/campaigns' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.EMAIL_AUTOMATION_TOKEN }}"}]},"sendBody":true,"contentType":"raw","rawContentType":"application/json","body":"={{ JSON.stringify($json) }}","options":{"timeout":30000}}},
-    {"id":"respond","name":"Confirmar criação","type":"n8n-nodes-base.respondToWebhook","typeVersion":1.4,"position":[750,0],"parameters":{"respondWith":"json","responseBody":"={{ $json }}","options":{"responseCode":202}}}
+    {"id":"schedule","name":"Diariamente às 9h30","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[0,-90],"parameters":{"rule":{"interval":[{"field":"cronExpression","expression":"30 9 * * *"}]}}},
+    {"id":"trigger","name":"Filme publicado","type":"n8n-nodes-base.webhook","typeVersion":2,"position":[0,90],"parameters":{"httpMethod":"POST","path":"email/movie-published","responseMode":"onReceived","options":{}}},
+    {"id":"prepare","name":"Normalizar estreia","type":"n8n-nodes-base.code","typeVersion":2,"position":[280,0],"parameters":{"jsCode":"const event=$input.first().json.body||$input.first().json||{}; return [{json:{type:'premiere',...(event.movieId?{movieId:String(event.movieId)}:{}),triggerType:event.type||'schedule.daily'}}];"}},
+    {"id":"campaign","name":"Preparar estreia","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[560,0],"parameters":{"method":"POST","url":"={{ $env.EMAIL_AUTOMATION_BASE_URL + '/api/email-automation/campaigns' }}","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"={{ 'Bearer ' + $env.EMAIL_AUTOMATION_TOKEN }}"}]},"sendBody":true,"contentType":"raw","rawContentType":"application/json","body":"={{ JSON.stringify($json) }}","options":{"timeout":30000}}}
   ],
-  "connections":{"Filme publicado":{"main":[[{"node":"Normalizar filme","type":"main","index":0}]]},"Normalizar filme":{"main":[[{"node":"Preparar estreia","type":"main","index":0}]]},"Preparar estreia":{"main":[[{"node":"Confirmar criação","type":"main","index":0}]]}},
-  "pinData":{},"meta":{"templateCredsSetupCompleted":false},"versionId":"36a4f8c2-6f31-49ad-b024-931034ed33d5"
+  "connections":{"Diariamente às 9h30":{"main":[[{"node":"Normalizar estreia","type":"main","index":0}]]},"Filme publicado":{"main":[[{"node":"Normalizar estreia","type":"main","index":0}]]},"Normalizar estreia":{"main":[[{"node":"Preparar estreia","type":"main","index":0}]]}},
+  "pinData":{},"meta":{"templateCredsSetupCompleted":false},"versionId":"8a688b95-1a9c-44f8-92b5-6acc1a1747b4"
 }

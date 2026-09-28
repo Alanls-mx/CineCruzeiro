@@ -106,7 +106,13 @@ function buildEmailAutomationPlan(db = {}, request = {}, options = {}) {
   if (type === "weekly" || type === "reactivation") movies = moviesInWindow(db, now, 7);
   if (type === "premiere") {
     const requested = visibleMovies(db).find((movie) => String(movie.id) === String(request.movieId || ""));
-    movies = requested ? [requested] : moviesInWindow(db, now, 21).filter((movie) => ["upcoming", "coming_soon", "em_breve", "active"].includes(String(movie.status || "active"))).slice(0, 1);
+    const earliestRelease = dateKey(new Date(now.getTime() - 3 * DAY_MS));
+    const latestRelease = dateKey(new Date(now.getTime() + 21 * DAY_MS));
+    movies = requested ? [requested] : moviesInWindow(db, now, 21).filter((movie) => {
+      const status = String(movie.status || "").toLowerCase();
+      const releaseDate = String(movie.releaseDate || movie.release_date || "").slice(0, 10);
+      return ["upcoming", "coming_soon", "em_breve"].includes(status) || (releaseDate && releaseDate >= earliestRelease && releaseDate <= latestRelease);
+    }).slice(0, 1);
   }
   if (type === "birthday") customerIds = birthdayCustomerIds(db, now);
   if (["weekly", "premiere", "reactivation"].includes(type) && !movies.length) return { skipped: true, type, reason: "Nenhum filme com sessão confirmada foi encontrado para este período." };
@@ -117,7 +123,8 @@ function buildEmailAutomationPlan(db = {}, request = {}, options = {}) {
   const templateId = type === "weekly" ? "weekly" : type === "premiere" ? "premiere" : type;
   const recipientMode = type === "birthday" ? "birthday_manual" : type === "reactivation" ? "reactivation" : "all";
   const movieIds = movies.map((movie) => String(movie.id));
-  const fingerprint = crypto.createHash("sha256").update(`${type}:${period}:${movieIds.join(",")}:${customerIds.join(",")}`).digest("hex").slice(0, 20);
+  const identityPeriod = type === "premiere" ? "movie-lifecycle" : period;
+  const fingerprint = crypto.createHash("sha256").update(`${type}:${identityPeriod}:${movieIds.join(",")}:${customerIds.join(",")}`).digest("hex").slice(0, 20);
   return {
     skipped: false,
     type,
