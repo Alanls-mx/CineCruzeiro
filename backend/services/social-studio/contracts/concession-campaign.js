@@ -54,7 +54,8 @@ function concessionCopy(product, direction, index = 0, context = {}) {
   const cta = ['sell','price','offer'].includes(objective) ? ['ESCOLHA NA BOMBONIERE','PEÇA NO BALCÃO','CONFIRA O PRODUTO'][index%3] : ['CONHEÇA NA BOMBONIERE','VEJA OS DETALHES','DESCUBRA ESTA OPÇÃO'][index%3];
   const occasion = context.relatedMovieId && context.movie?.title ? `Para acompanhar sua sessão de ${context.movie.title}.` : category === 'family' || category === 'couple' ? 'Para quem faz do cinema um encontro.' : category === 'chocolate' ? 'Inclua chocolate no seu próximo encontro com o cinema.' : category === 'soda' ? 'Escolha a bebida que acompanha o seu filme.' : category === 'popcorn' ? 'Escolha sua pipoca antes de entrar na sala.' : 'Conheça a composição e escolha seu pedido antes da sessão.';
   const facts = String(product.description || '').trim();
-  const supportingText = context.density === 'short' ? (index>5 && facts ? facts : occasion) : [facts,occasion].filter(Boolean).join(' ');
+  const sentence = facts && !/[.!?]$/.test(facts) ? `${facts}.` : facts;
+  const supportingText = context.density === 'short' ? (index>5 && sentence ? sentence : occasion) : [sentence,occasion].filter(Boolean).join(' ');
   const destinationText = String(context.action?.destination || '').replace(/^https?:\/\//,'').replace(/\/$/,'');
   const brief = String(context.copyBrief || '').trim();
   return { headline:name,kicker,supportingText,detail:price,cta,destinationText,

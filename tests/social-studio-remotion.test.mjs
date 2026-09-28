@@ -71,3 +71,32 @@ test('reinício marca render interrompido e limpa apenas seu diretório temporá
   const jobs=new AnimationJobs(root,{loadImage:async()=>null});
   try{const job=await jobs.get(id,'a');assert.equal(job.status,'failed');assert.match(job.error,/reinício/);assert.equal(await fs.access(path.join(root,id)).then(()=>true,()=>false),false);}finally{clearInterval(jobs.cleanupTimer);await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('retenção expira vídeos antigos, limita finais por post e limpa órfãos',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'cine-motion-retention-'));
+  const now=Date.now(),ids=Array.from({length:6},(_,i)=>`aaaaaaaa-aaaa-aaaa-aaaa-${String(i+1).padStart(12,'0')}`);
+  try {
+    for(let i=0;i<ids.length;i++) {
+      const age=i===4?8*86400000:i===5?2*86400000:i*60000;
+      const quality=i===5?'preview':'final';
+      const job={id:ids[i],owner:'a',postId:'post',status:'done',config:{format:'mp4',quality},createdAt:new Date(now-age).toISOString(),metrics:{bytes:5}};
+      await fs.writeFile(path.join(root,`${job.id}.json`),JSON.stringify(job));
+      await fs.writeFile(path.join(root,`${job.id}.mp4`),'video');
+    }
+    const orphan='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    await fs.mkdir(path.join(root,orphan));
+    await fs.writeFile(path.join(root,orphan,'partial'),'x');
+    const old=new Date(now-2*86400000);
+    await fs.utimes(path.join(root,orphan),old,old);
+    const jobs=new AnimationJobs(root,{loadImage:async()=>null});
+    try {
+      await jobs.ready;
+      for(const id of ids.slice(0,3))assert.equal((await jobs.get(id,'a')).status,'done');
+      for(const id of ids.slice(3)) {
+        await assert.rejects(()=>jobs.get(id,'a'),/não encontrada/);
+        assert.equal(await fs.access(path.join(root,`${id}.mp4`)).then(()=>true,()=>false),false);
+      }
+      assert.equal(await fs.access(path.join(root,orphan)).then(()=>true,()=>false),false);
+    }finally{clearInterval(jobs.cleanupTimer);}
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});

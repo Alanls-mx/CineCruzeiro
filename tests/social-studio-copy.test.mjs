@@ -67,3 +67,9 @@ test('CTAs variam sem inventar compra e duração numérica recebe unidade',()=>
   const week=generateCopy(normalizeV2Draft({templateId:'sessions-week'},context),context);
   assert.ok(week.candidates.every(x=>!x.bundle.caption.includes('SETE DIAS DE CINEMA')));
 });
+
+test('descrição de bomboniere termina antes da chamada complementar',()=>{
+  const draft=normalizeV2Draft({templateId:'concession-combo',concessionId:'c'},ctx);
+  const result=generateCopy(draft,ctx,{density:'medium'});
+  assert.ok(result.candidates.every(candidate=>candidate.bundle.supportingText.startsWith('Água mineral. ')));
+});

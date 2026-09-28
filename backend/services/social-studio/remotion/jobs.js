@@ -6,6 +6,10 @@ const {normalizeAnimation,createSpec}=require('./spec');
 const {flattenElements}=require('../scene/groups');
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
 const publicJob=job=>{const {id,status,progress,error,postId,artVersion,config,plan,metrics,createdAt,updatedAt}=job;return {id,status,progress,error,postId,artVersion,config,plan,metrics,createdAt,updatedAt};};
+const DAY=86400000;
+const PREVIEW_TTL=DAY;
+const FINAL_TTL=7*DAY;
+const MAX_STORED_BYTES=512*1024*1024;
 
 class AnimationJobs {
   constructor(root,options={}) {
@@ -35,19 +39,34 @@ class AnimationJobs {
     await fs.writeFile(temporary,JSON.stringify(job));await fs.rename(temporary,file);
   }
   async cleanup() {
-    const completed=[...this.jobs.values()].filter(j=>!['waiting','rendering'].includes(j.status)).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    const completed=[...this.jobs.values()].filter(j=>!['waiting','rendering'].includes(j.status)).sort((a,b)=>{
+      const priority=j=>j.status==='done' && j.config?.quality==='final'?1:0;
+      return priority(b)-priority(a) || String(b.createdAt).localeCompare(String(a.createdAt));
+    });
     let bytes=0;const finalCounts=new Map();
     for(const job of completed) {
       const key=`${job.owner}:${job.postId}`;
-      if(job.status==='done' && job.config.quality==='final') {
-        finalCounts.set(key,(finalCounts.get(key) || 0)+1);
-        if(finalCounts.get(key)<=3)continue;
-      }else {
-        bytes+=job.metrics?.bytes || 0;
-        if(Date.now()-Date.parse(job.createdAt)<86400000 && bytes<256*1024*1024)continue;
+      const final=job.status==='done' && job.config?.quality==='final';
+      const file=path.join(this.root,`${job.id}.${job.config?.format || 'mp4'}`);
+      const stat=job.status==='done'?await fs.stat(file).catch(()=>null):null;
+      const age=Date.now()-Date.parse(job.createdAt);
+      const withinTtl=Number.isFinite(age) && age<(final?FINAL_TTL:PREVIEW_TTL);
+      const withinCount=!final || (finalCounts.get(key) || 0)<3;
+      const withinBudget=!stat || bytes+stat.size<=MAX_STORED_BYTES;
+      if(withinTtl && withinCount && withinBudget && (job.status!=='done' || stat)) {
+        if(final)finalCounts.set(key,(finalCounts.get(key) || 0)+1);
+        bytes+=stat?.size || 0;
+        continue;
       }
-      await fs.rm(path.join(this.root,`${job.id}.${job.config.format}`),{force:true});
+      await fs.rm(file,{force:true});
       await fs.rm(path.join(this.root,`${job.id}.json`),{force:true});this.jobs.delete(job.id);
+    }
+    for(const entry of await fs.readdir(this.root,{withFileTypes:true})) {
+      const match=entry.name.match(/^([a-f0-9-]{36})(?:\.(?:json|mp4|webm|gif))?$/);
+      if(!match || this.jobs.has(match[1]) || this.active?.id===match[1])continue;
+      const target=path.join(this.root,entry.name);
+      const stat=await fs.stat(target).catch(()=>null);
+      if(stat && Date.now()-stat.mtimeMs>DAY)await fs.rm(target,{recursive:entry.isDirectory(),force:true});
     }
   }
   owned(id,owner) {
