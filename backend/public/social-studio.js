@@ -1013,10 +1013,12 @@
     const available=(state.context.movies || []).filter(movie=>movie.catalogued!==false).flatMap(movie=>(movie.sessions || []).filter(session=>session.date>=today && session.active!==false && session.available!==false && session.availableForPurchase!==false && !['cancelled','canceled','expired','disabled','hidden','sold_out'].includes(session.status)).map(session=>({movie,date:session.date,time:session.time || ''}))).sort((a,b)=>a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
     if(!available.length)return;
     const day=currentTemplate().id==='sessions-today';
-    const start=day ? (available.some(item=>item.date===today)?today:available[0].date) : today;
+    const selectedDate=value('socialStudioPeriodStart');
+    const start=state.programDateTouched && /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)
+      ? selectedDate : day ? (available.some(item=>item.date===today)?today:available[0].date) : today;
     const end=new Date(Date.parse(`${start}T12:00:00Z`)+6*86400000).toISOString().slice(0,10);
     let current=available.filter(item=>item.date>=start && (day?item.date===start:item.date<=end));
-    if(!current.length)current=available.filter(item=>item.date===available[0].date);
+    if(!current.length && !state.programDateTouched)current=available.filter(item=>item.date===available[0].date);
     const movies=[...new Map(current.map(item=>[String(item.movie.id),item.movie])).values()].slice(0,selectors.length);
     movies.forEach((movie,index)=>{selectors[index].value=String(movie.id);});
     if(!state.programDateTouched)setControl('socialStudioPeriodStart',current[0].date===start?start:current[0].date);
@@ -2164,7 +2166,7 @@
     document.getElementById("socialStudioTemplates").addEventListener("change", async () => {
       preserveManualEdits();
       state.styleManuallySelected=false;setRadio('socialStudioStyle','automatic');
-      setControl('socialStudioProgramLayout','automatic');state.programSelectionTouched=false;
+      setControl('socialStudioProgramLayout','automatic');state.programSelectionTouched=false;state.programDateTouched=false;
       root.querySelectorAll('[data-program-movie]').forEach(node=>node.value='');
       if(document.getElementById('socialStudioAutoProgram'))document.getElementById('socialStudioAutoProgram').checked=true;
       updateFieldVisibility();
@@ -2206,7 +2208,14 @@
     });
     form.addEventListener("change", (event) => {
       if(event.target.matches('[data-program-movie]'))state.programSelectionTouched=true;
-      if(event.target.id==='socialStudioPeriodStart')state.programDateTouched=true;
+      if(event.target.id==='socialStudioPeriodStart') {
+        state.programDateTouched=true;
+        if(document.getElementById('socialStudioAutoProgram').checked) {
+          root.querySelectorAll('[data-program-movie]').forEach(node=>node.value='');
+          fillProgramFromSchedule();
+          syncFocusedControls();
+        }
+      }
       if((event.target.matches('[data-program-movie]') || event.target.id==='socialStudioPeriodStart') && state.context?.programLayouts?.[currentTemplate()?.id]) {
         resolveDefaults({resetCopy:false});
         return;

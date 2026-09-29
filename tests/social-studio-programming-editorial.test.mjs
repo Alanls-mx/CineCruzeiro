@@ -10,7 +10,7 @@ const {programLayout}=require('../backend/services/social-studio/programming/dir
 const {validateArtworkLayout}=require('../backend/services/social-studio/composition-engine/artwork-quality');
 const poster=await sharp({create:{width:800,height:1200,channels:3,background:'#306080'}}).png().toBuffer();
 const logo=await sharp({create:{width:600,height:200,channels:3,background:'#307ac0'}}).png().toBuffer();
-const loadImage=async src=>src==='/program-logo'?logo:src==='/program-poster'?poster:null;
+const loadImage=async src=>src==='/program-logo' || src.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png')?logo:src==='/program-poster'?poster:null;
 const titles=['Coyote vs. ACME','O Fim da Rua','Toy Story 5','Minha Melhor Amiga','Vingadores: Doutor Destino','Harry Potter e a Pedra Filosofal','Cara de Barro','Resident Evil'];
 const movies=titles.map((title,i)=>({id:`p${i}`,title,posterUrl:'/program-poster',sessions:[{id:`s${i}`,date:'2026-09-24',time:`${13+i}:00`}]}));
 const context={now:'2026-09-24T09:00:00-03:00',brand:{name:'Cine Cruzeiro',logoUrl:'/program-logo',website:'https://cinecruzeiro.com.br'},movies};
