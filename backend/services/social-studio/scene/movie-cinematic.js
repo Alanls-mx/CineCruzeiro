@@ -2,7 +2,7 @@ const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {mix,hexToRgb}=require('../engine/palette');
 const alpha=(hex,a)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${a})`;};
-const {SAFE}=require('../contracts/artwork-layout');
+const {SAFE,sessionMomentLabel}=require('../contracts/artwork-layout');
 
 function sessionCopy(draft) {
   const day=draft.schedule?.days?.[0];
@@ -57,18 +57,19 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   const titleBox=box(plan.title),dataBox=box(plan.data);
   tx('title',draft.title || draft.entities.movie?.title,titleBox, family==='movie-asymmetric'?108:family==='movie-spotlight'?54:94,{lines:4,visible:!draft.artworkPolicy?.hideTitle});
   const session=sessionCopy(draft);
+  const sessionMoment=sessionMomentLabel(draft.schedule?.days);
   const dateOnly=!draft.artworkPolicy?.hideDate && draft.date && draft.date!=='EM BREVE'?`${draft.content?.primaryDateLabel || 'DIA'} ${draft.date}`:'';
   const commercial=draft.templateId==='movie-price';
   const premiere=['movie-premiere','movie-presale'].includes(draft.templateId);
   const normalizedDate=value=>String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
-  const sessionDetails=premiere && normalizedDate(draft.date)===normalizedDate(session.split(' • ')[0])?draft.schedule.days[0].times.join(' • '):session;
+  const sessionDetails=premiere && normalizedDate(draft.date)===normalizedDate(session.split(' • ')[0])?sessionMoment:session;
   if(family==='movie-spotlight') {
     const day=draft.schedule?.days?.[0];
     const label=commercial?'INGRESSOS':premiere?draft.content?.primaryDateLabel || 'ESTREIA':day?'SESSÕES':'EM BREVE';
     tx('subtitle',label,{...dataBox,height:dataBox.height*.16},28,{lines:1});
     const main=commercial?draft.price:premiere?draft.date:session?session.split(' • ')[0]:draft.date || 'EM BREVE';
     tx('detail',main,{...dataBox,y:dataBox.y+dataBox.height*.20,height:dataBox.height*.43},104,{fontFamily:'Social Display',fontWeight:900,lines:1,fill:accent,shadowBlur:12,shadowColor:alpha(accent,.42)});
-    if(session)tx('description',premiere?sessionDetails:day.times.join(' • '),{...dataBox,y:dataBox.y+dataBox.height*.70,height:dataBox.height*.25},36,{lines:2});
+    if(session)tx('description',premiere?sessionDetails:sessionMoment,{...dataBox,y:dataBox.y+dataBox.height*.70,height:dataBox.height*.25},36,{lines:2});
   } else if(commercial || premiere && dateOnly) {
     const detailH=dataBox.height*(session?.48:1);
     tx('detail',commercial?draft.price:dateOnly,{...dataBox,height:detailH},commercial?64:42,{lines:3});
@@ -76,7 +77,7 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   } else if(session) {
     const [date,...times]=session.split(' • '),dateH=dataBox.height*.50;
     tx('detail',date,{...dataBox,height:dateH},dataBox.width>w*.6?86:58,{lines:2,fontFamily:'Social Display',fontWeight:900,fill:accent});
-    tx('description',times.join(' • '),{...dataBox,y:dataBox.y+dateH+8*u,height:dataBox.height-dateH-8*u},38,{lines:3});
+    tx('description',sessionMoment || times.join(' • '),{...dataBox,y:dataBox.y+dateH+8*u,height:dataBox.height-dateH-8*u},38,{lines:3});
   }
   else if(!draft.artworkPolicy?.hideDate)tx('detail',dateOnly || 'EM BREVE',dataBox,46,{lines:3});
   const footer=box([.065,.905,.60,.038]);

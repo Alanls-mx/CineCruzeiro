@@ -4,12 +4,24 @@ import {createRequire} from 'node:module';
 import sharp from 'sharp';
 const require=createRequire(import.meta.url);
 const {sessionSchedule}=require('../backend/services/social-studio/engine/content-rules');
+const {sessionMomentLabel}=require('../backend/services/social-studio/contracts/artwork-layout');
 const engine=require('../backend/services/socialStudioEngineService');
 const {animationPlan}=require('../backend/services/social-studio/composition-engine/animation');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const context={now:'2026-09-22T12:00:00-03:00',brand:{name:'Cine Cruzeiro',posterWebsite:'www.cinecruzeiro.com.br',logoUrl:'asset://logo'},movies:Array.from({length:6},(_,i)=>({id:`m${i}`,title:`Filme ${i+1}`,genre:'Animação',posterUrl:`asset://poster${i}`,releaseDate:'2026-09-24',sessions:[{date:'2026-09-22',time:'10:00'},{date:'2026-09-22',time:'14:00'},{date:'2026-09-22',time:'16:30'},{date:'2026-09-23',time:'19:00'},{date:'2026-09-23',time:'20:00',status:'cancelled'}]}))};
 const poster=await sharp({create:{width:240,height:360,channels:3,background:'#376077'}}).png().toBuffer();
 const loadImage=async()=>poster;
+test('sessão de filme informa o dia real e distingue início de período',()=>{
+  assert.equal(sessionMomentLabel([{date:'2026-09-25',times:['14:00']}]),'SEXTA ÀS 14:00');
+  assert.equal(sessionMomentLabel([{date:'2026-09-26',times:['14:00']},{date:'2026-09-27',times:['19:00']}]),'A PARTIR DE SÁBADO ÀS 14:00');
+  assert.equal(sessionMomentLabel([{date:'2026-09-30',times:['14:00']}],{includeDate:true}),'QUARTA 30/09 ÀS 14:00');
+  assert.equal(sessionMomentLabel([{date:'2026-09-30',times:[]}]),'');
+});
+test('layout de filme imprime dia da semana junto ao horário',async()=>{
+  const rendered=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'m0',layoutId:'movie-spotlight'},context,{loadImage,skipRaster:true});
+  const description=flattenElements(rendered.scene.elements).find(item=>item.id==='description');
+  assert.match(description?.text || '',/TERÇA ÀS 14:00/);
+});
 test('programação respeita período, fuso, cancelamento, ordem e deduplicação',()=>{
   const today=sessionSchedule(context.movies[0],{scheduleMode:'today'},context.now);
   assert.equal(today.count,2);assert.equal(today.text,'TER • 22/09 • 14:00 / 16:30');assert.doesNotMatch(today.text,/10:00|19:00|20:00|Hoje/);

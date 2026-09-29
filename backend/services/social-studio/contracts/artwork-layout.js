@@ -34,4 +34,15 @@ function dayLabel(value) {
   return `${weekday} • ${value.slice(8,10)}/${value.slice(5,7)}`;
 }
 function scheduleLabel(day,limit=5) {return `${dayLabel(day.date)} • ${day.times.slice(0,limit).map(timeLabel).filter(Boolean).join(' / ')}${day.times.length>limit?' +':''}`;}
-module.exports={MOVIE_FAMILIES,PRODUCT_LAYOUTS,SAFE,isMovie,isProgramme,movieFamily,campaignCTA,timeLabel,dayLabel,scheduleLabel};
+function sessionMomentLabel(days, {includeDate=false}={}) {
+  const first=Array.isArray(days)?days[0]:null;
+  if(!first || !require('../engine/content-rules').validDay(first.date))return '';
+  const times=(first.times || []).map(timeLabel).filter(Boolean);
+  if(!times.length)return '';
+  const weekday=new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC',weekday:'long'}).format(new Date(`${first.date}T12:00:00Z`)).replace(/-feira$/,'').toUpperCase();
+  const recurring=days.some(day=>day.date!==first.date);
+  const prefix=recurring?'A PARTIR DE ':'';
+  const date=includeDate?` ${first.date.slice(8,10)}/${first.date.slice(5,7)}`:'';
+  return `${prefix}${weekday}${date} ÀS ${times.join(' / ')}`;
+}
+module.exports={MOVIE_FAMILIES,PRODUCT_LAYOUTS,SAFE,isMovie,isProgramme,movieFamily,campaignCTA,timeLabel,dayLabel,scheduleLabel,sessionMomentLabel};

@@ -8413,7 +8413,7 @@ function socialStudioBrand(db) {
     name: configured.name || db.settings?.cinemaName || db.settings?.name || inherited.name,
     logoUrl: publicAssetUrl(configured.logoUrl || db.settings?.logoUrl || inherited.logoUrl || `${basePath}/images/logo-display.webp`),
     website: configured.website || appFrontendUrl(),
-    posterWebsite: configured.posterWebsite || (isEstacao ? appFrontendUrl().replace(/^https?:\/\//, "") : "www.cinecruzeiro.com.br"),
+    posterWebsite: configured.posterWebsite || (isEstacao ? "www.cineestacaoamparo.com.br" : "www.cinecruzeiro.com.br"),
     posterLogoUrl: publicAssetUrl(configured.posterLogoUrl || (isEstacao ? "/images/cine-estacao/assinatura-clara.webp" : "/images/social-studio/cine-cruzeiro-assinatura-oficial.png")),
     primaryColor: configured.primaryColor || db.settings?.primaryColor,
     secondaryColor: configured.secondaryColor || db.settings?.secondaryColor,

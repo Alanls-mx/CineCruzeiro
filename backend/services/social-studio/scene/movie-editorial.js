@@ -1,7 +1,7 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {mix,hexToRgb}=require('../engine/palette');
-const {SAFE,scheduleLabel}=require('../contracts/artwork-layout');
+const {SAFE,sessionMomentLabel}=require('../contracts/artwork-layout');
 const {visualLength}=require('../engine/typography');
 
 function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl}) {
@@ -52,11 +52,11 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
       tx('subtitle',dateLabel || draft.subtitle,[titleX,.41,titleW,.04],30,1);
       tx('detail',date,[titleX,.47,titleW,.105],66,2);
     } else if(draft.subtitle && !/HOJE|EM DESTAQUE|NA TELA GRANDE/i.test(draft.subtitle))tx('subtitle',draft.subtitle,[titleX,.40,titleW,.06],30,2);
-    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',scheduleLabel(draft.schedule.days[0],99),[titleX,showDate?.63:.44,titleW,.14],40,4);
+    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',sessionMomentLabel(draft.schedule.days,{includeDate:!showDate}),[titleX,showDate?.63:.44,titleW,.14],40,4);
   } else {
     const row=y+titleHeight+.023;
     if(showDate)tx('detail',`${dateLabel} ${date}`.trim(),[.065,row,.87,.06],44,2);
-    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',scheduleLabel(draft.schedule.days[0],99),[.065,row+(showDate?.075:0),.87,.045],38,2);
+    if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',sessionMomentLabel(draft.schedule.days,{includeDate:!showDate}),[.065,row+(showDate?.075:0),.87,.045],38,2);
   }
   const footer=.885;
   const footerY=top+area*(footer-.10);

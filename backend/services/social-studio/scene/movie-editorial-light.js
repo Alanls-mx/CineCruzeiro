@@ -1,7 +1,7 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {mix,hexToRgb}=require('../engine/palette');
-const {SAFE,scheduleLabel}=require('../contracts/artwork-layout');
+const {SAFE,sessionMomentLabel}=require('../contracts/artwork-layout');
 
 const rgba=(hex,opacity)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${opacity})`;};
 
@@ -40,9 +40,9 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   if(!/^(ESTREIA|PRÉ-VENDA|SESSÃO)$/i.test(label))text('subtitle',label,box([.62,.045,.315,.07]),29,{lines:2,fill:accent});
   text('title',movieTitle,box([.62,.15,.315,.28]),82,{lines:4,display:true,hierarchy:'primary'});
   const days=draft.schedule?.days || [];
-  const schedule=days.length && draft.showSessions!==false?scheduleLabel(days[0],99):'';
-  const detail=draft.templateId==='movie-price'?draft.price:draft.templateId==='movie-premiere' || draft.templateId==='movie-presale'?draft.date || schedule:schedule || draft.date;
   const dateHero=['movie-premiere','movie-presale'].includes(draft.templateId) && Boolean(draft.date);
+  const schedule=days.length && draft.showSessions!==false?sessionMomentLabel(days,{includeDate:!dateHero}):'';
+  const detail=draft.templateId==='movie-price'?draft.price:draft.templateId==='movie-premiere' || draft.templateId==='movie-presale'?draft.date || schedule:schedule || draft.date;
   if(dateHero) {
     text('date-label',draft.content?.primaryDateLabel || (draft.templateId==='movie-presale'?'PRÉ-VENDA':'ESTREIA'),box([.32,.81,.615,.045]),30,{lines:1,fill:'#ffffff'});
     text('detail',detail,box([.32,.865,.615,.12]),66,{lines:2,display:true,fill:atmosphere?.highlight || '#ffffff',hierarchy:'primary'});
