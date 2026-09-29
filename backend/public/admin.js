@@ -13456,7 +13456,7 @@ function restoreActivePointPayment() {
 
 async function initAdmin() {
   const logo = $("adminLogoImg");
-  if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp?brand=cinecruzeiro-horizontal-2026`;
+  if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp?brand=cinecruzeiro-goldstars-2026`;
   bindEvents();
   setupPerformanceControls();
   setBoxOfficeTab("newSale");

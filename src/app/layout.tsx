@@ -20,7 +20,7 @@ const siteOrigin = new URL(siteUrl).origin;
 const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 const publicUrl = `${siteOrigin}${basePath}`;
-const logoUrl = `${basePath}/images/logo-display.webp?brand=cinecruzeiro-horizontal-2026`;
+const logoUrl = `${basePath}/images/logo-display.webp?brand=cinecruzeiro-goldstars-2026`;
 const iconUrl = `${basePath}/images/favicon-64.png`;
 const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG || "default";
 export const metadata: Metadata = {
