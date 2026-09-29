@@ -123,9 +123,13 @@ async function assertArtworkQuality(scene,loadImage) {
 }
 async function repairContrast(scene,loadImage) {
   if(scene.sourceDraft.movieFamily==='movie-editorial-light') {
-    // The editorial layout has separate light copy and dark branding zones.
-    // A full-frame veil would destroy that separation and hide the artwork.
-    await repairConcessionContrast(scene,loadImage);
+    // Keep the poster-derived footer continuous instead of placing a dark card
+    // behind each date line when the image has mixed luminance.
+    for(const reading of await contrastReadings(scene,loadImage)) {
+      const element=scene.elements.find(e=>e.id===reading.id);
+      if(element && reading.ratio<4.5 && Math.max(reading.white,reading.dark)>=4.5)
+        element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
+    }
     return;
   }
   if(scene.sourceDraft.programCampaignVersion===2) {

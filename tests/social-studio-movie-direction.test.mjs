@@ -8,7 +8,7 @@ const {movieDirection}=require('../backend/services/social-studio/composition-en
 const {MOVIE_FAMILIES}=require('../backend/services/social-studio/contracts/artwork-layout');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const assets={poster:await sharp({create:{width:800,height:1200,channels:3,background:'#997522'}}).png().toBuffer(),backdrop:await sharp({create:{width:1600,height:900,channels:3,background:'#276799'}}).png().toBuffer(),logo:await sharp({create:{width:600,height:200,channels:3,background:'#277abc'}}).png().toBuffer()};
-const loadImage=async src=>assets[src.replace('/movie-direction/','')] || null;
+const loadImage=async src=>src.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png')?assets.logo:assets[src.replace('/movie-direction/','')] || null;
 const context={now:'2026-09-24T09:00:00-03:00',brand:{name:'Cine Cruzeiro',logoUrl:'/movie-direction/logo',website:'https://cinecruzeiro.com.br'},movies:[{id:'movie',title:'Uma aventura extraordinária',genre:'Ação',posterUrl:'/movie-direction/poster',backdropUrl:'/movie-direction/backdrop',releaseDate:'2026-09-25',sessions:[{date:'2026-09-25',time:'13:00',ticketTypes:[{id:'full',name:'Inteira',price:29.9}]},{date:'2026-09-25',time:'18:30',ticketTypes:[{id:'full',name:'Inteira',price:29.9}]}]}]};
 test('arquétipos cinematográficos funcionam em formatos e campanhas preservando horários e contraste',async()=>{
   for(const templateId of ['movie-highlight','movie-premiere','movie-presale','movie-price'])for(const formatId of ['feed_portrait','square','story'])for(const layoutId of Object.keys(MOVIE_FAMILIES)) {
@@ -46,6 +46,8 @@ test('editorial integrado dissolve o pôster em fundo derivado e mantém ação 
   assert.equal(result.scene.sourceDraft.movieFamily,'movie-editorial-light');
   assert.equal(elements.find(e=>e.id==='artwork').effects.mask,'fade-all');
   assert.ok(elements.some(e=>e.id==='editorial-brand-band'));
+  assert.ok(elements.some(e=>e.id==='editorial-brand-tone'));
+  assert.ok(!elements.some(e=>e.id.startsWith('product-contrast-')));
   assert.ok(elements.find(e=>e.id==='logo').x<result.scene.width*.2);
   assert.ok(elements.find(e=>e.id==='website').text.includes('cinecruzeiro.com.br'));
 });
@@ -66,6 +68,7 @@ test('editorial mantém imagem, data e horários sem recorrer a outro layout',as
     assert.ok(elements.find(e=>e.id==='title').x>art.x+art.width);
     if(['movie-premiere','movie-presale'].includes(templateId))assert.ok(elements.find(e=>e.id==='detail').y>art.y+art.height);
     assert.ok(!elements.some(e=>e.id==='movie-reading-veil'));
+    assert.ok(!elements.some(e=>e.id.startsWith('product-contrast-')));
   }
 });
 test('atmosfera editorial deriva as cores do pôster sem vermelho ou cor de marca fixos',async()=>{

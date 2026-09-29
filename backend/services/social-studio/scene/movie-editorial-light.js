@@ -27,6 +27,14 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   const bandY=top+area*.73;
   // Preserve the artwork's spatial color variation rather than flattening it into swatches.
   image('editorial-brand-band',sourceUrl || backgroundUrl,{x:0,y:bandY,width:w,height:h-bandY},{role:'ambient',fit:'cover',focusX:50,focusY:90,effects:{layer:'background',blur:52,brightness:.85,saturation:1,scale:1,mask:'fade-top',blend:100}});
+  const brandShadow=atmosphere?.shadow || mix(palette.dominantColor,'#000000',.62);
+  const toneTop=bandY-area*.11;
+  elements.push({id:'editorial-brand-tone',role:'ambient',type:'gradient',x:0,y:toneTop,width:w,height:h-toneTop,direction:'bottom',stops:[
+    {offset:0,color:rgba(brandShadow,0)},
+    {offset:.28,color:rgba(brandShadow,.42)},
+    {offset:.52,color:rgba(brandShadow,.78)},
+    {offset:1,color:rgba(brandShadow,.92)}
+  ]});
   const movieTitle=draft.title || draft.entities.movie?.title || '';
   const label=draft.subtitle && !/^(INGRESSOS )?EM DESTAQUE$/i.test(draft.subtitle)?draft.subtitle:'O FILME DA SUA VEZ';
   if(!/^(ESTREIA|PRÉ-VENDA|SESSÃO)$/i.test(label))text('subtitle',label,box([.62,.045,.315,.07]),29,{lines:2,fill:accent});
