@@ -17,6 +17,7 @@ for (const [name, route, token] of checks) {
     const body = await response.json();
     console.log(`marca: ${body.cinema?.name || "(ausente)"}`);
     console.log(`assinatura: ${body.cinema?.posterLogoUrl || "(ausente)"}`);
+    console.log(`site no poster: ${body.cinema?.posterWebsite || "(ausente)"}`);
   }
   if (!response.ok) process.exitCode = 1;
 }
