@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/Alanls-mx/CineCruzeiro.git",
+  "keepReleases": 2,
+  "instances": [
+    {
+      "slug": "cinecruzeiro",
+      "enabled": true,
+      "brandFrom": "Cine Cruzeiro",
+      "name": "Cine Cruzeiro",
+      "city": "Cruzeiro - SP",
+      "instagram": "@cinecruzeiro",
+      "route": "/projects/cinecruzeiro",
+      "siteUrl": "https://lumixengine.com/projects/cinecruzeiro",
+      "baseDir": "/home/ubuntu/projects/cinecruzeiro",
+      "frontendPort": 3100,
+      "backendPort": 4100,
+      "frontendProcess": "cinecruzeiro-frontend",
+      "backendProcess": "cinecruzeiro-backend",
+      "applyBrand": false
+    },
+    {
+      "slug": "cine-estacao-amparo",
+      "enabled": true,
+      "brandFrom": "Cine Cruzeiro",
+      "name": "Cine Estação Amparo",
+      "city": "Amparo - SP",
+      "instagram": "",
+      "route": "/projects/cine-estacao-amparo",
+      "siteUrl": "https://lumixengine.com/projects/cine-estacao-amparo",
+      "baseDir": "/home/ubuntu/projects/cine-estacao-amparo",
+      "frontendPort": 3120,
+      "backendPort": 4120,
+      "frontendProcess": "cine-estacao-amparo-frontend",
+      "backendProcess": "cine-estacao-amparo-backend",
+      "applyBrand": true
+    }
+  ]
+}

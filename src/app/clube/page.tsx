@@ -7,7 +7,7 @@ import { CalendarCheck, Check, ChevronDown, ChevronLeft, ChevronRight, Popcorn, 
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
-import { isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
+import { cinemaEditorialImages, isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
 
 function uploadedImageUrl(value: string | undefined) {
   return publicAssetPath(value) || "";
@@ -50,6 +50,9 @@ export default function ClubePage() {
     [plans]
   );
   const preserveTransparentImages = settings.clubTransparentImages === true;
+  const editorialImages = cinemaEditorialImages();
+  const heroImage = uploadedImageUrl(settings.clubHeroImageUrl) || editorialImages?.clubHero || "";
+  const bannerImage = uploadedImageUrl(settings.clubBannerImageUrl) || editorialImages?.clubBanner || "";
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
@@ -73,16 +76,16 @@ export default function ClubePage() {
             </div>
           </div>
           <div className={`relative min-h-[190px] overflow-hidden rounded-[10px] shadow-[0_18px_44px_rgba(0,0,0,.32)] sm:min-h-[220px] lg:min-h-[280px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
-            {uploadedImageUrl(settings.clubHeroImageUrl) ? (
+            {heroImage ? (
               <Image
-                src={uploadedImageUrl(settings.clubHeroImageUrl)}
-                alt="Público em uma sala de cinema"
+                src={heroImage}
+                alt={settings.clubHeroImageUrl ? "Público em uma sala de cinema" : "Cena ilustrativa de amigos chegando ao cinema"}
                 fill
                 priority
                 unoptimized={isUploadedAsset(settings.clubHeroImageUrl)}
                 quality={72}
                 sizes="(max-width: 768px) 100vw, 44vw"
-                className={preserveTransparentImages ? "object-contain p-4 sm:p-6" : "object-cover"}
+                className={preserveTransparentImages && settings.clubHeroImageUrl ? "object-contain p-4 sm:p-6" : "object-cover"}
               />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
@@ -137,15 +140,15 @@ export default function ClubePage() {
 
         <section className="mx-auto grid max-w-[1320px] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[.9fr_1.1fr] lg:px-8">
           <div className={`relative min-h-[320px] overflow-hidden rounded-[10px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
-            {uploadedImageUrl(settings.clubBannerImageUrl) ? (
+            {bannerImage ? (
               <Image
-                src={uploadedImageUrl(settings.clubBannerImageUrl)}
-                alt="Sala de cinema iluminada antes da sessão"
+                src={bannerImage}
+                alt={settings.clubBannerImageUrl ? "Sala de cinema iluminada antes da sessão" : "Cena ilustrativa de espectadores com ingressos e pipoca"}
                 fill
                 unoptimized={isUploadedAsset(settings.clubBannerImageUrl)}
                 quality={72}
                 sizes="(max-width: 1024px) 100vw, 45vw"
-                className={preserveTransparentImages ? "object-contain p-5 sm:p-8" : "object-cover"}
+                className={preserveTransparentImages && settings.clubBannerImageUrl ? "object-contain p-5 sm:p-8" : "object-cover"}
               />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(250,204,21,.18),transparent_32%),linear-gradient(135deg,#0d1930,#030712)]" />

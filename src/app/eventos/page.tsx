@@ -10,7 +10,7 @@ import type { CinemaContent } from "@/services/cinemaApi";
 import { sendPrivateEventWebhook } from "@/services/webhook";
 import type { PrivateEventRequest } from "@/types";
 import { trackMarketingEvent } from "@/utils/tracking";
-import { isUploadedAsset, money } from "@/utils/cinema";
+import { cinemaEditorialImages, isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
 
 export default function EventosPage() {
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
@@ -29,6 +29,12 @@ export default function EventosPage() {
   const [messageType, setMessageType] = useState<"success" | "error" | "">("");
   const [loading, setLoading] = useState(false);
   const preserveTransparentImages = settings.eventTransparentImages === true;
+  const editorialImages = cinemaEditorialImages();
+  const eventHero = publicAssetPath(settings.eventHeroImageUrl) || editorialImages?.eventHero || "";
+  const eventGames = publicAssetPath(settings.eventGamesImageUrl) || editorialImages?.eventGames || "";
+  const eventParties = publicAssetPath(settings.eventPartiesImageUrl) || editorialImages?.eventParties || "";
+  const eventCorporate = publicAssetPath(settings.eventCorporateImageUrl) || editorialImages?.eventCorporate || "";
+  const eventGallery = publicAssetPath(settings.eventGalleryImageUrl) || editorialImages?.eventGallery || "";
 
   useEffect(() => {
     fetchCinemaContent()
@@ -87,8 +93,8 @@ export default function EventosPage() {
             </a>
           </div>
           <div className={`relative min-h-[360px] overflow-hidden rounded-[10px] shadow-[0_30px_90px_rgba(0,0,0,.45)] lg:min-h-[560px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
-            {settings.eventHeroImageUrl ? (
-              <Image src={settings.eventHeroImageUrl} alt="Sala de cinema reservada para evento privado" fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} className={preserveTransparentImages ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 1024px) 100vw, 56vw" />
+            {eventHero ? (
+              <Image src={eventHero} alt={settings.eventHeroImageUrl ? "Sala de cinema reservada para evento privado" : "Cena ilustrativa de um evento em sala de cinema"} fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} className={preserveTransparentImages && settings.eventHeroImageUrl ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 1024px) 100vw, 56vw" />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
@@ -100,13 +106,13 @@ export default function EventosPage() {
         <section className="mx-auto max-w-[1320px] px-4 py-10 sm:px-6 lg:px-8">
           <div className="grid gap-8 md:grid-cols-[1.08fr_.92fr]">
             <div className="grid gap-5">
-              <Experience image={settings.eventGamesImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<Gamepad2 />} title="Games" text="Console na tela grande, som da sala e clima de final de torneio com os amigos." />
-              <Experience image={settings.eventPartiesImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<PartyPopper />} title="Aniversários e festas" text="Sessão especial, bomboniere e registro fotográfico para transformar a data em estreia." />
-              <Experience image={settings.eventCorporateImageUrl || ""} preserveTransparency={preserveTransparentImages} icon={<Building2 />} title="Corporativo" text="Treinamentos, apresentações e encontros fora da sala de reunião convencional." />
+              <Experience image={eventGames} preserveTransparency={preserveTransparentImages && Boolean(settings.eventGamesImageUrl)} icon={<Gamepad2 />} title="Games" text="Console na tela grande, som da sala e clima de final de torneio com os amigos." />
+              <Experience image={eventParties} preserveTransparency={preserveTransparentImages && Boolean(settings.eventPartiesImageUrl)} icon={<PartyPopper />} title="Aniversários e festas" text="Sessão especial, bomboniere e registro fotográfico para transformar a data em estreia." />
+              <Experience image={eventCorporate} preserveTransparency={preserveTransparentImages && Boolean(settings.eventCorporateImageUrl)} icon={<Building2 />} title="Corporativo" text="Treinamentos, apresentações e encontros fora da sala de reunião convencional." />
             </div>
             <div className={`relative min-h-[420px] overflow-hidden rounded-[10px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
-              {settings.eventGalleryImageUrl ? (
-                <Image src={settings.eventGalleryImageUrl} alt="Público entrando em uma sala de cinema" fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} className={preserveTransparentImages ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 768px) 100vw, 42vw" />
+              {eventGallery ? (
+                <Image src={eventGallery} alt={settings.eventGalleryImageUrl ? "Público entrando em uma sala de cinema" : "Cena ilustrativa de espectadores em uma sala de cinema"} fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} className={preserveTransparentImages && settings.eventGalleryImageUrl ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 768px) 100vw, 42vw" />
               ) : (
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(250,204,21,.18),transparent_32%),linear-gradient(135deg,#0d1930,#030712)]" />
               )}

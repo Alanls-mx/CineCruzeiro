@@ -59,6 +59,20 @@ export function cinemaBrand() {
   return CINEMA_BRANDS[slug] || CINEMA_BRANDS.default;
 }
 
+export function cinemaEditorialImages() {
+  if (process.env.NEXT_PUBLIC_CINEMA_SLUG !== "cine-estacao-amparo") return null;
+  const image = (name: string) => assetPath(`/images/cine-estacao/${name}.webp`);
+  return {
+    clubHero: image("club-hero"),
+    clubBanner: image("club-banner"),
+    eventHero: image("events-hero"),
+    eventGames: image("events-games"),
+    eventParties: image("events-parties"),
+    eventCorporate: image("events-corporate"),
+    eventGallery: image("events-gallery"),
+  };
+}
+
 export function assetPath(path: string) {
   const cleanPath = `/${String(path || "").replace(/^\/+/, "")}`;
   return `${PUBLIC_BASE_PATH}${cleanPath}`;
