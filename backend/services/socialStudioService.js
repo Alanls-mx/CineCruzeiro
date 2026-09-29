@@ -290,7 +290,8 @@ function signatureForDraft(draft = {}, context = {}) {
   const requestedId = draft.signatureId === "automatic"
     ? automaticByTemplate[draft.templateId] || "wordmark-3d"
     : draft.signatureId;
-  const signature = SOCIAL_SIGNATURES.find((item) => item.id === requestedId) || SOCIAL_SIGNATURES[1];
+  const signatures = context.signatures?.length ? context.signatures : SOCIAL_SIGNATURES;
+  const signature = signatures.find((item) => item.id === requestedId) || signatures[1];
   if (signature.id === "none") return null;
   if (signature.id === "classic") {
     return signature;
