@@ -20,8 +20,9 @@ const siteOrigin = new URL(siteUrl).origin;
 const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "";
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 const publicUrl = `${siteOrigin}${basePath}`;
-const logoUrl = `${basePath}/images/logo-display.webp?brand=cinecruzeiro-goldstars-2026`;
-const iconUrl = `${basePath}/images/favicon-64.png`;
+const logoUrl = `${basePath}/images/logo-display.webp?brand=cinecruzeiro-goldstars-v2-2026`;
+const iconUrl = `${basePath}/images/favicon-64.png?brand=cinecruzeiro-icon-2026`;
+const appleIconUrl = `${basePath}/images/favicon-180.png?brand=cinecruzeiro-icon-2026`;
 const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG || "default";
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
   ],
   icons: {
     icon: iconUrl,
-    apple: iconUrl,
+    apple: appleIconUrl,
   },
   alternates: {
     canonical: `${publicUrl}/`,

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Entrar no Admin | Cine Cruzeiro</title>
+    <link rel="icon" type="image/png" href="../images/favicon-64.png?brand=cinecruzeiro-icon-2026" />
     <style>
       :root {
         color-scheme: dark;
@@ -81,7 +82,7 @@
   </head>
   <body>
     <main>
-      <img id="adminLoginLogo" src="../images/logo-display.webp?brand=cinecruzeiro-goldstars-2026" alt="Cine Cruzeiro" width="280" height="78" />
+      <img id="adminLoginLogo" src="../images/logo-display.webp?brand=cinecruzeiro-goldstars-v2-2026" alt="Cine Cruzeiro" width="280" height="75" />
       <h1>Painel Cine Cruzeiro</h1>
       <p>Entre com uma conta autorizada para gerenciar programação, vendas, bomboniere e validação de ingressos.</p>
       <form id="loginForm">
@@ -119,7 +120,7 @@
         return adminIndex > 0 ? pathname.slice(0, adminIndex) : "";
       })();
       const logo = document.getElementById("adminLoginLogo");
-      if (logo && ADMIN_BASE) logo.src = `${ADMIN_BASE}/images/logo-display.webp?brand=cinecruzeiro-goldstars-2026`;
+      if (logo && ADMIN_BASE) logo.src = `${ADMIN_BASE}/images/logo-display.webp?brand=cinecruzeiro-goldstars-v2-2026`;
       const form = document.getElementById("loginForm");
       const button = document.getElementById("submitButton");
       const verifyButton = document.getElementById("verifyButton");

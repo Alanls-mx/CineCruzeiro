@@ -1,37 +1,48 @@
 import Image from "next/image";
 import Link from "next/link";
-import { unstable_cache } from "next/cache";
+import type { Metadata } from "next";
+import { createHash } from "node:crypto";
 import { Ticket } from "lucide-react";
 import { HomeTrailerButton } from "@/components/HomeTrailerButton";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { MovieMetadata } from "@/components/MovieMetadata";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
-import { CinemaContent, normalizeCinemaContent } from "@/services/cinemaApi";
+import { CinemaContent } from "@/services/cinemaApi";
+import { homeFeaturedMovie, loadHomeContent } from "@/services/homeContent";
 import { Movie } from "@/types";
 import { isUploadedAsset, movieSlug, money } from "@/utils/cinema";
 import { normalizeMovieTag } from "@/utils/movieTags";
 
 export const dynamic = "force-dynamic";
 
-const backendUrl = (
-  process.env.CINE_BACKEND_URL ||
-  process.env.NEXT_PUBLIC_CINE_API_URL ||
-  (process.env.NODE_ENV === "production" ? "http://127.0.0.1:4100" : "http://127.0.0.1:4000")
-).replace(/\/+$/, "");
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.NODE_ENV === "production" ? "https://lumixengine.com" : "http://localhost:3000");
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || (process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "")).replace(/\/+$/, "");
 
-const loadHomeContent = unstable_cache(
-  async () => {
-    const response = await fetch(`${backendUrl}/api/content`, {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) throw new Error("Desculpe, erro interno no servidor ao carregar a programação.");
-    return normalizeCinemaContent(await response.json());
-  },
-  ["cine-cruzeiro-home-content"],
-  { revalidate: 30 }
-);
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const featured = homeFeaturedMovie(await loadHomeContent());
+    if (!featured) return {};
+
+    const day = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const artVersion = createHash("sha1")
+      .update(`${featured.id}|${featured.title}|${featured.posterUrl}|${featured.backdropUrl}`)
+      .digest("hex").slice(0, 10);
+    const imageUrl = `${new URL(siteUrl).origin}${basePath}/og/home?day=${encodeURIComponent(day)}&movie=${encodeURIComponent(featured.id)}&art=${artVersion}`;
+    const title = `${featured.title} | Cine Cruzeiro`;
+    const description = featured.synopsis?.trim().slice(0, 180) || `Confira ${featured.title} no Cine Cruzeiro.`;
+
+    return {
+      title,
+      description,
+      openGraph: { title, description, images: [{ url: imageUrl, width: 1200, height: 630, alt: `${featured.title} em destaque no Cine Cruzeiro` }] },
+      twitter: { card: "summary_large_image", title, description, images: [imageUrl] },
+    };
+  } catch {
+    return {};
+  }
+}
 
 export default async function HomePage() {
   let content: CinemaContent | null = null;
@@ -43,7 +54,7 @@ export default async function HomePage() {
     error = "Não foi possível carregar a programação agora. Tente novamente em instantes.";
   }
 
-  const featured = content?.featuredMovie || content?.nowPlaying[0] || null;
+  const featured = homeFeaturedMovie(content);
   const firstSession = featured?.sessions[0];
 
   return (

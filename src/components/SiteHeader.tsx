@@ -65,12 +65,12 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
       <div className="mx-auto flex h-20 max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center" aria-label={brand.name}>
           <img
-            src={assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-2026")}
+            src={assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026")}
             alt={brand.name}
-            width={197}
+            width={208}
             height={56}
             decoding="async"
-            className="h-14 w-auto object-contain sm:h-16"
+            className="h-12 w-auto object-contain sm:h-16"
           />
         </Link>
 
@@ -127,7 +127,7 @@ export function SiteFooter() {
       <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
         <div>
           <img
-            src={assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-2026")}
+            src={assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026")}
             alt={brand.name}
             width={155}
             height={44}
