@@ -18,11 +18,12 @@ function normalizeCampaignRequest(input={},defaults={}) {
   const rawFormats=Array.isArray(input.formats)?input.formats:[input.formatId || 'feed_portrait'];
   const formats=[...new Set(rawFormats.map(value=>FORMAT_ALIASES[value] || value).filter(value=>FORMAT_IDS.has(value)))].slice(0,3);
   const subject=input.subject && typeof input.subject==='object' && !Array.isArray(input.subject)?input.subject:{};
+  const selectedMovies=input.movieIds ?? input.programMovieIds ?? subject.movieIds ?? subject.programMovieIds;
   const request={
     cinemaId:String(input.cinemaId || defaults.cinemaId || 'default').slice(0,120),campaignType,objective,
     formats:formats.length?formats:['feed_portrait'],templateId:String(input.templateId || input.template || subject.templateId || templateFor(campaignType,objective)),
     triggerType:String(input.triggerType || 'manual').slice(0,80),source:String(input.source || 'studio').slice(0,80),
-    subject:{...subject,...Object.fromEntries(['movieId','concessionId','clubPlanId','programMovieIds','sessionId','priceSelection','copyTone','copyDensity','copyBrief','offerTerms','offerHeadline','cta','title','subtitle','auxiliaryText','actionDestination'].filter(key=>input[key]!==undefined).map(key=>[key,input[key]]))},
+    subject:{...subject,...Object.fromEntries(['movieId','concessionId','clubPlanId','sessionId','priceSelection','copyTone','copyDensity','copyBrief','offerTerms','offerHeadline','cta','title','subtitle','auxiliaryText','actionDestination'].filter(key=>input[key]!==undefined).map(key=>[key,input[key]])),...(selectedMovies!==undefined?{movieIds:selectedMovies}:{})},
     assets:Array.isArray(input.assets)?input.assets.slice(0,20):[],context:input.context && typeof input.context==='object'?input.context:{},
     copyOptions:input.copyOptions && typeof input.copyOptions==='object'?input.copyOptions:{},variationCount:Math.max(1,Math.min(4,Number(input.variationCount)||3))
   };

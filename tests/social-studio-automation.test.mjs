@@ -31,6 +31,12 @@ test('contrato adapta aliases e gera chave idempotente estável',()=>{
   assert.equal(first.idempotencyKey,second.idempotencyKey);
 });
 
+test('automação de programação entrega os filmes selecionados ao Studio',()=>{
+  const request=normalizeCampaignRequest({campaignType:'schedule',subject:{programMovieIds:['hoje-1','hoje-2']}});
+  assert.deepEqual(request.subject.movieIds,['hoje-1','hoje-2']);
+  assert.deepEqual(normalizeCampaignRequest({campaignType:'schedule',movieIds:['semana-1']}).subject.movieIds,['semana-1']);
+});
+
 test('webhook duplicado reutiliza campanha e a fila produz Feed e Story para revisão',async()=>{
   const {service}=orchestrator();
   const input={cinemaId:'cinema-a',campaignType:'movie',objective:'Estreia do filme',formats:['feed_portrait','story'],movieId:'m',idempotencyKey:'event-42'};
