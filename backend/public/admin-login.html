@@ -32,7 +32,7 @@
         background: var(--panel);
         box-shadow: 0 24px 80px rgba(0, 0, 0, .38);
       }
-      img { width: 120px; height: auto; display: block; margin-bottom: 22px; }
+      img { width: min(280px, 100%); height: auto; display: block; margin-bottom: 22px; }
       h1 { margin: 0; font-size: 26px; line-height: 1.1; }
       p { margin: 10px 0 24px; color: var(--muted); font-size: 14px; line-height: 1.55; }
       label { display: grid; gap: 8px; margin-top: 14px; font-size: 12px; font-weight: 800; color: #bfdbfe; }
@@ -81,7 +81,7 @@
   </head>
   <body>
     <main>
-      <img id="adminLoginLogo" src="../images/logo-display.webp?brand=cinecruzeiro-silver-2026" alt="Cine Cruzeiro" width="320" height="227" />
+      <img id="adminLoginLogo" src="../images/logo-display.webp?brand=cinecruzeiro-horizontal-2026" alt="Cine Cruzeiro" width="280" height="80" />
       <h1>Painel Cine Cruzeiro</h1>
       <p>Entre com uma conta autorizada para gerenciar programação, vendas, bomboniere e validação de ingressos.</p>
       <form id="loginForm">
@@ -119,7 +119,7 @@
         return adminIndex > 0 ? pathname.slice(0, adminIndex) : "";
       })();
       const logo = document.getElementById("adminLoginLogo");
-      if (logo && ADMIN_BASE) logo.src = `${ADMIN_BASE}/images/logo-display.webp?brand=cinecruzeiro-silver-2026`;
+      if (logo && ADMIN_BASE) logo.src = `${ADMIN_BASE}/images/logo-display.webp?brand=cinecruzeiro-horizontal-2026`;
       const form = document.getElementById("loginForm");
       const button = document.getElementById("submitButton");
       const verifyButton = document.getElementById("verifyButton");
