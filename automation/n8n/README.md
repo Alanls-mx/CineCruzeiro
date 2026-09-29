@@ -34,4 +34,6 @@ Depois abra `http://127.0.0.1:5678`. Esse modo não exige alteração de Nginx, 
 
 As automações de e-mail são idempotentes e respeitam descadastro e elegibilidade. `EMAIL_AUTOMATION_MODE=draft` é o padrão do backend e cria rascunhos para revisão. O envio automático só ocorre quando o backend usa `EMAIL_AUTOMATION_MODE=send` e o canal de e-mail está configurado e ativo.
 
+O Cine Estação usa os workflows `estacao-*.json` no mesmo n8n, com URLs e segredos `ESTACAO_*` próprios. O backend dessa instância deve receber os tokens correspondentes e manter `EMAIL_AUTOMATION_MODE=draft` até a aprovação explícita do envio. As URLs de webhooks do Studio são separadas por `/cine-estacao/` para não colidir com as do Cruzeiro.
+
 Os endpoints retornam `queued`, `processing`, `qa`, `ready` ou `failed`. A revisão e a exportação continuam no Studio.
