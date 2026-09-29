@@ -137,10 +137,10 @@ svg text {
 }
 
 .brand img {
-  width: clamp(92px, 11vw, 136px);
-  height: auto;
+  width: auto;
+  height: 64px;
   display: block;
-  filter: drop-shadow(0 10px 20px rgba(37, 99, 235, 0.25));
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35));
 }
 
 .brand strong {
@@ -7555,6 +7555,7 @@ th {
 
   .brand img {
     width: 88px;
+    height: auto;
   }
 
   .workspace {
