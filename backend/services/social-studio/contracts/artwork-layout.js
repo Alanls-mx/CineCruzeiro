@@ -25,7 +25,7 @@ function campaignCTA(draft) {
   if(!isMovie(draft))return draft.cta;
   const content=draft.content;
   const available=content?.purchaseAvailable && !(draft.templateId==='movie-presale' && content.presaleStartDate>content.today);
-  return !available?'EM BREVE':['movie-price','movie-presale'].includes(draft.templateId)?'COMPRE SEU INGRESSO':'ESCOLHA SUA SESSÃO';
+  return !available?'CONHEÇA O FILME':['movie-price','movie-presale'].includes(draft.templateId)?'COMPRE SEU INGRESSO':'ESCOLHA SUA SESSÃO';
 }
 function timeLabel(value) {return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value))?String(value):'';}
 function dayLabel(value) {

@@ -1,6 +1,6 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
-const {mix}=require('../engine/palette');
+const {mix,hexToRgb}=require('../engine/palette');
 const {SAFE,scheduleLabel}=require('../contracts/artwork-layout');
 const {visualLength}=require('../engine/typography');
 
@@ -12,7 +12,8 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
   if(family==='poster-lateral' && format.id==='story')family='cinematic-story';
   const lateral=family==='poster-lateral' || family==='cinematic-blend';
   const flip=(draft.artDirection?.seed || 0)%2===1;
-  const bg=mix(palette.dominantColor,'#000000',.86),ink='#ffffff',accent=mix(palette.accentColor,'#ffffff',.55);
+  const bg=mix(palette.dominantColor,'#000000',.67),ink='#ffffff',accent=mix(palette.accentColor,'#ffffff',.55);
+  const rgba=(color,opacity)=>{const {r,g,b}=hexToRgb(color);return `rgba(${r},${g},${b},${opacity})`;};
   const box=([x,y,width,height])=>({x:x*w,y:top+y*area,width:width*w,height:height*area});
   const elements=[];
   const tx=(id,value,rect,size,lines=3,extra={})=>{
@@ -20,8 +21,8 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
     const b=box(rect),fitted=wrapText(value,b.width,b.height,size,lines);
     elements.push({id,name:id,type:'text',role:id,...b,...fitted,fontFamily:['title','detail'].includes(id)?'Social Display':'Social Text',fontWeight:['title','detail'].includes(id)?900:600,fill:['subtitle','detail'].includes(id)?accent:ink,lineHeight:1.12,align:'left',hierarchy:id==='title'?'secondary':'tertiary',...extra});
   };
-  if(backgroundUrl)elements.push({id:'background-blur',type:'image',role:'background',src:backgroundUrl,x:0,y:0,width:w,height:h,fit:'cover',focusX:flip?70:30,focusY:45,opacity:family==='cinematic-blend'?.40:.22,effects:{layer:'background',blur:family==='cinematic-blend'?8:16,brightness:.55,saturation:.70,scale:1.08,mask:'none'}});
-  elements.push({id:'editorial-veil',type:'gradient',role:'ambient',x:0,y:0,width:w,height:h,direction:flip?'left':'right',stops:[{offset:0,color:'rgba(0,0,0,0.1)'},{offset:1,color:bg}]});
+  if(backgroundUrl || sourceUrl)elements.push({id:'background-blur',type:'image',role:'background',src:backgroundUrl || sourceUrl,x:0,y:0,width:w,height:h,fit:'cover',focusX:flip?70:30,focusY:45,opacity:.82,effects:{layer:'background',blur:backgroundUrl?32:48,brightness:.78,saturation:.9,scale:1.16,mask:'none'}});
+  elements.push({id:'editorial-veil',type:'gradient',role:'ambient',x:0,y:0,width:w,height:h,direction:flip?'left':'right',stops:[{offset:0,color:rgba(bg,.10)},{offset:.45,color:rgba(bg,.45)},{offset:1,color:rgba(bg,.88)}]});
   const withPriceAndSessions=['movie-price','movie-premiere','movie-presale'].includes(draft.templateId) && draft.schedule?.days?.length && draft.showSessions!==false;
   const artHeight=withPriceAndSessions?.55:format.id==='square'?.61:.65;
   let artRect=lateral?[flip?.435:.055,.012,.51,.80]:[.065,.0,.87,artHeight];
@@ -58,7 +59,8 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
     if(showSessions && draft.schedule?.days?.length && draft.showSessions!==false)tx('description',scheduleLabel(draft.schedule.days[0],99),[.065,row+(showDate?.075:0),.87,.045],38,2);
   }
   const footer=.885;
-  elements.push({id:'editorial-footer',type:'shape',role:'ambient',x:0,y:top+area*(footer-.02),width:w,height:h-(top+area*(footer-.02)),fill:bg});
+  const footerY=top+area*(footer-.10);
+  elements.splice(elements.findIndex(e=>e.type==='text'),0,{id:'editorial-footer',type:'gradient',role:'ambient',x:0,y:footerY,width:w,height:h-footerY,direction:'bottom',stops:[{offset:0,color:rgba(bg,0)},{offset:.55,color:rgba(bg,.58)},{offset:1,color:rgba(bg,.92)}]});
   tx('cta',draft.cta,[.065,footer,.60,.042],36,1);
   tx('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),[.065,footer+.056,.60,.032],26,1);
   const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;

@@ -5,11 +5,16 @@ import sharp from 'sharp';
 const require=createRequire(import.meta.url);
 const engine=require('../backend/services/socialStudioEngineService');
 const {movieDirection}=require('../backend/services/social-studio/composition-engine/movie-direction');
-const {MOVIE_FAMILIES}=require('../backend/services/social-studio/contracts/artwork-layout');
+const {MOVIE_FAMILIES,campaignCTA}=require('../backend/services/social-studio/contracts/artwork-layout');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const assets={poster:await sharp({create:{width:800,height:1200,channels:3,background:'#997522'}}).png().toBuffer(),backdrop:await sharp({create:{width:1600,height:900,channels:3,background:'#276799'}}).png().toBuffer(),logo:await sharp({create:{width:600,height:200,channels:3,background:'#277abc'}}).png().toBuffer()};
 const loadImage=async src=>src.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png')?assets.logo:assets[src.replace('/movie-direction/','')] || null;
 const context={now:'2026-09-24T09:00:00-03:00',brand:{name:'Cine Cruzeiro',logoUrl:'/movie-direction/logo',website:'https://cinecruzeiro.com.br'},movies:[{id:'movie',title:'Uma aventura extraordinária',genre:'Ação',posterUrl:'/movie-direction/poster',backdropUrl:'/movie-direction/backdrop',releaseDate:'2026-09-25',sessions:[{date:'2026-09-25',time:'13:00',ticketTypes:[{id:'full',name:'Inteira',price:29.9}]},{date:'2026-09-25',time:'18:30',ticketTypes:[{id:'full',name:'Inteira',price:29.9}]}]}]};
+test('filme sem venda ativa mantém ação editorial sem repetir EM BREVE',()=>{
+  assert.equal(campaignCTA({templateId:'movie-highlight',content:{purchaseAvailable:false}}),'CONHEÇA O FILME');
+  assert.equal(campaignCTA({templateId:'movie-highlight',content:{purchaseAvailable:true}}),'ESCOLHA SUA SESSÃO');
+  assert.equal(campaignCTA({templateId:'movie-presale',content:{purchaseAvailable:true,presaleStartDate:'2026-10-01',today:'2026-09-24'}}),'CONHEÇA O FILME');
+});
 test('arquétipos cinematográficos funcionam em formatos e campanhas preservando horários e contraste',async()=>{
   for(const templateId of ['movie-highlight','movie-premiere','movie-presale','movie-price'])for(const formatId of ['feed_portrait','square','story'])for(const layoutId of Object.keys(MOVIE_FAMILIES)) {
     const r=await engine.renderSocialPost({templateId,movieId:'movie',formatId,layoutId,priceSelection:{mode:'full'}},context,{loadImage,skipRaster:true});
