@@ -47,7 +47,7 @@ function shell({draft,format,brand,palette,logoUrl}) {
     const item={id,name:id,role:id,type:'text',x,y,width,height,visible:true,opacity:1,fontFamily:'Social Text',fontWeight:600,lineHeight:1.12,align:'left',fill:theme.ink,...extra,...fit};
     elements.push(item);manifest.push({id,text:String(value).replace(/\s+/g,' ').trim()});return item;
   };
-  const im=(id,src,x,y,width,height)=>{if(src)elements.push({id,name:id,role:id==='logo'?'logo':id,type:'image',src,x,y,width,height,fit:'contain',focusX:50,focusY:50,opacity:1,visible:true});};
+  const im=(id,src,x,y,width,height)=>{if(src)elements.push({id,name:id,role:id==='logo'?'logo':id,type:'image',src,x,y,width,height,fit:'contain',focusX:50,focusY:50,opacity:1,visible:true,...(id==='logo' && light?{effects:{shadow:60}}:{})});};
   const panel=(id,x,y,width,height)=>{
     const at=elements.findIndex(element=>element.type==='text');
     elements.splice(at,0,{id,role:'decorative',type:'shape',x,y,width,height,fill:theme.panel,locked:true});
