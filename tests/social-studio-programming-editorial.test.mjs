@@ -75,6 +75,7 @@ test('tratamentos de cor preservam a programação sempre com imagens',async()=>
       assert.equal(rendered.scene.backgroundColor,'#ffda38');
       assert.ok(rendered.scene.elements.some(e=>e.id==='program-cross-band-one'));
       assert.equal(flattenElements(rendered.scene.elements).find(e=>e.id==='logo').effects.shadow,60);
+      assert.ok(flattenElements(rendered.scene.elements).some(e=>e.id==='program-logo-contrast'));
     }
   }
   assert.ok(backgrounds.size>=4);

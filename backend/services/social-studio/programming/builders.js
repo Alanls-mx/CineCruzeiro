@@ -61,6 +61,7 @@ function shell({draft,format,brand,palette,logoUrl}) {
   tx('cta',draft.cta,m,footer,w*.65,40*u,32,{minimum:26,maxLines:1});
   tx('website',(draft.actionDestination || draft.website || '').replace(/^https?:\/\//,'').replace(/\/$/,''),m,footer+48*u,w*.65,38*u,27,{minimum:24,maxLines:1});
   draft.signatureReserved={x:w*.76,y:bottom-86*u,width:w*.18,height:86*u};
+  if(logoUrl && light)elements.push({id:'program-logo-contrast',role:'decorative',type:'shape',x:draft.signatureReserved.x-12*u,y:draft.signatureReserved.y-8*u,width:draft.signatureReserved.width+24*u,height:draft.signatureReserved.height+16*u,fill:theme.ink,opacity:.88,locked:true});
   if(logoUrl)im('logo',logoUrl,...Object.values(draft.signatureReserved));
   else tx('cinema',brand.name,w*.77,bottom-70*u,w*.17,70*u,28,{minimum:24,hierarchy:'branding'});
   const contentTop=top+(singleDay?164:140)*u;
