@@ -28,7 +28,7 @@ async function fixture() {
         sessions: [{ date: "2026-10-22", time: "19:30", ticketTypes: [{ name: "Inteira", price: 20 }] }]
       }]
     },
-    loadImage: async (url) => assets.get(url) || null
+    loadImage: async (url) => assets.get(url) || (url.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png') ? assets.get('asset://logo') : null)
   };
 }
 
@@ -56,6 +56,30 @@ test("normalização da cena limita tipos, cores e quantidade de elementos", () 
   assert.equal(scene.backgroundColor, "#050b16");
   assert.equal(scene.elements.length, 80);
   assert.equal(scene.elements[0].fill, "#ffffff");
+});
+
+test("quebras de linha digitadas permanecem no texto ajustado e na cena", () => {
+  const {wrapText}=require('../backend/services/social-studio/scene/factory');
+  const content='Primeira linha\n\nSegunda linha';
+  assert.equal(wrapText(content,800,240,48,4).text,content);
+  assert.equal(wrapText('Primeira linha\r\nSegunda linha',800,180,48,3).text,'Primeira linha\nSegunda linha');
+  assert.equal(engine.normalizeDraft({templateId:'movie-premiere',auxiliaryText:content},{brand:{name:'Cine Cruzeiro'}}).auxiliaryText,content);
+  const scene=engine.normalizeScene({width:1080,height:1350,elements:[{id:'description',type:'text',text:content,width:800,height:240}]});
+  assert.equal(scene.elements[0].text,content);
+});
+
+test("renderização do editor mantém a linha em branco entre parágrafos", async () => {
+  const scene={width:500,height:300,backgroundColor:'#000000',elements:[{id:'description',type:'text',text:'PRIMEIRA\n\nSEGUNDA',x:20,y:20,width:460,height:260,fontSize:48,fill:'#ffffff'}]};
+  const rendered=await engine.renderSocialScene(scene,{layerRender:true,loadImage:async()=>null});
+  const {data,info}=await sharp(rendered.buffer).raw().toBuffer({resolveWithObject:true});
+  const bands=[];
+  for(let y=0;y<info.height;y++) {
+    let visible=false;
+    for(let x=0;x<info.width;x++)if(data[(y*info.width+x)*info.channels]>120){visible=true;break;}
+    if(visible){if(!bands.length || y>bands.at(-1)[1]+1)bands.push([y,y]);else bands.at(-1)[1]=y;}
+  }
+  assert.equal(bands.length,2);
+  assert.ok(bands[1][0]-bands[0][1]>45);
 });
 
 test("renderização manual permanece no servidor e respeita tamanho e formato", async () => {

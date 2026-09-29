@@ -29,27 +29,36 @@ function base(id, type, bounds, props = {}) {
 }
 
 function wrapText(value, width, height, preferred, maxLines = 3) {
-  const words = String(value || "").trim().split(/\s+/).filter(Boolean);
-  for (let size = Math.floor(preferred); size >= 12; size--) {
+  const paragraphs = String(value || "").replace(/\r\n?/g, "\n").split("\n");
+  const wrap = (size) => {
     const lines = [];
-    let line = "";
-    let fits = true;
-    for (const word of words) {
-      if (visualLength(word) * size > width) { fits = false; break; }
-      const next = line ? `${line} ${word}` : word;
-      if (line && visualLength(next) * size > width) { lines.push(line); line = word; }
-      else line = next;
+    for (const paragraph of paragraphs) {
+      const words = paragraph.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) { lines.push(""); continue; }
+      let line = "";
+      for (const word of words) {
+        if (visualLength(word) * size > width) return null;
+        const next = line ? `${line} ${word}` : word;
+        if (line && visualLength(next) * size > width) { lines.push(line); line = word; }
+        else line = next;
+      }
+      lines.push(line);
     }
-    if (line) lines.push(line);
-    if (fits && lines.length <= maxLines && lines.length * size * 1.12 <= height) return { text: lines.join("\n"), fontSize: size };
+    return lines;
+  };
+  for (let size = Math.floor(preferred); size >= 12; size--) {
+    const lines = wrap(size);
+    if (lines && lines.length <= maxLines && lines.length * size * 1.12 <= height) return { text: lines.join("\n"), fontSize: size };
   }
   const chunks = [];
-  let line = "";
-  for (const character of words.join(" ")) {
-    if (visualLength(line + character) * 12 > width && line) { chunks.push(line.trim()); line = ""; }
-    line += character;
+  for (const paragraph of paragraphs) {
+    let line = "";
+    for (const character of paragraph.trim().replace(/\s+/g, " ")) {
+      if (visualLength(line + character) * 12 > width && line) { chunks.push(line.trim()); line = ""; }
+      line += character;
+    }
+    chunks.push(line.trim());
   }
-  if (line) chunks.push(line.trim());
   return { text: chunks.join("\n"), fontSize: 12 };
 }
 
