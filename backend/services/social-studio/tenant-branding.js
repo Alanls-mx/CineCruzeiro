@@ -5,15 +5,15 @@ const POSTER_BRANDS = Object.freeze({
   },
   "cinemax-piraju": {
     signature: "/images/social-studio/signatures/cinemax-piraju-white-3d.png",
-    website: "lumixengine.com/projects/cinemax-piraju"
+    website: "www.cinemaxpiraju.com.br"
   },
   "cine-gama": {
     signature: "/images/social-studio/signatures/cine-gama-white-3d.png",
-    website: "lumixengine.com/projects/cine-gama"
+    website: "www.cinegama.com.br"
   },
   "cinemania-cosmopolis": {
     signature: "/images/social-studio/signatures/cinemania-cosmopolis-white-3d.png",
-    website: "lumixengine.com/projects/cinemania-cosmopolis"
+    website: "www.cinemaniacosmopolis.com.br"
   }
 });
 

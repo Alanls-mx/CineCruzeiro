@@ -11,10 +11,16 @@ const { studioPosterBrand } = require("../backend/services/social-studio/tenant-
 const publicRoot = fileURLToPath(new URL("../public/", import.meta.url));
 
 test("cada cinema tem assinatura 3D transparente e endereco proprio no Studio", async () => {
+  const websites = {
+    "cine-estacao-amparo": "www.cineestacaoamparo.com.br",
+    "cinemax-piraju": "www.cinemaxpiraju.com.br",
+    "cine-gama": "www.cinegama.com.br",
+    "cinemania-cosmopolis": "www.cinemaniacosmopolis.com.br"
+  };
   for (const slug of ["cine-estacao-amparo", "cinemax-piraju", "cine-gama", "cinemania-cosmopolis"]) {
     const brand = studioPosterBrand(slug);
     assert.ok(brand.signature.includes(slug));
-    assert.ok(brand.website && !brand.website.includes("cinecruzeiro"));
+    assert.equal(brand.website, websites[slug]);
     const image = await readFile(path.join(publicRoot, brand.signature.slice(1)));
     const metadata = await sharp(image).metadata();
     const stats = await sharp(image).stats();
