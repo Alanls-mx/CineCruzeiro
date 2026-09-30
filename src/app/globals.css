@@ -708,6 +708,51 @@ body[data-cinema-theme="cinemania-cosmopolis"] .border-white\/8 { border-color: 
 body[data-cinema-theme="cinemania-cosmopolis"] .shadow-glow { box-shadow: 0 16px 34px -18px rgba(233, 185, 56, 0.68) !important; }
 body[data-cinema-theme="cinemania-cosmopolis"] .shadow-glow-blue { box-shadow: 0 18px 38px -22px rgba(37, 129, 241, 0.7) !important; }
 
+.seat-picker {
+  --seat-standard: #2563eb;
+  --seat-accent: #facc15;
+  --seat-accent-soft: rgba(250, 204, 21, 0.1);
+  --seat-map-surface: #080f1b;
+}
+
+body[data-cinema-theme="cine-estacao-amparo"] .seat-picker {
+  --seat-standard: #a52a3d;
+  --seat-accent: #e1aa45;
+  --seat-accent-soft: rgba(225, 170, 69, 0.13);
+  --seat-map-surface: #23080e;
+}
+
+body[data-cinema-theme="cinemax-piraju"] .seat-picker {
+  --seat-standard: #007fb4;
+  --seat-accent: #ffc431;
+  --seat-accent-soft: rgba(255, 196, 49, 0.13);
+  --seat-map-surface: #031e3a;
+}
+
+body[data-cinema-theme="cine-gama"] .seat-picker {
+  --seat-standard: #6655d8;
+  --seat-accent: #ff7900;
+  --seat-accent-soft: rgba(255, 121, 0, 0.14);
+  --seat-map-surface: #1c103d;
+}
+
+body[data-cinema-theme="cinemania-cosmopolis"] .seat-picker {
+  --seat-standard: #1671d6;
+  --seat-accent: #e9b938;
+  --seat-accent-soft: rgba(233, 185, 56, 0.13);
+  --seat-map-surface: #041f43;
+}
+
+.seat-picker__map { background-color: var(--seat-map-surface); }
+.seat-picker__screen { border-color: var(--seat-accent); }
+.seat-picker__count { background-color: var(--seat-accent-soft); color: var(--seat-accent); }
+.seat-picker__selected-swatch { background-color: var(--seat-accent); border-color: var(--seat-accent); }
+.seat-picker__selected {
+  background-color: var(--seat-accent);
+  border-color: var(--seat-accent);
+  color: #10141c !important;
+}
+
 body[data-cinema-theme="cinemax-piraju"] input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]),
 body[data-cinema-theme="cinemax-piraju"] select,
 body[data-cinema-theme="cinemax-piraju"] textarea { border-color: rgba(108, 226, 242, 0.35); background: #041f3f; color: #f4fbff; }

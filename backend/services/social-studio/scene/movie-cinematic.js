@@ -87,7 +87,7 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   tx('cta',draft.cta,footer,34,{lines:1,hierarchy:'tertiary'});
   tx('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),box([.065,.955,.60,.032]),26,{lines:1,hierarchy:'tertiary'});
   const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
-  const {width:lw,height:lh}=require('./branding').signatureDimensions(w,h,ratio,draft);
+  const {width:lw,height:lh}=require('./branding').signatureDimensions(w,h,ratio,draft,logoUrl);
   const safeBottom=h*(format.id==='story'?.91:.985);
   const logoBox={x:w*.935-lw,y:Math.min(footer.y,safeBottom-lh),width:lw,height:lh};
   image('logo',logoUrl,logoBox,{role:'logo',hierarchy:'branding',protected:true});

@@ -60,7 +60,10 @@ function shell({draft,format,brand,palette,logoUrl}) {
   const footer=bottom-90*u;
   tx('cta',draft.cta,m,footer,w*.65,40*u,32,{minimum:26,maxLines:1});
   tx('website',(draft.actionDestination || draft.website || '').replace(/^https?:\/\//,'').replace(/\/$/,''),m,footer+48*u,w*.65,38*u,27,{minimum:24,maxLines:1});
-  draft.signatureReserved={x:w*.76,y:bottom-86*u,width:w*.18,height:86*u};
+  const tenantSignature=/\/images\/social-studio\/signatures\/[^/]+-white-3d\.png(?:\?|$)/.test(String(logoUrl));
+  draft.signatureReserved=tenantSignature
+    ? {x:w*.72,y:bottom-120*u,width:w*.22,height:120*u}
+    : {x:w*.76,y:bottom-86*u,width:w*.18,height:86*u};
   if(logoUrl)im('logo',logoUrl,...Object.values(draft.signatureReserved));
   else tx('cinema',brand.name,w*.77,bottom-70*u,w*.17,70*u,28,{minimum:24,hierarchy:'branding'});
   const contentTop=top+(singleDay?164:140)*u;

@@ -112,7 +112,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   if((draft.templateId==='ticket-offer' || concession || draft.movieFamily) && logoUrl) {
     const logo=await loadArtwork(logoUrl);
     if(!logo) logoUrl='';
-    else {const metadata=await sharp(logo).metadata();draft.signatureAsset={width:metadata.width,height:metadata.height};}
+    else {const signature=await require('./assets').loadSignatureAsset(logoUrl,loadImage);const metadata=await sharp(signature || logo).metadata();draft.signatureAsset={width:metadata.width,height:metadata.height};}
   }
   const template = templateById(draft.templateId);
   const outputType = draft.outputType === "jpg" ? "jpg" : "png";

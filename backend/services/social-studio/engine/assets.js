@@ -23,6 +23,13 @@ async function loadAsset(url, loader) {
   });
 }
 
+async function loadSignatureAsset(url, loader) {
+  const buffer = await loadAsset(url, loader);
+  if (!buffer || !/\/images\/social-studio\/signatures\/[^/]+-white-3d\.png(?:\?|$)/.test(String(url))) return buffer;
+  const key = `${bufferKey(buffer)}:signature-trim`;
+  return transformedCache.getOrLoad(key, async () => sharp(buffer, { failOn: "error" }).trim().png().toBuffer());
+}
+
 function imageAnchor(draft = {}) {
   const presets = {
     center: [50, 50], left: [20, 50], right: [80, 50], top: [50, 18], bottom: [50, 82]
@@ -83,6 +90,7 @@ function sourceUrlForDraft(draft = {}) {
 module.exports = {
   dataUrl,
   loadAsset,
+  loadSignatureAsset,
   prepareArtwork,
   prepareLogo,
   sourceCache,

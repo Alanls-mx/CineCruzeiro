@@ -1,5 +1,5 @@
 const sharp = require("sharp");
-const { dataUrl, loadAsset } = require("../engine/assets");
+const { dataUrl, loadAsset, loadSignatureAsset } = require("../engine/assets");
 const { socialStudioFonts } = require("../engine/fonts");
 const { normalizeScene } = require("./schema");
 const { createCinematicArtwork } = require("../composition-engine/pipeline");
@@ -40,7 +40,7 @@ function gradientCss(element) {
 }
 
 async function imageData(element, loadImage) {
-  const buffer = await loadAsset(element.src, loadImage);
+  const buffer = element.role === "logo" ? await loadSignatureAsset(element.src, loadImage) : await loadAsset(element.src, loadImage);
   if (!buffer) return "";
   if (element.effects) return dataUrl(await createCinematicArtwork(buffer, element));
   let pipeline = sharp(buffer, { failOn: "error", limitInputPixels: 40_000_000 }).rotate();

@@ -65,8 +65,12 @@ function buildMovieEditorial({draft,format,palette,brand,sourceUrl,backgroundUrl
   tx('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),[.065,footer+.056,.60,.032],26,1);
   const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
   const scale=Math.max(.7,Math.min(1.35,(draft.signatureScale || 100)/100));
-  const lw=Math.min(w*.19,w*.14*scale,h*.07*ratio),lh=lw/ratio;
-  const logoBox={x:w*.935-lw,y:top+area*footer,width:lw,height:lh};
+  const tenantSignature=/\/images\/social-studio\/signatures\/[^/]+-white-3d\.png(?:\?|$)/.test(String(logoUrl));
+  const lw=tenantSignature
+    ? Math.min(w*.22,w*.21*scale,h*.12*ratio)
+    : Math.min(w*.19,w*.14*scale,h*.07*ratio);
+  const lh=lw/ratio;
+  const logoBox={x:w*.935-lw,y:Math.min(top+area*footer,h*.975-lh),width:lw,height:lh};
   if(logoUrl)elements.push({id:'logo',type:'image',role:'logo',src:logoUrl,...logoBox,fit:'contain',keepRatio:true,protected:true,hierarchy:'branding'});
   else if(draft.signatureId!=='none')tx('cinema',brand.name,[.73,footer,.205,.06],26,2);
   const {entities,...sourceDraft}=draft;

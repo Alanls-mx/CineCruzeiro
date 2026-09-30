@@ -955,6 +955,8 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
   const selectedSeatIds = draft.selectedSeatIds || [];
   const seatsById = new Map((seatMap?.rows || []).flatMap((row) => row.seats).map((seat) => [seat.id, seat]));
   const seatTypesById = new Map((seatMap?.seatTypes || []).map((type) => [type.id, type]));
+  const seatTypeColor = (type?: { id: string; color: string }) =>
+    type?.id === "standard" && type.color.toLowerCase() === "#2563eb" ? "var(--seat-standard)" : type?.color;
   const seatSelectionComplete = seatMapStatus === "ready" && (!seatMap?.enabled || selectedSeatIds.length === requiredSeats);
 
   const [seatActionError, setSeatActionError] = useState("");
@@ -989,7 +991,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
         </div>
       ))}
       {!ticketTypes.length && <p className="text-sm font-semibold text-amber-200">Nenhum tipo de ingresso foi liberado para esta sessão.</p>}
-      <section aria-labelledby="seat-selection-title" className="border-t border-white/10 pt-8">
+      <section aria-labelledby="seat-selection-title" className="seat-picker border-t border-white/10 pt-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 id="seat-selection-title" className="font-display text-2xl font-black text-white">Escolha de poltronas</h2>
@@ -1000,7 +1002,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
             </p>
           </div>
           {seatMap?.enabled && (
-            <strong className={`rounded-md px-3 py-2 text-sm ${selectedSeatIds.length === requiredSeats ? "bg-emerald-400/15 text-emerald-200" : "bg-gold-400/10 text-gold-300"}`}>
+            <strong className={`rounded-md px-3 py-2 text-sm ${selectedSeatIds.length === requiredSeats ? "bg-emerald-400/15 text-emerald-200" : "seat-picker__count"}`}>
               {selectedSeatIds.length} de {requiredSeats}
             </strong>
           )}
@@ -1016,17 +1018,17 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
           <div className="mt-6">
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-bold text-slate-300">
               {seatMap.seatTypes.map((type) => (
-                <span key={type.id} className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm" style={{ backgroundColor: type.color }} />{type.name}</span>
+                <span key={type.id} className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm" style={{ backgroundColor: seatTypeColor(type) }} />{type.name}</span>
               ))}
               <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-slate-500" />Indisponível</span>
               <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-rose-300 bg-rose-700" />Reservada temporariamente</span>
-              <span className="inline-flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-gold-200 bg-gold-400" />Selecionada por você</span>
+              <span className="inline-flex items-center gap-2"><span className="seat-picker__selected-swatch h-3 w-3 rounded-sm border" />Selecionada por você</span>
               <span className="inline-flex items-center gap-2"><Accessibility className="h-4 w-4" />Cadeirante</span>
               <span className="inline-flex items-center gap-2"><CircleUserRound className="h-4 w-4" />Pessoa obesa</span>
             </div>
-            <div className="mt-5 overflow-x-auto rounded-lg bg-[#080f1b] px-2 pb-5 pt-4 sm:px-4 sm:pb-6 sm:pt-5">
+            <div className="seat-picker__map mt-5 overflow-x-auto rounded-lg px-2 pb-5 pt-4 sm:px-4 sm:pb-6 sm:pt-5">
               <div className="mx-auto grid w-max min-w-full gap-1.5 sm:gap-2">
-                <div className="mb-3 w-[min(620px,75%)] justify-self-center border-t-[3px] border-gold-400 pt-2 text-center text-[10px] font-black uppercase tracking-[.16em] text-slate-500 sm:mb-5 sm:text-xs">
+                <div className="seat-picker__screen mb-3 w-[min(620px,75%)] justify-self-center border-t-[3px] pt-2 text-center text-[10px] font-black uppercase tracking-[.16em] text-slate-500 sm:mb-5 sm:text-xs">
                   {seatMap.screenLabel || "TELA"}
                 </div>
                 {seatMap.rows.map((row) => (
@@ -1041,7 +1043,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                         let seatStateClass = "bg-brand-700 hover:-translate-y-0.5";
                         if (unavailable) seatStateClass = "cursor-not-allowed border-slate-700 bg-transparent text-slate-600 opacity-60";
                         if (temporarilyReserved) seatStateClass = "cursor-not-allowed border-rose-300 bg-rose-800 text-rose-50 opacity-90";
-                        if (selected) seatStateClass = "scale-105 border-gold-700 bg-gold-400 !text-slate-950";
+                        if (selected) seatStateClass = "seat-picker__selected scale-105";
                         return (
                           <button
                             key={seat.id}
@@ -1053,7 +1055,7 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                             title={temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : `${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
                             className={`relative flex h-7 w-8 shrink-0 items-center justify-center rounded border border-white/10 text-[10px] font-black text-white shadow-[inset_0_-2px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-9 sm:w-10 sm:rounded-md sm:text-xs sm:shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] ${seat.aisleAfter ? "mr-3 sm:mr-6" : ""} ${seatStateClass}`}
                             style={{
-                              ...(selected || unavailable || temporarilyReserved || !(seat.color || type?.color) ? {} : { backgroundColor: seat.color || type?.color }),
+                              ...(selected || unavailable || temporarilyReserved ? {} : { backgroundColor: seat.color || seatTypeColor(type) }),
                             }}
                           >
                             {seat.accessibility === "wheelchair" ? (

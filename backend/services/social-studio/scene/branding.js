@@ -1,11 +1,14 @@
 const sharp = require('sharp');
-const {loadAsset} = require('../engine/assets');
+const {loadSignatureAsset} = require('../engine/assets');
 
-function signatureDimensions(width,height,ratio,draft={}) {
+function signatureDimensions(width,height,ratio,draft={},logoUrl='') {
   const prominence={subtle:.82,normal:1,strong:1.15}[draft.brandProminence] || 1;
   const requested=draft.signatureScaleMode==='automatic'?prominence:Number(draft.signatureScale || 100)/100;
   const scale=Math.max(.7,Math.min(1.35,requested));
-  const logoWidth=Math.min(width*.22,width*.16*scale,height*.145*ratio);
+  const tenantSignature=/\/images\/social-studio\/signatures\/[^/]+-white-3d\.png(?:\?|$)/.test(String(logoUrl));
+  const logoWidth=tenantSignature
+    ? Math.min(width*.22,width*.21*scale,height*.145*ratio)
+    : Math.min(width*.22,width*.16*scale,height*.145*ratio);
   return {width:logoWidth,height:logoWidth/ratio,scale};
 }
 
@@ -13,11 +16,11 @@ function signatureDimensions(width,height,ratio,draft={}) {
 async function applySignatureGeometry(scene, loadImage) {
   const logo = scene.elements.find(e => e.role === 'logo' && e.visible !== false);
   if (!logo) return scene;
-  const buffer = await loadAsset(logo.src, loadImage);
+  const buffer = await loadSignatureAsset(logo.src, loadImage);
   const metadata = buffer ? await sharp(buffer).metadata() : null;
   const ratio = metadata?.width && metadata?.height ? metadata.width / metadata.height : logo.width / logo.height;
   const draft = scene.sourceDraft;
-  const dimensions=signatureDimensions(scene.width,scene.height,ratio,draft);
+  const dimensions=signatureDimensions(scene.width,scene.height,ratio,draft,logo.src);
   const margin = scene.width * .055;
   const bottom = scene.height * (scene.formatId === 'story' ? .90 : .975);
   const baseWidth = dimensions.width;
