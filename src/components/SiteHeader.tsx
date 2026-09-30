@@ -22,6 +22,9 @@ type SiteHeaderProps = {
 
 export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAction = false }: SiteHeaderProps = {}) {
   const brand = cinemaBrand();
+  const brandLogo = brand.name === "Cine Estação Amparo"
+    ? assetPath("/images/cine-estacao/logo.webp?brand=estacao-amparo-v1")
+    : assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026");
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [remoteContent, setRemoteContent] = useState<CinemaContent | null>(null);
@@ -65,7 +68,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
       <div className="mx-auto flex h-20 max-w-[1320px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center" aria-label={brand.name}>
           <img
-            src={assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026")}
+            src={brandLogo}
             alt={brand.name}
             width={208}
             height={56}
@@ -122,12 +125,15 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
 
 export function SiteFooter() {
   const brand = cinemaBrand();
+  const brandLogo = brand.name === "Cine Estação Amparo"
+    ? assetPath("/images/cine-estacao/logo.webp?brand=estacao-amparo-v1")
+    : assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026");
   return (
     <footer className="border-t border-white/8 bg-[#050810] text-xs text-slate-400">
       <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
         <div>
           <img
-            src={assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026")}
+            src={brandLogo}
             alt={brand.name}
             width={155}
             height={44}

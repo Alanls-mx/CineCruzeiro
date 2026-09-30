@@ -34,6 +34,54 @@
       "frontendProcess": "cine-estacao-amparo-frontend",
       "backendProcess": "cine-estacao-amparo-backend",
       "applyBrand": true
+    },
+    {
+      "slug": "cinemax-piraju",
+      "enabled": true,
+      "brandFrom": "Cine Cruzeiro",
+      "name": "Cinemax Piraju",
+      "city": "Piraju - SP",
+      "instagram": "@cinemaxpiraju",
+      "route": "/projects/cinemax-piraju",
+      "siteUrl": "https://lumixengine.com/projects/cinemax-piraju",
+      "baseDir": "/home/ubuntu/projects/cinemax-piraju",
+      "frontendPort": 3110,
+      "backendPort": 4110,
+      "frontendProcess": "cinemax-piraju-frontend",
+      "backendProcess": "cinemax-piraju-backend",
+      "applyBrand": true
+    },
+    {
+      "slug": "cine-gama",
+      "enabled": true,
+      "brandFrom": "Cine Cruzeiro",
+      "name": "Cine Gama",
+      "city": "Colatina - ES",
+      "instagram": "",
+      "route": "/projects/cine-gama",
+      "siteUrl": "https://lumixengine.com/projects/cine-gama",
+      "baseDir": "/home/ubuntu/projects/cine-gama",
+      "frontendPort": 3130,
+      "backendPort": 4130,
+      "frontendProcess": "cine-gama-frontend",
+      "backendProcess": "cine-gama-backend",
+      "applyBrand": true
+    },
+    {
+      "slug": "cinemania-cosmopolis",
+      "enabled": true,
+      "brandFrom": "Cine Cruzeiro",
+      "name": "CineMania Cosmópolis",
+      "city": "Cosmópolis - SP",
+      "instagram": "",
+      "route": "/projects/cinemania-cosmopolis",
+      "siteUrl": "https://lumixengine.com/projects/cinemania-cosmopolis",
+      "baseDir": "/home/ubuntu/projects/cinemania-cosmopolis",
+      "frontendPort": 3140,
+      "backendPort": 4140,
+      "frontendProcess": "cinemania-cosmopolis-frontend",
+      "backendProcess": "cinemania-cosmopolis-backend",
+      "applyBrand": true
     }
   ]
 }

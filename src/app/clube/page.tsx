@@ -7,7 +7,7 @@ import { CalendarCheck, Check, ChevronDown, ChevronLeft, ChevronRight, Popcorn, 
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
-import { cinemaEditorialImages, isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
+import { assetPath, cinemaBrand, cinemaEditorialImages, isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
 
 function uploadedImageUrl(value: string | undefined) {
   return publicAssetPath(value) || "";
@@ -51,17 +51,35 @@ export default function ClubePage() {
   );
   const preserveTransparentImages = settings.clubTransparentImages === true;
   const editorialImages = cinemaEditorialImages();
-  const heroImage = uploadedImageUrl(settings.clubHeroImageUrl) || editorialImages?.clubHero || "";
-  const bannerImage = uploadedImageUrl(settings.clubBannerImageUrl) || editorialImages?.clubBanner || "";
+  const isEstacao = Boolean(editorialImages);
+  const useRealPhotos = isEstacao && (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ESTACAO_REAL_PHOTOS_APPROVED === "true");
+  const brand = cinemaBrand();
+  const heroImage = uploadedImageUrl(settings.clubHeroImageUrl) || (useRealPhotos ? assetPath("/images/cine-estacao/real/fachada-02.jpg") : editorialImages?.clubHero) || "";
+  const bannerImage = uploadedImageUrl(settings.clubBannerImageUrl) || (useRealPhotos ? assetPath("/images/cine-estacao/real/fachada-01.jpg") : editorialImages?.clubBanner) || "";
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
       <SiteHeader settings={settings} />
       <main className="flex-1 overflow-hidden">
+        {isEstacao ? (
+          <section className="relative isolate flex min-h-[440px] items-end overflow-hidden sm:min-h-[510px] lg:min-h-[570px]">
+            <Image src={heroImage} alt={useRealPhotos ? "Fachada do Cine Estação Amparo" : "Cena ilustrativa de cinema"} fill priority quality={75} sizes="100vw" className="object-cover object-[center_58%] contrast-[1.04] saturate-[1.08]" />
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(9,14,23,.86),rgba(9,14,23,.3)_72%),linear-gradient(0deg,rgba(9,14,23,.95),transparent_72%)]" />
+            <div className="relative mx-auto w-full max-w-[1320px] px-4 pb-12 pt-32 sm:px-6 lg:px-8 lg:pb-16">
+              <p className="mb-4 text-xs font-black uppercase text-amber-300">Clube Cine Estação · Amparo</p>
+              <h1 className="max-w-3xl font-display text-4xl font-black leading-[1.04] sm:text-5xl lg:text-6xl">O cinema de sempre. Mais vezes no seu mês.</h1>
+              <p className="mt-5 max-w-xl text-base leading-7 text-white/85">Ingressos todo mês, vantagens na bomboniere e tudo organizado na sua conta.</p>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <a href="#planos" className="inline-flex min-h-12 items-center justify-center bg-gold-400 px-6 text-sm font-black text-slate-950 hover:bg-gold-300">Conhecer os planos</a>
+                <Link href="/conta" className="inline-flex min-h-12 items-center justify-center border border-white/50 px-6 text-sm font-black text-white hover:bg-white/10">Minha conta</Link>
+              </div>
+            </div>
+          </section>
+        ) : (
         <section className="mx-auto grid max-w-[1040px] items-center gap-7 px-4 py-6 sm:px-6 md:grid-cols-[.9fr_.7fr] lg:px-8 lg:py-9">
           <div className="relative z-10 max-w-lg">
             <h1 className="font-display text-3xl font-black leading-[1.02] sm:text-4xl lg:text-5xl">
-              Clube Cine Cruzeiro: cinema todo mês, sem pensar duas vezes.
+              {brand.clubLabel}: cinema todo mês, sem pensar duas vezes.
             </h1>
             <p className="mt-4 max-w-md text-sm leading-6 text-slate-300 sm:text-base">
               Assine, receba créditos mensais e transforme a ida ao cinema em rotina de bairro: ingresso digital, benefícios na bomboniere e fila expressa.
@@ -96,6 +114,7 @@ export default function ClubePage() {
             </div>
           </div>
         </section>
+        )}
 
         <section className="mx-auto grid max-w-[1040px] gap-5 px-4 py-5 sm:px-6 md:grid-cols-4 lg:px-8">
           <Benefit icon={<Ticket />} title="Ingressos mensais" text="Créditos renovados a cada ciclo para usar na programação." />
@@ -143,7 +162,7 @@ export default function ClubePage() {
             {bannerImage ? (
               <Image
                 src={bannerImage}
-                alt={settings.clubBannerImageUrl ? "Sala de cinema iluminada antes da sessão" : "Cena ilustrativa de espectadores com ingressos e pipoca"}
+                alt={useRealPhotos ? "Fachada do Cine Estação Amparo" : settings.clubBannerImageUrl ? "Sala de cinema iluminada antes da sessão" : "Cena ilustrativa de espectadores com ingressos e pipoca"}
                 fill
                 unoptimized={isUploadedAsset(settings.clubBannerImageUrl)}
                 quality={72}
@@ -239,7 +258,7 @@ function PlansCarousel({ plans }: { plans: SubscriptionPlan[] }) {
       className="relative"
       role="region"
       aria-roledescription="carrossel"
-      aria-label="Planos do Clube Cine Cruzeiro"
+      aria-label={`Planos do ${cinemaBrand().clubLabel}`}
       onKeyDown={(event) => {
         if (event.key === "ArrowLeft") {
           event.preventDefault();

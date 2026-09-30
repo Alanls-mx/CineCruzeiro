@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import { cinemaBrand } from "@/utils/cinema";
 
 const origin = new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://lumixengine.com").origin;
-const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || "/projects/cinecruzeiro").replace(/\/+$/, "");
+const isEstacao = process.env.NEXT_PUBLIC_CINEMA_SLUG === "cine-estacao-amparo";
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || (isEstacao ? "/projects/cine-estacao-amparo" : "/projects/cinecruzeiro")).replace(/\/+$/, "");
+const brand = cinemaBrand();
 
 export const metadata: Metadata = {
-  title: "Clube Cine Cruzeiro | Planos mensais",
-  description: "Conheça os planos e benefícios mensais do Clube Cine Cruzeiro.",
+  title: `${brand.clubLabel} | Planos mensais`,
+  description: `Conheça os planos e benefícios mensais do ${brand.clubLabel}.`,
   alternates: { canonical: `${origin}${basePath}/clube` },
 };
 
