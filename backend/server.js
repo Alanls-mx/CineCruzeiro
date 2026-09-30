@@ -8404,17 +8404,19 @@ function buildCommercialCatalog(db, now = new Date()) {
   };
 }
 
+const { studioPosterBrand } = require("./services/social-studio/tenant-branding");
+
 function socialStudioBrand(db) {
   const configured = db.settings?.socialStudioBrand || {};
   const inherited = db.settings?.emailBranding || {};
   const basePath = configuredAppBasePath();
-  const isEstacao = process.env.NEXT_PUBLIC_CINEMA_SLUG === "cine-estacao-amparo";
+  const tenantSignature = studioPosterBrand(process.env.NEXT_PUBLIC_CINEMA_SLUG);
   return normalizeSocialBrand({
     name: configured.name || db.settings?.cinemaName || db.settings?.name || inherited.name,
     logoUrl: publicAssetUrl(configured.logoUrl || db.settings?.logoUrl || inherited.logoUrl || `${basePath}/images/logo-display.webp`),
     website: configured.website || appFrontendUrl(),
-    posterWebsite: configured.posterWebsite || (isEstacao ? "www.cineestacaoamparo.com.br" : "www.cinecruzeiro.com.br"),
-    posterLogoUrl: publicAssetUrl(configured.posterLogoUrl || (isEstacao ? "/images/cine-estacao/assinatura-clara.webp" : "/images/social-studio/cine-cruzeiro-assinatura-oficial.png")),
+    posterWebsite: tenantSignature?.website || configured.posterWebsite || "www.cinecruzeiro.com.br",
+    posterLogoUrl: publicAssetUrl(tenantSignature?.signature || configured.posterLogoUrl || "/images/social-studio/cine-cruzeiro-assinatura-oficial.png"),
     primaryColor: configured.primaryColor || db.settings?.primaryColor,
     secondaryColor: configured.secondaryColor || db.settings?.secondaryColor,
     accentColor: configured.accentColor || db.settings?.accentColor,
@@ -8424,7 +8426,7 @@ function socialStudioBrand(db) {
 
 function socialStudioContext(db) {
   const studioBrand = socialStudioBrand(db);
-  const isEstacao = process.env.NEXT_PUBLIC_CINEMA_SLUG === "cine-estacao-amparo";
+  const tenantSignature = studioPosterBrand(process.env.NEXT_PUBLIC_CINEMA_SLUG);
   const catalog = buildCommercialCatalog(db);
   const catalogMovies = (catalog.movies || []).map((movie) => ({
     ...movie,
@@ -8454,11 +8456,11 @@ function socialStudioContext(db) {
   const context = {
     brand: studioBrand,
     templates: SOCIAL_TEMPLATES,
-    signatures: SOCIAL_SIGNATURES.map((signature) => ({
+    signatures: SOCIAL_SIGNATURES.filter((signature) => !tenantSignature || ["automatic", "classic", "none"].includes(signature.id)).map((signature) => ({
       ...signature,
-      imageUrl: isEstacao && signature.imageUrl
-        ? signature.id === "wordmark-3d" ? studioBrand.logoUrl : studioBrand.posterLogoUrl
-        : signature.imageUrl ? publicAssetUrl(signature.imageUrl) : ""
+      imageUrl: signature.imageUrl
+        ? tenantSignature ? studioBrand.posterLogoUrl : publicAssetUrl(signature.imageUrl)
+        : ""
     })),
     styles: [...SOCIAL_STYLES, ...require("./services/social-studio/composition-engine/config").STYLES],
     composition: {

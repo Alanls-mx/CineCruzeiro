@@ -741,12 +741,11 @@
   }
 
   function renderSignatures(selected = "automatic") {
-    const brand = state.context?.brand || {};
     const signatures = state.context?.signatures || [];
     const container = document.getElementById("socialStudioSignatures");
     if (!container) return;
     container.innerHTML = signatures.map((signature) => {
-      const source = signature.id === "classic" ? brand.logoUrl : signature.imageUrl;
+      const source = signature.imageUrl;
       const preview = source
         ? `<img src="${escapeHtml(assetUrl(source))}" alt="" loading="lazy" />`
         : `<span aria-hidden="true">${signature.id === "automatic" ? "AUTO" : "—"}</span>`;
