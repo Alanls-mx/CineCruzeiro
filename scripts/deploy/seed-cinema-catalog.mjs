@@ -16,7 +16,7 @@ const hasNewImages = slug !== "cinecruzeiro" && slug !== "cine-estacao-amparo";
 const items = [
   { id: "pipoca-doce", name: "Pipoca Doce Caramelizada", description: "Pipoca com cobertura de caramelo, porção individual.", category: "pipoca", price: 19, sort: 35 },
   { id: "agua-mineral", name: "Água Mineral 500 ml", description: "Água mineral sem gás, garrafa de 500 ml.", category: "bebida", price: 6, sort: 45 },
-  { id: "nachos-queijo", name: "Nachos com Queijo", description: "Nachos crocantes com molho de queijo servido à parte.", category: "salgado", price: 17, sort: 55 },
+  { id: "nachos-queijo", name: "Nachos com Queijo", description: "Nachos crocantes com molho de queijo servido à parte.", category: "outro", price: 17, sort: 55 },
   { id: "bala-de-goma", name: "Bala de Goma", description: "Porção individual de balas de goma sortidas.", category: "doce", price: 9, sort: 65 },
 ];
 const existingItems = ["combo-classico", "pipoca-grande", "refrigerante", "combo-familia", "chocolate-cinema", "foto-tematica"];
