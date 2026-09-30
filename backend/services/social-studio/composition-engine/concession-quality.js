@@ -57,8 +57,9 @@ function inspectConcessionLayout(scene) {
     if(elements.slice(index+1).some(later=>later.type!=='text' && later.opacity>.1 && overlap(boxOf(e),boxOf(later))>e.width*e.height*.05)) add('OCCLUDED_CONTENT',e.id,'Uma camada à frente está cobrindo o texto.');
   }
   const title=elements.find(e=>e.id==='title'),subject=elements.find(e=>e.id==='subject');
-  const name=String(scene.sourceDraft?.productName || '').replace(/\s+/g,' ').toLowerCase();
-  if(name && ![title,subject].some(e=>e?.text.replace(/\s+/g,' ').toLowerCase().includes(name))) add('PRODUCT_IDENTITY','title','Mantenha o nome do produto na campanha.');
+  const productLabel=value=>String(value || '').normalize('NFD').replace(/\p{M}/gu,'').replace(/\s+/g,' ').trim().toLowerCase();
+  const name=productLabel(scene.sourceDraft?.productName);
+  if(name && ![title,subject].some(e=>productLabel(e?.text).includes(name))) add('PRODUCT_IDENTITY','title','Mantenha o nome do produto na campanha.');
   const detail=elements.find(e=>e.id==='detail');
   if(detail && scene.sourceDraft?.productPrice && detail.text.replace(/\s+/g,' ')!==scene.sourceDraft.productPrice.replace(/\s+/g,' ')) add('PRODUCT_PRICE','detail','O preço deve corresponder ao cadastro.');
   const cta=elements.find(e=>e.id==='cta'),website=elements.find(e=>e.id==='website');

@@ -46,8 +46,13 @@ async function request(route, body) {
 const context = await request("/api/studio/context");
 const movies = context.movies.filter((movie) => movie.catalogued && (movie.posterUrl || movie.backdropUrl));
 const concessions = context.concessions.filter((item) => item.imageUrl && Number(item.price) > 0);
-const scheduled = movies.filter((movie) => movie.sessions.some((session) => session.date >= date && session.date <= lastWeekDate));
-const today = scheduled.filter((movie) => movie.sessions.some((session) => session.date === date));
+const now = Date.now();
+const futureSession = (session) => {
+  const startsAt = Date.parse(session.startsAt || `${session.date}T${session.time}:00-03:00`);
+  return Number.isFinite(startsAt) && startsAt > now;
+};
+const scheduled = movies.filter((movie) => movie.sessions.some((session) => session.date >= date && session.date <= lastWeekDate && futureSession(session)));
+const today = scheduled.filter((movie) => movie.sessions.some((session) => session.date === date && futureSession(session)));
 
 const jobs = [
   ...movies.map((movie) => ({
@@ -84,7 +89,10 @@ try {
   manifest = { cinema: slug, generatedAt: new Date().toISOString(), results: [] };
 }
 for (const job of selectedJobs) {
-  const revision = job.campaignType === "schedule" ? scheduleRevision : movieRevision;
+  const specialCopy = job.key === "bomboniere-combo-familia" || (slug === "cinemania-cosmopolis" && job.key === "bomboniere-foto-tematica");
+  const revision = job.key === "programacao-hoje" ? "signature-v4-upcoming"
+    : specialCopy ? "signature-v2-copy-v1"
+    : job.campaignType === "schedule" ? scheduleRevision : movieRevision;
   if (manifest.results.some((result) => result.key === job.key && result.status === "ready" && result.revision === revision) && !refresh) continue;
   let result;
   try {
@@ -97,10 +105,17 @@ for (const job of selectedJobs) {
         campaignType: job.campaignType,
         templateId,
         objective: `Divulgar ${job.title} no ${context.cinema.name}`,
-        subject: job.subject,
+        subject: specialCopy ? {
+          ...job.subject,
+          title: job.key === "bomboniere-combo-familia" ? "Combo Família" : "Foto Temática",
+          subtitle: job.key === "bomboniere-combo-familia" ? "PARA DIVIDIR" : "UMA LEMBRANÇA DO CINEMA",
+          auxiliaryText: job.key === "bomboniere-combo-familia" ? "Pipoca, bebidas e chocolate." : "Registre seu momento no cinema.",
+          cta: "PEÇA NO BALCÃO",
+          actionDestination: `https://www.${slug.replaceAll("-", "")}.com.br`,
+        } : job.subject,
         formats: ["feed_portrait"],
         variationCount: 1,
-        copyOptions: { seed: variant * 37 },
+        copyOptions: { seed: variant * 37, ...(specialCopy ? { locks: { headline: true, kicker: true, supportingText: true, cta: true } } : {}) },
         idempotencyKey: `all-posters-${date}-${slug}-${job.key}-${revision}${refresh ? "-refresh" : ""}-v${variant}`,
       });
       const id = created.campaign?.id;

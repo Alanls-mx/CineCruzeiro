@@ -50,3 +50,9 @@ test('imagem cadastrada preserva embalagem e cores na exportacao',()=>{
   scene.elements[0].src='/real-product';
   assert.ok(!inspectConcessionLayout(scene).issues.some(i=>i.code==='PRODUCT_ASSET_INTEGRITY'));
 });
+test('nome do produto aceita acentos corrigidos sem aceitar outro produto',()=>{
+  const scene={...base(),templateId:'concession-offer',sourceDraft:{productName:'Combo Familia'},elements:[{id:'title',type:'text',text:'Combo Família',x:70,y:180,width:800,height:100,fontSize:80,lineHeight:1.1,opacity:1}]};
+  assert.ok(!inspectConcessionLayout(scene).issues.some(i=>i.code==='PRODUCT_IDENTITY'));
+  scene.elements[0].text='Pipoca Grande';
+  assert.ok(inspectConcessionLayout(scene).issues.some(i=>i.code==='PRODUCT_IDENTITY'));
+});
