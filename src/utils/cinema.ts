@@ -60,8 +60,9 @@ export function cinemaBrand() {
 }
 
 export function cinemaEditorialImages() {
-  if (process.env.NEXT_PUBLIC_CINEMA_SLUG !== "cine-estacao-amparo") return null;
-  const image = (name: string) => assetPath(`/images/cine-estacao/${name}.webp`);
+  const slug = String(process.env.NEXT_PUBLIC_CINEMA_SLUG || "").trim().toLowerCase();
+  if (!["cine-estacao-amparo", "cinemax-piraju", "cine-gama", "cinemania-cosmopolis"].includes(slug)) return null;
+  const image = (name: string) => assetPath(`/images/cinema-editorial/${slug}/${name}.webp`);
   return {
     clubHero: image("club-hero"),
     clubBanner: image("club-banner"),

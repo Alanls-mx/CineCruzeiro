@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const { studioPosterBrand } = require("../backend/services/social-studio/tenant-branding.js");
 const { loadSignatureAsset } = require("../backend/services/social-studio/engine/assets.js");
 const { signatureDimensions } = require("../backend/services/social-studio/scene/branding.js");
+const { reserveSignature } = require("../backend/services/social-studio/composition-engine/artwork-quality.js");
 const publicRoot = fileURLToPath(new URL("../public/", import.meta.url));
 
 test("cada cinema tem assinatura 3D transparente e endereco proprio no Studio", async () => {
@@ -48,4 +49,24 @@ test("assinaturas dos cinemas usam conteudo visivel e largura legivel", async ()
     assert.ok(bounds.width >= 190 && bounds.width <= 238);
     assert.ok(bounds.height <= 202.5);
   }
+});
+
+test("a assinatura da programacao ocupa o rodape sem invadir a chamada", async () => {
+  const url = studioPosterBrand("cinemax-piraju").signature;
+  const image = await readFile(path.join(publicRoot, url.slice(1)));
+  const scene = {
+    width: 1080,
+    height: 1350,
+    formatId: "feed_portrait",
+    sourceDraft: { signatureScaleMode: "automatic" },
+    elements: [
+      { id: "cta", type: "text", text: "CONFIRA A PROGRAMACAO", x: 65, y: 1190, width: 540, height: 60, visible: true },
+      { id: "logo", type: "image", role: "logo", src: url, x: 840, y: 1190, width: 150, height: 75, visible: true },
+    ],
+  };
+  await reserveSignature(scene, async () => image);
+  const logo = scene.elements[1];
+  assert.ok(logo.width >= 200 && logo.width <= 1080 * .19);
+  assert.ok(logo.x >= 1080 * .75 && logo.x + logo.width <= 1080 * .945);
+  assert.ok(logo.y + logo.height <= 1350 * .95);
 });

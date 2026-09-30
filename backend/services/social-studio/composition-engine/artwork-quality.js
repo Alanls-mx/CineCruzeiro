@@ -2,14 +2,14 @@ const {flattenElements}=require('../scene/groups');
 const {boxOf,overlap,contrastReadings,repairConcessionContrast}=require('./concession-quality');
 const {SAFE,isMovie,isProgramme}=require('../contracts/artwork-layout');
 const {visualLength}=require('../engine/typography');
-const {loadAsset}=require('../engine/assets');
+const {loadAsset,loadSignatureAsset}=require('../engine/assets');
 const sharp=require('sharp');
 const applies=scene=>isMovie(scene) || isProgramme(scene);
 
 async function reserveSignature(scene,loadImage) {
   const logo=scene.elements.find(e=>e.role==='logo' && e.visible!==false);
   if(!logo)return;
-  const buffer=await loadAsset(logo.src,loadImage);
+  const buffer=await loadSignatureAsset(logo.src,loadImage);
   if(!buffer) {scene.elements=scene.elements.filter(e=>e!==logo);return;}
   const meta=await sharp(buffer).metadata(),ratio=meta.width/meta.height;
   const safe=SAFE[scene.formatId],w=scene.width,h=scene.height;
@@ -18,7 +18,8 @@ async function reserveSignature(scene,loadImage) {
   const reserved=scene.sourceDraft.signatureReserved;
   let selected=reserved && fits(reserved)?reserved:null;
   const scale=require('../scene/branding').signatureDimensions(w,h,ratio,scene.sourceDraft).scale;
-  for(const requestedWidth of [w*.16,w*.145,w*.13].map(value=>Math.min(w*.22,value*scale,h*.145*ratio))) {
+  const maxWidth=scene.formatId==='story'?.18:.19;
+  for(const requestedWidth of [maxWidth,maxWidth-.015,maxWidth-.03].map(value=>Math.min(w*value*scale,h*.145*ratio))) {
     if(selected)break;
     const height=requestedWidth/ratio,width=requestedWidth;
     for(const x of [w*safe.right-width,w*safe.left]) {

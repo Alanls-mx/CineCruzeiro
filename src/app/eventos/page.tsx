@@ -10,7 +10,7 @@ import type { CinemaContent } from "@/services/cinemaApi";
 import { sendPrivateEventWebhook } from "@/services/webhook";
 import type { PrivateEventRequest } from "@/types";
 import { trackMarketingEvent } from "@/utils/tracking";
-import { assetPath, cinemaBrand, cinemaEditorialImages, isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
+import { cinemaBrand, cinemaEditorialImages, isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
 
 export default function EventosPage() {
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
@@ -30,14 +30,12 @@ export default function EventosPage() {
   const [loading, setLoading] = useState(false);
   const preserveTransparentImages = settings.eventTransparentImages === true;
   const editorialImages = cinemaEditorialImages();
-  const isEstacao = Boolean(editorialImages);
-  const useRealPhotos = isEstacao && (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ESTACAO_REAL_PHOTOS_APPROVED === "true");
   const brand = cinemaBrand();
-  const eventHero = publicAssetPath(settings.eventHeroImageUrl) || (useRealPhotos ? assetPath("/images/cine-estacao/real/fachada-01.jpg") : editorialImages?.eventHero) || "";
+  const eventHero = publicAssetPath(settings.eventHeroImageUrl) || editorialImages?.eventHero || "";
   const eventGames = publicAssetPath(settings.eventGamesImageUrl) || editorialImages?.eventGames || "";
   const eventParties = publicAssetPath(settings.eventPartiesImageUrl) || editorialImages?.eventParties || "";
   const eventCorporate = publicAssetPath(settings.eventCorporateImageUrl) || editorialImages?.eventCorporate || "";
-  const eventGallery = publicAssetPath(settings.eventGalleryImageUrl) || (useRealPhotos ? assetPath("/images/cine-estacao/real/fachada-02.jpg") : editorialImages?.eventGallery) || "";
+  const eventGallery = publicAssetPath(settings.eventGalleryImageUrl) || editorialImages?.eventGallery || "";
 
   useEffect(() => {
     fetchCinemaContent()
@@ -79,21 +77,6 @@ export default function EventosPage() {
     <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
       <SiteHeader settings={settings} textPrimaryAction />
       <main className="flex-1 overflow-hidden">
-        {isEstacao ? (
-          <section className="relative isolate flex min-h-[440px] items-end overflow-hidden sm:min-h-[520px] lg:min-h-[570px]">
-            <Image src={eventHero} alt={useRealPhotos ? "Fachada do Cine Estação Amparo" : "Cena ilustrativa de evento no cinema"} fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} quality={75} sizes="100vw" className="object-cover object-[center_58%] contrast-[1.04] saturate-[1.08]" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(9,14,23,.84),rgba(9,14,23,.25)_72%),linear-gradient(0deg,rgba(9,14,23,.94),transparent_75%)]" />
-            <div className="relative mx-auto w-full max-w-[1320px] px-4 pb-12 pt-32 sm:px-6 lg:px-8 lg:pb-16">
-              <p className="mb-4 text-xs font-black uppercase text-amber-300">Eventos · Cine Estação Amparo</p>
-              <h1 className="max-w-3xl font-display text-4xl font-black leading-[1.04] sm:text-5xl lg:text-6xl">Sua ideia merece a tela grande.</h1>
-              <p className="mt-5 max-w-xl text-base leading-7 text-white/85">Reserve o cinema para comemorações, encontros ou uma sessão só para o seu grupo.</p>
-              <div className="mt-7 flex flex-wrap items-center gap-4">
-                <a href="#orcamento" className="inline-flex min-h-12 items-center justify-center bg-gold-400 px-6 text-sm font-black text-slate-950 hover:bg-gold-300">Solicitar orçamento</a>
-                <span className="text-sm text-white/80">{Number(settings.eventStartingPrice || 0) > 0 ? `A partir de ${money(Number(settings.eventStartingPrice))} por sessão` : "Proposta conforme data e formato"}</span>
-              </div>
-            </div>
-          </section>
-        ) : (
         <section className="mx-auto grid max-w-[1320px] items-center gap-12 px-4 py-12 sm:px-6 lg:grid-cols-[.9fr_1.1fr] lg:px-8 lg:py-20">
           <div>
             <h1 className="font-display text-5xl font-black leading-none sm:text-7xl">Uma sessão só para o seu grupo.</h1>
@@ -120,26 +103,7 @@ export default function EventosPage() {
             <p className="absolute bottom-0 left-0 max-w-md p-6 font-display text-3xl font-black leading-tight">A tela grande vira aniversário, campeonato, apresentação ou sessão privada.</p>
           </div>
         </section>
-        )}
 
-        {isEstacao ? (
-          <section className="mx-auto max-w-[1320px] px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
-            <div className="mb-8 max-w-2xl">
-              <p className="text-xs font-black uppercase text-amber-300">Possibilidades</p>
-              <h2 className="mt-3 font-display text-3xl font-black sm:text-4xl">Um espaço, muitas histórias.</h2>
-              <p className="mt-3 leading-7 text-slate-300">Escolha o formato. Nossa equipe confirma disponibilidade e estrutura antes de fechar a proposta.</p>
-            </div>
-            <div className="grid border-y border-white/15 md:grid-cols-3 md:divide-x md:divide-white/15">
-              <div className="border-b border-white/15 py-7 md:border-b-0 md:pr-7"><Gamepad2 className="mb-5 h-7 w-7 text-gold-400" /><h3 className="font-display text-2xl font-black">Games</h3><p className="mt-3 leading-7 text-slate-300">Jogue com os amigos em uma tela de cinema.</p></div>
-              <div className="border-b border-white/15 py-7 md:border-b-0 md:px-7"><PartyPopper className="mb-5 h-7 w-7 text-gold-400" /><h3 className="font-display text-2xl font-black">Comemorações</h3><p className="mt-3 leading-7 text-slate-300">Aniversários e encontros com um cenário fora do comum.</p></div>
-              <div className="py-7 md:pl-7"><Building2 className="mb-5 h-7 w-7 text-gold-400" /><h3 className="font-display text-2xl font-black">Empresas</h3><p className="mt-3 leading-7 text-slate-300">Apresentações e eventos para reunir sua equipe.</p></div>
-            </div>
-            <div className="mt-10 grid gap-5 md:grid-cols-[1.2fr_.8fr] md:items-center">
-              <div className="relative aspect-[3/2] overflow-hidden"><Image src={eventGallery} alt={useRealPhotos ? "Entrada do Cine Estação Amparo" : "Cena ilustrativa de cinema"} fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} quality={75} sizes="(max-width: 768px) 100vw, 60vw" className="object-cover contrast-[1.04] saturate-[1.08]" /></div>
-              <div className="md:px-8"><p className="text-xs font-black uppercase text-amber-300">No centro de Amparo</p><h2 className="mt-3 font-display text-3xl font-black">O encontro começa na chegada.</h2><p className="mt-4 leading-7 text-slate-300">Conte o que você imagina para o evento. A equipe organiza uma proposta para o seu grupo e a programação da sala.</p><a href="#orcamento" className="mt-6 inline-flex min-h-12 items-center border-b-2 border-gold-400 text-sm font-black text-white">Conversar sobre o evento</a></div>
-            </div>
-          </section>
-        ) : (
         <section className="mx-auto max-w-[1320px] px-4 py-10 sm:px-6 lg:px-8">
           <div className="grid gap-8 md:grid-cols-[1.08fr_.92fr]">
             <div className="grid gap-5">
@@ -157,7 +121,6 @@ export default function EventosPage() {
             </div>
           </div>
         </section>
-        )}
 
         <section className="bg-[#091122]">
           <div className="mx-auto grid max-w-[1320px] gap-8 px-4 py-14 sm:px-6 md:grid-cols-4 lg:px-8">

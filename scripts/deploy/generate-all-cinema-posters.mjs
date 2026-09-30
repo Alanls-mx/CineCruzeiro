@@ -24,6 +24,8 @@ if (!env.STUDIO_AUTOMATION_TOKEN) throw new Error("Token do Studio ausente.");
 
 const base = `http://127.0.0.1:${ports[slug]}`;
 const date = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+const movieRevision = "signature-v2";
+const scheduleRevision = "signature-v3";
 const weekEnd = new Date(`${date}T12:00:00Z`);
 weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
 const lastWeekDate = weekEnd.toISOString().slice(0, 10);
@@ -73,6 +75,7 @@ const jobs = [
   ] : []),
 ];
 const selectedJobs = process.argv.includes("--pilot") ? jobs.slice(0, 1) : jobs;
+const refresh = process.argv.includes("--refresh");
 
 let manifest;
 try {
@@ -80,38 +83,44 @@ try {
 } catch {
   manifest = { cinema: slug, generatedAt: new Date().toISOString(), results: [] };
 }
-const completed = new Set(manifest.results.filter((result) => result.status === "ready").map((result) => result.key));
-
 for (const job of selectedJobs) {
-  if (completed.has(job.key)) continue;
+  const revision = job.campaignType === "schedule" ? scheduleRevision : movieRevision;
+  if (manifest.results.some((result) => result.key === job.key && result.status === "ready" && result.revision === revision) && !refresh) continue;
   let result;
   try {
-    const created = await request("/api/studio/campaigns/generate", {
-      cinemaId: slug,
-      campaignType: job.campaignType,
-      templateId: job.templateId,
-      objective: `Divulgar ${job.title} no ${context.cinema.name}`,
-      subject: job.subject,
-      formats: ["feed_portrait"],
-      variationCount: 1,
-      idempotencyKey: `all-posters-${date}-${slug}-${job.key}`,
-    });
-    const id = created.campaign?.id;
-    if (!id) throw new Error("Campanha sem identificador.");
-    let campaign;
-    for (let attempt = 0; attempt < 90; attempt += 1) {
-      campaign = (await request(`/api/studio/campaigns/${id}`)).campaign;
-      if (["ready", "failed"].includes(campaign.status)) break;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    const alternatives = job.campaignType === "concession"
+      ? [job.templateId, job.templateId === "concession-combo" ? "concession-offer" : "concession-combo"]
+      : [job.templateId];
+    for (const [variant, templateId] of alternatives.entries()) {
+      const created = await request("/api/studio/campaigns/generate", {
+        cinemaId: slug,
+        campaignType: job.campaignType,
+        templateId,
+        objective: `Divulgar ${job.title} no ${context.cinema.name}`,
+        subject: job.subject,
+        formats: ["feed_portrait"],
+        variationCount: 1,
+        copyOptions: { seed: variant * 37 },
+        idempotencyKey: `all-posters-${date}-${slug}-${job.key}-${revision}${refresh ? "-refresh" : ""}-v${variant}`,
+      });
+      const id = created.campaign?.id;
+      if (!id) throw new Error("Campanha sem identificador.");
+      let campaign;
+      for (let attempt = 0; attempt < 90; attempt += 1) {
+        campaign = (await request(`/api/studio/campaigns/${id}`)).campaign;
+        if (["ready", "failed"].includes(campaign.status)) break;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      const composition = campaign?.result?.compositions?.[0];
+      result = {
+        ...job, templateId, revision, id, status: campaign?.status || "timeout",
+        previewUrl: composition?.previewUrl || "", quality: composition?.quality?.total || 0,
+        error: campaign?.error?.code || "",
+      };
+      if (result.status === "ready" || result.error !== "STUDIO_QA_REJECTED") break;
     }
-    const composition = campaign?.result?.compositions?.[0];
-    result = {
-      ...job, id, status: campaign?.status || "timeout",
-      previewUrl: composition?.previewUrl || "", quality: composition?.quality?.total || 0,
-      error: campaign?.error?.code || "",
-    };
   } catch (error) {
-    result = { ...job, status: "failed", previewUrl: "", error: error.message };
+    result = { ...job, revision, status: "failed", previewUrl: "", error: error.message };
   }
   manifest.results = [...manifest.results.filter((item) => item.key !== job.key), result];
   await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
