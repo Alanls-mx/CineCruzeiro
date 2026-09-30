@@ -280,6 +280,7 @@ function storedLocalUploadUrl(url) {
 function storedEditorialImageUrl(url) {
   const value = storedAssetUrl(url);
   if (value.startsWith("/uploads/")) return value;
+  if (/^\/images\/cinema-editorial\/(cine-estacao-amparo|cinemax-piraju|cine-gama|cinemania-cosmopolis)\/(club-hero|club-banner|events-hero|events-games|events-parties|events-corporate|events-gallery)\.webp$/.test(value)) return value;
   try {
     const parsed = new URL(value);
     return parsed.protocol === "https:" && parsed.hostname === "images.unsplash.com" ? value : "";
