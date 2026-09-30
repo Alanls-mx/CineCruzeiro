@@ -43,6 +43,19 @@ test('agrupa horários duplicados, ordena os dias e calcula título factual',()=
   model.days.push({date:'2026-09-30'});
   assert.match(programTitle(model,'2026-09-24','Cine Cruzeiro','sessions-week'),/DA SEMANA/);
 });
+test('dia e horario compartilham alinhamento em cartazes com datas diferentes',async()=>{
+  const dated=movies.slice(0,2).map((movie,index)=>({...movie,sessions:movie.sessions.map(session=>({...session,date:index?'2026-09-25':'2026-09-24'}))}));
+  const rendered=await engine.renderSocialPost({templateId:'multi-movies',movieIds:dated.map(movie=>movie.id),formatId:'feed_portrait'}, {...context,movies:dated},{loadImage,skipRaster:true});
+  const elements=flattenElements(rendered.scene.elements);
+  for(let index=0;index<2;index++) {
+    const day=elements.find(element=>element.id===`movie-day-${index}-0`);
+    const time=elements.find(element=>element.id===`movie-sessions-${index}-0`);
+    assert.ok(day && time);
+    assert.equal(day.align,time.align);
+    assert.equal(day.x,time.x);
+    assert.equal(day.width,time.width);
+  }
+});
 test('não exporta horários alterados, conteúdo oculto nem ordem invertida',async()=>{
   const rendered=await engine.renderSocialPost({templateId:'multi-movies',movieIds:['p0','p1'],programLayout:'program-list'},context,{loadImage,skipRaster:true});
   for(const kind of ['time','hidden','order','association']) {

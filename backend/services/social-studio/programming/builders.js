@@ -98,7 +98,7 @@ function movieBlock(s,movie,index,box,{horizontal=false,posters=true,center=fals
   s.tx(`movie-title-${index}`,movie.title,textX,textY,textW,titleH,42,{fontFamily:'Social Display',fontWeight:900,hierarchy:'secondary',minimum:28,align:center?'center':'left'});
   rows.forEach((row,i)=>{
     const ry=textY+titleH+i*rowH;
-    if(!s.singleDay)s.tx(`movie-day-${index}-${i}`,dayLabel(row.date),textX,ry,textW,34*u,28,{fill:s.accent,maxLines:1});
+    if(!s.singleDay)s.tx(`movie-day-${index}-${i}`,dayLabel(row.date),textX,ry,textW,34*u,28,{fill:s.accent,maxLines:1,align:center?'center':'left'});
     s.tx(`movie-sessions-${index}-${i}`,row.times.map(timeLabel).join(' • '),textX,ry+(s.singleDay?4:38)*u,textW,70*u,36,{fill:s.accent,minimum:28,maxLines:2,hierarchy:'primary',align:center?'center':'left'});
   });
 }

@@ -17,7 +17,7 @@ for (const slug of slugs) {
     const specialCopy = result.key === "bomboniere-combo-familia" || (slug === "cinemania-cosmopolis" && result.key === "bomboniere-foto-tematica");
     const expectedRevision = result.key === "programacao-hoje" ? "signature-v4-upcoming"
       : specialCopy ? "signature-v2-copy-v1"
-      : result.campaignType === "schedule" ? "signature-v3" : "signature-v2";
+      : result.campaignType === "schedule" ? "signature-v4-aligned" : "signature-v2";
     if (result.revision !== expectedRevision) throw new Error(`${slug}/${result.key}: versao ${result.revision}, esperada ${expectedRevision}.`);
     if (!/^\/uploads\/social-studio-automation\/[\w.-]+\.png$/.test(result.previewUrl)) {
       throw new Error(`${slug}/${result.key}: URL de previa invalida.`);
@@ -30,10 +30,18 @@ await fs.mkdir(outputDir, { recursive: true });
 let next = 0;
 let completed = 0;
 const failures = [];
+const fileName = (job) => {
+  const label = job.key.startsWith("filme-")
+    ? `filme-${job.title.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`
+    : job.key;
+  return `${job.slug}-${label}.png`;
+};
+const names = jobs.map(fileName);
+if (new Set(names).size !== names.length) throw new Error("Nomes de arquivo duplicados no lote.");
 async function worker() {
   while (next < jobs.length) {
     const job = jobs[next++];
-    const destination = path.join(outputDir, `${job.slug}-${job.key}.png`);
+    const destination = path.join(outputDir, fileName(job));
     try {
       const url = `https://lumixengine.com/projects/${job.slug}${job.previewUrl}`;
       const response = await fetch(url, { signal: AbortSignal.timeout(60000) });

@@ -25,7 +25,7 @@ if (!env.STUDIO_AUTOMATION_TOKEN) throw new Error("Token do Studio ausente.");
 const base = `http://127.0.0.1:${ports[slug]}`;
 const date = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 const movieRevision = "signature-v2";
-const scheduleRevision = "signature-v3";
+const scheduleRevision = "signature-v4-aligned";
 const weekEnd = new Date(`${date}T12:00:00Z`);
 weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
 const lastWeekDate = weekEnd.toISOString().slice(0, 10);
@@ -116,7 +116,7 @@ for (const job of selectedJobs) {
         formats: ["feed_portrait"],
         variationCount: 1,
         copyOptions: { seed: variant * 37, ...(specialCopy ? { locks: { headline: true, kicker: true, supportingText: true, cta: true } } : {}) },
-        idempotencyKey: `all-posters-${date}-${slug}-${job.key}-${revision}${refresh ? "-refresh" : ""}-v${variant}`,
+        idempotencyKey: `all-posters-${date}-${slug}-${job.key}-${revision}${refresh ? "-refresh" : ""}-v${variant}${specialCopy ? "-accent" : ""}`,
       });
       const id = created.campaign?.id;
       if (!id) throw new Error("Campanha sem identificador.");
