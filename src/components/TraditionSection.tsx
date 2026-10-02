@@ -43,7 +43,7 @@ export function TraditionSection() {
               <Heart className="h-5 w-5 shrink-0 text-rose-400" />
               <p className="text-xs font-semibold leading-relaxed text-slate-200">
                 Uma experiência local, afetiva e simples: escolha o filme, pague no Pix e receba
-                seu ingresso digital pelo WhatsApp.
+                seu ingresso digital pelo site.
               </p>
             </div>
           </div>

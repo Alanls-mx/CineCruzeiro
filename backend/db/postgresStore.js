@@ -2,7 +2,7 @@ const { Pool } = require("pg");
 const { AsyncLocalStorage } = require("async_hooks");
 const { calendarDateKey } = require("../services/calendarDateService");
 const { randomUUID } = require("node:crypto");
-const { captureSnapshot, rememberSnapshot, snapshotBaseline, changesBetween, assertCurrent, deleteRemovedRows, createSnapshotWriter } = require("./snapshotChanges");
+const { captureSnapshot, rememberSnapshot, snapshotBaseline, changesBetween, assertCurrent, deleteRemovedRows, deleteRemovedSessions, createSnapshotWriter } = require("./snapshotChanges");
 const { poolConfiguration } = require("./databasePolicy");
 const { createSnapshotCache } = require("./snapshotCache");
 const { startCacheInvalidation } = require("./cacheInvalidation");
@@ -1285,6 +1285,8 @@ async function writeDbToPostgres(db, { normalize = (value) => value, importSnaps
       ]);
     }
 
+    await deleteRemovedSessions(client, changes);
+
     if (!existingClient) {
       await client.query("COMMIT");
       invalidateSnapshotCache();
@@ -1346,6 +1348,106 @@ async function appendSystemLogToPostgres(log) {
   } finally {
     client.release();
   }
+}
+
+async function enqueueCrmWebhookEvent(event) {
+  const result = await getPool().query(`
+    WITH capacity AS (
+      SELECT count(*) < 10000 AS available
+      FROM crm_webhook_outbox
+      WHERE status IN ('queued', 'processing')
+    )
+    INSERT INTO crm_webhook_outbox (id, event_name, payload, max_attempts)
+    SELECT $1, $2, $3::jsonb, $4 FROM capacity WHERE available
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id
+  `, [event.id, event.eventName, JSON.stringify(event.payload), event.maxAttempts]);
+  if (!result.rowCount) {
+    const error = new Error("A fila persistente do CRM atingiu o limite temporário.");
+    error.code = "CRM_OUTBOX_FULL";
+    error.statusCode = 503;
+    throw error;
+  }
+  return result.rows[0]?.id || event.id;
+}
+
+async function claimNextCrmWebhookEvent() {
+  const result = await getPool().query(`
+    WITH candidate AS (
+      SELECT id
+      FROM crm_webhook_outbox
+      WHERE (status = 'queued' AND next_attempt_at <= now())
+         OR (status = 'processing' AND locked_at < now() - interval '2 minutes')
+      ORDER BY created_at, id
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    UPDATE crm_webhook_outbox AS outbox
+    SET status = 'processing', attempts = outbox.attempts + 1,
+        locked_at = now(), updated_at = now()
+    FROM candidate
+    WHERE outbox.id = candidate.id
+    RETURNING outbox.id, outbox.event_name, outbox.payload, outbox.attempts,
+              outbox.max_attempts, outbox.created_at
+  `);
+  const row = result.rows[0];
+  return row ? {
+    id: row.id,
+    eventName: row.event_name,
+    payload: jsonValue(row.payload, {}),
+    attempts: num(row.attempts),
+    maxAttempts: num(row.max_attempts, 3),
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : ""
+  } : null;
+}
+
+async function updateCrmWebhookEvent(id, { status, httpStatus = 0, errorCode = "", nextAttemptAt = "" } = {}) {
+  const result = await getPool().query(`
+    UPDATE crm_webhook_outbox
+    SET status = $2,
+        last_http_status = NULLIF($3, 0),
+        last_error_code = NULLIF($4, ''),
+        next_attempt_at = COALESCE(NULLIF($5, '')::timestamptz, now()),
+        locked_at = NULL,
+        delivered_at = CASE WHEN $2 = 'delivered' THEN now() ELSE delivered_at END,
+        updated_at = now()
+    WHERE id = $1
+  `, [String(id), String(status), Number(httpStatus || 0), String(errorCode || "").slice(0, 80), nextAttemptAt]);
+  return Number(result.rowCount || 0) > 0;
+}
+
+async function summarizeCrmWebhookOutbox() {
+  const result = await getPool().query(`
+    SELECT status, count(*)::int AS count,
+           min(created_at) FILTER (WHERE status IN ('queued', 'processing')) AS oldest_pending_at
+    FROM crm_webhook_outbox
+    GROUP BY status
+  `);
+  const summary = { queued: 0, processing: 0, delivered: 0, dead: 0, cancelled: 0, oldestPendingAt: "" };
+  for (const row of result.rows) {
+    if (Object.hasOwn(summary, row.status)) summary[row.status] = Number(row.count || 0);
+    if (row.oldest_pending_at) summary.oldestPendingAt = new Date(row.oldest_pending_at).toISOString();
+  }
+  return summary;
+}
+
+async function requeueDeadCrmWebhookEvents() {
+  const result = await getPool().query(`
+    UPDATE crm_webhook_outbox
+    SET status = 'queued', attempts = 0, next_attempt_at = now(), locked_at = NULL,
+        last_http_status = NULL, last_error_code = NULL, updated_at = now()
+    WHERE status = 'dead'
+  `);
+  return Number(result.rowCount || 0);
+}
+
+async function pruneCrmWebhookOutbox() {
+  const result = await getPool().query(`
+    DELETE FROM crm_webhook_outbox
+    WHERE (status = 'delivered' AND delivered_at < now() - interval '30 days')
+       OR (status IN ('dead', 'cancelled') AND updated_at < now() - interval '90 days')
+  `);
+  return Number(result.rowCount || 0);
 }
 
 async function listSystemLogsFromPostgres(filters = {}) {
@@ -1574,6 +1676,12 @@ module.exports = {
   withPostgresMutationLock,
   appendAuditLogToPostgres,
   appendSystemLogToPostgres,
+  enqueueCrmWebhookEvent,
+  claimNextCrmWebhookEvent,
+  updateCrmWebhookEvent,
+  summarizeCrmWebhookOutbox,
+  requeueDeadCrmWebhookEvents,
+  pruneCrmWebhookOutbox,
   listSystemLogsFromPostgres,
   pruneSystemLogsFromPostgres,
   checkPostgresReadiness,

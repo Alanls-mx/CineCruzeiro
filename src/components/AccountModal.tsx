@@ -306,7 +306,7 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
               <input
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
-                placeholder="WhatsApp"
+                placeholder="Telefone"
                 className="w-full rounded-xl bg-brand-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
               />
               <input

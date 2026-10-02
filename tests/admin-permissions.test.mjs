@@ -24,13 +24,14 @@ test("financial export is independently assignable", () => {
   assert.equal(permissions.adminHasPermission(exporter, "ticket_finance.export"), true);
 });
 
-test("WhatsApp permissions separate reading, replying and administration", () => {
-  const viewer = { role: "operator", useCustomPermissions: true, adminPermissions: ["whatsapp.view"] };
-  const agent = { role: "operator", useCustomPermissions: true, adminPermissions: ["whatsapp.view", "whatsapp.reply"] };
-  const manager = { role: "operator", useCustomPermissions: true, adminPermissions: ["whatsapp.manage"] };
-  assert.equal(permissions.adminHasPermission(viewer, "whatsapp.reply"), false);
-  assert.equal(permissions.adminHasPermission(agent, "whatsapp.reply"), true);
-  assert.equal(permissions.adminHasPermission(agent, "whatsapp.manage"), false);
-  assert.equal(permissions.adminHasPermission(manager, "whatsapp.view"), true);
-  assert.equal(permissions.adminHasPermission(manager, "whatsapp.manage"), true);
+test("retired WhatsApp grants are ignored for every role and saved custom permissions", () => {
+  for (const role of ["owner", "master", "manager", "operator", "seller"]) {
+    for (const useCustomPermissions of [false, true]) {
+      const user = { role, useCustomPermissions, adminPermissions: ["orders.view", "whatsapp.manage", "whatsapp.view", "whatsapp.reply"] };
+      for (const permission of ["whatsapp.view", "whatsapp.reply", "whatsapp.manage"]) {
+        assert.equal(permissions.adminHasPermission(user, permission), false);
+      }
+      assert.equal(permissions.adminHasPermission(user, "orders.view"), true);
+    }
+  }
 });

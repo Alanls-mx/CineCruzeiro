@@ -40,9 +40,6 @@ const ADMIN_PERMISSION_KEYS = [
   "social_studio.view",
   "social_studio.create",
   "social_studio.delete",
-  "whatsapp.view",
-  "whatsapp.reply",
-  "whatsapp.manage",
   "club.view",
   "club.manage",
   "club.credits",
@@ -64,7 +61,6 @@ const LEGACY_ADMIN_PERMISSION_EXPANSIONS = {
   "orders.manage": ["orders.view", "orders.edit", "orders.cancel", "orders.archive", "orders.delete", "orders.refund", "orders.print", "orders.resend", "payments.view", "tickets.view"],
   "concessions.manage": ["concessions.view", "concessions.sell", "concessions.edit", "concessions.delete", "concessions.refund"],
   "marketing.manage": ["marketing.view", "marketing.manage"],
-  "whatsapp.manage": ["whatsapp.view", "whatsapp.reply", "whatsapp.manage"],
   "club.manage": ["club.view", "club.manage", "club.credits"],
   "integrations.manage": ["integrations.view", "integrations.manage"],
   "settings.manage": ["settings.view", "settings.manage", "users.manage"],
@@ -117,9 +113,7 @@ function roleAdminPermissions(role) {
       "payments.view",
       "box_office.sell",
       "concessions.view",
-      "concessions.sell",
-      "whatsapp.view",
-      "whatsapp.reply"
+      "concessions.sell"
     ];
   }
   return [];
@@ -133,7 +127,7 @@ function effectiveAdminPermissions(user) {
 }
 
 function adminHasPermission(user, permission) {
-  return roleAlias(user?.role) === "owner" || effectiveAdminPermissions(user).includes(permission);
+  return effectiveAdminPermissions(user).includes(permission);
 }
 
 module.exports = {

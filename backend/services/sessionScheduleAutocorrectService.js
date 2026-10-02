@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { isDeletedMovie } = require("./movieCatalogLifecycleService");
 const { movieDurationMinutes, roomIdentity, sessionStartsAt } = require("./sessionRoomConflictService");
 
 const INACTIVE_STATUSES = new Set(["cancelled", "hidden", "archived"]);
@@ -43,7 +44,7 @@ function buildSessionAutocorrectPlan({ movies = [], rooms = [], tickets = [], or
     ...tickets.map((ticket) => ticket.sessionId),
     ...orders.map((order) => order.sessionId)
   ].filter(Boolean));
-  const entries = movies.flatMap((movie) => (movie.sessions || []).map((session) => {
+  const entries = movies.filter((movie) => !isDeletedMovie(movie)).flatMap((movie) => (movie.sessions || []).map((session) => {
     const startsAt = sessionStartsAt(session)?.getTime();
     return {
       movie,
@@ -118,4 +119,3 @@ function buildSessionAutocorrectPlan({ movies = [], rooms = [], tickets = [], or
 }
 
 module.exports = { buildSessionAutocorrectPlan, planHash, ceilToStep, _test: { cinemaParts, overlaps, ceilToStep } };
-

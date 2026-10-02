@@ -1,3 +1,6 @@
+const { isValidCalendarDate, isValidSessionTime } = require("./calendarDateService");
+const { isDeletedMovie } = require("./movieCatalogLifecycleService");
+
 function normalizedStatus(value) {
   return String(value || "available").trim().toLowerCase();
 }
@@ -5,7 +8,7 @@ function normalizedStatus(value) {
 function sessionStartsAt(session = {}) {
   const date = String(session.date || "").slice(0, 10);
   const time = String(session.time || session.timeLabel || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  if (!isValidCalendarDate(date) || !isValidSessionTime(time)) return null;
   const parsed = new Date(`${date}T${time}:00-03:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
@@ -36,7 +39,7 @@ function findSessionRoomConflicts({ movies = [], candidateMovie = {}, candidate 
   if (!candidateStart || ["cancelled", "hidden", "archived"].includes(normalizedStatus(candidate.status))) return [];
   const candidateEnd = new Date(candidateStart.getTime() + movieDurationMinutes(candidateMovie) * 60 * 1000);
   const candidateRoom = roomIdentity(candidate);
-  const scheduled = movies.flatMap((movie) => (movie.sessions || []).map((session) => ({ movie, session }))).concat(additional);
+  const scheduled = movies.filter((movie) => !isDeletedMovie(movie)).flatMap((movie) => (movie.sessions || []).map((session) => ({ movie, session }))).concat(additional);
 
   return scheduled.flatMap(({ movie, session }) => {
     if (!session || String(session.id || "") === String(ignoreSessionId || candidate.id || "")) return [];

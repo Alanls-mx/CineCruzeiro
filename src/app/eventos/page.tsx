@@ -134,7 +134,7 @@ export default function EventosPage() {
         <section id="orcamento" className="mx-auto grid max-w-[1320px] gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[.85fr_1.15fr] lg:px-8">
           <div className="self-start">
             <h2 className="font-display text-4xl font-black sm:text-5xl">Solicitar orçamento</h2>
-            <p className="mt-4 leading-7 text-slate-300">Campos rápidos, só o necessário para a equipe retornar pelo WhatsApp com uma proposta real.</p>
+            <p className="mt-4 leading-7 text-slate-300">Campos rápidos, só o necessário para a equipe retornar por e-mail ou telefone com uma proposta.</p>
             <div className="mt-8 grid gap-4 text-sm font-bold text-slate-300">
               <span className="flex items-center gap-3"><UsersRound className="h-5 w-5 text-gold-400" /> Ideal para grupos, turmas e empresas.</span>
               <span className="flex items-center gap-3"><CalendarDays className="h-5 w-5 text-gold-400" /> Data e horário dependem da programação.</span>
@@ -143,7 +143,7 @@ export default function EventosPage() {
           </div>
           <form onSubmit={submit} className="grid gap-4 bg-brand-900/65 p-5 shadow-2xl shadow-blue-950/20 sm:grid-cols-2 sm:p-7">
             <Field label="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
-            <Field label="WhatsApp" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} required />
+            <Field label="Telefone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} required />
             <Field label="E-mail" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} required />
             <label className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
               Site

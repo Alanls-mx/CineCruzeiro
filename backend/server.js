@@ -19,6 +19,12 @@ const {
   withPostgresMutationLock,
   appendAuditLogToPostgres,
   appendSystemLogToPostgres,
+  enqueueCrmWebhookEvent,
+  claimNextCrmWebhookEvent,
+  updateCrmWebhookEvent,
+  summarizeCrmWebhookOutbox,
+  requeueDeadCrmWebhookEvents,
+  pruneCrmWebhookOutbox,
   listSystemLogsFromPostgres,
   pruneSystemLogsFromPostgres,
   checkPostgresReadiness,
@@ -30,6 +36,8 @@ const {
 const paymentService = require("./services/paymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
+const { createDiscordWebhookService } = require("./services/discordWebhookService");
+const { CRM_EVENT_TYPES, normalizeCrmEvents, sendCrmWebhook, createCrmWebhookWorker } = require("./services/crmWebhookDeliveryService");
 const emailService = require("./services/emailService");
 const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
 const { armCampaignCoupon, syncCampaignCouponSchedule, syncScheduledCampaignCoupons } = require("./services/emailCampaignCouponService");
@@ -74,7 +82,8 @@ const {
 } = require("./services/financialRecognitionService");
 const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
 const { PRE_PREMIERE_WINDOW_MS, moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
-const { calendarDateKey } = require("./services/calendarDateService");
+const { calendarDateKey, isValidCalendarDate, isValidSessionTime } = require("./services/calendarDateService");
+const { isDeletedMovie, movieHistory, assertMovieCanBeDeleted, deletedMovieRecord } = require("./services/movieCatalogLifecycleService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
 const { buildSessionAutocorrectPlan } = require("./services/sessionScheduleAutocorrectService");
 const {
@@ -125,6 +134,9 @@ const {
 
 const requestContext = new AsyncLocalStorage();
 const mutationContext = new AsyncLocalStorage();
+const discordWebhookService = createDiscordWebhookService({
+  logger: (entry) => console.warn(JSON.stringify({ level: "warn", ...entry }))
+});
 const adminTwoFactorChallenges = new Map();
 const memorySeatHolds = new Map();
 const paymentReconciliationAttempts = new Map();
@@ -135,10 +147,13 @@ let jsonMutationQueue = Promise.resolve();
 let movieImageMaintenanceRunning = false;
 let emailAttachmentMaintenanceRunning = false;
 let emailCampaignWorker = null;
+let crmWebhookWorker = null;
+let crmWebhookRuntimeConfig = null;
+let crmWebhookConfigVersion = 0;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "039_database_runtime.sql";
+const LATEST_SCHEMA_MIGRATION = "040_crm_webhook_outbox.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -379,10 +394,35 @@ function getJwtSecret() {
   });
 }
 
-function getCrmWebhookUrl(db) {
+function getCrmWebhookConfig(db) {
   const configured = db ? integrationConfigService.resolvedConfig(db, "crm") : null;
-  if (configured?.enabled && configured?.url) return configured.url;
-  return getFirstEnv(CRM_WEBHOOK_ENV_KEYS)?.value || "";
+  const envUrl = getFirstEnv(CRM_WEBHOOK_ENV_KEYS)?.value || "";
+  const envSecret = getFirstEnv(["CRM_WEBHOOK_SECRET", "LUMIX_WEBHOOK_SECRET"])?.value || "";
+  const storedEnabled = Boolean(configured?.enabled && configured?.url);
+  const url = storedEnabled ? configured.url : envUrl;
+  const secret = storedEnabled ? (configured.secret || envSecret) : (envSecret || configured?.secret || "");
+  const events = normalizeCrmEvents(configured?.events ?? ["order.created", "payment.approved", "ticket.used"]);
+  const timeout = Math.min(30000, Math.max(1000, Number(configured?.timeout) || 8000));
+  const retryLimit = Math.min(8, Math.max(0, Number.isInteger(Number(configured?.retryLimit)) ? Number(configured.retryLimit) : 2));
+  const enabled = storedEnabled || Boolean(envUrl);
+  return { ...(configured || {}), enabled, configured: Boolean(url && secret), url, secret, events, timeout, retryLimit };
+}
+
+function configureDiscordWebhook(db) {
+  discordWebhookService.setConfig(integrationConfigService.resolvedConfig(db, "discord") || {});
+}
+
+function configureCrmWebhookWorker(db) {
+  crmWebhookRuntimeConfig = getCrmWebhookConfig(db);
+  const version = ++crmWebhookConfigVersion;
+  const worker = getCrmWebhookWorker();
+  worker.stop();
+  if (crmWebhookRuntimeConfig.enabled && crmWebhookRuntimeConfig.configured && crmWebhookRuntimeConfig.events.length) {
+    const timer = setTimeout(() => {
+      if (version === crmWebhookConfigVersion) worker.start();
+    }, 0);
+    timer.unref?.();
+  }
 }
 
 function getPasswordResetEmailWebhookUrl(db) {
@@ -597,6 +637,7 @@ function logEvent(level, event, fields = {}) {
   const line = JSON.stringify(payload);
   if (level === "error") console.error(line);
   else console.log(line);
+  discordWebhookService.enqueue({ level, event, requestId: payload.requestId, timestamp: payload.timestamp, fields });
   if (postgresEnabled()) {
     const [category = "system"] = String(event || "system").split(".");
     void appendSystemLogToPostgres({
@@ -1409,7 +1450,6 @@ function customerMutationOriginAllowed(req) {
 }
 
 function requiredAdminRoles(pathname, method) {
-  if (pathname.startsWith("/api/admin/whatsapp")) return ["owner", "manager", "operator"];
   if (pathname === "/api/admin/concession-counter-sales" && method === "POST") return ["owner", "manager", "operator"];
   if (/^\/api\/admin\/concession-sales\/[^/]+\/print$/.test(pathname) && method === "GET") return ["owner", "manager", "operator"];
   if (pathname.startsWith("/api/admin/concession-sales")) return ["owner", "manager"];
@@ -1437,13 +1477,6 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
-  if (pathname.startsWith("/api/admin/whatsapp")) {
-    if (method === "GET") return "whatsapp.view";
-    if (/^\/api\/admin\/whatsapp\/api\/whatsapp\/conversations\/[^/]+\/assign$/.test(pathname)) return "whatsapp.manage";
-    return /^\/api\/admin\/whatsapp\/api\/whatsapp\/conversations(?:\/|$)/.test(pathname)
-      ? "whatsapp.reply"
-      : "whatsapp.manage";
-  }
   if (pathname === "/api/admin/concession-counter-sales") return "concessions.sell";
   if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
   if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
@@ -1615,7 +1648,7 @@ function normalizeDb(db) {
     cinemaName: "Cine Cruzeiro",
     defaultTicketPrice: 10,
     currency: "BRL",
-    salesChannel: "WhatsApp + Pix",
+    salesChannel: "Site + Pix",
     heroTrailerBackgroundEnabled: false,
     announcementEnabled: true,
     announcementText: "Promoção permanente no Cine Cruzeiro - Ingressos a apenas R$ 10,00",
@@ -1637,6 +1670,7 @@ function normalizeDb(db) {
     },
     ...db.settings
   };
+  if (/whatsapp/i.test(String(db.settings.salesChannel || ""))) db.settings.salesChannel = "Site + Pix";
   db.settings.ticketDistributorRules = normalizeTicketDistributorRules(db.settings.ticketDistributorRules);
   [
     "clubHeroImageUrl",
@@ -1776,15 +1810,17 @@ function normalizeDb(db) {
   ];
   db.ads ||= [
     {
-      id: "banner-whatsapp-pix",
-      title: "Compre pelo WhatsApp e pague no Pix",
+      id: "banner-site-pix",
+      title: "Compre pelo site e pague no Pix",
       placement: "movie",
       imageUrl: "",
       linkUrl: "",
       active: true
     }
   ];
-  db.ads = db.ads.map((item) => normalizeAd(item, item));
+  db.ads = db.ads
+    .filter((item) => item.id !== "banner-whatsapp-pix" && !/whatsapp/i.test(`${item.title || ""} ${item.description || ""}`))
+    .map((item) => normalizeAd(item, item));
   db.users ||= [
     {
       id: "admin",
@@ -1853,6 +1889,120 @@ async function withCriticalMutation(callback) {
   } finally {
     release();
   }
+}
+
+function createCrmOutboxRepository() {
+  async function mutateJson(mutator) {
+    return withCriticalMutation(async () => {
+      const db = await readDb();
+      db.crmWebhookOutbox ||= [];
+      const result = await mutator(db.crmWebhookOutbox);
+      await writeDb(db);
+      return result;
+    });
+  }
+
+  return {
+    async enqueue(event) {
+      if (postgresEnabled()) return enqueueCrmWebhookEvent(event);
+      return mutateJson((items) => {
+        if (items.filter((item) => ["queued", "processing"].includes(item.status)).length >= 10000) {
+          throw Object.assign(new Error("A fila persistente do CRM atingiu o limite temporário."), { code: "CRM_OUTBOX_FULL", statusCode: 503 });
+        }
+        if (items.some((item) => item.id === event.id)) return event.id;
+        items.push({ ...event, status: "queued", attempts: 0, nextAttemptAt: new Date().toISOString(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+        return event.id;
+      });
+    },
+    async claimNext() {
+      if (postgresEnabled()) return claimNextCrmWebhookEvent();
+      return mutateJson((items) => {
+        const now = Date.now();
+        const item = items.filter((entry) => (entry.status === "queued" && new Date(entry.nextAttemptAt).getTime() <= now)
+          || (entry.status === "processing" && now - new Date(entry.lockedAt || 0).getTime() > 120000))
+          .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))[0];
+        if (!item) return null;
+        item.status = "processing";
+        item.attempts = Number(item.attempts || 0) + 1;
+        item.lockedAt = new Date(now).toISOString();
+        item.updatedAt = item.lockedAt;
+        return structuredCloneSafe(item);
+      });
+    },
+    async deliver(id, httpStatus) {
+      if (postgresEnabled()) return updateCrmWebhookEvent(id, { status: "delivered", httpStatus });
+      return mutateJson((items) => {
+        const item = items.find((entry) => entry.id === id);
+        if (!item) return false;
+        Object.assign(item, { status: "delivered", httpStatus, deliveredAt: new Date().toISOString(), updatedAt: new Date().toISOString(), lockedAt: "" });
+        return true;
+      });
+    },
+    async fail(id, failure) {
+      if (postgresEnabled()) return updateCrmWebhookEvent(id, failure);
+      return mutateJson((items) => {
+        const item = items.find((entry) => entry.id === id);
+        if (!item) return false;
+        Object.assign(item, { status: failure.status, httpStatus: failure.httpStatus, errorCode: failure.errorCode, nextAttemptAt: failure.nextAttemptAt || "", updatedAt: new Date().toISOString(), lockedAt: "" });
+        return true;
+      });
+    },
+    async cancel(id, reason) {
+      if (postgresEnabled()) return updateCrmWebhookEvent(id, { status: "cancelled", errorCode: reason });
+      return mutateJson((items) => {
+        const item = items.find((entry) => entry.id === id);
+        if (!item) return false;
+        Object.assign(item, { status: "cancelled", errorCode: reason, updatedAt: new Date().toISOString(), lockedAt: "" });
+        return true;
+      });
+    },
+    async summary() {
+      if (postgresEnabled()) return summarizeCrmWebhookOutbox();
+      const db = await readDb();
+      const summary = { queued: 0, processing: 0, delivered: 0, dead: 0, cancelled: 0, oldestPendingAt: "" };
+      for (const item of db.crmWebhookOutbox || []) {
+        if (Object.hasOwn(summary, item.status)) summary[item.status] += 1;
+        if (["queued", "processing"].includes(item.status) && (!summary.oldestPendingAt || item.createdAt < summary.oldestPendingAt)) summary.oldestPendingAt = item.createdAt;
+      }
+      return summary;
+    },
+    async retryDead() {
+      if (postgresEnabled()) return requeueDeadCrmWebhookEvents();
+      return mutateJson((items) => {
+        let count = 0;
+        items.forEach((item) => {
+          if (item.status !== "dead") return;
+          Object.assign(item, { status: "queued", attempts: 0, nextAttemptAt: new Date().toISOString(), lockedAt: "", httpStatus: 0, errorCode: "", updatedAt: new Date().toISOString() });
+          count += 1;
+        });
+        return count;
+      });
+    },
+    async prune() {
+      if (postgresEnabled()) return pruneCrmWebhookOutbox();
+      return mutateJson((items) => {
+        const now = Date.now();
+        const keep = items.filter((item) => {
+          const age = now - new Date(item.deliveredAt || item.updatedAt || item.createdAt).getTime();
+          return !((item.status === "delivered" && age > 30 * 86400000) || (["dead", "cancelled"].includes(item.status) && age > 90 * 86400000));
+        });
+        const removed = items.length - keep.length;
+        items.splice(0, items.length, ...keep);
+        return removed;
+      });
+    }
+  };
+}
+
+function getCrmWebhookWorker() {
+  if (!crmWebhookWorker) {
+    crmWebhookWorker = createCrmWebhookWorker({
+      repository: createCrmOutboxRepository(),
+      getConfig: async () => crmWebhookRuntimeConfig || getCrmWebhookConfig(await readDb()),
+      logger: (level, event, metadata) => logEvent(level, event, metadata)
+    });
+  }
+  return crmWebhookWorker;
 }
 
 function pruneMemorySeatHolds() {
@@ -2068,80 +2218,11 @@ function adminSessionMaxAge(req) {
   return isDesktopAdminRequest(req) ? DESKTOP_ADMIN_SESSION_SECONDS : ADMIN_SESSION_SECONDS;
 }
 
-const WHATSAPP_ADMIN_PROXY_PREFIX = "/api/admin/whatsapp";
-
 function adminPathForRequest(req, suffix = "") {
   const forwardedPrefix = String(req.headers["x-forwarded-prefix"] || "").replace(/\/+$/, "");
   return `${forwardedPrefix}/admin${suffix}`;
 }
 
-function whatsappCompanionConfig() {
-  const url = String(process.env.WHATSAPP_SERVICE_URL || "http://127.0.0.1:3335").replace(/\/+$/, "");
-  const token = String(process.env.WHATSAPP_INTERNAL_TOKEN || "").trim();
-  return { url, token };
-}
-
-async function proxyWhatsAppAdminRequest(req, res, pathname, method) {
-  const { url: baseUrl, token } = whatsappCompanionConfig();
-  if (!token || token.length < 32) {
-    sendJson(res, 503, { error: { code: "WHATSAPP_COMPANION_NOT_CONFIGURED", message: "A central do WhatsApp ainda não está configurada no servidor." } });
-    return;
-  }
-
-  const sourceUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-  const upstreamPath = pathname.slice(WHATSAPP_ADMIN_PROXY_PREFIX.length) || "/health";
-  const targetUrl = new URL(`${baseUrl}${upstreamPath}`);
-  targetUrl.search = sourceUrl.search;
-  const headers = {
-    "x-lumix-internal-token": token,
-    "x-lumix-admin-user": String(req.adminUser?.id || ""),
-    "x-lumix-admin-user-name": String(req.adminUser?.name || req.adminUser?.email || ""),
-    "x-lumix-admin-role": String(req.adminUser?.role || ""),
-    "x-request-id": requestContext.getStore()?.requestId || ""
-  };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), upstreamPath.endsWith("/events") ? 60 * 60 * 1000 : 20_000);
-
-  try {
-    if (method === "GET" && upstreamPath.endsWith("/events")) {
-      const upstream = await fetch(targetUrl, { headers, signal: controller.signal });
-      if (!upstream.ok || !upstream.body) {
-        const detail = await upstream.text().catch(() => "");
-        sendJson(res, upstream.status || 502, { error: { code: "WHATSAPP_EVENTS_UNAVAILABLE", message: detail || "Não foi possível abrir as atualizações em tempo real." } });
-        return;
-      }
-      res.writeHead(upstream.status, {
-        ...securityHeaders(),
-        "Content-Type": upstream.headers.get("content-type") || "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no"
-      });
-      await pipeline(Readable.fromWeb(upstream.body), res);
-      return;
-    }
-
-    const requestHeaders = { ...headers };
-    let body;
-    if (!["GET", "HEAD"].includes(method)) {
-      body = JSON.stringify(await readBody(req));
-      requestHeaders["content-type"] = "application/json";
-    }
-    const upstream = await fetch(targetUrl, { method, headers: requestHeaders, body, signal: controller.signal });
-    const payload = await upstream.text();
-    res.writeHead(upstream.status, {
-      ...securityHeaders(),
-      "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
-      "Cache-Control": "no-store"
-    });
-    res.end(payload);
-  } catch (error) {
-    const code = error?.name === "AbortError" ? "WHATSAPP_COMPANION_TIMEOUT" : "WHATSAPP_COMPANION_UNAVAILABLE";
-    sendJson(res, 502, { error: { code, message: "A central do WhatsApp não respondeu. Tente novamente em instantes." } });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 function ticketDocumentRetentionEndsAt(ticket, db = null) {
   const archiveAt = ticketArchiveAt(ticket, db);
@@ -2287,6 +2368,7 @@ function occupiedSeatIds(db, sessionId, ignoredOrderId = "") {
 
 function findSessionWithMovie(db, sessionId) {
   for (const movie of db.movies || []) {
+    if (isDeletedMovie(movie)) continue;
     const session = (movie.sessions || []).find((item) => item.id === sessionId);
     if (session) return { movie, session };
   }
@@ -3071,9 +3153,14 @@ function applyMercadoPagoSubscriptionStatus(db, subscription, providerSubscripti
     subscription.paymentStatus = "approved";
     subscription.approvedAt ||= now;
     subscription.startedAt ||= now;
-    if (!currentSubscriptionCredit(db, subscription)) {
+    const paidCyclePaymentId = String(options.payment?.providerPaymentId || "");
+    const shouldIssuePaidCycle = paidCyclePaymentId
+      ? clubDomainService.shouldIssueSubscriptionPaymentCycle(db, { ...options.payment, provider: options.payment?.provider || subscription.provider })
+      : !currentSubscriptionCredit(db, subscription);
+    if (shouldIssuePaidCycle) {
       const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId);
-      if (plan) createSubscriptionCreditCycle(db, subscription, plan, new Date(), options.payment || null);
+      const approvedAt = options.payment?.approvedAt ? new Date(options.payment.approvedAt) : new Date();
+      if (plan) createSubscriptionCreditCycle(db, subscription, plan, Number.isNaN(approvedAt.getTime()) ? new Date() : approvedAt, options.payment || null);
     }
   } else if (nextStatus === "active") {
     subscription.status = "pending_payment";
@@ -5787,12 +5874,6 @@ async function deleteUnreferencedAssets(db, urls = []) {
   await Promise.all(uniqueUrls.map((url) => valueReferencesAsset(db, url) ? false : storageService.deleteByPublicUrl(url)));
 }
 
-function movieHasAuditHistory(db, movieId) {
-  return (db.orders || []).some((order) => order.movieId === movieId || (order.items || []).some((item) => item.movieId === movieId))
-    || (db.tickets || []).some((ticket) => ticket.movieId === movieId)
-    || (db.payments || []).some((payment) => payment.movieId === movieId);
-}
-
 function normalizeMovie(input, existing = {}) {
   const title = String(input.title || existing.title || "Novo Filme").trim();
   const id = String(input.id || existing.id || slugify(title) || `filme-${Date.now()}`);
@@ -5820,6 +5901,9 @@ function normalizeMovie(input, existing = {}) {
   const existingMetadata = existing.metadata && typeof existing.metadata === "object" ? existing.metadata : {};
   const inputMetadata = input.metadata && typeof input.metadata === "object" ? input.metadata : {};
   let metadata = { ...existingMetadata, ...inputMetadata };
+  // Catalog deletion is server-owned and cannot be supplied by an editor/import.
+  delete metadata.catalogDeletedAt;
+  delete metadata.catalogOriginalSlug;
   const automatedTag = tag === "Pré-Estreia" || tag === "Estreia";
   const hasValidTransition = metadata.movieTagTransitionActive
     && Number.isFinite(new Date(metadata.movieTagTransitionStartedAt || "").getTime());
@@ -5891,12 +5975,12 @@ function normalizeMovieSession(input, movieId, existing = {}, ticketTypes = []) 
   const priceFull = Number(selectedTicketTypes[0]?.price ?? input.priceFull ?? existing.priceFull ?? 0);
   const priceHalf = Number(selectedTicketTypes[1]?.price ?? selectedTicketTypes[0]?.price ?? input.priceHalf ?? input.priceFull ?? existing.priceHalf ?? existing.priceFull ?? 0);
 
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!isValidCalendarDate(date)) {
     const error = new Error("Informe uma data válida para a sessão.");
     error.statusCode = 422;
     throw error;
   }
-  if (!time || !/^\d{2}:\d{2}$/.test(time)) {
+  if (!isValidSessionTime(time)) {
     const error = new Error("Informe um horário válido para a sessão.");
     error.statusCode = 422;
     throw error;
@@ -5936,7 +6020,7 @@ function normalizeMovieSession(input, movieId, existing = {}, ticketTypes = []) 
 function sessionDatesInRange(dateFrom, dateTo, weekdays = []) {
   const start = new Date(`${String(dateFrom || "").slice(0, 10)}T12:00:00Z`);
   const end = new Date(`${String(dateTo || "").slice(0, 10)}T12:00:00Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+  if (!isValidCalendarDate(dateFrom) || !isValidCalendarDate(dateTo) || end < start) {
     const error = new Error("Informe um período válido para criar as sessões.");
     error.statusCode = 422;
     throw error;
@@ -5957,10 +6041,9 @@ function sessionDatesInRange(dateFrom, dateTo, weekdays = []) {
 function createMovieSessionBatch(input, movieId, existingSessions = [], ticketTypes = []) {
   const dateFrom = String(input.dateFrom || input.date || "").slice(0, 10);
   const dateTo = String(input.dateTo || input.dateEnd || dateFrom).slice(0, 10);
-  const times = (Array.isArray(input.times) ? input.times : [input.time])
-    .map((time) => String(time || "").trim())
-    .filter((time, index, items) => /^\d{2}:\d{2}$/.test(time) && items.indexOf(time) === index);
-  if (!times.length) {
+  const times = [...new Set((Array.isArray(input.times) ? input.times : [input.time])
+    .map((time) => String(time || "").trim()))];
+  if (!times.length || times.some((time) => !isValidSessionTime(time))) {
     const error = new Error("Informe pelo menos um horário válido.");
     error.statusCode = 422;
     throw error;
@@ -6011,7 +6094,7 @@ function sessionHasActiveSeatAssignments(db, sessionId) {
 }
 
 function sessionCommercialChanges(previous = {}, next = {}) {
-  return ["date", "time", "room", "format"]
+  return ["date", "time", "room", "roomId", "format"]
     .filter((field) => String(previous[field] || "") !== String(next[field] || ""));
 }
 
@@ -8117,6 +8200,7 @@ function getContent(db, options = {}) {
     metaPixelId: analyticsConfig?.enabled ? String(analyticsConfig.metaPixelId || "") : ""
   };
   const movies = [...(db.movies || [])]
+    .filter((movie) => !isDeletedMovie(movie))
     .sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")))
     .map((movie) => assetMovie({
       ...movie,
@@ -8755,13 +8839,23 @@ function parseAdminPeriod(url) {
     start = url.searchParams.get("from") || today;
     end = url.searchParams.get("to") || today;
   }
-  const startDate = new Date(`${start}T00:00:00`);
-  const endDate = new Date(`${end}T23:59:59`);
-  const days = Math.max(1, Math.round((endDate - startDate) / 86400000) + 1);
+  if (!isValidCalendarDate(start) || !isValidCalendarDate(end) || end < start) {
+    const error = new Error("Informe um período válido: a data final deve ser igual ou posterior à inicial.");
+    error.statusCode = 422;
+    throw error;
+  }
+  const startDate = new Date(`${start}T00:00:00Z`);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  const days = Math.floor((endDate - startDate) / 86400000) + 1;
+  if (days > 366) {
+    const error = new Error("Selecione um período de até 366 dias por relatório.");
+    error.statusCode = 422;
+    throw error;
+  }
   const previousEndDate = new Date(startDate);
-  previousEndDate.setDate(previousEndDate.getDate() - 1);
+  previousEndDate.setUTCDate(previousEndDate.getUTCDate() - 1);
   const previousStartDate = new Date(previousEndDate);
-  previousStartDate.setDate(previousStartDate.getDate() - days + 1);
+  previousStartDate.setUTCDate(previousStartDate.getUTCDate() - days + 1);
   return {
     period,
     start,
@@ -9934,7 +10028,7 @@ function adminDashboard(db, options = {}) {
     const date = new Date(`${period.start}T12:00:00`);
     date.setDate(date.getDate() + index);
     const key = date.toISOString().slice(0, 10);
-    const orders = periodPaidOrders.filter((order) => String(recognitionDate(order, paymentForOrder(order)) || "").slice(0, 10) === key);
+    const orders = periodPaidOrders.filter((order) => inDateRange(recognitionDate(order, paymentForOrder(order)), key, key));
     const dayClubFinance = clubFinanceForRange(key, key);
     chart.push({
       date: key,
@@ -10068,7 +10162,7 @@ function adminIntegrationsStatus(req, db) {
   integrations.googleWallet.configured = Boolean(wallet.configured);
   integrations.tmdb.configured = Boolean(tmdb.configured);
   integrations.email.configured = Boolean(integrationConfigService.resolvedConfig(db, "email")?.configured || getEmailVerificationWebhookUrl(db) || getPasswordResetEmailWebhookUrl(db));
-  integrations.crm.configured = Boolean(getCrmWebhookUrl(db));
+  integrations.crm.configured = Boolean(getCrmWebhookConfig(db).configured);
   return integrations;
 }
 
@@ -10366,25 +10460,23 @@ async function testIntegrationProvider(db, provider, req) {
     };
   }
   if (key === "crm") {
-    if (!config.url) return { ok: false, message: "Informe a URL do webhook CRM." };
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Number(config.timeout || 8000));
-    try {
-      const response = await fetch(config.url, {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          ...(config.secret ? { "X-Cine-Cruzeiro-Secret": config.secret } : {})
-        },
-        body: JSON.stringify({ event: "integration.tested", timestamp: new Date().toISOString(), source: "cine-cruzeiro-admin" })
-      });
-      return { ok: response.ok, message: response.ok ? "Webhook CRM respondeu com sucesso." : `Webhook CRM respondeu HTTP ${response.status}.` };
-    } catch (error) {
-      return { ok: false, message: error.name === "AbortError" ? "Webhook CRM demorou demais para responder." : "Não foi possível chamar o webhook CRM." };
-    } finally {
-      clearTimeout(timer);
-    }
+    const crm = getCrmWebhookConfig(db);
+    if (!crm.url) return { ok: false, message: "Informe a URL do webhook CRM." };
+    if (!crm.secret) return { ok: false, message: "Informe o segredo usado para assinar as entregas HMAC." };
+    const eventId = crypto.randomUUID();
+    const body = { event: "integration.tested", eventId, timestamp: new Date().toISOString(), cinemaId: "cine_cruzeiro_sala_1", source: "cine-cruzeiro-admin" };
+    const result = await sendCrmWebhook({ url: crm.url, secret: crm.secret, eventId, eventName: body.event, body, timeout: crm.timeout });
+    return {
+      ok: result.ok,
+      code: result.errorCode || "",
+      message: result.ok ? "Webhook CRM respondeu com sucesso e validou a chamada assinada." : result.httpStatus
+        ? `Webhook CRM respondeu HTTP ${result.httpStatus}.`
+        : result.errorCode === "CRM_TIMEOUT" ? "Webhook CRM excedeu o timeout configurado." : "Não foi possível chamar o webhook CRM."
+    };
+  }
+  if (key === "discord") {
+    if (!config.webhookUrl) return { ok: false, message: "Informe a URL privada do webhook do Discord." };
+    return discordWebhookService.test(config);
   }
   if (key === "commercialCatalog") {
     return config.accessToken
@@ -10733,17 +10825,14 @@ async function serveStatic(req, res, pathname) {
   const db = await readDb();
   const wantsAdminShell = pathname === "/admin" || pathname === "/admin/";
   const directAdminHtml = pathname === "/admin/admin.html";
-  const wantsWhatsAppAdmin = pathname === "/admin/whatsapp" || pathname.startsWith("/admin/whatsapp/");
   const authenticatedAdmin = getAdminUser(req, db);
-  if ((directAdminHtml || wantsWhatsAppAdmin) && (!authenticatedAdmin || authenticatedAdmin.twoFactorSetupRequired || !adminHasPermission(authenticatedAdmin, "whatsapp.view"))) {
+  if (directAdminHtml && (!authenticatedAdmin || authenticatedAdmin.twoFactorSetupRequired)) {
     res.writeHead(302, { Location: adminPathForRequest(req) });
     res.end();
     return;
   }
   const relativePath = wantsAdminShell
     ? (authenticatedAdmin ? "admin.html" : "admin-login.html")
-    : wantsWhatsAppAdmin
-      ? `whatsapp/${pathname.replace(/^\/admin\/whatsapp\/?/, "") || "index.html"}`
     : pathname.replace(/^\/admin\//, "");
   const filePath = path.normalize(path.join(PUBLIC_DIR, relativePath));
   if (!pathIsInside(PUBLIC_DIR, filePath)) {
@@ -11241,38 +11330,6 @@ async function handleApi(req, res, pathname) {
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
-  if (pathname === WHATSAPP_ADMIN_PROXY_PREFIX || pathname.startsWith(`${WHATSAPP_ADMIN_PROXY_PREFIX}/`)) {
-    if (pathname === `${WHATSAPP_ADMIN_PROXY_PREFIX}/api/session` && method === "GET") {
-      sendJson(res, 200, {
-        data: {
-          user: {
-            id: req.adminUser.id,
-            name: req.adminUser.name || req.adminUser.email || "Usuário",
-            role: req.adminUser.role,
-            effectivePermissions: effectiveAdminPermissions(req.adminUser)
-          }
-        }
-      });
-      return;
-    }
-    if (pathname === `${WHATSAPP_ADMIN_PROXY_PREFIX}/api/staff` && method === "GET") {
-      if (!ensureAdminAction(req, res, "whatsapp.manage", "Seu usuário não pode atribuir atendimentos.")) return;
-      const staff = postgresEnabled()
-        ? await userRepository.listActiveStaff()
-        : (db.users || []).filter((user) => user.active !== false && ["owner", "master", "manager", "operator", "seller"].includes(user.role));
-      sendJson(res, 200, {
-        data: staff.map((user) => ({
-          id: user.id,
-          name: user.name || user.email || "Usuário",
-          email: user.email || "",
-          role: roleAlias(user.role)
-        }))
-      });
-      return;
-    }
-    await proxyWhatsAppAdminRequest(req, res, pathname, method);
-    return;
-  }
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
     const user = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : (db.users || []).find((item) => item.id === req.adminUser.id);
@@ -12138,8 +12195,16 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/reports/ticket-distributor/settings" && method === "PUT") {
     const body = await readBody(req);
-    const rules = normalizeTicketDistributorRules(body);
     const previous = db.settings?.ticketDistributorRules || {};
+    for (const key of ["distributorPercent", "courtesyPercent", "clubTicketFee"]) {
+      if (body[key] === undefined) continue;
+      const value = Number(body[key]);
+      if (body[key] === null || String(body[key]).trim() === "" || !Number.isFinite(value) || value < 0 || (key !== "clubTicketFee" && value > 100)) {
+        sendJson(res, 422, { error: "Informe percentuais entre 0 e 100 e uma taxa do Clube maior ou igual a zero." });
+        return;
+      }
+    }
+    const rules = normalizeTicketDistributorRules({ ...previous, ...body });
     db.settings.ticketDistributorRules = rules;
     if (postgresEnabled()) {
       await settingsRepository.patchAppSettings({ ticketDistributorRules: rules }, {
@@ -12523,6 +12588,21 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/integrations/crm/outbox" && method === "GET") {
+    if (!ensureAdmin(req, res, db, pathname, method)) return;
+    sendJson(res, 200, { outbox: await createCrmOutboxRepository().summary() });
+    return;
+  }
+
+  if (pathname === "/api/admin/integrations/crm/outbox/retry-dead" && method === "POST") {
+    if (!ensureAdmin(req, res, db, pathname, method)) return;
+    const count = await createCrmOutboxRepository().retryDead();
+    getCrmWebhookWorker().wake();
+    logEvent("warn", "crm_webhook.dead_letters_requeued", { count, actorUserId: req.adminUser?.id || "" });
+    sendJson(res, 200, { count, outbox: await createCrmOutboxRepository().summary() });
+    return;
+  }
+
   const adminIntegrationMatch = pathname.match(/^\/api\/admin\/integrations\/([^/]+)(?:\/(test|enable|disable))?$/);
   if (adminIntegrationMatch) {
     const key = integrationConfigService.providerKey(decodeURIComponent(adminIntegrationMatch[1]));
@@ -12532,7 +12612,9 @@ async function handleApi(req, res, pathname) {
       return;
     }
     if (method === "GET" && !action) {
-      sendJson(res, 200, { integration: integrationConfigService.sanitizeConfig(db, key) });
+      const integration = integrationConfigService.sanitizeConfig(db, key);
+      if (key === "crm") integration.outbox = await createCrmOutboxRepository().summary();
+      sendJson(res, 200, { integration });
       return;
     }
     if (method === "PUT" && !action) {
@@ -12544,12 +12626,16 @@ async function handleApi(req, res, pathname) {
         await settingsRepository.updateSectionKey("integrations", key, payloadToPersist, {
           audit: repositoryAudit(req, "integration", key, before, saved)
         });
+        if (key === "discord") configureDiscordWebhook(db);
+        if (key === "crm") configureCrmWebhookWorker(db);
         sendJson(res, 200, { integration: saved });
       } else {
         await withCriticalMutation(async () => {
           const lockedDb = await readDb();
           const saved = integrationConfigService.save(lockedDb, key, body, req.adminUser);
           await writeDb(lockedDb);
+          if (key === "discord") configureDiscordWebhook(lockedDb);
+          if (key === "crm") configureCrmWebhookWorker(lockedDb);
           sendJson(res, 200, { integration: saved });
         });
       }
@@ -12563,12 +12649,16 @@ async function handleApi(req, res, pathname) {
         await settingsRepository.updateSectionKey("integrations", key, payloadToPersist, {
           audit: repositoryAudit(req, "integration", key, before, saved)
         });
+        if (key === "discord") configureDiscordWebhook(db);
+        if (key === "crm") configureCrmWebhookWorker(db);
         sendJson(res, 200, { integration: saved });
       } else {
         await withCriticalMutation(async () => {
           const lockedDb = await readDb();
           const saved = integrationConfigService.setEnabled(lockedDb, key, action === "enable", req.adminUser);
           await writeDb(lockedDb);
+          if (key === "discord") configureDiscordWebhook(lockedDb);
+          if (key === "crm") configureCrmWebhookWorker(lockedDb);
           sendJson(res, 200, { integration: saved });
         });
       }
@@ -13037,20 +13127,7 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/events" && method === "POST") {
     const body = await readBody(req);
-    const allowedEvents = new Set([
-      "order.created",
-      "payment.created",
-      "payment.approved",
-      "payment.rejected",
-      "payment.expired",
-      "payment.refunded",
-      "ticket.created",
-      "ticket.used",
-      "club_lead.created",
-      "private_rental.inquiry",
-      "password_reset.requested"
-    ]);
-    if (!allowedEvents.has(body.event)) {
+    if (!CRM_EVENT_TYPES.includes(body.event)) {
       sendJson(res, 400, { error: { code: "EVENT_NOT_ALLOWED", message: "Evento nao suportado." } });
       return;
     }
@@ -13067,7 +13144,7 @@ async function handleApi(req, res, pathname) {
       inquiry.estimatedGuests = String(inquiry.estimatedGuests || "").trim().slice(0, 80);
       inquiry.notes = String(inquiry.notes || "").trim().slice(0, 2000);
       if (inquiry.name.length < 2 || inquiry.phone.replace(/\D/g, "").length < 8 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inquiry.email)) {
-        sendJson(res, 422, { error: { code: "EVENT_INQUIRY_INVALID", message: "Informe nome, WhatsApp e um e-mail válido para receber a confirmação." } });
+        sendJson(res, 422, { error: { code: "EVENT_INQUIRY_INVALID", message: "Informe nome, telefone e um e-mail válido para receber a confirmação." } });
         return;
       }
       const emailConfig = integrationConfigService.resolvedConfig(db, "email");
@@ -13083,23 +13160,33 @@ async function handleApi(req, res, pathname) {
       body.data = inquiry;
       body.delivery = { acknowledgementSent: Boolean(delivery.acknowledgementDelivered) };
     }
-    const crmUrl = getCrmWebhookUrl(db);
-    if (crmUrl) {
-      await fetch(crmUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Origin-Client": "CineCruzeiro-Backend"
-        },
-        body: JSON.stringify({
-          ...body,
-          timestamp: body.timestamp || new Date().toISOString(),
-          cinemaId: "cine_cruzeiro_sala_1"
-        })
-      }).catch(() => null);
+    const crm = getCrmWebhookConfig(db);
+    let crmQueued = false;
+    if (crm.enabled && crm.url && crm.events.includes(body.event)) {
+      if (!crm.secret) {
+        sendJson(res, 503, { error: { code: "CRM_SIGNATURE_SECRET_MISSING", message: "A integração CRM está ativa, mas falta configurar o segredo HMAC." } });
+        return;
+      }
+      const eventId = crypto.randomUUID();
+      const payload = {
+        ...body,
+        eventId,
+        timestamp: body.timestamp || new Date().toISOString(),
+        cinemaId: "cine_cruzeiro_sala_1"
+      };
+      await createCrmOutboxRepository().enqueue({
+        id: eventId,
+        eventName: body.event,
+        payload,
+        maxAttempts: crm.retryLimit + 1
+      });
+      crmQueued = true;
+      getCrmWebhookWorker().wake();
+      logEvent("info", "crm_webhook.queued", { event: body.event, eventId });
     }
     sendJson(res, 202, {
       success: true,
+      crmQueued,
       acknowledgementSent: body.event === "private_rental.inquiry" ? Boolean(body.delivery?.acknowledgementSent) : undefined,
       message: body.event === "private_rental.inquiry"
         ? (body.delivery?.acknowledgementSent
@@ -14444,6 +14531,9 @@ async function handleApi(req, res, pathname) {
     const previousMovies = db.movies.map((item) => ({ ...item }));
     const body = await readBody(req);
     let movie = normalizeMovie(body);
+    if (db.movies.some((item) => item.id === movie.id && isDeletedMovie(item))) {
+      movie.id = `${movie.id}-${crypto.randomBytes(4).toString("hex")}`;
+    }
     movie.sessions = (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session));
     if (db.movies.some((item) => item.id === movie.id)) {
       sendJson(res, 409, { error: { code: "MOVIE_EXISTS", message: "Já existe um filme com este identificador. Abra o filme existente para editá-lo." } });
@@ -14495,7 +14585,7 @@ async function handleApi(req, res, pathname) {
     } else {
       await writeDb(db);
     }
-    sendJson(res, 200, { movies: db.movies });
+    sendJson(res, 200, { movies: db.movies.filter((movie) => !isDeletedMovie(movie)) });
     return;
   }
 
@@ -14605,7 +14695,7 @@ async function handleApi(req, res, pathname) {
     const movieId = decodeURIComponent(movieSessionsMatch[1]);
     const sessionId = movieSessionsMatch[2] ? decodeURIComponent(movieSessionsMatch[2]) : "";
     const movieIndex = db.movies.findIndex((movie) => movie.id === movieId);
-    if (movieIndex === -1) {
+    if (movieIndex === -1 || isDeletedMovie(db.movies[movieIndex])) {
       sendJson(res, 404, { error: { code: "MOVIE_NOT_FOUND", message: "Filme não encontrado." } });
       return;
     }
@@ -14679,7 +14769,8 @@ async function handleApi(req, res, pathname) {
       if (requireSessionRoomConflictConfirmation(res, conflicts, body.confirmRoomConflict)) return;
       const commercialChanges = sessionCommercialChanges(previousSession, session);
       const hasHistory = sessionHasAuditHistory(db, sessionId);
-      if (session.room !== previousSession.room && sessionHasActiveSeatAssignments(db, sessionId)) {
+      if ((session.room !== previousSession.room || session.roomId !== previousSession.roomId)
+        && (sessionHasActiveSeatAssignments(db, sessionId) || (await listActiveSeatHolds(sessionId)).length > 0)) {
         sendJson(res, 409, {
           error: {
             code: "SESSION_ROOM_LOCKED_BY_SEATS",
@@ -14746,7 +14837,7 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 409, {
           error: {
             code: "SESSION_HAS_HISTORY",
-            message: "Esta sessão possui vendas ou ingressos vinculados e não pode ser excluída. Marque-a como esgotada para interromper novas vendas."
+            message: "Esta sessão possui histórico e não pode ser excluída. Use Esgotada para suspender vendas ou Cancelada para cancelar a exibição e tratar os reembolsos."
           }
         });
         return;
@@ -14769,7 +14860,7 @@ async function handleApi(req, res, pathname) {
   if (movieMatch) {
     const id = decodeURIComponent(movieMatch[1]);
     const index = db.movies.findIndex((movie) => movie.id === id);
-    if (index === -1) {
+    if (index === -1 || isDeletedMovie(db.movies[index])) {
       sendJson(res, 404, { error: "Filme nao encontrado" });
       return;
     }
@@ -14779,7 +14870,7 @@ async function handleApi(req, res, pathname) {
       const previousMovie = postgresEnabled()
         ? await movieRepository.findById(id)
         : db.movies[index];
-      if (!previousMovie) {
+      if (!previousMovie || isDeletedMovie(previousMovie)) {
         sendJson(res, 404, { error: "Filme nao encontrado" });
         return;
       }
@@ -14819,38 +14910,25 @@ async function handleApi(req, res, pathname) {
 
     if (method === "DELETE") {
       const movie = db.movies[index];
-      if (movieHasAuditHistory(db, movie.id)) {
-        db.movies[index] = {
-          ...movie,
-          workflowStatus: "archived",
-          status: "hidden",
-          isHighlight: false,
-          archivedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        if (postgresEnabled()) {
-          await movieRepository.archive(db.movies[index], {
-            audit: repositoryAudit(req, "movies", movie.id, movie, db.movies[index])
-          });
-        } else {
-          await writeDb(db);
-        }
-        sendJson(res, 200, { archived: true, movie: db.movies[index] });
-        return;
-      }
-      const [removed] = db.movies.splice(index, 1);
+      assertMovieCanBeDeleted({ ...db, seatHolds: postgresEnabled() ? [] : [...memorySeatHolds.values()] }, movie);
+      let historyPreserved = movieHistory(db, movie);
       if (postgresEnabled()) {
-        await movieRepository.remove(id, {
-          audit: repositoryAudit(req, "movies", id, removed, null)
+        const result = await movieRepository.removeFromCatalog(id, {
+          audit: repositoryAudit(req, "movies", id, movie, null)
         });
+        historyPreserved = result.historyPreserved;
+        if (historyPreserved) db.movies[index] = result.movie;
+        else db.movies.splice(index, 1);
       } else {
+        if (historyPreserved) db.movies[index] = deletedMovieRecord(movie);
+        else db.movies.splice(index, 1);
         await writeDb(db);
       }
-      await Promise.all([
-        deleteLocalTrailer(removed.localTrailerUrl),
-        deleteUnreferencedAssets(db, [removed.posterUrl, removed.backdropUrl])
+      if (!historyPreserved) await Promise.all([
+        deleteLocalTrailer(movie.localTrailerUrl),
+        deleteUnreferencedAssets(db, [movie.posterUrl, movie.backdropUrl])
       ]);
-      sendJson(res, 200, removed);
+      sendJson(res, 200, { id, deleted: true, historyPreserved });
       return;
     }
   }
@@ -17147,7 +17225,7 @@ async function handleApi(req, res, pathname) {
                 providerPaymentId: authorizedPayment?.paymentId || authorizedPayment?.id || providerPaymentId,
                 amount: authorizedPayment?.amount || (lockedDb.subscriptionPlans || []).find((item) => item.id === subscription.planId)?.monthlyPrice || 0,
                 currency: "BRL",
-                approvedAt: new Date().toISOString(),
+                approvedAt: authorizedPayment?.approvedAt || new Date().toISOString(),
                 metadata: { authorizedPaymentId: authorizedPayment?.id || providerPaymentId }
               }
             });
@@ -17543,6 +17621,24 @@ async function handleApi(req, res, pathname) {
 }
 
 const performanceMonitor = createPerformanceMonitor({ diskPath: ROOT, onAlert: logEvent });
+function suspiciousRequestRule(url) {
+  let target = `${url.pathname}?${url.searchParams.toString()}`;
+  try { target = decodeURIComponent(target); } catch {}
+  const signatures = [
+    ["sqli.union_select", /\bunion\b[\s/+-]+\bselect\b/i],
+    ["sqli.boolean_condition", /(?:\b(or|and)\b\s+['"\d]+\s*=\s*['"\d]+|\b(or|and)\b\s+1\s*=\s*1\b)/i],
+    ["sqli.time_function", /\b(sleep|benchmark|pg_sleep)\s*\(/i],
+    ["sqli.stacked_statement", /;\s*(select|insert|update|delete|drop|alter)\b/i],
+    ["sqli.comment_probe", /(?:--|\/\*|\bload_file\s*\()/i]
+  ];
+  const match = signatures.find(([, pattern]) => pattern.test(target));
+  if (match) return { attackType: "possible_sql_injection", rule: match[0] };
+  if (/\/(?:\.env|\.git|wp-admin|wp-login\.php|phpmyadmin)(?:\/|$)/i.test(url.pathname)) {
+    return { attackType: "common_exploit_probe", rule: "path.common_exploit_probe" };
+  }
+  return null;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -17560,9 +17656,17 @@ const server = http.createServer(async (req, res) => {
         path: pathname
       });
     }
-    if (!pathname.startsWith("/api/") || !postgresEnabled()) return;
+    if (!pathname.startsWith("/api/") || pathname.startsWith("/api/admin/logs")) return;
     const durationMs = Date.now() - store.startedAt;
     const level = res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
+    discordWebhookService.enqueue({
+      level,
+      event: "http.request.completed",
+      requestId: store.requestId,
+      timestamp: new Date().toISOString(),
+      fields: { method: req.method, path: pathname, statusCode: res.statusCode, durationMs }
+    });
+    if (!postgresEnabled()) return;
     void appendSystemLogToPostgres({
       level,
       category: "http",
@@ -17583,6 +17687,19 @@ const server = http.createServer(async (req, res) => {
   });
   requestContext.run(store, async () => {
     try {
+      const securitySignal = suspiciousRequestRule(url);
+      if (securitySignal) {
+        logEvent("warn", "security.suspicious_request", {
+          ...securitySignal,
+          method: req.method,
+          path: pathname
+        });
+      }
+
+      if (/^\/(?:api\/admin\/whatsapp|admin\/whatsapp|whatsapp)(?:\/|$)/.test(pathname.replace(/\/{2,}/g, "/"))) {
+        sendJson(res, 410, { error: { code: "MODULE_REMOVED", message: "Este módulo foi removido." } });
+        return;
+      }
 
       if (pathname.startsWith("/api/")) {
         await handleApi(req, res, pathname);
@@ -17624,7 +17741,11 @@ const server = http.createServer(async (req, res) => {
     });
 });
 
-server.once("close", () => performanceMonitor.close());
+server.once("close", () => {
+  performanceMonitor.close();
+  discordWebhookService.close();
+  crmWebhookWorker?.stop();
+});
 seatRealtimeService = createSeatRealtimeService(server, {
   allowedOrigins: allowedCorsOrigins,
   getSessionState: realtimeSeatState,
@@ -17805,6 +17926,12 @@ loadEnvFiles().then(() => {
     process.exit(1);
   }
   enablePostgresCacheInvalidation();
+  void readDb().then((db) => {
+    configureDiscordWebhook(db);
+    configureCrmWebhookWorker(db);
+  }).catch((error) => {
+    console.warn(JSON.stringify({ level: "warn", event: "discord.configuration_load_failed", reason: error.name || "database" }));
+  });
   server.listen(PORT, HOST, () => {
     const tmdb = getTmdbCredentials();
     console.log(`Cine Cruzeiro backend: http://${HOST}:${PORT}`);
@@ -17836,6 +17963,22 @@ loadEnvFiles().then(() => {
       void runEmailAttachmentMaintenance();
     }, 24 * 60 * 60 * 1000);
     emailAttachmentMaintenanceTimer.unref?.();
+    void createCrmOutboxRepository().prune().catch((error) => logEvent("warn", "crm_webhook.outbox_prune_failed", { message: error.message }));
+    const crmOutboxMaintenanceTimer = setInterval(() => {
+      void createCrmOutboxRepository().prune().catch((error) => logEvent("warn", "crm_webhook.outbox_prune_failed", { message: error.message }));
+    }, 24 * 60 * 60 * 1000);
+    crmOutboxMaintenanceTimer.unref?.();
+    let lastDiscordHealthAt = 0;
+    const discordHealthTimer = setInterval(() => {
+      if (!discordWebhookService.isEnabled()) return;
+      const now = Date.now();
+      if (now - lastDiscordHealthAt < discordWebhookService.healthIntervalMs()) return;
+      const snapshot = performanceMonitor.snapshot();
+      if (!snapshot.current) return;
+      lastDiscordHealthAt = now;
+      discordWebhookService.enqueueHealth(snapshot);
+    }, 15000);
+    discordHealthTimer.unref?.();
   });
 }).catch((error) => {
   console.error(error);
@@ -17845,6 +17988,7 @@ loadEnvFiles().then(() => {
 for (const signal of ["SIGTERM", "SIGINT"]) {
   process.once(signal, () => {
     emailCampaignWorker?.stop();
+    crmWebhookWorker?.stop();
     server.close(() => { void closePostgres().finally(() => process.exit(0)); });
     setTimeout(() => process.exit(1), 10000).unref?.();
   });

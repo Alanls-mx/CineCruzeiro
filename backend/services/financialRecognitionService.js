@@ -1,4 +1,4 @@
-const APPROVED_STATUSES = new Set(["approved", "paid", "processed"]);
+const APPROVED_STATUSES = new Set(["approved", "paid", "processed", "partially_refunded"]);
 const FULL_REFUND_STATUSES = new Set(["refunded", "charged_back", "chargeback"]);
 
 function money(value) {
@@ -14,7 +14,7 @@ function completedRefundAmount(refund) {
 }
 
 function paymentRefundedAmount(payment = {}) {
-  const amount = Math.max(0, money(payment.amount || payment.totalPrice));
+  const amount = Math.max(0, money(payment.amount ?? payment.totalPrice));
   const status = String(payment.status || "").toLowerCase();
   if (FULL_REFUND_STATUSES.has(status)) return amount;
 
@@ -26,7 +26,7 @@ function paymentRefundedAmount(payment = {}) {
 }
 
 function paymentFinancialState(payment = {}) {
-  const amount = Math.max(0, money(payment.amount || payment.totalPrice));
+  const amount = Math.max(0, money(payment.amount ?? payment.totalPrice));
   const status = String(payment.status || "").toLowerCase();
   const refundedAmount = paymentRefundedAmount(payment);
   const fullyRefunded = FULL_REFUND_STATUSES.has(status) || (amount > 0 && refundedAmount >= amount);

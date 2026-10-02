@@ -227,6 +227,7 @@ function normalizeMercadoPagoAuthorizedPayment(data = {}) {
     status: String(data.status || ""),
     paymentId: String(data.payment?.id || ""),
     paymentStatus,
+    approvedAt: String(data.payment?.date_approved || data.debit_date || data.last_modified || data.date_created || ""),
     statusDetail: String(data.payment?.status_detail || ""),
     amount: Number(data.transaction_amount || 0),
     raw: data

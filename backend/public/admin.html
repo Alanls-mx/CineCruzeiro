@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Painel Cine Cruzeiro</title>
     <link rel="icon" type="image/png" href="../images/favicon-64.png?brand=cinecruzeiro-icon-2026" />
-    <link rel="stylesheet" href="admin.css?v=20260920-print-workflow" />
+    <link rel="stylesheet" href="admin.css?v=20261001-catalog-filters" />
     <link rel="stylesheet" href="admin-premium.css?v=20260911-ai-prompt-models" />
     <link rel="stylesheet" href="social-studio.css?v=20260927-startup-preview" />
   </head>
@@ -384,7 +384,7 @@
         <section id="moviesPanel" class="panel">
           <div class="panel-heading">
             <div>
-              <h1>Filmes em Cartaz</h1>
+              <h1>Filmes e sessões</h1>
               <p>Controle catálogo, destaque da home, status e sessões exibidas no site.</p>
             </div>
             <button id="newMovieButton" class="primary-button icon-label" type="button" data-permission="movies.create">
@@ -403,6 +403,16 @@
           <div class="split-grid">
             <div class="surface">
               <div class="section-title">Catálogo</div>
+              <div class="movie-catalog-filters">
+                <label>Buscar filme<input id="movieCatalogSearch" type="search" placeholder="Título do filme" /></label>
+                <label>Situação<select id="movieCatalogFilter">
+                  <option value="">Todos</option>
+                  <option value="now_playing">Em cartaz</option>
+                  <option value="upcoming">Em breve</option>
+                  <option value="draft">Rascunhos</option>
+                  <option value="archived">Arquivados / ocultos</option>
+                </select></label>
+              </div>
               <div id="moviesList" class="list"></div>
             </div>
 
@@ -994,7 +1004,7 @@
                   <input id="manualCustomerName" />
                 </label>
                 <label>
-                  WhatsApp opcional
+                  Telefone opcional
                   <input id="manualCustomerPhone" />
                 </label>
                 <label>
@@ -2420,9 +2430,6 @@
                     <label><input type="checkbox" value="club.credits" /><span><strong>Ajustar créditos do Clube</strong><small>Concede ou remove créditos de assinantes.</small></span></label>
                   </section>
                   <section class="permission-group"><h3>Sistema</h3>
-                    <label><input type="checkbox" value="whatsapp.view" /><span><strong>Visualizar central do WhatsApp</strong><small>Consulta conversas, programação e estado da conexão.</small></span></label>
-                    <label><input type="checkbox" value="whatsapp.reply" /><span><strong>Responder no WhatsApp</strong><small>Assume, devolve e responde atendimentos.</small></span></label>
-                    <label><input type="checkbox" value="whatsapp.manage" /><span><strong>Gerenciar WhatsApp</strong><small>Configura bot, pareamento e conexão.</small></span></label>
                     <label><input type="checkbox" value="integrations.view" /><span><strong>Visualizar integrações</strong><small>Consulta estado e diagnóstico dos serviços.</small></span></label>
                     <label><input type="checkbox" value="integrations.manage" /><span><strong>Gerenciar integrações</strong><small>Altera credenciais e ativa serviços.</small></span></label>
                     <label><input type="checkbox" value="logs.view" /><span><strong>Visualizar logs</strong><small>Consulta ações e ocorrências.</small></span></label>
@@ -2996,7 +3003,7 @@
               <input id="orderCustomerName" />
             </label>
             <label>
-              WhatsApp
+              Telefone
               <input id="orderCustomerPhone" />
             </label>
           </div>
@@ -3188,7 +3195,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
-    <script src="admin.js?v=20260928-log-activity-detail"></script>
+    <script src="admin.js?v=20261001-catalog-sessions-finance"></script>
     <script src="social-studio.js?v=20260927-editorial-review"></script>
   </body>
 </html>

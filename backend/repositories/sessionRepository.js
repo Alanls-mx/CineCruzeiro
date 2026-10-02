@@ -35,6 +35,7 @@ async function replaceTicketTypes(client, sessionId, ticketTypeIds = []) {
 }
 
 async function insertSession(client, movieId, session) {
+  await lockCatalogMovie(client, movieId);
   const result = await timedQuery(client, `INSERT INTO sessions
     (id, movie_id, room_id, starts_at, time_label, room_label, format, price_full, price_half, status, updated_at)
     VALUES ($1, $2, $3, NULLIF($4, '')::timestamptz, $5, $6, $7, $8, $9, $10, now())
@@ -52,6 +53,15 @@ async function insertSession(client, movieId, session) {
   ], { repository: "session", operation: "insert" });
   await replaceTicketTypes(client, session.id, session.ticketTypeIds);
   return mapSession({ ...result.rows[0], ticket_type_ids: session.ticketTypeIds });
+}
+
+async function lockCatalogMovie(client, movieId) {
+  const result = await timedQuery(client, "SELECT id FROM movies WHERE id=$1 AND NOT (metadata ? 'catalogDeletedAt') FOR UPDATE", [movieId], { repository: "session", operation: "movie.lock" });
+  if (!result.rowCount) {
+    const error = new Error("O filme não está mais no catálogo. Atualize a programação antes de continuar.");
+    error.statusCode = 409;
+    throw error;
+  }
 }
 
 async function findById(id) {
@@ -137,6 +147,7 @@ async function update(movie, session, options = {}) {
     metadata: { repository: "session", operation: "update", sessionId: session.id, movieId: movie.id },
     audit: options.audit
   }, async (client) => {
+    await lockCatalogMovie(client, movie.id);
     const result = await timedQuery(client, `UPDATE sessions SET
       room_id = $2, starts_at = NULLIF($3, '')::timestamptz, time_label = $4,
       room_label = $5, format = $6, price_full = $7, price_half = $8,

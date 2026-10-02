@@ -72,7 +72,7 @@ export function Footer() {
                 className="flex items-center gap-2 text-slate-200 hover:text-emerald-400 transition-colors"
               >
                 <Phone className="h-4 w-4 text-emerald-400" />
-                <span>WhatsApp: (11) 99999-9999</span>
+                <span>suporte@cinecruzeiro.com.br</span>
               </a>
               <a
                 href="https://instagram.com"

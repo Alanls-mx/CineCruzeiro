@@ -34,6 +34,7 @@
     "test:abuse-controls": "node --test tests/ticket-transfer-policy.test.mjs",
     "test:ticket-concessions": "node --test tests/ticket-concession-assignment.test.mjs",
     "test:movie-publication": "node --test tests/movie-publication-policy.test.mjs",
+    "test:catalog-operations": "node --test tests/catalog-sessions-finance-polish.test.mjs tests/catalog-operations-http.test.mjs tests/catalog-lifecycle-postgres.test.mjs",
     "test:session-conflicts": "node --test tests/session-room-conflict.test.mjs tests/session-schedule-autocorrect.test.mjs",
     "test:coupon": "node --test tests/coupon-lifecycle.test.mjs",
     "test:finance": "node --test tests/club-checkout-pricing.test.mjs tests/club-free-item-pricing.test.mjs tests/concession-finance.test.mjs tests/concession-cancellation.test.mjs tests/financial-recognition.test.mjs tests/operations-monitor-refund.test.mjs tests/ticket-distributor-report.test.mjs",

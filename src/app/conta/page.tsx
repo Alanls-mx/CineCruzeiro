@@ -391,7 +391,7 @@ function ContaPageContent() {
               <h2 className="font-display text-3xl font-black">Olá, {user.name}</h2>
               <dl className="mt-6 space-y-4 text-sm text-slate-300">
                 <div><dt className="font-bold text-white">E-mail</dt><dd>{user.email}</dd></div>
-                <div><dt className="font-bold text-white">WhatsApp</dt><dd>{maskPhone(user.phone) || "Não informado"}</dd></div>
+                <div><dt className="font-bold text-white">Telefone</dt><dd>{maskPhone(user.phone) || "Não informado"}</dd></div>
                 <div><dt className="font-bold text-white">CPF</dt><dd>{maskCpf(user.cpf) || "Opcional, não informado"}</dd></div>
                 <div>
                   <dt className="font-bold text-white">Verificação</dt>
@@ -480,7 +480,7 @@ function ContaPageContent() {
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <Input label="Nome" value={profile.name} onChange={(value) => setProfile({ ...profile, name: value })} />
-                <Input label="WhatsApp" value={profile.phone} onChange={(value) => setProfile({ ...profile, phone: value })} />
+                <Input label="Telefone" value={profile.phone} onChange={(value) => setProfile({ ...profile, phone: value })} />
                 <Input label="CPF (opcional)" value={profile.cpf} onChange={(value) => setProfile({ ...profile, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
                 <Input label="Senha atual" type="password" value={profile.currentPassword} onChange={(value) => setProfile({ ...profile, currentPassword: value })} />
                 <Input label="Nova senha" type="password" value={profile.newPassword} onChange={(value) => setProfile({ ...profile, newPassword: value })} />
@@ -517,7 +517,7 @@ function ContaPageContent() {
                 {mode !== "recover" && <Input label={mode === "reset" ? "Nova senha" : "Senha"} type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} required minLength={mode === "login" ? undefined : 10} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} />}
                 {mode === "register" && (
                   <>
-                    <Input label="WhatsApp" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />
+                    <Input label="Telefone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />
                     <Input label="CPF (opcional)" value={form.cpf} onChange={(value) => setForm({ ...form, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
                   </>
                 )}

@@ -54,6 +54,31 @@ canvas {
   max-width: 100%;
 }
 
+.movie-catalog-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.movie-catalog-filters label {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 1120px) {
+  #movieForm .wizard-actions {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #movieForm .wizard-actions .unsaved-indicator {
+    flex-basis: 100%;
+  }
+}
+
 button,
 input,
 select,
@@ -2231,6 +2256,23 @@ h1 {
 
 .integration-fields label.full {
   grid-column: 1 / -1;
+}
+
+.integration-fields .integration-checkbox-group {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.integration-checkbox-group legend {
+  padding: 0 6px;
+  color: var(--text);
+  font-weight: 750;
 }
 
 .integration-fields .check-field {

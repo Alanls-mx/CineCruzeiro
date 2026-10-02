@@ -106,6 +106,7 @@ function assertCurrent(before, current, changes) {
 async function deleteRemovedRows(client, changes) {
   for (const table of DELETE_ORDER) {
     const removed = [...changes.tables.get(table).removed];
+    if (table === "sessions") continue;
     if (table === "order_items") {
       const owners = [...new Set([...removed, ...changes.tables.get(table).changed])];
       if (owners.length) await client.query("DELETE FROM order_items WHERE order_id = ANY($1::text[])", [owners]);
@@ -117,6 +118,11 @@ async function deleteRemovedRows(client, changes) {
       await client.query(`DELETE FROM ${table} WHERE ${column} = ANY($1::text[])`, [removed]);
     }
   }
+}
+
+async function deleteRemovedSessions(client, changes) {
+  const removed = [...changes.tables.get("sessions").removed];
+  if (removed.length) await client.query("DELETE FROM sessions WHERE id = ANY($1::text[])", [removed]);
 }
 
 // Only the fixed INSERT statements in postgresStore use this adapter. Values
@@ -147,4 +153,4 @@ function createSnapshotWriter(client, changes) {
   };
 }
 
-module.exports = { captureSnapshot, rememberSnapshot, snapshotBaseline, changesBetween, assertCurrent, deleteRemovedRows, createSnapshotWriter };
+module.exports = { captureSnapshot, rememberSnapshot, snapshotBaseline, changesBetween, assertCurrent, deleteRemovedRows, deleteRemovedSessions, createSnapshotWriter };

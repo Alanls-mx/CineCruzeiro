@@ -504,7 +504,7 @@ async function sendPrivateEventInquiry(db, inquiry = {}, options = {}) {
       <tr><td style="padding:16px;color:#dbeafe;line-height:1.7;overflow-wrap:anywhere">
         <strong style="color:#fff">Cliente:</strong> ${htmlEscape(inquiry.name)}<br>
         <strong style="color:#fff">E-mail:</strong> ${htmlEscape(requesterEmail)}<br>
-        <strong style="color:#fff">WhatsApp:</strong> ${htmlEscape(inquiry.phone)}<br>
+        <strong style="color:#fff">Telefone:</strong> ${htmlEscape(inquiry.phone)}<br>
         <strong style="color:#fff">Evento:</strong> ${htmlEscape(eventLabel)}<br>
         <strong style="color:#fff">Data desejada:</strong> ${htmlEscape(inquiry.desiredDate || "A combinar")}<br>
         <strong style="color:#fff">Público estimado:</strong> ${htmlEscape(inquiry.estimatedGuests || "Não informado")}
@@ -517,7 +517,7 @@ async function sendPrivateEventInquiry(db, inquiry = {}, options = {}) {
     replyTo: requesterEmail,
     subject: `Novo pedido de evento: ${eventLabel} - ${inquiry.name}`,
     html: baseLayout("Nova solicitação de evento", details, { kicker: "Eventos" }),
-    text: `Nova solicitação de evento\nCliente: ${inquiry.name}\nE-mail: ${requesterEmail}\nWhatsApp: ${inquiry.phone}\nEvento: ${eventLabel}\nData: ${inquiry.desiredDate || "A combinar"}\nPúblico: ${inquiry.estimatedGuests || "Não informado"}\nMensagem: ${inquiry.notes || ""}`
+    text: `Nova solicitação de evento\nCliente: ${inquiry.name}\nE-mail: ${requesterEmail}\nTelefone: ${inquiry.phone}\nEvento: ${eventLabel}\nData: ${inquiry.desiredDate || "A combinar"}\nPúblico: ${inquiry.estimatedGuests || "Não informado"}\nMensagem: ${inquiry.notes || ""}`
   }, "private_rental.inquiry", { source: inquiry.source || "eventos" });
   if (!inquiryDelivered) return { inquiryDelivered: false, acknowledgementDelivered: false };
 
@@ -527,7 +527,7 @@ async function sendPrivateEventInquiry(db, inquiry = {}, options = {}) {
     html: baseLayout("Sua solicitação chegou", `
       <p>Olá, <strong>${htmlEscape(inquiry.name)}</strong>.</p>
       <p>Recebemos seu pedido para <strong>${htmlEscape(eventLabel)}</strong>. Nossa equipe vai analisar a data, o tamanho do grupo e os detalhes enviados.</p>
-      <p>Entraremos em contato em breve pelo WhatsApp <strong>${htmlEscape(inquiry.phone)}</strong> ou por este e-mail.</p>
+      <p>Entraremos em contato em breve pelo telefone <strong>${htmlEscape(inquiry.phone)}</strong> ou por este e-mail.</p>
       <div style="margin-top:18px;padding:14px 16px;background:#111827;border-radius:10px;color:#dbeafe">
         <strong style="display:block;margin-bottom:6px;color:#facc15">Resumo</strong>
         ${htmlEscape(inquiry.desiredDate || "Data a combinar")} · ${htmlEscape(inquiry.estimatedGuests || "Público a combinar")}

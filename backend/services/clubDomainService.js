@@ -16,6 +16,19 @@ function addDays(value, days) {
   return date.toISOString();
 }
 
+function hasApprovedProviderPayment(db, provider, providerPaymentId) {
+  const id = String(providerPaymentId || "");
+  if (!id) return false;
+  return (db.subscriptionPayments || []).some((payment) =>
+    payment.provider === provider && payment.providerPaymentId === id && payment.status === "approved"
+  );
+}
+
+function shouldIssueSubscriptionPaymentCycle(db, payment) {
+  const providerPaymentId = String(payment?.providerPaymentId || "");
+  return Boolean(providerPaymentId && !hasApprovedProviderPayment(db, payment.provider || "unknown", providerPaymentId));
+}
+
 function releaseExpiredReservations(db, now = new Date()) {
   const timestamp = now.getTime();
   for (const credit of db.subscriptionCreditUnits || []) {
@@ -295,10 +308,12 @@ module.exports = {
   calculateGoodsDiscount,
   creditCounts,
   eligibleCredits,
+  hasApprovedProviderPayment,
   issueCycle,
   orderBreakdown,
   redeemReservedCredits,
   releaseExpiredReservations,
   releaseOrderCredits,
-  reserveCredits
+  reserveCredits,
+  shouldIssueSubscriptionPaymentCycle
 };

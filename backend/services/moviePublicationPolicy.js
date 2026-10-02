@@ -1,3 +1,5 @@
+const { isValidCalendarDate, isValidSessionTime } = require("./calendarDateService");
+
 function normalizedStatus(value) {
   return String(value || "available").trim().toLowerCase();
 }
@@ -10,7 +12,7 @@ function sessionStartsAt(session = {}) {
   }
   const date = String(session.date || "").slice(0, 10);
   const time = String(session.time || session.timeLabel || "00:00").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  if (!isValidCalendarDate(date) || !isValidSessionTime(time)) return null;
   const parsed = new Date(`${date}T${time}:00-03:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
@@ -68,5 +70,6 @@ module.exports = {
   moviePremiereTiming,
   nearestAvailableSession,
   shouldPublishUpcomingMovie,
+  sessionStartsAt,
   _test: { availableSessions, normalizedStatus, sessionStartsAt }
 };

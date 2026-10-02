@@ -1413,10 +1413,14 @@ function openConcessionOrderDetail(orderId) {
 }
 
 function ticketFinanceQuery() {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  const from = $("ticketFinanceFrom")?.value || state.dashboardFrom || today;
+  const to = $("ticketFinanceTo")?.value || state.dashboardTo || today;
+  if (from > to) throw new Error("A data final deve ser igual ou posterior à inicial.");
   const params = new URLSearchParams({
     period: "custom",
-    from: $("ticketFinanceFrom")?.value || state.dashboardFrom || new Date().toISOString().slice(0, 10),
-    to: $("ticketFinanceTo")?.value || state.dashboardTo || new Date().toISOString().slice(0, 10)
+    from,
+    to
   });
   const movieId = $("ticketFinanceMovie")?.value || "";
   if (movieId) params.set("movieId", movieId);
@@ -1425,15 +1429,30 @@ function ticketFinanceQuery() {
 
 async function loadTicketFinanceReport() {
   if (!adminCan("ticket_finance.view")) return;
+  const requestId = (state.ticketFinanceRequestId || 0) + 1;
+  state.ticketFinanceRequestId = requestId;
   const button = $("ticketFinanceRefresh");
   if (button) button.disabled = true;
+  $("ticketFinanceRows").setAttribute("aria-busy", "true");
+  $("ticketFinanceRows").innerHTML = `<tr><td colspan="5">Atualizando apuração...</td></tr>`;
+  ["ticketFinanceQuantity", "ticketFinanceGross", "ticketFinanceDistributor", "ticketFinanceNet", "ticketFinanceMargin"].forEach((id) => { $(id).textContent = "—"; });
+  ["ticketFinanceExportCsv", "ticketFinanceExportPdf"].forEach((id) => setDisabled(id, true));
   try {
-    state.ticketFinanceReport = await api(`/api/admin/reports/ticket-distributor?${ticketFinanceQuery()}`);
+    const report = await api(`/api/admin/reports/ticket-distributor?${ticketFinanceQuery()}`);
+    if (state.ticketFinanceRequestId !== requestId) return;
+    state.ticketFinanceReport = report;
     renderTicketFinanceReport();
+    ["ticketFinanceExportCsv", "ticketFinanceExportPdf"].forEach((id) => setDisabled(id, false));
   } catch (error) {
+    if (state.ticketFinanceRequestId !== requestId) return;
+    state.ticketFinanceReport = null;
+    renderTicketFinanceReport();
     showToast(error.message, "error");
   } finally {
-    if (button) button.disabled = false;
+    if (state.ticketFinanceRequestId === requestId) {
+      if (button) button.disabled = false;
+      $("ticketFinanceRows").removeAttribute("aria-busy");
+    }
   }
 }
 
@@ -1493,9 +1512,11 @@ async function saveTicketFinanceRules(event) {
 
 function downloadTicketFinanceReport(format) {
   if (!adminCan("ticket_finance.export")) return;
+  let query;
+  try { query = ticketFinanceQuery(); } catch (error) { showToast(error.message, "error"); return; }
   const extension = format === "csv" ? "csv" : "pdf";
   const link = document.createElement("a");
-  link.href = `${API_BASE}/api/admin/reports/ticket-distributor.${extension}?${ticketFinanceQuery()}`;
+  link.href = `${API_BASE}/api/admin/reports/ticket-distributor.${extension}?${query}`;
   link.download = "";
   document.body.appendChild(link);
   link.click();
@@ -2215,9 +2236,12 @@ function exportLogs() {
 
 function renderInsights() {
   const movies = state.content?.movies || [];
-  const nowPlaying = movies.filter((movie) => movie.status === "now_playing").length;
-  const upcoming = movies.filter((movie) => movie.status === "upcoming").length;
-  const sessions = movies.reduce((total, movie) => total + (movie.sessions?.length || 0), 0);
+  const published = movies.filter((movie) => movie.workflowStatus === "published" && movie.status !== "hidden");
+  const nowPlaying = published.filter((movie) => movie.status === "now_playing").length;
+  const upcoming = published.filter((movie) => movie.status === "upcoming").length;
+  const sessions = movies.reduce((total, movie) => total + (movie.sessions || []).filter((session) =>
+    !["cancelled", "hidden", "archived"].includes(session.status)
+    && new Date(`${session.date}T${session.time}:00-03:00`).getTime() + 10 * 60000 > Date.now()).length, 0);
   const activeTickets = state.content?.ticketTypes?.filter((ticket) => ticket.active !== false) || [];
   const baseTicket = activeTickets[0]?.price ?? state.content?.ticketTypes?.[0]?.price ?? 0;
 
@@ -2931,26 +2955,35 @@ function validateMovieWizardStep(step, finalPublish = false) {
   return true;
 }
 
-function renderMovies() {
-  const movies = [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
-  const catalogPositions = new Map(movies.map((movie, index) => [movie.id, index + 1]));
+function renderMovies(options = {}) {
+  const catalog = [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
+  const catalogPositions = new Map(catalog.map((movie, index) => [movie.id, index + 1]));
+  const search = ($("movieCatalogSearch")?.value || "").trim().toLocaleLowerCase("pt-BR");
+  const filter = $("movieCatalogFilter")?.value || "";
+  const movies = catalog.filter((movie) => {
+    const workflow = movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published");
+    const matches = !filter || (filter === "draft" ? workflow === "draft"
+      : filter === "archived" ? workflow === "archived" || (workflow !== "draft" && movie.status === "hidden")
+      : workflow === "published" && movie.status === filter);
+    return matches && String(movie.title || "").toLocaleLowerCase("pt-BR").includes(search);
+  });
   if (state.creating.movie) {
     $("moviesList").innerHTML = creationPlaceholder("Novo filme em edição", "Preencha o quadro à direita e publique quando estiver pronto.");
-    fillMovieForm(null);
+    if (!options.preserveForm) fillMovieForm(null);
     return;
   }
   if (!movies.length) {
     $("moviesList").innerHTML = `
       <div class="empty-state">
-        <strong>Nenhum filme cadastrado</strong>
-        <span>Use Novo Filme ou a busca TMDB para montar o catálogo.</span>
+        <strong>${catalog.length ? "Nenhum filme encontrado" : "Nenhum filme cadastrado"}</strong>
+        <span>${catalog.length ? "Altere a busca ou o filtro de situação." : "Use Novo Filme ou a busca TMDB para montar o catálogo."}</span>
       </div>
     `;
-    fillMovieForm(null);
+    if (!options.preserveForm) fillMovieForm(currentMovie());
     return;
   }
 
-  const pagination = paginateAdminItems(movies, "movies", "selectedMovieId");
+  const pagination = paginateAdminItems(movies, "movies", options.preserveForm ? "" : "selectedMovieId");
   $("moviesList").innerHTML = pagination.pageItems
     .map((movie) => {
       const sessionCount = movie.sessions?.length || 0;
@@ -2985,7 +3018,7 @@ function renderMovies() {
     })
     .join("") + renderAdminListPager("movies", pagination, "filme(s)");
 
-  fillMovieForm(currentMovie());
+  if (!options.preserveForm) fillMovieForm(currentMovie());
 }
 
 function fillMovieForm(movie) {
@@ -3193,7 +3226,7 @@ function renderSessions(sessions) {
         .map(
           (session) => {
             const linkedTickets = (state.content?.tickets || []).filter((ticket) => ticket.sessionId === session.id);
-            const sold = linkedTickets.filter((ticket) => !["cancelled", "refunded", "pending_payment"].includes(ticket.status)).length;
+            const sold = linkedTickets.filter((ticket) => ["active", "used"].includes(ticket.status)).length;
             const capacity = Number(session.capacity || linkedTickets[0]?.sessionCapacity || 0);
             const allowedTypes = sessionTicketTypes(session);
             const ticketTypeSummary = allowedTypes.length
@@ -3201,8 +3234,8 @@ function renderSessions(sessions) {
               : "Sem ingressos liberados";
             return `
             <div class="session-row">
-              <strong>${session.time}</strong>
-              <span>${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR")} • ` : ""}${session.format} • ${session.room}</span>
+              <strong>${escapeHtml(session.time)} · ${escapeHtml(globalSessionStatusLabel(session.status))}</strong>
+              <span>${session.date ? `${escapeHtml(new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }))} • ` : ""}${escapeHtml(session.format)} • ${escapeHtml(session.room)}</span>
               <span>${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
               <div class="session-row-actions">
                 <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(session.id)}')">Ingressos</button>
@@ -3335,6 +3368,7 @@ function applySessionMutation(movieId, session, removed = false) {
   movie.sessions.sort((a, b) => String(`${a.date} ${a.time}`).localeCompare(String(`${b.date} ${b.time}`)));
   movie.updatedAt = new Date().toISOString();
   renderGlobalSessions();
+  renderInsights();
 }
 
 function loweredMoviePriorityMessage(changes) {
@@ -3507,16 +3541,25 @@ async function saveMovie(event) {
 
 async function deleteMovie(id = "") {
   const movie = id ? state.content?.movies?.find((item) => item.id === id) : currentMovie();
-  if (!movie || !confirm(`Excluir ${movie.title}?`)) return;
+  if (!movie || state.deletingMovieId) return;
+  if (!confirm(`Excluir "${movie.title}" do catálogo e da programação?\n\nO filme deixará de aparecer nas listas. Pedidos, ingressos e registros financeiros existentes serão preservados para consulta.`)) return;
+  state.deletingMovieId = movie.id;
+  setDisabled("deleteMovieButton", true);
   try {
     const result = await api(`/api/movies/${encodeURIComponent(movie.id)}`, { method: "DELETE" });
     state.selectedMovieId = "";
-    if (result.archived && result.movie) upsertAdminCollection("movies", result.movie);
-    else removeAdminCollectionItem("movies", movie.id);
+    removeAdminCollectionItem("movies", movie.id);
+    closeSessionEditor();
+    state.movieDraftSessions = [];
     renderMovies();
-    showToast(result.archived ? "Filme arquivado por possuir histórico." : "Filme excluído.");
+    renderGlobalSessions();
+    renderInsights();
+    showToast(result.historyPreserved ? "Filme excluído do catálogo. Histórico de vendas e financeiro preservado." : "Filme excluído.");
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    state.deletingMovieId = "";
+    setDisabled("deleteMovieButton", !currentMovie());
   }
 }
 
@@ -4435,7 +4478,7 @@ function globalSessionConflictMap(entries) {
 }
 
 function globalSessionStatusLabel(status = "") {
-  return { available: "Disponível", sold_out: "Esgotada", cancelled: "Cancelada", hidden: "Oculta", archived: "Arquivada" }[String(status || "available").toLowerCase()] || "Disponível";
+  return { available: "Disponível", filling_fast: "Últimos lugares", sold_out: "Esgotada", cancelled: "Cancelada", hidden: "Oculta", archived: "Arquivada" }[String(status || "available").toLowerCase()] || "Disponível";
 }
 
 function renderGlobalSessionOptions() {
@@ -10804,14 +10847,14 @@ const ALL_ADMIN_PERMISSIONS = [
   "orders.view", "orders.edit", "orders.cancel", "orders.archive", "orders.delete", "orders.refund", "orders.print", "orders.resend", "payments.view",
   "concessions.view", "concessions.sell", "concessions.edit", "concessions.delete", "concessions.refund",
   "marketing.view", "marketing.manage", "social_studio.view", "social_studio.create", "social_studio.delete",
-  "whatsapp.view", "whatsapp.reply", "whatsapp.manage", "club.view", "club.manage", "club.credits",
+  "club.view", "club.manage", "club.credits",
   "integrations.view", "integrations.manage", "logs.view", "logs.delete", "users.manage", "settings.view", "settings.manage", "media.manage"
 ];
 
 const ADMIN_PERMISSION_PRESETS = {
   owner: [...ALL_ADMIN_PERMISSIONS],
   manager: ALL_ADMIN_PERMISSIONS.filter((permission) => !["integrations.view", "integrations.manage", "settings.manage", "users.manage", "logs.delete"].includes(permission)),
-  operator: ["dashboard.view", "movies.view", "rooms.view", "tickets.view", "tickets.validate", "orders.view", "orders.print", "payments.view", "box_office.sell", "concessions.view", "concessions.sell", "whatsapp.view", "whatsapp.reply"]
+  operator: ["dashboard.view", "movies.view", "rooms.view", "tickets.view", "tickets.validate", "orders.view", "orders.print", "payments.view", "box_office.sell", "concessions.view", "concessions.sell"]
 };
 
 function selectedUserPermissions() {
@@ -11662,6 +11705,7 @@ function integrationCategory(key) {
     email: "E-mail",
     analytics: "Medição",
     crm: "CRM",
+    discord: "Alertas e monitoramento",
     commercialCatalog: "Catálogo comercial"
   }[key] || "Integração";
 }
@@ -11839,6 +11883,22 @@ function renderIntegrationContext(integration, testResult = null) {
       </div>
     </dl>
     ${integration.key === "googleWallet" ? integrationDiagnosticsMarkup(testResult?.checks, testResult?.diagnostics) : ""}
+    ${integration.key === "crm" ? `
+      <section class="integration-catalog-access">
+        <strong>O que esta integração recebe</strong>
+        <p>Somente os eventos marcados são enfileirados. A entrega usa HMAC SHA-256 com timestamp, timeout configurável e fila persistente com novas tentativas para falhas transitórias.</p>
+        <p>Fila: ${Number(integration.outbox?.queued || 0)} pendente(s), ${Number(integration.outbox?.processing || 0)} em processamento, ${Number(integration.outbox?.dead || 0)} em dead letter.</p>
+        <button class="ghost-button" type="button" onclick="retryCrmDeadLetters()" ${Number(integration.outbox?.dead || 0) ? "" : "disabled"}>Reenfileirar falhas</button>
+        <small>Falhas permanentes ficam para inspeção. Itens ainda pendentes que forem desmarcados são cancelados antes de enviar.</small>
+      </section>
+    ` : ""}
+    ${integration.key === "discord" ? `
+      <section class="integration-catalog-access">
+        <strong>O que será enviado</strong>
+        <p>Alertas de erro, falhas HTTP, desempenho, eventos de segurança e um resumo periódico de CPU, memória, disco e latência. Os eventos informativos podem ser ligados separadamente.</p>
+        <p>Os embeds omitem IP, dados de clientes, conteúdo de requisições e credenciais. Tentativas de SQL injection são sinalizadas por padrões heurísticos em URL e query, sem bloquear a requisição e sem inspecionar corpos POST.</p>
+      </section>
+    ` : ""}
     ${integration.key === "commercialCatalog" ? commercialCatalogAccessMarkup() : ""}
   `;
 }
@@ -11861,6 +11921,21 @@ function integrationFieldInput(field, integration) {
           ${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${String(value) === String(option) ? "selected" : ""}>${escapeHtml(option === "production" ? "Produção" : option === "sandbox" ? "Sandbox" : option)}</option>`).join("")}
         </select>
       </label>
+    `;
+  }
+  if (field.type === "checkboxGroup") {
+    const selected = new Set(Array.isArray(value) ? value : String(value || "").split(",").map((item) => item.trim()));
+    const original = escapeHtml(JSON.stringify([...selected]));
+    return `
+      <fieldset class="integration-checkbox-group" data-integration-checkbox-group="${escapeHtml(field.key)}" data-integration-original="${original}">
+        <legend>${escapeHtml(field.label)}</legend>
+        ${(field.options || []).map((option) => `
+          <label class="check-field">
+            <input type="checkbox" data-integration-field="${escapeHtml(field.key)}" data-integration-option="${escapeHtml(option)}" ${selected.has(option) ? "checked" : ""} />
+            <span>${escapeHtml(option)}</span>
+          </label>
+        `).join("")}
+      </fieldset>
     `;
   }
   const secret = integration.secrets?.[field.key];
@@ -11892,6 +11967,7 @@ function integrationFieldInput(field, integration) {
     googleMeasurementId: "Ex.: G-XXXXXXXXXX",
     metaPixelId: "Ex.: 123456789012345",
     url: "Ex.: https://crm.seusite.com/webhook",
+    webhookUrl: "https://discord.com/api/webhooks/ID/TOKEN (tratado como segredo)",
     secret: "Cole o segredo de assinatura",
     events: "Ex.: order.created,payment.approved",
     timeout: "Ex.: 8000",
@@ -12182,9 +12258,20 @@ function closeIntegrationConfig() {
 
 function collectIntegrationForm() {
   const payload = {};
+  const collectedGroups = new Set();
   $("integrationForm").querySelectorAll("[data-integration-field]").forEach((input) => {
     const key = input.dataset.integrationField;
     if (!key) return;
+    if (input.dataset.integrationOption) {
+      if (collectedGroups.has(key)) return;
+      collectedGroups.add(key);
+      const group = input.closest("[data-integration-checkbox-group]");
+      const current = [...group.querySelectorAll("[data-integration-option]:checked")].map((option) => option.dataset.integrationOption);
+      let original = [];
+      try { original = JSON.parse(group.dataset.integrationOriginal || "[]"); } catch {}
+      if (JSON.stringify(current) !== JSON.stringify(original)) payload[key] = current;
+      return;
+    }
     if (input.type === "checkbox") {
       if (String(input.checked) === input.dataset.integrationOriginal) return;
       payload[key] = input.checked;
@@ -12383,6 +12470,11 @@ function bindEvents() {
   $("ticketFinanceExportCsv")?.addEventListener("click", () => downloadTicketFinanceReport("csv"));
   $("ticketFinanceRulesForm")?.addEventListener("submit", saveTicketFinanceRules);
   $("ticketFinanceMovie")?.addEventListener("change", loadTicketFinanceReport);
+  $("ticketFinanceFrom")?.addEventListener("change", loadTicketFinanceReport);
+  $("ticketFinanceTo")?.addEventListener("change", loadTicketFinanceReport);
+  const filterCatalog = () => { state.moviesPage = 1; renderMovies({ preserveForm: true }); };
+  $("movieCatalogSearch")?.addEventListener("input", filterCatalog);
+  $("movieCatalogFilter")?.addEventListener("change", filterCatalog);
 
   document.addEventListener("click", (event) => {
     const floating = $("floatingActionMenu");
@@ -13428,6 +13520,7 @@ window.updateClubSubscription = updateClubSubscription;
 window.deleteClubPlan = deleteClubPlan;
 window.adjustClubCredit = adjustClubCredit;
 window.openIntegrationConfig = openIntegrationConfig;
+window.retryCrmDeadLetters = retryCrmDeadLetters;
 window.testIntegration = testIntegration;
 window.showWebhookRun = showWebhookRun;
 window.resendWebhookRun = resendWebhookRun;
@@ -13452,6 +13545,20 @@ function restoreActivePointPayment() {
   activatePanel("concessionsPanel", { scroll: false });
   setConcessionTab("counterSale");
   pollConcessionCounterPayment({ manual: true });
+}
+
+async function retryCrmDeadLetters() {
+  try {
+    const result = await api("/api/admin/integrations/crm/outbox/retry-dead", { method: "POST" });
+    const integration = state.integrations?.integrations?.crm;
+    if (integration) integration.outbox = result.outbox;
+    if (state.selectedIntegrationKey === "crm" && integration) {
+      $("integrationContext").innerHTML = renderIntegrationContext(integration);
+    }
+    showToast(`${Number(result.count || 0)} evento(s) reenfileirado(s).`, "ok");
+  } catch (error) {
+    showToast(error.message || "Não foi possível reenfileirar as falhas.", "error");
+  }
 }
 
 async function initAdmin() {

@@ -22,8 +22,9 @@ test('an unknown event still shows its identity; known Studio activity has a rea
   assert.match(present({event: 'custom.reconciliation_started', category: 'custom'}).description, /custom\.reconciliation_started/);
 });
 
-test('WhatsApp is absent from navigation while its permission controls remain', () => {
+test('WhatsApp navigation and permission controls are removed', () => {
   const html = readFileSync(new URL('../backend/public/admin.html', import.meta.url), 'utf8');
   assert.doesNotMatch(html, /class="nav-button"[^>]*admin\/whatsapp/);
-  assert.match(html, /value="whatsapp\.view"/);
+  assert.doesNotMatch(html, /value="whatsapp\./);
+  assert.doesNotMatch(script, /"whatsapp\.(view|reply|manage)"/);
 });

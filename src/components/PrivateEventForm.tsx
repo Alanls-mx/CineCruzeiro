@@ -132,7 +132,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
               </div>
               <h3 className="text-2xl font-black text-white">Solicitação recebida</h3>
               <p className="text-sm text-slate-300 max-w-md mx-auto">
-                Obrigado, <strong>{name}</strong>! Nossa equipe entrará em contato pelo WhatsApp{" "}
+                Obrigado, <strong>{name}</strong>! Nossa equipe entrará em contato pelo telefone{" "}
                 <strong>{phone}</strong> com o orçamento personalizado para a data{" "}
                 <strong>{desiredDate}</strong>.
               </p>
@@ -155,7 +155,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
               <div className="text-left mb-4">
                 <h3 className="text-lg font-bold text-white">Solicite um Orçamento Rápido</h3>
                 <p className="text-xs text-slate-300 font-medium">
-                  Preencha os campos abaixo e receba valores e disponibilidade no WhatsApp em até 2 horas.
+                  Preencha os campos abaixo e solicite valores e disponibilidade à equipe do cinema.
                 </p>
               </div>
 
@@ -173,7 +173,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-brand-300">WhatsApp para Contato *</label>
+                  <label className="text-xs font-bold text-brand-300">Telefone para contato *</label>
                   <input
                     type="tel"
                     required
@@ -264,7 +264,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
                 ) : (
                   <>
                     <Send className="h-4 w-4" />
-                    <span>Solicitar Orçamento no WhatsApp</span>
+                    <span>Solicitar orçamento</span>
                   </>
                 )}
               </button>

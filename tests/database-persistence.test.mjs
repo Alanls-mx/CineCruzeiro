@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const { captureSnapshot, changesBetween, assertCurrent, createSnapshotWriter, deleteRemovedRows } = require("../backend/db/snapshotChanges");
+const { captureSnapshot, changesBetween, assertCurrent, createSnapshotWriter, deleteRemovedRows, deleteRemovedSessions } = require("../backend/db/snapshotChanges");
 
 const fixture = () => ({ settings: { title: "Cinema" }, users: [{ id: "u", name: "A" }], movies: [{ id: "m", title: "Filme", sessions: [{ id: "s", time: "19:00", ticketTypeIds: ["t"] }] }] });
 
@@ -27,7 +27,11 @@ test("mudança de sessão é independente do filme e remoção fica restrita ao 
   assert.deepEqual([...changes.tables.get("sessions").removed], ["s"]);
   const queries = [];
   await deleteRemovedRows({ query: async (...args) => queries.push(args) }, changes);
+  assert.equal(queries.length, 1);
+  assert.match(queries[0][0], /session_ticket_types/);
+  await deleteRemovedSessions({ query: async (...args) => queries.push(args) }, changes);
   assert.equal(queries.length, 2);
+  assert.match(queries[1][0], /DELETE FROM sessions/);
   assert.ok(queries.every(([sql]) => sql.includes("WHERE")));
 });
 

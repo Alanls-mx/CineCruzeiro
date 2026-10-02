@@ -186,7 +186,7 @@ export const CINEMA_DIFFERENTIATORS = [
   {
     title: "Sem Filas Intermináveis",
     description:
-      "Escolha o filme, chame no WhatsApp, pague com Pix e receba o ingresso digital na hora. Sem baixar apps pesados.",
+      "Escolha o filme e a sessão, pague com Pix e receba o ingresso digital após a aprovação. Sem baixar aplicativos.",
     icon: "Clock",
     highlight: "30s no celular",
   },

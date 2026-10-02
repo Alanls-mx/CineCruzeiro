@@ -1205,7 +1205,7 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
         <div className="mt-6 bg-brand-900/70 p-5 shadow-soft">
           <p className="text-lg font-black text-white">{customerUser.name || "Cliente Cine Cruzeiro"}</p>
           <p className="mt-2 text-sm text-slate-300">{customerUser.email}</p>
-          <p className="mt-1 text-sm text-slate-400">{customerUser.phone || "WhatsApp não informado"}</p>
+          <p className="mt-1 text-sm text-slate-400">{customerUser.phone || "Telefone não informado"}</p>
           <Link href="/conta" className="mt-4 inline-flex text-sm font-black text-gold-400 hover:text-gold-300">
             Editar dados da conta
           </Link>

@@ -1,5 +1,7 @@
 const crypto = require("crypto");
 const { requireRuntimeSecret } = require("./runtimeSecretService");
+const { validateDiscordWebhookUrl } = require("./discordWebhookService");
+const { CRM_EVENT_TYPES, normalizeCrmEvents } = require("./crmWebhookDeliveryService");
 
 const SECRET_MASK = "••••••••";
 const GCM_AUTH_TAG_BYTES = 16;
@@ -101,15 +103,27 @@ const DEFINITIONS = {
   crm: {
     name: "Webhook CRM",
     purpose: "Sincronização de eventos comerciais e operacionais",
-    defaults: { enabled: false, environment: "production", url: "", events: "order.created,payment.approved,ticket.used", timeout: 8000, retryLimit: 2 },
+    defaults: { enabled: false, environment: "production", url: "", events: ["order.created", "payment.approved", "ticket.used"], timeout: 8000, retryLimit: 2 },
     secrets: ["secret"],
     fields: [
       { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
       { key: "url", label: "URL do webhook", type: "url" },
       { key: "secret", label: "Segredo", type: "secret" },
-      { key: "events", label: "Eventos", type: "text" },
+      { key: "events", label: "Eventos enviados ao CRM", type: "checkboxGroup", options: CRM_EVENT_TYPES },
       { key: "timeout", label: "Timeout em ms", type: "number" },
       { key: "retryLimit", label: "Tentativas", type: "number" }
+    ]
+  },
+  discord: {
+    name: "Alertas operacionais Discord",
+    purpose: "Embeds filtrados de erros, segurança, desempenho e saúde do servidor",
+    defaults: { enabled: false, environment: "production", includeInfo: false, healthIntervalMinutes: 5 },
+    secrets: ["webhookUrl"],
+    fields: [
+      { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
+      { key: "webhookUrl", label: "URL privada do webhook Discord", type: "url" },
+      { key: "includeInfo", label: "Incluir eventos informativos", type: "boolean" },
+      { key: "healthIntervalMinutes", label: "Intervalo do resumo de saúde (minutos)", type: "number" }
     ]
   },
   commercialCatalog: {
@@ -168,6 +182,9 @@ const ENV = {
   crm: {
     url: ["CRM_WEBHOOK_URL", "LUMIX_WEBHOOK_URL"],
     secret: ["CRM_WEBHOOK_SECRET", "LUMIX_WEBHOOK_SECRET"]
+  },
+  discord: {
+    webhookUrl: ["DISCORD_ALERTS_WEBHOOK_URL"]
   },
   commercialCatalog: {
     accessToken: ["COMMERCIAL_CATALOG_TOKEN", "CATALOG_WEBHOOK_TOKEN"],
@@ -271,7 +288,8 @@ function isConfigured(provider, config) {
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
   if (provider === "email") return Boolean((config.smtpHost && config.smtpUser && config.smtpPassword && config.fromEmail) || config.webhookUrl);
   if (provider === "analytics") return Boolean(config.googleMeasurementId || config.metaPixelId);
-  if (provider === "crm") return Boolean(config.url);
+  if (provider === "crm") return Boolean(config.url && config.secret && normalizeCrmEvents(config.events).length);
+  if (provider === "discord") return Boolean(config.webhookUrl && validateDiscordWebhookUrl(config.webhookUrl));
   if (provider === "commercialCatalog") return Boolean(config.accessToken);
   return false;
 }
@@ -419,6 +437,9 @@ function save(db, provider, input = {}, user) {
       if (normalized === "__CLEAR__") {
         delete next[field.key];
       } else {
+        if (key === "discord" && field.key === "webhookUrl" && !validateDiscordWebhookUrl(normalized)) {
+          throw configValidationError("Use uma URL HTTPS válida de webhook do Discord (discord.com/api/webhooks/...).", "DISCORD_WEBHOOK_URL_INVALID");
+        }
         if (key === "googleWallet" && field.key === "serviceAccountJson") {
           normalized = normalizeGoogleWalletServiceAccount(normalized);
         }
@@ -430,6 +451,7 @@ function save(db, provider, input = {}, user) {
     if (value === null || value === undefined) return;
     if (field.type === "boolean") next[field.key] = Boolean(value);
     else if (field.type === "number") next[field.key] = Number(value || 0);
+    else if (field.type === "checkboxGroup") next[field.key] = normalizeCrmEvents(value);
     else next[field.key] = String(value ?? "").trim();
   });
   if (googleWalletClassChanged) delete next.resolvedClassId;

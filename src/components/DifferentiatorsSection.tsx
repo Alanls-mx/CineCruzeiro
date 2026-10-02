@@ -41,7 +41,7 @@ export function DifferentiatorsSection() {
               <h3 className="text-lg font-bold text-white">Compre em 30 Segundos</h3>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed font-normal">
-              1. Escolha o filme. 2. Chame no WhatsApp. 3. Pague com PIX e receba seu ingresso digital na hora. Sem baixar apps pesados.
+              1. Escolha o filme. 2. Selecione a sessão. 3. Pague com Pix e receba seu ingresso digital após a aprovação.
             </p>
           </div>
 
@@ -148,7 +148,7 @@ export function DifferentiatorsSection() {
 
             {/* Row 4 */}
             <div className="grid grid-cols-12 items-center rounded-2xl bg-brand-950/80 p-3 sm:p-4 text-xs sm:text-sm border border-brand-800">
-              <div className="col-span-5 sm:col-span-4 font-bold text-white">Ingresso pelo WhatsApp</div>
+              <div className="col-span-5 sm:col-span-4 font-bold text-white">Ingresso pelo site</div>
               <div className="col-span-4 sm:col-span-4 text-emerald-400 font-bold flex items-center gap-1.5">
                 <Check className="h-4 w-4 shrink-0 stroke-[3]" />
                 <span>Instantâneo</span>
