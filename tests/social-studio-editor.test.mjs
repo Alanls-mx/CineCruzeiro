@@ -6,6 +6,7 @@ import sharp from "sharp";
 
 const require = createRequire(import.meta.url);
 const engine = require("../backend/services/socialStudioEngineService");
+const { flattenElements } = require("../backend/services/social-studio/scene/groups");
 
 async function solid(width, height, background) {
   return sharp({ create: { width, height, channels: 4, background } }).png().toBuffer();
@@ -94,10 +95,35 @@ test("renderização manual permanece no servidor e respeita tamanho e formato",
   title.height=originalHeight;
   const {wrapText}=require('../backend/services/social-studio/scene/factory');
   Object.assign(title,wrapText(title.text,title.width,title.height,title.fontSize,4));
-  const rendered = await engine.renderSocialScene(automatic.scene, { loadImage, outputType: "jpg" });
+  const rendered = await engine.renderSocialScene(automatic.scene, { loadImage, outputType: "jpg", allowManualLayoutIssues: true });
   const metadata = await sharp(rendered.buffer).metadata();
   assert.deepEqual([metadata.width, metadata.height, metadata.format], [1080, 1080, "jpeg"]);
   assert.equal(rendered.scene.elements.find((element) => element.role === "title").text.replace(/\s+/g,' '), "Título ajustado pelo operador");
+});
+
+test("editor saves and exports manually overlapping text while automatic rendering still flags it", async () => {
+  const { context, loadImage } = await fixture();
+  const automatic = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "square" }, context, { loadImage });
+  const texts = flattenElements(automatic.scene.elements).filter((element) => element.type === "text");
+  assert.ok(texts.length > 1);
+  const findElement = (elements, id, origin = { x: 0, y: 0 }) => {
+    for (const element of elements) {
+      if (element.id === id) return { element, origin };
+      const nested = element.children && findElement(element.children, id, { x: origin.x + element.x, y: origin.y + element.y });
+      if (nested) return nested;
+    }
+    return null;
+  };
+  const target = findElement(automatic.scene.elements, texts[1].id);
+  target.element.x = texts[0].x - target.origin.x;
+  target.element.y = texts[0].y - target.origin.y;
+  assert.ok(require("../backend/services/social-studio/composition-engine/artwork-quality").validateArtworkLayout(automatic.scene).issues.some((issue) => issue.code === "TEXT_OVERLAP"));
+
+  await assert.rejects(engine.renderSocialScene(automatic.scene, { loadImage }), { code: "ARTWORK_QUALITY" });
+  const rendered = await engine.renderSocialScene(automatic.scene, { loadImage, allowManualLayoutIssues: true });
+  const metadata = await sharp(rendered.buffer).metadata();
+  assert.deepEqual([metadata.width, metadata.height], [1080, 1080]);
+  assert.equal(flattenElements(rendered.scene.elements).filter((element) => element.type === "text")[1].x, texts[0].x);
 });
 
 test("histórico mantém original automático separado da futura edição", async () => {
@@ -118,6 +144,7 @@ test("painel expõe editor opcional e API cobre rascunho, versão, exportação 
   assert.match(admin, /Editar detalhes/);
   assert.match(admin, /social-editor\?postId=/);
   for (const action of ["scene-draft", "scene-versions", "scene-export", "scene-reset"]) assert.match(server, new RegExp(action));
+  assert.match(server, /allowManualLayoutIssues:\s*true/);
   assert.match(editor, /autosave|scene-draft/i);
   assert.match(editor, /Ctrl\+Z|keydown/);
   assert.doesNotMatch(editor, /email/i);

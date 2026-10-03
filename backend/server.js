@@ -11830,7 +11830,7 @@ async function handleApi(req, res, pathname) {
     const rendered = body.scene
       ? await require('./services/social-studio/scene/preview-edit').renderPreviewEdit(
         require('./services/social-studio/remotion/snapshots').read(String(req.adminUser.id), body.previewToken), body.scene,
-        {loadImage:loadSocialStudioImage, outputType:body.outputType})
+        {loadImage:loadSocialStudioImage, outputType:body.outputType, allowManualLayoutIssues:true})
       : await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage, allowIncompleteTicket: true });
     res.writeHead(200, {
       ...securityHeaders({
@@ -11990,7 +11990,7 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const outputType = body.outputType === "jpg" ? "jpg" : "png";
       const trustedScene=await editableSceneForPost(post,db);
-      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType });
+      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType, allowManualLayoutIssues: true });
       const uploaded = await storageService.uploadImageBuffer({
         buffer: rendered.buffer,
         filename: `${slugify(post.title || post.templateName || "post")}-editado${rendered.extension}`,
@@ -12031,7 +12031,7 @@ async function handleApi(req, res, pathname) {
       const body = await readBody(req);
       const outputType = body.outputType === "jpg" ? "jpg" : "png";
       const trustedScene=await editableSceneForPost(post,db);
-      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType });
+      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType, allowManualLayoutIssues: true });
       res.writeHead(200, {
         ...securityHeaders({
           "Content-Type": rendered.contentType,

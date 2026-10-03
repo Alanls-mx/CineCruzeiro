@@ -107,13 +107,16 @@ async function renderElement(element, loadImage, relative = false) {
 
 async function renderSocialScene(input = {}, options = {}) {
   const scene = normalizeScene(input);
-  if(scene.templateId==='ticket-offer' && !options.layerRender) {
+  if(scene.templateId==='ticket-offer' && !options.layerRender && !options.allowManualLayoutIssues) {
     const validation=require('../contracts/ticket-campaign').validateLayoutCollisions(scene);
     if(!validation.valid) throw Object.assign(new Error('Existem elementos sobrepostos ou fora da área segura. Ajuste a composição antes de exportar.'),{statusCode:400,code:'TICKET_LAYOUT_COLLISION',validation});
   }
   const loadImage = typeof options.loadImage === "function" ? options.loadImage : async () => null;
-  if(!options.layerRender) await require('../composition-engine/concession-quality').assertConcessionQuality(scene,loadImage);
-  if(!options.layerRender) await require('../composition-engine/artwork-quality').assertArtworkQuality(scene,loadImage);
+  // Manual editor output honors the operator's layout choices; automatic generation keeps strict QA gates.
+  if(!options.layerRender && !options.allowManualLayoutIssues) {
+    await require('../composition-engine/concession-quality').assertConcessionQuality(scene,loadImage);
+    await require('../composition-engine/artwork-quality').assertArtworkQuality(scene,loadImage);
+  }
   const children = (await Promise.all(scene.elements.map((element) => renderElement(element, loadImage)))).filter(Boolean);
   const tree = node("div", {
     style: {
