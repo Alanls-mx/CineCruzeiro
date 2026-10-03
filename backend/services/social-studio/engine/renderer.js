@@ -17,7 +17,7 @@ function signatureUrl(draft, context = {}) {
   const signatures = context.signatures?.length ? context.signatures : legacy.SOCIAL_SIGNATURES;
   if (draft.signatureId === "icon-3d") return brand.posterLogoUrl || brand.logoUrl || "";
   const signature = signatures.find((item) => item.id === draft.signatureId);
-  if (draft.signatureId === "automatic") return signatures.find((item) => item.id === "classic")?.imageUrl || brand.posterLogoUrl || brand.logoUrl || "";
+  if (draft.signatureId === "automatic") return brand.posterLogoUrl || signatures.find((item) => item.id === "classic")?.imageUrl || brand.logoUrl || "";
   if (draft.signatureId === "classic") return signature?.imageUrl || brand.logoUrl || "";
   return signature?.imageUrl || brand.posterLogoUrl || brand.logoUrl || "";
 }

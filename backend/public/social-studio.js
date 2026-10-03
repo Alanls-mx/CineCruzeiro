@@ -236,6 +236,10 @@
     byId('socialStudioMovieSelections').hidden=byId('socialStudioAutoProgram').checked;
     const count=[...root.querySelectorAll('[data-program-movie]')].filter(node=>node.value).length;
     byId('socialStudioProgramSummary').textContent=`${count} filmes selecionados pela programação`;
+    const featured=byId('socialStudioFeaturedMovie'),selectedIds=new Set([...root.querySelectorAll('[data-program-movie]')].map(node=>node.value).filter(Boolean));
+    const currentFeatured=featured.value;
+    featured.innerHTML=`<option value="">Escolha automática</option>${(state.context.movies || []).filter(movie=>movie.catalogued!==false && selectedIds.has(String(movie.id))).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}`;
+    featured.value=selectedIds.has(currentFeatured)?currentFeatured:'';
     byId('socialStudioProgramLayout').closest('label').hidden=true;
     byId('socialStudioShowSessions').closest('label').hidden=program;
     byId('socialStudioFeaturedMovie').closest('label').hidden=value('socialStudioProgramPosterMode')!=='featured';
@@ -677,7 +681,7 @@
     const programLayouts=state.context?.programLayouts?.[template?.id];
     const count=[...root.querySelectorAll('[data-program-movie]')].filter(node=>node.value).length;
     const available=(state.context.workspaceLayouts || workspaceLayouts)[campaignKind()] || [];
-    const choices=available.filter(id=>id==='program-cards'?count>=1 && count<=4:id==='program-grid'?count>=2 && count<=6:true);
+    const choices=programLayouts?.length?available:available.filter(id=>id==='program-cards'?count>=1 && count<=12:id==='program-grid'?count>=1 && count<=12:true);
     const styles=[{id:'automatic',name:'Automática'},...choices.map(id=>({id,name:layoutNames[id]}))];
     const movie = artworkMovie();
     const concession = state.context.concessions?.find((item) => String(item.id) === value("socialStudioConcession"));
@@ -763,7 +767,7 @@
     fillSelect("socialStudioMovie", context.movies, "Nenhum filme disponível", (item) => `${item.title || "Filme sem título"}${item.catalogued === false ? " · pré-lançamento editorial" : ""}`);
     document.getElementById('socialStudioMovie').add(new Option('Campanha geral do cinema (sem filme)',''),0);
     document.getElementById('socialStudioMovieSelections').innerHTML = Array.from({length:12},(_,index)=>`<label>Filme ${index+1}<select data-program-movie="${index}" data-requires-create><option value="">${index===0?'Selecionar filme':'Nenhum'}</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}</select></label>`).join('');
-    document.getElementById('socialStudioFeaturedMovie').innerHTML=`<option value="">Nenhum destaque</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}`;
+    document.getElementById('socialStudioFeaturedMovie').innerHTML=`<option value="">Escolha automática</option>${context.movies.filter(movie=>movie.catalogued!==false).map(movie=>`<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join('')}`;
     fillSelect("socialStudioConcession", context.concessions, "Nenhum produto disponível", (item) => item.name || "Produto sem nome");
     fillSelect("socialStudioClub", context.clubPlans, "Nenhum plano disponível", (item) => item.name || "Plano sem nome");
     if (context.recommendedMovieId) document.getElementById("socialStudioMovie").value = context.recommendedMovieId;
@@ -772,6 +776,7 @@
     document.getElementById("socialStudioBrandSwatches").innerHTML = [brand.primaryColor, brand.secondaryColor, brand.accentColor]
       .filter(Boolean).map((color) => `<i style="--swatch:${escapeHtml(color)}"></i>`).join("");
     renderStyles();
+    syncFocusedControls();
     syncCompositionControls();
     document.getElementById("socialStudioPalettes").innerHTML = (context.palettes || []).map((palette, index) => `<label title="${escapeHtml(palette.name)}"><input type="radio" name="socialStudioPaletteId" value="${escapeHtml(palette.id)}" ${index === 0 ? "checked" : ""} data-requires-create /><span><i aria-hidden="true">${palette.colors.map((color) => `<b style="background:${escapeHtml(color)}"></b>`).join("")}</i><small>${escapeHtml(palette.name)}</small></span></label>`).join("");
     updateStyleRecommendation({ apply: true });
@@ -1021,7 +1026,6 @@
     const movies=[...new Map(current.map(item=>[String(item.movie.id),item.movie])).values()].slice(0,selectors.length);
     movies.forEach((movie,index)=>{selectors[index].value=String(movie.id);});
     if(!state.programDateTouched)setControl('socialStudioPeriodStart',current[0].date===start?start:current[0].date);
-    if(movies.length)setControl('socialStudioFeaturedMovie',String(movies[0].id));
   }
 
   function value(id, fallback = "") {

@@ -1,6 +1,6 @@
 const {normalizeScene}=require('../scene/schema');
 const {wrapText}=require('../scene/factory');
-const {programLayout}=require('./direction');
+const {programLayout,selectFeaturedMovie}=require('./direction');
 const {programData}=require('./schedule');
 const {dayLabel,timeLabel,SAFE}=require('../contracts/artwork-layout');
 const {mix}=require('../engine/palette');
@@ -37,7 +37,7 @@ function shell({draft,format,brand,palette,logoUrl}) {
     elements.push({id:'program-top-rule',role:'ambient',type:'shape',x:m,y:top+151*u,width:w-2*m,height:2*u,fill:theme.rule,locked:true});
   }
   const light=['vibrant','premium','editorial'].includes(style);
-  const movie=draft.programMovies.find(m=>m.id===draft.featuredMovieId) || draft.programMovies[0];
+  const movie=draft.programMovies.find(m=>m.id===draft.resolvedFeaturedMovieId || m.id===draft.featuredMovieId) || selectFeaturedMovie(draft.programMovies);
   if(movie?.backdropUrl || movie?.posterUrl)elements.push({id:'program-atmosphere',role:'ambient',type:'image',src:movie.backdropUrl || movie.posterUrl,x:0,y:0,width:w,height:h,fit:'cover',opacity:light?.12:.62,locked:true,focusX:72,focusY:32,effects:{layer:'background',blur:18,brightness:light?1:.66,saturation:.72,scale:1.18,vignette:42,grain:1,colorWash:16,color:palette.secondaryColor}});
   elements.push({id:'program-reading-wash',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,locked:true,stops:[{offset:0,color:light?theme.field:'rgba(0,0,0,0.76)'},{offset:.24,color:light?'rgba(255,255,255,0)':'rgba(0,0,0,0.15)'},{offset:.7,color:light?'rgba(255,255,255,0)':'rgba(0,0,0,0.45)'},{offset:1,color:theme.bg}]});
   const tx=(id,value,x,y,width,height,size=36,extra={})=>{
@@ -112,37 +112,54 @@ function cards(s,model,layout,draft,format) {
     const height=(s.height-gap*(count-1))/count;
     model.movies.forEach((movie,i)=>movieBlock(s,movie,i,{x:s.x,y:s.y+i*(height+gap),width:s.width,height},{horizontal:true}));return;
   }
-  if(count===5 && format.id!=='square') {
-    const rowGap=32*s.u,topH=(s.height-rowGap)*.54;
-    model.movies.forEach((movie,i)=>{
-      const upper=i<2,columns=upper?2:3,index=upper?i:i-2,width=(s.width-gap*(columns-1))/columns;
-      movieBlock(s,movie,i,{x:s.x+index*(width+gap),y:upper?s.y:s.y+topH+rowGap,width,height:upper?topH:s.height-topH-rowGap},{center:true});
-    });return;
-  }
-  const columns=count===3?3:count===2?2:count>4 && format.id!=='story'?3:2;
+  if(count>6)throw capacity();
+  const columns=count<=2?count:count===3?3:3;
   const rows=Math.ceil(count/columns),width=(s.width-gap*(columns-1))/columns,height=(s.height-gap*(rows-1))/rows;
   model.movies.forEach((movie,i)=>{
-    const box={x:s.x+i%columns*(width+gap),y:s.y+Math.floor(i/columns)*(height+gap),width,height};
+    const row=Math.floor(i/columns),column=i%columns,rowCount=Math.min(columns,count-row*columns),rowWidth=rowCount*width+(rowCount-1)*gap;
+    const box={x:s.x+(s.width-rowWidth)/2+column*(width+gap),y:s.y+row*(height+gap),width,height};
     movieBlock(s,movie,i,box,{posters,center:true});
   });
 }
+function featureBadge(s,id,x,y,width) {
+  const height=34*s.u;
+  s.elements.push({id:`${id}-badge-bg`,role:'decorative',type:'shape',x,y,width:Math.min(width,270*s.u),height,fill:s.bg,locked:true});
+  s.tx(id,'DESTAQUE DA SEMANA',x+10*s.u,y+3*s.u,Math.min(width,260*s.u),height-6*s.u,22,{fontFamily:'Social Display',fontWeight:800,fill:s.accent,maxLines:1,minimum:20,hierarchy:'tertiary'});
+}
 function mosaic(s,model,draft,format) {
-  if(model.movies.length>4 || model.movies.length===1 || format.id==='square')return cards(s,model,'program-grid',draft,format);
-  const gap=32*s.u,lead=model.movies.find(m=>m.id===draft.featuredMovieId) || model.movies[0];
-  const rest=model.movies.filter(m=>m!==lead),leadW=s.width*.54;
-  movieBlock(s,lead,model.movies.indexOf(lead),{x:s.x,y:s.y,width:leadW,height:s.height});
-  const sideW=s.width-leadW-gap,sideH=(s.height-gap*(rest.length-1))/rest.length;
-  for(const [i,movie] of rest.entries())movieBlock(s,movie,model.movies.indexOf(movie),{x:s.x+leadW+gap,y:s.y+i*(sideH+gap),width:sideW,height:sideH},{horizontal:rest.length>2});
+  if(model.movies.length===1) {
+    movieBlock(s,model.movies[0],0,{x:s.x,y:s.y,width:s.width,height:s.height},{center:true});
+    return;
+  }
+  if(model.movies.length>5 || format.id==='square')return cards(s,model,'program-grid',draft,format);
+  const gap=32*s.u,lead= model.movies.find(m=>m.id===draft.featuredMovieId)
+    || model.movies.find(m=>m.id===draft.resolvedFeaturedMovieId)
+    || selectFeaturedMovie(draft.programMovies);
+  const leadId=lead?.id,hero=model.movies.find(m=>m.id===leadId) || model.movies[0];
+  const rest=model.movies.filter(m=>m.id!==hero.id),leadW=s.width*(rest.length===1?.50:rest.length>=4?.39:.45),badgeH=44*s.u;
+  featureBadge(s,'program-featured-badge',s.x,s.y,leadW);
+  movieBlock(s,hero,model.movies.indexOf(hero),{x:s.x,y:s.y+badgeH,width:leadW,height:s.height-badgeH});
+  const sideX=s.x+leadW+gap,sideW=s.width-leadW-gap;
+  if(rest.length>=3) {
+    const columns=2,rows=2,cellW=(sideW-gap)/columns,cellH=(s.height-gap*(rows-1))/rows;
+    for(const [i,movie] of rest.entries())movieBlock(s,movie,model.movies.indexOf(movie),{x:sideX+(i%columns)*(cellW+gap),y:s.y+Math.floor(i/columns)*(cellH+gap),width:cellW,height:cellH},{center:true});
+    return;
+  }
+  const sideH=(s.height-gap*(rest.length-1))/rest.length;
+  for(const [i,movie] of rest.entries())movieBlock(s,movie,model.movies.indexOf(movie),{x:sideX,y:s.y+i*(sideH+gap),width:sideW,height:sideH},{horizontal:rest.length>2});
 }
 function list(s,model,draft) {
   // Day groups are indivisible. Reading order is down each column, then right.
   const u=s.u,featured=draft.programPosterMode==='featured' && model.movies.find(m=>m.id===draft.featuredMovieId);
   const feature=featured && model.rows.length<=4 && model.days.length===1 && (featured.posterUrl || featured.backdropUrl);
-  if(feature)s.im(`movie-art-${model.movies.indexOf(featured)}`,featured.posterUrl || featured.backdropUrl,s.x,s.y,s.width*.30,s.height*.72);
+  if(feature) {
+    featureBadge(s,'program-featured-badge',s.x,s.y,s.width*.30);
+    s.im(`movie-art-${model.movies.indexOf(featured)}`,featured.posterUrl || featured.backdropUrl,s.x,s.y+44*u,s.width*.30,s.height*.66);
+  }
   const startX=feature?s.x+s.width*.35:s.x,width=feature?s.width*.65:s.width;
   const columns=!feature && model.days.length>1 && model.rows.length>6?2:1,gap=40*u;
   const colW=(width-(columns-1)*gap)/columns;
-  const timeWidth=colW*(columns===2?.28:.22);
+  const timeWidth=colW*(columns===2?.34:.30);
   const density=Math.min(1.65,Math.max(1,s.height/(model.rows.length*(columns===2?65:100)*u+model.days.length*82*u)));
   const titleSize=Math.min(56,36*density),timeSize=Math.min(44,32*density);
   const dayHeader=s.singleDay?0:58*u,dayGap=s.singleDay?0:24*u;
@@ -168,7 +185,7 @@ function list(s,model,draft) {
     if(y+dayH>s.y+s.height+1 && columns>1 && col===0) {col=1;x=startX+colW+gap;y=s.y;}
     if(y+dayH>s.y+s.height+1)throw capacity();
     if(!s.singleDay)s.tx(`program-day-${model.days.indexOf(day)}`,dayLabel(day.date),x,y,colW,40*u,32,{fill:s.accent,maxLines:1});y+=dayHeader;
-    for(const {row,height} of prepared) {
+    for(const [entryIndex,{row,height}] of prepared.entries()) {
       const index=model.movies.findIndex(m=>m.id===row.movieId),rowIndex=model.rows.indexOf(row);
       const id=seen.has(row.movieId)?`program-film-${rowIndex}`:`movie-title-${index}`;
       seen.add(row.movieId);
@@ -186,6 +203,7 @@ function list(s,model,draft) {
       s.tx(id,row.title,copyX,copyY,titleWidth,copyH,displayTitle,{fontFamily:'Social Display',hierarchy:'secondary'});
       s.tx(`program-time-${rowIndex}`,row.times.map(timeLabel).join(' • '),stacked?copyX:x+colW-timeWidth,stacked?copyY+copyH+10*u:copyY,stacked?titleWidth:timeWidth,stacked?height-(copyY-y)-copyH-14*u:copyH,displayTime,{fill:s.accent,hierarchy:'primary'});
       y+=height;
+      if(entryIndex<prepared.length-1)s.elements.push({id:`program-row-rule-${rowIndex}`,role:'decorative',type:'shape',x,y:y-2*u,width:colW,height:1*u,fill:s.accent,opacity:.3,locked:true});
     }
     y+=dayGap;
   }
@@ -198,7 +216,6 @@ function buildProgrammingScene(args) {
   }
   if(!model.rows.length || model.movies.some(m=>!model.rows.some(r=>r.movieId===m.id)))throw capacity();
   let layout=programLayout(draft,model.movies.length),s=shell(args);
-  if(draft.programPosterMode==='featured' && draft.featuredMovieId && model.movies.length>1)layout=model.movies.length<=4?'program-grid':'program-list';
   if(['program-list','program-days'].includes(layout))list(s,model,draft);
   else {
     try {

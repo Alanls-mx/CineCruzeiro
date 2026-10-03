@@ -71,7 +71,7 @@ function applyContentRules(draft, input, context) {
   const schedule = sessionSchedule(draft.entities.movie, draft, now);
   if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = 'EM DESTAQUE';
   draft.schedule = schedule;
-  draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],featured:movie.id===draft.featuredMovieId,schedule:sessionSchedule(movie,{...draft,compact:false},now)})) : [];
+  draft.programMovies = program ? selected.map(movie=>({id:movie.id,title:movie.title,posterUrl:movie.posterUrl || '',backdropUrl:movie.backdropUrl || '',genre:movie.genre,genres:movie.genres || [],tag:movie.tag,releaseDate:movie.releaseDate,priority:movie.priority,displayOrder:movie.displayOrder,featured:movie.id===draft.featuredMovieId,schedule:sessionSchedule(movie,{...draft,compact:false},now)})) : [];
   if (scheduleCampaign) {
     if(input.title === undefined) draft.title = selected.length>1 ? 'Programação' : draft.entities.movie?.title || 'Programação';
     if(input.subtitle === undefined) draft.subtitle = draft.scheduleMode === 'today' ? `SESSÕES EM ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}` : `SEMANA DE ${schedule.from.slice(8,10)}/${schedule.from.slice(5,7)}`;

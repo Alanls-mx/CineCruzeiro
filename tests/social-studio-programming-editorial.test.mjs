@@ -6,7 +6,7 @@ const require=createRequire(import.meta.url);
 const engine=require('../backend/services/socialStudioEngineService');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const {programData,programTitle}=require('../backend/services/social-studio/programming/schedule');
-const {programLayout}=require('../backend/services/social-studio/programming/direction');
+const {programLayout,selectFeaturedMovie}=require('../backend/services/social-studio/programming/direction');
 const {validateArtworkLayout}=require('../backend/services/social-studio/composition-engine/artwork-quality');
 const poster=await sharp({create:{width:800,height:1200,channels:3,background:'#306080'}}).png().toBuffer();
 const logo=await sharp({create:{width:600,height:200,channels:3,background:'#307ac0'}}).png().toBuffer();
@@ -21,6 +21,16 @@ test('agenda escolhe seis estruturas por conteúdo, sem destaque implícito',()=
     assert.ok(draft.programMovies.every(m=>!m.featured));
     assert.equal(draft.programMovies[0].id,'p0');
   }
+});
+test('destaque da semana é explícito ou determinado por critérios editoriais, nunca pela ordem recebida',()=>{
+  const candidates=[
+    {id:'late',title:'Z Filme',priority:1,schedule:{count:1,days:[{date:'2026-09-26',times:['21:00']}]}},
+    {id:'premiere',title:'A Estreia',tag:'Estreia',priority:50,schedule:{count:1,days:[{date:'2026-09-26',times:['18:00']}]}}
+  ];
+  assert.equal(selectFeaturedMovie(candidates,{now:context.now}).id,'premiere');
+  assert.equal(selectFeaturedMovie([...candidates].reverse(),{now:context.now}).id,'premiere');
+  assert.equal(selectFeaturedMovie(candidates,{now:context.now,featuredMovieId:'late'}).id,'late');
+  assert.equal(programLayout({programMovies:candidates,programLayout:'program-grid'},1),'program-grid');
 });
 test('1, 2, 3, 5 e 8 filmes preservam conteúdo e geometria nos três formatos',async()=>{
   for(const count of [1,2,3,5,8])for(const formatId of ['square','feed_portrait','story']) {
@@ -55,6 +65,13 @@ test('dia e horario compartilham alinhamento em cartazes com datas diferentes',a
     assert.equal(day.x,time.x);
     assert.equal(day.width,time.width);
   }
+});
+test('lista premium mantém múltiplos horários numa linha compacta quando há espaço',async()=>{
+  const moviesWithTimes=movies.slice(0,2).map(movie=>({...movie,sessions:[{...movie.sessions[0],time:'18:00'},{...movie.sessions[0],id:`late-${movie.id}`,time:'22:00'}]}));
+  const result=await engine.renderSocialPost({templateId:'multi-movies',movieIds:moviesWithTimes.map(movie=>movie.id),programLayout:'program-days',formatId:'feed_portrait'}, {...context,movies:moviesWithTimes},{loadImage,skipRaster:true});
+  const rows=flattenElements(result.scene.elements).filter(element=>element.id.startsWith('program-time-'));
+  assert.equal(rows.length,2);
+  assert.ok(rows.every(element=>element.text==='18:00 • 22:00'));
 });
 test('não exporta horários alterados, conteúdo oculto nem ordem invertida',async()=>{
   const rendered=await engine.renderSocialPost({templateId:'multi-movies',movieIds:['p0','p1'],programLayout:'program-list'},context,{loadImage,skipRaster:true});
