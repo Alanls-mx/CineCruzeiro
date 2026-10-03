@@ -637,7 +637,17 @@ function logEvent(level, event, fields = {}) {
   const line = JSON.stringify(payload);
   if (level === "error") console.error(line);
   else console.log(line);
-  discordWebhookService.enqueue({ level, event, requestId: payload.requestId, timestamp: payload.timestamp, fields });
+  discordWebhookService.enqueue({
+    level,
+    event,
+    requestId: payload.requestId,
+    timestamp: payload.timestamp,
+    fields: {
+      ...(store?.method ? { method: store.method } : {}),
+      ...(store?.pathname ? { path: store.pathname } : {}),
+      ...fields
+    }
+  });
   if (postgresEnabled()) {
     const [category = "system"] = String(event || "system").split(".");
     void appendSystemLogToPostgres({
@@ -17727,6 +17737,8 @@ const server = http.createServer(async (req, res) => {
       logEvent(status >= 500 ? "error" : "warn", "request.failed", {
         status,
         code: error.code || "REQUEST_ERROR",
+        errorType: error.name || "Error",
+        cause: error.cause?.message || "",
         message: error.message
       });
       sendJson(res, status, {

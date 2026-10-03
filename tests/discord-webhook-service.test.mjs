@@ -51,10 +51,54 @@ test("event embeds omit personal and unapproved fields", () => {
     fields: { attackType: "possible_sql_injection", rule: "sqli.union_select", path: "/api/items/1%27%20UNION%20SELECT%20email", ip: "203.0.113.5", email: "person@example.com", body: "secret" }
   });
   const text = JSON.stringify(embed);
-  assert.match(text, /possible_sql_injection/);
+  assert.match(text, /Possível tentativa de injeção SQL/);
   assert.match(text, /sqli\.union_select/);
   assert.doesNotMatch(text, /UNION|SELECT/);
   assert.doesNotMatch(text, /203\.0\.113\.5|person@example\.com|secret/);
+  assert.equal(embed.title, "Padrão suspeito detectado");
+  assert.match(embed.description, /API do site/);
+});
+
+test("HTTP completion embeds explain the affected area, route, status and duration in Portuguese", () => {
+  const embed = eventEmbed({
+    level: "info",
+    event: "http.request.completed",
+    requestId: "req-123",
+    fields: { method: "GET", path: "/api/admin/payments/123456", statusCode: 200, durationMs: 17 }
+  });
+  const text = JSON.stringify(embed);
+  assert.equal(embed.title, "Requisição HTTP concluída");
+  assert.match(embed.description, /Consulta em painel administrativo · pagamentos respondeu HTTP 200 \(sucesso\)/i);
+  assert.match(text, /Área afetada/);
+  assert.match(text, /\/api\/admin\/payments\/:id/);
+  assert.match(text, /Duração.*17 ms/);
+  assert.match(text, /ID da requisição/);
+  assert.doesNotMatch(text, /"method"|"path"|"statusCode"|"durationMs"/);
+});
+
+test("failed request embeds include technical type and a sanitized cause", () => {
+  const embed = eventEmbed({
+    level: "error",
+    event: "request.failed",
+    requestId: "req-failed",
+    fields: {
+      method: "POST",
+      path: "/api/checkout",
+      status: 500,
+      code: "ECONNREFUSED",
+      errorType: "TypeError",
+      message: "Cannot connect as alan@example.com using Bearer abc123",
+      cause: "postgres://admin:password@db.internal/cinema"
+    }
+  });
+  const text = JSON.stringify(embed);
+  assert.equal(embed.title, "Falha ao processar requisição");
+  assert.match(embed.description, /checkout e pagamento/i);
+  assert.match(embed.description, /conexão do banco ocultada/);
+  assert.match(embed.description, /Mensagem: Cannot connect/);
+  assert.match(text, /ECONNREFUSED · conexão recusada pelo serviço de destino/);
+  assert.match(text, /TypeError · Erro de tipo/);
+  assert.doesNotMatch(text, /alan@example\.com|abc123|admin:password/);
 });
 
 test("service batches and posts alert embeds asynchronously with mentions disabled", async () => {
@@ -74,7 +118,7 @@ test("service batches and posts alert embeds asynchronously with mentions disabl
   assert.equal(sent[0].url, webhookUrl);
   assert.equal(sent[0].redirect, "error");
   assert.equal(sent[0].body.allowed_mentions.parse.length, 0);
-  assert.equal(sent[0].body.embeds[0].title, "security.suspicious_request");
+  assert.equal(sent[0].body.embeds[0].title, "Padrão suspeito detectado");
 });
 
 test("test action publishes a minimal verification embed", async () => {

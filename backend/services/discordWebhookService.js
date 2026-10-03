@@ -4,8 +4,110 @@ const SEND_TIMEOUT_MS = 5000;
 const RETRY_LIMIT = 2;
 const EVENT_FIELD_ALLOWLIST = new Set([
   "status", "statusCode", "code", "reason", "rule", "attackType", "method", "path",
-  "durationMs", "count", "threshold", "windowSeconds", "cpuPercent", "httpStatus"
+  "durationMs", "count", "threshold", "windowSeconds", "cpuPercent", "httpStatus",
+  "message", "cause", "errorType", "errorCode"
 ]);
+
+const LEVEL_LABELS = { error: "ERRO", warn: "AVISO", info: "INFORMAÇÃO", debug: "DEPURAÇÃO" };
+const EVENT_LABELS = {
+  "http.request.completed": "Requisição HTTP concluída",
+  "request.failed": "Falha ao processar requisição",
+  "security.suspicious_request": "Padrão suspeito detectado",
+  "performance.anomaly": "Desempenho degradado",
+  "performance.recovered": "Desempenho normalizado",
+  "discord.delivery_failed": "Falha ao entregar alerta ao Discord",
+  "crm_webhook.queued": "Evento colocado na fila do CRM",
+  "crm_webhook.delivered": "Evento entregue ao CRM",
+  "crm_webhook.retry_scheduled": "Nova tentativa do CRM agendada",
+  "crm_webhook.dead_letter": "Entrega ao CRM esgotou as tentativas",
+  "payment.created": "Pagamento criado",
+  "payment.reconciled": "Pagamento conciliado",
+  "payment.reconciliation_reference_mismatch": "Referência do pagamento divergente",
+  "payment.reconciliation_amount_mismatch": "Valor do pagamento divergente",
+  "order.refund_pending": "Estorno de pedido pendente",
+  "order.refunded": "Pedido estornado",
+  "ticket.used": "Ingresso validado na entrada",
+  "ticket_email.failed": "Falha no envio do ingresso por e-mail",
+  "box_office_ticket_print.failed": "Falha ao imprimir ingresso na bilheteria",
+  "webhook.processed": "Webhook processado",
+  "webhook.mercado_pago.rejected": "Webhook do Mercado Pago rejeitado",
+  "google_wallet.integration_failed": "Falha na integração com Google Wallet",
+  "email_campaign.attachment_pruned": "Anexo antigo de campanha removido",
+  "system_log.persist_failed": "Falha ao salvar log de operação"
+};
+
+const DOMAIN_LABELS = {
+  abuse: "Proteção contra abuso", admin: "Painel administrativo", admin_two_factor: "Autenticação em duas etapas",
+  box_office: "Bilheteria", club: "Clube", concession: "Bomboniere", crm_webhook: "Webhook CRM",
+  database: "Banco de dados", discord: "Integração Discord", email: "E-mail", email_campaign: "Campanha de e-mail",
+  email_verification: "Verificação de e-mail", google_wallet: "Google Wallet", http: "API", integrations: "Integrações",
+  movie: "Filmes", order: "Pedidos", password_reset: "Redefinição de senha", payment: "Pagamentos",
+  performance: "Desempenho", repository: "Persistência de dados", security: "Segurança", session: "Sessões",
+  social_studio: "Studio", subscription: "Assinaturas", system: "Sistema", ticket: "Ingressos", ticket_email: "E-mail de ingressos",
+  webhook: "Webhooks"
+};
+
+const WORD_TRANSLATIONS = {
+  action_required: "requer atenção", anomaly: "desvio detectado", applied: "aplicada", background: "em segundo plano",
+  cancelled: "cancelado", canceled: "cancelado", completed: "concluída", created: "criado", delivery: "entrega",
+  failed: "falhou", failure: "falha", missing: "ausente", not_found: "não encontrado", pending: "pendente",
+  persisted: "salvo", processed: "processado", queued: "na fila", recovered: "normalizado", rejected: "rejeitado",
+  released: "liberado", removed: "removido", request: "requisição", retry: "nova tentativa", scheduled: "agendada",
+  suspicious: "suspeito", updated: "atualizado", used: "utilizado", mismatch: "divergente", timeout: "tempo esgotado"
+};
+
+const FIELD_LABELS = {
+  status: "Estado", statusCode: "Código HTTP", httpStatus: "HTTP da integração", code: "Código técnico",
+  errorCode: "Código da causa", errorType: "Tipo de erro", reason: "Motivo", rule: "Regra detectada",
+  attackType: "Tipo de atividade suspeita", method: "Método", path: "Rota", durationMs: "Duração",
+  count: "Ocorrências", threshold: "Limite", windowSeconds: "Janela", cpuPercent: "Uso de CPU",
+  message: "Causa / detalhe", cause: "Causa raiz"
+};
+
+const HTTP_STATUS_LABELS = {
+  200: "sucesso", 201: "criado", 202: "aceito para processamento", 204: "sucesso sem conteúdo",
+  301: "redirecionamento permanente", 302: "redirecionamento temporário", 304: "sem alteração",
+  400: "requisição inválida ou incompleta", 401: "autenticação ausente ou inválida", 403: "acesso não autorizado",
+  404: "rota ou recurso não encontrado", 408: "tempo limite da requisição esgotado", 409: "conflito com o estado atual",
+  410: "recurso removido", 413: "conteúdo acima do limite permitido", 415: "formato não suportado",
+  422: "dados rejeitados pela validação", 429: "limite de requisições atingido", 500: "falha interna do servidor",
+  502: "resposta inválida de um serviço integrado", 503: "serviço temporariamente indisponível", 504: "serviço integrado excedeu o tempo limite"
+};
+
+const ERROR_CODE_LABELS = {
+  ECONNREFUSED: "conexão recusada pelo serviço de destino", ECONNRESET: "conexão encerrada antes da resposta",
+  ETIMEDOUT: "tempo limite de conexão excedido", ENOTFOUND: "endereço do serviço não encontrado",
+  ENOSPC: "disco sem espaço disponível", EACCES: "permissão insuficiente no sistema de arquivos",
+  REQUEST_ERROR: "falha durante o processamento da requisição", MODULE_REMOVED: "módulo desativado nesta instalação",
+  23505: "registro duplicado no banco de dados", 23503: "referência relacionada não encontrada no banco de dados",
+  23502: "campo obrigatório ausente no banco de dados", "42P01": "tabela não encontrada no banco de dados",
+  "42601": "comando SQL inválido"
+};
+
+const ROUTE_AREAS = [
+  [/^\/api\/health/, "Disponibilidade e saúde da API"],
+  [/^\/api\/admin\/me(?:\/|$)/, "Painel administrativo · sessão e permissões"],
+  [/^\/api\/admin\/payments?(?:\/|$)/, "Painel administrativo · pagamentos"],
+  [/^\/api\/admin\/orders?(?:\/|$)/, "Painel administrativo · pedidos"],
+  [/^\/api\/admin\/movies?(?:\/|$)|^\/api\/movies(?:\/|$)/, "Catálogo de filmes"],
+  [/^\/api\/admin\/sessions?(?:\/|$)|^\/api\/sessions(?:\/|$)/, "Programação e sessões"],
+  [/^\/api\/admin\/users?(?:\/|$)/, "Painel administrativo · clientes e usuários"],
+  [/^\/api\/admin\/integrations?(?:\/|$)|^\/api\/integrations(?:\/|$)/, "Painel administrativo · integrações"],
+  [/^\/api\/admin\/social-studio(?:\/|$)/, "Painel administrativo · Social Studio"],
+  [/^\/api\/admin\/email(?:\/|$)/, "Painel administrativo · campanhas de e-mail"],
+  [/^\/api\/admin\/dashboard(?:\/|$)/, "Painel administrativo · indicadores"],
+  [/^\/api\/admin\/logs(?:\/|$)/, "Painel administrativo · logs"],
+  [/^\/api\/admin\/login(?:\/|$)/, "Painel administrativo · autenticação"],
+  [/^\/api\/admin(?:\/|$)/, "Painel administrativo"],
+  [/^\/api\/webhooks?(?:\/|$)/, "Recebimento de webhooks"],
+  [/^\/api\/orders?(?:\/|$)/, "Pedidos do site"],
+  [/^\/api\/checkout(?:\/|$)/, "Checkout e pagamento"],
+  [/^\/api\/box-office(?:\/|$)/, "Bilheteria"],
+  [/^\/api\/(?:club|subscriptions)(?:\/|$)/, "Clube e assinaturas"],
+  [/^\/api\/(?:concessions|snacks)(?:\/|$)/, "Bomboniere"],
+  [/^\/api\//, "API do site"],
+  [/^\/(?:admin|images|uploads|trailers)(?:\/|$)/, "Site e conteúdo público"]
+];
 
 function validateDiscordWebhookUrl(input) {
   let url;
@@ -42,34 +144,134 @@ function cleanPath(value) {
   return cleanText(segments.join("/"), 220);
 }
 
+function cleanDiagnosticText(value, limit = 500) {
+  return cleanText(value, 1400)
+    .replace(/\b(?:postgres|postgresql):\/\/\S+/gi, "[conexão do banco ocultada]")
+    .replace(/\bBearer\s+\S+/gi, "Bearer [credencial ocultada]")
+    .replace(/[\w.+-]+@[\w.-]+\.[A-Z]{2,}/gi, "[e-mail ocultado]")
+    .replace(/\b(password|senha|token|secret|api[_ -]?key|authorization)\s*[:=]\s*\S+/gi, "$1=[ocultado]")
+    .slice(0, limit);
+}
+
+function humanizeEvent(event = "system.event") {
+  const code = String(event);
+  if (EVENT_LABELS[code]) return EVENT_LABELS[code];
+  const words = code.toLowerCase().split(/[._-]+/).filter(Boolean);
+  const translated = words.map((word) => WORD_TRANSLATIONS[word] || word);
+  if (DOMAIN_LABELS[words[0]]) translated[0] = DOMAIN_LABELS[words[0]];
+  return translated.map((word, index) => index ? word : word.charAt(0).toUpperCase() + word.slice(1)).join(" · ");
+}
+
+function describeRoute(path) {
+  const route = cleanPath(path);
+  return ROUTE_AREAS.find(([pattern]) => pattern.test(route))?.[1] || "Recurso do Cine Cruzeiro";
+}
+
+function statusDescription(status) {
+  return HTTP_STATUS_LABELS[Number(status)] || "resposta HTTP";
+}
+
+function errorTypeDescription(type) {
+  const labels = {
+    TypeError: "Erro de tipo: um valor ou formato inesperado foi recebido",
+    SyntaxError: "Erro de sintaxe: os dados recebidos não puderam ser interpretados",
+    AbortError: "A operação foi interrompida por tempo limite ou cancelamento",
+    TimeoutError: "O serviço não respondeu dentro do tempo permitido",
+    DatabaseError: "Erro durante uma operação no banco de dados",
+    Error: "Erro durante o processamento"
+  };
+  return labels[String(type)] || "Falha durante o processamento";
+}
+
+function fieldValue(key, value) {
+  if (key === "path") return cleanPath(value) || "Rota não informada";
+  if (key === "method") {
+    const method = String(value).toUpperCase();
+    const meanings = { GET: "consulta", POST: "envio/criação", PUT: "substituição", PATCH: "atualização", DELETE: "remoção" };
+    return `${method}${meanings[method] ? ` · ${meanings[method]}` : ""}`;
+  }
+  if (key === "statusCode" || key === "status" || key === "httpStatus") {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${number} · ${statusDescription(number)}` : cleanDiagnosticText(value, 160);
+  }
+  if (key === "durationMs") return `${cleanDiagnosticText(value, 30)} ms`;
+  if (key === "errorType") return `${cleanDiagnosticText(value, 100)} · ${errorTypeDescription(value)}`;
+  if (key === "errorCode" || key === "code") {
+    const code = String(value);
+    return `${cleanDiagnosticText(code, 100)}${ERROR_CODE_LABELS[code] ? ` · ${ERROR_CODE_LABELS[code]}` : ""}`;
+  }
+  if (key === "attackType" && value === "possible_sql_injection") return "Possível tentativa de injeção SQL";
+  if (key === "rule" && value === "sqli.union_select") return "Tentativa de combinar resultados SQL detectada (sqli.union_select; conteúdo sensível ocultado)";
+  return cleanDiagnosticText(value, 400);
+}
+
+function eventDescription(event, level, payload) {
+  const method = String(payload.method || "").toUpperCase();
+  const path = payload.path ? cleanPath(payload.path) : "";
+  const area = path ? describeRoute(path) : "";
+  const status = Number(payload.statusCode ?? payload.status);
+  let summary;
+  if (event === "http.request.completed") {
+    const action = { GET: "Consulta", POST: "Envio/criação", PUT: "Substituição", PATCH: "Atualização", DELETE: "Remoção" }[method] || `Requisição ${method || "HTTP"}`;
+    summary = Number.isFinite(status)
+      ? `${action} ${area ? `em ${area} ` : ""}respondeu HTTP ${status} (${statusDescription(status)}).`
+      : `${action} ${area ? `em ${area} ` : ""}foi concluída.`;
+    if (payload.durationMs != null) summary += ` Tempo: ${payload.durationMs} ms.`;
+    if (status >= 400 && payload.message) summary += ` Detalhe: ${cleanDiagnosticText(payload.message, 350)}.`;
+  } else if (event === "request.failed") {
+    summary = `A requisição${area ? ` em ${area}` : ""} falhou${Number.isFinite(status) ? ` com HTTP ${status} (${statusDescription(status)})` : ""}.`;
+    if (payload.cause || payload.message) summary += ` Causa informada: ${cleanDiagnosticText(payload.cause, 280) || cleanDiagnosticText(payload.message, 350)}.`;
+    if (payload.message && payload.cause) summary += ` Mensagem: ${cleanDiagnosticText(payload.message, 350)}.`;
+  } else if (event === "security.suspicious_request") {
+    summary = `Foi detectado um padrão de requisição suspeito${area ? ` em ${area}` : ""}. O registro identifica o padrão; não significa, por si só, que houve acesso bem-sucedido.`;
+  } else if (event === "performance.anomaly") {
+    summary = `As métricas ultrapassaram o limite configurado${payload.threshold != null ? ` (${cleanDiagnosticText(payload.threshold, 80)})` : ""}. Verifique a rota e as métricas registradas.`;
+  } else if (event === "performance.recovered") {
+    summary = "As métricas de desempenho voltaram à faixa normal.";
+  } else {
+    summary = cleanDiagnosticText(payload.cause || payload.message || humanizeEvent(event), 600);
+  }
+  return `**Nível:** ${LEVEL_LABELS[level] || "INFORMAÇÃO"}\n**O que aconteceu:** ${summary}`;
+}
+
 function eventEmbed(log = {}) {
   const level = String(log.level || "info").toLowerCase();
   const colors = { error: 0xe5484d, warn: 0xe5a000, info: 0x3b82f6 };
-  const title = cleanText(log.event || "Evento do sistema", 240);
+  const event = String(log.event || "system.event");
+  const title = cleanText(humanizeEvent(event), 240);
   const fields = [];
   const payload = log.fields && typeof log.fields === "object" ? log.fields : {};
-  for (const [key, value] of Object.entries(payload)) {
+  if (payload.path) fields.push({ name: "Área afetada", value: describeRoute(payload.path), inline: true });
+  const orderedKeys = ["method", "path", "statusCode", "status", "durationMs", "attackType", "rule", "errorType", "errorCode", "code", "cause", "message", "reason", "threshold", "count", "windowSeconds", "cpuPercent", "httpStatus"];
+  const used = new Set();
+  for (const key of orderedKeys) {
+    const value = payload[key];
     if (!EVENT_FIELD_ALLOWLIST.has(key) || value === null || value === undefined || typeof value === "object") continue;
-    const safeValue = key === "path" ? cleanPath(value) : cleanText(value, 160);
-    if (safeValue) fields.push({ name: cleanText(key, 40), value: safeValue, inline: true });
-    if (fields.length === 6) break;
+    if (key === "status" && payload.statusCode != null && event === "http.request.completed") continue;
+    const label = FIELD_LABELS[key] || key;
+    fields.push({ name: cleanText(label, 40), value: fieldValue(key, value) || "Não informado", inline: !["path", "cause", "message"].includes(key) });
+    used.add(key);
+    if (fields.length >= 9) break;
   }
   const metrics = payload.metrics && typeof payload.metrics === "object" ? payload.metrics : {};
   const metricFields = [
     ["cpuPercent", "CPU"],
-    ["latencyRequestP95Ms", "HTTP p95"],
+    ["latencyRequestP95Ms", "Latência HTTP p95"],
     ["eventLoopP95Ms", "Event loop p95"],
-    ["errors5xx", "HTTP 5xx"]
+    ["errors5xx", "Erros HTTP 5xx"]
   ];
   for (const [key, label] of metricFields) {
-    if (metrics[key] === null || metrics[key] === undefined || fields.length === 10) continue;
+    if (metrics[key] === null || metrics[key] === undefined || fields.length >= 10 || (key === "cpuPercent" && used.has(key))) continue;
     const suffix = key.endsWith("Ms") ? " ms" : key === "cpuPercent" ? "%" : "";
-    fields.push({ name: label, value: cleanText(`${metrics[key]}${suffix}`, 40), inline: true });
+    fields.push({ name: label, value: cleanDiagnosticText(`${metrics[key]}${suffix}`, 40), inline: true });
   }
-  if (log.requestId) fields.push({ name: "Request ID", value: cleanText(log.requestId, 60), inline: true });
+  if (event !== "http.request.completed" && event !== "request.failed") {
+    fields.push({ name: "Código do evento", value: cleanText(event, 100), inline: true });
+  }
+  if (log.requestId && fields.length < 11) fields.push({ name: "ID da requisição", value: cleanText(log.requestId, 60), inline: true });
   return {
     title,
-    description: `Nível: **${cleanText(level.toUpperCase(), 12)}**`,
+    description: eventDescription(event, level, payload).slice(0, 4000),
     color: colors[level] || colors.info,
     fields,
     timestamp: new Date(log.timestamp || Date.now()).toISOString(),
