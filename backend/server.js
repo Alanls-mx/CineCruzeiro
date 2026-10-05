@@ -1055,7 +1055,7 @@ function applyAutomatedMovieTags(db, now = new Date()) {
   return changed;
 }
 
-async function readBody(req) {
+async function readBody(req, { rawOnly = false } = {}) {
   const chunks = [];
   let receivedBytes = 0;
   const declaredBytes = Number(req.headers["content-length"] || 0);
@@ -1075,8 +1075,11 @@ async function readBody(req) {
     }
     chunks.push(chunk);
   }
-  const raw = Buffer.concat(chunks).toString("utf8");
+  const rawBuffer = Buffer.concat(chunks);
+  const raw = rawBuffer.toString("utf8");
+  req.rawBodyBuffer = rawBuffer;
   req.rawBody = raw;
+  if (rawOnly) return rawBuffer;
   if (!raw) return {};
   try {
     return JSON.parse(raw);
@@ -17183,9 +17186,15 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/webhooks/pag-bank" && method === "POST") {
-    const body = await readBody(req);
+    await readBody(req, { rawOnly: true });
     const providerConfig = integrationConfigService.resolvedConfig(db, "pagBank") || {};
-    pagBankPaymentService.verifyOrderWebhook(req, providerConfig);
+    await pagBankPaymentService.verifyOrderWebhook(req, providerConfig);
+    let body;
+    try {
+      body = JSON.parse(req.rawBody);
+    } catch {
+      throw Object.assign(new Error("JSON inválido. Revise o corpo da notificação PagBank."), { code: "INVALID_JSON", statusCode: 400 });
+    }
     const { chargeId: signedChargeId, orderId: providerOrderId } = pagBankPaymentService.resolveWebhookOrder(body, db.payments || []);
     if (!/^ORDE_[A-Za-z0-9-]+$/.test(providerOrderId)) {
       sendJson(res, signedChargeId ? 503 : 200, { ok: !signedChargeId, processed: false, reason: signedChargeId ? "charge_not_recorded" : "unknown_event" });

@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const webhookPublicKeys = new Map();
+const WEBHOOK_KEY_TTL_MS = 6 * 60 * 60 * 1000;
 
 function pagBankError(code, message, statusCode = 400) {
   const error = new Error(message);
@@ -206,19 +208,88 @@ async function captureCharge(chargeId, amount, config = {}, idempotencyKey = "")
   });
 }
 
-function verifyOrderWebhook(req, config = {}) {
-  const signature = String(req.headers?.["x-authenticity-token"] || "").trim();
-  const raw = req.rawBody;
+function webhookSignatures(header) {
+  const values = Array.isArray(header) ? header : String(header || "").split(",");
+  return values.map((value) => String(value).trim()).filter(Boolean);
+}
+
+async function getWebhookPublicKey(config = {}, { refresh = false } = {}) {
+  const cacheKey = crypto.createHash("sha256").update(`${config.environment || "sandbox"}:${token(config)}`).digest("hex");
+  const cached = webhookPublicKeys.get(cacheKey);
+  if (!refresh && cached && cached.expiresAt > Date.now()) return cached.key;
+  const response = await request("/public-keys?type=webhook", config);
+  const encoded = String(response.public_key || "").trim();
+  let key;
+  try {
+    const der = Buffer.from(encoded, "base64");
+    if (!encoded || !der.length || der.toString("base64") !== encoded) throw new Error("invalid key encoding");
+    key = crypto.createPublicKey({ key: der, format: "der", type: "spki" });
+    if (key.asymmetricKeyType !== "ec") throw new Error("unexpected key type");
+  } catch {
+    webhookPublicKeys.delete(cacheKey);
+    throw pagBankError("PAGBANK_WEBHOOK_PUBLIC_KEY_INVALID", "O PagBank retornou uma chave pública de webhook inválida.", 502);
+  }
+  webhookPublicKeys.set(cacheKey, { key, expiresAt: Date.now() + WEBHOOK_KEY_TTL_MS });
+  return key;
+}
+
+function validatePayloadSignatures(rawBody, signatures, publicKey) {
+  return signatures.some((signature) => {
+    try {
+      const bytes = Buffer.from(signature, "base64");
+      return bytes.length > 0 && bytes.toString("base64") === signature
+        && crypto.verify("sha256", rawBody, publicKey, bytes);
+    } catch {
+      return false;
+    }
+  });
+}
+
+async function verifyOrderWebhook(req, config = {}) {
+  const raw = Buffer.isBuffer(req.rawBodyBuffer)
+    ? req.rawBodyBuffer
+    : typeof req.rawBody === "string" ? Buffer.from(req.rawBody, "utf8") : null;
   const accessToken = token(config);
-  if (!accessToken || typeof raw !== "string" || !/^[a-f0-9]{64}$/i.test(signature)) {
+  if (!accessToken || !raw) {
     throw pagBankError("PAGBANK_WEBHOOK_SIGNATURE_REQUIRED", "Notificação PagBank sem assinatura válida.", 401);
   }
-  const expected = crypto.createHash("sha256").update(`${accessToken}-${raw}`).digest();
-  const received = Buffer.from(signature, "hex");
+
+  const signatures = webhookSignatures(req.headers?.["x-payload-signature"]);
+  if (signatures.length) {
+    let publicKey;
+    try {
+      publicKey = await getWebhookPublicKey(config);
+    } catch (error) {
+      if (error.code === "PAGBANK_NOT_CONFIGURED") throw error;
+      // A cached key remains usable during a temporary PagBank key-service outage.
+      const cacheKey = crypto.createHash("sha256").update(`${config.environment || "sandbox"}:${accessToken}`).digest("hex");
+      const cached = webhookPublicKeys.get(cacheKey);
+      if (!cached || cached.expiresAt <= Date.now()) throw error;
+      publicKey = cached.key;
+    }
+    if (validatePayloadSignatures(raw, signatures, publicKey)) return { verified: true, scheme: "ecdsa-sha256" };
+
+    // Refresh once to handle PagBank key rotation while both keys are in flight.
+    try {
+      publicKey = await getWebhookPublicKey(config, { refresh: true });
+      if (validatePayloadSignatures(raw, signatures, publicKey)) return { verified: true, scheme: "ecdsa-sha256" };
+    } catch (error) {
+      if (error.code === "PAGBANK_WHITELIST_REQUIRED") throw error;
+    }
+    throw pagBankError("PAGBANK_WEBHOOK_INVALID_SIGNATURE", "Assinatura ECDSA da notificação PagBank não confere.", 401);
+  }
+
+  // Retain compatibility with notifications still using PagBank's legacy header.
+  const legacySignature = String(req.headers?.["x-authenticity-token"] || "").trim();
+  if (!/^[a-f0-9]{64}$/i.test(legacySignature)) {
+    throw pagBankError("PAGBANK_WEBHOOK_SIGNATURE_REQUIRED", "Notificação PagBank sem assinatura válida.", 401);
+  }
+  const expected = crypto.createHash("sha256").update(`${accessToken}-${raw.toString("utf8")}`).digest();
+  const received = Buffer.from(legacySignature, "hex");
   if (!crypto.timingSafeEqual(expected, received)) {
     throw pagBankError("PAGBANK_WEBHOOK_INVALID_SIGNATURE", "Assinatura da notificação PagBank não confere.", 401);
   }
-  return { verified: true };
+  return { verified: true, scheme: "legacy-sha256" };
 }
 
 function resolveWebhookOrder(body = {}, payments = []) {

@@ -64,11 +64,34 @@ test("card API receives only the encrypted card and cardholder tax ID", async ()
   }
 });
 
-test("webhook signature is validated over the exact raw body", () => {
+test("legacy webhook signature remains validated over the exact raw body", async () => {
   const rawBody = '{"id":"ORDE_123", "charges":[]}';
   const signature = crypto.createHash("sha256").update(`token-${rawBody}`).digest("hex");
-  assert.deepEqual(pagBank.verifyOrderWebhook({ rawBody, headers: { "x-authenticity-token": signature } }, { accessToken: "token" }), { verified: true });
-  assert.throws(() => pagBank.verifyOrderWebhook({ rawBody: rawBody.replace(" ", ""), headers: { "x-authenticity-token": signature } }, { accessToken: "token" }), { code: "PAGBANK_WEBHOOK_INVALID_SIGNATURE" });
+  assert.deepEqual(await pagBank.verifyOrderWebhook({ rawBody, headers: { "x-authenticity-token": signature } }, { accessToken: "token" }), { verified: true, scheme: "legacy-sha256" });
+  await assert.rejects(pagBank.verifyOrderWebhook({ rawBody: rawBody.replace(" ", ""), headers: { "x-authenticity-token": signature } }, { accessToken: "token" }), { code: "PAGBANK_WEBHOOK_INVALID_SIGNATURE" });
+});
+
+test("modern PagBank ECDSA webhook signatures verify against a cached public key", async () => {
+  const originalFetch = global.fetch;
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const publicKeyBase64 = publicKey.export({ type: "spki", format: "der" }).toString("base64");
+  const rawBody = Buffer.from('{"id":"ORDE_123","charges":[]}');
+  const signature = crypto.sign("sha256", rawBody, privateKey).toString("base64");
+  let keyFetches = 0;
+  global.fetch = async (url) => {
+    assert.equal(url, "https://sandbox.api.pagseguro.com/public-keys?type=webhook");
+    keyFetches += 1;
+    return { ok: true, json: async () => ({ public_key: publicKeyBase64 }) };
+  };
+  try {
+    const req = { rawBody: rawBody.toString("utf8"), rawBodyBuffer: rawBody, headers: { "x-payload-signature": signature } };
+    assert.deepEqual(await pagBank.verifyOrderWebhook(req, { environment: "sandbox", accessToken: "ecdsa-test-token" }), { verified: true, scheme: "ecdsa-sha256" });
+    assert.deepEqual(await pagBank.verifyOrderWebhook(req, { environment: "sandbox", accessToken: "ecdsa-test-token" }), { verified: true, scheme: "ecdsa-sha256" });
+    assert.equal(keyFetches, 1);
+    await assert.rejects(pagBank.verifyOrderWebhook({ ...req, rawBodyBuffer: Buffer.from(`${rawBody.toString("utf8")} `) }, { environment: "sandbox", accessToken: "ecdsa-test-token" }), { code: "PAGBANK_WEBHOOK_INVALID_SIGNATURE" });
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test("PagBank whitelist refusal identifies the blocked API without exposing credentials", async () => {
