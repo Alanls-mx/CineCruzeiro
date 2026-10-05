@@ -21,8 +21,11 @@ const productionBasePath = process.env.NODE_ENV === "production" ? "/projects/ci
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || productionBasePath).replace(/\/+$/, "");
 const publicUrl = `${siteOrigin}${basePath}`;
 const logoUrl = `${basePath}/images/logo-display.webp?brand=cinecruzeiro-goldstars-v2-2026`;
-const iconUrl = `${basePath}/images/favicon-64.png?brand=cinecruzeiro-icon-black-20261005`;
-const appleIconUrl = `${basePath}/images/favicon-180.png?brand=cinecruzeiro-icon-black-20261005`;
+const iconUrl = `${basePath}/images/favicon-64.png?brand=cinecruzeiro-icon-bold-20261005`;
+const smallIconUrl = `${basePath}/images/favicon-16.png?brand=cinecruzeiro-icon-bold-20261005`;
+const mediumIconUrl = `${basePath}/images/favicon-32.png?brand=cinecruzeiro-icon-bold-20261005`;
+const vectorIconUrl = `${basePath}/images/favicon.svg?brand=cinecruzeiro-icon-bold-20261005`;
+const appleIconUrl = `${basePath}/images/favicon-180.png?brand=cinecruzeiro-icon-bold-20261005`;
 const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG || "default";
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
@@ -38,7 +41,12 @@ export const metadata: Metadata = {
     "aluguel de cinema para eventos",
   ],
   icons: {
-    icon: iconUrl,
+    icon: [
+      { url: vectorIconUrl, type: "image/svg+xml", sizes: "any" },
+      { url: smallIconUrl, type: "image/png", sizes: "16x16" },
+      { url: mediumIconUrl, type: "image/png", sizes: "32x32" },
+      { url: iconUrl, type: "image/png", sizes: "64x64" },
+    ],
     apple: appleIconUrl,
   },
   alternates: {
