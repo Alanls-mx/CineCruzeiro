@@ -146,7 +146,17 @@ async function createOrderPayment(order, config = {}, options = {}) {
     ...(options.notificationUrl ? { notification_urls: [options.notificationUrl] } : {})
   };
   const data = await request("/orders", config, { method: "POST", body, idempotencyKey: String(options.idempotencyKey || order.idempotencyKey || order.id) });
-  const payment = normalizeOrder(data, method);
+  let payment = normalizeOrder(data, method);
+  if (method === "credit_card" && payment.status === "processing" && data.charges?.[0]?.status === "AUTHORIZED") {
+    try {
+      const captureKey = crypto.createHash("sha256").update(`${String(options.idempotencyKey || order.id)}:capture`).digest("hex");
+      await captureCharge(payment.transactionId, undefined, config, captureKey);
+      const capturedOrder = await fetchOrder(payment.id, config);
+      if (capturedOrder) payment = capturedOrder;
+    } catch {
+      // Keep the authorization pending; order reconciliation can confirm a later capture.
+    }
+  }
   if (!/^ORDE_[A-Za-z0-9-]+$/.test(payment.id)
     || !/^CHAR_[A-Za-z0-9-]+$/.test(payment.transactionId)
     || payment.externalReference !== body.reference_id
@@ -178,6 +188,17 @@ async function cancelCharge(chargeId, amount, config = {}, idempotencyKey = "") 
   });
 }
 
+async function captureCharge(chargeId, amount, config = {}, idempotencyKey = "") {
+  if (!/^CHAR_[A-Za-z0-9-]+$/.test(String(chargeId || ""))) {
+    throw pagBankError("PAGBANK_CHARGE_ID_INVALID", "Identificador da cobrança PagBank inválido.", 422);
+  }
+  return request(`/charges/${encodeURIComponent(chargeId)}/capture`, config, {
+    method: "POST",
+    idempotencyKey: idempotencyKey || crypto.createHash("sha256").update(`capture:${chargeId}`).digest("hex"),
+    body: amount === undefined || amount === null ? {} : { amount: { value: toCents(amount) } }
+  });
+}
+
 function verifyOrderWebhook(req, config = {}) {
   const signature = String(req.headers?.["x-authenticity-token"] || "").trim();
   const raw = req.rawBody;
@@ -204,4 +225,4 @@ function resolveWebhookOrder(body = {}, payments = []) {
   return { chargeId, orderId };
 }
 
-module.exports = { baseUrl, token, toCents, normalizedStatus, normalizeOrder, request, createOrderPayment, fetchOrder, cancelCharge, verifyOrderWebhook, resolveWebhookOrder };
+module.exports = { baseUrl, token, toCents, normalizedStatus, normalizeOrder, request, createOrderPayment, fetchOrder, captureCharge, cancelCharge, verifyOrderWebhook, resolveWebhookOrder };

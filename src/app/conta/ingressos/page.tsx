@@ -40,6 +40,7 @@ export default function IngressosPage() {
   const [tab, setTab] = useState<"upcoming" | "archived">("upcoming");
   const [ticketPage, setTicketPage] = useState(1);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [loadError, setLoadError] = useState("");
   const [validatedTicketId, setValidatedTicketId] = useState("");
   const [transferSuccessInfo, setTransferSuccessInfo] = useState<TransferSuccessInfo | null>(null);
   const ticketStatusesRef = useRef(new Map<string, TicketRecord["status"]>());
@@ -75,8 +76,11 @@ export default function IngressosPage() {
         }
         setStatus("ready");
       })
-      .catch(() => {
-        if (!silent) setStatus("error");
+      .catch((error) => {
+        if (!silent) {
+          setLoadError(error instanceof Error ? error.message : "Não foi possível carregar seus ingressos agora. Verifique sua conexão e tente novamente.");
+          setStatus("error");
+        }
       });
   }
 
@@ -152,8 +156,9 @@ export default function IngressosPage() {
         {status === "loading" && <div className="mt-10 h-64 skeleton-soft" />}
         {status === "error" && (
           <div className="mt-10">
-            <p className="text-slate-300">Entre na sua conta para ver seus ingressos.</p>
-            <Link href="/conta" className="mt-4 inline-flex text-gold-400">Ir para login</Link>
+            <p className="text-slate-300">{loadError}</p>
+            <button type="button" onClick={() => reloadTickets()} className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-gold-400 px-4 font-bold text-slate-950">Tentar novamente</button>
+            <Link href="/conta" className="ml-4 inline-flex text-gold-400">Minha conta</Link>
           </div>
         )}
 

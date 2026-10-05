@@ -15802,10 +15802,6 @@ async function handleApi(req, res, pathname) {
       res.end();
       return;
     }
-    if (activeOnlinePaymentProvider(db).provider === "pag_bank") {
-      sendJson(res, 412, { error: { code: "PAGBANK_RECURRING_NOT_READY", message: "A recorrência PagBank do Clube requer habilitação da conta e integração própria de assinaturas. Nenhuma assinatura ou cobrança foi iniciada." } });
-      return;
-    }
     const user = requireCustomerAuth(req, res, db);
     if (!user) return;
     const enrichedTickets = findAccountTickets(db, user);

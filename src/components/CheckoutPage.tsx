@@ -111,7 +111,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   const [draft, setDraft] = useState<StoredCheckoutDraft | null>(null);
   const [hydratedSessionId, setHydratedSessionId] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState("");
-  const [confirmationStatus, setConfirmationStatus] = useState<"idle" | "checking" | "ready" | "invalid">("idle");
+  const [confirmationStatus, setConfirmationStatus] = useState<"idle" | "checking" | "ready" | "retrying">("idle");
   const [loading, setLoading] = useState(false);
   const [clubLoading, setClubLoading] = useState(false);
   const [clubSubscriptions, setClubSubscriptions] = useState<AccountSubscription[]>([]);
@@ -400,8 +400,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           setConfirmationStatus("ready");
         })
         .catch(() => {
-          setConfirmationStatus("invalid");
-          router.replace(checkoutPathFor("pagamento"));
+          setConfirmationStatus("retrying");
         });
       return;
     }
@@ -1588,7 +1587,7 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
   );
 }
 
-function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestartPayment }: { draft: StoredCheckoutDraft; confirmationStatus: "idle" | "checking" | "ready" | "invalid"; orderReference: string; onRestartPayment: () => void }) {
+function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestartPayment }: { draft: StoredCheckoutDraft; confirmationStatus: "idle" | "checking" | "ready" | "retrying"; orderReference: string; onRestartPayment: () => void }) {
   const [copied, setCopied] = useState(false);
   const result = draft.paymentResult as CheckoutPaymentResult | undefined;
   const expiresAt = result?.payment?.expiresAt || result?.order?.reservationExpiresAt || "";
@@ -1635,6 +1634,8 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
               <h2 className="mt-1 font-display text-3xl font-black leading-none sm:text-4xl text-white">
                 {confirmationStatus === "checking"
                   ? "Estamos conferindo seu pedido"
+                  : confirmationStatus === "retrying"
+                  ? "Conferindo a confirmação do pagamento"
                   : approved
                   ? "Tudo certo com sua compra"
                   : latePayment
@@ -1649,6 +1650,8 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
           <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300">
             {approved
               ? "Seus ingressos digitais foram liberados na sua conta. Lá você encontra QR Code, download, transferência e histórico da compra."
+              : confirmationStatus === "retrying"
+              ? "Não conseguimos consultar o status neste instante. Vamos tentar novamente automaticamente. Não refaça o pagamento enquanto conferimos."
               : latePayment
               ? "O pagamento foi confirmado depois que a reserva expirou. Nenhum ingresso foi emitido automaticamente; a equipe verificará a cobrança e os assentos antes de concluir ou devolver o valor."
               : expired
@@ -1664,7 +1667,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
             <div className={`rounded-lg p-4 transition-colors duration-300 ${approved ? "bg-emerald-950/40" : "bg-brand-950/70"}`} aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
               <strong className={`mt-2 block text-white transition-colors duration-500 ${approved ? "text-emerald-300 font-semibold" : ""}`}>
-                {approved ? "Pagamento aprovado" : latePayment ? "Conciliação necessária" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
+                {approved ? "Pagamento aprovado" : confirmationStatus === "retrying" ? "Nova consulta automática" : latePayment ? "Conciliação necessária" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
               </strong>
             </div>
             {pending && expiresAt && !expired && (
