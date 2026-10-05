@@ -170,7 +170,7 @@ export default function ClubePage() {
         </section>
 
         <section className="mx-auto max-w-[1320px] px-4 pb-16 sm:px-6 lg:px-8">
-          <div className="grid gap-6 md:grid-cols-3">
+          <div className="grid items-start gap-6 md:grid-cols-3">
             <Faq title="Preciso ter conta?" text="Sim. A assinatura e os créditos ficam vinculados ao usuário para evitar uso inseguro." />
             <Faq title="Crédito vira ingresso na hora?" text="Ele aparece no pagamento do checkout quando a assinatura está ativa e com saldo disponível." />
             <Faq title="Posso comprar avulso?" text="Sim. O ingresso promocional continua disponível para quem prefere comprar sem assinatura." />
