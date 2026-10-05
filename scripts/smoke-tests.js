@@ -2452,7 +2452,7 @@ async function run() {
       body: JSON.stringify({ scenario: "resource_not_found", action: "order.processed", amount: 10 })
     });
     assert.equal(simulator.response.status, 200);
-    assert.equal(simulator.payload.run.httpStatus, 200);
+    assert.equal(simulator.payload.run.httpStatus, 503);
     assert.equal(simulator.payload.run.passed, true);
 
     const webhookBatch = await request("/api/admin/integrations/mercadoPago/webhook-simulations/batch", {

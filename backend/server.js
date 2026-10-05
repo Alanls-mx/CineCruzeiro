@@ -747,6 +747,7 @@ function webhookTesterEnabled() {
 // These checks may intentionally wait for slow or unavailable dependencies. Keep their
 // progress outside the request lifecycle so they never distort operational latency.
 const webhookBatchJobs = new Map();
+const mercadoPagoSimulatedOrders = new Map();
 
 function webhookBatchJobSnapshot(job = {}) {
   return {
@@ -10621,8 +10622,8 @@ async function ensureWebhookTestFixture(payload, options = {}) {
     const reference = payload.data.external_reference;
     const resourceId = payload.data.id;
     const existing = (db.orders || []).find((item) => item.id === reference);
-    if (existing && existing.origin !== "webhook_test" && !options.useExistingOrder) {
-      const error = new Error("A referência pertence a um pedido real. Ative explicitamente o teste em pedido existente para continuar.");
+    if (existing && existing.origin !== "webhook_test") {
+      const error = new Error("O simulador não pode alterar um pedido real. Use uma referência de teste exclusiva.");
       error.code = "WEBHOOK_TEST_REAL_ORDER_BLOCKED";
       error.statusCode = 409;
       throw error;
@@ -10673,6 +10674,7 @@ async function ensureWebhookTestFixture(payload, options = {}) {
 function webhookTestExpectation(scenario = "valid") {
   if (["invalid_signature", "missing_signature", "missing_request_id", "missing_data_id"].includes(scenario)) return 401;
   if (scenario === "invalid_payload") return 400;
+  if (scenario === "resource_not_found") return 503;
   return 200;
 }
 
@@ -10712,7 +10714,7 @@ async function runMercadoPagoWebhookSimulation(input = {}, options = {}) {
   const payload = buildMercadoPagoWebhookTestPayload(input);
   if (scenario === "unknown_event") payload.action = "order.unknown";
   const resourceMissing = scenario === "resource_not_found" || webhookTestExpectation(scenario) !== 200;
-  await ensureWebhookTestFixture(payload, { resourceMissing, useExistingOrder: Boolean(input.useExistingOrder) });
+  await ensureWebhookTestFixture(payload, { resourceMissing });
 
   const requestId = String(input.requestId || crypto.randomUUID());
   const timestamp = String(input.timestamp || Math.floor(Date.now() / 1000));
@@ -10724,6 +10726,13 @@ async function runMercadoPagoWebhookSimulation(input = {}, options = {}) {
   if (scenario !== "missing_signature") headers["x-signature"] = scenario === "invalid_signature"
     ? `${signature.header.slice(0, -1)}${signature.header.endsWith("0") ? "1" : "0"}`
     : signature.header;
+
+  if (!resourceMissing) {
+    mercadoPagoSimulatedOrders.set(payload.data.id, {
+      order: paymentService.normalizeMercadoPagoWebhookOrder(payload),
+      expiresAt: Date.now() + 15000
+    });
+  }
 
   const startedAt = Date.now();
   let status = 0;
@@ -10741,6 +10750,8 @@ async function runMercadoPagoWebhookSimulation(input = {}, options = {}) {
     responsePayload = JSON.parse(responseText || "{}");
   } catch (error) {
     responsePayload = { error: { code: "WEBHOOK_TEST_REQUEST_FAILED", message: error.message } };
+  } finally {
+    mercadoPagoSimulatedOrders.delete(payload.data.id);
   }
   const elapsedMs = Date.now() - startedAt;
   const expectedStatus = webhookTestExpectation(scenario);
@@ -10967,7 +10978,7 @@ async function reconcileOnlineCheckoutOrder(orderId, snapshotDb) {
   if (!snapshotPayment || !["mercado_pago", "pag_bank"].includes(snapshotPayment.provider) || !snapshotPayment.providerPaymentId) return false;
 
   const hasTickets = (snapshotDb.tickets || []).some((ticket) => ticket.orderId === snapshotOrder.id);
-  const needsReconciliation = ["pending", "processing"].includes(String(snapshotPayment.status || ""))
+  const needsReconciliation = ["pending", "processing", "expired"].includes(String(snapshotPayment.status || ""))
     || (snapshotPayment.status === "approved" && (snapshotOrder.status !== "paid" || !hasTickets));
   if (!needsReconciliation) return false;
 
@@ -10990,18 +11001,17 @@ async function reconcileOnlineCheckoutOrder(orderId, snapshotDb) {
   }
   if (!providerStatus || providerStatus.status === "pending") return false;
 
-  if ((snapshotPayment.provider === "pag_bank" && (
-    providerStatus.id !== snapshotPayment.providerPaymentId
-    || !providerStatus.externalReference
-    || Math.round(Number(providerStatus.amount) * 100) !== Math.round(Number(snapshotPayment.amount) * 100)
-  )) || !mercadoPagoReferenceMatches(snapshotPayment, providerStatus.externalReference)) {
+  if (String(providerStatus.id || "").toLowerCase() !== String(snapshotPayment.providerPaymentId).toLowerCase()
+    || (providerStatus.status === "approved" && !providerStatus.externalReference)
+    || !mercadoPagoReferenceMatches(snapshotPayment, providerStatus.externalReference)) {
     logEvent("warn", "payment.reconciliation_reference_mismatch", {
       orderId: snapshotOrder.id,
       providerPaymentId: snapshotPayment.providerPaymentId
     });
     return false;
   }
-  if (providerStatus.amount && Math.abs(Number(providerStatus.amount) - Number(snapshotPayment.amount)) > 0.01) {
+  if ((providerStatus.status === "approved" && (!Number.isFinite(Number(providerStatus.amount)) || Number(providerStatus.amount) <= 0))
+    || (providerStatus.amount && Math.round(Number(providerStatus.amount) * 100) !== Math.round(Number(snapshotPayment.amount) * 100))) {
     logEvent("warn", "payment.reconciliation_amount_mismatch", {
       orderId: snapshotOrder.id,
       providerPaymentId: snapshotPayment.providerPaymentId
@@ -11038,6 +11048,9 @@ async function reconcileOnlineCheckoutOrder(orderId, snapshotDb) {
     } else if (payment.status === "approved" && order.status === "expired") {
       order.latePaymentReview = { provider: payment.provider, detectedAt: payment.updatedAt, amount: payment.amount };
       logEvent("error", "payment.late_after_reservation_expired", { orderId: order.id, providerPaymentId: payment.providerPaymentId, amount: payment.amount });
+    } else if (payment.status === "approved" && ["cancelled", "refunded"].includes(order.status)) {
+      order.latePaymentReview = { provider: payment.provider, detectedAt: payment.updatedAt, amount: payment.amount };
+      logEvent("error", "payment.approved_after_order_cancelled", { orderId: order.id, providerPaymentId: payment.providerPaymentId, amount: payment.amount });
     } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status) && order.status !== "paid") {
       releaseConcessionReservation(lockedDb, order);
       order.status = payment.status === "refunded" ? "refunded" : payment.status === "rejected" ? "cancelled" : payment.status;
@@ -14135,7 +14148,8 @@ async function handleApi(req, res, pathname) {
         }
 
         const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
-        if (!(mercadoPagoConfig?.enabled && mercadoPagoConfig?.configured) && process.env.PAYMENTS_MODE !== "test") {
+        const activeProvider = activeOnlinePaymentProvider(lockedDb);
+        if (activeProvider.provider !== "mercado_pago" || (!(mercadoPagoConfig?.enabled && mercadoPagoConfig?.configured) && process.env.PAYMENTS_MODE !== "test")) {
           sendJson(res, 412, { error: { code: "MERCADO_PAGO_NOT_CONFIGURED", message: "Ative e configure o Mercado Pago nas Integracoes para vender assinaturas recorrentes." } });
           return;
         }
@@ -17260,6 +17274,9 @@ async function handleApi(req, res, pathname) {
       } else if (payment.status === "approved" && order.status === "expired") {
         order.latePaymentReview = { provider: "pag_bank", detectedAt: payment.updatedAt, amount: payment.amount };
         logEvent("error", "payment.late_after_reservation_expired", { orderId: order.id, providerOrderId, amount: payment.amount });
+      } else if (payment.status === "approved" && ["cancelled", "refunded"].includes(order.status)) {
+        order.latePaymentReview = { provider: "pag_bank", detectedAt: payment.updatedAt, amount: payment.amount };
+        logEvent("error", "payment.approved_after_order_cancelled", { orderId: order.id, providerOrderId, amount: payment.amount });
       } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status) && order.status !== "paid") {
         releaseConcessionReservation(lockedDb, order);
         order.status = payment.status === "refunded" ? "refunded" : payment.status === "rejected" ? "cancelled" : payment.status;
@@ -17298,7 +17315,7 @@ async function handleApi(req, res, pathname) {
     const signedOrderStatus = paymentService.normalizeMercadoPagoWebhookOrder(body);
     const providerPaymentId = String(verification.dataId || signedOrderStatus?.id || body.data?.id || body.providerPaymentId || body.paymentId || "");
     const orderId = String(body.orderId || body.externalReference || body.external_reference || signedOrderStatus?.externalReference || body.data?.external_reference || body.reference || "");
-    const eventId = mercadoPagoWebhookEventId(body, verification);
+    let eventId = mercadoPagoWebhookEventId(body, verification);
     const webhookAction = mercadoPagoWebhookAction(body);
     const webhookTopic = String([
       webhookUrl.searchParams.get("type"),
@@ -17359,6 +17376,10 @@ async function handleApi(req, res, pathname) {
       const providerSubscription = effectiveProviderSubscriptionId
         ? await subscriptionPaymentProvider.getSubscription(effectiveProviderSubscriptionId, providerConfig || {})
         : null;
+      if ((isAuthorizedPaymentEvent && !authorizedPayment) || !providerSubscription) {
+        sendJson(res, 503, { error: { code: "SUBSCRIPTION_LOOKUP_FAILED", message: "A assinatura ainda não pôde ser confirmada no Mercado Pago. Reenvie a notificação." } });
+        return;
+      }
       await withCriticalMutation(async () => {
         const lockedDb = await readDb();
         if (lockedDb.webhookEvents.some((event) => event.provider === provider && event.eventId === eventId)) {
@@ -17375,19 +17396,8 @@ async function handleApi(req, res, pathname) {
           )
         );
         if (!subscription) {
-          lockedDb.webhookEvents.push({
-            provider,
-            eventId,
-            providerPaymentId,
-            orderId: "",
-            subscriptionId: "",
-            status: "not_found",
-            verified: verification.verified,
-            createdAt: new Date().toISOString()
-          });
-          await writeDb(lockedDb);
           logEvent("info", "webhook.subscription.not_found", { provider, eventId, providerPaymentId, verified: verification.verified });
-          sendJson(res, 200, { ok: true, accepted: true, processed: false, processing: { recognized: true, subscriptionLocated: false, stateUpdated: false } });
+          sendJson(res, 503, { error: { code: "SUBSCRIPTION_NOT_RECORDED", message: "Assinatura ainda não persistida; reenvie a notificação." } });
           return;
         }
         if (isAuthorizedPaymentEvent) {
@@ -17449,12 +17459,26 @@ async function handleApi(req, res, pathname) {
       return;
     }
 
-    // Prefer the provider lookup recommended by Mercado Pago. The signed Orders
-    // payload is a safe fallback when the lookup is temporarily unavailable.
-    const signedPayloadHasState = Boolean(body.data?.status || body.data?.status_detail || body.data?.transactions?.payments?.length);
-    const providerStatus = signedPayloadHasState
-      ? signedOrderStatus
-      : await paymentService.fetchProviderPaymentStatus(provider, providerPaymentId, providerConfig || {});
+    // The HMAC covers the resource ID, not the status or amount in the webhook body.
+    const simulated = mercadoPagoSimulatedOrders.get(providerPaymentId);
+    const localRequest = ["::1", "127.0.0.1", "::ffff:127.0.0.1"].includes(String(req.socket.remoteAddress || ""));
+    const providerStatus = localRequest && simulated?.expiresAt > Date.now()
+      ? simulated.order
+      : localRequest && !isProduction() && process.env.PAYMENTS_MODE === "test"
+        ? signedOrderStatus
+        : await paymentService.fetchMercadoPagoWebhookOrder(providerPaymentId, providerConfig || {});
+    if (!providerStatus || String(providerStatus.id).toLowerCase() !== providerPaymentId.toLowerCase()) {
+      sendJson(res, 503, { error: { code: "MERCADO_PAGO_WEBHOOK_LOOKUP_FAILED", message: "O pedido notificado ainda não pôde ser confirmado. Reenvie a notificação." } });
+      return;
+    }
+    eventId = crypto.createHash("sha256").update(JSON.stringify({
+      provider,
+      id: providerStatus.id,
+      status: providerStatus.status,
+      detail: providerStatus.statusDetail,
+      amount: providerStatus.amount,
+      reference: providerStatus.externalReference
+    })).digest("hex");
     await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       if (lockedDb.webhookEvents.some((event) => event.provider === provider && event.eventId === eventId)) {
@@ -17468,40 +17492,27 @@ async function handleApi(req, res, pathname) {
         return;
       }
 
-      const effectiveOrderId = orderId || providerStatus?.externalReference || "";
+      const effectiveOrderId = providerStatus.externalReference || "";
       const payment = lockedDb.payments.find((item) =>
         item.provider === provider &&
-        (item.providerPaymentId === providerPaymentId || item.orderId === effectiveOrderId || item.providerReference === effectiveOrderId)
+        (String(item.providerPaymentId || "").toLowerCase() === providerPaymentId.toLowerCase()
+          || (item.metadata?.kind === "point_sale" && !item.providerPaymentId && item.providerReference === effectiveOrderId))
       );
       if (!payment) {
-        lockedDb.webhookEvents.push({
-          provider,
-          eventId,
-          providerPaymentId,
-          orderId: effectiveOrderId,
-          status: "not_found",
-          verified: verification.verified,
-          createdAt: new Date().toISOString()
-        });
-        await writeDb(lockedDb);
         logEvent("info", "webhook.payment.not_found", { provider, eventId, providerPaymentId, orderId: effectiveOrderId, verified: verification.verified });
-        sendJson(res, 200, {
-          ok: true,
-          accepted: true,
-          processed: false,
-          processing: { recognized: true, orderLocated: false, stateUpdated: false }
-        });
+        sendJson(res, 503, { error: { code: "PAYMENT_NOT_RECORDED", message: "Pagamento ainda não persistido; reenvie a notificação." } });
         return;
       }
 
       const isClubSubscriptionPayment = payment.metadata?.kind === "club_subscription";
       const isPointPayment = payment.metadata?.kind === "point_sale";
       const order = isClubSubscriptionPayment ? null : lockedDb.orders.find((item) => item.id === payment.orderId);
-      if (provider === "mercado_pago" && providerPaymentId && payment.providerPaymentId !== providerPaymentId && providerStatus?.id) {
+      if (providerPaymentId && payment.providerPaymentId !== providerPaymentId && providerStatus.id) {
         payment.metadata = { ...(payment.metadata || {}), previousProviderPaymentId: payment.providerPaymentId };
         payment.providerPaymentId = providerStatus.id;
       }
-      if (!mercadoPagoReferenceMatches(payment, providerStatus?.externalReference)) {
+      if ((providerStatus.status === "approved" && !providerStatus.externalReference)
+        || !mercadoPagoReferenceMatches(payment, providerStatus.externalReference)) {
         sendJson(res, 409, {
           error: {
             code: "PAYMENT_REFERENCE_MISMATCH",
@@ -17511,7 +17522,8 @@ async function handleApi(req, res, pathname) {
         return;
       }
       if (providerStatus?.externalReference) payment.providerReference = providerStatus.externalReference;
-      if (providerStatus?.amount && Math.abs(Number(providerStatus.amount) - Number(payment.amount)) > 0.01) {
+      if ((providerStatus.status === "approved" && (!Number.isFinite(Number(providerStatus.amount)) || Number(providerStatus.amount) <= 0))
+        || (providerStatus.amount && Math.round(Number(providerStatus.amount) * 100) !== Math.round(Number(payment.amount) * 100))) {
         sendJson(res, 409, {
           error: {
             code: "PAYMENT_AMOUNT_MISMATCH",
@@ -17521,8 +17533,8 @@ async function handleApi(req, res, pathname) {
         return;
       }
 
-      const nextStatus = providerStatus?.status || normalizeProviderPaymentStatus(body.status || body.action || body.type);
-      payment.metadata = { ...(payment.metadata || {}), lastWebhook: body, verification, providerStatus: providerStatus?.raw || null };
+      const nextStatus = providerStatus.status;
+      payment.metadata = { ...(payment.metadata || {}), lastWebhookAt: new Date().toISOString(), verification, providerStatus: providerStatus.raw || null };
       payment.status = paymentStatusAfterWebhook(payment.status, nextStatus);
       payment.updatedAt = new Date().toISOString();
       if (payment.status === "approved") payment.approvedAt = payment.approvedAt || new Date().toISOString();
@@ -17560,7 +17572,13 @@ async function handleApi(req, res, pathname) {
             paymentMethod: payment.method
           });
         }
-      } else if (payment.status === "approved") {
+      } else if (payment.status === "approved" && order?.status === "expired") {
+        order.latePaymentReview = { provider, detectedAt: payment.updatedAt, amount: payment.amount };
+        logEvent("error", "payment.late_after_reservation_expired", { orderId: order.id, providerPaymentId, amount: payment.amount });
+      } else if (payment.status === "approved" && ["cancelled", "refunded"].includes(order?.status || "")) {
+        order.latePaymentReview = { provider, detectedAt: payment.updatedAt, amount: payment.amount };
+        logEvent("error", "payment.approved_after_order_cancelled", { orderId: order.id, providerPaymentId, amount: payment.amount });
+      } else if (payment.status === "approved" && ["pending_payment", "paid"].includes(order?.status || "")) {
         const wasAlreadyPaid = order?.status === "paid";
         tickets = finalizePaidOrder(lockedDb, order, payment, "online");
         if (!wasAlreadyPaid && tickets.length) consumePendingClubCredit(lockedDb, order, tickets, order?.customerUserId);

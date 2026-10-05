@@ -5,7 +5,7 @@
 | Operacao | Implementacao atual |
 | --- | --- |
 | Checkout Pix/cartao | `POST /api/payments/pix` e `/api/payments/card`; preco recalculado no servidor, idempotencia, reserva de poltronas/estoque, pagamento persistido e ingresso somente apos aprovacao. |
-| Confirmacao | Webhook assinado `/api/webhooks/mercado-pago` e conciliacao em `GET /api/checkout/orders/:id`. |
+| Confirmacao | Webhook assinado `/api/webhooks/mercado-pago` identifica o recurso; o servidor consulta o pedido diretamente no Mercado Pago antes de alterar pagamento, pedido ou ingresso. Falhas de consulta retornam 503 para nova tentativa. Conciliacao adicional em `GET /api/checkout/orders/:id`. |
 | Estorno | Pedido completo, apenas ingressos ou apenas bomboniere; intencao persistida antes da chamada e confirmacao consultada no provedor. |
 | Bilheteria | Mercado Pago Point cria cobranca no terminal e vincula impressao/ingressos ao status confirmado. Dinheiro, cortesia e Pix externo sao fluxos locais distintos. |
 | Clube | Assinatura recorrente via Checkout hospedado e API de recorrencia Mercado Pago. |
@@ -17,11 +17,11 @@
 | Exclusividade | Ativar PagBank exige desativar Mercado Pago em **Admin > Integracoes**; o backend tambem recusa configuracao dupla. Credenciais do provedor antigo permanecem para consultar/reembolsar cobrancas historicas. |
 | Pix online | API Orders, QR copia-e-cola, mesmo preco/reserva/estoque/ingresso do checkout existente. |
 | Cartao online | SDK PagBank criptografa no navegador; o backend recebe apenas o cartao criptografado e os dados do titular, nunca PAN/CVV. |
-| Confirmacao | Webhook `/api/webhooks/pag-bank` valida `x-authenticity-token` sobre o corpo bruto e consulta o pedido na API antes de alterar estado. Referencia e valor precisam coincidir; eventos repetidos sao deduplicados. |
+| Confirmacao | Webhook `/api/webhooks/pag-bank` valida preferencialmente `x-payload-signature` (ECDSA com a chave publica de webhook do PagBank); o formato legado `x-authenticity-token` tambem e aceito. Consulta o pedido na API antes de alterar estado. Referencia e valor precisam coincidir; eventos repetidos sao deduplicados. |
 | Conciliacao | Consulta de status de pedido tambem suporta PagBank. Pagamento confirmado apos expirar a reserva fica sem ingresso e requer conciliacao humana para evitar venda duplicada da poltrona. |
 | Estorno online | `POST /charges/{id}/cancel` para valor integral ou parcial, com chave idempotente. A operacao local somente conclui apos a consulta do pedido confirmar o valor devolvido. |
 | Bilheteria Tap On | **Nao ativada.** O Point nao pode ser reutilizado como Tap On. As tentativas de venda em cartao retornam erro explicito enquanto nao houver app nativo Android de operacao homologado. Dinheiro e Pix externo continuam disponiveis. |
-| Clube recorrente | **Nao ativado no PagBank.** A conta deve ter o produto de assinaturas habilitado e o fluxo proprio de plano, checkout, renovacao, cancelamento e webhooks precisa ser homologado. O endpoint recusa novas assinaturas quando PagBank esta ativo; assinaturas historicas Mercado Pago ainda podem ser tratadas. |
+| Clube recorrente | **Nao ativado no PagBank.** A conta deve ter o produto de assinaturas habilitado e o fluxo proprio de plano, checkout, renovacao, cancelamento e webhooks precisa ser homologado. O endpoint recusa novas assinaturas quando PagBank esta ativo; as paginas do Clube mostram a pausa antes de enviar o cliente ao checkout. Assinaturas historicas Mercado Pago ainda podem ser tratadas. |
 
 ## Configuracao e seguranca
 

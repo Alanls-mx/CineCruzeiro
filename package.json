@@ -37,7 +37,7 @@
     "test:catalog-operations": "node --test tests/catalog-sessions-finance-polish.test.mjs tests/catalog-operations-http.test.mjs tests/catalog-lifecycle-postgres.test.mjs",
     "test:session-conflicts": "node --test tests/session-room-conflict.test.mjs tests/session-schedule-autocorrect.test.mjs",
     "test:coupon": "node --test tests/coupon-lifecycle.test.mjs",
-    "test:finance": "node --test tests/club-checkout-pricing.test.mjs tests/club-free-item-pricing.test.mjs tests/concession-finance.test.mjs tests/concession-cancellation.test.mjs tests/financial-recognition.test.mjs tests/operations-monitor-refund.test.mjs tests/ticket-distributor-report.test.mjs",
+    "test:finance": "node --test tests/club-checkout-pricing.test.mjs tests/club-free-item-pricing.test.mjs tests/concession-finance.test.mjs tests/concession-cancellation.test.mjs tests/financial-recognition.test.mjs tests/operations-monitor-refund.test.mjs tests/ticket-distributor-report.test.mjs tests/pagbank-integration.test.mjs tests/mercado-pago-webhook-authority.test.mjs",
     "test:ticket-code": "node --test tests/ticket-code.test.mjs",
     "test:ticket-security": "node --test tests/ticket-security.test.mjs",
     "test:integrity": "node --test tests/goods-fiscal-lifecycle.test.mjs",

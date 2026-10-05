@@ -92,7 +92,8 @@ async function mercadoPagoRequest(path, options = {}, integrationConfig = {}) {
       "Content-Type": "application/json",
       ...(options.idempotencyKey ? { "X-Idempotency-Key": options.idempotencyKey } : {})
     },
-    ...(options.body ? { body: JSON.stringify(options.body) } : {})
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    signal: AbortSignal.timeout(15000)
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -552,7 +553,8 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
       "Content-Type": "application/json",
       "X-Idempotency-Key": idempotencyKey
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15000)
   });
 
   const data = await response.json().catch(() => ({}));
@@ -772,6 +774,18 @@ async function fetchMercadoPagoOrder(providerPaymentId, integrationConfig = {}) 
   return normalizeMercadoPagoOrder(data);
 }
 
+async function fetchMercadoPagoWebhookOrder(providerPaymentId, integrationConfig = {}) {
+  const order = await fetchMercadoPagoOrder(providerPaymentId, integrationConfig);
+  if (!order || String(order.id).toLowerCase() !== String(providerPaymentId || "").toLowerCase()) {
+    throw paymentError(
+      "MERCADO_PAGO_WEBHOOK_LOOKUP_FAILED",
+      "O pedido notificado ainda não pôde ser confirmado no Mercado Pago. A notificação deve ser reenviada.",
+      503
+    );
+  }
+  return order;
+}
+
 async function cancelMercadoPagoOrder(providerPaymentId, integrationConfig = {}, idempotencyKey = "") {
   if (!providerPaymentId) return null;
   if (isTestPaymentsMode() && !isProduction()) return { id: providerPaymentId, status: "cancelled", testMode: true };
@@ -833,6 +847,7 @@ module.exports = {
   cancelMercadoPagoOrder,
   cancelMercadoPagoSubscription,
   fetchMercadoPagoAuthorizedPayment,
+  fetchMercadoPagoWebhookOrder,
   fetchMercadoPagoSubscription,
   fetchProviderPaymentStatus,
   getMercadoPagoAccessToken,

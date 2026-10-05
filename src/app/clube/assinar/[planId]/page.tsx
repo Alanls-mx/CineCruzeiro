@@ -10,6 +10,7 @@ import {
   CustomerUser,
   fetchCinemaContent,
   fetchCurrentCustomer,
+  fetchMercadoPagoCheckoutConfig,
   fetchSubscriptionPlans,
   subscribeToPlan,
 } from "@/services/cinemaApi";
@@ -27,6 +28,7 @@ export default function ClubSubscriptionCheckoutPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [clubCheckoutAvailable, setClubCheckoutAvailable] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -34,13 +36,15 @@ export default function ClubSubscriptionCheckoutPage() {
       fetchSubscriptionPlans(),
       fetchCinemaContent().catch(() => null),
       fetchCurrentCustomer().catch(() => null),
+      fetchMercadoPagoCheckoutConfig().catch(() => null),
     ])
-      .then(([plans, content, customer]) => {
+      .then(([plans, content, customer, paymentConfig]) => {
         if (!mounted) return;
         const selectedPlan = plans.find((item) => item.id === planId && item.active !== false) || null;
         setPlan(selectedPlan);
         setSettings(content?.settings || {});
         setUser(customer?.user || null);
+        setClubCheckoutAvailable(Boolean(paymentConfig?.provider === "mercado_pago" && paymentConfig.enabled && paymentConfig.configured && paymentConfig.checkoutAvailable));
         setStatus(selectedPlan ? "ready" : "error");
         setAuthReady(true);
       })
@@ -108,12 +112,16 @@ export default function ClubSubscriptionCheckoutPage() {
           {status === "ready" && plan && (
             <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
               <section className="bg-[#0d1728] p-5 shadow-[0_20px_54px_rgba(0,0,0,.28)] sm:p-8">
-                <h1 className="font-display text-3xl font-black leading-tight sm:text-4xl">Assine com cartão de crédito</h1>
+                <h1 className="font-display text-3xl font-black leading-tight sm:text-4xl">{clubCheckoutAvailable ? "Assine com cartão de crédito" : "Assinaturas temporariamente indisponíveis"}</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-                  A cobrança mensal é autorizada no ambiente seguro do Mercado Pago. O plano só fica ativo depois da confirmação do primeiro pagamento.
+                  {clubCheckoutAvailable
+                    ? "A cobrança mensal é autorizada no ambiente seguro do Mercado Pago. O plano só fica ativo depois da confirmação do primeiro pagamento."
+                    : "Novas assinaturas do Clube estão pausadas enquanto o pagamento recorrente não estiver disponível. Os planos existentes continuam acessíveis na sua conta."}
                 </p>
 
-                {!authReady ? (
+                {!clubCheckoutAvailable ? (
+                  <Link href="/clube#planos" className="mt-7 inline-flex min-h-[48px] items-center justify-center bg-gold-400 px-6 text-sm font-black text-slate-950">Voltar aos planos</Link>
+                ) : !authReady ? (
                   <div className="mt-8 h-28 skeleton-soft" />
                 ) : (
                   <>

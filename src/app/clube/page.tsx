@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarCheck, Check, ChevronDown, ChevronLeft, ChevronRight, Popcorn, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
-import { fetchCinemaContent, fetchSubscriptionPlans } from "@/services/cinemaApi";
+import { fetchCinemaContent, fetchMercadoPagoCheckoutConfig, fetchSubscriptionPlans } from "@/services/cinemaApi";
 import type { CinemaContent, SubscriptionPlan } from "@/services/cinemaApi";
 import { cinemaBrand, cinemaEditorialImages, isUploadedAsset, money, publicAssetPath } from "@/utils/cinema";
 
@@ -17,11 +17,16 @@ export default function ClubePage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [settings, setSettings] = useState<CinemaContent["settings"]>({});
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [clubCheckoutAvailable, setClubCheckoutAvailable] = useState(false);
 
   async function loadAvailablePlans() {
     setStatus("loading");
     try {
-      const plansResult = await fetchSubscriptionPlans();
+      const [plansResult, paymentConfig] = await Promise.all([
+        fetchSubscriptionPlans(),
+        fetchMercadoPagoCheckoutConfig().catch(() => null),
+      ]);
+      setClubCheckoutAvailable(Boolean(paymentConfig?.provider === "mercado_pago" && paymentConfig.enabled && paymentConfig.configured && paymentConfig.checkoutAvailable));
       setPlans(plansResult.filter((plan) => (
         plan.active !== false
         && Boolean(plan.id && plan.name)
@@ -113,8 +118,8 @@ export default function ClubePage() {
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">Planos recorrentes para quem vem sozinho, em casal ou divide a magia com a família.</p>
               </div>
               <div className="text-sm md:text-right">
-                <p className="font-bold text-brand-300">Assinatura no cartão de crédito via Mercado Pago</p>
-                <p className="mt-1 text-xs text-slate-400">Cobrança recorrente autorizada no checkout seguro.</p>
+                <p className="font-bold text-brand-300">{clubCheckoutAvailable ? "Assinatura no cartão de crédito via Mercado Pago" : "Novas assinaturas temporariamente indisponíveis"}</p>
+                <p className="mt-1 text-xs text-slate-400">{clubCheckoutAvailable ? "Cobrança recorrente autorizada no checkout seguro." : "Os planos permanecem disponíveis para consulta."}</p>
               </div>
             </div>
             {status === "loading" && <div className="h-72 skeleton-soft" />}
@@ -128,7 +133,7 @@ export default function ClubePage() {
             )}
             {status === "ready" && (
               carouselPlans.length ? (
-                <PlansCarousel plans={carouselPlans} />
+                <PlansCarousel plans={carouselPlans} checkoutAvailable={clubCheckoutAvailable} />
               ) : (
                 <div className="bg-white/[0.035] px-5 py-8 text-center">
                   <h3 className="font-display text-xl font-black">Nenhum plano disponível para assinatura</h3>
@@ -215,7 +220,7 @@ function arrangePlansForCarousel(plans: SubscriptionPlan[]) {
   ].map(({ plan }) => plan);
 }
 
-function PlansCarousel({ plans }: { plans: SubscriptionPlan[] }) {
+function PlansCarousel({ plans, checkoutAvailable }: { plans: SubscriptionPlan[]; checkoutAvailable: boolean }) {
   const featuredIndex = Math.max(0, plans.findIndex((plan) => plan.isFeatured));
   const [activeIndex, setActiveIndex] = useState(featuredIndex);
   const planRefs = useRef<Array<HTMLElement | null>>([]);
@@ -281,6 +286,7 @@ function PlansCarousel({ plans }: { plans: SubscriptionPlan[] }) {
             <Plan
               key={plan.id}
               plan={plan}
+              checkoutAvailable={checkoutAvailable}
               active={index === activeIndex}
               position={index + 1}
               total={plans.length}
@@ -309,8 +315,9 @@ function PlansCarousel({ plans }: { plans: SubscriptionPlan[] }) {
   );
 }
 
-function Plan({ plan, active, position, total, setRef, onSelect }: {
+function Plan({ plan, checkoutAvailable, active, position, total, setRef, onSelect }: {
   plan: SubscriptionPlan;
+  checkoutAvailable: boolean;
   active: boolean;
   position: number;
   total: number;
@@ -364,12 +371,16 @@ function Plan({ plan, active, position, total, setRef, onSelect }: {
             </li>
           ))}
         </ul>
-        <Link href={`/clube/assinar/${encodeURIComponent(plan.id)}`} tabIndex={active ? 0 : -1} className="mt-auto flex min-h-[52px] w-full items-center justify-center bg-gold-400 px-7 py-4 text-center text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
-          Assinar {plan.name}
-        </Link>
+        {checkoutAvailable ? (
+          <Link href={`/clube/assinar/${encodeURIComponent(plan.id)}`} tabIndex={active ? 0 : -1} className="mt-auto flex min-h-[52px] w-full items-center justify-center bg-gold-400 px-7 py-4 text-center text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
+            Assinar {plan.name}
+          </Link>
+        ) : (
+          <p className="mt-auto bg-white/5 px-5 py-4 text-center text-sm font-bold text-slate-300">Assinaturas temporariamente indisponíveis</p>
+        )}
         <p className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
           <ShieldCheck className="h-4 w-4 text-emerald-300" />
-          Cartão de crédito via Mercado Pago. Créditos liberados após a aprovação.
+          {checkoutAvailable ? "Cartão de crédito via Mercado Pago. Créditos liberados após a aprovação." : "Quem já é assinante pode consultar seus créditos na conta."}
         </p>
       </div>
       </div>

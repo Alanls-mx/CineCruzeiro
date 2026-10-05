@@ -456,12 +456,12 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
   }, [authStatus, availableTicketTypes, draft, found, total, trackingItems]);
 
   useEffect(() => {
-    if (confirmationPaymentStatus !== "approved" || !confirmationOrderId) return;
+    if (confirmationPaymentStatus !== "approved" || confirmationResult?.order?.status !== "paid" || !confirmationResult?.tickets?.length || !confirmationOrderId) return;
     const key = `cine-tracked-purchase-${confirmationOrderId}`;
     if (window.localStorage.getItem(key)) return;
     window.localStorage.setItem(key, "1");
     trackMarketingEvent("purchase", { currency: "BRL", value: Number(confirmationResult?.order?.totalPrice ?? checkoutTotal), transaction_id: confirmationOrderId, affiliation: "Cine Cruzeiro Online", coupon: confirmationResult?.order?.couponCode || couponPreview?.coupon.code || "", items: trackingItems });
-  }, [checkoutTotal, confirmationOrderId, confirmationPaymentStatus, confirmationResult?.order?.couponCode, confirmationResult?.order?.totalPrice, couponPreview?.coupon.code, trackingItems]);
+  }, [checkoutTotal, confirmationOrderId, confirmationPaymentStatus, confirmationResult?.order?.couponCode, confirmationResult?.order?.status, confirmationResult?.order?.totalPrice, confirmationResult?.tickets?.length, couponPreview?.coupon.code, trackingItems]);
 
   useEffect(() => {
     if (step !== "confirmacao" || !confirmationOrderId || !["pending", "processing"].includes(confirmationPaymentStatus)) return;
@@ -1613,10 +1613,12 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
     return () => window.clearInterval(timer);
   }, [expiresAt]);
   const approved = result?.order?.status === "paid" && Boolean(result?.tickets?.length);
-  const latePayment = result?.payment?.status === "approved" && result?.order?.status === "expired";
+  const latePayment = result?.payment?.status === "approved" && ["expired", "cancelled", "refunded"].includes(result?.order?.status || "");
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
   const timerExpired = Boolean(expiresAt && remainingMs <= 0 && pending);
-  const expired = result?.payment?.status === "expired" || result?.order?.status === "expired" || timerExpired;
+  const rejected = result?.payment?.status === "rejected";
+  const expired = ["expired", "cancelled", "refunded", "rejected"].includes(result?.payment?.status || "")
+    || ["expired", "cancelled", "refunded"].includes(result?.order?.status || "") || timerExpired;
   const pixVisible = pending && !expired && Boolean(result?.payment?.qrCode);
   const remainingLabel = `${String(Math.floor(remainingMs / 60000)).padStart(2, "0")}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, "0")}`;
   const copyPix = async () => {
@@ -1648,7 +1650,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
                   : latePayment
                   ? "Pagamento recebido após a reserva"
                   : expired
-                  ? "O prazo deste pagamento terminou"
+                  ? rejected ? "O pagamento foi recusado" : "Este pagamento foi encerrado"
                   : "Pedido criado com segurança"}
               </h2>
             </div>
@@ -1660,9 +1662,9 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
               : confirmationStatus === "retrying"
               ? "Não conseguimos consultar o status neste instante. Vamos tentar novamente automaticamente. Não refaça o pagamento enquanto conferimos."
               : latePayment
-              ? "O pagamento foi confirmado depois que a reserva expirou. Nenhum ingresso foi emitido automaticamente; a equipe verificará a cobrança e os assentos antes de concluir ou devolver o valor."
+              ? "O pagamento foi confirmado após o encerramento da reserva. Nenhum ingresso foi emitido automaticamente; a equipe verificará a cobrança e os assentos antes de concluir ou devolver o valor."
               : expired
-              ? "A cobrança foi cancelada e as poltronas voltaram a ficar disponíveis. Inicie um novo pagamento para refazer a reserva."
+              ? rejected ? "O provedor recusou este pagamento. Confira os dados e inicie uma nova tentativa." : "Esta cobrança não está mais disponível. Inicie um novo pagamento para refazer a reserva."
               : "Finalize o pagamento para liberar os ingressos. Assim que o provedor confirmar, eles aparecem automaticamente em Minha Conta."}
           </p>
 
@@ -1674,7 +1676,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
             <div className={`rounded-lg p-4 transition-colors duration-300 ${approved ? "bg-emerald-950/40" : "bg-brand-950/70"}`} aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
               <strong className={`mt-2 block text-white transition-colors duration-500 ${approved ? "text-emerald-300 font-semibold" : ""}`}>
-                {approved ? "Pagamento aprovado" : confirmationStatus === "retrying" ? "Nova consulta automática" : latePayment ? "Conciliação necessária" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
+                {approved ? "Pagamento aprovado" : confirmationStatus === "retrying" ? "Nova consulta automática" : latePayment ? "Conciliação necessária" : rejected ? "Pagamento recusado" : expired ? "Pagamento encerrado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
               </strong>
             </div>
             {pending && expiresAt && !expired && (
