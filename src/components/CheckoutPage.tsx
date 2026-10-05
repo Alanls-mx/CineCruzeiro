@@ -305,8 +305,8 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     const stored = readCheckoutDraft();
     if (stored?.sessionId === sessionId) {
       if (step !== "confirmacao" && isValidPaymentResult(stored.paymentResult)) {
-        clearCheckoutDraft(sessionId);
-        setDraft(null);
+        setDraft(stored);
+        router.replace(`/checkout/${sessionId}/confirmacao`);
       } else {
         setDraft(stored);
       }
@@ -314,7 +314,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       setDraft(null);
     }
     setHydratedSessionId(sessionId);
-  }, [sessionId, step]);
+  }, [router, sessionId, step]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !found || !draft || draft.seatHoldToken || isValidPaymentResult(draft.paymentResult)) return;
