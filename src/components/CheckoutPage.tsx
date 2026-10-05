@@ -38,6 +38,7 @@ type MercadoPagoCheckoutConfig = {
   publicKey: string;
   environment: "sandbox" | "production";
   livePayments: boolean;
+  checkoutAvailable: boolean;
 };
 type MercadoPagoCardPayload = {
   token?: string;
@@ -613,7 +614,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
     try {
       const persisted = readCheckoutDraft();
       const checkoutDraft = persisted?.sessionId === found.session.id ? persisted : draft;
-      if (checkoutTotal > 0 && (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments)) {
+      if (checkoutTotal > 0 && (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.checkoutAvailable)) {
         throw new Error("Pagamento indisponível: configure o provedor ativo em Integrações.");
       }
       if (checkoutTotal > 0 && checkoutDraft.paymentMethod === "credit_card" && !(cardData?.token || cardData?.encryptedCard)) {
@@ -748,7 +749,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         if (mounted) setMercadoPagoConfig(config);
       })
       .catch(() => {
-        if (mounted) setMercadoPagoConfig({ provider: "mercado_pago", name: "Mercado Pago", enabled: false, configured: false, publicKey: "", environment: "sandbox", livePayments: false });
+        if (mounted) setMercadoPagoConfig({ provider: "mercado_pago", name: "Mercado Pago", enabled: false, configured: false, publicKey: "", environment: "sandbox", livePayments: false, checkoutAvailable: false });
       });
     return () => {
       mounted = false;
@@ -852,7 +853,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           paymentMethod={draft.paymentMethod || "pix"}
           onSubmit={submitPayment}
           onContinueToPayment={continueToPayment}
-          submitDisabled={checkoutTotal > 0 && (draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments)}
+          submitDisabled={checkoutTotal > 0 && (draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.checkoutAvailable)}
           continueDisabled={step === "ingressos" && !ticketSelectionComplete}
         />
       )}
@@ -1212,7 +1213,7 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
   const estimatedPayable = total;
   const clubPricingPending = Boolean(activeClub && couponCanStack && (clubBenefitsEnabled || clubCreditsEnabled))
     && (clubBenefitsLoading || !clubBenefitsPreview || Boolean(clubBenefitsError));
-  const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments;
+  const mercadoPagoUnavailable = !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.checkoutAvailable;
   return (
     <div className="grid gap-10 xl:grid-cols-2">
       <section>
@@ -1228,6 +1229,11 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
       </section>
       <section>
         <h2 className="font-display text-3xl font-black">Pagamento</h2>
+        {mercadoPagoConfig?.provider === "pag_bank" && mercadoPagoConfig.environment === "sandbox" && mercadoPagoConfig.enabled && mercadoPagoConfig.configured && mercadoPagoConfig.checkoutAvailable && (
+          <p className="mt-4 rounded-lg border border-amber-300/30 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100" role="status">
+            PagBank em Sandbox: use somente cartões de teste. Nenhuma cobrança real será feita; aprovações de teste podem gerar pedidos e ingressos nesta base.
+          </p>
+        )}
         <div className="mt-6 border-y border-white/10 py-5">
           <h3 className="text-sm font-black text-white">Cupom de desconto</h3>
           {couponPreview ? (
@@ -1351,7 +1357,7 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
             </div>
             {mercadoPagoUnavailable && (
               <p className="text-sm font-semibold text-amber-200">
-                {mercadoPagoConfig?.name || "Provedor"} indisponível para cobranças reais. Ative a integração com credenciais de produção em Admin → Integrações.
+                {mercadoPagoConfig?.name || "Provedor"} indisponível. Confira o ambiente e as credenciais em Admin → Integrações.
               </p>
             )}
             {!mercadoPagoUnavailable && !clubPricingPending && (

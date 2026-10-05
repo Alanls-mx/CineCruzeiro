@@ -116,7 +116,7 @@ const DEFINITIONS = {
   },
   pagBank: {
     name: "PagBank (PagSeguro)",
-    purpose: "Pix e cartão online. Tap On e assinaturas exigem integração Android e homologação separadas.",
+    purpose: "Pix e cartão online. O Sandbox aceita cartões de teste; produção exige liberação PagBank. Tap On e assinaturas exigem homologações separadas.",
     defaults: { enabled: false, environment: "sandbox", publicKey: "" },
     secrets: ["publicKey", "accessToken"],
     fields: [

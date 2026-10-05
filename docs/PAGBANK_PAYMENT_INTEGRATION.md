@@ -25,13 +25,13 @@
 
 ## Configuracao e seguranca
 
-1. Solicitar habilitacao de Orders/Pix/cartao, token de producao e chave publica `card` na mesma conta PagBank. Uma chave de assinaturas nao serve para o checkout comum.
+1. Para testes, usar token e chave publica Sandbox juntos. A API de cartoes de teste usa `/orders` no Sandbox. Para operar com cobrancas reais, solicitar habilitacao de Orders/Pix/cartao, token de producao e chave publica `card` na conta PagBank. Uma chave de assinaturas nao serve para o checkout comum.
 2. Inserir token e chave publica em **Admin > Integracoes > PagBank**. Testar as credenciais e verificar a correspondencia da chave. Desativar Mercado Pago antes de ativar PagBank.
-3. Comecar em sandbox; nao ativar cobranca real sem testes de criacao, webhook, expirar reserva, reembolso integral/parcial e recebimento de ingresso. O ambiente de producao recusa uma integracao PagBank ainda configurada como sandbox.
+3. O checkout permite usar o Sandbox mesmo quando o Cine Cruzeiro esta hospedado em runtime de producao. O checkout mostra um aviso de teste; pedidos aprovados pelo Sandbox podem criar pedidos e ingressos na base conectada. Antes de aceitar clientes, substituir o ambiente, token e chave por credenciais de producao homologadas.
 4. Manter `PAGBANK_ACCESS_TOKEN` somente no servidor. A chave publica pode ser entregue ao checkout. Nunca gravar numero/CVV de cartao, AppKey Tap On, cabecalhos de autorizacao ou payload bruto do cliente em logs.
 5. Aplicar a migracao `041_pagbank_payment_provider.sql` antes de habilitar PagBank para que pagamentos `pag_bank` possam ser persistidos.
 
-O botao **Testar** valida o token e a chave publica `card`, mas nao cria um pedido e nao comprova que `POST /orders` foi liberado para a conta. Se o PagBank responder `whitelist access required`, solicitar homologacao e liberacao da API de Pedidos em producao pelo [canal oficial de homologacao](https://developer.pagbank.com.br/docs/solicitar-homologacao). Nao tentar contornar a restricao com outro endpoint ou marcar um pedido como pago manualmente. Enquanto a liberacao nao for confirmada, desativar PagBank e reativar Mercado Pago se for necessario continuar recebendo pagamentos online.
+O botao **Testar** valida o token e a chave publica `card`, mas nao cria um pedido. A documentacao do PagBank direciona os cartoes de teste para a API Orders no Sandbox; use credenciais de Sandbox para esses testes. Se a API de Producao responder `whitelist access required`, solicitar homologacao e liberacao da API de Pedidos em producao pelo [canal oficial de homologacao](https://developer.pagbank.com.br/docs/solicitar-homologacao). Nao tentar contornar a restricao com outro endpoint ou marcar um pedido como pago manualmente. Enquanto a liberacao nao for confirmada, usar Sandbox para testes ou reativar Mercado Pago para cobrancas reais.
 
 ## Tap On Android: trabalho ainda necessario
 

@@ -12570,7 +12570,9 @@ async function handleApi(req, res, pathname) {
       configured: Boolean(config?.configured),
       publicKey: config?.publicKey || "",
       environment,
-      livePayments: !isProduction() || environment === "production"
+      livePayments: !isProduction() || environment === "production",
+      checkoutAvailable: !isProduction() || environment === "production"
+        || (active.provider === "pag_bank" && environment === "sandbox")
     });
     return;
   }

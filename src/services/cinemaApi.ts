@@ -641,6 +641,7 @@ export async function fetchMercadoPagoCheckoutConfig() {
     publicKey: string;
     environment: "sandbox" | "production";
     livePayments: boolean;
+    checkoutAvailable: boolean;
   };
 }
 

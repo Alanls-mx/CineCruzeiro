@@ -117,9 +117,6 @@ function customerFromOrder(order) {
 }
 
 async function createOrderPayment(order, config = {}, options = {}) {
-  if (process.env.NODE_ENV === "production" && config.environment !== "production") {
-    throw pagBankError("PAGBANK_PRODUCTION_REQUIRED", "Configure o ambiente de produção do PagBank para cobranças reais.", 412);
-  }
   const method = options.method === "credit_card" ? "credit_card" : "pix";
   if (process.env.PAYMENTS_MODE === "test" && process.env.NODE_ENV !== "production") {
     return normalizeOrder({
