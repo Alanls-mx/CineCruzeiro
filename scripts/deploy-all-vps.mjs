@@ -100,12 +100,21 @@ function releaseTag(commit) {
   return `${stamp}-${commit.slice(0, 7)}`;
 }
 
+function writeReleaseManifest(releaseDir, releaseInfo) {
+  const manifestPath = path.join(releaseDir, "release-info.json");
+  fs.writeFileSync(manifestPath, `${JSON.stringify(releaseInfo, null, 2)}\n`, "utf8");
+  const written = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (written.commit !== releaseInfo.commit || written.release !== releaseInfo.release) {
+    throw new Error(`Manifesto da release não persistiu corretamente: ${manifestPath}`);
+  }
+}
+
 function materializeRelease(archivePath, instance, tag, env, releaseInfo) {
   const releaseDir = path.join(instance.baseDir, "releases", tag);
   if (fs.existsSync(releaseDir)) fs.rmSync(releaseDir, { recursive: true, force: true });
   fs.mkdirSync(releaseDir, { recursive: true });
   run("tar", ["-xf", archivePath, "-C", releaseDir]);
-  fs.writeFileSync(path.join(releaseDir, "release-info.json"), `${JSON.stringify(releaseInfo, null, 2)}\n`, "utf8");
+  writeReleaseManifest(releaseDir, releaseInfo);
 
   if (instance.applyBrand) {
     const brandingDir = path.join(instance.baseDir, "shared", "branding");
@@ -135,6 +144,7 @@ function materializeRelease(archivePath, instance, tag, env, releaseInfo) {
   };
   run("npm", ["run", "build"], { cwd: releaseDir, env: buildEnv });
   if(instance.slug==='cinecruzeiro') run('node',['scripts/build-social-motion.cjs','--browser'],{cwd:releaseDir,env:buildEnv});
+  writeReleaseManifest(releaseDir, releaseInfo);
   return releaseDir;
 }
 
