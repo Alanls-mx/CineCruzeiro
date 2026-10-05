@@ -10,6 +10,18 @@ function refundError(code, message, statusCode = 409) {
   return Object.assign(new Error(message), { code, statusCode });
 }
 
+function sandboxRefundResult(refund, providerConfig = {}) {
+  if (providerConfig.environment !== "sandbox") return null;
+  return {
+    refundId: refund.id,
+    providerStatus: "SANDBOX_SIMULATED",
+    providerStatusDetail: "Reembolso simulado; nenhuma transação real foi enviada ao provedor.",
+    providerRefundIds: [],
+    simulated: true,
+    completedAt: new Date().toISOString()
+  };
+}
+
 function prepareRefund(payment, order, now = new Date().toISOString()) {
   const existing = payment.metadata?.cancellationRefund;
   if (existing) return existing;
@@ -83,6 +95,8 @@ async function submitPagBankRefund(refund, config) {
 }
 
 async function submitFullRefund(refund, accessToken, request = fetch, providerConfig = {}) {
+  const sandboxResult = sandboxRefundResult(refund, providerConfig);
+  if (sandboxResult) return sandboxResult;
   if (refund.provider === "pag_bank") return submitPagBankRefund(refund, providerConfig);
   if (!accessToken) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de solicitar o reembolso.", 412);
   const response = await request(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(refund.providerOrderId)}/refund`, {
@@ -113,6 +127,8 @@ async function submitFullRefund(refund, accessToken, request = fetch, providerCo
 }
 
 async function submitConcessionRefund(refund, accessToken, request = fetch, providerConfig = {}) {
+  const sandboxResult = sandboxRefundResult(refund, providerConfig);
+  if (sandboxResult) return sandboxResult;
   if (refund.provider === "pag_bank") return submitPagBankRefund(refund, providerConfig);
   if (!accessToken) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de solicitar o reembolso.", 412);
   const body = refund.full ? {} : { transactions: [{ id: refund.transactionId, amount: Number(refund.amount).toFixed(2) }] };

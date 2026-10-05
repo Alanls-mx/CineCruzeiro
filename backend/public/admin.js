@@ -5406,6 +5406,7 @@ function orderDetailHtml(order) {
   const payment = paymentForOrder(order.id);
   const movie = movieForOrder(order);
   const val = getOrderValidationSummary(order);
+  const sandboxRefundSimulated = [order.ticketRefund, order.concessionRefund, payment?.metadata?.cancellationRefund, payment?.metadata?.ticketRefund, payment?.metadata?.concessionRefund].some((refund) => refund?.simulated === true);
   const tickets = (order.tickets || []).map((ticket) => `
     <button class="copy-code" type="button" onclick="copyTicketCode('${escapeHtml(ticket.displayCode || ticket.code)}')">${escapeHtml(ticket.displayCode || ticket.code)}</button>
     <span class="list-meta">${escapeHtml(orderStatusLabel(ticket.status))}</span>
@@ -5472,7 +5473,7 @@ function orderDetailHtml(order) {
       ["Complemento pago", money(order.additionalPayment || 0)],
       ["Status", paymentStatusLabel(payment?.status || order.paymentStatus)],
       ["Pagamento aprovado em", payment?.approvedAt || order.paidAt ? new Date(payment?.approvedAt || order.paidAt).toLocaleString("pt-BR") : "-"],
-      ["Reembolso", order.refundStatus === "required" ? "Devolução manual necessária" : order.refundStatus === "completed" ? "Concluído" : order.refundStatus === "pending" ? "Em processamento" : "-"],
+      ["Reembolso", sandboxRefundSimulated ? "Simulado (Sandbox; sem movimentação real)" : order.refundStatus === "required" ? "Devolução manual necessária" : order.refundStatus === "completed" ? "Concluído" : order.refundStatus === "pending" ? "Em processamento" : "-"],
       ["Reembolso concluído em", payment?.refundedAt || order.refundedAt || order.ticketRefund?.completedAt || order.concessionRefund?.completedAt ? new Date(payment?.refundedAt || order.refundedAt || order.ticketRefund?.completedAt || order.concessionRefund?.completedAt).toLocaleString("pt-BR") : "-"],
       ["Orientação", order.manualRefundReason || payment?.metadata?.manualRefund?.reason || "-"],
       ["Referência externa", payment?.providerPaymentId || payment?.providerReference || "-"]

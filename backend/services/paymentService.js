@@ -163,6 +163,7 @@ function createPaymentRecord(order, providerPayment, method) {
       referenceId: providerPayment.referenceId || "",
       paymentMethodId: providerPayment.paymentMethodId || "",
       paymentMethodType: providerPayment.paymentMethodType || "",
+      providerEnvironment: ["sandbox", "production"].includes(providerPayment.providerEnvironment) ? providerPayment.providerEnvironment : "",
       transactionSecurityUrl: providerPayment.transactionSecurityUrl || "",
       raw: providerPayment.raw || {}
     },

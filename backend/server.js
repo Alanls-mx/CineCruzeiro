@@ -3133,10 +3133,20 @@ function activeOnlinePaymentProvider(db) {
   return { provider: "mercado_pago", config: mercadoPago || {}, name: "Mercado Pago" };
 }
 
+function refundProviderConfig(db, payment) {
+  const provider = payment?.provider === "pag_bank" ? "pagBank" : "mercadoPago";
+  const config = { ...(integrationConfigService.resolvedConfig(db, provider) || {}) };
+  const originalEnvironment = String(payment?.metadata?.providerEnvironment || "");
+  if (["sandbox", "production"].includes(originalEnvironment)) config.environment = originalEnvironment;
+  return config;
+}
+
 async function createActiveOnlinePayment(order, active, options = {}) {
-  return active.provider === "pag_bank"
+  const payment = await (active.provider === "pag_bank"
     ? pagBankPaymentService.createOrderPayment(order, active.config, options)
-    : createMercadoPagoOrderPayment(order, active.config, options);
+    : createMercadoPagoOrderPayment(order, active.config, options));
+  payment.providerEnvironment = active.config?.environment === "sandbox" ? "sandbox" : "production";
+  return payment;
 }
 
 function frontendUrlForRequest(req, db) {
@@ -6631,9 +6641,10 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
       await writeDb(db);
       return { completed: true, order, payment };
     }
-    const config = integrationConfigService.resolvedConfig(db, payment?.provider === "pag_bank" ? "pagBank" : "mercadoPago") || {};
+    const config = refundProviderConfig(db, payment);
     const token = payment?.provider === "pag_bank" ? config.accessToken : paymentService.getMercadoPagoAccessToken(config);
-    let manualRefundReason = !token
+    const sandboxRefund = config.environment === "sandbox";
+    let manualRefundReason = !token && !sandboxRefund
       ? "A integração do provedor original não está configurada para executar a devolução automaticamente."
       : "";
     let refund = existing || null;
@@ -6839,9 +6850,9 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
       await writeDb(db);
       return { completed: true, order, payment, refund };
     }
-    const config = integrationConfigService.resolvedConfig(db, payment?.provider === "pag_bank" ? "pagBank" : "mercadoPago") || {};
+    const config = refundProviderConfig(db, payment);
     const token = payment?.provider === "pag_bank" ? config.accessToken : paymentService.getMercadoPagoAccessToken(config);
-    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o provedor original antes de solicitar o reembolso.", 412);
+    if (!token && config.environment !== "sandbox") throw refundError("REFUND_NOT_CONFIGURED", "Configure o provedor original antes de solicitar o reembolso.", 412);
     const refund = prepareConcessionRefund(payment, order, eligibility.amount);
     refund.reason ||= String(reason || "Cancelamento da bomboniere");
     refund.couponDiscount ??= eligibility.concessionCouponDiscount;
@@ -6974,9 +6985,9 @@ async function refundOrderTickets(orderId, reason, adminUser) {
       await writeDb(db);
       return { completed: true, order, payment, refund };
     }
-    const config = integrationConfigService.resolvedConfig(db, payment?.provider === "pag_bank" ? "pagBank" : "mercadoPago") || {};
+    const config = refundProviderConfig(db, payment);
     const token = payment?.provider === "pag_bank" ? config.accessToken : paymentService.getMercadoPagoAccessToken(config);
-    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o provedor original antes de solicitar o reembolso.", 412);
+    if (!token && config.environment !== "sandbox") throw refundError("REFUND_NOT_CONFIGURED", "Configure o provedor original antes de solicitar o reembolso.", 412);
     const refund = prepareTicketRefund(payment, order, eligibility.amount);
     refund.reason ||= String(reason || "Cancelamento de ingressos");
     order.ticketRefund = refund;

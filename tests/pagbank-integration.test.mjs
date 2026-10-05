@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const integrationConfigService = require("../backend/services/integrationConfigService");
 const pagBank = require("../backend/services/pagBankPaymentService");
+const paymentService = require("../backend/services/paymentService");
 const refunds = require("../backend/services/orderRefundService");
 
 test("only one online payment provider may be enabled", () => {
@@ -139,6 +140,33 @@ test("PagBank refund preparation requires the charge ID and retains idempotency"
   assert.throws(() => refunds.prepareRefund({ ...payment, metadata: {} }, order), { code: "REFUND_PROVIDER_UNSUPPORTED" });
 });
 
+test("sandbox payment environment is retained on the local payment record", () => {
+  const record = paymentService.createPaymentRecord({ id: "order-sandbox", totalPrice: 10 }, {
+    provider: "pag_bank", id: "ORDE_SANDBOX", transactionId: "CHAR_SANDBOX", status: "approved", amount: 10, providerEnvironment: "sandbox"
+  }, "credit_card");
+  assert.equal(record.metadata.providerEnvironment, "sandbox");
+});
+
+test("Sandbox cancellations are recorded locally without sending refunds to either gateway", async () => {
+  const neverRequest = async () => { throw new Error("Sandbox refund must not make an external request"); };
+  const mpPayment = { provider: "mercado_pago", providerPaymentId: "ORD123", status: "approved", amount: 10, metadata: {} };
+  const order = { id: "order-mp-test", totalPrice: 10 };
+  const fullRefund = refunds.prepareRefund(mpPayment, order);
+  const fullResult = await refunds.submitFullRefund(fullRefund, "sandbox-token", neverRequest, { environment: "sandbox" });
+  assert.equal(fullResult.simulated, true);
+  assert.equal(fullResult.providerStatus, "SANDBOX_SIMULATED");
+  assert.deepEqual(fullResult.providerRefundIds, []);
+
+  const ticketPayment = { provider: "pag_bank", providerPaymentId: "ORDE_TEST", status: "approved", amount: 10, metadata: { transactionId: "CHAR_TEST" } };
+  const ticketRefund = refunds.prepareTicketRefund(ticketPayment, { id: "order-pagbank-test", totalPrice: 10 }, 10);
+  const ticketResult = await refunds.submitPartialRefund(ticketRefund, "sandbox-token", neverRequest, { environment: "sandbox" });
+  assert.equal(ticketResult.simulated, true);
+
+  const concessionRefund = refunds.prepareConcessionRefund(ticketPayment, { id: "order-pagbank-concession-test", totalPrice: 10 }, 2);
+  const concessionResult = await refunds.submitConcessionRefund(concessionRefund, "sandbox-token", neverRequest, { environment: "sandbox" });
+  assert.equal(concessionResult.simulated, true);
+});
+
 test("refund is completed only after PagBank confirms the refunded amount", async () => {
   const originalFetch = global.fetch;
   const payment = { provider: "pag_bank", providerPaymentId: "ORDE_123", status: "approved", amount: 10, metadata: { transactionId: "CHAR_123" } };
@@ -151,11 +179,11 @@ test("refund is completed only after PagBank confirms the refunded amount", asyn
     return { ok: true, json: async () => ({ id: "ORDE_123", reference_id: "order-123", charges: [{ id: "CHAR_123", status: "REFUNDED", amount: { value: 1000, summary: { refunded: refundedCents } } }] }) };
   };
   try {
-    await assert.rejects(refunds.submitFullRefund(refund, "token", undefined, { environment: "sandbox", accessToken: "token" }), { code: "REFUND_CONFIRMATION_PENDING" });
+    await assert.rejects(refunds.submitFullRefund(refund, "token", undefined, { environment: "production", accessToken: "token" }), { code: "REFUND_CONFIRMATION_PENDING" });
     refundedCents = 1000;
-    const confirmed = await refunds.submitFullRefund(refund, "token", undefined, { environment: "sandbox", accessToken: "token" });
+    const confirmed = await refunds.submitFullRefund(refund, "token", undefined, { environment: "production", accessToken: "token" });
     assert.equal(confirmed.providerStatus, "REFUNDED");
-    assert.equal(calls[0].url, "https://sandbox.api.pagseguro.com/charges/CHAR_123/cancel");
+    assert.equal(calls[0].url, "https://api.pagseguro.com/charges/CHAR_123/cancel");
     assert.equal(calls[0].options.headers["x-idempotency-key"], refund.id);
   } finally {
     global.fetch = originalFetch;
