@@ -1108,6 +1108,7 @@
                 <label><input name="manualPaymentMethod" type="radio" value="point_qr" /> Pix na Point</label>
                 <label data-permission="box_office.courtesy"><input name="manualPaymentMethod" type="radio" value="courtesy" /> Cortesia</label>
               </div>
+              <p id="manualTapOnStatus" class="helper-text" hidden>PagBank online ativo. Tap On presencial depende do aplicativo Android de operação homologado; cobrança por cartão indisponível neste painel.</p>
 
               <div class="box-office-total">
                 <span>Total calculado</span>
@@ -1393,6 +1394,7 @@
                   <label><input name="concessionCounterPaymentMethod" type="radio" value="point_credit" /> Crédito na Point</label>
                   <label><input name="concessionCounterPaymentMethod" type="radio" value="point_qr" /> Pix na Point</label>
                   <label data-permission="box_office.courtesy"><input name="concessionCounterPaymentMethod" type="radio" value="courtesy" /> Cortesia</label>
+                  <p id="concessionTapOnStatus" class="helper-text" hidden>Tap On presencial ainda não está conectado ao aplicativo Android de operação.</p>
                 </fieldset>
                 <div class="concession-counter-actions">
                   <button id="concessionCounterClearButton" class="ghost-button" type="button">Limpar seleção</button>

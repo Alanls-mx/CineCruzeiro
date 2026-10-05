@@ -117,7 +117,7 @@ export interface TicketOrder {
   customerEmail: string;
   customerCpf?: string;
   paymentMethod: "PIX" | "CREDIT_CARD" | "CLUB_CREDIT";
-  paymentProvider?: "open_finance" | "mercado_pago" | "internal_club";
+  paymentProvider?: "open_finance" | "mercado_pago" | "pag_bank" | "internal_club";
   paymentId?: string;
   paymentStatus?: string;
   pixCode?: string;

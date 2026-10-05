@@ -31,6 +31,8 @@ type CheckoutPaymentResult = {
   tickets?: Array<{ code: string }>;
 };
 type MercadoPagoCheckoutConfig = {
+  provider: "mercado_pago" | "pag_bank";
+  name: string;
   enabled: boolean;
   configured: boolean;
   publicKey: string;
@@ -38,10 +40,20 @@ type MercadoPagoCheckoutConfig = {
   livePayments: boolean;
 };
 type MercadoPagoCardPayload = {
-  token: string;
-  paymentMethodId: string;
-  paymentTypeId: string;
+  token?: string;
+  encryptedCard?: string;
+  cardHolderName?: string;
+  cardHolderTaxId?: string;
+  paymentMethodId?: string;
+  paymentTypeId?: string;
   installments: number;
+};
+type PagSeguroBrowser = {
+  encryptCard: (card: { publicKey: string; holder: string; number: string; expMonth: string; expYear: string; securityCode: string }) => {
+    encryptedCard?: string;
+    hasErrors?: boolean;
+    errors?: Array<{ message?: string }>;
+  };
 };
 type MercadoPagoBrickController = { unmount?: () => void };
 type MercadoPagoConstructor = new (
@@ -602,10 +614,10 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       const persisted = readCheckoutDraft();
       const checkoutDraft = persisted?.sessionId === found.session.id ? persisted : draft;
       if (checkoutTotal > 0 && (!mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.livePayments)) {
-        throw new Error("Pix real indisponível: configure o Mercado Pago no ambiente de produção.");
+        throw new Error("Pagamento indisponível: configure o provedor ativo em Integrações.");
       }
-      if (checkoutTotal > 0 && checkoutDraft.paymentMethod === "credit_card" && !cardData?.token) {
-        throw new Error("Preencha os dados do cartão no formulário seguro do Mercado Pago.");
+      if (checkoutTotal > 0 && checkoutDraft.paymentMethod === "credit_card" && !(cardData?.token || cardData?.encryptedCard)) {
+        throw new Error("Preencha os dados do cartão no formulário seguro do provedor ativo.");
       }
       trackMarketingEvent("add_payment_info", {
         currency: "BRL",
@@ -644,6 +656,9 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
           ...(cardData
             ? {
                 cardToken: cardData.token,
+                encryptedCard: cardData.encryptedCard,
+                cardHolderName: cardData.cardHolderName,
+                cardHolderTaxId: cardData.cardHolderTaxId,
                 paymentMethodId: cardData.paymentMethodId,
                 paymentTypeId: cardData.paymentTypeId,
                 installments: cardData.installments,
@@ -733,7 +748,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
         if (mounted) setMercadoPagoConfig(config);
       })
       .catch(() => {
-        if (mounted) setMercadoPagoConfig({ enabled: false, configured: false, publicKey: "", environment: "sandbox", livePayments: false });
+        if (mounted) setMercadoPagoConfig({ provider: "mercado_pago", name: "Mercado Pago", enabled: false, configured: false, publicKey: "", environment: "sandbox", livePayments: false });
       });
     return () => {
       mounted = false;
@@ -1326,9 +1341,9 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
         {draft.paymentMethod === "credit_card" && (
           <div className="mt-6 space-y-4">
             <div className="rounded-lg bg-brand-900/70 p-5 shadow-soft">
-              <h3 className="text-base font-black text-white">Cartão transparente Mercado Pago</h3>
+              <h3 className="text-base font-black text-white">Cartão {mercadoPagoConfig?.name || "online"}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-300">
-                O formulário seguro do Mercado Pago gera um token para processar a compra. O Cine Cruzeiro não recebe número, validade ou CVV do cartão.
+                {mercadoPagoConfig?.provider === "pag_bank" ? "O cartão é criptografado no navegador com o SDK PagBank. Número, validade e CVV não são enviados ao Cine Cruzeiro." : "O formulário seguro do Mercado Pago gera um token para processar a compra. O Cine Cruzeiro não recebe número, validade ou CVV do cartão."}
               </p>
               <p className="mt-3 text-xs font-bold text-slate-500">
                 Total confirmado: {money(total)}. Ingressos liberados após aprovação do pagamento.
@@ -1336,11 +1351,13 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
             </div>
             {mercadoPagoUnavailable && (
               <p className="text-sm font-semibold text-amber-200">
-                Mercado Pago indisponível para cobranças reais. Ative a integração com credenciais de produção em Admin → Integrações.
+                {mercadoPagoConfig?.name || "Provedor"} indisponível para cobranças reais. Ative a integração com credenciais de produção em Admin → Integrações.
               </p>
             )}
             {!mercadoPagoUnavailable && !clubPricingPending && (
-              <CardPaymentBrick publicKey={mercadoPagoConfig.publicKey} amount={total} loading={loading} onSubmit={onSubmit} />
+              mercadoPagoConfig.provider === "pag_bank"
+                ? <PagBankCardForm publicKey={mercadoPagoConfig.publicKey} loading={loading} onSubmit={onSubmit} />
+                : <CardPaymentBrick publicKey={mercadoPagoConfig.publicKey} amount={total} loading={loading} onSubmit={onSubmit} />
             )}
             {!mercadoPagoUnavailable && clubPricingPending && (
               <div className="rounded-lg border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-300" role="status">
@@ -1351,9 +1368,9 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
         )}
         {draft.paymentMethod !== "credit_card" && (
           <div className="mt-6 rounded-lg bg-brand-900/70 p-5 shadow-soft">
-            <h3 className="text-base font-black text-white">Pix Mercado Pago</h3>
+            <h3 className="text-base font-black text-white">Pix {mercadoPagoConfig?.name || "online"}</h3>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              Gere o QR Code e o Pix copia-e-cola sem sair do checkout. O ingresso só é liberado após a confirmação do Mercado Pago.
+              Gere o QR Code e o Pix copia-e-cola sem sair do checkout. O ingresso só é liberado após a confirmação do pagamento.
             </p>
             <p className="mt-3 text-xs font-bold text-slate-500">Total confirmado: {money(total)}.</p>
           </div>
@@ -1378,6 +1395,95 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
         )}
       </section>
     </div>
+  );
+}
+
+function PagBankCardForm({ publicKey, loading, onSubmit }: { publicKey: string; loading: boolean; onSubmit: (cardData: MercadoPagoCardPayload) => Promise<void> }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [sdkReady, setSdkReady] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    const existing = (window as typeof window & { PagSeguro?: PagSeguroBrowser }).PagSeguro;
+    if (existing?.encryptCard) {
+      setSdkReady(true);
+      return () => { mounted = false; };
+    }
+    const script = document.getElementById("pagbank-card-sdk") as HTMLScriptElement | null
+      || document.createElement("script");
+    const onLoad = () => { if (mounted) setSdkReady(true); };
+    const onError = () => { if (mounted) setError("Não foi possível carregar a criptografia do PagBank."); };
+    script.addEventListener("load", onLoad);
+    script.addEventListener("error", onError);
+    if (!script.id) {
+      script.id = "pagbank-card-sdk";
+      script.src = "https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    return () => {
+      mounted = false;
+      script.removeEventListener("load", onLoad);
+      script.removeEventListener("error", onError);
+    };
+  }, []);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const form = formRef.current;
+    const sdk = (window as typeof window & { PagSeguro?: PagSeguroBrowser }).PagSeguro;
+    if (!form || !sdkReady || !sdk?.encryptCard) {
+      setError("A criptografia do PagBank ainda não está disponível.");
+      return;
+    }
+    const fields = new FormData(form);
+    const holder = String(fields.get("holder") || "").trim();
+    const holderTaxId = String(fields.get("holderTaxId") || "").replace(/\D/g, "");
+    let encrypted;
+    try {
+      encrypted = sdk.encryptCard({
+        publicKey,
+        holder,
+        number: String(fields.get("number") || "").replace(/\D/g, ""),
+        expMonth: String(fields.get("expMonth") || ""),
+        expYear: String(fields.get("expYear") || ""),
+        securityCode: String(fields.get("securityCode") || "")
+      });
+    } catch {
+      setError("Não foi possível criptografar o cartão. Confira os dados e tente novamente.");
+      return;
+    } finally {
+      for (const name of ["number", "expMonth", "expYear", "securityCode"]) {
+        const input = form.elements.namedItem(name) as HTMLInputElement | null;
+        if (input) input.value = "";
+      }
+    }
+    if (encrypted.hasErrors || !encrypted.encryptedCard) {
+      setError(encrypted.errors?.[0]?.message || "Confira os dados do cartão e tente novamente.");
+      return;
+    }
+    try {
+      await onSubmit({ encryptedCard: encrypted.encryptedCard, cardHolderName: holder, cardHolderTaxId: holderTaxId, installments: 1 });
+    } catch {
+      // The checkout displays the server error next to the payment controls.
+    }
+  }
+
+  return (
+    <form ref={formRef} onSubmit={(event) => void submit(event)} className="space-y-4 rounded-lg bg-white/[0.03] p-5 shadow-soft" autoComplete="on">
+      <label className="block text-sm font-semibold text-white">Nome no cartão<input name="holder" required autoComplete="cc-name" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
+      <label className="block text-sm font-semibold text-white">CPF do titular<input name="holderTaxId" required inputMode="numeric" minLength={11} maxLength={14} className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
+      <label className="block text-sm font-semibold text-white">Número do cartão<input name="number" required inputMode="numeric" autoComplete="cc-number" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
+      <div className="grid grid-cols-3 gap-3">
+        <label className="block text-sm font-semibold text-white">Mês<input name="expMonth" required inputMode="numeric" maxLength={2} autoComplete="cc-exp-month" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
+        <label className="block text-sm font-semibold text-white">Ano<input name="expYear" required inputMode="numeric" maxLength={4} autoComplete="cc-exp-year" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
+        <label className="block text-sm font-semibold text-white">CVV<input name="securityCode" required type="password" inputMode="numeric" maxLength={4} autoComplete="cc-csc" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
+      </div>
+      {error && <p role="alert" className="text-sm text-rose-200">{error}</p>}
+      <button type="submit" disabled={!sdkReady || loading} className="w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">{loading ? "Processando..." : "Pagar com cartão"}</button>
+    </form>
   );
 }
 
@@ -1494,7 +1600,8 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
   }, [expiresAt]);
-  const approved = result?.payment?.status === "approved" || (result?.order?.status === "paid" && Boolean(result?.tickets?.length));
+  const approved = result?.order?.status === "paid" && Boolean(result?.tickets?.length);
+  const latePayment = result?.payment?.status === "approved" && result?.order?.status === "expired";
   const pending = ["pending", "processing"].includes(String(result?.payment?.status || ""));
   const timerExpired = Boolean(expiresAt && remainingMs <= 0 && pending);
   const expired = result?.payment?.status === "expired" || result?.order?.status === "expired" || timerExpired;
@@ -1517,13 +1624,15 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
             </span>
             <div className={approved ? "payment-success-heading" : ""}>
               <p className={`text-xs font-black uppercase tracking-[.16em] transition-colors duration-500 ${approved ? "text-emerald-400" : "text-brand-300"}`}>
-                {approved ? "Compra confirmada" : "Pagamento em andamento"}
+                {approved ? "Compra confirmada" : latePayment ? "Pagamento em análise" : "Pagamento em andamento"}
               </p>
               <h2 className="mt-1 font-display text-3xl font-black leading-none sm:text-4xl text-white">
                 {confirmationStatus === "checking"
                   ? "Estamos conferindo seu pedido"
                   : approved
                   ? "Tudo certo com sua compra"
+                  : latePayment
+                  ? "Pagamento recebido após a reserva"
                   : expired
                   ? "O prazo deste pagamento terminou"
                   : "Pedido criado com segurança"}
@@ -1534,6 +1643,8 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
           <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300">
             {approved
               ? "Seus ingressos digitais foram liberados na sua conta. Lá você encontra QR Code, download, transferência e histórico da compra."
+              : latePayment
+              ? "O pagamento foi confirmado depois que a reserva expirou. Nenhum ingresso foi emitido automaticamente; a equipe verificará a cobrança e os assentos antes de concluir ou devolver o valor."
               : expired
               ? "A cobrança foi cancelada e as poltronas voltaram a ficar disponíveis. Inicie um novo pagamento para refazer a reserva."
               : "Finalize o pagamento para liberar os ingressos. Assim que o provedor confirmar, eles aparecem automaticamente em Minha Conta."}
@@ -1547,7 +1658,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
             <div className={`rounded-lg p-4 transition-colors duration-300 ${approved ? "bg-emerald-950/40" : "bg-brand-950/70"}`} aria-live="polite">
               <span className="block text-xs font-black uppercase tracking-[.14em] text-slate-400">Status</span>
               <strong className={`mt-2 block text-white transition-colors duration-500 ${approved ? "text-emerald-300 font-semibold" : ""}`}>
-                {approved ? "Pagamento aprovado" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
+                {approved ? "Pagamento aprovado" : latePayment ? "Conciliação necessária" : expired ? "Pagamento expirado" : pending ? "Aguardando confirmação" : "Pedido recebido"}
               </strong>
             </div>
             {pending && expiresAt && !expired && (
@@ -1577,7 +1688,7 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
           )}
 
           <div className="mt-8 flex flex-wrap gap-3">
-            {expired && (
+            {expired && !latePayment && (
               <Link href={`/checkout/${draft.sessionId}/pagamento`} onClick={onRestartPayment} className="inline-flex min-h-[48px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">
                 Iniciar novo pagamento
               </Link>

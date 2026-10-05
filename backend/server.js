@@ -34,6 +34,7 @@ const {
   releaseSeatHoldsForOwner: releaseSeatHoldsForOwnerInPostgres
 } = require("./db/postgresStore");
 const paymentService = require("./services/paymentService");
+const pagBankPaymentService = require("./services/pagBankPaymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const { createDiscordWebhookService } = require("./services/discordWebhookService");
@@ -124,7 +125,7 @@ const { CampaignOrchestrator } = require("./services/social-studio/automation/or
 const userRepository = require("./repositories/userRepository");
 const orderRepository = require("./repositories/orderRepository");
 const { createPerformanceMonitor } = require("./services/performanceMonitor");
-const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, refundError } = require("./services/orderRefundService");
+const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, supportedAutomaticRefund, refundError } = require("./services/orderRefundService");
 const {
   buildGoogleWalletClassIdentity,
   buildGoogleWalletClassTemplateInfo,
@@ -155,7 +156,7 @@ let crmWebhookConfigVersion = 0;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "040_crm_webhook_outbox.sql";
+const LATEST_SCHEMA_MIGRATION = "041_pagbank_payment_provider.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -548,7 +549,7 @@ function securityHeaders(extra = {}) {
     "frame-ancestors 'self'",
     "img-src 'self' data: blob: https:",
     "media-src 'self' blob: https:",
-    "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://http2.mlstatic.com https://accounts.google.com",
+    "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://http2.mlstatic.com https://assets.pagseguro.com.br https://accounts.google.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src 'self' https: wss:${isProduction() ? "" : " ws://localhost:3000 ws://localhost:4000 ws://localhost:4010 ws://127.0.0.1:3000 ws://127.0.0.1:4000 ws://127.0.0.1:4010"}`,
@@ -3116,6 +3117,25 @@ async function createMercadoPagoOrderPayment(order, config = {}, options = {}) {
   return paymentService.createMercadoPagoOrderPayment(order, config, options);
 }
 
+function activeOnlinePaymentProvider(db) {
+  const pagBank = integrationConfigService.resolvedConfig(db, "pagBank");
+  const mercadoPago = integrationConfigService.resolvedConfig(db, "mercadoPago");
+  if (pagBank?.enabled && mercadoPago?.enabled) {
+    const error = new Error("Desative um dos provedores de pagamento nas Integrações.");
+    error.statusCode = 409;
+    error.code = "PAYMENT_PROVIDER_CONFLICT";
+    throw error;
+  }
+  if (pagBank?.enabled) return { provider: "pag_bank", config: pagBank, name: "PagBank" };
+  return { provider: "mercado_pago", config: mercadoPago || {}, name: "Mercado Pago" };
+}
+
+async function createActiveOnlinePayment(order, active, options = {}) {
+  return active.provider === "pag_bank"
+    ? pagBankPaymentService.createOrderPayment(order, active.config, options)
+    : createMercadoPagoOrderPayment(order, active.config, options);
+}
+
 function frontendUrlForRequest(req, db) {
   return getGoogleOAuthConfig(req, db).frontendUrl;
 }
@@ -5680,7 +5700,7 @@ function expireStaleReservations(db, expiredOrders = []) {
   });
   (db.orders || []).filter((order) => order.expirationCleanupPending || (
     order.status === "expired"
-    && (db.payments || []).some((payment) => payment.orderId === order.id && payment.provider === "mercado_pago" && payment.qrCode)
+    && (db.payments || []).some((payment) => payment.orderId === order.id && ["mercado_pago", "pag_bank"].includes(payment.provider) && payment.qrCode)
   )).forEach((order) => {
     changed = true;
     const payment = (db.payments || []).find((item) => item.orderId === order.id) || null;
@@ -6608,10 +6628,10 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
       await writeDb(db);
       return { completed: true, order, payment };
     }
-    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
-    const token = paymentService.getMercadoPagoAccessToken(config);
+    const config = integrationConfigService.resolvedConfig(db, payment?.provider === "pag_bank" ? "pagBank" : "mercadoPago") || {};
+    const token = payment?.provider === "pag_bank" ? config.accessToken : paymentService.getMercadoPagoAccessToken(config);
     let manualRefundReason = !token
-      ? "A integracao do Mercado Pago nao esta configurada para executar a devolucao automaticamente."
+      ? "A integração do provedor original não está configurada para executar a devolução automaticamente."
       : "";
     let refund = existing || null;
     if (!manualRefundReason && !refund) {
@@ -6650,7 +6670,7 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     payment.refundStatus = "pending";
     payment.metadata = { ...payment.metadata, cancellationRefund: refund };
     await writeDb(db);
-    return { refund: structuredCloneSafe(refund), token };
+    return { refund: structuredCloneSafe(refund), token, config };
   });
   if (prepared.completed) {
     if (typeof broadcastReleasedOrderSeats === "function") {
@@ -6661,7 +6681,7 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
   // The durable key is committed before calling the provider, outside the database lock.
   let confirmation;
   try {
-    confirmation = await submitFullRefund(prepared.refund, prepared.token);
+    confirmation = await submitFullRefund(prepared.refund, prepared.token, undefined, prepared.config);
   } catch (error) {
     logEvent("warn", "order.refund_pending", { orderId, refundId: prepared.refund.id, code: error.code || "REFUND_NETWORK_ERROR" });
     throw refundError("REFUND_PENDING", error.code ? error.message : "Sem confirmacao do reembolso. Tente novamente para consultar a mesma operacao; nao crie uma devolucao manual duplicada.");
@@ -6727,10 +6747,10 @@ function concessionRefundEligibility(db, order, payment = orderPayment(db, order
   const amount = order.concessionRefund?.amount ?? breakdown.concessionRevenue;
   if (Number(amount) <= 0) return { allowed: true, amount: 0, concessionCouponDiscount: breakdown.concessionCouponDiscount, complimentary: true, reason: "Produtos sem valor liquido; o cancelamento libera estoque e beneficios sem movimentar o pagamento." };
   if (!payment || payment.status !== "approved") return { allowed: false, reason: "O pagamento nao esta aprovado para reembolso automatico." };
-  if (payment.provider !== "mercado_pago" || !/^ORD[A-Z0-9]+$/i.test(payment.providerPaymentId || "")) return { allowed: false, reason: "A forma de pagamento exige conciliacao e devolucao manual." };
+  if (!supportedAutomaticRefund(payment)) return { allowed: false, reason: "A forma de pagamento exige conciliacao e devolucao manual." };
   if ((payment.metadata?.relatedOrderIds || []).length > 1) return { allowed: false, reason: "A cobranca agrupa varios pedidos e nao permite esta devolucao isolada." };
   const full = Math.round(Number(amount) * 100) === Math.round(Number(payment.amount || 0) * 100);
-  if (!full && !String(payment.metadata?.transactionId || "").trim()) return { allowed: false, reason: "A transacao parcial exigida pelo Mercado Pago nao foi registrada neste pagamento." };
+  if (!full && !String(payment.metadata?.transactionId || "").trim()) return { allowed: false, reason: "A transação parcial exigida pelo provedor não foi registrada neste pagamento." };
   return { allowed: true, amount: Number(Number(amount).toFixed(2)), concessionCouponDiscount: breakdown.concessionCouponDiscount, full, reason: `Reembolso calculado pelo servidor: R$ ${Number(amount).toFixed(2).replace(".", ",")}.` };
 }
 
@@ -6816,9 +6836,9 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
       await writeDb(db);
       return { completed: true, order, payment, refund };
     }
-    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
-    const token = paymentService.getMercadoPagoAccessToken(config);
-    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de solicitar o reembolso.", 412);
+    const config = integrationConfigService.resolvedConfig(db, payment?.provider === "pag_bank" ? "pagBank" : "mercadoPago") || {};
+    const token = payment?.provider === "pag_bank" ? config.accessToken : paymentService.getMercadoPagoAccessToken(config);
+    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o provedor original antes de solicitar o reembolso.", 412);
     const refund = prepareConcessionRefund(payment, order, eligibility.amount);
     refund.reason ||= String(reason || "Cancelamento da bomboniere");
     refund.couponDiscount ??= eligibility.concessionCouponDiscount;
@@ -6826,7 +6846,7 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
     payment.refundStatus = "pending";
     payment.metadata = { ...(payment.metadata || {}), concessionRefund: refund };
     await writeDb(db);
-    return { refund: structuredCloneSafe(refund), token };
+    return { refund: structuredCloneSafe(refund), token, config };
   });
   if (prepared.completed) {
     if (prepared.order?.status === "cancelled") {
@@ -6836,7 +6856,7 @@ async function refundOrderConcessions(orderId, reason, adminUser) {
   }
   let confirmation;
   try {
-    confirmation = await submitConcessionRefund(prepared.refund, prepared.token);
+    confirmation = await submitConcessionRefund(prepared.refund, prepared.token, undefined, prepared.config);
   } catch (error) {
     logEvent("warn", "order.concession_refund_pending", { orderId, refundId: prepared.refund.id, code: error.code || "REFUND_NETWORK_ERROR" });
     throw refundError("REFUND_PENDING", error.code ? error.message : "Sem confirmacao do reembolso. Tente novamente para consultar a mesma operacao.");
@@ -6878,10 +6898,10 @@ function ticketRefundEligibility(db, order, payment = orderPayment(db, order?.id
     return { allowed: true, amount: 0, complimentary: true, reason: "Ingressos sem valor líquido cobrado; o cancelamento libera os assentos e cancela os bilhetes sem movimentar o pagamento." };
   }
   if (!payment || payment.status !== "approved") return { allowed: false, reason: "O pagamento não está aprovado para reembolso automático." };
-  if (payment.provider !== "mercado_pago" || !/^ORD[A-Z0-9]+$/i.test(payment.providerPaymentId || "")) return { allowed: false, reason: "A forma de pagamento exige conciliação e devolução manual." };
+  if (!supportedAutomaticRefund(payment)) return { allowed: false, reason: "A forma de pagamento exige conciliação e devolução manual." };
   if ((payment.metadata?.relatedOrderIds || []).length > 1) return { allowed: false, reason: "A cobrança agrupa vários pedidos e não permite este estorno isolado." };
   const full = Math.round(Number(amount) * 100) === Math.round(Number(payment.amount || 0) * 100);
-  if (!full && !String(payment.metadata?.transactionId || "").trim()) return { allowed: false, reason: "A transação parcial exigida pelo Mercado Pago não foi registrada neste pagamento." };
+  if (!full && !String(payment.metadata?.transactionId || "").trim()) return { allowed: false, reason: "A transação parcial exigida pelo provedor não foi registrada neste pagamento." };
   return { allowed: true, amount: Number(Number(amount).toFixed(2)), full, reason: `Reembolso de ingressos calculado pelo servidor: R$ ${Number(amount).toFixed(2).replace(".", ",")}.` };
 }
 
@@ -6951,16 +6971,16 @@ async function refundOrderTickets(orderId, reason, adminUser) {
       await writeDb(db);
       return { completed: true, order, payment, refund };
     }
-    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
-    const token = paymentService.getMercadoPagoAccessToken(config);
-    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o Mercado Pago antes de solicitar o reembolso.", 412);
+    const config = integrationConfigService.resolvedConfig(db, payment?.provider === "pag_bank" ? "pagBank" : "mercadoPago") || {};
+    const token = payment?.provider === "pag_bank" ? config.accessToken : paymentService.getMercadoPagoAccessToken(config);
+    if (!token) throw refundError("REFUND_NOT_CONFIGURED", "Configure o provedor original antes de solicitar o reembolso.", 412);
     const refund = prepareTicketRefund(payment, order, eligibility.amount);
     refund.reason ||= String(reason || "Cancelamento de ingressos");
     order.ticketRefund = refund;
     payment.refundStatus = "pending";
     payment.metadata = { ...(payment.metadata || {}), ticketRefund: refund };
     await writeDb(db);
-    return { refund: structuredCloneSafe(refund), token };
+    return { refund: structuredCloneSafe(refund), token, config };
   });
   if (prepared.completed) {
     if (typeof broadcastReleasedOrderSeats === "function") {
@@ -6970,7 +6990,7 @@ async function refundOrderTickets(orderId, reason, adminUser) {
   }
   let confirmation;
   try {
-    confirmation = await submitPartialRefund(prepared.refund, prepared.token);
+    confirmation = await submitPartialRefund(prepared.refund, prepared.token, undefined, prepared.config);
   } catch (error) {
     logEvent("warn", "order.ticket_refund_pending", { orderId, refundId: prepared.refund.id, code: error.code || "REFUND_NETWORK_ERROR" });
     throw refundError("REFUND_PENDING", error.code ? error.message : "Sem confirmacao do reembolso. Tente novamente para consultar a mesma operacao.");
@@ -8836,6 +8856,7 @@ function providerLabel(provider = "") {
   return {
     open_finance: "Pix legado",
     mercado_pago: "Mercado Pago",
+    pag_bank: "PagBank",
     box_office: "Bilheteria",
     admin: "Administração",
     internal_club: "Clube",
@@ -10500,6 +10521,18 @@ async function testIntegrationProvider(db, provider, req) {
         : result.errorCode === "CRM_TIMEOUT" ? "Webhook CRM excedeu o timeout configurado." : "Não foi possível chamar o webhook CRM."
     };
   }
+  if (key === "pagBank") {
+    if (!config.accessToken || !config.publicKey) return { ok: false, message: "Informe token e chave pública do PagBank." };
+    try {
+      const keyResponse = await pagBankPaymentService.request("/public-keys/card", config);
+      if (!keyResponse.public_key || keyResponse.public_key !== config.publicKey) {
+        return { ok: false, message: "O token foi aceito, mas a chave pública de cartão não corresponde a esta conta/ambiente." };
+      }
+      return { ok: true, message: "Token e chave pública PagBank válidos. Pix/cartão online prontos para teste; Tap On e Clube requerem homologação separada." };
+    } catch (error) {
+      return { ok: false, message: error.message || "Não foi possível validar as credenciais PagBank." };
+    }
+  }
   if (key === "discord") {
     if (!config.webhookUrl) return { ok: false, message: "Informe a URL privada do webhook do Discord." };
     return discordWebhookService.test(config);
@@ -10913,11 +10946,11 @@ function mercadoPagoReferenceMatches(payment, externalReference) {
     || received === localOrderId.slice(0, 64);
 }
 
-async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
+async function reconcileOnlineCheckoutOrder(orderId, snapshotDb) {
   const snapshotOrder = (snapshotDb.orders || []).find((item) => item.id === orderId || item.idempotencyKey === orderId);
   if (!snapshotOrder) return false;
   const snapshotPayment = (snapshotDb.payments || []).find((item) => item.orderId === snapshotOrder.id);
-  if (!snapshotPayment || snapshotPayment.provider !== "mercado_pago" || !snapshotPayment.providerPaymentId) return false;
+  if (!snapshotPayment || !["mercado_pago", "pag_bank"].includes(snapshotPayment.provider) || !snapshotPayment.providerPaymentId) return false;
 
   const hasTickets = (snapshotDb.tickets || []).some((ticket) => ticket.orderId === snapshotOrder.id);
   const needsReconciliation = ["pending", "processing"].includes(String(snapshotPayment.status || ""))
@@ -10934,15 +10967,17 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
     }
   }
 
-  const providerConfig = integrationConfigService.resolvedConfig(snapshotDb, "mercadoPago");
-  const providerStatus = await paymentService.fetchProviderPaymentStatus(
-    "mercado_pago",
-    snapshotPayment.providerPaymentId,
-    providerConfig || {}
-  );
+  const providerConfig = integrationConfigService.resolvedConfig(snapshotDb, snapshotPayment.provider === "pag_bank" ? "pagBank" : "mercadoPago");
+  const providerStatus = snapshotPayment.provider === "pag_bank"
+    ? await pagBankPaymentService.fetchOrder(snapshotPayment.providerPaymentId, providerConfig || {})
+    : await paymentService.fetchProviderPaymentStatus("mercado_pago", snapshotPayment.providerPaymentId, providerConfig || {});
   if (!providerStatus || providerStatus.status === "pending") return false;
 
-  if (!mercadoPagoReferenceMatches(snapshotPayment, providerStatus.externalReference)) {
+  if ((snapshotPayment.provider === "pag_bank" && (
+    providerStatus.id !== snapshotPayment.providerPaymentId
+    || !providerStatus.externalReference
+    || Math.round(Number(providerStatus.amount) * 100) !== Math.round(Number(snapshotPayment.amount) * 100)
+  )) || !mercadoPagoReferenceMatches(snapshotPayment, providerStatus.externalReference)) {
     logEvent("warn", "payment.reconciliation_reference_mismatch", {
       orderId: snapshotOrder.id,
       providerPaymentId: snapshotPayment.providerPaymentId
@@ -10978,11 +11013,14 @@ async function reconcileMercadoPagoCheckoutOrder(orderId, snapshotDb) {
     }
 
     let tickets = [];
-    if (payment.status === "approved") {
+    if (payment.status === "approved" && ["pending_payment", "paid"].includes(order.status)) {
       tickets = finalizePaidOrder(lockedDb, order, payment, "online");
       if (!wasAlreadyPaid && tickets.length) {
         consumePendingClubCredit(lockedDb, order, tickets, order.customerUserId);
       }
+    } else if (payment.status === "approved" && order.status === "expired") {
+      order.latePaymentReview = { provider: payment.provider, detectedAt: payment.updatedAt, amount: payment.amount };
+      logEvent("error", "payment.late_after_reservation_expired", { orderId: order.id, providerPaymentId: payment.providerPaymentId, amount: payment.amount });
     } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status) && order.status !== "paid") {
       releaseConcessionReservation(lockedDb, order);
       order.status = payment.status === "refunded" ? "refunded" : payment.status === "rejected" ? "cancelled" : payment.status;
@@ -12521,14 +12559,16 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/payments/config/mercado-pago" && method === "GET") {
-    const mercadoPago = integrationConfigService.resolvedConfig(db, "mercadoPago");
-    const environment = mercadoPago?.environment === "production" ? "production" : "sandbox";
+  if (["/api/payments/config", "/api/payments/config/mercado-pago"].includes(pathname) && method === "GET") {
+    const active = activeOnlinePaymentProvider(db);
+    const config = active.config;
+    const environment = config?.environment === "production" ? "production" : "sandbox";
     sendJson(res, 200, {
-      provider: "mercado_pago",
-      enabled: Boolean(mercadoPago?.enabled),
-      configured: Boolean(mercadoPago?.configured),
-      publicKey: mercadoPago?.publicKey || "",
+      provider: active.provider,
+      name: active.name,
+      enabled: Boolean(config?.enabled),
+      configured: Boolean(config?.configured),
+      publicKey: config?.publicKey || "",
       environment,
       livePayments: !isProduction() || environment === "production"
     });
@@ -15556,14 +15596,15 @@ async function handleApi(req, res, pathname) {
         if (completed.tickets.length) queueTicketEmailDelivery(completed.order.id);
         return;
       }
-      const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
-      if (!(mercadoPagoConfig?.enabled && mercadoPagoConfig?.configured) && process.env.PAYMENTS_MODE !== "test") {
-        sendJson(res, 412, { error: { code: "MERCADO_PAGO_NOT_CONFIGURED", message: "Mercado Pago está indisponível. Configure e habilite a integração no painel administrativo." } });
+      const active = activeOnlinePaymentProvider(lockedDb);
+      if (!(active.config?.enabled && active.config?.configured) && process.env.PAYMENTS_MODE !== "test") {
+        sendJson(res, 412, { error: { code: "PAYMENT_PROVIDER_NOT_CONFIGURED", message: `${active.name} está indisponível. Configure e habilite a integração no painel administrativo.` } });
         return;
       }
-      const providerPayment = await createMercadoPagoOrderPayment(order, mercadoPagoConfig, {
+      const providerPayment = await createActiveOnlinePayment(order, active, {
         method: "pix",
-        idempotencyKey: body.idempotencyKey || req.headers["x-idempotency-key"]
+        idempotencyKey: body.idempotencyKey || req.headers["x-idempotency-key"],
+        notificationUrl: `${frontendUrlForRequest(req, lockedDb).replace(/\/$/, "")}/api/webhooks/pag-bank`
       });
       const payment = createPaymentRecord(order, providerPayment, "pix");
       const savedOrder = {
@@ -15602,7 +15643,7 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/payments/card" && method === "POST") {
     const body = await readBody(req);
     if (body.cardNumber || body.cvv || body.securityCode || body.cardExpiration || body.cardholderName) {
-      sendJson(res, 400, { error: { code: "CARD_DATA_NOT_ALLOWED", message: "O Cine Cruzeiro não recebe dados de cartão. Envie apenas o token seguro gerado pelo Mercado Pago." } });
+      sendJson(res, 400, { error: { code: "CARD_DATA_NOT_ALLOWED", message: "O Cine Cruzeiro não recebe dados de cartão. Envie apenas o token ou cartão criptografado gerado pelo provedor ativo." } });
       return;
     }
     await withCriticalMutation(async () => {
@@ -15651,21 +15692,25 @@ async function handleApi(req, res, pathname) {
         if (completed.tickets.length) queueTicketEmailDelivery(completed.order.id);
         return;
       }
-      const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
-      if (!(mercadoPagoConfig?.enabled && mercadoPagoConfig?.configured) && process.env.PAYMENTS_MODE !== "test") {
-        sendJson(res, 412, { error: { code: "MERCADO_PAGO_NOT_CONFIGURED", message: "Mercado Pago está indisponível. Configure e habilite a integração no painel administrativo." } });
+      const active = activeOnlinePaymentProvider(lockedDb);
+      if (!(active.config?.enabled && active.config?.configured) && process.env.PAYMENTS_MODE !== "test") {
+        sendJson(res, 412, { error: { code: "PAYMENT_PROVIDER_NOT_CONFIGURED", message: `${active.name} está indisponível. Configure e habilite a integração no painel administrativo.` } });
         return;
       }
-      const providerPayment = await createMercadoPagoOrderPayment(order, mercadoPagoConfig, {
+      const providerPayment = await createActiveOnlinePayment(order, active, {
         method: "credit_card",
         card: {
           token: body.cardToken || body.token || body.card?.token || body.payment?.token,
+          encrypted: body.encryptedCard || body.card?.encrypted,
+          holderName: body.cardHolderName || body.card?.holderName,
+          holderTaxId: body.cardHolderTaxId || body.card?.holderTaxId,
           paymentMethodId: body.paymentMethodId || body.payment_method_id || body.card?.paymentMethodId || body.card?.payment_method_id,
           paymentTypeId: body.paymentTypeId || body.payment_type_id || body.card?.paymentTypeId || body.card?.payment_type_id || "credit_card",
           installments: body.installments || body.card?.installments || 1
         },
         idempotencyKey: body.idempotencyKey || req.headers["x-idempotency-key"],
-        statementDescriptor: "CINE CRUZEIRO"
+        statementDescriptor: "CINE CRUZEIRO",
+        notificationUrl: `${frontendUrlForRequest(req, lockedDb).replace(/\/$/, "")}/api/webhooks/pag-bank`
       });
       const payment = createPaymentRecord(order, providerPayment, "credit_card");
       const savedOrder = {
@@ -15725,7 +15770,7 @@ async function handleApi(req, res, pathname) {
       snapshotDb = await readDb();
       snapshotOrder = (snapshotDb.orders || []).find((item) => item.id === snapshotOrder.id);
     }
-    await reconcileMercadoPagoCheckoutOrder(snapshotOrder.id, snapshotDb);
+    await reconcileOnlineCheckoutOrder(snapshotOrder.id, snapshotDb);
     const currentDb = await readDb();
     const order = (currentDb.orders || []).find((item) => item.id === snapshotOrder.id);
     if (!order) {
@@ -15753,6 +15798,10 @@ async function handleApi(req, res, pathname) {
         "Cache-Control": "private, no-store, max-age=0"
       }));
       res.end();
+      return;
+    }
+    if (activeOnlinePaymentProvider(db).provider === "pag_bank") {
+      sendJson(res, 412, { error: { code: "PAGBANK_RECURRING_NOT_READY", message: "A recorrência PagBank do Clube requer habilitação da conta e integração própria de assinaturas. Nenhuma assinatura ou cobrança foi iniciada." } });
       return;
     }
     const user = requireCustomerAuth(req, res, db);
@@ -16144,6 +16193,10 @@ async function handleApi(req, res, pathname) {
     const adminUser = getAdminUser(req, db);
     if (!adminUser) {
       sendJson(res, 401, { error: { code: "ADMIN_AUTH_REQUIRED", message: "Entre no painel para consultar as maquininhas." } });
+      return;
+    }
+    if (activeOnlinePaymentProvider(db).provider === "pag_bank") {
+      sendJson(res, 412, { error: { code: "TAP_ON_ANDROID_NOT_CONNECTED", message: "O PagBank está ativo para pagamentos online. A cobrança presencial Tap On exige o aplicativo Android de operação homologado; não é uma maquininha Point Bluetooth." } });
       return;
     }
     const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
@@ -16732,6 +16785,10 @@ async function handleApi(req, res, pathname) {
       }
 
       if (pointPayment) {
+        if (activeOnlinePaymentProvider(lockedDb).provider === "pag_bank") {
+          sendJson(res, 412, { error: { code: "TAP_ON_ANDROID_NOT_CONNECTED", message: "A cobrança presencial PagBank Tap On ainda não está conectada ao aplicativo Android de operação. Use dinheiro ou Pix externo até a homologação; nenhuma venda em cartão foi registrada." } });
+          return;
+        }
         const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
         if (!cardTerminalProvider.configured(mercadoPagoConfig)) {
           sendJson(res, 412, {
@@ -17121,6 +17178,66 @@ async function handleApi(req, res, pathname) {
         concessions: error.concessions || []
       });
     }
+    return;
+  }
+
+  if (pathname === "/api/webhooks/pag-bank" && method === "POST") {
+    const body = await readBody(req);
+    const providerConfig = integrationConfigService.resolvedConfig(db, "pagBank") || {};
+    pagBankPaymentService.verifyOrderWebhook(req, providerConfig);
+    const { chargeId: signedChargeId, orderId: providerOrderId } = pagBankPaymentService.resolveWebhookOrder(body, db.payments || []);
+    if (!/^ORDE_[A-Za-z0-9-]+$/.test(providerOrderId)) {
+      sendJson(res, signedChargeId ? 503 : 200, { ok: !signedChargeId, processed: false, reason: signedChargeId ? "charge_not_recorded" : "unknown_event" });
+      return;
+    }
+    const eventId = crypto.createHash("sha256").update(req.rawBody).digest("hex");
+    const providerStatus = await pagBankPaymentService.fetchOrder(providerOrderId, providerConfig);
+    if (!providerStatus || providerStatus.id !== providerOrderId || (signedChargeId && providerStatus.transactionId !== signedChargeId)) {
+      throw Object.assign(new Error("O pedido informado pelo webhook não pôde ser confirmado no PagBank."), { code: "PAGBANK_ORDER_LOOKUP_FAILED", statusCode: 503 });
+    }
+    await withCriticalMutation(async () => {
+      const lockedDb = await readDb();
+      lockedDb.webhookEvents ||= [];
+      if (lockedDb.webhookEvents.some((event) => event.provider === "pag_bank" && event.eventId === eventId)) {
+        sendJson(res, 200, { ok: true, duplicate: true });
+        return;
+      }
+      const payment = (lockedDb.payments || []).find((item) => item.provider === "pag_bank" && item.providerPaymentId === providerOrderId);
+      const order = payment && (lockedDb.orders || []).find((item) => item.id === payment.orderId);
+      if (!payment || !order) {
+        sendJson(res, 503, { error: { code: "PAGBANK_ORDER_NOT_RECORDED", message: "Pedido ainda não persistido; o PagBank pode reenviar a notificação." } });
+        return;
+      }
+      if (!mercadoPagoReferenceMatches(payment, providerStatus.externalReference)
+        || !providerStatus.externalReference
+        || Math.abs(Number(providerStatus.amount) - Number(payment.amount)) > 0.01) {
+        logEvent("error", "webhook.pag_bank_mismatch", { orderId: order.id, providerOrderId });
+        sendJson(res, 409, { error: { code: "PAGBANK_PAYMENT_MISMATCH", message: "Referência ou valor do pedido não confere." } });
+        return;
+      }
+      const wasPaid = order.status === "paid";
+      payment.status = paymentStatusAfterWebhook(payment.status, providerStatus.status);
+      payment.updatedAt = new Date().toISOString();
+      payment.metadata = { ...(payment.metadata || {}), providerStatus: providerStatus.raw || null, lastWebhookAt: payment.updatedAt };
+      if (payment.status === "approved") payment.approvedAt ||= payment.updatedAt;
+      if (payment.status === "refunded") payment.refundedAt ||= payment.updatedAt;
+      let tickets = [];
+      if (payment.status === "approved" && ["pending_payment", "paid"].includes(order.status)) {
+        tickets = finalizePaidOrder(lockedDb, order, payment, "online");
+        if (!wasPaid && tickets.length) consumePendingClubCredit(lockedDb, order, tickets, order.customerUserId);
+      } else if (payment.status === "approved" && order.status === "expired") {
+        order.latePaymentReview = { provider: "pag_bank", detectedAt: payment.updatedAt, amount: payment.amount };
+        logEvent("error", "payment.late_after_reservation_expired", { orderId: order.id, providerOrderId, amount: payment.amount });
+      } else if (["expired", "cancelled", "rejected", "refunded"].includes(payment.status) && order.status !== "paid") {
+        releaseConcessionReservation(lockedDb, order);
+        order.status = payment.status === "refunded" ? "refunded" : payment.status === "rejected" ? "cancelled" : payment.status;
+        order.paymentStatus = payment.status;
+      }
+      lockedDb.webhookEvents.push({ provider: "pag_bank", eventId, providerPaymentId: providerOrderId, orderId: order.id, status: payment.status, verified: true, createdAt: payment.updatedAt });
+      await writeDb(lockedDb);
+      if (!wasPaid && tickets.length) queueTicketEmailDelivery(order.id);
+      sendJson(res, 200, { ok: true, processed: true, status: payment.status, ticketsCreated: tickets.length });
+    });
     return;
   }
 

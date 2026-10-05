@@ -779,6 +779,7 @@ function renderAll() {
   renderCustomerUsers();
   renderClub();
   renderIntegrations();
+  refreshPointProviderControls();
   if (state.logs) renderLogs();
   fillSettingsForm();
   renderRoomOptions();
@@ -11788,6 +11789,7 @@ function renderIntegrations() {
 function integrationCategory(key) {
   return {
     mercadoPago: "Pagamentos",
+    pagBank: "Pagamentos",
     googleLogin: "Login",
     googleWallet: "Carteira digital",
     tmdb: "Catálogo",
@@ -12444,6 +12446,10 @@ async function toggleIntegration(key, enabled) {
     const result = await api(`/api/admin/integrations/${encodeURIComponent(key)}/${enabled ? "enable" : "disable"}`, { method: "POST" });
     if (state.integrations?.integrations) state.integrations.integrations[key] = result.integration;
     renderIntegrations();
+    if (["mercadoPago", "pagBank"].includes(key)) {
+      state.onlinePaymentProvider = undefined;
+      refreshPointProviderControls();
+    }
     showToast(enabled ? "Integração ativada." : "Integração desativada.");
   } catch (error) {
     showToast(error.message, "error");
@@ -13634,6 +13640,32 @@ function restoreActivePointPayment() {
   activatePanel("concessionsPanel", { scroll: false });
   setConcessionTab("counterSale");
   pollConcessionCounterPayment({ manual: true });
+}
+
+function refreshPointProviderControls() {
+  if (state.onlinePaymentProvider === undefined) {
+    state.onlinePaymentProvider = null;
+    api("/api/payments/config")
+      .then((config) => {
+        state.onlinePaymentProvider = config.provider || "mercado_pago";
+        refreshPointProviderControls();
+      })
+      .catch(() => { state.onlinePaymentProvider = "mercado_pago"; });
+    return;
+  }
+  const pagBankActive = state.onlinePaymentProvider === "pag_bank";
+  for (const name of ["manualPaymentMethod", "concessionCounterPaymentMethod"]) {
+    document.querySelectorAll(`input[name="${name}"][value^="point_"]`).forEach((input) => {
+      input.disabled = pagBankActive;
+      input.closest("label")?.classList.toggle("is-disabled", pagBankActive);
+      if (pagBankActive && input.checked) {
+        const cash = document.querySelector(`input[name="${name}"][value="cash"]`);
+        if (cash) cash.checked = true;
+      }
+    });
+  }
+  if ($("manualTapOnStatus")) $("manualTapOnStatus").hidden = !pagBankActive;
+  if ($("concessionTapOnStatus")) $("concessionTapOnStatus").hidden = !pagBankActive;
 }
 
 async function retryCrmDeadLetters() {

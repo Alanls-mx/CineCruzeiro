@@ -114,6 +114,17 @@ const DEFINITIONS = {
       { key: "retryLimit", label: "Tentativas", type: "number" }
     ]
   },
+  pagBank: {
+    name: "PagBank (PagSeguro)",
+    purpose: "Pix e cartão online. Tap On e assinaturas exigem integração Android e homologação separadas.",
+    defaults: { enabled: false, environment: "sandbox", publicKey: "" },
+    secrets: ["publicKey", "accessToken"],
+    fields: [
+      { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
+      { key: "publicKey", label: "Chave pública para criptografia do cartão", type: "secret" },
+      { key: "accessToken", label: "Token de acesso", type: "secret" }
+    ]
+  },
   discord: {
     name: "Alertas operacionais Discord",
     purpose: "Embeds filtrados de erros, segurança, desempenho e saúde do servidor",
@@ -182,6 +193,10 @@ const ENV = {
   crm: {
     url: ["CRM_WEBHOOK_URL", "LUMIX_WEBHOOK_URL"],
     secret: ["CRM_WEBHOOK_SECRET", "LUMIX_WEBHOOK_SECRET"]
+  },
+  pagBank: {
+    publicKey: ["PAGBANK_PUBLIC_KEY", "PAGSEGURO_PUBLIC_KEY"],
+    accessToken: ["PAGBANK_ACCESS_TOKEN", "PAGSEGURO_ACCESS_TOKEN"]
   },
   discord: {
     webhookUrl: ["DISCORD_ALERTS_WEBHOOK_URL"]
@@ -283,6 +298,7 @@ function resolvedConfig(db, provider) {
 
 function isConfigured(provider, config) {
   if (provider === "mercadoPago") return Boolean(config.publicKey && config.accessToken);
+  if (provider === "pagBank") return Boolean(config.publicKey && config.accessToken);
   if (provider === "googleLogin") return Boolean(config.clientId && config.clientSecret);
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.serviceAccountJson || (config.clientEmail && config.privateKey)));
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
@@ -422,6 +438,7 @@ function save(db, provider, input = {}, user) {
   const before = sanitizeConfig(db, key);
   const current = rawConfig(db, key);
   const next = { ...current, enabled: Boolean(input.enabled ?? current.enabled) };
+  assertExclusivePaymentProvider(db, key, next.enabled);
   const googleWalletClassChanged = key === "googleWallet"
     && Object.prototype.hasOwnProperty.call(input, "classId")
     && input.classId !== null
@@ -471,6 +488,7 @@ function setEnabled(db, provider, enabled, user) {
   const key = providerKey(provider);
   if (!key) return null;
   const store = ensureStore(db);
+  assertExclusivePaymentProvider(db, key, enabled);
   const before = sanitizeConfig(db, key);
   const nextConfig = { ...rawConfig(db, key), enabled: Boolean(enabled), updatedAt: new Date().toISOString(), updatedBy: user?.id || "" };
   store[key] = nextConfig;
@@ -481,6 +499,17 @@ function setEnabled(db, provider, enabled, user) {
   const after = sanitizeConfig(db, key);
   audit(db, enabled ? "integration.enabled" : "integration.disabled", key, user, before, after);
   return after;
+}
+
+function assertExclusivePaymentProvider(db, provider, enabled) {
+  if (!enabled || !["mercadoPago", "pagBank"].includes(provider)) return;
+  const other = provider === "mercadoPago" ? "pagBank" : "mercadoPago";
+  if (rawConfig(db, other)?.enabled) {
+    throw configValidationError(
+      `Desative ${DEFINITIONS[other].name} antes de habilitar ${DEFINITIONS[provider].name}. Apenas um provedor de pagamentos pode ficar ativo.`,
+      "PAYMENT_PROVIDER_EXCLUSIVE"
+    );
+  }
 }
 
 function setTestResult(db, provider, result, user) {

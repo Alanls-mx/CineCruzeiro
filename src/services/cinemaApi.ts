@@ -553,6 +553,9 @@ export async function createCheckoutPayment(
   paymentInput: {
     idempotencyKey?: string;
     cardToken?: string;
+    encryptedCard?: string;
+    cardHolderName?: string;
+    cardHolderTaxId?: string;
     paymentMethodId?: string;
     paymentTypeId?: string;
     installments?: number;
@@ -577,7 +580,7 @@ export async function createCheckoutPayment(
   return data as {
     order: TicketOrder;
     payment: {
-      provider: "mercado_pago";
+      provider: "mercado_pago" | "pag_bank";
       id: string;
       status: string;
       qrCode: string;
@@ -622,7 +625,7 @@ export async function previewCheckoutCoupon(order: Partial<TicketOrder> & { coup
 }
 
 export async function fetchMercadoPagoCheckoutConfig() {
-  const response = await apiFetch(`${API_BASE}/api/payments/config/mercado-pago`, {
+  const response = await apiFetch(`${API_BASE}/api/payments/config`, {
     cache: "no-store",
     credentials: "include",
   });
@@ -631,7 +634,8 @@ export async function fetchMercadoPagoCheckoutConfig() {
     throw new Error(apiErrorMessage(payload, "Desculpe, não foi possível consultar a configuração de pagamento."));
   }
   return payload as {
-    provider: "mercado_pago";
+    provider: "mercado_pago" | "pag_bank";
+    name: string;
     enabled: boolean;
     configured: boolean;
     publicKey: string;
