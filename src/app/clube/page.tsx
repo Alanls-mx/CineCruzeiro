@@ -391,7 +391,7 @@ function Benefit({ icon, title, text }: { icon: React.ReactNode; title: string; 
 
 function Faq({ title, text }: { title: string; text: string }) {
   return (
-    <details className="group bg-white/[0.04] p-5 shadow-xl shadow-blue-950/10">
+    <details name="clube-faq" className="group bg-white/[0.04] p-5 shadow-xl shadow-blue-950/10">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-display text-xl font-black">
         {title}
         <ChevronDown className="h-5 w-5 text-gold-400 transition-transform duration-200 group-open:rotate-180" aria-hidden="true" />
