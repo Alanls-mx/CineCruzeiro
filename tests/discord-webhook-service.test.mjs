@@ -101,6 +101,26 @@ test("failed request embeds include technical type and a sanitized cause", () =>
   assert.doesNotMatch(text, /alan@example\.com|abc123|admin:password/);
 });
 
+test("release and outage embeds explain the failure stage and human-readable cause", () => {
+  const embed = eventEmbed({
+    level: "error",
+    event: "deployment.failed",
+    fields: {
+      failureStage: "health_check",
+      outageDetected: true,
+      outageType: "health_check_unreachable",
+      attemptedVersion: "2.4.0+abc1234",
+      cause: "servidor não respondeu"
+    }
+  });
+  const text = JSON.stringify(embed);
+  assert.match(embed.description, /checagem de disponibilidade/);
+  assert.match(embed.description, /servidor não respondeu à checagem/);
+  assert.match(embed.description, /2\.4\.0\+abc1234/);
+  assert.match(text, /Versão tentada/);
+  assert.match(text, /Etapa da falha/);
+});
+
 test("service batches and posts alert embeds asynchronously with mentions disabled", async () => {
   const sent = [];
   const service = createDiscordWebhookService({

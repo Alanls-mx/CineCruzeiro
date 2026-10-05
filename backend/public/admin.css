@@ -5815,6 +5815,13 @@ input[type="file"]::file-selector-button {
   align-items: flex-end;
 }
 
+.logs-release-status {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 .logs-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

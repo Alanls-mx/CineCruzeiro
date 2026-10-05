@@ -25,7 +25,7 @@ function routeKey(request) {
   return `${request.method || "GET"} ${String(request.path || "").replace(/\/[0-9a-f-]{16,}/gi, "/:id")}`;
 }
 
-function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 15000 }) {
+function createPerformanceMonitor({ diskPath, onAlert = () => {}, onSample = () => {}, intervalMs = 1000 }) {
   const delay = monitorEventLoopDelay({ resolution: 20 });
   delay.enable();
   let requests = [];
@@ -150,6 +150,7 @@ function createPerformanceMonitor({ diskPath, onAlert = () => {}, intervalMs = 1
       current = { ...sampleData, alerts };
       history.push(current);
       if (history.length > 240) history.shift();
+      try { onSample(current); } catch {}
     } finally {
       busy = false;
     }

@@ -821,6 +821,8 @@ function logCategoryLabel(category = "") {
     integration: "Integrações",
     google_wallet: "Carteira digital",
     webhook: "Confirmações automáticas",
+    deployment: "Publicação do sistema",
+    service: "Disponibilidade do sistema",
     request: "Operação do sistema",
     logs: "Histórico",
     system: "Sistema"
@@ -882,6 +884,28 @@ function logAdminAction(log) {
   ];
   const resource = resources.find(([pattern]) => pattern.test(path))?.[1] || "Configuração";
   return { title: `${resource} ${operation}`, description: "Uma alteração foi realizada pelo painel administrativo." };
+}
+
+function logDeploymentStageLabel(value = "") {
+  return ({
+    prepare_release: "preparação da release",
+    release_build: "montagem da release",
+    backup_and_migration: "backup ou migração do banco",
+    release_activation: "ativação da nova versão",
+    health_check: "checagem de disponibilidade",
+    completed: "concluída"
+  })[String(value)] || String(value || "não identificada").replace(/[_-]+/g, " ");
+}
+
+function logOutageTypeLabel(value = "") {
+  return ({
+    readiness_dependency_unavailable: "dependência necessária indisponível",
+    http_server_error: "erro HTTP interno do servidor",
+    health_check_unreachable: "servidor não respondeu à checagem",
+    release_activation_failed: "falha ao ativar a release",
+    rollback_health_check_failed: "checagem falhou após o rollback",
+    process_exit_without_shutdown: "processo encerrou sem parada normal"
+  })[String(value)] || String(value || "não identificado").replace(/[_-]+/g, " ");
 }
 
 function logPerformanceAlert(log) {
@@ -960,6 +984,30 @@ function logPresentation(log = {}) {
     "ticket_transfer_email.failed": { title: "Transferência não enviada por e-mail", description: "O ingresso foi transferido, mas o destinatário não recebeu a mensagem." },
     "ticket_transfer_pdf.failed": { title: "PDF da transferência não gerado", description: "O ingresso foi transferido, mas o PDF atualizado não pôde ser preparado." },
     "google_wallet.integration_failed": { title: "Carteira digital indisponível", description: "A conexão com o Google Wallet apresentou uma falha." },
+    "deployment.completed": {
+      title: "Nova versão publicada",
+      description: `${metadata.version || "Versão atualizada"} entrou em produção. Commit ${metadata.commitShort || metadata.commit || "não informado"}. Alterações: ${String(metadata.summary || log.message || "sem resumo").replace(/\s+/g, " ")}`
+    },
+    "deployment.failed": {
+      title: "Falha ao publicar versão",
+      description: `Etapa: ${logDeploymentStageLabel(metadata.failureStage)}. ${metadata.outageDetected ? `Tipo de queda: ${logOutageTypeLabel(metadata.outageType)}.` : "A versão anterior permaneceu ativa; não foi detectada indisponibilidade causada pela publicação."} Versão tentada: ${metadata.attemptedVersion || "não informada"}. Causa: ${logFriendlyError(metadata.cause || log.message || "não informada")}`
+    },
+    "deployment.rollback_completed": {
+      title: "Versão anterior restaurada",
+      description: `A publicação ${metadata.failedRelease || "tentada"} foi revertida para ${metadata.currentRelease || "a release anterior"}; a checagem após rollback passou.`
+    },
+    "service.outage.detected": {
+      title: "Indisponibilidade detectada",
+      description: `Tipo: ${logOutageTypeLabel(metadata.outageType)}. Etapa: ${logDeploymentStageLabel(metadata.failureStage)}. HTTP da checagem: ${metadata.healthStatus || "sem resposta"}. Causa: ${logFriendlyError(metadata.cause || log.message || "não confirmada")}`
+    },
+    "service.outage.recovered": {
+      title: "Serviço restabelecido após reinício inesperado",
+      description: `O processo anterior encerrou sem sinal de parada normal (${logOutageTypeLabel(metadata.outageType)}). Indisponibilidade estimada desde o último sinal: ${metadata.outageDurationSeconds == null ? "não calculada" : `${metadata.outageDurationSeconds} s`}. ${metadata.diagnosis || "A causa exata não foi confirmada; verifique PM2 e eventos de memória do sistema."}`
+    },
+    "service.outage.recovery_failed": {
+      title: "Serviço continua indisponível após rollback",
+      description: `A checagem da release anterior também falhou (${metadata.healthStatus || "sem resposta"}). Causa: ${logFriendlyError(metadata.cause || log.message || "não confirmada")}`
+    },
     "logs.retention_applied": { title: "Histórico antigo organizado", description: "A política de retenção removeu registros técnicos antigos." },
     "logs.retention_failed": { title: "Histórico antigo não foi limpo", description: "A rotina de organização dos registros precisa ser executada novamente." },
     "admin_two_factor.setup_started": { title: "Configuração do 2FA iniciada", description: "O aplicativo autenticador foi preparado para esta conta administrativa." },
@@ -982,6 +1030,35 @@ function logPresentation(log = {}) {
 
 function logReferenceItems(log = {}) {
   const metadata = log.metadata || {};
+  if (String(log.event || "").startsWith("deployment.")) {
+    return [
+      ["Versão atual", metadata.version || metadata.currentVersion],
+      ["Versão tentada", metadata.attemptedVersion],
+      ["Commit", metadata.commitShort || metadata.commit || metadata.attemptedCommit],
+      ["Release", metadata.release || metadata.currentRelease],
+      ["Release anterior", metadata.previousRelease],
+      ["Arquivos alterados", Array.isArray(metadata.files) ? metadata.files.slice(0, 8).join(", ") : ""],
+      ["Etapa da falha", logDeploymentStageLabel(metadata.failureStage)]
+    ].filter(([, value]) => value != null && String(value).trim()).slice(0, 6);
+  }
+  if (String(log.event || "").startsWith("service.outage.")) {
+    return [
+      ["Tipo de queda", logOutageTypeLabel(metadata.outageType)],
+      ["Duração estimada", metadata.outageDurationSeconds == null ? "" : `${metadata.outageDurationSeconds} s`],
+      ["Último sinal", metadata.lastHeartbeatAt],
+      ["Versão anterior", metadata.previousVersion],
+      ["Versão atual", metadata.currentVersion]
+    ].filter(([, value]) => value != null && String(value).trim()).slice(0, 5);
+  }
+  if (String(log.event || "").startsWith("service.runtime.")) {
+    return [
+      ["Versão", metadata.version],
+      ["Commit", metadata.commit],
+      ["Release", metadata.release],
+      ["PID do processo", metadata.pid],
+      ["Sinal de encerramento", metadata.signal]
+    ].filter(([, value]) => value != null && String(value).trim()).slice(0, 5);
+  }
   const candidates = [
     ["Pedido", metadata.orderId],
     ["Pagamento", metadata.paymentId || metadata.providerPaymentId],
@@ -1572,8 +1649,8 @@ async function toggleConcessionArchive(orderId, currentArchived) {
 }
 
 let performanceLoading = false;
-let performanceStreamTimer = null;
-let performanceIntervalMs = 15000;
+let performanceEventSource = null;
+let performanceIntervalMs = 1;
 let performanceHistoryCache = [];
 let performancePeakCpu = 0;
 
@@ -2033,7 +2110,7 @@ function setPerformanceInterval(ms) {
       liveBadge.className = "perf-live-pill live";
       const lbl = liveBadge.querySelector(".live-label");
       if (lbl) lbl.textContent = "AO VIVO";
-      liveBadge.title = `Transmissão ativa a cada ${ms / 1000}s`;
+      liveBadge.title = "Telemetria transmitida continuamente pelo servidor";
     } else {
       liveBadge.className = "perf-live-pill paused";
       const lbl = liveBadge.querySelector(".live-label");
@@ -2046,24 +2123,26 @@ function setPerformanceInterval(ms) {
 }
 
 function startPerformanceStream() {
-  if (performanceStreamTimer) {
-    clearInterval(performanceStreamTimer);
-    performanceStreamTimer = null;
-  }
-  if (performanceIntervalMs > 0) {
-    performanceStreamTimer = setInterval(() => {
-      if ($("logsPanel")?.classList.contains("active") && !document.hidden) {
-        void loadPerformance();
-      }
-    }, performanceIntervalMs);
-  }
+  stopPerformanceStream();
+  if (performanceIntervalMs <= 0 || !window.EventSource) return;
+  performanceEventSource = new EventSource(`${API_BASE}/api/admin/logs/performance/stream`, { withCredentials: true });
+  performanceEventSource.onmessage = (event) => {
+    try {
+      updatePerformance(JSON.parse(event.data));
+    } catch {
+      if ($("performanceStatus")) $("performanceStatus").textContent = "Recebemos uma amostra inválida de telemetria.";
+    }
+  };
+  performanceEventSource.onerror = () => {
+    if ($("performanceStatus") && performanceIntervalMs > 0) {
+      $("performanceStatus").textContent = "Conexão ao vivo interrompida; tentando reconectar…";
+    }
+  };
 }
 
 function stopPerformanceStream() {
-  if (performanceStreamTimer) {
-    clearInterval(performanceStreamTimer);
-    performanceStreamTimer = null;
-  }
+  performanceEventSource?.close();
+  performanceEventSource = null;
 }
 
 function setupPerformanceControls() {
@@ -2099,29 +2178,7 @@ async function loadPerformance() {
   performanceLoading = true;
   try {
     const data = await api("/api/admin/logs/performance");
-    const metrics = data?.current;
-    if (!metrics) {
-      if ($("performanceStatus")) $("performanceStatus").textContent = "Coletando primeira amostra de telemetria.";
-      return;
-    }
-
-    if (Array.isArray(data.history) && data.history.length) {
-      performanceHistoryCache = data.history;
-    } else {
-      performanceHistoryCache.push(metrics);
-      if (performanceHistoryCache.length > 60) performanceHistoryCache.shift();
-    }
-
-    if ($("perfHostMeta")) $("perfHostMeta").textContent = `Host · ${metrics.vcores || 2} vCPU`;
-    if ($("perfUptimeMeta")) $("perfUptimeMeta").textContent = `Uptime: ${formatPerfUptime(metrics.uptimeSeconds)}`;
-    if ($("performanceStatus")) {
-      $("performanceStatus").textContent = `Atualizado ${new Date(metrics.sampledAt).toLocaleTimeString("pt-BR")} · HTTP: últimos 5m${metrics.sampleCapped ? " (amostra limitada)" : ""}`;
-    }
-
-    renderPerformanceKpis(metrics, performanceHistoryCache);
-    renderPerformanceCharts(performanceHistoryCache, metrics);
-    renderPerformanceAlerts(metrics.alerts);
-    renderPerformanceSlowRoutes(metrics.slowestRoutes);
+    updatePerformance(data);
   } catch (error) {
     if ($("performanceStatus")) $("performanceStatus").textContent = `Telemetria indisponível: ${error.message}`;
   } finally {
@@ -3182,6 +3239,38 @@ async function importTmdbMovie(tmdbId) {
     showToast("Não foi possível importar o filme.", "error");
     renderTmdbMissingFields([]);
   }
+}
+
+function updatePerformance(data = {}) {
+  const release = data.release;
+  if ($("logsVersionMeta") && release) {
+    const commit = release.commitShort ? ` · commit ${release.commitShort}` : "";
+    const releaseName = release.release ? ` · release ${release.release}` : "";
+    $("logsVersionMeta").textContent = `Versão atual: ${release.version || release.appVersion || "não informada"}${commit}${releaseName}`;
+  }
+  const metrics = data.current;
+  if (!metrics) {
+    if ($("performanceStatus")) $("performanceStatus").textContent = "Coletando primeira amostra de telemetria.";
+    return;
+  }
+
+  if (Array.isArray(data.history) && data.history.length) {
+    performanceHistoryCache = data.history;
+  } else if (performanceHistoryCache.at(-1)?.sampledAt !== metrics.sampledAt) {
+    performanceHistoryCache.push(metrics);
+    if (performanceHistoryCache.length > 240) performanceHistoryCache.shift();
+  }
+
+  if ($("perfHostMeta")) $("perfHostMeta").textContent = `Host · ${metrics.vcores || 2} vCPU`;
+  if ($("perfUptimeMeta")) $("perfUptimeMeta").textContent = `Uptime: ${formatPerfUptime(metrics.uptimeSeconds)}`;
+  if ($("performanceStatus")) {
+    $("performanceStatus").textContent = `Ao vivo · amostra ${new Date(metrics.sampledAt).toLocaleTimeString("pt-BR")} · HTTP: últimos 5m${metrics.sampleCapped ? " (amostra limitada)" : ""}`;
+  }
+
+  renderPerformanceKpis(metrics, performanceHistoryCache);
+  renderPerformanceCharts(performanceHistoryCache, metrics);
+  renderPerformanceAlerts(metrics.alerts);
+  renderPerformanceSlowRoutes(metrics.slowestRoutes);
 }
 
 function renderSessions(sessions) {

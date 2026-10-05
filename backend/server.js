@@ -37,6 +37,8 @@ const paymentService = require("./services/paymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const { createDiscordWebhookService } = require("./services/discordWebhookService");
+const { readReleaseInfo } = require("./services/releaseInfoService");
+const { createRuntimeLifecycle } = require("./services/runtimeLifecycleService");
 const { CRM_EVENT_TYPES, normalizeCrmEvents, sendCrmWebhook, createCrmWebhookWorker } = require("./services/crmWebhookDeliveryService");
 const emailService = require("./services/emailService");
 const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
@@ -721,6 +723,14 @@ const BUSINESS_LOG_EVENTS = new Set([
   "password_reset.delivery_missing_channel",
   "password_reset.delivery_not_configured",
   "google_wallet.integration_failed",
+  "deployment.completed",
+  "deployment.failed",
+  "deployment.rollback_completed",
+  "service.outage.detected",
+  "service.outage.recovered",
+  "service.outage.recovery_failed",
+  "service.runtime.started",
+  "service.runtime.stopped",
   "logs.retention_applied",
   "logs.retention_failed"
 ]);
@@ -1900,6 +1910,12 @@ async function withCriticalMutation(callback) {
     release();
   }
 }
+
+const releaseInfo = readReleaseInfo();
+const runtimeLifecycle = createRuntimeLifecycle({
+  statePath: isProduction() ? path.resolve(PROJECT_ROOT, "../..", "shared", "runtime-state.json") : "",
+  onEvent: logEvent
+});
 
 function createCrmOutboxRepository() {
   async function mutateJson(mutator) {
@@ -12357,7 +12373,12 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/logs/performance" && method === "GET") {
-    sendJson(res, 200, { ...performanceMonitor.snapshot(), database: postgresEnabled() ? postgresDiagnostics() : null });
+    sendJson(res, 200, { ...performanceMonitor.snapshot(), database: postgresEnabled() ? postgresDiagnostics() : null, release: releaseInfo });
+    return;
+  }
+
+  if (pathname === "/api/admin/logs/performance/stream" && method === "GET") {
+    openPerformanceStream(res);
     return;
   }
 
@@ -17630,7 +17651,52 @@ async function handleApi(req, res, pathname) {
   sendJson(res, 404, { error: "Rota nao encontrada" });
 }
 
-const performanceMonitor = createPerformanceMonitor({ diskPath: ROOT, onAlert: logEvent });
+const performanceStreamClients = new Set();
+function performanceStreamPayload(snapshot, includeHistory = false) {
+  return JSON.stringify({
+    current: snapshot.current,
+    ...(includeHistory ? { history: snapshot.history } : {}),
+    intervalMs: snapshot.intervalMs,
+    requestWindowSeconds: snapshot.requestWindowSeconds,
+    release: releaseInfo
+  });
+}
+function broadcastPerformanceSnapshot(metrics) {
+  if (!performanceStreamClients.size) return;
+  const frame = `data: ${performanceStreamPayload({ current: metrics, intervalMs: 1000, requestWindowSeconds: 300 })}\n\n`;
+  for (const response of performanceStreamClients) {
+    if (response.destroyed || response.writableEnded) {
+      performanceStreamClients.delete(response);
+      continue;
+    }
+    if (response.writableLength < 256 * 1024) response.write(frame);
+  }
+}
+function openPerformanceStream(res) {
+  if (performanceStreamClients.size >= 12) {
+    sendJson(res, 429, { error: { code: "PERFORMANCE_STREAM_LIMIT", message: "Limite de conexões de telemetria ao vivo atingido." } });
+    return;
+  }
+  res.writeHead(200, {
+    ...securityHeaders(),
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  res.write("retry: 2000\n\n");
+  performanceStreamClients.add(res);
+  res.write(`data: ${performanceStreamPayload(performanceMonitor.snapshot(), true)}\n\n`);
+  res.once("close", () => {
+    performanceStreamClients.delete(res);
+  });
+}
+const performanceMonitor = createPerformanceMonitor({
+  diskPath: ROOT,
+  onAlert: logEvent,
+  onSample: broadcastPerformanceSnapshot,
+  intervalMs: 1000
+});
 function suspiciousRequestRule(url) {
   let target = `${url.pathname}?${url.searchParams.toString()}`;
   try { target = decodeURIComponent(target); } catch {}
@@ -17945,6 +18011,7 @@ loadEnvFiles().then(() => {
     console.warn(JSON.stringify({ level: "warn", event: "discord.configuration_load_failed", reason: error.name || "database" }));
   });
   server.listen(PORT, HOST, () => {
+    runtimeLifecycle.start(releaseInfo);
     const tmdb = getTmdbCredentials();
     console.log(`Cine Cruzeiro backend: http://${HOST}:${PORT}`);
     console.log(`Painel admin: http://${HOST}:${PORT}/admin`);
@@ -17999,6 +18066,7 @@ loadEnvFiles().then(() => {
 
 for (const signal of ["SIGTERM", "SIGINT"]) {
   process.once(signal, () => {
+    runtimeLifecycle.stop(signal);
     emailCampaignWorker?.stop();
     crmWebhookWorker?.stop();
     server.close(() => { void closePostgres().finally(() => process.exit(0)); });

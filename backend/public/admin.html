@@ -2858,6 +2858,7 @@
             <div>
               <h1>Histórico do sistema</h1>
               <p>Veja o que aconteceu no cinema, quem realizou cada ação e o que precisa de atenção.</p>
+              <p id="logsVersionMeta" class="logs-release-status" aria-live="polite">Versão atual: carregando…</p>
             </div>
             <div class="button-row">
               <button id="logsExportButton" class="ghost-button" type="button">Exportar relatório</button>
@@ -2882,9 +2883,7 @@
               <div class="perf-actions">
                 <div class="perf-timeframe-picker" role="group" aria-label="Intervalo de atualização em tempo real">
                   <span class="perf-picker-label">Taxa:</span>
-                  <button type="button" class="perf-chip-btn active" data-perf-interval="3000">3s</button>
-                  <button type="button" class="perf-chip-btn" data-perf-interval="5000">5s</button>
-                  <button type="button" class="perf-chip-btn" data-perf-interval="15000">15s</button>
+                  <button type="button" class="perf-chip-btn active" data-perf-interval="1">Ao vivo</button>
                   <button type="button" class="perf-chip-btn" data-perf-interval="0">Pausar</button>
                 </div>
               </div>

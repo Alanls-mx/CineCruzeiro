@@ -5,7 +5,9 @@ const RETRY_LIMIT = 2;
 const EVENT_FIELD_ALLOWLIST = new Set([
   "status", "statusCode", "code", "reason", "rule", "attackType", "method", "path",
   "durationMs", "count", "threshold", "windowSeconds", "cpuPercent", "httpStatus",
-  "message", "cause", "errorType", "errorCode"
+  "message", "cause", "errorType", "errorCode", "version", "commit", "release", "previousRelease",
+  "outageType", "healthStatus", "failureStage", "summary", "outageDurationSeconds", "currentVersion", "currentCommit",
+  "attemptedVersion", "attemptedCommit", "previousVersion", "lastHeartbeatAt", "diagnosis", "pid", "signal"
 ]);
 
 const LEVEL_LABELS = { error: "ERRO", warn: "AVISO", info: "INFORMAÇÃO", debug: "DEPURAÇÃO" };
@@ -33,16 +35,24 @@ const EVENT_LABELS = {
   "webhook.mercado_pago.rejected": "Webhook do Mercado Pago rejeitado",
   "google_wallet.integration_failed": "Falha na integração com Google Wallet",
   "email_campaign.attachment_pruned": "Anexo antigo de campanha removido",
-  "system_log.persist_failed": "Falha ao salvar log de operação"
+  "system_log.persist_failed": "Falha ao salvar log de operação",
+  "deployment.completed": "Nova versão publicada",
+  "deployment.failed": "Falha ao publicar versão",
+  "deployment.rollback_completed": "Versão anterior restaurada",
+  "service.outage.detected": "Indisponibilidade detectada",
+  "service.outage.recovered": "Serviço restabelecido após reinício inesperado",
+  "service.outage.recovery_failed": "Serviço continua indisponível após rollback",
+  "service.runtime.started": "Backend iniciado",
+  "service.runtime.stopped": "Backend encerrado normalmente"
 };
 
 const DOMAIN_LABELS = {
   abuse: "Proteção contra abuso", admin: "Painel administrativo", admin_two_factor: "Autenticação em duas etapas",
   box_office: "Bilheteria", club: "Clube", concession: "Bomboniere", crm_webhook: "Webhook CRM",
-  database: "Banco de dados", discord: "Integração Discord", email: "E-mail", email_campaign: "Campanha de e-mail",
+  database: "Banco de dados", deployment: "Publicação do sistema", discord: "Integração Discord", email: "E-mail", email_campaign: "Campanha de e-mail",
   email_verification: "Verificação de e-mail", google_wallet: "Google Wallet", http: "API", integrations: "Integrações",
   movie: "Filmes", order: "Pedidos", password_reset: "Redefinição de senha", payment: "Pagamentos",
-  performance: "Desempenho", repository: "Persistência de dados", security: "Segurança", session: "Sessões",
+  performance: "Desempenho", repository: "Persistência de dados", security: "Segurança", service: "Disponibilidade do sistema", session: "Sessões",
   social_studio: "Studio", subscription: "Assinaturas", system: "Sistema", ticket: "Ingressos", ticket_email: "E-mail de ingressos",
   webhook: "Webhooks"
 };
@@ -61,8 +71,34 @@ const FIELD_LABELS = {
   errorCode: "Código da causa", errorType: "Tipo de erro", reason: "Motivo", rule: "Regra detectada",
   attackType: "Tipo de atividade suspeita", method: "Método", path: "Rota", durationMs: "Duração",
   count: "Ocorrências", threshold: "Limite", windowSeconds: "Janela", cpuPercent: "Uso de CPU",
-  message: "Causa / detalhe", cause: "Causa raiz"
+  message: "Causa / detalhe", cause: "Causa raiz", version: "Versão", commit: "Commit",
+  release: "Release atual", previousRelease: "Release anterior", outageType: "Tipo de queda",
+  healthStatus: "HTTP da checagem", failureStage: "Etapa da falha", summary: "Alterações do commit",
+  outageDurationSeconds: "Indisponibilidade estimada (s)", currentVersion: "Versão atual", currentCommit: "Commit atual",
+  attemptedVersion: "Versão tentada", attemptedCommit: "Commit tentado", previousVersion: "Versão anterior",
+  lastHeartbeatAt: "Último sinal do processo", diagnosis: "Como investigar", pid: "PID do processo", signal: "Sinal de encerramento"
 };
+
+const DEPLOYMENT_STAGE_LABELS = {
+  prepare_release: "preparação da release",
+  release_build: "montagem da release",
+  backup_and_migration: "backup ou migração do banco",
+  release_activation: "ativação da nova versão",
+  health_check: "checagem de disponibilidade",
+  completed: "concluída"
+};
+const OUTAGE_TYPE_LABELS = {
+  readiness_dependency_unavailable: "dependência necessária indisponível",
+  http_server_error: "erro HTTP interno do servidor",
+  health_check_unreachable: "servidor não respondeu à checagem",
+  release_activation_failed: "falha ao ativar a release",
+  rollback_health_check_failed: "checagem falhou após o rollback",
+  process_exit_without_shutdown: "processo encerrou sem parada normal"
+};
+function diagnosticLabel(value, labels) {
+  const key = String(value || "");
+  return labels[key] || key.replace(/[_-]+/g, " ") || "não identificado";
+}
 
 const HTTP_STATUS_LABELS = {
   200: "sucesso", 201: "criado", 202: "aceito para processamento", 204: "sucesso sem conteúdo",
@@ -184,6 +220,8 @@ function errorTypeDescription(type) {
 }
 
 function fieldValue(key, value) {
+  if (key === "failureStage") return diagnosticLabel(value, DEPLOYMENT_STAGE_LABELS);
+  if (key === "outageType") return diagnosticLabel(value, OUTAGE_TYPE_LABELS);
   if (key === "path") return cleanPath(value) || "Rota não informada";
   if (key === "method") {
     const method = String(value).toUpperCase();
@@ -195,6 +233,7 @@ function fieldValue(key, value) {
     return Number.isFinite(number) ? `${number} · ${statusDescription(number)}` : cleanDiagnosticText(value, 160);
   }
   if (key === "durationMs") return `${cleanDiagnosticText(value, 30)} ms`;
+  if (key === "outageDurationSeconds") return `${cleanDiagnosticText(value, 30)} s`;
   if (key === "errorType") return `${cleanDiagnosticText(value, 100)} · ${errorTypeDescription(value)}`;
   if (key === "errorCode" || key === "code") {
     const code = String(value);
@@ -228,6 +267,12 @@ function eventDescription(event, level, payload) {
     summary = `As métricas ultrapassaram o limite configurado${payload.threshold != null ? ` (${cleanDiagnosticText(payload.threshold, 80)})` : ""}. Verifique a rota e as métricas registradas.`;
   } else if (event === "performance.recovered") {
     summary = "As métricas de desempenho voltaram à faixa normal.";
+  } else if (event === "deployment.completed") {
+    summary = `A versão ${cleanDiagnosticText(payload.version || "não informada", 80)} foi ativada com sucesso. Commit ${cleanDiagnosticText(payload.commitShort || payload.commit || "não informado", 80)}. Alterações: ${cleanDiagnosticText(payload.summary || "sem resumo do commit", 700)}`;
+  } else if (event === "deployment.failed") {
+    summary = `A publicação falhou na etapa ${cleanDiagnosticText(diagnosticLabel(payload.failureStage, DEPLOYMENT_STAGE_LABELS), 100)}. ${payload.outageDetected ? `Indisponibilidade detectada: ${cleanDiagnosticText(diagnosticLabel(payload.outageType, OUTAGE_TYPE_LABELS), 120)}.` : "A release anterior permaneceu ativa; não foi detectada queda causada pelo deploy."} Versão tentada: ${cleanDiagnosticText(payload.attemptedVersion || "não informada", 80)}. Causa: ${cleanDiagnosticText(payload.cause || payload.message || "não informada", 500)}`;
+  } else if (event.startsWith("service.outage.")) {
+    summary = `${cleanDiagnosticText(payload.cause || payload.message || humanizeEvent(event), 500)}${payload.outageType ? ` Tipo: ${cleanDiagnosticText(diagnosticLabel(payload.outageType, OUTAGE_TYPE_LABELS), 120)}.` : ""}${payload.outageDurationSeconds != null ? ` Duração estimada: ${cleanDiagnosticText(payload.outageDurationSeconds, 30)} s.` : ""}`;
   } else {
     summary = cleanDiagnosticText(payload.cause || payload.message || humanizeEvent(event), 600);
   }
@@ -242,7 +287,7 @@ function eventEmbed(log = {}) {
   const fields = [];
   const payload = log.fields && typeof log.fields === "object" ? log.fields : {};
   if (payload.path) fields.push({ name: "Área afetada", value: describeRoute(payload.path), inline: true });
-  const orderedKeys = ["method", "path", "statusCode", "status", "durationMs", "attackType", "rule", "errorType", "errorCode", "code", "cause", "message", "reason", "threshold", "count", "windowSeconds", "cpuPercent", "httpStatus"];
+  const orderedKeys = ["version", "currentVersion", "attemptedVersion", "previousVersion", "commit", "attemptedCommit", "currentCommit", "release", "previousRelease", "outageType", "failureStage", "healthStatus", "lastHeartbeatAt", "diagnosis", "pid", "signal", "method", "path", "statusCode", "status", "durationMs", "attackType", "rule", "errorType", "errorCode", "code", "cause", "message", "reason", "threshold", "count", "windowSeconds", "cpuPercent", "httpStatus"];
   const used = new Set();
   for (const key of orderedKeys) {
     const value = payload[key];
