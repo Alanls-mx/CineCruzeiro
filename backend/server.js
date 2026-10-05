@@ -10968,9 +10968,12 @@ async function reconcileOnlineCheckoutOrder(orderId, snapshotDb) {
   }
 
   const providerConfig = integrationConfigService.resolvedConfig(snapshotDb, snapshotPayment.provider === "pag_bank" ? "pagBank" : "mercadoPago");
-  const providerStatus = snapshotPayment.provider === "pag_bank"
+  let providerStatus = snapshotPayment.provider === "pag_bank"
     ? await pagBankPaymentService.fetchOrder(snapshotPayment.providerPaymentId, providerConfig || {})
     : await paymentService.fetchProviderPaymentStatus("mercado_pago", snapshotPayment.providerPaymentId, providerConfig || {});
+  if (snapshotPayment.provider === "pag_bank" && providerStatus?.status === "processing") {
+    providerStatus = await pagBankPaymentService.captureAuthorizedOrder(providerStatus, providerConfig || {});
+  }
   if (!providerStatus || providerStatus.status === "pending") return false;
 
   if ((snapshotPayment.provider === "pag_bank" && (

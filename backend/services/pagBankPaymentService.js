@@ -148,14 +148,7 @@ async function createOrderPayment(order, config = {}, options = {}) {
   const data = await request("/orders", config, { method: "POST", body, idempotencyKey: String(options.idempotencyKey || order.idempotencyKey || order.id) });
   let payment = normalizeOrder(data, method);
   if (method === "credit_card" && payment.status === "processing" && data.charges?.[0]?.status === "AUTHORIZED") {
-    try {
-      const captureKey = crypto.createHash("sha256").update(`${String(options.idempotencyKey || order.id)}:capture`).digest("hex");
-      await captureCharge(payment.transactionId, undefined, config, captureKey);
-      const capturedOrder = await fetchOrder(payment.id, config);
-      if (capturedOrder) payment = capturedOrder;
-    } catch {
-      // Keep the authorization pending; order reconciliation can confirm a later capture.
-    }
+    payment = await captureAuthorizedOrder(payment, config);
   }
   if (!/^ORDE_[A-Za-z0-9-]+$/.test(payment.id)
     || !/^CHAR_[A-Za-z0-9-]+$/.test(payment.transactionId)
@@ -174,6 +167,20 @@ async function fetchOrder(orderId, config = {}) {
   } catch (error) {
     if (error.statusCode === 404 || error.name === "TimeoutError") return null;
     throw error;
+  }
+}
+
+async function captureAuthorizedOrder(order, config = {}) {
+  if (String(order?.raw?.charges?.[0]?.status || "").toUpperCase() !== "AUTHORIZED") return order;
+  try {
+    await captureCharge(order.transactionId, undefined, config);
+  } catch {
+    // A repeated capture can be rejected if PagBank completed it asynchronously; always re-read status.
+  }
+  try {
+    return await fetchOrder(order.id, config) || order;
+  } catch {
+    return order;
   }
 }
 
@@ -225,4 +232,4 @@ function resolveWebhookOrder(body = {}, payments = []) {
   return { chargeId, orderId };
 }
 
-module.exports = { baseUrl, token, toCents, normalizedStatus, normalizeOrder, request, createOrderPayment, fetchOrder, captureCharge, cancelCharge, verifyOrderWebhook, resolveWebhookOrder };
+module.exports = { baseUrl, token, toCents, normalizedStatus, normalizeOrder, request, createOrderPayment, fetchOrder, captureAuthorizedOrder, captureCharge, cancelCharge, verifyOrderWebhook, resolveWebhookOrder };
