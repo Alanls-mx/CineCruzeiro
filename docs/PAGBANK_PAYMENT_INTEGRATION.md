@@ -31,6 +31,8 @@
 4. Manter `PAGBANK_ACCESS_TOKEN` somente no servidor. A chave publica pode ser entregue ao checkout. Nunca gravar numero/CVV de cartao, AppKey Tap On, cabecalhos de autorizacao ou payload bruto do cliente em logs.
 5. Aplicar a migracao `041_pagbank_payment_provider.sql` antes de habilitar PagBank para que pagamentos `pag_bank` possam ser persistidos.
 
+O botao **Testar** valida o token e a chave publica `card`, mas nao cria um pedido e nao comprova que `POST /orders` foi liberado para a conta. Se o PagBank responder `whitelist access required`, solicitar homologacao e liberacao da API de Pedidos em producao pelo [canal oficial de homologacao](https://developer.pagbank.com.br/docs/solicitar-homologacao). Nao tentar contornar a restricao com outro endpoint ou marcar um pedido como pago manualmente. Enquanto a liberacao nao for confirmada, desativar PagBank e reativar Mercado Pago se for necessario continuar recebendo pagamentos online.
+
 ## Tap On Android: trabalho ainda necessario
 
 Tap On e uma extensao Android acionada por `Intent`, nao um endpoint web nem PlugPag Bluetooth. O app nativo de **operacao** (nao o app CineLumix do cliente) devera: obter AppKey homologada, validar Android 11+/NFC e pacote instalado, iniciar a `Intent` com `.setPackage("br.com.uol.ps.tapon")`, receber `TransactionResult`, conferir codigo/valor com o servidor e somente entao emitir e imprimir ingressos. Precisara tambem tratar estorno por `Intent`, cancelamento, reconexao, duplicidade, comprovante com bandeira e conciliacao de venda cujo retorno ao app se perdeu. Nao e seguro marcar uma venda como paga a partir de um campo enviado pelo navegador.

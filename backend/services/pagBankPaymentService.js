@@ -89,7 +89,11 @@ async function request(path, config = {}, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     const detail = data.error_messages?.[0]?.description || data.error_messages?.[0]?.message || data.message || data.error || "Operação recusada pelo PagBank.";
-    const error = pagBankError("PAGBANK_REQUEST_FAILED", detail, response.status);
+    const whitelistRequired = response.status === 403 && /whitelist\s+access\s+required/i.test(String(detail));
+    const resource = path.startsWith("/orders") ? "a API de Pedidos" : path.startsWith("/public-keys") ? "a API de Chaves Públicas" : "esta operação";
+    const error = whitelistRequired
+      ? pagBankError("PAGBANK_WHITELIST_REQUIRED", `A conta PagBank ainda não está liberada para ${resource} neste ambiente. Solicite a homologação e a inclusão na whitelist ao suporte PagBank.`, 412)
+      : pagBankError("PAGBANK_REQUEST_FAILED", detail, response.status);
     error.raw = data;
     throw error;
   }

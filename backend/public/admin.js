@@ -11802,6 +11802,7 @@ function integrationCategory(key) {
 }
 
 function integrationStatusLabel(item) {
+  if (item.key === "pagBank" && item.enabled && item.configured) return "Ativa; pedidos não verificados";
   if (item.enabled && item.configured) return "Operacional";
   if (item.configured) return "Configurada";
   return "Pendente";

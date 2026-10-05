@@ -71,6 +71,26 @@ test("webhook signature is validated over the exact raw body", () => {
   assert.throws(() => pagBank.verifyOrderWebhook({ rawBody: rawBody.replace(" ", ""), headers: { "x-authenticity-token": signature } }, { accessToken: "token" }), { code: "PAGBANK_WEBHOOK_INVALID_SIGNATURE" });
 });
 
+test("PagBank whitelist refusal identifies the blocked API without exposing credentials", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: false,
+    status: 403,
+    json: async () => ({ error_messages: [{ code: "ACCESS_DENIED", description: "whitelist access required. Contact PagSeguro" }] })
+  });
+  try {
+    await assert.rejects(pagBank.request("/orders", { accessToken: "private-token", environment: "production" }), (error) => {
+      assert.equal(error.code, "PAGBANK_WHITELIST_REQUIRED");
+      assert.equal(error.statusCode, 412);
+      assert.match(error.message, /API de Pedidos/);
+      assert.doesNotMatch(error.message, /private-token/);
+      return true;
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test("charge webhook resolves to the recorded PagBank order", () => {
   const payments = [{ provider: "pag_bank", providerPaymentId: "ORDE_123", metadata: { transactionId: "CHAR_123" } }];
   assert.deepEqual(pagBank.resolveWebhookOrder({ id: "CHAR_123", status: "PAID" }, payments), { chargeId: "CHAR_123", orderId: "ORDE_123" });

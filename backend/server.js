@@ -10528,7 +10528,7 @@ async function testIntegrationProvider(db, provider, req) {
       if (!keyResponse.public_key || keyResponse.public_key !== config.publicKey) {
         return { ok: false, message: "O token foi aceito, mas a chave pública de cartão não corresponde a esta conta/ambiente." };
       }
-      return { ok: true, message: "Token e chave pública PagBank válidos. Pix/cartão online prontos para teste; Tap On e Clube requerem homologação separada." };
+      return { ok: true, message: "Token e chave pública PagBank válidos. Este teste não comprova liberação da API de Pedidos; confirme a homologação/whitelist com o PagBank antes de receber pagamentos em produção. Tap On e Clube requerem integrações separadas." };
     } catch (error) {
       return { ok: false, message: error.message || "Não foi possível validar as credenciais PagBank." };
     }
