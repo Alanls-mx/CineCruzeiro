@@ -105,7 +105,7 @@ function generatedTicketCount(draft: StoredCheckoutDraft, ticketTypes: TicketTyp
   }, 0);
 }
 
-export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Step }) {
+export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId: string; step: Step; startNew?: boolean }) {
   const router = useRouter();
   const { content, status, error } = useCinemaContent();
   const [draft, setDraft] = useState<StoredCheckoutDraft | null>(null);
@@ -302,6 +302,13 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
   });
 
   useEffect(() => {
+    if (startNew && step === "ingressos") {
+      clearCheckoutDraft(sessionId);
+      setDraft(null);
+      setHydratedSessionId(sessionId);
+      router.replace(`/checkout/${sessionId}`, { scroll: false });
+      return;
+    }
     const stored = readCheckoutDraft();
     if (stored?.sessionId === sessionId) {
       if (step !== "confirmacao" && isValidPaymentResult(stored.paymentResult)) {
@@ -314,7 +321,7 @@ export function CheckoutPage({ sessionId, step }: { sessionId: string; step: Ste
       setDraft(null);
     }
     setHydratedSessionId(sessionId);
-  }, [router, sessionId, step]);
+  }, [router, sessionId, startNew, step]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !found || !draft || draft.seatHoldToken || isValidPaymentResult(draft.paymentResult)) return;

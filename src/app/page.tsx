@@ -93,7 +93,7 @@ export default async function HomePage() {
                   </div>
                   <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                     {firstSession && (
-                      <Link href={`/checkout/${firstSession.id}`} className="inline-flex items-center justify-center gap-2 bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400">
+                      <Link href={`/checkout/${firstSession.id}?novaCompra=1`} className="inline-flex items-center justify-center gap-2 bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-400">
                         <Ticket className="h-4 w-4" />
                         Comprar ingresso
                       </Link>

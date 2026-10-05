@@ -62,7 +62,7 @@ export function MovieSessionSelector({
               {items.map((session) => (
                 <Link
                   key={session.id}
-                  href={`/checkout/${session.id}`}
+                  href={`/checkout/${session.id}?novaCompra=1`}
                   className={`min-w-[82px] rounded-lg px-4 py-3 text-center text-lg font-black transition ${
                     session.status === "sold_out" ? "pointer-events-none bg-white/5 text-slate-600" : "bg-gold-400 text-slate-950 hover:bg-gold-300"
                   }`}
