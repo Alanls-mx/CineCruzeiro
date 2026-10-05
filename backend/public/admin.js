@@ -3324,9 +3324,12 @@ function renderSessions(sessions) {
               : "Sem ingressos liberados";
             return `
             <div class="session-row">
-              <strong>${escapeHtml(session.time)} · ${escapeHtml(globalSessionStatusLabel(session.status))}</strong>
-              <span>${session.date ? `${escapeHtml(new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }))} • ` : ""}${escapeHtml(session.format)} • ${escapeHtml(session.room)}</span>
-              <span>${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
+              <div class="session-row-primary">
+                <time>${escapeHtml(session.time || "--:--")}</time>
+                <span>${escapeHtml(globalSessionStatusLabel(session.status))}</span>
+              </div>
+              <span title="${escapeHtml(`${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })} • ` : ""}${session.format || "Formato não informado"} • ${session.room || "Sala não informada"}`)}">${session.date ? `${escapeHtml(new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }))} • ` : ""}${escapeHtml(session.format)} • ${escapeHtml(session.room)}</span>
+              <span title="${escapeHtml(ticketTypeSummary)}">${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
               <div class="session-row-actions">
                 <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(session.id)}')">Ingressos</button>
                 <button class="ghost-button" type="button" onclick="openSessionEditor('${escapeHtml(session.id)}')">Editar</button>

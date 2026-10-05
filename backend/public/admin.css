@@ -5419,7 +5419,7 @@ input[type="file"]::file-selector-button {
 
 .session-row {
   display: grid;
-  grid-template-columns: 72px minmax(180px, 1fr) minmax(220px, auto) auto;
+  grid-template-columns: minmax(96px, 0.55fr) minmax(0, 1.2fr) minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   padding: 10px;
@@ -5430,6 +5430,31 @@ input[type="file"]::file-selector-button {
 
 .session-row strong {
   color: var(--gold);
+}
+
+.session-row-primary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.session-row-primary time {
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.session-row-primary span {
+  overflow: visible;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: normal;
 }
 
 .session-editor {

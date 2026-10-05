@@ -2537,9 +2537,9 @@ body:has(.success-overlay:not([hidden])) { overflow: hidden; }
 
 .session-row {
   display: grid;
-  grid-template-columns: 48px minmax(180px, 1.2fr) minmax(160px, 1fr) auto;
+  grid-template-columns: minmax(96px, 0.55fr) minmax(0, 1.2fr) minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--sp-10);
+  gap: var(--sp-8);
   min-height: 42px;
   padding: var(--sp-6) var(--sp-12);
   border-radius: 6px;
@@ -2555,7 +2555,33 @@ body:has(.success-overlay:not([hidden])) { overflow: hidden; }
   font-variant-numeric: tabular-nums;
 }
 
+.session-row-primary {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.session-row-primary time {
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.session-row-primary span {
+  overflow: visible;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: normal;
+}
+
 .session-row span {
+  min-width: 0;
   color: var(--text);
   font-size: 12px;
   line-height: 1.35;
@@ -2749,6 +2775,12 @@ body:has(.success-overlay:not([hidden])) { overflow: hidden; }
   .issued-ticket-row { grid-template-columns: 1fr; }
 
   .camera-access-result .primary-button { width: 100%; }
+}
+
+@media (max-width: 760px) {
+  .session-row { grid-template-columns: 1fr; align-items: start; }
+  .session-row-actions { width: 100%; }
+  .session-row-actions > * { flex: 1; }
 }
 
 /* ≤ 420px */
