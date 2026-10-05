@@ -71,6 +71,13 @@ test("legacy webhook signature remains validated over the exact raw body", async
   await assert.rejects(pagBank.verifyOrderWebhook({ rawBody: rawBody.replace(" ", ""), headers: { "x-authenticity-token": signature } }, { accessToken: "token" }), { code: "PAGBANK_WEBHOOK_INVALID_SIGNATURE" });
 });
 
+test("unsigned PagBank webhook is only accepted as an untrusted sandbox hint", async () => {
+  const req = { rawBody: '{"id":"ORDE_123"}', headers: {} };
+  assert.deepEqual(await pagBank.verifyOrderWebhook(req, { environment: "sandbox", accessToken: "token" }, { allowUnsignedSandboxHint: true }), { verified: false, scheme: "sandbox-untrusted-hint" });
+  await assert.rejects(pagBank.verifyOrderWebhook(req, { environment: "production", accessToken: "token" }, { allowUnsignedSandboxHint: true }), { code: "PAGBANK_WEBHOOK_SIGNATURE_REQUIRED" });
+  await assert.rejects(pagBank.verifyOrderWebhook(req, { environment: "sandbox", accessToken: "token" }), { code: "PAGBANK_WEBHOOK_SIGNATURE_REQUIRED" });
+});
+
 test("modern PagBank ECDSA webhook signatures verify against a cached public key", async () => {
   const originalFetch = global.fetch;
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });

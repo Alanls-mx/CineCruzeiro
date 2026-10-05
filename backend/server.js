@@ -17188,7 +17188,9 @@ async function handleApi(req, res, pathname) {
   if (pathname === "/api/webhooks/pag-bank" && method === "POST") {
     await readBody(req, { rawOnly: true });
     const providerConfig = integrationConfigService.resolvedConfig(db, "pagBank") || {};
-    await pagBankPaymentService.verifyOrderWebhook(req, providerConfig);
+    const webhookAuth = await pagBankPaymentService.verifyOrderWebhook(req, providerConfig, {
+      allowUnsignedSandboxHint: providerConfig.environment === "sandbox"
+    });
     let body;
     try {
       body = JSON.parse(req.rawBody);
@@ -17199,6 +17201,15 @@ async function handleApi(req, res, pathname) {
     if (!/^ORDE_[A-Za-z0-9-]+$/.test(providerOrderId)) {
       sendJson(res, signedChargeId ? 503 : 200, { ok: !signedChargeId, processed: false, reason: signedChargeId ? "charge_not_recorded" : "unknown_event" });
       return;
+    }
+    if (!webhookAuth.verified) {
+      const knownPayment = (db.payments || []).find((item) => item.provider === "pag_bank" && item.providerPaymentId === providerOrderId);
+      const knownOrder = knownPayment && (db.orders || []).find((item) => item.id === knownPayment.orderId);
+      if (!knownPayment || !knownOrder || (signedChargeId && knownPayment.metadata?.transactionId !== signedChargeId)) {
+        sendJson(res, 404, { ok: false, processed: false, reason: "untrusted_sandbox_hint_without_matching_order" });
+        return;
+      }
+      logEvent("warn", "webhook.pag_bank_unsigned_sandbox_hint", { orderId: knownOrder.id, providerOrderId });
     }
     const eventId = crypto.createHash("sha256").update(req.rawBody).digest("hex");
     const providerStatus = await pagBankPaymentService.fetchOrder(providerOrderId, providerConfig);

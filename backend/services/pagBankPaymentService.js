@@ -245,7 +245,7 @@ function validatePayloadSignatures(rawBody, signatures, publicKey) {
   });
 }
 
-async function verifyOrderWebhook(req, config = {}) {
+async function verifyOrderWebhook(req, config = {}, { allowUnsignedSandboxHint = false } = {}) {
   const raw = Buffer.isBuffer(req.rawBodyBuffer)
     ? req.rawBodyBuffer
     : typeof req.rawBody === "string" ? Buffer.from(req.rawBody, "utf8") : null;
@@ -282,6 +282,9 @@ async function verifyOrderWebhook(req, config = {}) {
   // Retain compatibility with notifications still using PagBank's legacy header.
   const legacySignature = String(req.headers?.["x-authenticity-token"] || "").trim();
   if (!/^[a-f0-9]{64}$/i.test(legacySignature)) {
+    if (allowUnsignedSandboxHint && config.environment === "sandbox") {
+      return { verified: false, scheme: "sandbox-untrusted-hint" };
+    }
     throw pagBankError("PAGBANK_WEBHOOK_SIGNATURE_REQUIRED", "Notificação PagBank sem assinatura válida.", 401);
   }
   const expected = crypto.createHash("sha256").update(`${accessToken}-${raw.toString("utf8")}`).digest();
