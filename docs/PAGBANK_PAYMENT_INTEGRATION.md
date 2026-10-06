@@ -33,9 +33,78 @@
 
 O botao **Testar** valida o token e a chave publica `card`, mas nao cria um pedido. A documentacao do PagBank direciona os cartoes de teste para a API Orders no Sandbox; use credenciais de Sandbox para esses testes. Se a API de Producao responder `whitelist access required`, solicitar homologacao e liberacao da API de Pedidos em producao pelo [canal oficial de homologacao](https://developer.pagbank.com.br/docs/solicitar-homologacao). Nao tentar contornar a restricao com outro endpoint ou marcar um pedido como pago manualmente. Enquanto a liberacao nao for confirmada, usar Sandbox para testes ou reativar Mercado Pago para cobrancas reais.
 
-## Tap On Android: trabalho ainda necessario
+## Tap On Android: passo a passo de integracao e uso
 
-Tap On e uma extensao Android acionada por `Intent`, nao um endpoint web nem PlugPag Bluetooth. O app nativo de **operacao** (nao o app CineLumix do cliente) devera: obter AppKey homologada, validar Android 11+/NFC e pacote instalado, iniciar a `Intent` com `.setPackage("br.com.uol.ps.tapon")`, receber `TransactionResult`, conferir codigo/valor com o servidor e somente entao emitir e imprimir ingressos. Precisara tambem tratar estorno por `Intent`, cancelamento, reconexao, duplicidade, comprovante com bandeira e conciliacao de venda cujo retorno ao app se perdeu. Nao e seguro marcar uma venda como paga a partir de um campo enviado pelo navegador.
+**Estado atual:** o Tap On presencial ainda nao esta implementado no Cine Cruzeiro. Com PagBank ativo, vendas em cartao pela bilheteria e bomboniere retornam `TAP_ON_ANDROID_NOT_CONNECTED` em vez de registrar uma cobranca ficticia. O checkout PagBank online (Orders, token e chave publica `card`) e separado do Tap On; a AppKey do Tap On nao e a chave publica do cartao nem uma credencial PlugPag Bluetooth. Este roteiro descreve a implantacao necessaria, nao uma funcionalidade ja liberada.
+
+### 1. Solicitar acesso e homologacao ao PagBank
+
+1. Preencher o [formulario de parceria PagBank](https://pagbank.com.br/para-seu-negocio/parcerias/) para automacao comercial, indicando que a solucao e um **aplicativo Android de operacao de bilheteria** integrado a Tap On. O PagBank avalia a empresa e o modelo de negocio; a conta vendedora do cinema tambem precisa existir.
+2. Participar da reuniao tecnica. Solicitar a **AppKey de QA** e as instrucoes de instalacao da extensao de testes. Nao usar a AppKey de producao ou o token Orders em QA.
+3. Desenvolver e testar o APK. Abrir a solicitacao de homologacao pelo [canal de integracoes PagBank](https://app.pipefy.com/public/form/RrlV4wD0), enviando os dados e o APK pedidos pelo time tecnico.
+4. Apos a aprovacao, receber a **AppKey de producao** e instalar a extensao de producao nos aparelhos da bilheteria. Nao habilitar o botao de cartao presencial antes da homologacao e de uma venda real conciliada.
+
+O processo de parceria, a AppKey de QA e a AppKey de producao sao exigencias descritas no [guia oficial Tap On](https://developer.pagbank.com.br/docs/tap-on). A liberacao da API Orders para o site nao libera automaticamente esta integracao presencial.
+
+### 2. Preparar cada aparelho e o operador
+
+- Usar Android API 30 (Android 11) ou superior, NFC ativo, conta PagBank do vendedor e extensao PagBank Tap On instalada com `versionCode >= 51`. A versao de QA usa o pacote `br.com.uol.ps.tapon.debug`; producao usa `br.com.uol.ps.tapon`.
+- No primeiro pagamento, o operador entra na conta PagBank dentro da extensao. O login separado e opcional e deve ser usado apenas se a versao instalada o suportar (a documentacao informa a partir da release 3.26.0).
+- Conferir rede, horario do aparelho, permissao de uso da bilheteria no Cine Cruzeiro e impressora/comprovante. O valor aceito pelo Tap On deve respeitar os limites informados no guia oficial (R$ 1,00 a R$ 10.000,00).
+- Guardar a AppKey no app de operacao por ambiente, sem expo-la no site, no painel web, em logs ou em capturas. Aplicar controles de acesso ao aparelho e revogar credenciais perdidas.
+
+### 3. Criar uma venda pendente no Cine Cruzeiro
+
+**A implementar no backend e no app Android:** criar um fluxo proprio de Tap On para bilheteria e bomboniere. O app autenticado envia a selecao de sessao, assentos, ingressos e produtos; o servidor recalcula o total, reserva assentos/estoque e devolve `saleId`, `requestId`, valor em centavos e prazo da reserva. Persistir uma tentativa `pending_payment` com `provider=pag_bank`, `channel=tap_on` e chave idempotente. Uma repeticao do mesmo `requestId` deve devolver a mesma tentativa, nunca gerar uma segunda venda.
+
+Nao reutilizar `POST /api/box-office/sales` como se ja aceitasse Tap On: atualmente ele rejeita cartao presencial com HTTP 412. Os endpoints Android de iniciar, confirmar, consultar e estornar a tentativa **ainda precisam ser definidos e implementados**. A interface web nao deve poder declarar `paid` por conta propria.
+
+### 4. Abrir o Tap On no Android
+
+O app nativo monta `TapOnPaymentData` em JSON com `appKey`, `appName`, `appVersion`, `androidId` (`Settings.Secure.ANDROID_ID`), `saleAmount` em reais e `enableTaxPassThrough`. Inicialmente usar `false` para repasse de taxas, para que o valor apresentado coincida com o total calculado pelo Cine Cruzeiro; qualquer mudanca nesta regra exige recalculo, exibicao clara ao cliente e nova homologacao.
+
+```kotlin
+val packageName = if (isQa) "br.com.uol.ps.tapon.debug" else "br.com.uol.ps.tapon"
+val payload = JSONObject().apply {
+    put("appKey", tapOnAppKey)
+    put("appName", "Cine Cruzeiro Operacao")
+    put("appVersion", BuildConfig.VERSION_NAME)
+    put("androidId", Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID))
+    put("saleAmount", amountCents / 100.0)
+    put("enableTaxPassThrough", false)
+}
+val intent = Intent("br.com.uol.ps.tapon.OPEN_APP")
+    .addCategory(Intent.CATEGORY_DEFAULT)
+    .setPackage(packageName)
+    .putExtra("TAP_ON_PAYMENT_DATA", payload.toString())
+tapOnLauncher.launch(intent)
+```
+
+`tapOnLauncher` representa um launcher de resultado de Activity registrado pelo app. Verificar se o pacote de destino esta instalado antes de abrir a `Intent`. O `.setPackage(...)` e obrigatorio: sem ele, outro aplicativo poderia interceptar os dados da transacao.
+
+### 5. Receber, verificar e concluir
+
+1. Ler `resultTapOnSuccessJson` somente quando a Activity retornar sucesso. O JSON `TransactionResult` inclui `saleValue`, `paymentMethod`, `transactionCode`, `transactionDateTime` e `cardBrand`. Falta de retorno, cancelamento ou erro **nao** equivale a pagamento recusado nem autoriza uma segunda cobranca imediata.
+2. Enviar ao backend a tentativa local, o `transactionCode` e os campos necessarios para conciliacao. Conferir valor em centavos, conta/cinema, operador, venda pendente e unicidade do codigo. O retorno do Android, isoladamente, nao e prova confiavel para liberar ingressos: o metodo de confirmacao independente da transacao Tap On com o PagBank deve ser acertado na reuniao tecnica e implementado antes da producao. Nao presumir que `GET /orders/{id}` da API online consulte transacoes Tap On.
+3. Enquanto a confirmacao independente nao existir ou estiver indisponivel, manter a tentativa como **pendente de conciliacao**; nao emitir ingresso, baixar estoque definitivamente nem registrar receita aprovada. Se o PagBank confirmar pagamento, finalizar a venda de forma atomica, uma unica vez, emitir os ingressos e imprimir/entregar o comprovante.
+4. No comprovante de venda aprovada, exibir o logotipo da bandeira devolvida em `cardBrand`, requisito do guia oficial. Nao registrar nome completo do portador, dados de cartao ou JSON bruto em logs.
+
+### 6. Tratar queda, duplicidade e estorno
+
+- Se o app fechar ou perder conexao apos o cliente aproximar o cartao, consultar a tentativa e a transacao no fluxo de conciliacao aprovado pelo PagBank. Mostrar **resultado pendente** ao operador; nao refazer a cobranca automaticamente. Registrar alerta para revisao quando nao houver confirmacao independente.
+- Associar `transactionCode` a no maximo uma tentativa; reenvios do app devem ser idempotentes. Expiracao de reserva com pagamento posterior exige decisao operacional de reacomodar ou devolver, nunca emissao automatica para assento ja liberado.
+- Implementar estorno Tap On por `Intent` com `TapOnVoidPaymentData` (`transactionCode`, valor, AppKey, identificacao do app/dispositivo e um UUID unico `refCode`), conforme o guia oficial. Persistir a intencao de estorno antes da chamada e concluir o cancelamento local somente apos evidencia confirmada. O endpoint online `POST /charges/{id}/cancel` nao substitui o fluxo de estorno Tap On sem confirmacao expressa do PagBank.
+
+### 7. Validar em QA e liberar a operacao
+
+Testar no aparelho real: credito, debito, transacao recusada, cancelamento pelo cliente, NFC desligado, extensao ausente/desatualizada, AppKey invalida, valor divergente, duas tentativas com o mesmo `requestId`, queda de rede antes/depois da aproximacao, retorno perdido, estorno total/parcial e impressao com bandeira. Comparar cada transacao com o extrato/relatorio disponibilizado pelo PagBank e conferir que a quantidade de ingressos emitidos corresponde exatamente a vendas confirmadas. Depois da homologacao, repetir uma venda de baixo valor em producao, conferir liquidacao e so entao habilitar cartao presencial para operadores.
+
+### 8. Utilizar na bilheteria depois da ativacao
+
+1. O operador entra no app Android de operacao e seleciona a sessao, as poltronas, os tipos de ingresso e os produtos da bomboniere. Confere com o cliente o total calculado pelo servidor.
+2. Seleciona **Cartao por aproximacao (Tap On)**. O app cria ou recupera a tentativa pendente e abre a extensao PagBank no mesmo aparelho. O cliente aproxima o cartao ou dispositivo NFC e acompanha o resultado na tela do Tap On.
+3. Ao voltar ao app, o operador aguarda a confirmacao conciliada pelo backend. Apenas o status **aprovado e confirmado** libera impressao, QR Code e entrega de ingressos/produtos. Recusa permite iniciar uma nova tentativa; retorno inconclusivo exige consulta da tentativa existente.
+4. Antes de uma nova cobranca ou estorno, o operador consulta o historico da venda pelo `saleId`/`transactionCode`. Se a cobranca constar no PagBank mas nao no Cine Cruzeiro, encaminha para conciliacao, sem emitir um segundo ingresso ou cobrar novamente por suposicao.
 
 ## Fontes oficiais
 
