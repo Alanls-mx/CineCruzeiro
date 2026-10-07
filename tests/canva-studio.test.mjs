@@ -135,7 +135,7 @@ test("OAuth usa estado de uso único e guarda tokens criptografados", async () =
       assert.ok(options.body.get("code_verifier"));
       return new Response(JSON.stringify({ access_token: "access-private", refresh_token: "refresh-private", expires_in: 14400 }), { status: 200 });
     }
-    return new Response(JSON.stringify({ user: { id: "canva-user-1" } }), { status: 200 });
+    return new Response(JSON.stringify({ team_user: { user_id: "canva-user-1", team_id: "canva-team-1" } }), { status: 200 });
   };
   try {
     const config = { enabled: true, configured: true, clientId: "id", clientSecret: "secret", redirectUri: "https://example.com/projects/cinecruzeiro/api/admin/canva-studio/oauth/callback" };

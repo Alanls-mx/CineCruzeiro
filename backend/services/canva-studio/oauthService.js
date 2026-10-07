@@ -37,7 +37,7 @@ async function finish(config, adminId, state, code) {
   const tokens = await client(config).exchange({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: config.redirectUri });
   const canva = client(config, async () => tokens.access_token);
   const user = await canva.currentUser();
-  const accountId = String(user.user?.id || "");
+  const accountId = String(user.team_user?.user_id || "");
   if (!accountId) throw studioError("CANVA_ACCOUNT_UNKNOWN", "O Canva não retornou a identificação da conta. Tente conectar novamente.", 502);
   await repository.saveOAuth({ account_id: accountId, access_token: encryptSecret(tokens.access_token), refresh_token: encryptSecret(tokens.refresh_token), expires_at: new Date(Date.now() + Number(tokens.expires_in) * 1000) });
   return { connected: true, accountId };
