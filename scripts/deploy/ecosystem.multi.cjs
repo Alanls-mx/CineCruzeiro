@@ -34,7 +34,6 @@ module.exports = {
       env: {
         ...sharedEnv,
         PORT: String(backendPort),
-        STUDIO_AUTOMATION_TOKEN: process.env.STUDIO_AUTOMATION_TOKEN,
         EMAIL_AUTOMATION_TOKEN: process.env.EMAIL_AUTOMATION_TOKEN,
         EMAIL_AUTOMATION_MODE: process.env.EMAIL_AUTOMATION_MODE || "draft",
       },

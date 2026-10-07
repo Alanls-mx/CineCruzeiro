@@ -17,8 +17,7 @@ test('historical performance recovery identifies the alert that ended', () => {
   assert.notEqual(cpu.title, latency.title);
 });
 
-test('an unknown event still shows its identity; known Studio activity has a readable description', () => {
-  assert.match(present({event: 'social_studio.campaign_created', category: 'social_studio'}).description, /Campanha criada no Studio/);
+test('an unknown event still shows its identity', () => {
   assert.match(present({event: 'custom.reconciliation_started', category: 'custom'}).description, /custom\.reconciliation_started/);
 });
 

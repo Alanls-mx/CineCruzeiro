@@ -36,18 +36,13 @@ function updateEnv(file, original, entries) {
 if (process.platform !== "linux") throw new Error("Execute este provisionamento somente na VPS.");
 const backend = readEnv(backendFile);
 const n8n = readEnv(n8nFile);
-const studioToken = backend.values.STUDIO_AUTOMATION_TOKEN || n8n.values.ESTACAO_STUDIO_AUTOMATION_TOKEN || crypto.randomBytes(32).toString("hex");
 const emailToken = backend.values.EMAIL_AUTOMATION_TOKEN || n8n.values.ESTACAO_EMAIL_AUTOMATION_TOKEN || crypto.randomBytes(32).toString("hex");
-if (studioToken === emailToken) throw new Error("Studio e e-mail precisam de segredos diferentes.");
 
 updateEnv(backendFile, backend.content, {
-  STUDIO_AUTOMATION_TOKEN: studioToken,
   EMAIL_AUTOMATION_TOKEN: emailToken,
   EMAIL_AUTOMATION_MODE: "draft",
 });
 updateEnv(n8nFile, n8n.content, {
-  ESTACAO_STUDIO_BASE_URL: "https://lumixengine.com/projects/cine-estacao-amparo",
-  ESTACAO_STUDIO_AUTOMATION_TOKEN: studioToken,
   ESTACAO_EMAIL_AUTOMATION_BASE_URL: "https://lumixengine.com/projects/cine-estacao-amparo",
   ESTACAO_EMAIL_AUTOMATION_TOKEN: emailToken,
 });

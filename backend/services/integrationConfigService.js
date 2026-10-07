@@ -310,12 +310,6 @@ function isConfigured(provider, config) {
   return false;
 }
 
-function mask(value) {
-  const text = String(value || "");
-  if (!text) return "";
-  return `${SECRET_MASK}${text.slice(-4)}`;
-}
-
 function isMaskedSecret(value) {
   const text = String(value || "").trim();
   return text.startsWith(SECRET_MASK) || /^[*•]{8,}/u.test(text);
@@ -370,8 +364,9 @@ function sanitizeConfig(db, provider) {
   const secrets = {};
   definition.fields.forEach((field) => {
     if (definition.secrets.includes(field.key)) {
-      const value = decryptSecret(stored[field.key]) || firstEnv((ENV[key] || {})[field.key] || []);
-      secrets[field.key] = { hasValue: Boolean(value), masked: mask(value) };
+      const storedValue = decryptSecret(stored[field.key]);
+      const value = storedValue || firstEnv((ENV[key] || {})[field.key] || []);
+      secrets[field.key] = { hasValue: Boolean(value), source: value ? (storedValue ? "stored" : "environment") : "" };
     } else {
       values[field.key] = resolved[field.key] ?? "";
     }

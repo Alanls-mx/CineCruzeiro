@@ -10,7 +10,6 @@
     <link rel="icon" type="image/png" sizes="64x64" href="../images/favicon-64.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="stylesheet" href="admin.css?v=20261005-session-row-layout" />
     <link rel="stylesheet" href="admin-premium.css?v=20261005-session-row-layout" />
-    <link rel="stylesheet" href="social-studio.css?v=20260927-startup-preview" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -1651,7 +1650,6 @@
           <nav class="admin-subtabs" aria-label="Seções de Marketing" data-admin-tablist="marketing">
             <button class="active" type="button" data-admin-tab="overview">Visão geral</button>
             <button type="button" data-admin-tab="home">Home</button>
-            <button type="button" data-admin-tab="social" data-permission="social_studio.view">Social Studio</button>
             <button type="button" data-admin-tab="campaigns">Campanhas</button>
             <button type="button" data-admin-tab="promotions">Cupons</button>
             <button type="button" data-admin-tab="ads">Anúncios</button>
@@ -1754,10 +1752,6 @@
             </div>
             <button class="primary-button full" type="submit">Salvar configurações</button>
           </form>
-          </div>
-
-          <div class="admin-tab-panel" data-admin-tab-panel="marketing:social" data-permission="social_studio.view" hidden>
-            <div id="socialStudioRoot" class="social-studio-root" aria-live="polite"></div>
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
@@ -2427,9 +2421,6 @@
                   <section class="permission-group"><h3>Relacionamento</h3>
                     <label><input type="checkbox" value="marketing.view" /><span><strong>Visualizar marketing</strong><small>Consulta anúncios, e-mails e cupons.</small></span></label>
                     <label><input type="checkbox" value="marketing.manage" /><span><strong>Gerenciar marketing</strong><small>Cria, envia, edita e exclui campanhas.</small></span></label>
-                    <label><input type="checkbox" value="social_studio.view" /><span><strong>Visualizar Social Studio</strong><small>Consulta modelos, previews e artes recentes.</small></span></label>
-                    <label><input type="checkbox" value="social_studio.create" /><span><strong>Criar artes sociais</strong><small>Edita, gera, baixa e duplica posts.</small></span></label>
-                    <label><input type="checkbox" value="social_studio.delete" /><span><strong>Excluir artes sociais</strong><small>Remove artes e seus arquivos do histórico.</small></span></label>
                     <label><input type="checkbox" value="club.view" /><span><strong>Visualizar Clube</strong><small>Consulta planos, assinaturas e faturamento.</small></span></label>
                     <label><input type="checkbox" value="club.manage" /><span><strong>Gerenciar Clube</strong><small>Altera planos e assinaturas.</small></span></label>
                     <label><input type="checkbox" value="club.credits" /><span><strong>Ajustar créditos do Clube</strong><small>Concede ou remove créditos de assinantes.</small></span></label>
@@ -3200,6 +3191,5 @@
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
     <script src="admin.js?v=20261005-session-row-layout"></script>
-    <script src="social-studio.js?v=20260927-editorial-review"></script>
   </body>
 </html>

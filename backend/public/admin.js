@@ -928,8 +928,6 @@ function logPerformanceAlert(log) {
 
 function logEventSummary(event) {
   const known = {
-    "social_studio.campaign_created": "Campanha criada no Studio.",
-    "social_studio.post_created": "Post criado no Studio.",
     "email_automation.draft_created": "Rascunho de e-mail criado automaticamente.",
     "subscription.pending_payment_maintenance": "Assinaturas com pagamento pendente foram verificadas.",
     "session.finished_archived": "Uma sessão encerrada foi arquivada."
@@ -10940,7 +10938,7 @@ const ALL_ADMIN_PERMISSIONS = [
   "box_office.sell", "box_office.courtesy", "tickets.view", "tickets.validate",
   "orders.view", "orders.edit", "orders.cancel", "orders.archive", "orders.delete", "orders.refund", "orders.print", "orders.resend", "payments.view",
   "concessions.view", "concessions.sell", "concessions.edit", "concessions.delete", "concessions.refund",
-  "marketing.view", "marketing.manage", "social_studio.view", "social_studio.create", "social_studio.delete",
+  "marketing.view", "marketing.manage",
   "club.view", "club.manage", "club.credits",
   "integrations.view", "integrations.manage", "logs.view", "logs.delete", "users.manage", "settings.view", "settings.manage", "media.manage"
 ];
@@ -11816,7 +11814,7 @@ function integrationSecurityHint(field, integration) {
   if (!field.secret) return "";
   const secret = integration.secrets?.[field.key];
   return secret?.hasValue
-    ? `<small class="integration-field-hint">Valor salvo com segurança: ${escapeHtml(secret.masked)}. Preencha somente para substituir.</small>`
+    ? `<small class="integration-field-hint">${secret.source === "environment" ? "Credencial fornecida pelo servidor" : "Credencial desta integração já configurada"}. Preencha somente para substituir.</small>`
     : `<small class="integration-field-hint">Campo sensível. O valor será criptografado e ocultado após salvar.</small>`;
 }
 

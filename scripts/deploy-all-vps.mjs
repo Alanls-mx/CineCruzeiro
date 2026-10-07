@@ -26,6 +26,21 @@ function run(command, args, options = {}) {
   return options.capture ? String(result.stdout || "").trim() : "";
 }
 
+export function assertStudioRemoved(sourceDir) {
+  const retiredPaths = [
+    "backend/services/social-studio",
+    "backend/services/socialStudioService.js",
+    "backend/public/social-studio.js",
+    "src/app/social-editor",
+    "public/images/social-studio",
+    "backend/db/migrations/038_social_studio_automation.sql",
+  ];
+  const found = retiredPaths.filter((relativePath) => fs.existsSync(path.join(sourceDir, relativePath)));
+  if (found.length) {
+    throw new Error(`Deploy interrompido: a fonte ainda contem o Studio (${found.join(", ")}). Atualize o repositorio antes de publicar.`);
+  }
+}
+
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
   const parsed = {};
@@ -143,7 +158,6 @@ function materializeRelease(archivePath, instance, tag, env, releaseInfo) {
     NEXT_PUBLIC_CINE_API_URL: instance.siteUrl,
   };
   run("npm", ["run", "build"], { cwd: releaseDir, env: buildEnv });
-  if(instance.slug==='cinecruzeiro') run('node',['scripts/build-social-motion.cjs','--browser'],{cwd:releaseDir,env:buildEnv});
   writeReleaseManifest(releaseDir, releaseInfo);
   return releaseDir;
 }
@@ -313,6 +327,7 @@ async function main() {
     run("git", ["clone", "--quiet", registry.repository, sourceDir]);
     const targetCommit = args.commit || run("git", ["rev-parse", "HEAD"], { cwd: sourceDir, capture: true });
     run("git", ["checkout", "--quiet", targetCommit], { cwd: sourceDir });
+    assertStudioRemoved(sourceDir);
     const commit = run("git", ["rev-parse", "HEAD"], { cwd: sourceDir, capture: true });
     const tag = releaseTag(commit);
     run("git", ["archive", "--format=tar", "--output", archivePath, commit], { cwd: sourceDir });

@@ -12,7 +12,6 @@ const env = Object.fromEntries(fs.readFileSync(file, "utf8").split(/\r?\n/).filt
   return [line.slice(0, index), line.slice(index + 1).replace(/^['"]|['"]$/g, "")];
 }));
 for (const [name, route, token] of [
-  ["Studio", "/api/studio/context", env.STUDIO_AUTOMATION_TOKEN],
   ["E-mail", "/api/email-automation/context", env.EMAIL_AUTOMATION_TOKEN],
 ]) {
   const response = await fetch(`http://127.0.0.1:${ports[slug]}${route}`, {

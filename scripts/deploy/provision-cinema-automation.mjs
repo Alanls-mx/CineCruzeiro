@@ -46,24 +46,19 @@ const n8nFile = path.join(automationDir, ".env");
 const backend = readEnv(backendFile);
 const n8n = readEnv(n8nFile);
 const baseUrl = `https://lumixengine.com/projects/${slug}`;
-const studioToken = backend.values.STUDIO_AUTOMATION_TOKEN || n8n.values[`${cinema.env}_STUDIO_AUTOMATION_TOKEN`] || crypto.randomBytes(32).toString("hex");
 const emailToken = backend.values.EMAIL_AUTOMATION_TOKEN || n8n.values[`${cinema.env}_EMAIL_AUTOMATION_TOKEN`] || crypto.randomBytes(32).toString("hex");
-if (studioToken === emailToken) throw new Error("Tokens de Studio e e-mail devem ser diferentes.");
 
 updateEnv(backendFile, backend.content, {
-  STUDIO_AUTOMATION_TOKEN: studioToken,
   EMAIL_AUTOMATION_TOKEN: emailToken,
   EMAIL_AUTOMATION_MODE: "draft",
 });
 updateEnv(n8nFile, n8n.content, {
-  [`${cinema.env}_STUDIO_BASE_URL`]: baseUrl,
-  [`${cinema.env}_STUDIO_AUTOMATION_TOKEN`]: studioToken,
   [`${cinema.env}_EMAIL_AUTOMATION_BASE_URL`]: baseUrl,
   [`${cinema.env}_EMAIL_AUTOMATION_TOKEN`]: emailToken,
 });
 
 const workflowDir = path.join(automationDir, "workflows");
-const templates = fs.readdirSync(workflowDir).filter((file) => file.startsWith("estacao-") && file.endsWith(".json"));
+const templates = fs.readdirSync(workflowDir).filter((file) => file.startsWith("estacao-email-") && file.endsWith(".json"));
 for (const template of templates) {
   const original = fs.readFileSync(path.join(workflowDir, template), "utf8");
   const workflow = JSON.parse(original

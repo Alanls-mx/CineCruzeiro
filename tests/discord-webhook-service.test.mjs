@@ -30,7 +30,8 @@ test("integration settings validate and mask the Discord URL as a secret", () =>
   const resolved = integrationConfigService.resolvedConfig(db, "discord");
   assert.equal(saved.configured, true);
   assert.equal(saved.secrets.webhookUrl.hasValue, true);
-  assert.equal(saved.secrets.webhookUrl.masked.endsWith(webhookUrl.slice(-4)), true);
+  assert.equal(saved.secrets.webhookUrl.source, "stored");
+  assert.equal(saved.secrets.webhookUrl.masked, undefined);
   assert.equal(Object.values(saved.values).includes(webhookUrl), false);
   assert.equal(resolved.webhookUrl, webhookUrl);
 });

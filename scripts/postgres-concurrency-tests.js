@@ -297,11 +297,11 @@ async function run() {
     const initialContent = await request("/api/admin/content", {headers: jsonHeaders(initialAdminCookie)});
     const changedContent = await request("/api/content", {
       method: "PUT", headers: jsonHeaders(initialAdminCookie),
-      body: JSON.stringify({settings: {...initialContent.payload.settings, socialStudioPosts: [{id: "private-test"}]}})
+      body: JSON.stringify({settings: {...initialContent.payload.settings, emailTemplateLibrary: [{id: "private-test"}]}})
     });
     assert.equal(changedContent.response.status, 200, JSON.stringify(changedContent.payload));
     const publicContent = await request("/api/content");
-    assert.equal(publicContent.payload.settings.socialStudioPosts, undefined);
+    assert.equal(publicContent.payload.settings.emailTemplateLibrary, undefined);
     let checkoutCookie = await registerCustomer("checkout-seat@postgres.local");
 
     const { acquireSeatHold, releaseSeatHoldsForOwner } = require("../backend/db/postgresStore");
