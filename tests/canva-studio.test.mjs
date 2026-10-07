@@ -76,6 +76,7 @@ test("Canva Client envia payloads oficiais e mapeia falhas sem vazar tokens", as
   const url = new URL(clientModule.authorization({ clientId: "id", redirectUri: "https://example.com/callback" }, "state", "verifier"));
   assert.equal(url.searchParams.get("code_challenge_method"), "s256");
   assert.equal(url.searchParams.get("state"), "state");
+  assert.deepEqual(url.searchParams.get("scope").split(" "), ["asset:write", "brandtemplate:content:read", "design:content:read", "design:content:write", "design:meta:read"]);
   assert.ok(!url.href.includes("verifier"));
 });
 

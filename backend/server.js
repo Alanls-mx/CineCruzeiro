@@ -11154,7 +11154,10 @@ async function handleApi(req, res, pathname) {
     if (studioPath === "/oauth/callback" && method === "GET") {
       const params = new URL(req.url, "http://localhost").searchParams;
       if (params.get("error")) {
-        sendJson(res, 400, { error: { code: "CANVA_OAUTH_DENIED", message: "A conexão com o Canva não foi autorizada." } });
+        const prefix = canvaStudioOAuth.callbackPrefix(config);
+        const outcome = params.get("error") === "invalid_scope" ? "invalid_scope" : "denied";
+        res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/?studioOAuth=${outcome}#studioPanel` });
+        res.end();
         return;
       }
       await canvaStudioOAuth.finish(config, req.adminUser.id, params.get("state"), params.get("code"));

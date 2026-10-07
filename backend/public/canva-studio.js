@@ -3,6 +3,7 @@
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const endpoint = "/api/admin/canva-studio";
   const studio = { loaded: false, overview: null, templates: [], campaigns: [], activeId: "", running: false, tab: "create" };
+  let oauthOutcome = new URLSearchParams(window.location.search).get("studioOAuth");
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const canManage = () => ["owner", "master"].includes(state.adminUser?.role) || (state.adminUser?.effectivePermissions || []).includes("integrations.manage");
   const safeCanvaUrl = (value) => { try { const url = new URL(value); return url.protocol === "https:" && (url.hostname === "canva.com" || url.hostname.endsWith(".canva.com")) ? url.href : ""; } catch { return ""; } };
@@ -21,7 +22,7 @@
     node.hidden = !value;
     node.classList.toggle("error", error);
   }
-  function tab(name) {
+  function tab(name, refresh = true) {
     studio.tab = name;
     document.querySelectorAll("[data-studio-tab]").forEach((button) => {
       const active = button.dataset.studioTab === name;
@@ -34,7 +35,7 @@
     });
     if (name === "campaigns") void loadCampaigns();
     if (name === "templates") void loadTemplates();
-    if (name === "connection") void loadOverview();
+    if (name === "connection" && refresh) void loadOverview();
   }
 
   async function loadOverview() {
@@ -54,6 +55,16 @@
       if (!data.configured) message("Configure o app Canva em Integrações para começar.");
       else if (!data.connection?.connected) message("Conecte sua conta Canva para validar templates e criar campanhas.");
       else message("");
+      if (oauthOutcome) {
+        tab("connection", false);
+        message(oauthOutcome === "invalid_scope"
+          ? "O Canva recusou as permissões solicitadas. Em Canva Developers → Fora do Canva → Configuração → Escopos, habilite asset:write, brandtemplate:content:read, design:content:read, design:content:write e design:meta:read. Salve e clique em Conectar Canva novamente."
+          : "A autorização da conta Canva não foi concluída. Confira a conta e tente Conectar Canva novamente.", true);
+        oauthOutcome = "";
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("studioOAuth");
+        history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+      }
     } catch (error) { message(error.message, true); }
   }
 

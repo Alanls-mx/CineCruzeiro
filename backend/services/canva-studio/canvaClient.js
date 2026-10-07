@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const API_BASE = "https://api.canva.com/rest/v1";
 const AUTHORIZE_URL = "https://www.canva.com/api/oauth/authorize";
-const SCOPES = ["asset:write", "brandtemplate:content:read", "brandtemplate:meta:read", "design:content:read", "design:content:write", "design:meta:read"];
+const SCOPES = ["asset:write", "brandtemplate:content:read", "design:content:read", "design:content:write", "design:meta:read"];
 
 function b64url(buffer) {
   return Buffer.from(buffer).toString("base64url");

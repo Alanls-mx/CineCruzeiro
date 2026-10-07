@@ -38,10 +38,10 @@ Escolha **Canva for your platform / Outside Canva**. Não use o fluxo de app den
    | Área | Permissão exata |
    | --- | --- |
    | Assets | `asset:write` |
-   | Brand templates | `brandtemplate:content:read`, `brandtemplate:meta:read` |
+   | Brand templates | `brandtemplate:content:read` |
    | Designs | `design:content:read`, `design:content:write`, `design:meta:read` |
 
-   Se a interface agrupar por área, marque as opções Read/Write equivalentes. O código atual envia assets, mas não consulta seus metadados; `asset:read` não é exigido. Se alterar os scopes depois de conectar, reconecte a conta no Studio.
+   Se a interface agrupar por área, marque as opções Read/Write equivalentes. O código atual envia assets, mas não consulta seus metadados; `asset:read` não é exigido. Ele também não lista Brand Templates pelo Canva, então `brandtemplate:meta:read` não é exigido. Se alterar os scopes depois de conectar, reconecte a conta no Studio.
 
 6. Em **Outside Canva → Redirect URLs**, adicione a URL de retorno **exata**:
 
@@ -100,6 +100,7 @@ O `titleLockup` é opcional e deve ser um asset aprovado em `movie.metadata.titl
 | Migration 043 pendente | Confirme o banco da instalação e rode `npm run db:migrate`; não importe JSON para produção. |
 | Canva não conectado | Ative a integração e use **Studio → Integração Canva → Conectar Canva**. |
 | Redirect URI inválida | Compare URL do portal e do painel caractere por caractere; abra o painel no mesmo host. |
+| `invalid_scope` no retorno OAuth | Em **Outside Canva → Configuration → Scopes**, habilite os cinco escopos da seção 3, salve e clique **Conectar Canva** novamente. O Client ID do painel deve ser do mesmo app configurado no portal. |
 | 401/token revogado | Reconecte Canva. O Studio remove a autorização local inválida. |
 | 403 | Confira scopes, plano e acesso da conta conectada ao Brand Template. |
 | Template inválido | Confira grafia/tipo dos campos no Canva, publique e clique em **Validar**. O Canva pode ignorar campos inexistentes. |
