@@ -11792,7 +11792,6 @@ function integrationCategory(key) {
   return {
     mercadoPago: "Pagamentos",
     pagBank: "Pagamentos",
-    canva: "Criação de campanhas",
     googleLogin: "Login",
     googleWallet: "Carteira digital",
     tmdb: "Catálogo",
@@ -11806,7 +11805,6 @@ function integrationCategory(key) {
 
 function integrationStatusLabel(item) {
   if (item.key === "pagBank" && item.enabled && item.configured) return "Ativa; pedidos não verificados";
-  if (item.key === "canva" && item.enabled && item.configured) return "App configurado; confira conexão no Studio";
   if (item.enabled && item.configured) return "Operacional";
   if (item.configured) return "Configurada";
   return "Pendente";
@@ -12474,7 +12472,6 @@ function applyRbacVisibility() {
     (has("box_office.sell") || has("orders.view") || has("tickets.validate") || has("payments.view")) && "ordersPanel",
     has("concessions.view") && "concessionsPanel",
     has("marketing.view") && "marketingPanel",
-    has("marketing.view") && "studioPanel",
     has("club.view") && "clubPanel",
     "usersPanel",
     has("integrations.view") && "integrationsPanel",

@@ -11,7 +11,6 @@
     "dev:frontend": "next dev",
     "dev:backend": "node backend/server.js",
     "db:migrate": "node scripts/db-migrate.js",
-    "studio:db:local": "node scripts/setup-local-studio-postgres.js",
     "db:diagnostics": "node scripts/database-diagnostics.mjs",
     "db:seed": "node scripts/db-seed.js",
     "db:import-json": "node scripts/db-import-json.js",
@@ -23,7 +22,6 @@
     "demo:seed": "node scripts/seed-demo-instance.mjs",
     "demo:nginx": "node scripts/render-demo-nginx.mjs",
     "test:deployment": "node --test tests/deploy-instance-registry.test.mjs",
-    "test:canva-studio": "node --test tests/canva-studio.test.mjs tests/canva-studio-ui.test.mjs",
     "lint": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:operations": "node scripts/backup-retention-tests.js",
@@ -51,7 +49,6 @@
   },
   "dependencies": {
     "@mercadopago/sdk-js": "^0.0.3",
-    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/qrcode": "^1.5.6",
     "clsx": "^2.1.1",
     "jsqr": "^1.4.0",

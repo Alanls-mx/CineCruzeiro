@@ -37,11 +37,6 @@ const paymentService = require("./services/paymentService");
 const pagBankPaymentService = require("./services/pagBankPaymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
-const canvaStudioRepository = require("./services/canva-studio/studioRepository");
-const canvaStudioOAuth = require("./services/canva-studio/oauthService");
-const canvaStudio = require("./services/canva-studio/campaignService");
-const canvaStudioMcpOAuth = require("./services/canva-studio/mcpOAuthService");
-const canvaStudioAi = require("./services/canva-studio/aiCampaignService");
 const { createDiscordWebhookService } = require("./services/discordWebhookService");
 const { readReleaseInfo } = require("./services/releaseInfoService");
 const { createRuntimeLifecycle } = require("./services/runtimeLifecycleService");
@@ -139,11 +134,10 @@ let emailCampaignWorker = null;
 let crmWebhookWorker = null;
 let crmWebhookRuntimeConfig = null;
 let crmWebhookConfigVersion = 0;
-let canvaStudioWorkerRunning = false;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "044_canva_studio_mcp.sql";
+const LATEST_SCHEMA_MIGRATION = "045_remove_canva_studio.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -1357,8 +1351,7 @@ function mutatesState(method) {
 
 function repositoryMutationRoute(pathname, method) {
   if (!mutatesState(method)) return false;
-  return pathname.startsWith("/api/admin/canva-studio/")
-    || pathname === "/api/movies/order"
+  return pathname === "/api/movies/order"
     || /^\/api\/movies(?:\/[^/]+(?:\/sessions(?:\/[^/]+)?)?)?$/.test(pathname)
     || /^\/api\/rooms(?:\/[^/]+)?$/.test(pathname)
     || /^\/api\/ticket-types(?:\/[^/]+)?$/.test(pathname)
@@ -1436,10 +1429,6 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
-  if (pathname.startsWith("/api/admin/canva-studio/")) {
-    if (/\/(oauth|templates|connection)(\/|$)/.test(pathname)) return method === "GET" && !pathname.includes("/oauth/") ? "integrations.view" : "integrations.manage";
-    return method === "GET" ? "marketing.view" : "marketing.manage";
-  }
   if (pathname === "/api/admin/concession-counter-sales") return "concessions.sell";
   if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
   if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
@@ -10251,15 +10240,6 @@ async function testIntegrationProvider(db, provider, req) {
         : result.errorCode === "CRM_TIMEOUT" ? "Webhook CRM excedeu o timeout configurado." : "Não foi possível chamar o webhook CRM."
     };
   }
-  if (key === "canva") {
-    if (!config.configured || !config.enabled) return { ok: false, message: "Configure e ative Client ID, Client Secret e URL de retorno Canva." };
-    if (!postgresEnabled()) return { ok: false, message: "O Studio requer PostgreSQL." };
-    try {
-      const token = await canvaStudioOAuth.accessToken(config);
-      const response = await fetch("https://api.canva.com/rest/v1/users/me", { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) });
-      return response.ok ? { ok: true, message: "Conta Canva conectada e token válido." } : { ok: false, message: "A conta Canva precisa ser reconectada no Studio." };
-    } catch (error) { return { ok: false, message: error.expose ? error.message : "Não foi possível validar a conexão Canva." }; }
-  }
   if (key === "pagBank") {
     if (!config.accessToken || !config.publicKey) return { ok: false, message: "Informe token e chave pública do PagBank." };
     try {
@@ -11124,159 +11104,6 @@ async function handleApi(req, res, pathname) {
   }
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
-
-  if (pathname.startsWith("/api/admin/canva-studio/")) {
-    if (!postgresEnabled()) {
-      sendJson(res, 503, { error: { code: "STUDIO_POSTGRES_NOT_CONFIGURED", message: "Este painel local está usando armazenamento JSON. Inicie o Docker Desktop, execute npm run studio:db:local e reinicie o backend. Seus dados atuais serão importados." } });
-      return;
-    }
-    const studioDatabase = await checkPostgresReadiness(LATEST_SCHEMA_MIGRATION);
-    if (!studioDatabase.ready) {
-      sendJson(res, 503, { error: { code: studioDatabase.database ? "STUDIO_MIGRATION_REQUIRED" : "STUDIO_DATABASE_UNAVAILABLE", message: studioDatabase.database ? "A migration 044 do Studio ainda não foi aplicada neste banco. Execute npm run db:migrate e reinicie o backend." : "O PostgreSQL do Studio está indisponível. Verifique a conexão e a configuração do banco." } });
-      return;
-    }
-    const config = integrationConfigService.resolvedConfig(db, "canva");
-    const studioPath = pathname.slice("/api/admin/canva-studio".length);
-    if (studioPath === "/overview" && method === "GET") {
-      const connection = await canvaStudioOAuth.connection(config);
-      const mcpConnection = await canvaStudioMcpOAuth.connection();
-      sendJson(res, 200, {
-        configured: Boolean(config?.configured && config?.enabled),
-        connection,
-        mcpConnection,
-        mcpRedirectUri: config?.configured && config?.enabled ? canvaStudioMcpOAuth.redirectUri(config) : "",
-        concessions: (db.concessions || []).filter((item) => item.active !== false).map((item) => ({ id: item.id, name: item.name })),
-        promotions: (db.promotions || []).filter((item) => item.active !== false && !item.archivedAt).map((item) => ({ id: item.id, name: item.title || item.name })),
-        movies: (db.movies || []).filter((movie) => !movie.deletedAt).map((movie) => ({
-          id: movie.id, title: movie.title, genre: movie.genre, posterUrl: movie.posterUrl || "",
-          sessions: (movie.sessions || []).filter((session) => !["cancelled", "hidden", "archived"].includes(String(session.status || "").toLowerCase())).map((session) => ({ id: session.id, date: session.date, time: session.time, startsAt: session.startsAt, timeLabel: session.timeLabel }))
-        }))
-      }, { "Cache-Control": "no-store" });
-      return;
-    }
-    if (studioPath === "/oauth/start" && method === "POST") {
-      sendJson(res, 200, { url: await canvaStudioOAuth.begin(config, req.adminUser.id) });
-      return;
-    }
-    if (studioPath === "/oauth/callback" && method === "GET") {
-      const params = new URL(req.url, "http://localhost").searchParams;
-      if (params.get("error")) {
-        const prefix = canvaStudioOAuth.callbackPrefix(config);
-        const outcome = params.get("error") === "invalid_scope" ? "invalid_scope" : "denied";
-        res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/?studioOAuth=${outcome}#studioPanel` });
-        res.end();
-        return;
-      }
-      await canvaStudioOAuth.finish(config, req.adminUser.id, params.get("state"), params.get("code"));
-      const prefix = canvaStudioOAuth.callbackPrefix(config);
-      res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/#studioPanel` });
-      res.end();
-      return;
-    }
-    if (studioPath === "/mcp/start" && method === "POST") {
-      sendJson(res, 200, { url: await canvaStudioMcpOAuth.begin(config, req.adminUser.id) });
-      return;
-    }
-    if (studioPath === "/mcp/callback" && method === "GET") {
-      const params = new URL(req.url, "http://localhost").searchParams;
-      const prefix = canvaStudioOAuth.callbackPrefix(config);
-      if (params.get("error")) {
-        res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/?studioOAuth=mcp_denied#studioPanel` });
-        res.end();
-        return;
-      }
-      await canvaStudioMcpOAuth.finish(config, req.adminUser.id, params.get("state"), params.get("code"));
-      res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/#studioPanel` });
-      res.end();
-      return;
-    }
-    if (studioPath === "/templates" && method === "GET") {
-      sendJson(res, 200, { templates: await canvaStudioRepository.templates() }, { "Cache-Control": "no-store" });
-      return;
-    }
-    if (studioPath === "/templates" && method === "POST") {
-      sendJson(res, 200, { template: await canvaStudio.registerTemplate(await readBody(req)) });
-      return;
-    }
-    const templateMatch = studioPath.match(/^\/templates\/([^/]+)\/validate$/);
-    if (templateMatch && method === "POST") {
-      sendJson(res, 200, { template: await canvaStudio.validateTemplate(templateMatch[1], config) });
-      return;
-    }
-    const fixtureMatch = studioPath.match(/^\/templates\/([^/]+)\/fixture$/);
-    if (fixtureMatch && method === "POST") {
-      sendJson(res, 200, { fixture: await canvaStudio.testTemplateFixture(db, fixtureMatch[1], await readBody(req)) });
-      return;
-    }
-    if (studioPath === "/campaigns" && method === "GET") {
-      sendJson(res, 200, { campaigns: (await canvaStudioRepository.campaigns()).map(canvaStudio.publicCampaign) }, { "Cache-Control": "no-store" });
-      return;
-    }
-    if (studioPath === "/metrics" && method === "GET") {
-      const summary = (await canvaStudioRepository.queryPostgres(`SELECT count(*)::int AS total,
-        count(*) FILTER (WHERE status='completed')::int AS completed,
-        count(*) FILTER (WHERE status='failed')::int AS failed,
-        round(avg(extract(epoch FROM (updated_at-created_at))) FILTER (WHERE status='completed'))::int AS avg_seconds
-        FROM canva_studio_campaigns`)).rows[0];
-      const templates = (await canvaStudioRepository.queryPostgres(`SELECT option->>'templateId' AS template_id,
-        count(*) FILTER (WHERE option->>'status'='completed')::int AS completed,
-        count(*) FILTER (WHERE option->>'status'='failed')::int AS failed,
-        round(avg(extract(epoch FROM ((option->>'completedAt')::timestamptz - (option->>'startedAt')::timestamptz)))
-          FILTER (WHERE option ? 'completedAt' AND option ? 'startedAt'))::int AS avg_autofill_seconds
-        FROM canva_studio_campaigns, jsonb_array_elements(options) AS item(option)
-        GROUP BY 1 ORDER BY completed DESC, failed DESC LIMIT 20`)).rows;
-      sendJson(res, 200, { summary, templates }, { "Cache-Control": "no-store" });
-      return;
-    }
-    if (studioPath === "/campaigns" && method === "POST") {
-      if (!config?.enabled || !config.configured || !(await canvaStudioOAuth.connection(config)).connected) {
-        sendJson(res, 409, { error: { code: "CANVA_RECONNECT_REQUIRED", message: "Configure e conecte o Canva antes de criar campanhas." } });
-        return;
-      }
-      sendJson(res, 201, { campaign: await canvaStudio.createCampaign(db, await readBody(req), req.adminUser.id) });
-      return;
-    }
-    if (studioPath === "/campaigns/ai" && method === "POST") {
-      if (!config?.enabled || !config.configured || !(await canvaStudioOAuth.connection(config)).connected || !(await canvaStudioMcpOAuth.connection()).connected) {
-        sendJson(res, 409, { error: { code: "CANVA_AI_RECONNECT_REQUIRED", message: "Conecte Canva REST e Canva IA em Integração Canva antes de criar com IA." } });
-        return;
-      }
-      sendJson(res, 201, { campaign: await canvaStudioAi.createCampaign(db, await readBody(req), req.adminUser.id) });
-      return;
-    }
-    const campaignMatch = studioPath.match(/^\/campaigns\/([^/]+)$/);
-    if (campaignMatch && method === "GET") {
-      sendJson(res, 200, { campaign: await canvaStudio.campaignDetail(campaignMatch[1], config) }, { "Cache-Control": "no-store" });
-      return;
-    }
-    const advanceMatch = studioPath.match(/^\/campaigns\/([^/]+)\/advance$/);
-    if (advanceMatch && method === "POST") {
-      const campaign = await canvaStudioRepository.campaign(advanceMatch[1]);
-      sendJson(res, 200, { campaign: campaign?.plan?.mode === "ai" ? await canvaStudioAi.advanceCampaign(advanceMatch[1], config) : await canvaStudio.advanceCampaign(advanceMatch[1], config) });
-      return;
-    }
-    const selectCandidateMatch = studioPath.match(/^\/campaigns\/([^/]+)\/candidates\/([^/]+)\/select$/);
-    if (selectCandidateMatch && method === "POST") {
-      sendJson(res, 200, { campaign: await canvaStudioAi.selectCandidate(selectCandidateMatch[1], selectCandidateMatch[2], config) });
-      return;
-    }
-    const duplicateMatch = studioPath.match(/^\/campaigns\/([^/]+)\/duplicate$/);
-    if (duplicateMatch && method === "POST") {
-      const source = await canvaStudioRepository.campaign(duplicateMatch[1]);
-      const overrides = await readBody(req);
-      sendJson(res, 201, { campaign: source?.plan?.mode === "ai" ? await canvaStudioAi.createCampaign(db, { ...source.input, ...overrides, requestKey: undefined }, req.adminUser.id) : await canvaStudio.duplicateCampaign(db, duplicateMatch[1], overrides, req.adminUser.id) });
-      return;
-    }
-    const exportMatch = studioPath.match(/^\/campaigns\/([^/]+)\/options\/([^/]+)\/exports$/);
-    if (exportMatch && method === "POST") {
-      const body = await readBody(req);
-      sendJson(res, 200, { export: await canvaStudio.exportDesign(exportMatch[1], exportMatch[2], String(body.format || "png"), config) });
-      return;
-    }
-    sendJson(res, 404, { error: { code: "STUDIO_ROUTE_NOT_FOUND", message: "Rota do Studio não encontrada." } });
-    return;
-  }
-
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
     const user = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : (db.users || []).find((item) => item.id === req.adminUser.id);
@@ -17585,27 +17412,6 @@ async function runSystemLogMaintenance() {
   }
 }
 
-async function runCanvaStudioJobs() {
-  if (!postgresEnabled() || canvaStudioWorkerRunning) return;
-  canvaStudioWorkerRunning = true;
-  try {
-    const jobs = (await canvaStudioRepository.queryPostgres(`SELECT id FROM canva_studio_campaigns
-      WHERE status IN ('queued','processing') AND (lease_until IS NULL OR lease_until < now())
-      ORDER BY created_at LIMIT 3`)).rows;
-    if (!jobs.length) return;
-    const config = integrationConfigService.resolvedConfig(await readDb(), "canva");
-    if (!config?.enabled || !config.configured || !(await canvaStudioOAuth.connection(config)).connected) return;
-    for (const job of jobs) {
-      try { await canvaStudio.advanceCampaign(job.id, config); }
-      catch (error) { logEvent("warn", "canva_studio.job_step_failed", { campaignId: job.id, code: error.code || "STEP_FAILED" }); }
-    }
-  } catch (error) {
-    if (error.code !== "42P01") logEvent("warn", "canva_studio.worker_failed", { code: error.code || "WORKER_FAILED" });
-  } finally {
-    canvaStudioWorkerRunning = false;
-  }
-}
-
 loadEnvFiles().then(() => {
   if (isProduction() && !postgresEnabled()) {
     console.error("POSTGRES_REQUIRED_IN_PRODUCTION: configure DATABASE_URL ou POSTGRES_URL antes de iniciar em producao.");
@@ -17632,8 +17438,6 @@ loadEnvFiles().then(() => {
       emailCampaignWorker?.start();
       logEvent("info", "email_campaign.worker_started", { workerId: emailCampaignWorker?.workerId || "", config: emailCampaignWorker?.config || {} });
       void runSystemLogMaintenance();
-      const canvaStudioTimer = setInterval(() => { void runCanvaStudioJobs(); }, 5000);
-      canvaStudioTimer.unref?.();
     }
     const systemLogMaintenanceTimer = setInterval(() => {
       void runSystemLogMaintenance();

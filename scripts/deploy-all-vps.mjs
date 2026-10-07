@@ -34,6 +34,13 @@ export function assertStudioRemoved(sourceDir) {
     "src/app/social-editor",
     "public/images/social-studio",
     "backend/db/migrations/038_social_studio_automation.sql",
+    "backend/services/canva-studio",
+    "backend/public/canva-studio.js",
+    "backend/public/canva-studio.css",
+    "backend/db/migrations/043_canva_studio.sql",
+    "backend/db/migrations/044_canva_studio_mcp.sql",
+    "public/images/cine-cruzeiro-signature-light.png",
+    "public/images/cine-cruzeiro-signature-dark.png",
   ];
   const found = retiredPaths.filter((relativePath) => fs.existsSync(path.join(sourceDir, relativePath)));
   if (found.length) {

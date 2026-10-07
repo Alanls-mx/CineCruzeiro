@@ -84,6 +84,9 @@ test("impede deploy de uma fonte que ainda inclui o Studio", () => {
     assert.doesNotThrow(() => assertStudioRemoved(temp));
     fs.mkdirSync(path.join(temp, "src", "app", "social-editor"), { recursive: true });
     assert.throws(() => assertStudioRemoved(temp), /fonte ainda contem o Studio/);
+    fs.rmSync(path.join(temp, "src"), { recursive: true });
+    fs.mkdirSync(path.join(temp, "backend", "services", "canva-studio"), { recursive: true });
+    assert.throws(() => assertStudioRemoved(temp), /fonte ainda contem o Studio/);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

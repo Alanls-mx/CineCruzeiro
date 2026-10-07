@@ -125,18 +125,6 @@ const DEFINITIONS = {
       { key: "accessToken", label: "Token de acesso", type: "secret" }
     ]
   },
-  canva: {
-    name: "Canva Studio",
-    purpose: "Templates de marca, Autofill e exportacao de campanhas",
-    defaults: { enabled: false, environment: "production", clientId: "", redirectUri: "" },
-    secrets: ["clientSecret"],
-    fields: [
-      { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
-      { key: "clientId", label: "Client ID", type: "text" },
-      { key: "clientSecret", label: "Client Secret", type: "secret" },
-      { key: "redirectUri", label: "URL de retorno OAuth", type: "url" }
-    ]
-  },
   discord: {
     name: "Alertas operacionais Discord",
     purpose: "Embeds filtrados de erros, segurança, desempenho e saúde do servidor",
@@ -209,11 +197,6 @@ const ENV = {
   pagBank: {
     publicKey: ["PAGBANK_PUBLIC_KEY", "PAGSEGURO_PUBLIC_KEY"],
     accessToken: ["PAGBANK_ACCESS_TOKEN", "PAGSEGURO_ACCESS_TOKEN"]
-  },
-  canva: {
-    clientId: ["CANVA_CLIENT_ID"],
-    clientSecret: ["CANVA_CLIENT_SECRET"],
-    redirectUri: ["CANVA_REDIRECT_URI"]
   },
   discord: {
     webhookUrl: ["DISCORD_ALERTS_WEBHOOK_URL"]
@@ -316,7 +299,6 @@ function resolvedConfig(db, provider) {
 function isConfigured(provider, config) {
   if (provider === "mercadoPago") return Boolean(config.publicKey && config.accessToken);
   if (provider === "pagBank") return Boolean(config.publicKey && config.accessToken);
-  if (provider === "canva") return Boolean(config.clientId && config.clientSecret && config.redirectUri);
   if (provider === "googleLogin") return Boolean(config.clientId && config.clientSecret);
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.serviceAccountJson || (config.clientEmail && config.privateKey)));
   if (provider === "tmdb") return Boolean(config.apiKey || config.bearerToken);
