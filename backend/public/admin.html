@@ -10,7 +10,7 @@
     <link rel="icon" type="image/png" sizes="64x64" href="../images/favicon-64.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="stylesheet" href="admin.css?v=20261005-session-row-layout" />
     <link rel="stylesheet" href="admin-premium.css?v=20261005-session-row-layout" />
-    <link rel="stylesheet" href="canva-studio.css?v=20261006" />
+    <link rel="stylesheet" href="canva-studio.css?v=20261007-ai-mode" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -2530,21 +2530,31 @@
 
         <section id="studioPanel" class="panel">
           <div class="panel-heading studio-heading">
-            <div><h1>Studio</h1><p>Campanhas de filmes criadas com templates editáveis no Canva.</p></div>
+            <div><h1>Studio</h1><p>Crie peças para filmes, programação e ofertas no Canva.</p></div>
             <span id="studioConnectionBadge" class="status-pill muted">Canva não conectado</span>
           </div>
           <div class="studio-tabs" role="tablist" aria-label="Áreas do Studio">
-            <button type="button" class="active" data-studio-tab="create" role="tab" aria-selected="true">Criar campanha</button>
+            <button type="button" class="active" data-studio-tab="create" role="tab" aria-selected="true">Criar</button>
             <button type="button" data-studio-tab="campaigns" role="tab" aria-selected="false">Campanhas</button>
             <button type="button" data-studio-tab="templates" role="tab" aria-selected="false">Templates</button>
             <button type="button" data-studio-tab="connection" role="tab" aria-selected="false">Integração Canva</button>
           </div>
           <div id="studioMessage" class="studio-message" role="status" aria-live="polite" hidden></div>
           <div class="studio-view active" data-studio-view="create">
+            <div class="studio-mode-switch" role="group" aria-label="Modo de criação">
+              <button type="button" class="active" data-studio-mode="ai" aria-pressed="true">Criar com IA</button>
+              <button type="button" data-studio-mode="template" aria-pressed="false">Usar templates</button>
+            </div>
             <div class="studio-create-layout">
               <form id="studioCreateForm" class="studio-form">
-                <label>Filme
+                <label id="studioKindField">Peça
+                  <select id="studioKind"><option value="film">Filme</option><option value="programming">Programação</option><option value="concessions">Bomboniere</option><option value="promotion">Promoções</option><option value="other">Outras peças</option></select>
+                </label>
+                <label id="studioMovieField">Filme
                   <select id="studioMovie" required><option value="">Selecione um filme</option></select>
+                </label>
+                <label id="studioItemField" hidden>Item
+                  <select id="studioItem"><option value="">Selecione um item</option></select>
                 </label>
                 <fieldset class="studio-type-fieldset">
                   <legend>Objetivo</legend>
@@ -2558,7 +2568,13 @@
                 <label id="studioSessionField" hidden>Sessão
                   <select id="studioSession"><option value="">Selecione uma sessão</option></select>
                 </label>
-                <div class="studio-form-actions"><button class="primary-button" type="submit" id="studioCreateButton">Criar campanha</button></div>
+                <label id="studioSignatureField">Assinatura
+                  <select id="studioSignature"><option value="auto">Automática</option><option value="light">Clara</option><option value="dark">Escura</option></select>
+                </label>
+                <label id="studioPromptField">Direção adicional
+                  <textarea id="studioPrompt" rows="4" maxlength="1200" placeholder="Opcional: clima, mensagem ou referência visual"></textarea>
+                </label>
+                <div class="studio-form-actions"><button class="primary-button" type="submit" id="studioCreateButton">Criar com IA</button></div>
               </form>
               <div class="studio-movie-preview" id="studioMoviePreview"><span>Selecione um filme para começar.</span></div>
             </div>
@@ -3261,6 +3277,6 @@
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
     <script src="admin.js?v=20261005-session-row-layout"></script>
-    <script src="canva-studio.js?v=20261007-oauth-scopes"></script>
+    <script src="canva-studio.js?v=20261007-ai-mode"></script>
   </body>
 </html>

@@ -40,6 +40,8 @@ const integrationConfigService = require("./services/integrationConfigService");
 const canvaStudioRepository = require("./services/canva-studio/studioRepository");
 const canvaStudioOAuth = require("./services/canva-studio/oauthService");
 const canvaStudio = require("./services/canva-studio/campaignService");
+const canvaStudioMcpOAuth = require("./services/canva-studio/mcpOAuthService");
+const canvaStudioAi = require("./services/canva-studio/aiCampaignService");
 const { createDiscordWebhookService } = require("./services/discordWebhookService");
 const { readReleaseInfo } = require("./services/releaseInfoService");
 const { createRuntimeLifecycle } = require("./services/runtimeLifecycleService");
@@ -141,7 +143,7 @@ let canvaStudioWorkerRunning = false;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "043_canva_studio.sql";
+const LATEST_SCHEMA_MIGRATION = "044_canva_studio_mcp.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -11130,16 +11132,21 @@ async function handleApi(req, res, pathname) {
     }
     const studioDatabase = await checkPostgresReadiness(LATEST_SCHEMA_MIGRATION);
     if (!studioDatabase.ready) {
-      sendJson(res, 503, { error: { code: studioDatabase.database ? "STUDIO_MIGRATION_REQUIRED" : "STUDIO_DATABASE_UNAVAILABLE", message: studioDatabase.database ? "A migration 043 do Studio ainda não foi aplicada neste banco. Execute npm run db:migrate e reinicie o backend." : "O PostgreSQL do Studio está indisponível. Verifique a conexão e a configuração do banco." } });
+      sendJson(res, 503, { error: { code: studioDatabase.database ? "STUDIO_MIGRATION_REQUIRED" : "STUDIO_DATABASE_UNAVAILABLE", message: studioDatabase.database ? "A migration 044 do Studio ainda não foi aplicada neste banco. Execute npm run db:migrate e reinicie o backend." : "O PostgreSQL do Studio está indisponível. Verifique a conexão e a configuração do banco." } });
       return;
     }
     const config = integrationConfigService.resolvedConfig(db, "canva");
     const studioPath = pathname.slice("/api/admin/canva-studio".length);
     if (studioPath === "/overview" && method === "GET") {
       const connection = await canvaStudioOAuth.connection(config);
+      const mcpConnection = await canvaStudioMcpOAuth.connection();
       sendJson(res, 200, {
         configured: Boolean(config?.configured && config?.enabled),
         connection,
+        mcpConnection,
+        mcpRedirectUri: config?.configured && config?.enabled ? canvaStudioMcpOAuth.redirectUri(config) : "",
+        concessions: (db.concessions || []).filter((item) => item.active !== false).map((item) => ({ id: item.id, name: item.name })),
+        promotions: (db.promotions || []).filter((item) => item.active !== false && !item.archivedAt).map((item) => ({ id: item.id, name: item.title || item.name })),
         movies: (db.movies || []).filter((movie) => !movie.deletedAt).map((movie) => ({
           id: movie.id, title: movie.title, genre: movie.genre, posterUrl: movie.posterUrl || "",
           sessions: (movie.sessions || []).filter((session) => !["cancelled", "hidden", "archived"].includes(String(session.status || "").toLowerCase())).map((session) => ({ id: session.id, date: session.date, time: session.time, startsAt: session.startsAt, timeLabel: session.timeLabel }))
@@ -11162,6 +11169,23 @@ async function handleApi(req, res, pathname) {
       }
       await canvaStudioOAuth.finish(config, req.adminUser.id, params.get("state"), params.get("code"));
       const prefix = canvaStudioOAuth.callbackPrefix(config);
+      res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/#studioPanel` });
+      res.end();
+      return;
+    }
+    if (studioPath === "/mcp/start" && method === "POST") {
+      sendJson(res, 200, { url: await canvaStudioMcpOAuth.begin(config, req.adminUser.id) });
+      return;
+    }
+    if (studioPath === "/mcp/callback" && method === "GET") {
+      const params = new URL(req.url, "http://localhost").searchParams;
+      const prefix = canvaStudioOAuth.callbackPrefix(config);
+      if (params.get("error")) {
+        res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/?studioOAuth=mcp_denied#studioPanel` });
+        res.end();
+        return;
+      }
+      await canvaStudioMcpOAuth.finish(config, req.adminUser.id, params.get("state"), params.get("code"));
       res.writeHead(303, { ...securityHeaders(), Location: `${prefix}/admin/#studioPanel` });
       res.end();
       return;
@@ -11212,6 +11236,14 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 201, { campaign: await canvaStudio.createCampaign(db, await readBody(req), req.adminUser.id) });
       return;
     }
+    if (studioPath === "/campaigns/ai" && method === "POST") {
+      if (!config?.enabled || !config.configured || !(await canvaStudioOAuth.connection(config)).connected || !(await canvaStudioMcpOAuth.connection()).connected) {
+        sendJson(res, 409, { error: { code: "CANVA_AI_RECONNECT_REQUIRED", message: "Conecte Canva REST e Canva IA em Integração Canva antes de criar com IA." } });
+        return;
+      }
+      sendJson(res, 201, { campaign: await canvaStudioAi.createCampaign(db, await readBody(req), req.adminUser.id) });
+      return;
+    }
     const campaignMatch = studioPath.match(/^\/campaigns\/([^/]+)$/);
     if (campaignMatch && method === "GET") {
       sendJson(res, 200, { campaign: await canvaStudio.campaignDetail(campaignMatch[1], config) }, { "Cache-Control": "no-store" });
@@ -11219,12 +11251,20 @@ async function handleApi(req, res, pathname) {
     }
     const advanceMatch = studioPath.match(/^\/campaigns\/([^/]+)\/advance$/);
     if (advanceMatch && method === "POST") {
-      sendJson(res, 200, { campaign: await canvaStudio.advanceCampaign(advanceMatch[1], config) });
+      const campaign = await canvaStudioRepository.campaign(advanceMatch[1]);
+      sendJson(res, 200, { campaign: campaign?.plan?.mode === "ai" ? await canvaStudioAi.advanceCampaign(advanceMatch[1], config) : await canvaStudio.advanceCampaign(advanceMatch[1], config) });
+      return;
+    }
+    const selectCandidateMatch = studioPath.match(/^\/campaigns\/([^/]+)\/candidates\/([^/]+)\/select$/);
+    if (selectCandidateMatch && method === "POST") {
+      sendJson(res, 200, { campaign: await canvaStudioAi.selectCandidate(selectCandidateMatch[1], selectCandidateMatch[2], config) });
       return;
     }
     const duplicateMatch = studioPath.match(/^\/campaigns\/([^/]+)\/duplicate$/);
     if (duplicateMatch && method === "POST") {
-      sendJson(res, 201, { campaign: await canvaStudio.duplicateCampaign(db, duplicateMatch[1], await readBody(req), req.adminUser.id) });
+      const source = await canvaStudioRepository.campaign(duplicateMatch[1]);
+      const overrides = await readBody(req);
+      sendJson(res, 201, { campaign: source?.plan?.mode === "ai" ? await canvaStudioAi.createCampaign(db, { ...source.input, ...overrides, requestKey: undefined }, req.adminUser.id) : await canvaStudio.duplicateCampaign(db, duplicateMatch[1], overrides, req.adminUser.id) });
       return;
     }
     const exportMatch = studioPath.match(/^\/campaigns\/([^/]+)\/options\/([^/]+)\/exports$/);

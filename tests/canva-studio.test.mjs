@@ -7,6 +7,9 @@ import repository from "../backend/services/canva-studio/studioRepository.js";
 import oauth from "../backend/services/canva-studio/oauthService.js";
 import campaigns from "../backend/services/canva-studio/campaignService.js";
 import integrations from "../backend/services/integrationConfigService.js";
+import aiCampaigns from "../backend/services/canva-studio/aiCampaignService.js";
+import mcpClient from "../backend/services/canva-studio/mcpClient.js";
+import mcpOAuth from "../backend/services/canva-studio/mcpOAuthService.js";
 
 const movie = {
   id: "film-1", title: "Minha Melhor Amiga", genre: ["Romance", "Comédia"], status: "now_playing",
@@ -18,6 +21,86 @@ const movie = {
   ]
 };
 const dataset = { artwork: { type: "image" }, title: { type: "text" }, status: { type: "text" }, cinemaLogo: { type: "image" } };
+
+test("Canva IA usa poster, backdrop e assinatura oficial sem exigir template", async () => {
+  const previous = repository.insertCampaign;
+  let saved;
+  repository.insertCampaign = async (value) => { saved = value; return { ...value, status: "queued", stage: "planning", created_at: new Date(), updated_at: new Date() }; };
+  try {
+    const result = await aiCampaigns.createCampaign({ movies: [movie] }, { kind: "film", movieId: movie.id, type: "campaign", signature: "light", prompt: "Enfatize a amizade." }, "admin-1");
+    assert.equal(result.plan.mode, "ai");
+    assert.deepEqual(result.plan.sources.map((item) => item.source), [movie.posterUrl, movie.backdropUrl, aiCampaigns.SIGNATURES.light]);
+    assert.equal(saved.options.length, 0);
+    assert.match(aiCampaigns.brief(result.input, result.plan), /Enfatize a amizade/);
+    assert.match(aiCampaigns.brief(result.input, result.plan), /Não invente filmes/);
+  } finally { repository.insertCampaign = previous; }
+});
+
+test("Canva IA monta programação, bomboniere e promoção a partir do catálogo", () => {
+  const db = { movies: [movie], concessions: [{ name: "Combo", imageUrl: "/uploads/combo.png", price: 25, active: true }], promotions: [{ title: "Terça especial", imageUrl: "/uploads/promo.png", description: "Desconto de terça", active: true }] };
+  assert.equal(aiCampaigns.sources(db, null, "programming", "auto")[0].source, movie.posterUrl);
+  db.concessions[0].id = "combo-1";
+  db.promotions[0].id = "promo-1";
+  assert.equal(aiCampaigns.sources(db, null, "concessions", "auto", "combo-1")[0].source, "/uploads/combo.png");
+  assert.equal(aiCampaigns.sources(db, null, "promotion", "auto", "promo-1")[0].source, "/uploads/promo.png");
+  assert.match(aiCampaigns.facts(db, null, "concessions", null, "combo-1")[0], /R\$ 25,00/);
+  assert.match(aiCampaigns.facts(db, null, "promotion", null, "promo-1")[0], /Terça especial/);
+});
+
+test("outras peças exigem direção escrita e preservam assinatura", async () => {
+  await assert.rejects(aiCampaigns.createCampaign({ movies: [] }, { kind: "other" }, "admin-1"), { code: "STUDIO_AI_PROMPT_REQUIRED" });
+  assert.deepEqual(aiCampaigns.sources({}, null, "other", "dark").map((item) => item.source), [aiCampaigns.SIGNATURES.dark]);
+});
+
+test("Canva MCP preserva candidatos para revisão antes de salvar", () => {
+  const result = mcpClient.candidatesFrom({ job: { id: "job-1", result: { generated_designs: [{ candidate_id: "dg-1", url: "https://www.canva.com/d/1", thumbnails: [{ url: "https://design.canva.ai/1" }] }] } } });
+  assert.equal(result.jobId, "job-1");
+  assert.deepEqual(result.candidates, [{ candidateId: "dg-1", previewUrl: "https://design.canva.ai/1", viewUrl: "https://www.canva.com/d/1" }]);
+  assert.equal(mcpOAuth.redirectUri({ redirectUri: "https://lumixengine.com/projects/cinecruzeiro/api/admin/canva-studio/oauth/callback" }), "https://lumixengine.com/projects/cinecruzeiro/api/admin/canva-studio/mcp/callback");
+});
+
+test("OAuth MCP usa PKCE e não expõe o segredo na URL", async () => {
+  const previous = repository.flow;
+  let stored;
+  repository.flow = async (...args) => { stored = args; };
+  try {
+    const url = new URL(await mcpOAuth.begin({ enabled: true, configured: true, clientId: "client-id", clientSecret: "private-secret", redirectUri: "https://lumixengine.com/projects/cinecruzeiro/api/admin/canva-studio/oauth/callback" }, "admin-1"));
+    assert.equal(url.origin, "https://mcp.canva.com");
+    assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+    assert.equal(url.searchParams.get("resource"), "https://mcp.canva.com/mcp");
+    assert.ok(url.searchParams.get("state"));
+    assert.ok(stored[1]);
+    assert.doesNotMatch(url.href, /private-secret/);
+  } finally { repository.flow = previous; }
+});
+
+test("campanha IA espera escolha humana e salva apenas o candidato selecionado", async () => {
+  const row = { id: "campaign-ai", movie_title: movie.title, campaign_type: "campaign", input: { mode: "ai", kind: "film" }, plan: { mode: "ai", kind: "film", sources: [{ role: "Pôster oficial do filme", source: movie.posterUrl }], assetIds: { 0: "asset-1" }, facts: [movie.title] }, options: [], status: "queued", stage: "planning" };
+  const previous = { campaign: repository.campaign, claimCampaign: repository.claimCampaign, claimCandidate: repository.claimCandidate, updateCampaign: repository.updateCampaign, connection: oauth.connection, accessToken: mcpOAuth.accessToken, generate: mcpClient.generate, materialize: mcpClient.materialize };
+  repository.campaign = async () => row;
+  repository.claimCampaign = async () => { row.status = "processing"; return row; };
+  repository.claimCandidate = async (_id, options) => { row.options = options; row.stage = "selection_pending"; return row; };
+  repository.updateCampaign = async (_id, patch) => Object.assign(row, patch);
+  oauth.connection = async () => ({ connected: true, accountId: "canva-1" });
+  mcpOAuth.accessToken = async () => "token";
+  mcpClient.generate = async () => ({ jobId: "job-1", candidates: [{ candidateId: "dg-1", previewUrl: "https://design.canva.ai/1", viewUrl: "https://www.canva.com/d/1" }] });
+  mcpClient.materialize = async () => ({ id: "design-1", editUrl: "https://www.canva.com/design/1/edit", previewUrl: "" });
+  try {
+    const review = await aiCampaigns.advanceCampaign(row.id, {});
+    assert.equal(review.stage, "review");
+    assert.equal(review.status, "processing");
+    assert.equal(review.options[0].status, "candidate");
+    const selected = await aiCampaigns.selectCandidate(row.id, "dg-1", {});
+    assert.equal(selected.status, "completed");
+    assert.equal(selected.options[0].designId, "design-1");
+  } finally {
+    Object.assign(repository, { campaign: previous.campaign, claimCampaign: previous.claimCampaign, claimCandidate: previous.claimCandidate, updateCampaign: previous.updateCampaign });
+    oauth.connection = previous.connection;
+    mcpOAuth.accessToken = previous.accessToken;
+    mcpClient.generate = previous.generate;
+    mcpClient.materialize = previous.materialize;
+  }
+});
 function template(id, family, profiles = ["romantic-editorial"]) {
   return { id, canva_template_id: `DAV${id}`, name: family, active: true, validation: { valid: true }, dataset,
     metadata: { family, profiles, orientation: "portrait", campaignTypes: ["teaser", "campaign", "session"], titleCapacity: "medium", informationCapacity: "medium" } };

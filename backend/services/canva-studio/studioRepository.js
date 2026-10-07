@@ -38,12 +38,23 @@ async function claimCampaign(id) {
   return (await queryPostgres(`UPDATE canva_studio_campaigns SET lease_until=now()+interval '45 seconds',status='processing',updated_at=now()
     WHERE id=$1 AND status <> 'completed' AND (lease_until IS NULL OR lease_until<now()) RETURNING *`, [id])).rows[0] || null;
 }
+async function claimCandidate(id, options) {
+  return (await queryPostgres(`UPDATE canva_studio_campaigns SET options=$2::jsonb,stage='selection_pending',updated_at=now()
+    WHERE id=$1 AND stage='review' AND status='processing' RETURNING *`, [id, json(options)])).rows[0] || null;
+}
 async function oauth() { return (await queryPostgres("SELECT * FROM canva_studio_oauth WHERE id='primary'")).rows[0] || null; }
 async function clearOAuth() { await queryPostgres("DELETE FROM canva_studio_oauth WHERE id='primary'"); }
 async function saveOAuth(value) {
   return (await queryPostgres(`INSERT INTO canva_studio_oauth(id,account_id,access_token,refresh_token,expires_at) VALUES('primary',$1,$2::jsonb,$3::jsonb,$4)
     ON CONFLICT(id) DO UPDATE SET account_id=EXCLUDED.account_id,access_token=EXCLUDED.access_token,refresh_token=EXCLUDED.refresh_token,expires_at=EXCLUDED.expires_at,updated_at=now() RETURNING *`,
   [value.account_id, json(value.access_token), json(value.refresh_token), value.expires_at])).rows[0];
+}
+async function mcpOAuth() { return (await queryPostgres("SELECT * FROM canva_studio_mcp_oauth WHERE id='primary'")).rows[0] || null; }
+async function clearMcpOAuth() { await queryPostgres("DELETE FROM canva_studio_mcp_oauth WHERE id='primary'"); }
+async function saveMcpOAuth(value) {
+  return (await queryPostgres(`INSERT INTO canva_studio_mcp_oauth(id,access_token,refresh_token,expires_at) VALUES('primary',$1::jsonb,$2::jsonb,$3)
+    ON CONFLICT(id) DO UPDATE SET access_token=EXCLUDED.access_token,refresh_token=EXCLUDED.refresh_token,expires_at=EXCLUDED.expires_at,updated_at=now() RETURNING *`,
+  [json(value.access_token), json(value.refresh_token), value.expires_at])).rows[0];
 }
 async function flow(stateHash, verifier, adminId) {
   await queryPostgres("INSERT INTO canva_studio_oauth_flows(state_hash,verifier,admin_user_id,expires_at) VALUES($1,$2::jsonb,$3,now()+interval '10 minutes')", [stateHash, json(verifier), adminId]);
@@ -60,4 +71,4 @@ async function saveAsset(value) {
     ON CONFLICT(account_id,content_hash) DO UPDATE SET canva_asset_id=EXCLUDED.canva_asset_id,upload_job_id=EXCLUDED.upload_job_id,name=EXCLUDED.name,updated_at=now() RETURNING *`,
   [value.account_id, value.content_hash, value.canva_asset_id || null, value.upload_job_id || null, value.name])).rows[0];
 }
-module.exports = { templates, template, saveTemplate, campaigns, campaign, insertCampaign, updateCampaign, claimCampaign, oauth, clearOAuth, saveOAuth, flow, takeFlow, cachedAsset, saveAsset, withPostgresTransaction, queryPostgres };
+module.exports = { templates, template, saveTemplate, campaigns, campaign, insertCampaign, updateCampaign, claimCampaign, claimCandidate, oauth, clearOAuth, saveOAuth, mcpOAuth, clearMcpOAuth, saveMcpOAuth, flow, takeFlow, cachedAsset, saveAsset, withPostgresTransaction, queryPostgres };

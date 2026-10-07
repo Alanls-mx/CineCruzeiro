@@ -1,6 +1,6 @@
 # Configuração completa do Cine Cruzeiro Studio com Canva
 
-O Studio usa a **Canva REST API** para criar designs editáveis a partir de Brand Templates. Você configura **Client ID e Client Secret** do app Canva, não um token manual. O painel conduz o OAuth e guarda os tokens criptografados no backend.
+O Studio usa **Canva REST** para enviar assets e criar designs a partir de Brand Templates, e **Canva MCP** para o modo Criar com IA sem templates. Você configura **Client ID e Client Secret** do app Canva, não um token manual. O painel conduz os dois fluxos OAuth e guarda os tokens criptografados no backend.
 
 ## 1. Banco de dados
 
@@ -10,14 +10,14 @@ O Studio requer PostgreSQL para conexão OAuth, templates, cache de assets e cam
 
 1. Inicie o Docker Desktop e espere `docker version` mostrar **Client** e **Server**.
 2. Na pasta do projeto, execute `npm run studio:db:local`.
-3. O comando cria `cine-cruzeiro-studio-postgres` com volume persistente próprio, exposto apenas em `127.0.0.1:55432`; gera senha aleatória em `.env.local` (ignorado pelo Git); aplica migrations até `043_canva_studio.sql`; e importa **uma única vez** os dados de `backend/data/db.json`. O JSON original permanece intacto.
+3. O comando cria `cine-cruzeiro-studio-postgres` com volume persistente próprio, exposto apenas em `127.0.0.1:55432`; gera senha aleatória em `.env.local` (ignorado pelo Git); aplica migrations até `044_canva_studio_mcp.sql`; e importa **uma única vez** os dados de `backend/data/db.json`. O JSON original permanece intacto.
 4. Reinicie o backend, pois ele lê `.env.local` ao iniciar. Abra `http://127.0.0.1:4000/admin` e confira `http://127.0.0.1:4000/api/health/ready`.
 
 O comando pode ser repetido para aplicar migrations pendentes sem reimportar o JSON. Não apague o volume ou rode `db:import-json` novamente depois de começar a trabalhar no PostgreSQL. Se já existir `DATABASE_URL`/`POSTGRES_URL` para outro banco, o bootstrap se recusa a substituí-la.
 
 ### VPS com PostgreSQL existente
 
-**Não** rode o bootstrap Docker local. Faça backup, confirme a URL do banco daquela instalação, execute `npm run db:migrate` com o ambiente do serviço carregado e reinicie o backend. Verifique que `043_canva_studio.sql` consta em `schema_migrations`. Nunca importe o JSON por cima de um banco de produção.
+**Não** rode o bootstrap Docker local. Faça backup, confirme a URL do banco daquela instalação, execute `npm run db:migrate` com o ambiente do serviço carregado e reinicie o backend. Verifique que `044_canva_studio_mcp.sql` consta em `schema_migrations`. Nunca importe o JSON por cima de um banco de produção.
 
 ## 2. Pré-requisitos da conta Canva
 
@@ -27,11 +27,11 @@ O comando pode ser repetido para aplicar migrations pendentes sem reimportar o J
 
 ## 3. Criar o app e obter Client ID/Secret
 
-Escolha **Canva for your platform / Outside Canva**. Não use o fluxo de app dentro do editor nem o de Canva MCP.
+Escolha **Outside Canva**. O mesmo app pode habilitar Canva REST e Canva MCP.
 
 1. Acesse [Canva Developers](https://www.canva.com/developers/) → **Your apps** → **Create an app**.
 2. Dê um nome curto, como `Cine Cruzeiro Studio`. Para uma conta comum, escolha **Public**. A opção **Private** só existe para equipes Enterprise; essa escolha não muda após criar o app. Aceite os termos e conclua.
-3. Abra **Outside Canva → Start integrating**. Em **Outside Canva → Configuration → Integration methods**, habilite **Canva REST APIs**.
+3. Abra **Outside Canva → Start integrating**. Em **Outside Canva → Configuration → Integration methods**, habilite **Canva REST APIs** e **Canva MCP**.
 4. Em **Credentials**, copie o **Client ID**. Clique em **Generate secret** para criar o **Client Secret** e guarde-o imediatamente; o portal pode não exibi-lo outra vez. Se perder, gere outro segredo e atualize Integrações.
 5. Em **Scopes**, ative as permissões utilizadas pelo Studio:
 
@@ -47,6 +47,7 @@ Escolha **Canva for your platform / Outside Canva**. Não use o fluxo de app den
 
    - Ambiente local, abrindo também o painel nesse host: `http://127.0.0.1:4000/api/admin/canva-studio/oauth/callback`
    - Instalação atual sob o prefixo do projeto: `https://lumixengine.com/projects/cinecruzeiro/api/admin/canva-studio/oauth/callback`
+   - Para **Criar com IA**, cadastre também `https://lumixengine.com/projects/cinecruzeiro/api/admin/canva-studio/mcp/callback` (no local, troque o host/prefixo mantendo `/mcp/callback`).
 
    Se o site público estiver em outro domínio/prefixo, use a URL real. `localhost` e `127.0.0.1` não são intercambiáveis para cookies e OAuth; use o **mesmo host** no navegador, no portal e no painel. Fora do desenvolvimento local, use HTTPS. Não adicione barra final, parâmetros ou fragmentos. É possível cadastrar várias Redirect URLs no portal, mas cada instalação usa sua própria URL no painel.
 
@@ -61,12 +62,22 @@ Escolha **Canva for your platform / Outside Canva**. Não use o fluxo de app den
 3. Cole o **Client ID** e o **Client Secret** do mesmo app.
 4. Cole a URL cadastrada em **Redirect URLs** no campo **URL de retorno OAuth**.
 5. Ative a integração e clique em **Salvar configuração**.
-6. Abra **Studio → Integração Canva → Conectar Canva**. Autorize a mesma conta que tem acesso aos Brand Templates. Ao retornar ao painel, confira **Canva conectado**.
-7. Em Integrações, **Testar conexão** valida uma conexão OAuth já feita. Ele não substitui **Conectar Canva**.
+6. Abra **Studio → Integração Canva**. Use **Conectar REST** para enviar imagens/usar templates e **Conectar Canva IA** para gerar sem template. Autorize a mesma conta Canva nos dois fluxos.
+7. Em Integrações, **Testar conexão** valida a conexão REST; ele não substitui **Conectar REST** nem **Conectar Canva IA**.
 
 O backend deve manter a chave de criptografia estável. Em produção, configure `INTEGRATION_SECRET_KEY` ou `JWT_SECRET` no serviço. Em desenvolvimento local, o projeto usa `backend/data/.local-secret` se essas variáveis não existirem. Perder/trocar a chave impede a leitura dos secrets/tokens antigos. Você **não** precisa gerar access token, refresh token nem PKCE manualmente.
 
-## 5. Criar e publicar Brand Templates
+## 5. Criar com IA, sem template
+
+1. Confirme que **Canva REST** e **Canva IA** aparecem como conectados no Studio. O OAuth MCP usa `https://mcp.canva.com/authorize` e `https://mcp.canva.com/token`; não cole tokens manualmente.
+2. Em **Studio → Criar**, deixe **Criar com IA** selecionado. Escolha Filme, Programação, Bomboniere, Promoções ou Outras peças. Para Filme, selecione o título; Sessão exige uma sessão existente. Para Bomboniere ou Promoções, escolha o item/oferta do catálogo. Em Outras peças, descreva a finalidade e o texto desejado.
+3. Para filme, cadastre pôster ou backdrop. Para programação, cadastre sessões; para bomboniere e promoções, cadastre os itens/ofertas. O Studio usa as imagens disponíveis e acrescenta automaticamente a assinatura Cine Cruzeiro fornecida, clara ou escura. O campo **Direção adicional** é opcional; descreva o clima e a hierarquia que deseja, sem repetir os dados do catálogo.
+4. Clique **Criar com IA**, aguarde as alternativas e revise-as. Use **Usar esta opção** para transformar somente a alternativa escolhida em design editável. Depois abra o Canva ou exporte PNG/JPG.
+5. Confira qualquer texto gerado pelo Canva antes de divulgar. Se o app MCP não expuser geração de pôster com imagens, o Studio informa a limitação; isso não é resolvido por criar Brand Templates.
+
+O modo IA não cria arte de filme inexistente nem promete preservar automaticamente uma tipografia embutida na foto. A instrução enviada pede ao Canva que preserve a identidade e o título já presentes, mas a revisão humana continua necessária.
+
+## 6. Criar e publicar Brand Templates (modo opcional)
 
 As credenciais do app não criam layouts. Para gerar alternativas reais, publique pelo menos **dois Brand Templates** compatíveis com o tipo de campanha escolhido.
 
@@ -85,20 +96,20 @@ As credenciais do app não criam layouts. Para gerar alternativas reais, publiqu
 
 O `titleLockup` é opcional e deve ser um asset aprovado em `movie.metadata.titleLockupUrl`; o Studio não extrai tipografia da arte automaticamente. O logo oficial vem de `/images/logo-display.webp`. Pôsteres e backdrops vêm do cadastro de filmes. Uploads idênticos são reutilizados por hash SHA-256 e conta Canva.
 
-## 6. Primeira campanha e exportação
+## 7. Primeira campanha com template e exportação
 
-1. Em **Studio → Criar campanha**, selecione o filme e **Teaser**, **Campanha**, **Sessão** ou **Programação**. Se escolher Sessão, selecione uma sessão cadastrada.
-2. Clique em **Criar campanha**. O Content Reducer elimina dados redundantes; o Campaign Director define a direção; o Template Selector ranqueia templates ativos e diversifica famílias. Não há seleção hardcoded por nome do filme.
+1. Em **Studio → Criar → Usar templates**, selecione o filme e **Teaser**, **Campanha**, **Sessão** ou **Programação**. Se escolher Sessão, selecione uma sessão cadastrada.
+2. Clique em **Criar com template**. O Content Reducer elimina dados redundantes; o Campaign Director define a direção; o Template Selector ranqueia templates ativos e diversifica famílias. Não há seleção hardcoded por nome do filme.
 3. O backend prepara/reutiliza assets e acompanha os jobs assíncronos de upload e Autofill. Abra a campanha para atualizar as prévias temporárias.
 4. Compare as opções. **Editar no Canva** abre aquele design no editor. **PNG/JPG** solicita exportação assíncrona e abre o link temporário. O histórico guarda campanha e IDs de design; você pode duplicar uma campanha para outra sessão.
 
-## 7. Solução de problemas
+## 8. Solução de problemas
 
 | Sintoma | Ação |
 | --- | --- |
 | Painel local em modo JSON | Inicie Docker Desktop, execute `npm run studio:db:local`, reinicie o backend. Credenciais Canva não substituem PostgreSQL. |
-| Migration 043 pendente | Confirme o banco da instalação e rode `npm run db:migrate`; não importe JSON para produção. |
-| Canva não conectado | Ative a integração e use **Studio → Integração Canva → Conectar Canva**. |
+| Migration 044 pendente | Confirme o banco da instalação e rode `npm run db:migrate`; não importe JSON para produção. |
+| Canva não conectado | Ative a integração e use **Studio → Integração Canva → Conectar REST**. Para o modo IA, conecte também **Canva IA**. |
 | Redirect URI inválida | Compare URL do portal e do painel caractere por caractere; abra o painel no mesmo host. |
 | `invalid_scope` no retorno OAuth | Em **Outside Canva → Configuration → Scopes**, habilite os cinco escopos da seção 3, salve e clique **Conectar Canva** novamente. O Client ID do painel deve ser do mesmo app configurado no portal. |
 | 401/token revogado | Reconecte Canva. O Studio remove a autorização local inválida. |

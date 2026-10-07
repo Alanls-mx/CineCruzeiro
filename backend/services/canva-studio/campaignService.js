@@ -164,9 +164,9 @@ async function campaignDetail(id, config) {
     for (const option of result.options.filter((item) => item.designId)) {
       try {
         const design = (await canva.design(option.designId)).design;
-        option.previewUrl = design?.thumbnail?.url || "";
-        option.editUrl = design?.urls?.edit_url || "";
-      } catch { option.previewUrl = ""; option.editUrl = ""; }
+        option.previewUrl = design?.thumbnail?.url || option.previewUrl || "";
+        option.editUrl = design?.urls?.edit_url || option.editUrl || "";
+      } catch { /* Retain the URL returned when the candidate was saved. */ }
     }
   }
   return result;

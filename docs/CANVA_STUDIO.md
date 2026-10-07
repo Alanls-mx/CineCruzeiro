@@ -4,7 +4,19 @@
 
 ## Antes de usar
 
-O Studio usa apenas designs criados pela API oficial do Canva. Esta instalação ainda não tem um app Canva Developers nem Brand Templates fornecidos; portanto, a geração real fica indisponível até que esses itens existam. Não há pôsteres ou credenciais de exemplo em produção.
+O Studio oferece dois modos: **Criar com IA** via Canva MCP (sem Brand Template) e **Usar templates** via Canva REST/Autofill. Ambos criam designs editáveis no Canva. A geração real depende da conexão do app Canva do cinema; não há credenciais de exemplo.
+
+### Criar com IA
+
+1. Em Canva Developers, ative **Canva MCP** no mesmo app já usado para Canva REST. Cadastre também `https://lumixengine.com/projects/cinecruzeiro/api/admin/canva-studio/mcp/callback` em **Outside Canva → Redirect URLs**. A URL REST `/oauth/callback` permanece cadastrada.
+2. No painel, abra **Studio → Integração Canva** e conecte **Canva REST** e **Canva IA**. A primeira conexão envia assets; a segunda gera candidatos via MCP. Não compartilhe o Client Secret.
+3. Em **Studio → Criar → Criar com IA**, escolha **Filme**, **Programação**, **Bomboniere**, **Promoções** ou **Outras peças**. Para filme, escolha o título e, se for peça de sessão, a sessão; para bomboniere/promoções, selecione o item. Escolha a assinatura clara/escura ou deixe automática. A direção criativa é opcional, exceto em Outras peças.
+4. O Studio envia ao Canva as imagens cadastradas e os fatos confirmados no catálogo. Para filme, exige pôster ou backdrop e inclui a assinatura oficial; para as outras categorias, usa imagens quando houver e dados existentes dos filmes, produtos ou promoções. Bomboniere e promoções podem partir só dos dados e da assinatura.
+5. Revise as alternativas retornadas e clique **Usar esta opção**. Só então o design é salvo na sua conta para edição/exportação. O prompt complementa os dados, não os substitui; revise datas, preços, identidade e eventuais textos gerados antes de publicar.
+
+As assinaturas oficiais são `/images/cine-cruzeiro-signature-light.png` e `/images/cine-cruzeiro-signature-dark.png`. A geração pode não aparecer em todas as contas/apps: o Studio verifica se a conexão MCP oferece a ferramenta de pôster com assets e interrompe sem criar design caso não ofereça. Uma resposta remota incerta nunca é reenviada automaticamente.
+
+### Usar templates
 
 1. Crie uma integração em [Canva Developers](https://www.canva.dev/docs/apps/rest-apis/authentication/). Registre como URL de retorno a URL HTTPS exata do cinema seguida de `/api/admin/canva-studio/oauth/callback`. Na instalação sob `/projects/cinecruzeiro`, preserve esse prefixo: `https://seu-dominio/projects/cinecruzeiro/api/admin/canva-studio/oauth/callback`.
 2. Habilite os escopos `asset:write`, `brandtemplate:content:read`, `design:content:read`, `design:content:write` e `design:meta:read`. O Studio não lista metadados dos Brand Templates nesta versão; o endpoint de usuário atual não exige um escopo adicional.
@@ -14,7 +26,7 @@ O Studio usa apenas designs criados pela API oficial do Canva. Esta instalação
 6. Em **Studio → Templates**, registre o ID de cada Brand Template, família visual, direção compatível e tipos de campanha. Clique em **Validar** para ler o dataset diretamente do Canva; só templates válidos podem ser ativados.
 7. Em **Studio → Criar campanha**, escolha filme e objetivo. Para o modo Sessão, escolha uma sessão. A campanha gera até três alternativas via Autofill. Cada alternativa pode ser aberta para edição no Canva ou exportada em PNG/JPG.
 
-Em uma instalação com PostgreSQL, aplique `npm run db:migrate` antes de usar o Studio. A migration é `043_canva_studio.sql`. O backend retorna um erro explícito quando roda somente com JSON.
+Em uma instalação com PostgreSQL, aplique `npm run db:migrate` antes de usar o Studio. As migrations são `043_canva_studio.sql` e `044_canva_studio_mcp.sql`. O backend retorna um erro explícito quando roda somente com JSON.
 
 ## Convenção dos templates
 
@@ -40,3 +52,5 @@ Os templates ficam no Canva e podem representar Hero, Editorial, Monumental, Cle
 - [Upload binário de assets](https://www.canva.dev/docs/apps/rest-apis/reference/assets/create-asset-upload-job/)
 - [Design e thumbnail](https://www.canva.dev/docs/apps/rest-apis/reference/designs/get-design/)
 - [Exportação](https://www.canva.dev/docs/apps/rest-apis/reference/exports/create-design-export-job/)
+- [Canva MCP e configuração OAuth](https://www.canva.dev/docs/apps/quickstart/)
+- [Geração de candidatos](https://www.canva.dev/docs/apps/mcp/tools/generate-design/)

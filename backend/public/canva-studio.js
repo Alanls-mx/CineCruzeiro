@@ -2,7 +2,7 @@
   const $s = (id) => document.getElementById(id);
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const endpoint = "/api/admin/canva-studio";
-  const studio = { loaded: false, overview: null, templates: [], campaigns: [], activeId: "", running: false, tab: "create" };
+  const studio = { loaded: false, overview: null, templates: [], campaigns: [], activeId: "", running: false, tab: "create", mode: "ai" };
   let oauthOutcome = new URLSearchParams(window.location.search).get("studioOAuth");
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const canManage = () => ["owner", "master"].includes(state.adminUser?.role) || (state.adminUser?.effectivePermissions || []).includes("integrations.manage");
@@ -38,28 +38,63 @@
     if (name === "connection" && refresh) void loadOverview();
   }
 
+  function modeChanged(mode) {
+    studio.mode = mode;
+    document.querySelectorAll("[data-studio-mode]").forEach((button) => {
+      const active = button.dataset.studioMode === mode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    const ai = mode === "ai";
+    $s("studioKindField").hidden = !ai;
+    $s("studioSignatureField").hidden = !ai;
+    $s("studioPromptField").hidden = !ai;
+    const film = !ai || $s("studioKind").value === "film";
+    const itemKind = ai && ["concessions", "promotion"].includes($s("studioKind").value);
+    $s("studioMovieField").hidden = !film;
+    $s("studioMovie").required = film;
+    $s("studioItemField").hidden = !itemKind;
+    $s("studioItem").required = itemKind;
+    $s("studioPrompt").required = ai && $s("studioKind").value === "other";
+    $s("studioPrompt").placeholder = $s("studioPrompt").required ? "Descreva a peça, o texto e a finalidade" : "Opcional: clima, mensagem ou referência visual";
+    if (itemKind) {
+      const items = studio.overview?.[$s("studioKind").value === "concessions" ? "concessions" : "promotions"] || [];
+      const current = $s("studioItem").value;
+      $s("studioItem").innerHTML = `<option value="">Selecione um item</option>${items.map((item) => `<option value="${esc(item.id)}">${esc(item.name)}</option>`).join("")}`;
+      $s("studioItem").value = current;
+    }
+    $s("studioMoviePreview").hidden = !film;
+    $s("studioCreateForm").querySelector(".studio-type-fieldset").hidden = !film;
+    $s("studioCreateButton").textContent = ai ? "Criar com IA" : "Criar com template";
+    campaignTypeChanged();
+    const overview = studio.overview;
+    $s("studioCreateButton").disabled = !overview?.configured || !overview.connection?.connected || (ai && !overview.mcpConnection?.connected);
+  }
+
   async function loadOverview() {
     try {
       const data = await api(`${endpoint}/overview`);
       studio.overview = data;
       studio.loaded = true;
-      $s("studioCreateButton").disabled = !data.configured || !data.connection?.connected;
-      $s("studioConnectionBadge").textContent = data.connection?.connected ? "Canva conectado" : "Canva não conectado";
-      $s("studioConnectionBadge").classList.toggle("muted", !data.connection?.connected);
+      $s("studioConnectionBadge").textContent = data.connection?.connected && data.mcpConnection?.connected ? "Canva IA conectado" : data.connection?.connected ? "Canva REST conectado" : "Canva não conectado";
+      $s("studioConnectionBadge").classList.toggle("muted", !data.connection?.connected || !data.mcpConnection?.connected);
       const select = $s("studioMovie");
       const previous = select.value;
       select.innerHTML = `<option value="">Selecione um filme</option>${(data.movies || []).map((movie) => `<option value="${esc(movie.id)}">${esc(movie.title)}</option>`).join("")}`;
       select.value = previous;
       movieChanged();
+      modeChanged(studio.mode);
       renderConnection();
       if (!data.configured) message("Configure o app Canva em Integrações para começar.");
-      else if (!data.connection?.connected) message("Conecte sua conta Canva para validar templates e criar campanhas.");
+      else if (!data.connection?.connected) message("Conecte Canva REST para enviar as imagens e validar templates.");
+      else if (studio.mode === "ai" && !data.mcpConnection?.connected) message("Conecte também Canva IA em Integração Canva para criar pôsteres sem templates.");
       else message("");
       if (oauthOutcome) {
         tab("connection", false);
         message(oauthOutcome === "invalid_scope"
           ? "O Canva recusou as permissões solicitadas. Em Canva Developers → Fora do Canva → Configuração → Escopos, habilite asset:write, brandtemplate:content:read, design:content:read, design:content:write e design:meta:read. Salve e clique em Conectar Canva novamente."
-          : "A autorização da conta Canva não foi concluída. Confira a conta e tente Conectar Canva novamente.", true);
+          : oauthOutcome === "mcp_denied" ? "A autorização do Canva IA não foi concluída. Ative Canva MCP no app e confira a segunda URL de retorno."
+            : "A autorização da conta Canva não foi concluída. Confira a conta e tente Conectar Canva novamente.", true);
         oauthOutcome = "";
         const cleanUrl = new URL(window.location.href);
         cleanUrl.searchParams.delete("studioOAuth");
@@ -73,14 +108,17 @@
     if (!overview) return;
     const configured = overview.configured;
     const connected = overview.connection?.connected;
+    const mcpConnected = overview.mcpConnection?.connected;
     $s("studioConnectionBody").innerHTML = `
-      <p><strong>${connected ? "Canva conectado" : configured ? "Aguardando conexão" : "Configuração pendente"}</strong></p>
-      <p>${connected ? `Conta ${esc(overview.connection.accountId || "conectada")}. Os templates cadastrados nessa conta podem ser validados e usados em campanhas.` : configured ? "Autorize a conta que possui acesso aos Brand Templates." : "Crie um app no Canva Developers e configure Client ID, Client Secret e URL de retorno em Integrações."}</p>
+      <p><strong>Canva REST:</strong> ${connected ? `Conectado à conta ${esc(overview.connection.accountId || "Canva")}` : configured ? "Aguardando autorização" : "Configuração pendente"}</p>
+      <p><strong>Canva IA:</strong> ${mcpConnected ? "Conectado" : "Aguardando autorização MCP"}</p>
+      ${configured ? `<p>Ative Canva MCP em Canva Developers e cadastre também esta URL de retorno: <code>${esc(overview.mcpRedirectUri)}</code></p>` : ""}
       <div class="studio-form-actions">
-        ${configured && canManage() ? `<button class="primary-button" type="button" data-studio-action="connect">${connected ? "Reconectar Canva" : "Conectar Canva"}</button>` : ""}
+        ${configured && canManage() ? `<button class="ghost-button" type="button" data-studio-action="connect">${connected ? "Reconectar REST" : "Conectar REST"}</button><button class="primary-button" type="button" data-studio-action="connect-mcp">${mcpConnected ? "Reconectar Canva IA" : "Conectar Canva IA"}</button>` : ""}
         ${canManage() ? `<button class="ghost-button" type="button" data-studio-action="integrations">Abrir Integrações</button>` : ""}
       </div>
-      <p><a href="https://www.canva.dev/" target="_blank" rel="noopener noreferrer">Canva Developers</a> · <a href="https://www.canva.dev/docs/apps/rest-apis/autofill-guide/" target="_blank" rel="noopener noreferrer">Guia oficial de Autofill</a></p>`;
+      <div class="studio-signatures"><img src="${esc(imageUrl("/images/cine-cruzeiro-signature-light.png"))}" alt="Assinatura clara Cine Cruzeiro"><img src="${esc(imageUrl("/images/cine-cruzeiro-signature-dark.png"))}" alt="Assinatura escura Cine Cruzeiro"></div>
+      <p><a href="https://www.canva.dev/docs/apps/quickstart/" target="_blank" rel="noopener noreferrer">Configuração oficial do Canva MCP</a></p>`;
   }
 
   function movieChanged() {
@@ -92,7 +130,7 @@
   }
 
   function campaignTypeChanged() {
-    $s("studioSessionField").hidden = document.querySelector('input[name="studioType"]:checked')?.value !== "session";
+    $s("studioSessionField").hidden = (studio.mode === "ai" && $s("studioKind").value !== "film") || document.querySelector('input[name="studioType"]:checked')?.value !== "session";
   }
 
   async function loadTemplates() {
@@ -131,14 +169,15 @@
     catch (error) { message(error.message, true); }
   }
   function renderCampaigns() {
-    $s("studioCampaignList").innerHTML = studio.campaigns.length ? studio.campaigns.map((item) => `<div class="studio-list-row"><div><strong>${esc(item.movieTitle)}</strong><small>${esc(item.type)} · ${new Date(item.createdAt).toLocaleDateString("pt-BR")} · ${esc(item.status)}</small></div><div class="studio-row-actions"><button class="ghost-button" type="button" data-studio-action="open-campaign" data-id="${esc(item.id)}">Abrir</button><button class="ghost-button" type="button" data-studio-action="duplicate-campaign" data-id="${esc(item.id)}">Duplicar</button></div></div>`).join("") : `<div class="studio-empty">Nenhuma campanha criada ainda.</div>`;
+    $s("studioCampaignList").innerHTML = studio.campaigns.length ? studio.campaigns.map((item) => `<div class="studio-list-row"><div><strong>${esc(item.movieTitle)}</strong><small>${item.plan?.mode === "ai" ? "IA · " : "Template · "}${esc(item.type)} · ${new Date(item.createdAt).toLocaleDateString("pt-BR")} · ${esc(item.stage === "review" ? "Escolha uma alternativa" : item.status)}</small></div><div class="studio-row-actions"><button class="ghost-button" type="button" data-studio-action="open-campaign" data-id="${esc(item.id)}">Abrir</button><button class="ghost-button" type="button" data-studio-action="duplicate-campaign" data-id="${esc(item.id)}">Duplicar</button></div></div>`).join("") : `<div class="studio-empty">Nenhuma campanha criada ainda.</div>`;
   }
 
   function renderCampaign(campaign) {
     const done = campaign.status === "completed" || campaign.status === "failed";
     const options = campaign.options || [];
+    const ai = campaign.plan?.mode === "ai";
     $s("studioResult").innerHTML = `<div class="studio-section-heading"><h2>${esc(campaign.movieTitle)}</h2><span>${esc(campaign.stage || campaign.status)}</span></div>
-      <div class="studio-options">${options.map((option, index) => `<article class="studio-option">${option.previewUrl ? `<img src="${esc(imageUrl(option.previewUrl))}" alt="Prévia ${index + 1} do design" />` : `<div class="studio-option-placeholder">${option.status === "completed" ? "Prévia temporariamente indisponível" : esc(option.status === "failed" ? "Falha" : "Preparando design")}</div>`}<div class="studio-option-content"><strong>Opção ${String.fromCharCode(65 + index)} · ${esc(option.templateName)}</strong><small>${esc(option.status === "failed" ? option.error?.message || "Falha no Canva" : option.status === "completed" ? "Pronto para editar" : "Canva Autofill em andamento")}</small><div class="studio-option-actions">${option.designId ? `<button class="primary-button" type="button" data-studio-action="edit-design" data-url="${esc(safeCanvaUrl(option.editUrl))}" ${option.editUrl ? "" : "disabled"}>Editar no Canva</button><button class="ghost-button" type="button" data-studio-action="export-design" data-campaign="${esc(campaign.id)}" data-id="${esc(option.templateId)}" data-format="png">PNG</button><button class="ghost-button" type="button" data-studio-action="export-design" data-campaign="${esc(campaign.id)}" data-id="${esc(option.templateId)}" data-format="jpg">JPG</button>` : ""}</div></div></article>`).join("")}</div>`;
+      <div class="studio-options">${options.map((option, index) => `<article class="studio-option">${option.previewUrl ? `<img src="${esc(imageUrl(option.previewUrl))}" alt="Prévia ${index + 1} do design" />` : `<div class="studio-option-placeholder">${option.status === "completed" ? "Prévia temporariamente indisponível" : esc(option.status === "failed" ? "Falha" : "Preparando design")}</div>`}<div class="studio-option-content"><strong>Opção ${String.fromCharCode(65 + index)} · ${esc(option.templateName)}</strong><small>${esc(option.status === "failed" ? option.error?.message || "Falha no Canva" : option.status === "completed" ? "Pronto para editar" : ai ? option.status === "not_selected" ? "Alternativa não escolhida" : "Revise antes de usar" : "Canva Autofill em andamento")}</small><div class="studio-option-actions">${ai && campaign.stage === "review" ? `<button class="primary-button" type="button" data-studio-action="select-candidate" data-campaign="${esc(campaign.id)}" data-id="${esc(option.candidateId)}">Usar esta opção</button>${safeCanvaUrl(option.viewUrl) ? `<button class="ghost-button" type="button" data-studio-action="edit-design" data-url="${esc(safeCanvaUrl(option.viewUrl))}">Ver no Canva</button>` : ""}` : ""}${option.designId ? `<button class="primary-button" type="button" data-studio-action="edit-design" data-url="${esc(safeCanvaUrl(option.editUrl))}" ${safeCanvaUrl(option.editUrl) ? "" : "disabled"}>Editar no Canva</button><button class="ghost-button" type="button" data-studio-action="export-design" data-campaign="${esc(campaign.id)}" data-id="${esc(option.templateId)}" data-format="png">PNG</button><button class="ghost-button" type="button" data-studio-action="export-design" data-campaign="${esc(campaign.id)}" data-id="${esc(option.templateId)}" data-format="jpg">JPG</button>` : ""}</div></div></article>`).join("")}</div>`;
     if (done && campaign.status === "failed") message(campaign.error?.message || "A campanha não pôde ser criada. Verifique as alternativas.", true);
   }
 
@@ -148,7 +187,7 @@
     try {
       const campaign = (await api(`${endpoint}/campaigns/${encodeURIComponent(id)}`)).campaign;
       renderCampaign(campaign);
-      if (resume && !["completed", "failed"].includes(campaign.status)) void runCampaign(id);
+      if (resume && !["completed", "failed"].includes(campaign.status) && !["review", "selection_pending", "generation_pending", "generation_uncertain"].includes(campaign.stage)) void runCampaign(id);
     } catch (error) { message(error.message, true); }
   }
   async function runCampaign(id) {
@@ -159,6 +198,7 @@
       for (let step = 0; step < 80 && studio.activeId === id; step++) {
         const data = await api(`${endpoint}/campaigns/${encodeURIComponent(id)}/advance`, { method: "POST", body: "{}" });
         renderCampaign(data.campaign);
+        if (data.campaign.stage === "review") { await loadCampaigns(); return; }
         if (["completed", "failed"].includes(data.campaign.status)) { await openCampaign(id, false); await loadCampaigns(); return; }
         await pause(data.campaign.stage === "autofill_wait" || data.campaign.stage === "upload_wait" ? 2500 : 300);
       }
@@ -171,13 +211,17 @@
     const type = document.querySelector('input[name="studioType"]:checked')?.value || "campaign";
     const movieId = $s("studioMovie").value;
     const sessionId = $s("studioSession").value;
-    if (!movieId || (type === "session" && !sessionId)) { message("Selecione o filme e a sessão para continuar.", true); return; }
+    const kind = $s("studioKind").value;
+    const film = studio.mode === "template" || kind === "film";
+    const itemId = $s("studioItem").value;
+    if ((film && !movieId) || (film && type === "session" && !sessionId) || (["concessions", "promotion"].includes(kind) && studio.mode === "ai" && !itemId)) { message("Selecione o filme, sessão ou item necessário para esta peça.", true); return; }
     try {
       message("");
       $s("studioCreateButton").disabled = true;
       studio.pendingRequestKey ||= crypto.randomUUID();
       const requestKey = studio.pendingRequestKey;
-      const result = await api(`${endpoint}/campaigns`, { method: "POST", body: JSON.stringify({ movieId, type, sessionId, requestKey }) });
+      const ai = studio.mode === "ai";
+      const result = await api(`${endpoint}/campaigns${ai ? "/ai" : ""}`, { method: "POST", body: JSON.stringify(ai ? { kind, movieId: film ? movieId : "", itemId: ["concessions", "promotion"].includes(kind) ? itemId : "", type, sessionId: film ? sessionId : "", signature: $s("studioSignature").value, prompt: $s("studioPrompt").value, requestKey } : { movieId, type, sessionId, requestKey }) });
       studio.pendingRequestKey = "";
       studio.activeId = result.campaign.id;
       renderCampaign(result.campaign);
@@ -208,6 +252,8 @@
     try {
       if (action === "integrations") { activatePanel("integrationsPanel", { scroll: true }); return; }
       if (action === "connect") { const result = await api(`${endpoint}/oauth/start`, { method: "POST", body: "{}" }); window.location.assign(result.url); return; }
+      if (action === "connect-mcp") { const result = await api(`${endpoint}/mcp/start`, { method: "POST", body: "{}" }); window.location.assign(result.url); return; }
+      if (action === "select-candidate") { button.disabled = true; const result = await api(`${endpoint}/campaigns/${encodeURIComponent(button.dataset.campaign)}/candidates/${encodeURIComponent(id)}/select`, { method: "POST", body: "{}" }); renderCampaign(result.campaign); await loadCampaigns(); return; }
       if (action === "edit-template") { openTemplate(studio.templates.find((item) => item.id === id)); return; }
       if (action === "validate-template") { await api(`${endpoint}/templates/${encodeURIComponent(id)}/validate`, { method: "POST", body: "{}" }); await loadTemplates(); message("Campos do template verificados no Canva."); return; }
       if (action === "fixture-template") { const movieId = $s("studioMovie").value; if (!movieId) throw new Error("Selecione um filme em Criar campanha antes de testar o template."); const type = document.querySelector('input[name="studioType"]:checked')?.value || "campaign"; const result = (await api(`${endpoint}/templates/${encodeURIComponent(id)}/fixture`, { method: "POST", body: JSON.stringify({ movieId, type, sessionId: $s("studioSession").value }) })).fixture; message(result.compatible ? `${result.templateName}: compatível com este filme e objetivo.` : `${result.templateName}: incompatível. Assets ausentes: ${result.missingAssets.join(", ") || "verifique campos e objetivo"}.`, !result.compatible); return; }
@@ -220,6 +266,8 @@
   }
 
   document.querySelectorAll("[data-studio-tab]").forEach((button) => button.addEventListener("click", () => tab(button.dataset.studioTab)));
+  document.querySelectorAll("[data-studio-mode]").forEach((button) => button.addEventListener("click", () => modeChanged(button.dataset.studioMode)));
+  $s("studioKind").addEventListener("change", () => modeChanged(studio.mode));
   $s("studioMovie").addEventListener("change", movieChanged);
   document.querySelectorAll('input[name="studioType"]').forEach((input) => input.addEventListener("change", campaignTypeChanged));
   $s("studioCreateForm").addEventListener("submit", createCampaign);
@@ -228,6 +276,14 @@
   $s("studioCancelTemplate").addEventListener("click", () => { $s("studioTemplateForm").hidden = true; });
   $s("studioRefreshCampaigns").addEventListener("click", loadCampaigns);
   $s("studioPanel").addEventListener("click", act);
+  $s("studioResult").addEventListener("error", (event) => {
+    if (event.target instanceof HTMLImageElement) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "studio-option-placeholder";
+      placeholder.textContent = "Prévia indisponível. Abra a alternativa no Canva.";
+      event.target.replaceWith(placeholder);
+    }
+  }, true);
   document.addEventListener("admin:panel", (event) => { if (event.detail.panel === "studioPanel" && !studio.loaded) void loadOverview(); });
   if ($s("studioPanel").classList.contains("active")) void loadOverview();
 })();
