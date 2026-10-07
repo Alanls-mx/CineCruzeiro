@@ -10,6 +10,7 @@
     <link rel="icon" type="image/png" sizes="64x64" href="../images/favicon-64.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="stylesheet" href="admin.css?v=20261005-session-row-layout" />
     <link rel="stylesheet" href="admin-premium.css?v=20261005-session-row-layout" />
+    <link rel="stylesheet" href="canva-studio.css?v=20261006" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -75,6 +76,10 @@
         <button class="nav-button" type="button" data-panel="marketingPanel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13V7a2 2 0 0 1 2-2h5l7-3v18l-7-3H6a2 2 0 0 1-2-2z"/><path d="M11 5v14"/></svg>
           Marketing
+        </button>
+        <button class="nav-button" type="button" data-panel="studioPanel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 15 5-5 4 4 3-3 6 6M16 8h.01"/></svg>
+          Studio
         </button>
         <button class="nav-button" type="button" data-panel="clubPanel">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -2523,6 +2528,71 @@
           </div>
         </section>
 
+        <section id="studioPanel" class="panel">
+          <div class="panel-heading studio-heading">
+            <div><h1>Studio</h1><p>Campanhas de filmes criadas com templates editáveis no Canva.</p></div>
+            <span id="studioConnectionBadge" class="status-pill muted">Canva não conectado</span>
+          </div>
+          <div class="studio-tabs" role="tablist" aria-label="Áreas do Studio">
+            <button type="button" class="active" data-studio-tab="create" role="tab" aria-selected="true">Criar campanha</button>
+            <button type="button" data-studio-tab="campaigns" role="tab" aria-selected="false">Campanhas</button>
+            <button type="button" data-studio-tab="templates" role="tab" aria-selected="false">Templates</button>
+            <button type="button" data-studio-tab="connection" role="tab" aria-selected="false">Integração Canva</button>
+          </div>
+          <div id="studioMessage" class="studio-message" role="status" aria-live="polite" hidden></div>
+          <div class="studio-view active" data-studio-view="create">
+            <div class="studio-create-layout">
+              <form id="studioCreateForm" class="studio-form">
+                <label>Filme
+                  <select id="studioMovie" required><option value="">Selecione um filme</option></select>
+                </label>
+                <fieldset class="studio-type-fieldset">
+                  <legend>Objetivo</legend>
+                  <div class="studio-type-options">
+                    <label><input type="radio" name="studioType" value="teaser" />Teaser</label>
+                    <label><input type="radio" name="studioType" value="campaign" checked />Campanha</label>
+                    <label><input type="radio" name="studioType" value="session" />Sessão</label>
+                    <label><input type="radio" name="studioType" value="schedule" />Programação</label>
+                  </div>
+                </fieldset>
+                <label id="studioSessionField" hidden>Sessão
+                  <select id="studioSession"><option value="">Selecione uma sessão</option></select>
+                </label>
+                <div class="studio-form-actions"><button class="primary-button" type="submit" id="studioCreateButton">Criar campanha</button></div>
+              </form>
+              <div class="studio-movie-preview" id="studioMoviePreview"><span>Selecione um filme para começar.</span></div>
+            </div>
+            <div id="studioResult" class="studio-result" aria-live="polite"></div>
+          </div>
+          <div class="studio-view" data-studio-view="campaigns" hidden>
+            <div class="studio-section-heading"><h2>Campanhas</h2><button id="studioRefreshCampaigns" class="ghost-button" type="button">Atualizar</button></div>
+            <div id="studioCampaignList" class="studio-list"></div>
+          </div>
+          <div class="studio-view" data-studio-view="templates" hidden>
+            <div class="studio-section-heading"><h2>Templates Canva</h2><button id="studioNewTemplate" class="ghost-button" type="button" data-permission="integrations.manage">Adicionar template</button></div>
+            <div id="studioTemplateList" class="studio-list"></div>
+            <form id="studioTemplateForm" class="studio-template-form" hidden>
+              <h3 id="studioTemplateFormTitle">Novo template</h3>
+              <input type="hidden" id="studioTemplateLocalId" />
+              <div class="studio-template-fields">
+                <label>Nome interno<input id="studioTemplateName" maxlength="100" required /></label>
+                <label>ID do Brand Template<input id="studioTemplateCanvaId" maxlength="128" required /></label>
+                <label>Família visual<select id="studioTemplateFamily"><option value="hero">Hero</option><option value="editorial">Editorial</option><option value="monumental">Monumental</option><option value="clean">Clean</option><option value="dark">Dark</option><option value="event">Event</option><option value="teaser">Teaser</option></select></label>
+                <label>Orientação da arte<select id="studioTemplateOrientation"><option value="portrait">Vertical</option><option value="landscape">Horizontal</option><option value="square">Quadrada</option></select></label>
+                <label>Capacidade do título<select id="studioTemplateTitleCapacity"><option value="long">Longo</option><option value="medium">Médio</option><option value="short">Curto</option></select></label>
+                <label>Informação visual<select id="studioTemplateInfoCapacity"><option value="medium">Média</option><option value="low">Baixa</option><option value="high">Alta</option></select></label>
+                <label>Direções compatíveis<input id="studioTemplateProfiles" placeholder="romantic-editorial, dark-thriller" /></label>
+              </div>
+              <fieldset class="studio-template-types"><legend>Tipos de campanha</legend><label><input type="checkbox" value="teaser" />Teaser</label><label><input type="checkbox" value="campaign" checked />Campanha</label><label><input type="checkbox" value="session" />Sessão</label><label><input type="checkbox" value="schedule" />Programação</label></fieldset>
+              <div class="studio-form-actions"><button class="primary-button" type="submit">Salvar referência</button><button id="studioCancelTemplate" class="ghost-button" type="button">Cancelar</button></div>
+            </form>
+          </div>
+          <div class="studio-view" data-studio-view="connection" hidden>
+            <div class="studio-section-heading"><h2>Integração Canva</h2></div>
+            <div id="studioConnectionBody" class="studio-connection-body"></div>
+          </div>
+        </section>
+
         <section id="clubPanel" class="panel">
           <div class="panel-heading">
             <div>
@@ -3191,5 +3261,6 @@
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
     <script src="admin.js?v=20261005-session-row-layout"></script>
+    <script src="canva-studio.js?v=20261006"></script>
   </body>
 </html>
