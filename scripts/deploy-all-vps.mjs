@@ -26,25 +26,25 @@ function run(command, args, options = {}) {
   return options.capture ? String(result.stdout || "").trim() : "";
 }
 
-export function assertStudioRemoved(sourceDir) {
+export function assertStudioScope(sourceDir, instances) {
   const retiredPaths = [
-    "backend/services/social-studio",
-    "backend/services/socialStudioService.js",
-    "backend/public/social-studio.js",
-    "src/app/social-editor",
-    "public/images/social-studio",
-    "backend/db/migrations/038_social_studio_automation.sql",
-    "backend/services/canva-studio",
+    "backend/services/canva-studio/index.js",
     "backend/public/canva-studio.js",
     "backend/public/canva-studio.css",
     "backend/db/migrations/043_canva_studio.sql",
     "backend/db/migrations/044_canva_studio_mcp.sql",
     "public/images/cine-cruzeiro-signature-light.png",
     "public/images/cine-cruzeiro-signature-dark.png",
+    "backend/public/creative-prompt-studio.js",
+    "backend/services/creativePromptStudioService.js",
   ];
   const found = retiredPaths.filter((relativePath) => fs.existsSync(path.join(sourceDir, relativePath)));
   if (found.length) {
-    throw new Error(`Deploy interrompido: a fonte ainda contem o Studio (${found.join(", ")}). Atualize o repositorio antes de publicar.`);
+    throw new Error(`Deploy interrompido: a fonte ainda contem um Studio aposentado (${found.join(", ")}).`);
+  }
+  if (fs.existsSync(path.join(sourceDir, "backend/public/social-studio.js")) &&
+      instances.some((instance) => instance.slug !== "cinecruzeiro")) {
+    throw new Error("Deploy interrompido: o Social Studio restaurado esta autorizado apenas para cinecruzeiro.");
   }
 }
 
@@ -334,7 +334,7 @@ async function main() {
     run("git", ["clone", "--quiet", registry.repository, sourceDir]);
     const targetCommit = args.commit || run("git", ["rev-parse", "HEAD"], { cwd: sourceDir, capture: true });
     run("git", ["checkout", "--quiet", targetCommit], { cwd: sourceDir });
-    assertStudioRemoved(sourceDir);
+    assertStudioScope(sourceDir, instances);
     const commit = run("git", ["rev-parse", "HEAD"], { cwd: sourceDir, capture: true });
     const tag = releaseTag(commit);
     run("git", ["archive", "--format=tar", "--output", archivePath, commit], { cwd: sourceDir });

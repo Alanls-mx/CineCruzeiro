@@ -1,11 +1,11 @@
 # n8n para o Cine Cruzeiro
 
-Esta pasta contém a automação das campanhas de e-mail. O módulo de e-mail continua funcionando manualmente quando o n8n estiver indisponível.
+Esta pasta contém as automações de e-mail e os workflows opcionais do Social Studio do Cine Cruzeiro. Os dois módulos continuam funcionando manualmente quando o n8n estiver indisponível.
 
 ## Instalação segura
 
 1. Copie `.env.example` para `.env` fora do Git e preencha os segredos.
-2. Configure `EMAIL_AUTOMATION_TOKEN` no n8n e no backend.
+2. Configure `EMAIL_AUTOMATION_TOKEN` no n8n e no backend. Para usar os workflows do Studio, configure também `STUDIO_AUTOMATION_TOKEN` com um segredo diferente, e `STUDIO_BASE_URL` para o Cine Cruzeiro.
 3. Inicie com `bash deploy-private.sh`. O script valida a configuração, preserva um backup dos workflows, atualiza o container e importa os workflows inativos.
 4. Publique o n8n atrás do proxy HTTPS existente somente depois de validar portas e domínios.
 5. Importe os JSONs de `workflows/` e configure os webhooks de origem.
@@ -25,6 +25,8 @@ Depois abra `http://127.0.0.1:5678`. Esse modo não exige alteração de Nginx, 
 
 ## Workflows
 
+- `studio-campaign-create.json`: recebe uma solicitação e cria um job idempotente no Studio do Cine Cruzeiro.
+- `schedule-changed.json`: prepara campanha após alteração de programação, sem publicação automática.
 - `email-weekly-programming.json`: toda segunda-feira prepara a programação semanal com filmes e sessões reais.
 - `email-relationship-daily.json`: diariamente avalia aniversariantes e clientes em reativação.
 - `email-movie-event.json`: avalia estreias diariamente e também aceita evento de publicação de um filme.

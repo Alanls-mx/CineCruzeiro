@@ -11,7 +11,7 @@ const functions = ["setAdminSubtab", "applyRbacVisibility"].map((name) => {
   return match[0];
 }).join("\n");
 
-test("permission refresh keeps email campaigns navigation stable", async () => {
+test("permission refresh keeps email campaigns separate from Social Studio", async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -29,7 +29,7 @@ test("permission refresh keeps email campaigns navigation stable", async () => {
       window.eval(code);
     }, functions);
 
-    for (const tab of ["campaigns", "overview", "home", "promotions", "ads", "campaigns"]) {
+    for (const tab of ["social", "campaigns", "overview", "home", "promotions", "ads", "campaigns"]) {
       const visible = await page.evaluate((selected) => {
         setAdminSubtab("marketing", selected);
         applyRbacVisibility();
@@ -41,15 +41,27 @@ test("permission refresh keeps email campaigns navigation stable", async () => {
     }
 
     const allowed = await page.evaluate(() => {
-      state.adminUser = { role: "staff", effectivePermissions: ["marketing.view", "marketing.manage"] };
+      state.adminUser = { role: "staff", effectivePermissions: ["marketing.view", "marketing.manage", "social_studio.view"] };
       setAdminSubtab("marketing", "campaigns");
       applyRbacVisibility();
       return {
+        studioHidden: document.querySelector('[data-admin-tab-panel="marketing:social"]').hidden,
         emailHidden: document.querySelector('[data-admin-tab-panel="marketing:campaigns"]').hidden,
         emailDisabled: document.querySelector("#emailCampaignSubject").disabled,
       };
     });
-    assert.deepEqual(allowed, { emailHidden: false, emailDisabled: false });
+    assert.deepEqual(allowed, { studioHidden: true, emailHidden: false, emailDisabled: false });
+
+    const denied = await page.evaluate(() => {
+      state.adminUser.effectivePermissions = ["marketing.view", "marketing.manage"];
+      setAdminSubtab("marketing", "social");
+      applyRbacVisibility();
+      return {
+        studioHidden: document.querySelector('[data-admin-tab-panel="marketing:social"]').hidden,
+        studioTabHidden: document.querySelector('[data-admin-tablist="marketing"] [data-admin-tab="social"]').hidden,
+      };
+    });
+    assert.deepEqual(denied, { studioHidden: true, studioTabHidden: true });
 
     const accounts = await page.evaluate(() => {
       state.adminUser = { role: "owner" };

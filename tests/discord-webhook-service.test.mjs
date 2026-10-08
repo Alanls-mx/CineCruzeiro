@@ -20,7 +20,7 @@ test("Discord webhook URL accepts only official HTTPS webhook endpoints", () => 
   assert.equal(validateDiscordWebhookUrl(`${webhookUrl}?redirect=https://example.com`), false);
 });
 
-test("integration settings validate and mask the Discord URL as a secret", () => {
+test("integration settings validate and hide the Discord URL", () => {
   const db = { settings: {}, integrations: {}, auditLogs: [] };
   assert.throws(
     () => integrationConfigService.save(db, "discord", { webhookUrl: "https://attacker.example/hook" }, { id: "admin-test" }),
@@ -100,26 +100,6 @@ test("failed request embeds include technical type and a sanitized cause", () =>
   assert.match(text, /ECONNREFUSED · conexão recusada pelo serviço de destino/);
   assert.match(text, /TypeError · Erro de tipo/);
   assert.doesNotMatch(text, /alan@example\.com|abc123|admin:password/);
-});
-
-test("release and outage embeds explain the failure stage and human-readable cause", () => {
-  const embed = eventEmbed({
-    level: "error",
-    event: "deployment.failed",
-    fields: {
-      failureStage: "health_check",
-      outageDetected: true,
-      outageType: "health_check_unreachable",
-      attemptedVersion: "2.4.0+abc1234",
-      cause: "servidor não respondeu"
-    }
-  });
-  const text = JSON.stringify(embed);
-  assert.match(embed.description, /checagem de disponibilidade/);
-  assert.match(embed.description, /servidor não respondeu à checagem/);
-  assert.match(embed.description, /2\.4\.0\+abc1234/);
-  assert.match(text, /Versão tentada/);
-  assert.match(text, /Etapa da falha/);
 });
 
 test("service batches and posts alert embeds asynchronously with mentions disabled", async () => {

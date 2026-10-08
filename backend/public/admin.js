@@ -740,7 +740,6 @@ async function loadContent(options = {}) {
     if (!state.creating.customerUser && !customerUsers.some((user) => user.id === state.selectedCustomerAccountId)) state.selectedCustomerAccountId = customerUsers[0]?.id || "";
     if (!state.creating.clubPlan) state.selectedClubPlanId ||= state.content.subscriptionPlans?.[0]?.id || "";
     renderAll();
-    document.dispatchEvent(new CustomEvent("admin:content"));
     if (!silent) {
       setStatus("Salvo");
     } else {
@@ -929,6 +928,8 @@ function logPerformanceAlert(log) {
 
 function logEventSummary(event) {
   const known = {
+    "social_studio.campaign_created": "Campanha criada no Studio.",
+    "social_studio.post_created": "Post criado no Studio.",
     "email_automation.draft_created": "Rascunho de e-mail criado automaticamente.",
     "subscription.pending_payment_maintenance": "Assinaturas com pagamento pendente foram verificadas.",
     "session.finished_archived": "Uma sessão encerrada foi arquivada."
@@ -8896,7 +8897,6 @@ function setAdminSubtab(group, tab, options = {}) {
     item.hidden = !active;
     item.classList.toggle("active", active);
   });
-  document.dispatchEvent(new CustomEvent("admin:subtab", { detail: { group, tab } }));
   if (group === "rooms" && $("newRoomButton")) $("newRoomButton").hidden = tab !== "registered";
   if (options.focus) panel.querySelector("input:not([type=hidden]), button, select, textarea")?.focus();
 }
@@ -10940,7 +10940,7 @@ const ALL_ADMIN_PERMISSIONS = [
   "box_office.sell", "box_office.courtesy", "tickets.view", "tickets.validate",
   "orders.view", "orders.edit", "orders.cancel", "orders.archive", "orders.delete", "orders.refund", "orders.print", "orders.resend", "payments.view",
   "concessions.view", "concessions.sell", "concessions.edit", "concessions.delete", "concessions.refund",
-  "marketing.view", "marketing.manage",
+  "marketing.view", "marketing.manage", "social_studio.view", "social_studio.create", "social_studio.delete",
   "club.view", "club.manage", "club.credits",
   "integrations.view", "integrations.manage", "logs.view", "logs.delete", "users.manage", "settings.view", "settings.manage", "media.manage"
 ];
@@ -13562,7 +13562,6 @@ function activatePanel(panelId, options = {}) {
   } else if (target === "boxOfficePanel") {
     setBoxOfficeTab(state.boxOfficeTab || "newSale");
   }
-  document.dispatchEvent(new CustomEvent("admin:panel", { detail: { panel: target } }));
 }
 
 window.selectMovie = selectMovie;

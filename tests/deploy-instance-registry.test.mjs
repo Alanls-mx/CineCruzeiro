@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { validateRegistry } from "../scripts/cinema-instance-registry.mjs";
-import { assertStudioRemoved, postgresEnvironment } from "../scripts/deploy-all-vps.mjs";
+import { assertStudioScope, postgresEnvironment } from "../scripts/deploy-all-vps.mjs";
 
 function instance(overrides = {}) {
   return {
@@ -26,6 +26,12 @@ function instance(overrides = {}) {
     ...overrides,
   };
 }
+
+test("Social Studio restaurado so pode ser publicado no Cine Cruzeiro", () => {
+  const source = path.resolve();
+  assert.doesNotThrow(() => assertStudioScope(source, [{ slug: "cinecruzeiro" }]));
+  assert.throws(() => assertStudioScope(source, [{ slug: "cine-estacao-amparo" }]), /apenas para cinecruzeiro/);
+});
 
 test("valida uma instalacao independente", () => {
   const registry = validateRegistry({
@@ -76,20 +82,6 @@ test("converte DATABASE_URL sem colocar credenciais nos argumentos do pg_dump", 
   assert.equal(env.PGDATABASE, "cinema_demo");
   assert.equal(env.PGSSLMODE, "require");
   assert.equal(env.KEEP, "yes");
-});
-
-test("impede deploy de uma fonte que ainda inclui o Studio", () => {
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "cinema-studio-guard-"));
-  try {
-    assert.doesNotThrow(() => assertStudioRemoved(temp));
-    fs.mkdirSync(path.join(temp, "src", "app", "social-editor"), { recursive: true });
-    assert.throws(() => assertStudioRemoved(temp), /fonte ainda contem o Studio/);
-    fs.rmSync(path.join(temp, "src"), { recursive: true });
-    fs.mkdirSync(path.join(temp, "backend", "services", "canva-studio"), { recursive: true });
-    assert.throws(() => assertStudioRemoved(temp), /fonte ainda contem o Studio/);
-  } finally {
-    fs.rmSync(temp, { recursive: true, force: true });
-  }
 });
 
 test("aplica marca apenas nos arquivos operacionais e sobrepoe recursos aprovados", () => {

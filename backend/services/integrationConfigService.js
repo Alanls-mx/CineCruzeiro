@@ -148,18 +148,6 @@ const DEFINITIONS = {
       { key: "allowedOrigins", label: "Origens permitidas (opcional)", type: "text", placeholder: "https://app.parceira.com, https://site.parceiro.com" },
       { key: "cacheSeconds", label: "Cache do catálogo (segundos)", type: "number", placeholder: "60" }
     ]
-  },
-  creativePromptAi: {
-    name: "IA do Creative Prompt Studio",
-    purpose: "Análise visual e direção de arte textual. Não gera imagens nem envia conteúdo ao Canva.",
-    defaults: { enabled: false, environment: "production", model: "gpt-4.1-mini", timeout: 30000 },
-    secrets: ["apiKey"],
-    fields: [
-      { key: "environment", label: "Ambiente", type: "select", options: ["production"] },
-      { key: "apiKey", label: "Chave OpenAI", type: "secret" },
-      { key: "model", label: "Modelo com visão", type: "text", placeholder: "gpt-4.1-mini" },
-      { key: "timeout", label: "Tempo limite por análise (ms)", type: "number", placeholder: "30000" }
-    ]
   }
 };
 
@@ -216,10 +204,6 @@ const ENV = {
   commercialCatalog: {
     accessToken: ["COMMERCIAL_CATALOG_TOKEN", "CATALOG_WEBHOOK_TOKEN"],
     allowedOrigins: ["COMMERCIAL_CATALOG_ALLOWED_ORIGINS"]
-  },
-  creativePromptAi: {
-    apiKey: ["CREATIVE_PROMPT_OPENAI_API_KEY", "OPENAI_API_KEY"],
-    model: ["CREATIVE_PROMPT_OPENAI_MODEL"]
   }
 };
 
@@ -323,7 +307,6 @@ function isConfigured(provider, config) {
   if (provider === "crm") return Boolean(config.url && config.secret && normalizeCrmEvents(config.events).length);
   if (provider === "discord") return Boolean(config.webhookUrl && validateDiscordWebhookUrl(config.webhookUrl));
   if (provider === "commercialCatalog") return Boolean(config.accessToken);
-  if (provider === "creativePromptAi") return Boolean(config.apiKey && config.model);
   return false;
 }
 

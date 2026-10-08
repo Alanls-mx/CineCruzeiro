@@ -10,7 +10,7 @@
     <link rel="icon" type="image/png" sizes="64x64" href="../images/favicon-64.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="stylesheet" href="admin.css?v=20261005-session-row-layout" />
     <link rel="stylesheet" href="admin-premium.css?v=20261005-session-row-layout" />
-    <link rel="stylesheet" href="creative-prompt-studio.css?v=20261007-2" />
+    <link rel="stylesheet" href="social-studio.css?v=20261008-static" />
   </head>
   <body class="admin-booting">
     <header class="topbar">
@@ -1650,173 +1650,12 @@
 
           <nav class="admin-subtabs" aria-label="Seções de Marketing" data-admin-tablist="marketing">
             <button class="active" type="button" data-admin-tab="overview">Visão geral</button>
-            <button type="button" data-admin-tab="creative">Creative Studio</button>
             <button type="button" data-admin-tab="home">Home</button>
+            <button type="button" data-admin-tab="social" data-permission="social_studio.view">Social Studio</button>
             <button type="button" data-admin-tab="campaigns">Campanhas</button>
             <button type="button" data-admin-tab="promotions">Cupons</button>
             <button type="button" data-admin-tab="ads">Anúncios</button>
           </nav>
-
-        <section id="creativePromptPanel" class="admin-tab-panel" data-admin-tab-panel="marketing:creative" hidden>
-          <div class="panel-heading">
-            <div>
-              <h2>Creative Marketing Studio</h2>
-              <p>Direções criativas e prompts para campanhas no Canva.</p>
-            </div>
-            <span id="creativePromptProviderStatus" class="status-pill muted">Verificando análise visual</span>
-          </div>
-
-          <div class="creative-prompt-workspace">
-            <form id="creativePromptForm" class="creative-prompt-controls surface" data-permission="marketing.manage">
-              <div class="section-title">Nova direção</div>
-              <div class="creative-prompt-setup">
-                <label>Categoria
-                  <select id="creativePromptCategory"></select>
-                </label>
-                <label id="creativePromptSourceWrap">Item cadastrado (opcional)
-                  <select id="creativePromptSource"><option value="">Preencher manualmente</option></select>
-                </label>
-              </div>
-              <div id="creativePromptContextFields" class="creative-prompt-context-fields"></div>
-              <label>Objetivo da peça (opcional)
-                <input id="creativePromptObjective" type="text" maxlength="500" placeholder="Ex.: destacar lançamento ou convidar para uma sessão" />
-              </label>
-              <fieldset class="creative-prompt-artwork" aria-labelledby="creativePromptArtworkLabel">
-                <legend id="creativePromptArtworkLabel">Imagem principal (opcional)</legend>
-                <div class="creative-prompt-segments">
-                  <label id="creativePromptCatalogArt"><input type="radio" name="creativePromptArtwork" value="poster" checked /> Cadastrada</label>
-                  <label id="creativePromptBackdropArt"><input type="radio" name="creativePromptArtwork" value="backdrop" /> Backdrop</label>
-                  <label><input type="radio" name="creativePromptArtwork" value="upload" /> Upload</label>
-                  <label><input type="radio" name="creativePromptArtwork" value="none" /> Sem imagem</label>
-                </div>
-                <div id="creativePromptArtworkPreview" class="creative-prompt-image-preview"></div>
-                <label id="creativePromptArtworkUploadWrap" hidden>Artwork alternativa
-                  <input id="creativePromptArtworkUpload" type="file" accept="image/png,image/jpeg,image/webp" />
-                </label>
-              </fieldset>
-              <label id="creativePromptRoleWrap">Papel da imagem
-                <select id="creativePromptArtworkRole">
-                  <option value="official">Arte oficial</option><option value="product">Produto real</option>
-                  <option value="logo">Logotipo</option><option value="reference">Referência de estilo</option>
-                </select>
-              </label>
-              <div class="creative-prompt-fields">
-                <label id="creativePromptCampaignWrap">Campanha de filme
-                  <select id="creativePromptCampaign">
-                    <option value="teaser">Teaser</option>
-                    <option value="upcoming">Em breve</option>
-                    <option value="premiere">Estreia</option>
-                    <option value="session">Sessão</option>
-                    <option value="programming">Programação</option>
-                  </select>
-                </label>
-                <label>Formato
-                  <select id="creativePromptFormat">
-                    <option value="feed">Feed 4:5</option>
-                    <option value="story">Story 9:16</option>
-                    <option value="square">Square 1:1</option>
-                    <option value="landscape">Landscape 16:9</option>
-                  </select>
-                </label>
-                <label>Densidade
-                  <select id="creativePromptDensity">
-                    <option value="auto">Recomendada</option>
-                    <option value="minimal">Minimal</option>
-                    <option value="balanced">Balanced</option>
-                    <option value="informative">Informative</option>
-                  </select>
-                </label>
-              </div>
-              <details id="creativePromptLibrary" class="creative-prompt-library" hidden>
-                <summary>Biblioteca de referências <span id="creativePromptLibraryCount"></span></summary>
-                <div class="creative-prompt-library-body">
-                  <label>Buscar direção visual
-                    <input id="creativePromptLibrarySearch" type="search" placeholder="Ex.: romance, terror, pipoca" autocomplete="off" />
-                  </label>
-                  <label>Estudo de referência
-                    <select id="creativePromptLibraryReference"><option value="">Escolha automática</option></select>
-                  </label>
-                  <p id="creativePromptLibraryHint" class="creative-prompt-library-hint"></p>
-                  <details id="creativePromptLibraryExample" hidden>
-                    <summary>Ver exemplo completo</summary>
-                    <pre id="creativePromptLibraryExampleText"></pre>
-                  </details>
-                </div>
-              </details>
-              <details class="creative-prompt-more">
-                <summary>Referência e informações da campanha</summary>
-                <label>Referência visual (opcional)
-                  <input id="creativePromptReferenceUpload" type="file" accept="image/png,image/jpeg,image/webp" />
-                </label>
-                <label>O que aproveitar da referência (opcional)
-                  <textarea id="creativePromptReferenceDescription" rows="2" maxlength="600" placeholder="Composição, cor ou ritmo, sem copiar a peça"></textarea>
-                </label>
-                <div id="creativePromptReferencePreview" class="creative-prompt-reference-preview" hidden></div>
-                <button id="creativePromptReferenceClear" class="ghost-button" type="button" hidden>Remover referência</button>
-                <label>Textos obrigatórios (uma linha por texto)
-                  <textarea id="creativePromptMessage" rows="3" maxlength="2000" placeholder="Transcreva aqui textos que não podem ser omitidos"></textarea>
-                </label>
-                <div class="creative-prompt-fields">
-                  <label>CTA (opcional)<input id="creativePromptCta" type="text" maxlength="90" placeholder="Texto exato" /></label>
-                  <label>Público-alvo (opcional)<input id="creativePromptTagline" type="text" maxlength="120" /></label>
-                </div>
-                <label>Descrição visual quando não houver IA (opcional)
-                  <textarea id="creativePromptVisualDescription" rows="3" maxlength="900" placeholder="Cores, luz, protagonistas e áreas livres da imagem"></textarea>
-                </label>
-                <label>Direção adicional (opcional)
-                  <textarea id="creativePromptVisualNote" rows="3" maxlength="600" placeholder="Clima, ritmo ou intenção visual"></textarea>
-                </label>
-              </details>
-              <button id="creativePromptGenerate" class="primary-button" type="submit">Gerar direção criativa</button>
-              <p id="creativePromptFormStatus" class="creative-prompt-status" role="status"></p>
-            </form>
-
-            <div class="creative-prompt-result">
-              <div id="creativePromptEmpty" class="creative-prompt-empty">
-                <strong>Escolha a categoria para começar</strong>
-                <span>Use dados cadastrados ou preencha o briefing manualmente. A imagem é opcional.</span>
-              </div>
-              <section id="creativePromptVariants" class="creative-prompt-stage" hidden aria-label="Direções criativas">
-                <div class="creative-prompt-stage-head">
-                  <div><h2>Escolha uma abordagem</h2></div>
-                  <button id="creativePromptRegenerate" class="ghost-button" type="button">Gerar outra direção</button>
-                </div>
-                <div id="creativePromptVariantList" class="creative-prompt-variant-list"></div>
-              </section>
-              <section id="creativePromptOutput" class="creative-prompt-stage" hidden aria-label="Prompt final">
-                <div class="creative-prompt-stage-head">
-                  <div><h2>Prompt para o Canva</h2></div>
-                  <span id="creativePromptSaveStatus" class="status-pill muted">Pronto</span>
-                </div>
-                <div id="creativePromptDirectionSummary" class="creative-prompt-direction-summary"></div>
-                <div id="creativePromptDecisions" class="creative-prompt-decisions"></div>
-                <div class="creative-prompt-actions">
-                  <button id="creativePromptCopy" class="primary-button" type="button">Copiar prompt</button>
-                  <button id="creativePromptDownload" class="ghost-button" type="button">Baixar materiais (.zip)</button>
-                  <button id="creativePromptUpdate" class="ghost-button" type="button" hidden>Atualizar prompt</button>
-                  <button id="creativePromptSave" class="ghost-button" type="button">Salvar</button>
-                  <button id="creativePromptDuplicate" class="ghost-button" type="button">Duplicar</button>
-                </div>
-                <div id="creativePromptAssets" class="creative-prompt-assets"></div>
-                <div class="creative-prompt-refinements" aria-label="Refinar direção">
-                  <button type="button" data-creative-refine="premium">Mais premium</button>
-                  <button type="button" data-creative-refine="minimal">Mais minimalista</button>
-                  <button type="button" data-creative-refine="bold">Mais ousado</button>
-                  <button id="creativePromptEdit" type="button">Editar conteúdo</button>
-                </div>
-                <textarea id="creativePromptText" class="creative-prompt-text" aria-label="Prompt editável para o Canva" spellcheck="true"></textarea>
-              </section>
-            </div>
-          </div>
-
-          <section class="creative-prompt-history" aria-label="Histórico de prompts">
-            <div class="creative-prompt-stage-head">
-              <div><h2>Histórico</h2></div>
-              <button id="creativePromptRefreshHistory" class="ghost-button" type="button">Atualizar</button>
-            </div>
-            <div id="creativePromptHistoryList" class="creative-prompt-history-list"></div>
-          </section>
-        </section>
 
           <div class="admin-tab-panel active" data-admin-tab-panel="marketing:overview">
             <div id="marketingOverview" class="admin-overview"></div>
@@ -1915,6 +1754,10 @@
             </div>
             <button class="primary-button full" type="submit">Salvar configurações</button>
           </form>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-tab-panel="marketing:social" data-permission="social_studio.view" hidden>
+            <div id="socialStudioRoot" class="social-studio-root" aria-live="polite"></div>
           </div>
 
           <div class="admin-tab-panel" data-admin-tab-panel="marketing:campaigns" hidden>
@@ -2584,6 +2427,9 @@
                   <section class="permission-group"><h3>Relacionamento</h3>
                     <label><input type="checkbox" value="marketing.view" /><span><strong>Visualizar marketing</strong><small>Consulta anúncios, e-mails e cupons.</small></span></label>
                     <label><input type="checkbox" value="marketing.manage" /><span><strong>Gerenciar marketing</strong><small>Cria, envia, edita e exclui campanhas.</small></span></label>
+                    <label><input type="checkbox" value="social_studio.view" /><span><strong>Visualizar Social Studio</strong><small>Consulta modelos, previews e artes recentes.</small></span></label>
+                    <label><input type="checkbox" value="social_studio.create" /><span><strong>Criar artes sociais</strong><small>Edita, gera, baixa e duplica posts.</small></span></label>
+                    <label><input type="checkbox" value="social_studio.delete" /><span><strong>Excluir artes sociais</strong><small>Remove artes e seus arquivos do histórico.</small></span></label>
                     <label><input type="checkbox" value="club.view" /><span><strong>Visualizar Clube</strong><small>Consulta planos, assinaturas e faturamento.</small></span></label>
                     <label><input type="checkbox" value="club.manage" /><span><strong>Gerenciar Clube</strong><small>Altera planos e assinaturas.</small></span></label>
                     <label><input type="checkbox" value="club.credits" /><span><strong>Ajustar créditos do Clube</strong><small>Concede ou remove créditos de assinantes.</small></span></label>
@@ -3354,6 +3200,6 @@
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
     <script src="admin.js?v=20261005-session-row-layout"></script>
-    <script src="creative-prompt-studio.js?v=20261007-2"></script>
+    <script src="social-studio.js?v=20261008-static"></script>
   </body>
 </html>

@@ -1,0 +1,161 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import test from "node:test";
+import sharp from "sharp";
+
+const require = createRequire(import.meta.url);
+const engine = require("../backend/services/socialStudioEngineService");
+const { flattenElements } = require("../backend/services/social-studio/scene/groups");
+
+async function solid(width, height, background) {
+  return sharp({ create: { width, height, channels: 4, background } }).png().toBuffer();
+}
+
+async function fixture() {
+  const assets = new Map([
+    ["asset://poster", await solid(800, 1200, "#5c1420")],
+    ["asset://logo", await solid(600, 260, "#1268d7")]
+  ]);
+  return {
+    context: {
+      brand: { name: "Cine Cruzeiro", logoUrl: "asset://logo", posterLogoUrl: "asset://logo", posterWebsite: "www.cinecruzeiro.com.br", primaryColor: "#07111f", secondaryColor: "#1268d7", accentColor: "#f4c400", textColor: "#ffffff" },
+      movies: [{
+        id: "movie-1",
+        title: "Filme de Teste",
+        posterUrl: "asset://poster",
+        backdropUrl: "",
+        releaseDate: "2026-10-22",
+        sessions: [{ date: "2026-10-22", time: "19:30", ticketTypes: [{ name: "Inteira", price: 20 }] }]
+      }]
+    },
+    loadImage: async (url) => assets.get(url) || (url.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png') ? assets.get('asset://logo') : null)
+  };
+}
+
+test("cena V2 separa conteúdo, imagem e assinatura protegida", async () => {
+  const { context, loadImage } = await fixture();
+  const rendered = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "feed_portrait" }, context, { loadImage });
+  assert.equal(rendered.scene.rendererVersion, "v2-konva");
+  assert.ok(rendered.scene.elements.find((element) => element.role === "title" && element.type === "text"));
+  assert.ok(rendered.scene.elements.find((element) => element.role === "background" && element.type === "image"));
+  assert.equal(rendered.scene.elements.find((element) => element.role === "logo")?.protected, true);
+});
+
+test("normalização da cena limita tipos, cores e quantidade de elementos", () => {
+  const scene = engine.normalizeScene({
+    width: 99999,
+    height: 2,
+    backgroundColor: "url(javascript:alert(1))",
+    elements: [
+      ...Array.from({ length: 90 }, (_, index) => ({ id: `text-${index}`, type: "text", text: "Teste", fill: index === 0 ? "expression(alert(1))" : "#ffffff", width: 200, height: 50 })),
+      { id: "script", type: "script", text: "alert(1)" }
+    ]
+  });
+  assert.equal(scene.width, 2160);
+  assert.equal(scene.height, 320);
+  assert.equal(scene.backgroundColor, "#050b16");
+  assert.equal(scene.elements.length, 80);
+  assert.equal(scene.elements[0].fill, "#ffffff");
+});
+
+test("quebras de linha digitadas permanecem no texto ajustado e na cena", () => {
+  const {wrapText}=require('../backend/services/social-studio/scene/factory');
+  const content='Primeira linha\n\nSegunda linha';
+  assert.equal(wrapText(content,800,240,48,4).text,content);
+  assert.equal(wrapText('Primeira linha\r\nSegunda linha',800,180,48,3).text,'Primeira linha\nSegunda linha');
+  assert.equal(engine.normalizeDraft({templateId:'movie-premiere',auxiliaryText:content},{brand:{name:'Cine Cruzeiro'}}).auxiliaryText,content);
+  const scene=engine.normalizeScene({width:1080,height:1350,elements:[{id:'description',type:'text',text:content,width:800,height:240}]});
+  assert.equal(scene.elements[0].text,content);
+});
+
+test("renderização do editor mantém a linha em branco entre parágrafos", async () => {
+  const scene={width:500,height:300,backgroundColor:'#000000',elements:[{id:'description',type:'text',text:'PRIMEIRA\n\nSEGUNDA',x:20,y:20,width:460,height:260,fontSize:48,fill:'#ffffff'}]};
+  const rendered=await engine.renderSocialScene(scene,{layerRender:true,loadImage:async()=>null});
+  const {data,info}=await sharp(rendered.buffer).raw().toBuffer({resolveWithObject:true});
+  const bands=[];
+  for(let y=0;y<info.height;y++) {
+    let visible=false;
+    for(let x=0;x<info.width;x++)if(data[(y*info.width+x)*info.channels]>120){visible=true;break;}
+    if(visible){if(!bands.length || y>bands.at(-1)[1]+1)bands.push([y,y]);else bands.at(-1)[1]=y;}
+  }
+  assert.equal(bands.length,2);
+  assert.ok(bands[1][0]-bands[0][1]>45);
+});
+
+test("renderização manual permanece no servidor e respeita tamanho e formato", async () => {
+  const { context, loadImage } = await fixture();
+  const automatic = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "square" }, context, { loadImage });
+  const title = automatic.scene.elements.find((element) => element.role === "title");
+  title.text = "Título ajustado pelo operador";
+  title.x += 15;
+  const originalHeight=title.height;
+  title.height=8;
+  await assert.rejects(engine.renderSocialScene(automatic.scene, {loadImage}), {code:'ARTWORK_QUALITY'});
+  title.height=originalHeight;
+  const {wrapText}=require('../backend/services/social-studio/scene/factory');
+  Object.assign(title,wrapText(title.text,title.width,title.height,title.fontSize,4));
+  const rendered = await engine.renderSocialScene(automatic.scene, { loadImage, outputType: "jpg", allowManualLayoutIssues: true });
+  const metadata = await sharp(rendered.buffer).metadata();
+  assert.deepEqual([metadata.width, metadata.height, metadata.format], [1080, 1080, "jpeg"]);
+  assert.equal(rendered.scene.elements.find((element) => element.role === "title").text.replace(/\s+/g,' '), "Título ajustado pelo operador");
+});
+
+test("editor saves and exports manually overlapping text while automatic rendering still flags it", async () => {
+  const { context, loadImage } = await fixture();
+  const automatic = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "square" }, context, { loadImage });
+  const texts = flattenElements(automatic.scene.elements).filter((element) => element.type === "text");
+  assert.ok(texts.length > 1);
+  const findElement = (elements, id, origin = { x: 0, y: 0 }) => {
+    for (const element of elements) {
+      if (element.id === id) return { element, origin };
+      const nested = element.children && findElement(element.children, id, { x: origin.x + element.x, y: origin.y + element.y });
+      if (nested) return nested;
+    }
+    return null;
+  };
+  const target = findElement(automatic.scene.elements, texts[1].id);
+  target.element.x = texts[0].x - target.origin.x;
+  target.element.y = texts[0].y - target.origin.y;
+  assert.ok(require("../backend/services/social-studio/composition-engine/artwork-quality").validateArtworkLayout(automatic.scene).issues.some((issue) => issue.code === "TEXT_OVERLAP"));
+
+  await assert.rejects(engine.renderSocialScene(automatic.scene, { loadImage }), { code: "ARTWORK_QUALITY" });
+  const rendered = await engine.renderSocialScene(automatic.scene, { loadImage, allowManualLayoutIssues: true });
+  const metadata = await sharp(rendered.buffer).metadata();
+  assert.deepEqual([metadata.width, metadata.height], [1080, 1080]);
+  assert.equal(flattenElements(rendered.scene.elements).filter((element) => element.type === "text")[1].x, texts[0].x);
+});
+
+test("histórico mantém original automático separado da futura edição", async () => {
+  const { context, loadImage } = await fixture();
+  const rendered = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1" }, context, { loadImage });
+  const record = engine.createHistoryRecord(rendered, { savedImageUrl: "/uploads/social-studio/original.png" }, context, { id: "admin-1" });
+  assert.equal(record.activeVersion, "automatic");
+  assert.equal(record.originalImageUrl, "/uploads/social-studio/original.png");
+  assert.equal(record.originalScene.rendererVersion, "v2-konva");
+  assert.equal(record.editedScene, null);
+  assert.equal(record.sceneVersions[0].kind, "automatic");
+});
+
+test("painel expõe editor opcional e API cobre rascunho, versão, exportação e restauração", () => {
+  const admin = fs.readFileSync(new URL("../backend/public/social-studio.js", import.meta.url), "utf8");
+  const server = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
+  const editor = fs.readFileSync(new URL("../src/components/social-editor/SocialEditor.tsx", import.meta.url), "utf8");
+  assert.match(admin, /Editar detalhes/);
+  assert.match(admin, /social-editor\?postId=/);
+  for (const action of ["scene-draft", "scene-versions", "scene-export", "scene-reset"]) assert.match(server, new RegExp(action));
+  assert.match(server, /allowManualLayoutIssues:\s*true/);
+  assert.match(editor, /autosave|scene-draft/i);
+  assert.match(editor, /Ctrl\+Z|keydown/);
+  assert.doesNotMatch(editor, /email/i);
+});
+
+test("editor embutido não substitui a prévia automaticamente ao abrir o Studio", () => {
+  const admin = fs.readFileSync(new URL("../backend/public/social-studio.js", import.meta.url), "utf8");
+  const styles = fs.readFileSync(new URL("../backend/public/social-studio.css", import.meta.url), "utf8");
+  const loadScene = admin.slice(admin.indexOf("async function loadInlineScene"), admin.indexOf("async function prepareEditedPreview"));
+
+  assert.match(loadScene, /sendInlineScene\(\);showInlineEditor\(false\)/);
+  assert.doesNotMatch(loadScene, /showInlineEditor\(\);/);
+  assert.match(styles, /#socialStudioInlineEditor\[hidden\]\s*\{\s*display:none;\s*\}/);
+});

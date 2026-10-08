@@ -53,7 +53,7 @@ const DOMAIN_LABELS = {
   email_verification: "Verificação de e-mail", google_wallet: "Google Wallet", http: "API", integrations: "Integrações",
   movie: "Filmes", order: "Pedidos", password_reset: "Redefinição de senha", payment: "Pagamentos",
   performance: "Desempenho", repository: "Persistência de dados", security: "Segurança", service: "Disponibilidade do sistema", session: "Sessões",
-  subscription: "Assinaturas", system: "Sistema", ticket: "Ingressos", ticket_email: "E-mail de ingressos",
+  social_studio: "Studio", subscription: "Assinaturas", system: "Sistema", ticket: "Ingressos", ticket_email: "E-mail de ingressos",
   webhook: "Webhooks"
 };
 
@@ -129,6 +129,7 @@ const ROUTE_AREAS = [
   [/^\/api\/admin\/sessions?(?:\/|$)|^\/api\/sessions(?:\/|$)/, "Programação e sessões"],
   [/^\/api\/admin\/users?(?:\/|$)/, "Painel administrativo · clientes e usuários"],
   [/^\/api\/admin\/integrations?(?:\/|$)|^\/api\/integrations(?:\/|$)/, "Painel administrativo · integrações"],
+  [/^\/api\/admin\/social-studio(?:\/|$)/, "Painel administrativo · Social Studio"],
   [/^\/api\/admin\/email(?:\/|$)/, "Painel administrativo · campanhas de e-mail"],
   [/^\/api\/admin\/dashboard(?:\/|$)/, "Painel administrativo · indicadores"],
   [/^\/api\/admin\/logs(?:\/|$)/, "Painel administrativo · logs"],

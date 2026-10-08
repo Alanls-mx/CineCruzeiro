@@ -33,14 +33,6 @@ const {
   releaseSeatHold: releaseSeatHoldInPostgres,
   releaseSeatHoldsForOwner: releaseSeatHoldsForOwnerInPostgres
 } = require("./db/postgresStore");
-const creativePromptRepository = require("./repositories/creativePromptRepository");
-const creativeMarketingCore = require("./services/creativeMarketingStudioService");
-const creativePromptLibrary = require("./services/creativePromptLibraryService");
-const creativePromptCore = require("./services/creativePromptStudioService");
-const creativePromptImages = require("./services/creativePromptImageService");
-const { createBundle: createCreativeMarketingBundle } = require("./services/creativeMarketingBundleService");
-const { createCreativePromptAiProvider } = require("./services/creativePromptAiProvider");
-const { createCreativePromptWorkflow } = require("./services/creativePromptWorkflow");
 const paymentService = require("./services/paymentService");
 const pagBankPaymentService = require("./services/pagBankPaymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
@@ -57,6 +49,23 @@ const { resolveCampaignTemplate, normalizeObjective, scopeCampaignContext, valid
 const { buildTemplateLibrary, definitionFor, variantFor, updateLibraryPreference } = require("./services/emailTemplateLibraryService");
 const { buildEmailAutomationPlan, emailAutomationContext } = require("./services/emailAutomationService");
 const { publicApiError } = require("./services/publicApiErrorService");
+const {
+  SOCIAL_FORMATS,
+  SOCIAL_SIGNATURES,
+  SOCIAL_STYLES,
+  SOCIAL_TEMPLATES,
+  buildSocialReadyPosts,
+  captionForDraft,
+  createHistoryRecord,
+  draftNotices: socialDraftNotices,
+  generateSocialCampaign,
+  normalizeBrand: normalizeSocialBrand,
+  normalizeDraft: normalizeSocialDraft,
+  normalizeScene: normalizeSocialScene,
+  renderSocialPost,
+  renderSocialScene
+} = require("./services/socialStudioEngineService");
+const { SOCIAL_STUDIO_EDITORIAL_MOVIES } = require("./services/socialStudioEditorialCatalog");
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const adMetricRepository = require("./repositories/adMetricRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
@@ -111,6 +120,8 @@ const ticketTypeRepository = require("./repositories/ticketTypeRepository");
 const promotionRepository = require("./repositories/promotionRepository");
 const concessionRepository = require("./repositories/concessionRepository");
 const settingsRepository = require("./repositories/settingsRepository");
+const { SocialStudioAutomationRepository } = require("./repositories/socialStudioAutomationRepository");
+const { CampaignOrchestrator } = require("./services/social-studio/automation/orchestrator");
 const userRepository = require("./repositories/userRepository");
 const orderRepository = require("./repositories/orderRepository");
 const { createPerformanceMonitor } = require("./services/performanceMonitor");
@@ -145,7 +156,7 @@ let crmWebhookConfigVersion = 0;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "047_creative_marketing_studio.sql";
+const LATEST_SCHEMA_MIGRATION = "048_restore_social_studio.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -159,24 +170,30 @@ const storageService = createStorageService({
   publicDir: PUBLIC_DIR,
   rootDir: process.env.CINE_UPLOADS_DIR || ""
 });
-const creativePromptAi = createCreativePromptAiProvider();
-const creativePromptWorkflow = createCreativePromptWorkflow({
-  ai: creativePromptAi, images: creativePromptImages, repository: creativePromptRepository
-});
-const creativeMarketingWorkflow = creativeMarketingCore.createCreativeMarketingWorkflow({
-  ai: creativePromptAi, images: creativePromptImages, repository: creativePromptRepository
-});
-function localCreativeVisionConfig() {
-  if (!process.env.CREATIVE_STUDIO_VISION_BASE_URL || !process.env.CREATIVE_STUDIO_VISION_MODEL) return null;
-  let url;
-  try { url = new URL(process.env.CREATIVE_STUDIO_VISION_BASE_URL); } catch { return null; }
-  if (url.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return null;
-  return { kind: "local", enabled: true, configured: true, baseUrl: url.toString(),
-    model: process.env.CREATIVE_STUDIO_VISION_MODEL, apiKey: process.env.CREATIVE_STUDIO_VISION_API_KEY || "",
-    timeout: Number(process.env.CREATIVE_STUDIO_VISION_TIMEOUT_MS || 30000) };
-}
 const EMAIL_ATTACHMENT_ROOT = path.resolve(process.env.CINE_EMAIL_ATTACHMENTS_DIR || path.join(ROOT, "data", "email-attachments"));
 const TICKET_DOCUMENT_ROOT = path.resolve(process.env.CINE_TICKET_DOCUMENTS_DIR || path.join(ROOT, "data", "ticket-documents"));
+let socialStudioAutomationRepository;
+let socialStudioAutomationOrchestrator;
+function getSocialStudioAutomationRepository() {
+  if(!socialStudioAutomationRepository) socialStudioAutomationRepository=new SocialStudioAutomationRepository({
+    readJson:readDb,
+    mutateJson:callback=>withCriticalMutation(async()=>{const db=await readDb();const result=await callback(db);await writeDb(db);return result;})
+  });
+  return socialStudioAutomationRepository;
+}
+function getSocialStudioAutomationOrchestrator() {
+  if(!socialStudioAutomationOrchestrator) socialStudioAutomationOrchestrator=new CampaignOrchestrator({
+    repository:getSocialStudioAutomationRepository(),
+    contextProvider:async()=>socialStudioContext(await readDb()),
+    loadImage:loadSocialStudioImage,
+    savePreview:async(rendered,{campaignId,variationIndex,formatId})=>{
+      const uploaded=await storageService.uploadImageBuffer({buffer:rendered.buffer,filename:`${campaignId}-${variationIndex+1}-${formatId}${rendered.extension}`,contentType:rendered.contentType,folder:'social-studio-automation'});
+      return uploaded.url;
+    },
+    logger:(level,event,metadata)=>logEvent(level,event,metadata)
+  });
+  return socialStudioAutomationOrchestrator;
+}
 const EMAIL_ATTACHMENT_TYPES = new Set([
   "application/pdf",
   "text/plain",
@@ -1066,6 +1083,7 @@ const LOGIN_FAILURE_MAX_ENTRIES = 20000;
 const ticketTransferLimits = transferLimits();
 
 const RATE_LIMIT_RULES = [
+  { id: "studio-automation", limit: 40, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/studio/campaigns/generate" },
   { id: "customer-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/auth/login" },
   { id: "admin-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/login" },
   { id: "admin-2fa", limit: 6, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/login/2fa" },
@@ -1084,10 +1102,8 @@ const RATE_LIMIT_RULES = [
   { id: "ticket-artifacts", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => /^\/api\/me\/tickets\/[^/]+\/(download|google-wallet|qr)$/.test(path) },
   { id: "ticket-validation", limit: 180, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/tickets/validate" },
   { id: "uploads", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path.startsWith("/api/uploads/") },
-  { id: "creative-prompt-uploads", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/creative-prompts/images" },
   { id: "email-attachments", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/email/attachments" },
   { id: "integration-tests", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/integrations/test" },
-  { id: "creative-prompt-ai", limit: 8, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/creative-prompts/directions" },
   { id: "campaign-generation", limit: 12, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/(preview|test)$/.test(path) },
   { id: "campaign-dispatch", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/[^/]+\/(send|retry-failures)$/.test(path) },
   { id: "ad-metrics", limit: 120, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/marketing\/ads\/[^/]+\/(impression|click)$/.test(path) },
@@ -1345,6 +1361,7 @@ function getCustomerUser(req, db) {
 
 function adminAuthRequired(pathname, method) {
   if (pathname.startsWith("/api/webhooks/")) return false;
+  if (pathname.startsWith("/api/studio/")) return false;
   if (pathname.startsWith("/api/email-automation/")) return false;
   if (pathname === "/api/admin/login" || pathname === "/api/admin/login/2fa") return false;
   if (pathname.startsWith("/api/admin/")) return true;
@@ -1359,6 +1376,15 @@ function adminAuthRequired(pathname, method) {
   if (/^\/api\/orders(\/|$)/.test(pathname) && ["GET", "PATCH", "DELETE"].includes(method)) return true;
   if (pathname === "/api/tickets/manual" || pathname === "/api/tickets/validate") return true;
   return false;
+}
+
+function studioAutomationAuthorized(req) {
+  const expected=String(process.env.STUDIO_AUTOMATION_TOKEN || process.env.N8N_STUDIO_SHARED_SECRET || '').trim();
+  if(!expected)return false;
+  const authorization=String(req.headers.authorization || '');
+  const supplied=String(authorization.match(/^Bearer\s+(.+)$/i)?.[1] || req.headers['x-studio-automation-token'] || '').trim();
+  const left=Buffer.from(expected),right=Buffer.from(supplied);
+  return left.length===right.length && left.length>0 && crypto.timingSafeEqual(left,right);
 }
 
 function emailAutomationAuthorized(req) {
@@ -1389,6 +1415,7 @@ function repositoryMutationRoute(pathname, method) {
     || /^\/api\/admin\/email\/(branding|attachments)$/.test(pathname)
     || /^\/api\/admin\/email\/template-library\/[^/]+$/.test(pathname)
     || /^\/api\/admin\/email\/campaigns(?:\/.*)?$/.test(pathname)
+    || /^\/api\/admin\/social-studio\/(copy|resolve|preview|preview-scene|variations|uploads)$/.test(pathname)
     || /^\/api\/admin\/integrations\/[^/]+(?:\/(test|enable|disable))?$/.test(pathname)
     || /^\/api\/users(?:\/[^/]+)?$/.test(pathname)
     || (/^\/api\/orders\/[^/]+$/.test(pathname) && method === "PATCH")
@@ -1459,8 +1486,11 @@ function requiredAdminPermission(pathname, method) {
   if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
   if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
   if (pathname.startsWith("/api/admin/concession-sales")) return method === "GET" ? "concessions.view" : "concessions.edit";
+  if (pathname.startsWith("/api/admin/social-studio")) {
+    if (method === "DELETE") return "social_studio.delete";
+    return method === "GET" ? "social_studio.view" : "social_studio.create";
+  }
   if (pathname.startsWith("/api/admin/marketing")) return method === "GET" ? "marketing.view" : "marketing.manage";
-  if (pathname.startsWith("/api/admin/creative-prompts")) return method === "GET" ? "marketing.view" : "marketing.manage";
   if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "orders.print";
   if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
   if (pathname === "/api/admin/security-policy") return method === "GET" ? "settings.view" : "settings.manage";
@@ -8200,7 +8230,7 @@ function getContent(db, options = {}) {
   delete publicSettings.emailAiPromptTemplates;
   if (!includePrivate) {
     for (const name of Object.keys(publicSettings)) {
-      if (["emailAttachments", "emailTemplateLibrary", "emailBranding"].includes(name)) delete publicSettings[name];
+      if (name.startsWith("socialStudio") || ["emailAttachments", "emailTemplateLibrary", "emailBranding"].includes(name)) delete publicSettings[name];
     }
   }
   if (!includePrivate) delete publicSettings.adminTwoFactorRequired;
@@ -8500,6 +8530,225 @@ function buildCommercialCatalog(db, now = new Date()) {
   };
 }
 
+const { studioPosterBrand } = require("./services/social-studio/tenant-branding");
+
+function socialStudioBrand(db) {
+  const configured = db.settings?.socialStudioBrand || {};
+  const inherited = db.settings?.emailBranding || {};
+  const basePath = configuredAppBasePath();
+  const tenantSignature = studioPosterBrand(process.env.NEXT_PUBLIC_CINEMA_SLUG);
+  return normalizeSocialBrand({
+    name: configured.name || db.settings?.cinemaName || db.settings?.name || inherited.name,
+    logoUrl: publicAssetUrl(configured.logoUrl || db.settings?.logoUrl || inherited.logoUrl || `${basePath}/images/logo-display.webp`),
+    website: configured.website || appFrontendUrl(),
+    posterWebsite: tenantSignature?.website || configured.posterWebsite || "www.cinecruzeiro.com.br",
+    posterLogoUrl: publicAssetUrl(tenantSignature?.signature || configured.posterLogoUrl || "/images/social-studio/cine-cruzeiro-assinatura-oficial.png"),
+    primaryColor: configured.primaryColor || db.settings?.primaryColor,
+    secondaryColor: configured.secondaryColor || db.settings?.secondaryColor,
+    accentColor: configured.accentColor || db.settings?.accentColor,
+    textColor: configured.textColor || db.settings?.textColor
+  });
+}
+
+function socialStudioContext(db) {
+  const studioBrand = socialStudioBrand(db);
+  const tenantSignature = studioPosterBrand(process.env.NEXT_PUBLIC_CINEMA_SLUG);
+  const catalog = buildCommercialCatalog(db);
+  const catalogMovies = (catalog.movies || []).map((movie) => ({
+    ...movie,
+    director: String(db.movies?.find((source) => String(source.id) === String(movie.id))?.director || ""),
+    originalTitle: String(db.movies?.find((source) => String(source.id) === String(movie.id))?.originalTitle || ""),
+    catalogued: true,
+    releaseDate: movie.releaseDate || "",
+    sessions: movie.availableSessions || [],
+    minimumPrice: (movie.availableSessions || [])
+      .flatMap((session) => session.ticketTypes || [])
+      .map((ticketType) => Number(ticketType.price))
+      .filter((price) => Number.isFinite(price) && price > 0)
+      .sort((a, b) => a - b)[0] ?? null
+  }));
+  const catalogTitleKeys = new Set(catalogMovies.map((movie) => slugify(movie.title || movie.id)));
+  const editorialMovies = SOCIAL_STUDIO_EDITORIAL_MOVIES
+    .filter((movie) => !catalogTitleKeys.has(slugify(movie.title || movie.id)))
+    .map((movie) => ({
+      ...movie,
+      posterUrl: publicAssetUrl(movie.posterUrl || ""),
+      backdropUrl: publicAssetUrl(movie.backdropUrl || ""),
+      sessions: [],
+      minimumPrice: null
+    }));
+  const movies = [...catalogMovies, ...editorialMovies];
+  const premiereMovie = catalogMovies.find((movie) => /estreia/i.test(String(movie.tag || ""))) || catalogMovies[0] || null;
+  const context = {
+    brand: studioBrand,
+    templates: SOCIAL_TEMPLATES,
+    signatures: SOCIAL_SIGNATURES.filter((signature) => !tenantSignature || ["automatic", "classic", "none"].includes(signature.id)).map((signature) => ({
+      ...signature,
+      imageUrl: signature.imageUrl
+        ? tenantSignature ? studioBrand.posterLogoUrl : publicAssetUrl(signature.imageUrl)
+        : ""
+    })),
+    styles: [...SOCIAL_STYLES, ...require("./services/social-studio/composition-engine/config").STYLES],
+    composition: {
+      presets: require("./services/social-studio/composition-engine/config").PRESETS,
+      looks: require("./services/social-studio/composition-engine/config").LOOKS
+    },
+    palettes: require("./services/social-studio/engine/palette").PALETTES,
+    programLayouts: require('./services/social-studio/programming/direction').PROGRAM_LAYOUTS,
+    formats: Object.values(SOCIAL_FORMATS),
+    movies,
+    concessions: catalog.concessions || [],
+    clubPlans: (db.subscriptionPlans || [])
+      .filter((plan) => plan.active !== false)
+      .map((plan) => ({
+        id: String(plan.id || ""),
+        name: String(plan.name || ""),
+        monthlyPrice: Number(plan.monthlyPrice || 0),
+        includedTickets: Number(plan.includedTickets || 0),
+        benefits: Array.isArray(plan.benefits) ? plan.benefits.map(String) : [],
+        imageUrl: publicAssetUrl(plan.imageUrl || "")
+      })),
+    promotions: (catalog.promotions || []).map((promotion) => ({
+      id: promotion.id,
+      title: promotion.title,
+      description: promotion.description,
+      imageUrl: promotion.imageUrl || ""
+    })),
+    recommendedMovieId: premiereMovie?.id || "",
+    history: (db.settings?.socialStudioPosts || []).slice(0, 100).map(publicSocialStudioPost)
+  };
+  return {
+    ...context,
+    readyPosts: buildSocialReadyPosts(context)
+  };
+}
+
+function publicSocialStudioPost(post = {}) {
+  return {
+    ...post,
+    originalScene: undefined,
+    draftScene: undefined,
+    editedScene: undefined,
+    sceneVersions: Array.isArray(post.sceneVersions)
+      ? post.sceneVersions.map(({ scene, ...version }) => version)
+      : [],
+    editable: post.rendererVersion === "v2" || Boolean(post.originalScene),
+    hasEditedScene: Boolean(post.editedScene),
+    hasDraftScene: Boolean(post.draftScene)
+  };
+}
+
+async function editableSceneForPost(post, db) {
+  if (post.originalScene) return normalizeSocialScene(post.originalScene);
+  if (post.rendererVersion !== "v2" || !post.payload) return null;
+  const rendered = await renderSocialPost(post.payload, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+  return rendered.scene ? normalizeSocialScene(rendered.scene) : null;
+}
+
+function socialStudioPublicPath(value = "") {
+  let pathname = String(value || "").trim();
+  try {
+    pathname = new URL(pathname).pathname;
+  } catch {
+    // Caminhos locais seguem para a validacao abaixo.
+  }
+  const basePath = configuredAppBasePath();
+  if (basePath && pathname.startsWith(`${basePath}/`)) pathname = pathname.slice(basePath.length);
+  return stripPublicAssetBase(pathname);
+}
+
+async function readSocialStudioLocalImage(value = "") {
+  const pathname = socialStudioPublicPath(value);
+  let root = null;
+  let relative = "";
+  if (pathname.startsWith("/uploads/")) {
+    root = storageService.rootDir;
+    relative = pathname.replace(/^\/uploads\//, "");
+  } else if (pathname.startsWith("/images/")) {
+    root = FRONTEND_PUBLIC_DIR;
+    relative = pathname.replace(/^\//, "");
+  }
+  if (!root || !relative) return null;
+  const filePath = path.normalize(path.join(root, relative));
+  if (!pathIsInside(root, filePath)) return null;
+  return fs.readFile(filePath).catch(() => null);
+}
+
+async function validateSocialStudioImageBuffer(buffer) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > 8 * 1024 * 1024) return null;
+  const metadata = await sharp(buffer, { failOn: "error", limitInputPixels: 40_000_000 }).metadata().catch(() => null);
+  if (!metadata || !["jpeg", "png", "webp"].includes(metadata.format) || !metadata.width || !metadata.height) return null;
+  if (metadata.width * metadata.height > 40_000_000) return null;
+  return buffer;
+}
+
+async function readSocialStudioResponseBuffer(response, maxBytes = 8 * 1024 * 1024) {
+  if (!response?.body) return null;
+  const chunks = [];
+  let received = 0;
+  for await (const chunk of response.body) {
+    received += chunk.length;
+    if (received > maxBytes) {
+      await response.body.cancel().catch(() => null);
+      return null;
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function loadSocialStudioImage(value = "") {
+  const local = await readSocialStudioLocalImage(value);
+  if (local) return validateSocialStudioImageBuffer(local);
+  let parsed;
+  try {
+    parsed = new URL(String(value || ""));
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  const configuredHost = (() => {
+    try { return new URL(appFrontendUrl()).hostname; } catch { return ""; }
+  })();
+  const allowedHosts = new Set([configuredHost, "image.tmdb.org", "images.unsplash.com"].filter(Boolean));
+  if (!allowedHosts.has(parsed.hostname)) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(parsed, {
+      signal: controller.signal,
+      redirect: "error",
+      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg" }
+    }).catch(() => null);
+    if (!response?.ok) return null;
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > 8 * 1024 * 1024) return null;
+    const buffer = await readSocialStudioResponseBuffer(response);
+    return validateSocialStudioImageBuffer(buffer);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function persistSocialStudioPosts(db, posts, req, before = null) {
+  const normalized = (Array.isArray(posts) ? posts : []).slice(0, 100);
+  db.settings ||= {};
+  db.settings.socialStudioPosts = normalized;
+  if (postgresEnabled()) {
+    await settingsRepository.updateSection("socialStudioPosts", normalized, {
+      audit: repositoryAudit(req, "settings", "socialStudioPosts", before, normalized)
+    });
+  } else {
+    await writeDb(db);
+  }
+  return normalized;
+}
+
+function socialStudioDownloadName(post = {}) {
+  const title = slugify(post.title || post.templateName || "post") || "post";
+  const extension = post.outputType === "jpg" ? "jpg" : "png";
+  return `${title}-${post.formatId || "social"}.${extension}`;
+}
 
 function getAdminContent(db, adminUser) {
   const content = getContent(db, { includePrivate: true });
@@ -10198,7 +10447,6 @@ async function testIntegrationProvider(db, provider, req) {
   if (!key || !config) {
     return { ok: false, message: "Integração não encontrada." };
   }
-  if (key === "creativePromptAi") return creativePromptAi.testConnection(config);
   if (key === "mercadoPago") {
     if (!config.accessToken || !config.publicKey) return { ok: false, message: "Informe public key e access token do Mercado Pago." };
     const response = await fetch("https://api.mercadopago.com/users/me", { headers: { Authorization: `Bearer ${config.accessToken}` } });
@@ -10929,6 +11177,29 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname.startsWith("/api/studio/") && !studioAutomationAuthorized(req)) {
+    const configured=Boolean(process.env.STUDIO_AUTOMATION_TOKEN || process.env.N8N_STUDIO_SHARED_SECRET);
+    sendJson(res,configured?401:503,{error:{code:'STUDIO_AUTOMATION_UNAVAILABLE',message:configured?'Credencial de automação inválida.':'A integração de automação ainda não foi configurada.'}});
+    return;
+  }
+  if (pathname === "/api/studio/context" && method === "GET") {
+    const studio=socialStudioContext(db);
+    sendJson(res,200,{cinema:studio.brand,movies:studio.movies,concessions:studio.concessions,clubPlans:studio.clubPlans,formats:studio.formats.map(({id,name,width,height})=>({id,name,width,height})),templates:studio.templates.map(({id,name,category})=>({id,name,category}))},{'Cache-Control':'no-store'});
+    return;
+  }
+  if (pathname === "/api/studio/campaigns/generate" && method === "POST") {
+    const body=await readBody(req);
+    body.idempotencyKey ||= String(req.headers['idempotency-key'] || '');
+    const campaign=await getSocialStudioAutomationOrchestrator().create({...body,source:'n8n',triggerType:body.triggerType || 'webhook'},{createdBy:'n8n'});
+    sendJson(res,campaign.duplicate?200:202,{campaign,statusUrl:`${publicBackendUrl()}/api/studio/campaigns/${campaign.id}`},{'Cache-Control':'no-store'});
+    return;
+  }
+  const studioAutomationMatch=pathname.match(/^\/api\/studio\/campaigns\/([a-f0-9-]{36})$/);
+  if(studioAutomationMatch && method==='GET') {
+    const campaign=await getSocialStudioAutomationOrchestrator().get(studioAutomationMatch[1]);
+    if(!campaign){sendJson(res,404,{error:{code:'STUDIO_CAMPAIGN_NOT_FOUND',message:'Campanha automática não encontrada.'}});return;}
+    sendJson(res,200,{campaign},{'Cache-Control':'no-store'});return;
+  }
 
   if (pathname === "/api/commercial/catalog" && method === "GET") {
     const catalogConfig = integrationConfigService.resolvedConfig(db, "commercialCatalog") || {};
@@ -11133,220 +11404,6 @@ async function handleApi(req, res, pathname) {
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
-  if (pathname === "/api/admin/creative-prompts/images" && method === "POST") {
-    const body = await readBody(req);
-    const uploaded = await storageService.uploadImage({
-      data: body.data || body.base64,
-      filename: body.filename,
-      contentType: body.contentType,
-      folder: "creative-prompts"
-    });
-    sendJson(res, 201, { ...uploaded, publicUrl: publicAssetUrl(uploaded.url) });
-    return;
-  }
-
-  if (pathname === "/api/admin/creative-prompts/status" && method === "GET") {
-    const config = integrationConfigService.resolvedConfig(db, "creativePromptAi");
-    sendJson(res, 200, { configured: Boolean(config?.configured), enabled: Boolean(config?.enabled),
-      databaseReady: postgresEnabled(), model: config?.model || "gpt-4.1-mini",
-      manualAvailable: postgresEnabled(), localVisionAvailable: Boolean(localCreativeVisionConfig()) });
-    return;
-  }
-
-  if (pathname === "/api/admin/creative-prompts/categories" && method === "GET") {
-    sendJson(res, 200, { categories: creativeMarketingCore.CATEGORIES, formats: creativeMarketingCore.FORMATS });
-    return;
-  }
-
-  if (pathname === "/api/admin/creative-prompts/references" && method === "GET") {
-    const category = new URL(req.url, "http://localhost").searchParams.get("category");
-    sendJson(res, 200, { references: creativePromptLibrary.listReferences(category) });
-    return;
-  }
-  const creativeReferenceMatch = pathname.match(/^\/api\/admin\/creative-prompts\/references\/([A-Z]\d{3})$/);
-  if (creativeReferenceMatch && method === "GET") {
-    const reference = creativePromptLibrary.getReference(creativeReferenceMatch[1]);
-    if (!reference) sendJson(res, 404, { error: { code: "CREATIVE_MARKETING_REFERENCE_NOT_FOUND", message: "Referência não encontrada." } });
-    else sendJson(res, 200, { reference });
-    return;
-  }
-
-  if (pathname === "/api/admin/creative-prompts/history" && method === "GET") {
-    const offset = Math.max(0, Number(new URL(req.url, "http://localhost").searchParams.get("offset")) || 0);
-    const runs = await creativePromptRepository.list({ limit: 30, offset });
-    sendJson(res, 200, { runs: runs.map((run) => ({
-      id: run.id, movieId: run.movieId, category: run.category, briefVersion: run.briefVersion,
-      movieTitle: run.input?.movie?.title || run.input?.request?.facts?.title ||
-        run.input?.request?.facts?.product || run.input?.request?.facts?.name ||
-        run.input?.request?.facts?.headline || run.input?.request?.facts?.subject || "",
-      campaignType: run.campaignType, format: run.format, selectedVariant: run.selectedVariant,
-      status: run.status, createdAt: run.createdAt
-    })) });
-    return;
-  }
-
-  if (pathname === "/api/admin/creative-prompts/directions" && method === "POST") {
-    if (!postgresEnabled()) {
-      sendJson(res, 503, { error: { code: "CREATIVE_PROMPT_DATABASE_REQUIRED", message: "Configure PostgreSQL antes de gerar direções." } });
-      return;
-    }
-    const body = await readBody(req);
-    if (body.studioVersion === 2) {
-      const movie = body.movieId ? (db.movies || []).find((item) => item.id === String(body.movieId) && !isDeletedMovie(item)) : null;
-      const product = body.concessionId ? (db.concessions || []).find((item) => item.id === String(body.concessionId)) : null;
-      const promotion = body.promotionId ? (db.promotions || []).find((item) => item.id === String(body.promotionId)) : null;
-      if ((body.movieId && !movie) || (body.concessionId && !product) || (body.promotionId && !promotion)) {
-        sendJson(res, 404, { error: { code: "CREATIVE_MARKETING_SOURCE_NOT_FOUND", message: "O item selecionado não está mais no cadastro." } });
-        return;
-      }
-      const source = { movieId: movie?.id || null, artworkUrl: "", label: "", facts: {},
-        genre: movie ? (Array.isArray(movie.genre) ? movie.genre.join(" ") : String(movie.genre || "")) : "",
-        posterUrl: movie?.posterUrl || "", backdropUrl: movie?.backdropUrl || "" };
-      if (movie && ["films", "programming"].includes(body.category)) {
-        source.label = movie.title;
-        source.artworkUrl = body.movieArtwork === "backdrop" ? movie.backdropUrl : movie.posterUrl;
-        source.facts = body.category === "films" ? {
-          title: movie.title, release: movie.releaseDate || "", rating: movie.rating || "",
-          synopsis: movie.synopsis || "", sessions: (movie.sessions || []).filter((s) => s.date && s.time)
-            .map((s) => `${s.date} ${s.time}`).join("\n")
-        } : { movies: movie.title, sessions: (movie.sessions || []).filter((s) => s.date && s.time)
-          .map((s) => `${s.date} ${s.time}`).join("\n") };
-      }
-      if (product && body.category === "concessions") {
-        source.label = product.name;
-        source.artworkUrl = product.imageUrl || "";
-        source.facts = { product: product.name, components: (product.comboItems || [])
-          .map((item) => `${item.quantity}x ${item.name}`).join("\n"),
-          price: Number(product.price) > 0 ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(product.price) : "",
-          size: "", availability: "" };
-      }
-      if (promotion && ["promotions", "coupons"].includes(body.category)) {
-        source.label = promotion.title;
-        source.facts = body.category === "coupons" ? {
-          code: promotion.couponCode || "", benefit: promotion.title,
-          validity: promotion.endsAt || "", rules: promotion.description || ""
-        } : { benefit: promotion.title, period: [promotion.startsAt, promotion.endsAt].filter(Boolean).join(" a "),
-          conditions: promotion.description || "" };
-      }
-      if (["none", "upload"].includes(body.imageChoice)) source.artworkUrl = "";
-      const configured = integrationConfigService.resolvedConfig(db, "creativePromptAi");
-      let aiConfig = configured?.enabled && configured?.configured ? configured : null;
-      aiConfig = localCreativeVisionConfig() || aiConfig;
-      const run = await creativeMarketingWorkflow.generate({ raw: body, source, userId: req.adminUser.id,
-        aiConfig, imageOptions: { uploadRoot: storageService.rootDir, publicRoot: FRONTEND_PUBLIC_DIR,
-          basePath: configuredAppBasePath() } });
-      sendJson(res, 201, { run });
-      return;
-    }
-    const aiConfig = integrationConfigService.resolvedConfig(db, "creativePromptAi");
-    if (!aiConfig?.enabled || !aiConfig?.configured) {
-      sendJson(res, 412, { error: { code: "CREATIVE_PROMPT_AI_NOT_CONFIGURED", message: "Ative e configure IA do Creative Prompt Studio em Integrações." } });
-      return;
-    }
-    const movie = (db.movies || []).find((item) => item.id === String(body.movieId || "") && !isDeletedMovie(item));
-    if (!movie) {
-      sendJson(res, 404, { error: { code: "CREATIVE_PROMPT_MOVIE_NOT_FOUND", message: "Filme não encontrado no catálogo." } });
-      return;
-    }
-    creativePromptCore.normalizeRequest(body, movie);
-    const sourceRun = body.sourceRunId ? await creativePromptRepository.get(String(body.sourceRunId)) : null;
-    const run = await creativePromptWorkflow.generate({
-      config: aiConfig,
-      movie: { ...movie, cinemaName: db.settings?.cinemaName || "Cine Cruzeiro" },
-      input: body, userId: req.adminUser.id, sourceRun,
-      imageOptions: { uploadRoot: storageService.rootDir, publicRoot: FRONTEND_PUBLIC_DIR,
-        basePath: configuredAppBasePath() }
-    });
-    sendJson(res, 201, { run });
-    return;
-  }
-
-  const creativePromptMatch = pathname.match(/^\/api\/admin\/creative-prompts\/([0-9a-f-]{36})(?:\/(compile|save|duplicate))?$/i);
-  const creativeBundleMatch = pathname.match(/^\/api\/admin\/creative-prompts\/([0-9a-f-]{36})\/bundle$/i);
-  if (creativeBundleMatch && method === "GET") {
-    const run = await creativePromptRepository.get(creativeBundleMatch[1]);
-    if (!run) {
-      sendJson(res, 404, { error: { code: "CREATIVE_PROMPT_NOT_FOUND", message: "Direção criativa não encontrada." } });
-      return;
-    }
-    const movie = run.movieId ? (db.movies || []).find((item) => item.id === run.movieId && !isDeletedMovie(item)) : null;
-    const archive = await createCreativeMarketingBundle({ run, movie,
-      uploadRoot: storageService.rootDir, publicRoot: FRONTEND_PUBLIC_DIR,
-      basePath: configuredAppBasePath() });
-    res.writeHead(200, { "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="cine-cruzeiro-studio-${run.id.slice(0, 8)}.zip"`,
-      "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
-    archive.on("error", () => res.destroy());
-    archive.pipe(res);
-    return;
-  }
-  if (creativePromptMatch) {
-    const run = await creativePromptRepository.get(creativePromptMatch[1]);
-    if (!run) {
-      sendJson(res, 404, { error: { code: "CREATIVE_PROMPT_NOT_FOUND", message: "Direção criativa não encontrada." } });
-      return;
-    }
-    const action = creativePromptMatch[2] || "";
-    if (!action && method === "GET") {
-      sendJson(res, 200, { run });
-      return;
-    }
-    if (action === "compile" && method === "POST") {
-      const body = await readBody(req);
-      if (run.briefVersion === 2) {
-        sendJson(res, 200, { run: await creativeMarketingWorkflow.compileRun(run,
-          String(body.variantId || "recommended"), body.edits || {}) });
-        return;
-      }
-      let workingRun = run;
-      if (body.edits && typeof body.edits === "object" && !Array.isArray(body.edits)) {
-        const snapshot = { ...run.input.movie, id: run.movieId };
-        const fields = ["message", "cta", "tagline", "sessionId", "siteUrl", "visualNote"];
-        const edits = Object.fromEntries(fields.filter((key) => Object.hasOwn(body.edits, key)).map((key) => [key, body.edits[key]]));
-        const updatedRequest = creativePromptCore.normalizeRequest({
-          ...run.input.request, ...run.input.request.campaignInfo, ...edits
-        }, snapshot);
-        workingRun = await creativePromptRepository.update(run.id, {
-          input: { ...run.input, request: updatedRequest }
-        });
-      }
-      const movie = (db.movies || []).find((item) => item.id === run.movieId) || run.input.movie;
-      const compiled = await creativePromptWorkflow.compile({
-        run: workingRun, movie: { ...movie, cinemaName: db.settings?.cinemaName || "Cine Cruzeiro" },
-        variantId: String(body.variantId || "recommended")
-      });
-      sendJson(res, 200, { run: compiled });
-      return;
-    }
-    if (action === "save" && method === "POST") {
-      if (!run.promptText) {
-        sendJson(res, 409, { error: { code: "CREATIVE_PROMPT_NOT_COMPILED", message: "Gere o prompt antes de salvá-lo." } });
-        return;
-      }
-      const body = await readBody(req);
-      const editedText = typeof body.promptText === "string" && run.briefVersion === 2 ? body.promptText.trim() : run.promptText;
-      if (!editedText || editedText.length > 25000 ||
-        (run.briefVersion === 2 && (run.curatedContent?.required || []).some((fact) => !editedText.includes(fact)))) {
-        sendJson(res, 422, { error: { code: "CREATIVE_MARKETING_FACT_MISSING",
-          message: "O texto editado precisa manter todos os dados obrigatórios e ter até 25 mil caracteres." } });
-        return;
-      }
-      sendJson(res, 200, { run: await creativePromptRepository.update(run.id, { promptText: editedText, status: "saved" }) });
-      return;
-    }
-    if (action === "duplicate" && method === "POST") {
-      const duplicate = await creativePromptRepository.insert({
-        id: crypto.randomUUID(), category: run.category, briefVersion: run.briefVersion,
-        movieId: run.movieId, createdBy: req.adminUser.id,
-        campaignType: run.campaignType, format: run.format, density: run.density,
-        artworkSource: run.artworkSource, artworkUrl: run.artworkUrl,
-        referenceUrl: run.referenceUrl, input: run.input, analysis: run.analysis,
-        referenceAnalysis: run.referenceAnalysis, variants: run.variants
-      });
-      sendJson(res, 201, { run: duplicate });
-      return;
-    }
-  }
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
     const user = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : (db.users || []).find((item) => item.id === req.adminUser.id);
@@ -11655,6 +11712,389 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/social-studio/context" && method === "GET") {
+    const studioBrand=socialStudioBrand(db);
+    const automation=await getSocialStudioAutomationOrchestrator().list({cinemaId:studioBrand.id || studioBrand.slug || studioBrand.name || '',limit:8});
+    sendJson(res, 200, {
+      ...socialStudioContext(db),
+      automation:{enabled:Boolean(process.env.STUDIO_AUTOMATION_TOKEN || process.env.N8N_STUDIO_SHARED_SECRET),campaigns:automation},
+      workspaceLayouts: require('./services/social-studio/contracts/workspace').LAYOUTS,
+      capabilities: {
+        view: adminHasPermission(req.adminUser, "social_studio.view"),
+        create: adminHasPermission(req.adminUser, "social_studio.create"),
+        delete: adminHasPermission(req.adminUser, "social_studio.delete")
+      },
+      engine: { version: "v2", renderer: "Satori + Sharp", deterministic: true }
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/automation/campaigns" && method === "GET") {
+    sendJson(res,200,{campaigns:await getSocialStudioAutomationOrchestrator().list({limit:30})},{'Cache-Control':'no-store'});return;
+  }
+  if (pathname === "/api/admin/social-studio/automation/campaigns" && method === "POST") {
+    const body=await readBody(req);
+    const campaign=await getSocialStudioAutomationOrchestrator().create({...body,source:'studio',triggerType:body.triggerType || 'manual'},{createdBy:req.adminUser.id});
+    sendJson(res,campaign.duplicate?200:202,{campaign},{'Cache-Control':'no-store'});return;
+  }
+  const adminAutomationMatch=pathname.match(/^\/api\/admin\/social-studio\/automation\/campaigns\/([a-f0-9-]{36})(?:\/(reprocess))?$/);
+  if(adminAutomationMatch) {
+    const [,campaignId,action]=adminAutomationMatch;
+    if(action==='reprocess' && method==='POST'){sendJson(res,202,{campaign:await getSocialStudioAutomationOrchestrator().reprocess(campaignId)},{'Cache-Control':'no-store'});return;}
+    if(!action && method==='GET'){
+      const campaign=await getSocialStudioAutomationOrchestrator().get(campaignId);
+      if(!campaign){sendJson(res,404,{error:{code:'STUDIO_CAMPAIGN_NOT_FOUND',message:'Campanha automática não encontrada.'}});return;}
+      sendJson(res,200,{campaign},{'Cache-Control':'no-store'});return;
+    }
+  }
+
+  if (pathname === "/api/admin/social-studio/uploads" && method === "POST") {
+    const body = await readBody(req);
+    const uploaded = await storageService.uploadImage({
+      data: body.data || body.base64,
+      filename: body.filename,
+      contentType: body.contentType,
+      folder: "social-studio-source"
+    });
+    sendJson(res, 201, { ...uploaded, publicUrl: publicAssetUrl(uploaded.url) }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/assets" && method === "GET") {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const { loadAsset } = require("./services/social-studio/engine/assets");
+    let buffer = await loadAsset(url.searchParams.get("url") || "", loadSocialStudioImage);
+    if (!buffer) {
+      sendJson(res, 404, { error: { code: "SOCIAL_ASSET_NOT_FOUND", message: "A imagem solicitada não está disponível." } });
+      return;
+    }
+    const effectsRequest = url.searchParams.get("render");
+    if (effectsRequest) {
+      let element;
+      try {
+        if (effectsRequest.length > 3000) throw new Error("Invalid effects");
+        element = JSON.parse(effectsRequest);
+        if (!element || typeof element !== "object" || Array.isArray(element)) throw new Error("Invalid effects");
+      } catch {
+        sendJson(res, 400, { error: { code: "SOCIAL_INVALID_EFFECTS", message: "Os ajustes da imagem são inválidos." } });
+        return;
+      }
+      buffer = await require("./services/social-studio/composition-engine/pipeline").createCinematicArtwork(buffer, element);
+    }
+    const metadata = await sharp(buffer, { failOn: "error" }).metadata();
+    const contentType = metadata.format === "jpeg" ? "image/jpeg" : metadata.format === "webp" ? "image/webp" : "image/png";
+    res.writeHead(200, {
+      ...securityHeaders({
+        "Content-Type": contentType,
+        "Content-Length": buffer.length,
+        "Cache-Control": "private, max-age=300"
+      }),
+      "Access-Control-Allow-Origin": responseCorsOrigin(req),
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
+    });
+    res.end(buffer);
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/copy" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    const draft = normalizeSocialDraft(body, context);
+    const result = require('./services/social-studio/copy-engine').generateCopy(draft,context,{tone:body.copyTone,density:body.copyDensity,locks:body.copyLocks,seed:Number(body.copySeed)||0});
+    sendJson(res,200,result,{'Cache-Control':'no-store'});
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/resolve" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    const normalized = normalizeSocialDraft(body, context);
+    if(body.generateCopy===true) {
+      const {generateCopy,FIELD_MAP}=require('./services/social-studio/copy-engine');
+      const {bundle}=generateCopy(normalized,context,{tone:body.copyTone,density:body.copyDensity,locks:body.copyLocks});
+      for(const [field,key] of Object.entries(FIELD_MAP)) if(body[key]===undefined && !body.copyLocks?.[field]) normalized[key]=bundle[field];
+      Object.assign(normalized,normalizeSocialDraft(normalized,context));
+    }
+    const { entities, ...draft } = normalized;
+    sendJson(res, 200, {
+      draft,
+      caption: captionForDraft(normalized, context),
+      notices: socialDraftNotices(normalized, context)
+    }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/variations" && method === "POST") {
+    const body = await readBody(req);
+    const result = await require("./services/social-studio/composition-engine/variations").generateVariations(body, socialStudioContext(db), { loadImage: loadSocialStudioImage });
+    sendJson(res, 200, result, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/preview-scene" && method === "POST") {
+    const body = await readBody(req);
+    const snapshot = require('./services/social-studio/scene/snapshots').read(String(req.adminUser.id), body.previewToken);
+    sendJson(res, 200, {scene:snapshot.scene}, {'Cache-Control':'no-store'});
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/preview" && method === "POST") {
+    const body = await readBody(req);
+    const rendered = body.scene
+      ? await require('./services/social-studio/scene/preview-edit').renderPreviewEdit(
+        require('./services/social-studio/scene/snapshots').read(String(req.adminUser.id), body.previewToken), body.scene,
+        {loadImage:loadSocialStudioImage, outputType:body.outputType, allowManualLayoutIssues:true})
+      : await renderSocialPost(body, socialStudioContext(db), { loadImage: loadSocialStudioImage, allowIncompleteTicket: true });
+    res.writeHead(200, {
+      ...securityHeaders({
+        "Content-Type": rendered.contentType,
+        "Content-Length": rendered.buffer.length,
+        "X-Social-Scene-Id": require('./services/social-studio/scene/snapshots').remember(String(req.adminUser.id),rendered),
+        "X-Social-Review": encodeURIComponent(JSON.stringify(rendered.notices)),
+        "Cache-Control": "no-store",
+        "Content-Disposition": `inline; filename="social-studio-preview${rendered.extension}"`
+      }),
+      "Access-Control-Allow-Origin": responseCorsOrigin(req),
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
+    });
+    res.end(rendered.buffer);
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/posts" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,context));
+    const rendered = body.previewToken
+      ? require('./services/social-studio/scene/preview-edit').withCaption(require('./services/social-studio/scene/snapshots').read(String(req.adminUser.id),body.previewToken),body.caption)
+      : await renderSocialPost(body, context, { loadImage: loadSocialStudioImage });
+    require('./services/social-studio/engine/content-rules').assertContentReady(rendered.draft);
+    const uploaded = await storageService.uploadImageBuffer({
+      buffer: rendered.buffer,
+      filename: `${slugify(rendered.draft.title || rendered.draft.templateId || "post")}${rendered.extension}`,
+      contentType: rendered.contentType,
+      folder: "social-studio"
+    });
+    const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser || "");
+    post.imageUrl = uploaded.url;
+    const before = db.settings?.socialStudioPosts || [];
+    const history = await persistSocialStudioPosts(db, [post, ...before], req, before);
+    logEvent("info", "social_studio.post_created", {
+      postId: post.id,
+      templateId: post.templateId,
+      formatId: post.formatId,
+      actorUserId: req.adminUser?.id || ""
+    });
+    sendJson(res, 201, { post: publicSocialStudioPost(post), history: history.map(publicSocialStudioPost) }, { "Cache-Control": "no-store" });
+    return;
+  }
+
+  if (pathname === "/api/admin/social-studio/campaigns" && method === "POST") {
+    const body = await readBody(req);
+    const context = socialStudioContext(db);
+    require('./services/social-studio/engine/content-rules').assertContentReady(normalizeSocialDraft(body,context));
+    const formats = Object.keys(SOCIAL_FORMATS);
+    const uploadedUrls = [];
+    const campaignId = `campaign-${Date.now()}`;
+    const imageCache = new Map();
+    const loadCampaignImage = (url) => {
+      const key = String(url || "");
+      if (!imageCache.has(key)) imageCache.set(key, loadSocialStudioImage(key));
+      return imageCache.get(key);
+    };
+    try {
+      const campaign = await generateSocialCampaign({ ...body, formats }, context, { loadImage: loadCampaignImage });
+      const renderedItems = campaign.items;
+      const posts = [];
+      for (const rendered of renderedItems) {
+        const uploaded = await storageService.uploadImageBuffer({
+          buffer: rendered.buffer,
+          filename: `${slugify(rendered.draft.title || rendered.draft.templateId || "campanha")}-${rendered.format.id}${rendered.extension}`,
+          contentType: rendered.contentType,
+          folder: "social-studio-campaigns"
+        });
+        uploadedUrls.push(uploaded.url);
+        const post = createHistoryRecord(rendered, { savedImageUrl: uploaded.url }, context, req.adminUser || "");
+        post.imageUrl = uploaded.url;
+        post.campaignId = campaignId;
+        posts.push(post);
+      }
+      const before = db.settings?.socialStudioPosts || [];
+      const history = await persistSocialStudioPosts(db, [...posts, ...before], req, before);
+      logEvent("info", "social_studio.campaign_created", {
+        postIds: posts.map((post) => post.id),
+        templateId: body.templateId,
+        actorUserId: req.adminUser?.id || ""
+      });
+      sendJson(res, 201, { posts: posts.map(publicSocialStudioPost), history: history.map(publicSocialStudioPost), metrics: campaign.metrics, rendererVersion: campaign.rendererVersion }, { "Cache-Control": "no-store" });
+    } catch (error) {
+      await Promise.all(uploadedUrls.map((url) => storageService.deleteByPublicUrl(url).catch(() => false)));
+      throw error;
+    }
+    return;
+  }
+
+  const socialStudioPostMatch = pathname.match(/^\/api\/admin\/social-studio\/posts\/([^/]+)(?:\/(download|scene|scene-draft|scene-versions|scene-export|scene-reset))?$/);
+  if (socialStudioPostMatch) {
+    const postId = decodeURIComponent(socialStudioPostMatch[1]);
+    const action = socialStudioPostMatch[2] || "";
+    const posts = db.settings?.socialStudioPosts || [];
+    const post = posts.find((item) => String(item.id) === postId);
+    if (!post) {
+      sendJson(res, 404, { error: { code: "SOCIAL_POST_NOT_FOUND", message: "A arte não foi encontrada no histórico." } });
+      return;
+    }
+    if (action === "download" && method === "GET") {
+      const buffer = await loadSocialStudioImage(post.imageUrl);
+      if (!buffer) {
+        sendJson(res, 404, { error: { code: "SOCIAL_POST_FILE_NOT_FOUND", message: "O arquivo desta arte não está mais disponível." } });
+        return;
+      }
+      const contentType = post.outputType === "jpg" ? "image/jpeg" : "image/png";
+      res.writeHead(200, {
+        ...securityHeaders({
+          "Content-Type": contentType,
+          "Content-Length": buffer.length,
+          "Cache-Control": "private, no-store",
+          "Content-Disposition": `attachment; filename="${socialStudioDownloadName(post)}"`
+        }),
+        "Access-Control-Allow-Origin": responseCorsOrigin(req),
+        "Access-Control-Allow-Credentials": "true",
+        Vary: "Origin"
+      });
+      res.end(buffer);
+      return;
+    }
+    if (action === "scene" && method === "GET") {
+      const originalScene = await editableSceneForPost(post, db);
+      if (!originalScene) {
+        sendJson(res, 409, { error: { code: "SOCIAL_POST_NOT_EDITABLE", message: "Esta arte antiga não possui uma cena editável. Gere uma nova versão no Social Studio." } });
+        return;
+      }
+      sendJson(res, 200, {
+        editable: true,
+        post: publicSocialStudioPost(post),
+        originalScene,
+        editedScene: post.editedScene ? normalizeSocialScene(post.editedScene) : null,
+        draftScene: post.draftScene ? normalizeSocialScene(post.draftScene) : null,
+        scene: normalizeSocialScene(post.draftScene || post.editedScene || originalScene)
+      }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (action === "scene-draft" && method === "PUT") {
+      const body = await readBody(req);
+      const trustedScene=await editableSceneForPost(post,db);
+      const scene = normalizeSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body));
+      const now = new Date().toISOString();
+      const updated = {
+        ...post,
+        draftScene: scene,
+        draftSavedAt: now,
+        draftSavedBy: String(req.adminUser?.id || ""),
+        updatedAt: now
+      };
+      const history = posts.map((item) => String(item.id) === postId ? updated : item);
+      await persistSocialStudioPosts(db, history, req, posts);
+      sendJson(res, 200, { saved: true, savedAt: now }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (action === "scene-versions" && method === "POST") {
+      const body = await readBody(req);
+      const outputType = body.outputType === "jpg" ? "jpg" : "png";
+      const trustedScene=await editableSceneForPost(post,db);
+      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType, allowManualLayoutIssues: true });
+      const uploaded = await storageService.uploadImageBuffer({
+        buffer: rendered.buffer,
+        filename: `${slugify(post.title || post.templateName || "post")}-editado${rendered.extension}`,
+        contentType: rendered.contentType,
+        folder: "social-studio-edits"
+      });
+      const now = new Date().toISOString();
+      const versionId = `edit-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+      const version = {
+        id: versionId,
+        kind: "manual",
+        imageUrl: uploaded.url,
+        outputType,
+        scene: rendered.scene,
+        createdAt: now,
+        createdBy: String(req.adminUser?.id || "")
+      };
+      const versions = [...(Array.isArray(post.sceneVersions) ? post.sceneVersions : []), version].slice(-12);
+      const updated = {
+        ...post,
+        originalImageUrl: post.originalImageUrl || post.imageUrl,
+        originalScene: post.originalScene || await editableSceneForPost(post, db),
+        imageUrl: uploaded.url,
+        outputType,
+        editedScene: rendered.scene,
+        draftScene: null,
+        activeVersion: versionId,
+        sceneVersions: versions,
+        updatedAt: now
+      };
+      const history = posts.map((item) => String(item.id) === postId ? updated : item);
+      await persistSocialStudioPosts(db, history, req, posts);
+      logEvent("info", "social_studio.scene_version_created", { postId, versionId, actorUserId: req.adminUser?.id || "" });
+      sendJson(res, 201, { post: publicSocialStudioPost(updated), scene: rendered.scene, version: { ...version, scene: undefined } }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (action === "scene-export" && method === "POST") {
+      const body = await readBody(req);
+      const outputType = body.outputType === "jpg" ? "jpg" : "png";
+      const trustedScene=await editableSceneForPost(post,db);
+      const rendered = await renderSocialScene(require('./services/social-studio/scene/preview-edit').editableSnapshot({scene:trustedScene},body.scene || body), { loadImage: loadSocialStudioImage, outputType, allowManualLayoutIssues: true });
+      res.writeHead(200, {
+        ...securityHeaders({
+          "Content-Type": rendered.contentType,
+          "Content-Length": rendered.buffer.length,
+          "Cache-Control": "private, no-store",
+          "Content-Disposition": `attachment; filename="${slugify(post.title || "post")}-editado${rendered.extension}"`
+        }),
+        "Access-Control-Allow-Origin": responseCorsOrigin(req),
+        "Access-Control-Allow-Credentials": "true",
+        Vary: "Origin"
+      });
+      res.end(rendered.buffer);
+      return;
+    }
+    if (action === "scene-reset" && method === "POST") {
+      const originalScene = await editableSceneForPost(post, db);
+      if (!originalScene) {
+        sendJson(res, 409, { error: { code: "SOCIAL_POST_NOT_EDITABLE", message: "A versão automática original não está disponível." } });
+        return;
+      }
+      const updated = {
+        ...post,
+        originalScene: post.originalScene || originalScene,
+        imageUrl: post.originalImageUrl || post.imageUrl,
+        editedScene: null,
+        draftScene: null,
+        activeVersion: "automatic",
+        updatedAt: new Date().toISOString()
+      };
+      const history = posts.map((item) => String(item.id) === postId ? updated : item);
+      await persistSocialStudioPosts(db, history, req, posts);
+      sendJson(res, 200, { post: publicSocialStudioPost(updated), scene: originalScene }, { "Cache-Control": "no-store" });
+      return;
+    }
+    if (!action && method === "DELETE") {
+      const history = posts.filter((item) => String(item.id) !== postId);
+      const urls = new Set([
+        post.imageUrl,
+        post.originalImageUrl,
+        ...(Array.isArray(post.sceneVersions) ? post.sceneVersions.map((version) => version.imageUrl) : [])
+      ].filter(Boolean));
+      await Promise.all([...urls].map((url) => storageService.deleteByPublicUrl(url).catch(() => false)));
+      await persistSocialStudioPosts(db, history, req, posts);
+      logEvent("info", "social_studio.post_deleted", { postId, actorUserId: req.adminUser?.id || "" });
+      await getSocialAnimationJobs().removePost(postId);
+      sendJson(res, 200, { deleted: true, id: postId, history: history.map(publicSocialStudioPost) }, { "Cache-Control": "no-store" });
+      return;
+    }
+  }
 
   if (pathname === "/api/admin/reports/dashboard.csv" && method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -17676,6 +18116,7 @@ loadEnvFiles().then(() => {
     void runSubscriptionMaintenance();
     void runMovieImageMaintenance();
     void runEmailAttachmentMaintenance();
+    void getSocialStudioAutomationOrchestrator().resumePending().then(count=>{if(count)logEvent('info','social_studio.automation.resumed',{count});}).catch(error=>logEvent('warn','social_studio.automation.resume_failed',{message:error.message}));
     if (postgresEnabled()) {
       emailCampaignWorker = buildEmailCampaignWorker();
       emailCampaignWorker?.start();

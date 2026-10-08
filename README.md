@@ -37,6 +37,8 @@ Produção:
 | Ingressos digitais | Código, QR Code, PDF e histórico |
 | Google Wallet | Implementação oficial, dependente de credenciais externas |
 | E-mail | SMTP ou webhook de entrega configurável no Admin |
+| Social Studio V2 | Criação de campanhas com composição cinematográfica, editor visual e exportação PNG/JPG |
+| Automação do Social Studio | API assíncrona e idempotente, memória de campanhas, QA, retry e workflows n8n opcionais |
 | Logs operacionais | Consulta, filtros e retenção administrável |
 | Eventos privados | Formulário envia solicitação e confirmação automática |
 | TMDB | Importação assistida de dados de filmes |
@@ -74,6 +76,8 @@ Nginx da VPS
 ```
 
 O frontend nunca é fonte de verdade para preço, disponibilidade, pagamento, ticket ou status de assinatura. Esses dados são recalculados ou confirmados pelo backend.
+
+O Social Studio também expõe uma API de automação protegida para o n8n. O orquestrador prepara contexto e gatilhos; composição, renderização, editor e exportação continuam no Studio e permanecem disponíveis quando o n8n estiver offline. Consulte [`docs/SOCIAL_STUDIO_AUTOMATION_N8N.md`](docs/SOCIAL_STUDIO_AUTOMATION_N8N.md).
 
 ## 4. Stack tecnológica
 
@@ -132,6 +136,8 @@ O código, a publicação de versões e as instruções de compilação ficam em
 |   |-- services/
 |   |   |-- emailService.js
 |   |   |-- integrationConfigService.js
+|   |   |-- social-studio/
+|   |   |   `-- composition-engine/
 |   |   `-- paymentService.js
 |   `-- server.js
 |-- desktop/
@@ -509,6 +515,31 @@ Regras:
 - anexos de ingresso usam o PDF real gerado pelo sistema;
 - secrets SMTP ficam criptografados e mascarados no Admin.
 - a logo usada nos e-mails é um ativo local estável, evitando dependência de imagem privada ou URL temporária.
+
+### 13.1 Social Studio V2 e Composition Engine
+
+O Social Studio cria peças de redes sociais a partir dos dados de filmes e campanhas, mantendo um editor visual manual para ajustes finos. O Composition Engine transforma pôsteres e backdrops em artes com direção de arte automatizada, sem substituir o fluxo de criação, o histórico ou os templates existentes.
+
+Recursos principais:
+
+- composições `Hero Left`, `Hero Right`, `Hero Center`, `Full Bleed`, `Diagonal`, `Split`, `Editorial`, `Poster Dominant` e `Typography Dominant`;
+- enquadramentos independentes para fundo e hero, com escala, posição e crop próprios;
+- camadas de profundidade para fundo desfocado, color wash, arte secundária, hero, gradientes, tipografia e marca;
+- modos de hero `Rectangle`, `Soft Rectangle`, `Edge Dissolve`, `Full Blend` e `Floating`, com máscaras, glow e sombras ambiente;
+- presets por gênero e look visual, com iluminação local derivada da paleta dominante da mídia;
+- contraste automático e áreas de texto escolhidas por análise local de luminância e densidade de bordas;
+- geração de três ou quatro variações realmente distintas, com randomização controlada, hierarquia de campanha e score de composição;
+- prévia estática em camadas e exportação em PNG/JPG, sem geração de vídeo.
+
+O score verifica contraste, área segura, tamanho mínimo, sobreposição de texto, legibilidade da marca e visibilidade do pôster antes de oferecer uma variação. A análise visual é heurística: ela não usa reconhecimento semântico de rostos, personagens ou logotipos e, por isso, o operador continua podendo ajustar a arte no editor antes da publicação.
+
+A revisão editorial combina os validadores raster existentes com ocupação visual, faixas vazias, proximidade entre CTA e endereço, presença da arte disponível e semântica do preço mínimo. Problemas editoriais graves acionam até três alternativas de composição antes de impedir a geração. Avisos menores reduzem a pontuação sem reprovar automaticamente a arte; fundos atmosféricos não contam como conteúdo principal, enquanto artwork nítido em full bleed conta.
+
+Na comparação, opções com geometria praticamente igual são descartadas e as direções recebem intenção cinematográfica, editorial ou comercial. O histórico de campanhas salvas oferece um bônus limitado de preferência, sem substituir qualidade nem diversidade. Não há treinamento de IA ou inferência de aprovação a partir de uma simples prévia. Os horários usam `HH:mm` e a copy mantém o contexto de sessão, disponibilidade e preço mínimo.
+
+Na bomboniere, a origem da imagem pode ser registrada como imagem cadastrada, ativo oficial confirmado ou mockup promocional. Imagens cadastradas e oficiais preservam sua fonte e suas cores na composição; o modo mockup apenas identifica a natureza do ativo, não gera novas embalagens nem certifica marcas de terceiros.
+
+O processamento de imagem usa cache limitado e fila com concorrência controlada no backend. Os mesmos assets rasterizados são usados na prévia, no editor Konva e na exportação, reduzindo divergências entre o que o operador vê e o arquivo final. A documentação técnica detalhada está em [`docs/SOCIAL_STUDIO_COMPOSITION_ENGINE.md`](docs/SOCIAL_STUDIO_COMPOSITION_ENGINE.md).
 
 ## 14. Formulário de eventos
 

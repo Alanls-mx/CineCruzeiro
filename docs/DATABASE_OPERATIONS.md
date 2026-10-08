@@ -25,7 +25,8 @@ transformar tabelas indisponiveis em listas vazias.
 - Invalidacao local apos commit e entre processos por `LISTEN/NOTIFY` (migracao 039).
 - Resultado antigo em voo nao pode repopular cache depois de uma invalidacao.
 - Se a conexao de notificacoes cair, leituras deixam de reutilizar o cache ate reconectar.
-- O payload publico nao inclui anexos/modelos internos de e-mail.
+- O payload publico nao inclui bibliotecas internas do Studio nem anexos/modelos de e-mail.
+- Renderizacoes puras do Studio nao seguram o lock global de gravacao.
 
 O snapshot operacional ainda carrega varias colecoes. Esta rodada remove a regravacao destrutiva,
 mas nao transforma todos os endpoints em consultas paginadas: migrar os fluxos restantes por
