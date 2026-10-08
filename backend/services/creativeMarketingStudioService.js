@@ -341,7 +341,10 @@ function createCreativeMarketingWorkflow({ repository, ai, images }) {
     return repository.insert({ id: crypto.randomUUID(), category: input.category, briefVersion: 2,
       movieId: input.movieId, createdBy: userId, campaignType: input.category, format: input.format,
       density: input.density, artworkSource: input.artworkRole, artworkUrl: input.artworkUrl,
-      referenceUrl: input.referenceUrl, input: { request: input, warnings }, analysis: analysis || {},
+      referenceUrl: input.referenceUrl,
+      input: { request: input, warnings, sourceAssets: {
+        posterUrl: clean(source.posterUrl, 1000), backdropUrl: clean(source.backdropUrl, 1000)
+      } }, analysis: analysis || {},
       referenceAnalysis, variants });
   }
   async function compileRun(run, variantId, edits = {}) {

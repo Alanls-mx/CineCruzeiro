@@ -106,8 +106,11 @@ test("pacote entrega prompt, briefing, artwork, referência e duas assinaturas",
     const url = (name) => `/uploads/creative-prompts/${name}.png`;
     const archive = await bundleService.createBundle({
       run: { id: "test-run", briefVersion: 2, category: "films", format: "feed", promptText: "Prompt completo",
-        artworkUrl: url("principal"), referenceUrl: url("referencia"), input: { request: { facts: { title: "Filme" } } } },
-      movie: { posterUrl: url("poster"), backdropUrl: url("backdrop") }, uploadRoot, publicRoot
+        artworkUrl: url("principal"), referenceUrl: url("referencia"), input: {
+          request: { facts: { title: "Filme" } },
+          sourceAssets: { posterUrl: url("poster"), backdropUrl: url("backdrop") }
+        } },
+      movie: { posterUrl: url("arte-atualizada"), backdropUrl: url("backdrop-atualizado") }, uploadRoot, publicRoot
     });
     const bytes = await streamBuffer(archive);
     assert.equal(bytes.subarray(0, 2).toString(), "PK");

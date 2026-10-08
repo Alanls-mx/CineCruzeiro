@@ -11185,10 +11185,11 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 404, { error: { code: "CREATIVE_MARKETING_SOURCE_NOT_FOUND", message: "O item selecionado não está mais no cadastro." } });
         return;
       }
-      const source = { movieId: movie?.id || null, artworkUrl: "", label: "", facts: {} };
+      const source = { movieId: movie?.id || null, artworkUrl: "", label: "", facts: {},
+        posterUrl: movie?.posterUrl || "", backdropUrl: movie?.backdropUrl || "" };
       if (movie && ["films", "programming"].includes(body.category)) {
         source.label = movie.title;
-        source.artworkUrl = body.artworkRole === "official" && body.movieArtwork === "backdrop" ? movie.backdropUrl : movie.posterUrl;
+        source.artworkUrl = body.movieArtwork === "backdrop" ? movie.backdropUrl : movie.posterUrl;
         source.facts = body.category === "films" ? {
           title: movie.title, release: movie.releaseDate || "", rating: movie.rating || "",
           synopsis: movie.synopsis || "", sessions: (movie.sessions || []).filter((s) => s.date && s.time)

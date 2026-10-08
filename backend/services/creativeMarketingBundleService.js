@@ -26,9 +26,11 @@ async function createBundle({ run, movie, uploadRoot, publicRoot, basePath = "",
     }
   };
   await addImage("imagem-principal", run.artworkUrl, Boolean(run.artworkUrl));
-  if (movie) {
-    await addImage("poster-filme", movie.posterUrl);
-    await addImage("backdrop-filme", movie.backdropUrl);
+  if (movie || run.input?.sourceAssets) {
+    const posterUrl = run.input?.sourceAssets?.posterUrl || movie?.posterUrl;
+    const backdropUrl = run.input?.sourceAssets?.backdropUrl || movie?.backdropUrl;
+    await addImage("poster-filme", posterUrl);
+    await addImage("backdrop-filme", backdropUrl);
   }
   await addImage("referencia-visual", run.referenceUrl, Boolean(run.referenceUrl));
   for (const [label, filename] of [["assinatura-clara", "assinatura-clara.png"], ["assinatura-escura", "assinatura-escura.png"]]) {
