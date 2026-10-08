@@ -1669,12 +1669,14 @@
           <div class="creative-prompt-workspace">
             <form id="creativePromptForm" class="creative-prompt-controls surface" data-permission="marketing.manage">
               <div class="section-title">Nova direção</div>
-              <label>Categoria
-                <select id="creativePromptCategory"></select>
-              </label>
-              <label id="creativePromptSourceWrap">Item cadastrado (opcional)
-                <select id="creativePromptSource"><option value="">Preencher manualmente</option></select>
-              </label>
+              <div class="creative-prompt-setup">
+                <label>Categoria
+                  <select id="creativePromptCategory"></select>
+                </label>
+                <label id="creativePromptSourceWrap">Item cadastrado (opcional)
+                  <select id="creativePromptSource"><option value="">Preencher manualmente</option></select>
+                </label>
+              </div>
               <div id="creativePromptContextFields" class="creative-prompt-context-fields"></div>
               <label>Objetivo da peça (opcional)
                 <input id="creativePromptObjective" type="text" maxlength="500" placeholder="Ex.: destacar lançamento ou convidar para uma sessão" />
@@ -1760,20 +1762,21 @@
               </div>
               <section id="creativePromptVariants" class="creative-prompt-stage" hidden aria-label="Direções criativas">
                 <div class="creative-prompt-stage-head">
-                  <div><span class="creative-prompt-step">01 / DIREÇÃO</span><h2>Escolha uma abordagem</h2></div>
+                  <div><h2>Escolha uma abordagem</h2></div>
                   <button id="creativePromptRegenerate" class="ghost-button" type="button">Gerar outra direção</button>
                 </div>
                 <div id="creativePromptVariantList" class="creative-prompt-variant-list"></div>
               </section>
               <section id="creativePromptOutput" class="creative-prompt-stage" hidden aria-label="Prompt final">
                 <div class="creative-prompt-stage-head">
-                  <div><span class="creative-prompt-step">02 / BRIEFING</span><h2>Prompt para o Canva</h2></div>
+                  <div><h2>Prompt para o Canva</h2></div>
                   <span id="creativePromptSaveStatus" class="status-pill muted">Pronto</span>
                 </div>
                 <div id="creativePromptDirectionSummary" class="creative-prompt-direction-summary"></div>
                 <div id="creativePromptDecisions" class="creative-prompt-decisions"></div>
                 <div class="creative-prompt-actions">
                   <button id="creativePromptCopy" class="primary-button" type="button">Copiar prompt</button>
+                  <button id="creativePromptDownload" class="ghost-button" type="button">Baixar materiais (.zip)</button>
                   <button id="creativePromptUpdate" class="ghost-button" type="button" hidden>Atualizar prompt</button>
                   <button id="creativePromptSave" class="ghost-button" type="button">Salvar</button>
                   <button id="creativePromptDuplicate" class="ghost-button" type="button">Duplicar</button>
@@ -1792,7 +1795,7 @@
 
           <section class="creative-prompt-history" aria-label="Histórico de prompts">
             <div class="creative-prompt-stage-head">
-              <div><span class="creative-prompt-step">ARQUIVO</span><h2>Histórico</h2></div>
+              <div><h2>Histórico</h2></div>
               <button id="creativePromptRefreshHistory" class="ghost-button" type="button">Atualizar</button>
             </div>
             <div id="creativePromptHistoryList" class="creative-prompt-history-list"></div>

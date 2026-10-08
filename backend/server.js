@@ -37,6 +37,7 @@ const creativePromptRepository = require("./repositories/creativePromptRepositor
 const creativeMarketingCore = require("./services/creativeMarketingStudioService");
 const creativePromptCore = require("./services/creativePromptStudioService");
 const creativePromptImages = require("./services/creativePromptImageService");
+const { createBundle: createCreativeMarketingBundle } = require("./services/creativeMarketingBundleService");
 const { createCreativePromptAiProvider } = require("./services/creativePromptAiProvider");
 const { createCreativePromptWorkflow } = require("./services/creativePromptWorkflow");
 const paymentService = require("./services/paymentService");
@@ -11245,6 +11246,24 @@ async function handleApi(req, res, pathname) {
   }
 
   const creativePromptMatch = pathname.match(/^\/api\/admin\/creative-prompts\/([0-9a-f-]{36})(?:\/(compile|save|duplicate))?$/i);
+  const creativeBundleMatch = pathname.match(/^\/api\/admin\/creative-prompts\/([0-9a-f-]{36})\/bundle$/i);
+  if (creativeBundleMatch && method === "GET") {
+    const run = await creativePromptRepository.get(creativeBundleMatch[1]);
+    if (!run) {
+      sendJson(res, 404, { error: { code: "CREATIVE_PROMPT_NOT_FOUND", message: "Direção criativa não encontrada." } });
+      return;
+    }
+    const movie = run.movieId ? (db.movies || []).find((item) => item.id === run.movieId && !isDeletedMovie(item)) : null;
+    const archive = await createCreativeMarketingBundle({ run, movie,
+      uploadRoot: storageService.rootDir, publicRoot: FRONTEND_PUBLIC_DIR,
+      basePath: configuredAppBasePath() });
+    res.writeHead(200, { "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="cine-cruzeiro-studio-${run.id.slice(0, 8)}.zip"`,
+      "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+    archive.on("error", () => res.destroy());
+    archive.pipe(res);
+    return;
+  }
   if (creativePromptMatch) {
     const run = await creativePromptRepository.get(creativePromptMatch[1]);
     if (!run) {

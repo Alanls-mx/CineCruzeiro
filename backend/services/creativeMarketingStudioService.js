@@ -96,6 +96,12 @@ function sentence(value) {
   const text = clean(value);
   return /[.!?]$/.test(text) ? text : `${text}.`;
 }
+function brazilianFactDate(value) {
+  const text = clean(value, 1600);
+  return text.replace(/\b(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/g,
+    (_match, year, month, day, hour, minute) => `${day}/${month}/${year}${hour ? ` ${hour}:${minute}` : ""}`);
+}
+const DATE_FACTS = new Set(["release", "sessions", "period", "date", "validity", "hours"]);
 function normalizeInput(raw, source = {}) {
   const category = clean(raw.category, 30);
   const profile = CATEGORIES[category];
@@ -108,7 +114,8 @@ function normalizeInput(raw, source = {}) {
   const incoming = raw.facts && typeof raw.facts === "object" && !Array.isArray(raw.facts) ? raw.facts : {};
   const facts = {};
   for (const item of profile.fields) {
-    facts[item.key] = clean(Object.hasOwn(incoming, item.key) ? incoming[item.key] : sourceFacts[item.key], 1600);
+    const value = Object.hasOwn(incoming, item.key) ? incoming[item.key] : sourceFacts[item.key];
+    facts[item.key] = DATE_FACTS.has(item.key) ? brazilianFactDate(value) : clean(value, 1600);
     if (item.required && !facts[item.key]) invalid(`Informe ${item.label.toLowerCase()}.`, "CREATIVE_MARKETING_REQUIRED_FACT");
   }
   const requiredText = Array.isArray(raw.requiredText) ? raw.requiredText.map((item) => clean(item, 500)).filter(Boolean) : [];
@@ -142,6 +149,52 @@ function curate(input) {
   };
 }
 
+const CREATIVE_MODES = Object.freeze({
+  recommended: {
+    intent: "Integrar assunto e informação em uma mesma cena editorial, com fluxo de leitura orgânico.",
+    layout: "Colocar o assunto principal em escala dominante. Apoiar o título junto ao espaço negativo da imagem; agrupar dados secundários perto da ação sem criar faixas isoladas.",
+    hierarchy: "Equilibrar imagem, mensagem e dados confirmados em uma leitura contínua.",
+    finish: "Transições suaves entre imagem e fundo, com contraste somente onde há texto."
+  },
+  premium: {
+    intent: "Construir uma peça de presença cinematográfica e respiro deliberado.",
+    layout: "Ampliar a imagem para ocupar a maior parte do formato. Reduzir o texto auxiliar à menor área legível e usar escala tipográfica concentrada em um único ponto de impacto.",
+    hierarchy: "Primeiro a imagem e o título; fatos complementares ficam em segunda leitura compacta.",
+    finish: "Profundidade tonal e luz localizada, sem selos ou molduras decorativas."
+  },
+  bold: {
+    intent: "Criar tensão gráfica pela escala e por uma assimetria controlada.",
+    layout: "Deslocar o eixo principal para um lado e contrapor imagem e título em escalas distintas. Fazer os dados formarem uma coluna curta, preservando integralmente o ponto focal.",
+    hierarchy: "Título ou oferta lidera; imagem responde; informação factual permanece em grupo compacto.",
+    finish: "Contraste marcado e um único gesto gráfico derivado da artwork, sem efeitos genéricos."
+  },
+  commercial: {
+    intent: "Tornar o benefício e a ação compreensíveis num relance.",
+    layout: "Abrir com produto, prêmio ou benefício; aproximar preço ou código confirmado e CTA em uma unidade de leitura. Deixar detalhes e condições em base claramente associada.",
+    hierarchy: "Benefício primeiro, ação logo depois, condições sem esconder informação essencial.",
+    finish: "Cor e luz orientam o olhar para o elemento real, sem aparência de liquidação genérica."
+  },
+  editorial: {
+    intent: "Tratar a informação como uma publicação curada e escaneável.",
+    layout: "Construir uma coluna de leitura por filme ou dia, com alinhamentos e intervalos que marcam grupos. Usar a imagem como margem visual, nunca como fundo dos horários.",
+    hierarchy: "Sequência de títulos, datas e horários; nenhum dado muda de grupo.",
+    finish: "Tipografia precisa, divisões discretas e alto contraste funcional."
+  },
+  minimal: {
+    intent: "Retirar ornamento e preservar apenas a informação necessária.",
+    layout: "Dar muito espaço ao assunto real e a um único grupo de texto. Eliminar slogans e adornos opcionais; se os fatos obrigatórios forem extensos, dividir em mais de uma peça.",
+    hierarchy: "Assunto e dado indispensável; assinatura discreta.",
+    finish: "Textura contida e superfície limpa, sem caixas repetidas."
+  }
+});
+const ALTERNATE_LAYOUTS = Object.freeze({
+  recommended: "Nesta segunda proposta, inverter a relação entre imagem e texto: usar uma composição lateral fluida em vez de empilhar elementos.",
+  premium: "Nesta segunda proposta, concentrar o drama em um detalhe ampliado da imagem e deixar o título ocupar o outro eixo visual.",
+  bold: "Nesta segunda proposta, usar o título como primeiro impacto e a imagem como revelação, sem encobrir personagens.",
+  commercial: "Nesta segunda proposta, abrir pelo preço ou benefício confirmado e conduzir a leitura até o produto real.",
+  editorial: "Nesta segunda proposta, agrupar por dia em vez de filme, preservando a associação exata entre títulos e horários.",
+  minimal: "Nesta segunda proposta, usar a imagem como protagonista isolada e deslocar os dados obrigatórios para uma linha editorial discreta."
+});
 function variantsFor(input, analysis) {
   const profile = CATEGORIES[input.category];
   const palette = analysis?.dominantColors?.length ? analysis.dominantColors.join(", ")
@@ -152,15 +205,16 @@ function variantsFor(input, analysis) {
     : input.category === "films" || input.category === "events" || input.category === "free"
       ? [["recommended", "Recomendada"], ["premium", "Premium"], ["bold", "Ousada"]]
       : [["recommended", "Recomendada"], ["commercial", "Comercial"], ["minimal", "Minimalista"]];
-  return modes.map(([id, label]) => ({ id, label,
-    summary: `${profile.name}: ${id === "recommended" ? "equilíbrio entre presença visual e informação" : id === "commercial" ? "benefício e ação em leitura imediata" : id === "minimal" ? "menos elementos auxiliares, dados obrigatórios intactos" : id === "editorial" ? "ritmo de leitura e alinhamento refinados" : id === "bold" ? "escala e contraste mais expressivos" : "acabamento e atmosfera mais refinados"}.`,
-    artDirection: profile.direction,
-    composition: `${profile.composition} ${id === "bold" ? "Explorar assimetria com segurança para o assunto principal." : id === "editorial" ? "Usar ritmo editorial e espaçamento consistente." : id === "minimal" ? "Reduzir ornamentos e conteúdo opcional." : "Manter o foco visual inequívoco."} ${input.bias === "alternate" ? "Explorar uma segunda organização: mudar o eixo de leitura e a relação entre assunto e texto sem deslocar dados ou perder o ponto focal." : ""}`,
+  return modes.map(([id, label]) => { const mode = CREATIVE_MODES[id]; return { id, label,
+    summary: mode.intent,
+    artDirection: `${profile.direction} ${mode.intent}`,
+    composition: `${profile.composition} ${mode.layout} ${input.bias === "alternate" ? ALTERNATE_LAYOUTS[id] : ""}`.trim(),
+    hierarchy: mode.hierarchy,
     paletteDirection: `Derivar da identidade real: ${palette}. A marca atua como assinatura, não como filtro global.`,
     typographyDirection: profile.typography,
-    finish: profile.finish,
+    finish: `${profile.finish} ${mode.finish}`,
     density: id === "minimal" ? "minimal" : input.density === "auto" ? profile.defaultDensity : input.density
-  }));
+  }; });
 }
 
 function briefFor(input, curated, variant, analysis, referenceAnalysis) {
@@ -169,7 +223,7 @@ function briefFor(input, curated, variant, analysis, referenceAnalysis) {
     version: 2, category: input.category,
     objective: input.objective || `Comunicar ${profile.protagonist} de modo adequado a esta campanha.`,
     audience: input.audience, format: input.format, protagonist: profile.protagonist,
-    artDirection: variant.artDirection, composition: variant.composition,
+    artDirection: variant.artDirection, composition: variant.composition, visualHierarchy: variant.hierarchy,
     palette: variant.paletteDirection, typography: variant.typographyDirection,
     density: variant.density, mandatoryContent: curated.required,
     secondaryContent: curated.facts.filter((item) => !item.factual).map((item) => item.value),
@@ -224,7 +278,7 @@ function compile(input, brief, curated) {
     `FORMATO E DENSIDADE\n${FORMATS[input.format]}. ${FORMAT_GUIDANCE[input.format]} Densidade ${brief.density}. ${brief.overflowAdvice}`,
     `MATERIAL VISUAL\n${input.artworkRole === "none" ? "Sem imagem principal anexada." : `Papel da imagem principal: ${{ official: "arte oficial", product: "produto real", logo: "logotipo", reference: "referência de estilo" }[input.artworkRole]}.`} ${visualText} ${reference}${input.directionNote ? ` Orientação adicional da equipe: ${sentence(input.directionNote)}` : ""}`,
     `DIREÇÃO E COMPOSIÇÃO\n${brief.artDirection} ${brief.composition} Elemento protagonista: ${brief.protagonist}. ${categoryInstruction} Quando não houver área segura comprovada para texto, criar respiro no entorno ou estender o fundo sem cobrir o ponto focal.`,
-    `HIERARQUIA E TIPOGRAFIA\n${hierarchy} ${brief.typography} Textos pequenos devem permanecer legíveis em celular e impressão. Não substituir informação factual por lettering ilustrativo.`,
+    `HIERARQUIA E TIPOGRAFIA\n${hierarchy} ${brief.visualHierarchy || ""} ${brief.typography} Textos pequenos devem permanecer legíveis em celular e impressão. Não substituir informação factual por lettering ilustrativo.`,
     `PALETA E ATMOSFERA\n${brief.palette} A temperatura, a luz e o contraste devem respeitar o material principal e o objetivo da categoria; trabalhar contraste localizado para legibilidade, sem uniformizar tudo nas cores da marca.`,
     `TEXTOS E DADOS EXATOS\nInserir os dados abaixo exatamente como confirmados, mantendo grafia, números, pontuação e associação entre itens:\n${factLines}${mandatoryLines ? `\nTextos adicionais marcados como obrigatórios:\n${mandatoryLines}` : ""}\nNão completar lacunas com preço, data, horário, produto, regra, endereço ou alegação inventados.`,
     `CHAMADA E MARCA\n${input.cta ? `CTA com texto exato: ${input.cta}.` : "Sem CTA textual fornecido; não inventar uma chamada de ação."} Inserir a assinatura oficial do Cine Cruzeiro a partir do asset fornecido, intacta, discreta e legível. Não inventar site, redes sociais ou parceiros.`,
@@ -307,4 +361,4 @@ function createCreativeMarketingWorkflow({ repository, ai, images }) {
   return { generate, compileRun };
 }
 
-module.exports = { CATEGORIES, FORMATS, normalizeInput, curate, variantsFor, briefFor, compile, qa, createCreativeMarketingWorkflow };
+module.exports = { CATEGORIES, FORMATS, brazilianFactDate, normalizeInput, curate, variantsFor, briefFor, compile, qa, createCreativeMarketingWorkflow };

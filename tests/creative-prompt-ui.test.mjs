@@ -59,12 +59,17 @@ test("Studio dentro de Marketing mostra campos contextuais, gera prompt e cabe n
       await page.locator("#creativePromptCategory").selectOption("concessions");
       assert.ok(await page.locator("#creativeMarketingFact_product").isVisible());
       assert.equal(await page.locator("#creativeMarketingFact_code").count(), 0);
+      assert.equal(await page.locator("#creativeMarketingFact_size").isVisible(), false);
+      await page.locator(".creative-prompt-context-extra summary").click();
+      assert.ok(await page.locator("#creativeMarketingFact_size").isVisible());
+      await page.locator(".creative-prompt-context-extra summary").click();
       await page.locator("#creativePromptSource").selectOption("prod-1");
       assert.equal(await page.locator("#creativeMarketingFact_product").inputValue(), "Combo Pipoca");
       await page.locator('input[name="creativePromptArtwork"][value="none"]').check();
       await page.locator("#creativePromptGenerate").click();
       await page.locator('[data-creative-variant="recommended"]').click();
       assert.equal(await page.locator("#creativePromptText").inputValue(), "OBJETIVO\nCombo Pipoca com dados exatos.");
+      assert.ok(await page.locator("#creativePromptDownload").isVisible());
       assert.match(await page.locator("#creativePromptProviderStatus").textContent(), /Modo manual/);
       await page.screenshot({ path: path.join(os.tmpdir(), `creative-marketing-${width}.png`), fullPage: true });
       await page.locator("#creativePromptCategory").selectOption("coupons");

@@ -28,6 +28,10 @@
     const base = window.location.pathname.split("/admin")[0];
     return base && !url.startsWith(`${base}/`) ? `${base}${url}` : url;
   }
+  function brDate(value) {
+    return String(value || "").replace(/\b(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?\b/g,
+      (_match, year, month, day, hour, minute) => `${day}/${month}/${year}${hour ? ` ${hour}:${minute}` : ""}`);
+  }
   function sourceItems() {
     const category = $("creativePromptCategory").value;
     if (["films", "programming"].includes(category)) return (state.content?.movies || [])
@@ -40,16 +44,16 @@
   function sourceFacts(item) {
     if (!item) return {};
     const category = $("creativePromptCategory").value;
-    if (category === "films") return { title: item.title, release: item.releaseDate || "", rating: item.rating || "",
-      synopsis: item.synopsis || "", sessions: (item.sessions || []).filter((s) => s.date && s.time).map((s) => `${s.date} ${s.time}`).join("\n") };
+    if (category === "films") return { title: item.title, release: brDate(item.releaseDate), rating: item.rating || "",
+      synopsis: item.synopsis || "", sessions: (item.sessions || []).filter((s) => s.date && s.time).map((s) => `${brDate(s.date)} ${s.time}`).join("\n") };
     if (category === "programming") return { movies: item.title, sessions: (item.sessions || [])
-      .filter((s) => s.date && s.time).map((s) => `${s.date} ${s.time}`).join("\n") };
+      .filter((s) => s.date && s.time).map((s) => `${brDate(s.date)} ${s.time}`).join("\n") };
     if (category === "concessions") return { product: item.name, components: (item.comboItems || [])
       .map((part) => `${part.quantity}x ${part.name}`).join("\n"),
       price: Number(item.price) > 0 ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(item.price) : "" };
     if (category === "coupons") return { code: item.couponCode || "", benefit: item.title,
-      validity: item.endsAt || "", rules: item.description || "" };
-    if (category === "promotions") return { benefit: item.title, period: [item.startsAt, item.endsAt].filter(Boolean).join(" a "),
+      validity: brDate(item.endsAt), rules: item.description || "" };
+    if (category === "promotions") return { benefit: item.title, period: [item.startsAt, item.endsAt].filter(Boolean).map(brDate).join(" a "),
       conditions: item.description || "" };
     return {};
   }
@@ -66,13 +70,29 @@
   function renderFields(values = {}) {
     const profile = catalog[$("creativePromptCategory").value];
     if (!profile) return;
-    $("creativePromptContextFields").innerHTML = profile.fields.map((item) => {
+    const visibleByCategory = {
+      films: ["title", "campaign", "release", "sessions"],
+      concessions: ["product", "components", "price"],
+      programming: ["period", "movies", "sessions"],
+      promotions: ["benefit", "price", "period", "conditions"],
+      events: ["name", "date", "time", "venue"],
+      coupons: ["code", "benefit", "validity"],
+      giveaways: ["prize", "mechanics", "period"],
+      institutional: ["headline", "message", "period"],
+      free: ["subject", "objective", "details"]
+    };
+    const visible = new Set(visibleByCategory[$("creativePromptCategory").value] || []);
+    const fieldHtml = (item) => {
       const id = `creativeMarketingFact_${item.key}`;
       const control = item.multiline
         ? `<textarea id="${id}" rows="3" maxlength="1600" ${item.required ? "required" : ""}>${escape(values[item.key] || "")}</textarea>`
         : `<input id="${id}" type="text" maxlength="1600" value="${escape(values[item.key] || "")}" ${item.required ? "required" : ""} />`;
       return `<label>${escape(item.label)}${item.required ? " *" : ""}${control}</label>`;
-    }).join("");
+    };
+    const primary = profile.fields.filter((item) => item.required || visible.has(item.key));
+    const extra = profile.fields.filter((item) => !item.required && !visible.has(item.key));
+    $("creativePromptContextFields").innerHTML = primary.map(fieldHtml).join("") + (extra.length
+      ? `<details class="creative-prompt-context-extra"><summary>Mais dados para o prompt</summary><div class="creative-prompt-extra-fields">${extra.map(fieldHtml).join("")}</div></details>` : "");
     $("creativePromptCampaignWrap").hidden = $("creativePromptCategory").value !== "films";
     const role = $("creativePromptCategory").value === "films" ? "official" : "product";
     $("creativePromptArtworkRole").value = role;
@@ -174,8 +194,10 @@
       ["Composição", brief.composition], ["Acabamento", brief.finish || brief.premiumFinish]
     ].filter(([, value]) => value).map(([label, value]) => `<span><strong>${escape(label)}:</strong> ${escape(value)}</span>`).join("");
     $("creativePromptText").value = run.promptText;
-    $("creativePromptAssets").innerHTML = [["Abrir imagem", run.artworkUrl],
-      ["Abrir referência", run.referenceUrl], ["Assinatura do cinema", "/images/logo-display.webp"]]
+    $("creativePromptAssets").innerHTML = [["Imagem principal", run.artworkUrl],
+      ["Referência", run.referenceUrl],
+      ["Assinatura clara", "/images/creative-studio/assinatura-clara.png"],
+      ["Assinatura escura", "/images/creative-studio/assinatura-escura.png"]]
       .filter(([, value]) => value).map(([label, value]) => `<a href="${escape(assetUrl(value))}" target="_blank" rel="noopener noreferrer">${escape(label)}</a>`).join("");
     $("creativePromptSaveStatus").textContent = run.status === "saved" ? "Salvo" : "Pronto";
     const warning = (run.input?.warnings || []).join(" ");
@@ -266,13 +288,35 @@
     } catch (error) { message(error.message || "Não foi possível abrir a campanha.", true); }
   }
   async function save() {
-    if (!run?.promptText) return;
+    if (!run?.promptText) return false;
     try {
       const response = await api(`${endpoint}/${run.id}/save`, { method: "POST", body: JSON.stringify({
         promptText: $("creativePromptText").value
       }) });
       run = response.run; renderRun(); message("Prompt salvo no histórico."); void loadHistory();
-    } catch (error) { message(error.message, true); }
+      return true;
+    } catch (error) { message(error.message, true); return false; }
+  }
+  async function downloadBundle() {
+    if (!run?.promptText || busy || !await save()) return;
+    setBusy(true, "Preparando materiais...");
+    try {
+      const base = window.location.pathname.split("/admin")[0];
+      const response = await fetch(`${base}${endpoint}/${run.id}/bundle`, { credentials: "same-origin" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error?.message || "Não foi possível reunir os materiais.");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `cine-cruzeiro-studio-${run.id.slice(0, 8)}.zip`;
+      document.body.append(link);
+      link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      message("Pacote baixado. Confira os arquivos e textos antes de usar no Canva.");
+    } catch (error) { message(error.message || "Não foi possível baixar os materiais.", true); }
+    finally { setBusy(false); }
   }
   async function init() {
     if (loaded) return;
@@ -319,6 +363,7 @@
       catch { message("O navegador não permitiu copiar. Selecione o texto do prompt.", true); }
     });
     $("creativePromptSave").addEventListener("click", () => void save());
+    $("creativePromptDownload").addEventListener("click", () => void downloadBundle());
     $("creativePromptDuplicate").addEventListener("click", async () => {
       if (!run) return;
       try { run = (await api(`${endpoint}/${run.id}/duplicate`, { method: "POST", body: "{}" })).run;

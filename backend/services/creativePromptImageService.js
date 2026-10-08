@@ -63,6 +63,19 @@ function stripBase(url, basePath) {
 }
 
 async function imageDataUrl(url, { uploadRoot, publicRoot, basePath = "", uploadOnly = false, fetcher = fetch }) {
+  const { data } = await imageBuffer(url, { uploadRoot, publicRoot, basePath, uploadOnly, fetcher });
+  let result;
+  try {
+    result = await sharp(data, { failOn: "error", limitInputPixels: MAX_PIXELS }).rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 82, progressive: true }).toBuffer();
+  } catch {
+    throw invalidImage("A imagem é inválida ou excede o limite de resolução.");
+  }
+  return `data:image/jpeg;base64,${result.toString("base64")}`;
+}
+
+async function imageBuffer(url, { uploadRoot, publicRoot, basePath = "", uploadOnly = false, fetcher = fetch }) {
   const value = stripBase(url, basePath);
   const localPath = value.split(/[?#]/, 1)[0];
   let source;
@@ -78,17 +91,16 @@ async function imageDataUrl(url, { uploadRoot, publicRoot, basePath = "", upload
     throw invalidImage("Use uma arte do catálogo ou envie JPG, PNG ou WebP pelo painel.");
   }
   if (source.length > MAX_SOURCE_BYTES) throw invalidImage("A imagem excede o limite de 6 MB.", "CREATIVE_PROMPT_IMAGE_TOO_LARGE");
-  let result;
+  let format;
   try {
     const image = sharp(source, { failOn: "error", limitInputPixels: MAX_PIXELS });
     const metadata = await image.metadata();
     if (!["jpeg", "png", "webp"].includes(metadata.format)) throw new Error("unsupported");
-    result = await image.rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 82, progressive: true }).toBuffer();
+    format = metadata.format;
   } catch {
     throw invalidImage("A imagem é inválida ou excede o limite de resolução.");
   }
-  return `data:image/jpeg;base64,${result.toString("base64")}`;
+  return { data: source, format };
 }
 
-module.exports = { imageDataUrl, stripBase, MAX_SOURCE_BYTES };
+module.exports = { imageDataUrl, imageBuffer, stripBase, MAX_SOURCE_BYTES };

@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { buffer as streamBuffer } from "node:stream/consumers";
+import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import core from "../backend/services/creativeMarketingStudioService.js";
+import bundleService from "../backend/services/creativeMarketingBundleService.js";
+
+const publicRoot = fileURLToPath(new URL("../public/", import.meta.url));
 
 const scenarios = [
   ["films", { title: "Minha Melhor Amiga", campaign: "Estreia", release: "29/09", sessions: "29/09 15:00" }, "title lockup"],
@@ -56,6 +65,56 @@ test("campos ausentes não são inventados e fatos obrigatórios não são trunc
     /código do cupom/i);
   assert.throws(() => core.normalizeInput({ category: "free", format: "feed", facts: { subject: "X", objective: "Y" },
     requiredText: Array.from({ length: 31 }, (_, i) => `Linha ${i}`) }), /30 textos obrigatórios/i);
+});
+
+test("datas de catálogo são apresentadas em padrão brasileiro sem alterar textos não temporais", () => {
+  assert.equal(core.brazilianFactDate("2026-10-07"), "07/10/2026");
+  assert.equal(core.brazilianFactDate("2026-10-07T19:30:00Z"), "07/10/2026 19:30");
+  const input = core.normalizeInput({ category: "films", format: "feed", facts: {
+    title: "Filme 2026-10-07", campaign: "Sessão", release: "2026-10-07",
+    sessions: "2026-10-07 19:30"
+  } });
+  assert.equal(input.facts.title, "Filme 2026-10-07");
+  assert.equal(input.facts.release, "07/10/2026");
+  assert.equal(input.facts.sessions, "07/10/2026 19:30");
+});
+
+test("abordagens mudam composição, hierarquia e acabamento", () => {
+  for (const [category, facts] of [["films", { title: "Filme", campaign: "Teaser" }],
+    ["programming", { movies: "Filme A", sessions: "07/10/2026 19:30" }],
+    ["concessions", { product: "Pipoca" }]]) {
+    const input = core.normalizeInput({ category, format: "feed", facts });
+    const variants = core.variantsFor(input);
+    assert.equal(new Set(variants.map((v) => v.composition)).size, 3);
+    assert.equal(new Set(variants.map((v) => v.hierarchy)).size, 3);
+    assert.equal(new Set(variants.map((v) => v.finish)).size, 3);
+    const prompts = variants.map((v) => core.compile(input, core.briefFor(input, core.curate(input), v), core.curate(input)));
+    assert.equal(new Set(prompts).size, 3);
+    const second = core.variantsFor({ ...input, bias: "alternate" });
+    assert.notEqual(second[0].composition, variants[0].composition);
+  }
+});
+
+test("pacote entrega prompt, briefing, artwork, referência e duas assinaturas", async () => {
+  const uploadRoot = await fs.mkdtemp(path.join(os.tmpdir(), "creative-bundle-"));
+  try {
+    await fs.mkdir(path.join(uploadRoot, "creative-prompts"));
+    const image = await sharp({ create: { width: 12, height: 12, channels: 3,
+      background: { r: 10, g: 40, b: 80 } } }).png().toBuffer();
+    for (const name of ["principal.png", "poster.png", "backdrop.png", "referencia.png"])
+      await fs.writeFile(path.join(uploadRoot, "creative-prompts", name), image);
+    const url = (name) => `/uploads/creative-prompts/${name}.png`;
+    const archive = await bundleService.createBundle({
+      run: { id: "test-run", briefVersion: 2, category: "films", format: "feed", promptText: "Prompt completo",
+        artworkUrl: url("principal"), referenceUrl: url("referencia"), input: { request: { facts: { title: "Filme" } } } },
+      movie: { posterUrl: url("poster"), backdropUrl: url("backdrop") }, uploadRoot, publicRoot
+    });
+    const bytes = await streamBuffer(archive);
+    assert.equal(bytes.subarray(0, 2).toString(), "PK");
+    for (const filename of ["prompt-canva.txt", "briefing.json", "LEIA-ME.txt", "imagem-principal.png",
+      "poster-filme.png", "backdrop-filme.png", "referencia-visual.png", "assinatura-clara.png", "assinatura-escura.png"])
+      assert.ok(bytes.includes(Buffer.from(filename)), `${filename} missing`);
+  } finally { await fs.rm(uploadRoot, { recursive: true, force: true }); }
 });
 
 test("curadoria recomenda carrossel sem eliminar regras longas", () => {
