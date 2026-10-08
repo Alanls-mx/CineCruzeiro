@@ -50,3 +50,31 @@ test('fundo de filme continua disponível quando escolhido explicitamente',async
   const result=await studio.renderSocialPost({...input,auxiliaryText:'Pipoca quentinha na manteiga.',background:{mode:'movie',movieId:'film'}},context,{loadImage,skipRaster:true,concessionRetried:true});
   assert.ok(flattenElements(result.scene.elements).some(element=>element.id==='custom-background-0' && element.src==='/movie'));
 });
+
+test('miniatura amarela e composicao Produto e preco usam o mesmo tratamento',async()=>{
+  const request={...input,workspaceVersion:2,layoutId:'product-price',style:'product-price',automaticStyle:false,concessionDirection:{family:'automatic',objective:'sell'}};
+  const result=await studio.renderSocialPost(request,context,{loadImage});
+  assert.equal(result.draft.concessionDirection.layout,'product-price');
+  assert.equal(result.draft.concessionDirection.family,'commercial-vibrant');
+  assert.equal(result.scene.backgroundColor,'#ffda38');
+  assert.equal(result.quality.accepted,true,JSON.stringify(result.quality.issues));
+  assert.ok(result.buffer?.length>1000);
+  const corner=await sharp(result.buffer).extract({left:8,top:Math.round(result.scene.height*.5),width:1,height:1}).removeAlpha().raw().toBuffer();
+  assert.ok(corner[0]>230 && corner[1]>180 && corner[2]<100,`Fundo exportado: ${[...corner]}`);
+});
+
+test('tratamento manual continua podendo substituir o padrao do layout',()=>{
+  const request={...input,layoutId:'product-price',concessionDirection:{family:'clean-premium',objective:'sell'}};
+  const draft=studio.normalizeDraft(request,context);
+  assert.equal(draft.concessionDirection.family,'clean-premium');
+  assert.equal(draft.concessionDirection.layout,'product-price');
+});
+
+test('cada cartao de bomboniere seleciona seu tratamento automatico',()=>{
+  const treatments={'product-price':'commercial-vibrant','product-lateral':'cinematic-product','hero-product':'dark-snack'};
+  for(const [layoutId,family] of Object.entries(treatments)) {
+    const draft=studio.normalizeDraft({...input,workspaceVersion:2,layoutId,style:layoutId,concessionDirection:{family:'automatic'}},context);
+    assert.equal(draft.concessionDirection.layout,layoutId);
+    assert.equal(draft.concessionDirection.family,family);
+  }
+});
