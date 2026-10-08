@@ -1,0 +1,39 @@
+# Creative Marketing Studio
+
+O Studio fica em **Admin > Marketing > Creative Studio**. Ele gera direção criativa e texto para uso no Canva; não renderiza, edita nem publica peças, e não usa a API do Canva. O fluxo anterior de filmes continua legível no histórico, mas campanhas novas usam o brief versionado `2`.
+
+## Preparação
+
+1. Configure o PostgreSQL da instância e execute `node --env-file=.env.local scripts/db-migrate.js` localmente, ou `npm run db:migrate` com `DATABASE_URL` já exportada. A migration `046` cria o histórico e a `047` acrescenta categoria, versão do brief e campanhas sem filme.
+2. Entre com um usuário que tenha `marketing.view` para visualizar e `marketing.manage` para gerar, editar, subir imagens e salvar.
+3. Nenhuma chave de IA é necessária para o modo manual. Descreva luz, cores, assunto e espaço de texto no formulário se quiser orientar melhor a composição sem análise multimodal.
+4. Opcionalmente, em **Integrações > IA do Creative Prompt Studio**, configure a chave OpenAI no backend e ative a integração para análise visual. A chave nunca vai ao frontend. O modelo deve aceitar imagens e saída JSON.
+5. Para usar um serviço local compatível com Chat Completions, configure no ambiente privado do backend `CREATIVE_STUDIO_VISION_BASE_URL=http://127.0.0.1:11434/v1` e `CREATIVE_STUDIO_VISION_MODEL=<modelo-com-visao>`. Opcionalmente use `CREATIVE_STUDIO_VISION_API_KEY` e `CREATIVE_STUDIO_VISION_TIMEOUT_MS`. Somente loopback HTTP é aceito; o servidor local deve ouvir na mesma máquina/processo de rede do backend. A configuração local tem prioridade sobre a OpenAI nesse fluxo. Teste memória, disco e tempo de resposta da VPS com o modelo escolhido antes de mantê-lo ativo. Sem o serviço local acessível, o fluxo manual permanece disponível.
+
+## Uso
+
+1. Escolha uma das nove categorias: Filmes, Bomboniere, Programação, Promoções, Eventos, Cupons, Sorteios, Institucional ou Criação livre.
+2. Se houver um filme, produto ou promoção no cadastro, selecione-o. Os dados existentes entram nos campos relevantes, mas podem ser corrigidos antes de gerar. Para programação de vários filmes, informe a lista e os horários confirmados no campo de programação; a seleção cadastral inicial preenche um filme por vez.
+3. Preencha os campos da categoria. Asterisco indica obrigatório. Não deixe preço, validade ou regras como exemplo: dados ausentes são omitidos. Escreva outros textos que **não podem ser omitidos** no campo de textos obrigatórios, um por linha.
+4. Selecione o formato e a densidade. Use imagem cadastrada, upload de JPG/PNG/WebP de até 5 MB, ou **Sem imagem**. Informe corretamente o papel da imagem: arte oficial, produto, logo ou referência. A referência secundária é opcional e não deve ser copiada literalmente.
+5. Clique **Gerar direção criativa**, escolha uma proposta e compile o prompt. As variantes mudam conforme a categoria; nenhuma delas altera os fatos.
+6. Edite o prompt no campo de resultado, copie-o, ou salve. O salvamento rejeita a retirada de qualquer dado factual ou texto marcado como obrigatório. Para alterar o briefing, use **Editar conteúdo** e **Atualizar prompt**.
+7. No Canva, anexe manualmente as imagens, referência e assinatura indicadas pelos links. Confira letras, preços, códigos, datas e horários no editor antes de publicar; geradores visuais podem deformar texto. Para programação, cupons, promoções e sorteios, insira ou corrija dados críticos manualmente.
+
+## Arquitetura
+
+- `creativeMarketingStudioService.js` mantém perfis extensíveis por categoria, campos contextuais, variantes, curadoria, brief `version: 2`, compilação e QA. Os campos factuais são mantidos literalmente; a curadoria não os descarta. Conteúdo extenso em formato curto recebe recomendação de carrossel.
+- As rotas administrativas existentes `/api/admin/creative-prompts/*` mantêm autenticação, permissões, upload seguro, rate limit e histórico. Requisições com `studioVersion: 2` seguem o fluxo universal; registros antigos seguem o fluxo de filmes.
+- O analisador visual é opcional. Quando configurado, arte principal e referência são enviadas em chamadas separadas e a resposta fica no histórico. Quando ausente ou falha, o prompt registra explicitamente que a imagem não foi analisada e usa a descrição manual. O modo local usa uma API Chat Completions compatível; a integração OpenAI existente usa Responses API.
+- A tabela `creative_prompt_studio_runs` persiste o snapshot do briefing, categoria, versão, observações, variantes, brief, fatos curados, prompt e status. Uploads permanecem no armazenamento existente; o histórico guarda URLs, não bytes de imagem.
+- O Prompt QA verifica seções obrigatórias, formato e presença exata dos dados fornecidos. Ele não garante que o gerador do Canva reproduza esses dados corretamente; a revisão humana é obrigatória.
+
+## Segurança e limites
+
+O upload usa o serviço de armazenamento existente, valida assinatura/MIME/pixels e fica na pasta `creative-prompts`. A leitura para análise restringe origens; não aceita URL arbitrária para fetch. O serviço local é restrito a loopback para evitar chamadas a destinos externos controlados pelo usuário. Dados no formulário e em imagens são tratados como contexto, não como instruções de sistema. Chamadas de IA têm timeout; erros visuais não bloqueiam o modo manual e aparecem na tela. Há limite de oito solicitações de direção por dez minutos.
+
+Não há OCR preciso, extração de title lockup, garantia geométrica de proteção de rostos/mãos, editor gráfico, publicação ou integração Canva. O fluxo manual pode ser menos específico que um modelo multimodal; a interface indica isso. A primeira versão não consulta automaticamente múltiplos filmes para compor uma programação inteira.
+
+## Validação
+
+Execute `node --test tests/creative-marketing-studio.test.mjs tests/creative-prompt-studio.test.mjs tests/creative-prompt-ui.test.mjs tests/creative-prompt-http.test.mjs`, `node --env-file=.env.local --test tests/creative-prompt-postgres.test.mjs`, `npm run lint` e `npm run build`. Os testes de IA usam mocks; não consomem créditos. Exemplos completos e **fictícios** das nove categorias estão em [CREATIVE_MARKETING_STUDIO_EXAMPLES.md](CREATIVE_MARKETING_STUDIO_EXAMPLES.md).

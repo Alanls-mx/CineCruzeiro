@@ -740,6 +740,7 @@ async function loadContent(options = {}) {
     if (!state.creating.customerUser && !customerUsers.some((user) => user.id === state.selectedCustomerAccountId)) state.selectedCustomerAccountId = customerUsers[0]?.id || "";
     if (!state.creating.clubPlan) state.selectedClubPlanId ||= state.content.subscriptionPlans?.[0]?.id || "";
     renderAll();
+    document.dispatchEvent(new CustomEvent("admin:content"));
     if (!silent) {
       setStatus("Salvo");
     } else {
@@ -8895,6 +8896,7 @@ function setAdminSubtab(group, tab, options = {}) {
     item.hidden = !active;
     item.classList.toggle("active", active);
   });
+  document.dispatchEvent(new CustomEvent("admin:subtab", { detail: { group, tab } }));
   if (group === "rooms" && $("newRoomButton")) $("newRoomButton").hidden = tab !== "registered";
   if (options.focus) panel.querySelector("input:not([type=hidden]), button, select, textarea")?.focus();
 }

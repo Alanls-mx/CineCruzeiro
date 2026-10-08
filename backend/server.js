@@ -33,6 +33,12 @@ const {
   releaseSeatHold: releaseSeatHoldInPostgres,
   releaseSeatHoldsForOwner: releaseSeatHoldsForOwnerInPostgres
 } = require("./db/postgresStore");
+const creativePromptRepository = require("./repositories/creativePromptRepository");
+const creativeMarketingCore = require("./services/creativeMarketingStudioService");
+const creativePromptCore = require("./services/creativePromptStudioService");
+const creativePromptImages = require("./services/creativePromptImageService");
+const { createCreativePromptAiProvider } = require("./services/creativePromptAiProvider");
+const { createCreativePromptWorkflow } = require("./services/creativePromptWorkflow");
 const paymentService = require("./services/paymentService");
 const pagBankPaymentService = require("./services/pagBankPaymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
@@ -137,7 +143,7 @@ let crmWebhookConfigVersion = 0;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "045_remove_canva_studio.sql";
+const LATEST_SCHEMA_MIGRATION = "047_creative_marketing_studio.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -151,6 +157,22 @@ const storageService = createStorageService({
   publicDir: PUBLIC_DIR,
   rootDir: process.env.CINE_UPLOADS_DIR || ""
 });
+const creativePromptAi = createCreativePromptAiProvider();
+const creativePromptWorkflow = createCreativePromptWorkflow({
+  ai: creativePromptAi, images: creativePromptImages, repository: creativePromptRepository
+});
+const creativeMarketingWorkflow = creativeMarketingCore.createCreativeMarketingWorkflow({
+  ai: creativePromptAi, images: creativePromptImages, repository: creativePromptRepository
+});
+function localCreativeVisionConfig() {
+  if (!process.env.CREATIVE_STUDIO_VISION_BASE_URL || !process.env.CREATIVE_STUDIO_VISION_MODEL) return null;
+  let url;
+  try { url = new URL(process.env.CREATIVE_STUDIO_VISION_BASE_URL); } catch { return null; }
+  if (url.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return null;
+  return { kind: "local", enabled: true, configured: true, baseUrl: url.toString(),
+    model: process.env.CREATIVE_STUDIO_VISION_MODEL, apiKey: process.env.CREATIVE_STUDIO_VISION_API_KEY || "",
+    timeout: Number(process.env.CREATIVE_STUDIO_VISION_TIMEOUT_MS || 30000) };
+}
 const EMAIL_ATTACHMENT_ROOT = path.resolve(process.env.CINE_EMAIL_ATTACHMENTS_DIR || path.join(ROOT, "data", "email-attachments"));
 const TICKET_DOCUMENT_ROOT = path.resolve(process.env.CINE_TICKET_DOCUMENTS_DIR || path.join(ROOT, "data", "ticket-documents"));
 const EMAIL_ATTACHMENT_TYPES = new Set([
@@ -1060,8 +1082,10 @@ const RATE_LIMIT_RULES = [
   { id: "ticket-artifacts", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => /^\/api\/me\/tickets\/[^/]+\/(download|google-wallet|qr)$/.test(path) },
   { id: "ticket-validation", limit: 180, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/tickets/validate" },
   { id: "uploads", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path.startsWith("/api/uploads/") },
+  { id: "creative-prompt-uploads", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/creative-prompts/images" },
   { id: "email-attachments", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/email/attachments" },
   { id: "integration-tests", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/integrations/test" },
+  { id: "creative-prompt-ai", limit: 8, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/creative-prompts/directions" },
   { id: "campaign-generation", limit: 12, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/(preview|test)$/.test(path) },
   { id: "campaign-dispatch", limit: 10, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /\/api\/admin\/email\/campaigns\/[^/]+\/(send|retry-failures)$/.test(path) },
   { id: "ad-metrics", limit: 120, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/marketing\/ads\/[^/]+\/(impression|click)$/.test(path) },
@@ -1434,6 +1458,7 @@ function requiredAdminPermission(pathname, method) {
   if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
   if (pathname.startsWith("/api/admin/concession-sales")) return method === "GET" ? "concessions.view" : "concessions.edit";
   if (pathname.startsWith("/api/admin/marketing")) return method === "GET" ? "marketing.view" : "marketing.manage";
+  if (pathname.startsWith("/api/admin/creative-prompts")) return method === "GET" ? "marketing.view" : "marketing.manage";
   if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "orders.print";
   if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
   if (pathname === "/api/admin/security-policy") return method === "GET" ? "settings.view" : "settings.manage";
@@ -10171,6 +10196,7 @@ async function testIntegrationProvider(db, provider, req) {
   if (!key || !config) {
     return { ok: false, message: "Integração não encontrada." };
   }
+  if (key === "creativePromptAi") return creativePromptAi.testConnection(config);
   if (key === "mercadoPago") {
     if (!config.accessToken || !config.publicKey) return { ok: false, message: "Informe public key e access token do Mercado Pago." };
     const response = await fetch("https://api.mercadopago.com/users/me", { headers: { Authorization: `Bearer ${config.accessToken}` } });
@@ -11104,6 +11130,188 @@ async function handleApi(req, res, pathname) {
   }
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
+
+  if (pathname === "/api/admin/creative-prompts/images" && method === "POST") {
+    const body = await readBody(req);
+    const uploaded = await storageService.uploadImage({
+      data: body.data || body.base64,
+      filename: body.filename,
+      contentType: body.contentType,
+      folder: "creative-prompts"
+    });
+    sendJson(res, 201, { ...uploaded, publicUrl: publicAssetUrl(uploaded.url) });
+    return;
+  }
+
+  if (pathname === "/api/admin/creative-prompts/status" && method === "GET") {
+    const config = integrationConfigService.resolvedConfig(db, "creativePromptAi");
+    sendJson(res, 200, { configured: Boolean(config?.configured), enabled: Boolean(config?.enabled),
+      databaseReady: postgresEnabled(), model: config?.model || "gpt-4.1-mini",
+      manualAvailable: postgresEnabled(), localVisionAvailable: Boolean(localCreativeVisionConfig()) });
+    return;
+  }
+
+  if (pathname === "/api/admin/creative-prompts/categories" && method === "GET") {
+    sendJson(res, 200, { categories: creativeMarketingCore.CATEGORIES, formats: creativeMarketingCore.FORMATS });
+    return;
+  }
+
+  if (pathname === "/api/admin/creative-prompts/history" && method === "GET") {
+    const offset = Math.max(0, Number(new URL(req.url, "http://localhost").searchParams.get("offset")) || 0);
+    const runs = await creativePromptRepository.list({ limit: 30, offset });
+    sendJson(res, 200, { runs: runs.map((run) => ({
+      id: run.id, movieId: run.movieId, category: run.category, briefVersion: run.briefVersion,
+      movieTitle: run.input?.movie?.title || run.input?.request?.facts?.title ||
+        run.input?.request?.facts?.product || run.input?.request?.facts?.name ||
+        run.input?.request?.facts?.headline || run.input?.request?.facts?.subject || "",
+      campaignType: run.campaignType, format: run.format, selectedVariant: run.selectedVariant,
+      status: run.status, createdAt: run.createdAt
+    })) });
+    return;
+  }
+
+  if (pathname === "/api/admin/creative-prompts/directions" && method === "POST") {
+    if (!postgresEnabled()) {
+      sendJson(res, 503, { error: { code: "CREATIVE_PROMPT_DATABASE_REQUIRED", message: "Configure PostgreSQL antes de gerar direções." } });
+      return;
+    }
+    const body = await readBody(req);
+    if (body.studioVersion === 2) {
+      const movie = body.movieId ? (db.movies || []).find((item) => item.id === String(body.movieId) && !isDeletedMovie(item)) : null;
+      const product = body.concessionId ? (db.concessions || []).find((item) => item.id === String(body.concessionId)) : null;
+      const promotion = body.promotionId ? (db.promotions || []).find((item) => item.id === String(body.promotionId)) : null;
+      if ((body.movieId && !movie) || (body.concessionId && !product) || (body.promotionId && !promotion)) {
+        sendJson(res, 404, { error: { code: "CREATIVE_MARKETING_SOURCE_NOT_FOUND", message: "O item selecionado não está mais no cadastro." } });
+        return;
+      }
+      const source = { movieId: movie?.id || null, artworkUrl: "", label: "", facts: {} };
+      if (movie && ["films", "programming"].includes(body.category)) {
+        source.label = movie.title;
+        source.artworkUrl = body.artworkRole === "official" && body.movieArtwork === "backdrop" ? movie.backdropUrl : movie.posterUrl;
+        source.facts = body.category === "films" ? {
+          title: movie.title, release: movie.releaseDate || "", rating: movie.rating || "",
+          synopsis: movie.synopsis || "", sessions: (movie.sessions || []).filter((s) => s.date && s.time)
+            .map((s) => `${s.date} ${s.time}`).join("\n")
+        } : { movies: movie.title, sessions: (movie.sessions || []).filter((s) => s.date && s.time)
+          .map((s) => `${s.date} ${s.time}`).join("\n") };
+      }
+      if (product && body.category === "concessions") {
+        source.label = product.name;
+        source.artworkUrl = product.imageUrl || "";
+        source.facts = { product: product.name, components: (product.comboItems || [])
+          .map((item) => `${item.quantity}x ${item.name}`).join("\n"),
+          price: Number(product.price) > 0 ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(product.price) : "",
+          size: "", availability: "" };
+      }
+      if (promotion && ["promotions", "coupons"].includes(body.category)) {
+        source.label = promotion.title;
+        source.facts = body.category === "coupons" ? {
+          code: promotion.couponCode || "", benefit: promotion.title,
+          validity: promotion.endsAt || "", rules: promotion.description || ""
+        } : { benefit: promotion.title, period: [promotion.startsAt, promotion.endsAt].filter(Boolean).join(" a "),
+          conditions: promotion.description || "" };
+      }
+      if (["none", "upload"].includes(body.imageChoice)) source.artworkUrl = "";
+      const configured = integrationConfigService.resolvedConfig(db, "creativePromptAi");
+      let aiConfig = configured?.enabled && configured?.configured ? configured : null;
+      aiConfig = localCreativeVisionConfig() || aiConfig;
+      const run = await creativeMarketingWorkflow.generate({ raw: body, source, userId: req.adminUser.id,
+        aiConfig, imageOptions: { uploadRoot: storageService.rootDir, publicRoot: FRONTEND_PUBLIC_DIR,
+          basePath: configuredAppBasePath() } });
+      sendJson(res, 201, { run });
+      return;
+    }
+    const aiConfig = integrationConfigService.resolvedConfig(db, "creativePromptAi");
+    if (!aiConfig?.enabled || !aiConfig?.configured) {
+      sendJson(res, 412, { error: { code: "CREATIVE_PROMPT_AI_NOT_CONFIGURED", message: "Ative e configure IA do Creative Prompt Studio em Integrações." } });
+      return;
+    }
+    const movie = (db.movies || []).find((item) => item.id === String(body.movieId || "") && !isDeletedMovie(item));
+    if (!movie) {
+      sendJson(res, 404, { error: { code: "CREATIVE_PROMPT_MOVIE_NOT_FOUND", message: "Filme não encontrado no catálogo." } });
+      return;
+    }
+    creativePromptCore.normalizeRequest(body, movie);
+    const sourceRun = body.sourceRunId ? await creativePromptRepository.get(String(body.sourceRunId)) : null;
+    const run = await creativePromptWorkflow.generate({
+      config: aiConfig,
+      movie: { ...movie, cinemaName: db.settings?.cinemaName || "Cine Cruzeiro" },
+      input: body, userId: req.adminUser.id, sourceRun,
+      imageOptions: { uploadRoot: storageService.rootDir, publicRoot: FRONTEND_PUBLIC_DIR,
+        basePath: configuredAppBasePath() }
+    });
+    sendJson(res, 201, { run });
+    return;
+  }
+
+  const creativePromptMatch = pathname.match(/^\/api\/admin\/creative-prompts\/([0-9a-f-]{36})(?:\/(compile|save|duplicate))?$/i);
+  if (creativePromptMatch) {
+    const run = await creativePromptRepository.get(creativePromptMatch[1]);
+    if (!run) {
+      sendJson(res, 404, { error: { code: "CREATIVE_PROMPT_NOT_FOUND", message: "Direção criativa não encontrada." } });
+      return;
+    }
+    const action = creativePromptMatch[2] || "";
+    if (!action && method === "GET") {
+      sendJson(res, 200, { run });
+      return;
+    }
+    if (action === "compile" && method === "POST") {
+      const body = await readBody(req);
+      if (run.briefVersion === 2) {
+        sendJson(res, 200, { run: await creativeMarketingWorkflow.compileRun(run,
+          String(body.variantId || "recommended"), body.edits || {}) });
+        return;
+      }
+      let workingRun = run;
+      if (body.edits && typeof body.edits === "object" && !Array.isArray(body.edits)) {
+        const snapshot = { ...run.input.movie, id: run.movieId };
+        const fields = ["message", "cta", "tagline", "sessionId", "siteUrl", "visualNote"];
+        const edits = Object.fromEntries(fields.filter((key) => Object.hasOwn(body.edits, key)).map((key) => [key, body.edits[key]]));
+        const updatedRequest = creativePromptCore.normalizeRequest({
+          ...run.input.request, ...run.input.request.campaignInfo, ...edits
+        }, snapshot);
+        workingRun = await creativePromptRepository.update(run.id, {
+          input: { ...run.input, request: updatedRequest }
+        });
+      }
+      const movie = (db.movies || []).find((item) => item.id === run.movieId) || run.input.movie;
+      const compiled = await creativePromptWorkflow.compile({
+        run: workingRun, movie: { ...movie, cinemaName: db.settings?.cinemaName || "Cine Cruzeiro" },
+        variantId: String(body.variantId || "recommended")
+      });
+      sendJson(res, 200, { run: compiled });
+      return;
+    }
+    if (action === "save" && method === "POST") {
+      if (!run.promptText) {
+        sendJson(res, 409, { error: { code: "CREATIVE_PROMPT_NOT_COMPILED", message: "Gere o prompt antes de salvá-lo." } });
+        return;
+      }
+      const body = await readBody(req);
+      const editedText = typeof body.promptText === "string" && run.briefVersion === 2 ? body.promptText.trim() : run.promptText;
+      if (!editedText || editedText.length > 25000 ||
+        (run.briefVersion === 2 && (run.curatedContent?.required || []).some((fact) => !editedText.includes(fact)))) {
+        sendJson(res, 422, { error: { code: "CREATIVE_MARKETING_FACT_MISSING",
+          message: "O texto editado precisa manter todos os dados obrigatórios e ter até 25 mil caracteres." } });
+        return;
+      }
+      sendJson(res, 200, { run: await creativePromptRepository.update(run.id, { promptText: editedText, status: "saved" }) });
+      return;
+    }
+    if (action === "duplicate" && method === "POST") {
+      const duplicate = await creativePromptRepository.insert({
+        id: crypto.randomUUID(), category: run.category, briefVersion: run.briefVersion,
+        movieId: run.movieId, createdBy: req.adminUser.id,
+        campaignType: run.campaignType, format: run.format, density: run.density,
+        artworkSource: run.artworkSource, artworkUrl: run.artworkUrl,
+        referenceUrl: run.referenceUrl, input: run.input, analysis: run.analysis,
+        referenceAnalysis: run.referenceAnalysis, variants: run.variants
+      });
+      sendJson(res, 201, { run: duplicate });
+      return;
+    }
+  }
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
     const user = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : (db.users || []).find((item) => item.id === req.adminUser.id);
