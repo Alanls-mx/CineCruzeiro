@@ -41,6 +41,9 @@ test("Studio dentro de Marketing mostra campos contextuais, gera prompt e cabe n
             summary: "Produto em destaque", artDirection: "Fotografia comercial" }] };
         window.api = async (url) => {
           if (url.endsWith("/categories")) return { categories: window.testCatalog };
+          if (url.includes("/references?category=")) return { references: url.endsWith("concessions")
+            ? [{ id: "B001", name: "Pipoca salgada · Fotografia de campanha", composition: "Produto em destaque" }] : [] };
+          if (url.endsWith("/references/B001")) return { reference: { lines: ["Exemplo ilustrativo de composição"] } };
           if (url.endsWith("/status")) return { databaseReady: true, configured: false, enabled: false };
           if (url.endsWith("/history")) return { runs: [] };
           if (url.endsWith("/directions")) return { run: baseRun };
@@ -57,6 +60,14 @@ test("Studio dentro de Marketing mostra campos contextuais, gera prompt e cabe n
         detail: { group: "marketing", tab: "creative" }
       })));
       await page.locator("#creativePromptCategory").selectOption("concessions");
+      await page.locator("#creativePromptLibrary summary").first().click();
+      await page.locator("#creativePromptLibrarySearch").fill("pipoca");
+      await page.locator("#creativePromptLibraryReference").selectOption("B001");
+      assert.match(await page.locator("#creativePromptLibraryHint").textContent(), /Produto em destaque/);
+      await page.locator("#creativePromptLibraryExample summary").click();
+      await page.waitForFunction(() => document.getElementById("creativePromptLibraryExampleText").textContent.includes("Exemplo ilustrativo"));
+      assert.match(await page.locator("#creativePromptLibraryExampleText").textContent(), /Exemplo ilustrativo/);
+      await page.locator("#creativePromptLibrary summary").first().click();
       assert.ok(await page.locator("#creativeMarketingFact_product").isVisible());
       assert.equal(await page.locator("#creativeMarketingFact_code").count(), 0);
       assert.equal(await page.locator("#creativeMarketingFact_size").isVisible(), false);

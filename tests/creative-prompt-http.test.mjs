@@ -63,6 +63,14 @@ test("rotas do Studio isolam permissões e pasta de upload", { timeout: 60000 },
     const categories = await fetch(`${base}/api/admin/creative-prompts/categories`, { headers });
     assert.equal(categories.status, 200);
     assert.equal(Object.keys((await categories.json()).categories).length, 9);
+    const references = await fetch(`${base}/api/admin/creative-prompts/references?category=films`, { headers });
+    assert.equal(references.status, 200);
+    assert.equal((await references.json()).references.length, 80);
+    const example = await fetch(`${base}/api/admin/creative-prompts/references/F001`, { headers });
+    assert.equal(example.status, 200);
+    assert.equal((await example.json()).reference.lines.length, 25);
+    const hidden = await fetch(`${base}/api/admin/creative-prompts/references/F001`);
+    assert.equal(hidden.status, 401);
     const unavailable = await fetch(`${base}/api/admin/creative-prompts/directions`, {
       method: "POST", headers, body: JSON.stringify({ movieId: "missing" })
     });

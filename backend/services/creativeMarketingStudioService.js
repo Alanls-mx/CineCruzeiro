@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const promptLibrary = require("./creativePromptLibraryService");
 
 const FORMATS = Object.freeze({
   feed: "feed vertical 4:5", story: "story vertical 9:16",
@@ -131,7 +132,8 @@ function normalizeInput(raw, source = {}) {
     referenceUrl: clean(raw.referenceUrl, 1000), movieId: source.movieId || null,
     sourceId: clean(raw.movieId || raw.concessionId || raw.promotionId || raw.sourceId, 150),
     imageChoice: clean(raw.imageChoice, 20),
-    sourceLabel: clean(source.label, 180), bias: clean(raw.bias, 30)
+    sourceLabel: clean(source.label, 180), bias: clean(raw.bias, 30),
+    referenceId: clean(raw.referenceId, 12)
   };
 }
 
@@ -195,7 +197,7 @@ const ALTERNATE_LAYOUTS = Object.freeze({
   editorial: "Nesta segunda proposta, agrupar por dia em vez de filme, preservando a associação exata entre títulos e horários.",
   minimal: "Nesta segunda proposta, usar a imagem como protagonista isolada e deslocar os dados obrigatórios para uma linha editorial discreta."
 });
-function variantsFor(input, analysis) {
+function variantsFor(input, analysis, libraryReference = null) {
   const profile = CATEGORIES[input.category];
   const palette = analysis?.dominantColors?.length ? analysis.dominantColors.join(", ")
     : input.visualDescription ? `descrição fornecida pela equipe (${input.visualDescription}); conferir cores na imagem antes de finalizar`
@@ -205,14 +207,17 @@ function variantsFor(input, analysis) {
     : input.category === "films" || input.category === "events" || input.category === "free"
       ? [["recommended", "Recomendada"], ["premium", "Premium"], ["bold", "Ousada"]]
       : [["recommended", "Recomendada"], ["commercial", "Comercial"], ["minimal", "Minimalista"]];
+  const study = libraryReference?.concepts || {};
+  const studyNote = libraryReference ? `Estudo ${libraryReference.id} como linguagem, nunca como fonte de fatos. ` : "";
   return modes.map(([id, label]) => { const mode = CREATIVE_MODES[id]; return { id, label,
     summary: mode.intent,
     artDirection: `${profile.direction} ${mode.intent}`,
-    composition: `${profile.composition} ${mode.layout} ${input.bias === "alternate" ? ALTERNATE_LAYOUTS[id] : ""}`.trim(),
+    composition: `${profile.composition} ${mode.layout} ${input.bias === "alternate" ? ALTERNATE_LAYOUTS[id] : ""} ${study.composition ? `${studyNote}Composição sugerida: ${study.composition} Adaptar somente se preservar os pontos focais da artwork.` : ""}`.trim(),
     hierarchy: mode.hierarchy,
-    paletteDirection: `Derivar da identidade real: ${palette}. A marca atua como assinatura, não como filtro global.`,
-    typographyDirection: profile.typography,
-    finish: `${profile.finish} ${mode.finish}`,
+    paletteDirection: `Derivar da identidade real: ${palette}. ${study.palette ? `O estudo ${libraryReference.id} sugere ${study.palette} Usar somente cores efetivamente presentes ou compatíveis com a artwork; jamais transportar uma paleta incompatível.` : ""} A marca atua como assinatura, não como filtro global.`,
+    typographyDirection: `${profile.typography} ${study.typography ? `Linguagem tipográfica do estudo ${libraryReference.id}: ${study.typography} Adaptar ao título e ao material real.` : ""}`.trim(),
+    finish: `${profile.finish} ${mode.finish} ${study.finish ? `Acabamento do estudo ${libraryReference.id}: ${study.finish} Aplicar apenas se coerente com a imagem e a campanha.` : ""}`.trim(),
+    libraryReference: libraryReference ? { id: libraryReference.id, name: libraryReference.name } : null,
     density: id === "minimal" ? "minimal" : input.density === "auto" ? profile.defaultDensity : input.density
   }; });
 }
@@ -230,6 +235,7 @@ function briefFor(input, curated, variant, analysis, referenceAnalysis) {
     restrictions: input.facts.restrictions || "", finish: variant.finish,
     desiredResponse: input.cta || "compreender e recordar a mensagem",
     visualAnalysis: analysis || null, referenceAnalysis: referenceAnalysis || null,
+    libraryReference: variant.libraryReference || null,
     visualAnalysisStatus: analysis ? "analyzed" : "manual_or_unavailable",
     overflowAdvice: curated.overflowAdvice
   };
@@ -337,12 +343,21 @@ function createCreativeMarketingWorkflow({ repository, ai, images }) {
         };
       } catch (error) { warnings.push(`Referência não analisada: ${error.message}`); }
     }
-    const variants = variantsFor(input, analysis);
+    const libraryReference = input.referenceId
+      ? promptLibrary.getReference(input.referenceId, input.category)
+      : promptLibrary.recommendReference(input.category,
+        [input.objective, input.visualDescription, input.audience, ...Object.values(input.facts),
+          source.genre || "", analysis?.mainSubject || "", ...(analysis?.dominantColors || [])].join(" "),
+        input.bias === "alternate");
+    if (input.referenceId && !libraryReference) invalid("A referência da biblioteca não pertence a esta categoria.", "CREATIVE_MARKETING_REFERENCE_INVALID");
+    const variants = variantsFor(input, analysis, libraryReference);
     return repository.insert({ id: crypto.randomUUID(), category: input.category, briefVersion: 2,
       movieId: input.movieId, createdBy: userId, campaignType: input.category, format: input.format,
       density: input.density, artworkSource: input.artworkRole, artworkUrl: input.artworkUrl,
       referenceUrl: input.referenceUrl,
-      input: { request: input, warnings, sourceAssets: {
+      input: { request: input, warnings,
+        libraryReference: libraryReference ? { id: libraryReference.id, name: libraryReference.name } : null,
+        sourceAssets: {
         posterUrl: clean(source.posterUrl, 1000), backdropUrl: clean(source.backdropUrl, 1000)
       } }, analysis: analysis || {},
       referenceAnalysis, variants });

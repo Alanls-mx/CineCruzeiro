@@ -35,6 +35,7 @@ const {
 } = require("./db/postgresStore");
 const creativePromptRepository = require("./repositories/creativePromptRepository");
 const creativeMarketingCore = require("./services/creativeMarketingStudioService");
+const creativePromptLibrary = require("./services/creativePromptLibraryService");
 const creativePromptCore = require("./services/creativePromptStudioService");
 const creativePromptImages = require("./services/creativePromptImageService");
 const { createBundle: createCreativeMarketingBundle } = require("./services/creativeMarketingBundleService");
@@ -11157,6 +11158,19 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  if (pathname === "/api/admin/creative-prompts/references" && method === "GET") {
+    const category = new URL(req.url, "http://localhost").searchParams.get("category");
+    sendJson(res, 200, { references: creativePromptLibrary.listReferences(category) });
+    return;
+  }
+  const creativeReferenceMatch = pathname.match(/^\/api\/admin\/creative-prompts\/references\/([A-Z]\d{3})$/);
+  if (creativeReferenceMatch && method === "GET") {
+    const reference = creativePromptLibrary.getReference(creativeReferenceMatch[1]);
+    if (!reference) sendJson(res, 404, { error: { code: "CREATIVE_MARKETING_REFERENCE_NOT_FOUND", message: "Referência não encontrada." } });
+    else sendJson(res, 200, { reference });
+    return;
+  }
+
   if (pathname === "/api/admin/creative-prompts/history" && method === "GET") {
     const offset = Math.max(0, Number(new URL(req.url, "http://localhost").searchParams.get("offset")) || 0);
     const runs = await creativePromptRepository.list({ limit: 30, offset });
@@ -11186,6 +11200,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const source = { movieId: movie?.id || null, artworkUrl: "", label: "", facts: {},
+        genre: movie ? (Array.isArray(movie.genre) ? movie.genre.join(" ") : String(movie.genre || "")) : "",
         posterUrl: movie?.posterUrl || "", backdropUrl: movie?.backdropUrl || "" };
       if (movie && ["films", "programming"].includes(body.category)) {
         source.label = movie.title;

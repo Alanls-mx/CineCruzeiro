@@ -5,6 +5,7 @@
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[char]);
   let catalog = {};
+  let libraryReferences = [];
   let run = null;
   let artworkUrl = "";
   let referenceUrl = "";
@@ -102,6 +103,53 @@
     $("creativePromptCatalogArt").querySelector("input").parentElement.lastChild.textContent = film ? " Pôster" : " Cadastrada";
     renderSourceOptions();
   }
+  function renderLibraryOptions() {
+    const select = $("creativePromptLibraryReference");
+    const selected = select.value;
+    const search = $("creativePromptLibrarySearch").value.normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const matches = libraryReferences.filter((item) => !search || `${item.id} ${item.name}`.normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(search));
+    const options = matches.some((item) => item.id === selected) ? matches
+      : [...libraryReferences.filter((item) => item.id === selected), ...matches];
+    select.innerHTML = `<option value="">Escolha automática</option>${options.map((item) =>
+      `<option value="${escape(item.id)}">${escape(item.id)} · ${escape(item.name)}</option>`).join("")}`;
+    select.value = selected;
+    const reference = libraryReferences.find((item) => item.id === selected);
+    $("creativePromptLibraryHint").textContent = reference
+      ? `Composição do estudo: ${reference.composition} A artwork e os dados da campanha têm prioridade.`
+      : "O Studio sugere um estudo quando o briefing oferece contexto suficiente. Nenhum texto factual do exemplo é copiado.";
+    $("creativePromptLibraryExample").hidden = !reference;
+    if (!reference) $("creativePromptLibraryExample").open = false;
+  }
+  async function loadLibraryReferences() {
+    const category = $("creativePromptCategory").value;
+    const supported = ["films", "concessions", "programming"].includes(category);
+    $("creativePromptLibrary").hidden = !supported;
+    libraryReferences = [];
+    $("creativePromptLibraryReference").innerHTML = '<option value="">Escolha automática</option>';
+    if (!supported) return;
+    try {
+      const result = await api(`${endpoint}/references?category=${encodeURIComponent(category)}`);
+      if (category !== $("creativePromptCategory").value) return;
+      libraryReferences = result.references || [];
+      $("creativePromptLibraryCount").textContent = `· ${libraryReferences.length} estudos`;
+      renderLibraryOptions();
+    } catch (error) {
+      $("creativePromptLibraryHint").textContent = error.message || "Não foi possível carregar a biblioteca.";
+    }
+  }
+  async function showLibraryExample() {
+    if (!$("creativePromptLibraryExample").open) return;
+    const id = $("creativePromptLibraryReference").value;
+    if (!id) return;
+    $("creativePromptLibraryExampleText").textContent = "Carregando exemplo...";
+    try {
+      const result = await api(`${endpoint}/references/${encodeURIComponent(id)}`);
+      if (id === $("creativePromptLibraryReference").value)
+        $("creativePromptLibraryExampleText").textContent = (result.reference?.lines || []).join("\n\n");
+    } catch (error) { $("creativePromptLibraryExampleText").textContent = error.message || "Exemplo indisponível."; }
+  }
   function renderArtwork() {
     const choice = document.querySelector('input[name="creativePromptArtwork"]:checked')?.value || "none";
     const item = source();
@@ -169,6 +217,7 @@
       requiredText: $("creativePromptMessage").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
       cta: $("creativePromptCta").value.trim(), audience: $("creativePromptTagline").value.trim(),
       directionNote: $("creativePromptVisualNote").value.trim(),
+      referenceId: $("creativePromptLibraryReference").value,
       objective: $("creativePromptObjective").value.trim() || (category === "films" ? $("creativePromptCampaign").selectedOptions[0]?.textContent || "" : ""),
       bias
     };
@@ -186,10 +235,13 @@
       button.hidden = button.dataset.creativeRefine !== "minimal" &&
         !(run.variants || []).some((item) => item.id === button.dataset.creativeRefine);
     });
+    if (!$("creativePromptLibraryReference").value && run.input?.libraryReference)
+      $("creativePromptLibraryHint").textContent = `Estudo sugerido: ${run.input.libraryReference.id} · ${run.input.libraryReference.name}. Os fatos vêm apenas do briefing.`;
     if (!run.promptText) return;
     const brief = run.brief || {};
     $("creativePromptDirectionSummary").textContent = brief.artDirection || brief.summary || "";
     $("creativePromptDecisions").innerHTML = [
+      ["Estudo", brief.libraryReference ? `${brief.libraryReference.id} · ${brief.libraryReference.name}` : ""],
       ["Paleta", brief.palette || brief.paletteDirection], ["Densidade", brief.density],
       ["Composição", brief.composition], ["Acabamento", brief.finish || brief.premiumFinish]
     ].filter(([, value]) => value).map(([label, value]) => `<span><strong>${escape(label)}:</strong> ${escape(value)}</span>`).join("");
@@ -254,11 +306,14 @@
       badge.classList.toggle("muted", !result.databaseReady || !(result.localVisionAvailable || (result.enabled && result.configured)));
     } catch { $("creativePromptProviderStatus").textContent = "Verificação indisponível"; }
   }
-  function restore(current) {
+  async function restore(current) {
     const input = current.input?.request;
     if (!input || current.briefVersion !== 2) return;
     $("creativePromptCategory").value = input.category;
     renderFields(input.facts);
+    await loadLibraryReferences();
+    $("creativePromptLibraryReference").value = input.referenceId || "";
+    renderLibraryOptions();
     $("creativePromptFormat").value = input.format;
     $("creativePromptDensity").value = input.density;
     $("creativePromptSource").value = input.sourceId || input.movieId || "";
@@ -280,7 +335,7 @@
     try {
       const response = await api(`${endpoint}/${id}`);
       run = response.run;
-      restore(run);
+      await restore(run);
       renderRun();
       if (redo && run.briefVersion !== 2) message("Este registro usa o formato antigo. Visualize ou copie o prompt; crie uma campanha nova para refazer.");
       else if (redo) await generate("alternate");
@@ -327,7 +382,7 @@
       $("creativePromptCategory").innerHTML = Object.entries(catalog).map(([id, item]) =>
         `<option value="${escape(id)}">${escape(item.name)}</option>`).join("");
       renderFields();
-      await Promise.all([loadStatus(), loadHistory()]);
+      await Promise.all([loadStatus(), loadHistory(), loadLibraryReferences()]);
     } catch (error) { message(error.message || "Não foi possível abrir o Studio.", true); }
   }
   function bind() {
@@ -337,6 +392,8 @@
         "creativePromptMessage", "creativePromptVisualDescription", "creativePromptVisualNote",
         "creativePromptReferenceDescription"]) $(id).value = "";
       renderFields(); renderReference(); renderRun();
+      $("creativePromptLibrarySearch").value = "";
+      void loadLibraryReferences();
     });
     $("creativePromptSource").addEventListener("change", () => {
       const facts = sourceFacts(source());
@@ -352,6 +409,13 @@
     $("creativePromptReferenceUpload").addEventListener("change", (event) => void upload(event.target.files?.[0], "reference")
       .catch((error) => message(error.message, true)));
     $("creativePromptReferenceClear").addEventListener("click", () => { referenceUrl = ""; renderReference(); });
+    $("creativePromptLibrarySearch").addEventListener("input", renderLibraryOptions);
+    $("creativePromptLibraryReference").addEventListener("change", () => {
+      $("creativePromptLibraryExample").open = false;
+      renderLibraryOptions();
+      if (run) message("Gere uma nova direção para aplicar a referência escolhida.");
+    });
+    $("creativePromptLibraryExample").addEventListener("toggle", () => void showLibraryExample());
     $("creativePromptForm").addEventListener("submit", (event) => { event.preventDefault(); void generate(); });
     $("creativePromptVariantList").addEventListener("click", (event) => {
       const button = event.target.closest("[data-creative-variant]");

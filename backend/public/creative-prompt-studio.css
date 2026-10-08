@@ -120,6 +120,13 @@
 .creative-prompt-more summary { cursor: pointer; color: #b8e8dc; font-weight: 650; font-size: 13px; }
 .creative-prompt-more[open] { display: grid; gap: 14px; }
 .creative-prompt-more[open] summary { margin-bottom: 2px; }
+.creative-prompt-library { border-top: 1px solid #334155; padding-top: 10px; }
+.creative-prompt-library > summary, .creative-prompt-library-example summary { cursor: pointer; color: #b8e8dc; font-weight: 650; font-size: 13px; }
+.creative-prompt-library > summary span { color: #9fb2c6; font-size: 11px; font-weight: 500; }
+.creative-prompt-library-body { display: grid; gap: 10px; padding-top: 12px; }
+.creative-prompt-library-hint { margin: 0; color: #a9bdc9; font-size: 12px; line-height: 1.5; }
+#creativePromptLibraryExample summary { cursor: pointer; color: #9ddfce; font-size: 12px; }
+#creativePromptLibraryExampleText { max-height: 300px; overflow: auto; margin: 8px 0 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #354357; border-radius: 6px; color: #dce8ef; background: #0d1420; font-family: inherit; font-size: 12px; line-height: 1.5; }
 .creative-prompt-status { min-height: 18px; margin: 0; color: #9fb2c6; font-size: 12px; }
 .creative-prompt-status[data-state="error"] { color: #ffaca8; }
 

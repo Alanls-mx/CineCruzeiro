@@ -1727,6 +1727,22 @@
                   </select>
                 </label>
               </div>
+              <details id="creativePromptLibrary" class="creative-prompt-library" hidden>
+                <summary>Biblioteca de referências <span id="creativePromptLibraryCount"></span></summary>
+                <div class="creative-prompt-library-body">
+                  <label>Buscar direção visual
+                    <input id="creativePromptLibrarySearch" type="search" placeholder="Ex.: romance, terror, pipoca" autocomplete="off" />
+                  </label>
+                  <label>Estudo de referência
+                    <select id="creativePromptLibraryReference"><option value="">Escolha automática</option></select>
+                  </label>
+                  <p id="creativePromptLibraryHint" class="creative-prompt-library-hint"></p>
+                  <details id="creativePromptLibraryExample" hidden>
+                    <summary>Ver exemplo completo</summary>
+                    <pre id="creativePromptLibraryExampleText"></pre>
+                  </details>
+                </div>
+              </details>
               <details class="creative-prompt-more">
                 <summary>Referência e informações da campanha</summary>
                 <label>Referência visual (opcional)
