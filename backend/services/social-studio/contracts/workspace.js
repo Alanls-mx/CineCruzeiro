@@ -1,8 +1,8 @@
 const PROGRAM_IDS = ['sessions-today', 'sessions-week', 'multi-movies'];
 const LAYOUTS = {
-  movie: ['movie-editorial-light', 'movie-immersive', 'movie-spotlight'],
+  movie: ['movie-editorial-light', 'movie-immersive', 'movie-spotlight', 'movie-campaign'],
   programming: ['program-cards', 'program-grid', 'program-days'],
-  concession: ['product-price', 'product-lateral', 'hero-product'],
+  concession: Object.keys(require('./artwork-layout').PRODUCT_LAYOUTS),
   ticket: ['price-impact', 'ticket-burst', 'promo-editorial'],
   online: ['hero-left', 'hero-center', 'typography-dominant']
 };

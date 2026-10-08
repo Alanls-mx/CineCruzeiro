@@ -19,7 +19,7 @@ const context={
   concessions:[{id:'p',name:'Pipoca grande',description:'Pipoca salgada',price:18,imageUrl:'asset://product'}],
   clubPlans:[]
 };
-const loadImage=async url=>images.get(url) || null;
+const loadImage=async url=>/\/images\/social-studio\/cine-cruzeiro-assinatura-oficial\.png$/.test(url)?images.get('asset://logo'):images.get(url) || null;
 
 test('modelos adicionais usam preço cadastrado e preservam a marca',async()=>{
   for(const formatId of ['feed_portrait','square','story']) {
@@ -33,7 +33,7 @@ test('modelos adicionais usam preço cadastrado e preservam a marca',async()=>{
       assert.ok(elements.some(item=>item.id==='detail' && item.text===expected));
       assert.ok(elements.some(item=>item.id==='description' && item.text.includes('Condições confirmadas')));
       if(templateId==='ticket-offer') assert.equal(elements.filter(item=>item.type==='text' && /\bMeia\b/i.test(item.text)).length,1);
-      assert.ok(elements.some(item=>item.id==='logo' && item.src==='asset://logo'));
+      assert.ok(elements.some(item=>item.id==='logo' && (item.src==='asset://logo' || /cine-cruzeiro-assinatura-oficial\.png$/.test(item.src))));
       assert.ok(elements.some(item=>item.id==='artwork' && item.src===`asset://${templateId==='ticket-offer'?'movie':'product'}`));
       const meta=await sharp(result.buffer).metadata();
       assert.equal(meta.width,1080);

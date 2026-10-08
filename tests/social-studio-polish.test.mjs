@@ -124,7 +124,7 @@ test('exploração escolhe famílias diferentes sem perder a opção de variaç�
 test('variações comerciais permanecem na linguagem de cada categoria', async () => {
   const {context, loadImage} = await fixture();
   for (const [input, allowed] of [
-    [{templateId: 'concession-combo', concessionId: 'combo'}, ['product-price','product-lateral','hero-product']],
+    [{templateId: 'concession-combo', concessionId: 'combo'}, Object.keys(require('../backend/services/social-studio/contracts/artwork-layout').PRODUCT_LAYOUTS)],
     [{templateId: 'club-plan', clubPlanId: 'club'}, ['typography-dominant','editorial','hero-center','hero-right']]
   ]) {
     const result = await generateVariations({formatId: 'feed_portrait', ...input}, context, {loadImage});

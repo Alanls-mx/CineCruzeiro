@@ -76,10 +76,10 @@ test('escala manual permanece limitada à zona de assinatura nos três formatos'
  for(const formatId of ['square','story','feed_portrait']) {
   const sizes=[];
   for(const signatureScale of [100,135]) {
-   const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'m',formatId,style:'clean',artDirection:{enabled:false},signatureScale},context,{loadImage,skipRaster:true});
+   const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'m',formatId,layoutId:'movie-campaign',artDirection:{enabled:false},signatureScale},context,{loadImage,skipRaster:true});
    sizes.push(flattenElements(r.scene.elements).find(e=>e.id==='logo').width);
   }
-  assert.ok(sizes[1]>=sizes[0] && sizes[1]<=1080*.19+1);
+  assert.ok(sizes[1]>=sizes[0] && sizes[1]<=1080*.19+1,`${formatId}: ${sizes.join(', ')}`);
  }
 });
 test('data embutida só substitui data editorial idêntica conferida',async()=>{

@@ -12,7 +12,8 @@ function socialStudioFonts() {
   if (cachedFonts) return cachedFonts;
   cachedFonts = Object.freeze([
     { name: "Social Display", data: readFont("BarlowCondensed-Black.ttf"), weight: 900, style: "normal" },
-    { name: "Social Text", data: readFont("BarlowCondensed-SemiBold.ttf"), weight: 600, style: "normal" }
+    { name: "Social Text", data: readFont("BarlowCondensed-SemiBold.ttf"), weight: 600, style: "normal" },
+    { name: "Social Editorial", data: readFont("DMSerifDisplay-Regular.ttf"), weight: 400, style: "normal" }
   ]);
   return cachedFonts;
 }

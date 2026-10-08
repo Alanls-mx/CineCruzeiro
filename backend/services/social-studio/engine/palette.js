@@ -113,14 +113,15 @@ async function extractPalette(buffer, brand = {}) {
   });
 }
 
-async function extractEditorialAtmosphere(buffer) {
+async function extractEditorialAtmosphere(buffer,region='lower') {
   if(!Buffer.isBuffer(buffer) || !buffer.length)return null;
-  const key=`editorial-v2:${crypto.createHash('sha1').update(buffer).digest('hex')}`;
+  const sampleRegion=region==='upper'?'upper':'lower';
+  const key=`editorial-v3:${sampleRegion}:${crypto.createHash('sha1').update(buffer).digest('hex')}`;
   return paletteCache.getOrLoad(key,async()=>{
     const {data,info}=await sharp(buffer).rotate().resize(32,48,{fit:'fill'}).removeAlpha().raw().toBuffer({resolveWithObject:true});
     const buckets=new Map();
     // Sample the lower artwork, not letterboxed edges or a brand-biased palette.
-    for(let y=28;y<46;y++)for(let x=2;x<30;x++) {
+    for(let y=sampleRegion==='upper'?1:28;y<(sampleRegion==='upper'?15:46);y++)for(let x=2;x<30;x++) {
       const i=(y*info.width+x)*info.channels,color={r:data[i],g:data[i+1],b:data[i+2]};
       const light=(color.r+color.g+color.b)/3;
       if(light<18 || light>225)continue;
@@ -152,7 +153,25 @@ async function extractEditorialAtmosphere(buffer) {
     }).filter(item=>item.separation>=8 && item.separation<=45 && item.max<Math.max(main.r,main.g,main.b)*.9 && saturation(item.c)>45).sort((a,b)=>b.score-a.score);
     const shadow=shadows[0];
     const shade=shadow?rgbToHex(Object.fromEntries(Object.entries(shadow.c).map(([k,v])=>[k,Math.pow(v/shadow.max,1.6)*Math.min(shadow.max*.85,110)]))):mix(color,'#000000',.48);
-    return {color,shadow:shade,highlight:mix(color,'#ffffff',.58)};
+    let companion='';
+    if(sampleRegion==='upper') {
+      const candidates=new Map();
+      for(let y=0;y<info.height;y++)for(let x=0;x<info.width;x++) {
+        const i=(y*info.width+x)*info.channels,c={r:data[i],g:data[i+1],b:data[i+2]};
+        const max=Math.max(c.r,c.g,c.b),chroma=saturation(c);
+        const delta=Math.abs(hue(c)-mainHue),separation=Math.min(delta,360-delta);
+        if(max<35 || max>230 || chroma<22 || separation<55)continue;
+        const key=[c.r>>4,c.g>>4,c.b>>4].join(','),bin=candidates.get(key)||{r:0,g:0,b:0,count:0};
+        bin.r+=c.r;bin.g+=c.g;bin.b+=c.b;bin.count++;
+        candidates.set(key,bin);
+      }
+      const ranked=[...candidates.values()].map(bin=>{
+        const c=average(bin),max=Math.max(c.r,c.g,c.b);
+        return {c,score:Math.pow(bin.count,.45)*Math.pow(saturation(c)/max,1.5)*Math.sqrt(max)};
+      }).sort((a,b)=>b.score-a.score);
+      if(ranked[0])companion=rgbToHex(ranked[0].c);
+    }
+    return {color,shadow:shade,highlight:mix(color,'#ffffff',.58),...(companion?{companion}:{})};
   });
 }
 

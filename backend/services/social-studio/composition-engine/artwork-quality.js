@@ -13,7 +13,7 @@ async function reserveSignature(scene,loadImage) {
   if(!buffer) {scene.elements=scene.elements.filter(e=>e!==logo);return;}
   const meta=await sharp(buffer).metadata(),ratio=meta.width/meta.height;
   const safe=SAFE[scene.formatId],w=scene.width,h=scene.height;
-  const blockers=flattenElements(scene.elements).filter(e=>e.visible!==false && (e.type==='text' || e.id==='artwork' || e.id.startsWith('movie-art-')));
+  const blockers=flattenElements(scene.elements).filter(e=>e.visible!==false && (e.type==='text' || !scene.sourceDraft.integratedCampaign && (e.id==='artwork' || e.id.startsWith('movie-art-'))));
   const fits=b=>!blockers.some(e=>overlap({...b,x:b.x-10,y:b.y-10,width:b.width+20,height:b.height+20},boxOf(e))>4);
   const reserved=scene.sourceDraft.signatureReserved;
   let selected=reserved && fits(reserved)?reserved:null;
@@ -90,15 +90,17 @@ function validateArtworkLayout(scene) {
     if(elements.slice(index+1).some(later=>later.type!=='text' && later.opacity>.1 && overlap(boxOf(e),boxOf(later))>e.width*e.height*.05))add('OCCLUDED_CONTENT',e.id,'Uma camada está cobrindo o texto.');
   }
   for(const poster of art) {
-    const protectedBox=poster.fit==='contain'?boxOf(poster):{x:poster.x+poster.width*.2,y:poster.y+poster.height*.12,width:poster.width*.6,height:poster.height*.68};
+    const protectedBox=scene.sourceDraft.integratedCampaign
+      ? {x:poster.x+poster.width*.12,y:poster.y+poster.height*.11,width:poster.width*.76,height:poster.height*.36}
+      : poster.fit==='contain'?boxOf(poster):{x:poster.x+poster.width*.2,y:poster.y+poster.height*.12,width:poster.width*.6,height:poster.height*.68};
     if(text.some(t=>overlap(protectedBox,boxOf(t))>4))add('SUBJECT_OVERLAP',poster.id,'O texto invade a área protegida da imagem.');
     if(scene.sourceDraft.officialMovieLayout && (!scene.sourceDraft.heroUsesBackdrop && !scene.sourceDraft.heroUsesPosterCrop && poster.fit!=='contain' || poster.crop || poster.effects?.scale>1 || poster.effects?.blur>0))add('POSTER_CROP',poster.id,'Preserve o pôster principal inteiro e nítido.');
   }
   if(logo) {
     const atLeft=logo.x<=w*.11,atRight=logo.x+logo.width>=w*.89;
-    if(!(atLeft || atRight) || logo.y<h*.70 && !(atLeft && logo.y<=h*(safe.top+.045)))add('LOGO_POSITION',logo.id,'Use uma assinatura no canto, fora do centro da composição.');
+    if(!(atLeft || atRight || scene.sourceDraft.integratedCampaign && logo.y>h*.80) || logo.y<h*.70 && !(atLeft && logo.y<=h*(safe.top+.045)))add('LOGO_POSITION',logo.id,'Use uma assinatura em uma área livre da composição.');
     if(logo.width>w*.22 || logo.height>h*.15)add('LOGO_DOMINANT',logo.id,'A assinatura não pode dominar a composição.');
-    if([...text,...art].some(e=>overlap(boxOf(logo),boxOf(e))>4))add('LOGO_OVERLAP',logo.id,'A assinatura cobre conteúdo.');
+    if([...text,...(scene.sourceDraft.integratedCampaign?[]:art)].some(e=>overlap(boxOf(logo),boxOf(e))>4))add('LOGO_OVERLAP',logo.id,'A assinatura cobre conteúdo.');
   }
   const cta=text.find(e=>e.id==='cta'),website=text.find(e=>e.id==='website');
   if(scene.sourceDraft.content?.action?.label && !cta)add('MISSING_CTA','cta','A chamada precisa estar visível.');
@@ -123,6 +125,14 @@ async function assertArtworkQuality(scene,loadImage) {
   return quality;
 }
 async function repairContrast(scene,loadImage) {
+  if(scene.sourceDraft.integratedCampaign) {
+    for(const reading of await contrastReadings(scene,loadImage)) {
+      const element=scene.elements.find(e=>e.id===reading.id);
+      if(element && reading.ratio<4.5 && Math.max(reading.white,reading.dark)>=4.5)
+        element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
+    }
+    return;
+  }
   if(scene.sourceDraft.movieFamily==='movie-editorial-light') {
     // Keep the poster-derived footer continuous instead of placing a dark card
     // behind each date line when the image has mixed luminance.

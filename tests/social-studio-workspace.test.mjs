@@ -10,7 +10,9 @@ test('programação descarta enquadramento de filme e preserva seleção, cores 
   assert.deepEqual(draft.movieIds,['a','b']);assert.equal(draft.programStyle,'vibrant');assert.equal(draft.programLayout,'program-days');
 });
 test('criação oferece famílias restritas por categoria sem apagar contratos antigos',()=>{
-  assert.ok(Object.values(LAYOUTS).every(layouts=>layouts.length<=3));
+  assert.equal(LAYOUTS.movie.length,4);
+  assert.ok(LAYOUTS.concession.length>=7);
+  assert.ok(Object.entries(LAYOUTS).filter(([kind])=>!['movie','concession'].includes(kind)).every(([,layouts])=>layouts.length<=3));
   assert.equal(normalizeWorkspace({workspaceVersion:2,templateId:'movie-highlight',layoutId:'ticket-burst'}).layoutId,undefined);
   assert.equal(normalizeWorkspace({workspaceVersion:2,templateId:'concession-combo',layoutId:'movie-spotlight'}).layoutId,undefined);
   assert.equal(normalizeWorkspace({templateId:'movie-highlight',layoutId:'poster-editorial'}).layoutId,'poster-editorial');

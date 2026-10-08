@@ -90,8 +90,8 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   let palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
     : await extractPalette(sourceBuffer, brand), draft.paletteId);
-  if(draft.movieFamily==='movie-editorial-light' && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
-    palette.editorialAtmosphere=await require('./palette').extractEditorialAtmosphere(sourceBuffer);
+  if(['movie-editorial-light','movie-campaign'].includes(draft.movieFamily) && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
+    palette.editorialAtmosphere=await require('./palette').extractEditorialAtmosphere(sourceBuffer,draft.movieFamily==='movie-campaign'?'upper':'lower');
   }
   if(programming && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
     const palettes=[];
@@ -109,6 +109,10 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     }
   }
   let logoUrl = signatureUrl(draft, context);
+  if(draft.movieFamily==='movie-campaign' && draft.signatureId==='automatic' && /cine-cruzeiro-assinatura-/.test(logoUrl)) {
+    const light=require('../scene/movie-campaign').campaignSurface(palette).light;
+    logoUrl=light?'/images/social-studio/cine-cruzeiro-assinatura-black.png':'/images/social-studio/cine-cruzeiro-assinatura-oficial.png';
+  }
   if((draft.templateId==='ticket-offer' || concession || draft.movieFamily) && logoUrl) {
     const logo=await loadArtwork(logoUrl);
     if(!logo) logoUrl='';

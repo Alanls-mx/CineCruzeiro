@@ -33,7 +33,7 @@ test('fundos são independentes do produto e não há logo imposta como hero da 
 test('produto vinculado a filme mantém produto e preço, sem trocar a descrição pelos horários',async()=>{
   const result=await engine.renderSocialPost({templateId:'concession-combo',concessionId:'combo',relatedMovieId:'one'},context,options);
   assert.equal(layers(result).find(e=>e.id==='artwork').src,'/customization/product.png');
-  assert.equal(layers(result).find(e=>e.id==='custom-background-0').src,'/customization/backdrop.png');
+  assert.equal(layers(result).some(e=>e.id==='custom-background-0'),false);
   assert.equal(result.draft.contentRules.mustShowSessions,false);
   assert.match(engine.captionForDraft(result.draft,context),/Filme 1/);
 });

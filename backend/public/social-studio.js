@@ -148,8 +148,8 @@
     const id=currentTemplate()?.id || '';
     return ['sessions-today','sessions-week','multi-movies'].includes(id)?'programming':id==='ticket-offer'?'ticket':id==='online-ticket'?'online':id.startsWith('concession-')?'concession':'movie';
   }
-  const workspaceLayouts={movie:['movie-editorial-light','movie-immersive','movie-spotlight'],programming:['program-cards','program-grid','program-days'],concession:['product-price','product-lateral','hero-product'],ticket:['price-impact','ticket-burst','promo-editorial'],online:['hero-left','hero-center','typography-dominant']};
-  const layoutNames={'automatic':'Automática','movie-editorial-light':'Imagem e texto','movie-immersive':'Imagem imersiva','movie-spotlight':'Data em destaque','program-cards':'Cartazes editoriais','program-grid':'Destaque e mosaico','program-days':'Agenda por dia','product-price':'Produto e preço','product-lateral':'Produto lateral','hero-product':'Produto em destaque','price-impact':'Preço protagonista','campaign-led':'Campanha gráfica','ticket-burst':'Explosão promocional','promo-editorial':'Editorial com filme','hero-left':'Imagem e chamada','hero-center':'Imagem central','typography-dominant':'Texto em destaque'};
+  const workspaceLayouts={movie:['movie-editorial-light','movie-immersive','movie-spotlight','movie-campaign'],concession:['product-price','product-lateral','hero-product','product-cinema-blue','product-gold','product-neon','product-sunset','product-stage','product-retro','product-pop']};
+  const layoutNames={'automatic':'Automática','movie-editorial-light':'Imagem e texto','movie-immersive':'Imagem imersiva','movie-spotlight':'Data em destaque','movie-campaign':'Campanha integrada','product-price':'Produto e preço','product-lateral':'Produto lateral','hero-product':'Produto em destaque','product-cinema-blue':'Cinema azul','product-gold':'Verde e dourado','product-neon':'Neon','product-sunset':'Pôr do sol','product-stage':'Palco de cinema','product-retro':'Retrô editorial','product-pop':'Pop art'};
 
   function simplifyWorkspace() {
     const byId=id=>document.getElementById(id);
@@ -162,8 +162,10 @@
     const advanced=[...root.querySelectorAll('details')].find(node=>node.querySelector('summary')?.textContent==='Configurações avançadas');
     if(advanced)reserve.append(advanced);
     byId('socialStudioProgramLayout').closest('label').hidden=true;
-    byId('socialStudioCampaignButton').textContent='Salvar nos 3 formatos';
-    byId('socialStudioGenerateButton').textContent='Salvar arte';
+    byId('socialStudioCampaignButton').hidden=true;
+    byId('socialStudioAutomateButton').hidden=true;
+    byId('socialStudioPreviewButton').hidden=true;
+    byId('socialStudioGenerateButton').textContent='Salvar pôster';
     byId('socialStudioManualEdit').textContent='Editar na prévia';
     byId('socialStudioVariationsButton').textContent='Comparar 3 composições';
     const texts=document.createElement('details');texts.className='social-property-section';texts.innerHTML='<summary>Personalizar textos</summary><div class="social-property-body"></div>';
@@ -189,7 +191,7 @@
     byId('socialStudioPriceSection').querySelector('summary').textContent='Preço e disponibilidade';
     byId('socialStudioPriceMode').querySelector('option[value="minimum"]').textContent='Automático (menor disponível)';
     const category=document.createElement('select');category.id='socialStudioCategory';category.setAttribute('aria-label','Tipo de campanha');
-    category.innerHTML=[['FILMES','Filmes'],['PROGRAMAÇÃO','Programação'],['BOMBONIERE','Bomboniere'],['VENDAS','Ingressos']].map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
+    category.innerHTML=[['FILMES','Filmes'],['BOMBONIERE','Bomboniere']].map(([id,name])=>`<option value="${id}">${name}</option>`).join('');
     byId('socialStudioTemplates').before(category);
     category.addEventListener('change',()=>{const first=state.context.templates.find(item=>item.category===category.value);if(first){setRadio('socialStudioTemplate',first.id);byId('socialStudioTemplates').dispatchEvent(new Event('change',{bubbles:true}));}});
     const format=byId('socialStudioFormat').closest('label');format.classList.add('social-toolbar-format');root.querySelector('.social-preview-toolbar').prepend(format);
@@ -230,6 +232,11 @@
     root.querySelectorAll('.social-template-group').forEach(group=>{group.hidden=![...group.querySelectorAll('[name=socialStudioTemplate]')].some(input=>input.checked);});
     byId('socialStudioMovieField').hidden=program || !currentTemplate().fields.includes('movie');
     byId('socialStudioImageSection').hidden=program;
+    byId('socialStudioRelatedMovieField').hidden=true;
+    byId('socialStudioConcessionObjective').closest('label').hidden=kind==='concession';
+    byId('socialStudioProductAssetMode').closest('label').hidden=kind==='concession';
+    byId('socialStudioProductBranded').closest('label').hidden=kind==='concession';
+    byId('socialStudioPriceSection').hidden=true;
     byId('socialProgramVisual').hidden=!program;
     byId('socialStudioMovieSelections').hidden=byId('socialStudioAutoProgram').checked;
     const count=[...root.querySelectorAll('[data-program-movie]')].filter(node=>node.value).length;
@@ -503,9 +510,9 @@
         </div>
         <section class="social-production-dock" aria-label="Produção da campanha">
           <div class="social-production-tabs" role="tablist" aria-label="Produção">
-            ${[['composition','Composições'],['caption','Legenda'],['export','Exportação']].map(([key,label],index)=>`<button id="socialDockTab-${key}" type="button" role="tab" data-studio-dock="${key}" aria-controls="socialDock-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${label}</button>`).join('')}
+            ${[['caption','Legenda'],['export','Exportação']].map(([key,label],index)=>`<button id="socialDockTab-${key}" type="button" role="tab" data-studio-dock="${key}" aria-controls="socialDock-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${label}</button>`).join('')}
           </div>
-          ${['composition','caption','export'].map((key,index)=>`<div id="socialDock-${key}" class="social-production-panel" role="tabpanel" aria-labelledby="socialDockTab-${key}" ${index?'hidden':''}></div>`).join('')}
+          ${['caption','export'].map((key,index)=>`<div id="socialDock-${key}" class="social-production-panel" role="tabpanel" aria-labelledby="socialDockTab-${key}" ${index?'hidden':''}></div>`).join('')}
         </section>
       </form>
 
@@ -537,18 +544,20 @@
       panel.append(...nodes.filter(Boolean));
       art.append(panel);
     }
-    byId('socialDock-composition').append(byId('socialStudioStyles').closest('fieldset'));
+    byId('socialStudioStyles').closest('fieldset').querySelector('legend').textContent='Direção visual';
+    byId('socialInspectorLook').prepend(byId('socialStudioStyles').closest('fieldset'));
+    byId('socialStudioLookSection').open=false;
     const output = byId('socialStudioOutputSection');
     byId('socialDock-export').append(output.querySelector('.social-output-grid'));
     output.remove();
     const exportActions = document.createElement('div');
     exportActions.className = 'social-export-actions';
-    exportActions.append(byId('socialStudioGenerateButton'), byId('socialStudioCampaignButton'), byId('socialStudioPreviewDownload'));
+    exportActions.append(byId('socialStudioCampaignButton'), byId('socialStudioPreviewDownload'));
     byId('socialDock-export').append(exportActions);
     const exportShortcut = document.createElement('button');
     exportShortcut.type = 'button'; exportShortcut.className = 'primary-button';
     exportShortcut.dataset.studioOpen = 'export'; exportShortcut.textContent = 'Exportar campanha';
-    root.querySelector('.social-studio-toolbar-actions').append(exportShortcut);
+    root.querySelector('.social-studio-toolbar-actions').append(byId('socialStudioGenerateButton'),exportShortcut);
     byId('socialDock-caption').append(byId('socialStudioCaptionPanel'));
     byId('socialStudioCaptionPanel').hidden = false;
     byId('socialStudioCaption').rows = 7;
@@ -623,7 +632,7 @@
 
   function renderTemplates() {
     const groups = new Map();
-    state.context.templates.forEach((template) => {
+    state.context.templates.filter(template=>['FILMES','BOMBONIERE'].includes(template.category) && template.id!=='movie-price').forEach((template) => {
       const category = template.category || "OUTROS";
       if (!groups.has(category)) groups.set(category, []);
       groups.get(category).push(template);
@@ -655,7 +664,7 @@
     const allowed = template?.styles || ["clean"];
     const programLayouts=state.context?.programLayouts?.[template?.id];
     const count=[...root.querySelectorAll('[data-program-movie]')].filter(node=>node.value).length;
-    const available=(state.context.workspaceLayouts || workspaceLayouts)[campaignKind()] || [];
+    const available=workspaceLayouts[campaignKind()] || [];
     const choices=programLayouts?.length?available:available.filter(id=>id==='program-cards'?count>=1 && count<=12:id==='program-grid'?count>=1 && count<=12:true);
     const styles=[{id:'automatic',name:'Automática'},...choices.map(id=>({id,name:layoutNames[id]}))];
     const movie = artworkMovie();
@@ -665,7 +674,7 @@
     const programArtwork=programLayouts?[...root.querySelectorAll('[data-program-movie]')].map(node=>state.context.movies?.find(movie=>String(movie.id)===node.value)).filter(Boolean).slice(0,3).map(movie=>movie.posterUrl || movie.backdropUrl).filter(Boolean):[];
     const miniArtwork=(programLayouts?programArtwork:artwork?[artwork]:[]).map(src=>`<img src="${escapeHtml(assetUrl(src))}" alt="" />`).join('');
     const names = ['concession-combo','concession-offer'].includes(template?.id)
-      ? {"hero-left":"Produto + oferta", "hero-right":"Oferta + produto", "poster-dominant":"Produto em destaque", split:"Vitrine", automatic:"Direção automática"}
+      ? layoutNames
       : template?.id === "club-plan"
         ? {"typography-dominant":"Benefícios em destaque", editorial:"Plano editorial", "hero-center":"Plano em destaque", "hero-right":"Clube + plano", automatic:"Direção automática"}
         : { cinematic: "Cinema", impact: "Impacto", clean: "Editorial", minimal: "Galeria" };
@@ -2147,7 +2156,7 @@
     root.innerHTML = `<div class="social-studio-loading" role="status" aria-live="polite"><span class="loading-spinner" aria-hidden="true"></span><strong>Preparando o Social Studio</strong><small>Carregando programação, produtos e identidade do cinema.</small></div>`;
     try {
       state.context = await request("/api/admin/social-studio/context");
-      state.context.templates=state.context.templates.filter(template=>template.id!=='club-plan');
+      state.context.templates=state.context.templates.filter(template=>['FILMES','BOMBONIERE'].includes(template.category) && template.id!=='movie-price');
       renderShell();
       renderContext();
       bindEvents();

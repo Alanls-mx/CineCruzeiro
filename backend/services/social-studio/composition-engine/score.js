@@ -38,11 +38,12 @@ function scoreComposition(scene) {
   const graphicCampaign=scene.templateId==='ticket-offer';
   if (!graphicCampaign && !art && !bg && !elements.some(element=>element.id.startsWith('movie-art-'))) add("NO_ARTWORK", 15, "artwork");
   if (art) {
+    const integrated=scene.sourceDraft?.integratedCampaign;
     const protectedZone = {
-      x: art.x + art.width * 0.16,
-      y: art.y + art.height * 0.15,
-      width: art.width * 0.68,
-      height: art.height * 0.62,
+      x: art.x + art.width * (integrated ? .12 : .16),
+      y: art.y + art.height * (integrated ? .11 : .15),
+      width: art.width * (integrated ? .76 : .68),
+      height: art.height * (integrated ? .36 : .62),
     };
     for (const text of texts)
       if (overlap(protectedZone, text) > text.width * text.height * 0.12)

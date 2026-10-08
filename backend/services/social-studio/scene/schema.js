@@ -5,7 +5,7 @@ const { normalizeEffects } = require("../composition-engine/config");
 const SCENE_VERSION = 1;
 const MAX_ELEMENTS = 80;
 const ALLOWED_TYPES = new Set(["text", "image", "shape", "gradient", "group"]);
-const ALLOWED_FONTS = new Set(["Social Display", "Social Text"]);
+const ALLOWED_FONTS = new Set(["Social Display", "Social Text", "Social Editorial"]);
 const ALLOWED_ALIGNS = new Set(["left", "center", "right"]);
 const COLOR_PATTERN = /^(?:#[0-9a-f]{6}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\))$/i;
 

@@ -8,9 +8,21 @@ const MOVIE_FAMILIES=Object.freeze({
   'movie-asymmetric':'Editorial assimétrico',
   'movie-immersive':'Fundo imersivo',
   'movie-spotlight':'Estreia em destaque',
-  'movie-editorial-light':'Editorial integrado'
+  'movie-editorial-light':'Editorial integrado',
+  'movie-campaign':'Campanha integrada'
 });
-const PRODUCT_LAYOUTS=Object.freeze({'product-price':'Produto + preço','product-lateral':'Produto lateral','hero-product':'Hero product'});
+const PRODUCT_LAYOUTS=Object.freeze({
+  'product-price':'Produto + preço',
+  'product-lateral':'Produto lateral',
+  'hero-product':'Produto em destaque',
+  'product-cinema-blue':'Cinema azul',
+  'product-gold':'Verde e dourado',
+  'product-neon':'Neon',
+  'product-sunset':'Pôr do sol',
+  'product-stage':'Palco de cinema',
+  'product-retro':'Retrô editorial',
+  'product-pop':'Pop art'
+});
 const SAFE={square:{left:.055,right:.945,top:.045,bottom:.95},feed_portrait:{left:.055,right:.945,top:.045,bottom:.95},story:{left:.065,right:.935,top:.085,bottom:.89}};
 const isMovie=draft=>/^movie-/.test(draft?.templateId || '');
 const isProgramme=draft=>['sessions-today','sessions-week','multi-movies'].includes(draft?.templateId);

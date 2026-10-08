@@ -42,9 +42,8 @@ export function assertStudioScope(sourceDir, instances) {
   if (found.length) {
     throw new Error(`Deploy interrompido: a fonte ainda contem um Studio aposentado (${found.join(", ")}).`);
   }
-  if (fs.existsSync(path.join(sourceDir, "backend/public/social-studio.js")) &&
-      instances.some((instance) => instance.slug !== "cinecruzeiro")) {
-    throw new Error("Deploy interrompido: o Social Studio restaurado esta autorizado apenas para cinecruzeiro.");
+  if (!instances.every((instance) => instance.slug && instance.siteUrl && instance.baseDir)) {
+    throw new Error("Deploy interrompido: uma instancia do Studio nao possui configuracao completa.");
   }
 }
 

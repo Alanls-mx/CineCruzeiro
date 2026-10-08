@@ -25,7 +25,7 @@ async function loadAsset(url, loader) {
 
 async function loadSignatureAsset(url, loader) {
   const buffer = await loadAsset(url, loader);
-  if (!buffer || !/\/images\/social-studio\/signatures\/[^/]+-white-3d\.png(?:\?|$)/.test(String(url))) return buffer;
+  if (!buffer || !/(?:\/images\/social-studio\/signatures\/[^/]+-white-3d|\/images\/social-studio\/cine-cruzeiro-assinatura-black)\.png(?:\?|$)/.test(String(url))) return buffer;
   const key = `${bufferKey(buffer)}:signature-trim`;
   return transformedCache.getOrLoad(key, async () => sharp(buffer, { failOn: "error" }).trim().png().toBuffer());
 }

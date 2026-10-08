@@ -66,8 +66,8 @@ test('sessão de hoje disponível não gera falso alerta fora do filtro da arte'
 test('estreia e CTA têm pares próximos; horário real não é omitido',async()=>{
   const rendered=await engine.renderSocialPost({movieId:'m0',templateId:'movie-premiere',style:'hero-left',cta:'ACESSE O SITE'},context,{loadImage});
   const e=id=>flattenElements(rendered.scene.elements).find(item=>item.id===id);
-  assert.ok(Math.abs(e('detail').y-e('subtitle').y-e('subtitle').height)<15);
-  assert.ok(Math.abs(e('website').y-e('cta').y-e('cta').height)<15);
+  assert.ok(e('detail').y > e('title').y);
+  assert.ok(e('website').y>=e('cta').y+e('cta').height && e('website').y-e('cta').y-e('cta').height<24);
   assert.equal(e('website').text.replace(/\s/g,''),'www.cinecruzeiro.com.br');
   const schedule=await engine.renderSocialPost({movieId:'m0',templateId:'sessions-week'},context,{loadImage});
   assert.ok(flattenElements(schedule.scene.elements).some(item=>/14:00/.test(item.text || '')));

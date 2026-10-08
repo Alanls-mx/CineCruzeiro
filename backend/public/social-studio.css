@@ -1440,6 +1440,20 @@
 .social-layout-mini--product-lateral b { left: 61%; top: 26%; width: 34%; }
 .social-layout-mini--product-lateral em { left: 61%; top: 55%; width: 32%; height: 14%; }
 .social-layout-mini--hero-product img { left: 20%; top: 7%; width: 60%; height: 47%; }
+.social-layout-mini--product-cinema-blue { background: linear-gradient(#063354, #042039); }
+.social-layout-mini--product-gold { background: linear-gradient(#062f24, #031b16); }
+.social-layout-mini--product-neon { background: linear-gradient(#561474, #210b37); }
+.social-layout-mini--product-sunset { background: linear-gradient(#f05c42, #7b132b); }
+.social-layout-mini--product-stage { background: linear-gradient(#492317, #180b14); }
+.social-layout-mini--product-retro { background: linear-gradient(110deg, #f4ead4 60%, #152c45 60%); }
+.social-layout-mini--product-pop { background: linear-gradient(135deg, #0caad0 65%, #ffe438 65%); }
+.social-layout-mini--product-cinema-blue img,.social-layout-mini--product-gold img,.social-layout-mini--product-neon img,.social-layout-mini--product-sunset img { left: 6%; top: 28%; width: 56%; height: 51%; }
+.social-layout-mini--product-stage img { left: 21%; top: 23%; width: 58%; height: 48%; }
+.social-layout-mini--product-retro img { left: 47%; top: 27%; width: 49%; height: 51%; }
+.social-layout-mini--product-pop img { left: 5%; top: 31%; width: 54%; height: 50%; }
+.social-layout-mini--product-cinema-blue em,.social-layout-mini--product-gold em,.social-layout-mini--product-neon em,.social-layout-mini--product-sunset em,.social-layout-mini--product-pop em { left: 65%; top: 53%; width: 28%; height: 12%; background: #ffe38d; }
+.social-layout-mini--product-stage em { left: 27%; top: 73%; width: 46%; height: 11%; background: #ffd58a; }
+.social-layout-mini--product-retro em { left: 7%; top: 58%; width: 30%; height: 13%; background: #a46b12; }
 .social-layout-mini--hero-product b { left: 6%; top: 60%; width: 47%; }
 .social-layout-mini--hero-product em { left: 60%; top: 62%; width: 34%; height: 13%; }
 .social-layout-mini--poster-lateral img, .social-layout-mini--cinematic-blend img { left: 5%; top: 6%; width: 47%; height: 74%; object-fit: contain; }
@@ -1500,6 +1514,10 @@
 .social-composition-adjustments .social-composition-toggle { display: flex; align-items: center; gap: 8px; }
 .social-composition-toggle input { width: 16px; height: 16px; }
 .social-layout-mini--immersive img, .social-layout-mini--poster-blend img, .social-layout-mini--hero-cinematic img, .social-layout-mini--full-bleed img { left: 15%; top: 0; width: 70%; height: 70%; mask-image: linear-gradient(#000 55%, transparent); }
+.social-layout-mini--movie-campaign { background: linear-gradient(#242b2a 45%, #d1b9a2); }
+.social-layout-mini--movie-campaign img { inset: 0; width: 100%; height: 78%; object-fit: cover; mask-image: linear-gradient(#000 50%, transparent); }
+.social-layout-mini--movie-campaign b { top: 63%; left: 8%; width: 84%; height: 10%; background: #f7f1e6; }
+.social-layout-mini--movie-campaign em { top: 80%; left: 26%; width: 48%; height: 4%; background: #f7f1e6; }
 .social-layout-mini--split-cinematic img { left: 42%; top: 0; width: 58%; height: 76%; mask-image: linear-gradient(to right, transparent, #000 35%); }
 .social-layout-mini--editorial img { left: 0; top: 0; width: 60%; height: 76%; mask-image: linear-gradient(to left, transparent, #000 35%); }
 .social-framing { margin-top: 14px; }

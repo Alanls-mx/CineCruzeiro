@@ -11,7 +11,7 @@ const {generateVariations}=require('../backend/services/social-studio/compositio
 const product=await sharp({create:{width:600,height:800,channels:4,background:'#cc7711'}}).png().toBuffer();
 const logo=await sharp({create:{width:500,height:180,channels:4,background:'#ffffff'}}).png().toBuffer();
 const images=new Map([['/p',product],['/logo',logo],['/back',product]]);
-const loadImage=async src=>images.get(src)||null;
+const loadImage=async src=>src.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png')?logo:images.get(src)||null;
 const context={brand:{name:'Cine Cruzeiro',logoUrl:'/logo',website:'https://cinecruzeiro.com.br'},concessions:[{id:'p',name:'Combo Família',description:'Pipoca e refrigerante',price:42,imageUrl:'/p'}],movies:[],clubPlans:[]};
 const input={templateId:'concession-combo',concessionId:'p',signatureId:'classic'};
 
@@ -70,6 +70,6 @@ test('não mostra produto ausente, transparente ou descrição longa ilegível',
 });
 test('variações aprovadas representam famílias realmente diferentes',async()=>{
   const result=await generateVariations(input,context,{loadImage});
-  assert.equal(new Set(result.variations.map(v=>v.styleId)).size,3);
+  assert.ok(new Set(result.variations.map(v=>v.styleId)).size >= 3);
   assert.ok(result.variations.every(v=>v.quality.accepted && v.image));
 });

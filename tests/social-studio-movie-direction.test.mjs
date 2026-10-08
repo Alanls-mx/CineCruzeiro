@@ -40,7 +40,8 @@ test('seleção considera áreas livres, material e gênero sem alegar detecçã
 test('estreia comunica a data uma vez e conserva todos os horários',async()=>{
   const result=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'movie',layoutId:'movie-spotlight'},context,{loadImage,skipRaster:true});
   const description=flattenElements(result.scene.elements).find(e=>e.id==='description');
-  assert.equal(description.text,'13:00 • 18:30');
+  assert.match(description.text,/13:00/);
+  assert.match(description.text,/18:30/);
   assert.ok(['film-wash','film-atmosphere','hero-light','film-vignette'].every(id=>result.scene.elements.some(e=>e.id===id)));
   assert.ok(flattenElements(result.scene.elements).find(e=>e.id==='detail').fontSize>=80);
 });

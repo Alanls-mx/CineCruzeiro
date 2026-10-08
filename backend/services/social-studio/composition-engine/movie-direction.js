@@ -12,8 +12,9 @@ function movieDirection(draft,input,analysis,backdrop,backdropAnalysis) {
   const seed=crypto.createHash('sha256').update(`${draft.movieId}:${draft.artDirection?.seed || 0}`).digest().readUInt32LE(0);
   let family=manual?selected:choices[seed%choices.length];
   if(!manual && draft.templateId==='movie-premiere')family='movie-editorial-light';
+  else if(!manual && (draft.templateId==='movie-presale' || ['romance','comedy'].includes(genre)))family='movie-campaign';
   const quietest=analysis?.zones?.[0],busy=quietest?.complexity>.22;
-  if(!manual && busy && !backdrop && draft.templateId!=='movie-premiere')family=genre==='family'?'movie-immersive':'cinematic-blend';
+  if(!manual && busy && !backdrop && draft.templateId!=='movie-premiere' && family!=='movie-campaign')family=genre==='family'?'movie-immersive':'cinematic-blend';
   if(!manual && draft.templateId!=='movie-premiere' && backdrop && quietest?.id==='bottom' && quietest.complexity<.12)family='movie-full-bleed';
   if(!backdrop && ['movie-full-bleed','movie-character'].includes(family))family='cinematic-blend';
   const quiet=analysis?.zones?.find(z=>z.id==='left')?.complexity<analysis?.zones?.find(z=>z.id==='right')?.complexity?'left':'right';

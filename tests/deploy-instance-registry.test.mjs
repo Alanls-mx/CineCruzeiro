@@ -27,10 +27,10 @@ function instance(overrides = {}) {
   };
 }
 
-test("Social Studio restaurado so pode ser publicado no Cine Cruzeiro", () => {
+test("Social Studio pode ser publicado nas instancias configuradas", () => {
   const source = path.resolve();
-  assert.doesNotThrow(() => assertStudioScope(source, [{ slug: "cinecruzeiro" }]));
-  assert.throws(() => assertStudioScope(source, [{ slug: "cine-estacao-amparo" }]), /apenas para cinecruzeiro/);
+  assert.doesNotThrow(() => assertStudioScope(source, [{ slug: "cinecruzeiro", siteUrl: "https://example.com", baseDir: "/srv/cinecruzeiro" }]));
+  assert.doesNotThrow(() => assertStudioScope(source, [{ slug: "cine-estacao-amparo", siteUrl: "https://example.com", baseDir: "/srv/cine-estacao-amparo" }]));
 });
 
 test("valida uma instalacao independente", () => {
