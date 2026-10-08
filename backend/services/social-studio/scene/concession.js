@@ -32,8 +32,20 @@ function buildConcessionScene({draft,format,brand,sourceUrl,logoUrl,assetBounds}
   const tx=(id,value,r,size,extra={})=>{
     if(!String(value || '').trim())return;
     const box=rect(r),display=!['description','website','support'].includes(id);
-    const fitted=wrapText(value,box.width,box.height,size,extra.lines || 3);
-    if(['support','description'].includes(id) && fitted.fontSize<22*w/1080) {
+    let text=value;
+    let fitted=wrapText(text,box.width,box.height,size,extra.lines || 3);
+    if(id==='support' && fitted.fontSize<28*w/1080) {
+      const firstSentence=String(value).match(/^.*?[.!?](?=\s|$)/)?.[0]?.trim();
+      if(firstSentence && firstSentence!==String(value).trim()) {
+        const concise=wrapText(firstSentence,box.width,box.height,size,extra.lines || 3);
+        if(concise.fontSize>=28*w/1080) {
+          text=firstSentence;
+          fitted=concise;
+          draft.copyMovedToCaption=[...(draft.copyMovedToCaption || []),id];
+        }
+      }
+    }
+    if(['support','description'].includes(id) && fitted.fontSize<(id==='support'?28:22)*w/1080) {
       draft.copyMovedToCaption=[...(draft.copyMovedToCaption || []),id];
       return;
     }

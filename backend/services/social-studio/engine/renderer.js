@@ -42,7 +42,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   let sourceUrl = automaticPoster && movie?.posterUrl ? movie.posterUrl : sourceUrlForDraft(draft);
   if (!sourceUrl && draft.templateId==='club-plan') sourceUrl = brand.logoUrl || '';
   let sourceBuffer = await loadArtwork(sourceUrl);
-  let backgroundUrl = draft.composition.enabled && movie?.backdropUrl && !draft.imageUrl ? movie.backdropUrl : sourceUrl;
+  let backgroundUrl = !concession && draft.composition.enabled && movie?.backdropUrl && !draft.imageUrl ? movie.backdropUrl : sourceUrl;
   let backgroundBuffer = await loadArtwork(backgroundUrl);
   if (!sourceBuffer && backgroundBuffer && !concession) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
   if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
@@ -223,7 +223,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     analysis: analysis ? { method:analysis.method,quietest:analysis.quietest } : null,
     rendererVersion: "v2",
     template: { id: template.id, name: template.name },
-    notices: [...require("./normalizer").draftNotices(draft, context), ...(draft.copyMovedToCaption?.length ? [{type:'info',code:'COPY_MOVED_TO_CAPTION',message:'O texto complementar foi reservado para a legenda por não caber com tamanho legível na arte.'}] : []), ...(draft.style === "full-bleed" && !fullBleed ? [{ type: "info", code: "BACKDROP_FALLBACK", message: "Sem backdrop horizontal em alta resolução: usando pôster integrado, sem recortar a arte." }] : [])],
+    notices: [...require("./normalizer").draftNotices(draft, context), ...(draft.copyMovedToCaption?.length ? [{type:'info',code:'COPY_MOVED_TO_CAPTION',message:'O texto complementar completo foi mantido na legenda para preservar a leitura da arte.'}] : []), ...(draft.style === "full-bleed" && !fullBleed ? [{ type: "info", code: "BACKDROP_FALLBACK", message: "Sem backdrop horizontal em alta resolução: usando pôster integrado, sem recortar a arte." }] : [])],
     contentType: rendered.contentType,
     extension: rendered.extension,
     metrics: {

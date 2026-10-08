@@ -24,7 +24,7 @@ async function applyBackground(scene, draft, context, loadImage) {
   let config=draft.background;
   const product=require('../contracts/concession-campaign').isConcession(draft);
   if(!config || config.mode==='automatic') {
-    if(product && !draft.relatedMovieId) return scene;
+    if(product) return scene;
     if(!product && !['online-ticket'].includes(draft.templateId)) return scene;
     config={...config,mode:draft.relatedMovieId?'movie':'gradient',movieId:draft.relatedMovieId};
   }
