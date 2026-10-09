@@ -3,9 +3,11 @@ function canonicalOrigin(value) {
   if (!text) return "";
   try {
     const url = new URL(text);
-    return ["http:", "https:"].includes(url.protocol) ? url.origin : "";
+    return ["http:", "https:"].includes(url.protocol) && url.hostname && !url.username && !url.password
+      ? url.origin
+      : "";
   } catch {
-    return text.replace(/\/+$/, "");
+    return "";
   }
 }
 

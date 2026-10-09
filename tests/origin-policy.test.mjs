@@ -19,3 +19,12 @@ test("preserva origens locais sem caminho", () => {
     "http://127.0.0.1:3000"
   ]);
 });
+
+test("ignora coringas, esquemas invalidos e credenciais em CORS", () => {
+  assert.equal(canonicalOrigin("*"), "");
+  assert.equal(canonicalOrigin("javascript:alert(1)"), "");
+  assert.equal(canonicalOrigin("https://user:pass@evil.example"), "");
+  assert.deepEqual(allowedOrigins("*,javascript:alert(1),https://lumixengine.com/projects/cinecruzeiro"), [
+    "https://lumixengine.com"
+  ]);
+});

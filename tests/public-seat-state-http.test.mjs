@@ -54,6 +54,35 @@ test("mapa publico diferencia Pix pendente de venda e nao publica settings priva
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     assert.equal(ready, true, "Servidor local nao iniciou.");
+    for (const endpoint of ["/api/admin/content", "/api/orders"]) {
+      const response = await fetch(`http://127.0.0.1:${port}${endpoint}`);
+      assert.equal(response.status, 401);
+    }
+    const customerCrossSite = await fetch(`http://127.0.0.1:${port}/api/auth/logout`, {
+      method: "POST",
+      headers: { Cookie: "cine_customer=fake", Origin: "https://evil.example", "Sec-Fetch-Site": "cross-site" }
+    });
+    assert.equal(customerCrossSite.status, 403);
+    for (const endpoint of ["/api/auth/login", "/api/admin/login"]) {
+      const blocked = await fetch(`http://127.0.0.1:${port}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: "https://evil.example", "Sec-Fetch-Site": "cross-site" },
+        body: "{}"
+      });
+      assert.equal(blocked.status, 403);
+      assert.equal((await blocked.json()).error.code, "CUSTOMER_CSRF_BLOCKED");
+    }
+    const sameOriginLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: `http://127.0.0.1:${port}` },
+      body: "{}"
+    });
+    assert.equal(sameOriginLogin.status, 401);
+    const legacyCatalog = await fetch(`http://127.0.0.1:${port}/api/commercial/catalog?token=legacy-test`);
+    assert.equal(legacyCatalog.status, 404);
+    assert.equal(legacyCatalog.headers.get("cache-control"), "no-store");
+    assert.equal(legacyCatalog.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(legacyCatalog.headers.get("deprecation"), "true");
     const seats = await fetch(`http://127.0.0.1:${port}/api/sessions/session-1/seats`).then((response) => response.json());
     assert.deepEqual(seats.rows[0].seats.map((seat) => seat.status), ["held", "unavailable", "available"]);
     const socket = new WebSocket(`ws://127.0.0.1:${port}/api/realtime/seats`);

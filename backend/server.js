@@ -1458,8 +1458,15 @@ function adminOriginAllowed(req) {
 }
 
 function customerMutationOriginAllowed(req) {
-  if (!parseCookies(req).cine_customer || !mutatesState(req.method || "GET")) return true;
-  return adminOriginAllowed(req);
+  if (!mutatesState(req.method || "GET")) return true;
+  if (parseCookies(req).cine_customer) return adminOriginAllowed(req);
+  const pathname = new URL(req.url, `http://${req.headers.host || "localhost"}`).pathname;
+  const browserAuthMutation = [
+    "/api/auth/register", "/api/auth/login", "/api/auth/password/request", "/api/auth/password/reset",
+    "/api/admin/login", "/api/admin/login/2fa"
+  ].includes(pathname);
+  const browserHeaders = req.headers.origin || req.headers.referer || req.headers["sec-fetch-site"];
+  return !browserAuthMutation || !browserHeaders || adminOriginAllowed(req);
 }
 
 function requiredAdminRoles(pathname, method) {
@@ -11228,21 +11235,29 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/commercial/catalog" && method === "GET") {
     const catalogConfig = integrationConfigService.resolvedConfig(db, "commercialCatalog") || {};
+    const legacyQueryToken = new URL(req.url, `http://${req.headers.host || "localhost"}`).searchParams.has("token");
+    const legacyHeaders = legacyQueryToken ? {
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+      Deprecation: "true"
+    } : {};
     if (!catalogConfig.enabled || !catalogConfig.configured) {
-      sendJson(res, 404, { error: { code: "COMMERCIAL_CATALOG_UNAVAILABLE", message: "O catálogo comercial externo não está disponível." } }, { "Cache-Control": "no-store" });
+      sendJson(res, 404, { error: { code: "COMMERCIAL_CATALOG_UNAVAILABLE", message: "O catálogo comercial externo não está disponível." } }, { "Cache-Control": "no-store", ...legacyHeaders });
       return;
     }
     if (!catalogTokensMatch(catalogConfig.accessToken, commercialCatalogToken(req))) {
       sendJson(res, 401, { error: { code: "COMMERCIAL_CATALOG_UNAUTHORIZED", message: "Token de acesso inválido." } }, {
         ...commercialCatalogCorsHeaders(req, catalogConfig),
-        "Cache-Control": "no-store"
+        "Cache-Control": "no-store",
+        ...legacyHeaders
       });
       return;
     }
     const cacheSeconds = Math.min(300, Math.max(0, Math.floor(Number(catalogConfig.cacheSeconds || 60))));
     sendJson(res, 200, buildCommercialCatalog(db), {
       ...commercialCatalogCorsHeaders(req, catalogConfig),
-      "Cache-Control": cacheSeconds ? `private, max-age=${cacheSeconds}` : "no-store"
+      "Cache-Control": cacheSeconds ? `private, max-age=${cacheSeconds}` : "no-store",
+      ...legacyHeaders
     });
     return;
   }
