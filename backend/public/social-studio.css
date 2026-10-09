@@ -29,7 +29,6 @@
 .social-ready-head h3,
 .social-pane-heading h3,
 .social-preview-toolbar h3,
-.social-caption-editor h3,
 .social-studio-history-head h3 {
   margin: 0;
   color: var(--text);
@@ -45,7 +44,6 @@
 .social-ready-head p,
 .social-pane-heading p,
 .social-preview-toolbar p,
-.social-caption-editor p,
 .social-studio-history-head p {
   max-width: 68ch;
   margin: 6px 0 0;
@@ -785,7 +783,6 @@
 
 .social-property-body > label,
 .social-choice-fieldset legend,
-.social-caption-editor > label,
 .social-range-row label {
   display: grid;
   gap: 6px;
@@ -1013,28 +1010,6 @@
 
 .social-output-grid {
   grid-template-columns: 1fr 1fr;
-}
-
-.social-caption-editor {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
-.social-caption-editor h3 {
-  font-size: 14px;
-}
-
-.social-caption-editor p {
-  font-size: 10px;
-}
-
-.social-caption-editor textarea {
-  min-height: 310px;
-}
-
-.social-caption-editor button {
-  justify-self: end;
 }
 
 .social-studio-preview-empty,
@@ -1596,7 +1571,6 @@
 .social-production-panel .social-style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
 .social-production-panel .social-layout-mini { height: 112px; }
 .social-production-panel .social-editor-panel { max-height: none; overflow: visible; }
-.social-production-panel .social-caption-editor { padding: 0; max-width: 900px; }
 .social-production-panel .social-output-grid { padding: 0; grid-template-columns: repeat(2, minmax(0, 300px)); }
 .social-production-panel label { display: grid; gap: 8px; min-width: 0; color: #bdcadd; font-size: 12px; }
 .social-production-panel :is(input, select, textarea) { max-width: 100%; min-width: 0; }

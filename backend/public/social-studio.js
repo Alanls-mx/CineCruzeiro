@@ -203,7 +203,7 @@
       const saved=state.previousManual;
       if(!saved)return;
       preserveManualEdits();
-      applyDraft(saved.draft,saved.draft.caption || '');
+      applyDraft(saved.draft);
       state.pendingInlineRestore=saved.scene;
       saveDraftLocal();
       await updatePreview({force:true});
@@ -499,20 +499,13 @@
               </details>
             </div>
 
-            <div id="socialStudioCaptionPanel" class="social-editor-panel" hidden>
-              <div class="social-caption-editor">
-                <div><h3>Legenda sugerida</h3><p>Revise o texto antes de publicar na rede social.</p></div>
-                <textarea id="socialStudioCaption" aria-label="Legenda da campanha" rows="14" maxlength="1800" data-requires-create></textarea>
-                <button id="socialStudioCopyCaption" class="ghost-button" type="button">Copiar legenda</button>
-              </div>
-            </div>
           </aside>
         </div>
         <section class="social-production-dock" aria-label="Produção da campanha">
           <div class="social-production-tabs" role="tablist" aria-label="Produção">
-            ${[['caption','Legenda'],['export','Exportação']].map(([key,label],index)=>`<button id="socialDockTab-${key}" type="button" role="tab" data-studio-dock="${key}" aria-controls="socialDock-${key}" aria-selected="${index===0}" tabindex="${index===0?0:-1}">${label}</button>`).join('')}
+            <button id="socialDockTab-export" type="button" role="tab" data-studio-dock="export" aria-controls="socialDock-export" aria-selected="true" tabindex="0">Exportação</button>
           </div>
-          ${['caption','export'].map((key,index)=>`<div id="socialDock-${key}" class="social-production-panel" role="tabpanel" aria-labelledby="socialDockTab-${key}" ${index?'hidden':''}></div>`).join('')}
+          <div id="socialDock-export" class="social-production-panel" role="tabpanel" aria-labelledby="socialDockTab-export"></div>
         </section>
       </form>
 
@@ -558,9 +551,6 @@
     exportShortcut.type = 'button'; exportShortcut.className = 'primary-button';
     exportShortcut.dataset.studioOpen = 'export'; exportShortcut.textContent = 'Exportar campanha';
     root.querySelector('.social-studio-toolbar-actions').append(byId('socialStudioGenerateButton'),exportShortcut);
-    byId('socialDock-caption').append(byId('socialStudioCaptionPanel'));
-    byId('socialStudioCaptionPanel').hidden = false;
-    byId('socialStudioCaption').rows = 7;
     const customization = document.createElement('details');
     customization.className='social-property-section'; customization.open=true;
     const movies=(state.context.movies || []).filter(movie=>movie.catalogued!==false);
@@ -837,7 +827,6 @@
     const visible = collection.slice((state.readyPage - 1) * 3, state.readyPage * 3);
     document.getElementById("socialStudioReadyPager").innerHTML = `<button type="button" aria-label="Posts anteriores" data-ready-page="${state.readyPage - 1}" ${state.readyPage === 1 ? "disabled" : ""}>‹</button><span>${state.readyPage} de ${pages}</span><button type="button" aria-label="Próximos posts" data-ready-page="${state.readyPage + 1}" ${state.readyPage === pages ? "disabled" : ""}>›</button>`;
     document.getElementById("socialStudioReadyGrid").innerHTML = visible.length ? visible.map((post) => {
-      const caption = String(post.caption || "").replace(/\s+/g, " ").trim();
       return `<article class="social-ready-card">
         <div class="social-ready-poster">
           ${post.imageUrl ? `<img src="${escapeHtml(assetUrl(post.imageUrl))}" alt="" loading="lazy" />` : ""}
@@ -846,7 +835,6 @@
         <div class="social-ready-copy">
           <strong>${escapeHtml(post.title)}</strong>
           <small>${escapeHtml(post.description || "")}</small>
-          <p>${escapeHtml(caption.slice(0, 170))}${caption.length > 170 ? "…" : ""}</p>
           <div class="social-ready-source">
             <span>${escapeHtml(post.sourceName || "")}</span>
             ${post.sourceUrl ? `<a href="${escapeHtml(post.sourceUrl)}" target="_blank" rel="noreferrer">Consultar fonte</a>` : ""}
@@ -867,7 +855,7 @@
   async function openReadyPost(post) {
     if (!post) return;
     preserveManualEdits();
-    applyDraft({ ...post.draft, caption: post.caption }, post.caption);
+    applyDraft(post.draft);
     renderNotices(post.notices || []);
     saveDraftLocal();
     await updatePreview({ force: true });
@@ -893,7 +881,7 @@
     const editButton = document.getElementById("socialStudioManualEdit");
     editButton.disabled = !post.editable || state.context?.capabilities?.create === false;
     editButton.title = post.editable ? "Abrir o editor visual desta arte" : "Gere uma nova arte com o Engine V2 para editar os elementos";
-    if (post.payload) applyDraft(post.payload, post.caption || "");
+    if (post.payload) applyDraft(post.payload);
     state.previewKey=previewCacheKey(payload());
     if (post.width && post.height) {
       state.previewDimensions = {width: post.width, height: post.height};
@@ -913,7 +901,7 @@
     try {
       const result = await request("/api/admin/social-studio/posts", {
         method: "POST",
-        body: JSON.stringify({ ...post.draft, caption: post.caption })
+        body: JSON.stringify(post.draft)
       });
       state.context.history = result.history || [result.post, ...(state.context.history || [])];
       state.historyPage = 1;
@@ -1145,8 +1133,7 @@
       signaturePosition: {mode:value('socialStudioSignaturePosition','automatic'),x:Number(value('socialStudioSignatureX',85)),y:Number(value('socialStudioSignatureY',92))},
       signatureScale: Number(value("socialStudioSignatureScale", 100)),
       signatureScaleMode:document.getElementById('socialStudioSignatureAutomatic').checked?'automatic':'manual',
-      brandProminence:value('socialStudioBrandProminence','normal'),
-      caption: value("socialStudioCaption")
+      brandProminence:value('socialStudioBrandProminence','normal')
     };
   }
 
@@ -1161,7 +1148,7 @@
     if (radio) radio.checked = true;
   }
 
-  function applyDraft(draft, caption = "") {
+  function applyDraft(draft) {
     setControl('socialStudioProductTreatment',draft.concessionDirection?.familyMode==='manual'?draft.concessionDirection.family:'automatic');
     setControl('socialStudioConcessionCategory',draft.concessionDirection?.categoryMode==='manual'?draft.concessionDirection.category:'automatic');
     setControl('socialStudioConcessionObjective',draft.concessionDirection?.objective || 'sell');
@@ -1235,8 +1222,7 @@
       socialStudioTitleScale: draft.titleScale,
       socialStudioPalette: draft.paletteMode,
       socialStudioSignaturePosition: draft.signaturePosition?.mode || 'automatic',
-      socialStudioSignatureScale: draft.signatureScale,
-      socialStudioCaption: caption || draft.caption
+      socialStudioSignatureScale: draft.signatureScale
     };
     Object.entries(fields).forEach(([id, nextValue]) => setControl(id, nextValue));
     state.artworkMetadata={...draft.artworkMetadata};
@@ -1374,11 +1360,6 @@
         const lock=document.querySelector(`[data-copy-lock='${locks[field]}']`);
         if(lock) lock.checked=false;
       }
-    }
-    if(/\bhoje\b/i.test(value('socialStudioCaption'))) {
-      setControl('socialStudioCaption','');
-      const lock=document.querySelector("[data-copy-lock='caption']");
-      if(lock) lock.checked=false;
     }
     updateFieldVisibility();
     await resolveDefaults({resetCopy:false});
@@ -1602,7 +1583,7 @@
     if (state.generating) return;
     preserveManualEdits();
     state.styleManuallySelected = true;
-    applyDraft({...variation.draft,automaticStyle:false},variation.draft.caption || value("socialStudioCaption"));
+    applyDraft({...variation.draft,automaticStyle:false});
     saveDraftLocal();
     await updatePreview({force:true});
     if(action === "edit") { const post = await generatePost(); if(post?.id) window.location.href=`${basePath}/social-editor?postId=${encodeURIComponent(post.id)}`; }
@@ -1652,7 +1633,7 @@
     try {
       const saved = JSON.parse(localStorage.getItem(draftKey) || "null");
       if (!saved || !state.context.templates.some((template) => template.id === saved.templateId)) return false;
-      applyDraft(saved, saved.caption || "");
+      applyDraft(saved);
       state.pendingInlineRestore=saved.inlineScene || null;
       state.previousManual=saved.previousManual || null;
       document.getElementById('socialStudioRecoverEdits').hidden=!state.previousManual;
@@ -1676,18 +1657,17 @@
     try {
       const base = payload();
       if(options.resetPriceCopy) {
-        if(!base.copyLocks?.caption) base.caption=undefined;
         base.generateCopy=true;
       }
       if (options.resetCopy !== false) {
-        const locks={title:'headline',subtitle:'kicker',auxiliaryText:'supportingText',cta:'cta',caption:'caption'};
-        ["title", "subtitle", "price", "date", "auxiliaryText", "cta", "caption"].forEach((key) => { if(!base.copyLocks?.[locks[key]]) base[key] = undefined; });
+        const locks={title:'headline',subtitle:'kicker',auxiliaryText:'supportingText',cta:'cta'};
+        ["title", "subtitle", "price", "date", "auxiliaryText", "cta"].forEach((key) => { if(!base.copyLocks?.[locks[key]]) base[key] = undefined; });
         base.generateCopy=true;
         base.releaseDate=undefined;base.sessionDate=undefined;
       }
       const result = await request("/api/admin/social-studio/resolve", { method: "POST", body: JSON.stringify(base) });
       if (version !== state.resolveVersion || inputKey!==previewCacheKey(payload())) return;
-      applyDraft(result.draft, result.caption);
+      applyDraft(result.draft);
       renderNotices(result.notices || []);
       saveDraftLocal();
       operation.finish('Conteúdo atualizado.');
@@ -1873,7 +1853,7 @@
     if (button.dataset.socialAction === "duplicate") {
       preserveManualEdits();
       const postPayload = post.payload || {};
-      applyDraft({ ...postPayload, formatId: postPayload.formatId || post.formatId, outputType: postPayload.outputType || post.outputType }, post.caption || "");
+      applyDraft({ ...postPayload, formatId: postPayload.formatId || post.formatId, outputType: postPayload.outputType || post.outputType });
       renderNotices([]);
       saveDraftLocal();
       await updatePreview({ force: true });
@@ -1958,7 +1938,7 @@
     for(const id of ['socialStudioDateKind','socialStudioReleaseDate','socialStudioPresaleDate','socialStudioSessionDate','socialStudioDateTextMode']) document.getElementById(id).addEventListener('change',syncDate);
     document.getElementById('socialStudioRelatedMovie').addEventListener('change',()=>resolveDefaults({resetCopy:true}));
     document.getElementById('socialStudioBackgroundUpload').addEventListener('change',event=>uploadCustomImage(event.target.files?.[0],true).catch(error=>notify(error.message,'error')));
-    for(const [field,id] of Object.entries({headline:'socialStudioTitle',kicker:'socialStudioSubtitle',supportingText:'socialStudioAuxiliary',cta:'socialStudioCta',caption:'socialStudioCaption'})) {
+    for(const [field,id] of Object.entries({headline:'socialStudioTitle',kicker:'socialStudioSubtitle',supportingText:'socialStudioAuxiliary',cta:'socialStudioCta'})) {
       const control=document.getElementById(id);
       const row=document.createElement('div');row.className='social-copy-actions';
       row.innerHTML=`<button type="button" class="ghost-button" data-copy-field="${field}" data-requires-create>Outra sugestão</button><label class="social-toggle"><input type="checkbox" data-copy-lock="${field}" data-requires-create /> Manter texto</label>`;
@@ -1973,7 +1953,7 @@
         try {
           const result=await request('/api/admin/social-studio/copy',{method:'POST',body:JSON.stringify({...payload(),copySeed:state.copySeed=(state.copySeed || 0)+1})});
           if(control.value!==original || row.querySelector('input').checked || entityKey!==previewCacheKey(payload())) return;
-          control.value=result.bundle[field];saveDraftLocal();if(field!=='caption')schedulePreview();
+          control.value=result.bundle[field];saveDraftLocal();schedulePreview();
         } catch(error) {setStatus(error.message,'error');} finally {button.disabled=false;}
       });
     }
@@ -1985,7 +1965,7 @@
       const use=event.target.closest('[data-automation-use]'),retry=event.target.closest('[data-automation-reprocess]'),detail=event.target.closest('[data-automation-detail]');
       const id=use?.dataset.automationUse || retry?.dataset.automationReprocess || detail?.dataset.automationDetail;if(!id)return;
       const campaign=state.context.automation.campaigns.find(item=>item.id===id);
-      if(use){const composition=campaign?.result?.compositions?.[0];if(composition){applyDraft(composition.draft,composition.caption || '');await updatePreview({force:true});document.querySelector('.social-studio-workspace')?.scrollIntoView({behavior:'smooth',block:'start'});}}
+      if(use){const composition=campaign?.result?.compositions?.[0];if(composition){applyDraft(composition.draft);await updatePreview({force:true});document.querySelector('.social-studio-workspace')?.scrollIntoView({behavior:'smooth',block:'start'});}}
       if(retry){await request(`/api/admin/social-studio/automation/campaigns/${encodeURIComponent(id)}/reprocess`,{method:'POST',body:'{}'});await refreshAutomation();notify('Campanha enviada novamente para processamento.');}
       if(detail){const messages=[...(campaign?.warnings || []).map(item=>item.message),...(campaign?.qa?.items || []).flatMap(item=>item.findings || []).map(item=>item.message),campaign?.error?.message].filter(Boolean);window.alert(messages.length?messages.join('\n\n'):'Nenhum aviso nesta campanha.');}
     });
@@ -2057,7 +2037,7 @@
       if(event.target.id==='socialStudioSignatureScale') document.getElementById('socialStudioSignatureAutomatic').checked=false;
       if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) {syncTicketPrice();saveDraftLocal();schedulePreview(120);return;}
       if(event.target.name==='socialStudioImageMode' || event.target.id==='socialStudioImageUrl') resetArtworkMetadata();
-      if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
+      if (event.target.id!=="socialStudioPreviewZoom") document.getElementById("socialStudioVariations").hidden = true;
       const frame=event.target.dataset.directionFrame,frameKey=event.target.dataset.directionKey;
       if(frame&&frameKey){const next=event.target.valueAsNumber;if(!Number.isFinite(next))delete state.directionFrames[frame][frameKey];else state.directionFrames[frame][frameKey]=frameKey==="scale"?next/100:next;}
       const key = event.target.dataset.compositionEffect;
@@ -2069,7 +2049,7 @@
       }
       syncRangeOutputs();
       saveDraftLocal();
-      if (event.target.id !== "socialStudioCaption" && event.target.id !== "socialStudioPreviewZoom" && !event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) schedulePreview(300);
+      if (event.target.id !== "socialStudioPreviewZoom" && !event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) schedulePreview(300);
     });
     form.addEventListener("change", (event) => {
       if(event.target.matches('[data-program-movie]'))state.programSelectionTouched=true;
@@ -2093,7 +2073,7 @@
       syncCustomizationControls();
       syncFocusedControls();
       if(['socialStudioPriceMode','socialStudioTicketType','socialStudioPriceSession','socialStudioManualPrice'].includes(event.target.id)) return;
-      if (!["socialStudioCaption","socialStudioPreviewZoom"].includes(event.target.id)) document.getElementById("socialStudioVariations").hidden = true;
+      if (event.target.id!=="socialStudioPreviewZoom") document.getElementById("socialStudioVariations").hidden = true;
       if (["socialStudioCompositionPreset", "socialStudioCompositionLook"].includes(event.target.id)) { state.compositionAdjustments = {}; syncCompositionControls(); }
       if (event.target.matches("[name='socialStudioTemplate'], #socialStudioMovie, #socialStudioConcession, #socialStudioClub, #socialStudioImageUpload")) return;
       updatePreviewMeta();
@@ -2102,7 +2082,7 @@
         state.styleManuallySelected = true;
         updateStyleRecommendation();
       }
-      if (event.target.id !== "socialStudioCaption") schedulePreview(300);
+      schedulePreview(300);
     });
     document.getElementById("socialStudioImageUpload").addEventListener("change", (event) => {
       uploadCustomImage(event.target.files?.[0]).catch((error) => notify(error.message, "error"));
@@ -2126,17 +2106,6 @@
     document.querySelector(".social-editor-tabs").addEventListener("click", (event) => {
       const button = event.target.closest("[data-social-editor-tab]");
       if (button) switchEditorTab(button.dataset.socialEditorTab);
-    });
-    document.getElementById("socialStudioCopyCaption").addEventListener("click", async () => {
-      const caption = value("socialStudioCaption");
-      try {
-        await navigator.clipboard.writeText(caption);
-        notify("Legenda copiada.");
-      } catch {
-        document.getElementById("socialStudioCaption").select();
-        const copied=document.execCommand("copy");
-        notify(copied?"Legenda copiada.":"Não foi possível copiar. A legenda foi selecionada para cópia manual.",copied?'ok':'error');
-      }
     });
     document.getElementById("socialStudioHistoryGrid").addEventListener("click", (event) => {
       const button = event.target.closest("[data-social-action]");

@@ -29,7 +29,7 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   image('editorial-brand-band',sourceUrl || backgroundUrl,{x:0,y:bandY,width:w,height:h-bandY},{role:'ambient',fit:'cover',focusX:50,focusY:90,effects:{layer:'background',blur:52,brightness:.85,saturation:1,scale:1,mask:'fade-top',blend:100}});
   const brandShadow=atmosphere?.shadow || mix(palette.dominantColor,'#000000',.62);
   const toneTop=bandY-area*.11;
-  elements.push({id:'editorial-brand-tone',role:'ambient',type:'gradient',x:0,y:toneTop,width:w,height:h-toneTop,direction:'bottom',stops:[
+  elements.push({id:'editorial-brand-tone',role:'ambient',type:'gradient',x:0,y:toneTop,width:w*.60,height:h-toneTop,direction:'bottom',stops:[
     {offset:0,color:rgba(brandShadow,0)},
     {offset:.28,color:rgba(brandShadow,.42)},
     {offset:.52,color:rgba(brandShadow,.78)},

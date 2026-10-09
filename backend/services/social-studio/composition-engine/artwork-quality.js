@@ -124,13 +124,43 @@ async function assertArtworkQuality(scene,loadImage) {
   if(!quality.accepted)throw failure(quality);
   return quality;
 }
+async function repairIntegratedContrast(scene,loadImage) {
+  let readings=await contrastReadings(scene,loadImage);
+  for(const reading of readings) {
+    const element=scene.elements.find(e=>e.id===reading.id);
+    if(element && reading.ratio<4.5 && Math.max(reading.white,reading.dark)>=4.5)
+      element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
+  }
+  readings=await contrastReadings(scene,loadImage);
+  const lowContrast=readings.filter(r=>r.ratio<4.5);
+  const bounds=[];
+  for(const reading of lowContrast) {
+    const element=scene.elements.find(e=>e.id===reading.id);
+    if(!element)continue;
+    element.fill='#ffffff';
+    element.shadowColor='rgba(0,0,0,0.85)';
+    element.shadowBlur=Math.max(element.shadowBlur || 0,Math.round(scene.width*.012));
+    bounds.push(boxOf(element));
+  }
+  const artwork=scene.elements.find(e=>e.id==='artwork');
+  if(!bounds.length || !artwork?.src)return;
+  const padX=scene.width*.10,padY=scene.height*.07;
+  const left=Math.min(...bounds.map(b=>b.x)),top=Math.min(...bounds.map(b=>b.y));
+  const right=Math.max(...bounds.map(b=>b.x+b.width)),bottom=Math.max(...bounds.map(b=>b.y+b.height));
+  const mask={id:'movie-soft-contrast',role:'contrast',type:'image',src:artwork.src,
+    x:Math.max(0,left-padX),y:Math.max(0,top-padY),
+    width:Math.min(scene.width,right+padX)-Math.max(0,left-padX),
+    height:Math.min(scene.height,bottom+padY)-Math.max(0,top-padY),
+    opacity:.62,fit:'cover',locked:true,effects:{layer:'contrast',featherX:.12,featherY:.16}};
+  scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,mask);
+  for(const opacity of [.62,.74,.84,.92]) {
+    mask.opacity=opacity;
+    if(!(await contrastReadings(scene,loadImage)).some(reading=>reading.ratio<4.5))break;
+  }
+}
 async function repairContrast(scene,loadImage) {
   if(scene.sourceDraft.integratedCampaign) {
-    for(const reading of await contrastReadings(scene,loadImage)) {
-      const element=scene.elements.find(e=>e.id===reading.id);
-      if(element && reading.ratio<4.5 && Math.max(reading.white,reading.dark)>=4.5)
-        element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
-    }
+    await repairIntegratedContrast(scene,loadImage);
     return;
   }
   if(scene.sourceDraft.movieFamily==='movie-editorial-light') {
@@ -141,6 +171,7 @@ async function repairContrast(scene,loadImage) {
       if(element && reading.ratio<4.5 && Math.max(reading.white,reading.dark)>=4.5)
         element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
     }
+    await repairConcessionContrast(scene,loadImage);
     return;
   }
   if(scene.sourceDraft.programCampaignVersion===2) {
