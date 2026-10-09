@@ -1,7 +1,7 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {hexToRgb,mix}=require('../engine/palette');
-const {SAFE,sessionMomentParts}=require('../contracts/artwork-layout');
+const {SAFE,sessionDayMatches,sessionMomentParts}=require('../contracts/artwork-layout');
 
 const rgba=(hex,a)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${a})`;};
 const luminance=hex=>{const {r,g,b}=hexToRgb(hex);return .2126*r+.7152*g+.0722*b;};
@@ -43,6 +43,7 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
   const premiere=draft.templateId==='movie-premiere';
   const commercial=draft.templateId==='movie-price';
   const secondarySession=Boolean(session && (presale || premiere || commercial));
+  const sameSessionDate=premiere && sessionDayMatches(draft.content?.primaryDate || draft.date,days[0]?.date);
   const sourceRatio=draft.sourceAsset?.width/draft.sourceAsset?.height || 2/3;
   const landscapeArt=sourceRatio>1;
   const embeddedArtHeight=.68;
@@ -64,9 +65,9 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
   if(!embeddedTitle)text('title',draft.title || draft.entities.movie?.title,box(.065,secondarySession?.60:.685,.87,.085),serif?58:64,{fontFamily:serif?'Social Editorial':'Social Display',fontWeight:serif?500:900,lineHeight:1,lines:2,align:'center',fill:ink,hierarchy:'secondary'});
   const detail=presale && draft.content?.purchaseAvailable?'PRÉ-VENDA ABERTA':commercial?draft.price:premiere?draft.date:session?.day || draft.date || 'EM BREVE';
   const detailY=secondarySession?.70:session?.79:embeddedTitle?.79:.785;
-  if(session?.recurring)text('session-kicker','A PARTIR DE',box(.065,.749,.60,.037),32,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Text',fontWeight:800});
+  if(session?.recurring && !sameSessionDate)text('session-kicker','A PARTIR DE',box(.065,.749,.60,.037),32,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Text',fontWeight:800});
   text('detail',detail,box(.065,detailY,session?.66:.87,secondarySession?.052:.053),presale?54:session?43:48,{fontFamily:'Social Display',fontWeight:900,align:'center',fill:light?secondary:'#ffffff',lines:1,hierarchy:presale?'primary':'secondary'});
-  if(secondarySession)text('description',session.day,box(.065,.79,.66,.044),43,{align:'center',lines:1,fill:light?secondary:'#ffffff',fontFamily:'Social Display',fontWeight:900});
+  if(secondarySession)text('description',sameSessionDate?session.weekday:session.day,box(.065,.79,.66,.044),43,{align:'center',lines:1,fill:light?secondary:'#ffffff',fontFamily:'Social Display',fontWeight:900});
   if(session)text('session-time',session.clock,box(.065,.848,.66,.059),55,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Display',fontWeight:900});
   const ctaY=session?.916:detailY+.082;
   const compactCta=String(draft.cta || '').trim();

@@ -5,7 +5,7 @@ import sharp from 'sharp';
 const require=createRequire(import.meta.url);
 const engine=require('../backend/services/socialStudioEngineService');
 const {movieDirection}=require('../backend/services/social-studio/composition-engine/movie-direction');
-const {MOVIE_FAMILIES,campaignCTA}=require('../backend/services/social-studio/contracts/artwork-layout');
+const {MOVIE_FAMILIES,campaignCTA,sessionDayMatches}=require('../backend/services/social-studio/contracts/artwork-layout');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const assets={poster:await sharp({create:{width:800,height:1200,channels:3,background:'#997522'}}).png().toBuffer(),backdrop:await sharp({create:{width:1600,height:900,channels:3,background:'#276799'}}).png().toBuffer(),logo:await sharp({create:{width:600,height:200,channels:3,background:'#277abc'}}).png().toBuffer()};
 const loadImage=async src=>src.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png')?assets.logo:assets[src.replace('/movie-direction/','')] || null;
@@ -44,6 +44,22 @@ test('estreia comunica a data uma vez e conserva todos os horários',async()=>{
   assert.match(description.text,/18:30/);
   assert.ok(['film-wash','film-atmosphere','hero-light','film-vignette'].every(id=>result.scene.elements.some(e=>e.id===id)));
   assert.ok(flattenElements(result.scene.elements).find(e=>e.id==='detail').fontSize>=80);
+});
+test('data de estreia igual à sessão não reaparece no bloco de horários',async()=>{
+  assert.ok(sessionDayMatches('09 de outubro','2026-10-09'));
+  assert.ok(sessionDayMatches('2026-10-09','2026-10-09'));
+  assert.ok(!sessionDayMatches('08 de outubro','2026-10-09'));
+  for(const layoutId of ['movie-spotlight','movie-immersive','movie-editorial-light','movie-campaign','poster-lateral']) {
+    const same=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'movie',layoutId},context,{loadImage,skipRaster:true,artworkRetried:true});
+    const description=flattenElements(same.scene.elements).find(e=>e.id==='description');
+    assert.ok(description,layoutId);
+    assert.doesNotMatch(description.text,/25\/09|25 DE SETEMBRO/i,`${layoutId}: data repetida`);
+    const later=structuredClone(context);
+    later.movies[0].releaseDate='2026-09-24';
+    const different=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'movie',layoutId},later,{loadImage,skipRaster:true,artworkRetried:true});
+    const session=flattenElements(different.scene.elements).find(e=>e.id==='description');
+    assert.match(session.text,/25\/09|25 DE SETEMBRO/i,`${layoutId}: data distinta da sessão ausente`);
+  }
 });
 test('editorial integrado dissolve o pôster em fundo derivado e mantém ação e assinatura',async()=>{
   const result=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',formatId:'feed_portrait',layoutId:'movie-editorial-light'},context,{loadImage,skipRaster:true});

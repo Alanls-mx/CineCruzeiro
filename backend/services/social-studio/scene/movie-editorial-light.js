@@ -1,7 +1,7 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {mix,hexToRgb}=require('../engine/palette');
-const {SAFE,sessionMomentLabel}=require('../contracts/artwork-layout');
+const {SAFE,sessionDayMatches,sessionMomentLabel}=require('../contracts/artwork-layout');
 
 const rgba=(hex,opacity)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${opacity})`;};
 
@@ -41,7 +41,8 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   text('title',movieTitle,box([.62,.15,.315,.28]),82,{lines:4,display:true,hierarchy:'primary'});
   const days=draft.schedule?.days || [];
   const dateHero=['movie-premiere','movie-presale'].includes(draft.templateId) && Boolean(draft.date);
-  const schedule=days.length && draft.showSessions!==false?sessionMomentLabel(days,{includeDate:!dateHero}):'';
+  const sameSessionDate=sessionDayMatches(draft.content?.primaryDate || draft.date,days[0]?.date);
+  const schedule=days.length && draft.showSessions!==false?sessionMomentLabel(days,{includeDate:!dateHero || !sameSessionDate}):'';
   const detail=draft.templateId==='movie-price'?draft.price:draft.templateId==='movie-premiere' || draft.templateId==='movie-presale'?draft.date || schedule:schedule || draft.date;
   if(dateHero) {
     text('date-label',draft.content?.primaryDateLabel || (draft.templateId==='movie-presale'?'PRÉ-VENDA':'ESTREIA'),box([.32,.81,.615,.045]),30,{lines:1,fill:'#ffffff'});

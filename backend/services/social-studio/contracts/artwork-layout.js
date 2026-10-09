@@ -46,6 +46,16 @@ function dayLabel(value) {
   return `${weekday} • ${value.slice(8,10)}/${value.slice(5,7)}`;
 }
 function scheduleLabel(day,limit=5) {return `${dayLabel(day.date)} • ${day.times.slice(0,limit).map(timeLabel).filter(Boolean).join(' / ')}${day.times.length>limit?' +':''}`;}
+function sessionDayMatches(primaryDate,sessionDay) {
+  if(!require('../engine/content-rules').validDay(sessionDay) || !primaryDate)return false;
+  const value=String(primaryDate).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(value))return value===sessionDay;
+  const date=new Date(`${sessionDay}T12:00:00Z`);
+  const normalize=text=>text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/^0(?=\d\b)/,'').replace(/\s+/g,' ').trim();
+  const long=new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC',day:'numeric',month:'long'}).format(date);
+  const withYear=new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}).format(date);
+  return [long,withYear,`${date.getUTCDate()}/${date.getUTCMonth()+1}`,`${String(date.getUTCDate()).padStart(2,'0')}/${String(date.getUTCMonth()+1).padStart(2,'0')}`].some(candidate=>normalize(value)===normalize(candidate));
+}
 function sessionMomentParts(days, {includeDate=false}={}) {
   const first=Array.isArray(days)?days[0]:null;
   if(!first || !require('../engine/content-rules').validDay(first.date))return null;
@@ -55,10 +65,10 @@ function sessionMomentParts(days, {includeDate=false}={}) {
   const recurring=days.some(day=>day.date!==first.date);
   const prefix=recurring?'A PARTIR DE ':'';
   const date=includeDate?` ${first.date.slice(8,10)}/${first.date.slice(5,7)}`:'';
-  return {date:`${prefix}${weekday}${date}`,time:`ÀS ${times.join(' / ')}`,day:`${weekday}${includeDate?` •${date}`:''}`,clock:times.join(' / '),recurring};
+  return {date:`${prefix}${weekday}${date}`,time:`ÀS ${times.join(' / ')}`,day:`${weekday}${includeDate?` •${date}`:''}`,weekday,clock:times.join(' / '),recurring};
 }
 function sessionMomentLabel(days,options) {
   const parts=sessionMomentParts(days,options);
   return parts?`${parts.date} ${parts.time}`:'';
 }
-module.exports={MOVIE_FAMILIES,PRODUCT_LAYOUTS,SAFE,isMovie,isProgramme,movieFamily,campaignCTA,timeLabel,dayLabel,scheduleLabel,sessionMomentParts,sessionMomentLabel};
+module.exports={MOVIE_FAMILIES,PRODUCT_LAYOUTS,SAFE,isMovie,isProgramme,movieFamily,campaignCTA,timeLabel,dayLabel,scheduleLabel,sessionDayMatches,sessionMomentParts,sessionMomentLabel};

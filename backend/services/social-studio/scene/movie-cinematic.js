@@ -2,7 +2,7 @@ const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {mix,hexToRgb}=require('../engine/palette');
 const alpha=(hex,a)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${a})`;};
-const {SAFE,sessionMomentLabel}=require('../contracts/artwork-layout');
+const {SAFE,sessionDayMatches,sessionMomentLabel}=require('../contracts/artwork-layout');
 
 function sessionCopy(draft) {
   const day=draft.schedule?.days?.[0];
@@ -61,8 +61,8 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   const dateOnly=!draft.artworkPolicy?.hideDate && draft.date && draft.date!=='EM BREVE'?`${draft.content?.primaryDateLabel || 'DIA'} ${draft.date}`:'';
   const commercial=draft.templateId==='movie-price';
   const premiere=['movie-premiere','movie-presale'].includes(draft.templateId);
-  const normalizedDate=value=>String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
-  const sessionDetails=premiere && normalizedDate(draft.date)===normalizedDate(session.split(' • ')[0])?sessionMoment:session;
+  const sameSessionDate=sessionDayMatches(draft.content?.primaryDate || draft.date,draft.schedule?.days?.[0]?.date);
+  const sessionDetails=premiere && sameSessionDate?sessionMoment:session;
   if(family==='movie-spotlight') {
     const day=draft.schedule?.days?.[0];
     const label=commercial?'INGRESSOS':premiere?draft.content?.primaryDateLabel || 'ESTREIA':day?'SESSÕES':'EM BREVE';
