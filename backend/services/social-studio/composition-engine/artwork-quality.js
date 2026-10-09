@@ -155,6 +155,11 @@ async function repairIntegratedContrast(scene,loadImage) {
   scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,mask);
   for(const opacity of [.62,.74,.84,.92]) {
     mask.opacity=opacity;
+    for(const reading of await contrastReadings(scene,loadImage))if(reading.ratio<4.5) {
+      const element=scene.elements.find(e=>e.id===reading.id);
+      const ink=reading.white>=reading.dark?'#ffffff':'#101820';
+      if(element)element.fill=ink;
+    }
     if(!(await contrastReadings(scene,loadImage)).some(reading=>reading.ratio<4.5))break;
   }
 }

@@ -19,7 +19,7 @@ function normalizeRequest(element = {}) {
   return {
     width: Math.round(numeric(element.width, 1080, 8, 2160)),
     height: Math.round(numeric(element.height, 1350, 8, 3840)),
-    fit: element.fit === "contain" ? "contain" : "cover",
+    fit: element.fit === "contain" ? "contain" : element.fit === "fill" && element.role === "background" ? "fill" : "cover",
     focusX: numeric(element.focusX, 50, 0, 100),
     focusY: numeric(element.focusY, 50, 0, 100),
     crop:
@@ -153,7 +153,8 @@ async function processArtwork(source, request) {
       })
       .toBuffer({ resolveWithObject: true });
   }
-  const cover = fx.layer === "background" || request.fit === "cover";
+  const fill = request.fit === "fill";
+  const cover = !fill && (fx.layer === "background" || request.fit === "cover");
   const scale = cover
     ? Math.max(width / original.info.width, height / original.info.height) *
       Math.max(1, fx.scale)
@@ -163,7 +164,8 @@ async function processArtwork(source, request) {
     rh = Math.max(1, Math.round(original.info.height * scale));
   // Sharp's cover resize avoids allocating very wide/tall intermediate rasters.
   let image = sharp(original.data);
-  if (cover) {
+  if (fill) image = image.resize(width, height, { fit: "fill" });
+  else if (cover) {
     const cropWidth = Math.min(
         original.info.width,
         Math.max(1, Math.round(width / scale)),

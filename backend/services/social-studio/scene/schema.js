@@ -97,7 +97,7 @@ function normalizeElement(input, scene, depth = 0) {
       ...base,
       type: "image",
       src: safeText(input.src, 2000),
-      fit: input.fit === "contain" ? "contain" : "cover",
+      fit: input.fit === "contain" ? "contain" : input.fit === "fill" && input.role === "background" ? "fill" : "cover",
       focusX: clamp(finite(input.focusX, 50), 0, 100),
       focusY: clamp(finite(input.focusY, 50), 0, 100),
       crop: normalizeCrop(input.crop),

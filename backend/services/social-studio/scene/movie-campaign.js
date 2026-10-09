@@ -1,7 +1,7 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {hexToRgb,mix}=require('../engine/palette');
-const {SAFE,sessionMomentLabel}=require('../contracts/artwork-layout');
+const {SAFE,sessionMomentParts}=require('../contracts/artwork-layout');
 
 const rgba=(hex,a)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${a})`;};
 const luminance=hex=>{const {r,g,b}=hexToRgb(hex);return .2126*r+.7152*g+.0722*b;};
@@ -21,6 +21,7 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
   const saturated=[palette.secondaryColor,palette.accentColor,artColor].sort((a,b)=>chroma(b)-chroma(a))[0];
   const ink=light?mix(saturated,'#291d22',.58):'#f5f5ed';
   const secondary=light?mix(artColor,'#311d1b',.68):mix(artColor,'#ffffff',.62);
+  const filmAccent=light?mix(saturated,'#291d22',.34):mix(saturated,'#ffffff',.48);
   const elements=[],manifest=[];
   const box=(x,y,width,height)=>({x:x*w,y:top+y*area,width:width*w,height:height*area});
   const image=(id,src,bounds,extra={})=>{if(src)elements.push({id,name:id,role:id,type:'image',src,visible:true,opacity:1,...bounds,...extra});};
@@ -36,42 +37,45 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
     draft.artworkMetadata?.containsTitle && draft.artworkMetadata.sourceUrl===heroSource ||
     registeredPoster && draft.artworkMetadata?.containsTitle!==false
   ));
-  const sourceRatio=draft.sourceAsset?.width/draft.sourceAsset?.height || 2/3;
-  const landscapeArt=sourceRatio>1;
-  const artworkBounds={x:0,y:0,width:w,height:landscapeArt?Math.min(h*.75,w/sourceRatio):embeddedTitle?h*.78:h};
-  const canvasRatio=artworkBounds.width/artworkBounds.height;
-  const cropLoss=1-Math.min(sourceRatio/canvasRatio,canvasRatio/sourceRatio);
-  const canCover=cropLoss<=.20;
-  image('background-blur',backgroundUrl || heroSource,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:draft.movieDirection?.focusX || 50,focusY:38,effects:{layer:'background',blur:38,brightness:light?.92:.58,saturation:1,scale:1.16}});
-  image('artwork',heroSource,artworkBounds,{role:'artwork',fit:embeddedTitle?'contain':canCover?'cover':'contain',keepRatio:true,locked:true,focusX:draft.movieDirection?.focusX || 50,focusY:draft.movieDirection?.focusY || 42,hierarchy:'primary',effects:{layer:'hero',mask:embeddedTitle?'none':'cinematic-bottom',blend:embeddedTitle?0:canCover?45:72,brightness:1,scale:1}});
-  const transitionStart=embeddedTitle?.76:.68;
-  const atmosphereStops=[
-    {offset:0,color:rgba(base,0)},
-    {offset:transitionStart,color:rgba(base,0)},
-    {offset:.82,color:rgba(base,.16)},
-    {offset:.92,color:rgba(base,.36)},
-    {offset:1,color:rgba(base,.55)}
-  ];
-  elements.push({id:'campaign-atmosphere',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:'bottom',stops:atmosphereStops});
-  if(!embeddedTitle)text('title',draft.title || draft.entities.movie?.title,box(.065,.685,.87,.085),serif?58:64,{fontFamily:serif?'Social Editorial':'Social Display',fontWeight:serif?500:900,lineHeight:1,lines:2,align:'center',fill:ink,hierarchy:'secondary'});
   const days=draft.showSessions===false?[]:draft.schedule?.days || [];
-  const session=days.length?sessionMomentLabel(days,{includeDate:true}):'';
+  const session=days.length?sessionMomentParts(days,{includeDate:true}):null;
   const presale=draft.templateId==='movie-presale';
   const premiere=draft.templateId==='movie-premiere';
   const commercial=draft.templateId==='movie-price';
-  const detail=presale && draft.content?.purchaseAvailable?'PRÉ-VENDA ABERTA':commercial?draft.price:premiere?draft.date:session || draft.date || 'EM BREVE';
-  const description=(presale || premiere || commercial) && session?session:'';
-  const detailY=embeddedTitle?.79:.785;
-  text('detail',detail,box(.065,detailY,.87,.06),presale?54:48,{fontFamily:'Social Display',fontWeight:900,align:'center',fill:light?secondary:'#ffffff',lines:2,hierarchy:presale?'primary':'secondary'});
-  if(description)text('description',description,box(.075,detailY+.063,.85,.035),28,{align:'center',lines:1,fill:secondary});
-  const ctaY=description?detailY+.108:detailY+.082;
+  const secondarySession=Boolean(session && (presale || premiere || commercial));
+  const sourceRatio=draft.sourceAsset?.width/draft.sourceAsset?.height || 2/3;
+  const landscapeArt=sourceRatio>1;
+  const embeddedArtHeight=.68;
+  const artworkBounds={x:0,y:0,width:w,height:landscapeArt?Math.min(h*.80,w/sourceRatio):embeddedTitle?h*embeddedArtHeight:h};
+  const canvasRatio=artworkBounds.width/artworkBounds.height;
+  const cropLoss=1-Math.min(sourceRatio/canvasRatio,canvasRatio/sourceRatio);
+  const canCover=cropLoss<=.20;
+  image('background-blur',embeddedTitle?heroSource:backgroundUrl || heroSource,{x:0,y:0,width:w,height:h},{role:'background',fit:embeddedTitle?'fill':'cover',focusX:draft.movieDirection?.focusX || 50,focusY:38,effects:{layer:'background',blur:embeddedTitle?40:38,brightness:embeddedTitle?.88:light?.92:.58,saturation:1,scale:embeddedTitle?1:1.16}});
+  image('artwork',heroSource,artworkBounds,{role:'artwork',fit:embeddedTitle?'contain':canCover?'cover':'contain',keepRatio:true,locked:true,focusX:draft.movieDirection?.focusX || 50,focusY:draft.movieDirection?.focusY || 42,hierarchy:'primary',effects:{layer:'hero',mask:embeddedTitle?'fade-all':'cinematic-bottom',blend:embeddedTitle?27:canCover?45:72,brightness:1,scale:1}});
+  const transitionStart=secondarySession?.64:embeddedTitle?.71:.63;
+  const atmosphereStops=[
+    {offset:0,color:rgba(base,0)},
+    {offset:transitionStart,color:rgba(base,0)},
+    {offset:.78,color:rgba(base,.88)},
+    {offset:.88,color:rgba(base,.96)},
+    {offset:1,color:rgba(base,1)}
+  ];
+  elements.push({id:'campaign-atmosphere',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:'bottom',stops:atmosphereStops});
+  if(!embeddedTitle)text('title',draft.title || draft.entities.movie?.title,box(.065,secondarySession?.60:.685,.87,.085),serif?58:64,{fontFamily:serif?'Social Editorial':'Social Display',fontWeight:serif?500:900,lineHeight:1,lines:2,align:'center',fill:ink,hierarchy:'secondary'});
+  const detail=presale && draft.content?.purchaseAvailable?'PRÉ-VENDA ABERTA':commercial?draft.price:premiere?draft.date:session?.day || draft.date || 'EM BREVE';
+  const detailY=secondarySession?.70:session?.79:embeddedTitle?.79:.785;
+  if(session?.recurring)text('session-kicker','A PARTIR DE',box(.065,.749,.60,.037),32,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Text',fontWeight:800});
+  text('detail',detail,box(.065,detailY,session?.66:.87,secondarySession?.052:.053),presale?54:session?43:48,{fontFamily:'Social Display',fontWeight:900,align:'center',fill:light?secondary:'#ffffff',lines:1,hierarchy:presale?'primary':'secondary'});
+  if(secondarySession)text('description',session.day,box(.065,.79,.66,.044),43,{align:'center',lines:1,fill:light?secondary:'#ffffff',fontFamily:'Social Display',fontWeight:900});
+  if(session)text('session-time',session.clock,box(.065,.848,.66,.059),55,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Display',fontWeight:900});
+  const ctaY=session?.916:detailY+.082;
   const compactCta=String(draft.cta || '').trim();
-  text('cta',compactCta,box(.065,ctaY,.60,.042),31,{align:'center',lines:1,fill:light?ink:'#ffffff',fontFamily:'Social Display',fontWeight:900});
+  text('cta',compactCta,box(.065,ctaY,.60,.037),32,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Display',fontWeight:900});
   const site=String(brand.posterWebsite || brand.website || draft.actionDestination || '');
   let website='';
   try {website=new URL(/^https?:\/\//i.test(site)?site:`https://${site}`).hostname.replace(/^www\./i,'');} catch {}
   if(website)website=`www.${website}`;
-  text('website',website,box(.065,ctaY+.045,.60,.03),25,{align:'center',lines:1,fill:secondary});
+  text('website',website,box(.065,ctaY+(session?.04:.044),.60,.028),27,{align:'center',lines:1,fill:light?ink:'#ffffff'});
   const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
   const signatureScale=draft.signatureScaleMode==='manual'?Math.max(.7,Math.min(1.35,Number(draft.signatureScale || 100)/100)):1;
   const logoWidth=Math.min(w*.19,h*.115*ratio,w*.14*signatureScale),logoHeight=logoWidth/ratio;

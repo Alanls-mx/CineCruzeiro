@@ -67,7 +67,10 @@ test('pôster cadastrado preserva o título original por padrão e permite títu
   const original=await render({templateId:'movie-highlight',movieId:'film',layoutId:'movie-campaign'},context('Comédia','/qa/warm'));
   assert.ok(!original.scene.elements.some(e=>e.id==='title'));
   assert.equal(original.scene.elements.find(e=>e.id==='artwork').fit,'contain');
-  assert.ok(original.scene.elements.find(e=>e.id==='artwork').height<original.scene.height*.85);
+  assert.ok(original.scene.elements.find(e=>e.id==='artwork').height>=original.scene.height*.65);
+  assert.equal(original.scene.elements.find(e=>e.id==='artwork').effects.mask,'fade-all');
+  assert.ok(original.scene.elements.find(e=>e.id==='detail').y>original.scene.elements.find(e=>e.id==='artwork').height);
+  assert.equal(original.scene.elements.find(e=>e.id==='background-blur').fit,'fill');
   const explicit=await render({templateId:'movie-highlight',movieId:'film',layoutId:'movie-campaign',artworkMetadata:{containsTitle:false}},context('Comédia','/qa/warm'));
   assert.ok(explicit.scene.elements.some(e=>e.id==='title'));
 });
@@ -77,7 +80,28 @@ test('campanha integrada passa revisão em feed, quadrado e story',async()=>{
     const result=await render({templateId,movieId:'film',formatId,layoutId:'movie-campaign'},context('Comédia','/qa/warm'));
     assert.equal(result.scene.sourceDraft.movieFamily,'movie-campaign',`${formatId}/${templateId}`);
     assert.ok(result.quality.accepted,`${formatId}/${templateId}: ${JSON.stringify(result.quality.issues)}`);
+    const date=result.scene.elements.find(e=>e.id===('movie-highlight'===templateId?'detail':'description'));
+    const time=result.scene.elements.find(e=>e.id==='session-time');
+    assert.ok(date && time,`${formatId}/${templateId}`);
+    assert.doesNotMatch(date.text,/ÀS|15:00|19:00/);
+    assert.match(time.text,/^15:00 \/ 19:00$/);
+    assert.ok(time.fontSize>date.fontSize,`${formatId}/${templateId}: horário sem destaque`);
+    assert.ok(time.y>=date.y+date.height,`${formatId}/${templateId}: horário invadiu a data`);
+    const logo=result.scene.elements.find(e=>e.id==='logo');
+    assert.ok(logo.x>result.scene.width*.7 && logo.y>result.scene.height*.7,`${formatId}/${templateId}: assinatura fora do rodapé`);
+    if(formatId==='story')assert.ok(result.scene.elements.find(e=>e.id==='artwork').height<=result.scene.height*.68,`${formatId}/${templateId}: preserve o title lockup inferior`);
   }
+});
+
+test('prefixo de continuidade aparece separado apenas quando há sessões em vários dias',async()=>{
+  const single=await render({templateId:'movie-highlight',movieId:'film',layoutId:'movie-campaign'},context('Comédia','/qa/warm'));
+  assert.ok(!single.scene.elements.some(e=>e.id==='session-kicker'));
+  assert.match(single.scene.elements.find(e=>e.id==='detail').text,/SEXTA • 25\/09/);
+  const ongoing=context('Comédia','/qa/warm');
+  ongoing.movies[0].sessions.push({date:'2026-09-26',time:'16:00'});
+  const multiple=await render({templateId:'movie-highlight',movieId:'film',layoutId:'movie-campaign'},ongoing);
+  assert.equal(multiple.scene.elements.find(e=>e.id==='session-kicker').text,'A PARTIR DE');
+  assert.match(multiple.scene.elements.find(e=>e.id==='detail').text,/SEXTA • 25\/09/);
 });
 
 test('contraste integrado preserva a imagem com máscara suave em vez de faixa sólida',async()=>{
