@@ -5,10 +5,18 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import net from "node:net";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+const testJwtSecret = "local-checkout-access-test-secret";
+
+function signedCookie(name, payload) {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", testJwtSecret).update(encoded).digest("base64url");
+  return `${name}=${encoded}.${signature}`;
+}
 
 async function unusedPort() {
   const server = net.createServer();
@@ -26,20 +34,25 @@ test("mapa publico diferencia Pix pendente de venda e nao publica settings priva
   const past = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   await writeFile(dataFile, JSON.stringify({
     settings: { cinemaName: "Cinema Teste", futureSecret: "private-only", integrations: { mercadoPago: { accessToken: "private-token" } } },
+    users: [
+      { id: "buyer-1", name: "Comprador Um", role: "customer", active: true, sessionVersion: 0 },
+      { id: "buyer-2", name: "Comprador Dois", role: "customer", active: true, sessionVersion: 0 }
+    ],
     movies: [{ id: "movie-1", title: "Filme Teste", status: "now_playing", sessions: [{ id: "session-1", roomId: "room-1", date: "2099-01-01", time: "20:00" }] }],
     rooms: [{ id: "room-1", name: "Sala 1", seatSelectionEnabled: true, seatLayout: { screenLabel: "TELA", rows: [{ id: "A", label: "A", seats: [
       { id: "A1", label: "A1", enabled: true }, { id: "A2", label: "A2", enabled: true }, { id: "A3", label: "A3", enabled: true }
     ] }] } }],
     orders: [
-      { id: "pending", sessionId: "session-1", status: "pending_payment", selectedSeatIds: ["A1"], reservationExpiresAt: future },
+      { id: "pending", customerUserId: "buyer-1", customerName: "Comprador Um", customerEmail: "buyer@example.test", customerCpf: "12345678900", sessionId: "session-1", status: "pending_payment", selectedSeatIds: ["A1"], reservationExpiresAt: future },
       { id: "paid", sessionId: "session-1", status: "paid", selectedSeatIds: ["A2"] },
       { id: "expired", sessionId: "session-1", status: "pending_payment", selectedSeatIds: ["A3"], reservationExpiresAt: past }
-    ]
+    ],
+    payments: [{ id: "payment-1", orderId: "pending", status: "pending", method: "pix", amount: 10, metadata: { secret: "internal" }, raw: { token: "internal" } }]
   }));
 
   const child = spawn(process.execPath, ["backend/server.js"], {
     cwd: root,
-    env: { ...process.env, NODE_ENV: "test", PORT: String(port), HOST: "127.0.0.1", DATA_STORE: "json", CINE_DATA_FILE: dataFile,
+    env: { ...process.env, NODE_ENV: "test", JWT_SECRET: testJwtSecret, PORT: String(port), HOST: "127.0.0.1", DATA_STORE: "json", CINE_DATA_FILE: dataFile,
       MOVIE_IMAGE_MAINTENANCE_ENABLED: "false", GOOGLE_WALLET_SYNC_OBJECTS: "false" },
     stdio: "ignore"
   });
@@ -78,6 +91,32 @@ test("mapa publico diferencia Pix pendente de venda e nao publica settings priva
       body: "{}"
     });
     assert.equal(sameOriginLogin.status, 401);
+    const checkoutUrl = `http://127.0.0.1:${port}/api/checkout/orders/pending`;
+    const validUntil = Date.now() + 60_000;
+    const ownerCookie = signedCookie("cine_customer", { sub: "buyer-1", sv: 0, exp: validUntil });
+    const otherCookie = signedCookie("cine_customer", { sub: "buyer-2", sv: 0, exp: validUntil });
+    const orderProof = signedCookie("cine_checkout", { orderIds: ["pending"], exp: validUntil });
+    assert.equal((await fetch(checkoutUrl)).status, 404);
+    assert.equal((await fetch(checkoutUrl, { headers: { Cookie: ownerCookie } })).status, 200);
+    const withProof = await fetch(checkoutUrl, { headers: { Cookie: orderProof } });
+    assert.equal(withProof.status, 200);
+    assert.equal(withProof.headers.get("cache-control"), "private, no-store, max-age=0");
+    const checkout = await withProof.json();
+    assert.equal(checkout.order.customerEmail, undefined);
+    assert.equal(checkout.order.customerCpf, undefined);
+    assert.equal(checkout.payment.metadata, undefined);
+    assert.equal(checkout.payment.raw, undefined);
+    const expiredProof = signedCookie("cine_checkout", { orderIds: ["pending"], exp: Date.now() - 1000 });
+    assert.equal((await fetch(checkoutUrl, { headers: { Cookie: expiredProof } })).status, 404);
+    assert.equal((await fetch(checkoutUrl, { headers: { Cookie: `${otherCookie}; ${orderProof}` } })).status, 404);
+    const logout = await fetch(`http://127.0.0.1:${port}/api/auth/logout`, {
+      method: "POST", headers: { Cookie: `${ownerCookie}; ${orderProof}`, Origin: `http://127.0.0.1:${port}` }
+    });
+    assert.equal(logout.status, 200);
+    const clearedCookies = logout.headers.getSetCookie();
+    assert.equal(clearedCookies.length, 2);
+    assert.ok(clearedCookies.some((cookie) => cookie.startsWith("cine_customer=") && cookie.includes("Max-Age=0")));
+    assert.ok(clearedCookies.some((cookie) => cookie.startsWith("cine_checkout=") && cookie.includes("Max-Age=0")));
     const legacyCatalog = await fetch(`http://127.0.0.1:${port}/api/commercial/catalog?token=legacy-test`);
     assert.equal(legacyCatalog.status, 404);
     assert.equal(legacyCatalog.headers.get("cache-control"), "no-store");

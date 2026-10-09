@@ -13,6 +13,7 @@ Revisao pontual do backend, checkout, painel administrativo, uploads, downloads 
 | URLs remotas com risco de SSRF e resposta sem limite incremental | Alta | Downloads de trailer e poster podiam seguir destinos nao autorizados ou consumir bytes antes de validar o tamanho | DNS fixado em IPv4 publico, sem IP literal/porta/credenciais/redirecionamento, timeout e limite durante o fluxo; TMDB nao segue redirecionamento |
 | Configuracoes publicas por exclusao | Media | Uma nova chave privada em `settings` poderia aparecer em `/api/content` | Lista explicita de chaves publicas; teste HTTP com segredo ficticio |
 | Upload podia seguir pasta simbolica externa | Media | Validacao lexical nao detectava `folder` que resolvesse fora da raiz | Comparacao de caminhos reais antes da escrita e criacao exclusiva (`wx`) |
+| Cookie de checkout sobrevivia a troca de conta | Media | Um usuario autenticado em outra conta no mesmo navegador podia usar o comprovante assinado do pedido anterior para consultar seu estado | Pedido associado a cliente agora exige a conta proprietaria quando ha sessao ativa; logout apaga tambem o cookie de checkout; resposta privada usa `no-store` |
 | Dependencias de producao vulneraveis | Critica/Alta | Auditoria npm anterior apontou Next, Sharp, Nodemailer e transitivas | Next 16.4.0, Sharp/Nodemailer corrigidos e overrides de `fflate`/`source-map-js`; `npm audit --omit=dev` agora retorna zero |
 
 ## Continuidade da revisao
@@ -36,6 +37,7 @@ Revisao pontual do backend, checkout, painel administrativo, uploads, downloads 
 
 - Revisao estatica de `postgresStore`, repositorios e repositorio de campanhas nao confirmou interpolacao de valores externos em estrutura SQL. Valores externos observados usam parametros; colunas dinamicas usam mapas internos e direcao de ordenacao permitida. Os novos testes cobrem a construcao das consultas, mas nao substituem testes com PostgreSQL isolado.
 - Sessoes administrativas e de clientes usam assinatura e verificacao de versao. Testes de 2FA, papeis administrativos, DTO de ingresso e posse anti-IDOR passaram; nao foi executado teste fim-a-fim de todas as rotas privadas.
+- O teste HTTP isolado de checkout cobre proprietario, outra conta com o mesmo cookie de pedido, visitante com comprovante valido, comprovante expirado, limpeza dos cookies no logout, ocultacao de dados pessoais e resposta sem cache. O teste nao consulta provedores nem pedidos reais.
 - A validacao de origem administrativa deixou de confiar em `X-Forwarded-Host` controlavel pelo requisitante. Revisar ainda todas as combinacoes de `Origin`, `Referer` e proxy em homologacao.
 - O catalogo comercial ainda aceita `?token=` por compatibilidade. Clientes novos devem usar `Authorization: Bearer` ou `X-Commercial-Catalog-Token`; planejar a retirada do parametro de URL apos migracao dos consumidores.
 

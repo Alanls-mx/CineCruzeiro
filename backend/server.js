@@ -5656,7 +5656,7 @@ function findExistingCheckout(db, order, method) {
 
 function checkoutAccessAllowed(req, db, order) {
   const user = getCustomerUser(req, db);
-  if (user && order.customerUserId && order.customerUserId === user.id) return true;
+  if (user && order.customerUserId) return order.customerUserId === user.id;
   const proof = verifySignedValue(parseCookies(req).cine_checkout);
   return Array.isArray(proof?.orderIds) && proof.orderIds.map(String).includes(String(order.id));
 }
@@ -13557,7 +13557,9 @@ async function handleApi(req, res, pathname) {
         await writeDb(db);
       }
     }
-    sendJson(res, 200, { ok: true }, { "Set-Cookie": customerCookie("", 0) });
+    sendJson(res, 200, { ok: true }, {
+      "Set-Cookie": [customerCookie("", 0), checkoutAccessCookie(req, "", 0)]
+    });
     return;
   }
 
@@ -15882,7 +15884,9 @@ async function handleApi(req, res, pathname) {
     const tickets = (payment?.status === "approved" || (!payment && order.status === "paid"))
       ? (currentDb.tickets || []).filter((ticket) => ticket.orderId === order.id).map((ticket) => enrichTicket(currentDb, ticket))
       : [];
-    sendJson(res, 200, checkoutResponse(currentDb, order, payment, tickets));
+    sendJson(res, 200, checkoutResponse(currentDb, order, payment, tickets), {
+      "Cache-Control": "private, no-store, max-age=0"
+    });
     return;
   }
 
