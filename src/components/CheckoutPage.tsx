@@ -1529,7 +1529,7 @@ function PagBankCardForm({ publicKey, loading, onSubmit }: { publicKey: string; 
   return (
     <form ref={formRef} onSubmit={(event) => void submit(event)} className="space-y-4 rounded-lg bg-white/[0.03] p-5 shadow-soft" autoComplete="on">
       <label className="block text-sm font-semibold text-white">Nome no cartão<input name="holder" required autoComplete="cc-name" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
-      <label className="block text-sm font-semibold text-white">CPF do titular<input name="holderTaxId" required inputMode="numeric" minLength={11} maxLength={14} className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
+      <label className="block text-sm font-semibold text-white">CPF do titular<input name="holderTaxId" required inputMode="numeric" pattern="[0-9]{11}" minLength={11} onInput={(event) => { event.currentTarget.value = event.currentTarget.value.replace(/\D/g, "").slice(0, 11); }} className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
       <label className="block text-sm font-semibold text-white">Número do cartão<input name="number" required inputMode="numeric" autoComplete="cc-number" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>
       <div className="grid grid-cols-3 gap-3">
         <label className="block text-sm font-semibold text-white">Mês<input name="expMonth" required inputMode="numeric" maxLength={2} autoComplete="cc-exp-month" className="mt-2 w-full rounded border border-white/20 bg-brand-950 p-3 text-white" /></label>

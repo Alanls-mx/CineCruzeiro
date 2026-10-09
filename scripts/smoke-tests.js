@@ -85,7 +85,7 @@ async function registerCustomer(email, password = "cliente-smoke-123") {
   const result = await request("/api/auth/register", {
     method: "POST",
     headers: jsonHeaders(),
-    body: JSON.stringify({ name: "Teste Smoke", email, password, cpf: "12345678901" })
+    body: JSON.stringify({ firstName: "Teste", lastName: "Smoke", email, password, cpf: "12345678901" })
   });
   assert.equal(result.response.status, 201);
   const setCookie = result.response.headers.get("set-cookie") || "";
@@ -644,7 +644,7 @@ async function run() {
         event: "private_rental.inquiry",
         data: {
           name: "Cliente Evento",
-          phone: "(11) 99999-9999",
+          phone: "11999999999",
           email: "evento@cliente.local",
           eventType: "corporativo",
           desiredDate: "2099-12-30 19:00",

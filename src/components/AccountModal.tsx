@@ -33,18 +33,12 @@ function onlyCpf(value: string) {
   return value.replace(/\D/g, "").slice(0, 11);
 }
 
-function formatCpf(value: string) {
-  const raw = onlyCpf(value);
-  if (raw.length <= 3) return raw;
-  if (raw.length <= 6) return `${raw.slice(0, 3)}.${raw.slice(3)}`;
-  if (raw.length <= 9) return `${raw.slice(0, 3)}.${raw.slice(3, 6)}.${raw.slice(6)}`;
-  return `${raw.slice(0, 3)}.${raw.slice(3, 6)}.${raw.slice(6, 9)}-${raw.slice(9)}`;
-}
-
 export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
   const [mode, setMode] = useState<AccountMode>("login");
   const [auth, setAuth] = useState<{ user: CustomerUser } | null>(null);
   const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
@@ -67,8 +61,11 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
     setAuth(null);
     setMode("login");
     setName(customer.name || "");
-    setPhone(customer.phone || "");
-    setCpf(formatCpf(customer.cpf || ""));
+    const [savedFirstName = "", ...savedLastName] = String(customer.name || "").trim().split(/\s+/);
+    setFirstName(savedFirstName);
+    setLastName(savedLastName.join(" "));
+    setPhone(String(customer.phone || "").replace(/\D/g, "").slice(0, 11));
+    setCpf(onlyCpf(customer.cpf || ""));
     setEmail(customer.email || "");
     setPassword("");
     const params = new URLSearchParams(window.location.search);
@@ -83,8 +80,8 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
         setAuth({ user });
         setMode("profile");
         setName(user.name || customer.name || "");
-        setPhone(user.phone || customer.phone || "");
-        setCpf(formatCpf(user.cpf || customer.cpf || ""));
+        setPhone(String(user.phone || customer.phone || "").replace(/\D/g, "").slice(0, 11));
+        setCpf(onlyCpf(user.cpf || customer.cpf || ""));
         setEmail(user.email || customer.email || "");
       })
       .catch(() => {
@@ -153,7 +150,10 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
     setLoading(true);
     setError("");
     try {
-      persistAuth(await registerCustomer({ name, email, password, phone, cpf: onlyCpf(cpf) }));
+      if (firstName.trim().length < 2 || !lastName.trim()) throw new Error("Informe nome e sobrenome para criar sua conta.");
+      if (phone && !/^\d{10,11}$/.test(phone)) throw new Error("Informe um telefone com DDD, usando 10 ou 11 números.");
+      if (cpf && !/^\d{11}$/.test(cpf)) throw new Error("Informe um CPF com 11 números.");
+      persistAuth(await registerCustomer({ firstName, lastName, email, password, phone, cpf: onlyCpf(cpf) }));
       trackMarketingEvent("sign_up", { method: "email" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel criar sua conta.");
@@ -191,22 +191,24 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
     }
   };
 
-  const handleLocalSave = () => {
-    const nextCustomer = {
-      name: name.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      cpf: onlyCpf(cpf),
-    };
-    window.localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(nextCustomer));
-    if (auth) {
-      updateCurrentCustomer(nextCustomer)
-        .then(({ user }) => setAuth({ user }))
-        .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel atualizar sua conta."));
+  const handleLocalSave = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      if (phone && !/^\d{10,11}$/.test(phone)) throw new Error("Informe um telefone com DDD, usando 10 ou 11 números.");
+      if (cpf && !/^\d{11}$/.test(cpf)) throw new Error("Informe um CPF com 11 números.");
+      const nextCustomer = { name: name.trim(), phone, email: email.trim(), cpf };
+      const { user } = await updateCurrentCustomer(nextCustomer);
+      setAuth({ user });
+      window.localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(nextCustomer));
+      setSaved(true);
+      onSaved?.();
+      setTimeout(() => setSaved(false), 2200);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível atualizar sua conta.");
+    } finally {
+      setLoading(false);
     }
-    setSaved(true);
-    onSaved?.();
-    setTimeout(() => setSaved(false), 2200);
   };
 
   const handleLogout = async () => {
@@ -270,7 +272,29 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
         )}
 
         <div className="space-y-3 p-6">
-          {mode !== "login" && mode !== "forgot" && mode !== "reset" && (
+          {mode === "register" && (
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                placeholder="Nome"
+                aria-label="Nome"
+                autoComplete="given-name"
+                required
+                className="min-w-0 w-full rounded-xl bg-brand-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+              />
+              <input
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                placeholder="Sobrenome"
+                aria-label="Sobrenome"
+                autoComplete="family-name"
+                required
+                className="min-w-0 w-full rounded-xl bg-brand-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+              />
+            </div>
+          )}
+          {mode === "profile" && (
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -305,14 +329,21 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
             <>
               <input
                 value={phone}
-                onChange={(event) => setPhone(event.target.value)}
+                onChange={(event) => setPhone(event.target.value.replace(/\D/g, "").slice(0, 11))}
                 placeholder="Telefone"
+                aria-label="Telefone"
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]{10,11}"
                 className="w-full rounded-xl bg-brand-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
               />
               <input
                 value={cpf}
-                onChange={(event) => setCpf(formatCpf(event.target.value))}
+                onChange={(event) => setCpf(onlyCpf(event.target.value))}
                 placeholder="CPF (opcional)"
+                aria-label="CPF (opcional)"
+                inputMode="numeric"
+                pattern="[0-9]{11}"
                 className="w-full rounded-xl bg-brand-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
               />
             </>
@@ -418,8 +449,9 @@ export function AccountModal({ isOpen, onClose, onSaved }: AccountModalProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={handleLocalSave}
-                  className="flex items-center justify-center gap-2 rounded-2xl bg-gold-400 px-4 py-3 text-sm font-black text-slate-950 shadow-glow transition hover:bg-gold-300"
+                  onClick={() => void handleLocalSave()}
+                  disabled={loading}
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-gold-400 px-4 py-3 text-sm font-black text-slate-950 shadow-glow transition hover:bg-gold-300 disabled:opacity-60"
                 >
                   {saved && <Check className="h-4 w-4" />}
                   Salvar

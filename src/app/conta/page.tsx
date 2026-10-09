@@ -49,7 +49,7 @@ function ContaPageContent() {
   const [user, setUser] = useState<CustomerUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [mode, setMode] = useState<"login" | "register" | "recover" | "reset">("login");
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", cpf: "" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", password: "", phone: "", cpf: "" });
   const [resetToken, setResetToken] = useState("");
   const [profile, setProfile] = useState({ name: "", email: "", phone: "", cpf: "", currentPassword: "", newPassword: "", confirmPassword: "" });
   const [message, setMessage] = useState("");
@@ -101,8 +101,8 @@ function ContaPageContent() {
         setProfile({
           name: result.user.name || "",
           email: result.user.email || "",
-          phone: result.user.phone || "",
-          cpf: result.user.cpf || "",
+          phone: (result.user.phone || "").replace(/\D/g, "").slice(0, 11),
+          cpf: (result.user.cpf || "").replace(/\D/g, "").slice(0, 11),
           currentPassword: "",
           newPassword: "",
           confirmPassword: "",
@@ -165,8 +165,8 @@ function ContaPageContent() {
         setProfile({
           name: result.user.name || "",
           email: result.user.email || "",
-          phone: result.user.phone || "",
-          cpf: result.user.cpf || "",
+          phone: (result.user.phone || "").replace(/\D/g, "").slice(0, 11),
+          cpf: (result.user.cpf || "").replace(/\D/g, "").slice(0, 11),
           currentPassword: "",
           newPassword: "",
           confirmPassword: "",
@@ -249,8 +249,8 @@ function ContaPageContent() {
       setProfile({
         name: result.user.name || "",
         email: result.user.email || "",
-        phone: result.user.phone || "",
-        cpf: result.user.cpf || "",
+        phone: (result.user.phone || "").replace(/\D/g, "").slice(0, 11),
+        cpf: (result.user.cpf || "").replace(/\D/g, "").slice(0, 11),
         currentPassword: "",
         newPassword: "",
         confirmPassword: "",
@@ -493,8 +493,8 @@ function ContaPageContent() {
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <Input label="Nome" value={profile.name} onChange={(value) => setProfile({ ...profile, name: value })} />
-                <Input label="Telefone" value={profile.phone} onChange={(value) => setProfile({ ...profile, phone: value })} />
-                <Input label="CPF (opcional)" value={profile.cpf} onChange={(value) => setProfile({ ...profile, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
+                <Input label="Telefone" type="tel" inputMode="numeric" pattern="[0-9]{10,11}" value={profile.phone} onChange={(value) => setProfile({ ...profile, phone: value.replace(/\D/g, "").slice(0, 11) })} />
+                <Input label="CPF (opcional)" inputMode="numeric" pattern="[0-9]{11}" value={profile.cpf} onChange={(value) => setProfile({ ...profile, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
                 <Input label="Senha atual" type="password" value={profile.currentPassword} onChange={(value) => setProfile({ ...profile, currentPassword: value })} />
                 <Input label="Nova senha" type="password" value={profile.newPassword} onChange={(value) => setProfile({ ...profile, newPassword: value })} />
                 <Input label="Confirmar nova senha" type="password" value={profile.confirmPassword} onChange={(value) => setProfile({ ...profile, confirmPassword: value })} />
@@ -525,7 +525,12 @@ function ContaPageContent() {
                 <button onClick={() => setMode("register")} className={mode === "register" ? "text-gold-400" : ""}>Criar conta</button>
               </div>
               <form onSubmit={submit} className="mt-8 space-y-5">
-                {mode === "register" && <Input label="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required minLength={2} maxLength={120} autoComplete="name" />}
+                {mode === "register" && (
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Input label="Nome" value={form.firstName} onChange={(value) => setForm({ ...form, firstName: value })} required minLength={2} maxLength={120} autoComplete="given-name" />
+                    <Input label="Sobrenome" value={form.lastName} onChange={(value) => setForm({ ...form, lastName: value })} required minLength={1} maxLength={120} autoComplete="family-name" />
+                  </div>
+                )}
                 {mode !== "reset" && <Input label="E-mail" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} required maxLength={160} autoComplete="email" />}
                 {mode === "reset" && (
                   <p className="rounded-xl bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">
@@ -535,8 +540,8 @@ function ContaPageContent() {
                 {mode !== "recover" && <Input label={mode === "reset" ? "Nova senha" : "Senha"} type="password" value={form.password} onChange={(value) => setForm({ ...form, password: value })} required minLength={mode === "login" ? undefined : 10} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} />}
                 {mode === "register" && (
                   <>
-                    <Input label="Telefone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} />
-                    <Input label="CPF (opcional)" value={form.cpf} onChange={(value) => setForm({ ...form, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
+                    <Input label="Telefone" type="tel" inputMode="numeric" pattern="[0-9]{10,11}" value={form.phone} onChange={(value) => setForm({ ...form, phone: value.replace(/\D/g, "").slice(0, 11) })} />
+                    <Input label="CPF (opcional)" inputMode="numeric" pattern="[0-9]{11}" value={form.cpf} onChange={(value) => setForm({ ...form, cpf: value.replace(/\D/g, "").slice(0, 11) })} />
                   </>
                 )}
                 {message && <p className="text-sm font-semibold text-amber-200">{message}</p>}
@@ -677,7 +682,7 @@ function ClubSubscriptionCard({
   );
 }
 
-function Input({ label, value, onChange, type = "text", required = false, minLength, maxLength, autoComplete }: {
+function Input({ label, value, onChange, type = "text", required = false, minLength, maxLength, autoComplete, inputMode, pattern }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -686,6 +691,8 @@ function Input({ label, value, onChange, type = "text", required = false, minLen
   minLength?: number;
   maxLength?: number;
   autoComplete?: string;
+  inputMode?: "numeric";
+  pattern?: string;
 }) {
   return (
     <label className="block">
@@ -697,6 +704,8 @@ function Input({ label, value, onChange, type = "text", required = false, minLen
         minLength={minLength}
         maxLength={maxLength}
         autoComplete={autoComplete}
+        inputMode={inputMode}
+        pattern={pattern}
         onChange={(event) => onChange(event.target.value)}
         className="mt-2 min-h-[48px] w-full rounded-lg border border-white/12 bg-white/[0.07] px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 hover:border-white/24 focus:border-gold-400 focus:bg-white/[0.09] focus:shadow-[0_0_0_4px_rgba(250,204,21,.12)]"
       />

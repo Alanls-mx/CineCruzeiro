@@ -771,7 +771,9 @@ export async function fetchCheckoutOrderStatus(orderId: string) {
 }
 
 export async function registerCustomer(data: {
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   password: string;
   phone?: string;

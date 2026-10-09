@@ -37,6 +37,7 @@ const paymentService = require("./services/paymentService");
 const pagBankPaymentService = require("./services/pagBankPaymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
+const { phoneDigits, cpfDigits } = require("./services/customerContactValidationService");
 const { createDiscordWebhookService } = require("./services/discordWebhookService");
 const { readReleaseInfo } = require("./services/releaseInfoService");
 const { createRuntimeLifecycle } = require("./services/runtimeLifecycleService");
@@ -6592,6 +6593,8 @@ function appendOrderAudit(order, entry) {
 
 function safeOrderUpdate(order, body, adminUser) {
   const allowedFields = ["customerName", "customerPhone", "customerEmail", "customerCpf", "operationalNotes"];
+  if (Object.hasOwn(body, "customerPhone")) phoneDigits(body.customerPhone);
+  if (Object.hasOwn(body, "customerCpf")) cpfDigits(body.customerCpf);
   const before = structuredCloneSafe(order);
   allowedFields.forEach((field) => {
     if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -7742,8 +7745,8 @@ function normalizeUser(input, existing = {}) {
     id: String(input.id || existing.id || slugify(email || name) || `usuario-${Date.now()}`),
     name,
     email,
-    phone: input.phone !== undefined ? String(input.phone || "").trim().slice(0, 30) : existing.phone || "",
-    cpf: input.cpf !== undefined ? String(input.cpf || "").replace(/\D/g, "").slice(0, 11) : existing.cpf || "",
+    phone: input.phone !== undefined ? phoneDigits(input.phone) : existing.phone || "",
+    cpf: input.cpf !== undefined ? cpfDigits(input.cpf) : existing.cpf || "",
     passwordHash: input.password ? hashPassword(String(input.password)) : input.passwordHash || existing.passwordHash || "",
     authProvider: input.authProvider || existing.authProvider || (input.googleSub || existing.googleSub ? "google" : "email"),
     googleSub: String(input.googleSub || existing.googleSub || "").slice(0, 255),
@@ -7792,6 +7795,9 @@ function adminUserPayload(input = {}, existing = {}) {
     : accountType === "team" ? "operator" : "customer";
   if (name.length < 2 || name.length > 120) {
     throw Object.assign(new Error("Informe o nome com 2 a 120 caracteres."), { statusCode: 422, code: "USER_NAME_INVALID" });
+  }
+  if (accountType === "customer" && (!existing.id || name !== existing.name) && name.split(/\s+/).length < 2) {
+    throw Object.assign(new Error("Informe nome e sobrenome para a conta de cliente."), { statusCode: 422, code: "USER_NAME_INVALID" });
   }
   if (email.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw Object.assign(new Error("Informe um e-mail válido."), { statusCode: 422, code: "USER_EMAIL_INVALID" });
@@ -13293,12 +13299,12 @@ async function handleApi(req, res, pathname) {
         return;
       }
       inquiry.name = String(inquiry.name || "").trim().slice(0, 100);
-      inquiry.phone = String(inquiry.phone || "").trim().slice(0, 30);
+      inquiry.phone = phoneDigits(inquiry.phone);
       inquiry.email = String(inquiry.email || "").trim().toLowerCase().slice(0, 160);
       inquiry.desiredDate = String(inquiry.desiredDate || "").trim().slice(0, 80);
       inquiry.estimatedGuests = String(inquiry.estimatedGuests || "").trim().slice(0, 80);
       inquiry.notes = String(inquiry.notes || "").trim().slice(0, 2000);
-      if (inquiry.name.length < 2 || inquiry.phone.replace(/\D/g, "").length < 8 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inquiry.email)) {
+      if (inquiry.name.length < 2 || !inquiry.phone || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inquiry.email)) {
         sendJson(res, 422, { error: { code: "EVENT_INQUIRY_INVALID", message: "Informe nome, telefone e um e-mail válido para receber a confirmação." } });
         return;
       }
@@ -13443,9 +13449,14 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "");
-    const name = String(body.name || "").trim();
-    if (name.length < 2 || name.length > 120) {
-      sendJson(res, 422, { error: { code: "CUSTOMER_NAME_INVALID", message: "Informe seu nome com 2 a 120 caracteres." } });
+    const hasSeparateName = Object.hasOwn(body, "firstName") || Object.hasOwn(body, "lastName");
+    const submittedName = String(body.name || "").trim().replace(/\s+/g, " ");
+    const [legacyFirstName = "", ...legacyLastName] = submittedName.split(" ");
+    const firstName = hasSeparateName ? String(body.firstName || "").trim().replace(/\s+/g, " ") : legacyFirstName;
+    const lastName = hasSeparateName ? String(body.lastName || "").trim().replace(/\s+/g, " ") : legacyLastName.join(" ");
+    const name = `${firstName} ${lastName}`.trim();
+    if (firstName.length < 2 || !lastName || name.length > 120) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_NAME_INVALID", message: "Informe nome e sobrenome para criar sua conta." } });
       return;
     }
     if (email.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -13681,6 +13692,10 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 422, { error: { code: "CUSTOMER_NAME_INVALID", message: "Informe seu nome com 2 a 120 caracteres." } });
       return;
     }
+    if (body.name !== undefined && requestedName !== user.name && requestedName.split(/\s+/).length < 2) {
+      sendJson(res, 422, { error: { code: "CUSTOMER_NAME_INVALID", message: "Informe nome e sobrenome no seu perfil." } });
+      return;
+    }
     if (requestedEmail && (requestedEmail.length > 160 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail))) {
       sendJson(res, 422, { error: { code: "CUSTOMER_EMAIL_INVALID", message: "Informe um e-mail válido." } });
       return;
@@ -13689,9 +13704,11 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: { code: "EMAIL_CHANGE_REQUIRES_VERIFICATION", message: "Use o fluxo de verificacao para trocar o e-mail." } });
       return;
     }
+    const nextPhone = body.phone !== undefined ? phoneDigits(body.phone) : user.phone || "";
+    const nextCpf = body.cpf !== undefined ? cpfDigits(body.cpf) : user.cpf || "";
     user.name = requestedName;
-    user.phone = String(body.phone || user.phone || "").trim().slice(0, 30);
-    user.cpf = String(body.cpf || user.cpf || "").replace(/\D/g, "").slice(0, 11);
+    user.phone = nextPhone;
+    user.cpf = nextCpf;
     const wantsPasswordChange = body.password !== undefined || body.newPassword !== undefined || body.currentPassword !== undefined || body.confirmPassword !== undefined;
     let passwordChanged = false;
     if (wantsPasswordChange) {
@@ -15642,6 +15659,10 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para gerar o pagamento por Pix." } });
         return;
       }
+      if (String(customerUser.name || "").trim().split(/\s+/).length < 2) {
+        sendJson(res, 422, { error: { code: "CUSTOMER_LAST_NAME_REQUIRED", message: "Complete nome e sobrenome em Minha Conta antes de pagar." } });
+        return;
+      }
       const rawOrder = body.order || body;
       const normalizedOrder = normalizePaymentOrder(rawOrder);
       normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
@@ -15742,6 +15763,10 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para pagar com cartão." } });
         return;
       }
+      if (String(customerUser.name || "").trim().split(/\s+/).length < 2) {
+        sendJson(res, 422, { error: { code: "CUSTOMER_LAST_NAME_REQUIRED", message: "Complete nome e sobrenome em Minha Conta antes de pagar." } });
+        return;
+      }
       const rawOrder = body.order || body;
       const normalizedOrder = normalizePaymentOrder(rawOrder);
       normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
@@ -15794,7 +15819,7 @@ async function handleApi(req, res, pathname) {
           token: body.cardToken || body.token || body.card?.token || body.payment?.token,
           encrypted: body.encryptedCard || body.card?.encrypted,
           holderName: body.cardHolderName || body.card?.holderName,
-          holderTaxId: body.cardHolderTaxId || body.card?.holderTaxId,
+          holderTaxId: cpfDigits(body.cardHolderTaxId || body.card?.holderTaxId),
           paymentMethodId: body.paymentMethodId || body.payment_method_id || body.card?.paymentMethodId || body.card?.payment_method_id,
           paymentTypeId: body.paymentTypeId || body.payment_type_id || body.card?.paymentTypeId || body.card?.payment_type_id || "credit_card",
           installments: body.installments || body.card?.installments || 1
@@ -16834,8 +16859,8 @@ async function handleApi(req, res, pathname) {
         customerUserId: selectedCustomer?.id || "",
         customerName: selectedCustomer?.name || body.customerName || (concessionCounterSale ? "Venda presencial da bomboniere" : saleMode === "quick" ? "Venda rápida de balcão" : "Cliente avulso"),
         customerEmail: selectedCustomer?.email || body.customerEmail || "",
-        customerPhone: selectedCustomer?.phone || body.customerPhone || "",
-        customerCpf: selectedCustomer?.cpf || body.customerCpf || ""
+        customerPhone: selectedCustomer?.phone || phoneDigits(body.customerPhone),
+        customerCpf: selectedCustomer?.cpf || cpfDigits(body.customerCpf)
       };
 
       // Valida e precifica o lote inteiro antes de emitir qualquer ingresso.

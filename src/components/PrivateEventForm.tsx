@@ -25,14 +25,7 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
   const [errorMessage, setErrorMessage] = useState("");
 
   const handlePhoneChange = (val: string) => {
-    const raw = val.replace(/\D/g, "").slice(0, 11);
-    if (raw.length <= 2) {
-      setPhone(raw);
-    } else if (raw.length <= 7) {
-      setPhone(`(${raw.slice(0, 2)}) ${raw.slice(2)}`);
-    } else {
-      setPhone(`(${raw.slice(0, 2)}) ${raw.slice(2, 7)}-${raw.slice(7)}`);
-    }
+    setPhone(val.replace(/\D/g, "").slice(0, 11));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -177,7 +170,9 @@ export function PrivateEventForm({ onSuccessToast }: PrivateEventFormProps) {
                   <input
                     type="tel"
                     required
-                    placeholder="(00) 00000-0000"
+                    placeholder="11999999999"
+                    inputMode="numeric"
+                    pattern="[0-9]{10,11}"
                     value={phone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
                     className="w-full rounded-xl border border-brand-800 bg-brand-950 py-3 px-4 text-sm text-white placeholder-slate-500 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"

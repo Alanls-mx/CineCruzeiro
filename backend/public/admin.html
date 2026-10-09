@@ -1011,7 +1011,7 @@
                 </label>
                 <label>
                   Telefone opcional
-                  <input id="manualCustomerPhone" />
+                  <input id="manualCustomerPhone" type="tel" inputmode="numeric" pattern="[0-9]{10,11}" />
                 </label>
                 <label>
                   <span id="manualCustomerEmailLabel">E-mail opcional</span>
@@ -1019,7 +1019,7 @@
                 </label>
                 <label>
                   CPF somente se necessário
-                  <input id="manualCustomerCpf" />
+                  <input id="manualCustomerCpf" inputmode="numeric" pattern="[0-9]{11}" />
                 </label>
                 <fieldset id="guestTicketDelivery" class="guest-ticket-delivery">
                   <legend>Entrega do ingresso</legend>
@@ -2485,16 +2485,20 @@
                   <input id="customerUserName" required />
                 </label>
                 <label>
+                  Sobrenome
+                  <input id="customerUserLastName" required autocomplete="family-name" />
+                </label>
+                <label>
                   E-mail
                   <input id="customerUserEmail" type="email" required />
                 </label>
                 <label>
                   Telefone
-                  <input id="customerUserPhone" inputmode="tel" placeholder="(12) 99999-9999" />
+                  <input id="customerUserPhone" type="tel" inputmode="numeric" pattern="[0-9]{10,11}" placeholder="12999999999" />
                 </label>
                 <label>
                   CPF
-                  <input id="customerUserCpf" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" />
+                  <input id="customerUserCpf" inputmode="numeric" pattern="[0-9]{11}" placeholder="00000000000" />
                 </label>
                 <label>
                   Senha temporária
@@ -3011,7 +3015,7 @@
             </label>
             <label>
               Telefone
-              <input id="orderCustomerPhone" />
+              <input id="orderCustomerPhone" type="tel" inputmode="numeric" pattern="[0-9]{10,11}" />
             </label>
           </div>
           <div class="field-row">
@@ -3021,7 +3025,7 @@
             </label>
             <label>
               CPF
-              <input id="orderCustomerCpf" />
+              <input id="orderCustomerCpf" inputmode="numeric" pattern="[0-9]{11}" />
             </label>
           </div>
           <div class="section-title">Observações</div>

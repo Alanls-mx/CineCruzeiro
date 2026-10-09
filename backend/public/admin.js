@@ -5681,9 +5681,9 @@ function fillOrderEditor(order, mode) {
   $("orderPermanentDeleteButton").hidden = !order || !adminCan("orders.delete");
   if (order) {
     $("orderCustomerName").value = order.customerName || "";
-    $("orderCustomerPhone").value = order.customerPhone || "";
+    $("orderCustomerPhone").value = String(order.customerPhone || "").replace(/\D/g, "").slice(0, 11);
     $("orderCustomerEmail").value = order.customerEmail || "";
-    $("orderCustomerCpf").value = order.customerCpf || "";
+    $("orderCustomerCpf").value = String(order.customerCpf || "").replace(/\D/g, "").slice(0, 11);
     $("orderOperationalNotes").value = order.operationalNotes || "";
   }
   $("orderOverlay").hidden = false;
@@ -7822,8 +7822,8 @@ function selectBoxOfficeCustomer(customer) {
   $("manualCustomerUserId").value = customer.id;
   $("manualCustomerName").value = customer.name || "";
   $("manualCustomerEmail").value = customer.email || "";
-  $("manualCustomerPhone").value = customer.phone || "";
-  $("manualCustomerCpf").value = customer.cpf || "";
+  $("manualCustomerPhone").value = String(customer.phone || "").replace(/\D/g, "").slice(0, 11);
+  $("manualCustomerCpf").value = String(customer.cpf || "").replace(/\D/g, "").slice(0, 11);
   $("manualCustomerSearch").value = customer.name || customer.email || "";
   $("registeredCustomerBox")?.classList.add("has-selected-customer");
   $("manualSelectedCustomer").className = "selected-customer-state confirmed";
@@ -11242,10 +11242,12 @@ function fillCustomerUserForm(item) {
   syncCreationControl("customerUser", "cancelCustomerUserCreateButton", "deleteCustomerUserButton", Boolean(item));
   setDisabled("deleteCustomerUserButton", !item);
   $("customerUserId").value = item?.id || "";
-  $("customerUserName").value = item?.name || "";
+  const [customerFirstName = "", ...customerLastName] = String(item?.name || "").trim().split(/\s+/);
+  $("customerUserName").value = customerFirstName;
+  $("customerUserLastName").value = customerLastName.join(" ");
   $("customerUserEmail").value = item?.email || "";
-  $("customerUserPhone").value = item?.phone || "";
-  $("customerUserCpf").value = item?.cpf || "";
+  $("customerUserPhone").value = String(item?.phone || "").replace(/\D/g, "").slice(0, 11);
+  $("customerUserCpf").value = String(item?.cpf || "").replace(/\D/g, "").slice(0, 11);
   $("customerUserPassword").value = "";
   $("customerUserPassword").required = !item;
   $("customerUserActive").checked = item?.active !== false;
@@ -11259,7 +11261,7 @@ async function saveCustomerUser(event) {
   try {
     const payload = {
       id: $("customerUserId").value || undefined,
-      name: $("customerUserName").value,
+      name: `${$("customerUserName").value.trim()} ${$("customerUserLastName").value.trim()}`.trim(),
       email: $("customerUserEmail").value,
       phone: $("customerUserPhone").value,
       cpf: $("customerUserCpf").value,
@@ -12679,6 +12681,13 @@ function applyRbacVisibility() {
 }
 
 function bindEvents() {
+  const numericContactFields = new Set(["manualCustomerPhone", "manualCustomerCpf", "customerUserPhone", "customerUserCpf", "orderCustomerPhone", "orderCustomerCpf"]);
+  document.addEventListener("input", (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !numericContactFields.has(input.id)) return;
+    const value = input.value.replace(/\D/g, "").slice(0, 11);
+    if (value !== input.value) input.value = value;
+  });
   bindAdminSubtabs();
   enhanceImageUploads();
   enhanceLongForms();

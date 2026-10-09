@@ -143,7 +143,7 @@ export default function EventosPage() {
           </div>
           <form onSubmit={submit} className="grid gap-4 bg-brand-900/65 p-5 shadow-2xl shadow-blue-950/20 sm:grid-cols-2 sm:p-7">
             <Field label="Nome" value={form.name} onChange={(value) => setForm({ ...form, name: value })} required />
-            <Field label="Telefone" value={form.phone} onChange={(value) => setForm({ ...form, phone: value })} required />
+            <Field label="Telefone" type="tel" inputMode="numeric" pattern="[0-9]{10,11}" value={form.phone} onChange={(value) => setForm({ ...form, phone: value.replace(/\D/g, "").slice(0, 11) })} required />
             <Field label="E-mail" type="email" value={form.email} onChange={(value) => setForm({ ...form, email: value })} required />
             <label className="absolute -left-[10000px] top-auto h-px w-px overflow-hidden" aria-hidden="true">
               Site
@@ -219,11 +219,11 @@ function Step({ title, text }: { title: string; text: string }) {
   );
 }
 
-function Field({ label, value, onChange, type = "text", required = false }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean }) {
+function Field({ label, value, onChange, type = "text", required = false, inputMode, pattern }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; inputMode?: "numeric"; pattern?: string }) {
   return (
     <label className="block">
       <span className="text-xs font-black uppercase tracking-[.16em] text-slate-400">{label}</span>
-      <input type={type} value={value} required={required} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full" />
+      <input type={type} value={value} required={required} inputMode={inputMode} pattern={pattern} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full" />
     </label>
   );
 }
