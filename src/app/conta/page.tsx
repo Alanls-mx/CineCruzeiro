@@ -24,10 +24,11 @@ import {
   updateAccountProfile,
 } from "@/services/cinemaApi";
 import { trackMarketingEvent } from "@/utils/tracking";
+import { ConcessionLoginCarousel } from "@/components/ConcessionLoginCarousel";
 
 export default function ContaPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#060a12] text-white"><SiteHeader /><main className="mx-auto max-w-[1320px] px-4 py-12 sm:px-6 lg:px-8"><div className="h-80 skeleton-soft" /></main><SiteFooter /></div>}>
+    <Suspense fallback={<div className="flex min-h-dvh flex-col bg-[#060a12] text-white"><SiteHeader /><main className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-12 sm:px-6 lg:px-8"><div className="h-80 skeleton-soft" /></main><SiteFooter /></div>}>
       <ContaPageContent />
     </Suspense>
   );
@@ -345,9 +346,9 @@ function ContaPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#060a12] text-white">
+    <div className="flex min-h-dvh flex-col bg-[#060a12] text-white">
       <SiteHeader />
-      <main className="mx-auto max-w-[1320px] px-4 py-12 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-12 sm:px-6 lg:px-8">
         <h1 className="font-display text-4xl font-black sm:text-5xl">
           {returnTo.startsWith("/clube/assinar") ? "Entre para continuar sua assinatura" : "Acesse seus ingressos"}
         </h1>
@@ -543,13 +544,7 @@ function ContaPageContent() {
                 )}
               </div>
             </div>
-            <div className="hidden min-h-[420px] bg-brand-900/40 lg:block">
-              <div className="flex h-full items-end p-10">
-                <p className="max-w-md text-2xl font-black leading-tight">
-                  Seus ingressos digitais ficam reunidos em um só lugar, prontos para validar na entrada.
-                </p>
-              </div>
-            </div>
+            <ConcessionLoginCarousel />
           </section>
         )}
       </main>
