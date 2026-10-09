@@ -1268,9 +1268,9 @@ function renderConcessionDailySales() {
     <div class="table-pagination-bar">
       <span>Exibindo <strong>${start + 1}–${Math.min(start + pageOrders.length, filtered.length)}</strong> de <strong>${filtered.length}</strong> pedido(s)</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state.concessionDailySalesPage <= 1 ? "disabled" : ""} onclick="changeConcessionDailySalesPage(-1)">← Anterior</button>
+        <button class="ghost-button" type="button" ${state.concessionDailySalesPage <= 1 ? "disabled" : ""} data-static-pager="concession-daily-sales" data-page-delta="-1">← Anterior</button>
         <span class="pager-page-indicator">Página ${state.concessionDailySalesPage} de ${totalPages}</span>
-        <button class="ghost-button" type="button" ${state.concessionDailySalesPage >= totalPages ? "disabled" : ""} onclick="changeConcessionDailySalesPage(1)">Próxima →</button>
+        <button class="ghost-button" type="button" ${state.concessionDailySalesPage >= totalPages ? "disabled" : ""} data-static-pager="concession-daily-sales" data-page-delta="1">Próxima →</button>
       </div>
     </div>
   `;
@@ -2370,14 +2370,14 @@ function renderDashboard() {
     const entries = Object.entries(data.revenueByOrigin || data.salesByOrigin || {});
     const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0);
     $("dashSalesOrigin").innerHTML = entries.length
-      ? entries.map(([name, value]) => `<div class="metric-row clickable-row" onclick="activatePanel('ordersPanel', { scroll: true })"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
+      ? entries.map(([name, value]) => `<div class="metric-row clickable-row" data-admin-panel="ordersPanel"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
       : `<div class="empty-state compact"><strong>Sem vendas</strong><span>As origens aparecerão após os primeiros pedidos.</span></div>`;
   }
   if ($("dashPaymentMethods")) {
     const entries = Object.entries(data.revenueByMethod || data.paymentMethods || {});
     const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0);
     $("dashPaymentMethods").innerHTML = entries.length
-      ? entries.map(([name, value]) => `<div class="metric-row clickable-row" onclick="setBoxOfficeTab('payments')"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
+      ? entries.map(([name, value]) => `<div class="metric-row clickable-row" data-admin-command="show-box-office-payments"><span>${escapeHtml(name)}<small>${total ? Math.round((Number(value || 0) / total) * 100) : 0}% do período</small></span><strong>${money(value)}</strong></div>`).join("")
       : `<div class="empty-state compact"><strong>Sem pagamentos</strong><span>As formas usadas aparecerão aqui.</span></div>`;
   }
   if ($("dashPaymentSummary")) {
@@ -2447,7 +2447,7 @@ function renderDashboard() {
               <small>${item.isInProgress ? `Termina às ${dashboardTime(item.endsAt)} • faltam ${Number(item.remainingMinutes || 0)} min • ` : ""}${Number(item.sold || 0)} / ${Number(item.capacity || 0)} • ${Number(item.occupancyRate || 0)}% • ${escapeHtml(item.status || "Boa disponibilidade")}</small>
             </div>
           </div>`).join("") + renderMiniPager(state.dashSessionsPage, totalPages, sessions.length, "sessions", "sessão(ões)")
-      : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre um horário quando a programação estiver definida.</span><button class="ghost-button" type="button" onclick="createSessionFromDashboard()">Criar sessão</button></div>`;
+      : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre um horário quando a programação estiver definida.</span><button class="ghost-button" type="button" data-admin-command="create-session-from-dashboard">Criar sessão</button></div>`;
   }
   if ($("dashCapacity")) {
     const capacity = data.capacity || {};
@@ -2467,8 +2467,8 @@ function renderDashboard() {
     const pageProducts = products.slice(start, start + pageSize);
 
     $("dashTopProducts").innerHTML = products.length
-      ? pageProducts.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0)))}` : ""}${Number(item.refundTotal || 0) > 0 ? ` • reembolsos ${money(item.refundTotal)}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("") + renderMiniPager(state.dashTopProductsPage, totalPages, products.length, "products", "produto(s)")
-      : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" onclick="activatePanel('concessionsPanel', { scroll: true })">Ver Bomboniere</button></div>`;
+      ? pageProducts.map((item) => `<div class="metric-row clickable-row" data-admin-panel="concessionsPanel"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0)))}` : ""}${Number(item.refundTotal || 0) > 0 ? ` • reembolsos ${money(item.refundTotal)}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("") + renderMiniPager(state.dashTopProductsPage, totalPages, products.length, "products", "produto(s)")
+      : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" data-admin-panel="concessionsPanel">Ver Bomboniere</button></div>`;
   }
   if ($("dashLatestOrders")) {
     const orders = data.latestOrders || [];
@@ -2492,7 +2492,7 @@ function renderDashboard() {
     const club = data.club || {};
     $("dashClubMetrics").innerHTML = `
       <div class="dash-club-compact-grid">
-        <div class="dash-club-stat clickable-row" onclick="activatePanel('clubPanel', { scroll: true })">
+        <div class="dash-club-stat clickable-row" data-admin-panel="clubPanel">
           <span>Assinaturas ativas</span>
           <strong>${Number(club.activeSubscriptions || 0)}</strong>
         </div>
@@ -2518,7 +2518,7 @@ function renderDashboard() {
         </div>
       </div>
       <div class="dash-club-footer-link">
-        <button class="ghost-button" type="button" onclick="activatePanel('clubPanel', { scroll: true })">
+        <button class="ghost-button" type="button" data-admin-panel="clubPanel">
           Gerenciar Clube →
         </button>
       </div>
@@ -2904,7 +2904,7 @@ function renderMovieMediaPreview(inputId, previewId, label) {
   const preview = $(previewId);
   if (!preview) return;
   preview.innerHTML = url
-    ? `<img src="${escapeHtml(adminAssetUrl(url))}" alt="${escapeHtml(label)}" onerror="this.parentElement.textContent='Imagem indisponível'" />`
+    ? `<img src="${escapeHtml(adminAssetUrl(url))}" alt="${escapeHtml(label)}" data-admin-image-fallback />`
     : `<span>${escapeHtml(label)}</span>`;
   const uploadRoot = preview.closest(".image-setting-grid, .media-grid");
   uploadRoot?.classList.toggle("has-image", Boolean(url));
@@ -3291,7 +3291,7 @@ function renderSessions(sessions) {
       <div class="empty-state">
         <strong>Nenhuma sessão cadastrada</strong>
         <span>O filme está salvo normalmente. Adicione um horário apenas quando a programação estiver definida.</span>
-        ${$("movieId").value ? `<button class="ghost-button" type="button" onclick="openSessionEditor()">Adicionar primeira sessão</button>` : `<span class="empty-state-note">Salve o filme antes de cadastrar sessões.</span>`}
+        ${$("movieId").value ? `<button class="ghost-button" type="button" data-admin-command="open-session-editor">Adicionar primeira sessão</button>` : `<span class="empty-state-note">Salve o filme antes de cadastrar sessões.</span>`}
       </div>
     `;
     return;
@@ -3313,9 +3313,9 @@ function renderSessions(sessions) {
     <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
       <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, sortedSessions.length)}</strong> de <strong>${sortedSessions.length}</strong> sessão(ões)</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state.movieSessionsPage <= 1 ? "disabled" : ""} onclick="changeMovieSessionsPage(-1)">← Anterior</button>
+        <button class="ghost-button" type="button" ${state.movieSessionsPage <= 1 ? "disabled" : ""} data-static-pager="movie-sessions" data-page-delta="-1">← Anterior</button>
         <span class="pager-page-indicator">Página ${state.movieSessionsPage} de ${totalPages}</span>
-        <button class="ghost-button" type="button" ${state.movieSessionsPage >= totalPages ? "disabled" : ""} onclick="changeMovieSessionsPage(1)">Próxima →</button>
+        <button class="ghost-button" type="button" ${state.movieSessionsPage >= totalPages ? "disabled" : ""} data-static-pager="movie-sessions" data-page-delta="1">Próxima →</button>
       </div>
     </div>
   `;
@@ -4931,7 +4931,7 @@ function renderSessionAutocorrectPreview(plan) {
   preview.innerHTML = `
     <div class="session-autocorrect-result-head">
       <div><strong>${changes.length ? `${changes.length} ajuste(s) sugerido(s)` : "Programação sem ajustes automáticos"}</strong><span>Intervalo operacional: ${Number(plan.turnaroundMinutes || 0)} min${stepLabel}.</span></div>
-      <button class="icon-only-sm ghost-button" type="button" onclick="clearSessionAutocorrectPreview()" aria-label="Fechar sugestão"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      <button class="icon-only-sm ghost-button" type="button" data-admin-command="clear-session-autocorrect" aria-label="Fechar sugestão"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     ${changes.length ? `<div class="session-autocorrect-changes">${changes.map((change) => `
       <article>
@@ -4940,8 +4940,8 @@ function renderSessionAutocorrectPreview(plan) {
       </article>`).join("")}</div>` : `<div class="empty-state compact"><strong>Nenhuma sessão precisa ser movida.</strong><span>Os horários consultados já respeitam a duração dos filmes e o intervalo escolhido.</span></div>`}
     ${unresolved.length ? `<div class="session-autocorrect-unresolved"><strong>${unresolved.length} conflito(s) exigem revisão manual</strong>${unresolved.map((item) => `<span>${escapeHtml(item.movieTitle)} · ${escapeHtml(item.date)} às ${escapeHtml(item.time)} · ${escapeHtml(item.reason)}</span>`).join("")}</div>` : ""}
     <div class="button-row session-autocorrect-footer">
-      <button class="ghost-button" type="button" onclick="clearSessionAutocorrectPreview()">Descartar sugestão</button>
-      ${changes.length ? `<button id="sessionAutocorrectApplyButton" class="primary-button" type="button" onclick="applySessionAutocorrect()">Aplicar ${changes.length} correção(ões)</button>` : ""}
+      <button class="ghost-button" type="button" data-admin-command="clear-session-autocorrect">Descartar sugestão</button>
+      ${changes.length ? `<button id="sessionAutocorrectApplyButton" class="primary-button" type="button" data-admin-command="apply-session-autocorrect">Aplicar ${changes.length} correção(ões)</button>` : ""}
     </div>`;
 }
 
@@ -5211,9 +5211,9 @@ function renderIssuedTickets() {
     <div class="issued-tickets-pager-bar">
       <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, tickets.length)}</strong> de <strong>${tickets.length}</strong> ingresso(s)</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state.issuedTicketsPage <= 1 ? "disabled" : ""} onclick="changeIssuedTicketsPage(-1)">← Anterior</button>
+        <button class="ghost-button" type="button" ${state.issuedTicketsPage <= 1 ? "disabled" : ""} data-static-pager="issued-tickets" data-page-delta="-1">← Anterior</button>
         <span class="pager-page-indicator">Página ${state.issuedTicketsPage} de ${totalPages}</span>
-        <button class="ghost-button" type="button" ${state.issuedTicketsPage >= totalPages ? "disabled" : ""} onclick="changeIssuedTicketsPage(1)">Próxima →</button>
+        <button class="ghost-button" type="button" ${state.issuedTicketsPage >= totalPages ? "disabled" : ""} data-static-pager="issued-tickets" data-page-delta="1">Próxima →</button>
       </div>
     </div>
     <div class="issued-tickets-rows">
@@ -6028,9 +6028,9 @@ function renderPaymentsCenter() {
     <div class="table-pagination-bar">
       <span>Exibindo <strong>${start + 1}–${Math.min(start + rows.length, allRows.length)}</strong> de <strong>${allRows.length}</strong> pagamento(s)</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state.paymentsPage <= 1 ? "disabled" : ""} onclick="changePaymentsPage(-1)">← Anterior</button>
+        <button class="ghost-button" type="button" ${state.paymentsPage <= 1 ? "disabled" : ""} data-static-pager="payments" data-page-delta="-1">← Anterior</button>
         <span class="pager-page-indicator">Página ${state.paymentsPage} de ${totalPages}</span>
-        <button class="ghost-button" type="button" ${state.paymentsPage >= totalPages ? "disabled" : ""} onclick="changePaymentsPage(1)">Próxima →</button>
+        <button class="ghost-button" type="button" ${state.paymentsPage >= totalPages ? "disabled" : ""} data-static-pager="payments" data-page-delta="1">Próxima →</button>
       </div>
     </div>
   `;
@@ -7847,7 +7847,7 @@ function selectBoxOfficeCustomer(customer) {
       <small>${escapeHtml([customer.email, customer.phone].filter(Boolean).join(" · ") || "Conta cadastrada")}</small>
       <span>Ingressos e itens vinculados serão associados a esta conta.</span>
     </span>
-    <button class="ghost-button compact-button" type="button" onclick="changeBoxOfficeCustomer()">Trocar</button>`;
+    <button class="ghost-button compact-button" type="button" data-admin-command="change-box-office-customer">Trocar</button>`;
   $("manualCustomerResults").innerHTML = "";
   renderManualSaleSummary();
 }
@@ -8205,10 +8205,10 @@ function renderTicketValidationResult(type, payload = {}) {
     ${priorityMarkup}
     <p>${template.copy}</p>
     ${pendingConcessionConfirmation
-      ? `<div class="scanner-confirmation-actions"><button class="primary-button full" id="confirmConcessionFulfillmentButton" type="button" disabled>${escapeHtml(template.action)}</button><button class="ghost-button full" type="button" onclick="scanNextTicket()">Cancelar e ler outro QR</button></div>`
+      ? `<div class="scanner-confirmation-actions"><button class="primary-button full" id="confirmConcessionFulfillmentButton" type="button" disabled>${escapeHtml(template.action)}</button><button class="ghost-button full" type="button" data-admin-command="scan-next-ticket">Cancelar e ler outro QR</button></div>`
       : pendingEntryConfirmation
-        ? `<div class="scanner-confirmation-actions"><button class="primary-button full" id="confirmTicketEntryButton" type="button">${escapeHtml(template.action)}</button><button class="ghost-button full" type="button" onclick="scanNextTicket()">Cancelar e ler outro QR</button></div>`
-      : `<button class="primary-button full" type="button" onclick="scanNextTicket()">${escapeHtml(template.action)}</button>`}
+        ? `<div class="scanner-confirmation-actions"><button class="primary-button full" id="confirmTicketEntryButton" type="button">${escapeHtml(template.action)}</button><button class="ghost-button full" type="button" data-admin-command="scan-next-ticket">Cancelar e ler outro QR</button></div>`
+      : `<button class="primary-button full" type="button" data-admin-command="scan-next-ticket">${escapeHtml(template.action)}</button>`}
   `;
   if (pendingConcessionConfirmation) {
     const checkboxes = [...target.querySelectorAll("[data-concession-confirmation]")];
@@ -8760,9 +8760,9 @@ function renderConcessionInsights() {
     <div class="table-pagination-bar" style="margin-bottom: 12px;">
       <span>Exibindo <strong>${start + 1}–${Math.min(start + pageProducts.length, products.length)}</strong> de <strong>${products.length}</strong> produto(s)</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state.concessionBreakdownPage <= 1 ? "disabled" : ""} onclick="changeConcessionBreakdownPage(-1)">← Anterior</button>
+        <button class="ghost-button" type="button" ${state.concessionBreakdownPage <= 1 ? "disabled" : ""} data-static-pager="concession-breakdown" data-page-delta="-1">← Anterior</button>
         <span class="pager-page-indicator">Página ${state.concessionBreakdownPage} de ${totalPages}</span>
-        <button class="ghost-button" type="button" ${state.concessionBreakdownPage >= totalPages ? "disabled" : ""} onclick="changeConcessionBreakdownPage(1)">Próxima →</button>
+        <button class="ghost-button" type="button" ${state.concessionBreakdownPage >= totalPages ? "disabled" : ""} data-static-pager="concession-breakdown" data-page-delta="1">Próxima →</button>
       </div>
     </div>
   ` : "";
@@ -8851,7 +8851,7 @@ function fillConcessionForm(item) {
 function renderConcessionPreview() {
   const url = cleanAdminAssetUrl($("concessionImageUrl").value);
   $("concessionImagePreview").innerHTML = url
-    ? `<img src="${escapeHtml(adminAssetUrl(url))}" alt="Prévia do produto" onerror="this.parentElement.innerHTML='<span>Imagem indisponível</span>'" />`
+    ? `<img src="${escapeHtml(adminAssetUrl(url))}" alt="Prévia do produto" data-admin-image-fallback />`
     : "<span>Imagem do produto</span>";
 }
 
@@ -10546,7 +10546,7 @@ async function viewEmailCampaignReport(id) {
     if (state.emailCampaignReportId !== id) return;
     const failures = [...(failed.recipients || []), ...(retryable.recipients || []), ...(unknown.recipients || [])];
     target.innerHTML = `
-      <div class="campaign-report-head"><div><strong>${escapeHtml(campaign.subject || "Relatório da campanha")}</strong><small>${escapeHtml(campaign.error || "Resultados consolidados a partir dos destinatários persistidos.")}</small></div><button type="button" class="icon-button" aria-label="Fechar relatório" onclick="this.closest('.campaign-report').hidden=true">×</button></div>
+      <div class="campaign-report-head"><div><strong>${escapeHtml(campaign.subject || "Relatório da campanha")}</strong><small>${escapeHtml(campaign.error || "Resultados consolidados a partir dos destinatários persistidos.")}</small></div><button type="button" class="icon-button" aria-label="Fechar relatório" data-admin-close="campaign-report">×</button></div>
       <div class="campaign-report-grid">
         <div class="campaign-report-metric"><span>Elegíveis</span><strong>${Number(campaign.customerCount || 0)}</strong></div>
         <div class="campaign-report-metric"><span>Processados</span><strong>${Number(campaign.processed || 0)}</strong></div>
@@ -11210,9 +11210,9 @@ function renderCustomerUsers() {
     <div class="table-pagination-bar customer-pagination-bar">
       <span>Exibindo <strong>${start + 1}-${Math.min(start + pageItems.length, items.length)}</strong> de <strong>${items.length}</strong> cliente(s)</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state.customerAccountsPage <= 1 ? "disabled" : ""} onclick="changeCustomerAccountsPage(-1)">Anterior</button>
+        <button class="ghost-button" type="button" ${state.customerAccountsPage <= 1 ? "disabled" : ""} data-static-pager="customer-accounts" data-page-delta="-1">Anterior</button>
         <span class="pager-page-indicator">Página ${state.customerAccountsPage} de ${totalPages}</span>
-        <button class="ghost-button" type="button" ${state.customerAccountsPage >= totalPages ? "disabled" : ""} onclick="changeCustomerAccountsPage(1)">Próxima</button>
+        <button class="ghost-button" type="button" ${state.customerAccountsPage >= totalPages ? "disabled" : ""} data-static-pager="customer-accounts" data-page-delta="1">Próxima</button>
       </div>
     </div>
   ` : "";
@@ -11493,9 +11493,9 @@ function renderClub() {
         <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
           <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, sortedSubscriptions.length)}</strong> de <strong>${sortedSubscriptions.length}</strong> assinatura(s)</span>
           <div class="pager-controls">
-            <button class="ghost-button" type="button" ${state.clubSubscriptionsPage <= 1 ? "disabled" : ""} onclick="changeClubSubscriptionsPage(-1)">← Anterior</button>
+            <button class="ghost-button" type="button" ${state.clubSubscriptionsPage <= 1 ? "disabled" : ""} data-static-pager="club-subscriptions" data-page-delta="-1">← Anterior</button>
             <span class="pager-page-indicator">Página ${state.clubSubscriptionsPage} de ${totalPages}</span>
-            <button class="ghost-button" type="button" ${state.clubSubscriptionsPage >= totalPages ? "disabled" : ""} onclick="changeClubSubscriptionsPage(1)">Próxima →</button>
+            <button class="ghost-button" type="button" ${state.clubSubscriptionsPage >= totalPages ? "disabled" : ""} data-static-pager="club-subscriptions" data-page-delta="1">Próxima →</button>
           </div>
         </div>
         <div class="list">
@@ -11550,9 +11550,9 @@ function renderClub() {
         <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
           <span>Exibindo <strong>${usageStart + 1}–${Math.min(usageStart + pageUsage.length, usage.length)}</strong> de <strong>${usage.length}</strong> registro(s)</span>
           <div class="pager-controls">
-            <button class="ghost-button" type="button" ${state.clubUsagePage <= 1 ? "disabled" : ""} onclick="changeClubUsagePage(-1)">← Anterior</button>
+            <button class="ghost-button" type="button" ${state.clubUsagePage <= 1 ? "disabled" : ""} data-static-pager="club-usage" data-page-delta="-1">← Anterior</button>
             <span class="pager-page-indicator">Página ${state.clubUsagePage} de ${totalUsagePages}</span>
-            <button class="ghost-button" type="button" ${state.clubUsagePage >= totalUsagePages ? "disabled" : ""} onclick="changeClubUsagePage(1)">Próxima →</button>
+            <button class="ghost-button" type="button" ${state.clubUsagePage >= totalUsagePages ? "disabled" : ""} data-static-pager="club-usage" data-page-delta="1">Próxima →</button>
           </div>
         </div>
         <div class="orders-table">
@@ -11588,7 +11588,7 @@ async function viewClubSubscription(subscriptionId) {
     target.innerHTML = `
       <div class="subscription-detail-heading">
         <div><div class="section-title">Histórico da assinatura</div><p class="helper-text">${escapeHtml(subscription.user?.name || subscription.user?.email || subscription.id || "Assinatura")}</p></div>
-        <button class="icon-button" type="button" title="Fechar detalhes" aria-label="Fechar detalhes" onclick="this.closest('.subscription-detail').hidden=true">×</button>
+        <button class="icon-button" type="button" title="Fechar detalhes" aria-label="Fechar detalhes" data-admin-close="subscription-detail">×</button>
       </div>
       <div class="subscription-detail-grid">
         <section><h3>Mensalidades</h3>${rows(detail.payments, (item) => `<p><strong>${money(item.amount)}</strong><span>${new Date(item.approvedAt || item.createdAt).toLocaleString("pt-BR")} • ${escapeHtml(item.provider || "manual")}</span></p>`, "Nenhuma mensalidade registrada.")}</section>
@@ -11967,8 +11967,8 @@ function commercialCatalogAccessMarkup() {
       <code>${escapeHtml(commercialCatalogEndpointUrl())}</code>
       <small>Prefira o header <code>Authorization: Bearer TOKEN</code>. Para integrações que exigem uma URL, use também <code>?token=TOKEN</code>.</small>
       <div class="integration-catalog-actions">
-        <button class="ghost-button" type="button" onclick="revealCommercialCatalogToken()">Revelar token</button>
-        <button class="ghost-button" type="button" onclick="copyCommercialCatalogToken()">Copiar token</button>
+        <button class="ghost-button" type="button" data-admin-command="reveal-commercial-token">Revelar token</button>
+        <button class="ghost-button" type="button" data-admin-command="copy-commercial-token">Copiar token</button>
       </div>
       <div id="commercialCatalogLinkPreview" class="integration-catalog-link-preview" aria-live="polite"></div>
     </section>
@@ -11985,7 +11985,7 @@ function updateCommercialCatalogLinkPreview() {
     return;
   }
   const link = `${commercialCatalogEndpointUrl()}?token=${encodeURIComponent(token)}`;
-  target.innerHTML = `<code>${escapeHtml(link)}</code><button class="ghost-button" type="button" onclick="copyCommercialCatalogLink()">Copiar link</button>`;
+  target.innerHTML = `<code>${escapeHtml(link)}</code><button class="ghost-button" type="button" data-admin-command="copy-commercial-link">Copiar link</button>`;
 }
 
 async function loadCommercialCatalogToken() {
@@ -12119,7 +12119,7 @@ function renderIntegrationContext(integration, testResult = null) {
         <strong>O que esta integração recebe</strong>
         <p>Somente os eventos marcados são enfileirados. A entrega usa HMAC SHA-256 com timestamp, timeout configurável e fila persistente com novas tentativas para falhas transitórias.</p>
         <p>Fila: ${Number(integration.outbox?.queued || 0)} pendente(s), ${Number(integration.outbox?.processing || 0)} em processamento, ${Number(integration.outbox?.dead || 0)} em dead letter.</p>
-        <button class="ghost-button" type="button" onclick="retryCrmDeadLetters()" ${Number(integration.outbox?.dead || 0) ? "" : "disabled"}>Reenfileirar falhas</button>
+        <button class="ghost-button" type="button" data-admin-command="retry-crm-dead-letters" ${Number(integration.outbox?.dead || 0) ? "" : "disabled"}>Reenfileirar falhas</button>
         <small>Falhas permanentes ficam para inspeção. Itens ainda pendentes que forem desmarcados são cancelados antes de enviar.</small>
       </section>
     ` : ""}
@@ -12222,7 +12222,7 @@ function integrationFieldInput(field, integration) {
     <label class="integration-field ${field.secret ? "secret-field" : ""}">
       ${escapeHtml(field.label)}
       <input type="${field.secret ? "password" : escapeHtml(field.type || "text")}" value="${field.secret ? "" : escapeHtml(value)}" ${common} />
-      ${integration.key === "commercialCatalog" && field.key === "accessToken" ? `<button class="ghost-button" type="button" onclick="generateCommercialCatalogToken()">Gerar token seguro</button>` : ""}
+      ${integration.key === "commercialCatalog" && field.key === "accessToken" ? `<button class="ghost-button" type="button" data-admin-command="generate-commercial-token">Gerar token seguro</button>` : ""}
       ${integrationSecurityHint(field, integration)}
     </label>
   `;
@@ -12304,9 +12304,9 @@ function renderWebhookHistory() {
     <div class="table-pagination-bar">
       <span>Exibindo <strong>${start + 1}–${Math.min(start + pageRuns.length, runs.length)}</strong> de <strong>${runs.length}</strong></span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state.webhookHistoryPage <= 1 ? "disabled" : ""} onclick="changeWebhookHistoryPage(-1)">← Anterior</button>
+        <button class="ghost-button" type="button" ${state.webhookHistoryPage <= 1 ? "disabled" : ""} data-static-pager="webhook-history" data-page-delta="-1">← Anterior</button>
         <span class="pager-page-indicator">Página ${state.webhookHistoryPage} de ${pages}</span>
-        <button class="ghost-button" type="button" ${state.webhookHistoryPage >= pages ? "disabled" : ""} onclick="changeWebhookHistoryPage(1)">Próxima →</button>
+        <button class="ghost-button" type="button" ${state.webhookHistoryPage >= pages ? "disabled" : ""} data-static-pager="webhook-history" data-page-delta="1">Próxima →</button>
       </div>
     </div>` : "") : `<div class="empty-state compact"><strong>Console vazio</strong><span>Os testes recentes aparecerão aqui.</span></div>`;
 }
@@ -12754,7 +12754,61 @@ function bindEvents() {
 
   document.addEventListener("mouseover", (event) => showChartHintFromPoint(event.target));
   document.addEventListener("focusin", (event) => showChartHintFromPoint(event.target));
+  document.addEventListener("error", (event) => {
+    if (event.target.matches?.("img[data-admin-image-fallback]")) {
+      event.target.parentElement.textContent = "Imagem indisponível";
+    }
+  }, true);
   document.addEventListener("click", (event) => {
+    const staticPager = event.target.closest?.("[data-static-pager][data-page-delta]");
+    if (staticPager && !staticPager.disabled) {
+      const pagers = {
+        "concession-daily-sales": changeConcessionDailySalesPage,
+        "movie-sessions": changeMovieSessionsPage,
+        "issued-tickets": changeIssuedTicketsPage,
+        payments: changePaymentsPage,
+        "concession-breakdown": changeConcessionBreakdownPage,
+        "customer-accounts": changeCustomerAccountsPage,
+        "club-subscriptions": changeClubSubscriptionsPage,
+        "club-usage": changeClubUsagePage,
+        "webhook-history": changeWebhookHistoryPage
+      };
+      const pager = Object.hasOwn(pagers, staticPager.dataset.staticPager) ? pagers[staticPager.dataset.staticPager] : null;
+      const delta = Number(staticPager.dataset.pageDelta);
+      if (pager && (delta === -1 || delta === 1)) pager(delta);
+      return;
+    }
+    const adminPanel = event.target.closest?.("[data-admin-panel]");
+    if (adminPanel && ["ordersPanel", "concessionsPanel", "clubPanel"].includes(adminPanel.dataset.adminPanel)) {
+      activatePanel(adminPanel.dataset.adminPanel, { scroll: true });
+      return;
+    }
+    const adminCommand = event.target.closest?.("[data-admin-command]");
+    if (adminCommand && !adminCommand.disabled) {
+      const commands = {
+        "show-box-office-payments": () => setBoxOfficeTab("payments"),
+        "create-session-from-dashboard": createSessionFromDashboard,
+        "open-session-editor": () => openSessionEditor(),
+        "clear-session-autocorrect": clearSessionAutocorrectPreview,
+        "apply-session-autocorrect": applySessionAutocorrect,
+        "change-box-office-customer": changeBoxOfficeCustomer,
+        "scan-next-ticket": scanNextTicket,
+        "reveal-commercial-token": revealCommercialCatalogToken,
+        "copy-commercial-token": copyCommercialCatalogToken,
+        "copy-commercial-link": copyCommercialCatalogLink,
+        "retry-crm-dead-letters": retryCrmDeadLetters,
+        "generate-commercial-token": generateCommercialCatalogToken
+      };
+      const command = Object.hasOwn(commands, adminCommand.dataset.adminCommand) ? commands[adminCommand.dataset.adminCommand] : null;
+      if (command) void command();
+      return;
+    }
+    const adminClose = event.target.closest?.("[data-admin-close]");
+    if (adminClose && ["campaign-report", "subscription-detail"].includes(adminClose.dataset.adminClose)) {
+      const container = adminClose.closest(`.${adminClose.dataset.adminClose}`);
+      if (container) container.hidden = true;
+      return;
+    }
     if (event.target.closest?.("[data-chart-hint-date]")) {
       showChartHintFromPoint(event.target);
       return;

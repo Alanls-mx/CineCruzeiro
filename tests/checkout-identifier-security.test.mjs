@@ -49,6 +49,19 @@ test("listas administrativas tratam IDs como dados, nao codigo inline", () => {
   assert.doesNotMatch(button, /onclick=|<img/);
 });
 
+test("painel e login funcionam sem JavaScript inline na CSP do backend", () => {
+  const admin = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
+  const login = readFileSync(fileURLToPath(new URL("../backend/public/admin-login.html", import.meta.url)), "utf8");
+  const server = readFileSync(fileURLToPath(new URL("../backend/server.js", import.meta.url)), "utf8");
+  assert.doesNotMatch(admin, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
+  assert.doesNotMatch(login, /<script(?![^>]*\bsrc=)[^>]*>/i);
+  assert.match(login, /<script src="\.\/admin-login\.js" defer><\/script>/);
+  assert.ok(readFileSync(fileURLToPath(new URL("../backend/public/admin-login.js", import.meta.url)), "utf8").includes('form.addEventListener("submit"'));
+  assert.match(server, /"script-src 'self' https:\/\/sdk\.mercadopago\.com/);
+  assert.doesNotMatch(server, /"script-src [^"\n]*'unsafe-inline'/);
+  assert.match(server, /"script-src-attr 'none'"/);
+});
+
 test("acoes delegadas mantem selecao, paginacao e impressao", () => {
   const source = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
   const start = source.indexOf('  document.addEventListener("click", (event) => {', source.indexOf('showChartHintFromPoint(event.target)'));
@@ -58,6 +71,16 @@ test("acoes delegadas mantem selecao, paginacao e impressao", () => {
   let handler;
   const context = {
     document: { addEventListener: (type, callback) => { if (type === "click") handler = callback; } },
+    changeConcessionDailySalesPage: (delta) => calls.push(["daily", delta]),
+    changeMovieSessionsPage() {}, changeIssuedTicketsPage() {}, changePaymentsPage() {},
+    changeConcessionBreakdownPage() {}, changeCustomerAccountsPage() {},
+    changeClubSubscriptionsPage() {}, changeClubUsagePage() {}, changeWebhookHistoryPage() {},
+    activatePanel: (panel) => calls.push(["panel", panel]),
+    setBoxOfficeTab() {}, createSessionFromDashboard() {}, openSessionEditor() {},
+    clearSessionAutocorrectPreview() {}, applySessionAutocorrect() {},
+    changeBoxOfficeCustomer() {}, scanNextTicket() {},
+    revealCommercialCatalogToken() {}, copyCommercialCatalogToken() {},
+    copyCommercialCatalogLink() {}, retryCrmDeadLetters() {}, generateCommercialCatalogToken() {},
     changeDashMoviePage: (delta) => calls.push(["page", delta]),
     changeDashSessionsPage() {}, changeDashTopProductsPage() {}, changeDashLatestOrdersPage() {},
     selectRoom: (id) => calls.push(["room", id]),
@@ -70,5 +93,7 @@ test("acoes delegadas mantem selecao, paginacao e impressao", () => {
   click("[data-admin-select-kind][data-admin-select-id]", { adminSelectKind: "room", adminSelectId: "room-1" });
   click("[data-dash-pager][data-page-delta]", { dashPager: "movies", pageDelta: "1" });
   click("[data-point-print-action][data-point-print-id]", { pointPrintAction: "ticket", pointPrintId: "ticket-1" });
-  assert.deepEqual(calls, [["room", "room-1"], ["page", 1], ["print", "ticket-1"]]);
+  click("[data-static-pager][data-page-delta]", { staticPager: "concession-daily-sales", pageDelta: "-1" });
+  click("[data-admin-panel]", { adminPanel: "clubPanel" });
+  assert.deepEqual(calls, [["room", "room-1"], ["page", 1], ["print", "ticket-1"], ["daily", -1], ["panel", "clubPanel"]]);
 });

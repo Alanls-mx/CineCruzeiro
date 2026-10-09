@@ -14,6 +14,7 @@ const publicContentSecurityPolicy = [
   "img-src 'self' data: blob: https:",
   "media-src 'self' blob: https:",
   "script-src 'self' 'unsafe-inline' https://sdk.mercadopago.com https://www.mercadopago.com https://http2.mlstatic.com https://assets.pagseguro.com.br https://accounts.google.com https://www.googletagmanager.com https://connect.facebook.net https://static.cloudflareinsights.com",
+  "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   `connect-src 'self' https: wss:${process.env.NODE_ENV === "production" ? "" : " ws:"}`,

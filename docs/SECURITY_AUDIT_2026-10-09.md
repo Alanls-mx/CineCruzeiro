@@ -32,7 +32,7 @@ Revisao pontual do backend, checkout, painel administrativo, uploads, downloads 
 - O backend envia `X-meli-session-id` e ja inclui itens, quantidades, preco unitario, comprador e `statement_descriptor` no caminho correto de Orders para cartao. Os testes verificam esses campos e a separacao do sandbox.
 - URL para notificacoes Order/Webhooks do Cine Cruzeiro: `https://lumixengine.com/projects/cinecruzeiro/api/webhooks/mercado-pago`. Orders API nao aceita `notification_url` no corpo; configurar a URL no painel do Mercado Pago.
 - O backend exige assinatura `x-signature` e consulta o estado da order no provedor antes de aprovar. Nao desabilitar essa verificacao para eliminar HTTP 401. Conferir no painel o segredo de Webhooks da mesma aplicacao/ambiente cadastrado no backend; reenviar um evento de teste apos alinhar os segredos.
-- A chave publica completa de producao ainda precisa ser confirmada no painel administrativo. Sem ela, o Brick de cartao permanece indisponivel. Nao colar Access Token em chats ou arquivos.
+- A consulta publica em 09/10 confirmou chave de producao com 44 caracteres e checkout habilitado. O endpoint oficial `GET /v1/payment_methods` aceitou a chave e retornou 12 metodos, incluindo Visa. Isto valida a chave, nao a tokenizacao do Brick nem uma cobranca concluida. Nao colar Access Token em chats ou arquivos.
 - Nenhuma cobranca real ou teste de webhook de producao foi realizado nesta auditoria.
 
 ## PostgreSQL e autorizacao
@@ -54,11 +54,18 @@ Revisao pontual do backend, checkout, painel administrativo, uploads, downloads 
 ## Riscos residuais e operacao
 
 - `npm audit` completo ainda aponta 7 avisos em dependencias de desenvolvimento do Tailwind 3. A migracao para Tailwind 4 e uma mudanca maior de CSS; testar separadamente. O runtime de producao nao apresenta alertas no audit atual.
-- A CSP ainda usa `unsafe-inline` por dependencias existentes do Next/admin. Remover apenas com migração de handlers inline e teste visual do checkout e Studio.
-- O admin ainda possui handlers inline estaticos; a varredura atual nao encontrou interpolacao dinamica nos atributos de evento. Uma revisao contextual completa de XSS/DOM e a migracao dos handlers estaticos ainda sao necessarias antes de remover `unsafe-inline` da CSP.
+- A CSP do backend nao usa mais `unsafe-inline` para scripts: login e painel nao possuem blocos ou atributos de evento inline, e `script-src-attr 'none'` impede sua reintroducao no navegador. O login/2FA passou em smoke test Chromium com essa politica. A CSP do Next ainda usa `unsafe-inline` para seus scripts de hidratacao; seus atributos de evento tambem estao bloqueados por `script-src-attr 'none'`. Remover o ultimo `unsafe-inline` exige nonce integrado ao renderizador Next e homologacao visual do checkout e Studio.
 - Os limites de taxa em memoria, inclusive o novo limite agregado de reservas por IP, nao sao compartilhados entre processos. Para multiplas instancias, configurar protecao Nginx/borda ou armazenamento compartilhado e validar a cadeia de proxy para IP real. HTTP e WebSocket agora compartilham a mesma validacao: o backend confia no ultimo endereco valido de `X-Forwarded-For` apenas quando a conexao vem de loopback; o proxy deve anexar o IP real como ultimo salto e o backend nao deve ser exposto diretamente.
 - Verificar na VPS isolamento dos bancos por cinema, privilegios minimos do usuario PostgreSQL, firewall, TLS, backup/restauracao e permissoes dos diretorios de upload. Nenhuma configuracao remota foi modificada.
 - O registro das cinco instalacoes passou nas validacoes, mas nenhum checkout de cada cinema foi homologado. Confirmar URLs, chaves e segredos por instalacao antes de publicar.
+
+## Continuidade de CSP e homologacao - 09/10
+
+- O JavaScript inline de `admin-login.html` foi movido para `admin-login.js`. Os handlers estaticos restantes do painel agora usam atributos `data-*` e um listener delegado; imagens com erro usam listener de captura. A CSP do backend removeu `unsafe-inline` de scripts, bloqueou atributos de evento e objetos incorporados. A CSP do Next bloqueia atributos de evento, mas preserva seus scripts inline de hidratacao.
+- Testes locais: 19 testes de seguranca, 7 testes focados em Orders/sandbox/webhook, lint, build e validacao do registro passaram. Smoke Chromium confirmou transicao login para 2FA sob a CSP nova.
+- Verificacoes de producao somente leitura: configuracao publica Mercado Pago com chave de producao valida; cinco rotas `/api/health/ready` retornaram HTTP 200. Nenhum pagamento real, pedido de teste remoto ou reenvio de webhook foi executado.
+- Homologacao ainda pendente: tokenizacao e pagamento com conta/cartao de teste autorizado, evento assinado entregue pelo Mercado Pago e confrontado com order consultada no provedor. O historico de HTTP 401 exige alinhar o segredo da aplicacao/ambiente no painel; os testes locais de assinatura nao provam esse alinhamento remoto.
+- A publicacao coordenada depende de acesso SSH autenticado a VPS. Nesta maquina o host conhecido respondeu `Permission denied (publickey)`; nao alterar `current` nem publicar por caminho alternativo sem acesso operacional verificado.
 
 ## Referencias oficiais
 
