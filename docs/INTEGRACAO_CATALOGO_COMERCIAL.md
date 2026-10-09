@@ -26,13 +26,13 @@ Autenticação recomendada:
 Authorization: Bearer SEU_TOKEN
 ```
 
-Para integrações que só aceitam uma URL, também é aceito:
+O formato legado para integrações que só aceitam uma URL ainda é aceito temporariamente:
 
 ```text
 https://lumixengine.com/projects/cinecruzeiro/api/commercial/catalog?token=SEU_TOKEN
 ```
 
-Não use o token em links públicos, páginas indexadas ou código exposto no navegador. Para uma aplicação web parceira, prefira o header `Authorization` e cadastre sua origem permitida no painel.
+Esse formato está depreciado: respostas com `?token=` usam `Cache-Control: no-store` e `Referrer-Policy: no-referrer`, mas o token ainda pode aparecer em logs de proxy, históricos e monitoramento. Migre os consumidores para `Authorization: Bearer SEU_TOKEN` ou `X-Commercial-Catalog-Token`; não use o token em links públicos, páginas indexadas ou código exposto no navegador. Para uma aplicação web parceira, cadastre sua origem permitida no painel.
 
 ## Dados entregues
 
