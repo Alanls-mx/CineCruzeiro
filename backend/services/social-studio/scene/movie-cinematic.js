@@ -30,8 +30,8 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   const officialTitle=embeddedMovieTitle(draft,sourceUrl);
   if(family==='movie-spotlight' && officialTitle.hide) {
     const tallStory=format.id==='story' && (draft.sourceAsset?.width/draft.sourceAsset?.height || 2/3)<=.76;
-    plan.art=tallStory?[.03,-.03,.94,.72]:[.06,-.03,.88,.67];
-    if(tallStory)plan.data=[.065,.70,.87,.18];
+    plan.art=tallStory?[.03,-.03,.94,.735]:[.06,-.03,.88,.67];
+    if(tallStory)plan.data=[.065,.75,.87,.14];
     plan.cover=false;
     plan.posterCrop=false;
   }
@@ -52,8 +52,9 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
     elements.push({id,name:id,role:id,type:'text',...bounds,...fit,fontFamily:id==='title'?'Social Display':'Social Text',fontWeight:id==='title'?900:600,fill:id==='detail'?accent:'#ffffff',lineHeight:1.12,align:'left',opacity:1,visible:true,hierarchy:id==='title'?'primary':'secondary',...extra});
     if(extra.visible!==false)manifest.push({id,text:String(value).replace(/\s+/g,' ').trim()});
   };
+  const immersiveSquare=family==='movie-immersive' && format.id==='square';
   const blur=Number.isFinite(draft.movieBackgroundBlur)?draft.movieBackgroundBlur:family==='movie-full-bleed'?10:Math.max(10,(dir.blur || 27)-(format.id==='square'?3:0));
-  image('background-blur',!plan.cover?sourceUrl || backgroundUrl:backgroundUrl || sourceUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:dir.focusX>50?25:75,focusY:60,opacity:.96,effects:{layer:'background',blur,brightness:dark?.74:.9,saturation:1,scale:1.3,mask:'none'}});
+  image('background-blur',immersiveSquare?backgroundUrl || sourceUrl:!plan.cover?sourceUrl || backgroundUrl:backgroundUrl || sourceUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:immersiveSquare?50:dir.focusX>50?25:75,focusY:immersiveSquare?45:60,opacity:immersiveSquare?.42:.96,effects:{layer:'background',blur:immersiveSquare && !Number.isFinite(draft.movieBackgroundBlur)?Math.min(blur,15):blur,brightness:immersiveSquare?.86:dark?.74:.9,saturation:1,scale:immersiveSquare?1.04:1.3,mask:'none'}});
   image('film-wash',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'wash',color:palette.dominantColor,colorWash:Math.min(14,atmospheric.colorWash || 9)}});
   image('film-atmosphere',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'atmosphere',color:palette.accentColor,grain:Math.min(2,atmospheric.grain || 1),overlay:atmospheric.overlay || 'none'}});
   elements.push({id:'cinematic-wash',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:side==='left'?'right':'left',stops:[{offset:0,color:alpha(bg,.88)},{offset:.62,color:alpha(bg,.2)},{offset:1,color:alpha(bg,.03)}],opacity:1});
@@ -63,12 +64,17 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
     const ratio=draft.sourceAsset?.width/draft.sourceAsset?.height || 2/3;
     const width=Math.min(hero.width,hero.height*ratio),height=width/ratio;
     hero={x:hero.x+(hero.width-width)/2,y:hero.y+(hero.height-height)/2,width,height};
+    if(dir.lateralBias && ['movie-spotlight','movie-immersive'].includes(family) && hero.width<w*.82) {
+      const shift=(dir.lateralBias==='right'?1:-1)*w*.06;
+      hero.x=Math.max(w*.04,Math.min(w*.96-hero.width,hero.x+shift));
+    }
   }
   if(heroSource) {
     if(atmospheric.glow)image('hero-light',heroSource,{x:Math.max(0,hero.x-w*.09),y:Math.max(0,hero.y-h*.05),width:Math.min(w,hero.width+w*.18),height:Math.min(h,hero.height+h*.10)},{role:'ambient',effects:{layer:'glow',color:palette.accentColor,glow:Math.min(30,atmospheric.glow*1.35)}});
     if(!plan.cover)image('ambient-shadow',heroSource,{...hero,x:hero.x+14*u,y:hero.y+18*u},{role:'ambient',fit:'contain',effects:{layer:'ambient-shadow',mask:'fade-all',blend:35,shadow:28,scale:1}});
     const edge=dir.edgeTreatment || 'soft';
-    image('artwork',heroSource,hero,{role:'artwork',fit:plan.cover?'cover':'contain',keepRatio:true,locked:true,focusX:dir.focusX,focusY:plan.posterCrop?18:dir.focusY,hierarchy:'primary',effects:{layer:'hero',mask:plan.cover?'cinematic-bottom':edge==='preserved'?'none':edge==='progressive'?'cinematic-bottom':'fade-all',blend:plan.cover?65:edge==='progressive'?40:edge==='soft'?format.id==='square'?52:26:0,brightness:1,scale:1}});
+    const spotlightPoster=family==='movie-spotlight' && !plan.cover;
+    image('artwork',heroSource,hero,{role:'artwork',fit:plan.cover?'cover':'contain',keepRatio:true,locked:true,focusX:dir.focusX,focusY:plan.posterCrop?18:dir.focusY,hierarchy:'primary',effects:{layer:'hero',mask:spotlightPoster?'fade-sides-bottom':plan.cover?'cinematic-bottom':edge==='preserved'?'none':edge==='progressive'?'cinematic-bottom':'fade-all',blend:spotlightPoster?29:plan.cover?65:edge==='progressive'?40:edge==='soft'?format.id==='square'?52:26:0,brightness:1,scale:1}});
   }
   image('film-vignette',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'vignette',color:bg,vignette:Math.min(36,atmospheric.vignette || 18)}});
   // Typography has reserved zones outside the sharp artwork, even in full-bleed compositions.
@@ -99,7 +105,7 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   const footer=box([.065,.905,.60,.038]);
   const footY=top+area*.88;
   // This foreground veil joins the atmosphere and action area without a hard footer bar.
-  elements.splice(elements.findIndex(e=>e.type==='text'),0,{id:'foreground-gradient',role:'ambient',type:'gradient',x:0,y:footY-area*.10,width:w,height:h-footY+area*.10,direction:'bottom',stops:[{offset:0,color:alpha(bg,0)},{offset:.45,color:alpha(bg,.86)},{offset:1,color:bg}],opacity:1});
+  elements.splice(elements.findIndex(e=>e.type==='text'),0,{id:'foreground-gradient',role:'ambient',type:'gradient',x:0,y:footY-area*.10,width:w,height:h-footY+area*.10,direction:'bottom',stops:[{offset:0,color:alpha(bg,0)},{offset:.45,color:alpha(bg,format.id==='story'?.72:.86)},{offset:1,color:alpha(bg,format.id==='story'?.90:1)}],opacity:1});
   tx('cta',draft.cta,footer,34,{lines:1,hierarchy:'tertiary'});
   tx('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),box([.065,.955,.60,.032]),26,{lines:1,hierarchy:'tertiary'});
   const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;

@@ -11,6 +11,7 @@ const MASKS = [
   "fade-all",
   "radial",
   "cinematic-bottom",
+  "fade-sides-bottom",
 ];
 const OVERLAYS = ["none", "fog", "dust", "light-leak", "gradient-light"];
 const PRESETS = {

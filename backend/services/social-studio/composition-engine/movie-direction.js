@@ -16,6 +16,11 @@ function movieDirection(draft,input,analysis,backdrop,backdropAnalysis) {
   }
   if(!backdrop && ['movie-full-bleed','movie-character'].includes(family))family='cinematic-blend';
   const quiet=analysis?.zones?.find(z=>z.id==='left')?.complexity<analysis?.zones?.find(z=>z.id==='right')?.complexity?'left':'right';
+  const leftComplexity=analysis?.zones?.find(z=>z.id==='left')?.complexity;
+  const rightComplexity=analysis?.zones?.find(z=>z.id==='right')?.complexity;
+  const lateralBias=Number.isFinite(leftComplexity) && Number.isFinite(rightComplexity)
+    && Math.abs(leftComplexity-rightComplexity)>=.055 && Math.min(leftComplexity,rightComplexity)<.55
+    ?leftComplexity<rightComplexity?'right':'left':null;
   const focal=['movie-full-bleed','movie-character'].includes(family)?backdropAnalysis || analysis:analysis;
   const brightness=analysis?.brightness ?? .42;
   const complexity=analysis?.zones?.reduce((sum,zone)=>sum+zone.complexity,0)/(analysis?.zones?.length || 1) || 0;
@@ -32,7 +37,7 @@ function movieDirection(draft,input,analysis,backdrop,backdropAnalysis) {
     :brightness>.58?'soft':'progressive';
   const blur=Number.isFinite(draft.movieBackgroundBlur)?draft.movieBackgroundBlur
     :Math.round(Math.max(12,Math.min(draft.formatId==='square'?21:34,14+complexity*42+(brightness<.28?4:0))));
-  return {family,automatic:!manual,copySide:quiet,focusX:focal?.focusX || 50,focusY:focal?.focusY || 42,
+  return {family,automatic:!manual,copySide:quiet,lateralBias,focusX:focal?.focusX || 50,focusY:focal?.focusY || 42,
     method:analysis?.method || 'genre-and-assets',genre,mood,editorialFont:serif?'Social Editorial':'Social Display',edgeTreatment,blur,brightness,complexity,
     reason:manual?'Composição escolhida no painel.':'Direção pelo formato, luminosidade e áreas de menor complexidade da arte; dados comerciais fora do pôster preservado.',
     // Edge density approximates a focal area; it does not claim face or gaze recognition.

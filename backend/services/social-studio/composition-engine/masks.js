@@ -20,6 +20,8 @@ function maskAlpha(x, y, mask, blend) {
     );
   if (mask === "cinematic-bottom")
     return left * right * top * smooth((1 - y) / (edge * 1.7));
+  if (mask === "fade-sides-bottom")
+    return left * right * smooth(y / 0.02) * smooth((1 - y) / (edge * 1.7));
   return left * right * top * bottom;
 }
 

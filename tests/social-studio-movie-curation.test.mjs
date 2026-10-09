@@ -10,6 +10,7 @@ const {flattenElements}=require('../backend/services/social-studio/scene/groups'
 const {sessionMomentParts}=require('../backend/services/social-studio/contracts/artwork-layout');
 const {mergeQuality}=require('../backend/services/social-studio/composition-engine/editorial-review');
 const {movieDirection}=require('../backend/services/social-studio/composition-engine/movie-direction');
+const {buildMovieCinematic}=require('../backend/services/social-studio/scene/movie-cinematic');
 
 test('direção editorial adapta fonte e bordas à obra sem depender do título',()=>{
   const analysis={brightness:.62,zones:[{id:'bottom',complexity:.10},{id:'left',complexity:.12},{id:'right',complexity:.14}]};
@@ -22,6 +23,25 @@ test('direção editorial adapta fonte e bordas à obra sem depender do título'
   assert.equal(romance.editorialFont,'Social Editorial');
   assert.ok(romance.blur<30);
   assert.equal(movieDirection({genreProfile:{id:'comedy'},formatId:'square',templateId:'movie-highlight'}, {...input,movieEdgeTreatment:'progressive'},analysis,false,null).edgeTreatment,'progressive');
+});
+
+test('direção lateral só desloca o pôster quando a imagem oferece um lado livre',()=>{
+  const draft={genreProfile:{id:'comedy'},formatId:'square',templateId:'movie-highlight'};
+  const zones=[{id:'left',complexity:.12},{id:'right',complexity:.32}];
+  const biased=movieDirection(draft,{layoutId:'movie-immersive'},{brightness:.5,zones},false,null);
+  const balanced=movieDirection(draft,{layoutId:'movie-immersive'},{brightness:.5,zones:[{id:'left',complexity:.20},{id:'right',complexity:.22}]},false,null);
+  assert.equal(biased.lateralBias,'right');
+  assert.equal(balanced.lateralBias,null);
+  const base={templateId:'movie-highlight',movieFamily:'movie-immersive',title:'Filme único',sourceAsset:{width:800,height:1200},entities:{movie:{title:'Filme único',posterUrl:'/poster'}},artworkMetadata:{sourceUrl:'/poster'}};
+  const args={format:{id:'square',width:1080,height:1080},palette:{dominantColor:'#246286',accentColor:'#a8d9ea',secondaryColor:'#15334c',artworkLightness:.3},brand:{name:'Cinema'},sourceUrl:'/poster',backgroundUrl:'/backdrop',logoUrl:null};
+  const centered=buildMovieCinematic({...args,draft:{...base,movieDirection:balanced}});
+  const shifted=buildMovieCinematic({...args,draft:{...base,movieDirection:biased}});
+  const centerArt=centered.elements.find(e=>e.id==='artwork'),shiftArt=shifted.elements.find(e=>e.id==='artwork');
+  const bg=shifted.elements.find(e=>e.id==='background-blur');
+  assert.ok(shiftArt.x>centerArt.x);
+  assert.ok(shiftArt.x>=0 && shiftArt.x+shiftArt.width<=1080);
+  assert.equal(bg.src,'/backdrop');
+  assert.ok(bg.opacity<.5 && bg.effects.scale<1.1 && bg.effects.blur<=15);
 });
 
 test('curadoria mantém uma ocorrência semântica, o papel principal e o contrato de exportação',()=>{
@@ -91,6 +111,7 @@ test('spotlight preserva pôster oficial inteiro e destaca horário sem repetir 
   const result=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'film',layoutId:'movie-spotlight',formatId:'feed_portrait',signatureId:'none'},context,{loadImage:async src=>src==='/poster'?poster:null,skipRaster:true});
   const elements=flattenElements(result.scene.elements),texts=elements.filter(e=>e.type==='text' && e.visible!==false);
   assert.equal(elements.find(e=>e.id==='artwork').fit,'contain');
+  assert.equal(elements.find(e=>e.id==='artwork').effects.mask,'fade-sides-bottom');
   assert.ok(!texts.some(e=>e.id==='title'));
   assert.match(texts.find(e=>e.id==='detail').text,/SEXTA.*09\/10/);
   assert.match(texts.find(e=>e.id==='description').text,/21:55/);

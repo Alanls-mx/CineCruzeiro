@@ -71,13 +71,17 @@ test("efeitos limitam entradas inválidas e dimensões de processamento", () => 
 test("máscaras preservam o centro e dissolvem apenas as bordas selecionadas", () => {
   for (const mask of MASKS)
     assert.equal(maskAlpha(0.5, 0.5, mask, 70), 1, mask);
-  for (const mask of ["fade-all", "radial", "cinematic-bottom"])
+  for (const mask of ["fade-all", "radial", "cinematic-bottom", "fade-sides-bottom"])
     assert.equal(maskAlpha(0, 0, mask, 70), 0);
   assert.equal(maskAlpha(0.5, 1, "fade-bottom", 80), 0);
   assert.equal(maskAlpha(0.5, 0, "fade-bottom", 80), 1);
   assert.equal(maskAlpha(0, 0.5, "fade-right", 80), 1);
   assert.equal(maskAlpha(1, 0.5, "fade-right", 80), 0);
   assert.equal(maskAlpha(0, 0, "fade-all", 0), 1);
+  assert.equal(maskAlpha(0.5, 0, "fade-sides-bottom", 29), 0);
+  assert.equal(maskAlpha(0.5, 0.02, "fade-sides-bottom", 29), 1);
+  assert.equal(maskAlpha(0.5, 1, "fade-sides-bottom", 29), 0);
+  assert.equal(maskAlpha(1, 0.5, "fade-sides-bottom", 29), 0);
 });
 
 test("rasterização preserva RGB central e aplica alfa nas bordas reais do poster", async () => {
