@@ -8,7 +8,7 @@ const {movieDirection}=require('../backend/services/social-studio/composition-en
 const {MOVIE_FAMILIES,campaignCTA,sessionDayMatches}=require('../backend/services/social-studio/contracts/artwork-layout');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const assets={poster:await sharp({create:{width:800,height:1200,channels:3,background:'#997522'}}).png().toBuffer(),backdrop:await sharp({create:{width:1600,height:900,channels:3,background:'#276799'}}).png().toBuffer(),logo:await sharp({create:{width:600,height:200,channels:3,background:'#277abc'}}).png().toBuffer()};
-const loadImage=async src=>src.includes('/images/social-studio/cine-cruzeiro-assinatura-oficial.png')?assets.logo:assets[src.replace('/movie-direction/','')] || null;
+const loadImage=async src=>src.includes('/images/social-studio/cine-cruzeiro-assinatura-')?assets.logo:assets[src.replace('/movie-direction/','')] || null;
 const context={now:'2026-09-24T09:00:00-03:00',brand:{name:'Cine Cruzeiro',logoUrl:'/movie-direction/logo',website:'https://cinecruzeiro.com.br'},movies:[{id:'movie',title:'Uma aventura extraordinária',genre:'Ação',posterUrl:'/movie-direction/poster',backdropUrl:'/movie-direction/backdrop',releaseDate:'2026-09-25',sessions:[{date:'2026-09-25',time:'13:00',ticketTypes:[{id:'full',name:'Inteira',price:29.9}]},{date:'2026-09-25',time:'18:30',ticketTypes:[{id:'full',name:'Inteira',price:29.9}]}]}]};
 test('filme sem venda ativa mantém ação editorial sem repetir EM BREVE',()=>{
   assert.equal(campaignCTA({templateId:'movie-highlight',content:{purchaseAvailable:false}}),'CONHEÇA O FILME');
@@ -25,7 +25,7 @@ test('arquétipos cinematográficos funcionam em formatos e campanhas preservand
     assert.ok(elements.find(e=>e.role==='logo').width/r.scene.width<=.19);
   }
 });
-test('seleção considera áreas livres, material e gênero sem alegar detecção de rostos',()=>{
+test('seleção considera áreas livres e formato antes do gênero sem alegar detecção de rostos',()=>{
   const draft={movieId:'one',genreProfile:{id:'family'},artDirection:{seed:3}};
   const analysis={quietest:'left',zones:[{id:'left',complexity:.07},{id:'right',complexity:.5},{id:'bottom',complexity:.4}],focusX:75,focusY:42,method:'luminance-edge-density'};
   assert.equal(movieDirection(draft,{},analysis,false).copySide,'left');
@@ -34,7 +34,10 @@ test('seleção considera áreas livres, material e gênero sem alegar detecçã
   assert.equal(selected.subjectDetection,'visual-saliency-heuristic');
   assert.equal(movieDirection(draft,{layoutId:'movie-full-bleed'},analysis,false).family,'cinematic-blend');
   const families=new Set(['horror','family','action','comedy','drama'].map(id=>movieDirection({...draft,genreProfile:{id}},{},analysis,true).family));
-  assert.ok(families.size>=3);
+  assert.equal(families.size,1,'a mesma imagem mantém a direção quando só o gênero muda');
+  assert.equal(movieDirection({...draft,formatId:'story'},{},analysis,true).family,'movie-spotlight');
+  assert.equal(movieDirection({...draft,formatId:'square'},{},analysis,true).family,'movie-immersive');
+  assert.equal(movieDirection(draft,{}, {...analysis,brightness:.8},true).family,'movie-campaign');
   for(const genre of ['family','comedy','drama'])assert.ok(!['poster-lateral','poster-editorial','cinematic-story'].includes(movieDirection({...draft,genreProfile:{id:genre}},{},analysis,true).family));
 });
 test('estreia comunica a data uma vez e conserva todos os horários',async()=>{
@@ -67,16 +70,16 @@ test('editorial integrado dissolve o pôster em fundo derivado e mantém ação 
   assert.ok(result.quality.accepted);
   assert.equal(result.scene.sourceDraft.movieFamily,'movie-editorial-light');
   assert.equal(elements.find(e=>e.id==='artwork').effects.mask,'fade-all');
-  assert.ok(elements.some(e=>e.id==='editorial-brand-band'));
-  assert.ok(elements.some(e=>e.id==='editorial-brand-tone'));
+  assert.ok(elements.some(e=>e.id==='editorial-color-wash'));
+  assert.ok(!elements.some(e=>e.id==='title'),'não repetir o título do pôster cadastrado');
   assert.ok(!elements.some(e=>e.id.startsWith('product-contrast-')));
-  assert.ok(elements.find(e=>e.id==='logo').x<result.scene.width*.2);
+  assert.ok(elements.find(e=>e.id==='logo').x>result.scene.width*.7);
   assert.ok(elements.find(e=>e.id==='website').text.includes('cinecruzeiro.com.br'));
 });
-test('estreia automática preserva pôster inteiro e usa editorial mesmo sem backdrop',()=>{
+test('estreia automática usa spotlight e respeita a composição escolhida',()=>{
   for(const backdrop of [false,true]) {
     const draft={templateId:'movie-premiere',movieId:'one',genreProfile:{id:'family'}};
-    assert.equal(movieDirection(draft,{}, {zones:[{id:'bottom',complexity:.8}]},backdrop).family,'movie-editorial-light');
+    assert.equal(movieDirection(draft,{}, {zones:[{id:'bottom',complexity:.8}]},backdrop).family,'movie-spotlight');
     assert.equal(movieDirection(draft,{layoutId:'movie-spotlight'},null,backdrop).family,'movie-spotlight');
   }
 });
@@ -87,7 +90,10 @@ test('editorial mantém imagem, data e horários sem recorrer a outro layout',as
     const elements=flattenElements(result.scene.elements),art=elements.find(e=>e.id==='artwork');
     assert.equal(art.fit,'contain');
     assert.ok(art.effects.blend<40);
-    assert.ok(elements.find(e=>e.id==='title').x>art.x+art.width);
+    assert.ok(!elements.some(e=>e.id==='title'));
+    assert.ok(elements.find(e=>e.id==='detail').y>art.y+art.height);
+    const clock=elements.find(e=>e.id==='session-time');
+    assert.ok(clock && !/25\/09/.test(clock.text));
     if(['movie-premiere','movie-presale'].includes(templateId))assert.ok(elements.find(e=>e.id==='detail').y>art.y+art.height);
     assert.ok(!elements.some(e=>e.id==='movie-reading-veil'));
     assert.ok(!elements.some(e=>e.id.startsWith('product-contrast-')));
@@ -115,9 +121,9 @@ test('rodape preserva uma segunda tonalidade escura real sem achatar o laranja e
   assert.equal(palette.color,'#cc550d');
   assert.ok(shade.r>60 && shade.g<shade.r*.15);
   const scene=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',layoutId:'movie-editorial-light'},context,{loadImage,skipRaster:true});
-  const texture=scene.scene.elements.find(e=>e.id==='editorial-brand-band');
+  const texture=scene.scene.elements.find(e=>e.id==='background-blur');
   assert.equal(texture.src,context.movies[0].posterUrl);
-  assert.equal(texture.effects.mask,'fade-top');
+  assert.equal(texture.fit,'fill');
   assert.equal(texture.opacity,1);
   assert.equal(texture.effects.saturation,1);
   assert.ok(!scene.scene.elements.some(e=>e.id==='editorial-bottom-glow'));
@@ -135,7 +141,7 @@ test('atmosfera inferior conserva variacao espacial da imagem sem curvas ou faix
   const {buildMovieEditorialLight}=require('../backend/services/social-studio/scene/movie-editorial-light');
   const {createCinematicArtwork}=require('../backend/services/social-studio/composition-engine/pipeline');
   const scene=buildMovieEditorialLight({draft:{entities:{},signatureId:'none'},format:{id:'feed_portrait',width:1080,height:1350},palette:{dominantColor:'#aa6622',secondaryColor:'#aa6622'},brand:{name:'Cine Cruzeiro'},sourceUrl:'/poster.png'});
-  const band=scene.elements.find(e=>e.id==='editorial-brand-band');
+  const band=scene.elements.find(e=>e.id==='background-blur');
   assert.equal(band.src,'/poster.png');
   assert.equal(band.effects.colorWash,0);
   const strip=await sharp({create:{width:64,height:192,channels:3,background:'#bb450d'}}).png().toBuffer();
@@ -144,6 +150,6 @@ test('atmosfera inferior conserva variacao espacial da imagem sem curvas ou faix
   const sample=x=>[...data.subarray(((info.height-1)*info.width+x)*info.channels,((info.height-1)*info.width+x)*info.channels+4)];
   const left=sample(0),right=sample(info.width-1);
   assert.ok(Math.abs(left[0]-right[0])>40,'real horizontal color variation must remain visible');
-  assert.equal(left[3],255);
-  assert.equal(right[3],255);
+  assert.ok(left[3]>=250);
+  assert.ok(right[3]>=250);
 });

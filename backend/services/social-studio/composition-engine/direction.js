@@ -240,6 +240,7 @@ async function analyzeArtwork(buffer) {
     };
     const [left,right]=axisBounds(true),[top,bottom]=axisBounds(false);
     return {
+      brightness:region(0,0,1,1).luminance,
       contentBounds: weight>1 && (right-left)*(bottom-top)<.8 ? {x:left,y:top,width:right-left,height:bottom-top} : null,
       zones,
       quietest: zones[0].id,

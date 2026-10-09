@@ -46,7 +46,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   let backgroundBuffer = await loadArtwork(backgroundUrl);
   if (!sourceBuffer && backgroundBuffer && !concession) { sourceUrl = backgroundUrl; sourceBuffer = backgroundBuffer; }
   if (!backgroundBuffer) { backgroundUrl = sourceUrl; backgroundBuffer = sourceBuffer; }
-  let analysis = draft.artDirection.enabled ? await analyzeArtwork(sourceBuffer) : null;
+  let analysis = draft.artDirection.enabled || draft.movieFamily ? await analyzeArtwork(sourceBuffer) : null;
   if(draft.movieFamily) {
     const hasBackdrop=Boolean(movie?.backdropUrl && backgroundBuffer && backgroundUrl!==sourceUrl);
     const backdropAnalysis=hasBackdrop?await analyzeArtwork(backgroundBuffer):null;
@@ -89,9 +89,10 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
   }
   let palette = applyPalette(draft.paletteMode === "brand"
     ? { dominantColor: brand.primaryColor, secondaryColor: brand.secondaryColor, accentColor: brand.accentColor, textColor: brand.textColor }
-    : await extractPalette(sourceBuffer, brand), draft.paletteId);
-  if(['movie-editorial-light','movie-campaign'].includes(draft.movieFamily) && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
-    palette.editorialAtmosphere=await require('./palette').extractEditorialAtmosphere(sourceBuffer,draft.movieFamily==='movie-campaign'?'upper':'lower');
+    : await extractPalette(sourceBuffer, brand, {preserveArtwork:Boolean(draft.movieFamily)}), draft.paletteId);
+  if(draft.movieFamily && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
+    palette.editorialAtmosphere=await require('./palette').extractEditorialAtmosphere(sourceBuffer,'upper');
+    palette.artworkColors=[...new Set([palette.dominantColor,palette.secondaryColor,palette.accentColor,palette.editorialAtmosphere?.companion].filter(Boolean))];
   }
   if(programming && draft.paletteMode!=='brand' && (!draft.paletteId || draft.paletteId==='automatic')) {
     const palettes=[];
@@ -109,8 +110,8 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     }
   }
   let logoUrl = signatureUrl(draft, context);
-  if(draft.movieFamily==='movie-campaign' && draft.signatureId==='automatic' && /cine-cruzeiro-assinatura-/.test(logoUrl)) {
-    const light=require('../scene/movie-campaign').campaignSurface(palette).light;
+  if(['movie-campaign','movie-editorial-light'].includes(draft.movieFamily) && draft.signatureId==='automatic' && /cine-cruzeiro-assinatura-/.test(logoUrl)) {
+    const light=draft.movieFamily==='movie-editorial-light' || require('../scene/movie-campaign').campaignSurface(palette).light;
     logoUrl=light?'/images/social-studio/cine-cruzeiro-assinatura-black.png':'/images/social-studio/cine-cruzeiro-assinatura-oficial.png';
   }
   if((draft.templateId==='ticket-offer' || concession || draft.movieFamily) && logoUrl) {
@@ -145,6 +146,7 @@ async function renderSocialPostV2(input = {}, context = {}, options = {}) {
     if(visualStyle==='minimal' && !['title','detail'].includes(element.id)) element.fontWeight=500;
   }
   if(!concession && !draft.movieFamily && !scene.sourceDraft.officialProgramLayout) policy.applyArtworkPolicy(scene);
+  if(draft.movieFamily)require('../composition-engine/movie-content').curateMovieContent(scene);
   if(!concession && !draft.movieFamily && !scene.sourceDraft.officialProgramLayout) await ensureTextContrast(scene, loadImage);
   if(!offerTemplate && !concession && !draft.movieFamily && !scene.sourceDraft.officialProgramLayout) await require('../scene/branding').applySignatureGeometry(scene,loadImage);
   if(!scene.sourceDraft.officialProgramLayout)require('../scene/customization').positionSignature(scene);

@@ -66,7 +66,7 @@ test('metadata troca estratégia e suprime duplicação sem interferir em outro 
   for(const [dominantAsset,strategy] of [['logo','LOGO_DOMINANT'],['symbol','SYMBOL_DOMINANT'],['character','CHARACTER_DOMINANT']]) {
     const r=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'m',date:'',artworkMetadata:{containsMovieLogo:true,dominantAsset}},context,{loadImage,skipRaster:true});
     assert.equal(r.draft.artworkPolicy.strategy,strategy);
-    if(dominantAsset!=='character') assert.equal(flattenElements(r.scene.elements).find(e=>e.id==='title').visible,false);
+    if(dominantAsset!=='character') assert.ok(!flattenElements(r.scene.elements).some(e=>e.id==='title' && e.visible!==false));
     assert.equal(flattenElements(r.scene.elements).filter(e=>e.visible!==false && e.hierarchy==='primary').length,1);
   }
   const draft=engine.normalizeDraft({movieId:'m',imageUrl:'asset://new',artworkMetadata:{sourceUrl:'asset://old',containsTitle:true}},context);

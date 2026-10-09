@@ -65,7 +65,7 @@ function imagePaletteKey(buffer, brand) {
   return `${hash}:${brand.primaryColor}:${brand.secondaryColor}:${brand.accentColor}`;
 }
 
-async function extractPalette(buffer, brand = {}) {
+async function extractPalette(buffer, brand = {}, {preserveArtwork=false} = {}) {
   const fallback = {
     dominantColor: safeHex(brand.primaryColor, "#07111f"),
     secondaryColor: safeHex(brand.secondaryColor, "#1d4ed8"),
@@ -73,7 +73,7 @@ async function extractPalette(buffer, brand = {}) {
     textColor: safeHex(brand.textColor, "#ffffff")
   };
   if (!Buffer.isBuffer(buffer) || !buffer.length) return fallback;
-  return paletteCache.getOrLoad(imagePaletteKey(buffer, fallback), async () => {
+  return paletteCache.getOrLoad(`${imagePaletteKey(buffer, fallback)}:${preserveArtwork}`, async () => {
     const { data, info } = await sharp(buffer, { failOn: "error" })
       .rotate()
       .resize(56, 56, { fit: "cover" })
@@ -81,8 +81,10 @@ async function extractPalette(buffer, brand = {}) {
       .raw()
       .toBuffer({ resolveWithObject: true });
     const buckets = new Map();
+    const average={r:0,g:0,b:0};
     for (let index = 0; index < data.length; index += info.channels) {
       const color = { r: data[index], g: data[index + 1], b: data[index + 2] };
+      for(const channel of ['r','g','b'])average[channel]+=color[channel]/(data.length/info.channels);
       const brightness = (color.r + color.g + color.b) / 3;
       if (brightness < 18 || brightness > 242) continue;
       const key = `${color.r >> 4},${color.g >> 4},${color.b >> 4}`;
@@ -99,11 +101,22 @@ async function extractPalette(buffer, brand = {}) {
         color: { r: entry.r / entry.count, g: entry.g / entry.count, b: entry.b / entry.count }
       }))
       .sort((a, b) => b.count - a.count);
-    const dominant = colors[0]?.color || hexToRgb(fallback.dominantColor);
-    const secondary = colors.find((entry) => distance(entry.color, dominant) > 72)?.color || hexToRgb(fallback.secondaryColor);
+    const dominant = colors[0]?.color || (preserveArtwork?average:hexToRgb(fallback.dominantColor));
+    const secondary = colors.find((entry) => distance(entry.color, dominant) > 72)?.color || (preserveArtwork?dominant:hexToRgb(fallback.secondaryColor));
     const accent = colors
-      .filter((entry) => distance(entry.color, dominant) > 60)
-      .sort((a, b) => saturation(b.color) - saturation(a.color) || b.count - a.count)[0]?.color || hexToRgb(fallback.accentColor);
+      .filter((entry) => distance(entry.color, dominant) > 60 && (!preserveArtwork || entry.count>=data.length/info.channels*.003))
+      .sort((a, b) => saturation(b.color) - saturation(a.color) || b.count - a.count)[0]?.color || (preserveArtwork?secondary:hexToRgb(fallback.accentColor));
+    if(preserveArtwork) {
+      let brightness=0;
+      for(let i=0;i<data.length;i+=info.channels)brightness+=.2126*data[i]+.7152*data[i+1]+.0722*data[i+2];
+      const artworkColors=[];
+      for(const {color} of colors)if(artworkColors.every(hex=>distance(hexToRgb(hex),color)>55)) {
+        artworkColors.push(rgbToHex(color));
+        if(artworkColors.length===4)break;
+      }
+      return {dominantColor:rgbToHex(dominant),secondaryColor:rgbToHex(secondary),accentColor:rgbToHex(accent),
+        textColor:'#ffffff',artworkColors,artworkLightness:brightness/(data.length/info.channels)/255};
+    }
     return {
       dominantColor: mix(rgbToHex(dominant), fallback.dominantColor, 0.42),
       secondaryColor: mix(rgbToHex(secondary), fallback.secondaryColor, 0.28),
@@ -111,6 +124,17 @@ async function extractPalette(buffer, brand = {}) {
       textColor: fallback.textColor
     };
   });
+}
+
+function movieSurface(palette) {
+  const colors=palette.artworkColors?.length?palette.artworkColors:[palette.dominantColor,palette.secondaryColor,palette.accentColor].filter(Boolean);
+  const color=palette.editorialAtmosphere?.companion || colors[0] || palette.dominantColor;
+  const rgb=hexToRgb(color),max=Math.max(rgb.r,rgb.g,rgb.b,1);
+  // Retain the artwork hue in the reading surface instead of converging to neutral black.
+  const factor=Math.min(1,76/max);
+  const dark=rgbToHex({r:rgb.r*factor,g:rgb.g*factor,b:rgb.b*factor});
+  return {dark,light:mix(palette.dominantColor,'#ffffff',.86),accent:mix(palette.accentColor || color,'#ffffff',.68),
+    ink:mix(color,'#000000',.68)};
 }
 
 async function extractEditorialAtmosphere(buffer,region='lower') {
@@ -175,4 +199,4 @@ async function extractEditorialAtmosphere(buffer,region='lower') {
   });
 }
 
-module.exports = { extractEditorialAtmosphere, extractPalette, blendProgramPalettes, hexToRgb, mix, paletteCache, rgbToHex, safeHex, PALETTES, applyPalette };
+module.exports = { extractEditorialAtmosphere, extractPalette, movieSurface, blendProgramPalettes, hexToRgb, mix, paletteCache, rgbToHex, safeHex, PALETTES, applyPalette };

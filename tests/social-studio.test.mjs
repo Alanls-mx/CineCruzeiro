@@ -381,6 +381,6 @@ test("painel registra módulo independente e não o mistura ao formulário de e-
   assert.match(client, /\/api\/admin\/social-studio\/preview/);
   assert.match(client, /\/api\/admin\/social-studio\/campaigns/);
   assert.match(client, /schedulePreview\(300\)/);
-  assert.match(client, /socialStudioCopyCaption/);
+  assert.doesNotMatch(client, /socialStudioCopyCaption/);
   assert.doesNotMatch(client, /emailCampaignForm|\/api\/admin\/email/);
 });

@@ -19,7 +19,7 @@ const onlyIds=onlyFlag?new Set(onlyFlag.slice('--only='.length).split(',').map(v
 const categoryFlag=process.argv.find(arg=>arg.startsWith('--category='));
 const onlyCategory=categoryFlag?.slice('--category='.length) || '';
 const intents={
-  'movie-editorial-light':'Preservar o pôster oficial e abrir uma área editorial de leitura leve para título e chamada.',
+  'movie-editorial-light':'Preservar o pôster oficial em grande escala, sem repetir seu título, com transição clara para data, horário e chamada no rodapé.',
   'movie-immersive':'Usar a imagem do filme como ambiente predominante, com transição atmosférica para as informações.',
   'movie-spotlight':'Fazer o momento de exibição ou o status do filme ganhar prioridade sem reduzir a presença da arte.',
   'movie-campaign':'Integrar a fotografia, a paleta e o tratamento de título da obra numa peça de campanha coesa.',
@@ -85,6 +85,7 @@ function renderFacts(result) {
   const artwork=elements.find(item=>item.id==='artwork');
   const logo=elements.find(item=>item.id==='logo');
   return {visibleText,artwork:artwork?.src || '',logo:logo?.src || '',backgroundColor:result.scene.backgroundColor,
+    artworkColors:result.palette?.artworkColors || [],titleEvidence:result.scene.sourceDraft.titleEvidence || '',curatedDuplicates:result.scene.sourceDraft.curatedDuplicates || [],
     quality:{accepted:result.quality.accepted,score:result.quality.total,issues:result.quality.issues || []}};
 }
 

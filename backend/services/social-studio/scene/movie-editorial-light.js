@@ -1,16 +1,16 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
-const {mix,hexToRgb}=require('../engine/palette');
-const {SAFE,sessionDayMatches,sessionMomentLabel}=require('../contracts/artwork-layout');
+const {movieSurface,hexToRgb}=require('../engine/palette');
+const {SAFE,sessionDayMatches,sessionMomentParts}=require('../contracts/artwork-layout');
+const {embeddedMovieTitle}=require('../composition-engine/movie-content');
 
 const rgba=(hex,opacity)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${opacity})`;};
 
 function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgroundUrl,logoUrl}) {
   const w=format.width,h=format.height,safe=SAFE[format.id],top=h*safe.top,area=h*(safe.bottom-safe.top),u=w/1080;
   const box=([x,y,width,height])=>({x:x*w,y:top+y*area,width:width*w,height:height*area});
-  const bg=mix(palette.dominantColor,'#e9e8e3',.84);
-  const atmosphere=palette.editorialAtmosphere;
-  const ink='#17212b',accent='#27323b';
+  const surface=movieSurface(palette),bg=surface.light,ink=surface.ink;
+  const titlePolicy=embeddedMovieTitle(draft,sourceUrl);
   const elements=[],manifest=[];
   const image=(id,src,bounds,extra={})=>{if(src)elements.push({id,name:id,type:'image',role:id,...bounds,src,fit:'contain',visible:true,opacity:1,...extra});};
   const text=(id,value,bounds,size,{lines=2,fill=ink,display=false,...extra}={})=>{
@@ -19,45 +19,36 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
     elements.push({id,name:id,type:'text',role:id,...bounds,...fit,fontFamily:display?'Social Display':'Social Text',fontWeight:display?900:600,fill,lineHeight:1.12,align:'left',visible:true,opacity:1,...extra});
     manifest.push({id,text:String(value).replace(/\s+/g,' ').trim()});
   };
-  image('background-blur',sourceUrl || backgroundUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:75,focusY:45,opacity:.85,effects:{layer:'background',blur:52,brightness:1.05,saturation:1,scale:1.2}});
-  elements.push({id:'editorial-color-wash',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:'right',stops:[{offset:0,color:rgba(bg,.35)},{offset:.48,color:rgba(bg,.60)},{offset:1,color:rgba(bg,.90)}]});
-  const hero=box([.025,.005,.565,.735]);
-  image('ambient-shadow',sourceUrl,{...hero,x:hero.x+12*u,y:hero.y+14*u},{role:'ambient',effects:{layer:'ambient-shadow',mask:'fade-all',blend:58,shadow:28,scale:1}});
-  image('artwork',sourceUrl,hero,{role:'artwork',keepRatio:true,locked:true,hierarchy:'primary',effects:{layer:'hero',mask:'fade-all',blend:26,brightness:1,scale:1}});
-  const bandY=top+area*.73;
-  // Preserve the artwork's spatial color variation rather than flattening it into swatches.
-  image('editorial-brand-band',sourceUrl || backgroundUrl,{x:0,y:bandY,width:w,height:h-bandY},{role:'ambient',fit:'cover',focusX:50,focusY:90,effects:{layer:'background',blur:52,brightness:.85,saturation:1,scale:1,mask:'fade-top',blend:100}});
-  const brandShadow=atmosphere?.shadow || mix(palette.dominantColor,'#000000',.62);
-  const toneTop=bandY-area*.11;
-  elements.push({id:'editorial-brand-tone',role:'ambient',type:'gradient',x:0,y:toneTop,width:w*.60,height:h-toneTop,direction:'bottom',stops:[
-    {offset:0,color:rgba(brandShadow,0)},
-    {offset:.28,color:rgba(brandShadow,.42)},
-    {offset:.52,color:rgba(brandShadow,.78)},
-    {offset:1,color:rgba(brandShadow,.92)}
+  image('background-blur',sourceUrl || backgroundUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'fill',effects:{layer:'background',blur:46,brightness:1,saturation:1,scale:1,mask:'none'}});
+  const hero=box([.015,-safe.top,.97,titlePolicy.hide?.67:.63]);
+  image('artwork',sourceUrl,hero,{role:'artwork',keepRatio:true,locked:true,hierarchy:'primary',effects:{layer:'hero',mask:'fade-all',blend:22,brightness:1,scale:1}});
+  const readingTop=(top+area*(titlePolicy.hide?.66:.635))/h;
+  elements.splice(elements.findIndex(e=>e.id==='artwork'),0,{id:'editorial-color-wash',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:'bottom',stops:[
+    {offset:0,color:rgba(bg,0)},{offset:readingTop-.16,color:rgba(bg,0)},{offset:readingTop,color:rgba(bg,.98)},{offset:1,color:rgba(bg,.98)}
   ]});
-  const movieTitle=draft.title || draft.entities.movie?.title || '';
-  const label=draft.subtitle && !/^(INGRESSOS )?EM DESTAQUE$/i.test(draft.subtitle)?draft.subtitle:'O FILME DA SUA VEZ';
-  if(!/^(ESTREIA|PRÉ-VENDA|SESSÃO)$/i.test(label))text('subtitle',label,box([.62,.045,.315,.07]),29,{lines:2,fill:accent});
-  text('title',movieTitle,box([.62,.15,.315,.28]),82,{lines:4,display:true,hierarchy:'primary'});
-  const days=draft.schedule?.days || [];
+  const movieTitle=draft.title || draft.entities?.movie?.title || '';
+  const days=draft.showSessions===false?[]:draft.schedule?.days || [];
+  const session=sessionMomentParts(days,{includeDate:true});
   const dateHero=['movie-premiere','movie-presale'].includes(draft.templateId) && Boolean(draft.date);
+  const commercial=draft.templateId==='movie-price';
+  const secondarySession=Boolean(session && (dateHero || commercial));
   const sameSessionDate=sessionDayMatches(draft.content?.primaryDate || draft.date,days[0]?.date);
-  const schedule=days.length && draft.showSessions!==false?sessionMomentLabel(days,{includeDate:!dateHero || !sameSessionDate}):'';
-  const detail=draft.templateId==='movie-price'?draft.price:draft.templateId==='movie-premiere' || draft.templateId==='movie-presale'?draft.date || schedule:schedule || draft.date;
-  if(dateHero) {
-    text('date-label',draft.content?.primaryDateLabel || (draft.templateId==='movie-presale'?'PRÉ-VENDA':'ESTREIA'),box([.32,.81,.615,.045]),30,{lines:1,fill:'#ffffff'});
-    text('detail',detail,box([.32,.865,.615,.12]),66,{lines:2,display:true,fill:atmosphere?.highlight || '#ffffff',hierarchy:'primary'});
-  } else text('detail',detail,box([.62,.44,.315,.075]),38,{lines:2,fill:accent});
-  if(days.length && ['movie-price','movie-premiere','movie-presale'].includes(draft.templateId))text('description',schedule,box([.62,dateHero?.48:.525,.315,.095]),30,{lines:3,fill:accent});
-  text('cta',draft.cta,box([.62,.635,.315,.05]),30,{lines:2,display:true});
-  text('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),box([.62,.695,.315,.035]),27,{lines:1});
-  const logoRatio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
-  const {width:logoWidth,height:logoHeight}=require('./branding').signatureDimensions(w,h,logoRatio,draft,logoUrl);
-  const logoBox={x:w*.065,y:top+area*.80,width:logoWidth,height:logoHeight};
-  if(logoUrl)image('logo',logoUrl,logoBox,{role:'logo',protected:true,hierarchy:'branding'});
-  else if(draft.signatureId!=='none')text('cinema',brand.name,box([.065,.88,.20,.065]),30,{lines:2,fill:'#ffffff'});
+  if(!titlePolicy.hide)text('title',movieTitle,box([.065,.635,.87,.07]),58,{lines:2,display:true,hierarchy:'primary'});
+  const detail=dateHero?draft.date:commercial?draft.price:session?.day || draft.date || 'EM BREVE';
+  const label=dateHero?(draft.content?.primaryDateLabel || (draft.templateId==='movie-presale'?'PRÉ-VENDA':'ESTREIA')):commercial?'INGRESSOS':session?.recurring?'A PARTIR DE':'';
+  if(label)text('date-label',label,box([.065,titlePolicy.hide?.66:.711,.66,.04]),32,{lines:1});
+  text('detail',detail,box([.065,titlePolicy.hide?.71:.755,.87,.061]),58,{lines:1,display:true,hierarchy:'primary'});
+  if(secondarySession)text('description',sameSessionDate?session.weekday:session.day,box([.065,.82,.40,.049]),32,{lines:2});
+  if(session)text('session-time',session.clock,box([secondarySession?.49:.065,.82,secondarySession?.445:.87,.06]),62,{lines:1,display:true,fill:surface.ink});
+  text('cta',draft.cta,box([.065,.905,.60,.041]),32,{lines:1,display:true});
+  text('website',(draft.actionDestination || '').replace(/^https?:\/\//,'').replace(/\/$/,''),box([.065,.955,.60,.032]),26,{lines:1});
+  const ratio=draft.signatureAsset?.width/draft.signatureAsset?.height || 2.6;
+  const {width:lw,height:lh}=require('./branding').signatureDimensions(w,h,ratio,draft,logoUrl);
+  const logoBox={x:w*.935-lw,y:Math.min(top+area*.905,h*(format.id==='story'?.91:.985)-lh),width:lw,height:lh};
+  if(logoUrl)image('logo',logoUrl,logoBox,{role:'logo',protected:true,hierarchy:'branding',...(!/assinatura-black/.test(logoUrl)?{effects:{layer:'hero',mask:'none',shadow:80,scale:1}}:{})});
+  else if(draft.signatureId!=='none')text('cinema',brand.name,logoBox,28,{lines:2});
   const {entities,...sourceDraft}=draft;
-  return normalizeScene({id:`scene-${draft.templateId}-${format.id}`,templateId:draft.templateId,formatId:format.id,width:w,height:h,backgroundColor:bg,elements,sourceDraft:{...sourceDraft,officialMovieLayout:true,creativeMovieLayout:true,movieManifest:manifest,signatureReserved:logoBox,editorialSource:sourceUrl,editorialTitle:movieTitle}});
+  return normalizeScene({id:`scene-${draft.templateId}-${format.id}`,templateId:draft.templateId,formatId:format.id,width:w,height:h,backgroundColor:bg,elements,sourceDraft:{...sourceDraft,officialMovieLayout:true,creativeMovieLayout:true,solidPanelAllowed:false,movieContrastColor:surface.dark,titleEvidence:titlePolicy.evidence,movieManifest:manifest,signatureReserved:logoBox,editorialSource:sourceUrl,editorialTitle:movieTitle}});
 }
 
 module.exports={buildMovieEditorialLight};

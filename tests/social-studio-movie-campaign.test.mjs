@@ -123,8 +123,10 @@ test('contraste integrado preserva a imagem com máscara suave em vez de faixa s
   const {buffer}=await renderSocialScene(background,{loadImage,layerRender:true});
   const {data,info}=await sharp(buffer).removeAlpha().raw().toBuffer({resolveWithObject:true});
   const luma=(x,y)=>{const i=(y*info.width+x)*info.channels;return .2126*data[i]+.7152*data[i+1]+.0722*data[i+2];};
-  assert.ok(luma(540,770)<luma(540,470)-25);
-  assert.ok(Math.abs(luma(540,470)-luma(540,490))<50);
+  assert.ok(luma(300,770)<luma(300,470)-25);
+  assert.ok(Math.abs(luma(300,470)-luma(300,490))<50);
+  const readings=await require('../backend/services/social-studio/composition-engine/concession-quality').contrastReadings(scene,loadImage);
+  assert.ok(readings.every(reading=>reading.ratio>=4.5));
 });
 
 test('automático usa campanha integrada em romance e pré-venda sem perder escolha manual',()=>{

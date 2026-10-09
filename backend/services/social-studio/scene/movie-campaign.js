@@ -2,6 +2,7 @@ const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
 const {hexToRgb,mix}=require('../engine/palette');
 const {SAFE,sessionDayMatches,sessionMomentParts}=require('../contracts/artwork-layout');
+const {embeddedMovieTitle}=require('../composition-engine/movie-content');
 
 const rgba=(hex,a)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${a})`;};
 const luminance=hex=>{const {r,g,b}=hexToRgb(hex);return .2126*r+.7152*g+.0722*b;};
@@ -32,11 +33,8 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
     if(extra.visible!==false)manifest.push({id,text:String(value).replace(/\s+/g,' ').trim()});
   };
   const heroSource=sourceUrl || backgroundUrl;
-  const registeredPoster=Boolean(heroSource && heroSource===draft.entities.movie?.posterUrl);
-  const embeddedTitle=Boolean(draft.titleVisibility==='hide' || draft.titleVisibility==='automatic' && (
-    draft.artworkMetadata?.containsTitle && draft.artworkMetadata.sourceUrl===heroSource ||
-    registeredPoster && draft.artworkMetadata?.containsTitle!==false
-  ));
+  const titlePolicy=embeddedMovieTitle(draft,heroSource);
+  const embeddedTitle=titlePolicy.hide;
   const days=draft.showSessions===false?[]:draft.schedule?.days || [];
   const session=days.length?sessionMomentParts(days,{includeDate:true}):null;
   const presale=draft.templateId==='movie-presale';

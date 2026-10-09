@@ -1,6 +1,7 @@
 const {normalizeScene}=require('./schema');
 const {wrapText}=require('./factory');
-const {mix,hexToRgb}=require('../engine/palette');
+const {movieSurface,hexToRgb}=require('../engine/palette');
+const {embeddedMovieTitle,semanticText}=require('../composition-engine/movie-content');
 const alpha=(hex,a)=>{const {r,g,b}=hexToRgb(hex);return `rgba(${r},${g},${b},${a})`;};
 const {SAFE,sessionDayMatches,sessionMomentLabel}=require('../contracts/artwork-layout');
 
@@ -23,10 +24,18 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   };
   const plan=plans[family] || plans['cinematic-blend'];
   if(format.id==='square' && family==='movie-immersive') {plan.art=[.20,0,.60,.60];plan.title=[.065,.63,.52,.17];plan.data=[.63,.63,.305,.19];}
+  if(!sourceUrl && !backgroundUrl) {
+    plan.title=[.065,.08,.87,.40];
+    plan.data=[.065,.53,.87,.28];
+  }
+  const titlePolicy=embeddedMovieTitle(draft,sourceUrl,{intact:!plan.cover});
+  if(titlePolicy.hide && family==='movie-immersive') {
+    plan.art=[.06,0,.88,.66];
+    plan.data=[.065,.70,.87,.175];
+  }
   const box=rect=>({x:rect[0]*w,y:top+rect[1]*area,width:rect[2]*w,height:rect[3]*area});
   const elements=[],manifest=[];
-  const dark=dir.genre==='horror',bg=mix(palette.dominantColor,'#101216',dark?.60:.32);
-  const accent=dark?mix(brand.secondaryColor || '#267be6','#ffffff',.36):mix(palette.accentColor,brand.primaryColor || '#3988d5',.26);
+  const surface=movieSurface(palette),dark=palette.artworkLightness<.24,bg=surface.dark,accent=surface.accent;
   const atmospheric=draft.composition || {};
   const image=(id,src,bounds,extra={})=>{if(src)elements.push({id,name:id,role:id,type:'image',src,...bounds,fit:'contain',opacity:1,visible:true,...extra});};
   const tx=(id,value,bounds,size,extra={})=>{
@@ -36,7 +45,7 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
     elements.push({id,name:id,role:id,type:'text',...bounds,...fit,fontFamily:id==='title'?'Social Display':'Social Text',fontWeight:id==='title'?900:600,fill:id==='detail'?accent:'#ffffff',lineHeight:1.12,align:'left',opacity:1,visible:true,hierarchy:id==='title'?'primary':'secondary',...extra});
     if(extra.visible!==false)manifest.push({id,text:String(value).replace(/\s+/g,' ').trim()});
   };
-  image('background-blur',backgroundUrl || sourceUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:dir.focusX>50?25:75,focusY:60,opacity:dark?.74:.96,effects:{layer:'background',blur:family==='movie-full-bleed'?12:28,brightness:dark?.56:.86,saturation:dark?.70:1.02,scale:1.3,mask:'none'}});
+  image('background-blur',!plan.cover?sourceUrl || backgroundUrl:backgroundUrl || sourceUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:dir.focusX>50?25:75,focusY:60,opacity:.96,effects:{layer:'background',blur:family==='movie-full-bleed'?12:34,brightness:dark?.74:.9,saturation:1,scale:1.3,mask:'none'}});
   image('film-wash',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'wash',color:palette.dominantColor,colorWash:Math.min(14,atmospheric.colorWash || 9)}});
   image('film-atmosphere',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'atmosphere',color:palette.accentColor,grain:Math.min(2,atmospheric.grain || 1),overlay:atmospheric.overlay || 'none'}});
   elements.push({id:'cinematic-wash',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:side==='left'?'right':'left',stops:[{offset:0,color:alpha(bg,.88)},{offset:.62,color:alpha(bg,.2)},{offset:1,color:alpha(bg,.03)}],opacity:1});
@@ -55,7 +64,7 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   image('film-vignette',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'vignette',color:bg,vignette:Math.min(36,atmospheric.vignette || 18)}});
   // Typography has reserved zones outside the sharp artwork, even in full-bleed compositions.
   const titleBox=box(plan.title),dataBox=box(plan.data);
-  tx('title',draft.title || draft.entities.movie?.title,titleBox, family==='movie-asymmetric'?108:family==='movie-spotlight'?54:94,{lines:4,visible:!draft.artworkPolicy?.hideTitle});
+  if(!titlePolicy.hide)tx('title',draft.title || draft.entities.movie?.title,titleBox, !sourceUrl && !backgroundUrl?120:family==='movie-asymmetric'?108:family==='movie-spotlight'?54:94,{lines:4,visible:!draft.artworkPolicy?.hideTitle});
   const session=sessionCopy(draft);
   const sessionMoment=sessionMomentLabel(draft.schedule?.days);
   const dateOnly=!draft.artworkPolicy?.hideDate && draft.date && draft.date!=='EM BREVE'?`${draft.content?.primaryDateLabel || 'DIA'} ${draft.date}`:'';
@@ -66,8 +75,8 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   if(family==='movie-spotlight') {
     const day=draft.schedule?.days?.[0];
     const label=commercial?'INGRESSOS':premiere?draft.content?.primaryDateLabel || 'ESTREIA':day?'SESSÕES':'EM BREVE';
-    tx('subtitle',label,{...dataBox,height:dataBox.height*.16},28,{lines:1});
     const main=commercial?draft.price:premiere?draft.date:session?session.split(' • ')[0]:draft.date || 'EM BREVE';
+    if(semanticText(label)!==semanticText(main))tx('subtitle',label,{...dataBox,height:dataBox.height*.16},28,{lines:1});
     tx('detail',main,{...dataBox,y:dataBox.y+dataBox.height*.20,height:dataBox.height*.43},104,{fontFamily:'Social Display',fontWeight:900,lines:1,fill:accent,shadowBlur:12,shadowColor:alpha(accent,.42)});
     if(session)tx('description',premiere?sessionDetails:sessionMoment,{...dataBox,y:dataBox.y+dataBox.height*.70,height:dataBox.height*.25},36,{lines:2});
   } else if(commercial || premiere && dateOnly) {
@@ -94,9 +103,9 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   if(!logoUrl && draft.signatureId!=='none')tx('cinema',brand.name,box([.74,.905,.195,.08]),26,{lines:2,hierarchy:'branding'});
   const primaryId={movieLogo:'artwork',symbol:'artwork',artwork:'artwork',date:'detail',price:'detail',title:'title'}[draft.primaryElement] || 'artwork';
   for(const e of elements)if(e.hierarchy==='primary')e.hierarchy='secondary';
-  const primary=elements.find(e=>e.id===primaryId && e.visible!==false);
+  const primary=elements.find(e=>e.id===primaryId && e.visible!==false) || elements.find(e=>e.id==='artwork') || elements.find(e=>e.id==='title' && e.visible!==false);
   if(primary)primary.hierarchy='primary';
   const {entities,...sourceDraft}=draft;
-  return normalizeScene({id:`scene-${draft.templateId}-${format.id}`,templateId:draft.templateId,formatId:format.id,width:w,height:h,backgroundColor:bg,elements,sourceDraft:{...sourceDraft,officialMovieLayout:true,creativeMovieLayout:true,movieManifest:manifest,heroUsesBackdrop:Boolean(plan.cover && !plan.posterCrop),heroUsesPosterCrop:Boolean(plan.posterCrop),signatureReserved:logoBox,editorialSource:heroSource,editorialTitle:draft.title}});
+  return normalizeScene({id:`scene-${draft.templateId}-${format.id}`,templateId:draft.templateId,formatId:format.id,width:w,height:h,backgroundColor:bg,elements,sourceDraft:{...sourceDraft,officialMovieLayout:true,creativeMovieLayout:true,solidPanelAllowed:false,movieContrastColor:surface.dark,titleEvidence:titlePolicy.evidence,movieManifest:manifest,heroUsesBackdrop:Boolean(plan.cover && !plan.posterCrop),heroUsesPosterCrop:Boolean(plan.posterCrop),signatureReserved:logoBox,editorialSource:heroSource,editorialTitle:draft.title}});
 }
 module.exports={buildMovieCinematic,sessionCopy};

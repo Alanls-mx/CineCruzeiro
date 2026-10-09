@@ -182,7 +182,7 @@ function normalizeEffects(value = {}) {
     shadow: number(v.shadow, 0, 0, 60),
     blend: number(v.blend, 0, 0, 100),
     colorWash: number(v.colorWash, 0, 0, 35),
-    color: /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : "#609edb",
+    color: /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : v.layer==='contrast'?"#000000":"#609edb",
     mask: MASKS.includes(v.mask) ? v.mask : "fade-all",
     overlay: OVERLAYS.includes(v.overlay) ? v.overlay : "none",
     scale: number(v.scale, 1, 0.7, 1.5),

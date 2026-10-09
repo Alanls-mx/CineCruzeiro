@@ -68,7 +68,7 @@ function rgbaLayer(width, height, fx) {
         color = rgb;
       if (fx.layer === "wash") alpha = fx.colorWash / 100;
       if (fx.layer === "contrast") {
-        color = [0, 0, 0];
+        color = rgb;
         alpha =
           smooth(nx / fx.featherX) *
           smooth((1 - nx) / fx.featherX) *

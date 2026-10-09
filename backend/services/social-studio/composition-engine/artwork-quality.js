@@ -144,17 +144,20 @@ async function repairIntegratedContrast(scene,loadImage) {
   }
   const artwork=scene.elements.find(e=>e.id==='artwork');
   if(!bounds.length || !artwork?.src)return;
+  const contrastColor=scene.sourceDraft.movieContrastColor || require('../engine/palette').movieSurface({dominantColor:scene.backgroundColor}).dark;
   const padX=scene.width*.10,padY=scene.height*.07;
   const left=Math.min(...bounds.map(b=>b.x)),top=Math.min(...bounds.map(b=>b.y));
   const right=Math.max(...bounds.map(b=>b.x+b.width)),bottom=Math.max(...bounds.map(b=>b.y+b.height));
-  const mask={id:'movie-soft-contrast',role:'contrast',type:'image',src:artwork.src,
-    x:Math.max(0,left-padX),y:Math.max(0,top-padY),
-    width:Math.min(scene.width,right+padX)-Math.max(0,left-padX),
-    height:Math.min(scene.height,bottom+padY)-Math.max(0,top-padY),
-    opacity:.62,fit:'cover',locked:true,effects:{layer:'contrast',featherX:.12,featherY:.16}};
-  scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,mask);
-  for(const opacity of [.62,.74,.84,.92]) {
-    mask.opacity=opacity;
+  const regions=scene.sourceDraft.integratedCampaign?[{x:left,y:top,width:right-left,height:bottom-top}]:bounds;
+  const masks=regions.map((b,index)=>{
+    const x=Math.max(0,b.x-padX),y=Math.max(0,b.y-padY);
+    const width=Math.min(scene.width,b.x+b.width+padX)-x,height=Math.min(scene.height,b.y+b.height+padY)-y;
+    return {id:index?`movie-soft-contrast-${index}`:'movie-soft-contrast',role:'contrast',type:'image',src:artwork.src,x,y,width,height,
+      opacity:.62,fit:'cover',locked:true,effects:{layer:'contrast',color:contrastColor,featherX:Math.min(.45,padX/width),featherY:Math.min(.45,padY/height)}};
+  });
+  scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,...masks);
+  for(const opacity of [.62,.74,.84,.94]) {
+    for(const mask of masks)mask.opacity=opacity;
     for(const reading of await contrastReadings(scene,loadImage))if(reading.ratio<4.5) {
       const element=scene.elements.find(e=>e.id===reading.id);
       const ink=reading.white>=reading.dark?'#ffffff':'#101820';
@@ -164,19 +167,8 @@ async function repairIntegratedContrast(scene,loadImage) {
   }
 }
 async function repairContrast(scene,loadImage) {
-  if(scene.sourceDraft.integratedCampaign) {
+  if(scene.sourceDraft.integratedCampaign || scene.sourceDraft.creativeMovieLayout) {
     await repairIntegratedContrast(scene,loadImage);
-    return;
-  }
-  if(scene.sourceDraft.movieFamily==='movie-editorial-light') {
-    // Keep the poster-derived footer continuous instead of placing a dark card
-    // behind each date line when the image has mixed luminance.
-    for(const reading of await contrastReadings(scene,loadImage)) {
-      const element=scene.elements.find(e=>e.id===reading.id);
-      if(element && reading.ratio<4.5 && Math.max(reading.white,reading.dark)>=4.5)
-        element.fill=reading.white>=reading.dark?'#ffffff':'#101820';
-    }
-    await repairConcessionContrast(scene,loadImage);
     return;
   }
   if(scene.sourceDraft.programCampaignVersion===2) {
@@ -186,20 +178,6 @@ async function repairContrast(scene,loadImage) {
     }
     // Repair only the reading areas; never discard the entire campaign background.
     await repairConcessionContrast(scene,loadImage);
-    return;
-  }
-  if(scene.sourceDraft.creativeMovieLayout) {
-    let readings=await contrastReadings(scene,loadImage);
-    const selectInk=()=>readings.forEach(r=>{const e=scene.elements.find(e=>e.id===r.id);if(e && r.ratio<4.5 && Math.max(r.white,r.dark)>=4.5)e.fill=r.white>=r.dark?'#ffffff':'#101820';});
-    selectInk();
-    if(readings.some(r=>Math.max(r.white,r.dark)<4.5)) {
-      const side=['movie-character','cinematic-blend','movie-asymmetric'].includes(scene.sourceDraft.movieFamily);
-      const left=scene.sourceDraft.movieFamily==='movie-asymmetric' || scene.sourceDraft.movieDirection?.copySide==='left';
-      const veil={id:'movie-reading-veil',role:'ambient',type:'gradient',x:0,y:0,width:scene.width,height:scene.height,opacity:1,direction:side?(left?'right':'left'):'bottom',stops:side?[{offset:0,color:'rgba(0,0,0,0.94)'},{offset:.34,color:'rgba(0,0,0,0.94)'},{offset:.58,color:'rgba(0,0,0,0)'},{offset:1,color:'rgba(0,0,0,0)'}]:[{offset:0,color:'rgba(0,0,0,0)'},{offset:.46,color:'rgba(0,0,0,0)'},{offset:.61,color:'rgba(0,0,0,0.94)'},{offset:1,color:'rgba(0,0,0,0.94)'}]};
-      scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,veil);
-      if(side)scene.elements.splice(scene.elements.findIndex(e=>e.type==='text'),0,{...veil,id:'movie-footer-veil',direction:'bottom',stops:[{offset:0,color:'rgba(0,0,0,0)'},{offset:.65,color:'rgba(0,0,0,0)'},{offset:.74,color:'rgba(0,0,0,0.94)'},{offset:1,color:'rgba(0,0,0,0.94)'}]});
-      readings=await contrastReadings(scene,loadImage);selectInk();
-    }
     return;
   }
   if(scene.sourceDraft.officialProgramLayout && (await contrastReadings(scene,loadImage)).some(r=>r.ratio<4.5)) {
