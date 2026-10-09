@@ -251,6 +251,7 @@
     const selectedMovie=state.context?.movies?.find(movie=>String(movie.id)===byId('socialStudioMovie').value);
     byId('socialStudioDayModeField').hidden=kind!=='movie' || !(selectedMovie?.sessions || []).some(session=>/^\d{2}:\d{2}$/.test(session.time || '') && session.time<'05:00');
     byId('socialStudioMovieBlurField').hidden=kind!=='movie';
+    byId('socialStudioMovieEdgeField').hidden=kind!=='movie';
     byId('socialStudioFeaturedMovie').closest('label').hidden=value('socialStudioProgramPosterMode')!=='featured';
     for(const [id,meaning] of [['socialStudioReleaseDate','release'],['socialStudioPresaleDate','presale'],['socialStudioSessionDate','session']])byId(id).closest('label').hidden=value('socialStudioDateKind')!==meaning;
     byId('socialStudioDate').closest('label').hidden=value('socialStudioDateTextMode')==='automatic';
@@ -456,6 +457,7 @@
                     </select>
                   </label>
                   <label id="socialStudioMovieBlurField" data-social-field="movie" hidden>Desfoque do fundo<select id="socialStudioMovieBlur" data-requires-create><option value="0">Automático</option><option value="18">Leve</option><option value="27">Médio</option><option value="40">Forte</option></select></label>
+                  <label id="socialStudioMovieEdgeField" data-social-field="movie" hidden>Integração da imagem<select id="socialStudioMovieEdge" data-requires-create><option value="automatic">Automática</option><option value="soft">Bordas suaves</option><option value="preserved">Bordas preservadas</option><option value="progressive">Gradiente progressivo</option></select></label>
                   <fieldset class="social-choice-fieldset"><legend>Variações de cor</legend><div id="socialStudioPalettes" class="social-palette-grid"></div></fieldset>
                   <label>Atmosfera<select id="socialStudioCompositionPreset" data-requires-create><option value="automatic">Automática pelo gênero</option>${Object.entries(state.context.composition?.presets || {}).map(([id, preset]) => `<option value="${id}">${escapeHtml(preset.name)}</option>`).join("")}</select></label>
                   <label>Visual<select id="socialStudioCompositionLook" data-requires-create>${Object.entries(state.context.composition?.looks || {}).map(([id, look]) => `<option value="${id}" ${id === "cinematic" ? "selected" : ""}>${escapeHtml(look.name)}</option>`).join("")}</select></label>
@@ -1116,6 +1118,7 @@
       sessionDate:value('socialStudioSessionDate'),
       sessionDayMode:value('socialStudioDayMode','calendar'),
       movieBackgroundBlur:Number(value('socialStudioMovieBlur',0)),
+      movieEdgeTreatment:value('socialStudioMovieEdge','automatic'),
       actionDestination:value('socialStudioActionDestination'),
       auxiliaryText: value("socialStudioAuxiliary"),
       cta: value("socialStudioCta"),
@@ -1177,6 +1180,7 @@
     setControl('socialStudioPeriodStart',draft.periodStart || '');
     setControl('socialStudioDayMode',draft.sessionDayMode || 'calendar');
     setControl('socialStudioMovieBlur',draft.movieBackgroundBlur || 0);
+    setControl('socialStudioMovieEdge',draft.movieEdgeTreatment || 'automatic');
     document.getElementById('socialStudioShowSessions').checked=draft.showSessions!==false;
     state.polish = draft.polish === true;
     invalidateThumbnails();

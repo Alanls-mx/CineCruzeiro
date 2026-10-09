@@ -11,7 +11,8 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
   const box=([x,y,width,height])=>({x:x*w,y:top+y*area,width:width*w,height:height*area});
   const surface=movieSurface(palette),bg=surface.light,ink=surface.ink;
   const filmAccent=mix(palette.accentColor || palette.dominantColor,'#101820',.56);
-  const editorialVoice=palette.artworkLightness>.50?'Social Editorial':'Social Display';
+  const editorialVoice=draft.movieDirection?.editorialFont || 'Social Display';
+  const edge=draft.movieDirection?.edgeTreatment || 'soft';
   const titlePolicy=embeddedMovieTitle(draft,sourceUrl);
   const elements=[],manifest=[];
   const image=(id,src,bounds,extra={})=>{if(src)elements.push({id,name:id,type:'image',role:id,...bounds,src,fit:'contain',visible:true,opacity:1,...extra});};
@@ -21,13 +22,13 @@ function buildMovieEditorialLight({draft,format,palette,brand,sourceUrl,backgrou
     elements.push({id,name:id,type:'text',role:id,...bounds,...fit,fontFamily:display?editorialVoice:'Social Text',fontWeight:display && editorialVoice==='Social Editorial'?700:display?900:600,fill,lineHeight:1.12,align:'left',visible:true,opacity:1,...extra});
     manifest.push({id,text:String(value).replace(/\s+/g,' ').trim()});
   };
-  image('background-blur',sourceUrl || backgroundUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'fill',effects:{layer:'background',blur:draft.movieBackgroundBlur ?? 36,brightness:1,saturation:1,scale:1,mask:'none'}});
+  image('background-blur',sourceUrl || backgroundUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'fill',effects:{layer:'background',blur:draft.movieDirection?.blur ?? 30,brightness:1,saturation:1,scale:1,mask:'none'}});
   const hero=box([.015,-safe.top,.97,titlePolicy.hide?.67:.63]);
-  image('artwork',sourceUrl,hero,{role:'artwork',keepRatio:true,locked:true,hierarchy:'primary',effects:{layer:'hero',mask:'fade-all',blend:22,brightness:1,scale:1}});
+  image('artwork',sourceUrl,hero,{role:'artwork',keepRatio:true,locked:true,hierarchy:'primary',effects:{layer:'hero',mask:edge==='preserved'?'none':edge==='progressive'?'cinematic-bottom':'fade-all',blend:edge==='progressive'?39:edge==='soft'?25:0,brightness:1,scale:1}});
   const readingTop=(top+area*(titlePolicy.hide?.66:.635))/h;
-  const lower= mix(bg,palette.editorialAtmosphere?.color || palette.dominantColor,.10);
+  const lower= mix(bg,palette.editorialAtmosphere?.color || palette.dominantColor,.15);
   elements.splice(elements.findIndex(e=>e.id==='artwork'),0,{id:'editorial-color-wash',role:'ambient',type:'gradient',x:0,y:0,width:w,height:h,direction:'bottom',stops:[
-    {offset:0,color:rgba(bg,0)},{offset:readingTop-.16,color:rgba(bg,0)},{offset:readingTop,color:rgba(bg,.90)},{offset:1,color:rgba(lower,.89)}
+    {offset:0,color:rgba(bg,0)},{offset:readingTop-.16,color:rgba(bg,0)},{offset:readingTop,color:rgba(bg,.84)},{offset:1,color:rgba(lower,.86)}
   ]});
   const movieTitle=draft.title || draft.entities?.movie?.title || '';
   const days=draft.showSessions===false?[]:draft.schedule?.days || [];

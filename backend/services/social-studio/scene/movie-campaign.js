@@ -49,8 +49,9 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
   const canvasRatio=artworkBounds.width/artworkBounds.height;
   const cropLoss=1-Math.min(sourceRatio/canvasRatio,canvasRatio/sourceRatio);
   const canCover=cropLoss<=.20;
-  image('background-blur',embeddedTitle?heroSource:backgroundUrl || heroSource,{x:0,y:0,width:w,height:h},{role:'background',fit:embeddedTitle?'fill':'cover',focusX:draft.movieDirection?.focusX || 50,focusY:38,effects:{layer:'background',blur:draft.movieBackgroundBlur ?? (embeddedTitle?32:30),brightness:embeddedTitle?.88:light?.92:.58,saturation:1,scale:embeddedTitle?1:1.16}});
-  image('artwork',heroSource,artworkBounds,{role:'artwork',fit:embeddedTitle?'contain':canCover?'cover':'contain',keepRatio:true,locked:true,focusX:draft.movieDirection?.focusX || 50,focusY:draft.movieDirection?.focusY || 42,hierarchy:'primary',effects:{layer:'hero',mask:embeddedTitle?'fade-all':'cinematic-bottom',blend:embeddedTitle?27:canCover?45:72,brightness:1,scale:1}});
+  const edge=draft.movieDirection?.edgeTreatment || 'soft';
+  image('background-blur',embeddedTitle?heroSource:backgroundUrl || heroSource,{x:0,y:0,width:w,height:h},{role:'background',fit:embeddedTitle?'fill':'cover',focusX:draft.movieDirection?.focusX || 50,focusY:38,effects:{layer:'background',blur:draft.movieDirection?.blur ?? 30,brightness:embeddedTitle?.88:light?.92:.58,saturation:1,scale:embeddedTitle?1:1.16}});
+  image('artwork',heroSource,artworkBounds,{role:'artwork',fit:embeddedTitle?'contain':canCover?'cover':'contain',keepRatio:true,locked:true,focusX:draft.movieDirection?.focusX || 50,focusY:draft.movieDirection?.focusY || 42,hierarchy:'primary',effects:{layer:'hero',mask:embeddedTitle?edge==='preserved'?'none':edge==='progressive'?'cinematic-bottom':'fade-all':'cinematic-bottom',blend:embeddedTitle?edge==='progressive'?40:edge==='soft'?27:0:canCover?45:72,brightness:1,scale:1}});
   const transitionStart=secondarySession?.64:embeddedTitle?.71:.63;
   const atmosphereStops=[
     {offset:0,color:rgba(base,0)},

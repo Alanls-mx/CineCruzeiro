@@ -38,3 +38,9 @@ O Studio registra duas notas independentes por arte. O QA técnico mede integrid
 Sessões depois da meia-noite exibem por padrão a data real como "MADRUGADA DE" seguida do dia e da data. O operador pode indicar também o dia comercial anterior quando a programação do cinema usa essa convenção; esse dia não substitui a data real da sessão.
 
 As exportações antigas não são modificadas pela atualização. As novas artes devem ser geradas novamente no Studio.
+
+## Direção adaptativa
+
+O Editorial integrado escolhe a voz tipográfica a partir do gênero e da complexidade visual. Filmes leves e cartazes movimentados usam a fonte de impacto; a fonte serifada fica para direções mais calmas. O fundo ajusta o desfoque pela imagem e pelo formato. O operador pode escolher bordas suaves, preservadas ou com gradiente progressivo. Em quadrados, a escolha automática favorece a transição suave para reduzir a aparência de cartaz sobreposto. Stories com pôster vertical usam mais da área disponível antes das informações da sessão.
+
+O QA editorial identifica fonte incompatível com direção divertida, pôster pequeno sobre fundo desfocado e separação excessiva no Story. A nota usa também equilíbrio, hierarquia, continuidade e aproveitamento da imagem. É uma triagem heurística; a revisão humana continua decisiva para a publicação.

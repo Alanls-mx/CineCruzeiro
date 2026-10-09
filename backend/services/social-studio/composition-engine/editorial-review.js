@@ -63,6 +63,14 @@ function mergeQuality(scene, general, specialist) {
       note('REPEATED_SESSION_DATE','A data aparece mais de uma vez.',16);
     const background=scene.elements.find(e=>e.id==='background-blur');
     if(background?.effects?.blur>38)note('HEAVY_BACKGROUND_BLUR','O desfoque afasta o fundo da identidade do filme.',9);
+    const art=flattenElements(scene.elements).find(e=>e.id==='artwork');
+    const mood=draft.movieDirection?.mood;
+    if(mood==='playful' && detail?.fontFamily==='Social Editorial')
+      note('TYPE_VOICE_MISMATCH','A fonte clássica não acompanha a linguagem divertida da obra.',14);
+    if(scene.formatId==='square' && art && art.width<scene.width*.55 && background?.effects?.blur>20)
+      note('ISOLATED_POSTER','O pôster ocupa pouca largura diante de um fundo muito desfocado.',12);
+    if(scene.formatId==='story' && art && detail && (detail.y-(art.y+art.height))/scene.height>.12)
+      note('EMPTY_STORY_TRANSITION','Há espaço excessivo entre o pôster e a informação principal.',10);
   }
   const editorialIssues=[...review.issues,...artIssues];
   const editorialScore=clamp(
@@ -78,7 +86,7 @@ function mergeQuality(scene, general, specialist) {
   const total = clamp((specialist ? specialist.total*.45+general.total*.30 : general.total*.75)+review.layout*.15+review.branding*.05+review.conversion*.05);
   return {...general,total,score:total,accepted:valid && !review.issues.some(i=>i.blocking),issues,
     technical:{score:specialist?.total ?? general.total,accepted:valid,issues:specialist?.issues || general.issues || []},
-    editorial:{...review,score:editorialScore,issues:editorialIssues},raster:specialist || null,method:'editorial-review-v4'};
+    editorial:{...review,score:editorialScore,issues:editorialIssues},raster:specialist || null,method:'editorial-review-v5'};
 }
 
 function geometry(scene) {

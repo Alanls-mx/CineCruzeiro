@@ -68,7 +68,7 @@ test('pôster cadastrado preserva o título original por padrão e permite títu
   assert.ok(!original.scene.elements.some(e=>e.id==='title'));
   assert.equal(original.scene.elements.find(e=>e.id==='artwork').fit,'contain');
   assert.ok(original.scene.elements.find(e=>e.id==='artwork').height>=original.scene.height*.65);
-  assert.equal(original.scene.elements.find(e=>e.id==='artwork').effects.mask,'fade-all');
+  assert.equal(original.scene.elements.find(e=>e.id==='artwork').effects.mask,'none');
   assert.ok(original.scene.elements.find(e=>e.id==='detail').y>original.scene.elements.find(e=>e.id==='artwork').height);
   assert.equal(original.scene.elements.find(e=>e.id==='background-blur').fit,'fill');
   const explicit=await render({templateId:'movie-highlight',movieId:'film',layoutId:'movie-campaign',artworkMetadata:{containsTitle:false}},context('Comédia','/qa/warm'));

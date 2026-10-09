@@ -67,7 +67,7 @@ test('data de estreia igual à sessão não reaparece no bloco de horários',asy
   }
 });
 test('editorial integrado dissolve o pôster em fundo derivado e mantém ação e assinatura',async()=>{
-  const result=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',formatId:'feed_portrait',layoutId:'movie-editorial-light'},context,{loadImage,skipRaster:true});
+  const result=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'movie',formatId:'feed_portrait',layoutId:'movie-editorial-light',movieEdgeTreatment:'soft'},context,{loadImage,skipRaster:true});
   const elements=flattenElements(result.scene.elements);
   assert.ok(result.quality.accepted);
   assert.equal(result.scene.sourceDraft.movieFamily,'movie-editorial-light');

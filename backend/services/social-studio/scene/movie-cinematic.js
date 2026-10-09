@@ -29,13 +29,15 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   }
   const officialTitle=embeddedMovieTitle(draft,sourceUrl);
   if(family==='movie-spotlight' && officialTitle.hide) {
-    plan.art=[.06,-.03,.88,.67];
+    const tallStory=format.id==='story' && (draft.sourceAsset?.width/draft.sourceAsset?.height || 2/3)<=.76;
+    plan.art=tallStory?[.03,-.03,.94,.72]:[.06,-.03,.88,.67];
+    if(tallStory)plan.data=[.065,.70,.87,.18];
     plan.cover=false;
     plan.posterCrop=false;
   }
   const titlePolicy=embeddedMovieTitle(draft,sourceUrl,{intact:!plan.cover});
   if(titlePolicy.hide && family==='movie-immersive') {
-    plan.art=[.06,0,.88,.66];
+    plan.art=format.id==='square'?[.025,-.08,.95,.75]:[.06,0,.88,.66];
     plan.data=[.065,.70,.87,.175];
   }
   const box=rect=>({x:rect[0]*w,y:top+rect[1]*area,width:rect[2]*w,height:rect[3]*area});
@@ -50,7 +52,7 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
     elements.push({id,name:id,role:id,type:'text',...bounds,...fit,fontFamily:id==='title'?'Social Display':'Social Text',fontWeight:id==='title'?900:600,fill:id==='detail'?accent:'#ffffff',lineHeight:1.12,align:'left',opacity:1,visible:true,hierarchy:id==='title'?'primary':'secondary',...extra});
     if(extra.visible!==false)manifest.push({id,text:String(value).replace(/\s+/g,' ').trim()});
   };
-  const blur=Number.isFinite(draft.movieBackgroundBlur)?draft.movieBackgroundBlur:family==='movie-full-bleed'?10:27;
+  const blur=Number.isFinite(draft.movieBackgroundBlur)?draft.movieBackgroundBlur:family==='movie-full-bleed'?10:Math.max(10,(dir.blur || 27)-(format.id==='square'?3:0));
   image('background-blur',!plan.cover?sourceUrl || backgroundUrl:backgroundUrl || sourceUrl,{x:0,y:0,width:w,height:h},{role:'background',fit:'cover',focusX:dir.focusX>50?25:75,focusY:60,opacity:.96,effects:{layer:'background',blur,brightness:dark?.74:.9,saturation:1,scale:1.3,mask:'none'}});
   image('film-wash',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'wash',color:palette.dominantColor,colorWash:Math.min(14,atmospheric.colorWash || 9)}});
   image('film-atmosphere',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'atmosphere',color:palette.accentColor,grain:Math.min(2,atmospheric.grain || 1),overlay:atmospheric.overlay || 'none'}});
@@ -65,7 +67,8 @@ function buildMovieCinematic({draft,format,palette,brand,sourceUrl,backgroundUrl
   if(heroSource) {
     if(atmospheric.glow)image('hero-light',heroSource,{x:Math.max(0,hero.x-w*.09),y:Math.max(0,hero.y-h*.05),width:Math.min(w,hero.width+w*.18),height:Math.min(h,hero.height+h*.10)},{role:'ambient',effects:{layer:'glow',color:palette.accentColor,glow:Math.min(30,atmospheric.glow*1.35)}});
     if(!plan.cover)image('ambient-shadow',heroSource,{...hero,x:hero.x+14*u,y:hero.y+18*u},{role:'ambient',fit:'contain',effects:{layer:'ambient-shadow',mask:'fade-all',blend:35,shadow:28,scale:1}});
-    image('artwork',heroSource,hero,{role:'artwork',fit:plan.cover?'cover':'contain',keepRatio:true,locked:true,focusX:dir.focusX,focusY:plan.posterCrop?18:dir.focusY,hierarchy:'primary',effects:{layer:'hero',mask:plan.cover?'cinematic-bottom':'fade-all',blend:plan.cover?65:24,brightness:1,scale:1}});
+    const edge=dir.edgeTreatment || 'soft';
+    image('artwork',heroSource,hero,{role:'artwork',fit:plan.cover?'cover':'contain',keepRatio:true,locked:true,focusX:dir.focusX,focusY:plan.posterCrop?18:dir.focusY,hierarchy:'primary',effects:{layer:'hero',mask:plan.cover?'cinematic-bottom':edge==='preserved'?'none':edge==='progressive'?'cinematic-bottom':'fade-all',blend:plan.cover?65:edge==='progressive'?40:edge==='soft'?format.id==='square'?52:26:0,brightness:1,scale:1}});
   }
   image('film-vignette',sourceUrl,{x:0,y:0,width:w,height:h},{role:'ambient',effects:{layer:'vignette',color:bg,vignette:Math.min(36,atmospheric.vignette || 18)}});
   // Typography has reserved zones outside the sharp artwork, even in full-bleed compositions.

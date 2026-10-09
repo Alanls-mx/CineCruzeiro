@@ -9,6 +9,20 @@ const engine=require('../backend/services/socialStudioEngineService');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
 const {sessionMomentParts}=require('../backend/services/social-studio/contracts/artwork-layout');
 const {mergeQuality}=require('../backend/services/social-studio/composition-engine/editorial-review');
+const {movieDirection}=require('../backend/services/social-studio/composition-engine/movie-direction');
+
+test('direção editorial adapta fonte e bordas à obra sem depender do título',()=>{
+  const analysis={brightness:.62,zones:[{id:'bottom',complexity:.10},{id:'left',complexity:.12},{id:'right',complexity:.14}]};
+  const input={layoutId:'movie-editorial-light',formatId:'square'};
+  const comedy=movieDirection({genreProfile:{id:'comedy'},formatId:'square',templateId:'movie-highlight'},input,analysis,false,null);
+  const romance=movieDirection({genreProfile:{id:'romance'},formatId:'square',templateId:'movie-highlight'},input,analysis,false,null);
+  assert.equal(comedy.editorialFont,'Social Display');
+  assert.equal(comedy.edgeTreatment,'soft');
+  assert.equal(movieDirection({genreProfile:{id:'comedy'},formatId:'story',templateId:'movie-highlight'},input,analysis,false,null).edgeTreatment,'preserved');
+  assert.equal(romance.editorialFont,'Social Editorial');
+  assert.ok(romance.blur<30);
+  assert.equal(movieDirection({genreProfile:{id:'comedy'},formatId:'square',templateId:'movie-highlight'}, {...input,movieEdgeTreatment:'progressive'},analysis,false,null).edgeTreatment,'progressive');
+});
 
 test('curadoria mantém uma ocorrência semântica, o papel principal e o contrato de exportação',()=>{
   const scene={templateId:'movie-highlight',sourceDraft:{movieManifest:[{id:'subtitle',text:'Em breve'},{id:'detail',text:'EM BREVE'}]},elements:[
@@ -96,4 +110,20 @@ test('QA editorial penaliza redundância mesmo quando a verificação técnica a
   assert.equal(quality.technical.score,95);
   assert.ok(quality.editorial.score<quality.technical.score);
   assert.ok(quality.editorial.issues.some(issue=>issue.code==='REPEATED_MOVIE_TITLE'));
+});
+
+test('QA editorial aponta fonte fora da linguagem do filme e cartaz isolado no quadrado',()=>{
+  const scene={templateId:'movie-highlight',formatId:'square',width:1080,height:1080,
+    sourceDraft:{genreProfile:{id:'comedy'},movieDirection:{mood:'playful'},availableArtwork:true},elements:[
+      {id:'background-blur',role:'background',type:'image',src:'/poster',x:0,y:0,width:1080,height:1080,effects:{blur:28}},
+      {id:'artwork',role:'artwork',type:'image',src:'/poster',x:320,y:0,width:440,height:700,visible:true},
+      {id:'detail',type:'text',text:'SEXTA • 09/10',x:70,y:730,width:620,height:80,fontSize:58,fontFamily:'Social Editorial',visible:true},
+      {id:'session-time',type:'text',text:'19:30',x:70,y:835,width:620,height:90,fontSize:72,visible:true}
+    ]};
+  const technical={total:96,accepted:true,issues:[]};
+  const quality=mergeQuality(scene,technical,technical);
+  assert.equal(quality.technical.score,96);
+  assert.ok(quality.editorial.issues.some(issue=>issue.code==='TYPE_VOICE_MISMATCH'));
+  assert.ok(quality.editorial.issues.some(issue=>issue.code==='ISOLATED_POSTER'));
+  assert.ok(quality.editorial.score<quality.technical.score);
 });
