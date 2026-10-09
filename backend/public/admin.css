@@ -2951,6 +2951,18 @@ textarea:focus {
   line-height: 1.5;
 }
 
+.session-schedule-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 10px 0 16px;
+}
+
+.session-schedule-hint .helper-text { flex: 1 1 320px; }
+.session-schedule-hint .ghost-button { flex: 0 0 auto; }
+
 .tmdb-results {
   display: grid;
   gap: 8px;

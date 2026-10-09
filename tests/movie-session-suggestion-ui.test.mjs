@@ -13,9 +13,12 @@ test("nova sessão parte da data de estreia e recebe sugestão de horário", () 
   assert.match(adminSource, /function suggestedSessionSchedule\(\)/);
   assert.match(adminSource, /considerando \$\{suggestion\.duration\} min de filme/);
   assert.match(adminHtml, /id="sessionScheduleSuggestion"/);
+  assert.match(adminHtml, /id="sessionUseSuggestedTime"/);
 });
 
 test("a sugestão respeita alterações manuais do operador", () => {
   assert.match(adminSource, /sessionTimeManuallyEdited = true/);
   assert.match(adminSource, /apply: !state\.sessionTimeManuallyEdited/);
+  assert.match(adminSource, /sessionTimeManuallyEdited = false;\s*updateSessionScheduleSuggestion\(\)/);
+  assert.match(adminSource, /date === adminTodayKey\(\)/);
 });

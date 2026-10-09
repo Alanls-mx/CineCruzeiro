@@ -4504,7 +4504,10 @@ function suggestedSessionSchedule() {
   const candidates = [];
   for (let minute = 19 * 60; minute <= (24 * 60) - duration; minute += 5) candidates.push(minute);
   for (let minute = 14 * 60; minute < 19 * 60 && minute <= (24 * 60) - duration; minute += 5) candidates.push(minute);
-  const suggested = candidates.find((start) => !occupied.some((slot) => (
+  const minimumStart = date === adminTodayKey()
+    ? sessionTimeMinutes(new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date())) + 45
+    : 0;
+  const suggested = candidates.find((start) => start >= minimumStart && !occupied.some((slot) => (
     start < slot.end + turnaround && start + duration + turnaround > slot.start
   )));
   return {
@@ -4517,23 +4520,29 @@ function suggestedSessionSchedule() {
 
 function updateSessionScheduleSuggestion({ apply = false } = {}) {
   const target = $("sessionScheduleSuggestion");
+  const useButton = $("sessionUseSuggestedTime");
   if (!target) return;
   if (state.editingSessionId) {
     target.textContent = "O horário existente será mantido até que você o altere.";
+    useButton.hidden = true;
     return;
   }
   const suggestion = suggestedSessionSchedule();
   if (!suggestion) {
     target.textContent = "Escolha a data e a sala para calcular um horário livre.";
+    useButton.hidden = true;
     return;
   }
   if (!suggestion.time) {
     target.textContent = "Não foi encontrada uma janela livre entre 14:00 e 00:00. Consulte a agenda global de sessões.";
+    useButton.hidden = true;
     return;
   }
   if (apply && !state.sessionTimeManuallyEdited) $("sessionTime").value = suggestion.time;
   const dateLabel = new Date(`${suggestion.date}T12:00:00`).toLocaleDateString("pt-BR");
-  target.textContent = `Sugestão: ${suggestion.time} em ${dateLabel}, considerando ${suggestion.duration} min de filme e ${suggestion.turnaround} min de intervalo na sala.`;
+  target.textContent = `Horário livre sugerido: ${suggestion.time} em ${dateLabel}, considerando ${suggestion.duration} min de filme e ${suggestion.turnaround} min de intervalo na sala.`;
+  useButton.hidden = $("sessionTime").value === suggestion.time;
+  useButton.dataset.suggestedTime = suggestion.time;
 }
 
 function globalSessionTime(session = {}) {
@@ -12967,8 +12976,15 @@ function bindEvents() {
     updateSessionScheduleSuggestion({ apply: !state.sessionTimeManuallyEdited });
   });
   $("sessionRoom").addEventListener("change", () => updateSessionScheduleSuggestion({ apply: !state.sessionTimeManuallyEdited }));
+  $("sessionUseSuggestedTime").addEventListener("click", () => {
+    $("sessionTime").value = $("sessionUseSuggestedTime").dataset.suggestedTime || "";
+    state.sessionTimeManuallyEdited = false;
+    updateSessionScheduleSuggestion();
+    $("sessionTime").focus();
+  });
   $("sessionTime").addEventListener("input", () => {
     state.sessionTimeManuallyEdited = true;
+    updateSessionScheduleSuggestion();
   });
   $("saveSessionButton").addEventListener("click", saveSession);
   $("cancelSessionButton").addEventListener("click", closeSessionEditor);

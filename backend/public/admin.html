@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="../images/favicon-16.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="icon" type="image/png" sizes="32x32" href="../images/favicon-32.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="icon" type="image/png" sizes="64x64" href="../images/favicon-64.png?brand=cinecruzeiro-icon-blue-star-20261005" />
-    <link rel="stylesheet" href="admin.css?v=20261009-session-seat-map" />
+    <link rel="stylesheet" href="admin.css?v=20261009-session-suggestion" />
     <link rel="stylesheet" href="admin-premium.css?v=20261005-session-row-layout" />
     <link rel="stylesheet" href="social-studio.css?v=20261008-static" />
   </head>
@@ -604,7 +604,10 @@
                         <option value="cancelled">Cancelada</option>
                       </select></label>
                     </div>
-                    <p id="sessionScheduleSuggestion" class="helper-text" aria-live="polite"></p>
+                    <div class="session-schedule-hint">
+                      <p id="sessionScheduleSuggestion" class="helper-text" aria-live="polite"></p>
+                      <button id="sessionUseSuggestedTime" class="ghost-button" type="button" hidden>Usar horário sugerido</button>
+                    </div>
                     <fieldset class="session-ticket-types-field">
                       <legend>Ingressos disponíveis nesta sessão</legend>
                       <p>Selecione os tipos cadastrados em Ingressos. Os preços são sempre obtidos do catálogo e não podem ser alterados aqui.</p>
@@ -3220,7 +3223,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
-    <script src="admin.js?v=20261009-session-seat-map"></script>
+    <script src="admin.js?v=20261009-session-suggestion"></script>
     <script src="social-studio.js?v=20261008-static"></script>
   </body>
 </html>
