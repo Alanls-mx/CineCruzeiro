@@ -1,22 +1,18 @@
 const crypto = require("crypto");
 const { WebSocketServer, WebSocket } = require("ws");
+const { clientIp } = require("./clientIpService");
 
 const MAX_MESSAGE_BYTES = 4096;
 const MESSAGE_WINDOW_MS = 60 * 1000;
 const MAX_MESSAGES_PER_WINDOW = 240;
+const MAX_MESSAGES_PER_IP_WINDOW = 1200;
 const MAX_SELECTIONS_PER_WINDOW = 120;
+const MAX_SELECTIONS_PER_IP_WINDOW = 600;
 const MAX_CONNECTIONS_PER_IP = 40;
 const MAX_PROTOCOL_ERRORS = 5;
+const MAX_IP_LIMIT_BUCKETS = 10000;
 
-function requestIp(request) {
-  const remoteAddress = String(request.socket.remoteAddress || "local").trim();
-  const proxyIsLocal = remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress === "::ffff:127.0.0.1";
-  if (!proxyIsLocal) return remoteAddress;
-  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",").map((value) => value.trim()).filter(Boolean);
-  return forwarded.at(-1) || String(request.headers["x-real-ip"] || "").trim() || remoteAddress;
-}
-
-function consumeSocketLimit(socket, kind, limit) {
+function consumeSocketLimit(socket, kind, limit, amount = 1) {
   const now = Date.now();
   const key = kind === "selection" ? "selectionRate" : "messageRate";
   const current = socket[key] || { count: 0, resetAt: now + MESSAGE_WINDOW_MS };
@@ -24,7 +20,7 @@ function consumeSocketLimit(socket, kind, limit) {
     current.count = 0;
     current.resetAt = now + MESSAGE_WINDOW_MS;
   }
-  current.count += 1;
+  current.count += amount;
   socket[key] = current;
   return current.count <= limit;
 }
@@ -53,6 +49,29 @@ function send(socket, message) {
 function createSeatRealtimeService(server, options) {
   const path = options.path || "/api/realtime/seats";
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
+  const ipSelectionBuckets = new Map();
+  const ipMessageBuckets = new Map();
+
+  function consumeIpLimit(buckets, ip, amount, limit) {
+    const now = Date.now();
+    let bucket = buckets.get(ip);
+    if (!bucket || bucket.resetAt <= now) bucket = { count: 0, resetAt: now + MESSAGE_WINDOW_MS };
+    bucket.count = Math.min(limit + 1, bucket.count + amount);
+    buckets.set(ip, bucket);
+    if (buckets.size > MAX_IP_LIMIT_BUCKETS) {
+      for (const [address, entry] of buckets) {
+        if (entry.resetAt <= now) buckets.delete(address);
+      }
+      while (buckets.size > MAX_IP_LIMIT_BUCKETS) buckets.delete(buckets.keys().next().value);
+    }
+    return bucket.count <= limit;
+  }
+
+  function consumeSelectionLimit(socket, amount = 1) {
+    if (amount <= 0) return true;
+    if (!consumeSocketLimit(socket, "selection", MAX_SELECTIONS_PER_WINDOW, amount)) return false;
+    return consumeIpLimit(ipSelectionBuckets, socket.clientIp, amount, MAX_SELECTIONS_PER_IP_WINDOW);
+  }
 
   function broadcast(sessionId, message, ownerToken = "") {
     for (const client of wss.clients) {
@@ -79,7 +98,7 @@ function createSeatRealtimeService(server, options) {
       socket.destroy();
       return;
     }
-    const ip = requestIp(request);
+    const ip = clientIp(request);
     const activeForIp = [...wss.clients].filter((client) => client.readyState === WebSocket.OPEN && client.clientIp === ip).length;
     if (activeForIp >= MAX_CONNECTIONS_PER_IP) {
       socket.write("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\nConnection: close\r\n\r\n");
@@ -91,13 +110,14 @@ function createSeatRealtimeService(server, options) {
 
   wss.on("connection", (socket, request) => {
     socket.connectionId = crypto.randomUUID();
-    socket.clientIp = requestIp(request);
+    socket.clientIp = clientIp(request);
     socket.seatSessionId = "";
     socket.seatOwnerToken = "";
     socket.protocolErrors = 0;
 
     socket.on("message", async (raw) => {
-      if (!consumeSocketLimit(socket, "message", MAX_MESSAGES_PER_WINDOW)) {
+      if (!consumeSocketLimit(socket, "message", MAX_MESSAGES_PER_WINDOW)
+        || !consumeIpLimit(ipMessageBuckets, socket.clientIp, 1, MAX_MESSAGES_PER_IP_WINDOW)) {
         send(socket, { type: "protocol_error", code: "RATE_LIMITED", message: "Muitas atualizacoes em pouco tempo." });
         socket.close(1008, "rate limited");
         return;
@@ -116,11 +136,14 @@ function createSeatRealtimeService(server, options) {
           const sessionId = validIdentifier(message.sessionId);
           const ownerToken = validIdentifier(message.ownerToken, 180);
           if (!sessionId || !ownerToken) throw Object.assign(new Error("Sessão ou token de reserva inválido."), { code: "INVALID_JOIN" });
-          socket.seatSessionId = sessionId;
-          socket.seatOwnerToken = ownerToken;
           const seatIds = Array.isArray(message.seatIds)
             ? [...new Set(message.seatIds.map((seatId) => validIdentifier(seatId)).filter(Boolean))].slice(0, 20)
             : [];
+          if (!consumeSelectionLimit(socket, seatIds.length)) {
+            throw Object.assign(new Error("Muitas selecoes em pouco tempo."), { code: "RATE_LIMITED" });
+          }
+          socket.seatSessionId = sessionId;
+          socket.seatOwnerToken = ownerToken;
           for (const seatId of seatIds) {
             try {
               await options.selectSeat({ sessionId, seatId, ownerToken, connectionId: socket.connectionId });
@@ -138,7 +161,7 @@ function createSeatRealtimeService(server, options) {
         }
 
         if (message.type === "select_seat") {
-          if (!consumeSocketLimit(socket, "selection", MAX_SELECTIONS_PER_WINDOW)) {
+          if (!consumeSelectionLimit(socket)) {
             throw Object.assign(new Error("Muitas selecoes em pouco tempo."), { code: "RATE_LIMITED" });
           }
           const seatId = validIdentifier(message.seatId);
@@ -164,7 +187,12 @@ function createSeatRealtimeService(server, options) {
         }
 
         if (message.type === "heartbeat") {
-          const seatIds = Array.isArray(message.seatIds) ? message.seatIds.map((seatId) => validIdentifier(seatId)).filter(Boolean).slice(0, 20) : [];
+          const seatIds = Array.isArray(message.seatIds)
+            ? [...new Set(message.seatIds.map((seatId) => validIdentifier(seatId)).filter(Boolean))].slice(0, 20)
+            : [];
+          if (!consumeSelectionLimit(socket, seatIds.length)) {
+            throw Object.assign(new Error("Muitas selecoes em pouco tempo."), { code: "RATE_LIMITED" });
+          }
           for (const seatId of seatIds) {
             await options.selectSeat({ sessionId: socket.seatSessionId, seatId, ownerToken: socket.seatOwnerToken, connectionId: socket.connectionId });
           }

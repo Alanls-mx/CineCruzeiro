@@ -116,6 +116,52 @@ async function main() {
   const recoveredState = await recoveredStatePromise;
   assert.equal(recoveredState.heldSeats.some((seat) => seat.seatId === "A2" && seat.heldByMe), true);
 
+  const repeatedJoin = await connect(url, "repeated-join");
+  const joinSeats = Array.from({ length: 20 }, (_, index) => `J${index + 1}`);
+  for (let index = 0; index < 6; index += 1) {
+    const requestId = `join-batch-${index}`;
+    repeatedJoin.send(JSON.stringify({ type: "join_session", requestId, sessionId: "session-1", ownerToken: "repeated-join", seatIds: joinSeats }));
+    assert.equal((await nextMessage(repeatedJoin, (message) => message.requestId === requestId)).type, "session_joined");
+  }
+  repeatedJoin.send(JSON.stringify({ type: "join_session", requestId: "join-over-limit", sessionId: "session-1", ownerToken: "repeated-join", seatIds: joinSeats }));
+  assert.equal((await nextMessage(repeatedJoin, (message) => message.requestId === "join-over-limit")).code, "RATE_LIMITED");
+
+  const repeatedHeartbeat = await connect(url, "repeated-heartbeat");
+  const heartbeatSeats = Array.from({ length: 20 }, (_, index) => `H${index + 1}`);
+  for (let index = 0; index < 6; index += 1) {
+    const requestId = `heartbeat-batch-${index}`;
+    repeatedHeartbeat.send(JSON.stringify({ type: "heartbeat", requestId, seatIds: heartbeatSeats }));
+    assert.equal((await nextMessage(repeatedHeartbeat, (message) => message.requestId === requestId)).type, "heartbeat_ack");
+  }
+  repeatedHeartbeat.send(JSON.stringify({ type: "heartbeat", requestId: "heartbeat-over-limit", seatIds: heartbeatSeats }));
+  assert.equal((await nextMessage(repeatedHeartbeat, (message) => message.requestId === "heartbeat-over-limit")).code, "RATE_LIMITED");
+
+  const rotatingSockets = await Promise.all(Array.from({ length: 5 }, (_, index) => connect(url, `rotating-${index}`)));
+  let sharedIpRejected = false;
+  for (let index = 0; index < 25 && !sharedIpRejected; index += 1) {
+    const socket = rotatingSockets[index % rotatingSockets.length];
+    const seatIds = Array.from({ length: 20 }, (_, seatIndex) => `R${index % rotatingSockets.length}-${seatIndex + 1}`);
+    const requestId = `rotating-heartbeat-${index}`;
+    socket.send(JSON.stringify({ type: "heartbeat", requestId, seatIds }));
+    const response = await nextMessage(socket, (message) => message.requestId === requestId);
+    sharedIpRejected = response.code === "RATE_LIMITED";
+  }
+  assert.equal(sharedIpRejected, true, "Trocar de conexao nao deve reiniciar o limite de selecoes por IP.");
+  const chatterSockets = await Promise.all(Array.from({ length: 6 }, (_, index) => connect(url, `chatter-${index}`)));
+  let sharedMessageRejected = false;
+  for (let index = 0; index < 1200 && !sharedMessageRejected; index += 1) {
+    const socket = chatterSockets[index % chatterSockets.length];
+    const requestId = `empty-join-${index}`;
+    socket.send(JSON.stringify({ type: "join_session", requestId, sessionId: "session-1", ownerToken: `chatter-${index % chatterSockets.length}` }));
+    const response = await nextMessage(socket, (message) => message.requestId === requestId || message.code === "RATE_LIMITED");
+    sharedMessageRejected = response.code === "RATE_LIMITED";
+  }
+  assert.equal(sharedMessageRejected, true, "Trocar de conexao nao deve reiniciar o limite de mensagens por IP.");
+  repeatedJoin.close();
+  repeatedHeartbeat.close();
+  rotatingSockets.forEach((socket) => socket.close());
+  chatterSockets.forEach((socket) => socket.close());
+
   first.close();
   second.close();
   contenders.forEach((socket) => socket.close());
@@ -127,5 +173,5 @@ async function main() {
 
 main().catch((error) => {
   console.error(error);
-  process.exitCode = 1;
+  process.exit(1);
 });

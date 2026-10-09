@@ -10,6 +10,8 @@ Revisao pontual do backend, checkout, painel administrativo, uploads, downloads 
 | --- | --- | --- | --- |
 | ID de pedido controlado pelo cliente inserido em `onclick` do admin | Alta | `escapeHtml()` nao protege uma string dentro de JavaScript inline; o ID podia sair do literal e executar codigo no painel | Acoes de pedidos/pagamentos passaram a usar atributos `data-*` e listener delegado; novos IDs de checkout e idempotencia aceitam somente formato limitado |
 | Pix pendente exibido como poltrona ocupada | Media | O mesmo conjunto era usado para venda concluida e reserva temporaria | Estados `sold` e `reserved` separados no mapa HTTP e WebSocket; conflito de compra continua considerando ambos |
+| Reserva de poltronas por WebSocket sem limite nos lotes | Media | `join_session` e `heartbeat` podiam renovar ate 20 poltronas por mensagem sem consumir o limite de selecoes; reconectar trocava o contador por socket | As tres formas de selecionar agora debitam por quantidade de poltronas, com teto por conexao e por IP; teste adversarial reproduziu a falha antes da correcao |
+| Consultas repetidas do mapa via novas conexoes | Media | `join_session` sem poltronas gerava leitura do mapa e tinha apenas limite por socket; alternar conexoes multiplicava a carga | Teto de mensagens por IP compartilhado entre sockets, alem do limite por conexao; teste local reproduziu a falha antes da correcao |
 | URLs remotas com risco de SSRF e resposta sem limite incremental | Alta | Downloads de trailer e poster podiam seguir destinos nao autorizados ou consumir bytes antes de validar o tamanho | DNS fixado em IPv4 publico, sem IP literal/porta/credenciais/redirecionamento, timeout e limite durante o fluxo; TMDB nao segue redirecionamento |
 | Configuracoes publicas por exclusao | Media | Uma nova chave privada em `settings` poderia aparecer em `/api/content` | Lista explicita de chaves publicas; teste HTTP com segredo ficticio |
 | Upload podia seguir pasta simbolica externa | Media | Validacao lexical nao detectava `folder` que resolvesse fora da raiz | Comparacao de caminhos reais antes da escrita e criacao exclusiva (`wx`) |
@@ -43,8 +45,8 @@ Revisao pontual do backend, checkout, painel administrativo, uploads, downloads 
 
 ## Testes executados
 
-- 91 testes automatizados distintos passaram: seguranca local (15), uploads (3), ingresso/anti-IDOR (8), metadata de pagamento (5), financeiro/webhooks (48), permissoes (4), mapa administrativo (2) e registro de instancias (6).
-- Scripts de localizacao TMDB, assinatura Mercado Pago, 2FA e tempo real de poltronas passaram.
+- 94 testes automatizados distintos passaram: seguranca local (18), uploads (3), ingresso/anti-IDOR (8), metadata de pagamento (5), financeiro/webhooks (48), permissoes (4), mapa administrativo (2) e registro de instancias (6).
+- Scripts de localizacao TMDB, assinatura Mercado Pago, 2FA e tempo real de poltronas passaram. O teste de tempo real agora inclui lotes de reconexao, heartbeats, rotacao de sockets e consultas repetidas do mapa no mesmo IP.
 - `npm run lint`, `npm run build`, `npm run deploy:validate` e `npm audit --omit=dev --audit-level=high` passaram.
 - O teste de abuso que aponta por padrao para um host publico, os testes que podem tocar `backend/data/db.json` e os testes de PostgreSQL sem banco isolado nao foram executados. Nao houve scanners ou carga contra producao.
 - O CI novo executa o subconjunto local, auditoria de dependencias de producao, lint e build em pull requests e pushes. Seu resultado no GitHub ainda precisa ser observado.
@@ -54,7 +56,7 @@ Revisao pontual do backend, checkout, painel administrativo, uploads, downloads 
 - `npm audit` completo ainda aponta 7 avisos em dependencias de desenvolvimento do Tailwind 3. A migracao para Tailwind 4 e uma mudanca maior de CSS; testar separadamente. O runtime de producao nao apresenta alertas no audit atual.
 - A CSP ainda usa `unsafe-inline` por dependencias existentes do Next/admin. Remover apenas com migração de handlers inline e teste visual do checkout e Studio.
 - O admin ainda possui handlers inline estaticos; a varredura atual nao encontrou interpolacao dinamica nos atributos de evento. Uma revisao contextual completa de XSS/DOM e a migracao dos handlers estaticos ainda sao necessarias antes de remover `unsafe-inline` da CSP.
-- Os limites de taxa em memoria nao sao compartilhados entre processos. Para multiplas instancias, configurar protecao Nginx/borda ou armazenamento compartilhado e validar a cadeia de proxy para IP real.
+- Os limites de taxa em memoria, inclusive o novo limite agregado de reservas por IP, nao sao compartilhados entre processos. Para multiplas instancias, configurar protecao Nginx/borda ou armazenamento compartilhado e validar a cadeia de proxy para IP real. HTTP e WebSocket agora compartilham a mesma validacao: o backend confia no ultimo endereco valido de `X-Forwarded-For` apenas quando a conexao vem de loopback; o proxy deve anexar o IP real como ultimo salto e o backend nao deve ser exposto diretamente.
 - Verificar na VPS isolamento dos bancos por cinema, privilegios minimos do usuario PostgreSQL, firewall, TLS, backup/restauracao e permissoes dos diretorios de upload. Nenhuma configuracao remota foi modificada.
 - O registro das cinco instalacoes passou nas validacoes, mas nenhum checkout de cada cinema foi homologado. Confirmar URLs, chaves e segredos por instalacao antes de publicar.
 

@@ -75,6 +75,7 @@ const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
+const { clientIp } = require("./services/clientIpService");
 const { buildAdminSessionSeatMap } = require("./services/adminSessionSeatMapService");
 const { sessionSeatAvailability } = require("./services/sessionSeatAvailability");
 const { checkoutIdentifier } = require("./services/checkoutIdentifier");
@@ -1122,14 +1123,6 @@ const RATE_LIMIT_RULES = [
   { id: "admin-mutations", limit: 180, windowMs: 60 * 1000, matches: (method, path) => mutatesState(method) && adminAuthRequired(path, method) },
   { id: "customer-mutations", limit: 120, windowMs: 60 * 1000, matches: (method, path) => mutatesState(method) && /^\/api\/(me|subscriptions|coupons)/.test(path) }
 ];
-
-function clientIp(req) {
-  const remoteAddress = String(req.socket.remoteAddress || "local").trim();
-  const proxyIsLocal = remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress === "::ffff:127.0.0.1";
-  if (!proxyIsLocal) return remoteAddress;
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",").map((value) => value.trim()).filter(Boolean);
-  return forwarded.at(-1) || String(req.headers["x-real-ip"] || "").trim() || remoteAddress;
-}
 
 function consumeRateBucket(key, limit, windowMs, now) {
   const bucket = rateBuckets.get(key) || { count: 0, resetAt: now + windowMs };
