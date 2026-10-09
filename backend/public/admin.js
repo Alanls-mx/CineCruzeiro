@@ -2310,14 +2310,14 @@ function renderInsights() {
   $("statBaseTicket").textContent = money(baseTicket);
 }
 
-function renderMiniPager(page, totalPages, totalItems, onPrevCall, onNextCall, label = "item(ns)") {
+function renderMiniPager(page, totalPages, totalItems, pagerKey, label = "item(ns)") {
   if (totalPages <= 1) return "";
   return `
     <div class="dash-card-pager">
       <span>Página <b>${page}</b> de <b>${totalPages}</b> (${totalItems} ${label})</span>
       <div class="dash-card-pager-controls">
-        <button class="ghost-button" type="button" ${page <= 1 ? "disabled" : ""} onclick="${onPrevCall}">← Anterior</button>
-        <button class="ghost-button" type="button" ${page >= totalPages ? "disabled" : ""} onclick="${onNextCall}">Próxima →</button>
+        <button class="ghost-button" type="button" ${page <= 1 ? "disabled" : ""} data-dash-pager="${pagerKey}" data-page-delta="-1">← Anterior</button>
+        <button class="ghost-button" type="button" ${page >= totalPages ? "disabled" : ""} data-dash-pager="${pagerKey}" data-page-delta="1">Próxima →</button>
       </div>
     </div>
   `;
@@ -2425,7 +2425,7 @@ function renderDashboard() {
           <div class="metric-row finance-row">
             <span>${escapeHtml(item.name || "Filme")}<small>${total ? Math.round((Number(item.amount || 0) / total) * 100) : 0}% da receita de ingressos</small></span>
             <strong>${money(item.amount)}</strong>
-          </div>`).join("") + renderMiniPager(state.dashMoviePage, totalPages, movies.length, "changeDashMoviePage(-1)", "changeDashMoviePage(1)", "filme(s)")
+          </div>`).join("") + renderMiniPager(state.dashMoviePage, totalPages, movies.length, "movies", "filme(s)")
       : `<div class="empty-state compact"><strong>Sem receita por filme</strong><span>As vendas aprovadas por sessão entram nesta lista.</span></div>`;
   }
   if ($("dashUpcomingSessions")) {
@@ -2446,7 +2446,7 @@ function renderDashboard() {
               <div class="mini-progress"><i style="width:${Math.min(100, Number(item.occupancyRate || 0))}%"></i></div>
               <small>${item.isInProgress ? `Termina às ${dashboardTime(item.endsAt)} • faltam ${Number(item.remainingMinutes || 0)} min • ` : ""}${Number(item.sold || 0)} / ${Number(item.capacity || 0)} • ${Number(item.occupancyRate || 0)}% • ${escapeHtml(item.status || "Boa disponibilidade")}</small>
             </div>
-          </div>`).join("") + renderMiniPager(state.dashSessionsPage, totalPages, sessions.length, "changeDashSessionsPage(-1)", "changeDashSessionsPage(1)", "sessão(ões)")
+          </div>`).join("") + renderMiniPager(state.dashSessionsPage, totalPages, sessions.length, "sessions", "sessão(ões)")
       : `<div class="empty-state compact"><strong>Nenhuma sessão programada para hoje.</strong><span>Cadastre um horário quando a programação estiver definida.</span><button class="ghost-button" type="button" onclick="createSessionFromDashboard()">Criar sessão</button></div>`;
   }
   if ($("dashCapacity")) {
@@ -2467,7 +2467,7 @@ function renderDashboard() {
     const pageProducts = products.slice(start, start + pageSize);
 
     $("dashTopProducts").innerHTML = products.length
-      ? pageProducts.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0)))}` : ""}${Number(item.refundTotal || 0) > 0 ? ` • reembolsos ${money(item.refundTotal)}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("") + renderMiniPager(state.dashTopProductsPage, totalPages, products.length, "changeDashTopProductsPage(-1)", "changeDashTopProductsPage(1)", "produto(s)")
+      ? pageProducts.map((item) => `<div class="metric-row clickable-row" onclick="activatePanel('concessionsPanel', { scroll: true })"><span>${escapeHtml(item.name)}<small>${Number(item.quantity || 0)} item(ns) • bruto ${money(item.grossRevenue || 0)}${Number(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0))) > 0 ? ` • descontos ${money(item.discountTotal ?? (Number(item.grossRevenue || 0) - Number(item.netRevenue || 0)))}` : ""}${Number(item.refundTotal || 0) > 0 ? ` • reembolsos ${money(item.refundTotal)}` : ""} • líquido ${money(item.netRevenue ?? item.revenue ?? 0)}</small></span><strong>${money(item.netRevenue ?? item.revenue ?? 0)}</strong></div>`).join("") + renderMiniPager(state.dashTopProductsPage, totalPages, products.length, "products", "produto(s)")
       : `<div class="empty-state compact"><strong>Nenhum produto vendido no período.</strong><span>Produtos vendidos aparecerão aqui.</span><button class="ghost-button" type="button" onclick="activatePanel('concessionsPanel', { scroll: true })">Ver Bomboniere</button></div>`;
   }
   if ($("dashLatestOrders")) {
@@ -2479,7 +2479,7 @@ function renderDashboard() {
     const pageOrders = orders.slice(start, start + pageSize);
 
     $("dashLatestOrders").innerHTML = orders.length
-      ? pageOrders.map((order) => `<div class="metric-row clickable-row" data-admin-order-action="view" data-admin-order-id="${escapeHtml(order.id)}"><span>${escapeHtml(order.reference || orderReference(order))} • ${escapeHtml(order.customerName)}<small>${escapeHtml(order.movieTitle || "")} • ${escapeHtml(order.origin)} • ${escapeHtml(order.status)}</small></span><strong>${money(order.totalPrice)}</strong></div>`).join("") + renderMiniPager(state.dashLatestOrdersPage, totalPages, orders.length, "changeDashLatestOrdersPage(-1)", "changeDashLatestOrdersPage(1)", "pedido(s)")
+      ? pageOrders.map((order) => `<div class="metric-row clickable-row" data-admin-order-action="view" data-admin-order-id="${escapeHtml(order.id)}"><span>${escapeHtml(order.reference || orderReference(order))} • ${escapeHtml(order.customerName)}<small>${escapeHtml(order.movieTitle || "")} • ${escapeHtml(order.origin)} • ${escapeHtml(order.status)}</small></span><strong>${money(order.totalPrice)}</strong></div>`).join("") + renderMiniPager(state.dashLatestOrdersPage, totalPages, orders.length, "orders", "pedido(s)")
       : `<div class="empty-state compact"><strong>Sem pedidos recentes</strong><span>As últimas vendas aparecerão aqui.</span></div>`;
   }
   if ($("dashAttentionPayments")) {
@@ -2594,9 +2594,8 @@ function renderDashboardChart(rows) {
         return `
           ${metric === "sales" ? `<rect class="chart-bar" x="${x(index) - barWidth / 2}" y="${height - padBottom - barHeight}" width="${barWidth}" height="${barHeight}" rx="3" />` : ""}
           <circle class="chart-point" cx="${x(index)}" cy="${y(value)}" r="${rows.length === 1 ? 7 : 5}" tabindex="0"
-            onmouseenter="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})"
-            onfocus="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})"
-            onclick="showChartHint('${item.date}', ${Number(item.revenue || 0)}, ${Number(item.orders || 0)}, ${Number(item.tickets || 0)})" />
+            data-chart-hint-date="${escapeHtml(item.date)}" data-chart-hint-revenue="${Number(item.revenue || 0)}"
+            data-chart-hint-orders="${Number(item.orders || 0)}" data-chart-hint-tickets="${Number(item.tickets || 0)}" />
           ${dateSet.has(index) ? `<text class="chart-date" x="${x(index)}" y="${height - 16}" text-anchor="middle">${dateLabel}</text>` : ""}
         `;
       }).join("")}
@@ -2607,6 +2606,17 @@ function renderDashboardChart(rows) {
 function showChartHint(date, revenue, orders, tickets) {
   if (!$("dashChartHint")) return;
   $("dashChartHint").textContent = `${new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR")} • ${money(revenue)} • ${orders} pedido(s) • ${tickets} ingresso(s)`;
+}
+
+function showChartHintFromPoint(target) {
+  const point = target.closest?.("[data-chart-hint-date]");
+  if (!point) return;
+  showChartHint(
+    point.dataset.chartHintDate,
+    Number(point.dataset.chartHintRevenue),
+    Number(point.dataset.chartHintOrders),
+    Number(point.dataset.chartHintTickets)
+  );
 }
 
 function openSessionDashboardDetail(movieId, sessionId) {
@@ -3184,7 +3194,7 @@ async function searchTmdb() {
     $("tmdbResults").innerHTML = results
       .map(
         (movie) => `
-          <button class="tmdb-result" type="button" onclick="importTmdbMovie('${movie.tmdbId}')">
+          <button class="tmdb-result" type="button" data-tmdb-movie-id="${escapeHtml(movie.tmdbId)}">
             <span class="tmdb-thumb">
               ${movie.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : ""}
             </span>
@@ -5007,12 +5017,12 @@ function renderRooms() {
     .map((room) => {
       const active = room.id === state.selectedRoomId ? "active" : "";
       return `
-        <button class="list-item ${active}" type="button" onclick="selectRoom('${room.id}')">
+        <button class="list-item ${active}" type="button" data-admin-select-kind="room" data-admin-select-id="${escapeHtml(room.id)}">
           <span>
-            <span class="list-title">${room.name}</span>
-            <span class="list-meta">${room.capacity} lugares • ${room.technology || "sem tecnologia cadastrada"}</span>
+            <span class="list-title">${escapeHtml(room.name)}</span>
+            <span class="list-meta">${Number(room.capacity || 0)} lugares • ${escapeHtml(room.technology || "sem tecnologia cadastrada")}</span>
           </span>
-          <span class="badge">${room.status}</span>
+          <span class="badge">${escapeHtml(room.status)}</span>
         </button>
       `;
     })
@@ -5128,10 +5138,10 @@ function renderTickets() {
     .map((ticket) => {
       const active = ticket.id === state.selectedTicketId ? "active" : "";
       return `
-        <button class="list-item ${active}" type="button" onclick="selectTicket('${ticket.id}')">
+        <button class="list-item ${active}" type="button" data-admin-select-kind="ticket" data-admin-select-id="${escapeHtml(ticket.id)}">
           <span>
-            <span class="list-title">${ticket.name}</span>
-            <span class="list-meta">${ticket.description || "Sem descrição"}${Number(ticket.bundleQuantity || 1) > 1 ? ` • gera ${Number(ticket.bundleQuantity)} ingressos por unidade` : ""}</span>
+            <span class="list-title">${escapeHtml(ticket.name)}</span>
+            <span class="list-meta">${escapeHtml(ticket.description || "Sem descrição")}${Number(ticket.bundleQuantity || 1) > 1 ? ` • gera ${Number(ticket.bundleQuantity)} ingressos por unidade` : ""}</span>
           </span>
           <span class="badge">${money(ticket.price)}</span>
         </button>
@@ -5425,9 +5435,9 @@ function renderOrdersTable(targetId, orders, options = {}) {
     <div class="issued-tickets-pager-bar" style="margin-bottom: var(--sp-8);">
       <span>Exibindo <strong>${start + 1}–${Math.min(start + pageItems.length, orders.length)}</strong> de <strong>${orders.length}</strong> pedido(s)</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${state[pageKey] <= 1 ? "disabled" : ""} onclick="changeOrdersPage(-1, '${targetId}')">← Anterior</button>
+        <button class="ghost-button" type="button" ${state[pageKey] <= 1 ? "disabled" : ""} data-order-page-target="${targetId}" data-page-delta="-1">← Anterior</button>
         <span class="pager-page-indicator">Página ${state[pageKey]} de ${totalPages}</span>
-        <button class="ghost-button" type="button" ${state[pageKey] >= totalPages ? "disabled" : ""} onclick="changeOrdersPage(1, '${targetId}')">Próxima →</button>
+        <button class="ghost-button" type="button" ${state[pageKey] >= totalPages ? "disabled" : ""} data-order-page-target="${targetId}" data-page-delta="1">Próxima →</button>
       </div>
     </div>
   `;
@@ -7222,9 +7232,9 @@ function renderPointPayment(data = {}) {
       <strong>Impressão da venda</strong>
       <p>${pendingPrint ? `A emissão está bloqueada até a impressora confirmar o trabalho. ${tickets.length || orders.reduce((sum, order) => sum + Number(order.printFulfillment?.ticketCount || 0), 0)} ingresso(s) aguardando ativação.` : `${tickets.length} ingresso(s) emitido(s).`}</p>
       <div class="button-row">
-        ${pendingPrint ? canRetryPrint ? `<button class="ghost-button" type="button" onclick="retryPendingSalePrint('${escapeHtml(payment.id || state.pointPaymentId)}')">Tentar imprimir novamente</button>` : "" : `<button class="ghost-button" type="button" onclick="requestLocalPointPaymentPrint('${escapeHtml(payment.id || state.pointPaymentId)}', { manual: true })">Imprimir venda novamente</button>`}
-        ${pendingPrint && printFailed && canResolve ? `<button class="danger-button" type="button" onclick="resolvePendingSalePrint('${escapeHtml(payment.id || state.pointPaymentId)}', '${payment.metadata?.kind === "point_sale" ? "refund" : "cancel"}')">${resolutionLabel}</button>` : ""}
-        ${pendingPrint ? "" : tickets.map((ticket, index) => `<button class="ghost-button" type="button" onclick="printPhysicalTicket('${escapeHtml(ticket.id)}')">Imprimir apenas ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
+        ${pendingPrint ? canRetryPrint ? `<button class="ghost-button" type="button" data-point-print-action="retry" data-point-print-id="${escapeHtml(payment.id || state.pointPaymentId)}">Tentar imprimir novamente</button>` : "" : `<button class="ghost-button" type="button" data-point-print-action="reprint" data-point-print-id="${escapeHtml(payment.id || state.pointPaymentId)}">Imprimir venda novamente</button>`}
+        ${pendingPrint && printFailed && canResolve ? `<button class="danger-button" type="button" data-point-print-action="resolve" data-point-print-id="${escapeHtml(payment.id || state.pointPaymentId)}" data-point-resolution="${payment.metadata?.kind === "point_sale" ? "refund" : "cancel"}">${resolutionLabel}</button>` : ""}
+        ${pendingPrint ? "" : tickets.map((ticket, index) => `<button class="ghost-button" type="button" data-point-print-action="ticket" data-point-print-id="${escapeHtml(ticket.id)}">Imprimir apenas ${escapeHtml(ticket.movieTitle || ticket.ticketType || `ingresso ${index + 1}`)}</button>`).join("")}
       </div>
     `;
   } else {
@@ -7782,9 +7792,9 @@ function renderAdminListPager(key, pagination, label) {
     <div class="table-pagination-bar admin-list-pagination">
       <span>Exibindo <strong>${pagination.start + 1}–${end}</strong> de <strong>${pagination.total}</strong> ${escapeHtml(label)}</span>
       <div class="pager-controls">
-        <button class="ghost-button" type="button" ${pagination.page <= 1 ? "disabled" : ""} onclick="changeAdminListPage('${key}', -1)">Anterior</button>
+        <button class="ghost-button" type="button" ${pagination.page <= 1 ? "disabled" : ""} data-admin-list-page="${escapeHtml(key)}" data-page-delta="-1">Anterior</button>
         <span class="pager-page-indicator">Página ${pagination.page} de ${pagination.totalPages}</span>
-        <button class="ghost-button" type="button" ${pagination.page >= pagination.totalPages ? "disabled" : ""} onclick="changeAdminListPage('${key}', 1)">Próxima</button>
+        <button class="ghost-button" type="button" ${pagination.page >= pagination.totalPages ? "disabled" : ""} data-admin-list-page="${escapeHtml(key)}" data-page-delta="1">Próxima</button>
       </div>
     </div>`;
 }
@@ -7887,7 +7897,7 @@ async function searchBoxOfficeCustomers() {
     state.customerSearchResults = customers;
     target.innerHTML = customers.length
       ? customers.map((customer) => `
-          <button type="button" class="customer-result" onclick="selectBoxOfficeCustomerById('${escapeHtml(customer.id)}')">
+          <button type="button" class="customer-result" data-box-office-customer-id="${escapeHtml(customer.id)}">
             <strong>${escapeHtml(customer.name)}</strong>
             <span>${escapeHtml(customer.email || "")} ${customer.phone ? `- ${escapeHtml(customer.phone)}` : ""} ${customer.role ? `- ${escapeHtml(adminRoleLabel(customer.role))}` : ""}</span>
           </button>
@@ -8670,7 +8680,7 @@ function renderConcessions() {
   const pagination = paginateAdminItems(items, "concessions", "selectedConcessionId");
   $("concessionsList").innerHTML = pagination.pageItems
     .map((item) => `
-      <button class="list-item ${item.id === state.selectedConcessionId ? "active" : ""}" type="button" onclick="selectConcession('${item.id}')">
+      <button class="list-item ${item.id === state.selectedConcessionId ? "active" : ""}" type="button" data-admin-select-kind="concession" data-admin-select-id="${escapeHtml(item.id)}">
         <span>
           <span class="list-title">${escapeHtml(item.name)}</span>
           <span class="list-meta">${escapeHtml(item.category || "combo")} • ${item.active ? "ativo" : "inativo"}${item.featured ? " • destaque" : ""}${item.stock !== "" && item.stock !== undefined ? ` • estoque ${escapeHtml(formatConcessionStock(item))}` : ""}</span>
@@ -10655,7 +10665,7 @@ function renderPromotions() {
   const pagination = paginateAdminItems(visibleItems, "promotions", "selectedPromotionId");
   $("promotionsList").innerHTML = visibleItems.length
     ? pagination.pageItems.map((item) => `
-        <button class="list-item ${item.id === state.selectedPromotionId ? "active" : ""}" type="button" onclick="selectPromotion('${item.id}')">
+        <button class="list-item ${item.id === state.selectedPromotionId ? "active" : ""}" type="button" data-admin-select-kind="promotion" data-admin-select-id="${escapeHtml(item.id)}">
           <span>
             <span class="list-title">${escapeHtml(item.title)}</span>
             <span class="list-meta">${item.couponCode ? `${escapeHtml(item.couponCode)} • ${couponRuleLabel(item)} • ` : "promoção sem código • "}${couponStatusLabel(item)}</span>
@@ -10824,9 +10834,9 @@ function renderPromotionUsageHistory() {
     return;
   }
   pager.innerHTML = `
-    <button type="button" class="ghost-button" ${meta.page <= 1 ? "disabled" : ""} onclick="loadPromotionUsage('${item.id}', ${meta.page - 1})">Anterior</button>
+    <button type="button" class="ghost-button" ${meta.page <= 1 ? "disabled" : ""} data-promotion-usage-id="${escapeHtml(item.id)}" data-promotion-usage-page="${meta.page - 1}">Anterior</button>
     <span>Página ${meta.page} de ${meta.pages}</span>
-    <button type="button" class="ghost-button" ${meta.page >= meta.pages ? "disabled" : ""} onclick="loadPromotionUsage('${item.id}', ${meta.page + 1})">Próxima</button>
+    <button type="button" class="ghost-button" ${meta.page >= meta.pages ? "disabled" : ""} data-promotion-usage-id="${escapeHtml(item.id)}" data-promotion-usage-page="${meta.page + 1}">Próxima</button>
   `;
 }
 
@@ -10927,7 +10937,7 @@ function renderAds() {
         const ended = item.endsAt && new Date(item.endsAt).getTime() <= now;
         const status = item.active === false ? "inativo" : scheduled ? "agendado" : ended ? "encerrado" : "em exibição";
         return `
-        <button class="list-item ${item.id === state.selectedAdId ? "active" : ""}" type="button" onclick="selectAd('${item.id}')">
+        <button class="list-item ${item.id === state.selectedAdId ? "active" : ""}" type="button" data-admin-select-kind="ad" data-admin-select-id="${escapeHtml(item.id)}">
           <span>
             <span class="list-title">${escapeHtml(item.title)}</span>
             <span class="list-meta">Páginas dos filmes • ${status} • ${Number(item.impressions || 0).toLocaleString("pt-BR")} impressões • ${Number(item.clicks || 0).toLocaleString("pt-BR")} cliques</span>
@@ -11103,7 +11113,7 @@ function renderUsers() {
   const pagination = paginateAdminItems(items, "users", "selectedUserId");
   $("usersList").innerHTML = items.length
     ? pagination.pageItems.map((item) => `
-        <button class="list-item ${item.id === state.selectedUserId ? "active" : ""}" type="button" onclick="selectUser('${item.id}')">
+        <button class="list-item ${item.id === state.selectedUserId ? "active" : ""}" type="button" data-admin-select-kind="user" data-admin-select-id="${escapeHtml(item.id)}">
           <span>
             <span class="list-title">${escapeHtml(item.name)}</span>
             <span class="list-meta">${escapeHtml(item.email || "sem email")} • ${escapeHtml(adminRoleLabel(item.role))} • ${item.twoFactorEnabled ? "2FA ativo" : "2FA pendente"}${item.useCustomPermissions ? " • acesso personalizado" : ""}</span>
@@ -11208,7 +11218,7 @@ function renderCustomerUsers() {
   ` : "";
   $("customerUsersList").innerHTML = items.length
     ? `${pageItems.map((item) => `
-        <button class="list-item ${item.id === state.selectedCustomerAccountId ? "active" : ""}" type="button" onclick="selectCustomerAccount('${item.id}')">
+        <button class="list-item ${item.id === state.selectedCustomerAccountId ? "active" : ""}" type="button" data-admin-select-kind="customer" data-admin-select-id="${escapeHtml(item.id)}">
           <span>
             <span class="list-title">${escapeHtml(item.name)}</span>
             <span class="list-meta">${escapeHtml(item.email || "sem e-mail")} • ${item.emailVerified ? "e-mail verificado" : "verificação pendente"}</span>
@@ -11434,7 +11444,7 @@ function renderClub() {
       ? creationPlaceholder("Novo plano", "Configure nome, créditos, preço e imagem local no quadro à direita.")
       : plans.length
       ? planPagination.pageItems.map((plan) => `
-          <button class="list-item club-plan-item ${plan.id === state.selectedClubPlanId ? "active" : ""}" type="button" onclick="selectClubPlan('${escapeHtml(plan.id)}')">
+          <button class="list-item club-plan-item ${plan.id === state.selectedClubPlanId ? "active" : ""}" type="button" data-club-plan-id="${escapeHtml(plan.id)}">
             <span class="plan-thumb">${plan.imageUrl ? `<img src="${escapeHtml(adminAssetUrl(plan.imageUrl))}" alt="">` : `<span>Plano</span>`}</span>
             <span class="club-plan-list-copy">
               <span class="list-title">${escapeHtml(plan.name)}</span>
@@ -11513,13 +11523,13 @@ function renderClub() {
                   </span>
                 </span>
                 <span class="table-actions">
-                  <button class="ghost-button" type="button" onclick="viewClubSubscription('${escapeHtml(subscription.id)}')">Detalhes</button>
-                  ${canReactivate ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','active')">Ativar</button>` : ""}
-                  ${!terminal && !ending && subscription.status === "active" ? `<button class="ghost-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','paused')">Pausar</button>` : ""}
-                  <button class="ghost-button" type="button" onclick="adjustClubCredit('${escapeHtml(subscription.id)}')">Ajustar crédito</button>
+                  <button class="ghost-button" type="button" data-club-subscription-action="view" data-club-subscription-id="${escapeHtml(subscription.id)}">Detalhes</button>
+                  ${canReactivate ? `<button class="ghost-button" type="button" data-club-subscription-action="active" data-club-subscription-id="${escapeHtml(subscription.id)}">Ativar</button>` : ""}
+                  ${!terminal && !ending && subscription.status === "active" ? `<button class="ghost-button" type="button" data-club-subscription-action="paused" data-club-subscription-id="${escapeHtml(subscription.id)}">Pausar</button>` : ""}
+                  <button class="ghost-button" type="button" data-club-subscription-action="credit" data-club-subscription-id="${escapeHtml(subscription.id)}">Ajustar crédito</button>
                   ${terminal
-                    ? `<button class="danger-button" type="button" onclick="deleteClubSubscription('${escapeHtml(subscription.id)}')">Excluir</button>`
-                    : ending ? "" : `<button class="danger-button" type="button" onclick="updateClubSubscription('${escapeHtml(subscription.id)}','cancelled')">Cancelar renovação</button>`}
+                    ? `<button class="danger-button" type="button" data-club-subscription-action="delete" data-club-subscription-id="${escapeHtml(subscription.id)}">Excluir</button>`
+                    : ending ? "" : `<button class="danger-button" type="button" data-club-subscription-action="cancelled" data-club-subscription-id="${escapeHtml(subscription.id)}">Cancelar renovação</button>`}
                 </span>
               </div>
             `;
@@ -11906,9 +11916,9 @@ function renderIntegrations() {
             </div>
           </div>
           <div class="integration-actions">
-            <button class="ghost-button" type="button" onclick="openIntegrationConfig('${escapeHtml(key)}')">Configurar</button>
-            <button class="ghost-button" type="button" onclick="testIntegration('${escapeHtml(key)}')">Testar</button>
-            <button class="${item.enabled ? "danger-button" : "primary-button"}" type="button" onclick="toggleIntegration('${escapeHtml(key)}', ${item.enabled ? "false" : "true"})">${item.enabled ? "Desativar" : "Ativar"}</button>
+            <button class="ghost-button" type="button" data-integration-action="config" data-integration-key="${escapeHtml(key)}">Configurar</button>
+            <button class="ghost-button" type="button" data-integration-action="test" data-integration-key="${escapeHtml(key)}">Testar</button>
+            <button class="${item.enabled ? "danger-button" : "primary-button"}" type="button" data-integration-action="${item.enabled ? "disable" : "enable"}" data-integration-key="${escapeHtml(key)}">${item.enabled ? "Desativar" : "Ativar"}</button>
           </div>
         </div>
       `).join("")
@@ -12281,14 +12291,14 @@ function renderWebhookHistory() {
   $("webhookHistoryCount").textContent = runs.length ? `${runs.length} registro${runs.length === 1 ? "" : "s"}` : "Nenhum teste";
   target.innerHTML = runs.length ? pageRuns.map((run) => `
     <div class="webhook-history-row ${state.selectedWebhookRunId === run.id ? "selected" : ""}">
-      <button type="button" class="webhook-history-main" onclick="showWebhookRun('${escapeHtml(run.id)}')">
+      <button type="button" class="webhook-history-main" data-webhook-action="show" data-webhook-id="${escapeHtml(run.id)}">
         <span>${escapeHtml(new Date(run.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }))}</span>
         <strong>${escapeHtml(run.action || "Evento")}</strong>
         <span class="truncate">${escapeHtml(run.resourceId || "")}</span>
         <span class="webhook-http ${run.passed ? "ok" : "error"}">${escapeHtml(String(run.httpStatus || "--"))}</span>
         <span>${escapeHtml(run.passed ? "Aprovado" : "Falhou")}</span>
       </button>
-      <button class="ghost-button webhook-resend" type="button" onclick="resendWebhookRun('${escapeHtml(run.id)}')">Reenviar</button>
+      <button class="ghost-button webhook-resend" type="button" data-webhook-action="resend" data-webhook-id="${escapeHtml(run.id)}">Reenviar</button>
     </div>
   `).join("") + (runs.length > pageSize ? `
     <div class="table-pagination-bar">
@@ -12742,7 +12752,106 @@ function bindEvents() {
     if (row) handleMovieDrop(event, row.dataset.movieId);
   });
 
+  document.addEventListener("mouseover", (event) => showChartHintFromPoint(event.target));
+  document.addEventListener("focusin", (event) => showChartHintFromPoint(event.target));
   document.addEventListener("click", (event) => {
+    if (event.target.closest?.("[data-chart-hint-date]")) {
+      showChartHintFromPoint(event.target);
+      return;
+    }
+    const dashPager = event.target.closest?.("[data-dash-pager][data-page-delta]");
+    if (dashPager) {
+      const pagers = {
+        movies: changeDashMoviePage,
+        sessions: changeDashSessionsPage,
+        products: changeDashTopProductsPage,
+        orders: changeDashLatestOrdersPage
+      };
+      const pager = Object.hasOwn(pagers, dashPager.dataset.dashPager) ? pagers[dashPager.dataset.dashPager] : null;
+      if (pager) pager(Number(dashPager.dataset.pageDelta));
+      return;
+    }
+    const orderPager = event.target.closest?.("[data-order-page-target][data-page-delta]");
+    if (orderPager) {
+      changeOrdersPage(Number(orderPager.dataset.pageDelta), orderPager.dataset.orderPageTarget);
+      return;
+    }
+    const adminListPager = event.target.closest?.("[data-admin-list-page][data-page-delta]");
+    if (adminListPager) {
+      changeAdminListPage(adminListPager.dataset.adminListPage, Number(adminListPager.dataset.pageDelta));
+      return;
+    }
+    const tmdbMovie = event.target.closest?.("[data-tmdb-movie-id]");
+    if (tmdbMovie) {
+      void importTmdbMovie(tmdbMovie.dataset.tmdbMovieId);
+      return;
+    }
+    const adminSelection = event.target.closest?.("[data-admin-select-kind][data-admin-select-id]");
+    if (adminSelection) {
+      const selectors = {
+        room: selectRoom,
+        ticket: selectTicket,
+        concession: selectConcession,
+        promotion: selectPromotion,
+        ad: selectAd,
+        user: selectUser,
+        customer: selectCustomerAccount
+      };
+      const selector = Object.hasOwn(selectors, adminSelection.dataset.adminSelectKind)
+        ? selectors[adminSelection.dataset.adminSelectKind] : null;
+      if (selector) selector(adminSelection.dataset.adminSelectId);
+      return;
+    }
+    const promotionUsage = event.target.closest?.("[data-promotion-usage-id][data-promotion-usage-page]");
+    if (promotionUsage) {
+      void loadPromotionUsage(promotionUsage.dataset.promotionUsageId, Number(promotionUsage.dataset.promotionUsagePage));
+      return;
+    }
+    const pointPrint = event.target.closest?.("[data-point-print-action][data-point-print-id]");
+    if (pointPrint) {
+      const id = pointPrint.dataset.pointPrintId;
+      const action = pointPrint.dataset.pointPrintAction;
+      if (action === "retry") void retryPendingSalePrint(id);
+      else if (action === "reprint") void requestLocalPointPaymentPrint(id, { manual: true });
+      else if (action === "resolve") void resolvePendingSalePrint(id, pointPrint.dataset.pointResolution === "refund" ? "refund" : "cancel");
+      else if (action === "ticket") printPhysicalTicket(id);
+      return;
+    }
+    const customerResult = event.target.closest?.("[data-box-office-customer-id]");
+    if (customerResult) {
+      selectBoxOfficeCustomerById(customerResult.dataset.boxOfficeCustomerId);
+      return;
+    }
+    const clubPlan = event.target.closest?.("[data-club-plan-id]");
+    if (clubPlan) {
+      selectClubPlan(clubPlan.dataset.clubPlanId);
+      return;
+    }
+    const clubSubscription = event.target.closest?.("[data-club-subscription-action][data-club-subscription-id]");
+    if (clubSubscription) {
+      const id = clubSubscription.dataset.clubSubscriptionId;
+      const action = clubSubscription.dataset.clubSubscriptionAction;
+      if (action === "view") void viewClubSubscription(id);
+      else if (action === "credit") void adjustClubCredit(id);
+      else if (action === "delete") void deleteClubSubscription(id);
+      else if (["active", "paused", "cancelled"].includes(action)) void updateClubSubscription(id, action);
+      return;
+    }
+    const integration = event.target.closest?.("[data-integration-action][data-integration-key]");
+    if (integration) {
+      const key = integration.dataset.integrationKey;
+      const action = integration.dataset.integrationAction;
+      if (action === "config") void openIntegrationConfig(key);
+      else if (action === "test") void testIntegration(key);
+      else if (action === "enable" || action === "disable") void toggleIntegration(key, action === "enable");
+      return;
+    }
+    const webhook = event.target.closest?.("[data-webhook-action][data-webhook-id]");
+    if (webhook) {
+      if (webhook.dataset.webhookAction === "show") showWebhookRun(webhook.dataset.webhookId);
+      else if (webhook.dataset.webhookAction === "resend") void resendWebhookRun(webhook.dataset.webhookId);
+      return;
+    }
     const sessionAction = event.target.closest?.("[data-admin-session-action][data-admin-session-id]");
     if (sessionAction) {
       const sessionId = sessionAction.dataset.adminSessionId;

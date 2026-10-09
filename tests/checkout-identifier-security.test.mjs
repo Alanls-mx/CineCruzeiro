@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import service from "../backend/services/checkoutIdentifier.js";
 
@@ -29,4 +30,45 @@ test("lista administrativa nao coloca IDs de pedidos em handlers inline", () => 
   assert.match(movieRows, /data-movie-id="\$\{escapeHtml\(movie\.id\)\}"/);
   assert.doesNotMatch(source, /onclick="[^"]*(?:showSessionTickets|openSessionEditor|removeSession|openGlobalSessionEditor|openSessionDashboardDetail)\('\$\{escapeHtml\(/);
   assert.match(source, /data-admin-session-action="global-edit" data-admin-movie-id="\$\{escapeHtml\(entry\.movie\.id\)\}"/);
+});
+
+test("listas administrativas tratam IDs como dados, nao codigo inline", () => {
+  const source = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
+  assert.doesNotMatch(source, /on(?:click|mouseenter|focus)="[^"\n]*\$\{/);
+  for (const marker of [
+    "data-point-print-action", "data-box-office-customer-id", "data-club-subscription-action",
+    "data-integration-action", "data-webhook-action", "data-admin-select-kind", "data-tmdb-movie-id"
+  ]) assert.ok(source.includes(marker), `Ação ${marker} deve usar atributo de dados.`);
+  const escapeSource = source.slice(source.indexOf("function escapeHtml("), source.indexOf("function adminAssetUrl("));
+  const escapeHtml = vm.runInNewContext(`${escapeSource}\nescapeHtml`);
+  const maliciousId = `x');globalThis.injected=true;//"<img onerror=alert(1)>`;
+  const button = `<button data-admin-select-id="${escapeHtml(maliciousId)}">Detalhes</button>`;
+  assert.ok(button.includes("&#039;"));
+  assert.ok(button.includes("&quot;"));
+  assert.ok(button.includes("&lt;img"));
+  assert.doesNotMatch(button, /onclick=|<img/);
+});
+
+test("acoes delegadas mantem selecao, paginacao e impressao", () => {
+  const source = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
+  const start = source.indexOf('  document.addEventListener("click", (event) => {', source.indexOf('showChartHintFromPoint(event.target)'));
+  const end = source.indexOf('  document.addEventListener("keydown"', start);
+  assert.ok(start > 0 && end > start);
+  const calls = [];
+  let handler;
+  const context = {
+    document: { addEventListener: (type, callback) => { if (type === "click") handler = callback; } },
+    changeDashMoviePage: (delta) => calls.push(["page", delta]),
+    changeDashSessionsPage() {}, changeDashTopProductsPage() {}, changeDashLatestOrdersPage() {},
+    selectRoom: (id) => calls.push(["room", id]),
+    selectTicket() {}, selectConcession() {}, selectPromotion() {}, selectAd() {}, selectUser() {}, selectCustomerAccount() {},
+    printPhysicalTicket: (id) => calls.push(["print", id])
+  };
+  vm.runInNewContext(source.slice(start, end), context);
+  assert.equal(typeof handler, "function");
+  const click = (selector, dataset) => handler({ target: { closest: (candidate) => candidate === selector ? { dataset } : null } });
+  click("[data-admin-select-kind][data-admin-select-id]", { adminSelectKind: "room", adminSelectId: "room-1" });
+  click("[data-dash-pager][data-page-delta]", { dashPager: "movies", pageDelta: "1" });
+  click("[data-point-print-action][data-point-print-id]", { pointPrintAction: "ticket", pointPrintId: "ticket-1" });
+  assert.deepEqual(calls, [["room", "room-1"], ["page", 1], ["print", "ticket-1"]]);
 });
