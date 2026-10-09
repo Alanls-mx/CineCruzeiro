@@ -11852,6 +11852,7 @@ async function handleApi(req, res, pathname) {
         "Content-Length": rendered.buffer.length,
         "X-Social-Scene-Id": require('./services/social-studio/scene/snapshots').remember(String(req.adminUser.id),rendered),
         "X-Social-Review": encodeURIComponent(JSON.stringify(rendered.notices)),
+        "X-Social-Quality": encodeURIComponent(JSON.stringify(rendered.quality ? {technical:rendered.quality.technical,editorial:rendered.quality.editorial} : {})),
         "Cache-Control": "no-store",
         "Content-Disposition": `inline; filename="social-studio-preview${rendered.extension}"`
       }),

@@ -660,6 +660,17 @@
   margin-top: 14px;
 }
 
+.social-quality-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 10px;
+  color: var(--text);
+  font-size: 12px;
+}
+.social-quality-summary[hidden] { display: none; }
+.social-quality-summary small { flex-basis: 100%; color: #b4c5d8; }
+
 .social-studio-notices {
   display: grid;
   flex: 1;

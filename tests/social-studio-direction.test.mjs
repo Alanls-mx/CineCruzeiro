@@ -337,7 +337,9 @@ test("variações entregam quatro estruturas válidas e dados idênticos", async
   assert.equal(result.variations.length, 4);
   assert.equal(result.evaluatedCount, Object.keys(require('../backend/services/social-studio/contracts/artwork-layout').MOVIE_FAMILIES).length);
   assert.equal(result.variations[0].recommended, true);
-  assert.deepEqual(result.variations.map(item => item.quality.total), result.variations.map(item => item.quality.total).sort((first, second) => second - first));
+  const recommendationScore=item=>item.quality.editorial.score*.65+item.quality.technical.score*.35+item.preference;
+  assert.ok(result.variations.every(item=>item.quality.editorial && item.quality.technical));
+  assert.ok(result.variations.slice(1).every(item=>recommendationScore(result.variations[0])>=recommendationScore(item)));
   assert.equal(new Set(result.variations.map((v) => v.draft.style)).size, 4);
   for (const v of result.variations) {
     assert.equal(v.draft.movieId, "test");

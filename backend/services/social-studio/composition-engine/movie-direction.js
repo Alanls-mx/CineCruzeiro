@@ -7,9 +7,10 @@ function movieDirection(draft,input,analysis,backdrop,backdropAnalysis) {
   let family=selected;
   if(!manual) {
     if(draft.templateId==='movie-presale')family='movie-campaign';
-    else if(draft.formatId==='story' || draft.templateId==='movie-premiere')family='movie-spotlight';
+    else if(draft.formatId==='story')family='movie-spotlight';
     else if(draft.formatId==='square')family='movie-immersive';
     else if(analysis?.brightness>.52 || !analysis && ['romance','comedy'].includes(genre))family='movie-campaign';
+    else if(draft.templateId==='movie-premiere')family='movie-spotlight';
     else if(analysis?.brightness>.3 && quietest?.id==='bottom' && quietest.complexity<.12)family='movie-editorial-light';
     else family='movie-immersive';
   }

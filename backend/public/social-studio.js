@@ -39,6 +39,7 @@
         const blob = await response.blob();
         blob.previewToken = response.headers.get('X-Social-Scene-Id');
         try { blob.reviewNotices = JSON.parse(decodeURIComponent(response.headers.get('X-Social-Review') || '%5B%5D')); } catch { blob.reviewNotices=[]; }
+        try { blob.quality = JSON.parse(decodeURIComponent(response.headers.get('X-Social-Quality') || '%7B%7D')); } catch { blob.quality={}; }
         return blob;
       }
       return await response.json().catch(() => { throw new Error(messages.invalidResponse); });
@@ -247,6 +248,9 @@
     featured.value=selectedIds.has(currentFeatured)?currentFeatured:'';
     byId('socialStudioProgramLayout').closest('label').hidden=true;
     byId('socialStudioShowSessions').closest('label').hidden=program;
+    const selectedMovie=state.context?.movies?.find(movie=>String(movie.id)===byId('socialStudioMovie').value);
+    byId('socialStudioDayModeField').hidden=kind!=='movie' || !(selectedMovie?.sessions || []).some(session=>/^\d{2}:\d{2}$/.test(session.time || '') && session.time<'05:00');
+    byId('socialStudioMovieBlurField').hidden=kind!=='movie';
     byId('socialStudioFeaturedMovie').closest('label').hidden=value('socialStudioProgramPosterMode')!=='featured';
     for(const [id,meaning] of [['socialStudioReleaseDate','release'],['socialStudioPresaleDate','presale'],['socialStudioSessionDate','session']])byId(id).closest('label').hidden=value('socialStudioDateKind')!==meaning;
     byId('socialStudioDate').closest('label').hidden=value('socialStudioDateTextMode')==='automatic';
@@ -317,6 +321,7 @@
                 <div id="socialStudioSafeArea" class="social-story-safe-area" hidden aria-hidden="true"></div>
               </div>
             </div>
+            <div id="socialStudioQuality" class="social-quality-summary" hidden></div>
             <div class="social-preview-footer">
               <div id="socialStudioNotices" class="social-studio-notices" aria-live="polite"></div>
               <button id="socialStudioManualEdit" class="primary-button" type="button" disabled>Editar detalhes</button>
@@ -342,6 +347,7 @@
                   <label id="socialStudioMovieField" data-social-field="movie">Filme<select id="socialStudioMovie" data-requires-create></select></label>
                   <fieldset data-social-field="movies" class="social-choice-fieldset"><legend>Filmes da programação</legend><div id="socialStudioMovieSelections"></div><label>Composição da programação<select id="socialStudioProgramLayout" data-requires-create><option value="automatic">Automática pela quantidade</option></select></label><label>Tratamento visual<select id="socialStudioProgramStyle" data-requires-create><option value="automatic">Automático pelos filmes</option><option value="vibrant">Vibrante</option><option value="premium">Claro editorial</option><option value="noir">Noturno</option><option value="cinematic">Cinematográfico</option></select></label><label class="social-toggle"><input id="socialStudioProgramUseImages" type="checkbox" checked data-requires-create /> Usar imagens dos filmes</label><label>Pôsteres<select id="socialStudioProgramPosterMode" data-requires-create><option value="equal">Equivalentes</option><option value="featured">Destaque escolhido</option></select></label><label>Filme em destaque<select id="socialStudioFeaturedMovie" data-requires-create><option value="">Nenhum destaque</option></select></label><input id="socialStudioMultiLayout" type="hidden" value="grid" /></fieldset>
                   <fieldset data-social-field="schedule" class="social-choice-fieldset"><legend>Programação</legend><label>Período<select id="socialStudioScheduleMode" data-requires-create><option value="today">Um dia</option><option value="week" selected>Sete dias</option></select></label><label>Data inicial<input id="socialStudioPeriodStart" type="date" data-requires-create /></label><label class="social-toggle"><input id="socialStudioShowSessions" type="checkbox" checked data-requires-create /> Mostrar horários por dia</label></fieldset>
+                  <label id="socialStudioDayModeField" data-social-field="movie" hidden>Divulgação de sessão na madrugada<select id="socialStudioDayMode" data-requires-create><option value="calendar">Mostrar a data real do ingresso</option><option value="previous">Indicar também o dia comercial anterior</option></select></label>
                   <label id="socialStudioConcessionField" data-social-field="concession">Produto ou combo<select id="socialStudioConcession" data-requires-create></select></label>
                   <fieldset data-social-field="concession" class="social-choice-fieldset"><legend>Direção da campanha</legend>
                     <label>Tratamento visual<select id="socialStudioProductTreatment" data-requires-create><option value="automatic">Automático pelo produto</option><option value="commercial-vibrant">Comercial vibrante</option><option value="cinematic-product">Produto cinematográfico</option><option value="clean-premium">Clean premium</option><option value="dark-snack">Dark food / snack</option></select></label>
@@ -449,6 +455,7 @@
                       <option value="dynamic">Cores do filme</option>
                     </select>
                   </label>
+                  <label id="socialStudioMovieBlurField" data-social-field="movie" hidden>Desfoque do fundo<select id="socialStudioMovieBlur" data-requires-create><option value="0">Automático</option><option value="18">Leve</option><option value="27">Médio</option><option value="40">Forte</option></select></label>
                   <fieldset class="social-choice-fieldset"><legend>Variações de cor</legend><div id="socialStudioPalettes" class="social-palette-grid"></div></fieldset>
                   <label>Atmosfera<select id="socialStudioCompositionPreset" data-requires-create><option value="automatic">Automática pelo gênero</option>${Object.entries(state.context.composition?.presets || {}).map(([id, preset]) => `<option value="${id}">${escapeHtml(preset.name)}</option>`).join("")}</select></label>
                   <label>Visual<select id="socialStudioCompositionLook" data-requires-create>${Object.entries(state.context.composition?.looks || {}).map(([id, look]) => `<option value="${id}" ${id === "cinematic" ? "selected" : ""}>${escapeHtml(look.name)}</option>`).join("")}</select></label>
@@ -1107,6 +1114,8 @@
       releaseDate:value('socialStudioReleaseDate'),
       presaleStartDate:value('socialStudioPresaleDate'),
       sessionDate:value('socialStudioSessionDate'),
+      sessionDayMode:value('socialStudioDayMode','calendar'),
+      movieBackgroundBlur:Number(value('socialStudioMovieBlur',0)),
       actionDestination:value('socialStudioActionDestination'),
       auxiliaryText: value("socialStudioAuxiliary"),
       cta: value("socialStudioCta"),
@@ -1166,6 +1175,8 @@
     setControl('socialStudioFeaturedMovie',draft.featuredMovieId || '');
     setControl('socialStudioScheduleMode',draft.scheduleMode || 'week');
     setControl('socialStudioPeriodStart',draft.periodStart || '');
+    setControl('socialStudioDayMode',draft.sessionDayMode || 'calendar');
+    setControl('socialStudioMovieBlur',draft.movieBackgroundBlur || 0);
     document.getElementById('socialStudioShowSessions').checked=draft.showSessions!==false;
     state.polish = draft.polish === true;
     invalidateThumbnails();
@@ -1482,6 +1493,9 @@
     stage.classList.remove('is-rendering');
     stage.innerHTML = `<img src="${state.previewUrl}" alt="${escapeHtml(alt)}" /><div id="socialStudioSafeArea" class="social-story-safe-area" ${currentFormat()?.id === "story" ? "" : "hidden"} aria-hidden="true"></div><span class="social-preview-progress" aria-hidden="true"></span>`;
     document.getElementById("socialStudioPreviewDownload").disabled = false;
+    const summary=document.getElementById('socialStudioQuality'),quality=blob.quality || {};
+    summary.hidden=!quality.technical || !quality.editorial;
+    if(!summary.hidden)summary.innerHTML=`<span>QA técnico <strong>${Number(quality.technical.score)}/100</strong></span><span>QA editorial <strong>${Number(quality.editorial.score)}/100</strong></span>${quality.editorial.issues?.length?`<small>${escapeHtml(quality.editorial.issues.map(issue=>issue.message).join(' '))}</small>`:''}`;
     state.activePostId = "";
     document.getElementById("socialStudioManualEdit").disabled = true;
     updateTemplatePreviews(payload(), state.previewUrl);
@@ -1549,7 +1563,8 @@
     const favoriteSaved = state.favorites.some(item => previewCacheKey(item.draft) === previewCacheKey(variation.draft));
     return `<article class="social-variation ${variation.recommended ? "is-recommended" : ""}">
       <img src="${escapeHtml(variation.image)}" alt="${escapeHtml(variation.name)}" />
-      <strong>${escapeHtml(variation.classification || "Favorita")} · ${quality.total ?? quality.score}/100</strong>
+      <strong>${escapeHtml(variation.classification || "Favorita")}</strong>
+      <span>QA técnico ${quality.technical?.score ?? quality.total ?? '—'}/100 · QA editorial ${quality.editorial?.score ?? '—'}/100</span>
       <strong>${escapeHtml(variation.name)}</strong><span>${escapeHtml(variation.creativeIntent || '')}${variation.creativeIntent ? ' · ' : ''}${escapeHtml(variation.intent || "")}</span>
       <span>${escapeHtml(quality.explanation || "")}</span>
       <span>${variation.refined ? `Acabamento aplicado: ${variation.beforeQuality?.total ?? quality.total} → ${quality.total}` : "Composição avaliada"}</span>

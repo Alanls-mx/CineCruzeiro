@@ -35,7 +35,7 @@ async function fixture() {
 
 test("cena V2 separa conteúdo, imagem e assinatura protegida", async () => {
   const { context, loadImage } = await fixture();
-  const rendered = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "feed_portrait" }, context, { loadImage });
+  const rendered = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "feed_portrait", titleVisibility: "show" }, context, { loadImage });
   assert.equal(rendered.scene.rendererVersion, "v2-konva");
   assert.ok(rendered.scene.elements.find((element) => element.role === "title" && element.type === "text"));
   assert.ok(rendered.scene.elements.find((element) => element.role === "background" && element.type === "image"));
@@ -85,7 +85,7 @@ test("renderização do editor mantém a linha em branco entre parágrafos", asy
 
 test("renderização manual permanece no servidor e respeita tamanho e formato", async () => {
   const { context, loadImage } = await fixture();
-  const automatic = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "square" }, context, { loadImage });
+  const automatic = await engine.renderSocialPost({ templateId: "movie-premiere", movieId: "movie-1", formatId: "square", titleVisibility: "show" }, context, { loadImage });
   const title = automatic.scene.elements.find((element) => element.role === "title");
   title.text = "Título ajustado pelo operador";
   title.x += 15;

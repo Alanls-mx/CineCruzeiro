@@ -38,6 +38,7 @@ test('seleção considera áreas livres e formato antes do gênero sem alegar de
   assert.equal(movieDirection({...draft,formatId:'story'},{},analysis,true).family,'movie-spotlight');
   assert.equal(movieDirection({...draft,formatId:'square'},{},analysis,true).family,'movie-immersive');
   assert.equal(movieDirection(draft,{}, {...analysis,brightness:.8},true).family,'movie-campaign');
+  assert.equal(movieDirection({...draft,templateId:'movie-premiere',formatId:'feed_portrait'},{}, {...analysis,brightness:.8},true).family,'movie-campaign');
   for(const genre of ['family','comedy','drama'])assert.ok(!['poster-lateral','poster-editorial','cinematic-story'].includes(movieDirection({...draft,genreProfile:{id:genre}},{},analysis,true).family));
 });
 test('estreia comunica a data uma vez e conserva todos os horários',async()=>{
@@ -46,7 +47,8 @@ test('estreia comunica a data uma vez e conserva todos os horários',async()=>{
   assert.match(description.text,/13:00/);
   assert.match(description.text,/18:30/);
   assert.ok(['film-wash','film-atmosphere','hero-light','film-vignette'].every(id=>result.scene.elements.some(e=>e.id===id)));
-  assert.ok(flattenElements(result.scene.elements).find(e=>e.id==='detail').fontSize>=80);
+  const elements=flattenElements(result.scene.elements);
+  assert.ok(elements.find(e=>e.id==='description').fontSize>=40);
 });
 test('data de estreia igual à sessão não reaparece no bloco de horários',async()=>{
   assert.ok(sessionDayMatches('09 de outubro','2026-10-09'));

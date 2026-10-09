@@ -56,7 +56,7 @@ function sessionDayMatches(primaryDate,sessionDay) {
   const withYear=new Intl.DateTimeFormat('pt-BR',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}).format(date);
   return [long,withYear,`${date.getUTCDate()}/${date.getUTCMonth()+1}`,`${String(date.getUTCDate()).padStart(2,'0')}/${String(date.getUTCMonth()+1).padStart(2,'0')}`].some(candidate=>normalize(value)===normalize(candidate));
 }
-function sessionMomentParts(days, {includeDate=false}={}) {
+function sessionMomentParts(days, {includeDate=false,dayMode='calendar'}={}) {
   const first=Array.isArray(days)?days[0]:null;
   if(!first || !require('../engine/content-rules').validDay(first.date))return null;
   const times=(first.times || []).map(timeLabel).filter(Boolean);
@@ -65,7 +65,13 @@ function sessionMomentParts(days, {includeDate=false}={}) {
   const recurring=days.some(day=>day.date!==first.date);
   const prefix=recurring?'A PARTIR DE ':'';
   const date=includeDate?` ${first.date.slice(8,10)}/${first.date.slice(5,7)}`:'';
-  return {date:`${prefix}${weekday}${date}`,time:`ÀS ${times.join(' / ')}`,day:`${weekday}${includeDate?` •${date}`:''}`,weekday,clock:times.join(' / '),recurring};
+  const lateNight=times.every(time=>time<'05:00');
+  const businessDate=lateNight && dayMode==='previous'
+    ?new Date(Date.parse(`${first.date}T12:00:00Z`)-86400000).toISOString().slice(0,10):first.date;
+  const businessDay=businessDate!==first.date?dayLabel(businessDate):'';
+  const actualDay=`${lateNight?'MADRUGADA DE ':''}${weekday}${includeDate?` •${date}`:''}`;
+  return {date:`${prefix}${lateNight?'MADRUGADA DE ':''}${weekday}${date}`,time:`ÀS ${times.join(' / ')}`,day:actualDay,weekday,
+    clock:times.join(' / '),recurring,lateNight,actualDate:first.date,businessDate,businessDay};
 }
 function sessionMomentLabel(days,options) {
   const parts=sessionMomentParts(days,options);

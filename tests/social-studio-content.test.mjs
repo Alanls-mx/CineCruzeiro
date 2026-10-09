@@ -19,7 +19,9 @@ test('sessão de filme informa o dia real e distingue início de período',()=>{
 test('layout de filme imprime dia da semana junto ao horário',async()=>{
   const rendered=await engine.renderSocialPost({templateId:'movie-highlight',movieId:'m0',layoutId:'movie-spotlight'},context,{loadImage,skipRaster:true});
   const description=flattenElements(rendered.scene.elements).find(item=>item.id==='description');
-  assert.match(description?.text || '',/TERÇA ÀS 14:00/);
+  const detail=flattenElements(rendered.scene.elements).find(item=>item.id==='detail');
+  assert.match(detail?.text || '',/TERÇA/);
+  assert.match(description?.text || '',/14:00/);
 });
 test('programação respeita período, fuso, cancelamento, ordem e deduplicação',()=>{
   const today=sessionSchedule(context.movies[0],{scheduleMode:'today'},context.now);

@@ -36,7 +36,7 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
   const titlePolicy=embeddedMovieTitle(draft,heroSource);
   const embeddedTitle=titlePolicy.hide;
   const days=draft.showSessions===false?[]:draft.schedule?.days || [];
-  const session=days.length?sessionMomentParts(days,{includeDate:true}):null;
+  const session=days.length?sessionMomentParts(days,{includeDate:true,dayMode:draft.sessionDayMode}):null;
   const presale=draft.templateId==='movie-presale';
   const premiere=draft.templateId==='movie-premiere';
   const commercial=draft.templateId==='movie-price';
@@ -49,7 +49,7 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
   const canvasRatio=artworkBounds.width/artworkBounds.height;
   const cropLoss=1-Math.min(sourceRatio/canvasRatio,canvasRatio/sourceRatio);
   const canCover=cropLoss<=.20;
-  image('background-blur',embeddedTitle?heroSource:backgroundUrl || heroSource,{x:0,y:0,width:w,height:h},{role:'background',fit:embeddedTitle?'fill':'cover',focusX:draft.movieDirection?.focusX || 50,focusY:38,effects:{layer:'background',blur:embeddedTitle?40:38,brightness:embeddedTitle?.88:light?.92:.58,saturation:1,scale:embeddedTitle?1:1.16}});
+  image('background-blur',embeddedTitle?heroSource:backgroundUrl || heroSource,{x:0,y:0,width:w,height:h},{role:'background',fit:embeddedTitle?'fill':'cover',focusX:draft.movieDirection?.focusX || 50,focusY:38,effects:{layer:'background',blur:draft.movieBackgroundBlur ?? (embeddedTitle?32:30),brightness:embeddedTitle?.88:light?.92:.58,saturation:1,scale:embeddedTitle?1:1.16}});
   image('artwork',heroSource,artworkBounds,{role:'artwork',fit:embeddedTitle?'contain':canCover?'cover':'contain',keepRatio:true,locked:true,focusX:draft.movieDirection?.focusX || 50,focusY:draft.movieDirection?.focusY || 42,hierarchy:'primary',effects:{layer:'hero',mask:embeddedTitle?'fade-all':'cinematic-bottom',blend:embeddedTitle?27:canCover?45:72,brightness:1,scale:1}});
   const transitionStart=secondarySession?.64:embeddedTitle?.71:.63;
   const atmosphereStops=[
@@ -63,10 +63,11 @@ function buildMovieCampaign({draft,format,palette,brand,sourceUrl,backgroundUrl,
   if(!embeddedTitle)text('title',draft.title || draft.entities.movie?.title,box(.065,secondarySession?.60:.685,.87,.085),serif?58:64,{fontFamily:serif?'Social Editorial':'Social Display',fontWeight:serif?500:900,lineHeight:1,lines:2,align:'center',fill:ink,hierarchy:'secondary'});
   const detail=presale && draft.content?.purchaseAvailable?'PRÉ-VENDA ABERTA':commercial?draft.price:premiere?draft.date:session?.day || draft.date || 'EM BREVE';
   const detailY=secondarySession?.70:session?.79:embeddedTitle?.79:.785;
-  if(session?.recurring && !sameSessionDate)text('session-kicker','A PARTIR DE',box(.065,.749,.60,.037),32,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Text',fontWeight:800});
+  if(session?.businessDay)text('session-kicker',`PROGRAMAÇÃO DE ${session.businessDay}`,box(.065,.749,.60,.037),30,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Text',fontWeight:800});
+  else if(session?.recurring && !sameSessionDate)text('session-kicker','A PARTIR DE',box(.065,.749,.60,.037),32,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Text',fontWeight:800});
   text('detail',detail,box(.065,detailY,session?.66:.87,secondarySession?.052:.053),presale?54:session?43:48,{fontFamily:'Social Display',fontWeight:900,align:'center',fill:light?secondary:'#ffffff',lines:1,hierarchy:presale?'primary':'secondary'});
   if(secondarySession)text('description',sameSessionDate?session.weekday:session.day,box(.065,.79,.66,.044),43,{align:'center',lines:1,fill:light?secondary:'#ffffff',fontFamily:'Social Display',fontWeight:900});
-  if(session)text('session-time',session.clock,box(.065,.848,.66,.059),55,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Display',fontWeight:900});
+  if(session)text('session-time',session.clock,box(.065,.848,.66,.059),64,{align:'center',lines:2,fill:filmAccent,fontFamily:'Social Display',fontWeight:900});
   const ctaY=session?.916:detailY+.082;
   const compactCta=String(draft.cta || '').trim();
   text('cta',compactCta,box(.065,ctaY,.60,.037),32,{align:'center',lines:1,fill:filmAccent,fontFamily:'Social Display',fontWeight:900});

@@ -7,6 +7,8 @@ const {curateMovieContent,embeddedMovieTitle}=require('../backend/services/socia
 const {extractPalette,movieSurface,hexToRgb}=require('../backend/services/social-studio/engine/palette');
 const engine=require('../backend/services/socialStudioEngineService');
 const {flattenElements}=require('../backend/services/social-studio/scene/groups');
+const {sessionMomentParts}=require('../backend/services/social-studio/contracts/artwork-layout');
+const {mergeQuality}=require('../backend/services/social-studio/composition-engine/editorial-review');
 
 test('curadoria mantém uma ocorrência semântica, o papel principal e o contrato de exportação',()=>{
   const scene={templateId:'movie-highlight',sourceDraft:{movieManifest:[{id:'subtitle',text:'Em breve'},{id:'detail',text:'EM BREVE'}]},elements:[
@@ -56,4 +58,42 @@ test('filme sem sessões exibe EM BREVE uma vez em cada composição',async()=>{
     if(layoutId!=='movie-spotlight')assert.ok(!texts.includes('Uma noite especial'),layoutId);
     assert.ok(!result.scene.elements.some(e=>e.id==='movie-reading-veil'));
   }
+});
+
+test('sessão na madrugada mantém data real e só mostra dia comercial quando solicitado',()=>{
+  const days=[{date:'2026-10-09',times:['01:00']}];
+  const actual=sessionMomentParts(days,{includeDate:true});
+  const previous=sessionMomentParts(days,{includeDate:true,dayMode:'previous'});
+  assert.match(actual.day,/MADRUGADA DE SEXTA.*09\/10/);
+  assert.equal(actual.businessDate,'2026-10-09');
+  assert.equal(previous.businessDate,'2026-10-08');
+  assert.match(previous.businessDay,/QUI.*08\/10/);
+  assert.equal(previous.clock,'01:00');
+});
+
+test('spotlight preserva pôster oficial inteiro e destaca horário sem repetir título ou data',async()=>{
+  const poster=await sharp({create:{width:800,height:1200,channels:3,background:'#ae6986'}}).png().toBuffer();
+  const context={now:'2026-10-08T09:00:00-03:00',brand:{name:'Cinema',website:'https://www.cinema.com.br'},movies:[{id:'film',title:'Filme único',posterUrl:'/poster',releaseDate:'2026-10-09',sessions:[{date:'2026-10-09',time:'21:55'}]}]};
+  const result=await engine.renderSocialPost({templateId:'movie-premiere',movieId:'film',layoutId:'movie-spotlight',formatId:'feed_portrait',signatureId:'none'},context,{loadImage:async src=>src==='/poster'?poster:null,skipRaster:true});
+  const elements=flattenElements(result.scene.elements),texts=elements.filter(e=>e.type==='text' && e.visible!==false);
+  assert.equal(elements.find(e=>e.id==='artwork').fit,'contain');
+  assert.ok(!texts.some(e=>e.id==='title'));
+  assert.match(texts.find(e=>e.id==='detail').text,/SEXTA.*09\/10/);
+  assert.match(texts.find(e=>e.id==='description').text,/21:55/);
+  assert.ok(texts.find(e=>e.id==='description').fontSize>=texts.find(e=>e.id==='detail').fontSize*.72);
+  assert.equal(texts.filter(e=>/09\/10/.test(e.text)).length,1);
+  assert.ok(result.quality.technical.accepted);
+  assert.ok(Number.isFinite(result.quality.editorial.score));
+});
+
+test('QA editorial penaliza redundância mesmo quando a verificação técnica aprova',()=>{
+  const scene={templateId:'movie-highlight',width:1080,height:1350,formatId:'feed_portrait',sourceDraft:{titleEvidence:'registered-poster',editorialTitle:'Filme único',availableArtwork:true},elements:[
+    {id:'artwork',role:'artwork',type:'image',src:'/poster',x:0,y:0,width:1080,height:1000,visible:true},
+    {id:'title',type:'text',text:'Filme único',x:80,y:1000,width:500,height:90,fontSize:60,visible:true},
+    {id:'cta',type:'text',text:'Escolha sua sessão',x:80,y:1140,width:500,height:45,fontSize:32,visible:true}
+  ]};
+  const quality=mergeQuality(scene,{total:95,accepted:true,issues:[]},{total:95,accepted:true,issues:[]});
+  assert.equal(quality.technical.score,95);
+  assert.ok(quality.editorial.score<quality.technical.score);
+  assert.ok(quality.editorial.issues.some(issue=>issue.code==='REPEATED_MOVIE_TITLE'));
 });

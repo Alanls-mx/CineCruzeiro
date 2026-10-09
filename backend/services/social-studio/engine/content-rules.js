@@ -66,6 +66,9 @@ function applyContentRules(draft, input, context) {
     if (next && (draft.templateId === 'sessions-today' && next.date !== cinemaDay(now) || draft.templateId !== 'sessions-today' && next.date > currentWeekEnd)) draft.periodStart = next.date;
   }
   draft.showSessions = scheduleCampaign || input.showSessions !== false;
+  draft.sessionDayMode = input.sessionDayMode === 'previous' ? 'previous' : 'calendar';
+  const requestedBlur=Number(input.movieBackgroundBlur);
+  draft.movieBackgroundBlur=Number.isFinite(requestedBlur) && requestedBlur>0 ? Math.max(4,Math.min(50,requestedBlur)) : undefined;
   draft.website = clean(context.brand?.posterWebsite || context.brand?.website).replace(/^https?:\/\//,'').replace(/\/$/,'');
   const schedule = sessionSchedule(draft.entities.movie, draft, now);
   if(draft.templateId==='movie-highlight' && input.subtitle===undefined) draft.subtitle = 'EM DESTAQUE';

@@ -31,4 +31,10 @@ A presença de título usa os metadados fornecidos pelo operador. Na ausência d
 
 Testes cobrem status único, título embutido e substituições manuais, paleta independente da marca, cores claras e escuras, data única, horários completos, três formatos, contraste raster, integridade dos assets, preços e assinaturas dos cinemas. O lote de validação usa os 11 filmes publicados do Cine Cruzeiro em quatro composições, com PNGs, folhas de contato e manifesto de textos e cores.
 
+## Qualidade e sessões de madrugada
+
+O Studio registra duas notas independentes por arte. O QA técnico mede integridade, resolução, margens e contraste. O QA editorial considera uso da imagem, continuidade visual, hierarquia, equilíbrio, redundância e adequação ao filme. A aprovação técnica não significa aprovação criativa; a recomendação automática considera as duas notas, sem ocultar as outras composições.
+
+Sessões depois da meia-noite exibem por padrão a data real como "MADRUGADA DE" seguida do dia e da data. O operador pode indicar também o dia comercial anterior quando a programação do cinema usa essa convenção; esse dia não substitui a data real da sessão.
+
 As exportações antigas não são modificadas pela atualização. As novas artes devem ser geradas novamente no Studio.

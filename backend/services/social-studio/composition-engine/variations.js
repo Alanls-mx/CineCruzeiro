@@ -114,7 +114,8 @@ async function generateVariations(input, context, options = {}) {
       preference:preferenceBonus(payload,context.history),
     });
   }
-  variations.sort((first, second) => (second.quality.total+second.preference) - (first.quality.total+first.preference) || second.quality.commercialClarity - first.quality.commercialClarity);
+  const recommendationScore=variation=>variation.quality.editorial?.score*.65+variation.quality.technical?.score*.35+variation.preference;
+  variations.sort((first, second) => recommendationScore(second)-recommendationScore(first) || second.quality.commercialClarity - first.quality.commercialClarity);
   const selected = selectDiverseVariations(variations, mode, input.workspaceVersion===2?3:4).map((variation, index) => ({ ...variation, recommended: index === 0, classification: index === 0 ? "Melhor opção" : variation.quality.total >= 88 ? "Muito boa" : variation.quality.total >= 78 ? "Boa" : "Experimental" }));
   for (const variation of selected) {
     const raster = await renderSocialScene(variation.scene, options);

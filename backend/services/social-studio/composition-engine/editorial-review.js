@@ -1,5 +1,6 @@
 const {flattenElements} = require('../scene/groups');
 const {category} = require('../contracts/workspace');
+const {semanticText}=require('./movie-content');
 const clamp = value => Math.round(Math.max(0, Math.min(100, value)));
 const contentElements = scene => flattenElements(scene.elements).filter(e => e.visible !== false && e.opacity !== 0 && (e.type === 'text' && e.text?.trim() || e.type === 'image' && e.src && (e.id === 'artwork' || e.id.startsWith('movie-art-') || ['logo','artwork'].includes(e.role))));
 
@@ -47,12 +48,37 @@ function reviewEditorial(scene) {
 
 function mergeQuality(scene, general, specialist) {
   const review = reviewEditorial(scene);
-  const issues = [...new Map([...(general.issues || []),...(specialist?.issues || []),...review.issues].map(i=>[`${i.code}:${i.elementId || ''}`,i])).values()];
+  const draft=scene.sourceDraft || {}, visible=flattenElements(scene.elements).filter(e=>e.type==='text' && e.visible!==false);
+  const artIssues=[];
+  const note=(code,message,penalty)=>artIssues.push({code,message,penalty,blocking:false});
+  if(category(scene.templateId)==='movie') {
+    const title=visible.find(e=>e.id==='title');
+    if(title && ['metadata','registered-poster'].includes(draft.titleEvidence) && semanticText(title.text)===semanticText(draft.editorialTitle))
+      note('REPEATED_MOVIE_TITLE','O pôster já apresenta o título; avalie retirar o título adicional.',18);
+    const detail=visible.find(e=>e.id==='detail'),clock=visible.find(e=>e.id==='session-time' || e.id==='description' && /\d{1,2}[:h]\d{2}/.test(e.text));
+    if(clock && detail && /\d{1,2}[/:]\d{2}|\b[A-Z]+\b/.test(detail.text) && clock.fontSize<detail.fontSize*.72)
+      note('WEAK_SESSION_TIME','O horário está fraco em relação à data.',15);
+    const dates=visible.flatMap(e=>[...e.text.matchAll(/\b\d{1,2}\s*(?:\/|DE)\s*(?:\d{2}|[A-ZÁÉÍÓÚÇ]+)/gi)].map(match=>({id:e.id,value:semanticText(match[0])})));
+    if(dates.some((entry,index)=>dates.some((other,otherIndex)=>otherIndex>index && other.id!==entry.id && other.value===entry.value)))
+      note('REPEATED_SESSION_DATE','A data aparece mais de uma vez.',16);
+    const background=scene.elements.find(e=>e.id==='background-blur');
+    if(background?.effects?.blur>38)note('HEAVY_BACKGROUND_BLUR','O desfoque afasta o fundo da identidade do filme.',9);
+  }
+  const editorialIssues=[...review.issues,...artIssues];
+  const editorialScore=clamp(
+    review.layout*.15+(general.balance ?? 100)*.10+(general.hierarchy ?? 100)*.15+
+    (general.visualContinuity ?? 100)*.20+(general.artworkUtilization ?? 100)*.15+
+    (general.redundancy ?? 100)*.10+(general.primaryElementClarity ?? 100)*.05+
+    (general.genreFit ?? 100)*.10-editorialIssues.reduce((sum,item)=>sum+item.penalty,0)
+  );
+  const issues = [...new Map([...(general.issues || []),...(specialist?.issues || []),...editorialIssues].map(i=>[`${i.code}:${i.elementId || ''}`,i])).values()];
   // Raster validators own exact collisions/contrast for their scene families;
   // generic heuristics remain available for ranking rather than being overwritten.
   const valid = specialist ? specialist.accepted : general.accepted;
   const total = clamp((specialist ? specialist.total*.45+general.total*.30 : general.total*.75)+review.layout*.15+review.branding*.05+review.conversion*.05);
-  return {...general, total, score:total, accepted:valid && !review.issues.some(i=>i.blocking), issues, editorial:review, raster:specialist || null, method:'editorial-review-v3'};
+  return {...general,total,score:total,accepted:valid && !review.issues.some(i=>i.blocking),issues,
+    technical:{score:specialist?.total ?? general.total,accepted:valid,issues:specialist?.issues || general.issues || []},
+    editorial:{...review,score:editorialScore,issues:editorialIssues},raster:specialist || null,method:'editorial-review-v4'};
 }
 
 function geometry(scene) {
