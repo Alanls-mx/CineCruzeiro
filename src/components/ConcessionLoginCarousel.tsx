@@ -46,11 +46,10 @@ export function ConcessionLoginCarousel() {
 
   const slide = slides[index];
   const move = (step: number) => setIndex((current) => (current + step + slides.length) % slides.length);
-  const signature = assetPath("/images/social-studio/cine-cruzeiro-assinatura-oficial.png");
 
   return (
     <section
-      className="overflow-hidden bg-[#101827] lg:flex lg:h-[420px]"
+      className="w-full max-w-[520px] justify-self-center"
       role="region"
       aria-roledescription="carrossel"
       aria-label="Artes da bomboniere"
@@ -64,24 +63,20 @@ export function ConcessionLoginCarousel() {
         if (event.key === "ArrowRight") { event.preventDefault(); move(1); }
       }}
     >
-      <div className="flex min-h-[280px] flex-1 items-center justify-center sm:min-h-[340px] lg:min-h-0">
+      <div className="aspect-square w-full overflow-hidden bg-[#101827]">
         {slide ? (
-          <a href={assetPath(`/images/login-bomboniere/${slide.file}`)} target="_blank" rel="noopener noreferrer" className="block h-[280px] w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-gold-400 sm:h-[340px] lg:h-full" aria-label={`Abrir arte de ${slide.name} em tamanho completo`}>
-            <img src={assetPath(`/images/login-bomboniere/${slide.file}`)} alt={`Arte da bomboniere: ${slide.name}`} width={1080} height={1080} className="h-full w-full object-contain" />
+          <a href={assetPath(`/images/login-bomboniere/${slide.file}`)} target="_blank" rel="noopener noreferrer" className="block h-full w-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-gold-400" aria-label={`Abrir arte de ${slide.name} em tamanho completo`}>
+            <img src={assetPath(`/images/login-bomboniere/${slide.file}`)} alt={`Arte da bomboniere: ${slide.name}`} width={1080} height={1080} className="block h-full w-full object-cover" />
           </a>
         ) : (
-          <p className="px-6 text-center text-sm font-semibold text-slate-300">Bomboniere Cine Cruzeiro</p>
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm font-semibold text-slate-300">Bomboniere Cine Cruzeiro</div>
         )}
       </div>
-      <div className="flex min-h-20 items-center justify-between gap-4 border-t border-white/10 px-5 py-3 lg:w-44 lg:flex-col lg:items-start lg:border-l lg:border-t-0 lg:px-5 lg:py-6">
-        <div>
-          <p className="text-xs font-black uppercase text-gold-300">Bomboniere</p>
-          <img src={signature} alt="Cine Cruzeiro" width={1280} height={1280} className="mt-2 h-auto max-h-12 w-auto max-w-24 object-contain lg:mt-5 lg:max-h-20 lg:max-w-32" />
-        </div>
+      <div className="flex h-14 items-center justify-center">
         {slides.length > 1 && (
-          <div className="flex items-center gap-1" aria-label="Navegação das artes">
+          <div className="flex items-center gap-3" aria-label="Navegação das artes">
             <button type="button" onClick={() => move(-1)} className="grid h-11 w-11 place-items-center text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label="Arte anterior" title="Arte anterior"><ChevronLeft className="h-5 w-5" /></button>
-            <span className="min-w-9 text-center text-xs tabular-nums text-slate-200">{index + 1}/{slides.length}</span>
+            <span className="min-w-12 text-center text-sm tabular-nums text-slate-200">{index + 1} / {slides.length}</span>
             <button type="button" onClick={() => move(1)} className="grid h-11 w-11 place-items-center text-white hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400" aria-label="Próxima arte" title="Próxima arte"><ChevronRight className="h-5 w-5" /></button>
           </div>
         )}

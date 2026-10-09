@@ -501,7 +501,7 @@ function ContaPageContent() {
             </form>
           </section>
         ) : (
-          <section className="mt-12 grid gap-10 lg:grid-cols-[.85fr_1.15fr]">
+          <section className="mt-12 grid gap-10 lg:grid-cols-2 lg:gap-16">
             <div>
               <div className="flex gap-5 border-b border-white/8 pb-4 text-sm font-black text-slate-400">
                 <button onClick={() => setMode("login")} className={mode === "login" ? "text-gold-400" : ""}>Entrar</button>
