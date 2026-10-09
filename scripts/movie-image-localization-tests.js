@@ -22,8 +22,9 @@ async function run() {
   const requested = [];
   const service = createMovieImageService({
     storageService,
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, options) => {
       requested.push(url);
+      assert.equal(options.redirect, "error");
       return new Response(PNG, { status: 200, headers: { "content-type": "image/png", "content-length": String(PNG.length) } });
     }
   });
@@ -33,6 +34,8 @@ async function run() {
     assert.equal(isTmdbImageUrl("http://image.tmdb.org/t/p/w780/poster.jpg"), false);
     assert.equal(isTmdbImageUrl("https://image.tmdb.org.evil.test/t/p/w780/poster.jpg"), false);
     assert.equal(isTmdbImageUrl("https://image.tmdb.org/not-images/poster.jpg"), false);
+    assert.equal(isTmdbImageUrl("https://user:pass@image.tmdb.org/t/p/w780/poster.jpg"), false);
+    assert.equal(isTmdbImageUrl("https://image.tmdb.org:8443/t/p/w780/poster.jpg"), false);
 
     const posterSource = "https://image.tmdb.org/t/p/w780/poster.jpg";
     const backdropSource = "https://image.tmdb.org/t/p/w1280/backdrop.jpg";
@@ -56,6 +59,17 @@ async function run() {
     assert.equal((await filesBelow(rootDir)).length, 2);
 
     await service.cleanupAssets(localized.assets);
+    assert.equal((await filesBelow(rootDir)).length, 0);
+
+    const oversized = createMovieImageService({
+      storageService,
+      maxBytes: PNG.length - 1,
+      fetchImpl: async () => new Response(PNG, { status: 200, headers: { "content-type": "image/png" } })
+    });
+    await assert.rejects(
+      oversized.localizeMovie({ id: "imagem-grande", posterUrl: posterSource }),
+      (error) => error.code === "TMDB_IMAGE_DOWNLOAD_FAILED" && /excede o limite/.test(error.message)
+    );
     assert.equal((await filesBelow(rootDir)).length, 0);
 
     const legacyMovie = {

@@ -160,6 +160,12 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
       throw error;
     }
     await fs.mkdir(targetDir, { recursive: true });
+    const [realRoot, realTarget] = await Promise.all([fs.realpath(rootDir), fs.realpath(targetDir)]);
+    if (!insideRoot(realRoot, realTarget)) {
+      const error = new Error("Operação de armazenamento não permitida.");
+      error.statusCode = 400;
+      throw error;
+    }
 
     const fileName = `${safeName}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}${extension}`;
     const filePath = path.resolve(targetDir, fileName);
@@ -168,7 +174,7 @@ function createStorageService({ publicDir, publicBasePath = "/uploads", rootDir:
       error.statusCode = 400;
       throw error;
     }
-    await fs.writeFile(filePath, sanitizedBuffer);
+    await fs.writeFile(filePath, sanitizedBuffer, { flag: "wx" });
 
     return {
       path: filePath,

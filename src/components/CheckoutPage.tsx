@@ -10,6 +10,7 @@ import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { useSeatRealtime } from "@/hooks/useSeatRealtime";
 import { AccountSubscription, ClubBenefitsPreviewResult, CouponPreviewResult, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, createSandboxCardTest, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap, previewCheckoutClubBenefits, previewCheckoutCoupon } from "@/services/cinemaApi";
+import { ensureMercadoPagoDeviceId } from "@/utils/mercadoPagoDevice";
 import { checkoutDraftTotal, clearCheckoutDraft, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, publicAssetPath, readCheckoutDraft, StoredCheckoutDraft, writeCheckoutDraft } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
 
@@ -276,8 +277,9 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
     }
   }, [selectedSeatIds, updateDraft]);
 
-  const applySeatSessionState = useCallback((state: { occupiedSeatIds: string[]; heldSeats: Array<{ seatId: string; heldByMe: boolean }> }) => {
+  const applySeatSessionState = useCallback((state: { occupiedSeatIds: string[]; reservedSeatIds: string[]; heldSeats: Array<{ seatId: string; heldByMe: boolean }> }) => {
     const occupied = new Set(state.occupiedSeatIds);
+    const reserved = new Set(state.reservedSeatIds);
     const held = new Map(state.heldSeats.map((item) => [item.seatId, item]));
     setSeatMap((current) => current ? {
       ...current,
@@ -285,7 +287,9 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
         ...row,
         seats: row.seats.map((seat) => seat.enabled === false ? seat : occupied.has(seat.id)
           ? { ...seat, status: "unavailable", heldByMe: false }
-          : held.has(seat.id)
+          : reserved.has(seat.id)
+            ? { ...seat, status: "held", heldByMe: false }
+            : held.has(seat.id)
             ? { ...seat, status: "held", heldByMe: Boolean(held.get(seat.id)?.heldByMe) }
             : { ...seat, status: "available", heldByMe: false })
       }))
@@ -626,6 +630,9 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
       }
       if (checkoutTotal > 0 && checkoutDraft.paymentMethod === "credit_card" && !(cardData?.token || cardData?.encryptedCard)) {
         throw new Error("Preencha os dados do cartão no formulário seguro do provedor ativo.");
+      }
+      if (checkoutTotal > 0 && mercadoPagoConfig?.provider === "mercado_pago") {
+        await ensureMercadoPagoDeviceId();
       }
       trackMarketingEvent("add_payment_info", {
         currency: "BRL",
@@ -1079,8 +1086,8 @@ function TicketsStep({ draft, updateDraft, ticketTypes, seatMap, seatMapStatus, 
                             disabled={unavailable}
                             onClick={() => void toggleSeat(seat.id)}
                             aria-pressed={selected}
-                            aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${temporarilyReserved ? ", reservada temporariamente por outra compra" : unavailable ? ", indisponível" : selected ? ", selecionada por você" : ""}`}
-                            title={temporarilyReserved ? `${seat.label} • Reservada temporariamente por outra compra` : `${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
+                            aria-label={`${seat.label}, ${type?.name || "poltrona"}${seat.accessibility === "wheelchair" ? ", cadeirante" : seat.accessibility === "obese" ? ", pessoa obesa" : ""}${temporarilyReserved ? ", reservada temporariamente" : unavailable ? ", indisponível" : selected ? ", selecionada por você" : ""}`}
+                            title={temporarilyReserved ? `${seat.label} • Reservada temporariamente` : `${seat.label} • ${type?.name || "Padrão"}${seat.accessibility === "wheelchair" ? " • Cadeirante" : seat.accessibility === "obese" ? " • Pessoa obesa" : ""}`}
                             className={`relative flex h-7 w-8 shrink-0 items-center justify-center rounded border border-white/10 text-[10px] font-black text-white shadow-[inset_0_-2px_0_rgba(2,6,23,.4)] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:h-9 sm:w-10 sm:rounded-md sm:text-xs sm:shadow-[inset_0_-3px_0_rgba(2,6,23,.4)] ${seat.aisleAfter ? "mr-3 sm:mr-6" : ""} ${seatStateClass}`}
                             style={{
                               ...(selected || unavailable || temporarilyReserved ? {} : { backgroundColor: seat.color || seatTypeColor(type) }),

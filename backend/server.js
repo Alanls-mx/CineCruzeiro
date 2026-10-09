@@ -76,6 +76,10 @@ const { createMovieImageService } = require("./services/movieImageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const { buildAdminSessionSeatMap } = require("./services/adminSessionSeatMapService");
+const { sessionSeatAvailability } = require("./services/sessionSeatAvailability");
+const { checkoutIdentifier } = require("./services/checkoutIdentifier");
+const { publicContentSettings } = require("./services/publicContentSettings");
+const { openPublicResource, downloadPublicBuffer } = require("./services/publicRemoteResource");
 const { allowedOrigins: normalizedAllowedOrigins } = require("./services/originPolicyService");
 const clubDomainService = require("./services/clubDomainService");
 const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
@@ -1439,7 +1443,7 @@ function adminOriginAllowed(req) {
   const fetchSite = String(req.headers["sec-fetch-site"] || "").toLowerCase();
   if (fetchSite === "cross-site") return false;
 
-  const requestHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  const requestHost = String(req.headers.host || "").split(",")[0].trim();
   const origin = originHost(req.headers.origin);
   const referer = originHost(req.headers.referer);
   const allowedHosts = new Set([
@@ -2143,7 +2147,8 @@ function createByteLimitStream(maxBytes) {
 function normalizePaymentOrder(input) {
   const customerName = String(input.customerName || "Cliente Cine Cruzeiro").trim();
   const [firstName, ...lastNameParts] = customerName.split(/\s+/);
-  const id = input.id || input.idempotencyKey || `pedido-${crypto.randomBytes(12).toString("hex")}`;
+  const id = checkoutIdentifier(input.id || input.idempotencyKey || `pedido-${crypto.randomBytes(12).toString("hex")}`);
+  const idempotencyKey = input.idempotencyKey ? checkoutIdentifier(input.idempotencyKey) : (input.id ? checkoutIdentifier(input.id) : "");
   const suppliedReference = String(input.reference || input.publicReference || "").trim().toUpperCase();
   const reference = isFriendlyOrderReference(suppliedReference)
     ? suppliedReference
@@ -2152,7 +2157,7 @@ function normalizePaymentOrder(input) {
   return {
     id,
     reference,
-    idempotencyKey: input.idempotencyKey || input.id || "",
+    idempotencyKey,
     movieId: String(input.movieId || ""),
     sessionId: String(input.sessionId || ""),
     fullTicketsCount: Math.max(0, Number(input.fullTicketsCount || 0)),
@@ -2368,18 +2373,11 @@ function roomSeatIdsInActiveUse(db, roomId) {
 }
 
 function occupiedSeatIds(db, sessionId, ignoredOrderId = "") {
-  const occupied = new Set();
-  (db.tickets || []).forEach((ticket) => {
-    if (ticket.sessionId !== sessionId || ["cancelled", "refunded", "expired"].includes(ticket.status)) return;
-    if (ticket.seatId) occupied.add(String(ticket.seatId));
-  });
-  const now = Date.now();
-  (db.orders || []).forEach((order) => {
-    if (order.id === ignoredOrderId || order.sessionId !== sessionId || !["pending_payment", "paid", "paid_pending_print"].includes(order.status)) return;
-    if (order.status === "pending_payment" && order.reservationExpiresAt && new Date(order.reservationExpiresAt).getTime() <= now) return;
-    (order.selectedSeatIds || []).forEach((seatId) => occupied.add(String(seatId)));
-  });
-  return occupied;
+  const source = ignoredOrderId
+    ? { tickets: db.tickets, orders: (db.orders || []).filter((order) => order.id !== ignoredOrderId) }
+    : db;
+  const { sold, reserved } = sessionSeatAvailability(source, sessionId);
+  return new Set([...sold, ...reserved]);
 }
 
 function findSessionWithMovie(db, sessionId) {
@@ -2397,9 +2395,11 @@ async function realtimeSeatState(sessionId, ownerToken = "") {
   if (!found) throw Object.assign(new Error("Sessão não encontrada."), { statusCode: 404, code: "SESSION_NOT_FOUND" });
   const room = roomForSession(db, found.session);
   const holds = roomSeatSelectionEnabled(room) ? await listActiveSeatHolds(sessionId) : [];
+  const { sold, reserved } = sessionSeatAvailability(db, sessionId);
   return {
     sessionId,
-    occupiedSeatIds: [...occupiedSeatIds(db, sessionId)],
+    occupiedSeatIds: [...sold],
+    reservedSeatIds: [...reserved],
     heldSeats: holds.map((hold) => ({
       seatId: hold.seatId,
       expiresAt: hold.expiresAt,
@@ -4279,14 +4279,13 @@ async function cachedPosterBufferForTicket(db, enriched) {
   const cached = await fs.readFile(cachePath).catch(() => null);
   if (cached && jpegDimensions(cached)) return cached;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 9000);
   try {
-    const response = await fetch(posterUrl, { signal: controller.signal, headers: { Accept: "image/jpeg,image/*;q=0.8" } }).catch(() => null);
-    if (!response?.ok) return null;
-    const arrayBuffer = await response.arrayBuffer();
-    const sourceBuffer = Buffer.from(arrayBuffer);
-    if (sourceBuffer.length > 6 * 1024 * 1024) return null;
+    const { buffer: sourceBuffer } = await downloadPublicBuffer(posterUrl, {
+      httpsOnly: true,
+      timeoutMs: 9000,
+      maxBytes: 6 * 1024 * 1024,
+      headers: { Accept: "image/jpeg,image/*;q=0.8" }
+    });
     const buffer = jpegDimensions(sourceBuffer)
       ? sourceBuffer
       : await sharp(sourceBuffer).rotate().jpeg({ quality: 88, progressive: true }).toBuffer().catch(() => null);
@@ -4294,9 +4293,7 @@ async function cachedPosterBufferForTicket(db, enriched) {
     await fs.mkdir(cacheDir, { recursive: true });
     await fs.writeFile(cachePath, buffer).catch(() => null);
     return buffer;
-  } finally {
-    clearTimeout(timer);
-  }
+  } catch { return null; }
 }
 
 function ticketStatusLabel(status) {
@@ -5800,18 +5797,15 @@ async function downloadTrailerForMovie(movie) {
   }
 
   try {
-    const response = await fetch(sourceUrl);
-    if (!response.ok || !response.body) {
-      throw new Error(`Nao foi possivel baixar o trailer (${response.status}).`);
-    }
+    const response = await openPublicResource(sourceUrl, { timeoutMs: 15000, maxBytes: MAX_TRAILER_BYTES });
 
-    const contentType = response.headers.get("content-type") || "";
+    const contentType = response.headers["content-type"] || "";
     const extension = getTrailerExtension(sourceUrl, contentType);
     if (!extension || (!contentType.startsWith("video/") && !path.extname(parsedUrl.pathname))) {
       throw new Error("A URL precisa apontar para um arquivo de video direto (.mp4, .webm ou .mov).");
     }
 
-    const contentLength = Number(response.headers.get("content-length") || 0);
+    const contentLength = Number(response.headers["content-length"] || 0);
     if (contentLength > MAX_TRAILER_BYTES) {
       throw new Error(`Trailer maior que o limite de ${Math.round(MAX_TRAILER_BYTES / 1024 / 1024)} MB.`);
     }
@@ -5822,7 +5816,7 @@ async function downloadTrailerForMovie(movie) {
     const tempDestination = `${destination}.download`;
 
     await pipeline(
-      Readable.fromWeb(response.body),
+      response,
       createByteLimitStream(MAX_TRAILER_BYTES),
       createWriteStream(tempDestination)
     );
@@ -8251,17 +8245,7 @@ function assetMovie(movie) {
 function getContent(db, options = {}) {
   const includePrivate = Boolean(options.includePrivate);
   const now = new Date();
-  const publicSettings = { ...(db.settings || {}) };
-  delete publicSettings.integrations;
-  delete publicSettings.webhookSimulatorRuns;
-  delete publicSettings.emailCampaigns;
-  delete publicSettings.emailAiPromptTemplates;
-  if (!includePrivate) {
-    for (const name of Object.keys(publicSettings)) {
-      if (name.startsWith("socialStudio") || ["emailAttachments", "emailTemplateLibrary", "emailBranding"].includes(name)) delete publicSettings[name];
-    }
-  }
-  if (!includePrivate) delete publicSettings.adminTwoFactorRequired;
+  const publicSettings = includePrivate ? { ...(db.settings || {}) } : publicContentSettings(db.settings);
   const analyticsConfig = integrationConfigService.resolvedConfig(db, "analytics");
   publicSettings.tracking = {
     enabled: Boolean(analyticsConfig?.enabled && analyticsConfig?.configured),
@@ -8710,21 +8694,6 @@ async function validateSocialStudioImageBuffer(buffer) {
   return buffer;
 }
 
-async function readSocialStudioResponseBuffer(response, maxBytes = 8 * 1024 * 1024) {
-  if (!response?.body) return null;
-  const chunks = [];
-  let received = 0;
-  for await (const chunk of response.body) {
-    received += chunk.length;
-    if (received > maxBytes) {
-      await response.body.cancel().catch(() => null);
-      return null;
-    }
-    chunks.push(Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
-}
-
 async function loadSocialStudioImage(value = "") {
   const local = await readSocialStudioLocalImage(value);
   if (local) return validateSocialStudioImageBuffer(local);
@@ -8740,22 +8709,16 @@ async function loadSocialStudioImage(value = "") {
   })();
   const allowedHosts = new Set([configuredHost, "image.tmdb.org", "images.unsplash.com"].filter(Boolean));
   if (!allowedHosts.has(parsed.hostname)) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(parsed, {
-      signal: controller.signal,
-      redirect: "error",
+    const { buffer } = await downloadPublicBuffer(parsed, {
+      httpsOnly: true,
+      allowedHosts,
+      timeoutMs: 8000,
+      maxBytes: 8 * 1024 * 1024,
       headers: { Accept: "image/avif,image/webp,image/png,image/jpeg" }
-    }).catch(() => null);
-    if (!response?.ok) return null;
-    const length = Number(response.headers.get("content-length") || 0);
-    if (length > 8 * 1024 * 1024) return null;
-    const buffer = await readSocialStudioResponseBuffer(response);
+    });
     return validateSocialStudioImageBuffer(buffer);
-  } finally {
-    clearTimeout(timer);
-  }
+  } catch { return null; }
 }
 
 async function persistSocialStudioPosts(db, posts, req, before = null) {
@@ -11099,6 +11062,7 @@ async function reconcileOnlineCheckoutOrder(orderId, snapshotDb) {
     }
 
     await writeDb(lockedDb);
+    if (order.sessionId) seatRealtimeService?.broadcastSessionRefresh(order.sessionId);
     if (!wasAlreadyPaid && tickets.length) queueTicketEmailDelivery(order.id);
     logEvent("info", "payment.reconciled", {
       orderId: order.id,
@@ -11696,7 +11660,7 @@ async function handleApi(req, res, pathname) {
     }
     const room = roomForSession(db, session);
     const enabled = roomSeatSelectionEnabled(room);
-    const occupied = enabled ? occupiedSeatIds(db, sessionId) : new Set();
+    const { sold, reserved } = enabled ? sessionSeatAvailability(db, sessionId) : { sold: new Set(), reserved: new Set() };
     const ownerToken = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("ownerToken") || "").trim();
     const holds = enabled ? await listActiveSeatHolds(sessionId) : [];
     const holdsBySeat = new Map(holds.map((hold) => [String(hold.seatId), hold]));
@@ -11723,12 +11687,12 @@ async function handleApi(req, res, pathname) {
           aisleAfter: Boolean(seat.aisleAfter),
           status: seat.enabled === false
             ? "blocked"
-            : occupied.has(String(seat.id))
+            : sold.has(String(seat.id))
               ? "unavailable"
-              : holdsBySeat.has(String(seat.id))
+              : reserved.has(String(seat.id)) || holdsBySeat.has(String(seat.id))
                 ? "held"
                 : "available",
-          heldByMe: Boolean(ownerToken && holdsBySeat.get(String(seat.id))?.ownerToken === ownerToken)
+          heldByMe: !reserved.has(String(seat.id)) && Boolean(ownerToken && holdsBySeat.get(String(seat.id))?.ownerToken === ownerToken)
         }))
       }))
     }, { "Cache-Control": "no-store" });
@@ -14357,7 +14321,7 @@ async function handleApi(req, res, pathname) {
       consumePendingClubCredit(lockedDb, savedOrder, tickets, lockedUser.id);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
-      await releaseOrderSeatHolds(savedOrder);
+      await releaseOrderSeatHolds(savedOrder, savedOrder.status === "pending_payment" ? "held" : "unavailable");
       sendJson(res, 201, { order: savedOrder, payment: null, tickets, subscription, creditsRemaining: clubDomainService.creditCounts(lockedDb, subscription.id).available }, {
         "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
       });
@@ -15665,7 +15629,7 @@ async function handleApi(req, res, pathname) {
       }
       const rawOrder = body.order || body;
       const normalizedOrder = normalizePaymentOrder(rawOrder);
-      normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
+      normalizedOrder.idempotencyKey = checkoutIdentifier(body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id);
       normalizedOrder.customerUserId = customerUser.id;
       normalizedOrder.customerEmail = customerUser.email || "";
       normalizedOrder.customerCpf = customerUser.cpf || "";
@@ -15731,7 +15695,8 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
-      await releaseOrderSeatHolds(savedOrder);
+      await releaseOrderSeatHolds(savedOrder, savedOrder.status === "pending_payment" ? "held" : "unavailable");
+      seatRealtimeService?.broadcastSessionRefresh(savedOrder.sessionId);
       logEvent("info", "payment.created", {
         orderId: savedOrder.id,
         paymentId: payment.id,
@@ -15769,7 +15734,7 @@ async function handleApi(req, res, pathname) {
       }
       const rawOrder = body.order || body;
       const normalizedOrder = normalizePaymentOrder(rawOrder);
-      normalizedOrder.idempotencyKey = body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id;
+      normalizedOrder.idempotencyKey = checkoutIdentifier(body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id);
       normalizedOrder.customerUserId = customerUser.id;
       normalizedOrder.customerEmail = customerUser.email || "";
       normalizedOrder.customerCpf = customerUser.cpf || "";
@@ -15844,7 +15809,8 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
-      await releaseOrderSeatHolds(savedOrder);
+      await releaseOrderSeatHolds(savedOrder, savedOrder.status === "pending_payment" ? "held" : "unavailable");
+      seatRealtimeService?.broadcastSessionRefresh(savedOrder.sessionId);
       logEvent("info", "payment.created", {
         orderId: savedOrder.id,
         paymentId: payment.id,
@@ -17367,6 +17333,7 @@ async function handleApi(req, res, pathname) {
       }
       lockedDb.webhookEvents.push({ provider: "pag_bank", eventId, providerPaymentId: providerOrderId, orderId: order.id, status: payment.status, verified: true, createdAt: payment.updatedAt });
       await writeDb(lockedDb);
+      if (order.sessionId) seatRealtimeService?.broadcastSessionRefresh(order.sessionId);
       if (!wasPaid && tickets.length) queueTicketEmailDelivery(order.id);
       sendJson(res, 200, { ok: true, processed: true, status: payment.status, ticketsCreated: tickets.length });
     });
@@ -17685,6 +17652,7 @@ async function handleApi(req, res, pathname) {
         createdAt: new Date().toISOString()
       });
       await writeDb(lockedDb);
+      if (order?.sessionId) seatRealtimeService?.broadcastSessionRefresh(order.sessionId);
       logEvent("info", "webhook.processed", { provider, eventId, providerPaymentId, orderId: payment.orderId, status: payment.status, tickets: tickets.length, verified: verification.verified });
       sendJson(res, 200, {
         ok: true,

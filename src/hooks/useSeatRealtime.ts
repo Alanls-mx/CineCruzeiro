@@ -13,7 +13,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
   enabled: boolean;
   selectedSeatIds: string[];
   onSeatChange: (change: SeatChange) => void;
-  onSessionState: (state: { occupiedSeatIds: string[]; heldSeats: Array<{ seatId: string; heldByMe: boolean; expiresAt?: string }> }) => void;
+  onSessionState: (state: { occupiedSeatIds: string[]; reservedSeatIds: string[]; heldSeats: Array<{ seatId: string; heldByMe: boolean; expiresAt?: string }> }) => void;
   onSessionRefresh?: () => void;
 }) {
   const [status, setStatus] = useState<SeatRealtimeStatus>("disconnected");
@@ -119,6 +119,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
           setJoined(true);
           callbacksRef.current.onSessionState({
             occupiedSeatIds: Array.isArray(message.occupiedSeatIds) ? message.occupiedSeatIds.map(String) : [],
+            reservedSeatIds: Array.isArray(message.reservedSeatIds) ? message.reservedSeatIds.map(String) : [],
             heldSeats: Array.isArray(message.heldSeats) ? message.heldSeats as Array<{ seatId: string; heldByMe: boolean; expiresAt?: string }> : []
           });
         }

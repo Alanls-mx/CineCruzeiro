@@ -1316,7 +1316,7 @@ function renderConcessionDailySales() {
           const orderTime = new Date(order.purchasedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 
           return `
-            <tr class="order-table-row ${order.archived ? "is-archived" : ""}" onclick="openConcessionOrderDetail('${escapeHtml(order.id)}')">
+            <tr class="order-table-row ${order.archived ? "is-archived" : ""}" data-admin-order-action="concession" data-admin-order-id="${escapeHtml(order.id)}">
               <td data-label="Data/Hora">
                 <strong>#${escapeHtml(order.id.slice(-8).toUpperCase())}</strong><br>
                 <span class="list-meta">${orderTime}</span>
@@ -1355,8 +1355,8 @@ function renderConcessionDailySales() {
                   ${order.archived ? '<span class="status-label archived">Arquivado</span>' : ""}
                 </div>
               </td>
-              <td data-label="Ações" onclick="event.stopPropagation()">
-                <button class="ghost-button" type="button" onclick="openConcessionOrderDetail('${escapeHtml(order.id)}')">Detalhes</button>
+              <td data-label="Ações">
+                <button class="ghost-button" type="button" data-admin-order-action="concession" data-admin-order-id="${escapeHtml(order.id)}">Detalhes</button>
               </td>
             </tr>
           `;
@@ -2479,13 +2479,13 @@ function renderDashboard() {
     const pageOrders = orders.slice(start, start + pageSize);
 
     $("dashLatestOrders").innerHTML = orders.length
-      ? pageOrders.map((order) => `<div class="metric-row clickable-row" onclick="openOrderView('${escapeHtml(order.id)}')"><span>${escapeHtml(order.reference || orderReference(order))} • ${escapeHtml(order.customerName)}<small>${escapeHtml(order.movieTitle || "")} • ${escapeHtml(order.origin)} • ${escapeHtml(order.status)}</small></span><strong>${money(order.totalPrice)}</strong></div>`).join("") + renderMiniPager(state.dashLatestOrdersPage, totalPages, orders.length, "changeDashLatestOrdersPage(-1)", "changeDashLatestOrdersPage(1)", "pedido(s)")
+      ? pageOrders.map((order) => `<div class="metric-row clickable-row" data-admin-order-action="view" data-admin-order-id="${escapeHtml(order.id)}"><span>${escapeHtml(order.reference || orderReference(order))} • ${escapeHtml(order.customerName)}<small>${escapeHtml(order.movieTitle || "")} • ${escapeHtml(order.origin)} • ${escapeHtml(order.status)}</small></span><strong>${money(order.totalPrice)}</strong></div>`).join("") + renderMiniPager(state.dashLatestOrdersPage, totalPages, orders.length, "changeDashLatestOrdersPage(-1)", "changeDashLatestOrdersPage(1)", "pedido(s)")
       : `<div class="empty-state compact"><strong>Sem pedidos recentes</strong><span>As últimas vendas aparecerão aqui.</span></div>`;
   }
   if ($("dashAttentionPayments")) {
     const payments = data.attentionPayments || [];
     $("dashAttentionPayments").innerHTML = payments.length
-      ? payments.map((payment) => `<div class="metric-row clickable-row alert-row" onclick="openOrderView('${escapeHtml(payment.orderId)}')"><span>${escapeHtml(payment.orderReference)}<small>${escapeHtml(payment.message)} • ${escapeHtml(payment.method)} • ${escapeHtml(payment.provider)}</small></span><strong>${money(payment.amount)}</strong></div>`).join("")
+      ? payments.map((payment) => `<div class="metric-row clickable-row alert-row" data-admin-order-action="view" data-admin-order-id="${escapeHtml(payment.orderId)}"><span>${escapeHtml(payment.orderReference)}<small>${escapeHtml(payment.message)} • ${escapeHtml(payment.method)} • ${escapeHtml(payment.provider)}</small></span><strong>${money(payment.amount)}</strong></div>`).join("")
       : `<div class="empty-state compact success-state"><span class="success-mark" aria-hidden="true"></span><strong>Nenhum pagamento precisa de atenção.</strong><span>Pendências e falhas aparecerão aqui.</span></div>`;
   }
   if ($("dashClubMetrics")) {
@@ -5457,7 +5457,7 @@ function renderOrdersTable(targetId, orders, options = {}) {
                 const customerLabel = quickSale ? "Venda rápida" : order.customerName || "Cliente avulso";
                 const isArchived = isOrderEffectivelyArchived(order);
                 return `
-                <tr class="order-table-row ${isArchived ? "is-archived" : ""}" onclick="openOrderView('${escapeHtml(order.id)}')">
+                <tr class="order-table-row ${isArchived ? "is-archived" : ""}" data-admin-order-action="view" data-admin-order-id="${escapeHtml(order.id)}">
                   <td data-label="Data/Hora"><strong>${escapeHtml(orderReference(order))}</strong><br><span class="list-meta">${new Date(order.createdAt).toLocaleString("pt-BR")}</span></td>
                   <td data-label="Cliente">${escapeHtml(customerLabel)}<br><span class="list-meta">${escapeHtml(quickSale ? "Sem identificação do cliente" : order.customerPhone || order.customerEmail || "")}</span></td>
                   <td data-label="Filme/Sessão"><strong>${escapeHtml(order.movieTitle || "-")}</strong><br><span class="list-meta">${escapeHtml([order.sessionTime, order.sessionFormat].filter(Boolean).join(" • ") || "-")}</span></td>
@@ -5465,10 +5465,10 @@ function renderOrdersTable(targetId, orders, options = {}) {
                   <td data-label="Total"><strong>${money(order.totalPrice)}</strong></td>
                   <td data-label="Pagamento">${escapeHtml(originLabel(order.origin || "online"))}<br><span class="list-meta">${escapeHtml(paymentMethodLabel(order.paymentMethod))}</span></td>
                   <td data-label="Status"><div class="order-status-stack"><span class="status-label ${statusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span>${isArchived ? '<span class="status-label archived">Arquivado</span>' : ""}${financialStatusEventHtml(order, paymentForOrder(order.id))}</div></td>
-                  <td data-label="Ações" onclick="event.stopPropagation()">
+                  <td data-label="Ações">
                     <div class="context-menu">
-                      <button class="ghost-button" type="button" onclick="openOrderView('${escapeHtml(order.id)}')">Visualizar</button>
-                      <button class="icon-button" type="button" onclick="toggleOrderMenu('${escapeHtml(order.id)}', event)" aria-label="Ações do pedido">•••</button>
+                      <button class="ghost-button" type="button" data-admin-order-action="view" data-admin-order-id="${escapeHtml(order.id)}">Visualizar</button>
+                      <button class="icon-button" type="button" data-admin-order-action="menu" data-admin-order-id="${escapeHtml(order.id)}" aria-label="Ações do pedido">•••</button>
                     </div>
                   </td>
                 </tr>
@@ -6042,7 +6042,7 @@ function renderPaymentsCenter() {
       </thead>
       <tbody>
         ${rows.map((payment) => `
-          <tr class="order-table-row" onclick="openOrderView('${escapeHtml(payment.orderId)}')">
+          <tr class="order-table-row" data-admin-order-action="view" data-admin-order-id="${escapeHtml(payment.orderId)}">
             <td data-label="Pedido"><strong>${escapeHtml(payment.orderReference || payment.orderId)}</strong><br><span class="list-meta">${new Date(payment.createdAt).toLocaleString("pt-BR")}</span></td>
             <td data-label="Cliente">${escapeHtml(payment.customerName || "Cliente")}</td>
             <td data-label="Filme">${escapeHtml(payment.movieTitle || "-")}</td>
@@ -12709,6 +12709,16 @@ function bindEvents() {
   $("movieCatalogFilter")?.addEventListener("change", filterCatalog);
 
   document.addEventListener("click", (event) => {
+    const orderAction = event.target.closest?.("[data-admin-order-action][data-admin-order-id]");
+    if (orderAction) {
+      const orderId = orderAction.dataset.adminOrderId;
+      if (orderAction.dataset.adminOrderAction === "concession") openConcessionOrderDetail(orderId);
+      else if (orderAction.dataset.adminOrderAction === "view") openOrderView(orderId);
+      else if (orderAction.dataset.adminOrderAction === "menu") {
+        toggleOrderMenu(orderId, { currentTarget: orderAction, stopPropagation() {} });
+        return;
+      }
+    }
     const floating = $("floatingActionMenu");
     if (floating && !floating.hidden && !floating.contains(event.target)) closeFloatingActionMenu();
     if (!event.target.closest?.(".admin-profile")) closeAdminProfileMenu();

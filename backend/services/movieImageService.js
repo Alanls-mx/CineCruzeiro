@@ -8,7 +8,8 @@ const IMAGE_FIELDS = ["posterUrl", "backdropUrl"];
 function isTmdbImageUrl(value) {
   try {
     const url = new URL(String(value || ""));
-    return url.protocol === "https:" && url.hostname === TMDB_IMAGE_HOST && url.pathname.startsWith("/t/p/");
+    return url.protocol === "https:" && url.hostname === TMDB_IMAGE_HOST
+      && !url.port && !url.username && !url.password && url.pathname.startsWith("/t/p/");
   } catch {
     return false;
   }
@@ -60,13 +61,20 @@ function createMovieImageService({ storageService, fetchImpl = global.fetch, tim
     try {
       const response = await fetchImpl(sourceUrl, {
         signal: controller.signal,
+        redirect: "error",
         headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8" }
       });
       if (!response.ok) throw new Error(`TMDB respondeu HTTP ${response.status}.`);
       const declaredSize = Number(response.headers.get("content-length") || 0);
       if (declaredSize > maxBytes) throw new Error("Imagem do TMDB excede o limite permitido.");
-      const sourceBuffer = Buffer.from(await response.arrayBuffer());
-      if (sourceBuffer.length > maxBytes) throw new Error("Imagem do TMDB excede o limite permitido.");
+      const chunks = [];
+      let received = 0;
+      for await (const chunk of response.body) {
+        received += chunk.length;
+        if (received > maxBytes) throw new Error("Imagem do TMDB excede o limite permitido.");
+        chunks.push(Buffer.from(chunk));
+      }
+      const sourceBuffer = Buffer.concat(chunks);
       const buffer = await sharp(sourceBuffer).rotate().jpeg({ quality: 88, progressive: true }).toBuffer();
       return storageService.uploadImageBuffer({
         buffer,
