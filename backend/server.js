@@ -74,6 +74,7 @@ const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
+const { buildAdminSessionSeatMap } = require("./services/adminSessionSeatMapService");
 const { allowedOrigins: normalizedAllowedOrigins } = require("./services/originPolicyService");
 const clubDomainService = require("./services/clubDomainService");
 const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
@@ -1498,6 +1499,7 @@ function requiredAdminPermission(pathname, method) {
   if (pathname === "/api/admin/security-policy") return method === "GET" ? "settings.view" : "settings.manage";
   if (pathname === "/api/admin/content") return "";
   if (pathname === "/api/admin/sessions/autocorrect") return "sessions.autocorrect";
+  if (/^\/api\/admin\/sessions\/[^/]+\/seat-map$/.test(pathname)) return "rooms.view";
   if (pathname.startsWith("/api/admin/logs")) return method === "DELETE" ? "logs.delete" : "logs.view";
   if (pathname.startsWith("/api/admin/integrations") || pathname.startsWith("/api/integrations")) return method === "GET" ? "integrations.view" : "integrations.manage";
   if (pathname.startsWith("/api/admin/email") || /^\/api\/(promotions|ads)(\/|$)/.test(pathname)) return method === "GET" ? "marketing.view" : "marketing.manage";
@@ -3130,6 +3132,11 @@ async function createActiveOnlinePayment(order, active, options = {}) {
     : createMercadoPagoOrderPayment(order, active.config, options));
   payment.providerEnvironment = active.config?.environment === "sandbox" ? "sandbox" : "production";
   return payment;
+}
+
+function mercadoPagoDeviceId(req) {
+  const value = String(req.headers["x-mp-device-id"] || "").trim();
+  return /^[A-Za-z0-9._:-]{8,256}$/.test(value) ? value : "";
 }
 
 function frontendUrlForRequest(req, db) {
@@ -10477,8 +10484,15 @@ async function testIntegrationProvider(db, provider, req) {
   }
   if (key === "mercadoPago") {
     if (!config.accessToken || !config.publicKey) return { ok: false, message: "Informe public key e access token do Mercado Pago." };
-    const response = await fetch("https://api.mercadopago.com/users/me", { headers: { Authorization: `Bearer ${config.accessToken}` } });
+    const response = await fetch("https://api.mercadopago.com/users/me", { headers: { Authorization: `Bearer ${config.accessToken}` }, signal: AbortSignal.timeout(10000) });
     if (!response.ok) return { ok: false, message: "Mercado Pago recusou as credenciais." };
+    const methodsUrl = new URL("https://api.mercadopago.com/v1/payment_methods/search");
+    methodsUrl.searchParams.set("public_key", String(config.publicKey));
+    methodsUrl.searchParams.set("locale", "pt-BR");
+    methodsUrl.searchParams.set("status", "active");
+    methodsUrl.searchParams.set("limit", "1");
+    const methodsResponse = await fetch(methodsUrl, { signal: AbortSignal.timeout(10000) });
+    if (!methodsResponse.ok) return { ok: false, message: "Access Token autenticado, mas a Public Key não foi aceita pelo Mercado Pago. Confira a chave pública completa de produção." };
     if (!config.pointEnabled) return { ok: true, message: "Mercado Pago autenticado com sucesso. A integração Point está desativada." };
     if (!config.pointDeviceId) return { ok: false, message: "Informe o Terminal ID para testar o Mercado Pago Point." };
     try {
@@ -11635,6 +11649,28 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
+  const adminSessionSeatMapMatch = pathname.match(/^\/api\/admin\/sessions\/([^/]+)\/seat-map$/);
+  if (adminSessionSeatMapMatch && method === "GET") {
+    const sessionId = decodeURIComponent(adminSessionSeatMapMatch[1]);
+    const found = findSessionWithMovie(db, sessionId);
+    if (!found) {
+      sendJson(res, 404, { error: { code: "SESSION_NOT_FOUND", message: "Sessão não encontrada." } });
+      return;
+    }
+    const room = roomForSession(db, found.session);
+    const map = buildAdminSessionSeatMap({
+      ...found,
+      room,
+      tickets: db.tickets || [],
+      orders: db.orders || [],
+      holds: roomSeatSelectionEnabled(room) ? await listActiveSeatHolds(sessionId) : [],
+      occupiedSeatIds: occupiedSeatIds(db, sessionId),
+      showPurchaser: adminHasPermission(req.adminUser, "tickets.view") && adminHasPermission(req.adminUser, "orders.view")
+    });
+    sendJson(res, 200, map, { "Cache-Control": "private, no-store" });
+    return;
+  }
+
   const sessionSeatsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/seats$/);
   if (sessionSeatsMatch && method === "GET") {
     const sessionId = decodeURIComponent(sessionSeatsMatch[1]);
@@ -12615,6 +12651,7 @@ async function handleApi(req, res, pathname) {
     }, sandbox, {
       method: "credit_card",
       sandboxTest: true,
+      deviceId: mercadoPagoDeviceId(req),
       idempotencyKey: reference,
       card: { token, paymentMethodId, paymentTypeId: "credit_card", installments: Math.max(1, Math.min(6, Number(body.installments || 1))) }
     });
@@ -15611,6 +15648,8 @@ async function handleApi(req, res, pathname) {
       normalizedOrder.customerUserId = customerUser.id;
       normalizedOrder.customerEmail = customerUser.email || "";
       normalizedOrder.customerCpf = customerUser.cpf || "";
+      normalizedOrder.customerName = customerUser.name || "";
+      normalizedOrder.customerRegisteredAt = customerUser.createdAt || "";
       const existing = findExistingCheckout(lockedDb, normalizedOrder, "pix");
       if (existing) {
         if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {
@@ -15651,6 +15690,7 @@ async function handleApi(req, res, pathname) {
       }
       const providerPayment = await createActiveOnlinePayment(order, active, {
         method: "pix",
+        deviceId: mercadoPagoDeviceId(req),
         idempotencyKey: body.idempotencyKey || req.headers["x-idempotency-key"],
         notificationUrl: `${frontendUrlForRequest(req, lockedDb).replace(/\/$/, "")}/api/webhooks/pag-bank`
       });
@@ -15708,6 +15748,8 @@ async function handleApi(req, res, pathname) {
       normalizedOrder.customerUserId = customerUser.id;
       normalizedOrder.customerEmail = customerUser.email || "";
       normalizedOrder.customerCpf = customerUser.cpf || "";
+      normalizedOrder.customerName = customerUser.name || "";
+      normalizedOrder.customerRegisteredAt = customerUser.createdAt || "";
       const existing = findExistingCheckout(lockedDb, normalizedOrder, "credit_card");
       if (existing) {
         if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {
@@ -15747,6 +15789,7 @@ async function handleApi(req, res, pathname) {
       }
       const providerPayment = await createActiveOnlinePayment(order, active, {
         method: "credit_card",
+        deviceId: mercadoPagoDeviceId(req),
         card: {
           token: body.cardToken || body.token || body.card?.token || body.payment?.token,
           encrypted: body.encryptedCard || body.card?.encrypted,

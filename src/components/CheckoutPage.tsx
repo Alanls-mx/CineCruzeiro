@@ -753,7 +753,12 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
     let mounted = true;
     fetchMercadoPagoCheckoutConfig()
       .then((config) => {
-        if (mounted) setMercadoPagoConfig(config);
+        if (mounted) {
+          setMercadoPagoConfig(config);
+          if (config.provider === "mercado_pago" && config.enabled) {
+            void import("@mercadopago/sdk-js").then(({ loadMercadoPago }) => loadMercadoPago()).catch(() => {});
+          }
+        }
       })
       .catch(() => {
         if (mounted) setMercadoPagoConfig({ provider: "mercado_pago", name: "Mercado Pago", enabled: false, configured: false, publicKey: "", environment: "sandbox", livePayments: false, checkoutAvailable: false });
@@ -1558,6 +1563,9 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
       setReady(false);
       setError("");
       try {
+        if (publicKey.trim().length < 30) {
+          throw new Error("Pagamento com cartão temporariamente indisponível. Escolha Pix ou tente novamente mais tarde.");
+        }
         const container = document.getElementById(containerId);
         if (!container) throw new Error("Área segura do cartão não foi encontrada.");
         container.replaceChildren();
@@ -1570,7 +1578,7 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
         const bricksBuilder = mp.bricks();
         readyTimeout = window.setTimeout(() => {
           if (mounted) setError("O formulário do Mercado Pago demorou para responder. Verifique a conexão e tente novamente.");
-        }, 15000);
+        }, 10000);
         const mountedController = await bricksBuilder.create("cardPayment", containerId, {
           initialization: { amount: Number(amount.toFixed(2)) },
           customization: {

@@ -385,9 +385,13 @@ function payerFromOrder(order, options = {}) {
       422
     );
   }
-  return {
-    email
-  };
+  const payer = { email };
+  const name = String(order.customerName || "").trim().split(/\s+/).filter(Boolean);
+  if (name.length) payer.first_name = name[0].slice(0, 60);
+  if (name.length > 1) payer.last_name = name.slice(1).join(" ").slice(0, 60);
+  const cpf = String(order.customerCpf || "").replace(/\D/g, "");
+  if (cpf.length === 11) payer.identification = { type: "CPF", number: cpf };
+  return payer;
 }
 
 function mercadoPagoOrderFailureDetail(data = {}) {
@@ -404,39 +408,73 @@ function mercadoPagoOrderFailureDetail(data = {}) {
 }
 
 function mercadoPagoItems(order) {
-  const items = [];
-  const ticketCount = Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0);
-  if (ticketCount > 0) {
-    items.push({
+  const lines = (order.ticketItems || []).filter((item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0).map((item) => ({
+    title: `${item.name || "Ingresso"} - ${order.movieTitle || "Cine Cruzeiro"}`.slice(0, 160),
+    external_code: String(item.id || order.id),
+    category_id: "tickets",
+    quantity: Math.floor(Number(item.quantity)),
+    unitCents: Math.round(Number(item.unitPrice || 0) * 100)
+  }));
+  if (!lines.length) {
+    const ticketCount = Math.floor(Number(order.fullTicketsCount || 0) + Number(order.halfTicketsCount || 0));
+    if (ticketCount > 0) lines.push({
       title: `Ingressos - ${order.movieTitle || "Cine Cruzeiro"}`,
-      unit_price: moneyString(Number(order.ticketSubtotal || order.totalPrice || 0) / ticketCount),
-      quantity: ticketCount,
-      description: `${order.movieTitle || "Filme"} ${order.sessionTime || ""}`.trim(),
       external_code: `${order.id}-tickets`,
       category_id: "tickets",
-      type: "tickets"
+      quantity: ticketCount,
+      unitCents: Math.round(Number(order.serviceSubtotal || order.ticketSubtotal || order.totalPrice || 0) * 100 / ticketCount)
     });
   }
   for (const item of order.concessionItems || []) {
-    items.push({
-      title: item.name || "Bomboniere",
-      unit_price: moneyString(item.unitPrice || item.price || 0),
-      quantity: Number(item.quantity || 1),
-      description: item.name || "Item da bomboniere",
-      external_code: item.id || item.sku || `${order.id}-extra`,
+    if (!Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) <= 0) continue;
+    lines.push({
+      title: String(item.name || "Bomboniere").slice(0, 160),
+      external_code: String(item.id || item.sku || `${order.id}-extra`),
       category_id: "food",
-      type: "food"
+      quantity: Math.floor(Number(item.quantity)),
+      unitCents: Math.round(Number(item.unitPrice || item.price || 0) * 100)
     });
   }
-  return items.length ? items : [{
-    title: `Cine Cruzeiro - ${order.movieTitle || "Pedido"}`,
-    unit_price: moneyString(order.totalPrice),
-    quantity: 1,
-    description: "Pedido Cine Cruzeiro",
-    external_code: order.id,
-    category_id: "tickets",
-    type: "tickets"
-  }];
+  if (!lines.length) lines.push({
+    title: String(order.movieTitle || "Pedido Cine Cruzeiro").slice(0, 160),
+    external_code: String(order.id), category_id: "tickets", quantity: 1,
+    unitCents: Math.round(Number(order.totalPrice || 0) * 100)
+  });
+
+  const originalCents = lines.reduce((sum, line) => sum + line.unitCents * line.quantity, 0);
+  const totalCents = Math.round(Number(order.totalPrice || 0) * 100);
+  if (totalCents < 0 || totalCents > originalCents || !Number.isSafeInteger(totalCents)
+    || !Number.isSafeInteger(originalCents)
+    || lines.some((line) => !Number.isSafeInteger(line.quantity) || line.quantity < 1
+      || !Number.isSafeInteger(line.unitCents) || line.unitCents < 0)) {
+    throw paymentError("MERCADO_PAGO_ITEMS_TOTAL_MISMATCH", "Os itens do pedido não correspondem ao valor cobrado.", 422);
+  }
+  const discountCents = originalCents - totalCents;
+  const allocations = lines.map((line, index) => {
+    const exact = originalCents ? discountCents * line.unitCents * line.quantity / originalCents : 0;
+    return { index, discount: Math.floor(exact), remainder: exact % 1 };
+  });
+  let remaining = discountCents - allocations.reduce((sum, item) => sum + item.discount, 0);
+  for (const item of [...allocations].sort((a, b) => b.remainder - a.remainder)) {
+    if (!remaining) break;
+    item.discount += 1;
+    remaining -= 1;
+  }
+  const items = [];
+  for (const [index, line] of lines.entries()) {
+    const chargedCents = line.unitCents * line.quantity - allocations[index].discount;
+    const lowCents = Math.floor(chargedCents / line.quantity);
+    const highCount = chargedCents % line.quantity;
+    const add = (quantity, unitCents) => {
+      if (quantity) items.push({
+        title: line.title, external_code: line.external_code, category_id: line.category_id,
+        quantity, unit_price: (unitCents / 100).toFixed(2)
+      });
+    };
+    add(line.quantity - highCount, lowCents);
+    add(highCount, lowCents + 1);
+  }
+  return items;
 }
 
 function extractMercadoPagoTransaction(data = {}) {
@@ -541,6 +579,9 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     external_reference: String(order.id || "").slice(0, 64),
     description: `Cine Cruzeiro - ${order.movieTitle || "Ingressos"}`.slice(0, 255),
     payer: payerFromOrder(order, options),
+    items: mercadoPagoItems(order),
+    ...(order.customerRegisteredAt && Number.isFinite(Date.parse(order.customerRegisteredAt))
+      ? { additional_info: { "payer.registration_date": new Date(order.customerRegisteredAt).toISOString() } } : {}),
     transactions: {
       payments: [
         {
@@ -557,7 +598,8 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
-      "X-Idempotency-Key": idempotencyKey
+      "X-Idempotency-Key": idempotencyKey,
+      ...(options.deviceId ? { "X-meli-session-id": String(options.deviceId) } : {})
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000)

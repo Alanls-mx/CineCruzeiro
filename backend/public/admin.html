@@ -8,7 +8,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="../images/favicon-16.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="icon" type="image/png" sizes="32x32" href="../images/favicon-32.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="icon" type="image/png" sizes="64x64" href="../images/favicon-64.png?brand=cinecruzeiro-icon-blue-star-20261005" />
-    <link rel="stylesheet" href="admin.css?v=20261005-session-row-layout" />
+    <link rel="stylesheet" href="admin.css?v=20261009-session-seat-map" />
     <link rel="stylesheet" href="admin-premium.css?v=20261005-session-row-layout" />
     <link rel="stylesheet" href="social-studio.css?v=20261008-static" />
   </head>
@@ -3196,10 +3196,31 @@
       </section>
     </div>
 
+    <dialog id="sessionSeatDialog" class="session-seat-dialog" aria-labelledby="sessionSeatTitle">
+      <div class="session-seat-dialog-head">
+        <div>
+          <span class="mini-label">Ocupação da sessão</span>
+          <h2 id="sessionSeatTitle">Mapa da sala</h2>
+          <p id="sessionSeatSubtitle"></p>
+        </div>
+        <div class="button-row">
+          <button id="sessionSeatRefresh" class="ghost-button" type="button">Atualizar</button>
+          <button id="sessionSeatClose" class="ghost-button icon-only-sm" type="button" aria-label="Fechar mapa">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="sessionSeatSummary" class="session-seat-summary" aria-live="polite"></div>
+      <div class="session-seat-dialog-body">
+        <div id="sessionSeatMap" class="session-seat-map-panel" aria-live="polite"></div>
+        <aside id="sessionSeatDetail" class="session-seat-detail" aria-live="polite"></aside>
+      </div>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
-    <script src="admin.js?v=20261005-session-row-layout"></script>
+    <script src="admin.js?v=20261009-session-seat-map"></script>
     <script src="social-studio.js?v=20261008-static"></script>
   </body>
 </html>

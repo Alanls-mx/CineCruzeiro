@@ -140,6 +140,7 @@ let state = {
   globalSessionsPageSize: 12,
   globalSessionFilters: { from: "", to: "", roomId: "", movieId: "", status: "active", conflictsOnly: false },
   selectedOngoingSessionId: "",
+  sessionSeatView: null,
   sessionAutocorrectPlan: null,
   ticketTypesPage: 1,
   ticketTypesPageSize: 8,
@@ -4643,9 +4644,15 @@ function renderGlobalSessions() {
         </div>
         <div class="global-session-room"><strong>${escapeHtml(entry.session.room || "Sala não informada")}</strong><small>${escapeHtml(globalSessionStatusLabel(entry.session.status))}</small></div>
         <div class="global-session-alert">${related.length ? `<strong>Conflito de horário</strong><small>${escapeHtml(conflictCopy)}</small>` : `<span>Horário livre</span>`}</div>
-        <button class="ghost-button" type="button" onclick="openGlobalSessionEditor('${escapeHtml(entry.movie.id)}', '${escapeHtml(entry.session.id)}')">Editar</button>
+        <div class="global-session-actions">
+          <button class="ghost-button" type="button" data-session-seat-map="${escapeHtml(entry.session.id)}">Mapa</button>
+          <button class="ghost-button" type="button" onclick="openGlobalSessionEditor('${escapeHtml(entry.movie.id)}', '${escapeHtml(entry.session.id)}')">Editar</button>
+        </div>
       </article>`;
   }).join("") + renderAdminListPager("globalSessions", { page: state.globalSessionsPage, pageSize, totalPages, start, pageItems, total: filtered.length }, "sessão(ões)");
+  $("globalSessionsList").querySelectorAll("[data-session-seat-map]").forEach((button) => {
+    button.addEventListener("click", () => void openSessionSeatMap(button.dataset.sessionSeatMap));
+  });
 }
 
 function roomForGlobalSession(session = {}) {
@@ -4667,27 +4674,6 @@ function sessionTicketRevenue(entry, tickets) {
     const couponTicketDiscount = Number(order.couponTicketDiscount || 0);
     return total + Math.max(0, Number(order.serviceSubtotal || 0) - Number(order.clubCreditsApplied || 0) - clubTicketDiscount - couponTicketDiscount);
   }, 0);
-}
-
-function renderOngoingSessionSeatMap(entry, tickets) {
-  const room = roomForGlobalSession(entry.session);
-  const rows = room?.seatLayout?.rows || [];
-  if (!rows.length) return `<div class="ongoing-seat-empty">Esta sala não usa mapa de poltronas configurado.</div>`;
-  const soldSeats = new Set(tickets.map((ticket) => String(ticket.seat || ticket.seatLabel || "").trim()).filter(Boolean));
-  return `
-    <div class="ongoing-seat-map" aria-label="Mapa da sala ${escapeHtml(room?.name || entry.session.room || "")}">
-      <div class="ongoing-seat-screen">${escapeHtml(room?.seatLayout?.screenLabel || "TELA")}</div>
-      ${(rows || []).map((row) => `
-        <div class="ongoing-seat-row">
-          <span>${escapeHtml(row.label || "")}</span>
-          <div>${(row.seats || []).filter((seat) => seat.enabled !== false).map((seat) => {
-            const sold = soldSeats.has(String(seat.label || ""));
-            return `<i class="${sold ? "is-sold" : ""}" title="${escapeHtml(`${seat.label || "Poltrona"}: ${sold ? "ocupada" : "livre"}`)}">${escapeHtml(seat.label || "")}</i>`;
-          }).join("")}</div>
-          <span aria-hidden="true">${escapeHtml(row.label || "")}</span>
-        </div>
-      `).join("")}
-    </div>`;
 }
 
 function renderOngoingSessions() {
@@ -4729,8 +4715,8 @@ function renderOngoingSessions() {
         <div><span>Receita de ingressos</span><strong>${money(sessionTicketRevenue(selected, tickets))}</strong></div>
       </div>
       <div class="ongoing-session-map-wrap">
-        <div><span class="mini-label">Mapa da sala</span><p>Ocupadas: ${tickets.filter((ticket) => ticket.seat || ticket.seatLabel).length} poltrona(s)</p></div>
-        ${renderOngoingSessionSeatMap(selected, tickets)}
+        <div><span class="mini-label">Mapa da sala</span><p>Consulte a ocupação atual e os detalhes de cada poltrona.</p></div>
+        <button class="ghost-button" type="button" data-session-seat-map="${escapeHtml(selected.session.id)}">Abrir mapa</button>
       </div>
     </article>`;
   target.querySelectorAll("[data-ongoing-session]").forEach((button) => {
@@ -4739,6 +4725,133 @@ function renderOngoingSessions() {
       renderOngoingSessions();
     });
   });
+  target.querySelector("[data-session-seat-map]")?.addEventListener("click", (event) => {
+    void openSessionSeatMap(event.currentTarget.dataset.sessionSeatMap);
+  });
+}
+
+const sessionSeatStatusLabels = {
+  available: "Livre",
+  sold: "Ocupada",
+  pending: "Aguardando pagamento",
+  held: "Reservada temporariamente",
+  blocked: "Bloqueada"
+};
+
+function sessionSeatDateTime(value) {
+  if (!value || !Number.isFinite(Date.parse(value))) return "Não informado";
+  return new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Sao_Paulo" });
+}
+
+function renderSessionSeatDetail() {
+  const view = state.sessionSeatView;
+  const seat = view?.map?.rows.flatMap((row) => row.seats).find((item) => item.id === view.seatId);
+  const target = $("sessionSeatDetail");
+  if (!seat) {
+    target.innerHTML = `<div class="session-seat-detail-empty"><strong>Selecione uma poltrona</strong><p>O status e as informações disponíveis da compra aparecem aqui.</p></div>`;
+    return;
+  }
+  const purchase = seat.purchase;
+  target.innerHTML = `
+    <span class="mini-label">Poltrona ${escapeHtml(seat.label)}</span>
+    <h3>${escapeHtml(sessionSeatStatusLabels[seat.status] || seat.status)}</h3>
+    <dl>
+      <div><dt>Tipo</dt><dd>${escapeHtml(seat.typeName || "Padrão")}</dd></div>
+      ${seat.accessibility ? `<div><dt>Acessibilidade</dt><dd>${escapeHtml(seat.accessibility === "wheelchair" ? "Cadeirante" : seat.accessibility === "obese" ? "Pessoa obesa" : seat.accessibility)}</dd></div>` : ""}
+      ${purchase ? `
+        <div><dt>Comprador</dt><dd>${escapeHtml(purchase.customerName)}</dd></div>
+        <div><dt>Pedido</dt><dd>${escapeHtml(purchase.orderReference || purchase.orderId)}</dd></div>
+        <div><dt>Situação</dt><dd>${escapeHtml(purchase.orderStatus === "paid" ? "Pago" : purchase.orderStatus === "paid_pending_print" ? "Pago, aguardando impressão" : purchase.orderStatus === "pending_payment" ? "Aguardando pagamento" : purchase.orderStatus || "Não informada")}</dd></div>
+        <div><dt>Pedido criado</dt><dd>${escapeHtml(sessionSeatDateTime(purchase.createdAt))}</dd></div>
+        ${purchase.paidAt ? `<div><dt>Pagamento aprovado</dt><dd>${escapeHtml(sessionSeatDateTime(purchase.paidAt))}</dd></div>` : ""}
+        ${purchase.paymentMethod ? `<div><dt>Pagamento</dt><dd>${escapeHtml(purchase.paymentMethod === "PIX" ? "Pix" : purchase.paymentMethod === "CREDIT_CARD" ? "Cartão" : purchase.paymentMethod)}</dd></div>` : ""}
+        ${purchase.ticketType ? `<div><dt>Ingresso</dt><dd>${escapeHtml(purchase.ticketType)}</dd></div>` : ""}
+        <div><dt>Origem</dt><dd>${escapeHtml(purchase.origin === "box_office" ? "Bilheteria" : purchase.origin === "online" ? "Site" : purchase.origin || "Não informada")}</dd></div>
+        ${purchase.usedAt ? `<div><dt>Entrada validada</dt><dd>${escapeHtml(sessionSeatDateTime(purchase.usedAt))}</dd></div>` : ""}
+      ` : seat.status === "held" ? `<div><dt>Reserva</dt><dd>Temporária, ainda sem compra concluída.</dd></div>` : ""}
+    </dl>
+    ${purchase?.orderId ? `<button class="ghost-button" type="button" data-session-seat-order="${escapeHtml(purchase.orderId)}">Abrir pedido</button>` : ""}`;
+  target.querySelector("[data-session-seat-order]")?.addEventListener("click", () => {
+    $("sessionSeatDialog").close();
+    openOrderView(purchase.orderId);
+  });
+}
+
+function renderSessionSeatDialog() {
+  const view = state.sessionSeatView;
+  const map = view?.map;
+  if (!map) return;
+  $("sessionSeatTitle").textContent = map.movieTitle || "Mapa da sala";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(map.date || "") ? map.date.split("-").reverse().join("/") : map.date || "";
+  $("sessionSeatSubtitle").textContent = `${map.roomName} · ${date} · ${map.time}`;
+  $("sessionSeatSummary").innerHTML = [
+    ["Livre", map.counts.available], ["Ocupada", map.counts.sold],
+    ["Pagamento pendente", map.counts.pending], ["Reserva temporária", map.counts.held], ["Bloqueada", map.counts.blocked]
+  ].map(([label, count]) => `<span><strong>${count}</strong>${label}</span>`).join("");
+  if (!map.enabled || !map.rows.length) {
+    $("sessionSeatMap").innerHTML = `<div class="ongoing-seat-empty">Esta sessão não possui mapa de poltronas configurado.</div>`;
+    renderSessionSeatDetail();
+    return;
+  }
+  $("sessionSeatMap").innerHTML = `
+    <div class="session-seat-map-content">
+      <div class="room-seat-screen">${escapeHtml(map.screenLabel)}</div>
+      <div class="session-seat-map" aria-label="Mapa da sala ${escapeHtml(map.roomName)}">
+        ${map.rows.map((row) => `<div class="session-seat-row">
+          <span class="room-seat-row-label">${escapeHtml(row.label)}</span>
+          <div class="session-seat-row-seats">${row.seats.map((seat) => `<button type="button"
+            class="session-seat-button is-${escapeHtml(seat.status)} ${seat.aisleAfter ? "has-aisle" : ""} ${view.seatId === seat.id ? "is-current" : ""}"
+            style="--seat-color:${manualSeatColor(seat.color)}"
+            data-session-seat-id="${escapeHtml(seat.id)}"
+            aria-label="${escapeHtml(`${seat.label}, ${seat.typeName}, ${sessionSeatStatusLabels[seat.status] || seat.status}`)}"
+            aria-pressed="${view.seatId === seat.id}">${seat.accessibility === "wheelchair" ? accessibilityIcon : seat.accessibility === "obese" ? obeseSeatIcon : ""}<span>${escapeHtml(seat.label)}</span></button>`).join("")}</div>
+          <span class="room-seat-row-label" aria-hidden="true">${escapeHtml(row.label)}</span>
+        </div>`).join("")}
+      </div>
+      <div class="session-seat-legend">${Object.entries(sessionSeatStatusLabels).map(([status, label]) => `<span><i class="is-${status}"></i>${label}</span>`).join("")}</div>
+    </div>`;
+  $("sessionSeatMap").querySelectorAll("[data-session-seat-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      view.seatId = button.dataset.sessionSeatId;
+      $("sessionSeatMap").querySelectorAll("[data-session-seat-id]").forEach((seatButton) => {
+        const selected = seatButton.dataset.sessionSeatId === view.seatId;
+        seatButton.classList.toggle("is-current", selected);
+        seatButton.setAttribute("aria-pressed", String(selected));
+      });
+      renderSessionSeatDetail();
+    });
+  });
+  renderSessionSeatDetail();
+}
+
+async function loadSessionSeatMap() {
+  const view = state.sessionSeatView;
+  if (!view) return;
+  const sessionId = view.sessionId;
+  $("sessionSeatMap").innerHTML = `<div class="manual-seat-loading" aria-label="Carregando mapa de poltronas"></div>`;
+  $("sessionSeatRefresh").disabled = true;
+  try {
+    const map = await api(`/api/admin/sessions/${encodeURIComponent(sessionId)}/seat-map`);
+    if (state.sessionSeatView !== view) return;
+    view.map = map;
+    if (!map.rows.some((row) => row.seats.some((seat) => seat.id === view.seatId))) view.seatId = "";
+    renderSessionSeatDialog();
+  } catch (error) {
+    if (state.sessionSeatView === view) $("sessionSeatMap").innerHTML = `<div class="validation-result error">${escapeHtml(error.message || "Não foi possível carregar o mapa da sala.")}</div>`;
+  } finally {
+    $("sessionSeatRefresh").disabled = false;
+  }
+}
+
+async function openSessionSeatMap(sessionId) {
+  const dialog = $("sessionSeatDialog");
+  state.sessionSeatView = { sessionId: String(sessionId || ""), seatId: "", map: null };
+  $("sessionSeatTitle").textContent = "Mapa da sala";
+  $("sessionSeatSubtitle").textContent = "";
+  $("sessionSeatSummary").innerHTML = "";
+  $("sessionSeatDetail").innerHTML = "";
+  if (!dialog.open) dialog.showModal();
+  await loadSessionSeatMap();
 }
 
 function updateGlobalSessionFilters() {
@@ -12899,6 +13012,12 @@ function bindEvents() {
     $(id)?.addEventListener("change", updateGlobalSessionFilters);
   });
   $("globalSessionCreateButton")?.addEventListener("click", () => openGlobalSessionEditor($("globalSessionCreateMovie").value));
+  $("sessionSeatRefresh")?.addEventListener("click", () => void loadSessionSeatMap());
+  $("sessionSeatClose")?.addEventListener("click", () => $("sessionSeatDialog").close());
+  $("sessionSeatDialog")?.addEventListener("close", () => { state.sessionSeatView = null; });
+  $("sessionSeatDialog")?.addEventListener("click", (event) => {
+    if (event.target === $("sessionSeatDialog")) $("sessionSeatDialog").close();
+  });
   $("sessionAutocorrectPreviewButton")?.addEventListener("click", previewSessionAutocorrect);
   ["sessionAutocorrectTurnaround", "sessionAutocorrectStep", "sessionAutocorrectIncludeSales"].forEach((id) => $(id)?.addEventListener("change", clearSessionAutocorrectPreview));
   $("cancelRoomCreateButton").addEventListener("click", () => cancelCreation("room"));

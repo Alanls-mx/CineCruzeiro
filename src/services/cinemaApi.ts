@@ -562,12 +562,14 @@ export async function createCheckoutPayment(
   } = {}
 ) {
   const endpoint = method === "pix" ? "/api/payments/pix" : "/api/payments/card";
+  const deviceId = typeof window === "undefined" ? "" : String((window as Window & { MP_DEVICE_SESSION_ID?: string }).MP_DEVICE_SESSION_ID || "");
   const response = await apiFetch(`${API_BASE}${endpoint}`, {
     method: "POST",
     credentials: "include",
     headers: authHeaders({
       "Content-Type": "application/json",
       ...(paymentInput.idempotencyKey ? { "X-Idempotency-Key": paymentInput.idempotencyKey } : {}),
+      ...(/^[A-Za-z0-9._:-]{8,256}$/.test(deviceId) ? { "X-MP-Device-Id": deviceId } : {}),
     }),
     body: JSON.stringify({ order, method, ...paymentInput }),
   });
@@ -647,10 +649,11 @@ export async function fetchMercadoPagoCheckoutConfig() {
 }
 
 export async function createSandboxCardTest(card: { token?: string; paymentMethodId?: string; installments: number }) {
+  const deviceId = typeof window === "undefined" ? "" : String((window as Window & { MP_DEVICE_SESSION_ID?: string }).MP_DEVICE_SESSION_ID || "");
   const response = await apiFetch(`${API_BASE}/api/payments/sandbox/card-test`, {
     method: "POST",
     credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: authHeaders({ "Content-Type": "application/json", ...(/^[A-Za-z0-9._:-]{8,256}$/.test(deviceId) ? { "X-MP-Device-Id": deviceId } : {}) }),
     body: JSON.stringify({ cardToken: card.token, paymentMethodId: card.paymentMethodId, installments: card.installments }),
   });
   const payload = await response.json().catch(() => ({}));
