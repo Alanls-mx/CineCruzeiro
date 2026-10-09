@@ -2438,7 +2438,7 @@ function renderDashboard() {
 
     $("dashUpcomingSessions").innerHTML = sessions.length
       ? pageSessions.map((item) => `
-          <div class="session-metric-row clickable-row ${item.isInProgress ? "is-in-progress" : ""}" onclick="openSessionDashboardDetail('${escapeHtml(item.movie?.id || "")}', '${escapeHtml(item.session?.id || "")}')">
+          <div class="session-metric-row clickable-row ${item.isInProgress ? "is-in-progress" : ""}" data-admin-session-action="dashboard" data-admin-movie-id="${escapeHtml(item.movie?.id || "")}" data-admin-session-id="${escapeHtml(item.session?.id || "")}">
             <div class="session-poster">${item.movie?.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(item.movie.posterUrl))}" alt="">` : `<span>${escapeHtml(item.movie?.rating || "L")}</span>`}</div>
             <div>
               <strong>${escapeHtml(item.movie?.title || "Filme")} • ${escapeHtml(item.session?.time || "-")}${item.isInProgress ? ` <em class="session-live-badge">EM ANDAMENTO</em>` : ""}</strong>
@@ -3054,22 +3054,22 @@ function renderMovies(options = {}) {
       const automation = movie.autoPublish ? " • auto" : "";
       const updated = movie.updatedAt ? ` • atualizado ${new Date(movie.updatedAt).toLocaleDateString("pt-BR")}` : "";
       return `
-        <div class="movie-row ${active}" draggable="true" data-movie-id="${escapeHtml(movie.id)}" ondragstart="handleMovieDragStart(event, '${escapeHtml(movie.id)}')" ondragover="handleMovieDragOver(event)" ondragleave="handleMovieDragLeave(event)" ondragend="handleMovieDragEnd()" ondrop="handleMovieDrop(event, '${escapeHtml(movie.id)}')" onclick="selectMovie('${escapeHtml(movie.id)}')">
-          <button class="drag-handle" type="button" draggable="true" aria-label="Arrastar para mudar prioridade" title="Arrastar para mudar prioridade" ondragstart="handleMovieDragStart(event, '${escapeHtml(movie.id)}')" ondragend="handleMovieDragEnd()" onclick="event.stopPropagation()">↕</button>
+        <div class="movie-row ${active}" draggable="true" data-movie-id="${escapeHtml(movie.id)}">
+          <button class="drag-handle" type="button" draggable="true" aria-label="Arrastar para mudar prioridade" title="Arrastar para mudar prioridade">↕</button>
           <div class="movie-thumb">${movie.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : `<span>${escapeHtml(movie.rating || "L")}</span>`}</div>
           <div>
             <span class="list-title">${escapeHtml(movie.title)}</span>
             <span class="movie-status-pill ${escapeHtml(priorityState.className)}"><span></span>${escapeHtml(priorityState.label)}</span>
             <span class="list-meta">Posição ${catalogPositions.get(movie.id)} • ${workflowLabel} • ${statusLabel} • ${sessionCount} sessões • ${escapeHtml(movie.duration || "-")} • ${escapeHtml(movie.rating || "L")}${release}${automation}${movie.isHighlight ? " • destaque" : ""}${updated}</span>
           </div>
-          <div class="movie-row-actions" onclick="event.stopPropagation()">
-            <button class="icon-button" type="button" onclick="toggleMovieMenu('${escapeHtml(movie.id)}')" aria-label="Ações do filme">•••</button>
+          <div class="movie-row-actions">
+            <button class="icon-button" type="button" data-movie-action="menu" aria-label="Ações do filme">•••</button>
             <div id="movieMenu-${escapeHtml(movie.id)}" class="context-menu-popover" hidden>
-              <button type="button" onclick="duplicateMovie('${escapeHtml(movie.id)}')">Duplicar</button>
-              <button type="button" onclick="moveMovie('${escapeHtml(movie.id)}', -1)">Mover para cima</button>
-              <button type="button" onclick="moveMovie('${escapeHtml(movie.id)}', 1)">Mover para baixo</button>
-              <button type="button" onclick="archiveMovie('${escapeHtml(movie.id)}')">Arquivar</button>
-              <button class="danger-text" type="button" onclick="deleteMovie('${escapeHtml(movie.id)}')">Excluir</button>
+              <button type="button" data-movie-action="duplicate">Duplicar</button>
+              <button type="button" data-movie-action="move-up">Mover para cima</button>
+              <button type="button" data-movie-action="move-down">Mover para baixo</button>
+              <button type="button" data-movie-action="archive">Arquivar</button>
+              <button class="danger-text" type="button" data-movie-action="delete">Excluir</button>
             </div>
           </div>
         </div>
@@ -3332,9 +3332,9 @@ function renderSessions(sessions) {
               <span title="${escapeHtml(`${session.date ? `${new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })} • ` : ""}${session.format || "Formato não informado"} • ${session.room || "Sala não informada"}`)}">${session.date ? `${escapeHtml(new Date(`${session.date}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" }))} • ` : ""}${escapeHtml(session.format)} • ${escapeHtml(session.room)}</span>
               <span title="${escapeHtml(ticketTypeSummary)}">${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
               <div class="session-row-actions">
-                <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(session.id)}')">Ingressos</button>
-                <button class="ghost-button" type="button" onclick="openSessionEditor('${escapeHtml(session.id)}')">Editar</button>
-                <button class="icon-button danger-icon" type="button" onclick="removeSession('${escapeHtml(session.id)}')" aria-label="Excluir sessão">${trashIcon}</button>
+                <button class="ghost-button" type="button" data-admin-session-action="tickets" data-admin-session-id="${escapeHtml(session.id)}">Ingressos</button>
+                <button class="ghost-button" type="button" data-admin-session-action="edit" data-admin-session-id="${escapeHtml(session.id)}">Editar</button>
+                <button class="icon-button danger-icon" type="button" data-admin-session-action="remove" data-admin-session-id="${escapeHtml(session.id)}" aria-label="Excluir sessão">${trashIcon}</button>
               </div>
             </div>
           `;
@@ -3528,11 +3528,12 @@ function handleMovieDragStart(event, id) {
 function handleMovieDragOver(event) {
   event.preventDefault();
   if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-  event.currentTarget?.classList.add("drag-over");
+  event.target.closest?.(".movie-row")?.classList.add("drag-over");
 }
 
 function handleMovieDragLeave(event) {
-  event.currentTarget?.classList.remove("drag-over");
+  const row = event.target.closest?.(".movie-row");
+  if (row && !row.contains(event.relatedTarget)) row.classList.remove("drag-over");
 }
 
 function handleMovieDragEnd() {
@@ -3689,7 +3690,7 @@ function renderSessionLinkedTickets(sessionId) {
     ? `
       <div class="session-linked-head">
         <strong>${linkedTickets.length} ingresso(s) vinculado(s)</strong>
-        <button class="text-button" type="button" onclick="showSessionTickets('${escapeHtml(sessionId)}')">Ver na aba Ingressos</button>
+        <button class="text-button" type="button" data-admin-session-action="tickets" data-admin-session-id="${escapeHtml(sessionId)}">Ver na aba Ingressos</button>
       </div>
       <div class="session-linked-list">
         ${linkedTickets.slice(0, 6).map((ticket) => `
@@ -4655,7 +4656,7 @@ function renderGlobalSessions() {
         <div class="global-session-alert">${related.length ? `<strong>Conflito de horário</strong><small>${escapeHtml(conflictCopy)}</small>` : `<span>Horário livre</span>`}</div>
         <div class="global-session-actions">
           <button class="ghost-button" type="button" data-session-seat-map="${escapeHtml(entry.session.id)}">Mapa</button>
-          <button class="ghost-button" type="button" onclick="openGlobalSessionEditor('${escapeHtml(entry.movie.id)}', '${escapeHtml(entry.session.id)}')">Editar</button>
+          <button class="ghost-button" type="button" data-admin-session-action="global-edit" data-admin-movie-id="${escapeHtml(entry.movie.id)}" data-admin-session-id="${escapeHtml(entry.session.id)}">Editar</button>
         </div>
       </article>`;
   }).join("") + renderAdminListPager("globalSessions", { page: state.globalSessionsPage, pageSize, totalPages, start, pageItems, total: filtered.length }, "sessão(ões)");
@@ -5230,13 +5231,13 @@ function renderIssuedTickets() {
           </div>
           <div>
             <span class="mini-label">Pedido</span>
-            <button class="text-button" type="button" onclick="openOrderView('${escapeHtml(ticket.orderId || ticket.orderReference || "")}')">${escapeHtml(ticket.orderReference || ticket.orderId || "-")}</button>
+            <button class="text-button" type="button" data-admin-ticket-action="order" data-admin-ticket-value="${escapeHtml(ticket.orderId || ticket.orderReference || "")}">${escapeHtml(ticket.orderReference || ticket.orderId || "-")}</button>
           </div>
           <div>
             <span class="mini-label">Status</span>
             <span class="status-pill status-${escapeHtml(ticket.status || "unknown")}">${escapeHtml(ticketStatusText(ticket.status))}</span>
           </div>
-          <button class="ghost-button" type="button" onclick="showSessionTickets('${escapeHtml(ticket.sessionId || "")}')">Sessão</button>
+          <button class="ghost-button" type="button" data-admin-session-action="tickets" data-admin-session-id="${escapeHtml(ticket.sessionId || "")}">Sessão</button>
         </article>
       `).join("")}
     </div>
@@ -5452,7 +5453,7 @@ function renderOrdersTable(targetId, orders, options = {}) {
             .map(
               (order) => {
                 const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name)} x${Number(item.quantity || 0)}`).join("<br>") || "Sem extras";
-                const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" onclick="event.stopPropagation(); copyTicketCode('${escapeHtml(ticket.displayCode || ticket.code)}')">${escapeHtml(ticket.displayCode || ticket.code)}</button>`).join(" ");
+                const tickets = (order.tickets || []).slice(0, 2).map((ticket) => `<button class="copy-code" type="button" data-admin-ticket-action="copy" data-admin-ticket-value="${escapeHtml(ticket.displayCode || ticket.code)}">${escapeHtml(ticket.displayCode || ticket.code)}</button>`).join(" ");
                 const quickSale = order.saleMode === "quick";
                 const customerLabel = quickSale ? "Venda rápida" : order.customerName || "Cliente avulso";
                 const isArchived = isOrderEffectivelyArchived(order);
@@ -5533,7 +5534,7 @@ function orderDetailHtml(order) {
   const val = getOrderValidationSummary(order);
   const sandboxRefundSimulated = [order.ticketRefund, order.concessionRefund, payment?.metadata?.cancellationRefund, payment?.metadata?.ticketRefund, payment?.metadata?.concessionRefund].some((refund) => refund?.simulated === true);
   const tickets = (order.tickets || []).map((ticket) => `
-    <button class="copy-code" type="button" onclick="copyTicketCode('${escapeHtml(ticket.displayCode || ticket.code)}')">${escapeHtml(ticket.displayCode || ticket.code)}</button>
+    <button class="copy-code" type="button" data-admin-ticket-action="copy" data-admin-ticket-value="${escapeHtml(ticket.displayCode || ticket.code)}">${escapeHtml(ticket.displayCode || ticket.code)}</button>
     <span class="list-meta">${escapeHtml(orderStatusLabel(ticket.status))}</span>
   `).join("<br>") || "-";
   const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name || item.id)} x${Number(item.quantity || 0)}`).join("<br>") || "-";
@@ -5876,17 +5877,17 @@ function toggleOrderMenu(orderId, event) {
   }
   floating.dataset.orderId = orderId;
   floating.innerHTML = `
-    <button type="button" onclick="openOrderView('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Visualizar</button>
-    ${!terminated && adminCan("orders.edit") ? `<button type="button" onclick="openOrderEdit('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Editar</button>` : ""}
-    ${!terminated && adminCan("orders.print") ? `<button type="button" onclick="printOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Imprimir ingresso</button>` : ""}
-    ${!terminated && adminCan("orders.resend") ? `<button type="button" onclick="resendOrderTicket('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Reenviar ingresso</button>` : ""}
-    ${isArchived || terminated || !adminCan("orders.cancel") ? "" : `<button type="button" onclick="cancelOrDeleteOrder('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Cancelar</button>`}
+    <button type="button" data-floating-order-action="view">Visualizar</button>
+    ${!terminated && adminCan("orders.edit") ? `<button type="button" data-floating-order-action="edit">Editar</button>` : ""}
+    ${!terminated && adminCan("orders.print") ? `<button type="button" data-floating-order-action="print">Imprimir ingresso</button>` : ""}
+    ${!terminated && adminCan("orders.resend") ? `<button type="button" data-floating-order-action="resend">Reenviar ingresso</button>` : ""}
+    ${isArchived || terminated || !adminCan("orders.cancel") ? "" : `<button type="button" data-floating-order-action="cancel">Cancelar</button>`}
     ${!adminCan("orders.archive") ? "" : order.archived
-      ? `<button type="button" onclick="restoreOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Restaurar pedido</button>`
+      ? `<button type="button" data-floating-order-action="restore">Restaurar pedido</button>`
       : isArchived
       ? ""
-      : `<button type="button" onclick="archiveOrderAdmin('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Arquivar</button>`}
-    ${adminCan("orders.delete") ? `<button class="danger-text" type="button" onclick="openPermanentDelete('${escapeHtml(orderId)}'); closeFloatingActionMenu()">Excluir permanentemente</button>` : ""}
+      : `<button type="button" data-floating-order-action="archive">Arquivar</button>`}
+    ${adminCan("orders.delete") ? `<button class="danger-text" type="button" data-floating-order-action="delete">Excluir permanentemente</button>` : ""}
   `;
   positionFloatingMenu(anchor, floating);
 }
@@ -5907,19 +5908,18 @@ function toggleEmailCampaignMenu(campaignId, event) {
   const cancellable = ["scheduled", "queued", "sending"].includes(campaign.status);
   const reportable = ["queued", "sending", "completed", "completed_with_errors", "failed", "sent", "cancelled"].includes(campaign.status);
   const retryable = ["completed_with_errors", "failed"].includes(campaign.status);
-  const safeId = escapeHtml(campaignId);
   floating.dataset.campaignId = campaignId;
   floating.classList.add("campaign-history-popover");
   floating.setAttribute("role", "menu");
   floating.setAttribute("aria-label", "Ações da campanha");
   floating.innerHTML = `
-    ${editable ? `<button type="button" role="menuitem" data-campaign-edit="${safeId}" onclick="void editEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Abrir</button>` : ""}
-    ${campaign.status === "draft" ? `<button type="button" role="menuitem" onclick="void sendExistingEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Enviar agora</button>` : ""}
-    ${reportable ? `<button type="button" role="menuitem" onclick="void viewEmailCampaignReport('${safeId}').finally(closeFloatingActionMenu)">${["queued", "sending"].includes(campaign.status) ? "Ver progresso" : "Ver relatório"}</button>` : ""}
-    ${retryable ? `<button type="button" role="menuitem" onclick="void retryEmailCampaignFailures('${safeId}').finally(closeFloatingActionMenu)">Reenviar falhas</button>` : ""}
-    ${cancellable ? `<button class="danger-text" type="button" role="menuitem" onclick="void cancelEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Cancelar</button>` : ""}
-    <button type="button" role="menuitem" data-campaign-duplicate="${safeId}" onclick="void duplicateEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Duplicar</button>
-    ${["draft", "failed", "cancelled"].includes(campaign.status) ? `<button class="danger-text" type="button" role="menuitem" data-campaign-delete="${safeId}" onclick="void deleteEmailCampaign('${safeId}').finally(closeFloatingActionMenu)">Excluir</button>` : ""}
+    ${editable ? `<button type="button" role="menuitem" data-campaign-edit="${escapeHtml(campaignId)}" data-floating-campaign-action="edit">Abrir</button>` : ""}
+    ${campaign.status === "draft" ? `<button type="button" role="menuitem" data-floating-campaign-action="send">Enviar agora</button>` : ""}
+    ${reportable ? `<button type="button" role="menuitem" data-floating-campaign-action="report">${["queued", "sending"].includes(campaign.status) ? "Ver progresso" : "Ver relatório"}</button>` : ""}
+    ${retryable ? `<button type="button" role="menuitem" data-floating-campaign-action="retry">Reenviar falhas</button>` : ""}
+    ${cancellable ? `<button class="danger-text" type="button" role="menuitem" data-floating-campaign-action="cancel">Cancelar</button>` : ""}
+    <button type="button" role="menuitem" data-campaign-duplicate="${escapeHtml(campaignId)}" data-floating-campaign-action="duplicate">Duplicar</button>
+    ${["draft", "failed", "cancelled"].includes(campaign.status) ? `<button class="danger-text" type="button" role="menuitem" data-campaign-delete="${escapeHtml(campaignId)}" data-floating-campaign-action="delete">Excluir</button>` : ""}
   `;
   anchor.setAttribute("aria-expanded", "true");
   positionFloatingMenu(anchor, floating);
@@ -10338,7 +10338,7 @@ function renderEmailCampaigns() {
     const template = emailCampaignTemplateLabel(item.templateId || "announcement");
     const context = [template, linked].filter(Boolean).join(" · ");
     const subject = item.subject || "Sem assunto";
-    return `<div class="campaign-history-row"><div class="campaign-history-main"><strong>${escapeHtml(subject)}</strong><small>${escapeHtml(context ? `${context} · ${delivery}${unsupported}` : `${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", completed: "Concluída", completed_with_errors: "Concluída com falhas", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button class="icon-button campaign-history-menu-button" type="button" data-floating-menu-trigger onclick="toggleEmailCampaignMenu('${escapeHtml(item.id)}', event)" aria-label="Ações de ${escapeHtml(subject)}" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button></div></div>`;
+    return `<div class="campaign-history-row"><div class="campaign-history-main"><strong>${escapeHtml(subject)}</strong><small>${escapeHtml(context ? `${context} · ${delivery}${unsupported}` : `${delivery}${unsupported}`)} · ${item.createdAt ? new Date(item.createdAt).toLocaleString("pt-BR") : ""}</small></div><div class="campaign-history-actions"><span class="campaign-status ${escapeHtml(item.status || "draft")}">${escapeHtml({ draft: "Rascunho", scheduled: "Agendada", queued: "Na fila", sending: "Enviando", sent: "Concluída", completed: "Concluída", completed_with_errors: "Concluída com falhas", failed: "Falhou", cancelled: "Cancelada" }[item.status] || "Rascunho")}</span><button class="icon-button campaign-history-menu-button" type="button" data-floating-menu-trigger data-admin-campaign-action="menu" data-admin-campaign-id="${escapeHtml(item.id)}" aria-label="Ações de ${escapeHtml(subject)}" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></button></div></div>`;
   }).join("") : `<div class="empty-state"><strong>Nenhuma campanha ainda</strong><span>Salve um rascunho ou envie sua primeira comunicação.</span></div>`;
   if (pager) {
     const start = Number(meta.total || 0) ? (page - 1) * pageSize + 1 : 0;
@@ -12707,8 +12707,98 @@ function bindEvents() {
   const filterCatalog = () => { state.moviesPage = 1; renderMovies({ preserveForm: true }); };
   $("movieCatalogSearch")?.addEventListener("input", filterCatalog);
   $("movieCatalogFilter")?.addEventListener("change", filterCatalog);
+  const moviesList = $("moviesList");
+  moviesList?.addEventListener("click", (event) => {
+    const row = event.target.closest?.(".movie-row[data-movie-id]");
+    if (!row) return;
+    const id = row.dataset.movieId;
+    const action = event.target.closest?.("[data-movie-action]")?.dataset.movieAction;
+    if (event.target.closest?.(".movie-row-actions")) {
+      event.stopPropagation();
+      if (action === "menu") toggleMovieMenu(id);
+      else if (action === "duplicate") duplicateMovie(id);
+      else if (action === "move-up") moveMovie(id, -1);
+      else if (action === "move-down") moveMovie(id, 1);
+      else if (action === "archive") archiveMovie(id);
+      else if (action === "delete") deleteMovie(id);
+      return;
+    }
+    if (event.target.closest?.(".drag-handle")) return;
+    selectMovie(id);
+  });
+  moviesList?.addEventListener("dragstart", (event) => {
+    const row = event.target.closest?.(".movie-row[data-movie-id]");
+    if (row) handleMovieDragStart(event, row.dataset.movieId);
+  });
+  moviesList?.addEventListener("dragover", (event) => {
+    if (event.target.closest?.(".movie-row")) handleMovieDragOver(event);
+  });
+  moviesList?.addEventListener("dragleave", (event) => {
+    if (event.target.closest?.(".movie-row")) handleMovieDragLeave(event);
+  });
+  moviesList?.addEventListener("dragend", handleMovieDragEnd);
+  moviesList?.addEventListener("drop", (event) => {
+    const row = event.target.closest?.(".movie-row[data-movie-id]");
+    if (row) handleMovieDrop(event, row.dataset.movieId);
+  });
 
   document.addEventListener("click", (event) => {
+    const sessionAction = event.target.closest?.("[data-admin-session-action][data-admin-session-id]");
+    if (sessionAction) {
+      const sessionId = sessionAction.dataset.adminSessionId;
+      const movieId = sessionAction.dataset.adminMovieId;
+      if (sessionAction.dataset.adminSessionAction === "dashboard") openSessionDashboardDetail(movieId, sessionId);
+      else if (sessionAction.dataset.adminSessionAction === "tickets") showSessionTickets(sessionId);
+      else if (sessionAction.dataset.adminSessionAction === "edit") openSessionEditor(sessionId);
+      else if (sessionAction.dataset.adminSessionAction === "remove") removeSession(sessionId);
+      else if (sessionAction.dataset.adminSessionAction === "global-edit") openGlobalSessionEditor(movieId, sessionId);
+      return;
+    }
+    const ticketAction = event.target.closest?.("[data-admin-ticket-action][data-admin-ticket-value]");
+    if (ticketAction) {
+      if (ticketAction.dataset.adminTicketAction === "copy") void copyTicketCode(ticketAction.dataset.adminTicketValue);
+      else if (ticketAction.dataset.adminTicketAction === "order") openOrderView(ticketAction.dataset.adminTicketValue);
+      return;
+    }
+    const floating = $("floatingActionMenu");
+    const floatingAction = event.target.closest?.("[data-floating-order-action], [data-floating-campaign-action]");
+    if (floatingAction && floating && !floating.hidden && floating.contains(floatingAction)) {
+      const orderActions = {
+        view: openOrderView,
+        edit: openOrderEdit,
+        print: printOrderTicket,
+        resend: resendOrderTicket,
+        cancel: cancelOrDeleteOrder,
+        restore: restoreOrderAdmin,
+        archive: archiveOrderAdmin,
+        delete: openPermanentDelete
+      };
+      const campaignActions = {
+        edit: editEmailCampaign,
+        send: sendExistingEmailCampaign,
+        report: viewEmailCampaignReport,
+        retry: retryEmailCampaignFailures,
+        cancel: cancelEmailCampaign,
+        duplicate: duplicateEmailCampaign,
+        delete: deleteEmailCampaign
+      };
+      const orderKey = floatingAction.dataset.floatingOrderAction;
+      const campaignKey = floatingAction.dataset.floatingCampaignAction;
+      const orderAction = Object.hasOwn(orderActions, orderKey) ? orderActions[orderKey] : null;
+      const campaignAction = Object.hasOwn(campaignActions, campaignKey) ? campaignActions[campaignKey] : null;
+      if (orderAction && floating.dataset.orderId) {
+        orderAction(floating.dataset.orderId);
+        closeFloatingActionMenu();
+      } else if (campaignAction && floating.dataset.campaignId) {
+        void campaignAction(floating.dataset.campaignId).finally(closeFloatingActionMenu);
+      }
+      return;
+    }
+    const campaignMenu = event.target.closest?.("[data-admin-campaign-action='menu'][data-admin-campaign-id]");
+    if (campaignMenu) {
+      toggleEmailCampaignMenu(campaignMenu.dataset.adminCampaignId, { currentTarget: campaignMenu, stopPropagation() {} });
+      return;
+    }
     const orderAction = event.target.closest?.("[data-admin-order-action][data-admin-order-id]");
     if (orderAction) {
       const orderId = orderAction.dataset.adminOrderId;
@@ -12719,7 +12809,6 @@ function bindEvents() {
         return;
       }
     }
-    const floating = $("floatingActionMenu");
     if (floating && !floating.hidden && !floating.contains(event.target)) closeFloatingActionMenu();
     if (!event.target.closest?.(".admin-profile")) closeAdminProfileMenu();
     if (!event.target.closest?.(".responsive-select")) closeResponsiveSelects();
