@@ -56,6 +56,11 @@ function ContaPageContent() {
   const [profileMessage, setProfileMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationFeedback, setVerificationFeedback] = useState<{
+    scope: "account" | "change";
+    type: "sending" | "success" | "error";
+    message: string;
+  } | null>(null);
   const [verificationNotice, setVerificationNotice] = useState<{
     type: "success" | "error";
     title: string;
@@ -254,7 +259,7 @@ function ContaPageContent() {
       if (mode === "register") {
         trackMarketingEvent("sign_up", { method: "email" });
         setProfileMessage(result.message || "Conta criada. Confirme seu e-mail para manter sua conta protegida.");
-        router.replace("/conta");
+        router.replace(returnTo || "/conta");
       } else {
         trackMarketingEvent("login", { method: "email" });
         router.replace(returnTo || "/conta/ingressos");
@@ -300,15 +305,15 @@ function ContaPageContent() {
 
   async function requestEmailChangeVerification() {
     if (!profile.email || profile.email === user?.email) return;
-    setProfileMessage("");
+    setVerificationFeedback({ scope: "change", type: "sending", message: "Enviando verificação para o novo e-mail..." });
     setVerificationLoading(true);
     try {
       const result = await requestEmailChange(profile.email);
       trackMarketingEvent("email_verification_requested", { reason: "email_change" });
       setUser(result.user);
-      setProfileMessage(result.message || "Enviamos a verificação para o novo e-mail.");
+      setVerificationFeedback({ scope: "change", type: "success", message: result.message || "Enviamos a verificação para o novo e-mail." });
     } catch (error) {
-      setProfileMessage(error instanceof Error ? error.message : "Não foi possível solicitar a verificação.");
+      setVerificationFeedback({ scope: "change", type: "error", message: error instanceof Error ? error.message : "Não foi possível solicitar a verificação." });
     } finally {
       setVerificationLoading(false);
     }
@@ -316,15 +321,15 @@ function ContaPageContent() {
 
   async function requestCurrentEmailVerification() {
     if (!user || user.emailVerified) return;
-    setProfileMessage("");
+    setVerificationFeedback({ scope: "account", type: "sending", message: "Enviando link de confirmação..." });
     setVerificationLoading(true);
     try {
       const result = await requestAccountEmailVerification();
       trackMarketingEvent("email_verification_requested", { reason: "account_confirmation" });
       setUser(result.user);
-      setProfileMessage(result.message || "Enviamos um link de confirmação para o e-mail da sua conta.");
+      setVerificationFeedback({ scope: "account", type: "success", message: result.message || "Enviamos um link de confirmação para o e-mail da sua conta." });
     } catch (error) {
-      setProfileMessage(error instanceof Error ? error.message : "Não foi possível enviar a confirmação do e-mail.");
+      setVerificationFeedback({ scope: "account", type: "error", message: error instanceof Error ? error.message : "Não foi possível enviar a confirmação do e-mail." });
     } finally {
       setVerificationLoading(false);
     }
@@ -400,7 +405,8 @@ function ContaPageContent() {
                 </div>
               </dl>
               {!user.emailVerified && (
-                <div className="mt-5 flex flex-wrap items-center gap-4">
+                <div className="mt-5">
+                  <div className="flex flex-wrap items-center gap-4">
                   <button
                     type="button"
                     onClick={requestCurrentEmailVerification}
@@ -410,6 +416,12 @@ function ContaPageContent() {
                     {verificationLoading ? "Enviando..." : "Confirmar e-mail"}
                   </button>
                   <button type="button" onClick={logout} className="inline-flex min-h-[48px] items-center text-sm font-black text-rose-200 transition hover:text-rose-100">Sair</button>
+                  </div>
+                  {verificationFeedback?.scope === "account" && (
+                    <p role={verificationFeedback.type === "error" ? "alert" : "status"} aria-live="polite" className={`mt-3 text-sm font-semibold ${verificationFeedback.type === "error" ? "text-rose-200" : "text-emerald-200"}`}>
+                      {verificationFeedback.message}
+                    </p>
+                  )}
                 </div>
               )}
               {user.emailVerified && (
@@ -493,6 +505,11 @@ function ContaPageContent() {
                     <button type="button" onClick={requestEmailChangeVerification} disabled={verificationLoading} className="mt-3 text-sm font-black text-gold-400 transition hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-60">
                       {verificationLoading ? "Enviando..." : "Enviar verificação para novo e-mail"}
                     </button>
+                  )}
+                  {verificationFeedback?.scope === "change" && (
+                    <p role={verificationFeedback.type === "error" ? "alert" : "status"} aria-live="polite" className={`mt-3 text-sm font-semibold ${verificationFeedback.type === "error" ? "text-rose-200" : "text-emerald-200"}`}>
+                      {verificationFeedback.message}
+                    </p>
                   )}
                 </div>
               </div>

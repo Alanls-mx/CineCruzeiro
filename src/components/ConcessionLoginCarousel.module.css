@@ -1,0 +1,21 @@
+.slide {
+  animation: artworkReveal 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.offer {
+  animation: offerReveal 500ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes artworkReveal {
+  from { opacity: 0.6; transform: scale(1.025); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes offerReveal {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide, .offer { animation: none; }
+}

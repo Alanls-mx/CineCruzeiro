@@ -17,6 +17,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
   onSessionRefresh?: () => void;
 }) {
   const [status, setStatus] = useState<SeatRealtimeStatus>("disconnected");
+  const [joined, setJoined] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const selectedRef = useRef(selectedSeatIds);
   const callbacksRef = useRef({ onSeatChange, onSessionState, onSessionRefresh });
@@ -53,6 +54,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
   useEffect(() => {
     if (!enabled || !sessionId || !ownerToken) {
       setStatus("disconnected");
+      setJoined(false);
       return;
     }
     let disposed = false;
@@ -79,6 +81,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
     const connect = () => {
       if (disposed) return;
       setStatus("connecting");
+      setJoined(false);
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const configuredUrl = String(process.env.NEXT_PUBLIC_CINE_WS_URL || "").replace(/\/+$/, "");
       const socket = new WebSocket(configuredUrl
@@ -90,7 +93,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
         attempt = 0;
         stopFallbackPoll();
         setStatus("connected");
-        socket.send(JSON.stringify({ type: "join_session", requestId: crypto.randomUUID(), sessionId, ownerToken }));
+        socket.send(JSON.stringify({ type: "join_session", requestId: crypto.randomUUID(), sessionId, ownerToken, seatIds: selectedRef.current }));
         heartbeatTimer = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "heartbeat", requestId: crypto.randomUUID(), seatIds: selectedRef.current }));
@@ -113,6 +116,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
           }
         }
         if (type === "session_state") {
+          setJoined(true);
           callbacksRef.current.onSessionState({
             occupiedSeatIds: Array.isArray(message.occupiedSeatIds) ? message.occupiedSeatIds.map(String) : [],
             heldSeats: Array.isArray(message.heldSeats) ? message.heldSeats as Array<{ seatId: string; heldByMe: boolean; expiresAt?: string }> : []
@@ -135,6 +139,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
         window.clearInterval(heartbeatTimer);
         if (disposed) return;
         setStatus("disconnected");
+        setJoined(false);
         startFallbackPoll();
         attempt += 1;
         reconnectTimer = window.setTimeout(connect, Math.min(10000, 750 * (2 ** Math.min(attempt, 4))));
@@ -157,6 +162,7 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
 
   return {
     status,
+    joined,
     selectSeat: useCallback((seatId: string) => sendRequest("select_seat", seatId), [sendRequest]),
     releaseSeat: useCallback((seatId: string) => sendRequest("release_seat", seatId), [sendRequest])
   };

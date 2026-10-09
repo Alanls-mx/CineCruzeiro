@@ -81,11 +81,17 @@ function buildGoogleWalletClassTemplateInfo() {
   };
 }
 
-function buildGoogleWalletClassIdentity() {
+function buildGoogleWalletClassIdentity(logoUrl = "") {
   return {
+    issuerName: "Cine Cruzeiro",
+    localizedIssuerName: { defaultValue: { language: "pt-BR", value: "Cine Cruzeiro" } },
     eventName: {
       defaultValue: { language: "pt-BR", value: "Ingresso Cine Cruzeiro" }
-    }
+    },
+    ...(logoUrl ? {
+      logo: { sourceUri: { uri: logoUrl }, contentDescription: { defaultValue: { language: "pt-BR", value: "Cine Cruzeiro" } } },
+      wideLogo: { sourceUri: { uri: logoUrl }, contentDescription: { defaultValue: { language: "pt-BR", value: "Cine Cruzeiro" } } }
+    } : {})
   };
 }
 

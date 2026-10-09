@@ -373,12 +373,12 @@ function splitName(name = "") {
   };
 }
 
-function payerFromOrder(order) {
+function payerFromOrder(order, options = {}) {
   const email = String(order.customerEmail || "").trim();
   if (!email) {
     throw paymentError("PAYER_EMAIL_REQUIRED", "Informe um e-mail para processar o pagamento online.", 422);
   }
-  if (isProduction() && /@testuser\.com$/i.test(email)) {
+  if (isProduction() && !options.sandboxTest && /@testuser\.com$/i.test(email)) {
     throw paymentError(
       "MERCADO_PAGO_TEST_PAYER_NOT_ALLOWED",
       "Uma cobranca real nao pode usar uma conta de teste do Mercado Pago. Entre com uma conta de cliente real.",
@@ -477,7 +477,13 @@ function normalizeMercadoPagoOrder(data = {}, method) {
 }
 
 async function createMercadoPagoOrderPayment(order, integrationConfig = {}, options = {}) {
-  ensureMercadoPagoProductionEnvironment(integrationConfig);
+  if (options.sandboxTest) {
+    if (integrationConfig.environment !== "sandbox" || !String(integrationConfig.publicKey || "").startsWith("TEST-")) {
+      throw paymentError("MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED", "Configure as credenciais de teste do Mercado Pago.", 412);
+    }
+  } else {
+    ensureMercadoPagoProductionEnvironment(integrationConfig);
+  }
   const accessToken = getMercadoPagoAccessToken(integrationConfig);
   const method = options.method === "credit_card" ? "credit_card" : "pix";
   const amount = moneyString(order.totalPrice);
@@ -534,7 +540,7 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     total_amount: amount,
     external_reference: String(order.id || "").slice(0, 64),
     description: `Cine Cruzeiro - ${order.movieTitle || "Ingressos"}`.slice(0, 255),
-    payer: payerFromOrder(order),
+    payer: payerFromOrder(order, options),
     transactions: {
       payments: [
         {
@@ -569,7 +575,10 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     throw error;
   }
 
-  if (isProduction() && data.live_mode === false) {
+  if (options.sandboxTest && data.live_mode === true) {
+    throw paymentError("MERCADO_PAGO_SANDBOX_LIVE_RESPONSE", "O Mercado Pago respondeu em modo real. Desative estas credenciais de teste imediatamente.", 502);
+  }
+  if (!options.sandboxTest && isProduction() && data.live_mode === false) {
     throw paymentError(
       "MERCADO_PAGO_TEST_CREDENTIALS",
       "O Mercado Pago respondeu em modo de teste. Configure as credenciais de producao para gerar um Pix real.",

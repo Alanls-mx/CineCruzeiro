@@ -17,13 +17,13 @@ function nextMessage(socket, predicate, timeoutMs = 3000) {
   });
 }
 
-async function connect(url, ownerToken) {
+async function connect(url, ownerToken, seatIds = []) {
   const socket = new WebSocket(url);
   await new Promise((resolve, reject) => {
     socket.once("open", resolve);
     socket.once("error", reject);
   });
-  socket.send(JSON.stringify({ type: "join_session", requestId: `join-${ownerToken}`, sessionId: "session-1", ownerToken }));
+  socket.send(JSON.stringify({ type: "join_session", requestId: `join-${ownerToken}`, sessionId: "session-1", ownerToken, seatIds }));
   await nextMessage(socket, (message) => message.type === "session_joined");
   return socket;
 }
@@ -79,6 +79,20 @@ async function main() {
   const heartbeat = await nextMessage(second, (message) => message.requestId === "delayed-heartbeat");
   assert.equal(heartbeat.type, "heartbeat_ack");
   assert.equal(holds.get("A1"), "cliente-2");
+
+  holds.delete("A1");
+  const restored = new WebSocket(url);
+  await new Promise((resolve, reject) => { restored.once("open", resolve); restored.once("error", reject); });
+  const restoredState = nextMessage(restored, (message) => message.type === "session_state");
+  restored.send(JSON.stringify({ type: "join_session", requestId: "resume-after-login", sessionId: "session-1", ownerToken: "cliente-2", seatIds: ["A1"] }));
+  assert.equal((await restoredState).heldSeats.find((seat) => seat.seatId === "A1")?.heldByMe, true);
+  assert.equal(holds.get("A1"), "cliente-2");
+
+  const protectedState = nextMessage(first, (message) => message.type === "session_state");
+  first.send(JSON.stringify({ type: "join_session", requestId: "resume-other-owner", sessionId: "session-1", ownerToken: "cliente-1", seatIds: ["A1"] }));
+  assert.equal((await protectedState).heldSeats.find((seat) => seat.seatId === "A1")?.heldByMe, false);
+  assert.equal(holds.get("A1"), "cliente-2");
+  restored.close();
 
   const contenders = await Promise.all(Array.from({ length: 20 }, (_, index) => connect(url, `concorrente-${index}`)));
   const outcomes = await Promise.all(contenders.map((socket, index) => {

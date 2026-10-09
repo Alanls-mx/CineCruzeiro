@@ -9,6 +9,14 @@ import googleWalletPassLayoutService from "../backend/services/googleWalletPassL
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+test("classe do Cine Cruzeiro identifica o emissor e usa a assinatura oficial", () => {
+  const identity = googleWalletPassLayoutService.buildGoogleWalletClassIdentity("https://example.com/assinatura.png");
+  assert.equal(identity.issuerName, "Cine Cruzeiro");
+  assert.equal(identity.localizedIssuerName.defaultValue.value, "Cine Cruzeiro");
+  assert.equal(identity.logo.sourceUri.uri, "https://example.com/assinatura.png");
+  assert.equal(identity.wideLogo.sourceUri.uri, "https://example.com/assinatura.png");
+});
+
 function serviceAccount(overrides = {}) {
   const pair = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   return {

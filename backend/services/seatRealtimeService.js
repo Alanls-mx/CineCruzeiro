@@ -118,6 +118,16 @@ function createSeatRealtimeService(server, options) {
           if (!sessionId || !ownerToken) throw Object.assign(new Error("Sessão ou token de reserva inválido."), { code: "INVALID_JOIN" });
           socket.seatSessionId = sessionId;
           socket.seatOwnerToken = ownerToken;
+          const seatIds = Array.isArray(message.seatIds)
+            ? [...new Set(message.seatIds.map((seatId) => validIdentifier(seatId)).filter(Boolean))].slice(0, 20)
+            : [];
+          for (const seatId of seatIds) {
+            try {
+              await options.selectSeat({ sessionId, seatId, ownerToken, connectionId: socket.connectionId });
+            } catch {
+              // The following state reports seats claimed by another customer.
+            }
+          }
           send(socket, { type: "session_joined", requestId, sessionId });
           await sendState(socket);
           return;

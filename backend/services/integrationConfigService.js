@@ -114,6 +114,17 @@ const DEFINITIONS = {
       { key: "retryLimit", label: "Tentativas", type: "number" }
     ]
   },
+  mercadoPagoSandbox: {
+    name: "Mercado Pago - testes isolados",
+    purpose: "Validar cartões de teste sem criar vendas ou ingressos reais",
+    defaults: { enabled: false, environment: "sandbox", publicKey: "", authorizedEmails: "" },
+    secrets: ["publicKey", "accessToken"],
+    fields: [
+      { key: "publicKey", label: "Chave pública de teste", type: "secret" },
+      { key: "accessToken", label: "Token de acesso de teste", type: "secret" },
+      { key: "authorizedEmails", label: "E-mails autorizados (separados por vírgula)", type: "text" }
+    ]
+  },
   pagBank: {
     name: "PagBank (PagSeguro)",
     purpose: "Pix e cartão online. O Sandbox aceita cartões de teste; produção exige liberação PagBank. Tap On e assinaturas exigem homologações separadas.",
@@ -193,6 +204,11 @@ const ENV = {
   crm: {
     url: ["CRM_WEBHOOK_URL", "LUMIX_WEBHOOK_URL"],
     secret: ["CRM_WEBHOOK_SECRET", "LUMIX_WEBHOOK_SECRET"]
+  },
+  mercadoPagoSandbox: {
+    publicKey: ["MERCADO_PAGO_SANDBOX_PUBLIC_KEY"],
+    accessToken: ["MERCADO_PAGO_SANDBOX_ACCESS_TOKEN"],
+    authorizedEmails: ["MERCADO_PAGO_SANDBOX_AUTHORIZED_EMAILS"]
   },
   pagBank: {
     publicKey: ["PAGBANK_PUBLIC_KEY", "PAGSEGURO_PUBLIC_KEY"],
@@ -298,6 +314,7 @@ function resolvedConfig(db, provider) {
 
 function isConfigured(provider, config) {
   if (provider === "mercadoPago") return Boolean(config.publicKey && config.accessToken);
+  if (provider === "mercadoPagoSandbox") return Boolean(config.publicKey && config.accessToken && String(config.publicKey).startsWith("TEST-"));
   if (provider === "pagBank") return Boolean(config.publicKey && config.accessToken);
   if (provider === "googleLogin") return Boolean(config.clientId && config.clientSecret);
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.serviceAccountJson || (config.clientEmail && config.privateKey)));

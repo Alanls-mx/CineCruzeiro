@@ -6466,6 +6466,7 @@ function renderManualConcessions() {
       if (quantity > 0) state.manualConcessionQuantities[item.id] = quantity;
       return `
         <article class="manual-concession-item ${stock === 0 ? "unavailable" : ""}">
+          ${item.imageUrl ? `<img class="manual-concession-image" src="${escapeHtml(adminAssetUrl(item.imageUrl))}" alt="" loading="lazy" />` : `<span class="manual-concession-image manual-concession-image--empty" aria-hidden="true">◈</span>`}
           <div class="manual-concession-copy">
             <strong>${escapeHtml(item.name)}</strong>
             <span>${money(item.price)}${stock !== null ? ` · ${stock} em estoque` : ""}</span>
