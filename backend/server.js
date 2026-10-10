@@ -1892,7 +1892,15 @@ async function writeDb(db) {
   const tempFile = `${DATA_FILE}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
   try {
     await fs.writeFile(tempFile, `${JSON.stringify(db, null, 2)}\n`, "utf8");
-    await fs.rename(tempFile, DATA_FILE);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await fs.rename(tempFile, DATA_FILE);
+        break;
+      } catch (error) {
+        if (process.platform !== "win32" || !["EPERM", "EBUSY"].includes(error.code) || attempt >= 5) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
+      }
+    }
   } finally {
     await fs.unlink(tempFile).catch(() => null);
   }
