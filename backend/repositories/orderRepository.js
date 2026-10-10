@@ -33,7 +33,7 @@ function mapOrder(row, itemRows = []) {
       unitPrice: number(item.unit_price)
     }));
   const ticketRows = itemRows.filter((item) => item.item_type === "ticket");
-  return {
+  const order = {
     ...metadata,
     id: row.id,
     idempotencyKey: row.idempotency_key || metadata.idempotencyKey || "",
@@ -71,6 +71,8 @@ function mapOrder(row, itemRows = []) {
     createdAt: iso(row.created_at) || metadata.createdAt || "",
     updatedAt: iso(row.updated_at) || metadata.updatedAt || ""
   };
+  if (row.row_version) Object.defineProperty(order, "rowVersion", { value: row.row_version });
+  return order;
 }
 
 async function loadItemRows(client, orderIds) {
@@ -87,7 +89,7 @@ async function hydrateRows(client, rows) {
 }
 
 async function findByIdWithClient(client, id, { forUpdate = false } = {}) {
-  const result = await timedQuery(client, `SELECT * FROM orders
+  const result = await timedQuery(client, `SELECT *, xmin::text AS row_version FROM orders
     WHERE id = $1 OR idempotency_key = NULLIF($1, '')
     ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END
     LIMIT 1${forUpdate ? " FOR UPDATE" : ""}`, [String(id || "")], {
@@ -105,7 +107,7 @@ async function findById(id) {
 async function findByIdempotencyKey(key) {
   const normalized = String(key || "").trim();
   if (!normalized) return null;
-  const result = await timedQuery(null, "SELECT * FROM orders WHERE idempotency_key = $1 LIMIT 1", [normalized], {
+  const result = await timedQuery(null, "SELECT *, xmin::text AS row_version FROM orders WHERE idempotency_key = $1 LIMIT 1", [normalized], {
     repository: "order",
     operation: "findByIdempotencyKey"
   });
@@ -113,7 +115,7 @@ async function findByIdempotencyKey(key) {
 }
 
 async function list() {
-  const result = await timedQuery(null, "SELECT * FROM orders ORDER BY created_at DESC, id", [], {
+  const result = await timedQuery(null, "SELECT *, xmin::text AS row_version FROM orders ORDER BY created_at DESC, id", [], {
     repository: "order",
     operation: "list"
   });
@@ -265,7 +267,7 @@ async function create(order, related = {}, options = {}) {
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
         $20,$21,$22,$23,$24::jsonb,COALESCE($25::timestamptz, now()),now())
       ON CONFLICT DO NOTHING
-      RETURNING *`, values, { repository: "order", operation: "create.insert" });
+      RETURNING *, xmin::text AS row_version`, values, { repository: "order", operation: "create.insert" });
     if (!inserted.rowCount) {
       const existing = await findByIdWithClient(client, order.id)
         || await findByIdWithClient(client, order.idempotencyKey);
@@ -290,7 +292,7 @@ async function update(order, related = {}, options = {}) {
   }, async (client) => {
     const values = orderValues(order);
     values.pop(); // created_at is immutable on updates
-    values.push(options.expectedUpdatedAt || null);
+    values.push(options.expectedRowVersion || order.rowVersion || null);
     const result = await timedQuery(client, `UPDATE orders SET
       customer_user_id=$2, customer_name=$3, customer_email=$4, customer_phone=$5,
       customer_cpf=$6, movie_id=$7, session_id=$8, status=$9, subtotal=$10,
@@ -299,8 +301,8 @@ async function update(order, related = {}, options = {}) {
       club_credits_applied=$18, club_discount=$19, additional_payment=$20,
       service_fiscal_status=$21, goods_fiscal_status=$22, goods_fiscal_trigger=$23,
       metadata=$24::jsonb, updated_at=now()
-      WHERE id=$1 AND ($25::timestamptz IS NULL OR date_trunc('milliseconds', updated_at)=$25::timestamptz)
-      RETURNING *`, values, { repository: "order", operation: options.operation || "update" });
+      WHERE id=$1 AND ($25::text IS NULL OR xmin::text=$25::text)
+      RETURNING *, xmin::text AS row_version`, values, { repository: "order", operation: options.operation || "update" });
     if (!result.rowCount) {
       const exists = await timedQuery(client, "SELECT 1 FROM orders WHERE id=$1", [order.id], {
         repository: "order",
@@ -335,7 +337,7 @@ async function updateStatus(id, nextStatus, expectedStatuses = [], patch = {}, o
     const next = { ...current, ...patch, status: nextStatus, updatedAt: new Date().toISOString() };
     const result = await timedQuery(client, `UPDATE orders SET
       status=$2, reservation_expires_at=$3, metadata=$4::jsonb, updated_at=now()
-      WHERE id=$1 RETURNING *`, [
+      WHERE id=$1 RETURNING *, xmin::text AS row_version`, [
       next.id,
       next.status === "pix_pending" ? "pending_payment" : next.status || "pending_payment",
       next.reservationExpiresAt || null,

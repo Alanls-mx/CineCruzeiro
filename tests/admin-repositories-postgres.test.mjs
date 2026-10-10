@@ -173,10 +173,12 @@ test("fase 3A cria pedido uma vez e preserva seus itens", { skip: !TEST_DATABASE
     assert.equal(saved.totalPrice, 25);
     assert.equal(saved.ticketItems.length, 1);
     assert.equal(saved.concessionItems.length, 1);
+    assert.ok(saved.rowVersion);
+    assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(saved)), "rowVersion"), false);
     const edited = await orderRepository.update(
       { ...saved, customerPhone: "11999998888" },
       {},
-      { expectedUpdatedAt: saved.updatedAt }
+      { expectedRowVersion: saved.rowVersion }
     );
     assert.equal(edited.customerPhone, "11999998888");
 
@@ -186,7 +188,7 @@ test("fase 3A cria pedido uma vez e preserva seus itens", { skip: !TEST_DATABASE
       saved.id, "11888887777", "2030-01-01T00:00:00.000900Z"
     ]);
     await assert.rejects(
-      orderRepository.update({ ...stale, customerPhone: "11777776666" }, {}, { expectedUpdatedAt: stale.updatedAt }),
+      orderRepository.update({ ...stale, customerPhone: "11777776666" }, {}, { expectedRowVersion: stale.rowVersion }),
       { code: "ORDER_CHANGED" }
     );
     assert.equal((await orderRepository.findById(saved.id)).customerPhone, "11888887777");

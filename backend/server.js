@@ -16819,11 +16819,12 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const before = structuredCloneSafe(order);
+      const expectedRowVersion = order.rowVersion;
       if (body.action === "archive") archiveOrder(order, body.reason, req.adminUser);
       else if (body.action === "unarchive") unarchiveOrder(order, body.reason, req.adminUser);
       else safeOrderUpdate(order, body, req.adminUser);
       const saved = await orderRepository.update(order, {}, {
-        expectedUpdatedAt: before.updatedAt,
+        expectedRowVersion,
         operation: body.action || "edit",
         audit: {
           userId: req.adminUser?.id,
