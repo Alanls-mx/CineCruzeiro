@@ -59,12 +59,17 @@ test("account, catalog and cleaning interval workflows on an isolated backend", 
     assert.equal((await request("/api/concessions", "POST", { name: "Pipoca QA", price: 12, stock: 10 })).status, 201);
     assert.equal((await request("/api/promotions", "POST", { title: "Oferta QA", value: 5, couponCode: "OFERTAQA" })).status, 201);
     assert.equal((await request("/api/ads", "POST", { title: "Anúncio QA" })).status, 201);
+    assert.equal((await request("/api/admin/logs")).status, 200);
+    assert.equal((await request("/api/admin/logs/performance")).status, 200);
+    assert.equal((await request("/api/admin/logs", "DELETE", { retentionDays: 30 })).status, 200);
     assert.equal((await request("/api/admin/me", "PATCH", { name: "Nobody" }, "")).status, 401);
     assert.equal((await request("/api/users", "POST", { name: "Operador QA", email: "operator@example.test", role: "operator", accountType: "team" })).status, 422);
     const created = await request("/api/users", "POST", { name: "Operador QA", email: "operator@example.test", role: "operator", accountType: "team", password });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     const operatorLogin = await login("operator@example.test", password);
     cookie = operatorLogin.headers.get("set-cookie").split(";")[0];
+    assert.equal((await request("/api/admin/logs")).status, 403);
+    assert.equal((await request("/api/admin/logs", "DELETE", { retentionDays: 30 })).status, 403);
     const changed = await request("/api/admin/me", "PATCH", { name: "Operador Atualizado", role: "owner", adminPermissions: ["users.manage"], password: "injected-password" });
     assert.equal(changed.status, 200, JSON.stringify(changed.data));
     assert.equal(changed.data.user.name, "Operador Atualizado");
