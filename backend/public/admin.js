@@ -378,6 +378,7 @@ async function loadAdminUser() {
     $("adminUserBadge").textContent = `${data.user.name || data.user.email} • ${adminRoleLabel(data.user.role)}`;
     if ($("adminProfileName")) $("adminProfileName").textContent = data.user.name || data.user.email || "Usuário";
     if ($("adminProfileRole")) $("adminProfileRole").textContent = adminRoleLabel(data.user.role);
+    renderStaffAvatar($("adminProfileAvatar"), data.user);
     renderAccountSecuritySummary();
     return data.user;
   } catch {
@@ -398,6 +399,7 @@ function toggleAdminProfileMenu(force) {
   const open = force ?? menu.hidden;
   menu.hidden = !open;
   button.setAttribute("aria-expanded", String(open));
+  if (open) menu.querySelector("button")?.focus();
 }
 
 function closeAdminProfileMenu() {
@@ -524,6 +526,12 @@ function renderAccountSecuritySummary() {
   if (!target) return;
   const enabled = Boolean(state.twoFactorStatus?.enabled ?? state.adminUser?.twoFactorEnabled);
   const required = Boolean(state.twoFactorStatus?.requiredByPolicy ?? state.content?.settings?.adminTwoFactorRequired);
+  if ($("myAccountSecurityState")) {
+    const remaining = state.twoFactorStatus?.recoveryCodesRemaining ?? state.adminUser?.twoFactorRecoveryCodesRemaining ?? 0;
+    $("myAccountSecurityState").textContent = enabled
+      ? `2FA ativo · ${remaining} códigos de recuperação disponíveis. Os códigos só são exibidos ao gerar um novo conjunto.`
+      : "2FA ainda não configurado para esta conta.";
+  }
   target.innerHTML = `
     <span class="security-state ${enabled ? "active" : "pending"}">${enabled ? "Protegida" : "Configuração pendente"}</span>
     <strong>${enabled ? "Seu acesso exige senha e código temporário" : "Adicione uma segunda etapa ao seu login"}</strong>
@@ -550,6 +558,92 @@ function downloadRecoveryCodes() {
   link.download = "cine-cruzeiro-codigos-recuperacao.txt";
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+function staffAvatarMarkup(user = {}) {
+  const initials = String(user.name || user.email || "?").trim().split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+  const picture = String(user.picture || "");
+  const safe = /^\/uploads\/[a-zA-Z0-9_./-]+$/.test(picture) || /^https:\/\//.test(picture);
+  return `<span>${escapeHtml(initials)}</span>${safe ? `<img src="${escapeHtml(adminAssetUrl(picture))}" alt="" loading="lazy" />` : ""}`;
+}
+
+function renderStaffAvatar(target, user) {
+  if (!target) return;
+  target.innerHTML = staffAvatarMarkup(user);
+  target.querySelector("img")?.addEventListener("error", (event) => event.target.remove(), { once: true });
+}
+
+function fillMyAccount() {
+  const user = state.adminUser;
+  if (!user) return;
+  $("myAccountName").value = user.name || "";
+  $("myAccountEmail").value = user.email || "";
+  $("myAccountPicture").value = user.picture || "";
+  $("myAccountIdentity").textContent = adminRoleLabel(user.role);
+  renderStaffAvatar($("myAccountAvatar"), user);
+  $("myAccountRemovePhoto").disabled = !user.picture;
+  renderAccountSecuritySummary();
+}
+
+async function uploadProfilePhoto(prefix, input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    showToast("Envie uma foto JPG, PNG ou WebP de até 5 MB.", "error");
+    input.value = "";
+    return;
+  }
+  const form = input.closest("form");
+  const submit = form.querySelector("button[type='submit']");
+  input.disabled = true;
+  if (submit) submit.disabled = true;
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Não foi possível ler a foto."));
+      reader.readAsDataURL(file);
+    });
+    const result = await api("/api/admin/profile/photo", { method: "POST", body: JSON.stringify({ data, contentType: file.type }) });
+    $(prefix + "Picture").value = result.url;
+    renderStaffAvatar($(prefix + "Avatar"), { name: $(prefix + "Name").value, picture: result.url });
+    $(prefix + "RemovePhoto").disabled = false;
+    showToast("Foto carregada. Salve o perfil para confirmar.");
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    input.disabled = false;
+    input.value = "";
+    if (submit) submit.disabled = false;
+  }
+}
+
+async function saveMyAccount(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (form.dataset.busy) return;
+  const password = form.id === "myPasswordForm";
+  const feedback = $(password ? "myPasswordFeedback" : "myAccountFeedback");
+  const button = form.querySelector("button[type='submit']");
+  const body = password ? Object.fromEntries(new FormData(form)) : { name: $("myAccountName").value, ...($("myAccountPicture").value !== state.adminUser.picture ? { picture: $("myAccountPicture").value } : {}) };
+  form.dataset.busy = "true";
+  button.disabled = true;
+  feedback.textContent = "Salvando…";
+  feedback.classList.remove("error");
+  try {
+    const result = await api(password ? "/api/admin/me/password" : "/api/admin/me", { method: password ? "POST" : "PATCH", body: JSON.stringify(body) });
+    state.adminUser = result.user;
+    if (state.content?.users) upsertAdminCollection("users", result.user);
+    await loadAdminUser();
+    if (password) form.reset();
+    feedback.textContent = password ? "Senha alterada. As outras sessões foram encerradas." : "Perfil atualizado.";
+  } catch (error) {
+    feedback.textContent = error.message;
+    feedback.classList.add("error");
+  } finally {
+    delete form.dataset.busy;
+    button.disabled = false;
+  }
 }
 
 function escapeHtml(value = "") {
@@ -3093,7 +3187,8 @@ function renderMovies(options = {}) {
 function fillMovieForm(movie) {
   syncCreationControl("movie", "cancelMovieCreateButton", "deleteMovieButton", Boolean(movie));
   setDisabled("deleteMovieButton", !movie);
-  setDisabled("addSessionButton", !movie);
+  setDisabled("addSessionButton", false);
+  $("addSessionButtonLabel").textContent = movie ? "Adicionar sessão" : "Salvar rascunho e adicionar sessão";
   $("movieFormHint").textContent = movie ? `Editando ${movie.title}` : "Novo filme";
   $("movieId").value = movie?.id || "";
   $("movieWorkflowStatus").value = movie?.workflowStatus || "draft";
@@ -3123,6 +3218,17 @@ function fillMovieForm(movie) {
   renderSessions(state.movieDraftSessions);
   setMovieWizardStep(0);
   renderTmdbMissingFields([]);
+  state.movieFormSnapshot = movieFormSnapshot();
+}
+
+function movieFormSnapshot() {
+  return JSON.stringify({ ...getMoviePayload($("movieWorkflowStatus").value), position: $("movieCatalogPosition").value });
+}
+
+function confirmMovieNavigation() {
+  if (state.savingMovie || state.savingSession) return false;
+  return !state.movieFormSnapshot || state.movieFormSnapshot === movieFormSnapshot()
+    || confirm("Há alterações não salvas no filme. Descartar essas alterações?");
 }
 
 const TMDB_FIELD_TARGETS = {
@@ -3291,7 +3397,7 @@ function renderSessions(sessions) {
       <div class="empty-state">
         <strong>Nenhuma sessão cadastrada</strong>
         <span>O filme está salvo normalmente. Adicione um horário apenas quando a programação estiver definida.</span>
-        ${$("movieId").value ? `<button class="ghost-button" type="button" data-admin-command="open-session-editor">Adicionar primeira sessão</button>` : `<span class="empty-state-note">Salve o filme antes de cadastrar sessões.</span>`}
+        <button class="ghost-button" type="button" data-admin-command="open-session-editor">${$("movieId").value ? "Adicionar primeira sessão" : "Salvar rascunho e adicionar sessão"}</button>
       </div>
     `;
     return;
@@ -3390,13 +3496,14 @@ function renderSessionTicketTypeOptions(selectedIds = []) {
 }
 
 function renderRoomOptions() {
-  const rooms = state.content?.rooms || [];
+  const rooms = (state.content?.rooms || []).filter((room) => room.active !== false && (!room.status || room.status === "active"));
   $("sessionRoom").innerHTML = rooms
-    .map((room) => `<option value="${room.name} (${room.technology || "Sala"})">${room.name}</option>`)
-    .join("");
+    .map((room) => `<option value="${escapeHtml(`${room.name} (${room.technology || "Sala"})`)}" data-room-id="${escapeHtml(room.id)}">${escapeHtml(room.name)}</option>`)
+    .join("") || `<option value="">Nenhuma sala ativa</option>`;
 }
 
 function selectMovie(id) {
+  if (!confirmMovieNavigation()) return;
   state.creating.movie = false;
   state.selectedMovieId = id;
   renderMovies();
@@ -3471,6 +3578,10 @@ function applySessionMutation(movieId, session, removed = false) {
   else movie.sessions.push(session);
   movie.sessions.sort((a, b) => String(`${a.date} ${a.time}`).localeCompare(String(`${b.date} ${b.time}`)));
   movie.updatedAt = new Date().toISOString();
+  if (movieId === ($("movieId").value || state.selectedMovieId)) {
+    state.movieDraftSessions = movie.sessions.map((item) => ({ ...item }));
+    renderSessions(state.movieDraftSessions);
+  }
   renderGlobalSessions();
   renderInsights();
 }
@@ -3499,7 +3610,7 @@ async function saveMovieOrder(ids, options = {}) {
         to: index + 1
       }))
       .filter((movie) => movie.from && movie.to > movie.from);
-    if (options.render !== false) renderMovies();
+    if (options.render !== false) renderMovies({ preserveForm: true });
     setStatus("Salvo");
     if (options.notify !== false) showToast(`Prioridade atualizada. ${loweredMoviePriorityMessage(loweredMovies)}`);
     return { movies: state.content.movies, loweredMovies };
@@ -3576,17 +3687,19 @@ function toggleMovieMenu(movieId) {
 }
 
 function newMovie() {
+  if (!confirmMovieNavigation()) return;
   state.creating.movie = true;
   state.selectedMovieId = "";
   $("moviesList").innerHTML = creationPlaceholder("Novo filme em edição", "Preencha o quadro à direita e publique quando estiver pronto.");
   fillMovieForm(null);
   $("movieWorkflowStatus").value = "draft";
   $("movieStatus").value = "upcoming";
+  state.movieFormSnapshot = movieFormSnapshot();
 }
 
 function getMoviePayload(action = "published") {
   const workflowStatus = action === "draft" ? "draft" : "published";
-  const status = action === "draft" ? "hidden" : $("movieStatus").value;
+  const status = $("movieStatus").value;
   return {
     id: $("movieId").value || $("movieSlug").value || undefined,
     slug: $("movieSlug").value || slugify($("movieTitle").value),
@@ -3614,9 +3727,12 @@ function getMoviePayload(action = "published") {
   };
 }
 
-async function saveMovieWithAction(action = "published") {
+async function saveMovieWithAction(action = "published", options = {}) {
+  if (state.savingMovie) return;
+  if (!validateMovieWizardStep(4, action === "published")) return;
+  state.savingMovie = true;
+  ["movieDraftButton", "moviePublishButton", "addSessionButton"].forEach((id) => setDisabled(id, true));
   try {
-    if (!validateMovieWizardStep(4, action === "published")) return;
     const requestedPosition = Number($("movieCatalogPosition").value || 1);
     const payload = getMoviePayload(action);
     const existingId = $("movieId").value || state.selectedMovieId;
@@ -3626,16 +3742,29 @@ async function saveMovieWithAction(action = "published") {
       : await api("/api/movies", { method: "POST", body: JSON.stringify(payload) });
     state.creating.movie = false;
     state.selectedMovieId = saved.id;
+    $("movieId").value = saved.id;
     upsertAdminCollection("movies", saved);
-    const priorityChange = await applyMovieCatalogPosition(saved.id, requestedPosition);
+    let priorityChange;
+    try {
+      priorityChange = await applyMovieCatalogPosition(saved.id, requestedPosition);
+    } catch (error) {
+      renderMovies();
+      showToast(`Filme salvo, mas a posição no catálogo não foi alterada: ${error.message}`, "error");
+      return saved;
+    }
     renderMovies();
+    if (options.quiet) return saved;
     showToast(action === "draft" ? "Rascunho salvo." : "Filme publicado.");
     showSuccess(
       action === "draft" ? "Rascunho salvo" : "Filme publicado",
       `${saved.title} foi atualizado na posição ${priorityChange.position} do catálogo administrativo. ${loweredMoviePriorityMessage(priorityChange.loweredMovies)}`
     );
+    return saved;
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    state.savingMovie = false;
+    ["movieDraftButton", "moviePublishButton", "addSessionButton"].forEach((id) => setDisabled(id, false));
   }
 }
 
@@ -3716,11 +3845,19 @@ function renderSessionLinkedTickets(sessionId) {
     `;
 }
 
-function openSessionEditor(sessionId = "") {
-  const movieId = $("movieId").value || state.selectedMovieId;
-  if (!movieId) {
-    showToast("Salve o filme antes de adicionar uma sessão.", "error");
+async function openSessionEditor(sessionId = "") {
+  if (!sessionId && !$("movieDuration").value.trim()) {
+    showToast("Informe a duração do filme antes de criar sessões.", "error");
+    setMovieWizardStep(1);
+    $("movieDuration").focus();
     return;
+  }
+  let movieId = $("movieId").value || state.selectedMovieId;
+  if (!movieId) {
+    const saved = await saveMovieWithAction("draft", { quiet: true });
+    if (!saved) return;
+    movieId = saved.id;
+    setMovieWizardStep(3);
   }
   const session = (state.movieDraftSessions || []).find((item) => item.id === sessionId);
   state.editingSessionId = session?.id || "";
@@ -3732,8 +3869,15 @@ function openSessionEditor(sessionId = "") {
   $("sessionDate").value = session?.date || (releaseDate >= adminTodayKey() ? releaseDate : adminTodayKey());
   $("sessionTime").value = session?.time || "";
   $("sessionFormat").value = session?.format || "2D Dublado";
-  if (session?.room && [...$("sessionRoom").options].some((option) => option.value === session.room)) {
-    $("sessionRoom").value = session.room;
+  renderRoomOptions();
+  if (session?.room) {
+    const option = [...$("sessionRoom").options].find((item) => item.value === session.room || (session.roomId && item.dataset.roomId === session.roomId));
+    if (option) $("sessionRoom").value = option.value;
+    else {
+      const legacy = new Option(`${session.room} (indisponível para novas sessões)`, session.room, true, true);
+      legacy.dataset.roomId = session.roomId || "";
+      $("sessionRoom").add(legacy);
+    }
   }
   renderSessionTicketTypeOptions(Array.isArray(session?.ticketTypeIds) ? session.ticketTypeIds : []);
   $("sessionStatus").value = session?.status || "available";
@@ -3748,6 +3892,7 @@ function openSessionEditor(sessionId = "") {
 }
 
 async function saveSession() {
+  if (state.savingSession) return;
   const movieId = $("movieId").value || state.selectedMovieId;
   if (!movieId) {
     showToast("Salve o filme antes de adicionar uma sessão.", "error");
@@ -3765,6 +3910,10 @@ async function saveSession() {
 
   const sessionId = state.editingSessionId;
   const range = !sessionId && $("sessionCreationMode").value === "range";
+  if (range && !document.querySelector("#sessionWeekdays input:checked")) {
+    showToast("Selecione pelo menos um dia da semana.", "error");
+    return;
+  }
   if (range && (!$('sessionDateEnd').value || $('sessionDateEnd').value < $('sessionDate').value)) {
     showToast("A data final precisa ser igual ou posterior à data inicial.", "error");
     return;
@@ -3781,6 +3930,7 @@ async function saveSession() {
     time: $("sessionTime").value,
     format: $("sessionFormat").value,
     room: $("sessionRoom").value,
+    roomId: $("sessionRoom").selectedOptions[0]?.dataset.roomId || "",
     ticketTypeIds,
     status: $("sessionStatus").value
   };
@@ -3795,30 +3945,43 @@ async function saveSession() {
       if (!confirm("Esta sessão possui vendas. Confirmar a alteração pode mudar os dados dos ingressos já emitidos e, em caso de cancelamento, exigir reembolso.")) return;
       const reason = prompt("Informe o motivo da alteração:", "Ajuste operacional da sessão");
       if (reason === null) return;
+      if (reason.trim().length < 6) { showToast("Informe um motivo com pelo menos 6 caracteres.", "error"); return; }
       payload.confirmSalesImpact = true;
       payload.changeReason = reason.trim();
     }
   }
 
   try {
+    state.savingSession = true;
     setDisabled("saveSessionButton", true);
     const endpoint = `/api/movies/${encodeURIComponent(movieId)}/sessions${sessionId ? `/${encodeURIComponent(sessionId)}` : ""}`;
     const persistSession = () => api(endpoint, { method: sessionId ? "PUT" : "POST", body: JSON.stringify(payload) });
     let result;
-    try {
-      result = await persistSession();
-    } catch (error) {
-      if (error.code !== "SESSION_ROOM_CONFLICT") throw error;
-      const conflicts = error.payload?.error?.conflicts || [];
-      const details = [...new Set(conflicts.map((conflict) => `${conflict.movieTitle} em ${new Date(`${conflict.date}T12:00:00`).toLocaleDateString("pt-BR")} às ${conflict.time}`))].join("\n");
-      if (!confirm(`Conflito de sala detectado:\n\n${details}\n\nDeseja salvar mesmo assim?`)) return;
-      payload.confirmRoomConflict = true;
-      result = await persistSession();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        result = await persistSession();
+        break;
+      } catch (error) {
+        if (error.code === "SESSION_CHANGE_CONFIRMATION_REQUIRED" && !payload.confirmSalesImpact) {
+          if (!confirm(error.message)) return;
+          const reason = prompt("Informe o motivo da alteração (mínimo de 6 caracteres):", "");
+          if (reason === null) return;
+          if (reason.trim().length < 6) throw new Error("Informe um motivo com pelo menos 6 caracteres.");
+          payload.confirmSalesImpact = true;
+          payload.changeReason = reason.trim();
+        } else if (error.code === "SESSION_ROOM_CONFLICT" && !payload.confirmRoomConflict) {
+          const conflicts = error.payload?.error?.conflicts || [];
+          const details = [...new Set(conflicts.map((conflict) => `${conflict.movieTitle} em ${new Date(`${conflict.date}T12:00:00`).toLocaleDateString("pt-BR")} às ${conflict.time}`))].join("\n");
+          if (!confirm(`Conflito de sala detectado:\n\n${details}\n\nDeseja salvar mesmo assim?`)) return;
+          payload.confirmRoomConflict = true;
+        } else throw error;
+      }
     }
+    if (!result) throw new Error("Não foi possível confirmar a sessão. Revise a programação.");
     closeSessionEditor();
     if (range) (result.created || []).forEach((session) => applySessionMutation(movieId, session));
     else applySessionMutation(movieId, result);
-    renderMovies();
+    renderMovies({ preserveForm: true });
     setMovieWizardStep(3);
     if (range) {
       showSuccess("Programação criada", `${Number(result.totalCreated || 0)} sessão(ões) adicionada(s)${result.totalSkipped ? ` e ${result.totalSkipped} duplicada(s) ignorada(s)` : ""}.`);
@@ -3829,6 +3992,7 @@ async function saveSession() {
   } catch (error) {
     showToast(error.message, "error");
   } finally {
+    state.savingSession = false;
     setDisabled("saveSessionButton", false);
   }
 }
@@ -3841,7 +4005,7 @@ async function removeSession(sessionId) {
     await api(`/api/movies/${encodeURIComponent(movieId)}/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
     closeSessionEditor();
     applySessionMutation(movieId, session, true);
-    renderMovies();
+    renderMovies({ preserveForm: true });
     setMovieWizardStep(3);
     showToast("Sessão excluída.");
   } catch (error) {
@@ -3869,7 +4033,10 @@ async function archiveMovie(id) {
 async function duplicateMovie(id) {
   const movie = state.content?.movies?.find((item) => item.id === id);
   if (!movie) return;
-  const slug = `${movie.slug || movie.id}-copia`;
+  const baseSlug = `${movie.slug || movie.id}-copia`;
+  let slug = baseSlug;
+  let suffix = 2;
+  while ((state.content?.movies || []).some((item) => item.id === slug || item.slug === slug)) slug = `${baseSlug}-${suffix++}`;
   try {
     const copy = await api("/api/movies", {
       method: "POST",
@@ -3896,7 +4063,7 @@ async function duplicateMovie(id) {
 function enhanceImageUploads() {
   document.querySelectorAll('input[type="file"][accept*="image"]').forEach((input) => {
     const label = input.closest("label");
-    if (!label || label.dataset.enhancedUpload) return;
+    if (!label || label.dataset.enhancedUpload || label.classList.contains("photo-picker")) return;
     label.dataset.enhancedUpload = "true";
     label.classList.add("enhanced-upload");
     const action = document.createElement("span");
@@ -4474,7 +4641,7 @@ function globalSessionRoomKey(session = {}) {
 function globalSessionDuration(movie = {}) {
   const raw = String(movie.duration || "").trim().toLowerCase();
   const hours = Number(raw.match(/(\d+(?:[.,]\d+)?)\s*h/)?.[1]?.replace(",", ".") || 0);
-  const minutes = Number(raw.match(/(\d+)\s*(?:m|min)/)?.[1] || 0);
+  const minutes = Number(raw.match(/(\d+)\s*(?:m|min)/)?.[1] || raw.match(/h\s*(\d+)\s*$/)?.[1] || 0);
   if (hours || minutes) return Math.max(1, Math.round(hours * 60 + minutes));
   const numeric = Number(raw.replace(/[^\d.,]/g, "").replace(",", "."));
   return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 100;
@@ -4498,17 +4665,19 @@ function suggestedSessionSchedule() {
   const movie = currentMovie();
   if (!movie || !date || !room) return null;
 
-  const duration = globalSessionDuration(movie);
-  const turnaround = 20;
-  const roomKey = globalSessionRoomKey({ room });
+  const duration = globalSessionDuration({ ...movie, duration: $("movieDuration")?.value || movie.duration });
+  const selectedRoomId = $("sessionRoom")?.selectedOptions[0]?.dataset.roomId;
+  const selectedRoom = (state.content?.rooms || []).find((item) => item.id === selectedRoomId);
+  const turnaround = Number(selectedRoom?.cleanupMinutes ?? 20);
+  const roomKey = globalSessionRoomKey({ room, roomId: selectedRoomId });
+  const dayStart = globalSessionTime({ date, time: "00:00" });
   const occupied = globalSessionEntries()
     .filter((entry) => entry.session.id !== state.editingSessionId
-      && entry.session.date === date
       && entry.roomKey === roomKey
       && !["cancelled", "hidden", "archived"].includes(String(entry.session.status || "").toLowerCase()))
     .map((entry) => ({
-      start: sessionTimeMinutes(entry.session.time),
-      end: sessionTimeMinutes(entry.session.time) + globalSessionDuration(entry.movie)
+      start: (entry.startsAt - dayStart) / 60000,
+      end: (entry.endsAt - dayStart) / 60000
     }))
     .filter((slot) => Number.isFinite(slot.start) && Number.isFinite(slot.end));
 
@@ -4534,7 +4703,10 @@ function updateSessionScheduleSuggestion({ apply = false } = {}) {
   const useButton = $("sessionUseSuggestedTime");
   if (!target) return;
   if (state.editingSessionId) {
-    target.textContent = "O horário existente será mantido até que você o altere.";
+    const roomId = $("sessionRoom")?.selectedOptions[0]?.dataset.roomId;
+    const room = (state.content?.rooms || []).find((item) => item.id === roomId);
+    const cleanupMinutes = Number(room?.cleanupMinutes ?? 20);
+    target.textContent = `O horário existente será mantido até que você o altere. A sala exige ${cleanupMinutes} min de limpeza entre sessões.`;
     useButton.hidden = true;
     return;
   }
@@ -4580,9 +4752,11 @@ function globalSessionConflictMap(entries) {
     if (["cancelled", "hidden", "archived"].includes(String(entry.session.status || "").toLowerCase())) return;
     for (let cursor = index + 1; cursor < entries.length; cursor += 1) {
       const candidate = entries[cursor];
-      if (candidate.startsAt >= entry.endsAt) break;
+      const room = (state.content?.rooms || []).find((item) => `id:${item.id}` === entry.roomKey);
+      const gapMs = Number(room?.cleanupMinutes ?? 20) * 60000;
+      if (candidate.startsAt >= entry.endsAt + gapMs) break;
       if (candidate.roomKey !== entry.roomKey || ["cancelled", "hidden", "archived"].includes(String(candidate.session.status || "").toLowerCase())) continue;
-      if (entry.startsAt < candidate.endsAt && candidate.startsAt < entry.endsAt) {
+      if (entry.startsAt < candidate.endsAt + gapMs && candidate.startsAt < entry.endsAt + gapMs) {
         conflicts.set(entry.session.id, [...(conflicts.get(entry.session.id) || []), candidate]);
         conflicts.set(candidate.session.id, [...(conflicts.get(candidate.session.id) || []), entry]);
       }
@@ -4904,7 +5078,7 @@ function sessionAutocorrectPayload() {
     to: state.globalSessionFilters.to,
     roomId: state.globalSessionFilters.roomId,
     movieId: state.globalSessionFilters.movieId,
-    turnaroundMinutes: Number($("sessionAutocorrectTurnaround")?.value || 20),
+    turnaroundMinutes: Number($("sessionAutocorrectTurnaround")?.value ?? 20),
     stepMinutes: Number($("sessionAutocorrectStep")?.value || 5),
     includeSales: Boolean($("sessionAutocorrectIncludeSales")?.checked)
   };
@@ -5050,6 +5224,7 @@ function fillRoomForm(room) {
   $("roomName").value = room?.name || "";
   $("roomCapacity").value = room?.capacity || 80;
   $("roomTechnology").value = room?.technology || "";
+  $("roomCleanupMinutes").value = String(room?.cleanupMinutes ?? 20);
   $("roomStatus").value = room?.status || "active";
   state.roomSeatDraft = defaultRoomSeatDraft(room);
   state.roomSeatSelection = null;
@@ -5064,6 +5239,7 @@ async function saveRoom(event) {
       name: $("roomName").value,
       capacity: Number($("roomCapacity").value || 80),
       technology: $("roomTechnology").value,
+      cleanupMinutes: Number($("roomCleanupMinutes").value),
       status: $("roomStatus").value,
       seatSelectionEnabled: Boolean(state.roomSeatDraft?.enabled),
       seatTypes: state.roomSeatDraft?.seatTypes || [],
@@ -5092,6 +5268,8 @@ async function saveRoom(event) {
     }
     renderRooms();
     renderRoomOptions();
+    renderGlobalSessions();
+    updateSessionScheduleSuggestion();
     showToast("Sala salva.");
   } catch (error) {
     showToast(error.message, "error");
@@ -11114,9 +11292,11 @@ function renderUsers() {
   $("usersList").innerHTML = items.length
     ? pagination.pageItems.map((item) => `
         <button class="list-item ${item.id === state.selectedUserId ? "active" : ""}" type="button" data-admin-select-kind="user" data-admin-select-id="${escapeHtml(item.id)}">
-          <span>
-            <span class="list-title">${escapeHtml(item.name)}</span>
+          <span class="staff-list-identity">
+            <span class="staff-avatar" aria-hidden="true">${staffAvatarMarkup(item)}</span>
+            <span><span class="list-title">${escapeHtml(item.name)}</span>
             <span class="list-meta">${escapeHtml(item.email || "sem email")} • ${escapeHtml(adminRoleLabel(item.role))} • ${item.twoFactorEnabled ? "2FA ativo" : "2FA pendente"}${item.useCustomPermissions ? " • acesso personalizado" : ""}</span>
+            </span>
           </span>
           <span class="badge">${item.active ? "ativo" : "off"}</span>
         </button>
@@ -11145,6 +11325,10 @@ function fillUserForm(item) {
   $("userName").value = item?.name || "";
   $("userEmail").value = item?.email || "";
   $("userPassword").value = "";
+  $("userPassword").required = !item;
+  $("userPicture").value = item?.picture || "";
+  $("userRemovePhoto").disabled = !item?.picture;
+  renderStaffAvatar($("userAvatar"), item || {});
   $("userRole").value = item?.role === "editor" ? "manager" : item?.role || "operator";
   $("userActive").checked = item?.active !== false;
   $("userUseCustomPermissions").checked = Boolean(item?.useCustomPermissions);
@@ -11153,12 +11337,17 @@ function fillUserForm(item) {
 
 async function saveUser(event) {
   event.preventDefault();
+  if (state.savingUser) return;
+  state.savingUser = true;
+  const button = $("userForm").querySelector("button[type='submit']");
+  if (button) button.disabled = true;
   try {
     const payload = {
       id: $("userId").value || undefined,
       name: $("userName").value,
       email: $("userEmail").value,
       password: $("userPassword").value || undefined,
+      ...($("userPicture").value !== (currentUser()?.picture || "") ? { picture: $("userPicture").value } : {}),
       accountType: "team",
       role: $("userRole").value,
       active: $("userActive").checked,
@@ -11175,9 +11364,13 @@ async function saveUser(event) {
     upsertAdminCollection("users", saved);
     renderUsers();
     renderCustomerUsers();
+    if (saved.id === state.adminUser?.id) await loadAdminUser();
     showSuccess("Usuário salvo", `${saved.name} foi atualizado.`);
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    state.savingUser = false;
+    if (button) button.disabled = false;
   }
 }
 
@@ -12611,6 +12804,7 @@ function applyRbacVisibility() {
     has("marketing.view") && "marketingPanel",
     has("club.view") && "clubPanel",
     "usersPanel",
+    "myAccountPanel",
     has("integrations.view") && "integrationsPanel",
     has("logs.view") && "logsPanel"
   ].filter(Boolean));
@@ -13004,18 +13198,28 @@ function bindEvents() {
     toggleAdminProfileMenu();
   });
   $("accountTwoFactorButton")?.addEventListener("click", () => void openTwoFactorSettings());
+  $("myAccountTwoFactorButton")?.addEventListener("click", () => void openTwoFactorSettings());
+  $("myAccountForm").addEventListener("submit", saveMyAccount);
+  $("myPasswordForm").addEventListener("submit", saveMyAccount);
+  ["myAccount", "user"].forEach((prefix) => {
+    $(prefix + "Photo").addEventListener("change", (event) => void uploadProfilePhoto(prefix, event.target));
+    $(prefix + "RemovePhoto").addEventListener("click", () => {
+      $(prefix + "Picture").value = "";
+      renderStaffAvatar($(prefix + "Avatar"), { name: $(prefix + "Name").value });
+      $(prefix + "RemovePhoto").disabled = true;
+    });
+  });
   $("adminSecurityPolicyForm")?.addEventListener("submit", saveAdminSecurityPolicy);
   $("profileLogoutButton")?.addEventListener("click", logoutAdmin);
   document.querySelectorAll("[data-profile-action]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.profileAction === "account") {
         closeAdminProfileMenu();
-        activatePanel("usersPanel", { scroll: true });
-        setAdminSubtab("accounts", "security", { focus: true });
+        activatePanel("myAccountPanel", { scroll: true });
         return;
       }
       closeAdminProfileMenu();
-      showToast("Preferências adicionais estarão disponíveis em breve.");
+      void openTwoFactorSettings();
     });
   });
   document.querySelectorAll("[data-validation-mode]").forEach((button) => {
@@ -13093,6 +13297,8 @@ function bindEvents() {
         closeTwoFactorSettings();
         await loadContent();
       }
+      closeTwoFactorSettings();
+      await loadAdminUser();
     }
   });
 
@@ -13236,6 +13442,18 @@ function bindEvents() {
   $("movieForm").addEventListener("submit", saveMovie);
   $("deleteMovieButton").addEventListener("click", () => deleteMovie());
   $("addSessionButton").addEventListener("click", () => openSessionEditor());
+  $("sessionEditor").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target.matches("input, select")) {
+      event.preventDefault();
+      void saveSession();
+    }
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (state.movieFormSnapshot && state.movieFormSnapshot !== movieFormSnapshot()) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
   $("sessionCreationMode").addEventListener("change", syncSessionCreationMode);
   $("sessionDate").addEventListener("change", () => {
     if (state.editingSessionId) {
@@ -13947,6 +14165,7 @@ function closeAdminDrawer() {
 
 function activatePanel(panelId, options = {}) {
   const target = $(panelId) ? panelId : "dashboardPanel";
+  if (target === "myAccountPanel") fillMyAccount();
   document.querySelectorAll(".nav-button").forEach((item) => item.classList.toggle("active", item.dataset.panel === target));
   document.querySelectorAll(".panel").forEach((item) => item.classList.toggle("active", item.id === target));
   localStorage.setItem("cine_admin_panel", target);

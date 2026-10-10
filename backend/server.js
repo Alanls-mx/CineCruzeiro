@@ -163,7 +163,7 @@ let crmWebhookConfigVersion = 0;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "048_restore_social_studio.sql";
+const LATEST_SCHEMA_MIGRATION = "050_room_cleanup_minutes.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -1092,6 +1092,8 @@ const LOGIN_FAILURE_MAX_ENTRIES = 20000;
 const ticketTransferLimits = transferLimits();
 
 const RATE_LIMIT_RULES = [
+  { id: "admin-password-change", limit: 6, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/me/password" },
+  { id: "admin-profile-photo", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/profile/photo" },
   { id: "studio-automation", limit: 40, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/studio/campaigns/generate" },
   { id: "customer-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/auth/login" },
   { id: "admin-login", limit: 12, windowMs: 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/admin/login" },
@@ -1422,6 +1424,9 @@ function repositoryMutationRoute(pathname, method) {
     || /^\/api\/users(?:\/[^/]+)?$/.test(pathname)
     || (/^\/api\/orders\/[^/]+$/.test(pathname) && method === "PATCH")
     || pathname === "/api/admin/logout"
+    || pathname === "/api/admin/me"
+    || pathname === "/api/admin/me/password"
+    || pathname === "/api/admin/profile/photo"
     || pathname.startsWith("/api/admin/2fa/");
 }
 
@@ -1501,7 +1506,7 @@ function requiredAdminPermission(pathname, method) {
   }
   if (pathname.startsWith("/api/admin/marketing")) return method === "GET" ? "marketing.view" : "marketing.manage";
   if (/^\/api\/admin\/(tickets|orders)\/[^/]+\/print$/.test(pathname)) return "orders.print";
-  if (pathname === "/api/admin/me" || pathname === "/api/admin/logout" || pathname.startsWith("/api/admin/2fa/")) return "";
+  if (["/api/admin/me", "/api/admin/me/password", "/api/admin/profile/photo", "/api/admin/logout"].includes(pathname) || pathname.startsWith("/api/admin/2fa/")) return "";
   if (pathname === "/api/admin/security-policy") return method === "GET" ? "settings.view" : "settings.manage";
   if (pathname === "/api/admin/content") return "";
   if (pathname === "/api/admin/sessions/autocorrect") return "sessions.autocorrect";
@@ -2335,6 +2340,16 @@ function roomDisplayLabel(room) {
 function sessionWithCurrentRoom(db, session) {
   const room = roomForSession(db, session);
   return room ? { ...session, roomId: room.id, room: roomDisplayLabel(room) } : session;
+}
+
+function validateSessionRoom(db, session, existing = {}) {
+  const rooms = db.rooms || [];
+  const room = rooms.find((item) => session.roomId ? item.id === session.roomId : [item.name, roomDisplayLabel(item)].includes(session.room));
+  const existingRoom = roomForSession(db, existing);
+  if (!room || ((room.active === false || (room.status && room.status !== "active")) && existingRoom?.id !== room.id)) {
+    throw Object.assign(new Error("Selecione uma sala ativa cadastrada para esta sessão."), { statusCode: 422, code: "SESSION_ROOM_INVALID" });
+  }
+  return { ...session, roomId: room.id, room: roomDisplayLabel(room) };
 }
 
 function roomSeatTypes(room) {
@@ -5933,7 +5948,21 @@ async function deleteUnreferencedAssets(db, urls = []) {
 }
 
 function normalizeMovie(input, existing = {}) {
-  const title = String(input.title || existing.title || "Novo Filme").trim();
+  const title = String(input.title ?? existing.title ?? "").trim();
+  if (!title) throw Object.assign(new Error("Informe o título do filme."), { statusCode: 422, code: "MOVIE_TITLE_REQUIRED" });
+  if (input.releaseDate && !isValidCalendarDate(calendarDateKey(input.releaseDate))) {
+    throw Object.assign(new Error("Informe uma data de estreia válida."), { statusCode: 422, code: "MOVIE_DATE_INVALID" });
+  }
+  const duration = String(input.duration ?? existing.duration ?? "").trim();
+  const durationParts = duration.match(/^(?:(\d+(?:[.,]\d+)?)\s*h(?:\s*(\d+)\s*(?:m|min(?:utos?)?)?)?|(?:(\d+)\s*(?:m|min(?:utos?)?)?))$/i);
+  const trailingMinutes = durationParts?.[2] ? Number(durationParts[2]) : 0;
+  const durationValue = durationParts
+    ? Number(String(durationParts[1] || "0").replace(",", ".")) * 60 + trailingMinutes + Number(durationParts[3] || 0)
+    : 0;
+  if (input.duration !== undefined && duration && (!durationParts || trailingMinutes >= 60
+    || durationValue < 1 || durationValue > 1440)) {
+    throw Object.assign(new Error("Informe uma duração válida, como 120 min ou 2h 10min."), { statusCode: 422, code: "MOVIE_DURATION_INVALID" });
+  }
   const id = String(input.id || existing.id || slugify(title) || `filme-${Date.now()}`);
   const workflowStatus = normalizeMovieWorkflow(input, existing);
   const slug = String(input.slug || existing.slug || slugify(title) || id).trim();
@@ -5978,10 +6007,10 @@ function normalizeMovie(input, existing = {}) {
     sortOrder: Number(input.sortOrder ?? input.displayOrder ?? existing.sortOrder ?? existing.displayOrder ?? 100),
     status: publicMovieStatus(input, existing, workflowStatus),
     title,
-    originalTitle: input.originalTitle || existing.originalTitle || "",
-    synopsis: input.synopsis || existing.synopsis || "",
-    duration: input.duration !== undefined ? String(input.duration || "").trim() : existing.duration || "",
-    director: input.director || existing.director || "",
+    originalTitle: input.originalTitle ?? existing.originalTitle ?? "",
+    synopsis: input.synopsis ?? existing.synopsis ?? "",
+    duration,
+    director: input.director ?? existing.director ?? "",
     metadata,
     genre: Array.isArray(input.genre)
       ? input.genre
@@ -5990,16 +6019,16 @@ function normalizeMovie(input, existing = {}) {
           .map((item) => item.trim())
           .filter(Boolean),
     rating: input.rating || existing.rating || "L",
-    posterUrl: input.posterUrl || existing.posterUrl || "",
-    backdropUrl: input.backdropUrl || existing.backdropUrl || "",
-    trailerYoutubeId: input.trailerYoutubeId || existing.trailerYoutubeId || "",
+    posterUrl: input.posterUrl ?? existing.posterUrl ?? "",
+    backdropUrl: input.backdropUrl ?? existing.backdropUrl ?? "",
+    trailerYoutubeId: input.trailerYoutubeId ?? existing.trailerYoutubeId ?? "",
     trailerVideoUrl: input.trailerVideoUrl !== undefined ? String(input.trailerVideoUrl || "").trim() : existing.trailerVideoUrl || "",
     localTrailerUrl: existing.localTrailerUrl || "",
     trailerSourceUrl: existing.trailerSourceUrl || "",
     trailerCacheStatus: existing.trailerCacheStatus || "idle",
     trailerCachedAt: existing.trailerCachedAt || "",
     trailerCacheError: existing.trailerCacheError || "",
-    isHighlight: Boolean(input.isHighlight),
+    isHighlight: input.isHighlight !== undefined ? Boolean(input.isHighlight) : Boolean(existing.isHighlight),
     highlightTrailerBackground: input.highlightTrailerBackground !== undefined
       ? Boolean(input.highlightTrailerBackground)
       : existing.highlightTrailerBackground !== false,
@@ -6097,6 +6126,9 @@ function sessionDatesInRange(dateFrom, dateTo, weekdays = []) {
 }
 
 function createMovieSessionBatch(input, movieId, existingSessions = [], ticketTypes = []) {
+  if (input.weekdays !== undefined && (!Array.isArray(input.weekdays) || !input.weekdays.length || input.weekdays.some((day) => !Number.isInteger(Number(day)) || Number(day) < 0 || Number(day) > 6))) {
+    throw Object.assign(new Error("Selecione pelo menos um dia da semana válido."), { statusCode: 422, code: "SESSION_WEEKDAYS_REQUIRED" });
+  }
   const dateFrom = String(input.dateFrom || input.date || "").slice(0, 10);
   const dateTo = String(input.dateTo || input.dateEnd || dateFrom).slice(0, 10);
   const times = [...new Set((Array.isArray(input.times) ? input.times : [input.time])
@@ -6204,7 +6236,7 @@ function syncSessionSnapshotRecords(db, movie, session, options = {}) {
 function movieDurationMinutes(movie = {}) {
   const raw = String(movie.duration || "").trim().toLowerCase();
   const hours = Number(raw.match(/(\d+(?:[.,]\d+)?)\s*h/)?.[1]?.replace(",", ".") || 0);
-  const minutes = Number(raw.match(/(\d+)\s*(?:m|min)/)?.[1] || 0);
+  const minutes = Number(raw.match(/(\d+)\s*(?:m|min)/)?.[1] || raw.match(/h\s*(\d+)\s*$/)?.[1] || 0);
   if (hours || minutes) return Math.max(1, Math.round(hours * 60 + minutes));
   const numeric = Number(raw.replace(/[^\d.,]/g, "").replace(",", "."));
   return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : 100;
@@ -6213,6 +6245,7 @@ function movieDurationMinutes(movie = {}) {
 function sessionRoomConflicts(db, movie, candidate, options = {}) {
   return findSessionRoomConflicts({
     movies: db.movies || [],
+    rooms: db.rooms || [],
     candidateMovie: movie,
     candidate,
     ignoreSessionId: options.ignoreSessionId,
@@ -6221,6 +6254,11 @@ function sessionRoomConflicts(db, movie, candidate, options = {}) {
 }
 
 function requireSessionRoomConflictConfirmation(res, conflicts, confirmed) {
+  const cleanupMinutes = Math.max(0, ...conflicts.map((item) => Number(item.cleanupMinutes || 0)));
+  if (cleanupMinutes > 0) {
+    sendJson(res, 409, { error: { code: "SESSION_CLEANUP_CONFLICT", message: `A sala exige pelo menos ${cleanupMinutes} minutos de limpeza entre o fim de um filme e a próxima sessão. Escolha outro horário ou ajuste o intervalo no cadastro da sala.`, conflicts } });
+    return true;
+  }
   if (!conflicts.length || confirmed === true) return false;
   sendJson(res, 409, {
     error: {
@@ -6354,6 +6392,10 @@ function archiveFinishedSessions(db, now = new Date(), expiredOrders = []) {
 }
 
 function normalizeRoom(input, existing = {}) {
+  const cleanupMinutes = Number(input.cleanupMinutes ?? existing.cleanupMinutes ?? 20);
+  if (!Number.isInteger(cleanupMinutes) || cleanupMinutes < 0 || cleanupMinutes > 120) {
+    throw Object.assign(new Error("Informe um intervalo de limpeza entre 0 e 120 minutos inteiros."), { statusCode: 422, code: "ROOM_CLEANUP_INVALID" });
+  }
   const name = String(input.name || existing.name || "Nova Sala").trim();
   const rawTypes = Array.isArray(input.seatTypes) ? input.seatTypes : (Array.isArray(existing.seatTypes) ? existing.seatTypes : []);
   const seatTypes = rawTypes.map((type, index) => ({
@@ -6400,6 +6442,7 @@ function normalizeRoom(input, existing = {}) {
     name,
     capacity: seatSelectionEnabled && enabledSeatCount ? enabledSeatCount : Math.max(1, Number(input.capacity ?? existing.capacity ?? 80)),
     technology: input.technology || existing.technology || "",
+    cleanupMinutes,
     status: input.status || existing.status || "active",
     seatSelectionEnabled,
     seatTypes,
@@ -7745,7 +7788,7 @@ function normalizeUser(input, existing = {}) {
     passwordHash: input.password ? hashPassword(String(input.password)) : input.passwordHash || existing.passwordHash || "",
     authProvider: input.authProvider || existing.authProvider || (input.googleSub || existing.googleSub ? "google" : "email"),
     googleSub: String(input.googleSub || existing.googleSub || "").slice(0, 255),
-    picture: String(input.picture || existing.picture || "").slice(0, 2048),
+    picture: String(input.picture ?? existing.picture ?? "").slice(0, 2048),
     emailVerified: input.emailVerified !== undefined ? Boolean(input.emailVerified) : Boolean(existing.emailVerified),
     pendingEmail: input.pendingEmail !== undefined ? String(input.pendingEmail || "").trim().toLowerCase() : existing.pendingEmail || "",
     emailVerificationHash: input.emailVerificationHash !== undefined ? input.emailVerificationHash : existing.emailVerificationHash || "",
@@ -7774,6 +7817,14 @@ function normalizeUser(input, existing = {}) {
   };
 }
 
+function adminProfilePicture(value) {
+  const picture = String(value || "").trim();
+  if (picture && !/^\/uploads\/profiles\/[a-zA-Z0-9_-]+\.(?:jpg|png|webp)$/.test(picture)) {
+    throw Object.assign(new Error("Envie uma foto JPG, PNG ou WebP pelo painel."), { statusCode: 422, code: "USER_PICTURE_INVALID" });
+  }
+  return picture;
+}
+
 function adminUserPayload(input = {}, existing = {}) {
   const email = String(input.email ?? existing.email ?? "").trim().toLowerCase();
   const name = String(input.name ?? existing.name ?? "").trim();
@@ -7800,12 +7851,16 @@ function adminUserPayload(input = {}, existing = {}) {
   if (password && passwordPolicyError(password)) {
     throw Object.assign(new Error(passwordPolicyError(password)), { statusCode: 422, code: "USER_PASSWORD_INVALID" });
   }
+  if (accountType === "team" && !existing.id && !password) {
+    throw Object.assign(new Error("Defina uma senha para a nova conta da equipe."), { statusCode: 422, code: "USER_PASSWORD_REQUIRED" });
+  }
   return {
     id: existing.id || input.id,
     name,
     email,
     phone: input.phone,
     cpf: input.cpf,
+    ...(accountType === "team" && input.picture !== undefined ? { picture: adminProfilePicture(input.picture) } : {}),
     ...(password ? { password } : {}),
     role,
     active: input.active,
@@ -11425,6 +11480,82 @@ async function handleApi(req, res, pathname) {
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
+  if (pathname === "/api/admin/profile/photo" && method === "POST") {
+    const body = await readBody(req);
+    const uploaded = await storageService.uploadImage({ data: body.data, filename: "perfil", contentType: body.contentType, folder: "profiles" });
+    sendJson(res, 201, { url: uploaded.url });
+    return;
+  }
+
+  if (pathname === "/api/admin/me" && method === "PATCH") {
+    const body = await readBody(req);
+    const name = String(body.name ?? req.adminUser.name).trim();
+    if (name.length < 2 || name.length > 120) {
+      sendJson(res, 422, { error: { code: "USER_NAME_INVALID", message: "Informe um nome com 2 a 120 caracteres." } });
+      return;
+    }
+    const fields = { name, ...(body.picture !== undefined ? { picture: adminProfilePicture(body.picture) } : {}) };
+    const audit = repositoryAudit(req, "user_profile", req.adminUser.id, null, fields);
+    let user;
+    if (postgresEnabled()) {
+      user = await userRepository.updateFields(req.adminUser.id, fields, { audit });
+    } else {
+      await withCriticalMutation(async () => {
+        const currentDb = await readDb();
+        user = getAdminUser(req, currentDb);
+        if (!user) return;
+        const stored = currentDb.users.find((item) => item.id === user.id);
+        Object.assign(stored, fields, { updatedAt: new Date().toISOString() });
+        user = stored;
+        currentDb.auditLogs ||= [];
+        currentDb.auditLogs.push({ ...audit, id: `audit-${crypto.randomUUID()}`, userEmail: user.email, createdAt: new Date().toISOString() });
+        await writeDb(currentDb);
+      });
+    }
+    sendJson(res, user ? 200 : 401, user ? { user: sanitizeUser(user) } : { error: { message: "Entre novamente no painel." } });
+    return;
+  }
+
+  if (pathname === "/api/admin/me/password" && method === "POST") {
+    const body = await readBody(req);
+    const newPassword = String(body.newPassword || "");
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError || newPassword !== body.confirmPassword) {
+      sendJson(res, 422, { error: { code: "USER_PASSWORD_INVALID", message: policyError || "A confirmação da senha não confere." } });
+      return;
+    }
+    const current = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : req.adminUser;
+    if (!verifyPassword(String(body.currentPassword || ""), current?.passwordHash)) {
+      sendJson(res, 422, { error: { code: "CURRENT_PASSWORD_INVALID", message: "A senha atual não confere." } });
+      return;
+    }
+    const passwordHash = hashPassword(newPassword);
+    const audit = repositoryAudit(req, "user_security", current.id, null, { passwordChanged: true, otherSessionsRevoked: true });
+    let updated;
+    if (postgresEnabled()) {
+      updated = await userRepository.changeOwnPassword(current.id, current.passwordHash, passwordHash, { audit });
+    } else {
+      await withCriticalMutation(async () => {
+        const currentDb = await readDb();
+        const user = currentDb.users.find((item) => item.id === current.id);
+        if (!getAdminUser(req, currentDb) || user?.passwordHash !== current.passwordHash) return;
+        Object.assign(user, { passwordHash, sessionVersion: Number(user.sessionVersion || 0) + 1, passwordResetHash: "", passwordResetExpiresAt: "", passwordResetRequestedAt: "", updatedAt: new Date().toISOString() });
+        currentDb.auditLogs ||= [];
+        currentDb.auditLogs.push({ ...audit, id: `audit-${crypto.randomUUID()}`, userEmail: user.email, createdAt: new Date().toISOString() });
+        await writeDb(currentDb);
+        updated = user;
+      });
+    }
+    if (!updated) {
+      sendJson(res, 409, { error: { message: "A conta foi alterada em outra sessão. Entre novamente." } });
+      return;
+    }
+    const previousSession = verifySignedValue(parseCookies(req).cine_admin);
+    const session = signedValue({ ...previousSession, sv: updated.sessionVersion });
+    const maxAge = Math.max(1, Math.floor((previousSession.exp - Date.now()) / 1000));
+    sendJson(res, 200, { user: sanitizeUser(updated) }, { "Set-Cookie": adminCookie(session, maxAge), "Cache-Control": "no-store" });
+    return;
+  }
 
   if (pathname === "/api/admin/2fa/status" && method === "GET") {
     const user = postgresEnabled() ? await userRepository.findById(req.adminUser.id) : (db.users || []).find((item) => item.id === req.adminUser.id);
@@ -14627,7 +14758,13 @@ async function handleApi(req, res, pathname) {
     if (db.movies.some((item) => item.id === movie.id && isDeletedMovie(item))) {
       movie.id = `${movie.id}-${crypto.randomBytes(4).toString("hex")}`;
     }
-    movie.sessions = (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session));
+    movie.sessions = (movie.sessions || []).map((session) => validateSessionRoom(db, normalizeMovieSession(session, movie.id, {}, db.ticketTypes)));
+    const initialSessions = [];
+    for (const session of movie.sessions) {
+      const conflicts = sessionRoomConflicts(db, movie, session, { additional: initialSessions.map((item) => ({ movie, session: item })) });
+      if (requireSessionRoomConflictConfirmation(res, conflicts, body.confirmRoomConflict)) return;
+      initialSessions.push(session);
+    }
     if (db.movies.some((item) => item.id === movie.id)) {
       sendJson(res, 409, { error: { code: "MOVIE_EXISTS", message: "Já existe um filme com este identificador. Abra o filme existente para editá-lo." } });
       return;
@@ -14798,9 +14935,13 @@ async function handleApi(req, res, pathname) {
 
     if (method === "POST" && !sessionId) {
       const body = await readBody(req);
+      if (!String(movie.duration || "").trim()) {
+        sendJson(res, 422, { error: { code: "SESSION_MOVIE_DURATION_REQUIRED", message: "Informe a duração do filme antes de criar sessões." } });
+        return;
+      }
       if (body.dateTo || body.dateEnd || Array.isArray(body.times)) {
         const batch = createMovieSessionBatch(body, movie.slug || movieId, movie.sessions, db.ticketTypes);
-        const created = batch.created.map((session) => sessionWithCurrentRoom(db, session));
+        const created = batch.created.map((session) => validateSessionRoom(db, session));
         const accepted = [];
         const conflicts = created.flatMap((session) => {
           const found = sessionRoomConflicts(db, movie, session, { additional: accepted.map((item) => ({ movie, session: item })) });
@@ -14821,8 +14962,8 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 201, { ...batch, created, totalCreated: created.length, totalSkipped: batch.skipped.length });
         return;
       }
-      const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movie.slug || movieId, {}, db.ticketTypes));
-      if (movie.sessions.some((item) => item.id === session.id)) {
+      const session = validateSessionRoom(db, normalizeMovieSession(body, movie.slug || movieId, {}, db.ticketTypes));
+      if (movie.sessions.some((item) => item.id === session.id || (item.date === session.date && item.time === session.time && roomForSession(db, item)?.id === session.roomId && item.format === session.format && item.status !== "cancelled"))) {
         sendJson(res, 409, { error: { code: "SESSION_EXISTS", message: "Já existe uma sessão com este identificador." } });
         return;
       }
@@ -14857,7 +14998,7 @@ async function handleApi(req, res, pathname) {
         return;
       }
       movie.sessions[sessionIndex] = previousSession;
-      const session = sessionWithCurrentRoom(db, normalizeMovieSession(body, movieId, previousSession, db.ticketTypes));
+      const session = validateSessionRoom(db, normalizeMovieSession(body, movieId, previousSession, db.ticketTypes), previousSession);
       const conflicts = sessionRoomConflicts(db, movie, session, { ignoreSessionId: sessionId });
       if (requireSessionRoomConflictConfirmation(res, conflicts, body.confirmRoomConflict)) return;
       const commercialChanges = sessionCommercialChanges(previousSession, session);
@@ -14969,10 +15110,27 @@ async function handleApi(req, res, pathname) {
       }
       db.movies[index] = previousMovie;
       const body = await readBody(req);
+      if (body.sessions !== undefined && JSON.stringify(body.sessions) !== JSON.stringify(previousMovie.sessions || [])) {
+        sendJson(res, 422, { error: { code: "SESSION_ENDPOINT_REQUIRED", message: "Altere as sessões pela programação do filme para preservar as validações e o histórico." } });
+        return;
+      }
       let movie = normalizeMovie({ ...body, id }, previousMovie);
       movie.sessions = (movie.sessions || []).map((session) => sessionWithCurrentRoom(db, session));
-      const publishingNow = (body.workflowStatus === "published" || body.workflow_status === "published")
-        && db.movies[index].workflowStatus !== "published";
+      if (!movie.duration && (movie.sessions.length || movie.workflowStatus === "published")) {
+        sendJson(res, 422, { error: { code: "MOVIE_DURATION_REQUIRED", message: "Informe a duração do filme antes de manter sessões ou publicar." } });
+        return;
+      }
+      if (movieDurationMinutes(movie) > movieDurationMinutes(previousMovie) && movie.sessions.length) {
+        const scheduleDb = { ...db, movies: db.movies.map((item, position) => position === index ? movie : item) };
+        const conflicts = movie.sessions
+          .filter((session) => (sessionStartsAt(session)?.getTime() || 0) + movieDurationMinutes(movie) * 60000 > Date.now())
+          .flatMap((session) => sessionRoomConflicts(scheduleDb, movie, session, { ignoreSessionId: session.id }));
+        if (conflicts.length) {
+          sendJson(res, 409, { error: { code: "MOVIE_DURATION_SESSION_CONFLICT", message: "A nova duração reduz o intervalo mínimo de limpeza de sessões futuras. Ajuste os horários antes de salvar o filme.", conflicts } });
+          return;
+        }
+      }
+      const publishingNow = body.workflowStatus === "published" || body.workflow_status === "published";
       validateMovieForWorkflow(db, movie, id, publishingNow);
       const localized = movie.workflowStatus === "published"
         ? await movieImageService.localizeMovie(movie)
@@ -15064,6 +15222,16 @@ async function handleApi(req, res, pathname) {
         .map((session) => ({ movie, session })));
       const linkedSessionIds = linkedSessions.map(({ session }) => session.id);
       const room = normalizeRoom(await readBody(req), existingRoom);
+      if (room.cleanupMinutes > Number(existingRoom.cleanupMinutes ?? 20)) {
+        const scheduleDb = { ...db, rooms: db.rooms.map((item, position) => position === index ? room : item) };
+        const conflicts = linkedSessions
+          .filter(({ movie, session }) => (sessionStartsAt(session)?.getTime() || 0) + movieDurationMinutes(movie) * 60000 > Date.now())
+          .flatMap(({ movie, session }) => sessionRoomConflicts(scheduleDb, movie, session, { ignoreSessionId: session.id }));
+        if (conflicts.length) {
+          sendJson(res, 409, { error: { code: "ROOM_CLEANUP_CONFLICT", message: "O intervalo de limpeza informado conflita com sessões futuras desta sala. Ajuste os horários antes de salvar.", conflicts } });
+          return;
+        }
+      }
       const nextSeatIds = new Set(roomSeats(room).map((seat) => String(seat.id)));
       const removedSeatIds = roomSeats(existingRoom).map((seat) => String(seat.id)).filter((seatId) => !nextSeatIds.has(seatId));
       const activeSeatIds = roomSeatIdsInActiveUse(db, existingRoom.id);

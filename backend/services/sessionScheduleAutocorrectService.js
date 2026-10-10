@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const { isDeletedMovie } = require("./movieCatalogLifecycleService");
-const { movieDurationMinutes, roomIdentity, sessionStartsAt } = require("./sessionRoomConflictService");
+const { movieDurationMinutes, roomIdentity, sessionStartsAt, roomCleanupMinutes } = require("./sessionRoomConflictService");
 
 const INACTIVE_STATUSES = new Set(["cancelled", "hidden", "archived"]);
 
@@ -32,6 +32,7 @@ function planHash(plan) {
     changes: plan.changes.map(({ movieId, sessionId, from, to }) => ({ movieId, sessionId, from, to })),
     unresolved: plan.unresolved.map(({ sessionId, reason }) => ({ sessionId, reason })),
     turnaroundMinutes: plan.turnaroundMinutes,
+    roomMinimums: plan.roomMinimums,
     stepMinutes: plan.stepMinutes
   })).digest("base64url");
 }
@@ -65,17 +66,19 @@ function buildSessionAutocorrectPlan({ movies = [], rooms = [], tickets = [], or
   entries.forEach((entry) => byRoom.set(entry.roomKey, [...(byRoom.get(entry.roomKey) || []), entry]));
   const changes = [];
   const unresolved = [];
-  const turnaroundMs = margin * 60 * 1000;
+  const roomMinimums = Object.fromEntries(rooms.map((room) => [room.id, roomCleanupMinutes(room)]));
 
   byRoom.forEach((roomEntries) => {
+    const room = roomMap.get(roomEntries[0].session.roomId);
+    const turnaroundMs = Math.max(margin, roomCleanupMinutes(room)) * 60000;
     const ordered = roomEntries.sort((a, b) => a.startsAt - b.startsAt || String(a.session.id).localeCompare(String(b.session.id)));
     const locked = ordered.filter((entry) => !entry.inScope || entry.startsAt <= now || (entry.hasSales && !includeSales));
     const occupied = locked.map((entry) => ({ start: entry.startsAt, end: entry.startsAt + entry.durationMinutes * 60000, entry }));
 
     const lockedInScope = locked.filter((entry) => entry.inScope);
     lockedInScope.forEach((entry, index) => {
-      const collision = lockedInScope.slice(index + 1).find((candidate) => entry.startsAt < candidate.startsAt + candidate.durationMinutes * 60000
-        && candidate.startsAt < entry.startsAt + entry.durationMinutes * 60000);
+      const collision = lockedInScope.slice(index + 1).find((candidate) => entry.startsAt < candidate.startsAt + candidate.durationMinutes * 60000 + turnaroundMs
+        && candidate.startsAt < entry.startsAt + entry.durationMinutes * 60000 + turnaroundMs);
       if (collision) unresolved.push({
         movieId: entry.movie.id,
         movieTitle: entry.movie.title,
@@ -114,7 +117,7 @@ function buildSessionAutocorrectPlan({ movies = [], rooms = [], tickets = [], or
   });
 
   changes.sort((a, b) => `${a.from.date}T${a.from.time}`.localeCompare(`${b.from.date}T${b.from.time}`));
-  const plan = { changes, unresolved, turnaroundMinutes: margin, stepMinutes: step, includeSales: Boolean(includeSales) };
+  const plan = { changes, unresolved, turnaroundMinutes: margin, roomMinimums, stepMinutes: step, includeSales: Boolean(includeSales) };
   return { ...plan, hash: planHash(plan) };
 }
 

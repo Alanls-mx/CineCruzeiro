@@ -9,7 +9,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="../images/favicon-32.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="icon" type="image/png" sizes="64x64" href="../images/favicon-64.png?brand=cinecruzeiro-icon-blue-star-20261005" />
     <link rel="stylesheet" href="admin.css?v=20261009-session-suggestion" />
-    <link rel="stylesheet" href="admin-premium.css?v=20261005-session-row-layout" />
+    <link rel="stylesheet" href="admin-premium.css?v=20261010-account-catalog" />
     <link rel="stylesheet" href="social-studio.css?v=20261008-static" />
   </head>
   <body class="admin-booting">
@@ -29,13 +29,13 @@
         <span id="syncStatus" class="status-pill"><span class="status-dot"></span>Carregando</span>
         <div class="admin-profile">
           <button id="adminProfileButton" class="admin-profile-button" type="button" aria-label="Abrir perfil do painel" aria-expanded="false">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
+            <span id="adminProfileAvatar" class="staff-avatar" aria-hidden="true"></span>
           </button>
           <div id="adminProfileMenu" class="admin-profile-menu" hidden>
             <strong id="adminProfileName">Usuário</strong>
             <span id="adminProfileRole">Operador</span>
-            <button type="button" data-profile-action="account">Segurança e 2FA</button>
-            <button type="button" data-profile-action="preferences">Preferências</button>
+            <button type="button" data-profile-action="account">Minha conta</button>
+            <button type="button" data-profile-action="security">Segurança e 2FA</button>
             <button id="profileLogoutButton" type="button">Sair</button>
           </div>
         </div>
@@ -572,7 +572,7 @@
                     </div>
                     <button id="addSessionButton" class="ghost-button icon-label" type="button">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                      Adicionar sessão
+                      <span id="addSessionButtonLabel">Adicionar sessão</span>
                     </button>
                   </div>
                   <div id="sessionsList" class="sessions-list"></div>
@@ -806,6 +806,11 @@
               <label>
                 Tecnologia
                 <input id="roomTechnology" placeholder="Ex.: Laser 4K + Dolby 7.1" />
+              </label>
+              <label>
+                Intervalo mínimo de limpeza (min)
+                <input id="roomCleanupMinutes" type="number" min="0" max="120" step="1" value="20" required />
+                <small class="field-help">Entre o fim de um filme e a próxima sessão. Zero desativa o intervalo.</small>
               </label>
               <label>
                 Status
@@ -2318,6 +2323,44 @@
           </div>
         </section>
 
+        <section id="myAccountPanel" class="panel">
+          <div class="panel-heading"><div><h1>Minha conta</h1><p id="myAccountIdentity"></p></div></div>
+          <div class="my-account-layout">
+            <form id="myAccountForm" class="account-section">
+              <h2>Perfil</h2>
+              <div class="profile-photo-editor">
+                <span id="myAccountAvatar" class="staff-avatar large" aria-hidden="true"></span>
+                <div class="profile-photo-actions">
+                  <label class="ghost-button photo-picker">Alterar foto<input id="myAccountPhoto" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+                  <button id="myAccountRemovePhoto" class="ghost-button" type="button">Remover foto</button>
+                  <small>JPG, PNG ou WebP · até 5 MB</small>
+                </div>
+              </div>
+              <input id="myAccountPicture" type="hidden" />
+              <label>Nome<input id="myAccountName" autocomplete="name" required minlength="2" maxlength="120" /></label>
+              <label>E-mail<input id="myAccountEmail" type="email" readonly autocomplete="email" /></label>
+              <button class="primary-button" type="submit">Salvar perfil</button>
+              <p id="myAccountFeedback" class="account-feedback" role="status" aria-live="polite"></p>
+            </form>
+            <div>
+              <form id="myPasswordForm" class="account-section">
+                <h2>Alterar senha</h2>
+                <label>Senha atual<input name="currentPassword" type="password" autocomplete="current-password" required maxlength="128" /></label>
+                <label>Nova senha<input name="newPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128" /></label>
+                <label>Confirmar nova senha<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128" /></label>
+                <small>De 10 a 128 caracteres. As outras sessões serão encerradas.</small>
+                <button class="primary-button" type="submit">Alterar senha</button>
+                <p id="myPasswordFeedback" class="account-feedback" role="status" aria-live="polite"></p>
+              </form>
+              <section class="account-section account-two-factor">
+                <h2>Autenticação em duas etapas</h2>
+                <p id="myAccountSecurityState"></p>
+                <button id="myAccountTwoFactorButton" class="ghost-button" type="button">Gerenciar 2FA e códigos</button>
+              </section>
+            </div>
+          </div>
+        </section>
+
         <section id="usersPanel" class="panel">
           <div class="panel-heading">
             <div>
@@ -2344,6 +2387,15 @@
             </div>
             <form id="userForm" class="surface form-grid">
               <input type="hidden" id="userId" />
+              <input type="hidden" id="userPicture" />
+              <div class="profile-photo-editor full-span">
+                <span id="userAvatar" class="staff-avatar large" aria-hidden="true"></span>
+                <div class="profile-photo-actions">
+                  <label class="ghost-button photo-picker">Alterar foto<input id="userPhoto" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+                  <button id="userRemovePhoto" class="ghost-button" type="button">Remover foto</button>
+                  <small>JPG, PNG ou WebP · até 5 MB</small>
+                </div>
+              </div>
               <label>
                 Nome
                 <input id="userName" required />
@@ -2354,7 +2406,7 @@
               </label>
               <label>
                 Senha temporaria
-                <input id="userPassword" type="password" autocomplete="new-password" placeholder="Preencha somente para definir ou alterar" />
+                <input id="userPassword" type="password" autocomplete="new-password" minlength="10" maxlength="128" placeholder="Obrigatória para uma nova conta" />
               </label>
               <label>
                 Cargo no painel
@@ -3227,7 +3279,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <div id="floatingActionMenu" class="floating-action-menu" hidden></div>
     <script src="jsQR.js?v=20260823"></script>
-    <script src="admin.js?v=20261009-session-suggestion"></script>
+    <script src="admin.js?v=20261010-account-catalog"></script>
     <script src="social-studio.js?v=20261008-static"></script>
   </body>
 </html>

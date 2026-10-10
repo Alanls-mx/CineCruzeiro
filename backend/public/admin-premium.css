@@ -2848,3 +2848,32 @@ body:has(.success-overlay:not([hidden])) { overflow: hidden; }
   .authenticator-qr { width: min(240px, 100%); justify-self: center; }
   .two-factor-action-form button, .two-factor-body .button-row, .two-factor-body .button-row > * { width: 100%; }
 }
+/* Account controls stay available independently of team-management permissions. */
+.topbar .admin-profile { display: block; }
+.topbar .admin-profile-button { padding: 0; width: 38px; height: 38px; min-height: 38px; border-radius: 50%; }
+.staff-avatar { position: relative; display: inline-grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; overflow: hidden; border-radius: 50%; background: #293444; color: #e6ecf3; font-size: 12px; font-weight: 750; letter-spacing: 0; }
+.staff-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.staff-avatar.large { width: 72px; height: 72px; flex-basis: 72px; font-size: 22px; }
+.staff-list-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.staff-list-identity > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.my-account-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; max-width: 960px; }
+.account-section { display: grid; align-content: start; justify-items: start; gap: 16px; min-width: 0; padding: 24px 0; border-top: 1px solid var(--line-soft, #293444); }
+.account-section h2 { font-size: 17px; margin: 0; letter-spacing: 0; }
+.account-section label:not(.photo-picker) { display: grid; gap: 8px; width: 100%; }
+.account-section input { width: 100%; min-width: 0; }
+.account-section small, .profile-photo-actions small { color: var(--muted); font-size: 12px; }
+.account-section p { margin: 0; line-height: 1.6; }
+.account-two-factor { margin-top: 16px; }
+.profile-photo-editor { display: flex; align-items: center; gap: 18px; min-width: 0; }
+.profile-photo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.profile-photo-actions small { width: 100%; }
+.photo-picker { position: relative; overflow: hidden; display: inline-flex; align-items: center; cursor: pointer; margin: 0; }
+.photo-picker input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.photo-picker:focus-within { outline: 2px solid var(--gold); outline-offset: 3px; }
+.account-feedback { min-height: 24px; color: #55d4aa; font-size: 13px; overflow-wrap: anywhere; }
+.account-feedback.error { color: #ff9aab; }
+.my-account-layout button { max-width: 100%; white-space: normal; }
+@media (max-width: 760px) {
+  .my-account-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .profile-photo-editor { align-items: flex-start; }
+}

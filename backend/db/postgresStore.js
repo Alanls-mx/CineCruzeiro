@@ -231,6 +231,7 @@ async function loadDbFromPostgres({ includeAuditLogs = true } = {}) {
         name: row.name,
         capacity: row.capacity,
         technology: row.technology || "",
+        cleanupMinutes: Number(row.cleanup_minutes ?? 20),
         status: row.status,
         seatSelectionEnabled: Boolean(row.seat_selection_enabled),
         seatTypes: asArray(row.seat_types),
@@ -764,7 +765,7 @@ async function writeDbToPostgres(db, { normalize = (value) => value, importSnaps
     }
 
     for (const room of asArray(db.rooms)) {
-      await persist(client, "INSERT INTO rooms (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)", [
+      await persist(client, "INSERT INTO rooms (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout, cleanup_minutes) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9)", [
         room.id,
         room.name,
         Number(room.capacity || 120),
@@ -772,7 +773,8 @@ async function writeDbToPostgres(db, { normalize = (value) => value, importSnaps
         room.status || "active",
         Boolean(room.seatSelectionEnabled),
         JSON.stringify(asArray(room.seatTypes)),
-        JSON.stringify(room.seatLayout && typeof room.seatLayout === "object" ? room.seatLayout : { screenLabel: "TELA", rows: [] })
+        JSON.stringify(room.seatLayout && typeof room.seatLayout === "object" ? room.seatLayout : { screenLabel: "TELA", rows: [] }),
+        Number(room.cleanupMinutes ?? 20)
       ]);
     }
     const roomsById = new Map(asArray(db.rooms).map((room) => [String(room.id), room]));

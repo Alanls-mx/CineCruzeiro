@@ -7,6 +7,7 @@ function mapRoom(row) {
     name: row.name,
     capacity: Number(row.capacity || 0),
     technology: row.technology || "",
+    cleanupMinutes: Number(row.cleanup_minutes ?? 20),
     status: row.status || "active",
     seatSelectionEnabled: Boolean(row.seat_selection_enabled),
     seatTypes: Array.isArray(row.seat_types) ? row.seat_types : [],
@@ -21,7 +22,8 @@ function params(room) {
     room.id, room.name, Number(room.capacity || 1), room.technology || "",
     room.status || "active", Boolean(room.seatSelectionEnabled),
     JSON.stringify(room.seatTypes || []),
-    JSON.stringify(room.seatLayout || { screenLabel: "TELA", rows: [] })
+    JSON.stringify(room.seatLayout || { screenLabel: "TELA", rows: [] }),
+    Number(room.cleanupMinutes ?? 20)
   ];
 }
 
@@ -32,12 +34,12 @@ async function findById(id) {
 
 async function upsertRoom(client, room) {
   const result = await timedQuery(client, `INSERT INTO rooms
-    (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,now())
+    (id, name, capacity, technology, status, seat_selection_enabled, seat_types, seat_layout, cleanup_minutes, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,now())
     ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, capacity=EXCLUDED.capacity,
       technology=EXCLUDED.technology, status=EXCLUDED.status,
       seat_selection_enabled=EXCLUDED.seat_selection_enabled, seat_types=EXCLUDED.seat_types,
-      seat_layout=EXCLUDED.seat_layout, updated_at=now()
+      seat_layout=EXCLUDED.seat_layout, cleanup_minutes=EXCLUDED.cleanup_minutes, updated_at=now()
     RETURNING *`, params(room), { repository: "room", operation: "upsert" });
   return mapRoom(result.rows[0]);
 }

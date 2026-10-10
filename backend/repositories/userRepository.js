@@ -150,7 +150,7 @@ async function create(user, options = {}) {
 
 async function updateAdmin(user, options = {}) {
   const adminFields = [
-    "name", "email", "phone", "cpf", "passwordHash", "authProvider", "role", "active",
+    "name", "email", "phone", "cpf", "picture", "passwordHash", "authProvider", "role", "active",
     "adminPermissions", "useCustomPermissions"
   ];
   return updateFields(user.id, Object.fromEntries(adminFields.filter((key) => user[key] !== undefined).map((key) => [key, user[key]])), {
@@ -174,6 +174,17 @@ async function resetPassword(id, expectedHash, passwordHash, authProvider = "ema
       password_reset_requested_at=NULL,updated_at=now()
       WHERE id=$1 AND password_reset_hash=$2 AND password_reset_expires_at>now() RETURNING *`,
     [id, expectedHash, passwordHash, authProvider || "email"], { repository: "user", operation: "passwordReset" });
+    return mapUser(result.rows[0]);
+  });
+}
+
+async function changeOwnPassword(id, expectedHash, passwordHash, options = {}) {
+  return runMutation({ event: "repository.user.password_change", metadata: { repository: "user", userId: id }, audit: options.audit }, async (client) => {
+    const result = await timedQuery(client, `UPDATE users SET password_hash=$3,
+      session_version=session_version+1,password_reset_hash=NULL,password_reset_expires_at=NULL,
+      password_reset_requested_at=NULL,updated_at=now()
+      WHERE id=$1 AND password_hash=$2 AND active=true RETURNING *`,
+    [id, expectedHash, passwordHash], { repository: "user", operation: "passwordChange" });
     return mapUser(result.rows[0]);
   });
 }
@@ -225,5 +236,5 @@ async function remove(id, options = {}) {
 module.exports = {
   mapUser, findById, findByEmail, findByGoogleSub, findByPasswordResetHash,
   findByEmailVerificationHash, emailExists, countActiveOwners, listActiveStaff, create, updateFields,
-  updateAdmin, incrementSessionVersion, resetPassword, confirmEmail, consumeRecoveryCode, remove
+  updateAdmin, incrementSessionVersion, resetPassword, changeOwnPassword, confirmEmail, consumeRecoveryCode, remove
 };
