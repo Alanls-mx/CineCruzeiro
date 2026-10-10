@@ -14,8 +14,11 @@ test("IDs de pagamento mantem valores antigos validos e rejeitam codigo em atrib
 
 test("lista administrativa nao coloca IDs de pedidos em handlers inline", () => {
   const source = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
+  const concessionSource = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/concession-sales-view.js", import.meta.url)), "utf8");
   assert.doesNotMatch(source, /onclick="[^"]*(?:openOrderView|openConcessionOrderDetail|toggleOrderMenu)\('\$\{escapeHtml\((?:order\.id|payment\.orderId)\)\}/);
+  assert.doesNotMatch(concessionSource, /onclick="[^"]*(?:openOrderView|openConcessionOrderDetail|toggleOrderMenu)\('\$\{escapeHtml\((?:order\.id|payment\.orderId)\)\}/);
   assert.match(source, /data-admin-order-id="\$\{escapeHtml\(order\.id\)\}"/);
+  assert.match(concessionSource, /data-admin-order-id="\$\{escapeHtml\(order\.id\)\}"/);
   const orderMenu = source.split("function toggleOrderMenu(")[1].split("function toggleEmailCampaignMenu(")[0];
   const campaignMenu = source.split("function toggleEmailCampaignMenu(")[1].split("async function copyTicketCode(")[0];
   assert.doesNotMatch(orderMenu, /onclick=/);
@@ -51,9 +54,11 @@ test("listas administrativas tratam IDs como dados, nao codigo inline", () => {
 
 test("painel e login funcionam sem JavaScript inline na CSP do backend", () => {
   const admin = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
+  const concession = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/concession-sales-view.js", import.meta.url)), "utf8");
   const login = readFileSync(fileURLToPath(new URL("../backend/public/admin-login.html", import.meta.url)), "utf8");
   const server = readFileSync(fileURLToPath(new URL("../backend/server.js", import.meta.url)), "utf8");
   assert.doesNotMatch(admin, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
+  assert.doesNotMatch(concession, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
   assert.doesNotMatch(login, /<script(?![^>]*\bsrc=)[^>]*>/i);
   assert.match(login, /<script src="\.\/admin-login\.js" defer><\/script>/);
   assert.ok(readFileSync(fileURLToPath(new URL("../backend/public/admin-login.js", import.meta.url)), "utf8").includes('form.addEventListener("submit"'));
