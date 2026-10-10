@@ -307,11 +307,17 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
 
   useEffect(() => {
     if (startNew && step === "ingressos") {
-      clearCheckoutDraft(sessionId);
-      setDraft(null);
-      setHydratedSessionId(sessionId);
+      const existing = readCheckoutDraft();
+      const canResumeCurrentSession = existing?.sessionId === sessionId
+        && Boolean(existing.selectedSeatIds?.length);
+      if (!canResumeCurrentSession) {
+        clearCheckoutDraft(sessionId);
+        setDraft(null);
+        setHydratedSessionId(sessionId);
+        router.replace(`/checkout/${sessionId}`, { scroll: false });
+        return;
+      }
       router.replace(`/checkout/${sessionId}`, { scroll: false });
-      return;
     }
     const stored = readCheckoutDraft();
     if (stored?.sessionId === sessionId) {
