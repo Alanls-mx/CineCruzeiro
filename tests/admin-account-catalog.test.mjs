@@ -150,6 +150,14 @@ test("account, catalog and cleaning interval workflows on an isolated backend", 
         page.on("pageerror", (error) => errors.push(error.message));
         await page.context().addCookies([{ name: cookie.split("=")[0], value: cookie.slice(cookie.indexOf("=") + 1), url: base }]);
         await page.goto(`${base}/admin/#moviesPanel`);
+        await page.locator('[data-panel="marketingPanel"]').click();
+        await page.locator('[data-admin-tab="promotions"]').click();
+        await expect(page.locator("#promotionsList")).toContainText("Oferta QA");
+        await page.locator('[data-admin-select-kind="promotion"]').filter({ hasText: "Oferta QA" }).click();
+        await expect(page.locator("#promotionTitle")).toHaveValue("Oferta QA");
+        await page.locator("#archivedPromotionsTab").click();
+        await expect(page.locator("#promotionsList")).toContainText("Nenhum cupom arquivado");
+        await page.locator('[data-panel="moviesPanel"]').click();
         await expect(page.locator("#movieTitle")).toHaveValue("Filme de teste");
         await page.locator("#movieTitle").fill("Título em edição");
         await page.locator('[data-movie-step="3"]').click();
