@@ -767,10 +767,14 @@ function verifyMercadoPagoWebhook(req, url, body, config = {}) {
   if (!signature.ts || !signature.v1) {
     throw paymentError("MERCADO_PAGO_WEBHOOK_SIGNATURE_MALFORMED", "Header x-signature malformado.", 401);
   }
-  const manifest = mercadoPagoManifest(dataId, requestId, signature.ts);
+  const manifestDataIds = new Set([dataId]);
+  if (/^[a-z0-9]+$/i.test(dataId)) manifestDataIds.add(dataId.toLowerCase());
   const verified = secrets.some((secret) => {
-    const expected = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
-    return signature.v1 && timingSafeEqualHex(signature.v1, expected);
+    return [...manifestDataIds].some((manifestDataId) => {
+      const manifest = mercadoPagoManifest(manifestDataId, requestId, signature.ts);
+      const expected = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+      return timingSafeEqualHex(signature.v1, expected);
+    });
   });
 
   if (!verified) {
