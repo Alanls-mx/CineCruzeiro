@@ -537,7 +537,7 @@ function securityHeaders(extra = {}) {
     "frame-ancestors 'self'",
     "img-src 'self' data: blob: https:",
     "media-src 'self' blob: https:",
-    "script-src 'self' https://sdk.mercadopago.com https://http2.mlstatic.com https://assets.pagseguro.com.br https://accounts.google.com",
+    "script-src 'self' https://sdk.mercadopago.com https://http2.mlstatic.com https://assets.pagseguro.com.br https://accounts.google.com https://static.cloudflareinsights.com",
     "script-src-attr 'none'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",

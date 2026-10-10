@@ -58,6 +58,7 @@ test("painel e login funcionam sem JavaScript inline na CSP do backend", () => {
   assert.match(login, /<script src="\.\/admin-login\.js" defer><\/script>/);
   assert.ok(readFileSync(fileURLToPath(new URL("../backend/public/admin-login.js", import.meta.url)), "utf8").includes('form.addEventListener("submit"'));
   assert.match(server, /"script-src 'self' https:\/\/sdk\.mercadopago\.com/);
+  assert.match(server, /"script-src [^"\n]*https:\/\/static\.cloudflareinsights\.com/);
   assert.doesNotMatch(server, /"script-src [^"\n]*'unsafe-inline'/);
   assert.match(server, /"script-src-attr 'none'"/);
 });
