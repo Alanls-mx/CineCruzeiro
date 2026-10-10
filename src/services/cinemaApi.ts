@@ -644,21 +644,7 @@ export async function fetchMercadoPagoCheckoutConfig() {
     environment: "sandbox" | "production";
     livePayments: boolean;
     checkoutAvailable: boolean;
-    sandboxTest?: { publicKey: string; amount: number };
   };
-}
-
-export async function createSandboxCardTest(card: { token?: string; paymentMethodId?: string; installments: number }) {
-  const deviceId = typeof window === "undefined" ? "" : String((window as Window & { MP_DEVICE_SESSION_ID?: string }).MP_DEVICE_SESSION_ID || "");
-  const response = await apiFetch(`${API_BASE}/api/payments/sandbox/card-test`, {
-    method: "POST",
-    credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json", ...(/^[A-Za-z0-9._:-]{8,256}$/.test(deviceId) ? { "X-MP-Device-Id": deviceId } : {}) }),
-    body: JSON.stringify({ cardToken: card.token, paymentMethodId: card.paymentMethodId, installments: card.installments }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(apiErrorMessage(payload, "Não foi possível processar o cartão de teste."));
-  return payload as { status: string; statusDetail: string; reference: string; orderId: string; message: string };
 }
 
 export async function fetchSubscriptionPlans() {

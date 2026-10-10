@@ -9,7 +9,7 @@ import { Accessibility, Check, CircleUserRound, TriangleAlert } from "lucide-rea
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { useCinemaContent } from "@/hooks/useCinemaContent";
 import { useSeatRealtime } from "@/hooks/useSeatRealtime";
-import { AccountSubscription, ClubBenefitsPreviewResult, CouponPreviewResult, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, createSandboxCardTest, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap, previewCheckoutClubBenefits, previewCheckoutCoupon } from "@/services/cinemaApi";
+import { AccountSubscription, ClubBenefitsPreviewResult, CouponPreviewResult, CustomerUser, SessionSeatMap, TicketTypeRecord, createCheckoutPayment, createClubCreditCheckout, fetchCheckoutOrderStatus, fetchCurrentCustomer, fetchMercadoPagoCheckoutConfig, fetchMySubscriptions, fetchSessionSeatMap, previewCheckoutClubBenefits, previewCheckoutCoupon } from "@/services/cinemaApi";
 import { ensureMercadoPagoDeviceId } from "@/utils/mercadoPagoDevice";
 import { checkoutDraftTotal, clearCheckoutDraft, findSession, isSessionCheckoutAvailable, isUploadedAsset, money, publicAssetPath, readCheckoutDraft, StoredCheckoutDraft, writeCheckoutDraft } from "@/utils/cinema";
 import { trackMarketingEvent } from "@/utils/tracking";
@@ -40,7 +40,6 @@ type MercadoPagoCheckoutConfig = {
   environment: "sandbox" | "production";
   livePayments: boolean;
   checkoutAvailable: boolean;
-  sandboxTest?: { publicKey: string; amount: number };
 };
 type MercadoPagoCardPayload = {
   token?: string;
@@ -768,7 +767,7 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
         }
       })
       .catch(() => {
-        if (mounted) setMercadoPagoConfig({ provider: "mercado_pago", name: "Mercado Pago", enabled: false, configured: false, publicKey: "", environment: "sandbox", livePayments: false, checkoutAvailable: false });
+        if (mounted) setMercadoPagoConfig({ provider: "mercado_pago", name: "Mercado Pago", enabled: false, configured: false, publicKey: "", environment: "production", livePayments: false, checkoutAvailable: false });
       });
     return () => {
       mounted = false;
@@ -1419,45 +1418,7 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
           </div>
         )}
       </section>
-      {mercadoPagoConfig?.sandboxTest && <SandboxCardTest config={mercadoPagoConfig.sandboxTest} />}
     </div>
-  );
-}
-
-function SandboxCardTest({ config }: { config: { publicKey: string; amount: number } }) {
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState("");
-
-  async function submit(card: MercadoPagoCardPayload) {
-    setLoading(true);
-    setResult("");
-    try {
-      const response = await createSandboxCardTest(card);
-      const orderId = response.orderId ? ` Order ID para avaliação: ${response.orderId}.` : "";
-      setResult(`Teste ${response.status}: ${response.statusDetail || response.reference}.${orderId} Nenhum ingresso foi emitido.`);
-    } catch (error) {
-      setResult(error instanceof Error ? error.message : "O teste não pôde ser concluído.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <section className="border-t border-white/15 pt-6 xl:col-span-2" aria-label="Teste isolado de cartão">
-      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="text-sm font-bold text-slate-300 underline underline-offset-4 hover:text-white">
-        {open ? "Fechar teste de cartão" : "Testar cartão do Mercado Pago"}
-      </button>
-      {open && (
-        <div className="mt-4 max-w-xl space-y-4">
-          <p className="border-l-2 border-amber-300 pl-4 text-sm leading-6 text-slate-200">
-            Ambiente de teste · {money(config.amount)} simulados. Não gera pedido, reserva ou ingresso. Use somente cartões de teste do Mercado Pago.
-          </p>
-          <CardPaymentBrick publicKey={config.publicKey} amount={config.amount} loading={loading} onSubmit={submit} />
-          {result && <p role="status" className="text-sm font-semibold text-slate-200">{result}</p>}
-        </div>
-      )}
-    </section>
   );
 }
 

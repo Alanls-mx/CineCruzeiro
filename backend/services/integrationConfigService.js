@@ -10,10 +10,9 @@ const DEFINITIONS = {
   mercadoPago: {
     name: "Mercado Pago",
     purpose: "Cartão, Pix, webhooks, assinaturas recorrentes e pagamentos presenciais Point",
-    defaults: { enabled: false, environment: "sandbox", publicKey: "", pointEnabled: false, pointStoreId: "", pointPosId: "", pointDeviceId: "", pointPrintOnTerminal: "seller_ticket", pointTicketPrintEnabled: true, pointExpirationTime: "PT15M", pointRequestTimeout: 15000, pointRetryLimit: 2, pointPrintTimeout: 120000, recurringEnabled: false },
+    defaults: { enabled: false, environment: "production", publicKey: "", pointEnabled: false, pointStoreId: "", pointPosId: "", pointDeviceId: "", pointPrintOnTerminal: "seller_ticket", pointTicketPrintEnabled: true, pointExpirationTime: "PT15M", pointRequestTimeout: 15000, pointRetryLimit: 2, pointPrintTimeout: 120000, recurringEnabled: false },
     secrets: ["publicKey", "accessToken", "webhookSecret"],
     fields: [
-      { key: "environment", label: "Ambiente", type: "select", options: ["sandbox", "production"] },
       { key: "publicKey", label: "Chave pública", type: "secret" },
       { key: "accessToken", label: "Token de acesso", type: "secret" },
       { key: "webhookSecret", label: "Segredo do webhook", type: "secret" },
@@ -114,17 +113,6 @@ const DEFINITIONS = {
       { key: "retryLimit", label: "Tentativas", type: "number" }
     ]
   },
-  mercadoPagoSandbox: {
-    name: "Mercado Pago - testes isolados",
-    purpose: "Validar cartões de teste sem criar vendas ou ingressos reais",
-    defaults: { enabled: false, environment: "sandbox", publicKey: "", authorizedEmails: "" },
-    secrets: ["publicKey", "accessToken"],
-    fields: [
-      { key: "publicKey", label: "Chave pública de teste", type: "secret" },
-      { key: "accessToken", label: "Token de acesso de teste", type: "secret" },
-      { key: "authorizedEmails", label: "E-mails autorizados (separados por vírgula)", type: "text" }
-    ]
-  },
   pagBank: {
     name: "PagBank (PagSeguro)",
     purpose: "Pix e cartão online. O Sandbox aceita cartões de teste; produção exige liberação PagBank. Tap On e assinaturas exigem homologações separadas.",
@@ -205,11 +193,6 @@ const ENV = {
     url: ["CRM_WEBHOOK_URL", "LUMIX_WEBHOOK_URL"],
     secret: ["CRM_WEBHOOK_SECRET", "LUMIX_WEBHOOK_SECRET"]
   },
-  mercadoPagoSandbox: {
-    publicKey: ["MERCADO_PAGO_SANDBOX_PUBLIC_KEY"],
-    accessToken: ["MERCADO_PAGO_SANDBOX_ACCESS_TOKEN"],
-    authorizedEmails: ["MERCADO_PAGO_SANDBOX_AUTHORIZED_EMAILS"]
-  },
   pagBank: {
     publicKey: ["PAGBANK_PUBLIC_KEY", "PAGSEGURO_PUBLIC_KEY"],
     accessToken: ["PAGBANK_ACCESS_TOKEN", "PAGSEGURO_ACCESS_TOKEN"]
@@ -285,6 +268,7 @@ function ensureStore(db) {
   }
   db.settings.integrations = db.integrations;
   delete db.integrations.openai;
+  delete db.integrations.mercadoPagoSandbox;
   return db.integrations;
 }
 
@@ -306,6 +290,7 @@ function resolvedConfig(db, provider) {
     const fromStore = definition.secrets.includes(field.key) ? decryptSecret(config[field.key]) : config[field.key];
     out[field.key] = fromStore || firstEnv(envMap[field.key] || []) || definition.defaults[field.key] || "";
   });
+  if (key === "mercadoPago") out.environment = "production";
   out.enabled = Boolean(config.enabled || false);
   out.configured = isConfigured(key, out);
   out.providerKey = key;
@@ -313,8 +298,11 @@ function resolvedConfig(db, provider) {
 }
 
 function isConfigured(provider, config) {
-  if (provider === "mercadoPago") return Boolean(config.publicKey && config.accessToken);
-  if (provider === "mercadoPagoSandbox") return Boolean(config.publicKey && config.accessToken && String(config.publicKey).startsWith("TEST-"));
+  if (provider === "mercadoPago") {
+    const testCredentials = /^TEST-/i.test(String(config.publicKey || "")) || /^TEST-/i.test(String(config.accessToken || ""));
+    const localTestHarness = process.env.NODE_ENV !== "production" && process.env.PAYMENTS_MODE === "test";
+    return Boolean(config.publicKey && config.accessToken && (!testCredentials || localTestHarness));
+  }
   if (provider === "pagBank") return Boolean(config.publicKey && config.accessToken);
   if (provider === "googleLogin") return Boolean(config.clientId && config.clientSecret);
   if (provider === "googleWallet") return Boolean(config.issuerId && config.classId && (config.serviceAccountJson || (config.clientEmail && config.privateKey)));

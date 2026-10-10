@@ -3,7 +3,6 @@ const { MercadoPagoConfig, Order: MercadoPagoOrder } = require("mercadopago");
 
 const MERCADO_PAGO_TOKEN_ENV_KEYS = ["MERCADO_PAGO_ACCESS_TOKEN", "MP_ACCESS_TOKEN", "MERCADOPAGO_ACCESS_TOKEN"];
 const MERCADO_PAGO_WEBHOOK_SECRET_ENV_KEYS = ["MERCADO_PAGO_WEBHOOK_SECRET", "MP_WEBHOOK_SECRET", "MERCADOPAGO_WEBHOOK_SECRET"];
-const MERCADO_PAGO_WEBHOOK_SECRET_SANDBOX_ENV_KEYS = ["MERCADO_PAGO_WEBHOOK_SECRET_SANDBOX", "MERCADO_PAGO_WEBHOOK_SECRET_TEST"];
 const MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION_ENV_KEYS = ["MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION", "MERCADO_PAGO_WEBHOOK_SECRET_LIVE"];
 const OPEN_FINANCE_PIX_ENDPOINT_ENV_KEYS = ["OPEN_FINANCE_PIX_ENDPOINT", "PIX_OPEN_FINANCE_ENDPOINT"];
 const OPEN_FINANCE_PIX_STATUS_ENDPOINT_ENV_KEYS = ["OPEN_FINANCE_PIX_STATUS_ENDPOINT", "PIX_OPEN_FINANCE_STATUS_ENDPOINT"];
@@ -33,10 +32,13 @@ function paymentError(code, message, statusCode = 400) {
 }
 
 function ensureMercadoPagoProductionEnvironment(config = {}) {
-  if (isProduction() && String(config.environment || "").trim().toLowerCase() !== "production") {
+  if (!isProduction() && process.env.PAYMENTS_MODE === "test") return;
+  const accessToken = getMercadoPagoAccessToken(config);
+  const testCredentials = /^TEST-/i.test(String(config.publicKey || "")) || /^TEST-/i.test(accessToken);
+  if (String(config.environment || "").trim().toLowerCase() !== "production" || testCredentials) {
     throw paymentError(
       "MERCADO_PAGO_PRODUCTION_REQUIRED",
-      "O Pix real exige credenciais e ambiente de producao do Mercado Pago.",
+      "O Mercado Pago aceita somente credenciais de produção. Configure as chaves de produção da integração.",
       412
     );
   }
@@ -67,12 +69,9 @@ function getMercadoPagoWebhookSecret(config = {}) {
 }
 
 function getMercadoPagoWebhookSecrets(config = {}) {
-  const environmentKeys = String(config.environment || "").toLowerCase() === "production"
-    ? MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION_ENV_KEYS
-    : MERCADO_PAGO_WEBHOOK_SECRET_SANDBOX_ENV_KEYS;
   return [
     config.webhookSecret,
-    ...environmentKeys.map((key) => process.env[key]),
+    ...MERCADO_PAGO_WEBHOOK_SECRET_PRODUCTION_ENV_KEYS.map((key) => process.env[key]),
     ...MERCADO_PAGO_WEBHOOK_SECRET_ENV_KEYS.map((key) => process.env[key])
   ]
     .map((value) => String(value || "").trim())
@@ -381,12 +380,12 @@ function splitName(name = "") {
   };
 }
 
-function payerFromOrder(order, options = {}) {
+function payerFromOrder(order) {
   const email = String(order.customerEmail || "").trim();
   if (!email) {
     throw paymentError("PAYER_EMAIL_REQUIRED", "Informe um e-mail para processar o pagamento online.", 422);
   }
-  if (isProduction() && !options.sandboxTest && /@testuser\.com$/i.test(email)) {
+  if (isProduction() && /@testuser\.com$/i.test(email)) {
     throw paymentError(
       "MERCADO_PAGO_TEST_PAYER_NOT_ALLOWED",
       "Uma cobranca real nao pode usar uma conta de teste do Mercado Pago. Entre com uma conta de cliente real.",
@@ -523,13 +522,7 @@ function normalizeMercadoPagoOrder(data = {}, method) {
 }
 
 async function createMercadoPagoOrderPayment(order, integrationConfig = {}, options = {}) {
-  if (options.sandboxTest) {
-    if (integrationConfig.environment !== "sandbox" || !String(integrationConfig.publicKey || "").startsWith("TEST-")) {
-      throw paymentError("MERCADO_PAGO_TEST_CREDENTIALS_REQUIRED", "Configure as credenciais de teste do Mercado Pago.", 412);
-    }
-  } else {
-    ensureMercadoPagoProductionEnvironment(integrationConfig);
-  }
+  ensureMercadoPagoProductionEnvironment(integrationConfig);
   const accessToken = getMercadoPagoAccessToken(integrationConfig);
   const method = options.method === "credit_card" ? "credit_card" : "pix";
   const amount = moneyString(order.totalPrice);
@@ -586,7 +579,7 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     total_amount: amount,
     external_reference: String(order.id || "").slice(0, 64),
     description: `Cine Cruzeiro - ${order.movieTitle || "Ingressos"}`.slice(0, 255),
-    payer: payerFromOrder(order, options),
+    payer: payerFromOrder(order),
     items: mercadoPagoItems(order),
     ...(order.customerRegisteredAt && Number.isFinite(Date.parse(order.customerRegisteredAt))
       ? { additional_info: { "payer.registration_date": new Date(order.customerRegisteredAt).toISOString() } } : {}),
@@ -629,13 +622,10 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     throw error;
   }
 
-  if (options.sandboxTest && data.live_mode === true) {
-    throw paymentError("MERCADO_PAGO_SANDBOX_LIVE_RESPONSE", "O Mercado Pago respondeu em modo real. Desative estas credenciais de teste imediatamente.", 502);
-  }
-  if (!options.sandboxTest && isProduction() && data.live_mode === false) {
+  if (data.live_mode === false) {
     throw paymentError(
       "MERCADO_PAGO_TEST_CREDENTIALS",
-      "O Mercado Pago respondeu em modo de teste. Configure as credenciais de producao para gerar um Pix real.",
+      "O Mercado Pago respondeu em modo de teste. Configure as credenciais de produção para processar pagamentos.",
       412
     );
   }

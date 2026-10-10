@@ -1106,7 +1106,6 @@ const RATE_LIMIT_RULES = [
   { id: "oauth-mobile-consume", limit: 20, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "GET" && path === "/api/auth/mobile/google/consume" },
   { id: "events", limit: 5, windowMs: 60 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/events" },
   { id: "payments", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/payments\/(pix|card)$/.test(path) },
-  { id: "sandbox-card-test", limit: 6, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/payments/sandbox/card-test" },
   { id: "subscriptions", limit: 10, windowMs: 15 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/subscriptions/subscribe" },
   { id: "coupon-preview", limit: 30, windowMs: 5 * 60 * 1000, matches: (method, path) => method === "POST" && path === "/api/coupons/preview" },
   { id: "ticket-transfer", limit: 8, windowMs: 10 * 60 * 1000, matches: (method, path) => method === "POST" && /^\/api\/me\/tickets\/[^/]+\/transfer$/.test(path) },
@@ -10479,19 +10478,6 @@ async function testIntegrationProvider(db, provider, req) {
       return { ok: false, message: error.message || "Não foi possível consultar os terminais Point." };
     }
   }
-  if (key === "mercadoPagoSandbox") {
-    if (!config.configured) return { ok: false, message: "Informe chaves de teste e uma chave pública TEST-." };
-    if (!String(config.authorizedEmails || "").trim()) return { ok: false, message: "Informe pelo menos um e-mail autorizado para testar cartões." };
-    const production = integrationConfigService.resolvedConfig(db, "mercadoPago");
-    if (config.accessToken === production?.accessToken) return { ok: false, message: "O token de teste deve ser diferente do token de produção." };
-    const response = await fetch("https://api.mercadopago.com/users/me", {
-      headers: { Authorization: `Bearer ${config.accessToken}` },
-      signal: AbortSignal.timeout(10000)
-    });
-    return response.ok
-      ? { ok: true, message: "Credenciais de teste autenticadas. Nenhuma cobrança foi criada." }
-      : { ok: false, message: "Mercado Pago recusou as credenciais de teste." };
-  }
   if (key === "tmdb") {
     const data = await tmdbFetch("/configuration", {}, db).catch((error) => ({ error }));
     return data.error ? { ok: false, message: data.error.message || "TMDB indisponível." } : { ok: true, message: "TMDB conectado com sucesso." };
@@ -12580,13 +12566,9 @@ async function handleApi(req, res, pathname) {
   if (["/api/payments/config", "/api/payments/config/mercado-pago"].includes(pathname) && method === "GET") {
     const active = activeOnlinePaymentProvider(db);
     const config = active.config;
-    const environment = config?.environment === "production" ? "production" : "sandbox";
-    const sandbox = integrationConfigService.resolvedConfig(db, "mercadoPagoSandbox");
-    const customer = getCustomerUser(req, db);
-    const authorizedEmails = String(sandbox?.authorizedEmails || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-    const sandboxAvailable = process.env.NEXT_PUBLIC_CINEMA_SLUG === "cinecruzeiro"
-      && Boolean(customer && sandbox?.enabled && sandbox?.configured && authorizedEmails.includes(String(customer.email || "").toLowerCase()))
-      && sandbox.accessToken !== integrationConfigService.resolvedConfig(db, "mercadoPago")?.accessToken;
+    const environment = active.provider === "mercado_pago"
+      ? "production"
+      : config?.environment === "production" ? "production" : "sandbox";
     sendJson(res, 200, {
       provider: active.provider,
       name: active.name,
@@ -12597,50 +12579,6 @@ async function handleApi(req, res, pathname) {
       livePayments: !isProduction() || environment === "production",
       checkoutAvailable: !isProduction() || environment === "production"
         || (active.provider === "pag_bank" && environment === "sandbox"),
-      ...(sandboxAvailable ? { sandboxTest: { publicKey: sandbox.publicKey, amount: 10 } } : {})
-    }, { "Cache-Control": "no-store" });
-    return;
-  }
-  if (pathname === "/api/payments/sandbox/card-test" && method === "POST") {
-    const customer = getCustomerUser(req, db);
-    const sandbox = integrationConfigService.resolvedConfig(db, "mercadoPagoSandbox");
-    const production = integrationConfigService.resolvedConfig(db, "mercadoPago");
-    const authorizedEmails = String(sandbox?.authorizedEmails || "").split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-    if (process.env.NEXT_PUBLIC_CINEMA_SLUG !== "cinecruzeiro" || !customer || !sandbox?.enabled || !sandbox?.configured
-      || !authorizedEmails.includes(String(customer.email || "").toLowerCase()) || sandbox.accessToken === production?.accessToken) {
-      sendJson(res, 403, { error: { code: "SANDBOX_FORBIDDEN", message: "Teste de pagamento não autorizado ou não configurado." } }, { "Cache-Control": "no-store" });
-      return;
-    }
-    const body = await readBody(req);
-    if (body.cardNumber || body.cvv || body.securityCode || body.cardExpiration || body.cardholderName) {
-      sendJson(res, 400, { error: { code: "CARD_DATA_NOT_ALLOWED", message: "Envie apenas o token do cartão gerado pelo Mercado Pago." } });
-      return;
-    }
-    const token = String(body.cardToken || "").trim();
-    const paymentMethodId = String(body.paymentMethodId || "").trim();
-    if (!token || token.length > 300 || !/^[a-z0-9_-]{2,40}$/i.test(paymentMethodId)) {
-      sendJson(res, 422, { error: { code: "SANDBOX_CARD_INVALID", message: "Token ou bandeira do cartão de teste inválidos." } });
-      return;
-    }
-    const reference = `SANDBOX-${crypto.randomUUID()}`;
-    const result = await paymentService.createMercadoPagoOrderPayment({
-      id: reference,
-      movieTitle: "Teste de cartão",
-      totalPrice: 10,
-      customerEmail: "test@testuser.com"
-    }, sandbox, {
-      method: "credit_card",
-      sandboxTest: true,
-      deviceId: mercadoPagoDeviceId(req),
-      idempotencyKey: reference,
-      card: { token, paymentMethodId, paymentTypeId: "credit_card", installments: Math.max(1, Math.min(6, Number(body.installments || 1))) }
-    });
-    sendJson(res, 200, {
-      status: result.status,
-      statusDetail: result.statusDetail,
-      reference,
-      orderId: result.raw?.testMode === true ? "" : String(result.id || ""),
-      message: "Teste processado. Nenhum pedido ou ingresso foi criado."
     }, { "Cache-Control": "no-store" });
     return;
   }

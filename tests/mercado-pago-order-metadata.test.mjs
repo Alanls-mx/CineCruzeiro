@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import paymentService from "../backend/services/paymentService.js";
 
-const config = { environment: "sandbox", publicKey: "TEST-public", accessToken: "TEST-private" };
+const config = { environment: "production", publicKey: "APP_USR-public", accessToken: "APP_USR-private" };
 
 async function captureOrder(order, options = {}, respond = (request) => new Response(JSON.stringify({
   id: "mp-order",
@@ -16,7 +16,7 @@ async function captureOrder(order, options = {}, respond = (request) => new Resp
   };
   try {
     await paymentService.createMercadoPagoOrderPayment(order, config, {
-      method: "credit_card", sandboxTest: true,
+      method: "credit_card",
       card: { token: "card-token", paymentMethodId: "visa", installments: 1 },
       ...options
     });
@@ -74,9 +74,9 @@ test("Mercado Pago recusa itens que nao compoem o total cobrado", async () => {
   }), { code: "MERCADO_PAGO_ITEMS_TOTAL_MISMATCH" });
 });
 
-test("SDK mantém o mapeamento do Mercado Pago para pagador de teste inválido", async () => {
+test("SDK mantém o mapeamento de erros de pagamento recusado pelo Mercado Pago", async () => {
   await assert.rejects(captureOrder({
-    id: "order-126", totalPrice: 10, customerEmail: "test@testuser.com",
+    id: "order-126", totalPrice: 10, customerEmail: "cliente@example.com",
     ticketItems: [{ id: "inteira", quantity: 1, unitPrice: 10 }]
   }, {}, () => new Response(JSON.stringify({
     message: "Invalid users involved",
