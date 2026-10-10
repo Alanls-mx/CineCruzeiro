@@ -17,6 +17,7 @@ const {
   closePostgres,
   writeDbToPostgres,
   withPostgresMutationLock,
+  outsidePostgresTransaction,
   appendAuditLogToPostgres,
   appendSystemLogToPostgres,
   enqueueCrmWebhookEvent,
@@ -1426,6 +1427,7 @@ function repositoryMutationRoute(pathname, method) {
     || /^\/api\/admin\/email\/campaigns(?:\/.*)?$/.test(pathname)
     || /^\/api\/admin\/social-studio\/(copy|resolve|preview|preview-scene|variations|uploads)$/.test(pathname)
     || /^\/api\/admin\/integrations\/[^/]+(?:\/(test|enable|disable))?$/.test(pathname)
+    || /^\/api\/admin\/integrations\/mercadoPago\/webhook-simulations(?:\/batch|\/[^/]+\/resend)?$/.test(pathname)
     || /^\/api\/users(?:\/[^/]+)?$/.test(pathname)
     || (/^\/api\/orders\/[^/]+$/.test(pathname) && method === "PATCH")
     || pathname === "/api/admin/logout"
@@ -1845,7 +1847,7 @@ function normalizeDb(db) {
   ];
   db.ads = db.ads
     .filter((item) => item.id !== "banner-whatsapp-pix" && !/whatsapp/i.test(`${item.title || ""} ${item.description || ""}`))
-    .map((item) => normalizeAd(item, item));
+    .map((item) => normalizeAd(item, item, { preserveTimestamp: true }));
   db.users ||= [
     {
       id: "admin",
@@ -3971,7 +3973,7 @@ function queueTicketEmailDelivery(orderId) {
   pendingTicketEmailDeliveries.add(normalizedOrderId);
   logEvent("info", "ticket_email.background_queued", { orderId: normalizedOrderId });
   setImmediate(() => {
-    requestContext.run({}, () => {
+    outsidePostgresTransaction(() => requestContext.run({}, () => {
       mutationContext.run({ active: false }, () => {
         void processQueuedTicketEmailDelivery(normalizedOrderId)
           .catch((error) => {
@@ -3982,7 +3984,7 @@ function queueTicketEmailDelivery(orderId) {
           })
           .finally(() => pendingTicketEmailDeliveries.delete(normalizedOrderId));
       });
-    });
+    }));
   });
   return true;
 }
@@ -7754,7 +7756,7 @@ function assertPromotionRules(db, promotion, currentId = "") {
   }
 }
 
-function normalizeAd(input, existing = {}) {
+function normalizeAd(input, existing = {}, { preserveTimestamp = false } = {}) {
   const title = String(input.title || existing.title || "Anuncio").trim();
   const startsAt = String(input.startsAt ?? existing.startsAt ?? "").trim();
   const endsAt = String(input.endsAt ?? existing.endsAt ?? "").trim();
@@ -7776,7 +7778,7 @@ function normalizeAd(input, existing = {}) {
     lastImpressionAt: existing.lastImpressionAt || "",
     lastClickAt: existing.lastClickAt || "",
     createdAt: existing.createdAt || input.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    updatedAt: preserveTimestamp ? (existing.updatedAt || input.updatedAt || new Date().toISOString()) : new Date().toISOString(),
     active: input.active !== undefined ? Boolean(input.active) : existing.active !== false
   };
 }
@@ -12451,7 +12453,7 @@ async function handleApi(req, res, pathname) {
     const job = createWebhookBatchJob();
     sendJson(res, 202, { job: webhookBatchJobSnapshot(job) });
     setImmediate(() => {
-      void runWebhookBatchJob(job);
+      outsidePostgresTransaction(() => { void runWebhookBatchJob(job); });
     });
     return;
   }

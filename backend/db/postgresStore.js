@@ -32,6 +32,10 @@ function contextClient() {
   return transactionContext.getStore()?.client || null;
 }
 
+function outsidePostgresTransaction(callback) {
+  return transactionContext.exit(callback);
+}
+
 async function queryPostgres(text, values = []) {
   const client = contextClient();
   return (client || getPool()).query(text, values);
@@ -1668,6 +1672,7 @@ module.exports = {
   postgresEnabled,
   queryPostgres,
   withPostgresTransaction,
+  outsidePostgresTransaction,
   invalidatePostgresSnapshot,
   rememberSnapshot,
   enablePostgresCacheInvalidation,

@@ -289,6 +289,7 @@ async function update(order, related = {}, options = {}) {
     audit: options.audit
   }, async (client) => {
     const values = orderValues(order);
+    values.pop(); // created_at is immutable on updates
     values.push(options.expectedUpdatedAt || null);
     const result = await timedQuery(client, `UPDATE orders SET
       customer_user_id=$2, customer_name=$3, customer_email=$4, customer_phone=$5,
@@ -298,7 +299,7 @@ async function update(order, related = {}, options = {}) {
       club_credits_applied=$18, club_discount=$19, additional_payment=$20,
       service_fiscal_status=$21, goods_fiscal_status=$22, goods_fiscal_trigger=$23,
       metadata=$24::jsonb, updated_at=now()
-      WHERE id=$1 AND ($26::timestamptz IS NULL OR updated_at=$26::timestamptz)
+      WHERE id=$1 AND ($25::timestamptz IS NULL OR date_trunc('milliseconds', updated_at)=$25::timestamptz)
       RETURNING *`, values, { repository: "order", operation: options.operation || "update" });
     if (!result.rowCount) {
       const exists = await timedQuery(client, "SELECT 1 FROM orders WHERE id=$1", [order.id], {

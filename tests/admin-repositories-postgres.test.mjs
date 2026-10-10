@@ -173,6 +173,12 @@ test("fase 3A cria pedido uma vez e preserva seus itens", { skip: !TEST_DATABASE
     assert.equal(saved.totalPrice, 25);
     assert.equal(saved.ticketItems.length, 1);
     assert.equal(saved.concessionItems.length, 1);
+    const edited = await orderRepository.update(
+      { ...saved, customerPhone: "11999998888" },
+      {},
+      { expectedUpdatedAt: saved.updatedAt }
+    );
+    assert.equal(edited.customerPhone, "11999998888");
 
     const statusResults = await Promise.all([
       orderRepository.updateStatus(saved.id, "expired", ["pending_payment"], { expiredAt: new Date().toISOString() }),
