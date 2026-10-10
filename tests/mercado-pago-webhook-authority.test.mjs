@@ -1,9 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import crypto from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const paymentService = require("../backend/services/paymentService");
+
+test("webhook signature preserves the uppercase order ID exactly as Mercado Pago signs it", () => {
+  const id = "ORDTESTUPPERCASE123";
+  const requestId = "2066ca19-c6f1-498a-be75-1923005edd06";
+  const timestamp = "1791560000000";
+  const secret = "webhook-secret";
+  const manifest = `id:${id};request-id:${requestId};ts:${timestamp};`;
+  const hash = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+  const url = new URL(`https://example.com/api/webhooks/mercado-pago?data.id=${id}&type=order`);
+  const req = { headers: { "x-request-id": requestId, "x-signature": `ts=${timestamp},v1=${hash}` } };
+
+  const verification = paymentService.verifyWebhookRequest("mercado_pago", req, url, {}, { webhookSecret: secret });
+  assert.equal(verification.dataId, id);
+  assert.equal(verification.verified, true);
+  assert.equal(paymentService.createMercadoPagoWebhookSignature({ dataId: id, requestId, timestamp }, secret).manifest, manifest);
+});
 
 test("a webhook body cannot approve an order that Mercado Pago still reports pending", async () => {
   const originalFetch = global.fetch;

@@ -50,6 +50,9 @@ const url = new URL(`https://lumixengine.com/projects/cinecruzeiro/api/webhooks/
 const verification = paymentService.verifyWebhookRequest("mercado_pago", req, url, body, { webhookSecret: secret });
 assert.equal(verification.verified, true);
 assert.equal(verification.dataId, dataId);
+const expectedManifest = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
+const expectedHash = crypto.createHmac("sha256", secret).update(expectedManifest).digest("hex");
+assert.equal(req.headers["x-signature"], `ts=${timestamp},v1=${expectedHash}`);
 
 const normalized = paymentService.normalizeMercadoPagoWebhookOrder(body);
 assert.equal(normalized.id, dataId);
@@ -122,7 +125,13 @@ assert.equal(authorizedPayment.paymentStatus, "approved");
 assert.equal(authorizedPayment.amount, 24.9);
 
 const lowerCaseUrl = new URL(`https://lumixengine.com/projects/cinecruzeiro/api/webhooks/mercado-pago?data.id=${encodeURIComponent(dataId.toLowerCase())}&type=order`);
-const lowerCaseVerification = paymentService.verifyWebhookRequest("mercado_pago", req, lowerCaseUrl, body, { webhookSecret: secret });
+assert.throws(
+  () => paymentService.verifyWebhookRequest("mercado_pago", req, lowerCaseUrl, body, { webhookSecret: secret }),
+  (error) => error?.code === "MERCADO_PAGO_WEBHOOK_INVALID_SIGNATURE" && error?.statusCode === 401
+);
+const lowerCaseVerification = paymentService.verifyWebhookRequest("mercado_pago", {
+  headers: { "x-request-id": requestId, "x-signature": signatureFor(dataId.toLowerCase()) }
+}, lowerCaseUrl, body, { webhookSecret: secret });
 assert.equal(lowerCaseVerification.verified, true);
 assert.equal(lowerCaseVerification.dataId, dataId.toLowerCase());
 

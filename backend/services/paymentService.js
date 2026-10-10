@@ -724,11 +724,8 @@ function requestHeader(req, name) {
 
 function mercadoPagoManifest(dataId, requestId, ts) {
   const parts = [];
-  // Mercado Pago requires alphanumeric resource IDs to be lowercased when the
-  // HMAC manifest is assembled. Keep the original ID outside the manifest for lookup.
-  const rawDataId = String(dataId || "").trim();
-  const normalizedDataId = /^[a-z0-9]+$/i.test(rawDataId) ? rawDataId.toLowerCase() : rawDataId;
-  if (normalizedDataId) parts.push(`id:${normalizedDataId};`);
+  const resourceId = String(dataId || "").trim();
+  if (resourceId) parts.push(`id:${resourceId};`);
   if (requestId) parts.push(`request-id:${requestId};`);
   if (ts) parts.push(`ts:${ts};`);
   return parts.join("");
