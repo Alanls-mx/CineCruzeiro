@@ -56,6 +56,9 @@ test("account, catalog and cleaning interval workflows on an isolated backend", 
     assert.equal(dashboard.status, 200, JSON.stringify(dashboard.data));
     assert.equal(dashboard.data.revenuePeriod, 0);
     assert.ok(Array.isArray(dashboard.data.chart));
+    assert.equal((await request("/api/concessions", "POST", { name: "Pipoca QA", price: 12, stock: 10 })).status, 201);
+    assert.equal((await request("/api/promotions", "POST", { title: "Oferta QA", value: 5, couponCode: "OFERTAQA" })).status, 201);
+    assert.equal((await request("/api/ads", "POST", { title: "Anúncio QA" })).status, 201);
     assert.equal((await request("/api/admin/me", "PATCH", { name: "Nobody" }, "")).status, 401);
     assert.equal((await request("/api/users", "POST", { name: "Operador QA", email: "operator@example.test", role: "operator", accountType: "team" })).status, 422);
     const created = await request("/api/users", "POST", { name: "Operador QA", email: "operator@example.test", role: "operator", accountType: "team", password });
