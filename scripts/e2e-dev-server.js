@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, "..");
 const dataDir = path.join(root, ".e2e-data");
 const dataFile = path.join(dataDir, "db.json");
 const processes = [];
+const frontendPort = Number(process.env.E2E_FRONTEND_PORT || 3000);
 
 function isoDate(daysFromNow) {
   const date = new Date(Date.now() + daysFromNow * 86400000);
@@ -181,13 +182,13 @@ const env = {
   MERCADO_PAGO_WEBHOOK_SECRET: "e2e-webhook-secret",
   ADMIN_EMAIL: "admin-e2e@cine.local",
   ADMIN_PASSWORD: "Admin-e2e-2026!",
-  CORS_ORIGIN: "http://127.0.0.1:3000,http://localhost:3000",
+  CORS_ORIGIN: `http://127.0.0.1:${frontendPort},http://localhost:${frontendPort}`,
   NEXT_PUBLIC_CINE_WS_URL: "ws://127.0.0.1:4000",
   MOVIE_IMAGE_MAINTENANCE_ENABLED: "false"
 };
 
-function run(label, executable, args) {
-  const child = spawn(executable, args, { cwd: root, env, shell: false, stdio: "pipe" });
+function run(label, executable, args, overrides = {}) {
+  const child = spawn(executable, args, { cwd: root, env: { ...env, ...overrides }, shell: false, stdio: "pipe" });
   processes.push(child);
   child.stdout.on("data", (data) => process.stdout.write(`[${label}] ${data}`));
   child.stderr.on("data", (data) => process.stderr.write(`[${label}] ${data}`));
@@ -206,5 +207,5 @@ function shutdown(code = 0) {
 
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
-run("backend-e2e", process.execPath, ["backend/server.js"]);
-run("frontend-e2e", process.execPath, [require.resolve("next/dist/bin/next"), "dev"]);
+run("backend-e2e", process.execPath, ["backend/server.js"], { PORT: "4000" });
+run("frontend-e2e", process.execPath, [require.resolve("next/dist/bin/next"), "dev"], { PORT: String(frontendPort) });
