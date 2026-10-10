@@ -111,6 +111,12 @@ Os modulos de navegador usam um unico namespace explicito, `CineAdminModules`, c
 
 `handleApi` ainda concentra autenticacao, bilheteria, Clube, integracoes, pagamentos e webhooks; `bindEvents` ainda concentra os listeners do admin. Essas partes exigem testes de contrato, concorrencia e permissao mais completos antes de extracoes adicionais. Em particular, o webhook Mercado Pago funcional e o payload de Orders foram deliberadamente preservados. `CheckoutPage.tsx` e `postgresStore.js` permanecem fora desta fase. A compatibilidade multi-cinema foi verificada por ausencia de novos valores de ambiente, credenciais ou marca fixa nos handlers compartilhados; a validacao de cinco instalacoes em execucao continua pendente.
 
+## Continuação: infraestrutura de testes
+
+O teste de automação de e-mail passou a usar a mesma data planejada para selecionar filmes e renderizar as sessões (commit `c20ddd6`); a suíte `test:email-campaign` passou. O smoke antigo foi isolado em diretório temporário e atualizado para contratos atuais de impressão, rascunhos e batch de webhooks. O modo legado JSON passou integralmente, sem acesso ao `backend/data/db.json` do workspace. Uma retentativa limitada para `rename` com `EPERM`/`EBUSY` no Windows foi adicionada ao armazenamento JSON; não há fallback que apague o destino.
+
+O fluxo padrão agora exige PostgreSQL descartável e marcado, conforme [TESTES_POSTGRESQL.md](TESTES_POSTGRESQL.md). `npm run test:unit` passou. Não há PostgreSQL local configurado neste host; smoke e concorrência PostgreSQL permanecem **não homologados**, e `npm test` falha de forma segura nessa ausência. A modularização adicional do `bindEvents` fica condicionada à execução do smoke PostgreSQL isolado. Nenhum deploy foi realizado.
+
 ## Commits
 
 `c864d05` auditoria/baseline; `2596baf` logs do admin; `0f6117f` dashboard backend; `8555e17` dashboard UI; `068f17e` filmes/sessoes; `af1f8bf` telemetria UI; `ce11961` salas/tipos; `2d7cf66` Clube UI; `911f62f` catalogo comercial; `94fb19f` cobertura dos repositorios apos extracao; `71672f5` vendas da bomboniere UI; `94dac03` logs administrativos backend; `8b01228` cupons UI; `5f9dc67` anuncios UI; `078b243` relatorio intermediario.

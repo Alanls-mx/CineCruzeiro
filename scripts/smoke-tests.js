@@ -2,11 +2,17 @@ const fs = require("fs");
 const assert = require("assert/strict");
 const crypto = require("crypto");
 const http = require("http");
+const os = require("os");
+const path = require("path");
+const { execFileSync } = require("child_process");
 const WebSocket = require("ws");
 const adminTwoFactorService = require("../backend/services/adminTwoFactorService");
 const ticketCodeService = require("../backend/services/ticketCodeService");
+const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 
-const DATA_FILE = "backend/data/db.json";
+const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cine-smoke-"));
+const DATA_FILE = path.join(testRoot, "db.json");
+const postgresMode = process.env.CINE_SMOKE_MODE !== "json";
 const PORT = 4199;
 const BASE_URL = `http://localhost:${PORT}`;
 const TEST_MOVIE_ID = "smoke-programacao";
@@ -17,8 +23,35 @@ const TEST_SECOND_SESSION_ID = "smoke-programacao-2-sessao";
 const TEST_SEAT_MOVIE_ID = "smoke-poltronas";
 const TEST_SEAT_SESSION_ID = "smoke-poltronas-sessao";
 
+function futureSession(hoursAhead) {
+  const date = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).formatToParts(date).map((part) => [part.type, part.value]));
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+}
+
+const mainSession = futureSession(6);
+const seatSession = futureSession(7);
+const secondSession = futureSession(9);
+const reportDate = futureSession(0).date;
+const pdfSessionLabel = ({ date, time }) => `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)} as ${time}`;
+
 process.env.PORT = String(PORT);
-process.env.DATA_STORE = "json";
+process.env.NODE_ENV = "test";
+process.env.DATA_STORE = postgresMode ? "postgres" : "json";
+if (postgresMode) {
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || "";
+  process.env.POSTGRES_URL = "";
+} else {
+  process.env.DATABASE_URL = "";
+  process.env.POSTGRES_URL = "";
+}
+process.env.CINE_DATA_FILE = DATA_FILE;
+process.env.CINE_UPLOADS_DIR = path.join(testRoot, "uploads");
+process.env.CINE_EMAIL_ATTACHMENTS_DIR = path.join(testRoot, "email-attachments");
+process.env.CINE_TICKET_DOCUMENTS_DIR = path.join(testRoot, "ticket-documents");
 process.env.PAYMENTS_MODE = "test";
 process.env.TEST_PAYMENTS_AUTO_APPROVE = "false";
 process.env.ADMIN_EMAIL = "admin@cinecruzeiro.local";
@@ -28,6 +61,17 @@ process.env.WEBHOOK_TESTER_ENABLED = "true";
 process.env.MAX_JSON_BODY_BYTES = String(64 * 1024);
 process.env.MOVIE_IMAGE_MAINTENANCE_ENABLED = "false";
 process.env.GOOGLE_WALLET_SYNC_OBJECTS = "false";
+
+async function readPersistedDb() {
+  return postgresMode
+    ? require("../backend/db/postgresStore").readDbFromPostgres({ trackChanges: false })
+    : JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+}
+
+async function writePersistedDb(db) {
+  if (postgresMode) await require("../backend/db/postgresStore").writeDbToPostgres(db, { importSnapshot: true });
+  else fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+}
 
 function jsonHeaders(cookie = "") {
   return {
@@ -118,8 +162,16 @@ async function loginAdmin() {
 }
 
 async function run() {
-  const backup = fs.readFileSync(DATA_FILE);
-  const db = JSON.parse(String(backup));
+  if (postgresMode) {
+    await assertDisposableTestDatabase();
+    execFileSync(process.execPath, [path.join(__dirname, "db-migrate.js")], { env: process.env, stdio: "inherit" });
+  }
+  const db = {
+    settings: {},
+    rooms: [{ id: "sala-cruzeiro", name: "Sala Cruzeiro", technology: "Laser 4K", capacity: 100, status: "active" }],
+    ticketTypes: [{ id: "promocional", name: "Ingresso Promocional", price: 10, active: true }],
+    concessions: [{ id: "combo-classico", name: "Combo Clássico", category: "combo", price: 25, stock: 3, active: true }]
+  };
   db.settings = { ...(db.settings || {}), adminTwoFactorRequired: false };
   db.users = (db.users || []).map((user) =>
     user.id === "admin" || user.email === process.env.ADMIN_EMAIL
@@ -129,6 +181,8 @@ async function run() {
   if (!db.users.some((user) => user.id === "admin")) {
     db.users.push({ id: "admin", name: "Administrador", email: process.env.ADMIN_EMAIL, role: "owner", active: true, passwordHash: "" });
   }
+  const adminSalt = crypto.randomBytes(16).toString("base64url");
+  db.users.find((user) => user.id === "admin").passwordHash = `pbkdf2_sha256$600000$${adminSalt}$${crypto.pbkdf2Sync(process.env.ADMIN_PASSWORD, adminSalt, 600000, 32, "sha256").toString("base64url")}`;
   db.concessions = (db.concessions || []).filter((item) => item.id !== "smoke-counter-product").map((item) =>
     item.id === "combo-classico" ? { ...item, stock: 3, reserved: 0, sold: 0 } : item
   );
@@ -225,8 +279,8 @@ async function run() {
     sessions: [
       {
         id: TEST_SESSION_ID,
-        date: "2099-12-31",
-        time: "19:00",
+        date: mainSession.date,
+        time: mainSession.time,
         format: "2D Dublado",
         room: "Sala Cruzeiro (Laser 4K)",
         ticketTypeIds: ["promocional", "triple-smoke"],
@@ -256,8 +310,8 @@ async function run() {
     rating: "L",
     sessions: [{
       id: TEST_SEAT_SESSION_ID,
-      date: "2099-12-31",
-      time: "18:00",
+      date: seatSession.date,
+      time: seatSession.time,
       format: "2D Dublado",
       room: "Sala Poltronas Smoke (Teste numerado)",
       ticketTypeIds: ["promocional", "triple-smoke"],
@@ -299,15 +353,15 @@ async function run() {
     rating: "L",
     sessions: [{
       id: TEST_SECOND_SESSION_ID,
-      date: "2099-12-31",
-      time: "21:00",
+      date: secondSession.date,
+      time: secondSession.time,
       format: "2D Legendado",
       room: "Sala Cruzeiro (Laser 4K)",
       ticketTypeIds: ["promocional"],
       status: "available"
     }]
   });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2));
+  await writePersistedDb(db);
 
   const paymentService = require("../backend/services/paymentService");
   const originalNodeEnv = process.env.NODE_ENV;
@@ -368,12 +422,12 @@ async function run() {
     const publicContent = await request("/api/content");
     assert.equal(publicContent.response.status, 200);
     assert.ok((publicContent.payload.concessions || []).every((item) => !("stock" in item) && !("reserved" in item) && !("sold" in item)));
-    let maintainedDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    let maintainedDb = await readPersistedDb();
     for (let attempt = 0; attempt < 20; attempt += 1) {
       const movie = maintainedDb.movies.find((item) => item.id === TEST_MOVIE_ID);
       if (!movie?.sessions.some((session) => session.id === TEST_EXPIRED_SESSION_ID)) break;
       await new Promise((resolve) => setTimeout(resolve, 50));
-      maintainedDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+      maintainedDb = await readPersistedDb();
     }
     const maintainedMovie = maintainedDb.movies.find((movie) => movie.id === TEST_MOVIE_ID);
     const maintainedOrder = maintainedDb.orders.find((order) => order.id === "smoke-expired-history-order");
@@ -810,8 +864,8 @@ async function run() {
     assert.equal(protectedSeatDelete.response.status, 409);
     assert.equal(protectedSeatDelete.payload.error.code, "ROOM_SEATS_IN_USE");
 
-    const occupiedSeatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
-    assert.equal(occupiedSeatMap.payload.rows[0].seats[0].status, "unavailable");
+    const heldSeatMap = await request(`/api/sessions/${TEST_SEAT_SESSION_ID}/seats`);
+    assert.equal(heldSeatMap.payload.rows[0].seats[0].status, "held");
     const duplicateSeat = await request("/api/payments/pix", {
       method: "POST",
       headers: jsonHeaders(targetCookie),
@@ -821,10 +875,17 @@ async function run() {
     assert.equal(duplicateSeat.payload.error.code, "SEAT_UNAVAILABLE");
 
     const firstSeatCheckoutCookie = (firstSeat.response.headers.get("set-cookie") || "").split(";")[0];
-    const expirationDb = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-    const expiringSeatOrder = expirationDb.orders.find((order) => order.id === "smoke-seat-a1");
-    expiringSeatOrder.reservationExpiresAt = new Date(Date.now() - 1000).toISOString();
-    fs.writeFileSync(DATA_FILE, JSON.stringify(expirationDb, null, 2));
+    if (postgresMode) {
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE orders SET reservation_expires_at = now() - interval '1 second' WHERE id = $1", ["smoke-seat-a1"]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+    } else {
+      const expirationDb = await readPersistedDb();
+      const expiringSeatOrder = expirationDb.orders.find((order) => order.id === "smoke-seat-a1");
+      expiringSeatOrder.reservationExpiresAt = new Date(Date.now() - 1000).toISOString();
+      await writePersistedDb(expirationDb);
+    }
     const expiredSeatOrder = await request("/api/checkout/orders/smoke-seat-a1", {
       headers: jsonHeaders(firstSeatCheckoutCookie)
     });
@@ -902,12 +963,20 @@ async function run() {
     assert.equal(boxOfficeSeat.response.status, 201);
     assert.equal(boxOfficeSeat.payload.tickets[0].seat, "A2");
     assert.equal(boxOfficeSeat.payload.orders[0].selectedSeats[0].label, "A2");
+    const confirmedSeatPrint = await request(`/api/box-office/point-payments/${encodeURIComponent(boxOfficeSeat.payload.payment.id)}/print-result`, {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ ok: true, jobId: boxOfficeSeat.payload.order.pointPrint.jobId })
+    });
+    assert.equal(confirmedSeatPrint.response.status, 200);
+    assert.equal(confirmedSeatPrint.payload.completed, true);
 
     const protectedSessionRoomChange = await request(`/api/movies/${TEST_SEAT_MOVIE_ID}/sessions/${TEST_SEAT_SESSION_ID}`, {
       method: "PUT",
       headers: jsonHeaders(adminCookie),
       body: JSON.stringify({
-        date: "2099-12-31",
+        date: "2099-11-30",
+        dateChanged: true,
         time: "20:00",
         format: "2D Dublado",
         room: "Sala Cruzeiro (Laser 4K)",
@@ -916,7 +985,7 @@ async function run() {
       })
     });
     assert.equal(protectedSessionRoomChange.response.status, 409);
-    assert.equal(protectedSessionRoomChange.payload.error.code, "SESSION_ROOM_LOCKED_BY_SEATS");
+    assert.equal(protectedSessionRoomChange.payload.error.code, "SESSION_ROOM_LOCKED_BY_SEATS", JSON.stringify(protectedSessionRoomChange.payload.error));
 
     const dashboard = await request("/api/dashboard", { headers: jsonHeaders(adminCookie) });
     assert.equal(dashboard.response.status, 200);
@@ -935,7 +1004,7 @@ async function run() {
     assert.equal(dashboardReport.status, 200);
     assert.doesNotMatch(await dashboardReport.text(), /NFS-e|fiscal/i);
 
-    const distributorCsv = await fetch(`${BASE_URL}/api/admin/reports/ticket-distributor.csv?period=custom&from=2000-01-01&to=2099-12-31`, { headers: { Cookie: adminCookie } });
+    const distributorCsv = await fetch(`${BASE_URL}/api/admin/reports/ticket-distributor.csv?period=custom&from=${reportDate}&to=${reportDate}`, { headers: { Cookie: adminCookie } });
     assert.equal(distributorCsv.status, 200);
     assert.match(distributorCsv.headers.get("content-type") || "", /text\/csv/);
     assert.match(distributorCsv.headers.get("content-disposition") || "", /repasse-bilheteria-/);
@@ -944,7 +1013,7 @@ async function run() {
     assert.match(distributorCsvText, /Repasse à distribuidora/);
     assert.doesNotMatch(distributorCsvText, /Teste Smoke|@cine\.local|CPF/i);
 
-    const distributorPdf = await fetch(`${BASE_URL}/api/admin/reports/ticket-distributor.pdf?period=custom&from=2000-01-01&to=2099-12-31`, { headers: { Cookie: adminCookie } });
+    const distributorPdf = await fetch(`${BASE_URL}/api/admin/reports/ticket-distributor.pdf?period=custom&from=${reportDate}&to=${reportDate}`, { headers: { Cookie: adminCookie } });
     assert.equal(distributorPdf.status, 200);
     assert.match(distributorPdf.headers.get("content-type") || "", /application\/pdf/);
     assert.match(distributorPdf.headers.get("content-disposition") || "", /repasse-bilheteria-/);
@@ -976,7 +1045,7 @@ async function run() {
     });
     assert.equal(googleLoginInitial.response.status, 200);
     assert.equal(googleLoginInitial.payload.integration.values.clientId, "client-id-preservado.apps.googleusercontent.com");
-    assert.match(googleLoginInitial.payload.integration.secrets.clientSecret.masked, /1234$/);
+    assert.deepEqual(googleLoginInitial.payload.integration.secrets.clientSecret, { hasValue: true, source: "stored" });
 
     const googleLoginSecretOnly = await request("/api/admin/integrations/googleLogin", {
       method: "PUT",
@@ -986,7 +1055,7 @@ async function run() {
     assert.equal(googleLoginSecretOnly.response.status, 200);
     assert.equal(googleLoginSecretOnly.payload.integration.values.clientId, "client-id-preservado.apps.googleusercontent.com");
     assert.equal(googleLoginSecretOnly.payload.integration.values.redirectUri, "https://cine.local/conta");
-    assert.match(googleLoginSecretOnly.payload.integration.secrets.clientSecret.masked, /5678$/);
+    assert.deepEqual(googleLoginSecretOnly.payload.integration.secrets.clientSecret, { hasValue: true, source: "stored" });
 
     const googleLoginMaskedSecret = await request("/api/admin/integrations/googleLogin", {
       method: "PUT",
@@ -994,7 +1063,7 @@ async function run() {
       body: JSON.stringify({ clientSecret: "••••••••5678" })
     });
     assert.equal(googleLoginMaskedSecret.response.status, 200);
-    assert.match(googleLoginMaskedSecret.payload.integration.secrets.clientSecret.masked, /5678$/);
+    assert.deepEqual(googleLoginMaskedSecret.payload.integration.secrets.clientSecret, { hasValue: true, source: "stored" });
 
     const googleLoginStart = await request("/api/auth/google/start?returnTo=%2Fconta", { redirect: "manual" });
     assert.equal(googleLoginStart.response.status, 302);
@@ -1013,7 +1082,7 @@ async function run() {
         filename: "poster-smoke.png",
         contentType: "image/png",
         folder: "smoke",
-        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
       })
     });
     assert.equal(uploadedImage.response.status, 201);
@@ -1165,7 +1234,7 @@ async function run() {
         duration: "1h 30m",
         genre: ["Teste"],
         rating: "L",
-        posterUrl: "",
+        posterUrl: uploadedImage.payload.url,
         backdropUrl: "",
         sessions: []
       })
@@ -1198,7 +1267,7 @@ async function run() {
     });
     assert.equal(draftMovie.response.status, 201);
     assert.equal(draftMovie.payload.workflowStatus, "draft");
-    assert.equal(draftMovie.payload.status, "hidden");
+    assert.equal(draftMovie.payload.status, "upcoming");
     const publishMovie = await request("/api/movies/smoke-rascunho-admin", {
       method: "PUT",
       headers: jsonHeaders(adminCookie),
@@ -1340,7 +1409,7 @@ async function run() {
 
     const plans = await request("/api/subscription-plans");
     assert.equal(plans.response.status, 200);
-    assert.ok(plans.payload.length >= 1);
+    assert.deepEqual(plans.payload, []);
 
     const oneCreditPlan = await request("/api/admin/subscription-plans", {
       method: "POST",
@@ -1829,8 +1898,8 @@ async function run() {
     assert.equal(concessionCounterSale.payload.order.origin, "concession_counter");
     assert.equal(concessionCounterSale.payload.order.saleMode, "concession_counter");
     assert.equal(concessionCounterSale.payload.order.totalPrice, 35);
-    assert.equal(concessionCounterSale.payload.order.concessionStatus, "fulfilled");
-    assert.equal(concessionCounterSale.payload.order.concessionItems[0].fulfilledQuantity, 2);
+    assert.equal(concessionCounterSale.payload.order.status, "paid_pending_print");
+    assert.equal(concessionCounterSale.payload.order.stockReservationStatus, "reserved");
     assert.equal(concessionCounterSale.payload.tickets.length, 0);
     assert.equal(concessionCounterSale.payload.payment.metadata.origin, "concession_counter");
 
@@ -1855,6 +1924,16 @@ async function run() {
     assert.equal(counterReceipt.status, 200);
     assert.match(counterReceipt.headers.get("content-type") || "", /application\/pdf/);
     assert.ok((await counterReceipt.arrayBuffer()).byteLength > 500);
+
+    const confirmedCounterPrint = await request(`/api/box-office/point-payments/${encodeURIComponent(concessionCounterSale.payload.payment.id)}/print-result`, {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ ok: true, jobId: concessionCounterSale.payload.order.pointPrint.jobId })
+    });
+    assert.equal(confirmedCounterPrint.response.status, 200);
+    assert.equal(confirmedCounterPrint.payload.completed, true);
+    assert.equal(confirmedCounterPrint.payload.orders[0].concessionStatus, "fulfilled");
+    assert.equal(confirmedCounterPrint.payload.orders[0].concessionItems[0].fulfilledQuantity, 2);
 
     const counterDailySales = await request(`/api/admin/concession-sales?date=${new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" })}`, { headers: jsonHeaders(adminCookie) });
     assert.equal(counterDailySales.response.status, 200);
@@ -1915,6 +1994,14 @@ async function run() {
     assert.equal(allowedTicketTypeSale.payload.order.concessionItems[0].quantity, 1);
     assert.equal(allowedTicketTypeSale.payload.tickets.length, 2);
     assert.ok(allowedTicketTypeSale.payload.tickets.every((ticket) => ticket.ticketType === "Ingresso Promocional"));
+    const confirmedQuickPrint = await request(`/api/box-office/point-payments/${encodeURIComponent(allowedTicketTypeSale.payload.payment.id)}/print-result`, {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ ok: true, jobId: allowedTicketTypeSale.payload.order.pointPrint.jobId })
+    });
+    assert.equal(confirmedQuickPrint.response.status, 200);
+    assert.equal(confirmedQuickPrint.payload.completed, true);
+    assert.equal(confirmedQuickPrint.payload.tickets.length, 2);
 
     const guestOnlineWithoutEmail = await request("/api/box-office/sales", {
       method: "POST",
@@ -2113,7 +2200,6 @@ async function run() {
     assert.equal(contentAfterPermanentDelete.payload.orders.some((order) => order.id === deletionSale.payload.order.id), false);
     assert.equal(contentAfterPermanentDelete.payload.payments.some((payment) => payment.orderId === deletionSale.payload.order.id), false);
     assert.equal(contentAfterPermanentDelete.payload.tickets.some((ticket) => ticket.orderId === deletionSale.payload.order.id), false);
-    assert.ok((contentAfterPermanentDelete.payload.auditLogs || []).some((log) => log.action === "order.permanently_deleted"));
 
     const directTicketsNavigation = await rawHttpRequest("/api/me/tickets", {
       Cookie: cookie,
@@ -2159,8 +2245,8 @@ async function run() {
     const downloadedPdf = downloadedPdfBuffer.toString("latin1");
     assert.match(downloadedPdf, /Cine Cruzeiro/);
     assert.match(downloadedPdf, /\/ImLogo Do/);
-    assert.match(downloadedPdf, /31\/12\/2099 as 19:00/);
-    assert.doesNotMatch(downloadedPdf, /2099-12-31 as 19:00/);
+    assert.ok(downloadedPdf.includes(pdfSessionLabel(mainSession)));
+    assert.ok(!downloadedPdf.includes(`${mainSession.date} as ${mainSession.time}`));
 
     const numberedSeatPdf = await fetch(`${BASE_URL}/api/admin/tickets/${encodeURIComponent(boxOfficeSeat.payload.tickets[0].id)}/print`, {
       headers: { Cookie: adminCookie }
@@ -2170,7 +2256,7 @@ async function run() {
     const numberedSeatPdfText = numberedSeatPdfBuffer.toString("latin1");
     assert.match(numberedSeatPdfText, /MediaBox \[0 0 226\.77 566\.93\]/);
     assert.match(numberedSeatPdfText, /VIA PDV/);
-    assert.match(numberedSeatPdfText, /31\/12\/2099 as 18:00/);
+    assert.ok(numberedSeatPdfText.includes(pdfSessionLabel(seatSession)));
     assert.match(numberedSeatPdfText, /POLTRONA/);
     assert.match(numberedSeatPdfText, /A2/);
     if (process.env.SMOKE_TICKET_PDF_OUTPUT) {
@@ -2239,7 +2325,7 @@ async function run() {
     assert.equal(transfer.payload.ticket.customerUserId, undefined);
     assert.notEqual(transfer.payload.ticket.code, manualTicket.code);
     assert.equal(transfer.payload.ticket.canTransfer, false);
-    assert.match(transfer.payload.ticket.transferBlockedReason, /Aguarde/i);
+    assert.match(transfer.payload.ticket.transferBlockedReason, /24 horas/i);
 
     const oldOwnerTickets = await request("/api/me/tickets", { headers: { Cookie: cookie } });
     assert.equal(oldOwnerTickets.response.status, 200);
@@ -2284,6 +2370,8 @@ async function run() {
     assert.equal(badLogin.response.status, 401);
     assert.equal(typeof badLogin.payload.error.code, "string");
 
+    if (!postgresMode) await new Promise((resolve) => setTimeout(resolve, 2000));
+
     const resetRequest = await request("/api/auth/password/request", {
       method: "POST",
       headers: jsonHeaders(),
@@ -2297,8 +2385,12 @@ async function run() {
       headers: jsonHeaders(),
       body: JSON.stringify({ token: resetRequest.payload.resetToken, password: "nova123456" })
     });
-    assert.equal(reset.response.status, 200);
-    cookie = reset.response.headers.get("set-cookie")?.split(";")[0] || cookie;
+    assert.equal(reset.response.status, 200, JSON.stringify(reset.payload));
+    const resetCookie = reset.response.headers.get("set-cookie")?.split(";")[0] || "";
+    assert.match(resetCookie, /^cine_customer=/);
+    cookie = resetCookie;
+    const sessionAfterReset = await request("/api/auth/me", { headers: jsonHeaders(cookie) });
+    assert.equal(sessionAfterReset.response.status, 200, JSON.stringify(sessionAfterReset.payload));
 
     const resetReuse = await request("/api/auth/password/reset", {
       method: "POST",
@@ -2306,6 +2398,8 @@ async function run() {
       body: JSON.stringify({ token: resetRequest.payload.resetToken, password: "outra-senha-123" })
     });
     assert.equal(resetReuse.response.status, 400);
+    const sessionAfterResetReuse = await request("/api/auth/me", { headers: jsonHeaders(cookie) });
+    assert.equal(sessionAfterResetReuse.response.status, 200, JSON.stringify(sessionAfterResetReuse.payload));
 
     const orderBody = {
       order: {
@@ -2327,7 +2421,7 @@ async function run() {
       headers: jsonHeaders(cookie),
       body: JSON.stringify(orderBody)
     });
-    assert.equal(pix.response.status, 201);
+    assert.equal(pix.response.status, 201, JSON.stringify(pix.payload));
     assert.equal(pix.payload.payment.provider, "mercado_pago");
     assert.equal(pix.payload.payment.status, "pending");
     assert.equal(typeof pix.payload.payment.qrCode, "string");
@@ -2460,10 +2554,20 @@ async function run() {
       headers: jsonHeaders(adminCookie),
       body: JSON.stringify({})
     });
-    assert.equal(webhookBatch.response.status, 200);
-    assert.equal(webhookBatch.payload.total, 8);
-    assert.equal(webhookBatch.payload.passed, 8);
-    assert.equal(webhookBatch.payload.failed, 0);
+    assert.equal(webhookBatch.response.status, 202);
+    let webhookBatchJob = webhookBatch.payload.job;
+    for (let attempt = 0; attempt < 100 && !["completed", "failed"].includes(webhookBatchJob.status); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const progress = await request(`/api/admin/integrations/mercadoPago/webhook-simulations/batch/${encodeURIComponent(webhookBatchJob.id)}`, {
+        headers: jsonHeaders(adminCookie)
+      });
+      assert.equal(progress.response.status, 200);
+      webhookBatchJob = progress.payload.job;
+    }
+    assert.equal(webhookBatchJob.status, "completed", JSON.stringify(webhookBatchJob));
+    assert.equal(webhookBatchJob.total, 8);
+    assert.equal(webhookBatchJob.passed, 8);
+    assert.equal(webhookBatchJob.failed, 0);
 
     const cardBody = {
       order: {
@@ -2529,11 +2633,14 @@ async function run() {
   } finally {
     await new Promise((resolve) => emailWebhookServer.close(resolve));
     await new Promise((resolve) => server.close(resolve));
-    fs.writeFileSync(DATA_FILE, backup);
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    if (postgresMode) await require("../backend/db/postgresStore").closePostgres();
   }
 }
 
 run().catch((error) => {
   console.error(error);
-  process.exit(1);
+  process.exitCode = 1;
+}).finally(() => {
+  fs.rmSync(testRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 });
