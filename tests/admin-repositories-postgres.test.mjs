@@ -180,6 +180,17 @@ test("fase 3A cria pedido uma vez e preserva seus itens", { skip: !TEST_DATABASE
     );
     assert.equal(edited.customerPhone, "11999998888");
 
+    await queryPostgres("UPDATE orders SET updated_at=$2 WHERE id=$1", [saved.id, "2030-01-01T00:00:00.000100Z"]);
+    const stale = await orderRepository.findById(saved.id);
+    await queryPostgres("UPDATE orders SET customer_phone=$2, updated_at=$3 WHERE id=$1", [
+      saved.id, "11888887777", "2030-01-01T00:00:00.000900Z"
+    ]);
+    await assert.rejects(
+      orderRepository.update({ ...stale, customerPhone: "11777776666" }, {}, { expectedUpdatedAt: stale.updatedAt }),
+      { code: "ORDER_CHANGED" }
+    );
+    assert.equal((await orderRepository.findById(saved.id)).customerPhone, "11888887777");
+
     const statusResults = await Promise.all([
       orderRepository.updateStatus(saved.id, "expired", ["pending_payment"], { expiredAt: new Date().toISOString() }),
       orderRepository.updateStatus(saved.id, "expired", ["pending_payment"], { expiredAt: new Date().toISOString() })
