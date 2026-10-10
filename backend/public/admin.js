@@ -10930,6 +10930,10 @@ function bindEvents() {
     $, state, renderMovies, toggleMovieMenu, duplicateMovie, moveMovie, archiveMovie, deleteMovie,
     selectMovie, handleMovieDragStart, handleMovieDragOver, handleMovieDragLeave, handleMovieDragEnd, handleMovieDrop
   });
+  const handleSessionTicketAction = window.CineAdminModules.sessionTicketActions.createSessionTicketActionHandler({
+    openSessionDashboardDetail, showSessionTickets, openSessionEditor, removeSession,
+    openGlobalSessionEditor, copyTicketCode, openOrderView
+  });
 
   document.addEventListener("mouseover", (event) => showChartHintFromPoint(event.target));
   document.addEventListener("focusin", (event) => showChartHintFromPoint(event.target));
@@ -11085,23 +11089,7 @@ function bindEvents() {
       else if (webhook.dataset.webhookAction === "resend") void resendWebhookRun(webhook.dataset.webhookId);
       return;
     }
-    const sessionAction = event.target.closest?.("[data-admin-session-action][data-admin-session-id]");
-    if (sessionAction) {
-      const sessionId = sessionAction.dataset.adminSessionId;
-      const movieId = sessionAction.dataset.adminMovieId;
-      if (sessionAction.dataset.adminSessionAction === "dashboard") openSessionDashboardDetail(movieId, sessionId);
-      else if (sessionAction.dataset.adminSessionAction === "tickets") showSessionTickets(sessionId);
-      else if (sessionAction.dataset.adminSessionAction === "edit") openSessionEditor(sessionId);
-      else if (sessionAction.dataset.adminSessionAction === "remove") removeSession(sessionId);
-      else if (sessionAction.dataset.adminSessionAction === "global-edit") openGlobalSessionEditor(movieId, sessionId);
-      return;
-    }
-    const ticketAction = event.target.closest?.("[data-admin-ticket-action][data-admin-ticket-value]");
-    if (ticketAction) {
-      if (ticketAction.dataset.adminTicketAction === "copy") void copyTicketCode(ticketAction.dataset.adminTicketValue);
-      else if (ticketAction.dataset.adminTicketAction === "order") openOrderView(ticketAction.dataset.adminTicketValue);
-      return;
-    }
+    if (handleSessionTicketAction(event)) return;
     const floating = $("floatingActionMenu");
     const floatingAction = event.target.closest?.("[data-floating-order-action], [data-floating-campaign-action]");
     if (floatingAction && floating && !floating.hidden && floating.contains(floatingAction)) {

@@ -36,7 +36,7 @@
     "test:payment-metadata": "node --test tests/mercado-pago-order-metadata.test.mjs tests/mercado-pago-sandbox.test.mjs",
     "test:seat-map": "node --test tests/admin-session-seat-map.test.mjs",
     "test:security": "node --test tests/security/abuse.test.mjs",
-    "test:security:local": "node --test tests/checkout-identifier-security.test.mjs tests/client-ip-service.test.mjs tests/origin-policy.test.mjs tests/public-content-settings.test.mjs tests/public-remote-resource.test.mjs tests/public-seat-state-http.test.mjs tests/session-seat-availability.test.mjs tests/sql-parameterization-security.test.mjs && node scripts/movie-image-localization-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/seat-realtime-tests.js",
+    "test:security:local": "node --test tests/admin-session-ticket-actions.test.mjs tests/checkout-identifier-security.test.mjs tests/client-ip-service.test.mjs tests/origin-policy.test.mjs tests/public-content-settings.test.mjs tests/public-remote-resource.test.mjs tests/public-seat-state-http.test.mjs tests/session-seat-availability.test.mjs tests/sql-parameterization-security.test.mjs && node scripts/movie-image-localization-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/seat-realtime-tests.js",
     "test:permissions": "node --test tests/admin-permissions.test.mjs",
     "test:abuse-controls": "node --test tests/ticket-transfer-policy.test.mjs",
     "test:ticket-concessions": "node --test tests/ticket-concession-assignment.test.mjs",
