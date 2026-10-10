@@ -6,7 +6,9 @@ async function main() {
   await assertDisposableTestDatabase();
   for (const args of [
     [path.join(__dirname, "db-migrate.js")],
-    ["--test", path.join(__dirname, "..", "tests", "admin-repositories-postgres.test.mjs")]
+    ["--test",
+      path.join(__dirname, "..", "tests", "admin-repositories-postgres.test.mjs"),
+      path.join(__dirname, "..", "tests", "database-persistence-postgres.test.mjs")]
   ]) {
     const child = spawnSync(process.execPath, args, { stdio: "inherit", env: process.env });
     if (child.error) throw child.error;

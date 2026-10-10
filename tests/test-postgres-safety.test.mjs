@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { parseTestUrl, assertDisposableTestDatabase } = require("../scripts/test-postgres-safety.js");
+const { parseTestUrl, parseAdminUrl, assertDisposableTestDatabase, assertDisposableTestServer } = require("../scripts/test-postgres-safety.js");
 
 test("destructive PostgreSQL tests reject operational and remote URLs before connecting", () => {
   for (const url of [
@@ -22,5 +22,22 @@ test("destructive PostgreSQL tests require an execution lease", async () => {
   await assert.rejects(
     assertDisposableTestDatabase("postgresql://cine_test_admin@127.0.0.1/cinecruzeiro_test_0123456789abcdef", ""),
     /sem execução autorizada/
+  );
+});
+
+test("maintenance connection rejects operational names, hosts and redirects", () => {
+  for (const url of [
+    "postgresql://cine_test_admin@localhost/cinecruzeiro",
+    "postgresql://postgres@localhost/postgres",
+    "postgresql://cine_test_admin@production.example.com/postgres",
+    "postgresql://cine_test_admin@localhost/postgres?host=production.example.com"
+  ]) assert.throws(() => parseAdminUrl(url));
+  assert.equal(parseAdminUrl("postgresql://cine_test_admin@127.0.0.1/postgres").pathname, "/postgres");
+});
+
+test("server identity token is mandatory before opening a connection", async () => {
+  await assert.rejects(
+    assertDisposableTestServer("postgresql://cine_test_admin@127.0.0.1/postgres", ""),
+    /sem marca de autorização/
   );
 });

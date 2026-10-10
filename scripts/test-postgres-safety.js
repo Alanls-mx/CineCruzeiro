@@ -2,6 +2,37 @@ const { Client } = require("pg");
 
 const TEST_DATABASE_NAME = /^cinecruzeiro_test_[a-f0-9]{16}$/;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+const TOKEN = /^[a-f0-9]{32}$/;
+
+function parseAdminUrl(value) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error("URL administrativa de teste inválida."); }
+  if (!["postgres:", "postgresql:"].includes(url.protocol) || !LOCAL_HOSTS.has(url.hostname)
+      || url.search || url.hash || decodeURIComponent(url.username) !== "cine_test_admin"
+      || url.pathname !== "/postgres") {
+    throw new Error("A instância de teste exige cine_test_admin@localhost/postgres sem parâmetros adicionais.");
+  }
+  return url;
+}
+
+async function assertDisposableTestServer(value = process.env.TEST_POSTGRES_ADMIN_URL, token = process.env.CINE_TEST_SERVER_TOKEN) {
+  if (process.env.NODE_ENV !== "test" || !TOKEN.test(token || "")) {
+    throw new Error("Instância PostgreSQL de teste sem marca de autorização.");
+  }
+  parseAdminUrl(value);
+  const client = new Client({ connectionString: value });
+  await client.connect();
+  try {
+    const result = await client.query("SELECT token FROM cine_test_server_marker WHERE id = 1");
+    if (result.rowCount !== 1 || result.rows[0].token !== token) {
+      throw new Error("A marca da instância PostgreSQL de teste não confere.");
+    }
+    const role = await client.query("SELECT rolsuper, rolcreatedb FROM pg_roles WHERE rolname = current_user");
+    if (role.rows[0]?.rolsuper || !role.rows[0]?.rolcreatedb) {
+      throw new Error("O role de teste deve ser não-superusuário e ter CREATEDB.");
+    }
+  } finally { await client.end(); }
+}
 
 function parseTestUrl(value) {
   let url;
@@ -17,10 +48,15 @@ function parseTestUrl(value) {
 }
 
 async function assertDisposableTestDatabase(value = process.env.TEST_DATABASE_URL, token = process.env.CINE_TEST_DB_TOKEN) {
-  if (process.env.NODE_ENV !== "test" || !token || !/^[a-f0-9]{32}$/.test(token)) {
+  if (process.env.NODE_ENV !== "test" || !TOKEN.test(token || "")) {
     throw new Error("Banco de teste sem execução autorizada. Nenhuma migration ou reset foi iniciado.");
   }
   const url = parseTestUrl(value);
+  const admin = parseAdminUrl(process.env.TEST_POSTGRES_ADMIN_URL);
+  if (admin.host !== url.host || admin.password !== url.password) {
+    throw new Error("O banco descartável não pertence à instância autorizada.");
+  }
+  await assertDisposableTestServer();
   for (const operational of [process.env.OPERATIONAL_DATABASE_URL, process.env.PRODUCTION_DATABASE_URL, process.env.DEVELOPMENT_DATABASE_URL]) {
     if (operational && operational === value) throw new Error("A URL de teste coincide com um banco operacional.");
   }
@@ -36,4 +72,4 @@ async function assertDisposableTestDatabase(value = process.env.TEST_DATABASE_UR
   }
 }
 
-module.exports = { assertDisposableTestDatabase, parseTestUrl, TEST_DATABASE_NAME, LOCAL_HOSTS };
+module.exports = { assertDisposableTestDatabase, assertDisposableTestServer, parseTestUrl, parseAdminUrl, TEST_DATABASE_NAME, LOCAL_HOSTS };

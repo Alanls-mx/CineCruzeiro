@@ -2,23 +2,23 @@ const { Client } = require("pg");
 const { randomBytes } = require("crypto");
 const { spawnSync } = require("child_process");
 const path = require("path");
-const { LOCAL_HOSTS } = require("./test-postgres-safety");
+const { parseAdminUrl, assertDisposableTestServer } = require("./test-postgres-safety");
 
 function adminUrl() {
   const value = process.env.TEST_POSTGRES_ADMIN_URL;
   if (!value) throw new Error("Configure TEST_POSTGRES_ADMIN_URL com o role local cine_test_admin (CREATEDB).");
-  const url = new URL(value);
-  if (!["postgres:", "postgresql:"].includes(url.protocol) || !LOCAL_HOSTS.has(url.hostname)
-      || decodeURIComponent(url.username) !== "cine_test_admin" || url.pathname !== "/postgres" || url.search || url.hash) {
-    throw new Error("TEST_POSTGRES_ADMIN_URL deve usar cine_test_admin@localhost/postgres.");
-  }
-  return url;
+  return parseAdminUrl(value);
 }
 
 async function main() {
   const target = process.argv[2];
   if (!["smoke", "concurrency", "repositories"].includes(target)) throw new Error("Escolha smoke, concurrency ou repositories.");
+  if (process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.TEST_DATABASE_URL) {
+    throw new Error("Remova URLs de banco herdadas antes de iniciar o harness de teste.");
+  }
+  process.env.NODE_ENV = "test";
   const baseUrl = adminUrl();
+  await assertDisposableTestServer(baseUrl.toString());
   const databaseName = `cinecruzeiro_test_${randomBytes(8).toString("hex")}`;
   const token = randomBytes(16).toString("hex");
   const testUrl = new URL(baseUrl);

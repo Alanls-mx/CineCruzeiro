@@ -1,0 +1,49 @@
+name: PostgreSQL integration
+
+on:
+  push:
+    branches:
+      - codex/modularize-server-admin
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      DATA_STORE: postgres
+      DATABASE_URL: ""
+      POSTGRES_URL: ""
+      TEST_DATABASE_URL: ""
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-postgres-isolated-only
+        ports:
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Verify owned PostgreSQL service
+        env:
+          POSTGRES_SERVICE_CONTAINER_ID: ${{ job.services.postgres.id }}
+          POSTGRES_SERVICE_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: node scripts/setup-ci-postgres.js
+      - run: npm run test:smoke:postgres
+      - run: npm run test:postgres
+      - run: npm run test:postgres:repositories
