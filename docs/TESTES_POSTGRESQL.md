@@ -1,6 +1,6 @@
 # Persistência dos testes
 
-O fluxo principal usa PostgreSQL. `npm test` executa a suíte unitária, o smoke HTTP e a concorrência em **dois bancos descartáveis diferentes**. O modo JSON é legado e só é executado por `npm run test:legacy:json`.
+O fluxo principal usa PostgreSQL. `npm test` executa a suíte unitária, o smoke HTTP, a concorrência e os testes de repositório em **três bancos descartáveis diferentes**. O modo JSON é legado e só é executado por `npm run test:legacy:json`.
 
 ## Configuração local
 
@@ -18,6 +18,7 @@ O role dedicado deve ser criado e autorizado **somente no PostgreSQL local reser
 npm run test:unit
 npm run test:smoke:postgres
 npm run test:postgres
+npm run test:postgres:repositories
 npm run test:legacy:json
 npm test
 ```
@@ -26,7 +27,7 @@ O smoke JSON cria um arquivo e diretórios auxiliares em `%TEMP%`/`os.tmpdir()` 
 
 ## Limites e dependências restantes
 
-- Nesta máquina, não há servidor PostgreSQL local nem `TEST_POSTGRES_ADMIN_URL`; o smoke PostgreSQL e a concorrência ainda não foram executados. Nenhum banco existente ou VPS foi usado para suprir essa ausência.
+- A validação desta fase usou um contêiner PostgreSQL 16 local e temporário, com role dedicado não-superusuário. Smoke, concorrência e testes de repositório passaram em bancos gerados e removidos pelo harness. Nenhum banco existente ou VPS foi usado.
 - `scripts/db-import-json.js` lê `backend/data/db.json` como ferramenta explícita de importação. Deve permanecer disponível para recuperação/migração de dados existentes.
 - `scripts/generate-social-studio-posts.mjs` lê esse JSON para geração manual; pode ser migrado para leitura PostgreSQL em tarefa separada, com validação das saídas antes de remover o caminho legado.
 - `scripts/e2e-dev-server.js` e testes HTTP JSON usam arquivos temporários próprios; são ambientes de compatibilidade, não a validação principal.

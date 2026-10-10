@@ -17,7 +17,7 @@ function adminUrl() {
 
 async function main() {
   const target = process.argv[2];
-  if (!["smoke", "concurrency"].includes(target)) throw new Error("Escolha smoke ou concurrency.");
+  if (!["smoke", "concurrency", "repositories"].includes(target)) throw new Error("Escolha smoke, concurrency ou repositories.");
   const baseUrl = adminUrl();
   const databaseName = `cinecruzeiro_test_${randomBytes(8).toString("hex")}`;
   const token = randomBytes(16).toString("hex");
@@ -41,7 +41,8 @@ async function main() {
       await testClient.query("INSERT INTO cine_test_database_marker (id, token) VALUES (1, $1)", [token]);
       marked = true;
     } finally { await testClient.end(); }
-    const script = path.join(__dirname, target === "smoke" ? "smoke-tests.js" : "postgres-concurrency-tests.js");
+    const script = path.join(__dirname, target === "smoke" ? "smoke-tests.js"
+      : target === "repositories" ? "postgres-repository-tests.js" : "postgres-concurrency-tests.js");
     const child = spawnSync(process.execPath, [script], {
       cwd: path.join(__dirname, ".."), stdio: "inherit",
       env: {

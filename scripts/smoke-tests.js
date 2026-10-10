@@ -86,6 +86,17 @@ async function request(pathname, options = {}) {
   return { response, payload };
 }
 
+async function requestUntil(pathname, options, matches, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  let result;
+  do {
+    result = await request(pathname, options);
+    if (matches(result)) return result;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < deadline);
+  assert.fail(`Estado esperado não apareceu em ${pathname}: ${JSON.stringify(result.payload)}`);
+}
+
 async function rawHttpRequest(pathname, headers = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({ hostname: "localhost", port: PORT, path: pathname, method: "GET", headers }, (res) => {
@@ -170,7 +181,8 @@ async function run() {
     settings: {},
     rooms: [{ id: "sala-cruzeiro", name: "Sala Cruzeiro", technology: "Laser 4K", capacity: 100, status: "active" }],
     ticketTypes: [{ id: "promocional", name: "Ingresso Promocional", price: 10, active: true }],
-    concessions: [{ id: "combo-classico", name: "Combo Clássico", category: "combo", price: 25, stock: 3, active: true }]
+    concessions: [{ id: "combo-classico", name: "Combo Clássico", category: "combo", price: 25, stock: 3, active: true }],
+    ads: [{ id: "banner-site-pix", title: "Compre pelo site e pague no Pix", placement: "movie", imageUrl: "", linkUrl: "", active: true }]
   };
   db.settings = { ...(db.settings || {}), adminTwoFactorRequired: false };
   db.users = (db.users || []).map((user) =>
@@ -596,6 +608,17 @@ async function run() {
     assert.equal(freeCouponCheckout.payload.order.totalPrice, 0);
     assert.equal(freeCouponCheckout.payload.payment, null);
     assert.equal(freeCouponCheckout.payload.tickets.length, 1);
+    const freeCouponPersisted = await requestUntil(
+      "/api/admin/content",
+      { headers: jsonHeaders(adminCookie) },
+      ({ payload }) => payload.orders?.some((item) => item.id === freeCouponOrderId)
+    );
+    assert.equal(freeCouponPersisted.response.status, 200, JSON.stringify(freeCouponPersisted.payload));
+    const freeCouponOrder = freeCouponPersisted.payload.orders.find((order) => order.id === freeCouponOrderId);
+    assert.ok(freeCouponOrder);
+    assert.equal(freeCouponOrder.status, "paid", JSON.stringify(freeCouponOrder));
+    assert.equal(freeCouponOrder.couponCode, "SMOKEFREE", JSON.stringify(freeCouponOrder));
+    assert.ok(Number(freeCouponOrder.couponDiscount) > 0, JSON.stringify(freeCouponOrder));
 
     const repeatedFreeCoupon = await request("/api/coupons/preview", {
       method: "POST",
@@ -853,6 +876,11 @@ async function run() {
     });
     assert.equal(firstSeat.response.status, 201);
     assert.deepEqual(firstSeat.payload.order.selectedSeats.map((seat) => seat.label), ["A1"]);
+    await requestUntil(
+      "/api/admin/content",
+      { headers: jsonHeaders(adminCookie) },
+      ({ payload }) => payload.orders?.some((order) => order.id === "smoke-seat-a1")
+    );
 
     const roomWithoutReservedSeat = structuredClone(seatRoomPayload);
     roomWithoutReservedSeat.seatLayout.rows[0].seats = roomWithoutReservedSeat.seatLayout.rows[0].seats.filter((seat) => seat.id !== "a1");
@@ -1438,7 +1466,11 @@ async function run() {
     assert.equal(oneCreditPlan.payload.concessionDiscountPercent, 5);
     assert.equal(oneCreditPlan.payload.freeConcessionItems[0].concessionId, "combo-classico");
 
-    const plansAfterMediaSave = await request("/api/subscription-plans");
+    const plansAfterMediaSave = await requestUntil(
+      "/api/subscription-plans",
+      {},
+      ({ payload }) => payload.some?.((plan) => plan.id === oneCreditPlan.payload.id)
+    );
     const persistedMediaPlan = plansAfterMediaSave.payload.find((plan) => plan.id === oneCreditPlan.payload.id);
     assert.equal(persistedMediaPlan.imageUrl, uploadedImage.payload.url);
     assert.equal(persistedMediaPlan.isFeatured, true);
@@ -1458,7 +1490,12 @@ async function run() {
       })
     });
     assert.equal(secondFeaturedPlan.response.status, 201);
-    const plansAfterFeaturedChange = await request("/api/subscription-plans");
+    const plansAfterFeaturedChange = await requestUntil(
+      "/api/subscription-plans",
+      {},
+      ({ payload }) => payload.find?.((plan) => plan.id === oneCreditPlan.payload.id)?.isFeatured === false
+        && payload.find?.((plan) => plan.id === secondFeaturedPlan.payload.id)?.isFeatured === true
+    );
     assert.equal(plansAfterFeaturedChange.payload.find((plan) => plan.id === oneCreditPlan.payload.id).isFeatured, false);
     assert.equal(plansAfterFeaturedChange.payload.find((plan) => plan.id === secondFeaturedPlan.payload.id).isFeatured, true);
 
@@ -1535,7 +1572,11 @@ async function run() {
     assert.equal(approvedSubscriptionWebhook.response.status, 200);
     assert.equal(approvedSubscriptionWebhook.payload.processing.status, "active");
 
-    const subscriptionsAfterApproval = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    const subscriptionsAfterApproval = await requestUntil(
+      "/api/me/subscriptions",
+      { headers: jsonHeaders(cookie) },
+      ({ payload }) => payload.subscriptions?.some((item) => item.id === pendingSubscription.payload.subscription.id && item.status === "active")
+    );
     const providerApprovedSubscription = subscriptionsAfterApproval.payload.subscriptions.find((item) => item.id === pendingSubscription.payload.subscription.id);
     assert.equal(providerApprovedSubscription.status, "active");
     assert.equal(providerApprovedSubscription.paymentStatus, "approved");
@@ -1726,7 +1767,14 @@ async function run() {
     assert.equal(cancelledClubOrder.response.status, 200);
     assert.equal(cancelledClubOrder.payload.order.status, "cancelled");
 
-    const clubAfterRefund = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    const clubAfterRefund = await requestUntil(
+      "/api/me/subscriptions",
+      { headers: jsonHeaders(cookie) },
+      ({ payload }) => payload.subscriptions?.some((subscription) =>
+        subscription.planId === oneCreditPlan.payload.id
+        && subscription.creditsRemaining === 1
+        && subscription.usage?.some((usage) => usage.refundedAt))
+    );
     const refundedClub = clubAfterRefund.payload.subscriptions.find((subscription) => subscription.planId === oneCreditPlan.payload.id);
     assert.equal(refundedClub.creditsRemaining, 1);
     assert.ok(refundedClub.usage.some((usage) => usage.refundedAt));
@@ -2118,7 +2166,7 @@ async function run() {
     assert.equal(adminLogs.response.status, 200);
     assert.ok(Array.isArray(adminLogs.payload.logs));
 
-    const editedOrder = await request(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
+    const editedOrder = await requestUntil(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
       method: "PATCH",
       headers: jsonHeaders(adminCookie),
       body: JSON.stringify({
@@ -2126,7 +2174,7 @@ async function run() {
         operationalNotes: "Ajuste operacional smoke",
         reason: "Teste smoke"
       })
-    });
+    }, ({ response, payload }) => response.status !== 409 || payload.error?.code !== "ORDER_CHANGED", 3000);
     assert.equal(editedOrder.response.status, 200);
     assert.equal(editedOrder.payload.order.customerPhone, "11888888888");
     assert.ok(Array.isArray(editedOrder.payload.order.auditTrail));
@@ -2196,7 +2244,11 @@ async function run() {
       body: JSON.stringify({ reason: "Remocao permanente smoke", confirmation: "EXCLUIR" })
     });
     assert.equal(permanentDelete.response.status, 200);
-    const contentAfterPermanentDelete = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    const contentAfterPermanentDelete = await requestUntil(
+      "/api/admin/content",
+      { headers: jsonHeaders(adminCookie) },
+      ({ payload }) => payload.orders && !payload.orders.some((order) => order.id === deletionSale.payload.order.id)
+    );
     assert.equal(contentAfterPermanentDelete.payload.orders.some((order) => order.id === deletionSale.payload.order.id), false);
     assert.equal(contentAfterPermanentDelete.payload.payments.some((payment) => payment.orderId === deletionSale.payload.order.id), false);
     assert.equal(contentAfterPermanentDelete.payload.tickets.some((ticket) => ticket.orderId === deletionSale.payload.order.id), false);
@@ -2327,7 +2379,11 @@ async function run() {
     assert.equal(transfer.payload.ticket.canTransfer, false);
     assert.match(transfer.payload.ticket.transferBlockedReason, /24 horas/i);
 
-    const oldOwnerTickets = await request("/api/me/tickets", { headers: { Cookie: cookie } });
+    const oldOwnerTickets = await requestUntil(
+      "/api/me/tickets",
+      { headers: { Cookie: cookie } },
+      ({ payload }) => payload.tickets && !payload.tickets.some((ticket) => ticket.id === manualTicket.id)
+    );
     assert.equal(oldOwnerTickets.response.status, 200);
     assert.equal(oldOwnerTickets.payload.tickets.some((ticket) => ticket.id === manualTicket.id), false);
 
