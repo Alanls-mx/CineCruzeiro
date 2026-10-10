@@ -2,6 +2,7 @@ const assert = require("assert/strict");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 const path = require("path");
+const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const PORT = 4299;
@@ -283,6 +284,7 @@ function mercadoPagoWebhookRequest({ payment, order, eventVersion = 1, status = 
 }
 
 async function run() {
+  await assertDisposableTestDatabase(TEST_DATABASE_URL);
   execFileSync(process.execPath, [path.join(__dirname, "db-migrate.js")], {
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
     stdio: "inherit"

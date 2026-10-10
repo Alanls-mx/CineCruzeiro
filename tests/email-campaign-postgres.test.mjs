@@ -3,10 +3,18 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const { assertDisposableTestDatabase } = require("../scripts/test-postgres-safety.js");
+const enabled = Boolean(process.env.TEST_DATABASE_URL);
+if (enabled) {
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  process.env.POSTGRES_URL = "";
+  process.env.DATA_STORE = "postgres";
+}
+test.beforeEach(async () => { if (enabled) await assertDisposableTestDatabase(); });
 const repository = require("../backend/services/emailCampaignRepository");
-const { queryPostgres, postgresEnabled } = require("../backend/db/postgresStore");
+const { queryPostgres } = require("../backend/db/postgresStore");
 
-test("chave idempotente devolve a campanha existente sem sinalizar nova criação", { skip: !postgresEnabled() }, async () => {
+test("chave idempotente devolve a campanha existente sem sinalizar nova criação", { skip: !enabled }, async () => {
   const suffix = Date.now();
   const id = `campaign-idempotent-${suffix}`;
   const key = `request-${suffix}`;
@@ -22,7 +30,7 @@ test("chave idempotente devolve a campanha existente sem sinalizar nova criaçã
   }
 });
 
-test("dois workers não reivindicam a mesma campanha", { skip: !postgresEnabled() }, async () => {
+test("dois workers não reivindicam a mesma campanha", { skip: !enabled }, async () => {
   const id = `campaign-concurrency-${Date.now()}`;
   try {
     await repository.createCampaign({ id, subject: "Concorrência", html: "<p>Teste</p>", status: "queued", createdAt: new Date().toISOString() });
@@ -36,7 +44,7 @@ test("dois workers não reivindicam a mesma campanha", { skip: !postgresEnabled(
   }
 });
 
-test("dois workers não reivindicam o mesmo destinatário", { skip: !postgresEnabled() }, async () => {
+test("dois workers não reivindicam o mesmo destinatário", { skip: !enabled }, async () => {
   const id = `campaign-recipient-concurrency-${Date.now()}`;
   try {
     await repository.createCampaign({ id, subject: "Destinatário único", html: "<p>Teste</p>", status: "queued" });
@@ -51,7 +59,7 @@ test("dois workers não reivindicam o mesmo destinatário", { skip: !postgresEna
   }
 });
 
-test("cancelamento impede claim posterior e cancela pendentes", { skip: !postgresEnabled() }, async () => {
+test("cancelamento impede claim posterior e cancela pendentes", { skip: !enabled }, async () => {
   const id = `campaign-cancel-${Date.now()}`;
   try {
     await repository.createCampaign({ id, subject: "Cancelar", html: "<p>Teste</p>", status: "scheduled", scheduleAt: new Date(Date.now() + 60000).toISOString() });
@@ -67,7 +75,7 @@ test("cancelamento impede claim posterior e cancela pendentes", { skip: !postgre
   }
 });
 
-test("conclusão em andamento não sobrescreve campanha cancelada", { skip: !postgresEnabled() }, async () => {
+test("conclusão em andamento não sobrescreve campanha cancelada", { skip: !enabled }, async () => {
   const id = `campaign-cancel-race-${Date.now()}`;
   const workerId = `worker-${id}`;
   try {
@@ -88,7 +96,7 @@ test("conclusão em andamento não sobrescreve campanha cancelada", { skip: !pos
   }
 });
 
-test("lock abandonado antes da tentativa volta a pendente sem consumir retry", { skip: !postgresEnabled() }, async () => {
+test("lock abandonado antes da tentativa volta a pendente sem consumir retry", { skip: !enabled }, async () => {
   const id = `campaign-recovery-${Date.now()}`;
   try {
     await repository.createCampaign({ id, subject: "Recuperação", html: "<p>Teste</p>", status: "queued" });
@@ -104,7 +112,7 @@ test("lock abandonado antes da tentativa volta a pendente sem consumir retry", {
   }
 });
 
-test("retentativa manual cria um novo número sem apagar o histórico", { skip: !postgresEnabled() }, async () => {
+test("retentativa manual cria um novo número sem apagar o histórico", { skip: !enabled }, async () => {
   const id = `campaign-manual-retry-${Date.now()}`;
   try {
     await repository.createCampaign({ id, subject: "Retentativa manual", html: "<p>Teste</p>", status: "queued" });

@@ -10,6 +10,8 @@ if (TEST_DATABASE_URL) {
 }
 
 const require = createRequire(import.meta.url);
+const { assertDisposableTestDatabase } = require("../scripts/test-postgres-safety.js");
+test.beforeEach(async () => { if (TEST_DATABASE_URL) await assertDisposableTestDatabase(); });
 const { queryPostgres } = require("../backend/db/postgresStore");
 const movieRepository = require("../backend/repositories/movieRepository");
 const sessionRepository = require("../backend/repositories/sessionRepository");

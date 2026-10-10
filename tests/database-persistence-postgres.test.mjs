@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 const require = createRequire(import.meta.url);
+const { assertDisposableTestDatabase } = require("../scripts/test-postgres-safety.js");
 const store = require("../backend/db/postgresStore");
 const users = require("../backend/repositories/userRepository");
 const { runMutation } = require("../backend/repositories/repositorySupport");
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
+test.beforeEach(async () => { if (enabled) await assertDisposableTestDatabase(); });
 
 test("persistência incremental preserva reservas, consentimento, auditoria e alterações concorrentes", { skip: !enabled }, async () => {
   const suffix = `polish-${Date.now()}`;
