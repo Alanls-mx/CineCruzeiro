@@ -52,6 +52,10 @@ test("account, catalog and cleaning interval workflows on an isolated backend", 
       const response = await fetch(`${base}${url}`, { method, headers: { Cookie: auth, "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
       return { status: response.status, data: await response.json(), cookie: response.headers.get("set-cookie")?.split(";")[0] };
     };
+    const dashboard = await request("/api/admin/dashboard?period=today");
+    assert.equal(dashboard.status, 200, JSON.stringify(dashboard.data));
+    assert.equal(dashboard.data.revenuePeriod, 0);
+    assert.ok(Array.isArray(dashboard.data.chart));
     assert.equal((await request("/api/admin/me", "PATCH", { name: "Nobody" }, "")).status, 401);
     assert.equal((await request("/api/users", "POST", { name: "Operador QA", email: "operator@example.test", role: "operator", accountType: "team" })).status, 422);
     const created = await request("/api/users", "POST", { name: "Operador QA", email: "operator@example.test", role: "operator", accountType: "team", password });
