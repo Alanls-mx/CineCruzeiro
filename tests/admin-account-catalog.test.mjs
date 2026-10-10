@@ -157,6 +157,10 @@ test("account, catalog and cleaning interval workflows on an isolated backend", 
         await expect(page.locator("#promotionTitle")).toHaveValue("Oferta QA");
         await page.locator("#archivedPromotionsTab").click();
         await expect(page.locator("#promotionsList")).toContainText("Nenhum cupom arquivado");
+        await page.locator('[data-admin-tab="ads"]').click();
+        await expect(page.locator("#adsList")).toContainText("Anúncio QA");
+        await page.locator('[data-admin-select-kind="ad"]').filter({ hasText: "Anúncio QA" }).click();
+        await expect(page.locator("#adTitle")).toHaveValue("Anúncio QA");
         await page.locator('[data-panel="moviesPanel"]').click();
         await expect(page.locator("#movieTitle")).toHaveValue("Filme de teste");
         await page.locator("#movieTitle").fill("Título em edição");
