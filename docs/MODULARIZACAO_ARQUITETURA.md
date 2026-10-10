@@ -64,6 +64,7 @@ Nao foi executado `npm test` integral nesta linha de base porque `scripts/smoke-
 | `/api/ticket-types`, `/api/ticket-types/:id` | owner, manager | `ticket_types.view/create/edit/delete` |
 | `/api/concessions`, `/api/concessions/:id` | owner, manager | `concessions.view/edit/delete` |
 | `/api/promotions`, `/api/ads` e subrotas | owner, manager | `marketing.view/manage` |
+| `/api/admin/logs`, `/api/admin/logs/performance`, `/stream` | owner, manager (DELETE: owner) | `logs.view` (DELETE: `logs.delete`) |
 
 Rotas de clientes, checkout, bilheteria, Clube, integracoes, automacoes e webhooks permanecem no dispatcher original. As excecoes de autenticacao para webhooks e automacoes continuam acompanhadas de suas verificacoes especificas de assinatura/token. O controle de origem/CSRF, a autenticacao 2FA e o rate limiting nao foram movidos.
 
@@ -71,10 +72,10 @@ Rotas de clientes, checkout, bilheteria, Clube, integracoes, automacoes e webhoo
 
 | Arquivo principal | Antes | Depois | Reducao liquida |
 | --- | ---: | ---: | ---: |
-| `backend/server.js` | 18.421 | 17.402 | 1.019 linhas |
-| `backend/public/admin.js` | 14.337 | 13.173 | 1.164 linhas |
+| `backend/server.js` | 18.421 | 17.330 | 1.091 linhas |
+| `backend/public/admin.js` | 14.337 | 12.498 | 1.839 linhas |
 
-Foram extraidas 2.469 linhas em oito modulos. A diferenca entre codigo extraido e reducao liquida vem de factories, contratos de dependencia, adaptadores de rota e carregamento explicito. A extracao nao altera esquema de banco, payloads de pagamentos nem arquivos de configuracao por cinema.
+Foram extraidas 3.272 linhas em onze modulos. A diferenca entre codigo extraido e reducao liquida vem de factories, contratos de dependencia, adaptadores de rota e carregamento explicito. A extracao nao altera esquema de banco, payloads de pagamentos nem arquivos de configuracao por cinema.
 
 | Modulo | Responsabilidade | Dependencias relevantes |
 | --- | --- | --- |
@@ -82,10 +83,13 @@ Foram extraidas 2.469 linhas em oito modulos. A diferenca entre codigo extraido 
 | `backend/services/movieCatalogHandler.js` | Filmes, sessoes e autocorrecao | Repositorios de filmes/sessoes, validadores e realtime injetados |
 | `backend/services/venueConfigurationHandler.js` | Salas, limpeza e tipos de ingresso | Repositorios de salas/tipos e estado de poltronas |
 | `backend/services/commercialCatalogHandler.js` | Catalogo de bomboniere, promocoes e anuncios | Repositorios comerciais e validadores existentes |
+| `backend/services/adminLogsHandler.js` | Consulta, stream e retencao de logs administrativos | Monitor de desempenho por getter, persistencia de logs e auditoria injetados |
 | `backend/public/admin-modules/log-presentation.js` | Textos e classificacao dos logs | Sem estado ou DOM |
 | `backend/public/admin-modules/dashboard-view.js` | Indicadores e grafico do dashboard | `state` e helpers de DOM/formatacao injetados |
 | `backend/public/admin-modules/performance-view.js` | KPIs, graficos e alertas de telemetria | Seletores/escape injetados; pico de CPU local ao modulo |
 | `backend/public/admin-modules/club-view.js` | Apresentacao de planos, assinaturas e uso | `state` e helpers de renderizacao injetados |
+| `backend/public/admin-modules/concession-sales-view.js` | Vendas diarias, estados de arquivamento e detalhes da bomboniere | `state`, DOM, API e comandos financeiros injetados |
+| `backend/public/admin-modules/promotions-view.js` | Lista, formulario e historico de cupons | `state`, DOM, API e helpers de formulario injetados |
 
 Os modulos de navegador usam um unico namespace explicito, `CineAdminModules`, carregado por scripts locais antes de `admin.js`. Nao ha segundo registro global de eventos ou etapa nova de build. Os handlers do backend recebem os servicos e repositorios por parametro; nenhum importa `server.js`, evitando ciclo de dependencia.
 
@@ -96,6 +100,7 @@ Os modulos de navegador usam um unico namespace explicito, `CineAdminModules`, c
 - `test:permissions`: 4/4; `test:finance`: 50/50; `test:coupon`: 6/6; `test:payment-metadata`: 7/7; `test:session-conflicts`: 10/10; `test:google-wallet`: 17/17.
 - `test:catalog-operations`: 15 passaram, 1 PostgreSQL ignorado. `test:admin-repositories`: 6 passaram, 3 PostgreSQL ignorados. `TEST_DATABASE_URL` nao esta disponivel; nenhum banco de producao foi usado como substituto.
 - `test:security:local`: 19/19, mais scripts de imagem, assinatura Mercado Pago e realtime de poltronas. Testes de UI com Playwright no fluxo administrativo isolado passaram sem erro JavaScript; os modulos novos tem testes de renderizacao e de ordem de carregamento.
+- Extracoes adicionais: vendas da bomboniere 3/3, cupons 2/2 e handler de logs 2/2. O teste HTTP isolado confirmou GET/DELETE de logs para dono e 403 para operador; o Playwright confirmou lista, formulario e filtro de cupons apos a extracao. A verificacao de CSP/XSS passou a ler tambem os novos scripts.
 - Persistencia: 8 passaram, 2 PostgreSQL ignorados. Publicacao de filmes: 5/5; mapa de poltronas: 2/2; registro de instalacoes: 6/6; `deploy:validate`: `REGISTRY_OK=1`.
 - `test:email-campaign`: 40 passaram, 7 ignorados, 1 falhou em `email-automation.test.mjs` por esperar `29/09 · 19:00` no HTML semanal. Nem o teste nem `emailAutomationService.js` mudaram em relacao a `ea7c5df`; a falha foi mantida fora do escopo desta refatoracao.
 - Nao foi executado `npm test` integral pelo risco conhecido de escrita em `backend/data/db.json` pelo smoke test. Nao houve homologacao ao vivo com provedor de pagamento, PostgreSQL, PM2 ou Nginx; nenhum deploy foi feito, conforme solicitado.
@@ -106,4 +111,4 @@ Os modulos de navegador usam um unico namespace explicito, `CineAdminModules`, c
 
 ## Commits
 
-`c864d05` auditoria/baseline; `2596baf` logs do admin; `0f6117f` dashboard backend; `8555e17` dashboard UI; `068f17e` filmes/sessoes; `af1f8bf` telemetria UI; `ce11961` salas/tipos; `2d7cf66` Clube UI; `911f62f` catalogo comercial; `94fb19f` cobertura dos repositorios apos extracao.
+`c864d05` auditoria/baseline; `2596baf` logs do admin; `0f6117f` dashboard backend; `8555e17` dashboard UI; `068f17e` filmes/sessoes; `af1f8bf` telemetria UI; `ce11961` salas/tipos; `2d7cf66` Clube UI; `911f62f` catalogo comercial; `94fb19f` cobertura dos repositorios apos extracao; `71672f5` vendas da bomboniere UI; `94dac03` logs administrativos backend; `8b01228` cupons UI.
