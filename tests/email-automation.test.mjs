@@ -26,8 +26,21 @@ test("programação semanal usa apenas filmes publicados com sessões no períod
   assert.equal(plan.campaign.recipientMode, "all");
   assert.match(plan.campaign.html, /Filme A/);
   assert.match(plan.campaign.html, /29\/09 · 19:00/);
+  assert.match(plan.campaign.html, /02\/10 · 21:15/);
   assert.doesNotMatch(plan.campaign.html, /Oculto/);
   assert.match(plan.campaign.idempotencyKey, /^email-auto:weekly:/);
+});
+
+test("HTML semanal usa a mesma janela temporal do planejamento", () => {
+  const plan = buildEmailAutomationPlan({
+    movies: [{ id: "window", title: "Filme da janela", status: "active", sessions: [
+      { date: "2026-09-29", time: "19:00", status: "available" },
+      { date: "2026-10-20", time: "21:00", status: "available" }
+    ] }]
+  }, { type: "weekly" }, { now, siteUrl: "https://cine.example" });
+  assert.equal(plan.skipped, false);
+  assert.match(plan.campaign.html, /29\/09 · 19:00/);
+  assert.doesNotMatch(plan.campaign.html, /20\/10 · 21:00/);
 });
 
 test("planejamento evita repetir a copy mais recente", () => {

@@ -85,11 +85,11 @@ function formatSession(session) {
   return `${day || ""}/${month || ""} · ${String(session.time || "").slice(0, 5)}`;
 }
 
-function campaignHtml({ type, copy, movies, siteUrl }) {
+function campaignHtml({ type, copy, movies, siteUrl, now = new Date() }) {
   const accent = type === "birthday" ? "#f6c453" : type === "reactivation" ? "#4d8dff" : "#22d3ee";
   const cards = movies.slice(0, 6).map((movie) => {
     const poster = absoluteUrl(movie.posterUrl || movie.backdropUrl, siteUrl);
-    const sessions = movieSessions(movie, new Date(), type === "premiere" ? 21 : 7).slice(0, 5).map(formatSession).join(" &nbsp; ");
+    const sessions = movieSessions(movie, now, type === "premiere" ? 21 : 7).slice(0, 5).map(formatSession).join(" &nbsp; ");
     return `<tr><td style="padding:14px 0;border-top:1px solid #26384d"><table role="presentation" width="100%"><tr>${poster ? `<td width="92" valign="top"><img src="${escapeHtml(poster)}" width="76" alt="Pôster de ${escapeHtml(movie.title)}" style="display:block;width:76px;height:108px;object-fit:cover;border-radius:4px"></td>` : ""}<td valign="top"><strong style="display:block;color:#ffffff;font-size:18px;line-height:1.3">${escapeHtml(movie.title || "Filme")}</strong>${sessions ? `<span style="display:block;margin-top:8px;color:#cbd5e1;font-size:13px;line-height:1.55">${escapeHtml(sessions)}</span>` : ""}</td></tr></table></td></tr>`;
   }).join("");
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#07111d;color:#dbeafe;font-family:Arial,sans-serif"><tr><td align="center" style="padding:28px 16px"><table role="presentation" width="100%" style="max-width:620px;background:#0b1728;border-top:4px solid ${accent};border-radius:8px"><tr><td style="padding:30px"><p style="margin:0 0 12px;color:${accent};font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px">Cine Cruzeiro</p><h1 style="margin:0;color:#fff;font-size:30px;line-height:1.15">${escapeHtml(copy.headline)}</h1><p style="margin:18px 0 0;color:#dbeafe;font-size:16px;line-height:1.65">${escapeHtml(copy.message)}</p>${cards ? `<table role="presentation" width="100%" style="margin-top:24px">${cards}</table>` : ""}<p style="margin:28px 0 0"><a href="${escapeHtml(absoluteUrl("/filmes", siteUrl))}" style="display:inline-block;padding:14px 20px;background:${accent};color:#050912;text-decoration:none;font-weight:800;border-radius:5px">${escapeHtml(copy.ctaLabel)}</a></p></td></tr></table></td></tr></table>`;
@@ -140,7 +140,7 @@ function buildEmailAutomationPlan(db = {}, request = {}, options = {}) {
       preheader: copy.preheader,
       headline: copy.headline,
       message: copy.message,
-      html: campaignHtml({ type, copy, movies, siteUrl }),
+      html: campaignHtml({ type, copy, movies, siteUrl, now }),
       ctaLabel: copy.ctaLabel,
       ctaUrl: `${String(siteUrl).replace(/\/$/, "")}/filmes`,
       recipientMode,
