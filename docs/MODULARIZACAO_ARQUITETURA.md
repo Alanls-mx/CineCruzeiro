@@ -117,6 +117,8 @@ O teste de automação de e-mail passou a usar a mesma data planejada para selec
 
 O fluxo padrão agora exige PostgreSQL descartável e marcado, conforme [TESTES_POSTGRESQL.md](TESTES_POSTGRESQL.md). Um contêiner PostgreSQL 16 local e temporário permitiu validar o smoke HTTP, a concorrência e os repositórios em bancos independentes, criados e removidos pelo harness; o modo JSON legado e os unitários também passaram. O smoke revelou e permitiu corrigir a precisão da atualização otimista de pedidos, o contexto transacional herdado por tarefas em segundo plano, um deadlock no simulador de webhooks e a normalização de anúncios. Essas correções não alteraram os contratos financeiros ou a validação de webhooks do Mercado Pago. Nenhum banco operacional ou VPS foi modificado; nenhum deploy foi realizado.
 
+Após essa validação, os listeners de filtro, seleção, ações e arraste da lista de filmes foram extraídos de `bindEvents` para `backend/public/admin-modules/movie-catalog-events.js`. O módulo recebe as ações já existentes por dependência, sem alterar rotas ou estado compartilhado; um teste focado confirma o carregamento anterior a `admin.js`, os filtros e o arraste, e a verificação de CSP inclui o novo arquivo.
+
 ## Commits
 
 `c864d05` auditoria/baseline; `2596baf` logs do admin; `0f6117f` dashboard backend; `8555e17` dashboard UI; `068f17e` filmes/sessoes; `af1f8bf` telemetria UI; `ce11961` salas/tipos; `2d7cf66` Clube UI; `911f62f` catalogo comercial; `94fb19f` cobertura dos repositorios apos extracao; `71672f5` vendas da bomboniere UI; `94dac03` logs administrativos backend; `8b01228` cupons UI; `5f9dc67` anuncios UI; `078b243` relatorio intermediario.

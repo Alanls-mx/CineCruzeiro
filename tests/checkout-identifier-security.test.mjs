@@ -57,12 +57,14 @@ test("painel e login funcionam sem JavaScript inline na CSP do backend", () => {
   const concession = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/concession-sales-view.js", import.meta.url)), "utf8");
   const promotions = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/promotions-view.js", import.meta.url)), "utf8");
   const ads = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/ads-view.js", import.meta.url)), "utf8");
+  const movieCatalogEvents = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/movie-catalog-events.js", import.meta.url)), "utf8");
   const login = readFileSync(fileURLToPath(new URL("../backend/public/admin-login.html", import.meta.url)), "utf8");
   const server = readFileSync(fileURLToPath(new URL("../backend/server.js", import.meta.url)), "utf8");
   assert.doesNotMatch(admin, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
   assert.doesNotMatch(concession, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
   assert.doesNotMatch(promotions, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
   assert.doesNotMatch(ads, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
+  assert.doesNotMatch(movieCatalogEvents, /\bon(?:click|change|input|error|load|submit|keydown|mouseover)\s*=\s*["']/i);
   assert.doesNotMatch(login, /<script(?![^>]*\bsrc=)[^>]*>/i);
   assert.match(login, /<script src="\.\/admin-login\.js" defer><\/script>/);
   assert.ok(readFileSync(fileURLToPath(new URL("../backend/public/admin-login.js", import.meta.url)), "utf8").includes('form.addEventListener("submit"'));
