@@ -64,8 +64,13 @@ test("rotas migradas nao entram no advisory lock global", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.match(server, /repositoryMutationRoute\(pathname, method\)/);
   assert.match(server, /!targetedRepositoryMutation && !context\?\.adminMutationLocked/);
+  const routeSources = [
+    server,
+    ...["movieCatalogHandler.js", "venueConfigurationHandler.js", "commercialCatalogHandler.js"]
+      .map((file) => fs.readFileSync(path.join(root, "backend", "services", file), "utf8"))
+  ].join("\n");
   ["movieRepository", "sessionRepository", "roomRepository", "ticketTypeRepository", "promotionRepository", "concessionRepository", "settingsRepository", "userRepository", "orderRepository"].forEach((repository) => {
-    assert.match(server, new RegExp(`${repository}\\.`));
+    assert.match(routeSources, new RegExp(`${repository}\\.`));
   });
 });
 
