@@ -658,7 +658,7 @@ export async function createSandboxCardTest(card: { token?: string; paymentMetho
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(apiErrorMessage(payload, "Não foi possível processar o cartão de teste."));
-  return payload as { status: string; statusDetail: string; reference: string; message: string };
+  return payload as { status: string; statusDetail: string; reference: string; orderId: string; message: string };
 }
 
 export async function fetchSubscriptionPlans() {

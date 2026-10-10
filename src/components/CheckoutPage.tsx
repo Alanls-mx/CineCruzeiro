@@ -1434,7 +1434,8 @@ function SandboxCardTest({ config }: { config: { publicKey: string; amount: numb
     setResult("");
     try {
       const response = await createSandboxCardTest(card);
-      setResult(`Teste ${response.status}: ${response.statusDetail || response.reference}. Nenhum ingresso foi emitido.`);
+      const orderId = response.orderId ? ` Order ID para avaliação: ${response.orderId}.` : "";
+      setResult(`Teste ${response.status}: ${response.statusDetail || response.reference}.${orderId} Nenhum ingresso foi emitido.`);
     } catch (error) {
       setResult(error instanceof Error ? error.message : "O teste não pôde ser concluído.");
     } finally {

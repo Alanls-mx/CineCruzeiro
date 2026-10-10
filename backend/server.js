@@ -12635,7 +12635,13 @@ async function handleApi(req, res, pathname) {
       idempotencyKey: reference,
       card: { token, paymentMethodId, paymentTypeId: "credit_card", installments: Math.max(1, Math.min(6, Number(body.installments || 1))) }
     });
-    sendJson(res, 200, { status: result.status, statusDetail: result.statusDetail, reference, message: "Teste processado. Nenhum pedido ou ingresso foi criado." }, { "Cache-Control": "no-store" });
+    sendJson(res, 200, {
+      status: result.status,
+      statusDetail: result.statusDetail,
+      reference,
+      orderId: result.raw?.testMode === true ? "" : String(result.id || ""),
+      message: "Teste processado. Nenhum pedido ou ingresso foi criado."
+    }, { "Cache-Control": "no-store" });
     return;
   }
 

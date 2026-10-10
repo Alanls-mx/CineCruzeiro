@@ -56,13 +56,13 @@ test("a webhook body cannot approve an order that Mercado Pago still reports pen
 
   global.fetch = async (requestedUrl) => {
     assert.equal(requestedUrl, `https://api.mercadopago.com/v1/orders/${id}`);
-    return { ok: true, json: async () => ({
+    return new Response(JSON.stringify({
       id,
       external_reference: "checkout-123",
       status: "pending",
       total_amount: "10.00",
       transactions: { payments: [{ status: "pending", amount: "10.00" }] }
-    }) };
+    }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
     const actual = await paymentService.fetchMercadoPagoWebhookOrder(verification.dataId, { accessToken: "test-token" });
@@ -75,7 +75,10 @@ test("a webhook body cannot approve an order that Mercado Pago still reports pen
 
 test("webhook lookup failures request a retry instead of accepting payload status", async () => {
   const originalFetch = global.fetch;
-  global.fetch = async () => ({ ok: false, status: 503, json: async () => ({ message: "unavailable" }) });
+  global.fetch = async () => new Response(JSON.stringify({ message: "unavailable" }), {
+    status: 503,
+    headers: { "content-type": "application/json" }
+  });
   try {
     await assert.rejects(
       paymentService.fetchMercadoPagoWebhookOrder("ORD01JQ4S4KY8HWQ6NA5PXB65B3D3", { accessToken: "test-token" }),

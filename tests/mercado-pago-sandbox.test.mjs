@@ -16,7 +16,10 @@ test("sandbox exige chave pública de teste e permanece separado do checkout rea
     calls += 1;
     assert.equal(options.headers.Authorization, `Bearer ${config.accessToken}`);
     assert.equal(JSON.parse(options.body).payer.email, "test@testuser.com");
-    return { ok: true, json: async () => ({ id: "test-order", live_mode: false, transactions: { payments: [{ status: "processed", status_detail: "accredited", amount: "10.00" }] } }) };
+    return new Response(JSON.stringify({ id: "test-order", live_mode: false, transactions: { payments: [{ status: "processed", status_detail: "accredited", amount: "10.00" }] } }), {
+      status: 201,
+      headers: { "content-type": "application/json" }
+    });
   };
   try {
     await assert.rejects(paymentService.createMercadoPagoOrderPayment(order, config, { method: "credit_card", card }), { code: "MERCADO_PAGO_PRODUCTION_REQUIRED" });

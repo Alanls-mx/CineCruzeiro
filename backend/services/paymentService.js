@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { MercadoPagoConfig, Order: MercadoPagoOrder } = require("mercadopago");
 
 const MERCADO_PAGO_TOKEN_ENV_KEYS = ["MERCADO_PAGO_ACCESS_TOKEN", "MP_ACCESS_TOKEN", "MERCADOPAGO_ACCESS_TOKEN"];
 const MERCADO_PAGO_WEBHOOK_SECRET_ENV_KEYS = ["MERCADO_PAGO_WEBHOOK_SECRET", "MP_WEBHOOK_SECRET", "MERCADOPAGO_WEBHOOK_SECRET"];
@@ -104,6 +105,13 @@ async function mercadoPagoRequest(path, options = {}, integrationConfig = {}) {
     throw error;
   }
   return data;
+}
+
+function mercadoPagoOrdersClient(accessToken, timeout) {
+  return new MercadoPagoOrder(new MercadoPagoConfig({
+    accessToken,
+    options: { timeout, maxRetries: 0 }
+  }));
 }
 
 function getOpenFinancePixConfig(config = {}) {
@@ -593,26 +601,30 @@ async function createMercadoPagoOrderPayment(order, integrationConfig = {}, opti
     }
   };
 
-  const response = await fetch("https://api.mercadopago.com/v1/orders", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "X-Idempotency-Key": idempotencyKey,
-      ...(options.deviceId ? { "X-meli-session-id": String(options.deviceId) } : {})
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15000)
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  let data;
+  try {
+    data = await mercadoPagoOrdersClient(accessToken, 15000).create({
+      body,
+      requestOptions: {
+        timeout: 15000,
+        maxRetries: 0,
+        idempotencyKey,
+        ...(options.deviceId ? { meliSessionId: String(options.deviceId) } : {})
+      }
+    });
+  } catch (sdkError) {
+    const data = {
+      message: sdkError.message || "Mercado Pago recusou a criacao da order.",
+      error: sdkError.error || "",
+      cause: Array.isArray(sdkError.causes) ? sdkError.causes : []
+    };
     const detail = mercadoPagoOrderFailureDetail(data);
     const invalidUsers = detail === "invalid_users_involved";
     const message = invalidUsers
       ? "O pagador informado nao pode ser usado nesta cobranca. Use uma conta de cliente real, diferente da conta vendedora do Mercado Pago."
-      : [data.message || data.error || "Mercado Pago recusou a criacao da order.", detail].filter(Boolean).join(" - ");
-    const error = paymentError(invalidUsers ? "MERCADO_PAGO_INVALID_USERS_INVOLVED" : "MERCADO_PAGO_ORDER_REJECTED", message, invalidUsers ? 422 : response.status);
+      : [data.message || data.error, detail].filter(Boolean).join(" - ");
+    const statusCode = Number(sdkError.status) || 502;
+    const error = paymentError(invalidUsers ? "MERCADO_PAGO_INVALID_USERS_INVOLVED" : "MERCADO_PAGO_ORDER_REJECTED", message, invalidUsers ? 422 : statusCode);
     error.raw = data;
     throw error;
   }
@@ -812,16 +824,21 @@ async function fetchMercadoPagoOrder(providerPaymentId, integrationConfig = {}) 
   const accessToken = getMercadoPagoAccessToken(integrationConfig);
   if (!accessToken || !providerPaymentId) return null;
 
-  const response = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(providerPaymentId)}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(5000)
-  }).catch((error) => {
-    if (error?.name === "TimeoutError") return null;
+  let data;
+  try {
+    data = await mercadoPagoOrdersClient(accessToken, 5000).get({
+      id: String(providerPaymentId),
+      requestOptions: { timeout: 5000, maxRetries: 0 }
+    });
+  } catch (error) {
+    if (Number(error?.status) > 0) return null;
+    if (error?.name === "MPConnectionError") {
+      const cause = error.__cause__;
+      if (["AbortError", "TimeoutError"].includes(cause?.name)) return null;
+      throw cause || error;
+    }
     throw error;
-  });
-  if (!response) return null;
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) return null;
+  }
 
   return normalizeMercadoPagoOrder(data);
 }
