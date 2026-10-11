@@ -2872,19 +2872,25 @@ async function run() {
     if (postgresMode) {
       const pg = require("pg");
       const originalQuery = pg.Client.prototype.query;
+      function failCommitForRecord(recordId, errorCode) {
+        const touchedClients = new WeakSet();
+        let tripped = false;
+        pg.Client.prototype.query = function (statement, ...args) {
+          if (args.some((arg) => String(JSON.stringify(arg) || "").includes(recordId))) touchedClients.add(this);
+          if (!tripped && statement === "COMMIT" && touchedClients.has(this)) {
+            tripped = true;
+            return Promise.reject(new Error(errorCode));
+          }
+          return originalQuery.call(this, statement, ...args);
+        };
+        return () => tripped;
+      }
       const counterFailureBody = {
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, fullTicketsCount: 1, halfTicketsCount: 0,
         saleMode: "registered", customerUserId: registered.user.id, paymentMethod: "external_pix",
         clientRequestId: "smoke-counter-commit-failure"
       };
-      let failCounterCommit = true;
-      pg.Client.prototype.query = function (statement, ...args) {
-        if (failCounterCommit && statement === "COMMIT") {
-          failCounterCommit = false;
-          return Promise.reject(new Error("smoke_counter_commit_failure"));
-        }
-        return originalQuery.call(this, statement, ...args);
-      };
+      const counterCommitFailed = failCommitForRecord("pedido-bilheteria-smoke-counter-commit-failure-0", "smoke_counter_commit_failure");
       let failedCounterSale;
       try {
         failedCounterSale = await request("/api/box-office/sales", {
@@ -2893,7 +2899,7 @@ async function run() {
       } finally {
         pg.Client.prototype.query = originalQuery;
       }
-      assert.equal(failCounterCommit, false, "O failpoint deve atingir o commit da bilheteria");
+      assert.equal(counterCommitFailed(), true, "O failpoint deve atingir o commit da bilheteria");
       assert.equal(failedCounterSale.response.status >= 500, true, "Falha de commit nao pode responder venda confirmada");
       assert.equal((await readPersistedDb()).orders.some((item) => item.id === "pedido-bilheteria-smoke-counter-commit-failure-0"), false);
       const recoveredCounterSale = await request("/api/box-office/sales", {
@@ -2902,14 +2908,7 @@ async function run() {
       assert.equal(recoveredCounterSale.response.status, 201);
       assert.equal((await readPersistedDb()).orders.some((item) => item.id === recoveredCounterSale.payload.order.id), true);
 
-      let failSaleCommit = true;
-      pg.Client.prototype.query = function (statement, ...args) {
-        if (failSaleCommit && statement === "COMMIT") {
-          failSaleCommit = false;
-          return Promise.reject(new Error("smoke_point_sale_commit_failure"));
-        }
-        return originalQuery.call(this, statement, ...args);
-      };
+      const saleCommitFailed = failCommitForRecord("pedido-bilheteria-smoke-point-sale-failure-0", "smoke_point_sale_commit_failure");
       let failedSale;
       try {
         failedSale = await request("/api/box-office/sales", {
@@ -2918,28 +2917,21 @@ async function run() {
       } finally {
         pg.Client.prototype.query = originalQuery;
       }
-      assert.equal(failSaleCommit, false, "O failpoint deve atingir o commit da venda");
+      assert.equal(saleCommitFailed(), true, "O failpoint deve atingir o commit da venda");
       assert.equal(failedSale.response.status >= 500, true, "Falha de commit nao pode responder venda concluida");
       assert.equal((await readPersistedDb()).orders.some((item) => item.id === "pedido-bilheteria-smoke-point-sale-failure-0"), false);
       const recoveredSale = await createPointSale("smoke-point-sale-failure");
       assert.equal(recoveredSale.payload.payment.providerPaymentId, `ORD-SMOKE-${mockPointOrders.size}`);
 
       const pointCommitFailure = await createPointSale("smoke-point-commit-failure");
-      let failNextCommit = true;
-      pg.Client.prototype.query = function (statement, ...args) {
-        if (failNextCommit && statement === "COMMIT") {
-          failNextCommit = false;
-          return Promise.reject(new Error("smoke_point_commit_failure"));
-        }
-        return originalQuery.call(this, statement, ...args);
-      };
+      const pointCommitFailed = failCommitForRecord(pointCommitFailure.payload.payment.id, "smoke_point_commit_failure");
       let failedCommit;
       try {
         failedCommit = await cancelPoint(pointCommitFailure.payload.payment.id);
       } finally {
         pg.Client.prototype.query = originalQuery;
       }
-      assert.equal(failNextCommit, false, "O failpoint deve atingir o commit do cancelamento");
+      assert.equal(pointCommitFailed(), true, "O failpoint deve atingir o commit do cancelamento");
       assert.equal(failedCommit.response.status >= 500, true, "Falha de commit nao pode responder sucesso");
       assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointCommitFailure.payload.payment.id).status, "pending");
       const recoveredCancel = await cancelPoint(pointCommitFailure.payload.payment.id);
