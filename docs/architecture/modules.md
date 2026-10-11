@@ -31,5 +31,6 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Logs | [log-presentation](../../backend/public/admin-modules/log-presentation.js), [log-events](../../backend/public/admin-modules/log-events.js) | [teste](../../tests/admin-log-events.test.mjs) |
 | Repasse de bilheteria | [ticket-finance-view](../../backend/public/admin-modules/ticket-finance-view.js) | [teste](../../tests/admin-ticket-finance-view.test.mjs) |
 | Contas de clientes | [customer-accounts-view](../../backend/public/admin-modules/customer-accounts-view.js) | [teste](../../tests/admin-customer-accounts-view.test.mjs) |
+| Lista de sessões do filme | [movie-sessions-view](../../backend/public/admin-modules/movie-sessions-view.js) | [teste](../../tests/admin-movie-sessions-view.test.mjs) |
 
 Próximos candidatos, ainda **não extraídos**: outras consultas administrativas do Clube, gestão de clientes, formulários de sessão e grupos de listeners do painel. Auditar dependências e cobertura antes de mover.
