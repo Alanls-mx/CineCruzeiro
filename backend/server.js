@@ -91,6 +91,7 @@ const clubDomainService = require("./services/clubDomainService");
 const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
 const { createAdminDashboardService } = require("./services/adminDashboardService");
 const { createAdminSubscriptionPresenter } = require("./services/adminSubscriptionPresenter");
+const { createAdminCustomerSearchService } = require("./services/adminCustomerSearchService");
 const { createMovieCatalogHandler } = require("./services/movieCatalogHandler");
 const { createVenueConfigurationHandler } = require("./services/venueConfigurationHandler");
 const { createCommercialCatalogHandler } = require("./services/commercialCatalogHandler");
@@ -2873,33 +2874,6 @@ function findAccountTickets(db, userOrQuery) {
     .filter((ticket) => ticketBelongsToUser(db, ticket, user))
     .map((ticket) => enrichTicket(db, ticket))
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-}
-
-function normalizeSearchText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function searchCustomers(db, query) {
-  const rawTerm = String(query || "").trim();
-  const term = normalizeSearchText(rawTerm);
-  const digits = term.replace(/\D/g, "");
-  return (db.users || [])
-    .filter((user) => user.active !== false && ["customer", ...adminRoles()].includes(user.role))
-    .filter((user) => {
-      if (term.length < 2 && digits.length < 2) return false;
-      const name = normalizeSearchText(user.name);
-      const email = normalizeSearchText(user.email);
-      const cpf = String(user.cpf || "").replace(/\D/g, "");
-      const phone = String(user.phone || "").replace(/\D/g, "");
-      return name.includes(term) || email.includes(term) || (digits.length >= 2 && (phone.includes(digits) || cpf.includes(digits)));
-    })
-    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")))
-    .slice(0, 12)
-    .map(sanitizeUser);
 }
 
 function isOrderFullyValidated(order, tickets = []) {
@@ -9692,6 +9666,7 @@ function ticketDistributorReportPdf(report, cinemaName = "Cine Cruzeiro") {
 const adminDashboard = createAdminDashboardService({ todayIsoDate, sessionStartsAt, normalizedSessionStatus, sessionWithCurrentRoom, finishedSessionEndsAt, orderPayment, paymentStatusLabel, orderStatusLabel, originLabel, methodLabel, providerLabel, inDateRange, compareMetric, shortOrderReference, movieForOrder, recognizedTicketCount, sessionCapacity, sessionAvailabilityStatus, orderFinancialBreakdown });
 const adminSubscriptionPresenter = createAdminSubscriptionPresenter({ refreshSubscriptionCredits, clubSavingsSummary,
   subscriptionStatusLabel, currentSubscriptionCredit, sanitizeUser, subscriptionSummary, enrichTicket });
+const adminCustomerSearch = createAdminCustomerSearchService({ adminRoles, sanitizeUser });
 
 function adminIntegrationsStatus(req, db) {
   const integrations = integrationConfigService.list(db);
@@ -12790,7 +12765,7 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/customers" && method === "GET") {
     const query = new URL(req.url, `http://${req.headers.host}`).searchParams.get("query") || "";
-    sendJson(res, 200, { customers: searchCustomers(db, query) });
+    sendJson(res, 200, { customers: adminCustomerSearch.search(db, query) });
     return;
   }
 
