@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import integrationConfigService from "../backend/services/integrationConfigService.js";
+import presenterService from "../backend/services/commercialCatalogPresenter.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,19 +34,69 @@ test("catálogo comercial externo salva token criptografado e não o devolve ao 
 
 test("catálogo comercial possui endpoint protegido, CORS opcional e os conjuntos comerciais esperados", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const presenter = fs.readFileSync(path.join(root, "backend", "services", "commercialCatalogPresenter.js"), "utf8");
   const admin = fs.readFileSync(path.join(root, "backend", "public", "admin.js"), "utf8");
 
   assert.match(server, /pathname === "\/api\/commercial\/catalog"/);
   assert.match(server, /catalogTokensMatch/);
   assert.match(server, /commercialCatalogCorsHeaders/);
   assert.match(server, /commercialCatalog\/access-token/);
-  assert.match(server, /availableSessions/);
-  assert.match(server, /concessions:/);
-  assert.match(server, /promotions:/);
-  assert.match(server, /coupons:/);
-  assert.match(server, /dates/);
+  assert.match(server, /createCommercialCatalogPresenter/);
+  assert.match(presenter, /availableSessions/);
+  assert.match(presenter, /concessions:/);
+  assert.match(presenter, /promotions:/);
+  assert.match(presenter, /coupons:/);
+  assert.match(presenter, /dates/);
   assert.match(admin, /Gerar token seguro/);
   assert.match(admin, /Revelar token/);
   assert.match(admin, /Copiar token/);
   assert.match(admin, /Authorization: Bearer TOKEN/);
+});
+
+test("catálogo comercial preserva sessões, ofertas e identidade da instalação", () => {
+  const now = new Date("2026-10-11T12:00:00.000Z");
+  const { buildCommercialCatalog } = presenterService.createCommercialCatalogPresenter({
+    appFrontendUrl: () => "https://cinema.example",
+    isSessionSellable: (session) => session.id === "session-1",
+    normalizedSessionStatus: (session) => session.status || "scheduled",
+    publicAssetUrl: (url) => url,
+    publicSessionStatus: () => "available",
+    roomDisplayLabel: (room) => room?.name || "",
+    roomForSession: (db, session) => db.rooms.find((room) => room.id === session.roomId),
+    sessionSalesOpenAt: () => now,
+    sessionStartsAt: (session) => new Date(`${session.date}T18:00:00.000Z`),
+    ticketTypesForSession: (db) => db.ticketTypes,
+    todayIsoDate: () => "2026-10-11"
+  });
+  const catalog = buildCommercialCatalog({
+    settings: { cinemaName: "Cinema de Teste" },
+    rooms: [{ id: "room-1", name: "Sala 1" }],
+    ticketTypes: [{ id: "full", name: "Inteira", price: 10 }],
+    movies: [
+      { id: "movie-1", title: "Filme A", posterUrl: "/poster.webp", sessions: [
+        { id: "session-1", roomId: "room-1", date: "2026-10-12", time: "15:00" },
+        { id: "session-2", roomId: "room-1", date: "2026-10-12", time: "18:00" }
+      ] },
+      { id: "hidden", title: "Oculto", status: "hidden", sessions: [] }
+    ],
+    concessions: [{ id: "popcorn", name: "Pipoca", price: 20, imageUrl: "/popcorn.webp" }],
+    promotions: [
+      { id: "promo", name: "Oferta", active: true },
+      { id: "coupon", name: "Cupom", couponCode: "CINEMA" },
+      { id: "expired", name: "Antiga", endsAt: "2026-10-10T00:00:00.000Z" }
+    ]
+  }, now);
+
+  assert.equal(catalog.catalog.name, "Cinema de Teste");
+  assert.equal(catalog.catalog.programmingUrl, "https://cinema.example/filmes");
+  assert.deepEqual(catalog.movies.map((movie) => movie.id), ["movie-1"]);
+  assert.equal(catalog.movies[0].posterUrl, "https://cinema.example/poster.webp");
+  assert.deepEqual(catalog.availableSessions.map((session) => session.id), ["session-1"]);
+  assert.deepEqual(catalog.programming.map((session) => session.id), ["session-1", "session-2"]);
+  assert.equal(catalog.programming[0].ticketTypes[0].price, 10);
+  assert.equal(catalog.programming[0].room.name, "Sala 1");
+  assert.deepEqual(catalog.dates.map((date) => [date.sessionCount, date.availableSessionCount]), [[2, 1]]);
+  assert.equal(catalog.concessions[0].imageUrl, "https://cinema.example/popcorn.webp");
+  assert.deepEqual(catalog.promotions.map((offer) => offer.id), ["promo"]);
+  assert.deepEqual(catalog.coupons.map((offer) => offer.code), ["CINEMA"]);
 });
