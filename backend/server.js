@@ -14406,7 +14406,7 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/payments/pix" && method === "POST") {
     const body = await readBody(req);
-    await withCriticalMutation(async () => {
+    const created = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       expireStaleReservations(lockedDb);
       const customerUser = getCustomerUser(req, lockedDb);
@@ -14452,12 +14452,7 @@ async function handleApi(req, res, pathname) {
         }
         const completed = await finalizeOrderWithoutCharge(lockedDb, order, customerUser);
         await writeDb(lockedDb);
-        await releaseOrderSeatHolds(completed.order);
-        sendJson(res, 201, checkoutResponse(lockedDb, completed.order, null, completed.tickets), {
-          "Set-Cookie": checkoutAccessCookie(req, completed.order.id)
-        });
-        if (completed.tickets.length) queueTicketEmailDelivery(completed.order.id);
-        return;
+        return { response: checkoutResponse(lockedDb, completed.order, null, completed.tickets), order: completed.order, tickets: completed.tickets };
       }
       const active = activeOnlinePaymentProvider(lockedDb);
       if (!(active.config?.enabled && active.config?.configured) && process.env.PAYMENTS_MODE !== "test") {
@@ -14486,8 +14481,6 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
-      await releaseOrderSeatHolds(savedOrder, savedOrder.status === "pending_payment" ? "held" : "unavailable");
-      seatRealtimeService?.broadcastSessionRefresh(savedOrder.sessionId);
       logEvent("info", "payment.created", {
         orderId: savedOrder.id,
         paymentId: payment.id,
@@ -14497,11 +14490,18 @@ async function handleApi(req, res, pathname) {
         couponCode: savedOrder.couponCode || "",
         couponDiscount: savedOrder.couponDiscount || 0
       });
-      sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
-        "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
-      });
-      if (tickets.length) queueTicketEmailDelivery(savedOrder.id);
+      return { response: checkoutResponse(lockedDb, savedOrder, payment, tickets), order: savedOrder, tickets };
     });
+    if (created) {
+      try {
+        await releaseOrderSeatHolds(created.order, created.order.status === "pending_payment" ? "held" : "unavailable");
+        seatRealtimeService?.broadcastSessionRefresh(created.order.sessionId);
+      } catch (error) {
+        logEvent("warn", "seat_realtime.release_hold_error", { orderId: created.order.id, message: error.message });
+      }
+      if (created.tickets.length) queueTicketEmailDelivery(created.order.id);
+      sendJson(res, 201, created.response, { "Set-Cookie": checkoutAccessCookie(req, created.order.id) });
+    }
     return;
   }
 
@@ -14511,7 +14511,7 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: { code: "CARD_DATA_NOT_ALLOWED", message: "O Cine Cruzeiro não recebe dados de cartão. Envie apenas o token ou cartão criptografado gerado pelo provedor ativo." } });
       return;
     }
-    await withCriticalMutation(async () => {
+    const created = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       expireStaleReservations(lockedDb);
       const customerUser = getCustomerUser(req, lockedDb);
@@ -14556,12 +14556,7 @@ async function handleApi(req, res, pathname) {
         }
         const completed = await finalizeOrderWithoutCharge(lockedDb, order, customerUser);
         await writeDb(lockedDb);
-        await releaseOrderSeatHolds(completed.order);
-        sendJson(res, 201, checkoutResponse(lockedDb, completed.order, null, completed.tickets), {
-          "Set-Cookie": checkoutAccessCookie(req, completed.order.id)
-        });
-        if (completed.tickets.length) queueTicketEmailDelivery(completed.order.id);
-        return;
+        return { response: checkoutResponse(lockedDb, completed.order, null, completed.tickets), order: completed.order, tickets: completed.tickets };
       }
       const active = activeOnlinePaymentProvider(lockedDb);
       if (!(active.config?.enabled && active.config?.configured) && process.env.PAYMENTS_MODE !== "test") {
@@ -14600,8 +14595,6 @@ async function handleApi(req, res, pathname) {
       lockedDb.payments.unshift(payment);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
-      await releaseOrderSeatHolds(savedOrder, savedOrder.status === "pending_payment" ? "held" : "unavailable");
-      seatRealtimeService?.broadcastSessionRefresh(savedOrder.sessionId);
       logEvent("info", "payment.created", {
         orderId: savedOrder.id,
         paymentId: payment.id,
@@ -14611,11 +14604,18 @@ async function handleApi(req, res, pathname) {
         couponCode: savedOrder.couponCode || "",
         couponDiscount: savedOrder.couponDiscount || 0
       });
-      sendJson(res, 201, checkoutResponse(lockedDb, savedOrder, payment, tickets), {
-        "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
-      });
-      if (tickets.length) queueTicketEmailDelivery(savedOrder.id);
+      return { response: checkoutResponse(lockedDb, savedOrder, payment, tickets), order: savedOrder, tickets };
     });
+    if (created) {
+      try {
+        await releaseOrderSeatHolds(created.order, created.order.status === "pending_payment" ? "held" : "unavailable");
+        seatRealtimeService?.broadcastSessionRefresh(created.order.sessionId);
+      } catch (error) {
+        logEvent("warn", "seat_realtime.release_hold_error", { orderId: created.order.id, message: error.message });
+      }
+      if (created.tickets.length) queueTicketEmailDelivery(created.order.id);
+      sendJson(res, 201, created.response, { "Set-Cookie": checkoutAccessCookie(req, created.order.id) });
+    }
     return;
   }
 

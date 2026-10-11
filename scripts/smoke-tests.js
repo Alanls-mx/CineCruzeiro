@@ -1673,6 +1673,9 @@ async function run() {
     assert.equal(planBenefitsPix.payload.order.clubBenefits.ticketDiscountPercent, 10);
     assert.equal(planBenefitsPix.payload.order.clubBenefits.freeConcessionItems[0].concessionId, "combo-classico");
     assert.equal(planBenefitsPix.payload.tickets.length, 0);
+    const benefitAfterCreated = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(benefitAfterCreated.response.status, 200);
+    assert.equal(benefitAfterCreated.payload.orders.some((order) => order.id === benefitOrderId), true, "Pix 201 deve ser visivel apos commit");
 
     const cancelBenefitOrder = await request(`/api/orders/${encodeURIComponent(benefitOrderId)}`, {
       method: "DELETE",
@@ -2704,6 +2707,9 @@ async function run() {
     assert.equal(card.response.status, 201);
     assert.equal(card.payload.payment.provider, "mercado_pago");
     assert.equal(card.payload.payment.method, "credit_card");
+    const cardAfterCreated = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(cardAfterCreated.response.status, 200);
+    assert.equal(cardAfterCreated.payload.orders.some((order) => order.id === card.payload.order.id), true, "Cartao 201 deve ser visivel apos commit");
 
     const requiredPolicy = await request("/api/admin/security-policy", {
       method: "PUT",
