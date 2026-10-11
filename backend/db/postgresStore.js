@@ -681,10 +681,10 @@ async function closePostgres() {
   if (pool) await pool.end();
 }
 
-async function readDbFromPostgres({ includeAuditLogs = true, trackChanges = true, fresh = false } = {}) {
+async function readDbFromPostgres({ includeAuditLogs = true, trackChanges = true } = {}) {
   // Reads made inside a critical mutation must observe the transaction directly.
   let snapshot;
-  if (contextClient() || fresh) snapshot = await loadDbFromPostgres({ includeAuditLogs });
+  if (contextClient()) snapshot = await loadDbFromPostgres({ includeAuditLogs });
   else {
     if (cacheInvalidation && !cacheInvalidation.connected()) invalidateSnapshotCache();
     snapshot = await snapshotCache.read(includeAuditLogs ? "full" : "operational");

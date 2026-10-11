@@ -10860,8 +10860,10 @@ async function handleApi(req, res, pathname) {
   }
 
   const targetedRepositoryMutation = postgresEnabled() && repositoryMutationRoute(pathname, method);
+  const selfManagedOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+$/.test(pathname);
   req.repositoryMutation = targetedRepositoryMutation;
-  if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method) && !targetedRepositoryMutation && !context?.adminMutationLocked) {
+  if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
@@ -10876,10 +10878,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const db = await readDb({
-    trackChanges: method !== "GET" && method !== "HEAD",
-    fresh: method === "GET" && pathname === "/api/me/subscriptions"
-  });
+  const db = await readDb({ trackChanges: method !== "GET" && method !== "HEAD" });
 
   if (pathname.startsWith("/api/email-automation/") && !emailAutomationAuthorized(req)) {
     const configured = Boolean(process.env.EMAIL_AUTOMATION_TOKEN || process.env.N8N_EMAIL_SHARED_SECRET);
