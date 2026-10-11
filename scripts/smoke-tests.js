@@ -1861,7 +1861,15 @@ async function run() {
     const refundedBundleSubscription = subscriptionsAfterBundleRefund.payload.subscriptions.find((subscription) => subscription.id === bundleSubscription.payload.subscription.id);
     assert.ok(refundedBundleSubscription, "A assinatura do pacote deve continuar visivel apos o cancelamento");
     const refundedBundleUsage = refundedBundleSubscription.usage.find((usage) => usage.orderId === bundleCreditOrder.payload.order.id);
-    assert.ok(refundedBundleUsage?.refundedAt, "O uso dos creditos deve registrar a devolucao");
+    assert.ok(refundedBundleUsage?.refundedAt, JSON.stringify({
+      message: "O uso dos creditos deve registrar a devolucao",
+      orderId: bundleCreditOrder.payload.order.id,
+      cancelledOrderStatus: cancelledBundleCreditOrder.payload.order?.status,
+      subscriptionStatus: refundedBundleSubscription.status,
+      credit: refundedBundleSubscription.credit,
+      creditCounts: refundedBundleSubscription.creditCounts,
+      usage: refundedBundleSubscription.usage.map(({ id, orderId, creditId, creditsUsed, refundedAt }) => ({ id, orderId, creditId, creditsUsed, refundedAt }))
+    }));
     assert.equal(refundedBundleSubscription.creditsRemaining, 3, JSON.stringify({
       orderId: bundleCreditOrder.payload.order.id,
       subscriptionStatus: refundedBundleSubscription.status,

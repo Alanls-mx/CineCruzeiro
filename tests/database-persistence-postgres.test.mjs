@@ -7,6 +7,7 @@ const { assertDisposableTestDatabase } = require("../scripts/test-postgres-safet
 const store = require("../backend/db/postgresStore");
 const users = require("../backend/repositories/userRepository");
 const { runMutation } = require("../backend/repositories/repositorySupport");
+const { CampaignOrchestrator } = require("../backend/services/social-studio/automation/orchestrator");
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 test.beforeEach(async () => { if (enabled) await assertDisposableTestDatabase(); });
 
@@ -35,6 +36,43 @@ test("tarefas pos-commit veem dados persistidos e sao descartadas no rollback", 
     }), /rollback esperado/);
     assert.equal(rollbackCallbackRan, false);
   } finally {
+    await store.queryPostgres("DELETE FROM settings WHERE key=$1", [key]);
+  }
+});
+
+test("fila do Studio inicia fora da transacao e apos o commit", { skip: !enabled }, async () => {
+  const key = `testStudioQueue${Date.now()}`;
+  const service = new CampaignOrchestrator({ repository: {}, contextProvider: async () => ({}), loadImage: async () => null, savePreview: async () => "" });
+  let started = false;
+  let resolveProcessed;
+  let rejectProcessed;
+  const processed = new Promise((resolve, reject) => {
+    resolveProcessed = resolve;
+    rejectProcessed = reject;
+  });
+  service.process = async () => {
+    started = true;
+    try {
+      const { rows } = await store.queryPostgres("SELECT value FROM settings WHERE key=$1", [key]);
+      resolveProcessed(rows[0]?.value);
+    } catch (error) {
+      rejectProcessed(error);
+    }
+  };
+  let timeout;
+  try {
+    await store.withPostgresMutationLock(async () => {
+      await store.queryPostgres("INSERT INTO settings(key,value) VALUES ($1,'true'::jsonb)", [key]);
+      service.enqueue(key);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(started, false);
+    });
+    assert.equal(await Promise.race([
+      processed,
+      new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("fila do Studio nao iniciou apos o commit")), 5000); })
+    ]), true);
+  } finally {
+    clearTimeout(timeout);
     await store.queryPostgres("DELETE FROM settings WHERE key=$1", [key]);
   }
 });

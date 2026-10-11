@@ -5,6 +5,7 @@ const {normalizeV2Draft}=require('../engine/normalizer');
 const {generateCopy,FIELD_MAP}=require('../copy-engine');
 const {generateVariations}=require('../composition-engine/variations');
 const {renderSocialPostV2}=require('../engine/renderer');
+const {deferUntilPostgresCommit,outsidePostgresTransaction}=require('../../../db/postgresStore');
 
 const STAGES={queued:['Na fila',0],context:['Preparando campanha',12],assets:['Buscando assets',28],copy:['Criando repertório',42],compositions:['Gerando composições',58],qa:['Verificando qualidade',82],ready:['Pronto para revisão',100],failed:['Erro',100]};
 const publicRecord=record=>({...record,request:undefined,idempotencyKey:undefined});
@@ -24,7 +25,10 @@ class CampaignOrchestrator {
     if(result.created)this.enqueue(result.record.id);
     return {...publicRecord(result.record),duplicate:!result.created};
   }
-  enqueue(id) {setImmediate(()=>this.process(id).catch(error=>this.logger('error','social_studio.automation.unhandled',{campaignId:id,message:error.message})));}
+  enqueue(id) {
+    if(deferUntilPostgresCommit(()=>this.enqueue(id)))return;
+    setImmediate(()=>outsidePostgresTransaction(()=>this.process(id).catch(error=>this.logger('error','social_studio.automation.unhandled',{campaignId:id,message:error.message}))));
+  }
   async resumePending() {const pending=(await this.repository.list({limit:100})).filter(item=>['queued','processing','qa'].includes(item.status));pending.forEach(item=>this.enqueue(item.id));return pending.length;}
   async reprocess(id) {
     const current=await this.repository.findById(id);if(!current?.id)throw Object.assign(new Error('Campanha automática não encontrada.'),{statusCode:404,code:'STUDIO_CAMPAIGN_NOT_FOUND'});
