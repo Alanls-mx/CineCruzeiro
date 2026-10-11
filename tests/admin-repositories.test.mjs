@@ -63,13 +63,14 @@ test("backend deriva o base path publico para imagens fora do Next", () => {
 test("rotas migradas nao entram no advisory lock global", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.match(server, /repositoryMutationRoute\(pathname, method\)/);
-  assert.match(server, /!targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !context\?\.adminMutationLocked/);
+  assert.match(server, /!targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !selfManagedRefundFlow && !context\?\.adminMutationLocked/);
   assert.match(server, /selfManagedOrderDeletion = method === "DELETE" &&/);
   assert.match(server, /selfManagedPermanentOrderDeletion = method === "DELETE" &&/);
   assert.match(server, /selfManagedClubAssignment = method === "POST" && pathname === "\/api\/admin\/subscriptions\/assign"/);
   assert.match(server, /selfManagedTicketValidation = method === "POST" && pathname === "\/api\/tickets\/validate"/);
   assert.match(server, /selfManagedBoxOfficeSale = method === "POST" &&/);
   assert.match(server, /selfManagedPointCancellation = method === "POST" &&/);
+  assert.match(server, /selfManagedRefundFlow = method === "POST" &&/);
   const routeSources = [
     server,
     ...["movieCatalogHandler.js", "venueConfigurationHandler.js", "commercialCatalogHandler.js"]
