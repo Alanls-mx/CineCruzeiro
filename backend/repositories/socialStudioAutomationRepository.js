@@ -41,7 +41,7 @@ class SocialStudioAutomationRepository {
       return {record:mapCampaign(record),created:true};
     });
   }
-  async update(id,patch={}) {
+  async update(id,patch={},options={}) {
     const clean={...patch,updatedAt:new Date().toISOString()};
     if(postgresEnabled()) {
       const fields={status:'status',stage:'stage',progress:'progress',result:'result',warnings:'warnings',qa:'qa',attempts:'attempts',error:'error',startedAt:'started_at',finishedAt:'finished_at'};
@@ -51,13 +51,21 @@ class SocialStudioAutomationRepository {
         sets.push(`${column}=$${values.length}${['result','warnings','qa','error'].includes(key)?'::jsonb':''}`);
       }
       values.push(clean.updatedAt,id);sets.push(`updated_at=$${values.length-1}`);
-      const result=await queryPostgres(`UPDATE social_studio_automation_campaigns SET ${sets.join(',')} WHERE id=$${values.length} RETURNING *`,values);
+      const idIndex=values.length;
+      let condition=`id=$${idIndex}`;
+      if(options.expectedAttempts!==undefined) {
+        values.push(options.expectedAttempts);
+        condition+=` AND attempts=$${values.length} AND status IN ('processing','qa')`;
+      }
+      const result=await queryPostgres(`UPDATE social_studio_automation_campaigns SET ${sets.join(',')} WHERE ${condition} RETURNING *`,values);
       return result.rows[0]?mapCampaign(result.rows[0]):null;
     }
     return this.mutateJson(async db=>{
       db.settings ||= {};db.settings.socialStudioAutomationCampaigns ||= [];
       const index=db.settings.socialStudioAutomationCampaigns.findIndex(item=>String(item.id)===String(id));
       if(index<0)return null;
+      if(options.expectedAttempts!==undefined && (Number(db.settings.socialStudioAutomationCampaigns[index].attempts)!==options.expectedAttempts
+        || !['processing','qa'].includes(db.settings.socialStudioAutomationCampaigns[index].status)))return null;
       db.settings.socialStudioAutomationCampaigns[index]={...db.settings.socialStudioAutomationCampaigns[index],...clean};
       return mapCampaign(db.settings.socialStudioAutomationCampaigns[index]);
     });
@@ -109,13 +117,14 @@ class SocialStudioAutomationRepository {
   }
   async touchClaim(id,attempts) {
     if(postgresEnabled()) {
-      await queryPostgres(`UPDATE social_studio_automation_campaigns SET updated_at=now()
+      const result=await queryPostgres(`UPDATE social_studio_automation_campaigns SET updated_at=now()
         WHERE id=$1 AND attempts=$2 AND status IN ('processing','qa')`,[id,attempts]);
-      return;
+      return result.rowCount>0;
     }
-    await this.mutateJson(async db=>{
+    return this.mutateJson(async db=>{
       const item=(db.settings?.socialStudioAutomationCampaigns || []).find(record=>record.id===id);
-      if(item && Number(item.attempts)===attempts && ['processing','qa'].includes(item.status))item.updatedAt=new Date().toISOString();
+      if(item && Number(item.attempts)===attempts && ['processing','qa'].includes(item.status)) {item.updatedAt=new Date().toISOString();return true;}
+      return false;
     });
   }
   async appendEvent(campaignId,event) {

@@ -47,6 +47,41 @@ test('reivindicação evita processar a mesma campanha duas vezes',async()=>{
   assert.equal(first?.attempts || second?.attempts,1);
 });
 
+test('tentativa antiga não substitui o estado após retomada por outra instância',async()=>{
+  const repository=memoryRepository();
+  await repository.create({id:'claim-fenced',idempotencyKey:'claim-fenced',status:'queued',stage:'queued',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+  const staleBefore=new Date(Date.now()-10*60*1000).toISOString();
+  const first=await repository.claim('claim-fenced',staleBefore);
+  assert.equal(await repository.touchClaim('claim-fenced',first.attempts),true);
+  assert.equal(await repository.claim('claim-fenced',staleBefore),null);
+  await repository.update('claim-fenced',{status:'queued'});
+  const second=await repository.claim('claim-fenced',staleBefore);
+  assert.equal(second.attempts,first.attempts+1);
+  assert.equal(await repository.touchClaim('claim-fenced',first.attempts),false);
+  assert.equal(await repository.update('claim-fenced',{status:'failed'},{expectedAttempts:first.attempts}),null);
+  assert.equal((await repository.update('claim-fenced',{status:'ready'},{expectedAttempts:second.attempts})).status,'ready');
+});
+
+test('instância antiga não marca failed após outra concluir a campanha',async()=>{
+  const repository=memoryRepository();
+  const request=normalizeCampaignRequest({cinemaId:'cinema-a',campaignType:'movie',objective:'Estreia',formats:['feed_portrait'],movieId:'m'});
+  await repository.create({id:'takeover',idempotencyKey:'takeover',cinemaId:'cinema-a',status:'queued',stage:'queued',request,formats:request.formats,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+  let releaseFirst,signalFirst;
+  const firstAtVariations=new Promise(resolve=>{signalFirst=resolve;});
+  const firstVariations=new Promise(resolve=>{releaseFirst=resolve;});
+  const options={repository,contextProvider:async()=>({brand:{id:'cinema-a'},history:[]}),loadImage:async()=>null,savePreview:async()=>'/preview/test.png'};
+  const first=new CampaignOrchestrator({...options,dependencies:{normalizeDraft:normalized,generateCopy:copy,generateVariations:async draft=>{signalFirst();await firstVariations;return variations(draft);},renderPost:render,evaluate:accepted}});
+  const second=new CampaignOrchestrator({...options,dependencies:{normalizeDraft:normalized,generateCopy:copy,generateVariations:variations,renderPost:render,evaluate:accepted}});
+  const oldProcess=first.process('takeover');
+  await firstAtVariations;
+  await repository.update('takeover',{status:'queued'});
+  await second.process('takeover');
+  assert.equal((await repository.findById('takeover')).status,'ready');
+  releaseFirst();
+  await oldProcess;
+  assert.equal((await repository.findById('takeover')).status,'ready');
+});
+
 test('falha ao reivindicar nao altera campanha pendente',async()=>{
   let updates=0;
   const repository={claim:async()=>{throw new Error('database unavailable');},update:async()=>{updates++;}};

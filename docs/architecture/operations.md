@@ -20,6 +20,7 @@ Fonte: [orquestrador](../../backend/services/social-studio/automation/orchestrat
 
 - A recuperação varre campanhas `queued` e trabalhos `processing`/`qa` inativos há dez minutos, em páginas de 20, ordenadas por criação e ID. Cada página é drenada antes da próxima; o processo mantém no máximo dois trabalhos simultâneos **por instância**.
 - `claim` é condicional no PostgreSQL e impede que duas instâncias reivindiquem a mesma campanha ao mesmo tempo. Heartbeat atualiza o registro durante renderizações longas. Um timer de um minuto descobre trabalhos que ficaram elegíveis depois da inicialização; chamadas concorrentes de recuperação não iniciam varreduras paralelas na mesma instância.
+- Atualizações de etapa e estado terminal exigem o número da tentativa reivindicada. Após expiração e novo claim, a instância antiga não pode gravar `ready` ou `failed` sobre a nova. O heartbeat também informa perda do claim. A operação de renderização já em curso não pode ser cancelada atomicamente; seus arquivos externos ainda precisam de observação/deduplicação.
 - Falha de renderização conclui a campanha como `failed`, preservando a ação explícita de reprocessar. Um crash antes de marcar `ready` pode repetir geração de arquivos após o lease; o resultado persistido continua identificado pela campanha. Verificar o efeito externo de upload ao investigar duplicações.
 - O armazenamento JSON de compatibilidade ainda limita histórico a 100 campanhas; backlog superior a 100 é validado para PostgreSQL. O teste unitário exercita 125 registros sem memória ilimitada.
 

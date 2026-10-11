@@ -70,33 +70,40 @@ class CampaignOrchestrator {
     const current=await this.repository.findById(id);if(!current?.id)throw Object.assign(new Error('Campanha automática não encontrada.'),{statusCode:404,code:'STUDIO_CAMPAIGN_NOT_FOUND'});
     await this.repository.update(id,{status:'queued',stage:'queued',progress:0,error:null,finishedAt:null});this.enqueue(id);return publicRecord(await this.repository.findById(id));
   }
-  async stage(id,key,patch={}) {const [message,progress]=STAGES[key];await this.repository.appendEvent(id,{stage:key,message,metadata:patch.metadata});return this.repository.update(id,{stage:key,progress,...patch});}
+  async stage(id,key,patch={},expectedAttempts) {
+    const [message,progress]=STAGES[key];
+    const record=await this.repository.update(id,{stage:key,progress,...patch},{expectedAttempts});
+    if(!record)throw Object.assign(new Error('A campanha foi retomada por outra instância.'),{code:'STUDIO_CLAIM_LOST'});
+    await this.repository.appendEvent(id,{stage:key,message,metadata:patch.metadata});
+    return record;
+  }
   async process(id) {
     if(this.running.has(id))return;this.running.add(id);
-    let heartbeat,claimed=false;
+    let heartbeat,claimed=false,claimAttempts;
     try {
       let record=await this.repository.claim(id,new Date(Date.now()-10*60*1000).toISOString());
       if(!record)return;
-      claimed=true;
-      heartbeat=setInterval(()=>void this.repository.touchClaim(id,record.attempts).catch(error=>this.logger('warn','social_studio.automation.heartbeat_failed',{campaignId:id,message:error.message})),60*1000);
+      claimed=true;claimAttempts=record.attempts;
+      const stage=(key,patch={})=>this.stage(id,key,patch,claimAttempts);
+      heartbeat=setInterval(()=>void this.repository.touchClaim(id,claimAttempts).then(active=>{if(!active)this.logger('warn','social_studio.automation.claim_lost',{campaignId:id});}).catch(error=>this.logger('warn','social_studio.automation.heartbeat_failed',{campaignId:id,message:error.message})),60*1000);
       heartbeat.unref?.();
-      await this.stage(id,'context');
+      await stage('context');
       const context=await this.contextProvider();
       const recent=await this.repository.list({cinemaId:record.cinemaId,limit:30});
       context.history=[...(context.history || []),...recent.filter(item=>item.id!==id).flatMap(item=>item.result?.compositions || []).map(item=>({payload:item.draft || {}}))];
       const request=record.request;
       let draft=this.dependencies.normalizeDraft({...request.subject,templateId:request.templateId,formatId:request.formats[0]},context);
       const warnings=[];
-      await this.stage(id,'assets');
+      await stage('assets');
       const movie=draft.entities?.movie;
       if(movie && !movie.posterUrl && !movie.backdropUrl && !draft.imageUrl)warnings.push({code:'MISSING_POSTER',message:'Não foi possível obter o pôster. O fallback visual do Studio será usado.'});
       if(request.assets.length && !draft.imageUrl)draft=this.dependencies.normalizeDraft({...draft,imageUrl:request.assets.find(asset=>asset?.url)?.url || ''},context);
-      await this.stage(id,'copy',{warnings});
+      await stage('copy',{warnings});
       const copy=this.dependencies.generateCopy(draft,context,{tone:request.copyOptions.tone || draft.copyTone,density:request.copyOptions.density || draft.copyDensity,locks:request.copyOptions.locks || draft.copyLocks,seed:Number(request.copyOptions.seed)||0});
       const withCopy={...draft};
       for(const [field,key] of Object.entries(FIELD_MAP))if(!request.copyOptions.locks?.[field] && !request.subject[key])withCopy[key]=copy.bundle[field];
       draft=this.dependencies.normalizeDraft(withCopy,context);
-      await this.stage(id,'compositions');
+      await stage('compositions');
       let variations=null,lastError=null,retryHistory=[];
       for(let attempt=0;attempt<3;attempt++) {
         try {
@@ -106,7 +113,7 @@ class CampaignOrchestrator {
         } catch(error) {lastError=error;retryHistory.push({attempt:attempt+1,reason:error.message,action:'Preservar o conceito e recalcular composição, branding e safe areas.'});}
       }
       if(!variations?.variations?.length)throw lastError || Object.assign(new Error('Nenhuma composição passou pela revisão automática.'),{code:'STUDIO_QA_REJECTED'});
-      await this.stage(id,'qa',{status:'qa'});
+      await stage('qa',{status:'qa'});
       const compositions=[],qaItems=[];
       for(const [variationIndex,variation] of variations.variations.slice(0,request.variationCount).entries()) for(const formatId of request.formats) {
         const rendered=await this.dependencies.renderPost({...variation.draft,formatId},context,{loadImage:this.loadImage});
@@ -118,10 +125,10 @@ class CampaignOrchestrator {
       }
       const qa={accepted:compositions.length>0,items:qaItems,errors:qaItems.reduce((sum,item)=>sum+item.counts.ERROR,0),warnings:qaItems.reduce((sum,item)=>sum+item.counts.WARNING,0),suggestions:qaItems.reduce((sum,item)=>sum+item.counts.SUGGESTION,0)};
       if(!qa.accepted)throw Object.assign(new Error('As composições apresentaram conflitos visuais. Gere novas variações ou reduza o texto.'),{code:'STUDIO_QA_REJECTED',qa});
-      record=await this.stage(id,'ready',{status:'ready',finishedAt:new Date().toISOString(),warnings:[...warnings,...(variations.notices || []).map(message=>({code:'VARIATION_NOTICE',message}))],qa,result:{compositions,repertoire:{provider:copy.provider,candidates:copy.candidates.map(item=>({id:item.id,score:item.score,bundle:item.bundle}))},retryHistory,rendererVersion:'v2'}});
+      record=await stage('ready',{status:'ready',finishedAt:new Date().toISOString(),warnings:[...warnings,...(variations.notices || []).map(message=>({code:'VARIATION_NOTICE',message}))],qa,result:{compositions,repertoire:{provider:copy.provider,candidates:copy.candidates.map(item=>({id:item.id,score:item.score,bundle:item.bundle}))},retryHistory,rendererVersion:'v2'}});
       this.logger('info','social_studio.automation.ready',{campaignId:id,compositions:compositions.length,attempts:record.attempts});
     } catch(error) {
-      if(claimed)await this.stage(id,'failed',{status:'failed',finishedAt:new Date().toISOString(),error:{code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message,qa:error.qa || null}}).catch(()=>{});
+      if(claimed && error.code!=='STUDIO_CLAIM_LOST')await this.stage(id,'failed',{status:'failed',finishedAt:new Date().toISOString(),error:{code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message,qa:error.qa || null}},claimAttempts).catch(()=>{});
       this.logger('error','social_studio.automation.failed',{campaignId:id,code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message});
     } finally {if(heartbeat)clearInterval(heartbeat);this.running.delete(id);}
   }

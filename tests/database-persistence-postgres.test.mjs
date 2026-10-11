@@ -42,6 +42,31 @@ test("pedido pago registra entrega no commit; rollback nao cria trabalho", { ski
   }
 });
 
+test("entrega de ingresso protege claim, heartbeat e conclusao apos lease expirado", { skip: !enabled }, async () => {
+  const orderId = `ticket-lease-${Date.now()}`;
+  const repository = createTicketEmailJobRepository();
+  try {
+    await store.queryPostgres(`INSERT INTO orders (id,customer_name,customer_email,status,metadata)
+      VALUES ($1,'Cliente','cliente@example.test','paid','{"ticketEmailRequested":true}'::jsonb)`, [orderId]);
+    const [first, second] = await Promise.all([repository.claimNext(), repository.claimNext()]);
+    const initial = first || second;
+    assert.equal([first, second].filter(Boolean).length, 1);
+    assert.equal(initial.orderId, orderId);
+    assert.equal(await repository.heartbeat(initial), true);
+    assert.equal(await repository.claimNext(), null);
+    await store.queryPostgres("UPDATE ticket_email_jobs SET locked_at=now()-interval '11 minutes' WHERE order_id=$1", [orderId]);
+    const resumed = await repository.claimNext();
+    assert.equal(resumed.orderId, orderId);
+    assert.equal(resumed.attempts, initial.attempts + 1);
+    assert.equal(await repository.heartbeat(initial), false);
+    assert.equal(await repository.complete(initial, { status: 'delivered' }), false);
+    assert.equal(await repository.complete(resumed, { status: 'delivered' }), true);
+    assert.equal(await repository.claimNext(), null);
+  } finally {
+    await store.queryPostgres('DELETE FROM orders WHERE id=$1', [orderId]);
+  }
+});
+
 test("Studio recupera backlog PostgreSQL acima de 100 e reivindica uma vez", { skip: !enabled }, async () => {
   const prefix = `phase5-recovery-${Date.now()}`;
   const repository = new SocialStudioAutomationRepository();
@@ -66,6 +91,15 @@ test("Studio recupera backlog PostgreSQL acima de 100 e reivindica uma vez", { s
       repository.claim(seen[0].id, new Date(Date.now() - 600000).toISOString())
     ]);
     assert.equal([first, second].filter(Boolean).length, 1);
+    const initialClaim = first || second;
+    assert.equal(await repository.touchClaim(initialClaim.id, initialClaim.attempts), true);
+    assert.equal(await repository.claim(initialClaim.id, new Date(Date.now() - 600000).toISOString()), null);
+    await store.queryPostgres("UPDATE social_studio_automation_campaigns SET updated_at=now()-interval '11 minutes' WHERE id=$1", [initialClaim.id]);
+    const resumed = await repository.claim(initialClaim.id, new Date(Date.now() - 600000).toISOString());
+    assert.equal(resumed.attempts, initialClaim.attempts + 1);
+    assert.equal(await repository.touchClaim(initialClaim.id, initialClaim.attempts), false);
+    assert.equal(await repository.update(initialClaim.id, { status: 'failed' }, { expectedAttempts: initialClaim.attempts }), null);
+    assert.equal((await repository.update(initialClaim.id, { status: 'ready' }, { expectedAttempts: resumed.attempts })).status, 'ready');
   } finally {
     await store.queryPostgres("DELETE FROM social_studio_automation_campaigns WHERE idempotency_key LIKE $1", [`${prefix}-%`]);
   }
