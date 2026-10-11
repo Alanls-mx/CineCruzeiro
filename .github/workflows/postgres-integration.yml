@@ -44,6 +44,11 @@ jobs:
           POSTGRES_SERVICE_CONTAINER_ID: ${{ job.services.postgres.id }}
           POSTGRES_SERVICE_PORT: ${{ job.services.postgres.ports[5432] }}
         run: node scripts/setup-ci-postgres.js
-      - run: npm run test:smoke:postgres
+      - name: Repeat isolated PostgreSQL smoke tests
+        run: |
+          for iteration in 1 2 3; do
+            echo "PostgreSQL smoke iteration $iteration"
+            npm run test:smoke:postgres
+          done
       - run: npm run test:postgres
       - run: npm run test:postgres:repositories
