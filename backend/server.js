@@ -3575,9 +3575,18 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
 
   const orders = pointPaymentOrders(db, payment);
   if (payment.metadata?.cancellationRefund) return { orders, tickets: [], newlyPaidOrders: [] };
+  const reconciliationRequired = nextStatus === "approved" && (
+    !orders.length || orders.some((order) => ["cancelled", "expired", "rejected", "refunded"].includes(String(order.status || "")))
+  );
+  if (reconciliationRequired) {
+    payment.metadata.reconciliationRequired = true;
+    payment.metadata.reconciliationReason = !orders.length ? "point_order_missing" : "point_approved_after_order_closed";
+    payment.metadata.reconciliationRequiredAt ||= now;
+  }
   const newlyPaidOrders = [];
   const tickets = [];
   for (const order of orders) {
+    if (reconciliationRequired) continue;
     if (nextStatus === "approved") {
       if (orderRequiresConfirmedPrint(order)) {
         tickets.push(...stagePaidOrderForPrint(db, order, payment, payment.method === "courtesy" ? "courtesy" : "box_office"));
@@ -3601,7 +3610,7 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
       order.updatedAt = now;
     }
   }
-  return { orders, tickets, newlyPaidOrders };
+  return { orders, tickets, newlyPaidOrders, reconciliationRequired };
 }
 
 function boxOfficeOrdersForAutomaticPrint(orders = []) {
@@ -10673,7 +10682,7 @@ async function handleApi(req, res, pathname) {
   const selfManagedClubAssignment = method === "POST" && pathname === "/api/admin/subscriptions/assign";
   const selfManagedBoxOfficeSale = method === "POST" && ["/api/box-office/sales", "/api/tickets/manual", "/api/admin/concession-counter-sales"].includes(pathname);
   const selfManagedPointCancellation = method === "POST" && /^\/api\/box-office\/point-payments\/[^/]+\/cancel$/.test(pathname);
-  req.commitResponseAfterMutation = selfManagedBoxOfficeSale;
+  req.commitResponseAfterMutation = selfManagedBoxOfficeSale || pathname.startsWith("/api/box-office/point-payments/");
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
     && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !context?.adminMutationLocked) {
@@ -15353,12 +15362,11 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 409, { error: { code: "POINT_AMOUNT_MISMATCH", message: "O valor retornado pela maquininha não confere com a venda." } });
       return;
     }
-    await withCriticalMutation(async () => {
+    const synced = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const payment = (lockedDb.payments || []).find((item) => item.id === paymentId && ["point_sale", "counter_sale"].includes(item.metadata?.kind));
       if (!payment) {
-        sendJson(res, 404, { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } });
-        return;
+        return { status: 404, payload: { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } } };
       }
       if (!payment.providerPaymentId && providerPayment.id) payment.providerPaymentId = providerPayment.id;
       payment.metadata = {
@@ -15369,7 +15377,9 @@ async function handleApi(req, res, pathname) {
       };
       let result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
       const existingPointPrint = result.orders.find((order) => order.pointPrint)?.pointPrint;
-      let pointPrint = payment.status === "approved" && ["local_required", "failed", "timed_out"].includes(String(existingPointPrint?.status || ""))
+      let pointPrint = result.reconciliationRequired
+        ? { requested: false, status: "not_requested", message: "Pagamento aprovado com pedido encerrado ou ausente. Conciliação administrativa necessária." }
+        : payment.status === "approved" && ["local_required", "failed", "timed_out"].includes(String(existingPointPrint?.status || ""))
         ? existingPointPrint
         : payment.status === "approved"
         ? await queueBoxOfficePointPrint(lockedDb, result.orders, result.tickets, config, {
@@ -15379,32 +15389,39 @@ async function handleApi(req, res, pathname) {
           forceLocal: payment.metadata?.kind === "counter_sale"
         })
         : { requested: false, status: "not_requested", message: "" };
-      if (payment.status === "approved" && ["queued", "on_terminal"].includes(String(pointPrint?.status || ""))) {
+      if (!result.reconciliationRequired && payment.status === "approved" && ["queued", "on_terminal"].includes(String(pointPrint?.status || ""))) {
         pointPrint = await syncBoxOfficePointPrint(result.orders, config) || pointPrint;
       }
-      if (payment.status === "approved" && pointPrint?.status === "printed") {
+      if (!result.reconciliationRequired && payment.status === "approved" && pointPrint?.status === "printed") {
         result = finalizePrintedOrders(lockedDb, result.orders, payment);
       }
       await writeDb(lockedDb);
-      logEvent("info", "box_office_point_sale.synced", {
-        paymentId: payment.id,
-        providerPaymentId: payment.providerPaymentId,
-        status: payment.status,
-        tickets: result.tickets.length,
+      return {
+        status: 200,
+        payload: {
+          payment,
+          orders: result.orders,
+          tickets: result.tickets,
+          pointPrint,
+          reconciliationRequired: Boolean(result.reconciliationRequired),
+          completed: !result.reconciliationRequired && payment.status === "approved" && result.orders.every((order) => !orderRequiresConfirmedPrint(order) || order.status === "paid"),
+          terminal: { id: payment.metadata?.terminalId || "", providerStatus: payment.metadata?.providerStatus || "" }
+        },
+        emailOrderIds: result.newlyPaidOrders.filter((order) => shouldDeliverBoxOfficeTicketsByEmail(order)).map((order) => order.id)
+      };
+    });
+    if (synced.status === 200) {
+      logEvent(synced.payload.reconciliationRequired ? "warn" : "info", "box_office_point_sale.synced", {
+        paymentId,
+        providerPaymentId: synced.payload.payment.providerPaymentId,
+        status: synced.payload.payment.status,
+        tickets: synced.payload.tickets.length,
+        reconciliationRequired: synced.payload.reconciliationRequired,
         actorUserId: adminUser.id
       });
-      sendJson(res, 200, {
-        payment,
-        orders: result.orders,
-        tickets: result.tickets,
-        pointPrint,
-        completed: payment.status === "approved" && result.orders.every((order) => !orderRequiresConfirmedPrint(order) || order.status === "paid"),
-        terminal: { id: payment.metadata?.terminalId || "", providerStatus: payment.metadata?.providerStatus || "" }
-      });
-      result.newlyPaidOrders
-        .filter((order) => shouldDeliverBoxOfficeTicketsByEmail(order))
-        .forEach((order) => queueTicketEmailDelivery(order.id));
-    });
+    }
+    sendJson(res, synced.status, synced.payload);
+    for (const orderId of synced.emailOrderIds || []) queueTicketEmailDelivery(orderId);
     return;
   }
 

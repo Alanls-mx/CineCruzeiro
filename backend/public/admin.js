@@ -5785,6 +5785,7 @@ function renderPointPayment(data = {}) {
   const ticketDelivery = orders[0]?.ticketDelivery || {};
   const onlineDelivery = orders.some((order) => order.ticketDeliveryMethod === "online");
   const status = data.reconnecting ? "reconnecting" : payment.status || "pending";
+  const reconciliationRequired = Boolean(data.reconciliationRequired || payment.metadata?.reconciliationRequired);
   const pendingPrint = status === "approved" && orders.some((order) => order.status === "paid_pending_print") && !data.completed;
   const finalStatus = ["rejected", "cancelled", "expired", "refunded"].includes(status) || (status === "approved" && !pendingPrint);
   state.pointPaymentSnapshot = { ...data, payment, orders, tickets, pointPrint };
@@ -5810,7 +5811,10 @@ function renderPointPayment(data = {}) {
     localStorage.removeItem("cine_admin_active_point_payment");
   }
 
-  const copy = {
+  const copy = reconciliationRequired ? [
+    "Conciliação financeira necessária",
+    "A Point confirmou um pagamento para um pedido encerrado ou ausente. Nenhum ingresso será emitido automaticamente. Confira a referência no painel antes de qualquer nova cobrança ou reembolso."
+  ] : {
     approved: [
       pendingPrint ? "Pagamento registrado, aguardando impressão" : "Venda concluída; ingressos emitidos",
       onlineDelivery
@@ -5835,7 +5839,7 @@ function renderPointPayment(data = {}) {
   $("pointPaymentMessage").textContent = copy[1];
 
   const printActions = $("pointPaymentPrintActions");
-  if (status === "approved" && orders.length && !onlineDelivery) {
+  if (status === "approved" && orders.length && !onlineDelivery && !reconciliationRequired) {
     const printFailed = ["failed", "timed_out"].includes(String(pointPrint.status || "")) || ["failed", "unavailable"].includes(state.localPointPrintStatus);
     const canRetryPrint = ["local_required", "failed", "timed_out"].includes(String(pointPrint.status || "")) || ["failed", "unavailable"].includes(state.localPointPrintStatus);
     const resolutionLabel = payment.metadata?.kind === "point_sale" ? "Reembolsar pagamento" : "Cancelar pedido";
@@ -5876,6 +5880,13 @@ async function pollPointPayment({ manual = false } = {}) {
       return;
     }
     state.pointPaymentPollAttempts = 0;
+    if (result.reconciliationRequired) {
+      stopPointPaymentPolling();
+      await loadContent({ silent: true });
+      renderPointPayment(result);
+      showToast("Pagamento exige conciliação administrativa. Não refaça a cobrança.");
+      return;
+    }
     if (result.payment?.status === "approved") {
       await loadContent({ silent: true });
       renderPointPayment(result);
@@ -6156,6 +6167,7 @@ function renderConcessionCounterPayment(data = {}) {
   const order = orders[0] || data.order || {};
   const pointPrint = data.pointPrint || state.concessionCounterPaymentSnapshot?.pointPrint || {};
   const status = data.reconnecting ? "reconnecting" : payment.status || "pending";
+  const reconciliationRequired = Boolean(data.reconciliationRequired || payment.metadata?.reconciliationRequired);
   const pendingPrint = status === "approved" && orders.some((item) => item.status === "paid_pending_print") && !data.completed;
   const finalStatus = ["rejected", "cancelled", "expired", "refunded"].includes(status) || (status === "approved" && !pendingPrint);
   state.concessionCounterPaymentSnapshot = { ...data, payment, orders, order, pointPrint };
@@ -6172,7 +6184,10 @@ function renderConcessionCounterPayment(data = {}) {
   if (payment.status === "approved" && data.completed === true) {
     localStorage.removeItem("cine_admin_active_concession_point_payment");
   }
-  const copy = {
+  const copy = reconciliationRequired ? [
+    "Conciliação financeira necessária",
+    "A Point confirmou um pagamento para um pedido encerrado ou ausente. Os produtos não serão liberados automaticamente. Confira a referência antes de nova cobrança ou reembolso."
+  ] : {
     approved: [pendingPrint ? "Pagamento aprovado, aguardando impressão" : "Venda aprovada", pointPrint.status === "printed"
       ? "O pagamento e a impressão foram confirmados pela Point."
       : ["queued", "on_terminal"].includes(pointPrint.status)
@@ -6192,7 +6207,7 @@ function renderConcessionCounterPayment(data = {}) {
   const printFailed = ["failed", "timed_out"].includes(String(pointPrint.status || "")) || ["failed", "unavailable"].includes(state.localPointPrintStatus);
   $("concessionCounterPaymentCancelButton").hidden = (finalStatus || status === "reconnecting") && !(pendingPrint && printFailed && adminCan(payment.metadata?.kind === "point_sale" ? "orders.refund" : "orders.cancel"));
   $("concessionCounterPaymentCancelButton").textContent = payment.metadata?.kind === "point_sale" ? "Reembolsar pagamento" : "Cancelar pedido";
-  $("concessionCounterPrintButton").hidden = status !== "approved" || !state.concessionCounterLastOrderId || (pendingPrint && !["local_required", "failed", "timed_out"].includes(String(pointPrint.status || "")));
+  $("concessionCounterPrintButton").hidden = reconciliationRequired || status !== "approved" || !state.concessionCounterLastOrderId || (pendingPrint && !["local_required", "failed", "timed_out"].includes(String(pointPrint.status || "")));
   $("concessionCounterPrintButton").textContent = pendingPrint ? "Tentar imprimir novamente" : "Imprimir comprovante novamente";
   $("concessionCounterNewSaleButton").hidden = !finalStatus;
 }
@@ -6213,6 +6228,13 @@ async function pollConcessionCounterPayment({ manual = false } = {}) {
     renderConcessionCounterPayment(result);
     if (result.reconnecting) {
       scheduleConcessionCounterPaymentPoll(Math.min(15000, Number(result.retryAfterMs || 5000)));
+      return;
+    }
+    if (result.reconciliationRequired) {
+      stopConcessionCounterPaymentPolling();
+      await loadContent({ silent: true });
+      renderConcessionCounterPayment(result);
+      showToast("Pagamento exige conciliação administrativa. Não refaça a cobrança.");
       return;
     }
     if (result.payment?.status === "approved") {

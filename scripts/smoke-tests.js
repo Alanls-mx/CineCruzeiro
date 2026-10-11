@@ -400,8 +400,11 @@ async function run() {
 
   const pointProvider = require("../backend/services/cardTerminalProvider");
   const mockPointOrders = new Map();
+  const mockPointPrints = new Map();
   let pointCancelMode = "cancelled";
   let pointCancelCalls = 0;
+  let pointStatusError = "";
+  let pointPrintFails = false;
   pointProvider.terminalConnection = async () => ({ connected: true, terminal: { id: "smoke-point-terminal" } });
   pointProvider.createPayment = async (order, _config, options) => {
     const existing = [...mockPointOrders.values()].find((item) => item.idempotencyKey === options.idempotencyKey);
@@ -419,6 +422,7 @@ async function run() {
     return { ...payment };
   };
   pointProvider.getStatus = async (id) => {
+    if (pointStatusError) throw Object.assign(new Error("Mock Point status unavailable"), { statusCode: 504, code: pointStatusError });
     const payment = mockPointOrders.get(id);
     if (!payment) throw Object.assign(new Error("Mock Point order missing"), { statusCode: 404, code: "POINT_ORDER_MISSING" });
     return { ...payment };
@@ -432,6 +436,13 @@ async function run() {
     payment.providerStatus = pointCancelMode === "pending" ? "processing" : pointCancelMode;
     return { ...payment };
   };
+  pointProvider.createTicketPrint = async (_tickets, _config, options) => {
+    if (pointPrintFails) throw Object.assign(new Error("Mock Point printer unavailable"), { code: "POINT_PRINT_FAILED" });
+    const reference = options.externalReference;
+    if (!mockPointPrints.has(reference)) mockPointPrints.set(reference, { id: `PRINT-SMOKE-${mockPointPrints.size + 1}`, terminalId: "smoke-point-terminal" });
+    return { ...mockPointPrints.get(reference) };
+  };
+  pointProvider.getPrintStatus = async (id) => ({ id, status: "printed", providerStatus: "finished", statusDetail: "" });
 
   const server = require("../backend/server.js");
   const deliveredEmails = [];
@@ -2859,6 +2870,68 @@ async function run() {
     assert.equal(pointCancelCalls, callsBeforeRace + 1, "Duas requisicoes devem produzir um cancelamento externo");
     assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointConcurrent.payload.payment.id).status, "cancelled");
 
+    const unknownPoint = await request("/api/box-office/point-payments/not-found", { headers: jsonHeaders(adminCookie) });
+    assert.equal(unknownPoint.response.status, 404);
+    const pointToApprove = await createPointSale("smoke-point-approval");
+    const pointOrder = mockPointOrders.get(pointToApprove.payload.payment.providerPaymentId);
+    const pointStatusPath = `/api/box-office/point-payments/${encodeURIComponent(pointToApprove.payload.payment.id)}`;
+    const pendingPoint = await request(pointStatusPath, { headers: jsonHeaders(adminCookie) });
+    assert.equal(pendingPoint.response.status, 200);
+    assert.equal(pendingPoint.payload.payment.status, "pending");
+    assert.equal(pendingPoint.payload.completed, false);
+    pointStatusError = "POINT_CONNECTION_LOST";
+    const disconnectedPoint = await request(pointStatusPath, { headers: jsonHeaders(adminCookie) });
+    assert.equal(disconnectedPoint.response.status, 200);
+    assert.equal(disconnectedPoint.payload.reconnecting, true);
+    pointStatusError = "";
+    pointOrder.externalReference = "another-sale";
+    assert.equal((await request(pointStatusPath, { headers: jsonHeaders(adminCookie) })).response.status, 409);
+    pointOrder.externalReference = pointToApprove.payload.payment.providerReference;
+    pointOrder.amount += 1;
+    assert.equal((await request(pointStatusPath, { headers: jsonHeaders(adminCookie) })).response.status, 409);
+    pointOrder.amount -= 1;
+    pointOrder.status = "approved";
+    pointOrder.providerStatus = "processed";
+    const approvedPoint = await request(pointStatusPath, { headers: jsonHeaders(adminCookie) });
+    assert.equal(approvedPoint.response.status, 200);
+    assert.equal(approvedPoint.payload.completed, true);
+    assert.equal(approvedPoint.payload.tickets.length, 1);
+    const approvedSnapshot = await readPersistedDb();
+    assert.equal(approvedSnapshot.payments.find((item) => item.id === pointToApprove.payload.payment.id).status, "approved");
+    assert.equal(approvedSnapshot.tickets.filter((item) => item.orderId === pointToApprove.payload.order.id).length, 1);
+    const printCountAfterApproval = mockPointPrints.size;
+    const repeatedApprovals = await Promise.all([
+      request(pointStatusPath, { headers: jsonHeaders(adminCookie) }),
+      request(pointStatusPath, { headers: jsonHeaders(adminCookie) })
+    ]);
+    assert.deepEqual(repeatedApprovals.map((item) => item.response.status), [200, 200]);
+    assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointToApprove.payload.order.id).length, 1);
+    assert.equal(mockPointPrints.size, printCountAfterApproval);
+
+    const latePoint = await createPointSale("smoke-point-late-approval");
+    assert.equal((await cancelPoint(latePoint.payload.payment.id)).response.status, 200);
+    const lateProviderOrder = mockPointOrders.get(latePoint.payload.payment.providerPaymentId);
+    lateProviderOrder.status = "approved";
+    lateProviderOrder.providerStatus = "processed";
+    const lateApproval = await request(`/api/box-office/point-payments/${encodeURIComponent(latePoint.payload.payment.id)}`, { headers: jsonHeaders(adminCookie) });
+    assert.equal(lateApproval.response.status, 200);
+    assert.equal(lateApproval.payload.reconciliationRequired, true);
+    assert.equal(lateApproval.payload.completed, false);
+    assert.equal((await readPersistedDb()).orders.find((item) => item.id === latePoint.payload.order.id).status, "cancelled");
+    assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === latePoint.payload.order.id).length, 0);
+
+    const pointPrintFailure = await createPointSale("smoke-point-print-failure");
+    const printFailureProviderOrder = mockPointOrders.get(pointPrintFailure.payload.payment.providerPaymentId);
+    printFailureProviderOrder.status = "approved";
+    printFailureProviderOrder.providerStatus = "processed";
+    pointPrintFails = true;
+    const failedPrint = await request(`/api/box-office/point-payments/${encodeURIComponent(pointPrintFailure.payload.payment.id)}`, { headers: jsonHeaders(adminCookie) });
+    pointPrintFails = false;
+    assert.equal(failedPrint.response.status, 200);
+    assert.equal(failedPrint.payload.pointPrint.status, "failed");
+    assert.equal(failedPrint.payload.completed, false);
+    assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointPrintFailure.payload.order.id).length, 0);
+
     const lastStockSale = () => request("/api/admin/concession-counter-sales", {
       method: "POST", headers: jsonHeaders(adminCookie),
       body: JSON.stringify({ saleMode: "concession_counter", paymentMethod: "cash", concessionItems: [{ id: "smoke-last-stock", quantity: 1 }] })
@@ -2885,6 +2958,28 @@ async function run() {
         };
         return () => tripped;
       }
+      const pointSyncFailure = await createPointSale("smoke-point-sync-commit-failure");
+      const syncProviderOrder = mockPointOrders.get(pointSyncFailure.payload.payment.providerPaymentId);
+      syncProviderOrder.status = "approved";
+      syncProviderOrder.providerStatus = "processed";
+      const syncPath = `/api/box-office/point-payments/${encodeURIComponent(pointSyncFailure.payload.payment.id)}`;
+      const syncCommitFailed = failCommitForRecord(pointSyncFailure.payload.payment.id, "smoke_point_sync_commit_failure");
+      let failedSync;
+      try {
+        failedSync = await request(syncPath, { headers: jsonHeaders(adminCookie) });
+      } finally {
+        pg.Client.prototype.query = originalQuery;
+      }
+      assert.equal(syncCommitFailed(), true, "O failpoint deve atingir o commit da sincronizacao Point");
+      assert.equal(failedSync.response.status >= 500, true, "Falha de commit nao pode responder Point confirmado");
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointSyncFailure.payload.payment.id).status, "pending");
+      assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointSyncFailure.payload.order.id).length, 0);
+      const printCountAfterFailedSync = mockPointPrints.size;
+      const recoveredSync = await request(syncPath, { headers: jsonHeaders(adminCookie) });
+      assert.equal(recoveredSync.response.status, 200);
+      assert.equal(recoveredSync.payload.completed, true);
+      assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointSyncFailure.payload.order.id).length, 1);
+      assert.equal(mockPointPrints.size, printCountAfterFailedSync, "A retomada deve reutilizar a mesma impressao Point");
       const counterFailureBody = {
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, fullTicketsCount: 1, halfTicketsCount: 0,
         saleMode: "registered", customerUserId: registered.user.id, paymentMethod: "external_pix",
