@@ -12037,7 +12037,7 @@ async function handleApi(req, res, pathname) {
   const concessionArchiveMatch = pathname.match(/^\/api\/admin\/concession-sales\/([^/]+)\/archive$/);
   if (concessionArchiveMatch && method === "POST") {
     const body = await readBody(req);
-    await withCriticalMutation(async () => {
+    const archived = await withCriticalMutation(async () => {
       const currentDb = await readDb();
       const order = (currentDb.orders || []).find((item) => item.id === decodeURIComponent(concessionArchiveMatch[1]));
       if (!order) throw refundError("ORDER_NOT_FOUND", "Pedido nao encontrado.", 404);
@@ -12045,8 +12045,9 @@ async function handleApi(req, res, pathname) {
       order.updatedAt = new Date().toISOString();
       appendOrderAudit(order, { action: order.concessionArchived ? "concessions.archive" : "concessions.unarchive", updatedBy: req.adminUser.id });
       await writeDb(currentDb);
-      sendJson(res, 200, { archived: order.concessionArchived });
+      return order.concessionArchived;
     });
+    sendJson(res, 200, { archived });
     return;
   }
 
@@ -12061,7 +12062,7 @@ async function handleApi(req, res, pathname) {
   const concessionDeleteMatch = pathname.match(/^\/api\/admin\/concession-sales\/([^/]+)$/);
   if (concessionDeleteMatch && method === "DELETE") {
     const orderId = decodeURIComponent(concessionDeleteMatch[1]);
-    await withCriticalMutation(async () => {
+    const deletion = await withCriticalMutation(async () => {
       const currentDb = await readDb();
       const order = (currentDb.orders || []).find((item) => item.id === orderId);
       if (!order || !(order.concessionItems || []).length) throw refundError("CONCESSION_ORDER_NOT_FOUND", "Pedido de bomboniere não encontrado.", 404);
@@ -12071,8 +12072,7 @@ async function handleApi(req, res, pathname) {
         || ["cancelled", "refunded", "expired"].includes(String(order.status || ""));
       if (!completed) throw refundError("CONCESSION_DELETE_REQUIRES_CANCELLATION", "Cancele ou reembolse a bomboniere antes de removê-la desta área.", 409);
       if (order.concessionDeletedAt) {
-        sendJson(res, 200, { deleted: true, deletedAt: order.concessionDeletedAt });
-        return;
+        return { deleted: true, deletedAt: order.concessionDeletedAt };
       }
       const now = new Date().toISOString();
       order.concessionDeletedAt = now;
@@ -12087,8 +12087,9 @@ async function handleApi(req, res, pathname) {
         }
       });
       await writeDb(currentDb);
-      sendJson(res, 200, { deleted: true, deletedAt: now });
+      return { deleted: true, deletedAt: now };
     });
+    sendJson(res, 200, deletion);
     return;
   }
 
@@ -16623,12 +16624,11 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 200, { deleted: false, ...await cancelOrderWithRefund(orderId, body.reason, req.adminUser) });
       return;
     }
-    await withCriticalMutation(async () => {
+    const deletion = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const index = (lockedDb.orders || []).findIndex((item) => item.id === orderId);
       if (index === -1) {
-        sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
-        return;
+        return { status: 404, payload: { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } } };
       }
       const order = lockedDb.orders[index];
       const payment = orderPayment(lockedDb, order.id);
@@ -16636,12 +16636,13 @@ async function handleApi(req, res, pathname) {
       if (removableDraftOrder(order, payment, tickets)) {
         lockedDb.orders.splice(index, 1);
         await writeDb(lockedDb);
-        await broadcastReleasedOrderSeats(order);
-        sendJson(res, 200, { deleted: true, orderId });
-        return;
+        return { status: 200, payload: { deleted: true, orderId }, releasedOrder: order };
       }
       throw refundError("ORDER_CHANGED", "O pedido mudou durante a operacao. Atualize e solicite o cancelamento novamente.");
     });
+    if (deletion.releasedOrder) await broadcastReleasedOrderSeats(deletion.releasedOrder)
+      .catch((error) => logEvent("warn", "seat_realtime.release_failed", { orderId, message: error.message }));
+    sendJson(res, deletion.status, deletion.payload);
     return;
   }
 

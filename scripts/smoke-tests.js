@@ -2047,6 +2047,19 @@ async function run() {
     const counterGroup = counterDailySales.payload.groups.find((group) => group.id.startsWith("counter-sales-"));
     assert.equal(counterGroup.title, "Balcão da bomboniere");
     assert.ok(counterGroup.orders.some((order) => order.id === concessionCounterSale.payload.order.id));
+    const archivedCounterSale = await request(`/api/admin/concession-sales/${encodeURIComponent(concessionCounterSale.payload.order.id)}/archive`, {
+      method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify({ archived: true })
+    });
+    assert.equal(archivedCounterSale.response.status, 200);
+    assert.equal(archivedCounterSale.payload.archived, true);
+    const contentAfterArchive = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(contentAfterArchive.response.status, 200);
+    assert.equal(contentAfterArchive.payload.orders.find((order) => order.id === concessionCounterSale.payload.order.id)?.concessionArchived, true);
+    const restoredCounterSale = await request(`/api/admin/concession-sales/${encodeURIComponent(concessionCounterSale.payload.order.id)}/archive`, {
+      method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify({ archived: false })
+    });
+    assert.equal(restoredCounterSale.response.status, 200);
+    assert.equal(restoredCounterSale.payload.archived, false);
 
     const multiMovieSale = await request("/api/box-office/sales", {
       method: "POST",
