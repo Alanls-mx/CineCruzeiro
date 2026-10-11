@@ -17,3 +17,17 @@ test("agenda abre o editor da sessao sem erros de script", async ({ page }) => {
   await expect(page.locator("#sessionEditorTitle")).toHaveText("Editar sessão");
   expect(pageErrors).toEqual([]);
 });
+
+test("dashboard atualiza repasse de ingressos apos extracao do modulo", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.goto("http://127.0.0.1:4000/admin");
+  await page.locator("#email").fill("admin-e2e@cine.local");
+  await page.locator("#password").fill("Admin-e2e-2026!");
+  await page.getByRole("button", { name: "Entrar no painel" }).click();
+  await expect(page.locator("#ticketFinanceRows")).toBeVisible();
+  await page.locator("#ticketFinanceRefresh").click();
+  await expect(page.locator("#ticketFinanceRows")).not.toContainText("Atualizando apuração...");
+  await expect(page.locator("#ticketFinanceQuantity")).not.toHaveText("—");
+  expect(pageErrors).toEqual([]);
+});
