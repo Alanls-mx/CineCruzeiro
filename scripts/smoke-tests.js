@@ -2908,6 +2908,16 @@ async function run() {
     assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointToApprove.payload.order.id).length, 1);
     assert.equal(mockPointPrints.size, printCountAfterApproval);
 
+    pointOrder.status = "refunded";
+    pointOrder.providerStatus = "refunded";
+    const providerRefundedAfterSale = await request(pointStatusPath, { headers: jsonHeaders(adminCookie) });
+    assert.equal(providerRefundedAfterSale.response.status, 200);
+    assert.equal(providerRefundedAfterSale.payload.reconciliationRequired, true);
+    assert.equal(providerRefundedAfterSale.payload.completed, false);
+    assert.equal(providerRefundedAfterSale.payload.payment.metadata.reconciliationReason, "point_provider_disagrees_with_paid_order");
+    assert.equal((await readPersistedDb()).tickets.find((item) => item.orderId === pointToApprove.payload.order.id).status, "active");
+    assert.equal(mockPointPrints.size, printCountAfterApproval);
+
     const latePoint = await createPointSale("smoke-point-late-approval");
     assert.equal((await cancelPoint(latePoint.payload.payment.id)).response.status, 200);
     const lateProviderOrder = mockPointOrders.get(latePoint.payload.payment.providerPaymentId);
@@ -2993,10 +3003,11 @@ async function run() {
       const refundablePath = `/api/box-office/point-payments/${encodeURIComponent(refundablePoint.payload.payment.id)}`;
       assert.equal((await request(refundablePath, { headers: jsonHeaders(adminCookie) })).payload.completed, true);
       await require("../backend/db/postgresStore").queryPostgres(
-        "UPDATE payments SET provider_payment_id=$1, metadata=metadata || $2::jsonb WHERE id=$3",
-        ["ORDSMOKEREFUND1", JSON.stringify({ providerEnvironment: "sandbox" }), refundablePoint.payload.payment.id]
+        "UPDATE payments SET provider_payment_id=$1, metadata=jsonb_set(metadata, '{metadata,providerEnvironment}', to_jsonb($2::text), true) WHERE id=$3",
+        ["ORDSMOKEREFUND1", "sandbox", refundablePoint.payload.payment.id]
       );
       require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === refundablePoint.payload.payment.id).metadata.providerEnvironment, "sandbox");
       const ticketRefundPath = `/api/orders/${encodeURIComponent(refundablePoint.payload.order.id)}/refund-tickets`;
       const requestTicketRefund = () => request(ticketRefundPath, {
         method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify({ reason: "Smoke refund" })

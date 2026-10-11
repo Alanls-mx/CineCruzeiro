@@ -3575,12 +3575,16 @@ function applyPointPaymentStatus(db, payment, providerPayment = {}) {
 
   const orders = pointPaymentOrders(db, payment);
   if (payment.metadata?.cancellationRefund) return { orders, tickets: [], newlyPaidOrders: [] };
-  const reconciliationRequired = nextStatus === "approved" && (
+  const approvedAfterClosure = nextStatus === "approved" && (
     !orders.length || orders.some((order) => ["cancelled", "expired", "rejected", "refunded"].includes(String(order.status || "")))
   );
+  const providerDisagreesWithPaidOrder = orders.some((order) => order.status === "paid")
+    && ["refunded", "cancelled", "expired", "rejected"].includes(String(providerPayment.status || ""));
+  const reconciliationRequired = approvedAfterClosure || providerDisagreesWithPaidOrder;
   if (reconciliationRequired) {
     payment.metadata.reconciliationRequired = true;
-    payment.metadata.reconciliationReason = !orders.length ? "point_order_missing" : "point_approved_after_order_closed";
+    payment.metadata.reconciliationReason = !orders.length ? "point_order_missing"
+      : providerDisagreesWithPaidOrder ? "point_provider_disagrees_with_paid_order" : "point_approved_after_order_closed";
     payment.metadata.reconciliationRequiredAt ||= now;
   }
   const newlyPaidOrders = [];
@@ -15383,7 +15387,7 @@ async function handleApi(req, res, pathname) {
       let result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
       const existingPointPrint = result.orders.find((order) => order.pointPrint)?.pointPrint;
       let pointPrint = result.reconciliationRequired
-        ? { requested: false, status: "not_requested", message: "Pagamento aprovado com pedido encerrado ou ausente. Conciliação administrativa necessária." }
+        ? { requested: false, status: "not_requested", message: "Cobrança e pedido divergentes. Conciliação administrativa necessária." }
         : payment.status === "approved" && ["local_required", "failed", "timed_out"].includes(String(existingPointPrint?.status || ""))
         ? existingPointPrint
         : payment.status === "approved"
