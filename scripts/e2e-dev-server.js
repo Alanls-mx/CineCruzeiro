@@ -18,8 +18,18 @@ function isoDate(daysFromNow) {
   }).format(date);
 }
 
+function sellableTomorrowTime() {
+  const hour = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    hourCycle: "h23"
+  }).format(new Date());
+  return `${hour}:00`;
+}
+
 function fixture() {
   const now = new Date().toISOString();
+  const sessionTime = sellableTomorrowTime();
   const mercadoPago = {
     enabled: true,
     environment: "sandbox",
@@ -75,7 +85,7 @@ function fixture() {
         sessions: [{
           id: "sessao-e2e",
           date: isoDate(1),
-          time: "19:00",
+          time: sessionTime,
           format: "2D Dublado",
           room: "Sala Livre E2E",
           roomId: "sala-livre-e2e",
@@ -98,7 +108,7 @@ function fixture() {
         sessions: [{
           id: "sessao-poltronas-e2e",
           date: isoDate(1),
-          time: "21:00",
+          time: sessionTime,
           format: "2D Legendado",
           room: "Sala Marcada E2E",
           roomId: "sala-marcada-e2e",
@@ -177,6 +187,8 @@ const env = {
   DATA_STORE: "json",
   DATABASE_URL: "",
   POSTGRES_URL: "",
+  CINE_BACKEND_URL: "http://127.0.0.1:4000",
+  NEXT_PUBLIC_CINE_API_URL: "http://127.0.0.1:4000",
   PAYMENTS_MODE: "test",
   TEST_PAYMENTS_AUTO_APPROVE: "false",
   MERCADO_PAGO_WEBHOOK_SECRET: "e2e-webhook-secret",
