@@ -63,8 +63,9 @@ test("backend deriva o base path publico para imagens fora do Next", () => {
 test("rotas migradas nao entram no advisory lock global", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   assert.match(server, /repositoryMutationRoute\(pathname, method\)/);
-  assert.match(server, /!targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedTicketValidation && !context\?\.adminMutationLocked/);
+  assert.match(server, /!targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedTicketValidation && !context\?\.adminMutationLocked/);
   assert.match(server, /selfManagedOrderDeletion = method === "DELETE" &&/);
+  assert.match(server, /selfManagedPermanentOrderDeletion = method === "DELETE" &&/);
   assert.match(server, /selfManagedTicketValidation = method === "POST" && pathname === "\/api\/tickets\/validate"/);
   const routeSources = [
     server,

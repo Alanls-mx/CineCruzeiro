@@ -2305,11 +2305,8 @@ async function run() {
       body: JSON.stringify({ reason: "Remocao permanente smoke", confirmation: "EXCLUIR" })
     });
     assert.equal(permanentDelete.response.status, 200);
-    const contentAfterPermanentDelete = await requestUntil(
-      "/api/admin/content",
-      { headers: jsonHeaders(adminCookie) },
-      ({ payload }) => payload.orders && !payload.orders.some((order) => order.id === deletionSale.payload.order.id)
-    );
+    const contentAfterPermanentDelete = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(contentAfterPermanentDelete.response.status, 200);
     assert.equal(contentAfterPermanentDelete.payload.orders.some((order) => order.id === deletionSale.payload.order.id), false);
     assert.equal(contentAfterPermanentDelete.payload.payments.some((payment) => payment.orderId === deletionSale.payload.order.id), false);
     assert.equal(contentAfterPermanentDelete.payload.tickets.some((ticket) => ticket.orderId === deletionSale.payload.order.id), false);

@@ -10687,10 +10687,11 @@ async function handleApi(req, res, pathname) {
 
   const targetedRepositoryMutation = postgresEnabled() && repositoryMutationRoute(pathname, method);
   const selfManagedOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+$/.test(pathname);
+  const selfManagedPermanentOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+\/permanent$/.test(pathname);
   const selfManagedTicketValidation = method === "POST" && pathname === "/api/tickets/validate";
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
-    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedTicketValidation && !context?.adminMutationLocked) {
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedTicketValidation && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
@@ -16478,12 +16479,13 @@ async function handleApi(req, res, pathname) {
   if (permanentOrderDeleteMatch && method === "DELETE") {
     const orderId = decodeURIComponent(permanentOrderDeleteMatch[1]);
     const body = await readBody(req);
-    await withCriticalMutation(async () => {
+    const result = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
-      const result = permanentlyDeleteOrder(lockedDb, orderId, body, req.adminUser);
+      const deletion = permanentlyDeleteOrder(lockedDb, orderId, body, req.adminUser);
       await writeDb(lockedDb);
-      sendJson(res, 200, result);
+      return deletion;
     });
+    sendJson(res, 200, result);
     return;
   }
 
