@@ -43,3 +43,7 @@ O smoke PostgreSQL passou a afirmar que Pix e cartao (201), atribuicao manual de
 O job de navegador em `.github/workflows/e2e.yml` e separado: usa processos e JSON sintetico temporario, nao substitui os testes PostgreSQL. `npm run test:e2e` isola tambem uploads, anexos e documentos, fecha os processos e guarda traces/screenshots em falhas no CI. O teste de variacao de dia fica em `tests/e2e-session-time.test.mjs`.
 
 O teste de cache `tests/postgres-snapshot-cache-policy.test.mjs` cobre duas invalidacoes sucessivas com leitores paralelos e roda no job PostgreSQL. A verificacao de cinco instalacoes em `npm run deploy:validate` valida configuracao, nao os bancos ou servicos operacionais. Nenhum banco existente foi migrado, apagado ou sobrescrito, e nenhum deploy foi realizado.
+
+## Atualizacao da Fase 5
+
+A migration `051_ticket_email_jobs.sql` cria o trabalho de e-mail de ingresso na transacao do pedido pago. `tests/database-persistence-postgres.test.mjs` verifica que rollback nao deixa trabalho, que o commit cria um unico job e que reivindicacao/conclusao sao condicionais. O mesmo arquivo exercita 125 campanhas do Social Studio em paginas e dois claims concorrentes. Esses testes sao executados pelo smoke PostgreSQL isolado no CI; sem `TEST_DATABASE_URL` autorizado sao ignorados localmente, nunca redirecionados a um banco de desenvolvimento. O primeiro job da Fase 5 encontrou um cursor vazio tratado como UUID na consulta de recuperacao; o codigo agora envia `NULL` tipado. Nenhuma migration foi aplicada em ambiente operacional.
