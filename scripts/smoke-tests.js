@@ -1844,16 +1844,32 @@ async function run() {
     assert.equal(bundleCreditOrder.response.status, 201, JSON.stringify(bundleCreditOrder.payload));
     assert.equal(bundleCreditOrder.payload.tickets.length, 3);
     assert.equal(bundleCreditOrder.payload.subscription.creditsAvailable, 0);
+    const subscriptionsAfterBundlePurchase = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    assert.equal(subscriptionsAfterBundlePurchase.response.status, 200);
+    const purchasedBundleSubscription = subscriptionsAfterBundlePurchase.payload.subscriptions.find((subscription) => subscription.id === bundleSubscription.payload.subscription.id);
+    assert.equal(purchasedBundleSubscription?.creditsRemaining, 0);
+    assert.equal(purchasedBundleSubscription?.creditCounts?.redeemed, 3);
     const cancelledBundleCreditOrder = await request(`/api/orders/${encodeURIComponent(bundleCreditOrder.payload.order.id)}`, {
       method: "DELETE",
       headers: jsonHeaders(adminCookie),
       body: JSON.stringify({ reason: "Teste de estorno integral do pacote" })
     });
     assert.equal(cancelledBundleCreditOrder.response.status, 200);
+    assert.equal(cancelledBundleCreditOrder.payload.order.status, "cancelled");
     const subscriptionsAfterBundleRefund = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    assert.equal(subscriptionsAfterBundleRefund.response.status, 200);
     const refundedBundleSubscription = subscriptionsAfterBundleRefund.payload.subscriptions.find((subscription) => subscription.id === bundleSubscription.payload.subscription.id);
-    assert.equal(refundedBundleSubscription.creditsRemaining, 3);
-    assert.equal(refundedBundleSubscription.usage.find((usage) => usage.orderId === bundleCreditOrder.payload.order.id).creditsUsed, 3);
+    assert.ok(refundedBundleSubscription, "A assinatura do pacote deve continuar visivel apos o cancelamento");
+    const refundedBundleUsage = refundedBundleSubscription.usage.find((usage) => usage.orderId === bundleCreditOrder.payload.order.id);
+    assert.ok(refundedBundleUsage?.refundedAt, "O uso dos creditos deve registrar a devolucao");
+    assert.equal(refundedBundleSubscription.creditsRemaining, 3, JSON.stringify({
+      orderId: bundleCreditOrder.payload.order.id,
+      subscriptionStatus: refundedBundleSubscription.status,
+      credit: refundedBundleSubscription.credit,
+      creditCounts: refundedBundleSubscription.creditCounts,
+      usage: refundedBundleUsage
+    }));
+    assert.equal(refundedBundleUsage.creditsUsed, 3);
     const closeBundleSubscription = await request(`/api/admin/subscriptions/${encodeURIComponent(bundleSubscription.payload.subscription.id)}`, {
       method: "PATCH",
       headers: jsonHeaders(adminCookie),

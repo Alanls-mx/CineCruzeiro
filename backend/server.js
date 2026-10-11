@@ -13935,6 +13935,7 @@ async function handleApi(req, res, pathname) {
     }
     const body = await readBody(req);
     try {
+      let completedCheckout = null;
       await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const lockedUser = getCustomerUser(req, lockedDb);
@@ -14012,12 +14013,28 @@ async function handleApi(req, res, pathname) {
       consumePendingClubCredit(lockedDb, savedOrder, tickets, lockedUser.id);
       lockedDb.orders.unshift(savedOrder);
       await writeDb(lockedDb);
-      await releaseOrderSeatHolds(savedOrder, savedOrder.status === "pending_payment" ? "held" : "unavailable");
-      sendJson(res, 201, { order: savedOrder, payment: null, tickets, subscription, creditsRemaining: clubDomainService.creditCounts(lockedDb, subscription.id).available }, {
-        "Set-Cookie": checkoutAccessCookie(req, savedOrder.id)
+      completedCheckout = {
+        order: savedOrder,
+        payment: null,
+        tickets,
+        subscription,
+        creditsRemaining: clubDomainService.creditCounts(lockedDb, subscription.id).available
+      };
       });
-      if (tickets.length) queueTicketEmailDelivery(savedOrder.id);
-      });
+      if (completedCheckout) {
+        try {
+          await releaseOrderSeatHolds(completedCheckout.order, "unavailable");
+        } catch (error) {
+          logEvent("warn", "club_checkout.seat_hold_release_failed", {
+            orderId: completedCheckout.order.id,
+            message: error.message
+          });
+        }
+        sendJson(res, 201, completedCheckout, {
+          "Set-Cookie": checkoutAccessCookie(req, completedCheckout.order.id)
+        });
+        if (completedCheckout.tickets.length) queueTicketEmailDelivery(completedCheckout.order.id);
+      }
     } catch (error) {
       sendJson(res, error.statusCode || 400, { error: { code: error.code || "CLUB_CREDIT_ERROR", message: error.message } });
     }
