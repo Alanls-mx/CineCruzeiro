@@ -845,13 +845,13 @@ function sanitizeWebhookTestPayload(body = {}) {
 function sendJson(res, status, data, extraHeaders = {}) {
   const store = requestContext.getStore();
   const req = store?.req;
+  const catalogRequest = req?.url?.split("?", 1)[0] === "/api/commercial/catalog";
   const payload = normalizeApiPayload(data, status, store?.requestId || "");
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, {
     ...securityHeaders(),
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": responseCorsOrigin(req),
-    "Access-Control-Allow-Credentials": "true",
+    ...(catalogRequest ? {} : { "Access-Control-Allow-Origin": responseCorsOrigin(req), "Access-Control-Allow-Credentials": "true" }),
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Idempotency-Key, Authorization",
@@ -864,10 +864,10 @@ function sendJson(res, status, data, extraHeaders = {}) {
 function sendNoContent(res, extraHeaders = {}) {
   const store = requestContext.getStore();
   const req = store?.req;
+  const catalogRequest = req?.url?.split("?", 1)[0] === "/api/commercial/catalog";
   res.writeHead(204, {
     ...securityHeaders(),
-    "Access-Control-Allow-Origin": responseCorsOrigin(req),
-    "Access-Control-Allow-Credentials": "true",
+    ...(catalogRequest ? {} : { "Access-Control-Allow-Origin": responseCorsOrigin(req), "Access-Control-Allow-Credentials": "true" }),
     "Vary": "Origin",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Idempotency-Key, Authorization",
