@@ -29,7 +29,7 @@ test("catalogo comercial protege token, CORS e dados privados no HTTP", async ()
   const db = {
     settings: { cinemaName: "Cinema Parceiro", internalCanary: "private-settings-canary" },
     integrations: {}, auditLogs: [],
-    movies: [{ id: "movie-1", title: "Filme Publicado", status: "now_playing", privateCanary: "private-movie-canary", posterUrl: "/poster.webp", sessions: [] }],
+    movies: [{ id: "movie-1", title: "Filme Publicado", status: "now_playing", privateCanary: "private-movie-canary", artworkMetadata: { containsTitle: true, token: "metadata-private-canary" }, posterUrl: "/poster.webp", sessions: [] }],
     concessions: [{ id: "snack-1", name: "Pipoca", price: 12, active: true, imageUrl: "/pipoca.webp", cost: 2, privateCanary: "private-stock-canary" }],
     promotions: [{ id: "offer-1", name: "Oferta", active: true, description: "Desconto", privateCanary: "private-offer-canary" }],
     users: [{ id: "user-1", name: "Pessoa Privada", email: "private@example.test" }]
@@ -88,7 +88,7 @@ test("catalogo comercial protege token, CORS e dados privados no HTTP", async ()
     assert.equal(body.concessions[0].name, "Pipoca");
     assert.equal(body.promotions[0].title, "Oferta");
     const serialized = JSON.stringify(body);
-    for (const privateValue of [token, secret, "private-settings-canary", "private-movie-canary", "private-stock-canary", "private-offer-canary", "private@example.test"]) {
+    for (const privateValue of [token, secret, "private-settings-canary", "private-movie-canary", "metadata-private-canary", "private-stock-canary", "private-offer-canary", "private@example.test"]) {
       assert.equal(serialized.includes(privateValue), false, `Resposta revelou ${privateValue}`);
     }
     const otherOrigin = await fetch(endpoint, { headers: { "x-commercial-catalog-token": token, Origin: "https://other.example.test" } });

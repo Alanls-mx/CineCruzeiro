@@ -92,6 +92,26 @@ function createCommercialCatalogPresenter({
     };
   }
 
+  function publicArtworkMetadata(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const safe = {};
+    for (const key of ["containsTitle", "containsReleaseDate", "containsMovieLogo", "containsBillingBlock", "releaseDateVerified"]) {
+      if (typeof value[key] === "boolean") safe[key] = value[key];
+    }
+    if (["logo", "symbol", "character", "poster"].includes(value.dominantAsset)) safe.dominantAsset = value.dominantAsset;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value.embeddedReleaseDate || "")) safe.embeddedReleaseDate = value.embeddedReleaseDate;
+    const bounds = value.contentBounds;
+    if (bounds && ["x", "y", "width", "height"].every((key) => Number.isFinite(bounds[key]))
+      && bounds.x >= 0 && bounds.y >= 0 && bounds.width > 0 && bounds.height > 0
+      && bounds.x + bounds.width <= 1 && bounds.y + bounds.height <= 1) {
+      safe.contentBounds = { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+    }
+    for (const key of ["poster", "backdrop"]) {
+      if (value[key] && typeof value[key] === "object") safe[key] = publicArtworkMetadata(value[key]);
+    }
+    return safe;
+  }
+
   function buildCommercialCatalog(db, now = new Date()) {
     const publishedMovies = (db.movies || [])
       .filter((movie) => (movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published")) === "published" && movie.status !== "hidden")
@@ -120,7 +140,7 @@ function createCommercialCatalogPresenter({
         releaseDate: String(movie.releaseDate || ""),
         duration: String(movie.duration || ""),
         genres: Array.isArray(movie.genre) ? movie.genre.map(String) : [],
-        artworkMetadata: movie.artworkMetadata || {},
+        artworkMetadata: publicArtworkMetadata(movie.artworkMetadata),
         rating: String(movie.rating || ""),
         featured: Boolean(movie.isHighlight),
         posterUrl: assetUrl(publicAssetUrl(movie.posterUrl || "")),

@@ -87,7 +87,7 @@ test("catálogo comercial preserva sessões, ofertas e identidade da instalaçã
     rooms: [{ id: "room-1", name: "Sala 1" }],
     ticketTypes: [{ id: "full", name: "Inteira", price: 10 }],
     movies: [
-      { id: "movie-1", title: "Filme A", posterUrl: "/poster.webp", sessions: [
+      { id: "movie-1", title: "Filme A", posterUrl: "/poster.webp", artworkMetadata: { containsTitle: true, privateCanary: "internal-only", poster: { dominantAsset: "logo", privateCanary: "nested-internal" } }, sessions: [
         { id: "session-1", roomId: "room-1", date: "2026-10-12", time: "15:00" },
         { id: "session-2", roomId: "room-1", date: "2026-10-12", time: "18:00" }
       ] },
@@ -105,6 +105,7 @@ test("catálogo comercial preserva sessões, ofertas e identidade da instalaçã
   assert.equal(catalog.catalog.programmingUrl, "https://cinema.example/filmes");
   assert.deepEqual(catalog.movies.map((movie) => movie.id), ["movie-1"]);
   assert.equal(catalog.movies[0].posterUrl, "https://cinema.example/poster.webp");
+  assert.deepEqual(catalog.movies[0].artworkMetadata, { containsTitle: true, poster: { dominantAsset: "logo" } });
   assert.deepEqual(catalog.availableSessions.map((session) => session.id), ["session-1"]);
   assert.deepEqual(catalog.programming.map((session) => session.id), ["session-1", "session-2"]);
   assert.equal(catalog.programming[0].ticketTypes[0].price, 10);
