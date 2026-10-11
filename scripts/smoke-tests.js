@@ -2060,6 +2060,9 @@ async function run() {
     });
     assert.equal(restoredCounterSale.response.status, 200);
     assert.equal(restoredCounterSale.payload.archived, false);
+    const contentAfterRestore = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(contentAfterRestore.response.status, 200);
+    assert.equal(contentAfterRestore.payload.orders.find((order) => order.id === concessionCounterSale.payload.order.id)?.concessionArchived, false);
 
     const multiMovieSale = await request("/api/box-office/sales", {
       method: "POST",

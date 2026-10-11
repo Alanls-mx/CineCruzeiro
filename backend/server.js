@@ -10682,11 +10682,12 @@ async function handleApi(req, res, pathname) {
   const targetedRepositoryMutation = postgresEnabled() && repositoryMutationRoute(pathname, method);
   const selfManagedOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+$/.test(pathname);
   const selfManagedPermanentOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+\/permanent$/.test(pathname);
+  const selfManagedConcessionArchive = method === "POST" && /^\/api\/admin\/concession-sales\/[^/]+\/archive$/.test(pathname);
   const selfManagedTicketValidation = method === "POST" && pathname === "/api/tickets/validate";
   const selfManagedClubAssignment = method === "POST" && pathname === "/api/admin/subscriptions/assign";
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
-    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedTicketValidation && !selfManagedClubAssignment && !context?.adminMutationLocked) {
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
