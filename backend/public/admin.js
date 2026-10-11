@@ -11315,30 +11315,10 @@ function bindEvents() {
     const current = state.integrations?.integrations?.[key];
     if (key && current) toggleIntegration(key, !current.enabled);
   });
-  $("logsRefreshButton")?.addEventListener("click", () => loadLogs());
+  window.CineAdminModules.logEvents.bindLogEvents({ $, document, state, loadLogs, exportLogs, pruneLogs });
   $("concessionSalesRefresh")?.addEventListener("click", () => loadConcessionDailySales());
   $("concessionSalesDate")?.addEventListener("change", () => loadConcessionDailySales());
   $("concessionSalesArchived")?.addEventListener("change", () => loadConcessionDailySales());
-  $("logsExportButton")?.addEventListener("click", exportLogs);
-  $("logsPruneButton")?.addEventListener("click", pruneLogs);
-  document.querySelectorAll("[data-logs-view]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.logsView = button.dataset.logsView || "business";
-      document.querySelectorAll("[data-logs-view]").forEach((item) => item.classList.toggle("active", item === button));
-      loadLogs({ page: 1 });
-    });
-  });
-  [["logsLevel", "level"], ["logsCategory", "category"], ["logsFrom", "from"], ["logsTo", "to"]].forEach(([id, key]) => {
-    $(id)?.addEventListener("change", () => {
-      state.logFilters[key] = $(id).value.trim();
-      loadLogs({ page: 1 });
-    });
-  });
-  $("logsSearch")?.addEventListener("input", () => {
-    clearTimeout(state.logsSearchTimer);
-    state.logFilters.search = $("logsSearch").value.trim();
-    state.logsSearchTimer = setTimeout(() => loadLogs({ page: 1 }), 350);
-  });
   $("webhookSimulateButton")?.addEventListener("click", simulateWebhook);
   $("webhookBatchButton")?.addEventListener("click", runWebhookBatch);
   $("webhookTestAction")?.addEventListener("change", () => {
