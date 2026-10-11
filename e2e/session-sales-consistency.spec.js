@@ -29,6 +29,10 @@ test("sessão com vendas exige confirmação, sincroniza horário e cancelamento
   const sold = await sale.json();
   const order = sold.orders[0];
   const ticket = sold.tickets[0];
+  await expect.poll(async () => {
+    const content = await (await request.get(`${BACKEND}/api/admin/content`)).json();
+    return content.orders.find((item) => item.id === order.id)?.ticketDelivery?.status;
+  }).toMatch(/^(delivered|failed)$/);
 
   const sessionBody = {
     date: order.sessionDate,

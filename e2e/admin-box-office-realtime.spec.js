@@ -4,16 +4,6 @@ const crypto = require("crypto");
 
 const BACKEND = "http://127.0.0.1:4000";
 
-function tomorrowBr() {
-  const date = new Date(Date.now() + 86400000);
-  return new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  }).format(date);
-}
-
 async function loginAdmin(page) {
   await page.goto(`${BACKEND}/admin`);
   await page.locator("#email").fill("admin-e2e@cine.local");
@@ -52,7 +42,9 @@ test("operador conclui venda rápida com ingresso e bomboniere pela interface do
   await page.getByRole("button", { name: "Bilheteria", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Bilheteria" })).toBeVisible();
   await page.getByRole("button", { name: "Venda rápida" }).click();
-  await page.locator("#manualSessionDate").fill(tomorrowBr());
+  const fixtureContent = await (await page.request.get(`${BACKEND}/api/admin/content`)).json();
+  const sessionDate = fixtureContent.movies.find((movie) => movie.id === "filme-e2e").sessions[0].date;
+  await page.locator("#manualSessionDate").fill(sessionDate.split("-").reverse().join("/"));
   await page.locator("#manualSessionDate").press("Tab");
   await expect(page.locator("#manualMovieSelect")).toContainText("Filme E2E");
   await page.locator("#manualMovieSelect").selectOption("filme-e2e");

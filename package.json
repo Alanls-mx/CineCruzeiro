@@ -23,7 +23,7 @@
     "demo:nginx": "node scripts/render-demo-nginx.mjs",
     "test:deployment": "node --test tests/deploy-instance-registry.test.mjs",
     "lint": "tsc --noEmit",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/run-e2e.js",
     "test:operations": "node scripts/backup-retention-tests.js",
     "test:postgres": "node scripts/with-isolated-postgres.js concurrency",
     "test:postgres:repositories": "node scripts/with-isolated-postgres.js repositories",

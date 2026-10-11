@@ -1,35 +1,23 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
+const { sellableTomorrowSession } = require("./e2e-session-time");
 
 const root = path.resolve(__dirname, "..");
-const dataDir = path.join(root, ".e2e-data");
+const dataDir = fs.realpathSync(process.env.CINE_E2E_DATA_DIR || fs.mkdtempSync(path.join(os.tmpdir(), "cinecruzeiro-e2e-")));
+if (path.dirname(dataDir) !== fs.realpathSync(os.tmpdir()) || !path.basename(dataDir).startsWith("cinecruzeiro-e2e-")) {
+  throw new Error("O diretório E2E deve ser descartável e estar diretamente em os.tmpdir().");
+}
 const dataFile = path.join(dataDir, "db.json");
 const processes = [];
 const frontendPort = Number(process.env.E2E_FRONTEND_PORT || 3000);
-
-function isoDate(daysFromNow) {
-  const date = new Date(Date.now() + daysFromNow * 86400000);
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(date);
-}
-
-function sellableTomorrowTime() {
-  const hour = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "America/Sao_Paulo",
-    hour: "2-digit",
-    hourCycle: "h23"
-  }).format(new Date());
-  return `${hour}:00`;
-}
+let shuttingDown = false;
 
 function fixture() {
-  const now = new Date().toISOString();
-  const sessionTime = sellableTomorrowTime();
+  const referenceDate = new Date();
+  const now = referenceDate.toISOString();
+  const { date: sessionDate, time: sessionTime } = sellableTomorrowSession(referenceDate);
   const mercadoPago = {
     enabled: true,
     environment: "sandbox",
@@ -84,7 +72,7 @@ function fixture() {
         backdropUrl: "",
         sessions: [{
           id: "sessao-e2e",
-          date: isoDate(1),
+          date: sessionDate,
           time: sessionTime,
           format: "2D Dublado",
           room: "Sala Livre E2E",
@@ -107,7 +95,7 @@ function fixture() {
         backdropUrl: "",
         sessions: [{
           id: "sessao-poltronas-e2e",
-          date: isoDate(1),
+          date: sessionDate,
           time: sessionTime,
           format: "2D Legendado",
           room: "Sala Marcada E2E",
@@ -178,12 +166,14 @@ function fixture() {
   };
 }
 
-fs.mkdirSync(dataDir, { recursive: true });
 fs.writeFileSync(dataFile, JSON.stringify(fixture(), null, 2));
 
 const env = {
   ...process.env,
   CINE_DATA_FILE: dataFile,
+  CINE_UPLOADS_DIR: path.join(dataDir, "uploads"),
+  CINE_EMAIL_ATTACHMENTS_DIR: path.join(dataDir, "email-attachments"),
+  CINE_TICKET_DOCUMENTS_DIR: path.join(dataDir, "ticket-documents"),
   DATA_STORE: "json",
   DATABASE_URL: "",
   POSTGRES_URL: "",
@@ -209,10 +199,24 @@ function run(label, executable, args, overrides = {}) {
   });
 }
 
-function shutdown(code = 0) {
-  while (processes.length) {
-    const child = processes.pop();
-    if (child && !child.killed) child.kill();
+async function shutdown(code = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const children = processes.splice(0);
+  await Promise.all(children.map((child) => new Promise((resolve) => {
+    if (child.exitCode !== null) return resolve();
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      resolve();
+    }, 5000);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    child.kill();
+  })));
+  if (!process.env.CINE_E2E_DATA_DIR && path.dirname(dataDir) === fs.realpathSync(os.tmpdir()) && path.basename(dataDir).startsWith("cinecruzeiro-e2e-")) {
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
   process.exit(code);
 }
