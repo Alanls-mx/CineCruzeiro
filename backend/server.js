@@ -84,6 +84,7 @@ const { checkoutIdentifier } = require("./services/checkoutIdentifier");
 const { publicContentSettings } = require("./services/publicContentSettings");
 const { openPublicResource, downloadPublicBuffer } = require("./services/publicRemoteResource");
 const { allowedOrigins: normalizedAllowedOrigins } = require("./services/originPolicyService");
+const { isCommercialCatalogRequest, commercialCatalogToken, catalogTokensMatch, commercialCatalogCorsHeaders } = require("./services/commercialCatalogAccessPolicy");
 const clubDomainService = require("./services/clubDomainService");
 const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
 const { createAdminDashboardService } = require("./services/adminDashboardService");
@@ -845,7 +846,7 @@ function sanitizeWebhookTestPayload(body = {}) {
 function sendJson(res, status, data, extraHeaders = {}) {
   const store = requestContext.getStore();
   const req = store?.req;
-  const catalogRequest = req?.url?.split("?", 1)[0] === "/api/commercial/catalog";
+  const catalogRequest = isCommercialCatalogRequest(req);
   const payload = normalizeApiPayload(data, status, store?.requestId || "");
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(status, {
@@ -864,7 +865,7 @@ function sendJson(res, status, data, extraHeaders = {}) {
 function sendNoContent(res, extraHeaders = {}) {
   const store = requestContext.getStore();
   const req = store?.req;
-  const catalogRequest = req?.url?.split("?", 1)[0] === "/api/commercial/catalog";
+  const catalogRequest = isCommercialCatalogRequest(req);
   res.writeHead(204, {
     ...securityHeaders(),
     ...(catalogRequest ? {} : { "Access-Control-Allow-Origin": responseCorsOrigin(req), "Access-Control-Allow-Credentials": "true" }),
@@ -8323,37 +8324,6 @@ function getContent(db, options = {}) {
           goodsFiscalDocuments: db.goodsFiscalDocuments || []
         }
       : {})
-  };
-}
-
-function commercialCatalogToken(req) {
-  const authorization = String(req?.headers?.authorization || "").trim();
-  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1] || "";
-  try {
-    const url = new URL(req.url || "/", "http://localhost");
-    return String(bearer || req.headers?.["x-commercial-catalog-token"] || url.searchParams.get("token") || "").trim();
-  } catch {
-    return String(bearer || req.headers?.["x-commercial-catalog-token"] || "").trim();
-  }
-}
-
-function catalogTokensMatch(expected, received) {
-  const expectedBuffer = Buffer.from(String(expected || ""), "utf8");
-  const receivedBuffer = Buffer.from(String(received || ""), "utf8");
-  return expectedBuffer.length > 0
-    && expectedBuffer.length === receivedBuffer.length
-    && crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
-}
-
-function commercialCatalogCorsHeaders(req, config = {}) {
-  const requestOrigin = String(req?.headers?.origin || "").replace(/\/+$/, "");
-  const configuredOrigins = String(config.allowedOrigins || "").trim();
-  const allowedOrigins = configuredOrigins ? normalizedAllowedOrigins(configuredOrigins) : [];
-  if (!requestOrigin || !allowedOrigins.includes(requestOrigin)) return {};
-  return {
-    "Access-Control-Allow-Origin": requestOrigin,
-    "Access-Control-Allow-Credentials": "false",
-    "Vary": "Origin"
   };
 }
 

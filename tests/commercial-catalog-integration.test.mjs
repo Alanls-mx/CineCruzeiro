@@ -5,8 +5,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import integrationConfigService from "../backend/services/integrationConfigService.js";
 import presenterService from "../backend/services/commercialCatalogPresenter.js";
+import accessPolicy from "../backend/services/commercialCatalogAccessPolicy.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+test("politica de acesso do catalogo exige token exato e origem explicitamente permitida", () => {
+  assert.equal(accessPolicy.isCommercialCatalogRequest({ url: "/api/commercial/catalog?token=old" }), true);
+  assert.equal(accessPolicy.isCommercialCatalogRequest({ url: "/api/admin/content" }), false);
+  assert.equal(accessPolicy.catalogTokensMatch("", ""), false);
+  assert.equal(accessPolicy.catalogTokensMatch("secret", "secret"), true);
+  assert.equal(accessPolicy.catalogTokensMatch("secret", "secret-extra"), false);
+  assert.equal(accessPolicy.commercialCatalogToken({ url: "/api/commercial/catalog?token=query", headers: { authorization: "Bearer header", "x-commercial-catalog-token": "alternate" } }), "header");
+  assert.equal(accessPolicy.commercialCatalogToken({ url: "/api/commercial/catalog?token=query", headers: {} }), "query");
+  const config = { allowedOrigins: "https://partner.example.test" };
+  assert.equal(accessPolicy.commercialCatalogCorsHeaders({ headers: { origin: "https://partner.example.test" } }, config)["Access-Control-Allow-Origin"], "https://partner.example.test");
+  assert.deepEqual(accessPolicy.commercialCatalogCorsHeaders({ headers: { origin: "https://other.example.test" } }, config), {});
+});
 
 test("catálogo comercial externo salva token criptografado e não o devolve ao painel", () => {
   const originalSecret = process.env.INTEGRATION_SECRET_KEY;
