@@ -47,6 +47,14 @@ test('reivindicação evita processar a mesma campanha duas vezes',async()=>{
   assert.equal(first?.attempts || second?.attempts,1);
 });
 
+test('falha ao reivindicar nao altera campanha pendente',async()=>{
+  let updates=0;
+  const repository={claim:async()=>{throw new Error('database unavailable');},update:async()=>{updates++;}};
+  const service=new CampaignOrchestrator({repository,contextProvider:async()=>({}),loadImage:async()=>null,savePreview:async()=>''});
+  await service.process('pending-1');
+  assert.equal(updates,0);
+});
+
 test('contrato adapta aliases e gera chave idempotente estável',()=>{
   const first=normalizeCampaignRequest({cinemaId:'cinema-a',campaignType:'schedule',objective:'Programação da semana',formats:['feed_4_5','story_9_16'],eventVersion:'42'});
   const second=normalizeCampaignRequest({eventVersion:'42',formats:['feed_4_5','story_9_16'],objective:'Programação da semana',campaignType:'schedule',cinemaId:'cinema-a'});

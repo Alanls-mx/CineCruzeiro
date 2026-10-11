@@ -73,10 +73,11 @@ class CampaignOrchestrator {
   async stage(id,key,patch={}) {const [message,progress]=STAGES[key];await this.repository.appendEvent(id,{stage:key,message,metadata:patch.metadata});return this.repository.update(id,{stage:key,progress,...patch});}
   async process(id) {
     if(this.running.has(id))return;this.running.add(id);
-    let heartbeat;
+    let heartbeat,claimed=false;
     try {
       let record=await this.repository.claim(id,new Date(Date.now()-10*60*1000).toISOString());
       if(!record)return;
+      claimed=true;
       heartbeat=setInterval(()=>void this.repository.touchClaim(id,record.attempts).catch(error=>this.logger('warn','social_studio.automation.heartbeat_failed',{campaignId:id,message:error.message})),60*1000);
       heartbeat.unref?.();
       await this.stage(id,'context');
@@ -120,7 +121,7 @@ class CampaignOrchestrator {
       record=await this.stage(id,'ready',{status:'ready',finishedAt:new Date().toISOString(),warnings:[...warnings,...(variations.notices || []).map(message=>({code:'VARIATION_NOTICE',message}))],qa,result:{compositions,repertoire:{provider:copy.provider,candidates:copy.candidates.map(item=>({id:item.id,score:item.score,bundle:item.bundle}))},retryHistory,rendererVersion:'v2'}});
       this.logger('info','social_studio.automation.ready',{campaignId:id,compositions:compositions.length,attempts:record.attempts});
     } catch(error) {
-      await this.stage(id,'failed',{status:'failed',finishedAt:new Date().toISOString(),error:{code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message,qa:error.qa || null}}).catch(()=>{});
+      if(claimed)await this.stage(id,'failed',{status:'failed',finishedAt:new Date().toISOString(),error:{code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message,qa:error.qa || null}}).catch(()=>{});
       this.logger('error','social_studio.automation.failed',{campaignId:id,code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message});
     } finally {if(heartbeat)clearInterval(heartbeat);this.running.delete(id);}
   }

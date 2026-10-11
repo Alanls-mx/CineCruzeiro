@@ -9,6 +9,7 @@ const users = require("../backend/repositories/userRepository");
 const { runMutation } = require("../backend/repositories/repositorySupport");
 const { CampaignOrchestrator } = require("../backend/services/social-studio/automation/orchestrator");
 const { createTicketEmailJobRepository } = require("../backend/repositories/ticketEmailJobRepository");
+const { SocialStudioAutomationRepository } = require("../backend/repositories/socialStudioAutomationRepository");
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 test.beforeEach(async () => { if (enabled) await assertDisposableTestDatabase(); });
 
@@ -38,6 +39,35 @@ test("pedido pago registra entrega no commit; rollback nao cria trabalho", { ski
     assert.equal(await repository.complete(claimed, { status: 'delivered' }), false);
   } finally {
     await store.queryPostgres("DELETE FROM orders WHERE id IN ($1,$2)", [orderId, rolledBackId]);
+  }
+});
+
+test("Studio recupera backlog PostgreSQL acima de 100 e reivindica uma vez", { skip: !enabled }, async () => {
+  const prefix = `phase5-recovery-${Date.now()}`;
+  const repository = new SocialStudioAutomationRepository();
+  try {
+    await store.queryPostgres(`INSERT INTO social_studio_automation_campaigns
+      (id,cinema_id,idempotency_key,campaign_type,status,created_at)
+      SELECT gen_random_uuid(),'test',$1 || '-' || n::text,'movie','queued',now() + n * interval '1 millisecond'
+      FROM generate_series(1,125) AS n`, [prefix]);
+    let afterCreatedAt = '', afterId = '';
+    const seen = [];
+    for (;;) {
+      const batch = await repository.listRecoverable({ afterCreatedAt, afterId, limit: 20, staleBefore: new Date().toISOString() });
+      if (!batch.length) break;
+      seen.push(...batch);
+      afterCreatedAt = batch.at(-1).createdAt;
+      afterId = batch.at(-1).id;
+    }
+    assert.equal(seen.length, 125);
+    assert.equal(new Set(seen.map(item => item.id)).size, 125);
+    const [first, second] = await Promise.all([
+      repository.claim(seen[0].id, new Date(Date.now() - 600000).toISOString()),
+      repository.claim(seen[0].id, new Date(Date.now() - 600000).toISOString())
+    ]);
+    assert.equal([first, second].filter(Boolean).length, 1);
+  } finally {
+    await store.queryPostgres("DELETE FROM social_studio_automation_campaigns WHERE idempotency_key LIKE $1", [`${prefix}-%`]);
   }
 });
 
