@@ -13617,33 +13617,30 @@ async function handleApi(req, res, pathname) {
     }
     const id = decodeURIComponent(mySubscriptionCancelMatch[1]);
     const body = await readBody(req);
-    await withCriticalMutation(async () => {
+    const cancellation = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const lockedUser = getCustomerUser(req, lockedDb);
       const subscription = (lockedDb.subscriptions || []).find((item) => item.id === id && item.userId === lockedUser.id);
       if (!subscription) {
-        sendJson(res, 404, { error: { code: "SUBSCRIPTION_NOT_FOUND", message: "Assinatura nao encontrada." } });
-        return;
+        return { status: 404, payload: { error: { code: "SUBSCRIPTION_NOT_FOUND", message: "Assinatura nao encontrada." } } };
       }
       if (["ending", "ended", "cancelled"].includes(subscription.status)) {
-        sendJson(res, 200, {
+        return { status: 200, payload: {
           subscription: { ...refreshSubscriptionCredits(lockedDb, subscription), statusLabel: subscriptionStatusLabel(subscription.status) },
           message: subscription.status === "ending" ? "A renovação já está cancelada. Seus créditos continuam válidos até o fim do ciclo." : "Esta assinatura já está encerrada."
-        });
-        return;
+        } };
       }
       const now = new Date().toISOString();
       const cancelImmediately = Boolean(body.cancelImmediately || body.immediate);
       const plan = (lockedDb.subscriptionPlans || []).find((item) => item.id === subscription.planId);
       const cancellationRules = plan?.cancellationRules || {};
       if ((!cancelImmediately && cancellationRules.allowPeriodEnd === false) || (cancelImmediately && cancellationRules.allowImmediateBillingEnd === false)) {
-        sendJson(res, 409, {
+        return { status: 409, payload: {
           error: {
             code: "SUBSCRIPTION_CANCELLATION_MODE_NOT_ALLOWED",
             message: "Este plano não permite a modalidade de cancelamento selecionada. Entre em contato com o cinema."
           }
-        });
-        return;
+        } };
       }
       let providerSubscription = null;
       if (subscription.provider === "mercado_pago" && subscription.providerSubscriptionId) {
@@ -13666,13 +13663,14 @@ async function handleApi(req, res, pathname) {
         at: subscription.cancelledAt
       });
       await writeDb(lockedDb);
-      sendJson(res, 200, {
+      return { status: 200, payload: {
         subscription: { ...refreshSubscriptionCredits(lockedDb, subscription), statusLabel: subscriptionStatusLabel(subscription.status) },
         message: cancelImmediately
           ? "Cobrança encerrada. Seus créditos atuais continuam válidos até o fim do ciclo."
           : "Renovação cancelada. Não haverá nova cobrança e os créditos atuais continuam válidos até o fim do ciclo."
-      });
+      } };
     });
+    sendJson(res, cancellation.status, cancellation.payload);
     return;
   }
 
@@ -13694,21 +13692,19 @@ async function handleApi(req, res, pathname) {
       return;
     }
     try {
-      await withCriticalMutation(async () => {
+      const outcome = await withCriticalMutation(async () => {
         const lockedDb = await readDb();
         const lockedUser = getCustomerUser(req, lockedDb);
         if (!lockedUser) {
-          sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para assinar o Clube." } });
-          return;
+          return { status: 401, payload: { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para assinar o Clube." } } };
         }
         const plan = (lockedDb.subscriptionPlans || []).find((item) => item.id === body.planId && item.active !== false);
         if (!plan) {
-          sendJson(res, 404, { error: { code: "PLAN_NOT_FOUND", message: "Plano do Clube nao encontrado." } });
-          return;
+          return { status: 404, payload: { error: { code: "PLAN_NOT_FOUND", message: "Plano do Clube nao encontrado." } } };
         }
         const existingSubscription = blockingSubscriptionForUser(lockedDb, lockedUser.id);
         if (existingSubscription) {
-          sendJson(res, 409, {
+          return { status: 409, payload: {
             error: {
               code: "SUBSCRIPTION_ALREADY_EXISTS",
               message: "Voce ja possui uma assinatura do Clube ativa ou pendente. Cancele a atual antes de assinar outro plano."
@@ -13718,15 +13714,13 @@ async function handleApi(req, res, pathname) {
               plan: (lockedDb.subscriptionPlans || []).find((item) => item.id === existingSubscription.planId) || null,
               statusLabel: subscriptionStatusLabel(existingSubscription.status)
             }
-          });
-          return;
+          } };
         }
 
         const mercadoPagoConfig = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago");
         const activeProvider = activeOnlinePaymentProvider(lockedDb);
         if (activeProvider.provider !== "mercado_pago" || (!(mercadoPagoConfig?.enabled && mercadoPagoConfig?.configured) && process.env.PAYMENTS_MODE !== "test")) {
-          sendJson(res, 412, { error: { code: "MERCADO_PAGO_NOT_CONFIGURED", message: "Ative e configure o Mercado Pago nas Integracoes para vender assinaturas recorrentes." } });
-          return;
+          return { status: 412, payload: { error: { code: "MERCADO_PAGO_NOT_CONFIGURED", message: "Ative e configure o Mercado Pago nas Integracoes para vender assinaturas recorrentes." } } };
         }
 
         const subscription = createSubscription(lockedDb, lockedUser.id, plan.id, lockedUser, "pending_payment", "mercado_pago");
@@ -13758,7 +13752,7 @@ async function handleApi(req, res, pathname) {
         });
 
         await writeDb(lockedDb);
-        sendJson(res, 202, {
+        return { status: 202, payload: {
           subscription: {
             ...subscription,
             plan,
@@ -13770,8 +13764,9 @@ async function handleApi(req, res, pathname) {
           paymentMethod: normalizedPaymentMethod,
           externalBillingPending: true,
           message: "Finalize a assinatura recorrente no Mercado Pago para liberar os creditos do Clube."
-        });
+        } };
       });
+      sendJson(res, outcome.status, outcome.payload);
     } catch (error) {
       sendJson(res, error.statusCode || 400, { error: { code: error.code || "SUBSCRIPTION_PROVIDER_ERROR", message: error.message || "Nao foi possivel iniciar a assinatura." } });
     }
@@ -16507,22 +16502,21 @@ async function handleApi(req, res, pathname) {
   const orderResendEmailMatch = pathname.match(/^\/api\/orders\/([^/]+)\/resend-ticket-email$/);
   if (orderResendEmailMatch && method === "POST") {
     const orderId = decodeURIComponent(orderResendEmailMatch[1]);
-    await withCriticalMutation(async () => {
+    const outcome = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const order = (lockedDb.orders || []).find((item) => item.id === orderId);
       if (!order) {
-        sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
-        return;
+        return { status: 404, payload: { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } } };
       }
       const tickets = orderTickets(lockedDb, order.id);
       if (order.status !== "paid" || !tickets.length) {
-        sendJson(res, 409, { error: { code: "ORDER_NOT_DELIVERABLE", message: "Somente pedidos pagos com ingressos emitidos podem ser reenviados." } });
-        return;
+        return { status: 409, payload: { error: { code: "ORDER_NOT_DELIVERABLE", message: "Somente pedidos pagos com ingressos emitidos podem ser reenviados." } } };
       }
       const delivered = await deliverTicketsByEmail(lockedDb, order, tickets);
       await writeDb(lockedDb);
-      sendJson(res, 200, { ok: delivered, emailDeliveredAt: order.emailDeliveredAt || "" });
+      return { status: 200, payload: { ok: delivered, emailDeliveredAt: order.emailDeliveredAt || "" } };
     });
+    sendJson(res, outcome.status, outcome.payload);
     return;
   }
 

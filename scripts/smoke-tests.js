@@ -1545,6 +1545,9 @@ async function run() {
     assert.ok(pendingSubscription.payload.subscription.paymentExpiresAt);
     assert.equal(pendingSubscription.payload.paymentMethod, "credit_card");
     assert.ok(pendingSubscription.payload.checkoutUrl);
+    const subscriptionsAfterCreate = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    assert.equal(subscriptionsAfterCreate.response.status, 200);
+    assert.ok(subscriptionsAfterCreate.payload.subscriptions.some((item) => item.id === pendingSubscription.payload.subscription.id));
 
     const pendingClubCredit = await request("/api/checkout/club-credit", {
       method: "POST",
@@ -1712,6 +1715,9 @@ async function run() {
     assert.equal(cancelProviderApprovedSubscription.payload.subscription.status, "ending");
     assert.equal(cancelProviderApprovedSubscription.payload.subscription.reactivationBlocked, true);
     assert.equal(cancelProviderApprovedSubscription.payload.subscription.creditsAvailable, 1);
+    const subscriptionsAfterCancel = await request("/api/me/subscriptions", { headers: jsonHeaders(cookie) });
+    assert.equal(subscriptionsAfterCancel.response.status, 200);
+    assert.equal(subscriptionsAfterCancel.payload.subscriptions.find((item) => item.id === providerApprovedSubscription.id)?.status, "ending");
 
     const forbiddenReactivation = await request(`/api/admin/subscriptions/${encodeURIComponent(providerApprovedSubscription.id)}`, {
       method: "PATCH",
