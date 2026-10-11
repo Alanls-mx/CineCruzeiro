@@ -32,6 +32,26 @@ test('invalidation prevents an older pending query from repopulating cache', asy
   assert.deepEqual(await cache.read('operational'), {version: 2});
 });
 
+test('successive invalidations make parallel readers converge on the latest snapshot', async () => {
+  const resolvers = [];
+  const cache = createSnapshotCache({load: () => new Promise(resolve => resolvers.push(resolve)), clone: structuredClone});
+  const readers = [cache.read('operational'), cache.read('operational')];
+  await Promise.resolve();
+  assert.equal(resolvers.length, 1);
+  cache.invalidate();
+  resolvers[0]({version: 1});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(resolvers.length, 2);
+  cache.invalidate();
+  resolvers[1]({version: 2});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(resolvers.length, 3);
+  resolvers[2]({version: 3});
+  assert.deepEqual(await Promise.all(readers), [{version: 3}, {version: 3}]);
+  assert.deepEqual(await cache.read('operational'), {version: 3});
+  assert.equal(cache.metrics().pending, 0);
+});
+
 test('cache expires and failed queries do not poison subsequent reads', async () => {
   let clock = 0, loads = 0;
   const cache = createSnapshotCache({ttlMs: 10, now: () => clock, clone: structuredClone, load: async () => {
