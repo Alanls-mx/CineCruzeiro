@@ -210,6 +210,7 @@ async function run() {
     maxPerOrder: 8,
     active: true
   });
+  db.concessions.push({ id: "smoke-last-stock", name: "Produto último estoque", category: "pipoca", price: 5, stock: 1, active: true });
   db.ticketTypes = (db.ticketTypes || []).filter((item) => item.id !== "triple-smoke");
   db.ticketTypes.push({ id: "triple-smoke", name: "Triple Ingresso", price: 25, description: "Pacote de teste", bundleQuantity: 3, active: true });
   db.promotions = (db.promotions || []).filter((item) => !["cupom-smoke-20", "cupom-smoke-gratis"].includes(item.id));
@@ -1041,6 +1042,19 @@ async function run() {
     });
     assert.equal(confirmedSeatPrint.response.status, 200);
     assert.equal(confirmedSeatPrint.payload.completed, true);
+
+    const raceSeatSale = () => request("/api/box-office/sales", {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({
+        movieId: TEST_SEAT_MOVIE_ID, sessionId: TEST_SEAT_SESSION_ID,
+        ticketItems: [{ id: "promocional", quantity: 1 }], selectedSeatIds: ["b1"],
+        autoAssignSeats: false, paymentMethod: "courtesy", saleMode: "quick"
+      })
+    });
+    const competingSeatSales = await Promise.all([raceSeatSale(), raceSeatSale()]);
+    assert.deepEqual(competingSeatSales.map((item) => item.response.status).sort(), [201, 409]);
+    assert.equal((await readPersistedDb()).orders.filter((item) => item.sessionId === TEST_SEAT_SESSION_ID && item.selectedSeatIds?.includes("b1")).length, 1);
 
     const protectedSessionRoomChange = await request(`/api/movies/${TEST_SEAT_MOVIE_ID}/sessions/${TEST_SEAT_SESSION_ID}`, {
       method: "PUT",
@@ -2026,6 +2040,9 @@ async function run() {
     assert.equal(boxOfficeSale.payload.payment.method, "external_pix");
     assert.equal(boxOfficeSale.payload.tickets.length, 1);
     assert.equal(boxOfficeSale.payload.tickets[0].ticketType, "Ingresso Promocional");
+    const committedBoxOfficeSale = await readPersistedDb();
+    assert.equal(committedBoxOfficeSale.orders.some((item) => item.id === boxOfficeSale.payload.order.id), true, "Bilheteria 201 deve seguir o commit");
+    assert.equal(committedBoxOfficeSale.tickets.some((item) => item.orderId === boxOfficeSale.payload.order.id), true);
 
     const concessionCounterSale = await request("/api/admin/concession-counter-sales", {
       method: "POST",
@@ -2044,6 +2061,8 @@ async function run() {
     assert.equal(concessionCounterSale.payload.order.stockReservationStatus, "reserved");
     assert.equal(concessionCounterSale.payload.tickets.length, 0);
     assert.equal(concessionCounterSale.payload.payment.metadata.origin, "concession_counter");
+    const committedCounterSale = await readPersistedDb();
+    assert.equal(committedCounterSale.orders.some((item) => item.id === concessionCounterSale.payload.order.id), true, "Bomboniere 201 deve seguir o commit");
 
     const concessionCourtesySale = await request("/api/admin/concession-counter-sales", {
       method: "POST",
@@ -2840,9 +2859,49 @@ async function run() {
     assert.equal(pointCancelCalls, callsBeforeRace + 1, "Duas requisicoes devem produzir um cancelamento externo");
     assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointConcurrent.payload.payment.id).status, "cancelled");
 
+    const lastStockSale = () => request("/api/admin/concession-counter-sales", {
+      method: "POST", headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ saleMode: "concession_counter", paymentMethod: "cash", concessionItems: [{ id: "smoke-last-stock", quantity: 1 }] })
+    });
+    const competingStockSales = await Promise.all([lastStockSale(), lastStockSale()]);
+    assert.deepEqual(competingStockSales.map((item) => item.response.status).sort(), [201, 409]);
+    const stockAfterRace = await readPersistedDb();
+    assert.equal(stockAfterRace.orders.filter((item) => item.concessionItems?.some((product) => product.id === "smoke-last-stock")).length, 1);
+    assert.equal(stockAfterRace.concessions.find((item) => item.id === "smoke-last-stock").stock, 0);
+
     if (postgresMode) {
       const pg = require("pg");
       const originalQuery = pg.Client.prototype.query;
+      const counterFailureBody = {
+        movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, fullTicketsCount: 1, halfTicketsCount: 0,
+        saleMode: "registered", customerUserId: registered.user.id, paymentMethod: "external_pix",
+        clientRequestId: "smoke-counter-commit-failure"
+      };
+      let failCounterCommit = true;
+      pg.Client.prototype.query = function (statement, ...args) {
+        if (failCounterCommit && statement === "COMMIT") {
+          failCounterCommit = false;
+          return Promise.reject(new Error("smoke_counter_commit_failure"));
+        }
+        return originalQuery.call(this, statement, ...args);
+      };
+      let failedCounterSale;
+      try {
+        failedCounterSale = await request("/api/box-office/sales", {
+          method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(counterFailureBody)
+        });
+      } finally {
+        pg.Client.prototype.query = originalQuery;
+      }
+      assert.equal(failCounterCommit, false, "O failpoint deve atingir o commit da bilheteria");
+      assert.equal(failedCounterSale.response.status >= 500, true, "Falha de commit nao pode responder venda confirmada");
+      assert.equal((await readPersistedDb()).orders.some((item) => item.id === "pedido-bilheteria-smoke-counter-commit-failure-0"), false);
+      const recoveredCounterSale = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(counterFailureBody)
+      });
+      assert.equal(recoveredCounterSale.response.status, 201);
+      assert.equal((await readPersistedDb()).orders.some((item) => item.id === recoveredCounterSale.payload.order.id), true);
+
       let failSaleCommit = true;
       pg.Client.prototype.query = function (statement, ...args) {
         if (failSaleCommit && statement === "COMMIT") {
