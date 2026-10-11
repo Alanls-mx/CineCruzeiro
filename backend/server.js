@@ -18,6 +18,7 @@ const {
   writeDbToPostgres,
   withPostgresMutationLock,
   outsidePostgresTransaction,
+  deferUntilPostgresCommit,
   appendAuditLogToPostgres,
   appendSystemLogToPostgres,
   enqueueCrmWebhookEvent,
@@ -3970,6 +3971,7 @@ async function processQueuedTicketEmailDelivery(orderId) {
 
 function queueTicketEmailDelivery(orderId) {
   const normalizedOrderId = String(orderId || "").trim();
+  if (normalizedOrderId && deferUntilPostgresCommit(() => queueTicketEmailDelivery(normalizedOrderId))) return true;
   if (!normalizedOrderId || pendingTicketEmailDeliveries.has(normalizedOrderId)) return false;
   pendingTicketEmailDeliveries.add(normalizedOrderId);
   logEvent("info", "ticket_email.background_queued", { orderId: normalizedOrderId });

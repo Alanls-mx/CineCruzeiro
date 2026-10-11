@@ -36,6 +36,28 @@ function outsidePostgresTransaction(callback) {
   return transactionContext.exit(callback);
 }
 
+function deferUntilPostgresCommit(callback) {
+  const context = transactionContext.getStore();
+  if (!context?.client) return false;
+  (context.afterCommit ||= []).push(callback);
+  return true;
+}
+
+function runAfterCommitCallbacks(context) {
+  for (const callback of context.afterCommit || []) {
+    try {
+      const result = outsidePostgresTransaction(callback);
+      if (result && typeof result.then === "function") {
+        result.catch((error) => {
+          console.warn(JSON.stringify({ level: "warn", event: "database.after_commit_failed", message: error.message }));
+        });
+      }
+    } catch (error) {
+      console.warn(JSON.stringify({ level: "warn", event: "database.after_commit_failed", message: error.message }));
+    }
+  }
+}
+
 async function queryPostgres(text, values = []) {
   const client = contextClient();
   return (client || getPool()).query(text, values);
@@ -48,8 +70,10 @@ async function withPostgresTransaction(callback) {
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock_shared(318642901, 20260823)");
-    const result = await transactionContext.run({ client, lockMode: "shared" }, () => callback(client));
+    const context = { client, lockMode: "shared" };
+    const result = await transactionContext.run(context, () => callback(client));
     await client.query("COMMIT");
+    runAfterCommitCallbacks(context);
     return result;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -686,9 +710,11 @@ async function withPostgresMutationLock(callback) {
       durationMs: Math.round((performance.now() - lockStartedAt) * 100) / 100,
       scope: "legacy_snapshot_mutation"
     }));
-    const result = await transactionContext.run({ client, lockMode: "exclusive" }, callback);
+    const context = { client, lockMode: "exclusive" };
+    const result = await transactionContext.run(context, callback);
     await client.query("COMMIT");
     invalidateSnapshotCache();
+    runAfterCommitCallbacks(context);
     return result;
   } catch (error) {
     await client.query("ROLLBACK");
@@ -1673,6 +1699,7 @@ module.exports = {
   queryPostgres,
   withPostgresTransaction,
   outsidePostgresTransaction,
+  deferUntilPostgresCommit,
   invalidatePostgresSnapshot,
   rememberSnapshot,
   enablePostgresCacheInvalidation,

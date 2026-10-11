@@ -10,6 +10,35 @@ const { runMutation } = require("../backend/repositories/repositorySupport");
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 test.beforeEach(async () => { if (enabled) await assertDisposableTestDatabase(); });
 
+test("tarefas pos-commit veem dados persistidos e sao descartadas no rollback", { skip: !enabled }, async () => {
+  const key = `testAfterCommit${Date.now()}`;
+  let resolveObserved;
+  let rejectObserved;
+  const observed = new Promise((resolve, reject) => {
+    resolveObserved = resolve;
+    rejectObserved = reject;
+  });
+  let rollbackCallbackRan = false;
+  try {
+    assert.equal(store.deferUntilPostgresCommit(() => {}), false);
+    await store.withPostgresMutationLock(async () => {
+      await store.queryPostgres("INSERT INTO settings(key,value) VALUES ($1,'true'::jsonb)", [key]);
+      assert.equal(store.deferUntilPostgresCommit(() => {
+        store.queryPostgres("SELECT value FROM settings WHERE key=$1", [key])
+          .then(({ rows }) => resolveObserved(rows[0]?.value), rejectObserved);
+      }), true);
+    });
+    assert.equal(await observed, true);
+    await assert.rejects(store.withPostgresMutationLock(async () => {
+      store.deferUntilPostgresCommit(() => { rollbackCallbackRan = true; });
+      throw new Error("rollback esperado");
+    }), /rollback esperado/);
+    assert.equal(rollbackCallbackRan, false);
+  } finally {
+    await store.queryPostgres("DELETE FROM settings WHERE key=$1", [key]);
+  }
+});
+
 test("persistência incremental preserva reservas, consentimento, auditoria e alterações concorrentes", { skip: !enabled }, async () => {
   const suffix = `polish-${Date.now()}`;
   const q = store.queryPostgres;
