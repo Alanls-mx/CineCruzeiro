@@ -10689,9 +10689,10 @@ async function handleApi(req, res, pathname) {
   const selfManagedOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+$/.test(pathname);
   const selfManagedPermanentOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+\/permanent$/.test(pathname);
   const selfManagedTicketValidation = method === "POST" && pathname === "/api/tickets/validate";
+  const selfManagedClubAssignment = method === "POST" && pathname === "/api/admin/subscriptions/assign";
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
-    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedTicketValidation && !context?.adminMutationLocked) {
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedTicketValidation && !selfManagedClubAssignment && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
@@ -14000,29 +14001,28 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === "/api/admin/subscriptions/assign" && method === "POST") {
     const body = await readBody(req);
-    await withCriticalMutation(async () => {
+    const outcome = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const adminUser = getAdminUser(req, lockedDb);
       const user = (lockedDb.users || []).find((item) => item.id === body.userId || item.email === String(body.email || "").toLowerCase());
       if (!user) {
-        sendJson(res, 404, { error: { code: "USER_NOT_FOUND", message: "Usuario cadastrado nao encontrado." } });
-        return;
+        return { status: 404, payload: { error: { code: "USER_NOT_FOUND", message: "Usuario cadastrado nao encontrado." } } };
       }
       const existingSubscription = blockingSubscriptionForUser(lockedDb, user.id);
       if (existingSubscription && existingSubscription.planId !== body.planId) {
-        sendJson(res, 409, {
+        return { status: 409, payload: {
           error: {
             code: "SUBSCRIPTION_ALREADY_EXISTS",
             message: "Este cliente ja possui uma assinatura ativa ou pendente."
           },
           subscription: existingSubscription
-        });
-        return;
+        } };
       }
       const subscription = createManualSubscription(lockedDb, user.id, body.planId, adminUser, body.status || "active");
       await writeDb(lockedDb);
-      sendJson(res, 201, { subscription });
+      return { status: 201, payload: { subscription } };
     });
+    sendJson(res, outcome.status, outcome.payload);
     return;
   }
 
