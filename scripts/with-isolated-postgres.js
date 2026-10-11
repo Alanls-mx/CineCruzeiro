@@ -64,7 +64,10 @@ async function main() {
             if (marker.rows[0]?.token !== token) throw new Error("Marcador divergente; banco não será removido.");
           } finally { await verify.end().catch(() => {}); }
         }
-        await admin.query(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
+        // The child has exited, so its connections must already be gone. FORCE
+        // may try to terminate PostgreSQL-owned maintenance sessions, which the
+        // deliberately non-superuser test role is not allowed to terminate.
+        await admin.query(`DROP DATABASE "${databaseName}"`);
       }
     } finally { await admin.end(); }
   }
