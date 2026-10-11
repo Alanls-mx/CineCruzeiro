@@ -17040,6 +17040,10 @@ loadEnvFiles().then(() => {
     void runMovieImageMaintenance();
     void runEmailAttachmentMaintenance();
     void getSocialStudioAutomationOrchestrator().resumePending().then(count=>{if(count)logEvent('info','social_studio.automation.resumed',{count});}).catch(error=>logEvent('warn','social_studio.automation.resume_failed',{message:error.message}));
+    const socialStudioRecoveryTimer=setInterval(()=>{
+      void getSocialStudioAutomationOrchestrator().resumePending().then(count=>{if(count)logEvent('info','social_studio.automation.resumed',{count});}).catch(error=>logEvent('warn','social_studio.automation.resume_failed',{message:error.message}));
+    },60*1000);
+    socialStudioRecoveryTimer.unref?.();
     if (postgresEnabled()) {
       emailCampaignWorker = buildEmailCampaignWorker();
       emailCampaignWorker?.start();

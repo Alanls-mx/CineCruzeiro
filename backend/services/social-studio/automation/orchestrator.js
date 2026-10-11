@@ -15,6 +15,10 @@ class CampaignOrchestrator {
     Object.assign(this,{repository,contextProvider,loadImage,savePreview,logger});
     this.dependencies={normalizeDraft:dependencies.normalizeDraft || normalizeV2Draft,generateCopy:dependencies.generateCopy || generateCopy,generateVariations:dependencies.generateVariations || generateVariations,renderPost:dependencies.renderPost || renderSocialPostV2,evaluate:dependencies.evaluate || evaluate};
     this.running=new Set();
+    this.jobs=new Map();
+    this.pending=[];
+    this.active=0;
+    this.recovering=false;
   }
   async create(input={},meta={}) {
     const context=await this.contextProvider();
@@ -27,9 +31,41 @@ class CampaignOrchestrator {
   }
   enqueue(id) {
     if(deferUntilPostgresCommit(()=>this.enqueue(id)))return;
-    setImmediate(()=>outsidePostgresTransaction(()=>this.process(id).catch(error=>this.logger('error','social_studio.automation.unhandled',{campaignId:id,message:error.message}))));
+    if(this.jobs.has(id))return this.jobs.get(id);
+    let resolve;
+    const job=new Promise(done=>{resolve=done;});
+    this.jobs.set(id,job);
+    this.pending.push({id,resolve});
+    setImmediate(()=>outsidePostgresTransaction(()=>this.drain()));
+    return job;
   }
-  async resumePending() {const pending=(await this.repository.list({limit:100})).filter(item=>['queued','processing','qa'].includes(item.status));pending.forEach(item=>this.enqueue(item.id));return pending.length;}
+  drain() {
+    while(this.active<2 && this.pending.length) {
+      const {id,resolve}=this.pending.shift();
+      this.active++;
+      void outsidePostgresTransaction(()=>this.process(id))
+        .catch(error=>this.logger('error','social_studio.automation.unhandled',{campaignId:id,message:error.message}))
+        .finally(()=>{this.active--;this.jobs.delete(id);resolve();this.drain();});
+    }
+  }
+  async resumePending() {
+    if(this.recovering)return 0;
+    this.recovering=true;
+    let count=0,afterCreatedAt='',afterId='';
+    try {
+      for(;;) {
+        const staleBefore=new Date(Date.now()-10*60*1000).toISOString();
+        const batch=await this.repository.listRecoverable({afterCreatedAt,afterId,limit:20,staleBefore});
+        if(!batch.length)break;
+        const last=batch[batch.length-1];
+        afterCreatedAt=last.createdAt;afterId=last.id;
+        count+=batch.length;
+        await Promise.all(batch.map(item=>this.enqueue(item.id)));
+        if(batch.length<20)break;
+      }
+      return count;
+    } finally {this.recovering=false;}
+  }
   async reprocess(id) {
     const current=await this.repository.findById(id);if(!current?.id)throw Object.assign(new Error('Campanha automática não encontrada.'),{statusCode:404,code:'STUDIO_CAMPAIGN_NOT_FOUND'});
     await this.repository.update(id,{status:'queued',stage:'queued',progress:0,error:null,finishedAt:null});this.enqueue(id);return publicRecord(await this.repository.findById(id));
@@ -37,9 +73,13 @@ class CampaignOrchestrator {
   async stage(id,key,patch={}) {const [message,progress]=STAGES[key];await this.repository.appendEvent(id,{stage:key,message,metadata:patch.metadata});return this.repository.update(id,{stage:key,progress,...patch});}
   async process(id) {
     if(this.running.has(id))return;this.running.add(id);
+    let heartbeat;
     try {
-      let record=await this.repository.findById(id);if(!record?.id || record.status==='ready')return;
-      await this.stage(id,'context',{status:'processing',startedAt:record.startedAt || new Date().toISOString(),attempts:record.attempts+1});
+      let record=await this.repository.claim(id,new Date(Date.now()-10*60*1000).toISOString());
+      if(!record)return;
+      heartbeat=setInterval(()=>void this.repository.touchClaim(id,record.attempts).catch(error=>this.logger('warn','social_studio.automation.heartbeat_failed',{campaignId:id,message:error.message})),60*1000);
+      heartbeat.unref?.();
+      await this.stage(id,'context');
       const context=await this.contextProvider();
       const recent=await this.repository.list({cinemaId:record.cinemaId,limit:30});
       context.history=[...(context.history || []),...recent.filter(item=>item.id!==id).flatMap(item=>item.result?.compositions || []).map(item=>({payload:item.draft || {}}))];
@@ -82,7 +122,7 @@ class CampaignOrchestrator {
     } catch(error) {
       await this.stage(id,'failed',{status:'failed',finishedAt:new Date().toISOString(),error:{code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message,qa:error.qa || null}}).catch(()=>{});
       this.logger('error','social_studio.automation.failed',{campaignId:id,code:error.code || 'STUDIO_AUTOMATION_FAILED',message:error.message});
-    } finally {this.running.delete(id);}
+    } finally {if(heartbeat)clearInterval(heartbeat);this.running.delete(id);}
   }
   async get(id) {const record=await this.repository.findById(id);if(!record?.id)return null;return {...publicRecord(record),events:await this.repository.events(id)};}
   async list(options={}) {return Promise.all((await this.repository.list(options)).map(async record=>({...publicRecord(record),events:(await this.repository.events(record.id)).slice(-6)})));}

@@ -23,6 +23,30 @@ function orchestrator(overrides={}) {
   return {repository,service:new CampaignOrchestrator({repository,contextProvider:async()=>({brand:{id:'cinema-a',name:'Cinema A'},history:[]}),loadImage:async()=>null,savePreview:async()=>`/preview/${++preview}.png`,dependencies:{normalizeDraft:normalized,generateCopy:copy,generateVariations:variations,renderPost:render,evaluate:accepted,...overrides}})};
 }
 
+test('recuperação pagina mais de 100 campanhas sem exceder dois trabalhos simultâneos',async()=>{
+  const records=Array.from({length:125},(_,index)=>({id:`campaign-${String(index).padStart(3,'0')}`,createdAt:new Date(Date.UTC(2026,0,1,0,0,index)).toISOString(),status:'queued'}));
+  let active=0,maxActive=0;
+  const repository={
+    async listRecoverable({afterCreatedAt,afterId,limit}) {
+      return records.filter(item=>!afterCreatedAt || item.createdAt>afterCreatedAt || (item.createdAt===afterCreatedAt && item.id>afterId)).slice(0,limit);
+    }
+  };
+  const service=new CampaignOrchestrator({repository,contextProvider:async()=>({}),loadImage:async()=>null,savePreview:async()=>''});
+  service.process=async()=>{active++;maxActive=Math.max(maxActive,active);await new Promise(resolve=>setTimeout(resolve,1));active--;};
+  assert.equal(await service.resumePending(),125);
+  assert.equal(maxActive,2);
+  assert.equal(service.jobs.size,0);
+});
+
+test('reivindicação evita processar a mesma campanha duas vezes',async()=>{
+  const repository=memoryRepository();
+  await repository.create({id:'claim-1',idempotencyKey:'claim-1',status:'queued',stage:'queued',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+  const staleBefore=new Date(Date.now()-10*60*1000).toISOString();
+  const [first,second]=await Promise.all([repository.claim('claim-1',staleBefore),repository.claim('claim-1',staleBefore)]);
+  assert.equal([first,second].filter(Boolean).length,1);
+  assert.equal(first?.attempts || second?.attempts,1);
+});
+
 test('contrato adapta aliases e gera chave idempotente estável',()=>{
   const first=normalizeCampaignRequest({cinemaId:'cinema-a',campaignType:'schedule',objective:'Programação da semana',formats:['feed_4_5','story_9_16'],eventVersion:'42'});
   const second=normalizeCampaignRequest({eventVersion:'42',formats:['feed_4_5','story_9_16'],objective:'Programação da semana',campaignType:'schedule',cinemaId:'cinema-a'});

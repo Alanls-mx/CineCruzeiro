@@ -77,6 +77,47 @@ class SocialStudioAutomationRepository {
     }
     const db=await this.readJson();return (db.settings?.socialStudioAutomationCampaigns || []).filter(item=>!cinemaId || item.cinemaId===cinemaId).slice(0,cleanLimit(limit)).map(mapCampaign);
   }
+  async listRecoverable({afterCreatedAt='',afterId='',limit=20,staleBefore=''}={}) {
+    if(postgresEnabled()) {
+      const result=await queryPostgres(`SELECT * FROM social_studio_automation_campaigns
+        WHERE (status='queued' OR (status IN ('processing','qa') AND updated_at < $1::timestamptz))
+          AND ($2='' OR (created_at,id) > ($2::timestamptz,$3))
+        ORDER BY created_at ASC,id ASC LIMIT $4`,[staleBefore,afterCreatedAt,afterId,cleanLimit(limit)]);
+      return result.rows.map(mapCampaign);
+    }
+    const db=await this.readJson();
+    return (db.settings?.socialStudioAutomationCampaigns || [])
+      .filter(item=>item.status==='queued' || (['processing','qa'].includes(item.status) && item.updatedAt < staleBefore))
+      .filter(item=>!afterCreatedAt || item.createdAt > afterCreatedAt || (item.createdAt===afterCreatedAt && item.id > afterId))
+      .sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt)) || String(a.id).localeCompare(String(b.id)))
+      .slice(0,cleanLimit(limit)).map(mapCampaign);
+  }
+  async claim(id,staleBefore) {
+    if(postgresEnabled()) {
+      const result=await queryPostgres(`UPDATE social_studio_automation_campaigns
+        SET status='processing',stage='context',attempts=attempts+1,started_at=COALESCE(started_at,now()),updated_at=now()
+        WHERE id=$1 AND (status='queued' OR (status IN ('processing','qa') AND updated_at < $2::timestamptz))
+        RETURNING *`,[id,staleBefore]);
+      return result.rows[0]?mapCampaign(result.rows[0]):null;
+    }
+    return this.mutateJson(async db=>{
+      const item=(db.settings?.socialStudioAutomationCampaigns || []).find(record=>record.id===id);
+      if(!item || !(item.status==='queued' || (['processing','qa'].includes(item.status) && item.updatedAt < staleBefore)))return null;
+      Object.assign(item,{status:'processing',stage:'context',attempts:Number(item.attempts || 0)+1,startedAt:item.startedAt || new Date().toISOString(),updatedAt:new Date().toISOString()});
+      return mapCampaign(item);
+    });
+  }
+  async touchClaim(id,attempts) {
+    if(postgresEnabled()) {
+      await queryPostgres(`UPDATE social_studio_automation_campaigns SET updated_at=now()
+        WHERE id=$1 AND attempts=$2 AND status IN ('processing','qa')`,[id,attempts]);
+      return;
+    }
+    await this.mutateJson(async db=>{
+      const item=(db.settings?.socialStudioAutomationCampaigns || []).find(record=>record.id===id);
+      if(item && Number(item.attempts)===attempts && ['processing','qa'].includes(item.status))item.updatedAt=new Date().toISOString();
+    });
+  }
   async appendEvent(campaignId,event) {
     const value={campaignId,level:event.level || 'info',stage:event.stage || 'processing',message:String(event.message || ''),metadata:event.metadata || {},createdAt:new Date().toISOString()};
     if(postgresEnabled()) {await queryPostgres('INSERT INTO social_studio_automation_events (campaign_id,level,stage,message,metadata) VALUES ($1,$2,$3,$4,$5::jsonb)',[campaignId,value.level,value.stage,value.message,json(value.metadata)]);return value;}
