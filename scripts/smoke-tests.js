@@ -1863,6 +1863,15 @@ async function run() {
     const refundedBundleSubscription = subscriptionsAfterBundleRefund.payload.subscriptions.find((subscription) => subscription.id === bundleSubscription.payload.subscription.id);
     assert.ok(refundedBundleSubscription, "A assinatura do pacote deve continuar visivel apos o cancelamento");
     const refundedBundleUsage = refundedBundleSubscription.usage.find((usage) => usage.orderId === bundleCreditOrder.payload.order.id);
+    let persistedClubState = null;
+    if (postgresMode && !refundedBundleUsage?.refundedAt) {
+      const { queryPostgres } = require("../backend/db/postgresStore");
+      const [credit, usage] = await Promise.all([
+        queryPostgres("SELECT used, remaining FROM subscription_credits WHERE id=$1", [refundedBundleSubscription.credit?.id]),
+        queryPostgres("SELECT credits_used, refunded_at FROM subscription_usage WHERE order_id=$1", [bundleCreditOrder.payload.order.id])
+      ]);
+      persistedClubState = { credit: credit.rows, usage: usage.rows };
+    }
     assert.ok(refundedBundleUsage?.refundedAt, JSON.stringify({
       message: "O uso dos creditos deve registrar a devolucao",
       orderId: bundleCreditOrder.payload.order.id,
@@ -1870,6 +1879,7 @@ async function run() {
       subscriptionStatus: refundedBundleSubscription.status,
       credit: refundedBundleSubscription.credit,
       creditCounts: refundedBundleSubscription.creditCounts,
+      persistedClubState,
       usage: refundedBundleSubscription.usage.map(({ id, orderId, creditId, creditsUsed, refundedAt }) => ({ id, orderId, creditId, creditsUsed, refundedAt }))
     }));
     assert.equal(refundedBundleSubscription.creditsRemaining, 3, JSON.stringify({
