@@ -35,3 +35,11 @@ O smoke JSON cria um arquivo e diretórios auxiliares em `%TEMP%`/`os.tmpdir()` 
 - `scripts/generate-social-studio-posts.mjs` lê esse JSON para geração manual; pode ser migrado para leitura PostgreSQL em tarefa separada, com validação das saídas antes de remover o caminho legado.
 - `scripts/e2e-dev-server.js` e testes HTTP JSON usam arquivos temporários próprios; são ambientes de compatibilidade, não a validação principal.
 - Nenhum script de teste deve executar migrations ou resets em `DATABASE_URL`/`POSTGRES_URL` operacional. Para execução destrutiva, use apenas o harness acima.
+
+## Atualizacao da Fase 4.2
+
+O smoke PostgreSQL passou a afirmar que Pix e cartao (201), atribuicao manual de assinatura (201), validacao de ingresso (200) e exclusao permanente de pedido (200) ficam visiveis em uma leitura imediata. O CI reproduziu falhas reais no cancelamento logo apos Pix e na leitura de assinatura logo apos a atribuicao; os handlers foram ajustados para responder depois do commit, sem adicionar espera ou relaxar o teste. O job PostgreSQL do commit `d80b5d3` passou, assim como seguranca e Playwright no GitHub Actions.
+
+O job de navegador em `.github/workflows/e2e.yml` e separado: usa processos e JSON sintetico temporario, nao substitui os testes PostgreSQL. `npm run test:e2e` isola tambem uploads, anexos e documentos, fecha os processos e guarda traces/screenshots em falhas no CI. O teste de variacao de dia fica em `tests/e2e-session-time.test.mjs`.
+
+O teste de cache `tests/postgres-snapshot-cache-policy.test.mjs` cobre duas invalidacoes sucessivas com leitores paralelos e roda no job PostgreSQL. A verificacao de cinco instalacoes em `npm run deploy:validate` valida configuracao, nao os bancos ou servicos operacionais. Nenhum banco existente foi migrado, apagado ou sobrescrito, e nenhum deploy foi realizado.
