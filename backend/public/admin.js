@@ -902,117 +902,7 @@ const { logLevelLabel, logCategoryLabel, logPaymentMethod, logFriendlyError, log
 
 const { loadConcessionDailySales, findConcessionOrder, getOrderTickets, isOrderFullyValidated, orderSessionStartsAt, isOrderSessionExpired, isOrderEffectivelyArchived, isOrderEffectivelyActive, getOrderValidationSummary, changeConcessionDailySalesPage, renderConcessionDailySales, openConcessionOrderDetail } = window.CineAdminModules.concessionSalesView.createConcessionSalesView({ state, $, api, document, escapeHtml, money, financialStatusEventHtml, showToast, adminCan, executeConcessionRefund, toggleConcessionArchive, deleteConcessionOrder });
 
-function ticketFinanceQuery() {
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
-  const from = $("ticketFinanceFrom")?.value || state.dashboardFrom || today;
-  const to = $("ticketFinanceTo")?.value || state.dashboardTo || today;
-  if (from > to) throw new Error("A data final deve ser igual ou posterior à inicial.");
-  const params = new URLSearchParams({
-    period: "custom",
-    from,
-    to
-  });
-  const movieId = $("ticketFinanceMovie")?.value || "";
-  if (movieId) params.set("movieId", movieId);
-  return params.toString();
-}
-
-async function loadTicketFinanceReport() {
-  if (!adminCan("ticket_finance.view")) return;
-  const requestId = (state.ticketFinanceRequestId || 0) + 1;
-  state.ticketFinanceRequestId = requestId;
-  const button = $("ticketFinanceRefresh");
-  if (button) button.disabled = true;
-  $("ticketFinanceRows").setAttribute("aria-busy", "true");
-  $("ticketFinanceRows").innerHTML = `<tr><td colspan="5">Atualizando apuração...</td></tr>`;
-  ["ticketFinanceQuantity", "ticketFinanceGross", "ticketFinanceDistributor", "ticketFinanceNet", "ticketFinanceMargin"].forEach((id) => { $(id).textContent = "—"; });
-  ["ticketFinanceExportCsv", "ticketFinanceExportPdf"].forEach((id) => setDisabled(id, true));
-  try {
-    const report = await api(`/api/admin/reports/ticket-distributor?${ticketFinanceQuery()}`);
-    if (state.ticketFinanceRequestId !== requestId) return;
-    state.ticketFinanceReport = report;
-    renderTicketFinanceReport();
-    ["ticketFinanceExportCsv", "ticketFinanceExportPdf"].forEach((id) => setDisabled(id, false));
-  } catch (error) {
-    if (state.ticketFinanceRequestId !== requestId) return;
-    state.ticketFinanceReport = null;
-    renderTicketFinanceReport();
-    showToast(error.message, "error");
-  } finally {
-    if (state.ticketFinanceRequestId === requestId) {
-      if (button) button.disabled = false;
-      $("ticketFinanceRows").removeAttribute("aria-busy");
-    }
-  }
-}
-
-function renderTicketFinanceReport() {
-  if (!$("ticketFinanceRows") || !adminCan("ticket_finance.view")) return;
-  const report = state.ticketFinanceReport;
-  if (!report) {
-    $("ticketFinanceRows").innerHTML = `<tr><td colspan="5">Não foi possível carregar a apuração neste momento.</td></tr>`;
-    return;
-  }
-  if ($("ticketFinanceFrom") && !$("ticketFinanceFrom").value) $("ticketFinanceFrom").value = report.period?.start || "";
-  if ($("ticketFinanceTo") && !$("ticketFinanceTo").value) $("ticketFinanceTo").value = report.period?.end || "";
-  if ($("ticketFinanceMovie")) {
-    const selected = $("ticketFinanceMovie").value || report.movieId || "";
-    $("ticketFinanceMovie").innerHTML = `<option value="">Todos os filmes</option>${(report.movies || []).map((movie) => `<option value="${escapeHtml(movie.id)}">${escapeHtml(movie.title)}</option>`).join("")}`;
-    $("ticketFinanceMovie").value = selected;
-  }
-  if ($("ticketFinanceDistributorPercent")) $("ticketFinanceDistributorPercent").value = Number(report.rules?.distributorPercent ?? 50);
-  if ($("ticketFinanceCourtesyPercent")) $("ticketFinanceCourtesyPercent").value = Number(report.rules?.courtesyPercent ?? 50);
-  if ($("ticketFinanceClubFee")) $("ticketFinanceClubFee").value = Number(report.rules?.clubTicketFee ?? 10).toFixed(2);
-  const totals = report.totals || {};
-  $("ticketFinanceQuantity").textContent = Number(totals.quantity || 0);
-  $("ticketFinanceGross").textContent = money(totals.grossRevenue || 0);
-  $("ticketFinanceDistributor").textContent = money(totals.distributorCost || 0);
-  $("ticketFinanceNet").textContent = money(totals.cinemaNet || 0);
-  $("ticketFinanceNet").classList.toggle("negative", Number(totals.cinemaNet || 0) < 0);
-  $("ticketFinanceMargin").textContent = `${Number(totals.retentionPercent || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% do faturamento`;
-  $("ticketFinanceRows").innerHTML = (report.rows || []).length
-    ? report.rows.map((row) => `<tr>
-        <td><strong>${escapeHtml(row.type)}</strong><small>${row.category === "club" ? "Receita reconhecida no Clube" : row.category === "courtesy" ? "Custo de indicação / marketing" : "Ingresso pago"}</small></td>
-        <td>${Number(row.quantity || 0)}</td>
-        <td>${money(row.grossRevenue || 0)}</td>
-        <td>${money(row.distributorCost || 0)}</td>
-        <td class="${Number(row.cinemaNet || 0) < 0 ? "negative" : "positive"}">${money(row.cinemaNet || 0)}</td>
-      </tr>`).join("")
-    : `<tr><td colspan="5">Nenhum ingresso reconhecido no período selecionado.</td></tr>`;
-}
-
-async function saveTicketFinanceRules(event) {
-  event.preventDefault();
-  if (!adminCan("ticket_finance.configure")) return;
-  try {
-    await api("/api/admin/reports/ticket-distributor/settings", {
-      method: "PUT",
-      body: JSON.stringify({
-        distributorPercent: Number($("ticketFinanceDistributorPercent").value),
-        courtesyPercent: Number($("ticketFinanceCourtesyPercent").value),
-        clubTicketFee: Number($("ticketFinanceClubFee").value)
-      })
-    });
-    await loadTicketFinanceReport();
-    showToast("Regras de repasse atualizadas.");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
-
-function downloadTicketFinanceReport(format) {
-  if (!adminCan("ticket_finance.export")) return;
-  let query;
-  try { query = ticketFinanceQuery(); } catch (error) { showToast(error.message, "error"); return; }
-  const extension = format === "csv" ? "csv" : "pdf";
-  const link = document.createElement("a");
-  link.href = `${API_BASE}/api/admin/reports/ticket-distributor.${extension}?${query}`;
-  link.download = "";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  showToast(extension === "pdf" ? "Preparando demonstrativo para a distribuidora." : "Preparando memória de cálculo detalhada.");
-}
+const { query: ticketFinanceQuery, load: loadTicketFinanceReport, render: renderTicketFinanceReport, saveRules: saveTicketFinanceRules, download: downloadTicketFinanceReport, bindEvents: bindTicketFinanceEvents } = window.CineAdminModules.ticketFinanceView.createTicketFinanceView({ state, $, api, adminCan, setDisabled, showToast, escapeHtml, money, document, apiBase: API_BASE });
 
 function closeConcessionOrderOverlay() {
   const overlay = $("concessionOrderOverlay");
@@ -10919,13 +10809,7 @@ function bindEvents() {
   setupResponsiveSelects();
 
   $("dashboardReportButton")?.addEventListener("click", () => window.open(`${API_BASE}/api/admin/reports/dashboard.csv?${dashboardQuery()}`, "_blank", "noopener"));
-  $("ticketFinanceRefresh")?.addEventListener("click", loadTicketFinanceReport);
-  $("ticketFinanceExportPdf")?.addEventListener("click", () => downloadTicketFinanceReport("pdf"));
-  $("ticketFinanceExportCsv")?.addEventListener("click", () => downloadTicketFinanceReport("csv"));
-  $("ticketFinanceRulesForm")?.addEventListener("submit", saveTicketFinanceRules);
-  $("ticketFinanceMovie")?.addEventListener("change", loadTicketFinanceReport);
-  $("ticketFinanceFrom")?.addEventListener("change", loadTicketFinanceReport);
-  $("ticketFinanceTo")?.addEventListener("change", loadTicketFinanceReport);
+  bindTicketFinanceEvents();
   window.CineAdminModules.movieCatalogEvents.bindMovieCatalogEvents({
     $, state, renderMovies, toggleMovieMenu, duplicateMovie, moveMovie, archiveMovie, deleteMovie,
     selectMovie, handleMovieDragStart, handleMovieDragOver, handleMovieDragLeave, handleMovieDragEnd, handleMovieDrop
