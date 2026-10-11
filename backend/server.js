@@ -78,6 +78,7 @@ const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
 const cardTerminalProvider = require("./services/cardTerminalProvider");
+const { createEmailCampaignPresenter } = require("./services/emailCampaignPresenter");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const { clientIp } = require("./services/clientIpService");
 const { buildAdminSessionSeatMap } = require("./services/adminSessionSeatMapService");
@@ -9131,31 +9132,7 @@ function normalizeCampaignInput(input = {}, existing = {}) {
   };
 }
 
-function publicCampaign(campaign = {}) {
-  const { customerIds, html, message, contentBlocks, attachments, ...safe } = campaign;
-  return {
-    ...safe,
-    attachments: (attachments || []).map(({ path, ...item }) => item),
-    customerCount: Number(campaign.recipientCount || campaign.recipients || 0),
-    hasHtml: campaign.hasHtml ?? Boolean(html),
-    hasMessage: campaign.hasMessage ?? Boolean(message),
-    hasBlocks: campaign.hasBlocks ?? Boolean(contentBlocks?.length),
-    metricsSupported: { sent: true, failed: true, delivered: campaign.delivered !== null, bounced: campaign.bounced !== null, opened: campaign.opened !== null, clicked: campaign.clicked !== null }
-  };
-}
-
-function campaignDetails(campaign = {}) {
-  return {
-    ...publicCampaign(campaign),
-    message: String(campaign.message || ""),
-    html: String(campaign.html || ""),
-    contentBlocks: Array.isArray(campaign.contentBlocks) ? campaign.contentBlocks : [],
-    customerIds: Array.isArray(campaign.customerIds) ? campaign.customerIds : [],
-    variables: campaign.variables || {},
-    brand: normalizeEmailBrand(campaign.brand || {}),
-    recipientSearch: campaign.recipientSearch || ""
-  };
-}
+const { publicCampaign, campaignDetails } = createEmailCampaignPresenter({ normalizeEmailBrand });
 
 async function listPersistedCampaigns(filters = {}) {
   if (postgresEnabled()) return emailCampaignRepository.listCampaigns(filters);
