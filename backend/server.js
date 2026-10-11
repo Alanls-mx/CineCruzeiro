@@ -72,6 +72,8 @@ const { SOCIAL_STUDIO_EDITORIAL_MOVIES } = require("./services/socialStudioEdito
 const emailCampaignRepository = require("./services/emailCampaignRepository");
 const adMetricRepository = require("./repositories/adMetricRepository");
 const { createEmailCampaignWorker } = require("./services/emailCampaignWorker");
+const { createTicketEmailWorker } = require("./services/ticketEmailWorker");
+const { createTicketEmailJobRepository } = require("./repositories/ticketEmailJobRepository");
 const adminTwoFactorService = require("./services/adminTwoFactorService");
 const { createStorageService } = require("./services/storageService");
 const { createMovieImageService } = require("./services/movieImageService");
@@ -167,13 +169,14 @@ let jsonMutationQueue = Promise.resolve();
 let movieImageMaintenanceRunning = false;
 let emailAttachmentMaintenanceRunning = false;
 let emailCampaignWorker = null;
+let ticketEmailWorker = null;
 let crmWebhookWorker = null;
 let crmWebhookRuntimeConfig = null;
 let crmWebhookConfigVersion = 0;
 
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.BIND_HOST || process.env.HOST || "0.0.0.0";
-const LATEST_SCHEMA_MIGRATION = "050_room_cleanup_minutes.sql";
+const LATEST_SCHEMA_MIGRATION = "051_ticket_email_jobs.sql";
 const SUBSCRIPTION_PENDING_PAYMENT_TTL_MS = 15 * 60 * 1000;
 const SUBSCRIPTION_MAINTENANCE_INTERVAL_MS = 60 * 1000;
 const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10;
@@ -3937,11 +3940,14 @@ async function processQueuedTicketEmailDelivery(orderId) {
       orderId,
       reason: !order ? "order_not_found" : order?.status !== "paid" ? "order_not_paid" : !tickets.length ? "tickets_not_found" : "customer_email_missing"
     });
-    return false;
+    return { status: "cancelled", reason: !order ? "order_not_found" : order?.status !== "paid" ? "order_not_paid" : !tickets.length ? "tickets_not_found" : "customer_email_missing" };
   }
   if (order.emailDeliveredAt || order.ticketDelivery?.status === "delivered") {
     logEvent("info", "ticket_email.background_skipped", { orderId, reason: "already_delivered" });
-    return true;
+    return { status: "delivered", reason: "already_delivered" };
+  }
+  if (["box_office", "concession_counter"].includes(String(order.origin || "")) && !shouldDeliverBoxOfficeTicketsByEmail(order)) {
+    return { status: "cancelled", reason: "physical_delivery" };
   }
 
   const deliveryOrder = structuredCloneSafe(order);
@@ -3968,12 +3974,16 @@ async function processQueuedTicketEmailDelivery(orderId) {
     delivered,
     durationMs: Date.now() - startedAt
   });
-  return delivered;
+  return { status: delivered ? "delivered" : "retry", reason: delivered ? "" : "delivery_failed" };
 }
 
 function queueTicketEmailDelivery(orderId) {
   const normalizedOrderId = String(orderId || "").trim();
   if (normalizedOrderId && deferUntilPostgresCommit(() => queueTicketEmailDelivery(normalizedOrderId))) return true;
+  if (postgresEnabled()) {
+    ticketEmailWorker?.wake();
+    return Boolean(normalizedOrderId);
+  }
   if (!normalizedOrderId || pendingTicketEmailDeliveries.has(normalizedOrderId)) return false;
   pendingTicketEmailDeliveries.add(normalizedOrderId);
   logEvent("info", "ticket_email.background_queued", { orderId: normalizedOrderId });
@@ -4661,6 +4671,10 @@ function finalizePaidOrder(db, order, payment, source = "online") {
   }
   confirmConcessionStock(db, order);
   db.tickets.unshift(...tickets);
+  if (order.customerEmail && tickets.length && source !== "promotional" &&
+      (!["box_office", "courtesy"].includes(source) || shouldDeliverBoxOfficeTicketsByEmail(order))) {
+    order.ticketEmailRequested = true;
+  }
   delete order.pendingPrintTickets;
   if (wasPendingPrint) {
     order.printFulfillment = {
@@ -17047,6 +17061,12 @@ loadEnvFiles().then(() => {
     if (postgresEnabled()) {
       emailCampaignWorker = buildEmailCampaignWorker();
       emailCampaignWorker?.start();
+      ticketEmailWorker = createTicketEmailWorker({
+        repository: createTicketEmailJobRepository(),
+        deliver: processQueuedTicketEmailDelivery,
+        logger: logEvent
+      });
+      ticketEmailWorker.start();
       logEvent("info", "email_campaign.worker_started", { workerId: emailCampaignWorker?.workerId || "", config: emailCampaignWorker?.config || {} });
       void runSystemLogMaintenance();
     }
@@ -17092,6 +17112,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.once(signal, () => {
     runtimeLifecycle.stop(signal);
     emailCampaignWorker?.stop();
+    ticketEmailWorker?.stop();
     crmWebhookWorker?.stop();
     server.close(() => { void closePostgres().finally(() => process.exit(0)); });
     setTimeout(() => process.exit(1), 10000).unref?.();

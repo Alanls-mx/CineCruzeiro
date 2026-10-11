@@ -8,8 +8,38 @@ const store = require("../backend/db/postgresStore");
 const users = require("../backend/repositories/userRepository");
 const { runMutation } = require("../backend/repositories/repositorySupport");
 const { CampaignOrchestrator } = require("../backend/services/social-studio/automation/orchestrator");
+const { createTicketEmailJobRepository } = require("../backend/repositories/ticketEmailJobRepository");
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 test.beforeEach(async () => { if (enabled) await assertDisposableTestDatabase(); });
+
+test("pedido pago registra entrega no commit; rollback nao cria trabalho", { skip: !enabled }, async () => {
+  const orderId = `ticket-job-${Date.now()}`;
+  const rolledBackId = `${orderId}-rollback`;
+  try {
+    await assert.rejects(store.withPostgresMutationLock(async () => {
+      await store.queryPostgres(`INSERT INTO orders (id,customer_name,customer_email,status,metadata)
+        VALUES ($1,'Cliente','cliente@example.test','paid','{"ticketEmailRequested":true}'::jsonb)`, [rolledBackId]);
+      throw new Error("rollback esperado");
+    }), /rollback esperado/);
+    assert.equal((await store.queryPostgres("SELECT count(*)::int AS n FROM ticket_email_jobs WHERE order_id=$1", [rolledBackId])).rows[0].n, 0);
+
+    await store.withPostgresMutationLock(async () => {
+      await store.queryPostgres(`INSERT INTO orders (id,customer_name,customer_email,status,metadata)
+        VALUES ($1,'Cliente','cliente@example.test','pending_payment','{"ticketEmailRequested":true}'::jsonb)`, [orderId]);
+      assert.equal((await store.queryPostgres("SELECT count(*)::int AS n FROM ticket_email_jobs WHERE order_id=$1", [orderId])).rows[0].n, 0);
+      await store.queryPostgres("UPDATE orders SET status='paid' WHERE id=$1", [orderId]);
+    });
+    assert.equal((await store.queryPostgres("SELECT count(*)::int AS n FROM ticket_email_jobs WHERE order_id=$1", [orderId])).rows[0].n, 1);
+    const repository = createTicketEmailJobRepository();
+    const claimed = await repository.claimNext();
+    assert.equal(claimed?.orderId, orderId);
+    assert.equal((await repository.claimNext())?.orderId, undefined);
+    assert.equal(await repository.complete(claimed, { status: 'delivered' }), true);
+    assert.equal(await repository.complete(claimed, { status: 'delivered' }), false);
+  } finally {
+    await store.queryPostgres("DELETE FROM orders WHERE id IN ($1,$2)", [orderId, rolledBackId]);
+  }
+});
 
 test("tarefas pos-commit veem dados persistidos e sao descartadas no rollback", { skip: !enabled }, async () => {
   const key = `testAfterCommit${Date.now()}`;
