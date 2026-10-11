@@ -28,7 +28,7 @@ test('invalidation prevents an older pending query from repopulating cache', asy
   resolvers[1]({version: 2});
   assert.deepEqual(await fresh, {version: 2});
   resolvers[0]({version: 1});
-  await old;
+  assert.deepEqual(await old, {version: 2});
   assert.deepEqual(await cache.read('operational'), {version: 2});
 });
 

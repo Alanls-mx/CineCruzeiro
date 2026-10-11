@@ -6,23 +6,26 @@ function createSnapshotCache({ load, clone, ttlMs = 30000, now = Date.now }) {
   const durations = [];
   return {
     async read(key) {
-      const cached = entries.get(key);
-      if (cached && cached.expiresAt > now()) { hits += 1; return clone(cached.value); }
-      misses += 1;
-      if (!inFlight.has(key)) {
+      for (;;) {
         const version = generation;
-        const started = performance.now();
-        const pending = Promise.resolve().then(() => load(key)).then((value) => {
-          if (version === generation) entries.set(key, { value, expiresAt: now() + ttlMs });
-          return value;
-        }).finally(() => {
-          durations.push(Math.round(performance.now() - started));
-          if (durations.length > 100) durations.shift();
-          if (inFlight.get(key) === pending) inFlight.delete(key);
-        });
-        inFlight.set(key, pending);
+        const cached = entries.get(key);
+        if (cached && cached.expiresAt > now()) { hits += 1; return clone(cached.value); }
+        misses += 1;
+        if (!inFlight.has(key)) {
+          const started = performance.now();
+          const pending = Promise.resolve().then(() => load(key)).then((value) => {
+            if (version === generation) entries.set(key, { value, expiresAt: now() + ttlMs });
+            return value;
+          }).finally(() => {
+            durations.push(Math.round(performance.now() - started));
+            if (durations.length > 100) durations.shift();
+            if (inFlight.get(key) === pending) inFlight.delete(key);
+          });
+          inFlight.set(key, pending);
+        }
+        const value = await inFlight.get(key);
+        if (version === generation) return clone(value);
       }
-      return clone(await inFlight.get(key));
     },
     invalidate() { generation += 1; invalidations += 1; entries.clear(); inFlight.clear(); },
     metrics() {
