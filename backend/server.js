@@ -90,6 +90,7 @@ const { isCommercialCatalogRequest, commercialCatalogToken, catalogTokensMatch, 
 const clubDomainService = require("./services/clubDomainService");
 const { summarizeConcessionFinance } = require("./services/concessionFinanceService");
 const { createAdminDashboardService } = require("./services/adminDashboardService");
+const { createAdminSubscriptionPresenter } = require("./services/adminSubscriptionPresenter");
 const { createMovieCatalogHandler } = require("./services/movieCatalogHandler");
 const { createVenueConfigurationHandler } = require("./services/venueConfigurationHandler");
 const { createCommercialCatalogHandler } = require("./services/commercialCatalogHandler");
@@ -9689,6 +9690,8 @@ function ticketDistributorReportPdf(report, cinemaName = "Cine Cruzeiro") {
 }
 
 const adminDashboard = createAdminDashboardService({ todayIsoDate, sessionStartsAt, normalizedSessionStatus, sessionWithCurrentRoom, finishedSessionEndsAt, orderPayment, paymentStatusLabel, orderStatusLabel, originLabel, methodLabel, providerLabel, inDateRange, compareMetric, shortOrderReference, movieForOrder, recognizedTicketCount, sessionCapacity, sessionAvailabilityStatus, orderFinancialBreakdown });
+const adminSubscriptionPresenter = createAdminSubscriptionPresenter({ refreshSubscriptionCredits, clubSavingsSummary,
+  subscriptionStatusLabel, currentSubscriptionCredit, sanitizeUser, subscriptionSummary, enrichTicket });
 
 function adminIntegrationsStatus(req, db) {
   const integrations = integrationConfigService.list(db);
@@ -13988,23 +13991,7 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/admin/subscriptions" && method === "GET") {
-    sendJson(res, 200, {
-      plans: db.subscriptionPlans || [],
-      subscriptions: (db.subscriptions || []).map((subscription) => ({
-        ...refreshSubscriptionCredits(db, subscription),
-        savings: clubSavingsSummary(db, subscription),
-        statusLabel: subscriptionStatusLabel(subscription.status),
-        credit: currentSubscriptionCredit(db, subscription),
-        plan: (db.subscriptionPlans || []).find((plan) => plan.id === subscription.planId) || null,
-        user: sanitizeUser((db.users || []).find((user) => user.id === subscription.userId) || {})
-      })),
-      credits: db.subscriptionCredits || [],
-      usage: db.subscriptionUsage || [],
-      cycles: db.subscriptionCycles || [],
-      payments: db.subscriptionPayments || [],
-      creditUnits: db.subscriptionCreditUnits || [],
-      redemptions: db.subscriptionCreditRedemptions || []
-    });
+    sendJson(res, 200, adminSubscriptionPresenter.list(db));
     return;
   }
 
@@ -14038,25 +14025,12 @@ async function handleApi(req, res, pathname) {
   const adminSubscriptionMatch = pathname.match(/^\/api\/admin\/subscriptions\/([^/]+)$/);
   if (adminSubscriptionMatch && method === "GET") {
     const id = decodeURIComponent(adminSubscriptionMatch[1]);
-    const subscription = (db.subscriptions || []).find((item) => item.id === id);
-    if (!subscription) {
+    const detail = adminSubscriptionPresenter.detail(db, id);
+    if (!detail) {
       sendJson(res, 404, { error: { code: "SUBSCRIPTION_NOT_FOUND", message: "Assinatura não encontrada." } });
       return;
     }
-    const orderIds = new Set((db.subscriptionCreditRedemptions || []).filter((item) => item.subscriptionId === id).map((item) => item.orderId));
-    sendJson(res, 200, {
-      subscription: subscriptionSummary(db, subscription.userId).find((item) => item.id === id),
-      cycles: (db.subscriptionCycles || []).filter((item) => item.subscriptionId === id).map((cycle) => ({
-        ...cycle,
-        creditsIssued: (db.subscriptionCreditUnits || []).filter((credit) => credit.cycleId === cycle.id).length
-      })),
-      payments: (db.subscriptionPayments || []).filter((item) => item.subscriptionId === id),
-      credits: (db.subscriptionCreditUnits || []).filter((item) => item.subscriptionId === id),
-      redemptions: (db.subscriptionCreditRedemptions || []).filter((item) => item.subscriptionId === id),
-      tickets: (db.tickets || []).filter((item) => orderIds.has(item.orderId)).map((item) => enrichTicket(db, item)),
-      orders: (db.orders || []).filter((item) => orderIds.has(item.id)),
-      history: subscription.history || []
-    });
+    sendJson(res, 200, detail);
     return;
   }
   if (adminSubscriptionMatch && method === "PATCH") {
