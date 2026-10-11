@@ -10876,7 +10876,10 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const db = await readDb({ trackChanges: method !== "GET" && method !== "HEAD" });
+  const db = await readDb({
+    trackChanges: method !== "GET" && method !== "HEAD",
+    fresh: method === "GET" && pathname === "/api/me/subscriptions"
+  });
 
   if (pathname.startsWith("/api/email-automation/") && !emailAutomationAuthorized(req)) {
     const configured = Boolean(process.env.EMAIL_AUTOMATION_TOKEN || process.env.N8N_EMAIL_SHARED_SECRET);

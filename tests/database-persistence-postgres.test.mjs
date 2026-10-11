@@ -11,6 +11,21 @@ const { CampaignOrchestrator } = require("../backend/services/social-studio/auto
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 test.beforeEach(async () => { if (enabled) await assertDisposableTestDatabase(); });
 
+test("leitura financeira fresca ignora o snapshot armazenado", { skip: !enabled }, async () => {
+  const id = `testFreshRead${Date.now()}`;
+  try {
+    await store.queryPostgres("INSERT INTO rooms(id,name,capacity) VALUES ($1,'Antes',10)", [id]);
+    store.invalidatePostgresSnapshot();
+    await store.readDbFromPostgres({ includeAuditLogs: false, trackChanges: false });
+    await store.queryPostgres("UPDATE rooms SET name='Depois' WHERE id=$1", [id]);
+    const fresh = await store.readDbFromPostgres({ includeAuditLogs: false, trackChanges: false, fresh: true });
+    assert.equal(fresh.rooms.find((room) => room.id === id)?.name, "Depois");
+  } finally {
+    await store.queryPostgres("DELETE FROM rooms WHERE id=$1", [id]);
+    store.invalidatePostgresSnapshot();
+  }
+});
+
 test("tarefas pos-commit veem dados persistidos e sao descartadas no rollback", { skip: !enabled }, async () => {
   const key = `testAfterCommit${Date.now()}`;
   let resolveObserved;
