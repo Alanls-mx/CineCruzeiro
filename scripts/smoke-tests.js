@@ -2945,14 +2945,19 @@ async function run() {
     if (postgresMode) {
       const pg = require("pg");
       const originalQuery = pg.Client.prototype.query;
-      function failCommitForRecord(recordId, errorCode) {
+      function failCommitForRecord(recordId, errorCode, occurrence = 1) {
         const touchedClients = new WeakSet();
         let tripped = false;
+        let matchingCommits = 0;
         pg.Client.prototype.query = function (statement, ...args) {
           if (args.some((arg) => String(JSON.stringify(arg) || "").includes(recordId))) touchedClients.add(this);
           if (!tripped && statement === "COMMIT" && touchedClients.has(this)) {
-            tripped = true;
-            return Promise.reject(new Error(errorCode));
+            touchedClients.delete(this);
+            matchingCommits += 1;
+            if (matchingCommits === occurrence) {
+              tripped = true;
+              return Promise.reject(new Error(errorCode));
+            }
           }
           return originalQuery.call(this, statement, ...args);
         };
@@ -2980,6 +2985,55 @@ async function run() {
       assert.equal(recoveredSync.payload.completed, true);
       assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointSyncFailure.payload.order.id).length, 1);
       assert.equal(mockPointPrints.size, printCountAfterFailedSync, "A retomada deve reutilizar a mesma impressao Point");
+
+      const refundablePoint = await createPointSale("smoke-point-ticket-refund");
+      const refundableProviderOrder = mockPointOrders.get(refundablePoint.payload.payment.providerPaymentId);
+      refundableProviderOrder.status = "approved";
+      refundableProviderOrder.providerStatus = "processed";
+      const refundablePath = `/api/box-office/point-payments/${encodeURIComponent(refundablePoint.payload.payment.id)}`;
+      assert.equal((await request(refundablePath, { headers: jsonHeaders(adminCookie) })).payload.completed, true);
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE payments SET provider_payment_id=$1, metadata=metadata || $2::jsonb WHERE id=$3",
+        ["ORDSMOKEREFUND1", JSON.stringify({ providerEnvironment: "sandbox" }), refundablePoint.payload.payment.id]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      const ticketRefundPath = `/api/orders/${encodeURIComponent(refundablePoint.payload.order.id)}/refund-tickets`;
+      const requestTicketRefund = () => request(ticketRefundPath, {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify({ reason: "Smoke refund" })
+      });
+      const refundPreparationFailed = failCommitForRecord(refundablePoint.payload.order.id, "smoke_refund_prepare_commit_failure");
+      let failedPreparation;
+      try {
+        failedPreparation = await requestTicketRefund();
+      } finally {
+        pg.Client.prototype.query = originalQuery;
+      }
+      assert.equal(refundPreparationFailed(), true);
+      assert.equal(failedPreparation.response.status >= 500, true, "Falha ao preparar estorno nao pode confirmar a venda estornada");
+      assert.equal((await readPersistedDb()).orders.find((item) => item.id === refundablePoint.payload.order.id).ticketRefund?.status || "", "");
+      assert.equal((await readPersistedDb()).tickets.find((item) => item.orderId === refundablePoint.payload.order.id).status, "active");
+
+      const refundConfirmationFailed = failCommitForRecord(refundablePoint.payload.order.id, "smoke_refund_confirm_commit_failure", 2);
+      let failedConfirmation;
+      try {
+        failedConfirmation = await requestTicketRefund();
+      } finally {
+        pg.Client.prototype.query = originalQuery;
+      }
+      assert.equal(refundConfirmationFailed(), true);
+      assert.equal(failedConfirmation.response.status >= 500, true, "Falha de commit final nao pode responder reembolso concluido");
+      const pendingRefundSnapshot = await readPersistedDb();
+      const pendingRefund = pendingRefundSnapshot.orders.find((item) => item.id === refundablePoint.payload.order.id).ticketRefund;
+      assert.equal(pendingRefund.status, "pending");
+      assert.equal(pendingRefundSnapshot.tickets.find((item) => item.orderId === refundablePoint.payload.order.id).status, "active");
+      const recoveredRefund = await requestTicketRefund();
+      assert.equal(recoveredRefund.response.status, 200);
+      assert.equal(recoveredRefund.payload.refund.id, pendingRefund.id, "A retomada deve usar a chave duravel do estorno");
+      const completedRefundSnapshot = await readPersistedDb();
+      assert.equal(completedRefundSnapshot.tickets.find((item) => item.orderId === refundablePoint.payload.order.id).status, "refunded");
+      const refundedAmount = completedRefundSnapshot.payments.find((item) => item.id === refundablePoint.payload.payment.id).refundedAmount;
+      assert.equal((await requestTicketRefund()).response.status, 200);
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === refundablePoint.payload.payment.id).refundedAmount, refundedAmount);
       const counterFailureBody = {
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, fullTicketsCount: 1, halfTicketsCount: 0,
         saleMode: "registered", customerUserId: registered.user.id, paymentMethod: "external_pix",

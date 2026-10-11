@@ -10682,10 +10682,15 @@ async function handleApi(req, res, pathname) {
   const selfManagedClubAssignment = method === "POST" && pathname === "/api/admin/subscriptions/assign";
   const selfManagedBoxOfficeSale = method === "POST" && ["/api/box-office/sales", "/api/tickets/manual", "/api/admin/concession-counter-sales"].includes(pathname);
   const selfManagedPointCancellation = method === "POST" && /^\/api\/box-office\/point-payments\/[^/]+\/cancel$/.test(pathname);
+  const selfManagedRefundFlow = method === "POST" && (
+    /^\/api\/orders\/[^/]+\/refund-(tickets|concessions)$/.test(pathname)
+    || /^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)
+    || /^\/api\/box-office\/point-payments\/[^/]+\/resolve-print-failure$/.test(pathname)
+  );
   req.commitResponseAfterMutation = selfManagedBoxOfficeSale || pathname.startsWith("/api/box-office/point-payments/");
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
-    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !context?.adminMutationLocked) {
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !selfManagedRefundFlow && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
