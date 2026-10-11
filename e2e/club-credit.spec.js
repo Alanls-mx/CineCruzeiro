@@ -7,10 +7,11 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
   await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
   await page.goto("/conta");
   await page.getByRole("button", { name: "Criar conta", exact: true }).click();
-  await page.getByLabel("Nome").fill("Cliente Clube E2E");
+  await page.getByLabel("Nome", { exact: true }).fill("Cliente Clube");
+  await page.getByLabel("Sobrenome", { exact: true }).fill("E2E");
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill("Clube-e2e-2026!");
-  await page.getByLabel("WhatsApp").fill("11988887777");
+  await page.getByLabel("Telefone").fill("11988887777");
   await page.locator("form").getByRole("button", { name: "Criar conta", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Olá, Cliente Clube E2E" })).toBeVisible({ timeout: 10000 });
 
@@ -42,8 +43,8 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
   await expect(summary.getByText("Créditos do Clube")).toBeVisible();
   await expect(summary.getByText("1 crédito", { exact: true })).toBeVisible();
   await expect(summary.getByText("1× Ingresso Inteiro")).toBeVisible();
-  await expect(summary.getByText("R$ 13,50 neste tipo de ingresso")).toBeVisible();
-  await expect(summary.getByText("-R$ 13,50")).toBeVisible();
+  await expect(summary).toContainText("R$ 15,00 após descontos");
+  await expect(summary.getByText("-R$ 15,00")).toBeVisible();
   await expect(summary.getByText("R$ 0,00", { exact: true })).toBeVisible();
   await expect(page.getByText("Créditos restantes após confirmação: 1.")).toBeVisible();
   await page.getByRole("button", { name: "Confirmar com créditos do Clube" }).click();
@@ -68,13 +69,15 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
 
 test("mantém benefícios e total do Clube no resumo após gerar o Pix", async ({ page, request }) => {
   const email = "cliente-clube-pix-e2e@cine.local";
+  await page.addInitScript(() => { window.MP_DEVICE_SESSION_ID = "e2e-device-club-pix"; });
   await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
   await page.goto("/conta");
   await page.getByRole("button", { name: "Criar conta", exact: true }).click();
-  await page.getByLabel("Nome").fill("Cliente Clube Pix E2E");
+  await page.getByLabel("Nome", { exact: true }).fill("Cliente Clube Pix");
+  await page.getByLabel("Sobrenome", { exact: true }).fill("E2E");
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill("Clube-pix-e2e-2026!");
-  await page.getByLabel("WhatsApp").fill("11977776666");
+  await page.getByLabel("Telefone").fill("11977776666");
   await page.locator("form").getByRole("button", { name: "Criar conta", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Olá, Cliente Clube Pix E2E" })).toBeVisible({ timeout: 10000 });
 
@@ -97,13 +100,13 @@ test("mantém benefícios e total do Clube no resumo após gerar o Pix", async (
   await page.getByLabel("Usar 1 crédito(s) do Clube").check();
   await expect(summary.getByText("Créditos do Clube")).toBeVisible();
   await expect(summary.getByText("1× Ingresso Inteiro")).toBeVisible();
-  await expect(summary.getByText("R$ 13,50 neste tipo de ingresso")).toBeVisible();
+  await expect(summary).toContainText("R$ 15,00 após descontos");
   await expect(summary.getByText("R$ 7,60", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Pix", exact: true }).click();
   await page.getByRole("button", { name: "Gerar Pix", exact: true }).click();
 
   await expect(page.getByText("Aguardando confirmação")).toBeVisible({ timeout: 10000 });
-  await expect(summary.getByText("Clube · ingressos (10%)")).toBeVisible();
+  await expect(summary.getByText("Clube · bomboniere (5%)")).toBeVisible();
   await expect(summary.getByText("Créditos do Clube")).toBeVisible();
   await expect(summary.getByText("1× Ingresso Inteiro")).toBeVisible();
   await expect(summary.getByText("Subtotal R$ 23,00")).toBeVisible();

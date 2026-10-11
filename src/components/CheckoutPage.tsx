@@ -232,7 +232,6 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
       setSeatMapStatus("ready");
     } catch {
       if (requestId !== seatMapRequestRef.current) return;
-      setSeatMap(null);
       setSeatMapStatus("error");
     }
   }, [activeSessionId, draft, hydratedSessionId]);

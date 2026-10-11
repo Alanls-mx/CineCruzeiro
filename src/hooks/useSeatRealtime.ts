@@ -90,7 +90,6 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
       socketRef.current = socket;
 
       socket.addEventListener("open", () => {
-        attempt = 0;
         stopFallbackPoll();
         setStatus("connected");
         socket.send(JSON.stringify({ type: "join_session", requestId: crypto.randomUUID(), sessionId, ownerToken, seatIds: selectedRef.current }));
@@ -116,12 +115,15 @@ export function useSeatRealtime({ sessionId, ownerToken, enabled, selectedSeatId
           }
         }
         if (type === "session_state") {
+          const reconnected = attempt > 0;
+          attempt = 0;
           setJoined(true);
           callbacksRef.current.onSessionState({
             occupiedSeatIds: Array.isArray(message.occupiedSeatIds) ? message.occupiedSeatIds.map(String) : [],
             reservedSeatIds: Array.isArray(message.reservedSeatIds) ? message.reservedSeatIds.map(String) : [],
             heldSeats: Array.isArray(message.heldSeats) ? message.heldSeats as Array<{ seatId: string; heldByMe: boolean; expiresAt?: string }> : []
           });
+          if (reconnected) callbacksRef.current.onSessionRefresh?.();
         }
         if (type === "seat_status_changed" && message.seatId) {
           callbacksRef.current.onSeatChange({

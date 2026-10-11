@@ -5,14 +5,18 @@ const BACKEND = "http://127.0.0.1:4000";
 const ADMIN_EMAIL = "admin-e2e@cine.local";
 const ADMIN_PASSWORD = "Admin-e2e-2026!";
 const WEBHOOK_SECRET = "e2e-webhook-secret";
+const authenticatedAdminContexts = new WeakSet();
 
 test.describe.configure({ mode: "serial" });
 
 async function adminContent(request) {
-  const login = await request.post(`${BACKEND}/api/admin/login`, {
-    data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD }
-  });
-  expect(login.ok()).toBeTruthy();
+  if (!authenticatedAdminContexts.has(request)) {
+    const login = await request.post(`${BACKEND}/api/admin/login`, {
+      data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD }
+    });
+    expect(login.ok(), `Falha no login administrativo: ${login.status()}`).toBeTruthy();
+    authenticatedAdminContexts.add(request);
+  }
   const response = await request.get(`${BACKEND}/api/admin/content`);
   expect(response.ok()).toBeTruthy();
   return response.json();
@@ -88,6 +92,7 @@ async function authenticateCustomer(page, email) {
 
 async function startPixCheckout(page, email, { concession = false } = {}) {
   await authenticateCustomer(page, email);
+  await page.addInitScript(() => { window.MP_DEVICE_SESSION_ID = "e2e-device-checkout"; });
   await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
   await page.goto("/checkout/sessao-e2e");
   await expect(page.getByRole("heading", { name: "Filme E2E" })).toBeVisible();
@@ -141,6 +146,7 @@ test("mantém as poltronas reservadas ao avançar até o pagamento", async ({ pa
 test("cliente aplica cupom e o backend mantém o desconto no pedido", async ({ page, request }) => {
   const email = "checkout-cupom@e2e.local";
   await authenticateCustomer(page, email);
+  await page.addInitScript(() => { window.MP_DEVICE_SESSION_ID = "e2e-device-coupon"; });
   await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
   await page.goto("/checkout/sessao-e2e");
   await page.getByRole("link", { name: "Continuar para Extras" }).click();

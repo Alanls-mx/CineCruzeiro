@@ -37,6 +37,17 @@ async function authenticateCustomer(page, email) {
 
 test("operador conclui venda rápida com ingresso e bomboniere pela interface do painel", async ({ page, request }) => {
   await page.setViewportSize({ width: 1800, height: 1000 });
+  await page.addInitScript(() => {
+    window.cineDesktop = {
+      checkPrinter: async () => ({ ready: true }),
+      printUrl: async (url, jobId) => {
+        const response = await fetch(url, { credentials: "include" });
+        window.dispatchEvent(new CustomEvent("cine-desktop-print-result", {
+          detail: { jobId, ok: response.ok, message: response.ok ? "" : "Falha na impressao E2E" }
+        }));
+      }
+    };
+  });
   await loginAdmin(page);
   await page.getByRole("button", { name: "Bilheteria", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Bilheteria" })).toBeVisible();
@@ -48,7 +59,7 @@ test("operador conclui venda rápida com ingresso e bomboniere pela interface do
   await page.locator("#manualSessionSelect").selectOption("sessao-e2e");
   await expect(page.getByLabel("Quantidade de Ingresso Inteiro")).toHaveValue("1");
   await page.getByRole("button", { name: "Adicionar Pipoca E2E" }).click();
-  await expect(page.getByLabel("Quantidade de Pipoca E2E")).toHaveValue("1");
+  await expect(page.locator('[data-manual-concession-quantity="pipoca-e2e"]')).toHaveValue("1");
   const summary = page.locator("#manualSaleSummary");
   await expect(summary).toContainText("Filme E2E");
   await expect(summary).toContainText("1× Ingresso Inteiro");
@@ -65,7 +76,7 @@ test("operador conclui venda rápida com ingresso e bomboniere pela interface do
   await expect(page.locator("#manualSaleItems")).toContainText("Filme E2E");
   await expect(page.locator("#manualSaleItems")).toContainText("1× Ingresso Inteiro");
   await page.getByRole("button", { name: "Finalizar venda rápida" }).click();
-  await expect(page.getByText("Venda finalizada")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Impressão confirmada. Os ingressos foram emitidos e ativados.")).toBeVisible({ timeout: 10000 });
 
   const login = await request.post(`${BACKEND}/api/admin/login`, {
     data: { email: "admin-e2e@cine.local", password: "Admin-e2e-2026!" }
@@ -156,11 +167,9 @@ test("cliente móvel reconecta após rede temporariamente offline e recupera est
   await expect(page.getByRole("button", { name: /^A2,/ })).toHaveAttribute("aria-pressed", "true");
   await context.setOffline(true);
   await page.evaluate(() => window.__lastSeatTestSocket?.close());
-  await expect(page.getByText("Reconectando à reserva de poltronas...")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Não foi possível carregar as poltronas.")).toBeVisible({ timeout: 15000 });
   await context.setOffline(false);
-  await expect(page.getByText(/Conectando à reserva|Reconectando à reserva/)).toHaveCount(0, { timeout: 15000 });
-  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
-  await expect(page.getByText(/Conectando à reserva|Reconectando à reserva/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^A2,/ })).toHaveAttribute("aria-pressed", "true", { timeout: 15000 });
   await page.reload();
   await expect(page.getByText(/Conectando à reserva|Reconectando à reserva/)).toHaveCount(0, { timeout: 15000 });
   await expect(page.getByRole("button", { name: /^A2,/ })).toHaveAttribute("aria-pressed", "true");

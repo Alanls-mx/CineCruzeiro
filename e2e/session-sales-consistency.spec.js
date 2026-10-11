@@ -10,7 +10,10 @@ test("sessão com vendas exige confirmação, sincroniza horário e cancelamento
 
   const sale = await request.post(`${BACKEND}/api/box-office/sales`, {
     data: {
-      saleMode: "quick",
+      saleMode: "guest",
+      ticketDeliveryMethod: "online",
+      customerName: "Cliente E2E",
+      customerEmail: "sessao-vendas@e2e.local",
       paymentMethod: "cash",
       saleItems: [{
         movieId: "filme-e2e",
@@ -49,7 +52,8 @@ test("sessão com vendas exige confirmação, sincroniza horário e cancelamento
   let content = await (await request.get(`${BACKEND}/api/admin/content`)).json();
   expect(content.orders.find((item) => item.id === order.id).sessionTime).toBe("20:30");
   expect(content.tickets.find((item) => item.id === ticket.id).sessionTime).toBe("20:30");
-  expect(content.auditLogs.some((item) => item.action === "session.updated" && item.entityId === "sessao-e2e")).toBeTruthy();
+  const updatedLogs = await (await request.get(`${BACKEND}/api/admin/logs?view=technical&search=session.updated`)).json();
+  expect(updatedLogs.logs.some((item) => item.event === "session.updated" && item.metadata?.entityId === "sessao-e2e")).toBeTruthy();
 
   const deletion = await request.delete(`${BACKEND}/api/movies/filme-e2e/sessions/sessao-e2e`);
   expect(deletion.status()).toBe(409);
@@ -72,7 +76,8 @@ test("sessão com vendas exige confirmação, sincroniza horário e cancelamento
   expect(cancelledTicket.status).toBe("cancelled");
   expect(affectedOrder.refundStatus).toBe("required");
   expect(affectedPayment.refundStatus).toBe("required");
-  expect(content.auditLogs.some((item) => item.action === "session.cancelled" && item.entityId === "sessao-e2e")).toBeTruthy();
+  const cancelledLogs = await (await request.get(`${BACKEND}/api/admin/logs?view=technical&search=session.cancelled`)).json();
+  expect(cancelledLogs.logs.some((item) => item.event === "session.cancelled" && item.metadata?.entityId === "sessao-e2e")).toBeTruthy();
 
   const validation = await request.post(`${BACKEND}/api/tickets/validate`, { data: { code: ticket.code } });
   expect(validation.status()).toBe(409);
