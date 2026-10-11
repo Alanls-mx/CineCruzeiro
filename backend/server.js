@@ -10717,9 +10717,10 @@ async function handleApi(req, res, pathname) {
 
   const targetedRepositoryMutation = postgresEnabled() && repositoryMutationRoute(pathname, method);
   const selfManagedOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+$/.test(pathname);
+  const selfManagedTicketValidation = method === "POST" && pathname === "/api/tickets/validate";
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
-    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !context?.adminMutationLocked) {
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedTicketValidation && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
@@ -15937,7 +15938,7 @@ async function handleApi(req, res, pathname) {
     const inspectConcessions = validationMode === "concessions" && body.action === "inspect";
     const inspectEntry = validationMode === "entry" && body.action === "inspect";
     try {
-      await withCriticalMutation(async () => {
+      const outcome = await withCriticalMutation(async () => {
         const lockedDb = await readDb();
         const adminUser = getAdminUser(req, lockedDb);
         const validation = validationMode === "concessions"
@@ -15949,37 +15950,37 @@ async function handleApi(req, res, pathname) {
             : validateTicket(lockedDb, body.code || body.qrPayload, adminUser, body.sessionId) };
         const ticket = validation.ticket;
         if (inspectEntry) {
-          logEvent("info", "ticket.inspected", {
-            ticketId: ticket.id,
-            orderId: ticket.orderId,
-            inspectedBy: adminUser?.id || ""
-          });
-          sendJson(res, 200, {
-            ok: true,
-            result: "ticket_pending_confirmation",
-            confirmationRequired: true,
-            ticket: enrichTicket(lockedDb, ticket)
-          });
-          return;
+          return {
+            payload: {
+              ok: true,
+              result: "ticket_pending_confirmation",
+              confirmationRequired: true,
+              ticket: enrichTicket(lockedDb, ticket)
+            },
+            event: "ticket.inspected",
+            fields: { ticketId: ticket.id, orderId: ticket.orderId, inspectedBy: adminUser?.id || "" }
+          };
         }
         if (inspectConcessions) {
-          logEvent("info", "concessions.inspected", {
-            ticketId: ticket.id,
-            orderIds: validation.orders.map((order) => order.id),
-            inspectedBy: adminUser?.id || "",
-            items: validation.concessions.length
-          });
-          sendJson(res, 200, {
-            ok: true,
-            result: "concessions_pending_confirmation",
-            confirmationRequired: true,
-            ticket: enrichTicket(lockedDb, ticket),
-            concessions: validation.concessions.map((item) => ({
-              ...item,
-              quantity: Math.max(0, Number(item.quantity || 0) - Number(item.fulfilledQuantity || 0))
-            }))
-          });
-          return;
+          return {
+            payload: {
+              ok: true,
+              result: "concessions_pending_confirmation",
+              confirmationRequired: true,
+              ticket: enrichTicket(lockedDb, ticket),
+              concessions: validation.concessions.map((item) => ({
+                ...item,
+                quantity: Math.max(0, Number(item.quantity || 0) - Number(item.fulfilledQuantity || 0))
+              }))
+            },
+            event: "concessions.inspected",
+            fields: {
+              ticketId: ticket.id,
+              orderIds: validation.orders.map((order) => order.id),
+              inspectedBy: adminUser?.id || "",
+              items: validation.concessions.length
+            }
+          };
         }
         lockedDb.auditLogs ||= [];
         lockedDb.auditLogs.push({
@@ -16004,23 +16005,30 @@ async function handleApi(req, res, pathname) {
         });
         await writeDb(lockedDb);
         if (validationMode === "concessions") {
-          logEvent("info", "concessions.fulfilled", {
-            ticketId: ticket.id,
-            orderId: ticket.orderId,
-            fulfilledBy: adminUser?.id || "",
-            items: validation.concessions.length
-          });
-          sendJson(res, 200, {
-            ok: true,
-            result: "concessions_fulfilled",
-            ticket: enrichTicket(lockedDb, ticket),
-            concessions: validation.concessions
-          });
-        } else {
-          logEvent("info", "ticket.used", { ticketId: ticket.id, orderId: ticket.orderId, usedBy: ticket.usedBy });
-          sendJson(res, 200, { ok: true, result: "valid", ticket: enrichTicket(lockedDb, ticket) });
+          return {
+            payload: {
+              ok: true,
+              result: "concessions_fulfilled",
+              ticket: enrichTicket(lockedDb, ticket),
+              concessions: validation.concessions
+            },
+            event: "concessions.fulfilled",
+            fields: {
+              ticketId: ticket.id,
+              orderId: ticket.orderId,
+              fulfilledBy: adminUser?.id || "",
+              items: validation.concessions.length
+            }
+          };
         }
+        return {
+          payload: { ok: true, result: "valid", ticket: enrichTicket(lockedDb, ticket) },
+          event: "ticket.used",
+          fields: { ticketId: ticket.id, orderId: ticket.orderId, usedBy: ticket.usedBy }
+        };
       });
+      logEvent("info", outcome.event, outcome.fields);
+      sendJson(res, 200, outcome.payload);
     } catch (error) {
       try {
         await withCriticalMutation(async () => {

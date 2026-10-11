@@ -2193,6 +2193,13 @@ async function run() {
     });
     assert.equal(correctSessionValidation.response.status, 200);
     assert.equal(correctSessionValidation.payload.ticket.status, "used");
+    const afterTicketValidation = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
+    assert.equal(afterTicketValidation.response.status, 200);
+    assert.equal(
+      afterTicketValidation.payload.tickets.find((ticket) => ticket.id === correctSessionValidation.payload.ticket.id)?.status,
+      "used",
+      "A validacao deve estar persistida quando HTTP 200 for recebido."
+    );
 
     const bundledTicketSale = await request("/api/box-office/sales", {
       method: "POST",
