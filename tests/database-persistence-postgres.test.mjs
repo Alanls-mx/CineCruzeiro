@@ -52,11 +52,11 @@ test("Studio recupera backlog PostgreSQL acima de 100 e reivindica uma vez", { s
       FROM generate_series(1,125) AS n`, [prefix]);
     let afterCreatedAt = '', afterId = '';
     const seen = [];
-    for (;;) {
+    for (let page = 0; page < 10; page++) {
       const batch = await repository.listRecoverable({ afterCreatedAt, afterId, limit: 20, staleBefore: new Date().toISOString() });
       if (!batch.length) break;
       seen.push(...batch);
-      afterCreatedAt = batch.at(-1).createdAt;
+      afterCreatedAt = batch.at(-1).recoveryCursorCreatedAt;
       afterId = batch.at(-1).id;
     }
     assert.equal(seen.length, 125);

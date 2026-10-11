@@ -79,11 +79,11 @@ class SocialStudioAutomationRepository {
   }
   async listRecoverable({afterCreatedAt='',afterId='',limit=20,staleBefore=''}={}) {
     if(postgresEnabled()) {
-      const result=await queryPostgres(`SELECT * FROM social_studio_automation_campaigns
+      const result=await queryPostgres(`SELECT *, created_at::text AS recovery_cursor_created_at FROM social_studio_automation_campaigns
         WHERE (status='queued' OR (status IN ('processing','qa') AND updated_at < $1::timestamptz))
           AND ($2::timestamptz IS NULL OR (created_at,id) > ($2::timestamptz,$3::uuid))
         ORDER BY created_at ASC,id ASC LIMIT $4`,[staleBefore,afterCreatedAt || null,afterCreatedAt ? afterId : null,cleanLimit(limit)]);
-      return result.rows.map(mapCampaign);
+      return result.rows.map(row=>({...mapCampaign(row),recoveryCursorCreatedAt:row.recovery_cursor_created_at}));
     }
     const db=await this.readJson();
     return (db.settings?.socialStudioAutomationCampaigns || [])

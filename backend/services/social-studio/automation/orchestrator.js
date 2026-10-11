@@ -58,7 +58,7 @@ class CampaignOrchestrator {
         const batch=await this.repository.listRecoverable({afterCreatedAt,afterId,limit:20,staleBefore});
         if(!batch.length)break;
         const last=batch[batch.length-1];
-        afterCreatedAt=last.createdAt;afterId=last.id;
+        afterCreatedAt=last.recoveryCursorCreatedAt || last.createdAt;afterId=last.id;
         count+=batch.length;
         await Promise.all(batch.map(item=>this.enqueue(item.id)));
         if(batch.length<20)break;
