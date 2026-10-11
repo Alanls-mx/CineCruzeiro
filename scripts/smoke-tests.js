@@ -2210,7 +2210,11 @@ async function run() {
     assert.equal(adminLogs.response.status, 200);
     assert.ok(Array.isArray(adminLogs.payload.logs));
 
-    const editedOrder = await requestUntil(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
+    await requestUntil(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
+      headers: jsonHeaders(adminCookie)
+    }, ({ response, payload }) => response.status === 200 && Boolean(payload.order?.emailDeliveredAt || payload.order?.ticketDelivery?.status === "delivered"), 10000);
+
+    const editedOrder = await request(`/api/orders/${encodeURIComponent(boxOfficeSale.payload.order.id)}`, {
       method: "PATCH",
       headers: jsonHeaders(adminCookie),
       body: JSON.stringify({
@@ -2218,7 +2222,7 @@ async function run() {
         operationalNotes: "Ajuste operacional smoke",
         reason: "Teste smoke"
       })
-    }, ({ response, payload }) => response.status !== 409 || payload.error?.code !== "ORDER_CHANGED", 3000);
+    });
     assert.equal(editedOrder.response.status, 200);
     assert.equal(editedOrder.payload.order.customerPhone, "11888888888");
     assert.ok(Array.isArray(editedOrder.payload.order.auditTrail));
