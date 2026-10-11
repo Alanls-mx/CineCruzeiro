@@ -1,0 +1,15 @@
+# Auditoria dirigida de transações
+
+Registro da Fase 6, **parcial**. A verificação foi feita no roteamento de [server.js](../../backend/server.js), em `repositoryMutationRoute`, `withCriticalMutation` e nos handlers/repositórios citados. `withCriticalMutation` usa [withPostgresMutationLock](../../backend/db/postgresStore.js) em PostgreSQL; uma resposta enviada de dentro do callback pode chegar ao cliente antes da confirmação. O caminho JSON usa fila de mutações e não serve como prova de commit PostgreSQL.
+
+| Fluxo auditado | Resposta e commit | Resultado / risco |
+| --- | --- | --- |
+| `POST /api/movies/:id/sessions`, `POST /api/rooms`, `POST /api/ticket-types` | `repositoryMutationRoute` evita wrapper global; os [handlers](../../backend/services/movieCatalogHandler.js) e [configuração de sala](../../backend/services/venueConfigurationHandler.js) aguardam o repositório antes da resposta | Ordem adequada nos ramos verificados; validar conflitos e leituras imediatas nos testes PostgreSQL. |
+| `PATCH /api/orders/:id` em PostgreSQL | Rota direcionada; `orderRepository.update` resolve antes de `sendJson` | Ordem adequada no ramo PG. O ramo JSON ainda responde dentro da fila após `writeDb`, mas não define contrato de commit PG. |
+| `POST /api/orders/:id/resend-ticket-email` | `sendJson` ocorre após `withCriticalMutation` local | O envio externo pode ter sido aceito antes de gravar `emailDeliveredAt`; uma falha local pode causar reenvio. Não há garantia exatamente uma vez. |
+| `POST /api/payments/pix` e `/card` | `sendJson(201)` vem após `withCriticalMutation` local; erros e reuso idempotente podem responder dentro dele | A criação pode chamar provedor externo antes do commit. Não alterar sem reprodução financeira específica. |
+| `POST /api/box-office/point-payments/:id/cancel` | A rota administrativa não consta de `repositoryMutationRoute`: wrapper global engloba `handleApi`; o ramo de sucesso envia `200` dentro de mutação aninhada | **Risco confirmado por fluxo de código:** resposta pode preceder commit PG. Além disso o cancelamento externo precede o commit. Não modificado nesta auditoria por requerer teste isolado do terminal/provedor e cobertura de compensação. |
+| `POST /api/box-office/sales` | Wrapper global PG; alguns ramos enviam resposta dentro do callback e podem iniciar impressão/e-mail | Mesmo risco de ordem e efeito externo. Exige cenário HTTP PostgreSQL com provedor simulado antes de qualquer refatoração. |
+| `POST /api/webhooks/mercado-pago` | Não passa pela autenticação admin; HMAC e idempotência são verificados no handler | Revisar por ação e status; não alterar núcleo do webhook sem falha reproduzida. [Teste de assinatura](../../scripts/mercado-pago-webhook-tests.js). |
+
+**Prioridade seguinte:** criar teste HTTP de leitura imediata e falha de commit para Point/bilheteria com provedor totalmente simulado. Então mover a resposta de sucesso para depois do commit e iniciar eventos/e-mail somente após persistência. Não usar polling para esconder o problema. Esta auditoria não afirma que todas as rotas foram verificadas.

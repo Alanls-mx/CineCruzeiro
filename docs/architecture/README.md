@@ -1,6 +1,6 @@
 # Mapa Inteligente da Arquitetura
 
-Índice inicial verificado na Fase 5. **Não é um inventário completo**. O código-fonte prevalece sobre este mapa.
+Índice progressivo verificado no código. **Não é um inventário completo**. O código-fonte prevalece sobre este mapa.
 
 | Entrada | Use quando |
 | --- | --- |
@@ -8,6 +8,13 @@
 | [Módulos](modules.md) | Você procura um arquivo, serviço, handler, repositório ou teste. |
 | [Fluxos](flows.md) | A mudança atravessa interface, API, transação e tarefas. |
 | [Operação assíncrona](operations.md) | Você investiga recuperação de e-mails ou campanhas. |
+| [Endpoints](endpoints.md) | Você precisa conferir método, estado, autenticação, persistência e teste de uma rota verificada. |
+| [Persistência](persistence.md) | Você precisa localizar as tabelas e os responsáveis por leitura/escrita. |
+| [Auditoria transacional](transactions.md) | Você investiga resposta antes do commit ou efeito externo. |
+| [Símbolos](symbols.md) | Você precisa de um ponto de entrada técnico validado no código. |
+| [Dependências](dependencies.md) | Você quer avaliar impacto entre serviço, API, tabela, evento e painel. |
+| [Exercícios de navegação](navigation.md) | Você quer verificar como o mapa orienta solicitações reais. |
+| [Auditoria estrutural](audit.md) | Você quer entender a ordem das extrações e as responsabilidades adiadas. |
 | [Histórico da modularização](../MODULARIZACAO_ARQUITETURA.md) | Você precisa entender decisões e pendências anteriores. |
 | [Testes PostgreSQL](../TESTES_POSTGRESQL.md) | Você precisa configurar validação isolada. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
