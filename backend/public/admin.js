@@ -5946,10 +5946,15 @@ async function cancelPointPayment() {
   button.disabled = true;
   try {
     const result = await api(`/api/box-office/point-payments/${encodeURIComponent(state.pointPaymentId)}/cancel`, { method: "POST" });
-    stopPointPaymentPolling();
     renderPointPayment(result);
     await loadContent({ silent: true });
-    showToast("Cobrança cancelada no Mercado Pago Point.");
+    if (result.cancellationPending) {
+      schedulePointPaymentPoll(1200);
+      showToast("Cancelamento solicitado. Aguardando confirmação da Point.");
+    } else {
+      stopPointPaymentPolling();
+      showToast("Cobrança encerrada no Mercado Pago Point.");
+    }
   } catch (error) {
     showToast(error.message, "error");
   } finally {
@@ -6273,11 +6278,16 @@ async function cancelConcessionCounterPayment() {
   button.disabled = true;
   try {
     const result = await api(`/api/box-office/point-payments/${encodeURIComponent(state.concessionCounterPaymentId)}/cancel`, { method: "POST" });
-    stopConcessionCounterPaymentPolling();
     renderConcessionCounterPayment(result);
-    localStorage.removeItem("cine_admin_active_concession_point_payment");
     await loadContent({ silent: true });
-    showToast("Cobrança cancelada no Mercado Pago Point.");
+    if (result.cancellationPending) {
+      scheduleConcessionCounterPaymentPoll(1200);
+      showToast("Cancelamento solicitado. Aguardando confirmação da Point.");
+    } else {
+      stopConcessionCounterPaymentPolling();
+      localStorage.removeItem("cine_admin_active_concession_point_payment");
+      showToast("Cobrança encerrada no Mercado Pago Point.");
+    }
   } catch (error) {
     showToast(error.message, "error");
   } finally {

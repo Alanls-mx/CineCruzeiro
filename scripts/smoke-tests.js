@@ -397,6 +397,41 @@ async function run() {
   if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = originalNodeEnv;
 
+  const pointProvider = require("../backend/services/cardTerminalProvider");
+  const mockPointOrders = new Map();
+  let pointCancelMode = "cancelled";
+  let pointCancelCalls = 0;
+  pointProvider.terminalConnection = async () => ({ connected: true, terminal: { id: "smoke-point-terminal" } });
+  pointProvider.createPayment = async (order, _config, options) => {
+    const existing = [...mockPointOrders.values()].find((item) => item.idempotencyKey === options.idempotencyKey);
+    if (existing) return { ...existing };
+    const payment = {
+      id: `ORD-SMOKE-${mockPointOrders.size + 1}`,
+      externalReference: options.externalReference,
+      idempotencyKey: options.idempotencyKey,
+      status: "pending",
+      providerStatus: "at_terminal",
+      amount: Number(order.totalPrice),
+      terminalId: "smoke-point-terminal"
+    };
+    mockPointOrders.set(payment.id, payment);
+    return { ...payment };
+  };
+  pointProvider.getStatus = async (id) => {
+    const payment = mockPointOrders.get(id);
+    if (!payment) throw Object.assign(new Error("Mock Point order missing"), { statusCode: 404, code: "POINT_ORDER_MISSING" });
+    return { ...payment };
+  };
+  pointProvider.cancelPayment = async (id) => {
+    pointCancelCalls += 1;
+    if (pointCancelMode === "refused") throw Object.assign(new Error("Mock Point refusal"), { statusCode: 409, code: "POINT_CANCEL_REFUSED" });
+    if (pointCancelMode === "timeout") throw Object.assign(new Error("Mock Point timeout"), { statusCode: 504, code: "POINT_CONNECTION_LOST" });
+    const payment = mockPointOrders.get(id);
+    payment.status = pointCancelMode;
+    payment.providerStatus = pointCancelMode === "pending" ? "processing" : pointCancelMode;
+    return { ...payment };
+  };
+
   const server = require("../backend/server.js");
   const deliveredEmails = [];
   const emailWebhookServer = http.createServer((req, res) => {
@@ -2732,6 +2767,126 @@ async function run() {
     const cardAfterCreated = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });
     assert.equal(cardAfterCreated.response.status, 200);
     assert.equal(cardAfterCreated.payload.orders.some((order) => order.id === card.payload.order.id), true, "Cartao 201 deve ser visivel apos commit");
+
+    const pointConfig = await request("/api/admin/integrations/mercadoPago", {
+      method: "PUT",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ enabled: true, pointEnabled: true, pointDeviceId: "smoke-point-terminal", accessToken: "TEST-smoke-point-only" })
+    });
+    assert.equal(pointConfig.response.status, 200);
+    const pointSaleBody = (key) => ({
+      movieId: TEST_MOVIE_ID,
+      sessionId: TEST_SESSION_ID,
+      fullTicketsCount: 1,
+      halfTicketsCount: 0,
+      saleMode: "quick",
+      paymentMethod: "point_debit",
+      clientRequestId: key
+    });
+    const createPointSale = async (key) => {
+      const result = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody(key))
+      });
+      assert.equal(result.response.status, 202, JSON.stringify(result.payload));
+      assert.equal(result.payload.payment.status, "pending");
+      const saved = await readPersistedDb();
+      assert.equal(saved.payments.some((item) => item.id === result.payload.payment.id), true, "Point 202 deve seguir o commit");
+      return result;
+    };
+    const cancelPoint = (id) => request(`/api/box-office/point-payments/${encodeURIComponent(id)}/cancel`, {
+      method: "POST", headers: jsonHeaders(adminCookie), body: "{}"
+    });
+
+    const pointPending = await createPointSale("smoke-point-pending");
+    const resumedPointSale = await request("/api/box-office/sales", {
+      method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody("smoke-point-pending"))
+    });
+    assert.equal(resumedPointSale.response.status, 200);
+    assert.equal(resumedPointSale.payload.payment.id, pointPending.payload.payment.id);
+    assert.equal(mockPointOrders.size, 1, "Repetir a venda nao deve criar outra Order Point");
+    pointCancelMode = "pending";
+    const inconclusiveCancel = await cancelPoint(pointPending.payload.payment.id);
+    assert.equal(inconclusiveCancel.response.status, 202);
+    assert.equal(inconclusiveCancel.payload.payment.status, "pending");
+    assert.equal(inconclusiveCancel.payload.cancellationPending, true);
+    assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointPending.payload.payment.id).status, "pending");
+    pointCancelMode = "cancelled";
+    const confirmedCancel = await cancelPoint(pointPending.payload.payment.id);
+    assert.equal(confirmedCancel.response.status, 200);
+    assert.equal(confirmedCancel.payload.payment.status, "cancelled");
+    const cancelledSnapshot = await readPersistedDb();
+    assert.equal(cancelledSnapshot.payments.find((item) => item.id === pointPending.payload.payment.id).status, "cancelled");
+    assert.equal(cancelledSnapshot.orders.find((item) => item.id === pointPending.payload.order.id).status, "cancelled");
+    const cancelCallsAfterConfirmation = pointCancelCalls;
+    const repeatedCancel = await cancelPoint(pointPending.payload.payment.id);
+    assert.equal(repeatedCancel.response.status, 200);
+    assert.equal(pointCancelCalls, cancelCallsAfterConfirmation, "A repeticao nao deve chamar cancelamento externo novamente");
+
+    const pointRefused = await createPointSale("smoke-point-refused");
+    pointCancelMode = "refused";
+    const refusedCancel = await cancelPoint(pointRefused.payload.payment.id);
+    assert.equal(refusedCancel.response.status, 409);
+    assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointRefused.payload.payment.id).status, "pending");
+    pointCancelMode = "timeout";
+    const timedOutCancel = await cancelPoint(pointRefused.payload.payment.id);
+    assert.equal(timedOutCancel.response.status, 504);
+    assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointRefused.payload.payment.id).status, "pending");
+
+    const pointConcurrent = await createPointSale("smoke-point-concurrent");
+    pointCancelMode = "cancelled";
+    const callsBeforeRace = pointCancelCalls;
+    const parallelCancels = await Promise.all([cancelPoint(pointConcurrent.payload.payment.id), cancelPoint(pointConcurrent.payload.payment.id)]);
+    assert.deepEqual(parallelCancels.map((item) => item.response.status), [200, 200]);
+    assert.equal(pointCancelCalls, callsBeforeRace + 1, "Duas requisicoes devem produzir um cancelamento externo");
+    assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointConcurrent.payload.payment.id).status, "cancelled");
+
+    if (postgresMode) {
+      const pg = require("pg");
+      const originalQuery = pg.Client.prototype.query;
+      let failSaleCommit = true;
+      pg.Client.prototype.query = function (statement, ...args) {
+        if (failSaleCommit && statement === "COMMIT") {
+          failSaleCommit = false;
+          return Promise.reject(new Error("smoke_point_sale_commit_failure"));
+        }
+        return originalQuery.call(this, statement, ...args);
+      };
+      let failedSale;
+      try {
+        failedSale = await request("/api/box-office/sales", {
+          method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody("smoke-point-sale-failure"))
+        });
+      } finally {
+        pg.Client.prototype.query = originalQuery;
+      }
+      assert.equal(failSaleCommit, false, "O failpoint deve atingir o commit da venda");
+      assert.equal(failedSale.response.status >= 500, true, "Falha de commit nao pode responder venda concluida");
+      assert.equal((await readPersistedDb()).orders.some((item) => item.id === "pedido-bilheteria-smoke-point-sale-failure-0"), false);
+      const recoveredSale = await createPointSale("smoke-point-sale-failure");
+      assert.equal(recoveredSale.payload.payment.providerPaymentId, `ORD-SMOKE-${mockPointOrders.size}`);
+
+      const pointCommitFailure = await createPointSale("smoke-point-commit-failure");
+      let failNextCommit = true;
+      pg.Client.prototype.query = function (statement, ...args) {
+        if (failNextCommit && statement === "COMMIT") {
+          failNextCommit = false;
+          return Promise.reject(new Error("smoke_point_commit_failure"));
+        }
+        return originalQuery.call(this, statement, ...args);
+      };
+      let failedCommit;
+      try {
+        failedCommit = await cancelPoint(pointCommitFailure.payload.payment.id);
+      } finally {
+        pg.Client.prototype.query = originalQuery;
+      }
+      assert.equal(failNextCommit, false, "O failpoint deve atingir o commit do cancelamento");
+      assert.equal(failedCommit.response.status >= 500, true, "Falha de commit nao pode responder sucesso");
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointCommitFailure.payload.payment.id).status, "pending");
+      const recoveredCancel = await cancelPoint(pointCommitFailure.payload.payment.id);
+      assert.equal(recoveredCancel.response.status, 200);
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointCommitFailure.payload.payment.id).status, "cancelled");
+    }
 
     const requiredPolicy = await request("/api/admin/security-policy", {
       method: "PUT",

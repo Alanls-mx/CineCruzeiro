@@ -852,6 +852,8 @@ function sanitizeWebhookTestPayload(body = {}) {
 function sendJson(res, status, data, extraHeaders = {}) {
   const store = requestContext.getStore();
   const req = store?.req;
+  if (req?.commitResponseAfterMutation && postgresEnabled()
+    && deferUntilPostgresCommit(() => sendJson(res, status, data, extraHeaders))) return;
   const catalogRequest = isCommercialCatalogRequest(req);
   const payload = normalizeApiPayload(data, status, store?.requestId || "");
   const body = JSON.stringify(payload, null, 2);
@@ -2496,6 +2498,13 @@ async function releaseOrderSeatHolds(order, broadcastStatus = "unavailable") {
   const released = await releaseSeatHoldsForOwner({ sessionId, ownerToken: order.seatHoldToken });
   released.forEach((hold) => seatRealtimeService?.broadcastSeatStatus(sessionId, hold.seatId, broadcastStatus));
   return released;
+}
+
+async function releaseBoxOfficeSeatHolds(orders) {
+  const release = async () => {
+    for (const order of orders) await releaseOrderSeatHolds(order);
+  };
+  if (!deferUntilPostgresCommit(release)) await release();
 }
 
 async function broadcastReleasedOrderSeats(order) {
@@ -10685,9 +10694,12 @@ async function handleApi(req, res, pathname) {
   const selfManagedConcessionArchive = method === "POST" && /^\/api\/admin\/concession-sales\/[^/]+\/archive$/.test(pathname);
   const selfManagedTicketValidation = method === "POST" && pathname === "/api/tickets/validate";
   const selfManagedClubAssignment = method === "POST" && pathname === "/api/admin/subscriptions/assign";
+  const selfManagedBoxOfficeSale = method === "POST" && ["/api/box-office/sales", "/api/tickets/manual", "/api/admin/concession-counter-sales"].includes(pathname);
+  const selfManagedPointCancellation = method === "POST" && /^\/api\/box-office\/point-payments\/[^/]+\/cancel$/.test(pathname);
+  req.commitResponseAfterMutation = selfManagedBoxOfficeSale;
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
-    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !context?.adminMutationLocked) {
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
@@ -15427,33 +15439,53 @@ async function handleApi(req, res, pathname) {
       return;
     }
     const paymentId = decodeURIComponent(pointPaymentCancelMatch[1]);
-    const snapshotPayment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
-    if (!snapshotPayment) {
-      sendJson(res, 404, { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } });
-      return;
-    }
-    if (snapshotPayment.status === "approved") {
-      sendJson(res, 409, { error: { code: "POINT_ALREADY_APPROVED", message: "O pagamento já foi aprovado. Use o fluxo de estorno para desfazer a venda." } });
-      return;
-    }
-    const config = integrationConfigService.resolvedConfig(db, "mercadoPago") || {};
-    const currentProviderPayment = await cardTerminalProvider.getStatus(snapshotPayment.providerPaymentId, config);
-    if (currentProviderPayment.status === "approved") {
-      sendJson(res, 409, { error: { code: "POINT_ALREADY_APPROVED", message: "O pagamento foi aprovado antes do cancelamento. Os ingressos serão emitidos; use o estorno para desfazer a venda." } });
-      return;
-    }
-    const providerPayment = await cardTerminalProvider.cancelPayment(snapshotPayment.providerPaymentId, config, {
-      idempotencyKey: `cancel-${snapshotPayment.id}`,
-      providerStatus: currentProviderPayment.providerStatus
-    });
-    await withCriticalMutation(async () => {
+    const outcome = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
-      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId);
-      const result = applyPointPaymentStatus(lockedDb, payment, { ...providerPayment, status: providerPayment.status === "pending" ? "cancelled" : providerPayment.status });
+      const payment = (lockedDb.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+      if (!payment) return { status: 404, payload: { error: { code: "POINT_PAYMENT_NOT_FOUND", message: "Cobrança Point não encontrada." } } };
+      if (payment.status === "approved" || payment.status === "refunded") {
+        return { status: 409, payload: { error: { code: "POINT_ALREADY_APPROVED", message: "O pagamento já foi aprovado. Use o fluxo de estorno para desfazer a venda." } } };
+      }
+      const config = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
+      if (!payment.providerPaymentId) {
+        return { status: 409, payload: { error: { code: "POINT_RECONNECT_REQUIRED", message: "Reconecte a cobrança com o terminal antes de solicitar o cancelamento." } } };
+      }
+      const currentProviderPayment = await cardTerminalProvider.getStatus(payment.providerPaymentId, config);
+      if (!mercadoPagoReferenceMatches(payment, currentProviderPayment.externalReference)
+        || (currentProviderPayment.amount && Math.abs(Number(currentProviderPayment.amount) - Number(payment.amount)) > 0.01)) {
+        return { status: 409, payload: { error: { code: "POINT_PAYMENT_MISMATCH", message: "A cobrança retornada pela Point não confere com a venda. Concilie antes de cancelar." } } };
+      }
+      if (currentProviderPayment.status === "approved" || currentProviderPayment.status === "refunded") {
+        return { status: 409, payload: { error: { code: "POINT_ALREADY_APPROVED", message: "O pagamento foi aprovado antes do cancelamento. Consulte a venda e use o estorno se necessário." } } };
+      }
+      const terminalStates = ["cancelled", "expired", "rejected"];
+      const wasPending = !terminalStates.includes(payment.status);
+      const providerPayment = terminalStates.includes(currentProviderPayment.status)
+        ? currentProviderPayment
+        : await cardTerminalProvider.cancelPayment(payment.providerPaymentId, config, {
+          idempotencyKey: `cancel-${payment.id}`,
+          providerStatus: currentProviderPayment.providerStatus
+        });
+      if (!mercadoPagoReferenceMatches(payment, providerPayment.externalReference)
+        || (providerPayment.amount && Math.abs(Number(providerPayment.amount) - Number(payment.amount)) > 0.01)) {
+        return { status: 409, payload: { error: { code: "POINT_PAYMENT_MISMATCH", message: "A resposta de cancelamento não confere com a venda. Concilie antes de prosseguir." } } };
+      }
+      if (providerPayment.status === "approved" || providerPayment.status === "refunded") {
+        return { status: 409, payload: { error: { code: "POINT_ALREADY_APPROVED", message: "A Point confirmou o pagamento durante o cancelamento. Consulte a venda antes de prosseguir." } } };
+      }
+      const result = applyPointPaymentStatus(lockedDb, payment, providerPayment);
+      payment.metadata.cancellationRequestedAt ||= new Date().toISOString();
+      payment.metadata.cancellationIdempotencyKey = `cancel-${payment.id}`;
       await writeDb(lockedDb);
-      logEvent("info", "box_office_point_sale.cancelled", { paymentId, providerPaymentId: payment.providerPaymentId, actorUserId: adminUser.id });
-      sendJson(res, 200, { payment, orders: result.orders, tickets: result.tickets });
+      return {
+        status: terminalStates.includes(payment.status) ? 200 : 202,
+        payload: { payment, orders: result.orders, tickets: result.tickets, cancellationPending: !terminalStates.includes(payment.status) },
+        confirmed: wasPending && terminalStates.includes(payment.status),
+        providerPaymentId: payment.providerPaymentId
+      };
     });
+    if (outcome.confirmed) logEvent("info", "box_office_point_sale.cancelled", { paymentId, providerPaymentId: outcome.providerPaymentId, actorUserId: adminUser.id });
+    sendJson(res, outcome.status, outcome.payload);
     return;
   }
 
@@ -15692,7 +15724,7 @@ async function handleApi(req, res, pathname) {
           lockedDb.orders.unshift(...orders);
           lockedDb.payments.unshift(pointPaymentRecord);
           await writeDb(lockedDb);
-          for (const order of orders) await releaseOrderSeatHolds(order);
+          await releaseBoxOfficeSeatHolds(orders);
           logEvent("warn", "box_office_point_sale.reconnect_required", { paymentId: pointPaymentRecord.id, orderIds: orders.map((order) => order.id), batchId, createdBy: adminUser.id });
           sendJson(res, 202, {
             order: orders[0], payment: pointPaymentRecord, orders, payments: [pointPaymentRecord], tickets: [],
@@ -15717,7 +15749,7 @@ async function handleApi(req, res, pathname) {
           })
           : { requested: false, status: "not_requested", message: "" };
         await writeDb(lockedDb);
-        for (const order of orders) await releaseOrderSeatHolds(order);
+        await releaseBoxOfficeSeatHolds(orders);
         logEvent("info", concessionCounterSale ? "concession_counter_point_sale.created" : "box_office_point_sale.created", {
           paymentId: pointPaymentRecord.id,
           providerPaymentId: pointPaymentRecord.providerPaymentId,
@@ -15805,7 +15837,7 @@ async function handleApi(req, res, pathname) {
       })
         : { requested: false, status: "not_requested", message: "" };
       await writeDb(lockedDb);
-      for (const order of orders) await releaseOrderSeatHolds(order);
+      await releaseBoxOfficeSeatHolds(orders);
       logEvent("info", concessionCounterSale ? "concession_counter_sale.created" : "box_office_sale.created", {
         orderId: orders[0].id,
         orderIds: orders.map((order) => order.id),
