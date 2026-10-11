@@ -7143,10 +7143,14 @@ function cancelOrder(db, order, reason, adminUser) {
     ticket.cancelledBy = adminUser?.id || "";
   });
 
-  if ((db.subscriptionUsage || []).some((usage) => usage.orderId === order.id)) {
-    (db.subscriptionUsage || [])
-      .filter((usage) => usage.orderId === order.id)
-      .forEach((usage) => refundSubscriptionCreditForUsage(db, usage, adminUser, order.cancellationReason));
+  const creditUsages = (db.subscriptionUsage || []).filter((usage) => usage.orderId === order.id);
+  if (order.clubCreditUsageId && !creditUsages.some((usage) => usage.id === order.clubCreditUsageId)) {
+    throw refundError("CLUB_CREDIT_USAGE_MISSING", "O uso do crédito do Clube não foi localizado. O cancelamento não foi concluído.", 409);
+  }
+  for (const usage of creditUsages) {
+    if (!usage.refundedAt && !refundSubscriptionCreditForUsage(db, usage, adminUser, order.cancellationReason)) {
+      throw refundError("CLUB_CREDIT_REFUND_FAILED", "O crédito do Clube não pôde ser devolvido. O cancelamento não foi concluído.", 409);
+    }
   }
 
   appendOrderAudit(order, {

@@ -1849,6 +1849,8 @@ async function run() {
     const purchasedBundleSubscription = subscriptionsAfterBundlePurchase.payload.subscriptions.find((subscription) => subscription.id === bundleSubscription.payload.subscription.id);
     assert.equal(purchasedBundleSubscription?.creditsRemaining, 0);
     assert.equal(purchasedBundleSubscription?.creditCounts?.redeemed, 3);
+    assert.ok(purchasedBundleSubscription?.usage.some((usage) => usage.orderId === bundleCreditOrder.payload.order.id && !usage.refundedAt),
+      "A compra deve persistir o uso dos creditos antes do cancelamento");
     const cancelledBundleCreditOrder = await request(`/api/orders/${encodeURIComponent(bundleCreditOrder.payload.order.id)}`, {
       method: "DELETE",
       headers: jsonHeaders(adminCookie),
