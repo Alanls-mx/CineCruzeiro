@@ -1866,16 +1866,22 @@ async function run() {
     let persistedClubState = null;
     if (postgresMode && !refundedBundleUsage?.refundedAt) {
       const { queryPostgres } = require("../backend/db/postgresStore");
-      const [credit, usage] = await Promise.all([
+      const [credit, usage, order] = await Promise.all([
         queryPostgres("SELECT used, remaining FROM subscription_credits WHERE id=$1", [refundedBundleSubscription.credit?.id]),
-        queryPostgres("SELECT credits_used, refunded_at FROM subscription_usage WHERE order_id=$1", [bundleCreditOrder.payload.order.id])
+        queryPostgres("SELECT credits_used, refunded_at FROM subscription_usage WHERE order_id=$1", [bundleCreditOrder.payload.order.id]),
+        queryPostgres("SELECT status, updated_at, metadata->'auditTrail' AS audit_trail FROM orders WHERE id=$1", [bundleCreditOrder.payload.order.id])
       ]);
-      persistedClubState = { credit: credit.rows, usage: usage.rows };
+      persistedClubState = {
+        credit: credit.rows,
+        usage: usage.rows,
+        order: order.rows.map(({ status, updated_at, audit_trail }) => ({ status, updated_at, auditActions: (audit_trail || []).map((entry) => entry.action) }))
+      };
     }
     assert.ok(refundedBundleUsage?.refundedAt, JSON.stringify({
       message: "O uso dos creditos deve registrar a devolucao",
       orderId: bundleCreditOrder.payload.order.id,
       cancelledOrderStatus: cancelledBundleCreditOrder.payload.order?.status,
+      cancellationAuditActions: (cancelledBundleCreditOrder.payload.order?.auditTrail || []).map((entry) => entry.action),
       subscriptionStatus: refundedBundleSubscription.status,
       credit: refundedBundleSubscription.credit,
       creditCounts: refundedBundleSubscription.creditCounts,
