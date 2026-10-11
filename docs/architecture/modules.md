@@ -12,6 +12,7 @@ O [server.js](../../backend/server.js) ainda faz roteamento, autenticação, aut
 | Logs administrativos | [adminLogsHandler](../../backend/services/adminLogsHandler.js) | [apresentação UI](../../tests/admin-log-events.test.mjs) |
 | Leitura administrativa do Clube | [adminSubscriptionPresenter](../../backend/services/adminSubscriptionPresenter.js) | [teste do presenter](../../tests/admin-subscription-presenter.test.mjs) |
 | Busca administrativa de clientes | [adminCustomerSearchService](../../backend/services/adminCustomerSearchService.js) | [teste de busca](../../tests/admin-customer-search.test.mjs), [smoke HTTP](../../scripts/smoke-tests.js) |
+| Apresentação pública de poltronas | [publicSessionSeatPresenter](../../backend/services/publicSessionSeatPresenter.js) | [teste do presenter](../../tests/public-session-seat-presenter.test.mjs), [teste HTTP](../../tests/public-seat-state-http.test.mjs) |
 | Entrega de ingressos | [ticketEmailWorker](../../backend/services/ticketEmailWorker.js), [ticketEmailJobRepository](../../backend/repositories/ticketEmailJobRepository.js) | [unidade](../../tests/ticket-email-worker.test.mjs), [PostgreSQL](../../tests/database-persistence-postgres.test.mjs) |
 | Campanhas automáticas Studio | [CampaignOrchestrator](../../backend/services/social-studio/automation/orchestrator.js), [repositório](../../backend/repositories/socialStudioAutomationRepository.js) | [teste](../../tests/social-studio-automation.test.mjs) |
 

@@ -92,6 +92,7 @@ const { summarizeConcessionFinance } = require("./services/concessionFinanceServ
 const { createAdminDashboardService } = require("./services/adminDashboardService");
 const { createAdminSubscriptionPresenter } = require("./services/adminSubscriptionPresenter");
 const { createAdminCustomerSearchService } = require("./services/adminCustomerSearchService");
+const { createPublicSessionSeatPresenter } = require("./services/publicSessionSeatPresenter");
 const { createMovieCatalogHandler } = require("./services/movieCatalogHandler");
 const { createVenueConfigurationHandler } = require("./services/venueConfigurationHandler");
 const { createCommercialCatalogHandler } = require("./services/commercialCatalogHandler");
@@ -9667,6 +9668,7 @@ const adminDashboard = createAdminDashboardService({ todayIsoDate, sessionStarts
 const adminSubscriptionPresenter = createAdminSubscriptionPresenter({ refreshSubscriptionCredits, clubSavingsSummary,
   subscriptionStatusLabel, currentSubscriptionCredit, sanitizeUser, subscriptionSummary, enrichTicket });
 const adminCustomerSearch = createAdminCustomerSearchService({ adminRoles, sanitizeUser });
+const publicSessionSeatPresenter = createPublicSessionSeatPresenter({ roomSeats, roomSeatTypes });
 
 function adminIntegrationsStatus(req, db) {
   const integrations = integrationConfigService.list(db);
@@ -11312,39 +11314,7 @@ async function handleApi(req, res, pathname) {
     const { sold, reserved } = enabled ? sessionSeatAvailability(db, sessionId) : { sold: new Set(), reserved: new Set() };
     const ownerToken = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("ownerToken") || "").trim();
     const holds = enabled ? await listActiveSeatHolds(sessionId) : [];
-    const holdsBySeat = new Map(holds.map((hold) => [String(hold.seatId), hold]));
-    sendJson(res, 200, {
-      sessionId,
-      movieTitle: movie?.title || "",
-      roomId: room?.id || "",
-      roomName: room?.name || session.room || "Sala Cruzeiro",
-      enabled,
-      capacity: enabled ? roomSeats(room).filter((seat) => seat.enabled !== false).length : Number(room?.capacity || session.capacity || 0),
-      placeholder: enabled ? "Selecione sua poltrona" : "Lugar livre",
-      screenLabel: room?.seatLayout?.screenLabel || "TELA",
-      seatTypes: roomSeatTypes(room),
-      rows: (room?.seatLayout?.rows || []).map((row) => ({
-        id: row.id,
-        label: row.label,
-        seats: (row.seats || []).map((seat) => ({
-          id: seat.id,
-          label: seat.label,
-          typeId: seat.typeId,
-          color: seat.color || "",
-          accessibility: seat.accessibility || "",
-          enabled: seat.enabled !== false,
-          aisleAfter: Boolean(seat.aisleAfter),
-          status: seat.enabled === false
-            ? "blocked"
-            : sold.has(String(seat.id))
-              ? "unavailable"
-              : reserved.has(String(seat.id)) || holdsBySeat.has(String(seat.id))
-                ? "held"
-                : "available",
-          heldByMe: !reserved.has(String(seat.id)) && Boolean(ownerToken && holdsBySeat.get(String(seat.id))?.ownerToken === ownerToken)
-        }))
-      }))
-    }, { "Cache-Control": "no-store" });
+    sendJson(res, 200, publicSessionSeatPresenter.present({ sessionId, session, movie, room, enabled, sold, reserved, holds, ownerToken }), { "Cache-Control": "no-store" });
     return;
   }
 
