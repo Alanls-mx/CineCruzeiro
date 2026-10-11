@@ -13,6 +13,7 @@ O [server.js](../../backend/server.js) ainda faz roteamento, autenticação, aut
 | Leitura administrativa do Clube | [adminSubscriptionPresenter](../../backend/services/adminSubscriptionPresenter.js) | [teste do presenter](../../tests/admin-subscription-presenter.test.mjs) |
 | Busca administrativa de clientes | [adminCustomerSearchService](../../backend/services/adminCustomerSearchService.js) | [teste de busca](../../tests/admin-customer-search.test.mjs), [smoke HTTP](../../scripts/smoke-tests.js) |
 | Apresentação pública de poltronas | [publicSessionSeatPresenter](../../backend/services/publicSessionSeatPresenter.js) | [teste do presenter](../../tests/public-session-seat-presenter.test.mjs), [teste HTTP](../../tests/public-seat-state-http.test.mjs) |
+| Projecao de campanhas de e-mail | [emailCampaignPresenter](../../backend/services/emailCampaignPresenter.js) | [teste de campos publicos/detalhados](../../tests/email-campaign-presenter.test.mjs) |
 | Entrega de ingressos | [ticketEmailWorker](../../backend/services/ticketEmailWorker.js), [ticketEmailJobRepository](../../backend/repositories/ticketEmailJobRepository.js) | [unidade](../../tests/ticket-email-worker.test.mjs), [PostgreSQL](../../tests/database-persistence-postgres.test.mjs) |
 | Campanhas automáticas Studio | [CampaignOrchestrator](../../backend/services/social-studio/automation/orchestrator.js), [repositório](../../backend/repositories/socialStudioAutomationRepository.js) | [teste](../../tests/social-studio-automation.test.mjs) |
 
@@ -32,5 +33,6 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Repasse de bilheteria | [ticket-finance-view](../../backend/public/admin-modules/ticket-finance-view.js) | [teste](../../tests/admin-ticket-finance-view.test.mjs) |
 | Contas de clientes | [customer-accounts-view](../../backend/public/admin-modules/customer-accounts-view.js) | [teste](../../tests/admin-customer-accounts-view.test.mjs) |
 | Lista de sessões do filme | [movie-sessions-view](../../backend/public/admin-modules/movie-sessions-view.js) | [teste](../../tests/admin-movie-sessions-view.test.mjs) |
+| Lista de salas | [room-list-view](../../backend/public/admin-modules/room-list-view.js) | [teste](../../tests/admin-room-list-view.test.mjs) |
 
 Próximos candidatos, ainda **não extraídos**: outras consultas administrativas do Clube, gestão de clientes, formulários de sessão e grupos de listeners do painel. Auditar dependências e cobertura antes de mover.

@@ -6,6 +6,8 @@
 | --- | --- | --- |
 | `createCustomerAccountsView` | [customer-accounts-view.js](../../backend/public/admin-modules/customer-accounts-view.js) | Lista e formulário de clientes no painel; estado compartilhado com admin.js. |
 | `createMovieSessionsView` | [movie-sessions-view.js](../../backend/public/admin-modules/movie-sessions-view.js) | Renderização e paginação das sessões de um filme, sem listeners próprios. |
+| `createRoomListView` | [room-list-view.js](../../backend/public/admin-modules/room-list-view.js) | Lista e paginação de salas; eventos e formulário permanecem em admin.js. |
+| `createEmailCampaignPresenter` | [emailCampaignPresenter.js](../../backend/services/emailCampaignPresenter.js) | Projeção pública/detalhada da campanha, com normalizador de marca injetado. |
 | `adminHasPermission` | [adminPermissionService.js](../../backend/services/adminPermissionService.js) | Verificação granular de permissões; chamada por `ensureAdmin` em server.js. |
 | `archiveExpiredCoupons` | [couponLifecycleService.js](../../backend/services/couponLifecycleService.js) | Ciclo de validade de cupom. |
 | `findSessionRoomConflicts` | [sessionRoomConflictService.js](../../backend/services/sessionRoomConflictService.js) | Sobreposição de sessões e intervalo de limpeza. |
