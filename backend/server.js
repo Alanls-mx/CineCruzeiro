@@ -6806,16 +6806,16 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     const hasUsedTickets = tickets.some((t) => t.status === "used");
     const hasFulfilledConcessions = (order.concessionItems || []).some((item) => Number(item.fulfilledQuantity || 0) > 0) || Boolean(order.concessionsFulfilledAt);
 
-    if (isOrderSessionExpired(order, db)) {
+    if (!existing && isOrderSessionExpired(order, db)) {
       throw refundError("SESSION_EXPIRED", "A sessão deste pedido já expirou; cancelamento e reembolso indisponíveis.", 409);
     }
-    if (hasUsedTickets && hasFulfilledConcessions) {
+    if (!existing && hasUsedTickets && hasFulfilledConcessions) {
       throw refundError("ORDER_ALREADY_VALIDATED", "Este pedido já foi totalmente validado e consumido no cinema; cancelamento e reembolso indisponíveis.", 409);
     }
-    if (hasUsedTickets) {
+    if (!existing && hasUsedTickets) {
       throw refundError("TICKETS_ALREADY_USED", "Os ingressos deste pedido já foram validados no cinema e não podem ser estornados. Você pode reembolsar separadamente a bomboniere pendente.", 409);
     }
-    if (hasFulfilledConcessions) {
+    if (!existing && hasFulfilledConcessions) {
       throw refundError("CONCESSIONS_ALREADY_FULFILLED", "Os itens de bomboniere já foram entregues ao cliente e não podem ser estornados. Você pode reembolsar separadamente os ingressos pendentes.", 409);
     }
 

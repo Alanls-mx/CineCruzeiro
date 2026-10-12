@@ -3211,6 +3211,11 @@ async function run() {
       assert.equal(pendingFullOrder.status, "paid");
       assert.equal(pendingFullOrder.refundStatus, "pending");
       assert.equal(pendingFullSnapshot.tickets.find((item) => item.orderId === fullRefundOrderId).status, "active");
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE orders SET metadata=jsonb_set(metadata, '{sessionDate}', to_jsonb($1::text), true) WHERE id=$2",
+        ["2020-01-01", fullRefundOrderId]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
       const completedFull = await requestFullRefund();
       assert.equal(completedFull.response.status, 200, JSON.stringify(completedFull.payload));
       assert.equal(completedFull.payload.refund.id, fullRefundId);
