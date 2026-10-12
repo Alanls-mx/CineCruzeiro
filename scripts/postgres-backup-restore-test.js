@@ -60,6 +60,8 @@ async function invariants(url) {
   const client = new Client({ connectionString: url });
   await client.connect();
   try {
+    const migrationFiles = (await fs.readdir(path.join(__dirname, "../backend/db/migrations")))
+      .filter((name) => name.endsWith(".sql"));
     const result = await client.query(`SELECT
       (SELECT count(*) FROM schema_migrations) AS migrations,
       (SELECT count(*) FROM movies WHERE id='restore-movie') AS movies,
@@ -74,7 +76,7 @@ async function invariants(url) {
       (SELECT count(*) FROM social_studio_automation_campaigns WHERE cinema_id='restore-cinema' AND status='queued') AS campaigns,
       (SELECT count(*) FROM payments WHERE id='restore-intent' AND status='pending' AND metadata->'metadata'->>'pointCreateState'='unknown' AND metadata->'metadata'->'recoveryRequest'->>'idempotencyKey'='restore-key') AS intents`);
     const row = Object.fromEntries(Object.entries(result.rows[0]).map(([key, value]) => [key, Number(value)]));
-    assert.ok(row.migrations > 50);
+    assert.equal(row.migrations, migrationFiles.length, "Todas as migrations versionadas devem estar presentes");
     for (const key of ["movies", "sessions", "customers", "tickets", "inventory", "credits", "jobs", "campaigns", "intents"]) assert.equal(row[key], 1, key);
     assert.equal(row.orders, 2);
     assert.equal(row.payments, 2);
