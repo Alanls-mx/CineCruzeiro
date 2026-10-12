@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const http = require("http");
 const os = require("os");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
 const WebSocket = require("ws");
 const adminTwoFactorService = require("../backend/services/adminTwoFactorService");
 const ticketCodeService = require("../backend/services/ticketCodeService");
@@ -430,6 +430,11 @@ async function run() {
   pointProvider.getStatus = async (id) => {
     if (pointStatusError) throw Object.assign(new Error("Mock Point status unavailable"), { statusCode: 504, code: pointStatusError });
     const payment = mockPointOrders.get(id);
+    if (!payment && id === "ORD-SMOKE-CROSS-INSTANCE") {
+      const local = (await readPersistedDb()).payments.find((item) => item.providerPaymentId === id);
+      if (local) return { id, externalReference: local.providerReference, status: "pending", providerStatus: "at_terminal",
+        amount: Number(local.amount), terminalId: "smoke-point-terminal" };
+    }
     if (!payment) throw Object.assign(new Error("Mock Point order missing"), { statusCode: 404, code: "POINT_ORDER_MISSING" });
     return { ...payment };
   };
@@ -3290,6 +3295,63 @@ async function run() {
         request(`/api/box-office/point-payments/${crashPaymentId}`, { headers: jsonHeaders(adminCookie) })));
       assert.deepEqual(recoveredCrash.map((result) => result.response.status), [200, 200]);
       assert.equal(mockPointOrders.size, pointOrdersBeforeCrash + 1);
+
+      const crossKey = "smoke-point-cross-instance";
+      const crossPaymentId = `pagamento-point-${crossKey}`;
+      const crossPrepareFail = failCommitForRecord(crossPaymentId, "smoke_point_cross_before_send", 1,
+        matchingPaymentWrite(crossPaymentId, (payment) => payment.metadata?.pointCreateState === "sending" && !payment.metadata?.providerRequestSentAt));
+      let crossPrepared;
+      try {
+        crossPrepared = await request("/api/box-office/sales", {
+          method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody(crossKey))
+        });
+      } finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(crossPrepareFail(), true);
+      assert.equal(crossPrepared.response.status, 202);
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === crossPaymentId).metadata.pointCreateState, "prepared");
+      const crossCallsFile = path.join(testRoot, "point-cross-instance-calls.txt");
+      fs.writeFileSync(crossCallsFile, "");
+      const secondPort = 4201;
+      const second = spawn(process.execPath, [path.join(__dirname, "point-smoke-second-instance.js")], {
+        env: { ...process.env, PORT: String(secondPort), CINE_POINT_CROSS_CALL_FILE: crossCallsFile },
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+      let secondOutput = "";
+      second.stdout.on("data", (chunk) => { secondOutput = (secondOutput + chunk).slice(-2000); });
+      second.stderr.on("data", (chunk) => { secondOutput = (secondOutput + chunk).slice(-2000); });
+      try {
+        let ready = false;
+        for (let attempt = 0; attempt < 60 && !ready; attempt += 1) {
+          if (second.exitCode !== null || second.signalCode !== null) break;
+          try { ready = (await fetch(`http://127.0.0.1:${secondPort}/api/content`)).ok; }
+          catch { await new Promise((resolve) => setTimeout(resolve, 100)); }
+        }
+        assert.equal(ready, true, `Segunda instancia nao iniciou: ${secondOutput}`);
+        const secondLogin = await fetch(`http://127.0.0.1:${secondPort}/api/admin/login`, {
+          method: "POST", headers: jsonHeaders(),
+          body: JSON.stringify({ email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD })
+        });
+        assert.equal(secondLogin.status, 200, `Login da segunda instancia: ${secondOutput}`);
+        const secondCookie = (secondLogin.headers.get("set-cookie") || "").split(";")[0];
+        const beforeCross = mockPointOrders.size;
+        const crossResults = await Promise.all([
+          request(`/api/box-office/point-payments/${crossPaymentId}`, { headers: jsonHeaders(adminCookie) }),
+          fetch(`http://127.0.0.1:${secondPort}/api/box-office/point-payments/${crossPaymentId}`, {
+            headers: jsonHeaders(secondCookie)
+          })
+        ]);
+        assert.deepEqual(crossResults.map((item) => item.response?.status || item.status), [200, 200]);
+        const secondCalls = fs.readFileSync(crossCallsFile, "utf8").trim().split("\n").filter(Boolean);
+        assert.equal(mockPointOrders.size - beforeCross + secondCalls.length, 1, "Duas instancias nao podem criar duas Orders para a mesma intencao");
+        assert.ok((await readPersistedDb()).payments.find((item) => item.id === crossPaymentId).providerPaymentId);
+      } finally {
+        second.kill("SIGTERM");
+        if (second.exitCode === null && second.signalCode === null) await Promise.race([
+          new Promise((resolve) => second.once("exit", resolve)),
+          new Promise((resolve) => setTimeout(resolve, 5000))
+        ]);
+        if (second.exitCode === null && second.signalCode === null) second.kill("SIGKILL");
+      }
 
       const finalKey = "smoke-point-final-commit-failure";
       const finalPaymentId = `pagamento-point-${finalKey}`;
