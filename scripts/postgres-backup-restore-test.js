@@ -94,8 +94,10 @@ async function main() {
   const admin = new Client({ connectionString: adminUrl.toString() });
   const databases = [];
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "cine-pg-restore-"));
-  await admin.connect();
+  let connected = false;
   try {
+    await admin.connect();
+    connected = true;
     const role = await admin.query("SELECT rolsuper, rolcreatedb FROM pg_roles WHERE rolname=current_user");
     assert.equal(role.rows[0]?.rolsuper, false);
     assert.equal(role.rows[0]?.rolcreatedb, true);
@@ -134,12 +136,22 @@ async function main() {
     console.log(JSON.stringify({ result: "BACKUP_RESTORE_OK", source: source.name, destination: destination.name,
       bytes: dump.length, invariants: restored }));
   } finally {
-    for (const entry of databases.reverse()) {
-      await verifyMarker(entry.url, entry.token);
-      await admin.query(`DROP DATABASE "${entry.name}"`);
+    const cleanupErrors = [];
+    if (connected) {
+      for (const entry of databases.reverse()) {
+        try {
+          await verifyMarker(entry.url, entry.token);
+          await admin.query(`DROP DATABASE "${entry.name}"`);
+        } catch (error) {
+          cleanupErrors.push(new Error(`Nao foi possivel limpar ${entry.name} com marcador verificado: ${error.message}`));
+        }
+      }
+      try { await admin.end(); } catch (error) { cleanupErrors.push(error); }
     }
-    await admin.end();
-    if (temp.startsWith(path.join(os.tmpdir(), "cine-pg-restore-"))) await fs.rm(temp, { recursive: true, force: true });
+    if (temp.startsWith(path.join(os.tmpdir(), "cine-pg-restore-"))) {
+      try { await fs.rm(temp, { recursive: true, force: true }); } catch (error) { cleanupErrors.push(error); }
+    }
+    if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "Limpeza do ensaio PostgreSQL incompleta");
   }
 }
 
