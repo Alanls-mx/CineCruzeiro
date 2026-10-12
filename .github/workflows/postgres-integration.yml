@@ -12,16 +12,21 @@ permissions:
 jobs:
   postgres-integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres-major: ["16", "18"]
     env:
       NODE_ENV: test
       DATA_STORE: postgres
       DATABASE_URL: ""
       POSTGRES_URL: ""
       TEST_DATABASE_URL: ""
+      CINE_CI_POSTGRES_MAJOR: ${{ matrix.postgres-major }}
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:${{ matrix.postgres-major }}-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-postgres-isolated-only
@@ -34,6 +39,8 @@ jobs:
           --health-retries 12
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -53,6 +60,9 @@ jobs:
           done
       - run: npm run test:postgres
       - run: npm run test:postgres:repositories
+      - name: Verify 050 to 052 upgrade on PostgreSQL 18
+        if: matrix.postgres-major == '18'
+        run: npm run test:postgres:upgrade
       - name: Verify synthetic backup and restore
         env:
           POSTGRES_SERVICE_CONTAINER_ID: ${{ job.services.postgres.id }}

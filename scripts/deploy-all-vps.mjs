@@ -305,6 +305,21 @@ function parseArguments() {
   return parsed;
 }
 
+export function assertDeploymentSelection(args, instances) {
+  if (!args.only || !/^[a-z0-9-]+$/.test(args.only)) {
+    throw new Error("Deploy exige --only com uma instalacao explicita.");
+  }
+  if (instances.length !== 1 || instances[0].slug !== args.only) {
+    throw new Error("Deploy exige exatamente uma instalacao habilitada correspondente a --only.");
+  }
+  if (!args.dryRun && !/^[a-f0-9]{40}$/.test(args.commit || "")) {
+    throw new Error("Deploy exige SHA completo e imutavel da candidata.");
+  }
+  if (!args.dryRun && args.only === "cinecruzeiro") {
+    throw new Error("CINECRUZEIRO_DEPLOY_GATE_PENDING: use o Portao B autorizado; o deploy multi-instalacao nao pausa workers nem verifica restore.");
+  }
+}
+
 async function main() {
   if (process.platform !== "linux") throw new Error("Este deploy deve ser executado na VPS Linux.");
   const args = parseArguments();
@@ -312,7 +327,7 @@ async function main() {
   const registry = loadRegistry(registryPath);
   let instances = registry.instances.filter((instance) => instance.enabled);
   if (args.only) instances = instances.filter((instance) => instance.slug === args.only);
-  if (!instances.length) throw new Error("Nenhuma instalacao habilitada corresponde ao deploy.");
+  assertDeploymentSelection(args, instances);
 
   console.log(`Instalacoes: ${instances.map((instance) => instance.slug).join(", ")}`);
   if (args.dryRun) {

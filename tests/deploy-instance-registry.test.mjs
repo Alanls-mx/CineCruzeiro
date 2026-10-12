@@ -5,7 +5,19 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { validateRegistry } from "../scripts/cinema-instance-registry.mjs";
-import { assertStudioScope, postgresEnvironment } from "../scripts/deploy-all-vps.mjs";
+import { assertStudioScope, assertDeploymentSelection, postgresEnvironment } from "../scripts/deploy-all-vps.mjs";
+
+test("deploy multi-instalacao recusa selecao ambigua e Cine Cruzeiro em portao pendente", () => {
+  const pilot = { slug: "cinecruzeiro" };
+  const other = { slug: "outro-cinema" };
+  const commit = "a".repeat(40);
+  assert.throws(() => assertDeploymentSelection({ only: "", commit }, [pilot, other]), /--only/);
+  assert.throws(() => assertDeploymentSelection({ only: "cinecruzeiro", commit }, [pilot, other]), /exatamente uma/);
+  assert.throws(() => assertDeploymentSelection({ only: "outro-cinema", commit: "main" }, [other]), /SHA completo/);
+  assert.throws(() => assertDeploymentSelection({ only: "cinecruzeiro", commit }, [pilot]), /DEPLOY_GATE_PENDING/);
+  assert.doesNotThrow(() => assertDeploymentSelection({ only: "cinecruzeiro", dryRun: true }, [pilot]));
+  assert.doesNotThrow(() => assertDeploymentSelection({ only: "outro-cinema", commit }, [other]));
+});
 
 function instance(overrides = {}) {
   return {

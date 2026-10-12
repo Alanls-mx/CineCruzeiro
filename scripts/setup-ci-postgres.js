@@ -17,7 +17,9 @@ async function main() {
     throw new Error("Prepare a instância somente no job PostgreSQL do GitHub Actions.");
   }
   const container = JSON.parse(docker(["inspect", containerId]))[0];
-  if (container?.Config?.Image !== "postgres:16-alpine"
+  const expectedImage = `postgres:${process.env.CINE_CI_POSTGRES_MAJOR || "16"}-alpine`;
+  if (!["postgres:16-alpine", "postgres:18-alpine"].includes(expectedImage)
+      || container?.Config?.Image !== expectedImage
       || !container?.NetworkSettings?.Ports?.["5432/tcp"]?.some((binding) => Number(binding.HostPort) === port)) {
     throw new Error("O contêiner ou a porta PostgreSQL do CI não correspondem ao serviço esperado.");
   }
