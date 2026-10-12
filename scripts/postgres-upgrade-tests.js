@@ -155,6 +155,20 @@ async function main() {
     await client.query("BEGIN");
     await client.query(await fs.readFile(path.join(migrationsDir, "052_point_payment_methods.sql"), "utf8"));
     await client.query("ROLLBACK");
+    const blocker = new Client({ connectionString: url });
+    await blocker.connect();
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("UPDATE payments SET status=status WHERE id='upgrade-pix'");
+      await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout='150ms'");
+      await assert.rejects(client.query(await fs.readFile(path.join(migrationsDir, "052_point_payment_methods.sql"), "utf8")),
+        (error) => error.code === "55P03", "DDL concorrente deve respeitar lock_timeout");
+      await client.query("ROLLBACK");
+    } finally {
+      await blocker.query("ROLLBACK");
+      await blocker.end();
+    }
     await assert.rejects(client.query(`INSERT INTO payments (id,order_id,method,provider,status,amount)
       VALUES ('upgrade-point-before','upgrade-pending','point_debit','mercado_pago','pending',10)`), /payments_method_check/);
     await apply(client, "052_point_payment_methods.sql");

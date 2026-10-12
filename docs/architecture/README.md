@@ -25,6 +25,10 @@
 | [Autorizacao do sandbox](../FASE11_AUTORIZACAO_SANDBOX.md) | Você precisa solicitar o primeiro teste externo sem assumir que a escolha do piloto libera pagamentos. |
 | [Auditoria VPS Fase 12](../FASE12_AUDITORIA_VPS.md) | Você precisa do estado observado da instalacao LumixEngine, da release e do esquema, sem segredos. |
 | [Plano de atualizacao Fase 12](../FASE12_PLANO_ATUALIZACAO.md) | Você precisa de preflight, backup, migracao, validacao e reversao antes de pedir autorizacao de deploy. |
+| [Preflight Fase 13](../FASE13_PREFLIGHT_OPERACIONAL.md) | Você precisa das evidencias read-only de isolamento e dos bloqueios do Portao A. |
+| [Matriz Fase 13](../FASE13_MATRIZ_ATUALIZACAO.md) | Você precisa dos criterios de parada e recuperacao por etapa. |
+| [Runbook Fase 13](../FASE13_RUNBOOK_EXECUCAO.md) | Você prepara uma eventual janela operacional, sem executa-la. |
+| [Ficha Portao B](../FASE13_AUTORIZACAO_ATUALIZACAO.md) | Você solicita autorizacao explicita por recurso e operacao; formulario vazio nao autoriza. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
 ## Navegação por intenção
@@ -39,7 +43,7 @@
 - Backup/restauração: [procedimento protegido](../TESTES_POSTGRESQL.md), [ensaio sintético](../../scripts/postgres-backup-restore-test.js).
 - Google Wallet e isolamento de marca: [layout](../../backend/services/googleWalletPassLayoutService.js), [teste](../../tests/google-wallet-integration.test.mjs), [portao externo](../FASE10_CADERNO_PILOTO.md#outras-integracoes).
 - Impressao Point e descricao da Order: [provedor](../../backend/services/cardTerminalProvider.js), [fluxo](flows.md), [teste local](../../scripts/mercado-pago-point-tests.js), [limites do piloto](../FASE11_HOMOLOGACAO_PILOTO.md#alteracao-dirigida).
-- Atualizacao da VPS existente: [auditoria Fase 12](../FASE12_AUDITORIA_VPS.md), [plano autorizado apenas futuramente](../FASE12_PLANO_ATUALIZACAO.md), [deploy script](../../scripts/deploy-all-vps.mjs), [migrations](../../backend/db/migrations/051_ticket_email_jobs.sql) e [operacoes](operations.md). Registro local de exemplo nao descreve os outros cinemas habilitados na VPS.
+- Atualizacao da VPS existente: [preflight Fase 13](../FASE13_PREFLIGHT_OPERACIONAL.md), [matriz](../FASE13_MATRIZ_ATUALIZACAO.md), [runbook](../FASE13_RUNBOOK_EXECUCAO.md), [ficha](../FASE13_AUTORIZACAO_ATUALIZACAO.md), [deploy bloqueado para o piloto](../../scripts/deploy-all-vps.mjs), [ensaio PG18](../../scripts/postgres-upgrade-tests.js) e [operacoes](operations.md). Registro local de exemplo nao descreve os outros cinemas habilitados na VPS.
 
 ## Regra de manutenção
 
