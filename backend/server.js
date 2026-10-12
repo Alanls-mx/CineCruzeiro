@@ -1,3 +1,7 @@
+if (process.env.CINE_OPERATION_MODE && process.env.CINE_OPERATION_MODE !== "normal") {
+  throw new Error("CINE_OPERATION_MODE_INVALID: use backend/start.js para o modo quiescent.");
+}
+
 const http = require("http");
 const { createWriteStream } = require("fs");
 const fs = require("fs/promises");

@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const net = require("node:net");
+const crypto = require("node:crypto");
 const { Client } = require("pg");
 const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 
@@ -84,6 +85,21 @@ async function oldReleaseProbe(sourceDir, databaseUrl, stage) {
         if (response.ok) {
           const catalog = await fetch(`http://127.0.0.1:${port}/api/content`, { signal: AbortSignal.timeout(2000) });
           assert.equal(catalog.status, 200, `A release antiga nao leu o catalogo no esquema ${stage}`);
+          if (stage === "052") {
+            const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: "upgrade@example.invalid", password: "upgrade-synthetic-123" }),
+              signal: AbortSignal.timeout(2000)
+            });
+            assert.equal(login.status, 200, "Login legado no esquema 052");
+            const cookie = login.headers.get("set-cookie")?.split(";")[0];
+            assert.ok(cookie?.startsWith("cine_customer="));
+            const ticket = await fetch(`http://127.0.0.1:${port}/api/me/tickets/upgrade-ticket`, {
+              headers: { Cookie: cookie }, signal: AbortSignal.timeout(2000)
+            });
+            assert.equal(ticket.status, 200, "Direito pago legivel pelo codigo antigo no esquema 052");
+            assert.equal((await ticket.json()).ticket.id, "upgrade-ticket");
+          }
           ready = true;
           break;
         }
@@ -126,7 +142,9 @@ async function main() {
     const { previous, files } = await migrationFiles();
     await client.query("CREATE TABLE schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())");
     for (const file of previous) await apply(client, file);
-    await client.query("INSERT INTO users (id,name,email,role) VALUES ('upgrade-user','Pessoa Sintetica','upgrade@example.invalid','customer')");
+    const salt = crypto.randomBytes(16).toString("base64url");
+    const passwordHash = `pbkdf2_sha256$600000$${salt}$${crypto.pbkdf2Sync("upgrade-synthetic-123", salt, 600000, 32, "sha256").toString("base64url")}`;
+    await client.query("INSERT INTO users (id,name,email,role,password_hash) VALUES ('upgrade-user','Pessoa Sintetica','upgrade@example.invalid','customer',$1)", [passwordHash]);
     await client.query(`INSERT INTO orders (id,customer_user_id,customer_name,status,total,metadata)
       VALUES ('upgrade-paid','upgrade-user','Pessoa Sintetica','paid',10,'{"ticketEmailRequested":true}'),
              ('upgrade-pending','upgrade-user','Pessoa Sintetica','pending_payment',10,'{"ticketEmailRequested":true}'),
@@ -180,6 +198,8 @@ async function main() {
     assert.match(check.rows[0].definition, /point_debit/);
     assert.equal((await client.query("SELECT count(*)::int AS total FROM schema_migrations")).rows[0].total, files.length);
     assert.equal((await client.query("SELECT count(*)::int AS total FROM payments")).rows[0].total, 2);
+    await client.query(`INSERT INTO tickets (id,order_id,code,qr_payload,ticket_type,customer_name,customer_email)
+      VALUES ('upgrade-ticket','upgrade-paid','upgrade-code','upgrade-qr','inteira','Pessoa Sintetica','upgrade@example.invalid')`);
     await withOldRelease((sourceDir) => oldReleaseProbe(sourceDir, url, "052"));
     const rerun = spawnSync(process.execPath, [path.join(__dirname, "db-migrate.js")], {
       cwd: path.join(__dirname, ".."), encoding: "utf8", env: { ...process.env, DATABASE_URL: url, POSTGRES_URL: "" }

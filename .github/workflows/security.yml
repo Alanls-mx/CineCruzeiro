@@ -16,6 +16,8 @@ jobs:
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run test:security:local
+      - run: npm run test:postgres-safety
+      - run: npm run test:maintenance
       - run: node --test tests/storage-image-sanitization.test.mjs
       - run: npm run test:ticket-security
       - run: node scripts/admin-two-factor-tests.js
