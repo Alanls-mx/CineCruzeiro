@@ -3286,8 +3286,9 @@ async function run() {
       assert.equal(crashedSale.response.status, 202, "A intencao duravel pode retornar pendencia quando a reivindicacao falha");
       assert.equal(mockPointOrders.size, pointOrdersBeforeCrash, "Interrupcao apos preparacao nao criou cobranca");
       assert.equal((await readPersistedDb()).payments.find((item) => item.id === crashPaymentId).metadata.pointCreateState, "prepared");
-      const recoveredCrash = await request(`/api/box-office/point-payments/${crashPaymentId}`, { headers: jsonHeaders(adminCookie) });
-      assert.equal(recoveredCrash.response.status, 200);
+      const recoveredCrash = await Promise.all(Array.from({ length: 2 }, () =>
+        request(`/api/box-office/point-payments/${crashPaymentId}`, { headers: jsonHeaders(adminCookie) })));
+      assert.deepEqual(recoveredCrash.map((result) => result.response.status), [200, 200]);
       assert.equal(mockPointOrders.size, pointOrdersBeforeCrash + 1);
 
       const finalKey = "smoke-point-final-commit-failure";
