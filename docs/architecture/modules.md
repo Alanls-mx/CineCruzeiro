@@ -4,6 +4,8 @@ O [server.js](../../backend/server.js) ainda faz roteamento, autenticação, aut
 
 Na Fase 9, a orquestração da intenção Point (`claimPointCreation`, `markPointRequestSent`, `attemptPointCreation`) permanece em `server.js`; [cardTerminalProvider](../../backend/services/cardTerminalProvider.js) continua responsável pela API externa. Não foi criada uma segunda máquina de estados ou uma extração estrutural ampla. O [ensaio de restauração](../../scripts/postgres-backup-restore-test.js) é um script de teste, não um worker operacional. A [segunda instância de smoke](../../scripts/point-smoke-second-instance.js) usa o mesmo PostgreSQL descartável e um provedor simulado; não é um processo de produção.
 
+Na Fase 11, `cardTerminalProvider` limita a descricao da Order a 150 caracteres e compoe a impressao com nome de cinema recebido de `server.js`, sem marca fixa no modulo compartilhado. [Teste Point](../../scripts/mercado-pago-point-tests.js); [relatorio do piloto](../FASE11_HOMOLOGACAO_PILOTO.md). Nao houve endpoint, permissao ou escritor novo.
+
 | Responsabilidade | Módulo | Verificação |
 | --- | --- | --- |
 | Indicadores administrativos | [adminDashboardService](../../backend/services/adminDashboardService.js) | [teste do dashboard](../../tests/admin-dashboard-module.test.mjs) |

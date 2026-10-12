@@ -37,3 +37,5 @@ Após restore, não religar automaticamente workers nem repetir uma cobrança Po
 ## Pre-homologacao e incidentes
 
 O [caderno da Fase 10](../FASE10_CADERNO_PILOTO.md) separa teste interno, sandbox e operacao assistida, com ficha de autorizacao, paradas e roteiro por incidente. O diagnostico Wallet **nao** e read-only: pode alterar classe externa. Para Point incerto, refund pendente, job/e-mail ou campanha interrompida, preservar IDs e estados, pausar somente a operacao afetada e escalar ao responsavel designado; nao reexecutar efeitos externos com identidade nova. O backup sintetico nao substitui plano de restauracao e conciliacao por cinema. Nenhuma dessas instrucoes autoriza acesso a recurso operacional.
+
+O [relatorio da Fase 11](../FASE11_HOMOLOGACAO_PILOTO.md) registra Cine Cruzeiro como piloto escolhido, evidencia interna e bloqueios. A [ficha de sandbox](../FASE11_AUTORIZACAO_SANDBOX.md) exige conta de teste, operacoes, limite, callback isolado, responsavel e parada antes de qualquer contato com o Mercado Pago. A escolha do piloto por si so nao autoriza teste externo nem implantacao.

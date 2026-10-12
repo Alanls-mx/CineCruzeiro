@@ -21,6 +21,8 @@
 | [Fase 9](../FASE9_DESBLOQUEIO.md) | Você investiga a intenção Point, estornos ou o ensaio de restauração. |
 | [Fase 10](../FASE10_PRE_HOMOLOGACAO.md) | Você prepara o portao de autorizacao, matrizes de integracao e a decisao de pre-homologacao. |
 | [Caderno do piloto](../FASE10_CADERNO_PILOTO.md) | Você procura roteiro funcional, incidentes, backup/reversao ou checklist por cinema. |
+| [Fase 11](../FASE11_HOMOLOGACAO_PILOTO.md) | Você procura a evidencia interna do Cine Cruzeiro confirmado como piloto, os limites do ambiente e a decisao A-E. |
+| [Autorizacao do sandbox](../FASE11_AUTORIZACAO_SANDBOX.md) | Você precisa solicitar o primeiro teste externo sem assumir que a escolha do piloto libera pagamentos. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
 ## Navegação por intenção
@@ -34,6 +36,7 @@
 - Cobrança Point inconclusiva: [fluxo presencial](flows.md), [limites de commit](transactions.md), [smoke PostgreSQL](../../scripts/smoke-tests.js).
 - Backup/restauração: [procedimento protegido](../TESTES_POSTGRESQL.md), [ensaio sintético](../../scripts/postgres-backup-restore-test.js).
 - Google Wallet e isolamento de marca: [layout](../../backend/services/googleWalletPassLayoutService.js), [teste](../../tests/google-wallet-integration.test.mjs), [portao externo](../FASE10_CADERNO_PILOTO.md#outras-integracoes).
+- Impressao Point e descricao da Order: [provedor](../../backend/services/cardTerminalProvider.js), [fluxo](flows.md), [teste local](../../scripts/mercado-pago-point-tests.js), [limites do piloto](../FASE11_HOMOLOGACAO_PILOTO.md#alteracao-dirigida).
 
 ## Regra de manutenção
 
