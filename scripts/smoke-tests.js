@@ -3176,6 +3176,47 @@ async function run() {
       assert.equal((await readPersistedDb()).payments.find((item) => item.id === combinedSale.payload.payment.id).refundedAmount, combinedRefundedAmount);
       assert.equal((await readPersistedDb()).concessions.find((item) => item.id === "combo-classico").stock, combinedStockBefore + 1);
 
+      const fullRefundSale = await createPointSale("smoke-point-full-refund");
+      const fullRefundProviderOrder = mockPointOrders.get(fullRefundSale.payload.payment.providerPaymentId);
+      fullRefundProviderOrder.status = "approved";
+      fullRefundProviderOrder.providerStatus = "processed";
+      assert.equal((await request(`/api/box-office/point-payments/${encodeURIComponent(fullRefundSale.payload.payment.id)}`, { headers: jsonHeaders(adminCookie) })).payload.completed, true);
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE payments SET provider_payment_id=$1, metadata=jsonb_set(metadata, '{metadata,providerEnvironment}', to_jsonb($2::text), true) WHERE id=$3",
+        ["ORDSMOKEFULLREFUND1", "sandbox", fullRefundSale.payload.payment.id]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      const fullRefundOrderId = fullRefundSale.payload.order.id;
+      const requestFullRefund = (cookie = adminCookie) => request(`/api/orders/${encodeURIComponent(fullRefundOrderId)}`, {
+        method: "PATCH", headers: jsonHeaders(cookie), body: JSON.stringify({ action: "cancel", reason: "Smoke full refund" })
+      });
+      assert.equal((await requestFullRefund(operatorCookie)).response.status, 403);
+      const fullPrepareFail = failCommitForRecord(fullRefundOrderId, "smoke_full_refund_prepare_commit_failure");
+      let failedFullPrepare;
+      try { failedFullPrepare = await requestFullRefund(); }
+      finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(fullPrepareFail(), true);
+      assert.equal(failedFullPrepare.response.status >= 500, true);
+      assert.equal((await readPersistedDb()).orders.find((item) => item.id === fullRefundOrderId).refundStatus || "", "");
+      assert.equal((await readPersistedDb()).tickets.find((item) => item.orderId === fullRefundOrderId).status, "active");
+      const fullFinalFail = failCommitForRecord(fullRefundOrderId, "smoke_full_refund_final_commit_failure", 2);
+      let failedFullFinal;
+      try { failedFullFinal = await requestFullRefund(); }
+      finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(fullFinalFail(), true);
+      assert.equal(failedFullFinal.response.status >= 500, true);
+      const pendingFullSnapshot = await readPersistedDb();
+      const pendingFullOrder = pendingFullSnapshot.orders.find((item) => item.id === fullRefundOrderId);
+      const fullRefundId = pendingFullSnapshot.payments.find((item) => item.id === fullRefundSale.payload.payment.id).metadata.cancellationRefund.id;
+      assert.equal(pendingFullOrder.status, "paid");
+      assert.equal(pendingFullOrder.refundStatus, "pending");
+      assert.equal(pendingFullSnapshot.tickets.find((item) => item.orderId === fullRefundOrderId).status, "active");
+      const completedFull = await requestFullRefund();
+      assert.equal(completedFull.response.status, 200, JSON.stringify(completedFull.payload));
+      assert.equal(completedFull.payload.refund.id, fullRefundId);
+      assert.equal((await readPersistedDb()).tickets.find((item) => item.orderId === fullRefundOrderId).status, "refunded");
+      assert.equal((await requestFullRefund()).response.status, 200);
+
       const counterFailureBody = {
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, fullTicketsCount: 1, halfTicketsCount: 0,
         saleMode: "registered", customerUserId: registered.user.id, paymentMethod: "external_pix",

@@ -2654,6 +2654,7 @@ function effectiveTicketStatus(ticket, order, session = null, db = null) {
   if (["cancelled", "refunded", "expired"].includes(ticket.status)) return ticket.status;
   if (order && ["cancelled", "refunded", "expired"].includes(order.status)) return order.status;
   if (order && order.status !== "paid") return "pending_payment";
+  if (order?.refundStatus === "pending") return "refund_pending";
   if (session && ["cancelled", "hidden"].includes(session.status)) return "cancelled";
   if (ticketIsExpired(ticket, db)) return "archived";
   return ticket.status || "active";
@@ -6861,10 +6862,10 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
       await writeDb(db);
       return { completed: true, manualRefundRequired: true, manualRefundReason, order, payment };
     }
-    if (!existing) cancelOrder(db, order, reason, adminUser);
     order.refundStatus = "pending";
     payment.refundStatus = "pending";
     payment.metadata = { ...payment.metadata, cancellationRefund: refund };
+    appendOrderAudit(order, { action: "refund.pending", refundId: refund.id, updatedBy: adminUser?.id || "" });
     await writeDb(db);
     return { refund: structuredCloneSafe(refund), token, config };
   });
@@ -6889,6 +6890,7 @@ async function cancelOrderWithRefund(orderId, reason, adminUser) {
     const refund = payment?.metadata?.cancellationRefund;
     if (!order || refund?.id !== prepared.refund.id) throw refundError("REFUND_STATE_CONFLICT", "Devolucao confirmada no provedor; conciliacao local necessaria.");
     if (refund.status !== "completed") {
+      if (order.status !== "cancelled") cancelOrder(db, order, reason, adminUser);
       const now = new Date().toISOString();
       Object.assign(refund, confirmation, { status: "completed", completedAt: now });
       Object.assign(payment, { status: "refunded", refundStatus: "completed", refundedAt: now, updatedAt: now });
@@ -16718,6 +16720,7 @@ async function handleApi(req, res, pathname) {
 
   const orderRefundTicketsMatch = pathname.match(/^\/api\/orders\/([^/]+)\/refund-tickets$/);
   if (orderRefundTicketsMatch && method === "POST") {
+    if (!ensureAdminAction(req, res, "orders.refund", "Esta conta não pode reembolsar ingressos.")) return;
     const orderId = decodeURIComponent(orderRefundTicketsMatch[1]);
     const body = await readBody(req);
     sendJson(res, 200, await refundOrderTickets(orderId, body.reason, req.adminUser));
@@ -16726,6 +16729,7 @@ async function handleApi(req, res, pathname) {
 
   const orderRefundConcessionsMatch = pathname.match(/^\/api\/orders\/([^/]+)\/refund-concessions$/);
   if (orderRefundConcessionsMatch && method === "POST") {
+    if (!ensureAdminAction(req, res, "orders.refund", "Esta conta não pode reembolsar itens de bomboniere.")) return;
     const orderId = decodeURIComponent(orderRefundConcessionsMatch[1]);
     const body = await readBody(req);
     sendJson(res, 200, await refundOrderConcessions(orderId, body.reason, req.adminUser));
