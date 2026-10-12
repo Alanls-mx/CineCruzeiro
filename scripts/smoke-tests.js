@@ -2990,12 +2990,14 @@ async function run() {
     if (postgresMode) {
       const pg = require("pg");
       const originalQuery = pg.Client.prototype.query;
-      function failCommitForRecord(recordId, errorCode, occurrence = 1) {
+      function failCommitForRecord(recordId, errorCode, occurrence = 1, matchWrite = null) {
         const touchedClients = new WeakSet();
         let tripped = false;
         let matchingCommits = 0;
         pg.Client.prototype.query = function (statement, ...args) {
-          if (args.some((arg) => String(JSON.stringify(arg) || "").includes(recordId))) touchedClients.add(this);
+          if (matchWrite
+            ? matchWrite(statement, args)
+            : args.some((arg) => String(JSON.stringify(arg) || "").includes(recordId))) touchedClients.add(this);
           if (!tripped && statement === "COMMIT" && touchedClients.has(this)) {
             touchedClients.delete(this);
             matchingCommits += 1;
@@ -3008,6 +3010,12 @@ async function run() {
         };
         return () => tripped;
       }
+      const matchingPaymentWrite = (paymentId, predicate) => (statement, args) =>
+        statement.startsWith("INSERT INTO payments") && args.some((values) =>
+          Array.isArray(values) && values.some((value) => value?.id === paymentId && predicate(value)));
+      const matchingOrderWrite = (orderId, predicate) => (statement, args) =>
+        statement.startsWith("INSERT INTO orders") && args.some((values) =>
+          Array.isArray(values) && values.some((value) => value?.id === orderId && predicate(value)));
       const pointSyncFailure = await createPointSale("smoke-point-sync-commit-failure");
       const syncProviderOrder = mockPointOrders.get(pointSyncFailure.payload.payment.providerPaymentId);
       syncProviderOrder.status = "approved";
@@ -3090,7 +3098,8 @@ async function run() {
       assert.equal((await readPersistedDb()).orders.find((item) => item.id === refundablePoint.payload.order.id).ticketRefund?.status || "", "");
       assert.equal((await readPersistedDb()).tickets.find((item) => item.orderId === refundablePoint.payload.order.id).status, "active");
 
-      const refundConfirmationFailed = failCommitForRecord(refundablePoint.payload.order.id, "smoke_refund_confirm_commit_failure", 2);
+      const refundConfirmationFailed = failCommitForRecord(refundablePoint.payload.order.id, "smoke_refund_confirm_commit_failure", 1,
+        matchingOrderWrite(refundablePoint.payload.order.id, (order) => order.ticketRefund?.status === "completed"));
       let failedConfirmation;
       try {
         failedConfirmation = await requestTicketRefund();
@@ -3264,7 +3273,8 @@ async function run() {
 
       const crashKey = "smoke-point-crash-before-send";
       const crashPaymentId = `pagamento-point-${crashKey}`;
-      const crashBeforeSend = failCommitForRecord(crashPaymentId, "smoke_point_crash_before_send", 2);
+      const crashBeforeSend = failCommitForRecord(crashPaymentId, "smoke_point_crash_before_send", 1,
+        matchingPaymentWrite(crashPaymentId, (payment) => payment.metadata?.pointCreateState === "sending" && !payment.metadata?.providerRequestSentAt));
       let crashedSale;
       const pointOrdersBeforeCrash = mockPointOrders.size;
       try {
@@ -3282,7 +3292,8 @@ async function run() {
 
       const finalKey = "smoke-point-final-commit-failure";
       const finalPaymentId = `pagamento-point-${finalKey}`;
-      const finalCommitFailed = failCommitForRecord(finalPaymentId, "smoke_point_final_commit_failure", 4);
+      const finalCommitFailed = failCommitForRecord(finalPaymentId, "smoke_point_final_commit_failure", 1,
+        matchingPaymentWrite(finalPaymentId, (payment) => Boolean(payment.providerPaymentId)));
       let failedFinal;
       try {
         failedFinal = await request("/api/box-office/sales", {

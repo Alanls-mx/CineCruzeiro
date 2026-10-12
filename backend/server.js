@@ -15776,11 +15776,12 @@ async function handleApi(req, res, pathname) {
           point_debit: "debit_card",
           card_terminal: "debit_card"
         }[paymentMethod];
+        const cinemaName = String(lockedDb.settings?.cinemaName || lockedDb.settings?.name || "Cinema").trim();
         const paymentDescription = concessionCounterSale
-          ? "Venda presencial da bomboniere - Cine Cruzeiro"
+          ? `Venda presencial da bomboniere - ${cinemaName}`
           : preparedOrders.length === 1
-          ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
-          : `Venda de ${preparedOrders.length} filmes - Cine Cruzeiro`;
+          ? `Ingresso ${preparedOrders[0].movieTitle || cinemaName}`
+          : `Venda de ${preparedOrders.length} filmes - ${cinemaName}`;
         const idempotencyKey = postgresEnabled()
           ? `point-${crypto.createHash("sha256").update(`${process.env.NEXT_PUBLIC_CINEMA_SLUG || "default"}:${clientRequestId}`).digest("hex")}`
           : `point-${batchId}`;
