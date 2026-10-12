@@ -32,10 +32,29 @@ As contagens sao linhas fisicas; crescimento pequeno por protecoes e diagnostico
 | `npm run lint`, `npm run build`, `npm run docs:check` | Local | Passaram. `docs:check` valida links e simbolos curados, nao semantica completa. |
 | `npm run test:e2e` | Navegador e dados temporarios | 19/19; usa JSON sintetico no processo E2E. |
 | `npm run deploy:validate`, `npm run test:multi-cinema:synthetic` | Registro/fixtures temporarios | `REGISTRY_OK=1`, 5/5 testes; nao validam cinco operacoes reais. |
-| PostgreSQL integration | GitHub Actions, PostgreSQL 16 descartavel e marcadores | Passou no commit `813c1d3`, inclusive smoke repetido, concorrencia e repositorios. Nenhum banco operacional foi usado. |
-| Security regression / Browser E2E | GitHub Actions | Passaram no commit `813c1d3`; verificar novamente no HEAD documental final desta fase. |
+| PostgreSQL integration | GitHub Actions, PostgreSQL 16 descartavel e marcadores | [Passou no commit `813c1d3`](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/38181155552), inclusive smoke repetido, concorrencia e repositorios. Nenhum banco operacional foi usado. |
+| Security regression / Browser E2E | GitHub Actions | [Seguranca](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/38181155557) e [navegador](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/38181155565) passaram no commit `813c1d3`; verificar novamente no HEAD documental final desta fase. |
 
 Historico de correcoes CI: `a01b4dd` passou no smoke, mas falhou na limpeza `DROP ... WITH (FORCE)` do banco temporario; `d98003f` removeu o FORCE. `3c53633` falhou porque o fixture do reembolso marcou ambiente sandbox no nivel JSON errado; `b023346` corrigiu a marca e comprovou o ramo de estorno. Nenhum teste foi pulado para esconder essas falhas. [Execucoes no GitHub](https://github.com/Alanls-mx/CineCruzeiro/actions?query=branch%3Acodex%2Fmodularize-server-admin).
+
+### Matriz funcional e de seguranca
+
+`Aprovado com ressalvas` abaixo significa apenas que os cenarios indicados passaram, nao que todos os estados possiveis do dominio foram exauridos.
+
+| Dominio | Classificacao tecnica isolada | Evidencia e limite |
+| --- | --- | --- |
+| Filmes, sessoes, salas e limpeza | Aprovado com ressalvas | `test:unit`, testes de conflito/publicacao, E2E de sessao; nao ha programacao real das cinco instalacoes. |
+| Checkout Pix/cartao e holds | Aprovado com ressalvas | Smoke PostgreSQL, metadados, webhook simulado e E2E; nenhum pagamento real ou cartao de producao. |
+| Bilheteria e Point | Aprovado com ressalvas nos casos cobertos | Smoke PostgreSQL com Point simulado, commit/concorrencia/impressao; cobranca orfa apos falha local permanece bloqueador global. |
+| Clube e creditos | Aprovado com ressalvas | Unidade e concorrencia PG do CI; nao validado saldo real por cinema. |
+| Bomboniere e estoque | Aprovado com ressalvas | Financeiro, concorrencia de ultima unidade no smoke e venda de balcao; failpoints de todos os reembolsos parciais ausentes. |
+| Ingressos, assentos e QR | Aprovado com ressalvas | `test:ticket-security`, smoke PG, E2E; Wallet de cada cinema e entrega por provedor real nao executadas. |
+| Administracao, equipe e autorizacao | Aprovado com ressalvas | `test:security:local` 25/25, 2FA, permissoes e E2E; auditoria manual de cada endpoint nao concluida. |
+| Email e automacoes | Aprovado com ressalvas | `test:unit` inclui fila, lease/fencing e Studio; aceitacao externa antes do registro local pode duplicar envio/artefato. |
+| Backup/restore PostgreSQL | Nao executado | Migrations e rollback testados no CI, mas sem ensaio de restauracao nesta fase. |
+| Seguranca operacional | Nao executado | Nao houve pentest nem inspeccao de CSP/CSRF/uploads em cada instalacao; suites locais e CI cobrem somente casos automatizados. |
+
+A regressao de seguranca automatizada cobre login/2FA, permissoes, origem, protecao de identificadores, webhook assinado, parametros SQL, assentos e sanitizacao de imagens. Ela nao demonstra ausencia de todos os vazamentos de PII, abuso ou configuracoes indevidas de cada cinema. `npm audit --omit=dev --audit-level=high` tambem roda no workflow Security regression.
 
 ## Mapa Inteligente
 
