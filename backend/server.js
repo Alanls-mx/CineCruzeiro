@@ -3533,6 +3533,97 @@ function pointPaymentOrders(db, payment) {
   return ids.map((id) => (db.orders || []).find((order) => order.id === id)).filter(Boolean);
 }
 
+function pointSaleFingerprint(pathname, body) {
+  const canonical = (value) => Array.isArray(value) ? value.map(canonical)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
+      : value;
+  return crypto.createHash("sha256").update(JSON.stringify(canonical({ pathname, body }))).digest("hex");
+}
+
+function pointProviderAccountFingerprint(config) {
+  const token = String(config.accessToken || process.env.MERCADO_PAGO_ACCESS_TOKEN || process.env.MP_ACCESS_TOKEN || process.env.MERCADOPAGO_ACCESS_TOKEN || "");
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+async function claimPointCreation(paymentId) {
+  return withCriticalMutation(async () => {
+    const db = await readDb();
+    const payment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+    if (!payment || payment.status !== "pending" || payment.providerPaymentId || payment.metadata?.pointCreateState === "review_required") return null;
+    if (Date.parse(payment.metadata?.pointCreateLeaseUntil || "") > Date.now()) return null;
+    if (!payment.metadata?.recoveryRequest?.idempotencyKey || !payment.metadata?.recoveryRequest?.externalReference) return null;
+    payment.metadata.pointCreateState = "sending";
+    payment.metadata.pointCreateAttempts = Number(payment.metadata.pointCreateAttempts || 0) + 1;
+    payment.metadata.pointCreateClaim = crypto.randomUUID();
+    payment.metadata.pointCreateLeaseUntil = new Date(Date.now() + 90_000).toISOString();
+    payment.updatedAt = new Date().toISOString();
+    await writeDb(db);
+    return { recovery: payment.metadata.recoveryRequest, paymentId, claim: payment.metadata.pointCreateClaim,
+      terminalId: payment.metadata.terminalId, accountFingerprint: payment.metadata.providerAccountFingerprint };
+  });
+}
+
+async function markPointRequestSent(paymentId, claim) {
+  return withCriticalMutation(async () => {
+    const db = await readDb();
+    const payment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+    if (!payment || payment.status !== "pending" || payment.providerPaymentId || payment.metadata?.pointCreateClaim !== claim) return false;
+    payment.metadata.pointCreateState = "sending";
+    payment.metadata.providerRequestSentAt = new Date().toISOString();
+    payment.updatedAt = payment.metadata.providerRequestSentAt;
+    await writeDb(db);
+    return true;
+  });
+}
+
+async function recordPointCreateUncertainty(paymentId, error) {
+  await withCriticalMutation(async () => {
+    const db = await readDb();
+    const payment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
+    if (!payment || payment.providerPaymentId) return;
+    const notSent = error.code === "POINT_TERMINAL_PRECHECK_FAILED" && !payment.metadata.providerRequestSentAt;
+    payment.metadata.pointCreateState = notSent ? "prepared"
+      : error.code === "POINT_CONNECTION_LOST" ? "unknown" : "review_required";
+    payment.metadata.reconnectRequired = true;
+    payment.metadata.statusDetail = error.code === "POINT_CONNECTION_LOST" ? "reconnect_required" : "provider_create_failed";
+    payment.metadata.pointCreateLeaseUntil = !notSent && error.code === "POINT_CONNECTION_LOST"
+      ? payment.metadata.pointCreateLeaseUntil : "";
+    payment.updatedAt = new Date().toISOString();
+    await writeDb(db);
+  });
+}
+
+async function attemptPointCreation(paymentId, config) {
+  const claim = await claimPointCreation(paymentId);
+  if (!claim) return null;
+  let requestWasSent = false;
+  try {
+    if (String(config.pointDeviceId || config.pointTerminalId || "") !== claim.terminalId
+      || (claim.accountFingerprint && pointProviderAccountFingerprint(config) !== claim.accountFingerprint)) {
+      throw Object.assign(new Error("O terminal da intenção mudou. Restaure a configuração original antes de retomar."), { code: "POINT_TERMINAL_PRECHECK_FAILED" });
+    }
+    try {
+      await cardTerminalProvider.terminalConnection(config);
+    } catch (error) {
+      error.code = "POINT_TERMINAL_PRECHECK_FAILED";
+      throw error;
+    }
+    if (!await markPointRequestSent(paymentId, claim.claim)) return null;
+    requestWasSent = true;
+    return await cardTerminalProvider.createPayment({
+      id: claim.recovery.externalReference,
+      totalPrice: claim.recovery.totalPrice,
+      description: claim.recovery.description
+    }, config, claim.recovery);
+  } catch (error) {
+    if (requestWasSent || error.code === "POINT_TERMINAL_PRECHECK_FAILED") {
+      await recordPointCreateUncertainty(paymentId, error);
+    }
+    throw error;
+  }
+}
+
 function paymentStatusAfterWebhook(currentStatus, incomingStatus) {
   const current = String(currentStatus || "pending").toLowerCase();
   const incoming = String(incomingStatus || "pending").toLowerCase();
@@ -15332,12 +15423,10 @@ async function handleApi(req, res, pathname) {
         if (!recovery?.idempotencyKey || !recovery?.externalReference) {
           throw Object.assign(new Error("A cobrança não possui dados suficientes para reconexão."), { code: "POINT_RECOVERY_DATA_MISSING" });
         }
-        await cardTerminalProvider.terminalConnection(config);
-        providerPayment = await cardTerminalProvider.createPayment({
-          id: recovery.externalReference,
-          totalPrice: recovery.totalPrice,
-          description: recovery.description
-        }, config, recovery);
+        providerPayment = await attemptPointCreation(snapshotPayment.id, config);
+        if (!providerPayment) {
+          throw Object.assign(new Error("A tentativa anterior ainda está em andamento ou requer conciliação."), { code: "POINT_RECOVERY_PENDING" });
+        }
       }
     } catch (error) {
       const orders = pointPaymentOrders(db, snapshotPayment);
@@ -15363,7 +15452,8 @@ async function handleApi(req, res, pathname) {
       });
       return;
     }
-    if (!mercadoPagoReferenceMatches(snapshotPayment, providerPayment.externalReference)) {
+    if ((snapshotPayment.metadata?.requestFingerprint && !providerPayment.externalReference)
+      || !mercadoPagoReferenceMatches(snapshotPayment, providerPayment.externalReference)) {
       sendJson(res, 409, { error: { code: "POINT_REFERENCE_MISMATCH", message: "A referência retornada pela maquininha não confere com a venda." } });
       return;
     }
@@ -15380,6 +15470,8 @@ async function handleApi(req, res, pathname) {
       if (!payment.providerPaymentId && providerPayment.id) payment.providerPaymentId = providerPayment.id;
       payment.metadata = {
         ...(payment.metadata || {}),
+        pointCreateState: payment.providerPaymentId ? "known" : payment.metadata?.pointCreateState,
+        pointCreateLeaseUntil: payment.providerPaymentId ? "" : payment.metadata?.pointCreateLeaseUntil,
         reconnectRequired: false,
         reconnectAttempts: Number(payment.metadata?.reconnectAttempts || 0) + (snapshotPayment.providerPaymentId ? 0 : 1),
         reconnectedAt: snapshotPayment.providerPaymentId ? payment.metadata?.reconnectedAt || "" : new Date().toISOString()
@@ -15451,6 +15543,14 @@ async function handleApi(req, res, pathname) {
       }
       const config = integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {};
       if (!payment.providerPaymentId) {
+        if (payment.metadata?.pointCreateState === "prepared"
+          && !payment.metadata?.providerRequestSentAt
+          && !(Date.parse(payment.metadata?.pointCreateLeaseUntil || "") > Date.now())) {
+          const result = applyPointPaymentStatus(lockedDb, payment, { status: "cancelled", providerStatus: "not_sent" });
+          payment.metadata.pointCreateState = "cancelled_before_send";
+          await writeDb(lockedDb);
+          return { status: 200, payload: { payment, orders: result.orders, tickets: [], cancellationPending: false }, confirmed: true, providerPaymentId: "" };
+        }
         return { status: 409, payload: { error: { code: "POINT_RECONNECT_REQUIRED", message: "Reconecte a cobrança com o terminal antes de solicitar o cancelamento." } } };
       }
       const currentProviderPayment = await cardTerminalProvider.getStatus(payment.providerPaymentId, config);
@@ -15496,7 +15596,7 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     if (["courtesy", "cortesia"].includes(String(body.paymentMethod || "").trim().toLowerCase())
       && !ensureAdminAction(req, res, "box_office.courtesy", "Esta conta pode vender na bilheteria, mas não pode emitir cortesias.")) return;
-    await withCriticalMutation(async () => {
+    const pointPreparation = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       const adminUser = getAdminUser(req, lockedDb);
       if (!adminUser) {
@@ -15522,9 +15622,22 @@ async function handleApi(req, res, pathname) {
       const clientRequestId = /^[a-zA-Z0-9_-]{8,80}$/.test(String(body.clientRequestId || ""))
         ? String(body.clientRequestId)
         : "";
+      if (pointPayment && !clientRequestId) {
+        sendJson(res, 422, { error: { code: "POINT_REQUEST_ID_REQUIRED", message: "Esta venda precisa de um identificador estável. Atualize o painel e tente novamente." } });
+        return;
+      }
+      const requestFingerprint = pointPayment ? pointSaleFingerprint(pathname, body) : "";
       if (pointPayment && clientRequestId) {
         const existingPayment = (lockedDb.payments || []).find((item) => item.metadata?.kind === "point_sale" && item.metadata?.clientRequestId === clientRequestId);
         if (existingPayment) {
+          const selectedTerminal = String((integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {}).pointDeviceId
+            || (integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {}).pointTerminalId || "");
+          if (existingPayment.metadata?.requestFingerprint && (existingPayment.metadata.requestFingerprint !== requestFingerprint
+            || existingPayment.metadata.terminalId !== selectedTerminal
+            || existingPayment.metadata.providerAccountFingerprint !== pointProviderAccountFingerprint(integrationConfigService.resolvedConfig(lockedDb, "mercadoPago") || {}))) {
+            sendJson(res, 409, { error: { code: "POINT_REQUEST_ID_CONFLICT", message: "Este identificador já pertence a outra venda ou terminal. Concilie a venda original antes de continuar." } });
+            return;
+          }
           const existingOrders = pointPaymentOrders(lockedDb, existingPayment);
           const existingOrderIds = new Set(existingOrders.map((order) => order.id));
           const existingTickets = (lockedDb.tickets || []).filter((ticket) => existingOrderIds.has(ticket.orderId));
@@ -15635,10 +15748,12 @@ async function handleApi(req, res, pathname) {
           });
           return;
         }
-        await cardTerminalProvider.terminalConnection(mercadoPagoConfig);
+        if (!postgresEnabled()) await cardTerminalProvider.terminalConnection(mercadoPagoConfig);
         const totalPrice = preparedOrders.reduce((sum, order) => sum + Number(order.totalPrice || 0), 0);
         preparedOrders.forEach((order) => reserveConcessionStock(lockedDb, order));
-        const externalReference = cardTerminalProvider.safeReference(`point-${batchId}`);
+        const externalReference = postgresEnabled()
+          ? `point-${crypto.createHash("sha256").update(`${process.env.NEXT_PUBLIC_CINEMA_SLUG || "default"}:${clientRequestId}`).digest("hex").slice(0, 48)}`
+          : cardTerminalProvider.safeReference(`point-${batchId}`);
         const defaultPaymentType = {
           point_qr: "qr",
           point_credit: "credit_card",
@@ -15650,8 +15765,10 @@ async function handleApi(req, res, pathname) {
           : preparedOrders.length === 1
           ? `Ingresso ${preparedOrders[0].movieTitle || "Cine Cruzeiro"}`
           : `Venda de ${preparedOrders.length} filmes - Cine Cruzeiro`;
-        const idempotencyKey = `point-${batchId}`;
-        const localPaymentId = `pagamento-point-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+        const idempotencyKey = postgresEnabled()
+          ? `point-${crypto.createHash("sha256").update(`${process.env.NEXT_PUBLIC_CINEMA_SLUG || "default"}:${clientRequestId}`).digest("hex")}`
+          : `point-${batchId}`;
+        const localPaymentId = postgresEnabled() ? `pagamento-point-${clientRequestId}` : `pagamento-point-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
         const timestamp = new Date().toISOString();
         const buildPointOrders = (paymentRecord) => preparedOrders.map((order) => ({
           ...order,
@@ -15678,6 +15795,42 @@ async function handleApi(req, res, pathname) {
             customerId: selectedCustomer?.id || ""
           }
         }));
+        if (postgresEnabled()) {
+          const pointPaymentRecord = {
+            id: localPaymentId,
+            orderId: preparedOrders[0].id,
+            method: paymentMethod,
+            provider: "mercado_pago",
+            providerPaymentId: "",
+            providerReference: externalReference,
+            status: "pending",
+            amount: totalPrice,
+            currency: "BRL",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            metadata: {
+              kind: "point_sale", origin: saleOrigin, batchId, clientRequestId,
+              requestFingerprint,
+              installationId: String(process.env.NEXT_PUBLIC_CINEMA_SLUG || "default"),
+              providerAccountFingerprint: pointProviderAccountFingerprint(mercadoPagoConfig),
+              relatedOrderIds: preparedOrders.map((order) => order.id),
+              terminalId: String(mercadoPagoConfig.pointDeviceId || mercadoPagoConfig.pointTerminalId || ""),
+              idempotencyKey,
+              pointCreateState: "prepared",
+              pointCreateAttempts: 0,
+              pointCreateLeaseUntil: "",
+              recoveryRequest: { externalReference, idempotencyKey, ticketNumber: batchId, defaultPaymentType, description: paymentDescription, totalPrice },
+              createdBy: adminUser.id,
+              createdByEmail: adminUser.email
+            }
+          };
+          const orders = buildPointOrders(pointPaymentRecord);
+          lockedDb.orders.unshift(...orders);
+          lockedDb.payments.unshift(pointPaymentRecord);
+          await writeDb(lockedDb);
+          await releaseBoxOfficeSeatHolds(orders);
+          return { pointPaymentId: pointPaymentRecord.id, orderIds: orders.map((order) => order.id), adminUserId: adminUser.id };
+        }
         let providerPayment;
         try {
           providerPayment = await cardTerminalProvider.createPayment({
@@ -15865,6 +16018,79 @@ async function handleApi(req, res, pathname) {
         .filter((sale) => sale.tickets.length && shouldDeliverBoxOfficeTicketsByEmail(sale.order))
         .forEach((sale) => queueTicketEmailDelivery(sale.order.id));
     });
+    if (pointPreparation?.pointPaymentId) {
+      const paymentId = pointPreparation.pointPaymentId;
+      const config = integrationConfigService.resolvedConfig(await readDb(), "mercadoPago") || {};
+      let providerPayment = null;
+      try {
+        providerPayment = await attemptPointCreation(paymentId, config);
+      } catch (error) {
+        logEvent("warn", "box_office_point_sale.reconnect_required", { paymentId, code: error.code || "POINT_PROVIDER_ERROR" });
+      }
+      if (providerPayment && (!providerPayment.id || !providerPayment.externalReference
+        || providerPayment.externalReference !== (await readDb()).payments.find((item) => item.id === paymentId)?.providerReference)) {
+        await recordPointCreateUncertainty(paymentId, { code: "POINT_PROVIDER_MISMATCH" });
+        providerPayment = null;
+      }
+      if (providerPayment) {
+        const result = await withCriticalMutation(async () => {
+          const lockedDb = await readDb();
+          const payment = (lockedDb.payments || []).find((item) => item.id === paymentId);
+          if (!payment) throw Object.assign(new Error("A intenção Point não foi encontrada."), { code: "POINT_INTENT_MISSING", statusCode: 409 });
+          if (providerPayment.amount && Math.abs(Number(providerPayment.amount) - Number(payment.amount)) > 0.01) {
+            payment.metadata.pointCreateState = "review_required";
+            payment.metadata.reconciliationRequired = true;
+            payment.metadata.reconciliationReason = "point_amount_mismatch";
+            payment.providerPaymentId = providerPayment.id;
+            await writeDb(lockedDb);
+            return { mismatch: true };
+          }
+          if (providerPayment.terminalId && providerPayment.terminalId !== payment.metadata.terminalId) {
+            payment.metadata.pointCreateState = "review_required";
+            payment.metadata.reconciliationRequired = true;
+            payment.metadata.reconciliationReason = "point_terminal_mismatch";
+            payment.providerPaymentId = providerPayment.id;
+            await writeDb(lockedDb);
+            return { mismatch: true };
+          }
+          payment.providerPaymentId = providerPayment.id;
+          payment.metadata.pointCreateState = "known";
+          payment.metadata.pointCreateLeaseUntil = "";
+          const pointResult = applyPointPaymentStatus(lockedDb, payment, providerPayment);
+          const pointPrint = payment.status === "approved" && !pointResult.reconciliationRequired
+            ? await queueBoxOfficePointPrint(lockedDb, pointResult.orders, pointResult.tickets, config, {
+              batchId: payment.metadata.batchId, paymentMethod: payment.method,
+              adminUser: (lockedDb.users || []).find((user) => user.id === pointPreparation.adminUserId)
+            })
+            : { requested: false, status: "not_requested", message: "" };
+          await writeDb(lockedDb);
+          return { payment, orders: pointResult.orders, tickets: pointResult.tickets, pointPrint,
+            emailOrderIds: pointResult.newlyPaidOrders.filter(shouldDeliverBoxOfficeTicketsByEmail).map((order) => order.id) };
+        });
+        if (result.mismatch) {
+          sendJson(res, 409, { error: { code: "POINT_PAYMENT_MISMATCH", message: "A cobrança retornou dados divergentes. Concilie antes de prosseguir." } });
+          return;
+        }
+        sendJson(res, result.payment.status === "approved" ? 201 : 202, {
+          order: result.orders[0], payment: result.payment, orders: result.orders, payments: [result.payment],
+          tickets: result.tickets, pointPrint: result.pointPrint, batchId: result.payment.metadata.batchId,
+          totalPrice: result.payment.amount,
+          point: { status: result.payment.status, providerOrderId: result.payment.providerPaymentId, terminalId: result.payment.metadata.terminalId }
+        });
+        result.emailOrderIds.forEach(queueTicketEmailDelivery);
+        return;
+      }
+      const pendingDb = await readDb();
+      const pendingPayment = (pendingDb.payments || []).find((item) => item.id === paymentId);
+      const orders = pointPaymentOrders(pendingDb, pendingPayment);
+      sendJson(res, 202, {
+        order: orders[0], payment: pendingPayment, orders, payments: [pendingPayment], tickets: [],
+        pointPrint: { requested: false, status: "not_requested", message: "" },
+        batchId: pendingPayment.metadata.batchId, totalPrice: pendingPayment.amount,
+        reconnecting: true, retryAfterMs: 3500,
+        point: { status: pendingPayment.status, providerOrderId: "", terminalId: pendingPayment.metadata.terminalId }
+      });
+    }
     return;
   }
 

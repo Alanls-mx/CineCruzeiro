@@ -405,6 +405,7 @@ async function run() {
   let pointCancelCalls = 0;
   let pointStatusError = "";
   let pointPrintFails = false;
+  let pointCreateLosesResponse = false;
   pointProvider.terminalConnection = async () => ({ connected: true, terminal: { id: "smoke-point-terminal" } });
   pointProvider.createPayment = async (order, _config, options) => {
     const existing = [...mockPointOrders.values()].find((item) => item.idempotencyKey === options.idempotencyKey);
@@ -419,6 +420,10 @@ async function run() {
       terminalId: "smoke-point-terminal"
     };
     mockPointOrders.set(payment.id, payment);
+    if (pointCreateLosesResponse) {
+      pointCreateLosesResponse = false;
+      throw Object.assign(new Error("Mock Point response lost"), { code: "POINT_CONNECTION_LOST", statusCode: 504 });
+    }
     return { ...payment };
   };
   pointProvider.getStatus = async (id) => {
@@ -2823,6 +2828,16 @@ async function run() {
       assert.equal(saved.payments.some((item) => item.id === result.payload.payment.id), true, "Point 202 deve seguir o commit");
       return result;
     };
+    const pointCallsBeforeInvalid = mockPointOrders.size;
+    for (const endpoint of ["/api/box-office/sales", "/api/tickets/manual", "/api/admin/concession-counter-sales"]) {
+      const invalid = await request(endpoint, {
+        method: "POST", headers: jsonHeaders(adminCookie),
+        body: JSON.stringify({ ...pointSaleBody("missing-key"), clientRequestId: "bad!" })
+      });
+      assert.equal(invalid.response.status, 422);
+      assert.equal(invalid.payload.error.code, "POINT_REQUEST_ID_REQUIRED");
+    }
+    assert.equal(mockPointOrders.size, pointCallsBeforeInvalid, "Identidade invalida nao pode chamar o provedor");
     const cancelPoint = (id) => request(`/api/box-office/point-payments/${encodeURIComponent(id)}/cancel`, {
       method: "POST", headers: jsonHeaders(adminCookie), body: "{}"
     });
@@ -2834,6 +2849,15 @@ async function run() {
     assert.equal(resumedPointSale.response.status, 200);
     assert.equal(resumedPointSale.payload.payment.id, pointPending.payload.payment.id);
     assert.equal(mockPointOrders.size, 1, "Repetir a venda nao deve criar outra Order Point");
+    if (postgresMode) {
+      const conflict = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie),
+        body: JSON.stringify({ ...pointSaleBody("smoke-point-pending"), fullTicketsCount: 2 })
+      });
+      assert.equal(conflict.response.status, 409);
+      assert.equal(conflict.payload.error.code, "POINT_REQUEST_ID_CONFLICT");
+      assert.equal(mockPointOrders.size, 1);
+    }
     pointCancelMode = "pending";
     const inconclusiveCancel = await cancelPoint(pointPending.payload.payment.id);
     assert.equal(inconclusiveCancel.response.status, 202);
@@ -3069,6 +3093,7 @@ async function run() {
       assert.equal((await readPersistedDb()).orders.some((item) => item.id === recoveredCounterSale.payload.order.id), true);
 
       const saleCommitFailed = failCommitForRecord("pedido-bilheteria-smoke-point-sale-failure-0", "smoke_point_sale_commit_failure");
+      const pointOrdersBeforePreparation = mockPointOrders.size;
       let failedSale;
       try {
         failedSale = await request("/api/box-office/sales", {
@@ -3080,8 +3105,75 @@ async function run() {
       assert.equal(saleCommitFailed(), true, "O failpoint deve atingir o commit da venda");
       assert.equal(failedSale.response.status >= 500, true, "Falha de commit nao pode responder venda concluida");
       assert.equal((await readPersistedDb()).orders.some((item) => item.id === "pedido-bilheteria-smoke-point-sale-failure-0"), false);
+      assert.equal(mockPointOrders.size, pointOrdersBeforePreparation, "Falha do commit da intencao nao pode chamar o provedor");
       const recoveredSale = await createPointSale("smoke-point-sale-failure");
-      assert.equal(recoveredSale.payload.payment.providerPaymentId, `ORD-SMOKE-${mockPointOrders.size}`);
+      assert.equal(mockPointOrders.has(recoveredSale.payload.payment.providerPaymentId), true);
+
+      const crashKey = "smoke-point-crash-before-send";
+      const crashPaymentId = `pagamento-point-${crashKey}`;
+      const crashBeforeSend = failCommitForRecord(crashPaymentId, "smoke_point_crash_before_send", 2);
+      let crashedSale;
+      const pointOrdersBeforeCrash = mockPointOrders.size;
+      try {
+        crashedSale = await request("/api/box-office/sales", {
+          method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody(crashKey))
+        });
+      } finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(crashBeforeSend(), true);
+      assert.equal(crashedSale.response.status >= 500, true);
+      assert.equal(mockPointOrders.size, pointOrdersBeforeCrash, "Interrupcao apos preparacao nao criou cobranca");
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === crashPaymentId).metadata.pointCreateState, "prepared");
+      const recoveredCrash = await request(`/api/box-office/point-payments/${crashPaymentId}`, { headers: jsonHeaders(adminCookie) });
+      assert.equal(recoveredCrash.response.status, 200);
+      assert.equal(mockPointOrders.size, pointOrdersBeforeCrash + 1);
+
+      const finalKey = "smoke-point-final-commit-failure";
+      const finalPaymentId = `pagamento-point-${finalKey}`;
+      const finalCommitFailed = failCommitForRecord(finalPaymentId, "smoke_point_final_commit_failure", 4);
+      let failedFinal;
+      try {
+        failedFinal = await request("/api/box-office/sales", {
+          method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody(finalKey))
+        });
+      } finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(finalCommitFailed(), true);
+      assert.equal(failedFinal.response.status >= 500, true);
+      const durableIntent = (await readPersistedDb()).payments.find((item) => item.id === finalPaymentId);
+      assert.equal(durableIntent.metadata.pointCreateState, "sending");
+      assert.equal(Boolean(durableIntent.metadata.providerRequestSentAt), true);
+      assert.equal(durableIntent.providerPaymentId || "", "");
+      const providerOrderCount = mockPointOrders.size;
+      const repeatedFinal = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody(finalKey))
+      });
+      assert.equal(repeatedFinal.response.status, 200);
+      assert.equal(mockPointOrders.size, providerOrderCount);
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE payments SET metadata=jsonb_set(metadata, '{metadata,pointCreateLeaseUntil}', to_jsonb($1::text), true) WHERE id=$2",
+        ["2000-01-01T00:00:00.000Z", finalPaymentId]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      const recoveredFinal = await request(`/api/box-office/point-payments/${finalPaymentId}`, { headers: jsonHeaders(adminCookie) });
+      assert.equal(recoveredFinal.response.status, 200);
+      assert.equal(recoveredFinal.payload.payment.providerPaymentId.startsWith("ORD-SMOKE-"), true);
+      assert.equal(mockPointOrders.size, providerOrderCount, "A chave original deve recuperar a mesma cobranca");
+
+      pointCreateLosesResponse = true;
+      const timeoutKey = "smoke-point-response-lost";
+      const timeoutSale = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(pointSaleBody(timeoutKey))
+      });
+      assert.equal(timeoutSale.response.status, 202);
+      assert.equal(timeoutSale.payload.payment.metadata.pointCreateState, "unknown");
+      const countAfterTimeout = mockPointOrders.size;
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE payments SET metadata=jsonb_set(metadata, '{metadata,pointCreateLeaseUntil}', to_jsonb($1::text), true) WHERE id=$2",
+        ["2000-01-01T00:00:00.000Z", timeoutSale.payload.payment.id]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      const resumedTimeout = await request(`/api/box-office/point-payments/${timeoutSale.payload.payment.id}`, { headers: jsonHeaders(adminCookie) });
+      assert.equal(resumedTimeout.response.status, 200);
+      assert.equal(mockPointOrders.size, countAfterTimeout);
 
       const pointCommitFailure = await createPointSale("smoke-point-commit-failure");
       const pointCommitFailed = failCommitForRecord(pointCommitFailure.payload.payment.id, "smoke_point_commit_failure");
