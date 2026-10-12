@@ -23,6 +23,8 @@ jobs:
       - run: npm run test:finance
       - run: npm run test:permissions
       - run: npm run test:seat-map
+      - run: npm run test:multi-cinema:synthetic
       - run: npm run docs:check
+      - run: npm run docs:coverage
       - run: npm run lint
       - run: npm run build
