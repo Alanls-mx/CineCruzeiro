@@ -81,18 +81,25 @@ function buildGoogleWalletClassTemplateInfo() {
   };
 }
 
-function buildGoogleWalletClassIdentity(logoUrl = "") {
+function buildGoogleWalletClassIdentity(logoUrl = "", cinemaName = "Cinema") {
+  const name = String(cinemaName || "").trim() || "Cinema";
   return {
-    issuerName: "Cine Cruzeiro",
-    localizedIssuerName: { defaultValue: { language: "pt-BR", value: "Cine Cruzeiro" } },
+    issuerName: name,
+    localizedIssuerName: { defaultValue: { language: "pt-BR", value: name } },
     eventName: {
-      defaultValue: { language: "pt-BR", value: "Ingresso Cine Cruzeiro" }
+      defaultValue: { language: "pt-BR", value: `Ingresso ${name}` }
     },
     ...(logoUrl ? {
-      logo: { sourceUri: { uri: logoUrl }, contentDescription: { defaultValue: { language: "pt-BR", value: "Cine Cruzeiro" } } },
-      wideLogo: { sourceUri: { uri: logoUrl }, contentDescription: { defaultValue: { language: "pt-BR", value: "Cine Cruzeiro" } } }
+      logo: { sourceUri: { uri: logoUrl }, contentDescription: { defaultValue: { language: "pt-BR", value: name } } },
+      wideLogo: { sourceUri: { uri: logoUrl }, contentDescription: { defaultValue: { language: "pt-BR", value: name } } }
     } : {})
   };
+}
+
+function buildGoogleWalletClassIdentityForCinema(settings = {}, frontendUrl = "") {
+  const cinemaName = String(settings.cinemaName || settings.name || "Cinema").trim() || "Cinema";
+  const baseUrl = String(frontendUrl || "").replace(/\/+$/, "");
+  return buildGoogleWalletClassIdentity(baseUrl ? `${baseUrl}/images/logo-display.webp` : "", cinemaName);
 }
 
 function formatConcessionItems(items = []) {
@@ -118,13 +125,13 @@ function formatSessionDate(value) {
 
 function formatRoomName(value) {
   const room = String(value || "").trim();
-  return room.replace(/\s*\([^)]*\)\s*$/, "") || "Sala Cruzeiro";
+  return room.replace(/\s*\([^)]*\)\s*$/, "") || "Sala";
 }
 
 function buildGoogleWalletTextModules(enriched = {}) {
   const concessions = formatConcessionItems(googleWalletConcessionItems(enriched));
   return [
-    { id: "filme", header: "Filme", body: String(enriched.movieTitle || "Cine Cruzeiro") },
+    { id: "filme", header: "Filme", body: String(enriched.movieTitle || "Filme") },
     {
       id: "sessao",
       header: "Data e horário",
@@ -140,6 +147,7 @@ function buildGoogleWalletTextModules(enriched = {}) {
 module.exports = {
   buildGoogleWalletClassTemplateInfo,
   buildGoogleWalletClassIdentity,
+  buildGoogleWalletClassIdentityForCinema,
   buildGoogleWalletTextModules,
   formatConcessionItems,
   formatRoomName,

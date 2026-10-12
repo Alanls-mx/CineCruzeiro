@@ -150,7 +150,7 @@ const orderRepository = require("./repositories/orderRepository");
 const { createPerformanceMonitor } = require("./services/performanceMonitor");
 const { prepareRefund, prepareConcessionRefund, prepareTicketRefund, submitFullRefund, submitConcessionRefund, submitPartialRefund, supportedAutomaticRefund, refundError } = require("./services/orderRefundService");
 const {
-  buildGoogleWalletClassIdentity,
+  buildGoogleWalletClassIdentityForCinema,
   buildGoogleWalletClassTemplateInfo,
   buildGoogleWalletTextModules,
   googleWalletTmdbImageUrl,
@@ -4156,11 +4156,11 @@ function walletEventTicketObjectForTicket(db, ticket, user, req) {
     state: enriched.status === "active" ? "ACTIVE" : "INACTIVE",
     heroImage: walletPosterUrl ? {
       sourceUri: { uri: walletPosterUrl },
-      contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "Cine Cruzeiro"}`)
+      contentDescription: googleWalletLocalized(`Poster de ${enriched.movieTitle || "filme"}`)
     } : undefined,
     imageModulesData: [],
     hexBackgroundColor: "#0b1424",
-    ticketHolderName: user.name || enriched.customerName || "Cliente Cine Cruzeiro",
+    ticketHolderName: user.name || enriched.customerName || "Cliente",
     ticketNumber: enriched.displayCode,
     ticketType: googleWalletLocalized(enriched.ticketType || "Ingresso"),
     seatInfo: seatLabel ? {
@@ -9859,7 +9859,10 @@ async function googleWalletApiPatch(pathname, config, body) {
 
 async function testGoogleWalletIntegration(db) {
   const wallet = getGoogleWalletConfig(db);
+  const configuredCinemaName = String(db?.settings?.cinemaName || db?.settings?.name || "").trim();
+  const desiredIdentity = buildGoogleWalletClassIdentityForCinema(db?.settings, appFrontendUrl());
   const checks = [
+    { key: "cinemaBrand", label: "Cinema", ok: Boolean(configuredCinemaName), detail: configuredCinemaName || "Nome do cinema ausente. Configure a identidade antes de testar o Google Wallet." },
     { key: "serviceAccount", label: "Service Account", ok: Boolean(wallet.clientEmail && wallet.privateKey), detail: wallet.clientEmail ? `Configurada como ${wallet.clientEmail}` : "JSON da Service Account ausente." },
     { key: "issuer", label: "Issuer", ok: Boolean(wallet.issuerId), detail: wallet.issuerId || "Issuer ID ausente." },
     { key: "class", label: "Classe configurada", ok: Boolean(wallet.configuredClassId), detail: wallet.configuredClassId || "Class ID ausente." },
@@ -9903,7 +9906,7 @@ async function testGoogleWalletIntegration(db) {
             method: "POST",
             body: {
               id: wallet.classId,
-              ...buildGoogleWalletClassIdentity(`${appFrontendUrl()}/images/social-studio/cine-cruzeiro-assinatura-oficial.png`),
+              ...desiredIdentity,
               classTemplateInfo: buildGoogleWalletClassTemplateInfo(),
               reviewStatus: "UNDER_REVIEW"
             }
@@ -9928,7 +9931,6 @@ async function testGoogleWalletIntegration(db) {
     let reviewStatus = String(eventClass.reviewStatus || "").toUpperCase();
     const classRejected = reviewStatus === "REJECTED";
     const desiredTemplate = buildGoogleWalletClassTemplateInfo();
-    const desiredIdentity = buildGoogleWalletClassIdentity(`${appFrontendUrl()}/images/social-studio/cine-cruzeiro-assinatura-oficial.png`);
     const currentTemplate = eventClass.classTemplateInfo || {};
     const templateChanged = JSON.stringify({
       cardTemplateOverride: currentTemplate.cardTemplateOverride,
@@ -9953,7 +9955,7 @@ async function testGoogleWalletIntegration(db) {
     checks.push(
       { key: "auth", label: "Autenticação", ok: true, detail: "Service Account autenticada na API Google Wallet." },
       { key: "classRead", label: "EventTicketClass", ok: true, detail: `${eventClass.id || wallet.classId} encontrada.` },
-      { key: "classLayout", label: "Layout do ingresso", ok: !classRejected && classBelongsToIssuer, detail: classRejected ? "A classe rejeitada não pode receber o layout de produção." : !classBelongsToIssuer ? "O layout não foi alterado porque a classe pertence a outro Issuer." : classPresentationChanged ? "Layout Cine Cruzeiro enviado para revisão da classe." : "Layout Cine Cruzeiro já estava atualizado." },
+      { key: "classLayout", label: "Layout do ingresso", ok: !classRejected && classBelongsToIssuer, detail: classRejected ? "A classe rejeitada não pode receber o layout de produção." : !classBelongsToIssuer ? "O layout não foi alterado porque a classe pertence a outro Issuer." : classPresentationChanged ? "Layout do cinema enviado para revisão da classe." : "Layout do cinema já estava atualizado." },
       { key: "classIssuer", label: "Classe do Issuer", ok: classBelongsToIssuer, detail: classBelongsToIssuer ? "Class ID pertence ao Issuer configurado." : `Classe pertence ao Issuer ${issuerFromClass || "desconhecido"}.` },
       {
         key: "classStatus",

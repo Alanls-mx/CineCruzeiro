@@ -18,6 +18,8 @@ const expected = new Map([
 test('cinco instalacoes possuem identidade e endereco sinteticos distintos', () => {
   const selected = registry.instances.filter((item) => expected.has(item.slug));
   assert.equal(selected.length, expected.size);
+  assert.deepEqual(registry.instances.filter((item) => item.enabled).map((item) => item.slug), ['cinecruzeiro']);
+  assert.equal(registry.instances.find((item) => item.slug === 'cine-romeu')?.enabled, false);
   for (const item of selected) {
     assert.equal(item.name, expected.get(item.slug));
     assert.equal(item.siteUrl.endsWith(item.route), true);

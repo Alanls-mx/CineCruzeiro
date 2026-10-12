@@ -9,12 +9,44 @@ import googleWalletPassLayoutService from "../backend/services/googleWalletPassL
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("classe do Cine Cruzeiro identifica o emissor e usa a assinatura oficial", () => {
-  const identity = googleWalletPassLayoutService.buildGoogleWalletClassIdentity("https://example.com/assinatura.png");
+test("classe do Cine Cruzeiro identifica o emissor e recebe o logo da instalacao", () => {
+  const identity = googleWalletPassLayoutService.buildGoogleWalletClassIdentity("https://example.com/assinatura.png", "Cine Cruzeiro");
   assert.equal(identity.issuerName, "Cine Cruzeiro");
   assert.equal(identity.localizedIssuerName.defaultValue.value, "Cine Cruzeiro");
   assert.equal(identity.logo.sourceUri.uri, "https://example.com/assinatura.png");
   assert.equal(identity.wideLogo.sourceUri.uri, "https://example.com/assinatura.png");
+});
+
+test("classe Wallet usa apenas a identidade da instalacao selecionada", () => {
+  const identity = googleWalletPassLayoutService.buildGoogleWalletClassIdentityForCinema(
+    { cinemaName: "Cine Estação Amparo" },
+    "https://cinema.example/projects/cine-estacao-amparo"
+  );
+  assert.equal(identity.issuerName, "Cine Estação Amparo");
+  assert.equal(identity.localizedIssuerName.defaultValue.value, "Cine Estação Amparo");
+  assert.equal(identity.eventName.defaultValue.value, "Ingresso Cine Estação Amparo");
+  assert.equal(identity.logo.contentDescription.defaultValue.value, "Cine Estação Amparo");
+  assert.equal(identity.logo.sourceUri.uri, "https://cinema.example/projects/cine-estacao-amparo/images/logo-display.webp");
+  assert.equal(JSON.stringify(identity).includes("Cine Cruzeiro"), false);
+});
+
+test("classe Wallet sem marca configurada nao herda Cine Cruzeiro", () => {
+  const identity = googleWalletPassLayoutService.buildGoogleWalletClassIdentityForCinema(
+    {}, "https://cinema.example/projects/cinema-teste/"
+  );
+  assert.equal(identity.issuerName, "Cinema");
+  assert.equal(identity.logo.sourceUri.uri, "https://cinema.example/projects/cinema-teste/images/logo-display.webp");
+  assert.equal(JSON.stringify(identity).includes("Cine Cruzeiro"), false);
+});
+
+test("diagnostico Wallet exige marca local antes de consultar o Google", () => {
+  const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
+  const testFlow = serverContent.slice(
+    serverContent.indexOf("async function testGoogleWalletIntegration"),
+    serverContent.indexOf("async function ", serverContent.indexOf("async function testGoogleWalletIntegration") + 1)
+  );
+  assert.match(testFlow, /key: "cinemaBrand"/);
+  assert.ok(testFlow.indexOf("checks.some((item) => !item.ok)") < testFlow.indexOf("await googleWalletApiGet"));
 });
 
 function serviceAccount(overrides = {}) {
@@ -203,7 +235,7 @@ test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () 
   assert.equal(rows[2].twoItems.endItem.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
   assert.equal(template.detailsTemplateOverride.detailsItemInfos[0].item.firstValue.fields[0].fieldPath, "object.textModulesData['bomboniere']");
   assert.equal(
-    googleWalletPassLayoutService.buildGoogleWalletClassIdentity().eventName.defaultValue.value,
+    googleWalletPassLayoutService.buildGoogleWalletClassIdentity("", "Cine Cruzeiro").eventName.defaultValue.value,
     "Ingresso Cine Cruzeiro"
   );
   assert.equal(
