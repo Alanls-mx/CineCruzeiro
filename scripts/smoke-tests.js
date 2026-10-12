@@ -3069,6 +3069,70 @@ async function run() {
       const refundedAmount = completedRefundSnapshot.payments.find((item) => item.id === refundablePoint.payload.payment.id).refundedAmount;
       assert.equal((await requestTicketRefund()).response.status, 200);
       assert.equal((await readPersistedDb()).payments.find((item) => item.id === refundablePoint.payload.payment.id).refundedAmount, refundedAmount);
+
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE concession_inventory SET available=10 WHERE concession_id=$1", ["combo-classico"]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      const combinedBody = {
+        ...pointSaleBody("smoke-point-combined-refund"),
+        saleMode: "registered", customerUserId: registered.user.id,
+        concessionItems: [{ id: "combo-classico", quantity: 1 }]
+      };
+      const combinedSale = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(combinedBody)
+      });
+      assert.equal(combinedSale.response.status, 202, JSON.stringify(combinedSale.payload));
+      const combinedProviderOrder = mockPointOrders.get(combinedSale.payload.payment.providerPaymentId);
+      combinedProviderOrder.status = "approved";
+      combinedProviderOrder.providerStatus = "processed";
+      const combinedPointPath = `/api/box-office/point-payments/${encodeURIComponent(combinedSale.payload.payment.id)}`;
+      assert.equal((await request(combinedPointPath, { headers: jsonHeaders(adminCookie) })).payload.completed, true);
+      await require("../backend/db/postgresStore").queryPostgres(
+        "UPDATE payments SET provider_payment_id=$1, metadata=jsonb_set(jsonb_set(metadata, '{metadata,providerEnvironment}', to_jsonb($2::text), true), '{metadata,transactionId}', to_jsonb($3::text), true) WHERE id=$4",
+        ["ORDSMOKECONCESSION1", "sandbox", "TRXSMOKECONCESSION1", combinedSale.payload.payment.id]
+      );
+      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      const combinedOrderId = combinedSale.payload.order.id;
+      const combinedTicketId = (await readPersistedDb()).tickets.find((item) => item.orderId === combinedOrderId)?.id;
+      assert.ok(combinedTicketId);
+      const combinedStockBefore = (await readPersistedDb()).concessions.find((item) => item.id === "combo-classico").stock;
+      const concessionRefundPath = `/api/orders/${encodeURIComponent(combinedOrderId)}/refund-concessions`;
+      const requestConcessionRefund = (cookie = adminCookie) => request(concessionRefundPath, {
+        method: "POST", headers: jsonHeaders(cookie), body: JSON.stringify({ reason: "Smoke partial refund" })
+      });
+      assert.equal((await requestConcessionRefund(operatorCookie)).response.status, 403);
+      const concessionPrepareFail = failCommitForRecord(combinedOrderId, "smoke_concession_prepare_commit_failure");
+      let failedConcessionPrepare;
+      try { failedConcessionPrepare = await requestConcessionRefund(); }
+      finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(concessionPrepareFail(), true);
+      assert.equal(failedConcessionPrepare.response.status >= 500, true);
+      assert.equal((await readPersistedDb()).orders.find((item) => item.id === combinedOrderId).concessionRefund?.status || "", "");
+      assert.equal((await readPersistedDb()).concessions.find((item) => item.id === "combo-classico").stock, combinedStockBefore);
+      const concessionFinalFail = failCommitForRecord(combinedOrderId, "smoke_concession_final_commit_failure", 2);
+      let failedConcessionFinal;
+      try { failedConcessionFinal = await requestConcessionRefund(); }
+      finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(concessionFinalFail(), true);
+      assert.equal(failedConcessionFinal.response.status >= 500, true);
+      const combinedPendingSnapshot = await readPersistedDb();
+      const pendingConcessionRefund = combinedPendingSnapshot.orders.find((item) => item.id === combinedOrderId).concessionRefund;
+      assert.equal(pendingConcessionRefund.status, "pending");
+      assert.equal(combinedPendingSnapshot.concessions.find((item) => item.id === "combo-classico").stock, combinedStockBefore);
+      assert.equal(combinedPendingSnapshot.tickets.find((item) => item.id === combinedTicketId).status, "active");
+      const completedConcession = await requestConcessionRefund();
+      assert.equal(completedConcession.response.status, 200, JSON.stringify(completedConcession.payload));
+      assert.equal(completedConcession.payload.refund.id, pendingConcessionRefund.id);
+      const combinedCompletedSnapshot = await readPersistedDb();
+      assert.equal(combinedCompletedSnapshot.concessions.find((item) => item.id === "combo-classico").stock, combinedStockBefore + 1);
+      assert.equal(combinedCompletedSnapshot.tickets.find((item) => item.id === combinedTicketId).status, "active");
+      assert.equal(combinedCompletedSnapshot.orders.find((item) => item.id === combinedOrderId).status, "paid");
+      const combinedRefundedAmount = combinedCompletedSnapshot.payments.find((item) => item.id === combinedSale.payload.payment.id).refundedAmount;
+      assert.equal((await requestConcessionRefund()).response.status, 200);
+      assert.equal((await readPersistedDb()).payments.find((item) => item.id === combinedSale.payload.payment.id).refundedAmount, combinedRefundedAmount);
+      assert.equal((await readPersistedDb()).concessions.find((item) => item.id === "combo-classico").stock, combinedStockBefore + 1);
+
       const counterFailureBody = {
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, fullTicketsCount: 1, halfTicketsCount: 0,
         saleMode: "registered", customerUserId: registered.user.id, paymentMethod: "external_pix",
@@ -3120,7 +3184,7 @@ async function run() {
         });
       } finally { pg.Client.prototype.query = originalQuery; }
       assert.equal(crashBeforeSend(), true);
-      assert.equal(crashedSale.response.status >= 500, true);
+      assert.equal(crashedSale.response.status, 202, "A intencao duravel pode retornar pendencia quando a reivindicacao falha");
       assert.equal(mockPointOrders.size, pointOrdersBeforeCrash, "Interrupcao apos preparacao nao criou cobranca");
       assert.equal((await readPersistedDb()).payments.find((item) => item.id === crashPaymentId).metadata.pointCreateState, "prepared");
       const recoveredCrash = await request(`/api/box-office/point-payments/${crashPaymentId}`, { headers: jsonHeaders(adminCookie) });
