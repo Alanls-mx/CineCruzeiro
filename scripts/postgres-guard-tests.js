@@ -112,8 +112,26 @@ async function main() {
     await assert.rejects(async () => assertPilotAuthorization({ ...authorization, database: alternateName },
       digest(targetName).slice(0, 12)), /MIGRATION_TARGET_REJECTED/);
 
-    const appliedNow = await run(target, url);
-    assert.deepEqual(appliedNow, pending);
+    const blocker = new Client({ connectionString: url });
+    await blocker.connect();
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query("LOCK TABLE payments IN ACCESS SHARE MODE");
+      await assert.rejects(run(target, url), /MIGRATION_ABORTED/);
+    } finally {
+      await blocker.query("ROLLBACK");
+      await blocker.end();
+    }
+    assert.deepEqual(await state(target), before, "051 tambem deve reverter se 052 perde o lock");
+    const competitor = new Client({ connectionString: url });
+    await competitor.connect();
+    let races;
+    try {
+      races = await Promise.allSettled([run(target, url), run(competitor, url)]);
+    } finally { await competitor.end(); }
+    assert.equal(races.filter((item) => item.status === "fulfilled").length, 1);
+    assert.equal(races.filter((item) => item.status === "rejected").length, 1);
+    assert.deepEqual(races.find((item) => item.status === "fulfilled").value, pending);
     const after = await state(target);
     assert.equal(after.migrations, files.length);
     assert.equal(after.jobs, true);
@@ -121,7 +139,7 @@ async function main() {
     assert.deepEqual(await state(alternate), before);
     await assert.rejects(run(target, url), /MIGRATION_TARGET_REJECTED/);
     assert.deepEqual(await state(target), after);
-    console.log("PG_GUARDED_MIGRATION_OK rejected=15 alternate_unchanged=true");
+    console.log("PG_GUARDED_MIGRATION_OK alternate_unchanged=true lock_rollback=true concurrent_winner=1");
   } finally {
     await target.end();
     if (created && alternate) {

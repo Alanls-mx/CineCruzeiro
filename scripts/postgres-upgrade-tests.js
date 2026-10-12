@@ -80,9 +80,11 @@ async function oldReleaseProbe(sourceDir, databaseUrl, stage) {
     let ready = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
       if (child.exitCode !== null) break;
+      let response;
       try {
-        const response = await fetch(`http://127.0.0.1:${port}/api/health/ready`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
+        response = await fetch(`http://127.0.0.1:${port}/api/health/ready`, { signal: AbortSignal.timeout(1000) });
+      } catch { /* Aguardar startup isolado. */ }
+      if (response?.ok) {
           const catalog = await fetch(`http://127.0.0.1:${port}/api/content`, { signal: AbortSignal.timeout(2000) });
           assert.equal(catalog.status, 200, `A release antiga nao leu o catalogo no esquema ${stage}`);
           if (stage === "052") {
@@ -102,8 +104,7 @@ async function oldReleaseProbe(sourceDir, databaseUrl, stage) {
           }
           ready = true;
           break;
-        }
-      } catch { /* Aguardar startup isolado. */ }
+      }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     assert.ok(ready, `Release antiga nao iniciou no esquema ${stage}: ${output}`);
