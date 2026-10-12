@@ -3831,7 +3831,8 @@ async function queueBoxOfficePointPrint(db, orders, tickets, config, context = {
       {
         orders: printableOrders,
         externalReference: printReference,
-        idempotencyKey: printReference
+        idempotencyKey: printReference,
+        cinemaName: String(db.settings?.cinemaName || db.settings?.name || "Cinema").trim()
       }
     );
     const pointPrint = {

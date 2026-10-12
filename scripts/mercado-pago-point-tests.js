@@ -106,6 +106,14 @@ async function run() {
   assert.equal(debitCall.body.config.payment_method.default_type, "debit_card");
   assert.equal(creditCall.body.config.payment_method.default_type, "credit_card");
 
+  await point.createPayment({ id: "venda-descricao", totalPrice: 20 }, config, {
+    externalReference: "point-venda-descricao",
+    idempotencyKey: "idem-point-descricao",
+    description: "A".repeat(180)
+  });
+  const descriptionCall = calls.find((call) => call.options.headers?.["X-Idempotency-Key"] === "idem-point-descricao");
+  assert.equal(descriptionCall.body.description.length, 150);
+
   const approved = await point.getStatus("ORD_POINT_1", config);
   assert.equal(approved.status, "approved");
   assert.equal(approved.paymentId, "PAY_POINT_1");
@@ -143,7 +151,9 @@ async function run() {
   assert.ok(printContent.includes("2x Pipoca Grande - R$ 36,00"));
   assert.ok(printContent.includes("1x Coca-Cola 500ML - R$ 9,00"));
 
-  const concessionOnlyContent = point.ticketPrintContent([], printOrders);
+  const concessionOnlyContent = point.ticketPrintContent([], printOrders, "Cine Estação Amparo");
+  assert.ok(concessionOnlyContent.includes("CINE ESTAÇÃO AMPARO"));
+  assert.equal(concessionOnlyContent.includes("CINE CRUZEIRO"), false);
   assert.ok(concessionOnlyContent.includes("BOMBONIERE - VIA PDV"));
   assert.ok(concessionOnlyContent.includes("2x Pipoca Grande - R$ 36,00"));
   assert.ok(concessionOnlyContent.includes("Venda presencial concluida"));
@@ -160,7 +170,8 @@ async function run() {
   }], config, {
     externalReference: "print-venda-1",
     idempotencyKey: "idem-print-venda-1",
-    orders: printOrders
+    orders: printOrders,
+    cinemaName: "Cine Cruzeiro"
   });
   assert.equal(printed.id, "PRINT_ACTION_1");
   assert.equal(printed.status, "created");
@@ -170,6 +181,7 @@ async function run() {
   assert.equal(printCall.body.config.point.terminal_id, "PAX_A910__123");
   assert.equal(printCall.body.config.point.subtype, "custom");
   assert.ok(printCall.body.content.includes("Filme de Teste"));
+  assert.ok(printCall.body.content.includes("CINE CRUZEIRO"));
   assert.ok(printCall.body.content.includes("Pipoca Grande"));
 
   const printStatus = await point.getPrintStatus("PRINT_ACTION_1", config);

@@ -80,22 +80,23 @@ function concessionPrintItems(orders = []) {
   return [...items.values()];
 }
 
-function ticketPrintContent(tickets = [], orders = []) {
+function ticketPrintContent(tickets = [], orders = [], cinemaName = "Cinema") {
   const normalized = (Array.isArray(tickets) ? tickets : []).filter(Boolean);
   const concessions = concessionPrintItems(orders);
   if (!normalized.length && !concessions.length) {
     throw providerError("Nenhum ingresso ou item da bomboniere foi informado para impressão.", 400, "POINT_PRINT_CONTENT_MISSING");
   }
 
+  const brand = printText(cinemaName, 40).toUpperCase() || "CINEMA";
   let content = normalized.length
-    ? "{center}{w}{b}CINE CRUZEIRO{/b}{/w}{br}{s}INGRESSO FISICO{/s}{/center}{br}"
-    : "{center}{w}{b}CINE CRUZEIRO{/b}{/w}{br}{s}BOMBONIERE - VIA PDV{/s}{/center}{br}";
+    ? `{center}{w}{b}${brand}{/b}{/w}{br}{s}INGRESSO FISICO{/s}{/center}{br}`
+    : `{center}{w}{b}${brand}{/b}{/w}{br}{s}BOMBONIERE - VIA PDV{/s}{/center}{br}`;
   normalized.forEach((ticket, index) => {
     const movie = printText(ticket.movieTitle || "Filme", 38);
     const date = brazilianDate(ticket.sessionDate);
     const time = printText(ticket.sessionTime, 5);
     const format = printText(ticket.sessionFormat, 24);
-    const room = printText(ticket.sessionRoom || "Sala Cruzeiro", 30);
+    const room = printText(ticket.sessionRoom || "Sala", 30);
     const type = printText(ticket.ticketType || "Ingresso", 24);
     const code = printText(ticket.displayCode || ticketCodeService.displayCode(ticket), 42);
     const qrPayload = printText(ticket.displayQrPayload || ticketCodeService.qrPayload(code), 160);
@@ -251,7 +252,7 @@ async function createPayment(order = {}, config = {}, options = {}) {
     body: {
       type: "point",
       external_reference: externalReference,
-      description: String(options.description || order.description || "Venda presencial Cine Cruzeiro").slice(0, 255),
+      description: String(options.description || order.description || "Venda presencial").slice(0, 150),
       expiration_time: String(config.pointExpirationTime || "PT15M"),
       transactions: { payments: [{ amount: decimalAmount(order.totalPrice ?? order.amount) }] },
       config: {
@@ -273,7 +274,7 @@ async function createTicketPrint(tickets = [], config = {}, options = {}) {
   }
   const externalReference = safeReference(options.externalReference || `ticket-print-${Date.now()}`);
   const idempotencyKey = String(options.idempotencyKey || crypto.randomUUID());
-  const content = ticketPrintContent(tickets, options.orders);
+  const content = ticketPrintContent(tickets, options.orders, options.cinemaName);
   const payload = await request("/terminals/v1/actions", config, {
     method: "POST",
     headers: { "X-Idempotency-Key": idempotencyKey },
