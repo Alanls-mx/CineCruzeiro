@@ -1,7 +1,9 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
-const { spawnSync } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
+const net = require("node:net");
 const { Client } = require("pg");
 const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 
@@ -42,6 +44,77 @@ async function apply(client, file, record = true) {
   }
 }
 
+async function availablePort() {
+  const listener = net.createServer();
+  await new Promise((resolve, reject) => listener.once("error", reject).listen(0, "127.0.0.1", resolve));
+  const port = listener.address().port;
+  await new Promise((resolve) => listener.close(resolve));
+  return port;
+}
+
+async function oldReleaseProbe(sourceDir, databaseUrl, stage) {
+  const port = await availablePort();
+  const environment = {
+    PATH: process.env.PATH,
+    NODE_PATH: path.join(__dirname, "..", "node_modules"),
+    NODE_ENV: "test",
+    DATA_STORE: "postgres",
+    DATABASE_URL: databaseUrl,
+    PORT: String(port),
+    HOST: "127.0.0.1",
+    JWT_SECRET: "synthetic-upgrade-test-only",
+    CINE_TEST_DB_TOKEN: process.env.CINE_TEST_DB_TOKEN,
+    TEST_DATABASE_URL: databaseUrl,
+    TEST_POSTGRES_ADMIN_URL: process.env.TEST_POSTGRES_ADMIN_URL,
+    CINE_TEST_SERVER_TOKEN: process.env.CINE_TEST_SERVER_TOKEN
+  };
+  const child = spawn(process.execPath, [path.join(sourceDir, "backend", "server.js")], {
+    cwd: sourceDir, env: environment, stdio: ["ignore", "pipe", "pipe"]
+  });
+  let output = "";
+  for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => {
+    output = (output + chunk.toString("utf8")).slice(-4000);
+  });
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (child.exitCode !== null) break;
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/health/ready`, { signal: AbortSignal.timeout(1000) });
+        if (response.ok) {
+          const catalog = await fetch(`http://127.0.0.1:${port}/api/content`, { signal: AbortSignal.timeout(2000) });
+          assert.equal(catalog.status, 200, `A release antiga nao leu o catalogo no esquema ${stage}`);
+          ready = true;
+          break;
+        }
+      } catch { /* Aguardar startup isolado. */ }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.ok(ready, `Release antiga nao iniciou no esquema ${stage}: ${output}`);
+  } finally {
+    child.kill("SIGTERM");
+    await Promise.race([
+      new Promise((resolve) => child.once("exit", resolve)),
+      new Promise((resolve) => setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 3000))
+    ]);
+  }
+}
+
+async function withOldRelease(fn) {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), "cine-old-upgrade-"));
+  try {
+    const archive = path.join(temp, "old.tar");
+    const result = spawnSync("git", ["archive", "--format=tar", "--output", archive, OLD_COMMIT,
+      "backend", "config", "scripts", "package.json"], { cwd: path.join(__dirname, ".."), encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr || "Nao foi possivel extrair a release antiga");
+    const extract = spawnSync("tar", ["-xf", archive, "-C", temp], { encoding: "utf8" });
+    assert.equal(extract.status, 0, extract.stderr || "Nao foi possivel abrir a release antiga");
+    await fn(temp);
+  } finally {
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   const url = process.env.TEST_DATABASE_URL;
   await assertDisposableTestDatabase(url);
@@ -60,6 +133,7 @@ async function main() {
              ('upgrade-no-mail','upgrade-user','Pessoa Sintetica','pending_payment',10,'{}')`);
     await client.query(`INSERT INTO payments (id,order_id,method,provider,status,amount)
       VALUES ('upgrade-pix','upgrade-paid','pix','mercado_pago','approved',10)`);
+    await withOldRelease((sourceDir) => oldReleaseProbe(sourceDir, url, "050"));
     const before = await client.query("SELECT to_regclass('ticket_email_jobs') AS jobs, count(*)::int AS orders FROM orders");
     assert.equal(before.rows[0].jobs, null);
     assert.equal(before.rows[0].orders, 3);
@@ -92,6 +166,7 @@ async function main() {
     assert.match(check.rows[0].definition, /point_debit/);
     assert.equal((await client.query("SELECT count(*)::int AS total FROM schema_migrations")).rows[0].total, files.length);
     assert.equal((await client.query("SELECT count(*)::int AS total FROM payments")).rows[0].total, 2);
+    await withOldRelease((sourceDir) => oldReleaseProbe(sourceDir, url, "052"));
     const rerun = spawnSync(process.execPath, [path.join(__dirname, "db-migrate.js")], {
       cwd: path.join(__dirname, ".."), encoding: "utf8", env: { ...process.env, DATABASE_URL: url, POSTGRES_URL: "" }
     });
