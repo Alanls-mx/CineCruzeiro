@@ -26,6 +26,8 @@ O [provedor Point](../backend/services/cardTerminalProvider.js) truncava `descri
 | `npm run docs:check`, `npm run docs:coverage` | Passaram: 17 documentos e 196 arquivos no escopo | Links/simbolos e candidatos; cobertura semantica requer revisao humana. |
 | PostgreSQL local protegido | Nao executado | Docker inativo e marcadores ausentes; CI do HEAD final deve executar smoke, concorrencia, repositarios e restore. |
 
+No commit `ffdc1138406a35fc06ef36238f4271e494458aca`, [Security regression](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/38288870765), [PostgreSQL integration](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/38288870707) e [Browser E2E](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/38288870730) terminaram com `success`. O job PostgreSQL confirmou servico Docker proprio, smoke repetido, concorrencia, repositarios e backup/restauracao sintetico. A presente atualizacao documental cria outro HEAD: a verificacao desses tres workflows **nesse HEAD** continua obrigatoria antes de fechar B, sem reutilizar apenas o resultado de `ffdc113`.
+
 ## Matriz funcional do piloto
 
 `Parcial` significa que o teste citado prova apenas as invariantes nomeadas. Nenhuma linha recebeu aceite operacional. Reutilizar procedimentos e resultados esperados em [F01-F12](FASE10_CADERNO_PILOTO.md#matriz-funcional-interna).
@@ -72,7 +74,7 @@ Para Point incerto, reembolso pendente, ingresso sem pagamento, falha de impress
 | Decisao | Estado | Motivo |
 | --- | --- | --- |
 | A. Refatoracao estrutural | Aprovada com ressalvas | Mantida da Fase 10; sem modularizacao ampla. |
-| B. Estabilidade tecnica da candidata | Condicionada ao CI final | Regressao local verde; exigir Security regression, PostgreSQL integration e Browser E2E no mesmo HEAD publicado. |
+| B. Estabilidade tecnica da candidata | Aprovada com ressalvas, sujeita ao CI do HEAD deste relatorio | Regressao local e tres workflows verdes em `ffdc113`; verificar Security regression, PostgreSQL integration e Browser E2E novamente no SHA final. |
 | C. Preparacao do ambiente piloto | Aprovada com ressalvas | Especificacao e fixture verificadas; piloto PG local nao montado, infraestrutura real nao inspecionada. |
 | D. Prontidao para **solicitar** sandbox | Aprovada com ressalvas apos B | [Ficha](FASE11_AUTORIZACAO_SANDBOX.md) e paradas preparadas; autorizacao ainda ausente. |
 | E. Homologacao operacional do Cine Cruzeiro | Nao executada | Nenhuma operacao externa ou fisica autorizada. |
