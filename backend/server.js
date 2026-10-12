@@ -1396,7 +1396,8 @@ function adminAuthRequired(pathname, method) {
   if (pathname === "/api/settings") return true;
   if (/^\/api\/(movies|rooms|ticket-types|concessions|promotions|ads|users)(\/|$)/.test(pathname)) return true;
   if (/^\/api\/admin\/(subscription-plans|subscriptions)(\/|$)/.test(pathname)) return true;
-  if (/^\/api\/orders(\/|$)/.test(pathname) && ["GET", "PATCH", "DELETE"].includes(method)) return true;
+  if (/^\/api\/orders(\/|$)/.test(pathname) && (["GET", "PATCH", "DELETE"].includes(method)
+    || (method === "POST" && /^\/api\/orders\/[^/]+\/(?:refund-tickets|refund-concessions|resend-ticket-email)$/.test(pathname)))) return true;
   if (pathname === "/api/tickets/manual" || pathname === "/api/tickets/validate") return true;
   return false;
 }
@@ -3551,6 +3552,17 @@ async function claimPointCreation(paymentId) {
     const db = await readDb();
     const payment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
     if (!payment || payment.status !== "pending" || payment.providerPaymentId || payment.metadata?.pointCreateState === "review_required") return null;
+    const orders = pointPaymentOrders(db, payment);
+    if (!orders.length || orders.some((order) => order.status !== "pending_payment"
+      || (order.reservationExpiresAt && Date.parse(order.reservationExpiresAt) <= Date.now()))) {
+      if (payment.metadata.providerRequestSentAt) {
+        payment.metadata.pointCreateState = "review_required";
+        payment.metadata.reconciliationRequired = true;
+        payment.metadata.reconciliationReason = "point_order_closed_before_recovery";
+        await writeDb(db);
+      }
+      return null;
+    }
     if (Date.parse(payment.metadata?.pointCreateLeaseUntil || "") > Date.now()) return null;
     if (!payment.metadata?.recoveryRequest?.idempotencyKey || !payment.metadata?.recoveryRequest?.externalReference) return null;
     payment.metadata.pointCreateState = "sending";
@@ -3569,6 +3581,8 @@ async function markPointRequestSent(paymentId, claim) {
     const db = await readDb();
     const payment = (db.payments || []).find((item) => item.id === paymentId && item.metadata?.kind === "point_sale");
     if (!payment || payment.status !== "pending" || payment.providerPaymentId || payment.metadata?.pointCreateClaim !== claim) return false;
+    if (!pointPaymentOrders(db, payment).length || pointPaymentOrders(db, payment).some((order) => order.status !== "pending_payment"
+      || (order.reservationExpiresAt && Date.parse(order.reservationExpiresAt) <= Date.now()))) return false;
     payment.metadata.pointCreateState = "sending";
     payment.metadata.providerRequestSentAt = new Date().toISOString();
     payment.updatedAt = payment.metadata.providerRequestSentAt;

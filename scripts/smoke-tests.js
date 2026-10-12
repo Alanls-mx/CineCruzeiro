@@ -401,6 +401,7 @@ async function run() {
   const pointProvider = require("../backend/services/cardTerminalProvider");
   const mockPointOrders = new Map();
   const mockPointPrints = new Map();
+  const mockPointRefunds = new Map();
   let pointCancelMode = "cancelled";
   let pointCancelCalls = 0;
   let pointStatusError = "";
@@ -439,6 +440,16 @@ async function run() {
     const payment = mockPointOrders.get(id);
     payment.status = pointCancelMode;
     payment.providerStatus = pointCancelMode === "pending" ? "processing" : pointCancelMode;
+    return { ...payment };
+  };
+  pointProvider.refundPayment = async (id, _config, options) => {
+    const existing = mockPointRefunds.get(options.idempotencyKey);
+    if (existing) return { ...existing };
+    const payment = mockPointOrders.get(id);
+    if (!payment) throw Object.assign(new Error("Mock Point refund order missing"), { statusCode: 404 });
+    payment.status = "refunded";
+    payment.providerStatus = "refunded";
+    mockPointRefunds.set(options.idempotencyKey, { ...payment });
     return { ...payment };
   };
   pointProvider.createTicketPrint = async (_tickets, _config, options) => {
@@ -3020,6 +3031,35 @@ async function run() {
       assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointSyncFailure.payload.order.id).length, 1);
       assert.equal(mockPointPrints.size, printCountAfterFailedSync, "A retomada deve reutilizar a mesma impressao Point");
 
+      const printResolvePath = `/api/box-office/point-payments/${encodeURIComponent(pointPrintFailure.payload.payment.id)}/resolve-print-failure`;
+      const requestPrintResolve = (cookie = adminCookie) => request(printResolvePath, {
+        method: "POST", headers: jsonHeaders(cookie), body: JSON.stringify({ reason: "Smoke print failure" })
+      });
+      assert.equal((await requestPrintResolve(operatorCookie)).response.status, 403);
+      const printPrepareFail = failCommitForRecord(pointPrintFailure.payload.payment.id, "smoke_print_refund_prepare_commit_failure");
+      let failedPrintPrepare;
+      try { failedPrintPrepare = await requestPrintResolve(); }
+      finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(printPrepareFail(), true);
+      assert.equal(failedPrintPrepare.response.status >= 500, true);
+      assert.equal(mockPointRefunds.size, 0, "O estorno Point nao deve sair antes da intencao confirmada");
+      const printFinalFail = failCommitForRecord(pointPrintFailure.payload.payment.id, "smoke_print_refund_final_commit_failure", 2);
+      let failedPrintFinal;
+      try { failedPrintFinal = await requestPrintResolve(); }
+      finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(printFinalFail(), true);
+      assert.equal(failedPrintFinal.response.status >= 500, true);
+      const printPending = (await readPersistedDb()).payments.find((item) => item.id === pointPrintFailure.payload.payment.id);
+      assert.equal(printPending.metadata.printResolution.status, "pending");
+      assert.equal(printPending.status, "approved");
+      assert.equal(mockPointRefunds.size, 1);
+      assert.equal((await readPersistedDb()).tickets.filter((item) => item.orderId === pointPrintFailure.payload.order.id).length, 0);
+      const printRecovered = await requestPrintResolve();
+      assert.equal(printRecovered.response.status, 200);
+      assert.equal(printRecovered.payload.payment.status, "refunded");
+      assert.equal(mockPointRefunds.size, 1);
+      assert.equal((await readPersistedDb()).orders.find((item) => item.id === pointPrintFailure.payload.order.id).status, "refunded");
+
       const refundablePoint = await createPointSale("smoke-point-ticket-refund");
       const refundableProviderOrder = mockPointOrders.get(refundablePoint.payload.payment.providerPaymentId);
       refundableProviderOrder.status = "approved";
@@ -3036,6 +3076,8 @@ async function run() {
       const requestTicketRefund = () => request(ticketRefundPath, {
         method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify({ reason: "Smoke refund" })
       });
+      assert.equal((await request(ticketRefundPath, { method: "POST", headers: jsonHeaders(), body: "{}" })).response.status, 401);
+      assert.equal((await request(ticketRefundPath, { method: "POST", headers: jsonHeaders(operatorCookie), body: "{}" })).response.status, 403);
       const refundPreparationFailed = failCommitForRecord(refundablePoint.payload.order.id, "smoke_refund_prepare_commit_failure");
       let failedPreparation;
       try {
@@ -3101,6 +3143,7 @@ async function run() {
       const requestConcessionRefund = (cookie = adminCookie) => request(concessionRefundPath, {
         method: "POST", headers: jsonHeaders(cookie), body: JSON.stringify({ reason: "Smoke partial refund" })
       });
+      assert.equal((await requestConcessionRefund("")).response.status, 401);
       assert.equal((await requestConcessionRefund(operatorCookie)).response.status, 403);
       const concessionPrepareFail = failCommitForRecord(combinedOrderId, "smoke_concession_prepare_commit_failure");
       let failedConcessionPrepare;
