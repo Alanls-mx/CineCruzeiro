@@ -45,6 +45,8 @@ O script aplica migrations apenas na origem, insere filme, sala, sessão, client
 
 Esse ensaio comprova integridade sintética do arquivo; **não** homologa um backup operacional. Antes de religar workers após uma restauração real autorizada, conciliar cobranças, reembolsos, impressões e entregas ocorridos entre a data do backup e o retorno, inclusive intenções Point `sending`/`unknown`. Restaurar PostgreSQL não desfaz uma operação já aceita pelo Mercado Pago.
 
+O [smoke PostgreSQL](../scripts/smoke-tests.js) também inicia uma [segunda instância Node](../scripts/point-smoke-second-instance.js) sobre o mesmo banco descartável para disputar uma intenção Point. O provedor simulado registra as chamadas em arquivo temporário externo aos processos; exatamente uma criação é esperada. O teste não usa terminal, credenciais nem cobrança reais.
+
 ## Atualizacao da Fase 4.2
 
 O smoke PostgreSQL passou a afirmar que Pix e cartao (201), atribuicao manual de assinatura (201), validacao de ingresso (200) e exclusao permanente de pedido (200) ficam visiveis em uma leitura imediata. O CI reproduziu falhas reais no cancelamento logo apos Pix e na leitura de assinatura logo apos a atribuicao; os handlers foram ajustados para responder depois do commit, sem adicionar espera ou relaxar o teste. O job PostgreSQL do commit `d80b5d3` passou, assim como seguranca e Playwright no GitHub Actions.
