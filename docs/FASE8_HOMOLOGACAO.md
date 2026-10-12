@@ -1,5 +1,9 @@
 # Fase 8 - checklist de homologacao
 
+> Este documento registra a linha de base historica da Fase 8. A implementacao, os testes e a reavaliacao posteriores estao em [Fase 9](FASE9_DESBLOQUEIO.md); as afirmacoes de bloqueio abaixo descrevem o estado anterior, nao o codigo atual.
+
+Na Fase 9, a intencao Point passou a ser persistida antes da comunicacao com o provedor nos fluxos PostgreSQL, e o ensaio sintetico de backup/restauracao foi executado no CI. As pendencias de homologacao por cinema, de disputa entre instancias independentes e de cobertura financeira completa continuam explicitadas no [relatorio novo](FASE9_DESBLOQUEIO.md#evidencias-e-decisao); nao usar os checkboxes historicos abaixo como certificacao automatica.
+
 Este e um plano, **nao** uma autorizacao de deploy, conexao operacional, pagamento, cancelamento, reembolso, e-mail ou campanha real. Usar plano de rollback, contas e valores de teste aprovados pelo operador de cada cinema. Registrar ambiente, versao, horario, resultado e evidencia sem dados pessoais ou segredos.
 
 ## Bloqueios antes de qualquer homologacao operacional

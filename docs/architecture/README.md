@@ -18,6 +18,7 @@
 | [Histórico da modularização](../MODULARIZACAO_ARQUITETURA.md) | Você precisa entender decisões e pendências anteriores. |
 | [Relatório consolidado](../RELATORIO_FINAL_REFATORACAO.md) | Você precisa da decisão formal, evidências e bloqueios residuais da Fase 8. |
 | [Testes PostgreSQL](../TESTES_POSTGRESQL.md) | Você precisa configurar validação isolada. |
+| [Fase 9](../FASE9_DESBLOQUEIO.md) | Você investiga a intenção Point, estornos ou o ensaio de restauração. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
 ## Navegação por intenção
@@ -28,6 +29,8 @@
 - Disponibilidade de poltronas: [sessionSeatAvailability](../../backend/services/sessionSeatAvailability.js), [teste](../../tests/session-seat-availability.test.mjs).
 - Emissão e entrega de ingressos: [fluxo de compra](flows.md), [operação assíncrona](operations.md).
 - Webhook Mercado Pago: [fluxo de compra](flows.md), [paymentService](../../backend/services/paymentService.js), [teste de assinatura](../../scripts/mercado-pago-webhook-tests.js).
+- Cobrança Point inconclusiva: [fluxo presencial](flows.md), [limites de commit](transactions.md), [smoke PostgreSQL](../../scripts/smoke-tests.js).
+- Backup/restauração: [procedimento protegido](../TESTES_POSTGRESQL.md), [ensaio sintético](../../scripts/postgres-backup-restore-test.js).
 
 ## Regra de manutenção
 

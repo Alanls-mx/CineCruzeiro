@@ -2,6 +2,8 @@
 
 O [server.js](../../backend/server.js) ainda faz roteamento, autenticação, autorização, CSRF e tratamento central de erros. Os handlers abaixo recebem dependências; não devem importá-lo de volta.
 
+Na Fase 9, a orquestração da intenção Point (`claimPointCreation`, `markPointRequestSent`, `attemptPointCreation`) permanece em `server.js`; [cardTerminalProvider](../../backend/services/cardTerminalProvider.js) continua responsável pela API externa. Não foi criada uma segunda máquina de estados ou uma extração estrutural ampla. O [ensaio de restauração](../../scripts/postgres-backup-restore-test.js) é um script de teste, não um worker operacional.
+
 | Responsabilidade | Módulo | Verificação |
 | --- | --- | --- |
 | Indicadores administrativos | [adminDashboardService](../../backend/services/adminDashboardService.js) | [teste do dashboard](../../tests/admin-dashboard-module.test.mjs) |

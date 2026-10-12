@@ -1,5 +1,14 @@
 # Relatorio de encerramento tecnico da refatoracao
 
+> Este relatorio e a decisao historica da Fase 8. A [Fase 9](FASE9_DESBLOQUEIO.md) adicionou intencao Point pre-provedor, testes de estorno e ensaio de backup/restauracao; use a decisao mais recente de la, apos conferir o CI no HEAD final. Nenhuma destas paginas autoriza deploy ou homologacao real.
+
+## Atualizacao da Fase 9
+
+- A criacao Point em PostgreSQL agora rejeita identidade ausente/invalida, grava pedido e pagamento pendentes antes do POST externo e reutiliza referencia/chave apos timeout, crash ou falha de commit final. O estado ambiguo fica pendente ou em revisao; nao se emitem direitos por mera intencao.
+- Os testes HTTP/PG foram ampliados para ingresso, bomboniere parcial, impressao Point e cancelamento integral. As rotas POST de estorno ganharam checagem explicita de `orders.refund`; no integral, o ingresso nao e invalidado no preparo e a validacao fica bloqueada durante a pendencia.
+- O [ensaio protegido de backup/restauracao](TESTES_POSTGRESQL.md#ensaio-de-backuprestauracao-da-fase-9) passou no [CI `38202732573`](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/38202732573), com 50 migrations e verificacao de estados financeiros, jobs e relacionamentos em dois bancos descartaveis. Nao e evidencia de recuperacao de banco real.
+- A decisao A permanece aprovada com ressalvas; a decisao B nao pode ser promovida sem regressao verde no HEAD final e cobertura restante entre instancias/provedores; a decisao C permanece bloqueada para os cinco cinemas. Detalhes, limites e historico de falhas estao no [registro da Fase 9](FASE9_DESBLOQUEIO.md).
+
 **Fase 8, branch `codex/modularize-server-admin`.** Este relatorio separa integridade demonstrada em ambiente isolado, lacunas arquiteturais e homologacao operacional futura. Ele nao autoriza deploy, merge na `main`, migracao de banco ou transacoes reais. O [checklist detalhado](FASE8_HOMOLOGACAO.md) e o [Mapa Inteligente](architecture/README.md) complementam o texto.
 
 ## Historico e escopo

@@ -20,6 +20,7 @@ npm run test:unit
 npm run test:smoke:postgres
 npm run test:postgres
 npm run test:postgres:repositories
+npm run test:postgres:backup-restore
 npm run test:legacy:json
 npm test
 ```
@@ -35,6 +36,14 @@ O smoke JSON cria um arquivo e diretórios auxiliares em `%TEMP%`/`os.tmpdir()` 
 - `scripts/generate-social-studio-posts.mjs` lê esse JSON para geração manual; pode ser migrado para leitura PostgreSQL em tarefa separada, com validação das saídas antes de remover o caminho legado.
 - `scripts/e2e-dev-server.js` e testes HTTP JSON usam arquivos temporários próprios; são ambientes de compatibilidade, não a validação principal.
 - Nenhum script de teste deve executar migrations ou resets em `DATABASE_URL`/`POSTGRES_URL` operacional. Para execução destrutiva, use apenas o harness acima.
+
+## Ensaio de backup/restauração da Fase 9
+
+`npm run test:postgres:backup-restore` rejeita URLs herdadas e exige a marca de servidor do mesmo contêiner descartável. Cria **dois** bancos novos `cinecruzeiro_test_<16 hex>` com tokens independentes; confirma cada marcador antes de migrations, backup, restore e remoção. O role `cine_test_admin` é não-superusuário com `CREATEDB`; nenhuma sessão alheia é terminada e não se usa `DROP DATABASE ... WITH (FORCE)`. No CI, `pg_dump` e `pg_restore` versão 16 são executados no contêiner PostgreSQL 16 com esse role, nunca como `postgres`. Localmente, as ferramentas de cliente PostgreSQL precisam estar instaladas e acessar o servidor local marcado.
+
+O script aplica migrations apenas na origem, insere filme, sala, sessão, cliente `.invalid`, pedido pago e intenção Point pendente, pagamentos simulados, ingresso, estoque, assinatura/crédito, job de e-mail e campanha em fila. Faz `pg_dump -Fc` sem ownership/ACL e exclui **somente** o marcador local; restaura no segundo banco marcado. Confere contagens, vínculos, saldo/histórico, estados financeiros e jobs na origem e no destino. Os processos da aplicação, workers e provedores externos não são iniciados. Se o marcador faltar ou divergir, o script recusa a remoção destrutiva e exige limpeza humana do contêiner descartável. O arquivo temporário é exclusivo da execução.
+
+Esse ensaio comprova integridade sintética do arquivo; **não** homologa um backup operacional. Antes de religar workers após uma restauração real autorizada, conciliar cobranças, reembolsos, impressões e entregas ocorridos entre a data do backup e o retorno, inclusive intenções Point `sending`/`unknown`. Restaurar PostgreSQL não desfaz uma operação já aceita pelo Mercado Pago.
 
 ## Atualizacao da Fase 4.2
 

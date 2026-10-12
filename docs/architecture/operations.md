@@ -25,3 +25,9 @@ Fonte: [orquestrador](../../backend/services/social-studio/automation/orchestrat
 - O armazenamento JSON de compatibilidade ainda limita histórico a 100 campanhas; backlog superior a 100 é validado para PostgreSQL. O teste unitário exercita 125 registros sem memória ilimitada.
 
 Testes: [automação](../../tests/social-studio-automation.test.mjs), [isolamento pós-commit](../../tests/database-persistence-postgres.test.mjs).
+
+## Intenção Point e recuperação após restauração
+
+Fonte: rotas de bilheteria e consulta em [server.js](../../backend/server.js), [cardTerminalProvider](../../backend/services/cardTerminalProvider.js), `orders`/`payments` em [PostgreSQL](../../backend/db/postgresStore.js). `payments.metadata` guarda chave idempotente, referência, fingerprint do pedido, terminal, hash da conta do provedor, estado da criação e lease. O pedido pendente e o pagamento são confirmados antes do POST externo; `prepared` não autoriza impressão, ingresso nem produto. `sending`/`unknown` após envio requer consulta com Order ID ou retry **da mesma chave**, após o lease. Erro definitivo ou divergência deve permanecer em revisão humana. A aplicação não consulta Point por referência externa sem Order ID. Ver [transações](transactions.md) e [procedimento da Fase 9](../FASE9_DESBLOQUEIO.md).
+
+Após restore, não religar automaticamente workers nem repetir uma cobrança Point com nova referência. Compare o snapshot com o provedor para pagamentos e reembolsos que ocorreram após o backup; confirme estados de `ticket_email_jobs`, campanhas, ingressos e estoque antes de retomar. O [ensaio protegido](../../scripts/postgres-backup-restore-test.js) só valida dados sintéticos e não executa a recuperação operacional.

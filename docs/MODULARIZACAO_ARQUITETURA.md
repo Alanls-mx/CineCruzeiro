@@ -1,5 +1,9 @@
 # Modularizacao estrutural: Cine Cruzeiro
 
+> Historico da refatoracao. A [Fase 9](FASE9_DESBLOQUEIO.md) altera limites transacionais da cobranca Point e dos estornos sem retomar extracoes amplas de `server.js`/`admin.js`; veja o [Mapa Inteligente](architecture/README.md) para a responsabilidade atual.
+
+A Fase 9 nao criou migrations nem uma nova maquina de estados: a intencao usa `orders`/`payments` e metadados existentes, coordenados em `server.js`, com [cardTerminalProvider](../backend/services/cardTerminalProvider.js) na fronteira externa. O teste de backup/restauracao e infraestrutura de teste isolada, nao worker de producao. Os riscos restantes estao documentados na decisao B da fase.
+
 ## Referencia funcional
 
 - Base: `codex/multi-cinema-rollout` em `ea7c5df`. Essa linha inclui os ajustes recentes de assinatura dos webhooks, SDK de pagamentos, CSP e seguranca.
