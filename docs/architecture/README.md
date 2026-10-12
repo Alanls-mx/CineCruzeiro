@@ -1,6 +1,6 @@
 # Mapa Inteligente da Arquitetura
 
-Índice progressivo verificado no código. **Não é um inventário completo**. O código-fonte prevalece sobre este mapa.
+Índice progressivo verificado no código. **Não é um inventário completo**. O código-fonte prevalece sobre este mapa. `npm run docs:coverage` mede o escopo bruto sem confundir caminhos candidatos com rotas ativas.
 
 | Entrada | Use quando |
 | --- | --- |
@@ -16,6 +16,7 @@
 | [Exercícios de navegação](navigation.md) | Você quer verificar como o mapa orienta solicitações reais. |
 | [Auditoria estrutural](audit.md) | Você quer entender a ordem das extrações e as responsabilidades adiadas. |
 | [Histórico da modularização](../MODULARIZACAO_ARQUITETURA.md) | Você precisa entender decisões e pendências anteriores. |
+| [Relatório consolidado](../RELATORIO_FINAL_REFATORACAO.md) | Você precisa da decisão formal, evidências e bloqueios residuais da Fase 8. |
 | [Testes PostgreSQL](../TESTES_POSTGRESQL.md) | Você precisa configurar validação isolada. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
@@ -30,4 +31,4 @@
 
 ## Regra de manutenção
 
-Ao modificar uma responsabilidade, confirme o endpoint e as permissões em [server.js](../../backend/server.js), o esquema em [migrations](../../backend/db/migrations/001_init.sql), os testes relevantes e os limites de commit. Atualize o domínio, o fluxo e o índice de módulos afetados. `npm run docs:check` verifica a existência dos caminhos linkados; ele não valida a semântica das descrições.
+Ao modificar uma responsabilidade, confirme o endpoint e as permissões em [server.js](../../backend/server.js), o esquema em [migrations](../../backend/db/migrations/001_init.sql), os testes relevantes e os limites de commit. Atualize o domínio, o fluxo e o índice de módulos afetados. `npm run docs:check` verifica caminhos e símbolos curados; ele não valida a semântica das descrições ou detecta todos os consumidores. O [relatório da Fase 8](../FASE8_HOMOLOGACAO.md) registra lacunas e decisão de prontidão.

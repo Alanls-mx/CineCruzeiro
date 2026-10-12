@@ -8,3 +8,4 @@
 6. Valide com testes direcionados, `npm run test:unit`, `npm run test:security:local`, `npm run lint`, `npm run build`, `npm run docs:check` e, quando aplicável, E2E e PostgreSQL descartável.
 7. As cinco instalações compartilham código, mas têm configurações, credenciais e bancos independentes. Não fixe marca, domínio ou segredo em módulo compartilhado.
 8. Nesta fase, não faça deploy nem integre à `main` automaticamente.
+9. Antes de tratar a refatoração como concluída, consulte o [relatório consolidado](docs/RELATORIO_FINAL_REFATORACAO.md) e o [checklist da Fase 8](docs/FASE8_HOMOLOGACAO.md): prontidão técnica, homologação operacional e cobertura do mapa são decisões separadas. `npm run docs:coverage` mede candidatos, não a completude semântica.
