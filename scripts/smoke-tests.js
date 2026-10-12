@@ -3056,7 +3056,8 @@ async function run() {
       assert.equal(printPrepareFail(), true);
       assert.equal(failedPrintPrepare.response.status >= 500, true);
       assert.equal(mockPointRefunds.size, 0, "O estorno Point nao deve sair antes da intencao confirmada");
-      const printFinalFail = failCommitForRecord(pointPrintFailure.payload.payment.id, "smoke_print_refund_final_commit_failure", 2);
+      const printFinalFail = failCommitForRecord(pointPrintFailure.payload.payment.id, "smoke_print_refund_final_commit_failure", 1,
+        matchingPaymentWrite(pointPrintFailure.payload.payment.id, (payment) => payment.metadata?.printResolution?.status === "completed"));
       let failedPrintFinal;
       try { failedPrintFinal = await requestPrintResolve(); }
       finally { pg.Client.prototype.query = originalQuery; }
@@ -3167,7 +3168,8 @@ async function run() {
       assert.equal(failedConcessionPrepare.response.status >= 500, true);
       assert.equal((await readPersistedDb()).orders.find((item) => item.id === combinedOrderId).concessionRefund?.status || "", "");
       assert.equal((await readPersistedDb()).concessions.find((item) => item.id === "combo-classico").stock, combinedStockBefore);
-      const concessionFinalFail = failCommitForRecord(combinedOrderId, "smoke_concession_final_commit_failure", 2);
+      const concessionFinalFail = failCommitForRecord(combinedOrderId, "smoke_concession_final_commit_failure", 1,
+        matchingOrderWrite(combinedOrderId, (order) => order.concessionRefund?.status === "completed"));
       let failedConcessionFinal;
       try { failedConcessionFinal = await requestConcessionRefund(); }
       finally { pg.Client.prototype.query = originalQuery; }
@@ -3213,7 +3215,8 @@ async function run() {
       assert.equal(failedFullPrepare.response.status >= 500, true);
       assert.equal((await readPersistedDb()).orders.find((item) => item.id === fullRefundOrderId).refundStatus || "", "");
       assert.equal((await readPersistedDb()).tickets.find((item) => item.orderId === fullRefundOrderId).status, "active");
-      const fullFinalFail = failCommitForRecord(fullRefundOrderId, "smoke_full_refund_final_commit_failure", 2);
+      const fullFinalFail = failCommitForRecord(fullRefundOrderId, "smoke_full_refund_final_commit_failure", 1,
+        matchingOrderWrite(fullRefundOrderId, (order) => order.refundStatus === "completed"));
       let failedFullFinal;
       try { failedFullFinal = await requestFullRefund(); }
       finally { pg.Client.prototype.query = originalQuery; }
