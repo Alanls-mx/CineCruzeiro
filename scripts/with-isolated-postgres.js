@@ -12,7 +12,7 @@ function adminUrl() {
 
 async function main() {
   const target = process.argv[2];
-  if (!["smoke", "concurrency", "repositories", "upgrade"].includes(target)) throw new Error("Escolha smoke, concurrency, repositories ou upgrade.");
+  if (!["smoke", "concurrency", "repositories", "upgrade", "guard"].includes(target)) throw new Error("Escolha smoke, concurrency, repositories, upgrade ou guard.");
   if (process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.TEST_DATABASE_URL) {
     throw new Error("Remova URLs de banco herdadas antes de iniciar o harness de teste.");
   }
@@ -43,7 +43,8 @@ async function main() {
     } finally { await testClient.end(); }
     const script = path.join(__dirname, target === "smoke" ? "smoke-tests.js"
       : target === "repositories" ? "postgres-repository-tests.js"
-      : target === "upgrade" ? "postgres-upgrade-tests.js" : "postgres-concurrency-tests.js");
+      : target === "upgrade" ? "postgres-upgrade-tests.js"
+      : target === "guard" ? "postgres-guard-tests.js" : "postgres-concurrency-tests.js");
     const child = spawnSync(process.execPath, [script], {
       cwd: path.join(__dirname, ".."), stdio: "inherit",
       env: {

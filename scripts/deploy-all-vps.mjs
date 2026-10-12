@@ -181,7 +181,7 @@ function backupAndMigrate(instance, releaseDir, env) {
     fs.rmSync(backup, { force: true });
     throw error;
   }
-  run("npm", ["run", "db:migrate"], { cwd: releaseDir, env: { ...env, DATABASE_URL: databaseUrl } });
+  run("npm", ["run", "db:migrate"], { cwd: releaseDir, env: { ...env, DATABASE_URL: databaseUrl, CINE_INSTANCE_SLUG: instance.slug } });
 }
 
 function switchCurrent(instance, releaseDir) {

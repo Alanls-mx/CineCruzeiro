@@ -60,6 +60,8 @@ jobs:
           done
       - run: npm run test:postgres
       - run: npm run test:postgres:repositories
+      - name: Reject wrong migration targets and verify atomic upgrade
+        run: npm run test:postgres:guard
       - name: Verify 050 to 052 upgrade on PostgreSQL 18
         if: matrix.postgres-major == '18'
         run: npm run test:postgres:upgrade
