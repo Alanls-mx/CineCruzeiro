@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const files = ['AGENTS.md', 'docs/FASE10_PRE_HOMOLOGACAO.md', 'docs/FASE10_CADERNO_PILOTO.md', 'docs/FASE11_HOMOLOGACAO_PILOTO.md', 'docs/FASE11_AUTORIZACAO_SANDBOX.md', ...((await fs.readdir(path.join(root, 'docs/architecture')))
+const files = ['AGENTS.md', 'docs/FASE10_PRE_HOMOLOGACAO.md', 'docs/FASE10_CADERNO_PILOTO.md', 'docs/FASE11_HOMOLOGACAO_PILOTO.md', 'docs/FASE11_AUTORIZACAO_SANDBOX.md', 'docs/FASE12_AUDITORIA_VPS.md', 'docs/FASE12_PLANO_ATUALIZACAO.md', ...((await fs.readdir(path.join(root, 'docs/architecture')))
   .filter(name => name.endsWith('.md')).map(name => `docs/architecture/${name}`))];
 const broken = [];
 for (const file of files) {

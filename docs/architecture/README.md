@@ -23,6 +23,8 @@
 | [Caderno do piloto](../FASE10_CADERNO_PILOTO.md) | Você procura roteiro funcional, incidentes, backup/reversao ou checklist por cinema. |
 | [Fase 11](../FASE11_HOMOLOGACAO_PILOTO.md) | Você procura a evidencia interna do Cine Cruzeiro confirmado como piloto, os limites do ambiente e a decisao A-E. |
 | [Autorizacao do sandbox](../FASE11_AUTORIZACAO_SANDBOX.md) | Você precisa solicitar o primeiro teste externo sem assumir que a escolha do piloto libera pagamentos. |
+| [Auditoria VPS Fase 12](../FASE12_AUDITORIA_VPS.md) | Você precisa do estado observado da instalacao LumixEngine, da release e do esquema, sem segredos. |
+| [Plano de atualizacao Fase 12](../FASE12_PLANO_ATUALIZACAO.md) | Você precisa de preflight, backup, migracao, validacao e reversao antes de pedir autorizacao de deploy. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
 ## Navegação por intenção
@@ -37,6 +39,7 @@
 - Backup/restauração: [procedimento protegido](../TESTES_POSTGRESQL.md), [ensaio sintético](../../scripts/postgres-backup-restore-test.js).
 - Google Wallet e isolamento de marca: [layout](../../backend/services/googleWalletPassLayoutService.js), [teste](../../tests/google-wallet-integration.test.mjs), [portao externo](../FASE10_CADERNO_PILOTO.md#outras-integracoes).
 - Impressao Point e descricao da Order: [provedor](../../backend/services/cardTerminalProvider.js), [fluxo](flows.md), [teste local](../../scripts/mercado-pago-point-tests.js), [limites do piloto](../FASE11_HOMOLOGACAO_PILOTO.md#alteracao-dirigida).
+- Atualizacao da VPS existente: [auditoria Fase 12](../FASE12_AUDITORIA_VPS.md), [plano autorizado apenas futuramente](../FASE12_PLANO_ATUALIZACAO.md), [deploy script](../../scripts/deploy-all-vps.mjs), [migrations](../../backend/db/migrations/051_ticket_email_jobs.sql) e [operacoes](operations.md). Registro local de exemplo nao descreve os outros cinemas habilitados na VPS.
 
 ## Regra de manutenção
 
