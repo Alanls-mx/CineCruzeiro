@@ -31,6 +31,7 @@
     "test:postgres": "node scripts/with-isolated-postgres.js concurrency",
     "test:postgres:repositories": "node scripts/with-isolated-postgres.js repositories",
     "test:smoke:postgres": "node scripts/with-isolated-postgres.js smoke",
+    "test:postgres:backup-restore": "node scripts/postgres-backup-restore-test.js",
     "test:legacy:json": "node scripts/run-legacy-json-smoke.js",
     "test:postgres-safety": "node --test tests/test-postgres-safety.test.mjs",
     "test:database": "node --test tests/database-persistence.test.mjs tests/postgres-snapshot-cache-policy.test.mjs tests/database-persistence-postgres.test.mjs",

@@ -53,3 +53,7 @@ jobs:
           done
       - run: npm run test:postgres
       - run: npm run test:postgres:repositories
+      - name: Verify synthetic backup and restore
+        env:
+          POSTGRES_SERVICE_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: npm run test:postgres:backup-restore
