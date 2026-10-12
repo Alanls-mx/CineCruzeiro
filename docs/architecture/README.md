@@ -19,6 +19,8 @@
 | [Relatório consolidado](../RELATORIO_FINAL_REFATORACAO.md) | Você precisa da decisão formal, evidências e bloqueios residuais da Fase 8. |
 | [Testes PostgreSQL](../TESTES_POSTGRESQL.md) | Você precisa configurar validação isolada. |
 | [Fase 9](../FASE9_DESBLOQUEIO.md) | Você investiga a intenção Point, estornos ou o ensaio de restauração. |
+| [Fase 10](../FASE10_PRE_HOMOLOGACAO.md) | Você prepara o portao de autorizacao, matrizes de integracao e a decisao de pre-homologacao. |
+| [Caderno do piloto](../FASE10_CADERNO_PILOTO.md) | Você procura roteiro funcional, incidentes, backup/reversao ou checklist por cinema. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
 ## Navegação por intenção
@@ -31,6 +33,7 @@
 - Webhook Mercado Pago: [fluxo de compra](flows.md), [paymentService](../../backend/services/paymentService.js), [teste de assinatura](../../scripts/mercado-pago-webhook-tests.js).
 - Cobrança Point inconclusiva: [fluxo presencial](flows.md), [limites de commit](transactions.md), [smoke PostgreSQL](../../scripts/smoke-tests.js).
 - Backup/restauração: [procedimento protegido](../TESTES_POSTGRESQL.md), [ensaio sintético](../../scripts/postgres-backup-restore-test.js).
+- Google Wallet e isolamento de marca: [layout](../../backend/services/googleWalletPassLayoutService.js), [teste](../../tests/google-wallet-integration.test.mjs), [portao externo](../FASE10_CADERNO_PILOTO.md#outras-integracoes).
 
 ## Regra de manutenção
 

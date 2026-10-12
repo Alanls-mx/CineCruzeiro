@@ -9,3 +9,4 @@
 7. As cinco instalações compartilham código, mas têm configurações, credenciais e bancos independentes. Não fixe marca, domínio ou segredo em módulo compartilhado.
 8. Nesta fase, não faça deploy nem integre à `main` automaticamente.
 9. Antes de tratar a refatoração como concluída, consulte o [relatório consolidado](docs/RELATORIO_FINAL_REFATORACAO.md) e o [checklist da Fase 8](docs/FASE8_HOMOLOGACAO.md): prontidão técnica, homologação operacional e cobertura do mapa são decisões separadas. `npm run docs:coverage` mede candidatos, não a completude semântica.
+10. Para homologacao externa, consulte o [portao da Fase 10](docs/FASE10_CADERNO_PILOTO.md). Um script, credencial disponivel ou botao de "testar integracao" nao autoriza chamada externa: exija cinema, ambiente, responsavel, operacoes, janela, limites e reversao especificos antes de usar sandbox, terminal, Wallet, email, VPS ou banco operacional.

@@ -1,6 +1,6 @@
 # Relatorio de encerramento tecnico da refatoracao
 
-> Este relatorio e a decisao historica da Fase 8. A [Fase 9](FASE9_DESBLOQUEIO.md) adicionou intencao Point pre-provedor, testes de estorno e ensaio de backup/restauracao; use a decisao mais recente de la, apos conferir o CI no HEAD final. Nenhuma destas paginas autoriza deploy ou homologacao real.
+> Este relatorio e a decisao historica da Fase 8. A [Fase 9](FASE9_DESBLOQUEIO.md) adicionou intencao Point pre-provedor, testes de estorno e ensaio de backup/restauracao. A [Fase 10](FASE10_PRE_HOMOLOGACAO.md) registra a pre-homologacao e seus portoes; consulte a decisao mais recente apos conferir o CI no HEAD final. Nenhuma destas paginas autoriza deploy ou homologacao real.
 
 ## Atualizacao da Fase 9
 

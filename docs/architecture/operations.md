@@ -33,3 +33,7 @@ Fonte: rotas de bilheteria e consulta em [server.js](../../backend/server.js), [
 O [smoke PostgreSQL](../../scripts/smoke-tests.js) inicia uma [segunda instância Node](../../scripts/point-smoke-second-instance.js) no mesmo banco descartável. Duas consultas simultâneas da intenção devem produzir uma única chamada simulada ao provedor, registrada fora da memória dos servidores. Isso valida a disputa local entre processos, não a idempotência de um terminal real nem uma transação distribuída.
 
 Após restore, não religar automaticamente workers nem repetir uma cobrança Point com nova referência. Compare o snapshot com o provedor para pagamentos e reembolsos que ocorreram após o backup; confirme estados de `ticket_email_jobs`, campanhas, ingressos e estoque antes de retomar. O [ensaio protegido](../../scripts/postgres-backup-restore-test.js) só valida dados sintéticos e não executa a recuperação operacional.
+
+## Pre-homologacao e incidentes
+
+O [caderno da Fase 10](../FASE10_CADERNO_PILOTO.md) separa teste interno, sandbox e operacao assistida, com ficha de autorizacao, paradas e roteiro por incidente. O diagnostico Wallet **nao** e read-only: pode alterar classe externa. Para Point incerto, refund pendente, job/e-mail ou campanha interrompida, preservar IDs e estados, pausar somente a operacao afetada e escalar ao responsavel designado; nao reexecutar efeitos externos com identidade nova. O backup sintetico nao substitui plano de restauracao e conciliacao por cinema. Nenhuma dessas instrucoes autoriza acesso a recurso operacional.
