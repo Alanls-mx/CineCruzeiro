@@ -2,6 +2,8 @@
 
 **Somente preparacao. Portao B nao autorizado.** Base historica: [auditoria](FASE12_AUDITORIA_VPS.md) e [plano](FASE12_PLANO_ATUALIZACAO.md) da Fase 12. O codigo da branch e a fonte para comportamento de startup e deploy; este registro nao concede acesso a dados de negocio nem muda a instalacao.
 
+Atualizacao Fase 13.1: [guard/pausa e lacunas](FASE13_1_FECHAMENTO_BLOQUEADORES.md) e [matriz](FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md). A tabela abaixo e a decisao **historica da Fase 13**, nao uma aprovacao atualizada. O modo guardado foi implementado sem execucao remota; a pausa antiga, retomada gradual e backup real ainda bloqueiam a atualizacao.
+
 ## Identidade e isolamento
 
 | Item | Evidencia / limite |

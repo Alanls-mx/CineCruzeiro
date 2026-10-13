@@ -2,6 +2,8 @@
 
 O fluxo principal usa PostgreSQL. `npm test` executa a suíte unitária, o smoke HTTP, a concorrência e os testes de repositório em **três bancos descartáveis diferentes**. O modo JSON é legado e só é executado por `npm run test:legacy:json`.
 
+Fase 13.1: `npm run test:postgres:guard` cria um banco marcado adicional dentro do servidor descartavel e o remove somente apos conferir seu marcador. Ambos recebem o mesmo esquema 050; o teste demonstra recusa sem DDL por alvo/role/SHA/historico/origem divergentes e sucesso atomico de 051/052. O job PostgreSQL 16 **e** 18 executa esse ensaio. `npm run test:maintenance` usa HTTP local e dois processos sem banco ou provedores externos. Nenhum desses comandos autoriza usar banco de desenvolvimento/operacional ou testa a transicao da release antiga na VPS.
+
 ## Configuração local
 
 Configure `TEST_POSTGRES_ADMIN_URL` apontando para um PostgreSQL **local e comprovadamente descartável** (`localhost`, `127.0.0.1` ou `::1`), banco de manutenção `postgres`, com o role dedicado `cine_test_admin`, não-superusuário e com permissão `CREATEDB`. Não utilize uma URL de produção, desenvolvimento, túnel para VPS ou um role de aplicação. Mantenha a credencial fora do repositório. O harness recusa URLs com parâmetros de query, role diferente ou host remoto. `localhost` sozinho não autoriza testes: antes de `CREATE DATABASE`, ele exige o token `CINE_TEST_SERVER_TOKEN` correspondente à tabela `cine_test_server_marker` criada **no contêiner descartável por um canal fora da conexão TCP**. Uma porta local encaminhada a outro servidor não terá essa marca. O banco temporário recebe ainda seu próprio marcador de execução.

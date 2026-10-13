@@ -29,6 +29,8 @@
 | [Matriz Fase 13](../FASE13_MATRIZ_ATUALIZACAO.md) | Você precisa dos criterios de parada e recuperacao por etapa. |
 | [Runbook Fase 13](../FASE13_RUNBOOK_EXECUCAO.md) | Você prepara uma eventual janela operacional, sem executa-la. |
 | [Ficha Portao B](../FASE13_AUTORIZACAO_ATUALIZACAO.md) | Você solicita autorizacao explicita por recurso e operacao; formulario vazio nao autoriza. |
+| [Fase 13.1](../FASE13_1_FECHAMENTO_BLOQUEADORES.md) | Você avalia guard de migrations, startup quiescente e bloqueios restantes. |
+| [Matriz 13.1](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md) | Você localiza entradas HTTP/WS/workers e as evidencias de pausa/isolamento. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
 ## Navegação por intenção

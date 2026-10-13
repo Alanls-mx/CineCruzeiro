@@ -2,6 +2,8 @@
 
 Inventario **parcial**, verificado no roteamento de [server.js](../../backend/server.js), em `withCriticalMutation`, `deferUntilPostgresCommit` e nos testes citados. O PostgreSQL confirma a mutacao local; nao pode confirmar atomicamente uma chamada ao provedor externo. Os testes JSON legados nao demonstram ordem de commit PostgreSQL. A integracao PG usa banco descartavel protegido pelo [harness](../../scripts/test-postgres-safety.js).
 
+Fase 13.1: o [guard de migrations](../../scripts/guarded-migration.js) abre uma transacao, valida banco/role/origem/ownership/historico/esquema e aplica 051/052 e marcadores **antes do unico COMMIT**. Timeout/erro faz ROLLBACK; nenhuma chamada externa faz parte dela. O [entrypoint quiescente](../../backend/start.js) nao executa transacoes. Isso nao drena transacoes abertas pelo processo antigo nem torna atomico um pagamento/refund externo; ver [matriz](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md).
+
 | Fluxo | Contexto, resposta e efeito externo | Rollback, teste e limite |
 | --- | --- | --- |
 | `POST /api/movies/:id/sessions`, `POST /api/rooms`, `POST /api/ticket-types` | `repositoryMutationRoute` dispensa wrapper global; [handlers de catalogo](../../backend/services/movieCatalogHandler.js) e [configuracao](../../backend/services/venueConfigurationHandler.js) aguardam repositorio antes de responder | Ordem adequada nos ramos verificados; conflitos de agenda/limpeza cobertos por [teste](../../tests/session-room-conflict.test.mjs). |

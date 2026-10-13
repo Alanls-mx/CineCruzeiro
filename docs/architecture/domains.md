@@ -2,6 +2,8 @@
 
 Este índice aponta para responsáveis confirmados, não substitui a leitura do código. Rotas que ainda estão em [server.js](../../backend/server.js) não são apresentadas como módulos extraídos.
 
+Operacao de atualizacao do piloto: [runner guardado](../../scripts/guarded-migration.js) vincula DDL a banco/role/release/esquema; [entrypoint quiescente](../../backend/start.js) bloqueia HTTP, webhook e WS sem carregar workers. [Matriz Fase 13.1](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md). A release antiga nao e pausada por esses modulos.
+
 | Domínio / termos de busca | Entrada principal | Persistência ou teste |
 | --- | --- | --- |
 | Autenticação, login, 2FA | [server.js](../../backend/server.js), [adminTwoFactorService](../../backend/services/adminTwoFactorService.js), [AccountModal](../../src/components/AccountModal.tsx) | [users](../../backend/db/migrations/001_init.sql), [teste 2FA](../../scripts/admin-two-factor-tests.js) |

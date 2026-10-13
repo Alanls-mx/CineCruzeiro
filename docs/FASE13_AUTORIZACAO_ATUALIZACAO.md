@@ -2,6 +2,8 @@
 
 **Formulario nao preenchido e nao concedido. Nenhuma operacao remota de escrita esta autorizada por esta ficha.** Preencher fora do repositorio as referencias restritas e aprovar explicitamente cada linha. A preparacao do Portao A, credenciais existentes e CI verde nao substituem a assinatura do responsavel.
 
+Fase 13.1 adicionou [guard de alvo e entrypoint fechado](FASE13_1_FECHAMENTO_BLOQUEADORES.md); eles nao aprovam esta ficha. Solicitar separadamente o manifesto restrito de migrations, ensaio de corte/dreno da release antiga, comportamento de retry de cada callback e plano de retomada por categoria antes de propor janela. Nao publicar URL de banco, segredos ou dados financeiros nesta ficha.
+
 | Campo | Valor a confirmar |
 | --- | --- |
 | Cinema / ambiente | Cine Cruzeiro / desenvolvimento na VPS LumixEngine |

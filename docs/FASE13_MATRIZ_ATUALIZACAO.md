@@ -2,6 +2,8 @@
 
 **Plano futuro, nao autorizacao de execucao.** Cada linha exige evidencia registrada e operador designado. `STOP` significa manter ou retornar a estado quiescente e escalar; nao repetir efeitos externos com chave nova. A [ficha](FASE13_AUTORIZACAO_ATUALIZACAO.md) deve aprovar cada operacao remota.
 
+Complemento Fase 13.1: consultar [matriz de isolamento/pausa](FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md). O guard de migrations e o novo entrypoint quiescente existem na candidata, mas nao cobrem o corte/dreno da release antiga nem a retomada gradual. As etapas 3, 6, 7 e 9 abaixo permanecem STOP ate ensaio e autorizacao especificos.
+
 | Etapa | Pre-condicao/evidencia | Recurso e risco | Criterio de aprovacao / STOP | Reversao ou recuperacao |
 | --- | --- | --- | --- | --- |
 | 0. Fixar escopo | Cinema, janela, operador, `ea7c5df` e SHA candidato completos; 4 outras instalacoes inventariadas sem segredos | Repo/PM2/DB compartilhados; role Cine conecta a seis outros DBs | Apenas `cinecruzeiro`; executor confere URL, `current_database`, `current_user` e dono antes de DDL; rever grants cruzados; STOP em divergencia | Nenhuma mutacao, manter `current` |

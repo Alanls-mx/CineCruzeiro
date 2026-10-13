@@ -2,6 +2,8 @@
 
 Inventário **parcial**, baseado no registro em [server.js](../../backend/server.js) e nos handlers abaixo. A aplicação Next encaminha `/api/*` por [route.ts](../../src/app/api/[...path]/route.ts). Métodos não listados não estão implicitamente disponíveis. `A` significa sessão administrativa válida mais a permissão indicada, checada por `ensureAdmin`; escritas administrativas também passam pelo controle de origem. `C` significa identidade de cliente validada no próprio fluxo. `W` significa assinatura/token da integração, não sessão administrativa. Reexaminar as condições do código antes de editar.
 
+No **processo quiescente**, apenas `GET/HEAD /api/health/maintenance` responde 200 com modo/instalacao/SHA; nao e endpoint de negocio e nao acessa DB. Todas as demais rotas, inclusive GET Point e POST webhook, respondem 503 sem processar corpo/autenticacao; upgrade WS 503. A permissao de negocio nao e relaxada: o servidor normal nao e carregado. A release antiga segue com seus endpoints ate corte/dreno externo. [Teste](../../tests/maintenance-startup.test.mjs), [limites](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md).
+
 | Método e caminho | Estado / função e responsável | Acesso | Persistência e efeitos | Verificação |
 | --- | --- | --- | --- | --- |
 | `GET /api/content` | Ativo; catálogo público em [server.js](../../backend/server.js) | Público | Leitura de filmes, sessões e configurações públicas | [conteúdo](../../tests/public-content-settings.test.mjs) |
