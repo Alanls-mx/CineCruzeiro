@@ -22,7 +22,7 @@ async function main() {
     await client.connect();
     try {
       const applied = await runGuardedMigration({ client, connectionString: databaseUrl(), authorization,
-        migrationsDir, releaseSha: release.commit, pilot: true });
+        migrationsDir, releaseSha: release.commit });
       console.log(`MIGRATION_GUARDED_OK count=${applied.length}`);
     } finally { await client.end(); }
     return;

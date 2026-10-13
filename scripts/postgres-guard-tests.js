@@ -69,7 +69,7 @@ async function main() {
       applied, pending, hashes
     };
     const run = (client, targetUrl, value = authorization, candidate = CANDIDATE) => runGuardedMigration({
-      client, connectionString: targetUrl, authorization: value, migrationsDir, releaseSha: candidate
+      client, connectionString: targetUrl, authorization: value, migrationsDir, releaseSha: candidate, syntheticTest: true
     });
     const before = await state(target);
     async function reject(client, targetUrl, value, candidate = CANDIDATE) {

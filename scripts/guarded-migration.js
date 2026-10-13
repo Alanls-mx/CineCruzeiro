@@ -95,8 +95,14 @@ async function assertConnectedTarget(client, authorization) {
   if (!state.rows[0]?.jobs_absent || !state.rows[0]?.old_payment_check || !state.rows[0]?.trigger_absent) fail();
 }
 
-async function runGuardedMigration({ client, connectionString, authorization, migrationsDir, releaseSha, pilot = false }) {
-  if (pilot) assertPilotAuthorization(authorization);
+async function runGuardedMigration({ client, connectionString, authorization, migrationsDir, releaseSha, syntheticTest = false }) {
+  if (syntheticTest) {
+    if (process.env.NODE_ENV !== "test" || !process.env.CINE_TEST_SERVER_TOKEN
+      || !process.env.CINE_TEST_DB_TOKEN
+      || connectionString !== process.env.TEST_DATABASE_URL) fail();
+  } else {
+    assertPilotAuthorization(authorization);
+  }
   assertAuthorizationShape(authorization, connectionString, releaseSha);
   const contents = await readMigrationSet(migrationsDir, authorization);
   await client.query("BEGIN");
