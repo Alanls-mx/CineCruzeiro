@@ -27,9 +27,11 @@ test("maintenance denies GET side effects, writes and unsigned webhook without i
     assert.deepEqual(await status.json(), { mode: "quiescent", instance: "cinecruzeiro", commit: sha });
     for (const [method, endpoint] of [
       ["GET", "/api/box-office/point-payments/fake"],
+      ["GET", "/api/health/ready"],
       ["GET", "/api/content"],
       ["POST", "/api/payments/pix"],
       ["POST", "/api/webhooks/mercado-pago"],
+      ["POST", "/api/webhooks/pag-bank"],
       ["POST", "/api/admin/social-studio/automation/campaigns"]
     ]) {
       const response = await fetch(`${base}${endpoint}`, { method });
@@ -105,4 +107,13 @@ test("invalid mode and release identity fail before startup", async () => {
   });
   const result = await new Promise((resolve) => child.once("exit", resolve));
   assert.notEqual(result, 0);
+  const direct = spawn(process.execPath, [path.join(root, "backend", "server.js")], {
+    cwd: root, stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, CINE_OPERATION_MODE: "quiescent", DATABASE_URL: "postgres://unreachable.invalid/no_db" }
+  });
+  let diagnostic = "";
+  direct.stderr.on("data", (chunk) => { diagnostic += chunk.toString("utf8"); });
+  const directResult = await new Promise((resolve) => direct.once("exit", resolve));
+  assert.notEqual(directResult, 0);
+  assert.match(diagnostic, /CINE_OPERATION_MODE_INVALID/);
 });
