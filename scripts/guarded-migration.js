@@ -30,7 +30,7 @@ function assertAuthorizationShape(authorization, connectionString, releaseSha) {
   let url;
   try { url = new URL(connectionString); } catch { fail(); }
   if (!["postgres:", "postgresql:"].includes(url.protocol) || url.search || url.hash
-    || !authorization?.instance || !authorization.database || !authorization.role
+    || authorization?.instance !== PILOT_INSTANCE || !authorization.database || !authorization.role
     || !authorization.origin?.host || !authorization.origin?.serverAddress
     || !Number.isInteger(authorization.origin?.port)
     || authorization.origin.port < 1 || authorization.origin.port > 65535
