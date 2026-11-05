@@ -4,6 +4,41 @@
 
 Complemento Fase 13.1: consultar [matriz de isolamento/pausa](FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md). O guard de migrations e o novo entrypoint quiescente existem na candidata, mas nao cobrem o corte/dreno da release antiga nem a retomada gradual. As etapas 3, 6, 7 e 9 abaixo permanecem STOP ate ensaio e autorizacao especificos.
 
+## Auditoria local em 05/11/2026
+
+Esta secao avalia o checkout local, **nao** o estado atual da VPS. O HEAD `29e1d478509cbfe1391040bf911daf1b61f062c5` coincide com a branch remota `codex/modularize-server-admin` consultada nesta data; `main` remota esta em outro SHA. Mudancas nao versionadas abaixo nao estao comprovadamente publicadas, nem fazem parte dos workflows verdes da Fase 13.1. Nenhum banco, provedor ou servico remoto foi usado nesta auditoria.
+
+| Area | Evidencia atual | Estado / proxima acao |
+| --- | --- | --- |
+| Catalogo, sessoes e contabilidade | `npm run test:catalog-operations`: 15 passaram; o caso PostgreSQL foi ignorado nesse comando porque `TEST_DATABASE_URL` nao estava configurado. O teste de UI foi atualizado apos a extracao de `ticket-finance-view.js`. O caso PG passou depois no harness protegido, como registrado abaixo. | **Local aprovado com ressalva**. Validar painel e CI no SHA candidato; nenhum banco operacional foi usado. |
+| Regressao compartilhada | `npm run test:unit`, `npm run test:security:local` (25/25), `npm run lint` e `npm run docs:check` (19 documentos) passaram. Suites PG condicionais de `test:unit` foram ignoradas sem banco autorizado. | **Local aprovado com ressalva**. Reexecutar CI Security, PG16/18 e Browser no SHA que incluir estas mudancas, nao no HEAD anterior. |
+| Build e E2E | A primeira execucao compilou, mas Next.js 16.4.0 interrompeu build/E2E com `SecurityFatalError`. A atualizacao para 16.4.5 e os resultados repetidos estao registrados abaixo. | **Resolvido localmente**, nao publicado. Fixar candidata e repetir no CI antes de promover. |
+| Arquivos locais | Ha teste PG/HTTP e documentacao de catalogo ainda nao versionados, alem de ferramentas operacionais em `scripts/ops`, scripts de restore/roles, backups, downloads de desktop, midia, app mobile e materiais de apresentacao. `renderer.js` aparece modificado no status, mas sem diferenca textual no diff; nao presumir mudanca funcional. | **Revisao pendente**. Separar codigo/testes de artefatos e dados, revisar scripts de restore/roles por risco, verificar origem/segredos e selecionar apenas arquivos apropriados para commit. Nao apagar nem publicar backups/credenciais por inferencia. |
+| VPS e migrations | Fase 13.1 prova guard e modo quiescente apenas em ambiente sintetico. Nao houve nesta auditoria confronto da identidade real, inventario financeiro, corte/dreno de processo antigo, backup restaurado ou migracao 051/052. | **STOP** nas etapas 2-9 ate autorizacao e evidencia especificas. A release local nao e evidencia do `current` remoto. |
+| Integracoes e homologacao | Testes locais simulam pagamento, webhook, assento, e-mail e Wallet; nao houve teste externo ou fisico por cinema nesta rodada. | **Nao homologado**. Executar matriz do piloto por canal/ambiente autorizado antes de qualquer conclusao operacional. |
+
+### Atualizacao dirigida do bloqueio Next.js
+
+Ainda em 05/11/2026, `next` foi atualizado de `16.4.0` para `16.4.5` em `package.json` e `package-lock.json`, sem alterar React ou os provedores. `npm audit --omit=dev --audit-level=high` nao apontou vulnerabilidade alta/critica apos a atualizacao; permanecem alertas **moderados** em `nodemailer` e `satori`, para triagem separada. O build concluiu, E2E passou **19/19**, e `test:unit`, `test:security:local` (25/25), `lint` e `docs:check` passaram novamente. Os avisos de CSP `eval` do Next em desenvolvimento e de webhook de email nao configurado no fixture E2E nao comprovam o estado da producao.
+
+Na rodada seguinte, `nodemailer` foi fixado em `10.1.4` e `satori` em `0.33.5`; `postcss-selector-parser` transitivo foi atualizado para `6.1.5` no lockfile. `npm audit` completo e `npm audit --omit=dev` reportaram **zero vulnerabilidades conhecidas** no momento da consulta. Passaram 12 testes dirigidos de artes do Studio, os testes locais de campanha de email (42 passaram, 7 PG ignorados naquele comando), `test:unit`, `test:security:local` (25/25), `lint`, `build` e E2E (19/19). Nao houve SMTP externo nem renderizacao/publicacao operacional do Studio; o ensaio PG posterior esta registrado abaixo.
+
+### Ensaio PostgreSQL local descartavel
+
+Com Docker local disponivel, foram criados contêineres novos `postgres:16-alpine` e `postgres:18-alpine`, **sem volume**, com porta aleatoria vinculada somente a `127.0.0.1`. Cada um recebeu role `cine_test_admin` nao-superusuario e marcador de servidor aleatorio; o harness criou e removeu bancos `cinecruzeiro_test_<token>` marcados. Nao houve uso de `DATABASE_URL` operacional, VPS ou servico externo. Os contêineres foram encerrados ao final, inclusive no caso de falha.
+
+| Ensaio | Resultado local | Limite |
+| --- | --- | --- |
+| PG16: `test:smoke:postgres`, `test:postgres`, `test:postgres:repositories`, `test:postgres:guard` | Passaram; guard confirmou alvo alternativo inalterado, rollback por lock e um vencedor concorrente. | Uma execucao local, nao as repeticoes nem o CI do SHA candidato. |
+| PG18: `test:postgres:upgrade`, `test:postgres:guard` | Passaram; upgrade sintetico 050->052, 50 migrations/48 antigas e tres pedidos sinteticos. | Nao mede lock em carga real nem compatibilidade financeira completa da release antiga. |
+| Catalogo PG no harness de repositorios | O teste `catalog-lifecycle-postgres.test.mjs` foi incluido na lista sequencial protegida. `test:postgres:repositories` repetido em PG16 passou 11/11, sem skips, e removendo o banco/contêiner ao final. | O CI no SHA candidato ainda precisa confirmar; nenhuma escrita operacional. |
+| Comparacao das migrations antigas no Windows | A primeira tentativa PG18 falhou porque comparava LF do Git com CRLF do checkout. O teste normaliza apenas as quebras de linha antes da comparacao; nenhuma migration foi editada. A repeticao passou. | Diferencas SQL continuam falhando; CI Linux no SHA final deve confirmar. |
+| Backup/restore PG local | Nao executado nesta rodada: `pg_dump` local nao esta instalado. | O ensaio sintetico do CI e, separadamente, backup operacional restaurado continuam pendentes. |
+
+Esses resultados ampliam a evidencia tecnica local, mas **nao** liberam os portoes D/E/F/G, nao conferem a identidade do banco na VPS e nao autorizam deploy.
+
+Ainda faltam backup/restore sintetico local e CI no SHA candidato, consolidar os arquivos apropriados em uma candidata imutavel e reavaliar os portoes operacionais da tabela abaixo. Esta atualizacao nao altera as pre-condicoes nem concede Portao B.
+
 | Etapa | Pre-condicao/evidencia | Recurso e risco | Criterio de aprovacao / STOP | Reversao ou recuperacao |
 | --- | --- | --- | --- | --- |
 | 0. Fixar escopo | Cinema, janela, operador, `ea7c5df` e SHA candidato completos; 4 outras instalacoes inventariadas sem segredos | Repo/PM2/DB compartilhados; role Cine conecta a seis outros DBs | Apenas `cinecruzeiro`; executor confere URL, `current_database`, `current_user` e dono antes de DDL; rever grants cruzados; STOP em divergencia | Nenhuma mutacao, manter `current` |
