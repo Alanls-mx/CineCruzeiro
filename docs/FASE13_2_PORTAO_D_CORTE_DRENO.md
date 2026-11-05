@@ -1,6 +1,6 @@
 # Fase 13.2 — Portão D: corte e dreno do Cine Cruzeiro
 
-**Estado: bloqueado.** Este é um plano de ensaio, não uma autorização para alterar Nginx, PM2, banco ou provedores. O código da candidata e o ensaio `test:maintenance` demonstram apenas que **um processo novo** em `quiescent` responde 503 sem iniciar o backend operacional. A release instalada `ea7c5df` continua capaz de receber requests, manter WebSockets e executar tarefas até ser isolada e encerrada.
+**Estado do plano original: bloqueado para instalações operacionais.** O usuário autorizou uma implantação específica na VPS de desenvolvimento em 05/11/2026. O corte executado, as evidências e as lacunas remanescentes estão no [registro da implantação](FASE13_2_IMPLANTACAO_2026-11-05.md). Este plano, por si só, não autoriza novas alterações de Nginx, PM2, banco ou provedores.
 
 ## Evidência no código
 
