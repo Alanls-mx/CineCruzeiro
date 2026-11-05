@@ -21,6 +21,14 @@ O comando `npm run test:phase13:proxy` executa uma prova **sintética** em Nginx
 
 Execução local em 05/11/2026: `npm run test:phase13:proxy` passou com `nginx:stable-alpine` (Nginx 1.30.6). O teste cobriu 7 entradas Cine Cruzeiro, upgrade WS e 3 controles negativos. Essa evidência não muda o estado bloqueado do Portão D.
 
+### Leitura limitada da VPS e ensaio ampliado — 05/11/2026
+
+Após autorização explícita de leitura da configuração Nginx, metadados PM2 e contagem de conexões, `nginx -T` passou. A configuração efetiva está em `/etc/nginx/sites-enabled/lumixengine`, com Nginx 1.28.3. Foram observadas nove classes de `location` Cine Cruzeiro: raiz exata, webhook WhatsApp exato (410), API, admin exato e prefixo, uploads, images, trailers e frontend. API/admin/arquivos apontam para `127.0.0.1:4100`; frontend para `127.0.0.1:3100`. Nenhum guard de pausa por prefixo foi encontrado. A presença de um `location` exato torna insuficiente adicionar apenas um `location` genérico de manutenção.
+
+Os processos PM2 `cinecruzeiro-frontend` e `cinecruzeiro-backend` estavam online, com diretório `current` resolvido para a release `20261010-041635-ea7c5df`. Uma amostra de `ss` mostrou somente sockets `LISTEN` nos ports 3100/4100, sem conexões estabelecidas naquele instante. Isso **não** demonstra ausência de requests, WebSockets ou trabalhos externos em outro momento. Nenhuma configuração, processo ou dado operacional foi modificado.
+
+O ensaio foi ampliado para a versão local `nginx:1.28.3-alpine`, com as nove classes observadas e três fases: configuração inicial, guard de 503 e reversão. API/WhatsApp e rotas vizinhas foram verificadas antes e depois; HTTP e upgrade WS receberam 503 durante o corte; vizinhos permaneceram em 200. A imagem Alpine e as rotas sintéticas não reproduzem todos os `include`, headers, TLS e condições da instalação Ubuntu. É necessário ensaiar a configuração efetiva sanitizada e um dreno observável antes de considerar D aprovado.
+
 1. Reproduzir a configuração **efetiva** do Nginx em ambiente isolado, após leitura de configuração autorizada. Usar backends sintéticos distintos por cinema; nenhuma credencial ou banco operacional.
 2. Cobrir GET, POST, uploads, admin, API, webhook e upgrade WS no prefixo Cine Cruzeiro. Após o corte, nenhuma nova requisição deve chegar ao backend antigo. Checar prefixos vizinhos, caminhos semelhantes e fronteiras de barra final.
 3. Abrir um request sintético prolongado e uma conexão WS antes do corte; medir separadamente novas entradas e sessões já estabelecidas. Demonstrar como cada uma termina ou é classificada antes de encerrar o processo.
