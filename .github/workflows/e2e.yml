@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/modularize-server-admin
+      - codex/cine-modularizacao-profunda
   pull_request:
 
 permissions:

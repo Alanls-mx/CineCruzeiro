@@ -86,7 +86,7 @@ function inspect(file) {
     if (ts.isIfStatement(node)) {
       const condition = node.expression.getText(source);
       if (condition.includes("/api/") || /\bpathname\b/.test(condition)) {
-        routeConditions.push({ file, line: place(source, node), condition: condition.replaceAll(/\s+/g, " ").slice(0, 350), scope: enclosingTopLevel(node, source) });
+        routeConditions.push({ file, line: place(source, node), condition: condition.replaceAll(/\s+/g, " "), scope: enclosingTopLevel(node, source) });
       }
     }
     ts.forEachChild(node, visit);

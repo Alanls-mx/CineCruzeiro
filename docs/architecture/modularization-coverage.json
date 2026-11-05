@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "domains": [
+    { "domain": "backend.auth.cookies.sessions.2fa", "tests": ["tests/admin-permissions.test.mjs", "scripts/admin-two-factor-tests.js", "tests/customer-registration-http.test.mjs"], "gap": "Contrato HTTP completo de expiração, rotação e logout por papel." },
+    { "domain": "backend.authorization", "tests": ["tests/admin-permissions.test.mjs", "tests/modularization-contract-characterization.test.mjs"], "gap": "Matriz método×rota para todos os endpoints administrativos." },
+    { "domain": "backend.csrf.origin.cors.rate_limit", "tests": ["tests/origin-policy.test.mjs", "tests/security/abuse.test.mjs", "tests/modularization-contract-characterization.test.mjs"], "gap": "Rate limit por todas as famílias e CORS de integração por instalação." },
+    { "domain": "backend.catalog.movies.sessions.rooms", "tests": ["tests/catalog-operations-http.test.mjs", "tests/session-room-conflict.test.mjs", "e2e/admin-session-actions.spec.js"], "gap": "Respostas HTTP de todos os ramos de conflito e edição concorrente." },
+    { "domain": "backend.seats.holds.websocket", "tests": ["tests/public-seat-state-http.test.mjs", "scripts/seat-realtime-tests.js", "e2e/admin-box-office-realtime.spec.js"], "gap": "Reconexão após troca de painel e concorrência PostgreSQL em todos os caminhos." },
+    { "domain": "backend.checkout.pix.card.club", "tests": ["tests/checkout-new-purchase.test.mjs", "tests/club-checkout-pricing.test.mjs", "e2e/checkout-payment.spec.js"], "gap": "Cartão Brick com provedor simulado e failpoints de commit para todos os ramos." },
+    { "domain": "backend.box_office.point", "tests": ["tests/box-office-print-fulfillment.test.mjs", "scripts/mercado-pago-point-tests.js", "scripts/smoke-tests.js"], "gap": "Recuperação de impressão e concorrência completa por rota no PostgreSQL." },
+    { "domain": "backend.refund.cancel.entitlements", "tests": ["tests/operations-monitor-refund.test.mjs", "tests/concession-cancellation.test.mjs", "scripts/smoke-tests.js"], "gap": "Failpoints de todos os provedores e reembolso parcial por item." },
+    { "domain": "backend.stock.concessions", "tests": ["tests/concession-finance.test.mjs", "tests/concession-cancellation.test.mjs", "scripts/smoke-tests.js"], "gap": "Última unidade sob concorrência entre balcão e checkout." },
+    { "domain": "backend.tickets.qr.validation.transfer", "tests": ["tests/ticket-security.test.mjs", "tests/ticket-transfer-policy.test.mjs", "tests/admin-session-ticket-actions.test.mjs"], "gap": "Repetição de scan e transferência simultânea no HTTP PostgreSQL." },
+    { "domain": "backend.signed_webhooks", "tests": ["scripts/mercado-pago-webhook-tests.js", "tests/mercado-pago-webhook-authority.test.mjs"], "gap": "Todos os status e reembolsos PagBank/MP com commit falho." },
+    { "domain": "backend.crm.email.studio", "tests": ["tests/crm-webhook-delivery.test.mjs", "tests/email-campaign-reliability.test.mjs", "tests/social-studio-automation.test.mjs"], "gap": "Contrato HTTP de upload, consentimento e envio após commit." },
+    { "domain": "backend.static.health.maintenance", "tests": ["tests/static-http-contract-characterization.test.mjs", "tests/maintenance-startup.test.mjs", "tests/phase8-multi-cinema.test.mjs", "tests/local-disposable-postgres-guard.test.mjs"], "gap": "Dreno da release antiga e SSE com reconexão dependem de caracterização adicional." },
+    { "domain": "admin.initialization.navigation", "tests": ["e2e/core-navigation.spec.js", "tests/admin-dashboard-module.test.mjs"], "gap": "Troca de todas as seções após perda de sessão e permissão." },
+    { "domain": "admin.listeners.lifecycle", "tests": ["tests/admin-log-events.test.mjs", "tests/admin-movie-catalog-events.test.mjs"], "gap": "Registro idempotente e dispose de todos os timers, SSE e WS." },
+    { "domain": "admin.modals.forms", "tests": ["e2e/admin-session-actions.spec.js", "tests/admin-session-ticket-actions.test.mjs"], "gap": "Teclado, foco e submissão duplicada em todos os modais." },
+    { "domain": "admin.movies.sessions", "tests": ["tests/admin-movie-sessions-view.test.mjs", "e2e/admin-session-actions.spec.js"], "gap": "Edição de filme/sessão com erro de rede e rascunho preservado." },
+    { "domain": "admin.customers.team", "tests": ["tests/admin-customer-accounts-view.test.mjs", "tests/admin-account-catalog.test.mjs"], "gap": "E2E de foto, senha, 2FA e papéis restritos." },
+    { "domain": "admin.box_office.finance", "tests": ["tests/admin-financial-ui.test.mjs", "e2e/admin-box-office-realtime.spec.js", "tests/admin-ticket-finance-view.test.mjs"], "gap": "Retomada Point após navegação, falha de impressão e exportação CSV/PDF." },
+    { "domain": "admin.club", "tests": ["tests/admin-club-module.test.mjs", "tests/modularization-contract-characterization.test.mjs"], "gap": "A função duplicada não limita paginação ao total; teste captura comportamento atual, sem corrigi-lo." },
+    { "domain": "admin.concessions.promotions.campaigns", "tests": ["tests/admin-concession-sales-view.test.mjs", "tests/admin-promotions-view.test.mjs", "e2e/admin-email-campaign.spec.js"], "gap": "Carrinho do balcão e campanha com modal fechado durante polling." },
+    { "domain": "admin.filters.pagination.feedback.permissions", "tests": ["tests/admin-log-events.test.mjs", "tests/admin-permissions.test.mjs", "tests/modularization-contract-characterization.test.mjs"], "gap": "Filtros/paginação de todos os painéis e mensagens de falha HTTP." }
+  ]
+}

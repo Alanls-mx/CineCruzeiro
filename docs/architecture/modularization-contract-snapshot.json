@@ -1,0 +1,2642 @@
+{
+  "schema": 1,
+  "routePredicates": [
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "/^\\/api\\/(movies|rooms|ticket-types|concessions|promotions|ads|users)(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "/^\\/api\\/admin\\/(subscription-plans|subscriptions)(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "/^\\/api\\/orders(\\/|$)/.test(pathname) && ([\"GET\", \"PATCH\", \"DELETE\"].includes(method) || (method === \"POST\" && /^\\/api\\/orders\\/[^/]+\\/(?:refund-tickets|refund-concessions|resend-ticket-email)$/.test(pathname)))"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname === \"/api/admin/login\" || pathname === \"/api/admin/login/2fa\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname === \"/api/content\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname === \"/api/settings\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname === \"/api/tickets/manual\" || pathname === \"/api/tickets/validate\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/admin/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/box-office/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/dashboard\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/email-automation/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/integrations\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/studio/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/uploads/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "predicate": "pathname.startsWith(\"/api/webhooks/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "predicate": "/^\\/api\\/orders(?:\\/([^/]+))?/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "predicate": "pathname === \"/api/admin/concession-counter-sales\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "predicate": "pathname === \"/api/box-office/sales\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "predicate": "pathname === \"/api/content\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "predicate": "pathname === \"/api/settings\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "predicate": "pathname === \"/api/tickets/manual\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "predicate": "pathname === \"/api/tickets/validate\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "downloadTrailerForMovie",
+      "predicate": "!extension || (!contentType.startsWith(\"video/\") && !path.extname(parsedUrl.pathname))"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "ensureAdmin",
+      "predicate": "!adminAuthRequired(pathname, method)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "!ensureAdmin(req, res, db, pathname, method, [\"owner\"])"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "!ensureAdmin(req, res, db, pathname, method)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "!ensureAdmin(req, res, db, pathname, method)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "!ensureAdmin(req, res, db, pathname, method)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "(pathname === \"/api/box-office/sales\" || pathname === \"/api/tickets/manual\" || pathname === \"/api/admin/concession-counter-sales\") && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "(pathname === \"/api/dashboard\" || pathname === \"/api/admin/dashboard\") && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "(pathname === \"/api/integrations\" || pathname === \"/api/admin/integrations\") && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "[\"/api/admin/reports/ticket-distributor.csv\", \"/api/admin/reports/ticket-distributor.pdf\"].includes(pathname) && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "[\"/api/auth/email/verify\", \"/api/me/email-change/confirm\"].includes(pathname) && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "[\"/api/health\", \"/api/health/ready\"].includes(pathname) && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "[\"/api/payments/config\", \"/api/payments/config/mercado-pago\"].includes(pathname) && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "await handleAdminLogsRoutes({ req, res, pathname, method, db })"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "await handleCommercialCatalogRoutes({ req, res, pathname, method, db })"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "await handleMovieCatalogRoutes({ req, res, pathname, method, db })"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "await handleVenueConfigurationRoutes({ req, res, pathname, method, db })"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/account/tickets\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/2fa/disable\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/2fa/enable\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/2fa/recovery-codes\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/2fa/setup\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/2fa/status\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/concession-sales\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/content\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/customers\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/attachments\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/branding\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/branding\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/campaigns\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/campaigns\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/campaigns/preview\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/campaigns/test\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/email/template-library\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/goods-fiscal-settings\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/integrations/commercialCatalog/access-token\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/integrations/crm/outbox\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/integrations/crm/outbox/retry-dead\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/login\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/login/2fa\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/logout\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/marketing/overview\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/me\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/me\" && method === \"PATCH\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/me/password\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/payments\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/profile/photo\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/reports/dashboard.csv\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/reports/ticket-distributor\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/reports/ticket-distributor/settings\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/security-policy\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/security-policy\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/assets\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/automation/campaigns\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/automation/campaigns\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/campaigns\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/context\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/copy\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/posts\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/preview-scene\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/preview\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/resolve\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/uploads\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/social-studio/variations\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/subscription-plans\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/subscription-plans\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/subscriptions\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/admin/subscriptions/assign\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/google/callback\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/google/start\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/login\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/logout\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/me\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/mobile/google/consume\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/password/request\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/password/reset\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/auth/register\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/box-office/point-terminals\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/checkout/club-benefits/preview\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/checkout/club-credit\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/commercial/catalog\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/content\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/content\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/coupons/preview\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/email-automation/campaigns\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/email-automation/context\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/email/unsubscribe\" && [\"GET\", \"POST\"].includes(method)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/events\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/health/live\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/integrations/test\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/me\" && method === \"PATCH\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/me/email-change/request\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/me/email-verification/request\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/me/subscriptions\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/me/tickets\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/orders\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/orders\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/payments/card\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/payments/pix\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/settings\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/studio/campaigns/generate\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/studio/context\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/subscription-plans\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/subscriptions/subscribe\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/tickets/validate\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/tmdb/search\" && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/uploads/images\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/users\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/webhooks/mercado-pago\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === \"/api/webhooks/pag-bank\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === `${webhookSimulationBase}/batch` && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === webhookSimulationBase && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname === webhookSimulationBase && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname.startsWith(\"/api/desktop/update/\") && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname.startsWith(\"/api/email-automation/\") && !emailAutomationAuthorized(req)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "pathname.startsWith(\"/api/studio/\") && !studioAutomationAuthorized(req)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "predicate": "postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method) && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !selfManagedRefundFlow && !context?.adminMutationLocked"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "localTrailerPathFromUrl",
+      "predicate": "!pathname.startsWith(\"/trailers/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "predicate": "!pathname.startsWith(\"/api/\") || pathname.startsWith(\"/api/admin/logs\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "predicate": "/^\\/(?:api\\/admin\\/whatsapp|admin\\/whatsapp|whatsapp)(?:\\/|$)/.test(pathname.replace(/\\/{2,}/g, \"/\"))"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "predicate": "pathname === \"/\" || pathname === \"/admin\" || pathname.startsWith(\"/admin/\") || pathname.startsWith(\"/images/\") || pathname.startsWith(\"/trailers/\") || stripPublicAssetBase(pathname).startsWith(\"/uploads/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "predicate": "pathname === \"/admin\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "predicate": "pathname.startsWith(\"/api/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "predicate": "pathname.startsWith(\"/api/\") && !pathname.startsWith(\"/api/admin/logs\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "rateLimit",
+      "predicate": "!pathname.startsWith(\"/api/\") || pathname.startsWith(\"/api/health\") || pathname.startsWith(\"/api/webhooks/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "readSocialStudioLocalImage",
+      "predicate": "pathname.startsWith(\"/images/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "readSocialStudioLocalImage",
+      "predicate": "pathname.startsWith(\"/uploads/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "[\"/api/admin/me\", \"/api/admin/me/password\", \"/api/admin/profile/photo\", \"/api/admin/logout\"].includes(pathname) || pathname.startsWith(\"/api/admin/2fa/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/admin\\/(subscription-plans|subscriptions)(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/admin\\/(tickets|orders)\\/[^/]+\\/print$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/admin\\/concession-sales\\/[^/]+\\/refund$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/admin\\/concession-sales\\/[^/]+$/.test(pathname) && method === \"DELETE\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/admin\\/reports\\/ticket-distributor\\.(csv|pdf)$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/admin\\/sessions\\/[^/]+\\/seat-map$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/admin\\/subscriptions\\/[^/]+\\/credits/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/box-office\\/point-payments\\/[^/]+\\/resolve-print-failure$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/concessions(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/movies(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/movies\\/[^/]+\\/sessions/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/orders(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/orders\\/[^/]+\\/permanent$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/orders\\/[^/]+\\/refund-(tickets|concessions)$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/orders\\/[^/]+\\/resend-ticket-email$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/rooms(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/ticket-types(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "/^\\/api\\/users(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/admin/concession-counter-sales\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/admin/content\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/admin/security-policy\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/admin/sessions/autocorrect\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/content\" && method === \"PUT\" || pathname === \"/api/settings\" && method !== \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/movies/order\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/settings\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname === \"/api/tickets/validate\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/concession-sales\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/email\") || /^\\/api\\/(promotions|ads)(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/integrations\") || pathname.startsWith(\"/api/integrations\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/logs\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/marketing\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/payments\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/reports\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/reports/ticket-distributor\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/reports/ticket-distributor/settings\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/admin/social-studio\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/box-office/\") || pathname === \"/api/tickets/manual\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/dashboard\") || pathname === \"/api/admin/dashboard\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "predicate": "pathname.startsWith(\"/api/uploads/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "/^\\/api\\/(movies|rooms|ticket-types|concessions|promotions|ads)(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "/^\\/api\\/admin\\/(subscription-plans|subscriptions)(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "/^\\/api\\/admin\\/concession-sales\\/[^/]+\\/print$/.test(pathname) && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "/^\\/api\\/orders(\\/|$)/.test(pathname) && method === \"GET\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "/^\\/api\\/orders\\/[^/]+\\/permanent$/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "/^\\/api\\/orders\\/[^/]+$/.test(pathname) && [\"PATCH\", \"DELETE\"].includes(method)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "/^\\/api\\/users(\\/|$)/.test(pathname)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname === \"/api/admin/concession-counter-sales\" && method === \"POST\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname === \"/api/admin/content\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname === \"/api/admin/dashboard\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname === \"/api/content\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname === \"/api/settings\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname === \"/api/tickets/manual\" || pathname === \"/api/tickets/validate\""
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/admin/concession-sales\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/admin/email\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/admin/integrations\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/admin/logs\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/admin/payments\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/admin/reports\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/box-office/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/dashboard\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/integrations\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "predicate": "pathname.startsWith(\"/api/uploads/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "serveStatic",
+      "predicate": "pathname.startsWith(\"/images/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "serveStatic",
+      "predicate": "pathname.startsWith(\"/trailers/\")"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "socialStudioPublicPath",
+      "predicate": "basePath && pathname.startsWith(`${basePath}/`)"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "suspiciousRequestRule",
+      "predicate": "/\\/(?:\\.env|\\.git|wp-admin|wp-login\\.php|phpmyadmin)(?:\\/|$)/i.test(url.pathname)"
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "predicate": "pathname === \"/api/admin/logs\" && method === \"DELETE\""
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "predicate": "pathname === \"/api/admin/logs\" && method === \"GET\""
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "predicate": "pathname === \"/api/admin/logs/performance\" && method === \"GET\""
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "predicate": "pathname === \"/api/admin/logs/performance/stream\" && method === \"GET\""
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "predicate": "pathname === \"/api/ads\" && method === \"POST\""
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "predicate": "pathname === \"/api/ads/status\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "predicate": "pathname === \"/api/concessions\" && method === \"POST\""
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "predicate": "pathname === \"/api/promotions\" && method === \"POST\""
+    },
+    {
+      "file": "backend/services/movieCatalogHandler.js",
+      "scope": "createMovieCatalogHandler",
+      "predicate": "pathname === \"/api/admin/sessions/autocorrect\" && method === \"POST\""
+    },
+    {
+      "file": "backend/services/movieCatalogHandler.js",
+      "scope": "createMovieCatalogHandler",
+      "predicate": "pathname === \"/api/movies\" && method === \"POST\""
+    },
+    {
+      "file": "backend/services/movieCatalogHandler.js",
+      "scope": "createMovieCatalogHandler",
+      "predicate": "pathname === \"/api/movies/order\" && method === \"PUT\""
+    },
+    {
+      "file": "backend/services/venueConfigurationHandler.js",
+      "scope": "createVenueConfigurationHandler",
+      "predicate": "pathname === \"/api/rooms\" && method === \"POST\""
+    },
+    {
+      "file": "backend/services/venueConfigurationHandler.js",
+      "scope": "createVenueConfigurationHandler",
+      "predicate": "pathname === \"/api/ticket-types\" && method === \"POST\""
+    }
+  ],
+  "apiPathLiterals": [
+    {
+      "file": "backend/public/admin.js",
+      "scope": "bindEvents",
+      "path": "/api/admin/2fa/disable"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "bindEvents",
+      "path": "/api/admin/2fa/enable"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "bindEvents",
+      "path": "/api/admin/2fa/recovery-codes"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "bindEvents",
+      "path": "/api/admin/2fa/setup"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadTwoFactorStatus",
+      "path": "/api/admin/2fa/status"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "createConcessionCounterSale",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadContent",
+      "path": "/api/admin/content"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "bindEvents",
+      "path": "/api/admin/email/attachments"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "bindEvents",
+      "path": "/api/admin/email/branding"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveEmailCampaign",
+      "path": "/api/admin/email/campaigns"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "refreshEmailCampaignRecipients",
+      "path": "/api/admin/email/campaigns/preview"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveEmailCampaign",
+      "path": "/api/admin/email/campaigns/preview"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "sendEmailCampaignTest",
+      "path": "/api/admin/email/campaigns/test"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadContent",
+      "path": "/api/admin/email/template-library?page=1&pageSize=18"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveClubPlan",
+      "path": "/api/admin/goods-fiscal-settings"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadCommercialCatalogToken",
+      "path": "/api/admin/integrations/commercialCatalog/access-token"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "retryCrmDeadLetters",
+      "path": "/api/admin/integrations/crm/outbox/retry-dead"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadWebhookSimulator",
+      "path": "/api/admin/integrations/mercadoPago/webhook-simulations"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "simulateWebhook",
+      "path": "/api/admin/integrations/mercadoPago/webhook-simulations"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "runWebhookBatch",
+      "path": "/api/admin/integrations/mercadoPago/webhook-simulations/batch"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "pruneLogs",
+      "path": "/api/admin/logs"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadPerformance",
+      "path": "/api/admin/logs/performance"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadContent",
+      "path": "/api/admin/marketing/overview"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadAdminUser",
+      "path": "/api/admin/me"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveMyAccount",
+      "path": "/api/admin/me"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveMyAccount",
+      "path": "/api/admin/me/password"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "uploadProfilePhoto",
+      "path": "/api/admin/profile/photo"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveAdminSecurityPolicy",
+      "path": "/api/admin/security-policy"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "applySessionAutocorrect",
+      "path": "/api/admin/sessions/autocorrect"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "previewSessionAutocorrect",
+      "path": "/api/admin/sessions/autocorrect"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveClubPlan",
+      "path": "/api/admin/subscription-plans"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "assignClubSubscription",
+      "path": "/api/admin/subscriptions/assign"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "createManualTicket",
+      "path": "/api/box-office/sales"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveConcession",
+      "path": "/api/concessions"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "loadContent",
+      "path": "/api/integrations"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "duplicateMovie",
+      "path": "/api/movies"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveMovieWithAction",
+      "path": "/api/movies"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveMovieOrder",
+      "path": "/api/movies/order"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "refreshPointProviderControls",
+      "path": "/api/payments/config"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveRoom",
+      "path": "/api/rooms"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "persistSettings",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveTicket",
+      "path": "/api/ticket-types"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "validateTicketByCode",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "uploadAdminImage",
+      "path": "/api/uploads/images"
+    },
+    {
+      "file": "backend/public/admin.js",
+      "scope": "saveUser",
+      "path": "/api/users"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "rateLimit",
+      "path": "/api/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/account/tickets"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/admin/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "ensureAdmin",
+      "path": "/api/admin/2fa/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/admin/2fa/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/2fa/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/2fa/disable"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/2fa/enable"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/2fa/recovery-codes"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/2fa/setup"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/2fa/status"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/concession-counter-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/concession-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/concession-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/concession-sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/customers"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/dashboard"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/dashboard"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/dashboard"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/email"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/email"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/attachments"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/email/attachments"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/branding"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/branding"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/campaigns"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/campaigns"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/campaigns/preview"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/campaigns/test"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/email/template-library"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/goods-fiscal-settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/admin/goods-fiscal-settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/integrations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/integrations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/integrations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/integrations/commercialCatalog/access-token"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/integrations/crm/outbox"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/integrations/crm/outbox/retry-dead"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/integrations/mercadoPago/webhook-simulations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/admin/login"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "customerMutationOriginAllowed",
+      "path": "/api/admin/login"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/login"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/login"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/admin/login/2fa"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "customerMutationOriginAllowed",
+      "path": "/api/admin/login/2fa"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/login/2fa"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/login/2fa"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "ensureAdmin",
+      "path": "/api/admin/logout"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/logout"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/admin/logout"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/logout"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/logs"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/logs"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/logs"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/logs"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/marketing"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/marketing/overview"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "ensureAdmin",
+      "path": "/api/admin/me"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/me"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/me"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/admin/me"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/me"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/me/password"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/me/password"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/admin/me/password"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/me/password"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/payments"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/payments"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/payments"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/profile/photo"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/profile/photo"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/admin/profile/photo"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/profile/photo"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/reports"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/admin/reports"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/admin/reports/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/reports/dashboard.csv"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/reports/ticket-distributor"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/reports/ticket-distributor"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/reports/ticket-distributor.csv"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/reports/ticket-distributor.pdf"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/reports/ticket-distributor/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/reports/ticket-distributor/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/security-policy"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/security-policy"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/admin/security-policy"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/security-policy"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/sessions/autocorrect"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/admin/social-studio"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/assets"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/automation/campaigns"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/automation/campaigns"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/campaigns"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/context"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/copy"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/posts"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/preview"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/preview-scene"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/resolve"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/uploads"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/social-studio/variations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/subscription-plans"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/subscription-plans"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/subscriptions"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/subscriptions/assign"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/admin/subscriptions/assign"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/email/verify"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/google/callback"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/google/start"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/auth/google/start"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "customerMutationOriginAllowed",
+      "path": "/api/auth/login"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/login"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/auth/login"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/logout"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/me"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/mobile/google/consume"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/auth/mobile/google/consume"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "customerMutationOriginAllowed",
+      "path": "/api/auth/password/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/password/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/auth/password/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "customerMutationOriginAllowed",
+      "path": "/api/auth/password/reset"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/password/reset"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/auth/password/reset"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "customerMutationOriginAllowed",
+      "path": "/api/auth/register"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/auth/register"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/auth/register"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/box-office/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/box-office/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/box-office/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/box-office/point-payments/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/box-office/point-terminals"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "path": "/api/box-office/sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/box-office/sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/box-office/sales"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/checkout/club-benefits/preview"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/checkout/club-credit"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/commercial/catalog"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/commercial/catalog"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/commercial/catalog"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "path": "/api/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/content"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/coupons/preview"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/coupons/preview"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/dashboard"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/dashboard"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/dashboard"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/dashboard"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/desktop/update/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/desktop/update/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/email-automation/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/email-automation/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/email-automation/campaigns"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/email-automation/context"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/email/unsubscribe"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/events"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/events"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/health"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/health"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "rateLimit",
+      "path": "/api/health"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/health/live"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/health/ready"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/integrations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/integrations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/integrations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/integrations"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/integrations/test"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/integrations/test"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/me"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/me/email-change/confirm"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/me/email-change/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/me/email-change/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/me/email-change/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/me/email-verification/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/me/email-verification/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/me/email-verification/request"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/me/subscriptions"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/me/tickets"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/movies/order"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/movies/order"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/orders"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/orders"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/payments/card"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/payments/config"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/payments/config/mercado-pago"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/payments/pix"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "repositoryMutationRoute",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/settings"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/studio/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/studio/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/studio/campaigns/generate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/studio/campaigns/generate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/studio/context"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/subscription-plans"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/subscriptions/subscribe"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/subscriptions/subscribe"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/tickets/manual"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "path": "/api/tickets/manual"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/tickets/manual"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/tickets/manual"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/tickets/manual"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/tickets/manual"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "auditCollectionForPath",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/tickets/validate"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/tmdb/search"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/uploads/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "module",
+      "path": "/api/uploads/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminPermission",
+      "path": "/api/uploads/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "requiredAdminRoles",
+      "path": "/api/uploads/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/uploads/images"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/users"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "adminAuthRequired",
+      "path": "/api/webhooks/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "rateLimit",
+      "path": "/api/webhooks/"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/webhooks/mercado-pago"
+    },
+    {
+      "file": "backend/server.js",
+      "scope": "handleApi",
+      "path": "/api/webhooks/pag-bank"
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "path": "/api/admin/logs"
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "path": "/api/admin/logs"
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "path": "/api/admin/logs/performance"
+    },
+    {
+      "file": "backend/services/adminLogsHandler.js",
+      "scope": "createAdminLogsHandler",
+      "path": "/api/admin/logs/performance/stream"
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "path": "/api/ads"
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "path": "/api/ads/status"
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "path": "/api/concessions"
+    },
+    {
+      "file": "backend/services/commercialCatalogHandler.js",
+      "scope": "createCommercialCatalogHandler",
+      "path": "/api/promotions"
+    },
+    {
+      "file": "backend/services/movieCatalogHandler.js",
+      "scope": "createMovieCatalogHandler",
+      "path": "/api/admin/sessions/autocorrect"
+    },
+    {
+      "file": "backend/services/movieCatalogHandler.js",
+      "scope": "createMovieCatalogHandler",
+      "path": "/api/movies"
+    },
+    {
+      "file": "backend/services/movieCatalogHandler.js",
+      "scope": "createMovieCatalogHandler",
+      "path": "/api/movies/order"
+    },
+    {
+      "file": "backend/services/venueConfigurationHandler.js",
+      "scope": "createVenueConfigurationHandler",
+      "path": "/api/rooms"
+    },
+    {
+      "file": "backend/services/venueConfigurationHandler.js",
+      "scope": "createVenueConfigurationHandler",
+      "path": "/api/ticket-types"
+    }
+  ]
+}

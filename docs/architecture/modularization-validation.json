@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "runs": [
+    { "command": "npm run test:unit", "outcome": "passed", "testsPassed": 218, "testsFailed": 0, "testsSkipped": 10, "note": "17 resumos TAP; 10 casos PostgreSQL condicionais foram ignorados sem TEST_DATABASE_URL. Suites PG independentes foram executadas em bancos descartáveis." },
+    { "command": "npm run test:characterization", "outcome": "passed", "testsPassed": 6, "testsFailed": 0, "testsSkipped": 0, "note": "Também contida em test:unit; cobre política de acesso/origem, paginação efetiva, estáticos locais e proteção do bootstrap Docker." },
+    { "command": "npm run test:security:local", "outcome": "passed", "testsPassed": 25, "testsFailed": 0, "testsSkipped": 0, "note": "Assinatura webhook, imagem e WebSocket locais também passaram." },
+    { "command": "npm run test:finance", "outcome": "passed", "testsPassed": 50, "testsFailed": 0, "testsSkipped": 0, "note": "Também contida em test:unit; contagem não é única." },
+    { "command": "npm run lint", "outcome": "passed" },
+    { "command": "npm run build", "outcome": "passed" },
+    { "command": "npm run test:e2e", "outcome": "passed", "testsPassed": 19, "testsFailed": 0, "testsSkipped": 0, "note": "Playwright local em JSON temporário; avisos de eval/CSP do modo dev, sem falha de caso." },
+    { "command": "node scripts/with-local-disposable-postgres.js smoke concurrency repositories", "outcome": "passed", "testsPassed": 11, "testsFailed": 0, "testsSkipped": 0, "note": "Smoke e concorrência informam sucesso sem total TAP; 11/11 é somente a suite de repositórios. PostgreSQL 16 local com contêiner e banco descartáveis removidos." },
+    { "command": "node scripts/with-local-disposable-postgres.js guard", "outcome": "passed", "note": "PG_GUARDED_MIGRATION_OK: alvo alternativo intacto, rollback de lock e um vencedor concorrente." },
+    { "command": "node scripts/with-local-disposable-postgres.js --pg18 upgrade", "outcome": "passed", "note": "PG18_UPGRADE_OK: 50 migrations, 48 anteriores, 3 pedidos sintéticos." },
+    { "command": "npm run test:postgres:backup-restore", "outcome": "skipped", "note": "pg_dump e pg_restore não disponíveis no host Windows; o job PostgreSQL de CI executa este teste dentro do serviço descartável." },
+    { "command": "npm run docs:check", "outcome": "passed", "note": "23 documentos e links locais válidos." },
+    { "command": "npm run docs:modularization:report", "outcome": "passed", "note": "Snapshot estático sem drift de rotas; medição reproduzível." }
+  ],
+  "setupAttempts": [
+    { "operation": "Primeiro contêiner PG16", "result": "Falhou ao conectar durante reinício temporário do PostgreSQL na inicialização; contêiner removido e espera pelo postmaster final adicionada. Repetição passou." },
+    { "operation": "Upgrade em PG16", "result": "Recusado pelo próprio ensaio, que exige PG18. O contêiner foi removido; repetição em PG18 passou." }
+  ],
+  "ciAtPreviousCommit": {
+    "sha": "16189b4469f7b3d767abe701bdb6a3e7e5f66127",
+    "securityRunId": 42125375781,
+    "securityConclusion": "success",
+    "note": "PostgreSQL integration e Browser E2E antes filtravam somente codex/modularize-server-admin; esta mudança inclui a branch de trabalho. Resultado do commit atual depende de push e execução de CI."
+  }
+}

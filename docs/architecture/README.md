@@ -17,6 +17,8 @@
 | [Auditoria estrutural](audit.md) | Você quer entender a ordem das extrações e as responsabilidades adiadas. |
 | [Linha de base da modularização profunda](MODULARIZATION_BASELINE.md) | Você quer medir arquivos, funções, listeners, rotas candidatas e riscos no HEAD de referência. |
 | [Plano de modularização profunda](DEEP_MODULARIZATION_PLAN.md) | Você quer a sequência de extrações, módulos de destino, orçamento de linhas e critérios de equivalência. |
+| [Caracterização HTTP e do Admin](HTTP_CONTRACT_CHARACTERIZATION.md) | Você quer preservar respostas, cookies, origem, permissões e eventos antes das extrações. |
+| [Relatório reproduzível da caracterização](MODULARIZATION_CHARACTERIZATION_REPORT.md) | Você quer contagens, cobertura, execução de testes e diferenças estáticas ante o snapshot. |
 | [Histórico da modularização](../MODULARIZACAO_ARQUITETURA.md) | Você precisa entender decisões e pendências anteriores. |
 | [Relatório consolidado](../RELATORIO_FINAL_REFATORACAO.md) | Você precisa da decisão formal, evidências e bloqueios residuais da Fase 8. |
 | [Testes PostgreSQL](../TESTES_POSTGRESQL.md) | Você precisa configurar validação isolada. |
