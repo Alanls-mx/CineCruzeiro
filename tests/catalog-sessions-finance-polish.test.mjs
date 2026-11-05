@@ -8,10 +8,13 @@ import lifecycle from "../backend/services/movieCatalogLifecycleService.js";
 import recognition from "../backend/services/financialRecognitionService.js";
 import conflicts from "../backend/services/sessionRoomConflictService.js";
 import autocorrect from "../backend/services/sessionScheduleAutocorrectService.js";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { createTicketFinanceView } = require("../backend/public/admin-modules/ticket-finance-view.js");
 
 const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
 const dashboardSource = fs.readFileSync(new URL("../backend/services/adminDashboardService.js", import.meta.url), "utf8");
-const admin = fs.readFileSync(new URL("../backend/public/admin.js", import.meta.url), "utf8");
 function extract(text, name) {
   const match = text.match(new RegExp(`^(?:async )?function ${name}\\([^]*?^}`, "m"));
   assert.ok(match, name);
@@ -123,34 +126,41 @@ test("partial refund status retains net revenue and zero amount remains zero", (
 function financeUi() {
   const elements = new Map();
   const $ = (id) => {
-    if (!elements.has(id)) elements.set(id, { textContent: "old", setAttribute() {}, removeAttribute() {} });
+    if (!elements.has(id)) elements.set(id, {
+      value: "", textContent: "old", innerHTML: "",
+      classList: { toggle() {} }, setAttribute() {}, removeAttribute() {}
+    });
     return elements.get(id);
   };
   const requests = [];
-  const ctx = vm.createContext({ $, state: {}, adminCan: () => true, ticketFinanceQuery: () => "period=today", setDisabled: (id, value) => { $(id).disabled = value; }, showToast() {}, renderTicketFinanceReport() {}, api: () => new Promise((resolve, reject) => requests.push({ resolve, reject })) });
-  vm.runInContext(extract(admin, "loadTicketFinanceReport"), ctx);
-  return { ctx, requests, $ };
+  const state = { dashboardFrom: "2026-10-01", dashboardTo: "2026-10-01" };
+  const view = createTicketFinanceView({ state, $, adminCan: () => true,
+    setDisabled: (id, value) => { $(id).disabled = value; }, showToast() {},
+    escapeHtml: (value) => String(value), money: (value) => String(value),
+    api: () => new Promise((resolve, reject) => requests.push({ resolve, reject })),
+    document: {}, apiBase: "" });
+  return { view, state, requests, $ };
 }
 
 test("latest finance filter wins even when older HTTP response arrives last", async () => {
-  const { ctx, requests, $ } = financeUi();
-  const first = ctx.loadTicketFinanceReport();
-  const second = ctx.loadTicketFinanceReport();
+  const { view, state, requests, $ } = financeUi();
+  const first = view.load();
+  const second = view.load();
   requests[1].resolve({ id: "latest" });
   await second;
   requests[0].resolve({ id: "stale" });
   await first;
-  assert.equal(ctx.state.ticketFinanceReport.id, "latest");
+  assert.equal(state.ticketFinanceReport.id, "latest");
   assert.equal($("ticketFinanceRefresh").disabled, false);
 });
 
 test("finance failure clears previous report and prevents stale exports", async () => {
-  const { ctx, requests, $ } = financeUi();
-  ctx.state.ticketFinanceReport = { id: "old" };
-  const call = ctx.loadTicketFinanceReport();
+  const { view, state, requests, $ } = financeUi();
+  state.ticketFinanceReport = { id: "old" };
+  const call = view.load();
   requests[0].reject(new Error("offline"));
   await call;
-  assert.equal(ctx.state.ticketFinanceReport, null);
+  assert.equal(state.ticketFinanceReport, null);
   assert.equal($("ticketFinanceExportCsv").disabled, true);
   assert.notEqual($("ticketFinanceGross").textContent, "old");
 });

@@ -25,7 +25,7 @@ async function migrationFiles() {
     "O conjunto de migrations ate 050 precisa coincidir com a release instalada");
   for (const file of previous) {
     const oldSql = git(["show", `${OLD_COMMIT}:backend/db/migrations/${file}`]);
-    assert.equal(await fs.readFile(path.join(migrationsDir, file), "utf8"), oldSql,
+    assert.equal((await fs.readFile(path.join(migrationsDir, file), "utf8")).replace(/\r\n/g, "\n"), oldSql.replace(/\r\n/g, "\n"),
       `Migration antiga modificada: ${file}`);
   }
   assert.deepEqual(files.slice(previous.length), ["051_ticket_email_jobs.sql", "052_point_payment_methods.sql"]);

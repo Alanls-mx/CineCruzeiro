@@ -8,7 +8,8 @@ async function main() {
     [path.join(__dirname, "db-migrate.js")],
     ["--test", "--test-concurrency=1",
       path.join(__dirname, "..", "tests", "admin-repositories-postgres.test.mjs"),
-      path.join(__dirname, "..", "tests", "database-persistence-postgres.test.mjs")]
+      path.join(__dirname, "..", "tests", "database-persistence-postgres.test.mjs"),
+      path.join(__dirname, "..", "tests", "catalog-lifecycle-postgres.test.mjs")]
   ]) {
     const child = spawnSync(process.execPath, args, { stdio: "inherit", env: process.env });
     if (child.error) throw child.error;
