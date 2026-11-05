@@ -15,6 +15,8 @@
 | [Dependências](dependencies.md) | Você quer avaliar impacto entre serviço, API, tabela, evento e painel. |
 | [Exercícios de navegação](navigation.md) | Você quer verificar como o mapa orienta solicitações reais. |
 | [Auditoria estrutural](audit.md) | Você quer entender a ordem das extrações e as responsabilidades adiadas. |
+| [Linha de base da modularização profunda](MODULARIZATION_BASELINE.md) | Você quer medir arquivos, funções, listeners, rotas candidatas e riscos no HEAD de referência. |
+| [Plano de modularização profunda](DEEP_MODULARIZATION_PLAN.md) | Você quer a sequência de extrações, módulos de destino, orçamento de linhas e critérios de equivalência. |
 | [Histórico da modularização](../MODULARIZACAO_ARQUITETURA.md) | Você precisa entender decisões e pendências anteriores. |
 | [Relatório consolidado](../RELATORIO_FINAL_REFATORACAO.md) | Você precisa da decisão formal, evidências e bloqueios residuais da Fase 8. |
 | [Testes PostgreSQL](../TESTES_POSTGRESQL.md) | Você precisa configurar validação isolada. |
