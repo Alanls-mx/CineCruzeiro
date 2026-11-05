@@ -22,6 +22,8 @@ O manifesto restrito confirmou banco, role, origem TCP, SHA da candidata, 48 mig
 
 A candidata iniciou primeiro em `quiescent`: health de manutenção 200 e rotas operacionais 503. O frontend respondeu 200 na porta interna. Em seguida, o backend iniciou em `normal`, com SHA esperado e health 200. A regra temporária de Nginx foi removida, `nginx -t` passou e a configuração foi recarregada. A configuração PM2 exclusiva do Cine Cruzeiro passou a usar `backend/start.js` e um snapshot de ambiente em `shared/pm2-runtime.json`, modo `0600`; o estado PM2 foi salvo para reinício da VPS.
 
+Na verificação final, `shared/backend.env.local` e os arquivos de snapshot `~/.pm2/dump.pm2*` continham configuração de execução com permissões `0664`; suas permissões foram ajustadas para `0600`, sem ler ou alterar os valores.
+
 ## Verificação após abertura
 
 - URL pública inicial, `/conta`, `/filmes` e API health: 200. Admin redirecionou para a rota canônica e terminou em 200.
