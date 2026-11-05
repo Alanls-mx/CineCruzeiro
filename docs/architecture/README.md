@@ -31,6 +31,7 @@
 | [Ficha Portao B](../FASE13_AUTORIZACAO_ATUALIZACAO.md) | Você solicita autorizacao explicita por recurso e operacao; formulario vazio nao autoriza. |
 | [Fase 13.1](../FASE13_1_FECHAMENTO_BLOQUEADORES.md) | Você avalia guard de migrations, startup quiescente e bloqueios restantes. |
 | [Matriz 13.1](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md) | Você localiza entradas HTTP/WS/workers e as evidencias de pausa/isolamento. |
+| [Portão D 13.2](../FASE13_2_PORTAO_D_CORTE_DRENO.md) | Você prepara o ensaio de corte e dreno da release antiga, sem operar a VPS. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
 
 ## Navegação por intenção

@@ -33,6 +33,8 @@
 
 ## Sequencia futura, ainda bloqueada
 
+O [plano dirigido do Portao D](FASE13_2_PORTAO_D_CORTE_DRENO.md) enumera evidencias para corte, requests em andamento, WS, workers, callbacks e retomada; ele nao substitui ensaio nem autorizacao operacional.
+
 1. Autorizar escopo, reconciliador e janela; aprovar filtro/proxy apenas para rota Cine Cruzeiro com ensaio sintético de requests, WS e 503 para webhooks. Nao recarregar Nginx compartilhado por inferencia.
 2. Impedir novas entradas da release antiga, medir in-flight/leases/jobs, aguardar ou classificar efeitos externos incertos e encerrar somente processos Cine Cruzeiro. Se nao houver dreno observavel, STOP.
 3. Backup novo/restauração em destino isolado autorizados; preparar manifesto restrito com DB/role/origem/SHA/hashes. Executar runner guardado somente apos verificar pausa e restore.

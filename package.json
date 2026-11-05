@@ -35,6 +35,7 @@
     "test:postgres:upgrade": "node scripts/with-isolated-postgres.js upgrade",
     "test:postgres:guard": "node scripts/with-isolated-postgres.js guard",
     "test:maintenance": "node --test tests/maintenance-startup.test.mjs",
+    "test:phase13:proxy": "node scripts/phase13-proxy-isolation-test.mjs",
     "test:legacy:json": "node scripts/run-legacy-json-smoke.js",
     "test:postgres-safety": "node --test tests/test-postgres-safety.test.mjs tests/guarded-migration.test.mjs",
     "test:database": "node --test tests/database-persistence.test.mjs tests/postgres-snapshot-cache-policy.test.mjs tests/database-persistence-postgres.test.mjs",
