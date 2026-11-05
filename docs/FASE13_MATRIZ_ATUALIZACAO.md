@@ -33,9 +33,13 @@ Com Docker local disponivel, foram criados contêineres novos `postgres:16-alpin
 | PG18: `test:postgres:upgrade`, `test:postgres:guard` | Passaram; upgrade sintetico 050->052, 50 migrations/48 antigas e tres pedidos sinteticos. | Nao mede lock em carga real nem compatibilidade financeira completa da release antiga. |
 | Catalogo PG no harness de repositorios | O teste `catalog-lifecycle-postgres.test.mjs` foi incluido na lista sequencial protegida. `test:postgres:repositories` repetido em PG16 passou 11/11, sem skips, e removendo o banco/contêiner ao final. | O CI no SHA candidato ainda precisa confirmar; nenhuma escrita operacional. |
 | Comparacao das migrations antigas no Windows | A primeira tentativa PG18 falhou porque comparava LF do Git com CRLF do checkout. O teste normaliza apenas as quebras de linha antes da comparacao; nenhuma migration foi editada. A repeticao passou. | Diferencas SQL continuam falhando; CI Linux no SHA final deve confirmar. |
-| Backup/restore PG local | Nao executado nesta rodada: `pg_dump` local nao esta instalado. | O ensaio sintetico do CI e, separadamente, backup operacional restaurado continuam pendentes. |
+| Backup/restore PG local | Nao executado nesta rodada: `pg_dump` local nao esta instalado. | O ensaio sintetico do CI passou depois, como registrado abaixo; backup **operacional** restaurado continua pendente. |
 
 Esses resultados ampliam a evidencia tecnica local, mas **nao** liberam os portoes D/E/F/G, nao conferem a identidade do banco na VPS e nao autorizam deploy.
+
+### Candidata publicada e CI
+
+Os commits `71c253e` (dependencias), `d439eee` (testes protegidos de catalogo/upgrade) e `a1986f7` (evidencia local) foram publicados somente na branch `codex/modularize-server-admin`. No SHA de codigo `a1986f7fcb6509d607fa7bad5a5ef3308a57548c`, passaram [Security regression](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42105960923), [Browser E2E](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42105960951) e [PostgreSQL integration](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42105960809), com jobs PG16 e PG18 verdes. O workflow PG executa smoke repetido, concorrencia, repositorios (agora incluindo catalogo), guard, upgrade PG18 e backup/restore sintetico em servicos descartaveis. Esta atualizacao documental cria um novo HEAD; conferir os tres workflows nele antes de usar a ficha do Portao B. A evidencia nao substitui backup operacional restaurado, corte/dreno da release antiga ou aprovacao especifica da VPS.
 
 Ainda faltam backup/restore sintetico local e CI no SHA candidato, consolidar os arquivos apropriados em uma candidata imutavel e reavaliar os portoes operacionais da tabela abaixo. Esta atualizacao nao altera as pre-condicoes nem concede Portao B.
 
