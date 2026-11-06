@@ -17,6 +17,8 @@ test("estáticos, health e preflight preservam status, redirecionamento e cache"
   const port = probe.address().port;
   await new Promise((resolve) => probe.close(resolve));
   await fs.writeFile(path.join(temp, "db.json"), JSON.stringify(syntheticCinemaRecords()));
+  await fs.mkdir(path.join(temp, "uploads"), { recursive: true });
+  await fs.writeFile(path.join(temp, "uploads", "characterization.txt"), "isolated upload");
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ["backend/server.js"], {
     cwd: root, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
@@ -58,6 +60,18 @@ test("estáticos, health e preflight preservam status, redirecionamento e cache"
     assert.match(script.headers.get("content-type"), /javascript/);
     const missing = await fetch(`${base}/admin/missing-baseline-file.js`);
     assert.equal(missing.status, 404);
+    assert.equal((await missing.json()).error.code, "REQUEST_ERROR");
+    const upload = await fetch(`${base}/uploads/characterization.txt`);
+    assert.equal(upload.status, 200);
+    assert.equal(upload.headers.get("cache-control"), "public, max-age=300, must-revalidate");
+    assert.equal(await upload.text(), "isolated upload");
+    const missingTrailer = await fetch(`${base}/trailers/missing-baseline.mp4`);
+    assert.equal(missingTrailer.status, 404);
+    const missingImage = await fetch(`${base}/images/missing-baseline.webp`);
+    assert.equal(missingImage.status, 404);
+    const missingUpdate = await fetch(`${base}/api/desktop/update/missing-baseline/latest.ini`);
+    assert.equal(missingUpdate.status, 404);
+    assert.equal((await missingUpdate.json()).error.code, "REQUEST_ERROR");
   } finally {
     if (child.exitCode === null) {
       const exited = new Promise((resolve) => child.once("exit", resolve));

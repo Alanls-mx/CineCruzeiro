@@ -1,5 +1,7 @@
 # Fluxos transversais iniciais
 
+Arquivos e painel: o servidor normal decide se o caminho é estático e chama [staticAssetHandler](../../backend/services/staticAssetHandler.js). O handler aplica o limite de diretório, lê uploads/trailers/imagens ou o shell Admin, consulta a sessão Admin para escolher/redirecionar o shell e responde com os cabeçalhos de segurança e cache existentes. Não grava dados; `start.js` quiescente não o importa. [Teste](../../tests/static-http-contract-characterization.test.mjs).
+
 As setas descrevem o caminho de manutenção. Elas não representam todos os ramos de erro. Os controles de origem, sessão, CSRF, permissões e rate limit ficam no [dispatcher](../../backend/server.js); confirme a regra por método antes de editar.
 
 Fluxo de atualizacao **ainda nao autorizado**: [manifesto restrito da candidata](../FASE13_1_FECHAMENTO_BLOQUEADORES.md) -> [runner](../../scripts/db-migrate.js) -> [guard](../../scripts/guarded-migration.js) verifica banco/role/origem/history/schema na mesma transacao -> 051/052 atomicas. Startup fechado: [start.js](../../backend/start.js) -> [maintenanceServer.js](../../backend/maintenanceServer.js) -> 503 para operacoes e upgrade WS, sem DB/workers. Corte da release antiga, backup restaurado e retomada por categoria faltam; ver [matriz](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md).
