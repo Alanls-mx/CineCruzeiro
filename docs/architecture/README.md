@@ -16,6 +16,8 @@
 | [Exercícios de navegação](navigation.md) | Você quer verificar como o mapa orienta solicitações reais. |
 | [Auditoria estrutural](audit.md) | Você quer entender a ordem das extrações e as responsabilidades adiadas. |
 | [Linha de base da modularização profunda](MODULARIZATION_BASELINE.md) | Você quer medir arquivos, funções, listeners, rotas candidatas e riscos no HEAD de referência. |
+| [Fase 21: inventário ordenado de rotas](FASE21_INVENTARIO_ROTAS.md) | Você precisa da ordem real de `handleApi`, dos guards, contratos, escritores e lacunas antes de extrair rotas. |
+| [Fase 21: plano de extrações](FASE21_PLANO_EXTRACOES.md) | Você quer o dispatcher composto, os portões de teste e o orçamento para reduzir `server.js` sem mover fluxos críticos prematuramente. |
 | [Plano de modularização profunda](DEEP_MODULARIZATION_PLAN.md) | Você quer a sequência de extrações, módulos de destino, orçamento de linhas e critérios de equivalência. |
 | [Preparação do Admin](ADMIN_MODULARIZATION_PLAN.md) | Você quer a linha de base de `admin.js`, contrato dos 14 módulos, estado, matriz de eventos/limpeza e sequência das próximas extrações. |
 | [Extração financeira do Admin](ADMIN_FINANCIAL_UI_EXTRACTION_RESULT.md) | Você quer comparar linhas, módulos, contratos, testes e riscos dos fluxos de bilheteria, Point, bomboniere, ingressos e Clube. |
