@@ -1,5 +1,11 @@
 # Fase 21 — plano de finalização do backend
 
+## Execução 21.2 — e-mail administrativo
+
+Linha de base medida: `server.js` 13.529 linhas; após a extração de `/api/admin/email/template-library`, `/branding`, `/attachments` e `/campaigns` (incluindo ações e destinatários), 13.161 linhas, redução líquida de 368. O novo [adminEmailRoutes](../../backend/services/adminEmailRoutes.js) tem 459 linhas. O slot continua depois de integrações e antes de clientes. `ensureAdmin`, `requiredAdminPermission` (`marketing.view`/`marketing.manage`), origem/CSRF, rate limit e o wrapper de mutação permanecem no dispatcher. O handler recebe `db` e capacidades explícitas; importar/compor não dispara campanha ou provedor.
+
+Persistência: preferências e marca em `settingsRepository` ou JSON legado; anexos em armazenamento privado; campanhas e destinatários em `emailCampaignRepository`; o snapshot de destinatários continua após criação de campanha PostgreSQL e antes da resposta HTTP. A elegibilidade, consentimento, estados de fila, idempotência e a apresentação de campanhas antigas continuam nos serviços existentes. Risco residual: o teste dirigido de handler não substitui o smoke PostgreSQL descartável nem o E2E do painel. Testes executados: `node --test tests/admin-email-routes.test.mjs tests/email-campaign*.test.mjs` (34 passaram, 7 PostgreSQL ignorados sem banco), `npm run test:security:local` (25/25 e scripts auxiliares), `npm run lint`; bateria PostgreSQL e E2E previstos no fechamento.
+
 **Branch:** `codex/cine-backend-finalizacao`; **base:** HEAD validado `715839fce442dd59d0438ff88b418cee0b5f0b31` de `codex/cine-modularizacao-profunda`. A branch é única para a Fase 21; usar commits por domínio e manter `main` e `backend/public/admin.js`/`admin-modules/` intocados. Este documento planeja, não executa, extrações. O [inventário ordenado](FASE21_INVENTARIO_ROTAS.md) é a matriz de precedência e de riscos do código atual.
 
 ## Meta e viabilidade

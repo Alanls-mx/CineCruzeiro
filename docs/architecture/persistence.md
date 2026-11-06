@@ -4,7 +4,7 @@ Criação/edição de contas administrativas: [adminUserWriteHandler](../../back
 
 Manutenção agendada: [backendMaintenanceTasks](../../backend/services/backendMaintenanceTasks.js) altera o snapshot de sessões, reservas, cupons, assinaturas e imagens sob `withCriticalMutation`/`writeDb`; anexos atualizam `settingsRepository` no PostgreSQL ou `writeDb` no JSON; logs usam `pruneSystemLogsFromPostgres`. O agendamento continua em `server.js`, sem rota ou permissão nova. [Teste dirigido](../../tests/backend-maintenance-tasks.test.mjs), [retenção](../../tests/system-logs-retention.test.mjs).
 
-Entrada de campanha: [emailCampaignInputService](../../backend/services/emailCampaignInputService.js) apenas sanitiza dados; `server.js` mantém a validação de audiência, `emailCampaignRepository` e o momento de commit. A factory não grava campanha nem acessa clientes. [Teste](../../tests/email-campaign-input-service.test.mjs).
+Entrada de campanha: [emailCampaignInputService](../../backend/services/emailCampaignInputService.js) apenas sanitiza dados; [adminEmailRoutes](../../backend/services/adminEmailRoutes.js) mantém a validação de audiência, `emailCampaignRepository` e o momento de commit no slot autorizado de `server.js`. A factory não grava campanha nem acessa clientes na importação. [Testes](../../tests/admin-email-routes.test.mjs) e [input](../../tests/email-campaign-input-service.test.mjs).
 
 Audiência: [emailCampaignAudienceService](../../backend/services/emailCampaignAudienceService.js) lê `users`, `orders` e `movies` do snapshot recebido para calcular elegibilidade; não grava nem dispara e-mail. A persistência da campanha e dos destinatários continua na rota/worker existentes. [Teste](../../tests/email-campaign-audience-service.test.mjs).
 
