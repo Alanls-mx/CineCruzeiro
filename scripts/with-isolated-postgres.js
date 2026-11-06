@@ -12,7 +12,7 @@ function adminUrl() {
 
 async function main() {
   const target = process.argv[2];
-  if (!["smoke", "concurrency", "repositories", "upgrade", "guard"].includes(target)) throw new Error("Escolha smoke, concurrency, repositories, upgrade ou guard.");
+  if (!["smoke", "concurrency", "repositories", "upgrade", "guard", "email-campaign"].includes(target)) throw new Error("Escolha smoke, concurrency, repositories, upgrade, guard ou email-campaign.");
   if (process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.TEST_DATABASE_URL) {
     throw new Error("Remova URLs de banco herdadas antes de iniciar o harness de teste.");
   }
@@ -41,7 +41,8 @@ async function main() {
       await testClient.query("INSERT INTO cine_test_database_marker (id, token) VALUES (1, $1)", [token]);
       marked = true;
     } finally { await testClient.end(); }
-    const script = path.join(__dirname, target === "smoke" ? "smoke-tests.js"
+    const script = path.join(__dirname, target === "email-campaign" ? "postgres-email-campaign-tests.js"
+      : target === "smoke" ? "smoke-tests.js"
       : target === "repositories" ? "postgres-repository-tests.js"
       : target === "upgrade" ? "postgres-upgrade-tests.js"
       : target === "guard" ? "postgres-guard-tests.js" : "postgres-concurrency-tests.js");

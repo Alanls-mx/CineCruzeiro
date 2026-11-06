@@ -7,10 +7,10 @@ const { assertDisposableTestServer } = require("./test-postgres-safety");
 const use18 = process.argv[2] === "--pg18";
 const image = use18 ? "postgres:18-alpine" : "postgres:16-alpine";
 const dataPath = use18 ? "/var/lib/postgresql" : "/var/lib/postgresql/data";
-const allowedTargets = new Set(["smoke", "concurrency", "repositories", "guard", "upgrade", "backup-restore"]);
+const allowedTargets = new Set(["smoke", "concurrency", "repositories", "guard", "upgrade", "backup-restore", "email-campaign"]);
 const targets = process.argv.slice(use18 ? 3 : 2);
 if (!targets.length || targets.some((target) => !allowedTargets.has(target))) {
-  throw new Error("Escolha um ou mais: smoke, concurrency, repositories, guard, upgrade, backup-restore; use --pg18 para upgrade.");
+  throw new Error("Escolha um ou mais: smoke, concurrency, repositories, guard, upgrade, backup-restore, email-campaign; use --pg18 para upgrade.");
 }
 if (targets.includes("upgrade") && !use18) throw new Error("O ensaio upgrade exige --pg18.");
 for (const name of ["DATABASE_URL", "POSTGRES_URL", "TEST_DATABASE_URL", "TEST_POSTGRES_ADMIN_URL", "CINE_TEST_SERVER_TOKEN"]) {
