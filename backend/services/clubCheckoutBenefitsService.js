@@ -8,105 +8,105 @@ function createClubCheckoutBenefitsService({
   calculateClubTicketDiscount,
   clubDomainService,
 }) {
-function clubSavingsSummary(db, subscription) {
-  const summary = {
-    total: 0,
-    tickets: 0,
-    concessions: 0,
-    freeItems: 0,
-    clubCredits: 0,
-    benefitedOrders: 0
-  };
+  function clubSavingsSummary(db, subscription) {
+    const summary = {
+      total: 0,
+      tickets: 0,
+      concessions: 0,
+      freeItems: 0,
+      clubCredits: 0,
+      benefitedOrders: 0
+    };
 
-  (db.orders || [])
-    .filter((order) => order.status === "paid" && order.clubSubscriptionId === subscription.id)
-    .forEach((order) => {
-      const benefits = order.clubBenefits && typeof order.clubBenefits === "object" ? order.clubBenefits : {};
-      const ticketDiscount = Math.max(0, Number(benefits.ticketDiscount || 0));
-      const concessionsRefunded = order.concessionRefund?.status === "completed";
-      const concessionDiscount = concessionsRefunded ? 0 : Math.max(0, Number(benefits.concessionDiscount || 0));
-      const freeItemsDiscount = concessionsRefunded ? 0 : Math.max(0, Number(benefits.freeConcessionDiscount || 0));
-      const creditValue = Math.max(0, Number(order.clubCreditsApplied || 0));
-      const total = ticketDiscount + concessionDiscount + freeItemsDiscount + creditValue;
-      if (total <= 0) return;
-      summary.tickets += ticketDiscount + creditValue;
-      summary.concessions += concessionDiscount;
-      summary.freeItems += freeItemsDiscount;
-      summary.clubCredits += creditValue;
-      summary.total += total;
-      summary.benefitedOrders += 1;
+    (db.orders || [])
+      .filter((order) => order.status === "paid" && order.clubSubscriptionId === subscription.id)
+      .forEach((order) => {
+        const benefits = order.clubBenefits && typeof order.clubBenefits === "object" ? order.clubBenefits : {};
+        const ticketDiscount = Math.max(0, Number(benefits.ticketDiscount || 0));
+        const concessionsRefunded = order.concessionRefund?.status === "completed";
+        const concessionDiscount = concessionsRefunded ? 0 : Math.max(0, Number(benefits.concessionDiscount || 0));
+        const freeItemsDiscount = concessionsRefunded ? 0 : Math.max(0, Number(benefits.freeConcessionDiscount || 0));
+        const creditValue = Math.max(0, Number(order.clubCreditsApplied || 0));
+        const total = ticketDiscount + concessionDiscount + freeItemsDiscount + creditValue;
+        if (total <= 0) return;
+        summary.tickets += ticketDiscount + creditValue;
+        summary.concessions += concessionDiscount;
+        summary.freeItems += freeItemsDiscount;
+        summary.clubCredits += creditValue;
+        summary.total += total;
+        summary.benefitedOrders += 1;
+      });
+
+    Object.keys(summary).forEach((key) => {
+      if (key !== "benefitedOrders") summary[key] = Number(summary[key].toFixed(2));
     });
+    return summary;
+  }
 
-  Object.keys(summary).forEach((key) => {
-    if (key !== "benefitedOrders") summary[key] = Number(summary[key].toFixed(2));
-  });
-  return summary;
-}
+  function activeClubPlanForBenefits(db, userId) {
+    if (!userId) return null;
+    const subscription = activeSubscriptionForUser(db, userId);
+    if (!subscription || !subscriptionCanUseCredit(subscription)) return null;
+    const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId && item.active !== false);
+    return plan ? { subscription, plan } : null;
+  }
 
-function activeClubPlanForBenefits(db, userId) {
-  if (!userId) return null;
-  const subscription = activeSubscriptionForUser(db, userId);
-  if (!subscription || !subscriptionCanUseCredit(subscription)) return null;
-  const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription.planId && item.active !== false);
-  return plan ? { subscription, plan } : null;
-}
+  function reservedFreeConcessionQuantity(db, subscription, concessionId, currentOrderId = "") {
+    const credit = currentSubscriptionCredit(db, subscription);
+    const cycleStart = new Date(credit?.cycleStart || subscription.currentPeriodStart || subscription.cycleStart || 0).getTime();
+    const cycleEnd = new Date(credit?.cycleEnd || subscription.currentPeriodEnd || subscription.cycleEnd || 0).getTime();
+    if (!Number.isFinite(cycleStart) || !Number.isFinite(cycleEnd)) return 0;
+    const now = Date.now();
+    return (db.orders || []).reduce((sum, existingOrder) => {
+      if (existingOrder.id === currentOrderId || existingOrder.clubSubscriptionId !== subscription.id) return sum;
+      if (!["pending_payment", "paid", "paid_pending_print"].includes(existingOrder.status)) return sum;
+      if (existingOrder.concessionRefund?.status === "completed") return sum;
+      if (existingOrder.status === "pending_payment" && existingOrder.reservationExpiresAt && new Date(existingOrder.reservationExpiresAt).getTime() <= now) return sum;
+      const createdAt = new Date(existingOrder.createdAt || 0).getTime();
+      if (createdAt < cycleStart || createdAt >= cycleEnd) return sum;
+      const claim = (existingOrder.clubBenefits?.freeConcessionItems || []).find((item) => item.concessionId === concessionId);
+      return sum + Number(claim?.quantity || 0);
+    }, 0);
+  }
 
-function reservedFreeConcessionQuantity(db, subscription, concessionId, currentOrderId = "") {
-  const credit = currentSubscriptionCredit(db, subscription);
-  const cycleStart = new Date(credit?.cycleStart || subscription.currentPeriodStart || subscription.cycleStart || 0).getTime();
-  const cycleEnd = new Date(credit?.cycleEnd || subscription.currentPeriodEnd || subscription.cycleEnd || 0).getTime();
-  if (!Number.isFinite(cycleStart) || !Number.isFinite(cycleEnd)) return 0;
-  const now = Date.now();
-  return (db.orders || []).reduce((sum, existingOrder) => {
-    if (existingOrder.id === currentOrderId || existingOrder.clubSubscriptionId !== subscription.id) return sum;
-    if (!["pending_payment", "paid", "paid_pending_print"].includes(existingOrder.status)) return sum;
-    if (existingOrder.concessionRefund?.status === "completed") return sum;
-    if (existingOrder.status === "pending_payment" && existingOrder.reservationExpiresAt && new Date(existingOrder.reservationExpiresAt).getTime() <= now) return sum;
-    const createdAt = new Date(existingOrder.createdAt || 0).getTime();
-    if (createdAt < cycleStart || createdAt >= cycleEnd) return sum;
-    const claim = (existingOrder.clubBenefits?.freeConcessionItems || []).find((item) => item.concessionId === concessionId);
-    return sum + Number(claim?.quantity || 0);
-  }, 0);
-}
+  function prioritizeFreeConcessionsBeforeDiscounts(db, order, freeConcessionItems) {
+    const coupon = (db.promotions || []).find((item) => item.id === order.couponId);
+    if (!coupon || !order.couponAllowsClubStacking || !freeConcessionItems.length) return;
 
-function prioritizeFreeConcessionsBeforeDiscounts(db, order, freeConcessionItems) {
-  const coupon = (db.promotions || []).find((item) => item.id === order.couponId);
-  if (!coupon || !order.couponAllowsClubStacking || !freeConcessionItems.length) return;
+    const freeByItem = new Map(freeConcessionItems.map((item) => [String(item.concessionId), Number(item.quantity || 0)]));
+    const concessionAmounts = (order.concessionItems || []).map((item) => {
+      const paidQuantity = Math.max(0, Number(item.quantity || 0) - Number(freeByItem.get(String(item.id)) || 0));
+      return Number((paidQuantity * Number(item.unitPrice || 0)).toFixed(2));
+    });
+    const concessionTotal = Number(concessionAmounts.reduce((sum, amount) => sum + amount, 0).toFixed(2));
+    const ticketTotal = ticketSubtotalForOrder(db, order);
+    const membership = order.useClubCredits ? activeClubPlanForBenefits(db, order.customerUserId) : null;
+    const referenceValue = Math.max(0, Number(membership?.plan?.creditReferenceValue || 0));
+    const creditAmount = membership
+      ? ticketUnitsForOrder(order).reduce((sum, unit) => sum + Math.min(unit.unitPrice, referenceValue > 0 ? referenceValue : unit.unitPrice), 0)
+      : 0;
+    const couponTicketBase = Math.max(0, Number((ticketTotal - creditAmount).toFixed(2)));
+    const pricing = calculateCouponDiscountForAmounts(coupon, couponTicketBase, concessionTotal);
+    const allocations = clubDomainService.allocateGoodsCouponDiscount(order.concessionItems, freeConcessionItems, pricing.concessionDiscount);
 
-  const freeByItem = new Map(freeConcessionItems.map((item) => [String(item.concessionId), Number(item.quantity || 0)]));
-  const concessionAmounts = (order.concessionItems || []).map((item) => {
-    const paidQuantity = Math.max(0, Number(item.quantity || 0) - Number(freeByItem.get(String(item.id)) || 0));
-    return Number((paidQuantity * Number(item.unitPrice || 0)).toFixed(2));
-  });
-  const concessionTotal = Number(concessionAmounts.reduce((sum, amount) => sum + amount, 0).toFixed(2));
-  const ticketTotal = ticketSubtotalForOrder(db, order);
-  const membership = order.useClubCredits ? activeClubPlanForBenefits(db, order.customerUserId) : null;
-  const referenceValue = Math.max(0, Number(membership?.plan?.creditReferenceValue || 0));
-  const creditAmount = membership
-    ? ticketUnitsForOrder(order).reduce((sum, unit) => sum + Math.min(unit.unitPrice, referenceValue > 0 ? referenceValue : unit.unitPrice), 0)
-    : 0;
-  const couponTicketBase = Math.max(0, Number((ticketTotal - creditAmount).toFixed(2)));
-  const pricing = calculateCouponDiscountForAmounts(coupon, couponTicketBase, concessionTotal);
-  const allocations = clubDomainService.allocateGoodsCouponDiscount(order.concessionItems, freeConcessionItems, pricing.concessionDiscount);
+    order.concessionItems = (order.concessionItems || []).map((item, index) => ({
+      ...item,
+      couponDiscount: allocations[index] || 0
+    }));
+    order.couponOriginalDiscount = Number(order.couponOriginalDiscount ?? order.couponDiscount ?? 0);
+    order.couponDiscount = pricing.discountValue;
+    order.couponTicketDiscount = pricing.ticketDiscount;
+    order.couponConcessionDiscount = pricing.concessionDiscount;
+    order.couponAppliedAfterClubFreeItems = true;
+    order.discountValue = pricing.discountValue;
+    const grossConcessions = (order.concessionItems || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
+    order.totalPrice = Math.max(0, Number((ticketTotal + grossConcessions - pricing.discountValue).toFixed(2)));
+  }
 
-  order.concessionItems = (order.concessionItems || []).map((item, index) => ({
-    ...item,
-    couponDiscount: allocations[index] || 0
-  }));
-  order.couponOriginalDiscount = Number(order.couponOriginalDiscount ?? order.couponDiscount ?? 0);
-  order.couponDiscount = pricing.discountValue;
-  order.couponTicketDiscount = pricing.ticketDiscount;
-  order.couponConcessionDiscount = pricing.concessionDiscount;
-  order.couponAppliedAfterClubFreeItems = true;
-  order.discountValue = pricing.discountValue;
-  const grossConcessions = (order.concessionItems || []).reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unitPrice || 0), 0);
-  order.totalPrice = Math.max(0, Number((ticketTotal + grossConcessions - pricing.discountValue).toFixed(2)));
-}
-
-function applyClubPlanBenefits(db, order, user) {
-  if (!order?.useClubBenefits) return { order, subscription: null, plan: null };
-  if (order.couponId && !order.couponAllowsClubStacking) {
-    order.clubBenefitsSkippedReason = "coupon_not_combinable";
+  function applyClubPlanBenefits(db, order, user) {
+    if (!order?.useClubBenefits) return { order, subscription: null, plan: null };
+    if (order.couponId && !order.couponAllowsClubStacking) {
+      order.clubBenefitsSkippedReason = "coupon_not_combinable";
     return { order, subscription: null, plan: null };
   }
   if (!user) {

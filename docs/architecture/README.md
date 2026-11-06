@@ -19,6 +19,7 @@
 | [Plano de modularização profunda](DEEP_MODULARIZATION_PLAN.md) | Você quer a sequência de extrações, módulos de destino, orçamento de linhas e critérios de equivalência. |
 | [Extração da infraestrutura HTTP](INFRASTRUCTURE_EXTRACTION_REPORT.md) | Você quer comparar linhas, módulos, contratos e verificações da etapa B01. |
 | [Extração de catálogo e administração](CATALOG_ADMIN_EXTRACTION_REPORT.md) | Você quer comparar rotas, serviços, riscos, testes e linhas desta etapa. |
+| [Extração comercial](COMMERCE_EXTRACTION_REPORT.md) | Você quer localizar preço, reservas, emissão, QR, Clube e a matriz de invariantes preservadas. |
 | [Caracterização HTTP e do Admin](HTTP_CONTRACT_CHARACTERIZATION.md) | Você quer preservar respostas, cookies, origem, permissões e eventos antes das extrações. |
 | [Relatório reproduzível da caracterização](MODULARIZATION_CHARACTERIZATION_REPORT.md) | Você quer contagens, cobertura, execução de testes e diferenças estáticas ante o snapshot. |
 | [Histórico da modularização](../MODULARIZACAO_ARQUITETURA.md) | Você precisa entender decisões e pendências anteriores. |

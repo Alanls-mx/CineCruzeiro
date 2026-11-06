@@ -2,6 +2,8 @@
 
 Respostas HTTP: [server.js](../../backend/server.js) injeta `requestContext`, `postgresEnabled`, `deferUntilPostgresCommit`, política CORS e cabeçalhos em [httpResponseService](../../backend/services/httpResponseService.js); handlers recebem `sendJson`/`sendNoContent` dessa única composição. O módulo não importa `server.js` nem acessa DB por conta própria. [Teste](../../tests/http-response-service.test.mjs).
 
+Checkout: `server.js` **chama** [orderCatalogPricingService](../../backend/services/orderCatalogPricingService.js), que usa seleção de tipos, rateio, disponibilidade/capacidade e estoque fornecidos por injeção; o mesmo preço é usado por checkout e bilheteria. [orderSeatAssignmentService](../../backend/services/orderSeatAssignmentService.js) **consulta** `sessionSeatAvailability`, sem alterar hold ou WebSocket. [clubOrderCreditService](../../backend/services/clubOrderCreditService.js) **muta no mesmo snapshot** `orders`, créditos, resgates, uso e itens de serviço; `server.js` conserva o limite de transação. [ticketIssuanceService](../../backend/services/ticketIssuanceService.js) só constrói ingressos quando a coordenação autorizada o chama. Testes de domínio em `npm run test:modularization:commerce`; smoke PostgreSQL descartável verifica o encadeamento.
+
 Cada seta identifica o tipo de relação observado no código. Não é um grafo completo; antes de alterar um contrato, confirme todas as chamadas atuais. [Endpoints](endpoints.md) registra métodos e permissões; [persistência](persistence.md) registra escritores críticos.
 
 | Alteração pretendida | Relação direta e consumidores | Impacto / teste inicial |

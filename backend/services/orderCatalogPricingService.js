@@ -16,76 +16,76 @@ function createOrderCatalogPricingService({
   ensureFriendlyOrderReference,
   assignSeatsToOrder,
 }) {
-function repriceOrderFromCatalog(db, order, options = {}) {
-  const movie = db.movies.find((item) => item.id === order.movieId);
-  if (!movie) {
-    const error = new Error("Filme nao encontrado para este pedido.");
-    error.statusCode = 400;
-    throw error;
-  }
-  const session = (movie.sessions || []).find((item) => item.id === order.sessionId);
-  if (!session || session.status === "sold_out") {
-    const error = new Error(session ? "Esta sessão está esgotada." : "Esta sessão já terminou ou não está mais disponível.");
-    error.statusCode = session ? 409 : 404;
-    error.code = session ? "SESSION_SOLD_OUT" : "SESSION_NOT_FOUND";
-    throw error;
-  }
-  const sessionDate = order.sessionDate || session.date || todayIsoDate();
-  const salesOpenAt = sessionSalesOpenAt(session, sessionDate);
-  if (salesOpenAt && salesOpenAt.getTime() > Date.now()) {
-    const error = new Error("As vendas desta sessão serão abertas automaticamente 24 horas antes da pré-estreia.");
-    error.statusCode = 409;
-    error.code = "SESSION_SALES_NOT_OPEN";
-    throw error;
-  }
-  if (!isSessionSellable(session, sessionDate)) {
-    const error = new Error("Esta sessão já iniciou e não está mais disponível para venda.");
-    error.statusCode = 409;
-    error.code = "SESSION_SALES_CLOSED";
-    throw error;
-  }
+  function repriceOrderFromCatalog(db, order, options = {}) {
+    const movie = db.movies.find((item) => item.id === order.movieId);
+    if (!movie) {
+      const error = new Error("Filme nao encontrado para este pedido.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const session = (movie.sessions || []).find((item) => item.id === order.sessionId);
+    if (!session || session.status === "sold_out") {
+      const error = new Error(session ? "Esta sessão está esgotada." : "Esta sessão já terminou ou não está mais disponível.");
+      error.statusCode = session ? 409 : 404;
+      error.code = session ? "SESSION_SOLD_OUT" : "SESSION_NOT_FOUND";
+      throw error;
+    }
+    const sessionDate = order.sessionDate || session.date || todayIsoDate();
+    const salesOpenAt = sessionSalesOpenAt(session, sessionDate);
+    if (salesOpenAt && salesOpenAt.getTime() > Date.now()) {
+      const error = new Error("As vendas desta sessão serão abertas automaticamente 24 horas antes da pré-estreia.");
+      error.statusCode = 409;
+      error.code = "SESSION_SALES_NOT_OPEN";
+      throw error;
+    }
+    if (!isSessionSellable(session, sessionDate)) {
+      const error = new Error("Esta sessão já iniciou e não está mais disponível para venda.");
+      error.statusCode = 409;
+      error.code = "SESSION_SALES_CLOSED";
+      throw error;
+    }
 
-  const ticketItems = resolveOrderTicketItems(db, order, session);
-  const requestedTickets = ticketItems.reduce((sum, item) => sum + Number(item.ticketQuantity || item.quantity || 0), 0);
-  if (requestedTickets <= 0) {
-    const error = new Error("Selecione pelo menos um ingresso.");
-    error.statusCode = 400;
-    throw error;
-  }
-  const sessionRoom = roomForSession(db, session);
-  const roomCapacity = roomSeatSelectionEnabled(sessionRoom)
-    ? roomSeats(sessionRoom).filter((seat) => seat.enabled !== false).length
-    : Number(sessionRoom?.capacity || 120);
-  const paidTickets = (db.tickets || []).filter((ticket) =>
-    ticket.sessionId === session.id && !["cancelled", "refunded"].includes(ticket.status)
-  ).length;
-  const reservedTickets = (db.orders || []).filter((existingOrder) =>
-    existingOrder.sessionId === session.id &&
-    existingOrder.status === "pending_payment" &&
-    (!existingOrder.reservationExpiresAt || new Date(existingOrder.reservationExpiresAt).getTime() > Date.now())
-  ).reduce((sum, existingOrder) => sum + orderTicketCount(existingOrder), 0);
-  if (paidTickets + reservedTickets + requestedTickets > roomCapacity) {
-    const error = new Error("Esta sessao nao possui lugares suficientes para a quantidade escolhida.");
-    error.statusCode = 409;
-    throw error;
-  }
+    const ticketItems = resolveOrderTicketItems(db, order, session);
+    const requestedTickets = ticketItems.reduce((sum, item) => sum + Number(item.ticketQuantity || item.quantity || 0), 0);
+    if (requestedTickets <= 0) {
+      const error = new Error("Selecione pelo menos um ingresso.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const sessionRoom = roomForSession(db, session);
+    const roomCapacity = roomSeatSelectionEnabled(sessionRoom)
+      ? roomSeats(sessionRoom).filter((seat) => seat.enabled !== false).length
+      : Number(sessionRoom?.capacity || 120);
+    const paidTickets = (db.tickets || []).filter((ticket) =>
+      ticket.sessionId === session.id && !["cancelled", "refunded"].includes(ticket.status)
+    ).length;
+    const reservedTickets = (db.orders || []).filter((existingOrder) =>
+      existingOrder.sessionId === session.id &&
+      existingOrder.status === "pending_payment" &&
+      (!existingOrder.reservationExpiresAt || new Date(existingOrder.reservationExpiresAt).getTime() > Date.now())
+    ).reduce((sum, existingOrder) => sum + orderTicketCount(existingOrder), 0);
+    if (paidTickets + reservedTickets + requestedTickets > roomCapacity) {
+      const error = new Error("Esta sessao nao possui lugares suficientes para a quantidade escolhida.");
+      error.statusCode = 409;
+      throw error;
+    }
 
-  const ticketTotal = ticketItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const concessionItems = (order.concessionItems || [])
-    .map((item) => {
-      const concession = db.concessions.find((catalogItem) => catalogItem.id === item.id && catalogItem.active !== false);
-      if (!concession) {
-        const error = new Error(`Produto indisponivel na bomboniere: ${item.name || item.id}`);
-        error.statusCode = 400;
-        throw error;
-      }
-      const quantity = Math.max(0, Math.min(Number(item.quantity || 0), Number(concession.maxPerOrder || 8)));
-      const stockDeduction = concessionStockConsumption(concession, null, quantity);
-      if (finiteStock(concession) && stockDeduction > Number(concession.stock || 0)) {
-        const error = new Error(`${concession.name} nao possui estoque suficiente.`);
-        error.statusCode = 409;
-        throw error;
-      }
+    const ticketTotal = ticketItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const concessionItems = (order.concessionItems || [])
+      .map((item) => {
+        const concession = db.concessions.find((catalogItem) => catalogItem.id === item.id && catalogItem.active !== false);
+        if (!concession) {
+          const error = new Error(`Produto indisponivel na bomboniere: ${item.name || item.id}`);
+          error.statusCode = 400;
+          throw error;
+        }
+        const quantity = Math.max(0, Math.min(Number(item.quantity || 0), Number(concession.maxPerOrder || 8)));
+        const stockDeduction = concessionStockConsumption(concession, null, quantity);
+        if (finiteStock(concession) && stockDeduction > Number(concession.stock || 0)) {
+          const error = new Error(`${concession.name} nao possui estoque suficiente.`);
+          error.statusCode = 409;
+          throw error;
+        }
       return {
         id: concession.id,
         sku: concession.sku,

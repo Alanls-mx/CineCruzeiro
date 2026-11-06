@@ -14,24 +14,24 @@ function findExistingCheckout(db, order, method) {
 }
 
 function createCheckoutPresentationService({ enrichTicket }) {
-function sanitizeCheckoutOrder(order) {
-  if (!order) return null;
-  const { customerName, customerEmail, customerPhone, customerCpf, metadata, ...safeOrder } = order;
-  return safeOrder;
-}
+  function sanitizeCheckoutOrder(order) {
+    if (!order) return null;
+    const { customerName, customerEmail, customerPhone, customerCpf, metadata, ...safeOrder } = order;
+    return safeOrder;
+  }
 
-function sanitizeCheckoutPayment(payment) {
-  if (!payment) return null;
-  const { metadata, raw, ...safePayment } = payment;
-  return safePayment;
-}
+  function sanitizeCheckoutPayment(payment) {
+    if (!payment) return null;
+    const { metadata, raw, ...safePayment } = payment;
+    return safePayment;
+  }
 
-function sanitizeCheckoutTicket(ticket) {
-  if (!ticket) return null;
-  return toCustomerTicketDto(ticket);
-}
+  function sanitizeCheckoutTicket(ticket) {
+    if (!ticket) return null;
+    return toCustomerTicketDto(ticket);
+  }
 
-function checkoutResponse(db, order, payment, tickets = []) {
+  function checkoutResponse(db, order, payment, tickets = []) {
   return {
     order: sanitizeCheckoutOrder(order),
     payment: sanitizeCheckoutPayment(payment),

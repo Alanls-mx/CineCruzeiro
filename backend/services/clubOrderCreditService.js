@@ -10,54 +10,54 @@ function createClubOrderCreditService({
   syncSubscriptionCreditMirror,
   creditBenefitLabel,
 }) {
-function reserveClubCreditsForOrder(db, order, user, idempotencyKey) {
-  if (!user || !order?.useClubCredits) return { subscription: null, plan: null, redemptions: [] };
-  if (order.couponId && !order.couponAllowsClubStacking) {
-    const error = new Error("Este cupom não pode ser combinado com créditos do Clube.");
-    error.statusCode = 409;
-    error.code = "COUPON_CLUB_NOT_COMBINABLE";
-    throw error;
-  }
-  const subscription = activeSubscriptionForUser(db, user.id);
-  const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription?.planId && item.active !== false);
-  if (!subscription || !plan || !subscriptionCanUseCredit(subscription)) {
-    const error = new Error("Você não possui assinatura ativa com créditos disponíveis.");
-    error.statusCode = 409;
-    error.code = "NO_ACTIVE_SUBSCRIPTION";
-    throw error;
-  }
-  assertClubPlanEligibility(plan, order);
-  const effectivePrices = ticketUnitPricesForOrder(order);
-  const redemptions = clubDomainService.reserveCredits(db, {
-    subscription,
-    order,
-    ticketPrices: effectivePrices,
-    reservationExpiresAt: order.reservationExpiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    idempotencyKey: idempotencyKey || order.id
-  });
-  const creditFirstPricing = discountedTicketUnitsForOrder(order, plan);
-  redemptions.forEach((redemption, index) => {
-    redemption.additionalPaymentAmount = Number(Math.max(0, Number(creditFirstPricing[index]?.discountedPrice || 0) - Number(redemption.creditAmount || 0)).toFixed(2));
-  });
-  const creditAmount = Number(redemptions.reduce((sum, item) => sum + Number(item.creditAmount || 0), 0).toFixed(2));
-  const additionalPayment = Number(redemptions.reduce((sum, item) => sum + Number(item.additionalPaymentAmount || 0), 0).toFixed(2));
-  if (!plan.allowPriceDifference && additionalPayment > 0) {
-    clubDomainService.releaseOrderCredits(db, order.id);
-    const error = new Error("Este plano não permite pagar diferença em sessões mais caras.");
-    error.statusCode = 409;
-    error.code = "CLUB_PRICE_DIFFERENCE_NOT_ALLOWED";
-    throw error;
-  }
-  order.clubSubscriptionId = subscription.id;
-  order.clubBenefit = "subscription_credit";
-  order.clubCreditQuantity = redemptions.length;
-  order.clubCreditsApplied = creditAmount;
-  order.clubCreditSummary = summarizeClubCreditItems(order, plan, redemptions);
-  order.additionalPayment = additionalPayment;
-  order.clubCreditPending = true;
-  order.clubCreditIdempotencyKey = `${idempotencyKey || order.id}:club-credit`;
-  order.discountValue = Number((Number(order.discountValue || 0) + creditAmount).toFixed(2));
-  order.totalPrice = Math.max(0, Number((Number(order.totalPrice || 0) - creditAmount).toFixed(2)));
+  function reserveClubCreditsForOrder(db, order, user, idempotencyKey) {
+    if (!user || !order?.useClubCredits) return { subscription: null, plan: null, redemptions: [] };
+    if (order.couponId && !order.couponAllowsClubStacking) {
+      const error = new Error("Este cupom não pode ser combinado com créditos do Clube.");
+      error.statusCode = 409;
+      error.code = "COUPON_CLUB_NOT_COMBINABLE";
+      throw error;
+    }
+    const subscription = activeSubscriptionForUser(db, user.id);
+    const plan = (db.subscriptionPlans || []).find((item) => item.id === subscription?.planId && item.active !== false);
+    if (!subscription || !plan || !subscriptionCanUseCredit(subscription)) {
+      const error = new Error("Você não possui assinatura ativa com créditos disponíveis.");
+      error.statusCode = 409;
+      error.code = "NO_ACTIVE_SUBSCRIPTION";
+      throw error;
+    }
+    assertClubPlanEligibility(plan, order);
+    const effectivePrices = ticketUnitPricesForOrder(order);
+    const redemptions = clubDomainService.reserveCredits(db, {
+      subscription,
+      order,
+      ticketPrices: effectivePrices,
+      reservationExpiresAt: order.reservationExpiresAt || new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      idempotencyKey: idempotencyKey || order.id
+    });
+    const creditFirstPricing = discountedTicketUnitsForOrder(order, plan);
+    redemptions.forEach((redemption, index) => {
+      redemption.additionalPaymentAmount = Number(Math.max(0, Number(creditFirstPricing[index]?.discountedPrice || 0) - Number(redemption.creditAmount || 0)).toFixed(2));
+    });
+    const creditAmount = Number(redemptions.reduce((sum, item) => sum + Number(item.creditAmount || 0), 0).toFixed(2));
+    const additionalPayment = Number(redemptions.reduce((sum, item) => sum + Number(item.additionalPaymentAmount || 0), 0).toFixed(2));
+    if (!plan.allowPriceDifference && additionalPayment > 0) {
+      clubDomainService.releaseOrderCredits(db, order.id);
+      const error = new Error("Este plano não permite pagar diferença em sessões mais caras.");
+      error.statusCode = 409;
+      error.code = "CLUB_PRICE_DIFFERENCE_NOT_ALLOWED";
+      throw error;
+    }
+    order.clubSubscriptionId = subscription.id;
+    order.clubBenefit = "subscription_credit";
+    order.clubCreditQuantity = redemptions.length;
+    order.clubCreditsApplied = creditAmount;
+    order.clubCreditSummary = summarizeClubCreditItems(order, plan, redemptions);
+    order.additionalPayment = additionalPayment;
+    order.clubCreditPending = true;
+    order.clubCreditIdempotencyKey = `${idempotencyKey || order.id}:club-credit`;
+    order.discountValue = Number((Number(order.discountValue || 0) + creditAmount).toFixed(2));
+    order.totalPrice = Math.max(0, Number((Number(order.totalPrice || 0) - creditAmount).toFixed(2)));
   return { subscription, plan, redemptions };
 }
 
