@@ -10,6 +10,8 @@ Telemetria ao vivo: guard de sessão/permissão no dispatcher → [adminLogsHand
 
 As setas descrevem o caminho de manutenção. Elas não representam todos os ramos de erro. Os controles de origem, sessão, CSRF, permissões e rate limit ficam no [dispatcher](../../backend/server.js); confirme a regra por método antes de editar.
 
+Manutenção periódica: startup normal em [server.js](../../backend/server.js) agenda os intervalos → [backendMaintenanceTasks](../../backend/services/backendMaintenanceTasks.js) executa cada varredura com os escritores injetados. Assinaturas/sessões/cupons usam `withCriticalMutation` e persistem antes da limpeza de pedidos expirados; imagens localizadas são aplicadas na mutação crítica antes da limpeza de arquivos não usados; anexos usam repositório no PostgreSQL e `writeDb` no JSON; retenção de logs roda somente em PostgreSQL. O modo quiescente de [start.js](../../backend/start.js) não importa o servidor operacional. [Teste](../../tests/backend-maintenance-tasks.test.mjs).
+
 Fluxo de atualizacao **ainda nao autorizado**: [manifesto restrito da candidata](../FASE13_1_FECHAMENTO_BLOQUEADORES.md) -> [runner](../../scripts/db-migrate.js) -> [guard](../../scripts/guarded-migration.js) verifica banco/role/origem/history/schema na mesma transacao -> 051/052 atomicas. Startup fechado: [start.js](../../backend/start.js) -> [maintenanceServer.js](../../backend/maintenanceServer.js) -> 503 para operacoes e upgrade WS, sem DB/workers. Corte da release antiga, backup restaurado e retomada por categoria faltam; ver [matriz](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md).
 
 ## Compra de ingressos
