@@ -6408,341 +6408,44 @@ const { filteredCustomerAccounts, renderCustomerUsers, changeCustomerAccountsPag
 
 
 
-const { renderClub } = window.CineAdminModules.clubView.createClubView({
-  state,
-  $,
-  adminAssetUrl,
-  clubStatusLabel,
-  creationPlaceholder,
-  currentClubPlan,
-  escapeHtml,
-  fillClubPlanForm,
-  filterClubSubscriptions,
-  money,
-  paginateAdminItems,
-  renderAdminListPager
+const { renderClub, viewClubSubscription, changeClubSubscriptionsPage, changeClubUsagePage, fillClubPlanForm, renderClubPlanExcludedItems, renderClubPlanFreeItems, selectClubPlan, newClubPlan, filterClubSubscriptions } = window.CineAdminModules.clubView.createClubView({
+  state, $, adminAssetUrl, api, clubStatusLabel, creationPlaceholder, currentClubPlan, document, escapeHtml, isOwnerAdmin, money, paginateAdminItems, renderAdminImagePreview, renderAdminListPager, setAdminSubtab, setDisabled, showToast, syncCreationControl
+});
+const { saveClubPlan, deleteClubPlan, assignClubSubscription, updateClubSubscription, deleteClubSubscription, adjustClubCredit } = window.CineAdminModules.clubCommands.createClubCommands({
+  state, $, api, cleanAdminAssetUrl, clubStatusLabel, confirm, currentClubPlan, document, CSS, isOwnerAdmin, loadContent, prompt, showSuccess, showToast
 });
 
-async function viewClubSubscription(subscriptionId) {
-  const target = $("clubSubscriptionDetail");
-  if (!target) return;
-  target.hidden = false;
-  target.innerHTML = `<div class="loading-state">Carregando histórico da assinatura...</div>`;
-  try {
-    const detail = await api(`/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}`);
-    const subscription = detail.subscription || {};
-    const rows = (items, render, empty) => items?.length ? items.map(render).join("") : `<p class="helper-text">${escapeHtml(empty)}</p>`;
-    target.innerHTML = `
-      <div class="subscription-detail-heading">
-        <div><div class="section-title">Histórico da assinatura</div><p class="helper-text">${escapeHtml(subscription.user?.name || subscription.user?.email || subscription.id || "Assinatura")}</p></div>
-        <button class="icon-button" type="button" title="Fechar detalhes" aria-label="Fechar detalhes" data-admin-close="subscription-detail">×</button>
-      </div>
-      <div class="subscription-detail-grid">
-        <section><h3>Mensalidades</h3>${rows(detail.payments, (item) => `<p><strong>${money(item.amount)}</strong><span>${new Date(item.approvedAt || item.createdAt).toLocaleString("pt-BR")} • ${escapeHtml(item.provider || "manual")}</span></p>`, "Nenhuma mensalidade registrada.")}</section>
-        <section><h3>Créditos individuais</h3>${rows(detail.credits, (item) => `<p><strong>${escapeHtml(item.status === "available" ? "Disponível" : item.status === "reserved" ? "Reservado" : item.status === "redeemed" ? "Utilizado" : item.status === "expired" ? "Expirado" : item.status)}</strong><span>${money(item.referenceValue)} • validade ${new Date(item.expiresAt).toLocaleDateString("pt-BR")}</span></p>`, "Nenhum crédito emitido.")}</section>
-        <section><h3>Resgates</h3>${rows(detail.redemptions, (item) => `<p><strong>${money(item.creditAmount)} em crédito</strong><span>Base ${money(item.basePrice)} • complemento ${money(item.additionalPaymentAmount)} • ${escapeHtml(item.status)}</span></p>`, "Nenhum resgate registrado.")}</section>
-        <section><h3>Ciclos</h3>${rows(detail.cycles, (item) => `<p><strong>${new Date(item.cycleStart).toLocaleDateString("pt-BR")} a ${new Date(item.cycleEnd).toLocaleDateString("pt-BR")}</strong><span>${Number(item.creditsIssued || 0)} crédito(s) emitido(s)</span></p>`, "Nenhum ciclo registrado.")}</section>
-      </div>`;
-    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  } catch (error) {
-    target.innerHTML = `<div class="empty-state"><strong>Não foi possível abrir o histórico</strong><span>${escapeHtml(error.message)}</span></div>`;
-  }
-}
 
-function changeClubSubscriptionsPage(delta) {
-  const subscriptions = state.content?.subscriptions || [];
-  const search = String(state.clubSubscriptionsSearch || "").trim().toLocaleLowerCase("pt-BR");
-  const filtered = subscriptions.filter((subscription) => {
-    if (!search) return true;
-    const users = state.content?.users || [];
-    const plans = state.content?.subscriptionPlans || [];
-    const user = subscription.user || users.find((item) => item.id === subscription.userId) || {};
-    const plan = subscription.plan || plans.find((item) => item.id === subscription.planId) || {};
-    return [user.name, user.email, plan.name, subscription.id]
-      .filter(Boolean)
-      .some((value) => String(value).toLocaleLowerCase("pt-BR").includes(search));
-  });
-  const pageSize = state.clubSubscriptionsPageSize || 5;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  state.clubSubscriptionsPage = Math.min(Math.max(1, (state.clubSubscriptionsPage || 1) + delta), totalPages);
-  renderClub();
-}
 
-function changeClubUsagePage(delta) {
-  const usage = state.content?.subscriptionUsage || [];
-  const pageSize = state.clubUsagePageSize || 5;
-  const totalPages = Math.max(1, Math.ceil(usage.length / pageSize));
-  state.clubUsagePage = Math.min(Math.max(1, (state.clubUsagePage || 1) + delta), totalPages);
-  renderClub();
-}
 
-function fillClubPlanForm(plan) {
-  if (!$("clubPlanForm")) return;
-  syncCreationControl("clubPlan", "cancelClubPlanCreateButton", "deleteClubPlanButton", Boolean(plan));
-  setDisabled("deleteClubPlanButton", !plan);
-  $("clubPlanId").value = plan?.id || "";
-  $("clubPlanName").value = plan?.name || "";
-  $("clubPlanPrice").value = plan?.monthlyPrice ?? 24.9;
-  $("clubPlanTickets").value = plan?.includedTickets ?? 3;
-  $("clubPlanTicketDiscount").value = Number(plan?.ticketDiscountPercent || 0);
-  $("clubPlanConcessionDiscount").value = Number(plan?.concessionDiscountPercent || 0);
-  $("clubPlanCreditReferenceValue").value = plan?.creditReferenceValue ?? "";
-  $("clubPlanCreditValidityDays").value = plan?.creditValidityDays ?? "";
-  $("clubPlanMaxAccumulatedCredits").value = plan?.maxAccumulatedCredits ?? "";
-  $("clubPlanGracePeriodDays").value = Number(plan?.gracePeriodDays || 0);
-  $("clubPlanAllowRollover").checked = Boolean(plan?.allowCreditRollover);
-  $("clubPlanAllowPriceDifference").checked = plan?.allowPriceDifference !== false;
-  const eligibleFormats = new Set(plan?.eligibleFormats || []);
-  document.querySelectorAll("#clubPlanEligibleFormats input").forEach((input) => {
-    input.checked = eligibleFormats.has(input.value);
-  });
-  $("clubPlanEligibleSessions").value = (plan?.eligibleSessionIds || []).join(", ");
-  if ($("clubPlanAccountingTickets")) $("clubPlanAccountingTickets").value = plan?.accounting?.ticketComponentValue ?? "";
-  if ($("clubPlanAccountingBenefits")) $("clubPlanAccountingBenefits").value = plan?.accounting?.benefitsComponentValue ?? "";
-  if ($("clubPlanAccountingVersion")) $("clubPlanAccountingVersion").value = plan?.accounting?.ruleVersion || "";
-  if ($("clubPlanAccountingEffectiveFrom")) $("clubPlanAccountingEffectiveFrom").value = String(plan?.accounting?.effectiveFrom || "").slice(0, 10);
-  if ($("clubNfceTrigger")) $("clubNfceTrigger").value = state.content?.settings?.nfceTrigger === "payment_approved" ? "payment_approved" : "goods_delivered";
-  if ($("clubPlanCancelAtPeriodEnd")) $("clubPlanCancelAtPeriodEnd").checked = plan?.cancellationRules?.allowPeriodEnd !== false;
-  if ($("clubPlanCancelImmediately")) $("clubPlanCancelImmediately").checked = plan?.cancellationRules?.allowImmediateBillingEnd !== false;
-  if ($("clubPlanAccountingSection")) $("clubPlanAccountingSection").hidden = !isOwnerAdmin();
-  $("clubPlanImageUrl").value = Object.prototype.hasOwnProperty.call(state.pendingImages, "clubPlanImageUrl")
-    ? state.pendingImages.clubPlanImageUrl
-    : plan?.imageUrl || "";
-  $("clubPlanDisplayOrder").value = plan?.displayOrder ?? 100;
-  $("clubPlanFeatured").checked = Boolean(plan?.isFeatured);
-  $("clubPlanBenefits").value = (plan?.benefits || []).join("\n");
-  $("clubPlanActive").checked = plan?.active !== false;
-  if ($("clubPlanEditorTitle")) $("clubPlanEditorTitle").textContent = plan?.name || "Novo plano";
-  if ($("clubPlanEditorSubtitle")) {
-    $("clubPlanEditorSubtitle").textContent = plan
-      ? "Ajuste a oferta publicada sem alterar o histórico das assinaturas existentes."
-      : "Preencha a oferta que será exibida na página do Clube.";
-  }
-  if ($("clubPlanEditorStatusText")) $("clubPlanEditorStatusText").textContent = plan?.active === false ? "Inativo" : "Ativo";
-  $("clubPlanForm")?.classList.toggle("is-inactive", plan?.active === false);
-  renderClubPlanFreeItems(plan);
-  renderClubPlanExcludedItems(plan);
-  renderAdminImagePreview("clubPlanImageUrl", "clubPlanImagePreview", "Prévia do plano");
-}
 
-function renderClubPlanExcludedItems(plan) {
-  const target = $("clubPlanExcludedItems");
-  if (!target) return;
-  const excluded = new Set(plan?.excludedConcessionIds || []);
-  const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
-  target.innerHTML = concessions.length
-      ? concessions.map((item) => `
-        <div class="benefit-product-row benefit-product-row-toggle">
-          <label><input type="checkbox" data-club-eligible-item="${escapeHtml(item.id)}" ${excluded.has(String(item.id)) ? "" : "checked"} /><span>${escapeHtml(item.name)}</span></label>
-        </div>`).join("")
-    : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre a bomboniere antes de configurar a elegibilidade.</span></div>`;
-}
 
-function renderClubPlanFreeItems(plan) {
-  const target = $("clubPlanFreeItems");
-  if (!target) return;
-  const configured = new Map((plan?.freeConcessionItems || []).map((item) => [String(item.concessionId || item.id), Number(item.quantityPerCycle || item.quantity || 1)]));
-  const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
-  target.innerHTML = concessions.length
-    ? concessions.map((item) => {
-        const quantity = configured.get(String(item.id)) || 1;
-        const checked = configured.has(String(item.id));
-        return `
-          <div class="benefit-product-row">
-            <label><input type="checkbox" data-club-free-item="${escapeHtml(item.id)}" ${checked ? "checked" : ""} /> <span>${escapeHtml(item.name)}</span></label>
-            <input type="number" min="1" max="20" step="1" value="${quantity}" data-club-free-quantity="${escapeHtml(item.id)}" aria-label="Quantidade grátis por ciclo de ${escapeHtml(item.name)}" />
-          </div>`;
-      }).join("")
-    : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre itens na Bomboniere para incluí-los como benefício.</span></div>`;
-}
 
-function selectClubPlan(id) {
-  delete state.pendingImages.clubPlanImageUrl;
-  state.creating.clubPlan = false;
-  state.selectedClubPlanId = id;
-  renderClub();
-}
 
-function newClubPlan() {
-  setAdminSubtab("club", "plans");
-  delete state.pendingImages.clubPlanImageUrl;
-  state.creating.clubPlan = true;
-  state.selectedClubPlanId = "";
-  $("clubPlansList").innerHTML = creationPlaceholder("Novo plano", "Configure nome, créditos, preço e imagem local no quadro à direita.");
-  fillClubPlanForm(null);
-}
 
-function changeClubSubscriptionsPage(delta) {
-  state.clubSubscriptionsPage = Math.max(1, Number(state.clubSubscriptionsPage || 1) + Number(delta || 0));
-  renderClub();
-}
 
-function filterClubSubscriptions(value) {
-  state.clubSubscriptionsSearch = String(value || "");
-  state.clubSubscriptionsPage = 1;
-  renderClub();
-  const input = $("clubSubscriptionSearch");
-  if (input) {
-    input.value = state.clubSubscriptionsSearch;
-    input.focus();
-  }
-}
 
-async function saveClubPlan(event) {
-  event.preventDefault();
-  const existingId = $("clubPlanId").value || state.selectedClubPlanId;
-  const requestedImageUrl = cleanAdminAssetUrl($("clubPlanImageUrl").value);
-  const payload = {
-    id: existingId || undefined,
-    name: $("clubPlanName").value,
-    monthlyPrice: Number($("clubPlanPrice").value || 0),
-    includedTickets: Number($("clubPlanTickets").value || 0),
-    ticketDiscountPercent: Number($("clubPlanTicketDiscount").value || 0),
-    concessionDiscountPercent: Number($("clubPlanConcessionDiscount").value || 0),
-    creditReferenceValue: $("clubPlanCreditReferenceValue").value === "" ? null : Number($("clubPlanCreditReferenceValue").value),
-    creditValidityDays: $("clubPlanCreditValidityDays").value === "" ? null : Number($("clubPlanCreditValidityDays").value),
-    allowCreditRollover: $("clubPlanAllowRollover").checked,
-    maxAccumulatedCredits: $("clubPlanMaxAccumulatedCredits").value === "" ? null : Number($("clubPlanMaxAccumulatedCredits").value),
-    gracePeriodDays: Number($("clubPlanGracePeriodDays").value || 0),
-    allowPriceDifference: $("clubPlanAllowPriceDifference").checked,
-    eligibleFormats: [...document.querySelectorAll("#clubPlanEligibleFormats input:checked")].map((input) => input.value),
-    eligibleSessionIds: $("clubPlanEligibleSessions").value.split(",").map((item) => item.trim()).filter(Boolean),
-    excludedConcessionIds: [...document.querySelectorAll("[data-club-eligible-item]:not(:checked)")].map((input) => input.dataset.clubEligibleItem),
-    freeConcessionItems: [...document.querySelectorAll("[data-club-free-item]:checked")].map((input) => ({
-      concessionId: input.dataset.clubFreeItem,
-      quantityPerCycle: Number(document.querySelector(`[data-club-free-quantity="${CSS.escape(input.dataset.clubFreeItem)}"]`)?.value || 1)
-    })),
-    imageUrl: requestedImageUrl,
-    displayOrder: Number($("clubPlanDisplayOrder").value || 100),
-    isFeatured: $("clubPlanFeatured").checked,
-    benefits: $("clubPlanBenefits").value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
-    active: $("clubPlanActive").checked
-  };
-  payload.cancellationRules = {
-    allowPeriodEnd: $("clubPlanCancelAtPeriodEnd").checked,
-    allowImmediateBillingEnd: $("clubPlanCancelImmediately").checked,
-    preservePaidCreditsUntilCycleEnd: true
-  };
-  if (isOwnerAdmin()) {
-    payload.accounting = {
-      ticketComponentValue: $("clubPlanAccountingTickets").value === "" ? null : Number($("clubPlanAccountingTickets").value),
-      benefitsComponentValue: $("clubPlanAccountingBenefits").value === "" ? null : Number($("clubPlanAccountingBenefits").value),
-      ruleVersion: $("clubPlanAccountingVersion").value.trim(),
-      effectiveFrom: $("clubPlanAccountingEffectiveFrom").value
-    };
-  }
-  try {
-    const saved = existingId
-      ? await api(`/api/admin/subscription-plans/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
-      : await api("/api/admin/subscription-plans", { method: "POST", body: JSON.stringify(payload) });
-    if (isOwnerAdmin() && $("clubNfceTrigger")) {
-      await api("/api/admin/goods-fiscal-settings", {
-        method: "PUT",
-        body: JSON.stringify({ nfceTrigger: $("clubNfceTrigger").value })
-      });
-    }
-    state.creating.clubPlan = false;
-    state.selectedClubPlanId = saved.id;
-    if (requestedImageUrl && cleanAdminAssetUrl(saved.imageUrl) !== requestedImageUrl) {
-      throw new Error("O plano foi salvo, mas a imagem não foi persistida. Envie o arquivo novamente.");
-    }
-    delete state.pendingImages.clubPlanImageUrl;
-    await loadContent({ silent: true });
-    showSuccess("Plano salvo", `${saved.name} foi atualizado no Clube Cine Cruzeiro.`);
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
 
-async function deleteClubPlan() {
-  const plan = currentClubPlan();
-  if (!plan) return;
-  const reason = prompt(`Motivo para excluir ou desativar ${plan.name}:`);
-  if (reason === null) return;
-  if (!confirm(`Confirmar exclusão/desativação do plano ${plan.name}?`)) return;
-  try {
-    const result = await api(`/api/admin/subscription-plans/${encodeURIComponent(plan.id)}`, {
-      method: "DELETE",
-      body: JSON.stringify({ reason })
-    });
-    state.selectedClubPlanId = "";
-    await loadContent({ silent: true });
-    showToast(result.deactivated ? "Plano desativado porque possui histórico de assinaturas." : "Plano excluído.");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
 
-async function assignClubSubscription(event) {
-  event.preventDefault();
-  try {
-    await api("/api/admin/subscriptions/assign", {
-      method: "POST",
-      body: JSON.stringify({
-        email: $("clubAssignEmail").value,
-        planId: $("clubAssignPlan").value,
-        status: "active"
-      })
-    });
-    $("clubAssignEmail").value = "";
-    state.clubSubscriptionsPage = 1;
-    await loadContent({ silent: true });
-    showSuccess("Assinatura atribuída", "O cliente já pode usar os créditos do Clube conforme o status do plano.");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
 
-async function updateClubSubscription(id, status) {
-  const reason = status === "cancelled" ? prompt("Motivo do cancelamento:") : "Ajuste pelo painel";
-  if (reason === null) return;
-  try {
-    await api(`/api/admin/subscriptions/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status, reason })
-    });
-    await loadContent({ silent: true });
-    showSuccess("Assinatura atualizada", `Status alterado para ${clubStatusLabel(status)}.`);
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
 
-async function deleteClubSubscription(id) {
-  if (!confirm("Excluir esta assinatura cancelada do banco de dados?")) return;
-  try {
-    await api(`/api/admin/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
-    await loadContent({ silent: true });
-    showSuccess("Assinatura excluída", "A assinatura cancelada foi removida do cadastro do cliente.");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
 
-async function adjustClubCredit(id) {
-  const deltaInput = prompt("Informe o ajuste de créditos. Use negativo para remover:");
-  if (deltaInput === null) return;
-  const delta = Number(deltaInput);
-  if (!Number.isFinite(delta) || !Number.isInteger(delta) || delta === 0) {
-    showToast("Informe um número inteiro diferente de zero.", "error");
-    return;
-  }
-  const reason = prompt("Motivo obrigatório do ajuste:");
-  if (!reason) {
-    showToast("Informe o motivo do ajuste.", "error");
-    return;
-  }
-  try {
-    await api(`/api/admin/subscriptions/${encodeURIComponent(id)}/credits/adjust`, {
-      method: "POST",
-      body: JSON.stringify({ delta, reason })
-    });
-    await loadContent({ silent: true });
-    showSuccess("Créditos ajustados", "O saldo do cliente foi atualizado com registro no histórico da assinatura.");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function renderIntegrations() {
   if (!$("integrationsList")) return;

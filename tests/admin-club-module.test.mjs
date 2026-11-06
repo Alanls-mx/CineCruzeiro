@@ -7,27 +7,30 @@ const require = createRequire(import.meta.url);
 const { createClubView } = require("../backend/public/admin-modules/club-view.js");
 
 test("club view renders current plans and escapes external names", () => {
-  const elements = new Map(["clubOverview", "clubPlansList", "clubSubscriptionsList", "clubUsageList"].map((id) => [id, { innerHTML: "" }]));
+  const elements = new Map();
+  const $ = (id) => {
+    if (!elements.has(id)) elements.set(id, { innerHTML: "", value: "", checked: false, hidden: false, classList: { toggle() {} } });
+    return elements.get(id);
+  };
   const state = {
     content: { subscriptionPlans: [{ id: "plan", name: "<script>", monthlyPrice: 25, includedTickets: 1 }], subscriptions: [], subscriptionCredits: [], subscriptionUsage: [], subscriptionPayments: [], users: [] },
-    creating: { clubPlan: false }, selectedClubPlanId: "plan"
+    creating: { clubPlan: false }, selectedClubPlanId: "plan", pendingImages: {}
   };
-  let filled = false;
   const view = createClubView({
-    state, $: (id) => elements.get(id),
+    state, $,
     adminAssetUrl: String,
     clubStatusLabel: String,
     creationPlaceholder: () => "",
     currentClubPlan: () => state.content.subscriptionPlans[0],
     escapeHtml: (value) => String(value).replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
-    fillClubPlanForm: () => { filled = true; },
-    filterClubSubscriptions: () => {},
+    document: { querySelectorAll: () => [] }, isOwnerAdmin: () => false,
+    renderAdminImagePreview: () => {}, syncCreationControl: () => {}, setDisabled: () => {},
     money: (value) => `R$ ${Number(value).toFixed(2)}`,
     paginateAdminItems: (items) => ({ pageItems: items }),
     renderAdminListPager: () => ""
   });
   view.renderClub();
-  assert.equal(filled, true);
+  assert.equal($("clubPlanName").value, "<script>");
   assert.match(elements.get("clubPlansList").innerHTML, /&lt;script&gt;/);
   assert.doesNotMatch(elements.get("clubPlansList").innerHTML, /<script>/);
   assert.match(elements.get("clubOverview").innerHTML, /Desempenho do Clube/);

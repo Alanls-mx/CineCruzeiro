@@ -1,5 +1,5 @@
 ((root) => {
-  function createClubView({ state, $, adminAssetUrl, clubStatusLabel, creationPlaceholder, currentClubPlan, escapeHtml, fillClubPlanForm, filterClubSubscriptions, money, paginateAdminItems, renderAdminListPager }) {
+  function createClubView({ state, $, adminAssetUrl, api, clubStatusLabel, creationPlaceholder, currentClubPlan, document, escapeHtml, isOwnerAdmin, money, paginateAdminItems, renderAdminImagePreview, renderAdminListPager, setAdminSubtab, setDisabled, showToast, syncCreationControl }) {
 function renderClub() {
   const plans = [...(state.content?.subscriptionPlans || [])].sort((a, b) => Number(b.displayOrder ?? 100) - Number(a.displayOrder ?? 100));
   const subscriptions = state.content?.subscriptions || [];
@@ -228,7 +228,153 @@ function renderClub() {
       : `<div class="empty-state"><strong>Nenhum uso de crédito</strong><span>Os ingressos emitidos pelo Clube aparecerão aqui.</span></div>`;
   }
 }
-    return { renderClub };
+    async function viewClubSubscription(subscriptionId) {
+      const target = $("clubSubscriptionDetail");
+      if (!target) return;
+      target.hidden = false;
+      target.innerHTML = `<div class="loading-state">Carregando histórico da assinatura...</div>`;
+      try {
+        const detail = await api(`/api/admin/subscriptions/${encodeURIComponent(subscriptionId)}`);
+        const subscription = detail.subscription || {};
+        const rows = (items, render, empty) => items?.length ? items.map(render).join("") : `<p class="helper-text">${escapeHtml(empty)}</p>`;
+        target.innerHTML = `
+          <div class="subscription-detail-heading">
+            <div><div class="section-title">Histórico da assinatura</div><p class="helper-text">${escapeHtml(subscription.user?.name || subscription.user?.email || subscription.id || "Assinatura")}</p></div>
+            <button class="icon-button" type="button" title="Fechar detalhes" aria-label="Fechar detalhes" data-admin-close="subscription-detail">×</button>
+          </div>
+          <div class="subscription-detail-grid">
+            <section><h3>Mensalidades</h3>${rows(detail.payments, (item) => `<p><strong>${money(item.amount)}</strong><span>${new Date(item.approvedAt || item.createdAt).toLocaleString("pt-BR")} • ${escapeHtml(item.provider || "manual")}</span></p>`, "Nenhuma mensalidade registrada.")}</section>
+            <section><h3>Créditos individuais</h3>${rows(detail.credits, (item) => `<p><strong>${escapeHtml(item.status === "available" ? "Disponível" : item.status === "reserved" ? "Reservado" : item.status === "redeemed" ? "Utilizado" : item.status === "expired" ? "Expirado" : item.status)}</strong><span>${money(item.referenceValue)} • validade ${new Date(item.expiresAt).toLocaleDateString("pt-BR")}</span></p>`, "Nenhum crédito emitido.")}</section>
+            <section><h3>Resgates</h3>${rows(detail.redemptions, (item) => `<p><strong>${money(item.creditAmount)} em crédito</strong><span>Base ${money(item.basePrice)} • complemento ${money(item.additionalPaymentAmount)} • ${escapeHtml(item.status)}</span></p>`, "Nenhum resgate registrado.")}</section>
+            <section><h3>Ciclos</h3>${rows(detail.cycles, (item) => `<p><strong>${new Date(item.cycleStart).toLocaleDateString("pt-BR")} a ${new Date(item.cycleEnd).toLocaleDateString("pt-BR")}</strong><span>${Number(item.creditsIssued || 0)} crédito(s) emitido(s)</span></p>`, "Nenhum ciclo registrado.")}</section>
+          </div>`;
+        target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } catch (error) {
+        target.innerHTML = `<div class="empty-state"><strong>Não foi possível abrir o histórico</strong><span>${escapeHtml(error.message)}</span></div>`;
+      }
+    }
+
+    function changeClubSubscriptionsPage(delta) {
+      state.clubSubscriptionsPage = Math.max(1, Number(state.clubSubscriptionsPage || 1) + Number(delta || 0));
+      renderClub();
+    }
+
+    function changeClubUsagePage(delta) {
+      const usage = state.content?.subscriptionUsage || [];
+      const pageSize = state.clubUsagePageSize || 5;
+      const totalPages = Math.max(1, Math.ceil(usage.length / pageSize));
+      state.clubUsagePage = Math.min(Math.max(1, (state.clubUsagePage || 1) + delta), totalPages);
+      renderClub();
+    }
+
+    function fillClubPlanForm(plan) {
+      if (!$("clubPlanForm")) return;
+      syncCreationControl("clubPlan", "cancelClubPlanCreateButton", "deleteClubPlanButton", Boolean(plan));
+      setDisabled("deleteClubPlanButton", !plan);
+      $("clubPlanId").value = plan?.id || "";
+      $("clubPlanName").value = plan?.name || "";
+      $("clubPlanPrice").value = plan?.monthlyPrice ?? 24.9;
+      $("clubPlanTickets").value = plan?.includedTickets ?? 3;
+      $("clubPlanTicketDiscount").value = Number(plan?.ticketDiscountPercent || 0);
+      $("clubPlanConcessionDiscount").value = Number(plan?.concessionDiscountPercent || 0);
+      $("clubPlanCreditReferenceValue").value = plan?.creditReferenceValue ?? "";
+      $("clubPlanCreditValidityDays").value = plan?.creditValidityDays ?? "";
+      $("clubPlanMaxAccumulatedCredits").value = plan?.maxAccumulatedCredits ?? "";
+      $("clubPlanGracePeriodDays").value = Number(plan?.gracePeriodDays || 0);
+      $("clubPlanAllowRollover").checked = Boolean(plan?.allowCreditRollover);
+      $("clubPlanAllowPriceDifference").checked = plan?.allowPriceDifference !== false;
+      const eligibleFormats = new Set(plan?.eligibleFormats || []);
+      document.querySelectorAll("#clubPlanEligibleFormats input").forEach((input) => {
+        input.checked = eligibleFormats.has(input.value);
+      });
+      $("clubPlanEligibleSessions").value = (plan?.eligibleSessionIds || []).join(", ");
+      if ($("clubPlanAccountingTickets")) $("clubPlanAccountingTickets").value = plan?.accounting?.ticketComponentValue ?? "";
+      if ($("clubPlanAccountingBenefits")) $("clubPlanAccountingBenefits").value = plan?.accounting?.benefitsComponentValue ?? "";
+      if ($("clubPlanAccountingVersion")) $("clubPlanAccountingVersion").value = plan?.accounting?.ruleVersion || "";
+      if ($("clubPlanAccountingEffectiveFrom")) $("clubPlanAccountingEffectiveFrom").value = String(plan?.accounting?.effectiveFrom || "").slice(0, 10);
+      if ($("clubNfceTrigger")) $("clubNfceTrigger").value = state.content?.settings?.nfceTrigger === "payment_approved" ? "payment_approved" : "goods_delivered";
+      if ($("clubPlanCancelAtPeriodEnd")) $("clubPlanCancelAtPeriodEnd").checked = plan?.cancellationRules?.allowPeriodEnd !== false;
+      if ($("clubPlanCancelImmediately")) $("clubPlanCancelImmediately").checked = plan?.cancellationRules?.allowImmediateBillingEnd !== false;
+      if ($("clubPlanAccountingSection")) $("clubPlanAccountingSection").hidden = !isOwnerAdmin();
+      $("clubPlanImageUrl").value = Object.prototype.hasOwnProperty.call(state.pendingImages, "clubPlanImageUrl")
+        ? state.pendingImages.clubPlanImageUrl
+        : plan?.imageUrl || "";
+      $("clubPlanDisplayOrder").value = plan?.displayOrder ?? 100;
+      $("clubPlanFeatured").checked = Boolean(plan?.isFeatured);
+      $("clubPlanBenefits").value = (plan?.benefits || []).join("\n");
+      $("clubPlanActive").checked = plan?.active !== false;
+      if ($("clubPlanEditorTitle")) $("clubPlanEditorTitle").textContent = plan?.name || "Novo plano";
+      if ($("clubPlanEditorSubtitle")) {
+        $("clubPlanEditorSubtitle").textContent = plan
+          ? "Ajuste a oferta publicada sem alterar o histórico das assinaturas existentes."
+          : "Preencha a oferta que será exibida na página do Clube.";
+      }
+      if ($("clubPlanEditorStatusText")) $("clubPlanEditorStatusText").textContent = plan?.active === false ? "Inativo" : "Ativo";
+      $("clubPlanForm")?.classList.toggle("is-inactive", plan?.active === false);
+      renderClubPlanFreeItems(plan);
+      renderClubPlanExcludedItems(plan);
+      renderAdminImagePreview("clubPlanImageUrl", "clubPlanImagePreview", "Prévia do plano");
+    }
+
+    function renderClubPlanExcludedItems(plan) {
+      const target = $("clubPlanExcludedItems");
+      if (!target) return;
+      const excluded = new Set(plan?.excludedConcessionIds || []);
+      const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
+      target.innerHTML = concessions.length
+          ? concessions.map((item) => `
+            <div class="benefit-product-row benefit-product-row-toggle">
+              <label><input type="checkbox" data-club-eligible-item="${escapeHtml(item.id)}" ${excluded.has(String(item.id)) ? "" : "checked"} /><span>${escapeHtml(item.name)}</span></label>
+            </div>`).join("")
+        : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre a bomboniere antes de configurar a elegibilidade.</span></div>`;
+    }
+
+    function renderClubPlanFreeItems(plan) {
+      const target = $("clubPlanFreeItems");
+      if (!target) return;
+      const configured = new Map((plan?.freeConcessionItems || []).map((item) => [String(item.concessionId || item.id), Number(item.quantityPerCycle || item.quantity || 1)]));
+      const concessions = (state.content?.concessions || []).filter((item) => item.active !== false);
+      target.innerHTML = concessions.length
+        ? concessions.map((item) => {
+            const quantity = configured.get(String(item.id)) || 1;
+            const checked = configured.has(String(item.id));
+            return `
+              <div class="benefit-product-row">
+                <label><input type="checkbox" data-club-free-item="${escapeHtml(item.id)}" ${checked ? "checked" : ""} /> <span>${escapeHtml(item.name)}</span></label>
+                <input type="number" min="1" max="20" step="1" value="${quantity}" data-club-free-quantity="${escapeHtml(item.id)}" aria-label="Quantidade grátis por ciclo de ${escapeHtml(item.name)}" />
+              </div>`;
+          }).join("")
+        : `<div class="empty-state"><strong>Sem produtos ativos</strong><span>Cadastre itens na Bomboniere para incluí-los como benefício.</span></div>`;
+    }
+
+    function selectClubPlan(id) {
+      delete state.pendingImages.clubPlanImageUrl;
+      state.creating.clubPlan = false;
+      state.selectedClubPlanId = id;
+      renderClub();
+    }
+
+    function newClubPlan() {
+      setAdminSubtab("club", "plans");
+      delete state.pendingImages.clubPlanImageUrl;
+      state.creating.clubPlan = true;
+      state.selectedClubPlanId = "";
+      $("clubPlansList").innerHTML = creationPlaceholder("Novo plano", "Configure nome, créditos, preço e imagem local no quadro à direita.");
+      fillClubPlanForm(null);
+    }
+
+    function filterClubSubscriptions(value) {
+      state.clubSubscriptionsSearch = String(value || "");
+      state.clubSubscriptionsPage = 1;
+      renderClub();
+      const input = $("clubSubscriptionSearch");
+      if (input) {
+        input.value = state.clubSubscriptionsSearch;
+        input.focus();
+      }
+    }
+
+    return { renderClub, viewClubSubscription, changeClubSubscriptionsPage, changeClubUsagePage, fillClubPlanForm, renderClubPlanExcludedItems, renderClubPlanFreeItems, selectClubPlan, newClubPlan, filterClubSubscriptions };
   }
 
   const api = Object.freeze({ createClubView });

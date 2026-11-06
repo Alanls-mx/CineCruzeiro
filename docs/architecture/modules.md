@@ -69,7 +69,7 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | --- | --- | --- |
 | Dashboard | [dashboard-view](../../backend/public/admin-modules/dashboard-view.js) | [teste](../../tests/admin-dashboard-module.test.mjs) |
 | Telemetria | [performance-view](../../backend/public/admin-modules/performance-view.js) | [teste](../../tests/admin-performance-module.test.mjs) |
-| Clube | [club-view](../../backend/public/admin-modules/club-view.js) | [teste](../../tests/admin-club-module.test.mjs) |
+| Clube: apresentação, planos e assinaturas | [club-view](../../backend/public/admin-modules/club-view.js) e [club-commands](../../backend/public/admin-modules/club-commands.js) | [view](../../tests/admin-club-module.test.mjs), [comandos](../../tests/admin-club-commands.test.mjs); `admin.js` compõe sem criar novo listener |
 | Vendas bomboniere | [concession-sales-view](../../backend/public/admin-modules/concession-sales-view.js) | [teste](../../tests/admin-concession-sales-view.test.mjs) |
 | Produtos bomboniere | [concession-products-view](../../backend/public/admin-modules/concession-products-view.js) | Formulário e catálogo; [teste](../../tests/admin-concession-products-view.test.mjs) |
 | Cupons | [promotions-view](../../backend/public/admin-modules/promotions-view.js) | [teste](../../tests/admin-promotions-view.test.mjs) |
@@ -87,4 +87,4 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Editor de poltronas | [room-seat-editor](../../backend/public/admin-modules/room-seat-editor.js) | Rascunho compartilhado, mapa, tipos e seleção; [teste](../../tests/admin-room-seat-editor.test.mjs) |
 | Marketing por e-mail | [email-campaign-template-engine](../../backend/public/admin-modules/email-campaign-template-engine.js), [email-campaign-editor](../../backend/public/admin-modules/email-campaign-editor.js), [email-campaign-history-view](../../backend/public/admin-modules/email-campaign-history-view.js), [email-template-library-view](../../backend/public/admin-modules/email-template-library-view.js) | [modelo](../../tests/admin-email-campaign-template-engine.test.mjs), [editor](../../tests/admin-email-campaign-editor.test.mjs), [histórico](../../tests/admin-email-campaign-history-view.test.mjs), [biblioteca](../../tests/admin-email-template-library-view.test.mjs) |
 
-Próximos candidatos, ainda **não extraídos**: outras consultas administrativas do Clube, blocos de bilheteria/Point, integrações e grupos de listeners do painel. Auditar dependências e cobertura antes de mover.
+Próximos candidatos, ainda **não extraídos**: blocos de bilheteria/Point, ingressos e QR, integrações e grupos de listeners do painel. Auditar dependências e cobertura antes de mover.
