@@ -32,3 +32,5 @@ Mapa presencial: `box-office-seat-map.js` recebeu canal WebSocket, owner token e
 Rascunho presencial: `box-office-draft-view.js` monta itens, extras, totais de ingressos e referências de hold sem enviar uma venda. `tests/admin-box-office-draft-view.test.mjs` verifica tipo, quantidade, assento e token preservados para o POST posterior. Estoque e preço final continuam sujeitos à validação do servidor.
 
 Resumo presencial: `box-office-sale-summary.js` apresenta cliente, entrega, sessão, ingressos, extras, assentos e valor calculado para a interface. O servidor mantém o cálculo autoritativo no POST. `tests/admin-box-office-sale-summary.test.mjs` cobre a composição local sem chamada externa.
+
+Comando presencial: `box-office-sale-command.js` mantém o POST `/api/box-office/sales`, `clientRequestId` Point em `sessionStorage`, verificações de entrega/impressora, limpeza somente após resposta e tratamento de erro/timeout. Um bloqueio local single-flight impede dois POSTs na mesma página; não altera a idempotência do servidor. `tests/admin-box-office-sale-command.test.mjs` verifica clique repetido e retenção da chave após timeout.
