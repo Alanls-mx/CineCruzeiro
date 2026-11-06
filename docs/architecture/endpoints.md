@@ -6,6 +6,8 @@ No **processo quiescente**, apenas `GET/HEAD /api/health/maintenance` responde 2
 
 O dispatch de `/admin`, `/admin/*`, `/images/*`, `/trailers/*` e `/uploads/*` permanece em `server.js`; a resposta de arquivo está em [staticAssetHandler](../../backend/services/staticAssetHandler.js). `GET /admin/admin.html` sem sessão Admin válida redireciona; o shell público depende de leitura do snapshot de usuários. Não há escrita de negócio nem chamada externa. [Teste de contrato](../../tests/static-http-contract-characterization.test.mjs).
 
+`GET /api/desktop/update/*` conserva o rate limit e a precedência no dispatcher de `server.js` e entrega o arquivo via [desktopUpdateHandler](../../backend/services/desktopUpdateHandler.js): `latest.ini` na raiz sem cache, arquivos versionados (inclusive outro `latest.ini`) com cache imutável, arquivo ausente 404. Público, sem escrita ou provedor. [Teste](../../tests/desktop-update-handler.test.mjs).
+
 | Método e caminho | Estado / função e responsável | Acesso | Persistência e efeitos | Verificação |
 | --- | --- | --- | --- | --- |
 | `GET /api/content` | Ativo; catálogo público em [server.js](../../backend/server.js) | Público | Leitura de filmes, sessões e configurações públicas | [conteúdo](../../tests/public-content-settings.test.mjs) |

@@ -48,6 +48,7 @@ const { createDiscordWebhookService } = require("./services/discordWebhookServic
 const { readReleaseInfo } = require("./services/releaseInfoService");
 const { createRuntimeLifecycle } = require("./services/runtimeLifecycleService");
 const { createStaticAssetHandler } = require("./services/staticAssetHandler");
+const { createDesktopUpdateHandler } = require("./services/desktopUpdateHandler");
 const { CRM_EVENT_TYPES, normalizeCrmEvents, sendCrmWebhook, createCrmWebhookWorker } = require("./services/crmWebhookDeliveryService");
 const emailService = require("./services/emailService");
 const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
@@ -10438,28 +10439,7 @@ const serveStatic = createStaticAssetHandler({
   FRONTEND_PUBLIC_DIR
 });
 
-async function serveDesktopUpdate(res, pathname) {
-  const updateRoot = path.join(PUBLIC_DIR, "downloads", "desktop");
-  const relativePath = pathname.replace(/^\/api\/desktop\/update\/?/, "");
-  const filePath = path.normalize(path.join(updateRoot, relativePath));
-  if (!relativePath || !pathIsInside(updateRoot, filePath)) {
-    sendJson(res, 404, { error: "Atualização não encontrada" });
-    return;
-  }
-
-  try {
-    const file = await fs.readFile(filePath);
-    const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, {
-      ...securityHeaders(),
-      "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
-      "Cache-Control": relativePath === "latest.ini" ? "no-store" : "public, max-age=31536000, immutable"
-    });
-    res.end(file);
-  } catch {
-    sendJson(res, 404, { error: "Atualização não encontrada" });
-  }
-}
+const serveDesktopUpdate = createDesktopUpdateHandler({ PUBLIC_DIR, pathIsInside, sendJson, securityHeaders, MIME_TYPES });
 
 function mercadoPagoReferenceMatches(payment, externalReference) {
   const received = String(externalReference || "");
