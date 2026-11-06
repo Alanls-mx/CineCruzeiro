@@ -1,17 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import vm from "node:vm";
+import pricingService from "../backend/services/checkoutPricingService.js";
 
-const source = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-const pricingSource = source.slice(
-  source.indexOf("function ticketUnitsForOrder("),
-  source.indexOf("\nfunction assertClubPlanEligibility(")
-);
-const context = { Array, Map, Math, Number, String };
-const summarizeClubCreditItems = vm.runInNewContext(`${pricingSource}; summarizeClubCreditItems`, context);
-const calculateClubTicketDiscount = vm.runInNewContext(`${pricingSource}; calculateClubTicketDiscount`, context);
-const calculateCouponDiscountForAmounts = vm.runInNewContext(`${pricingSource}; calculateCouponDiscountForAmounts`, context);
+const { summarizeClubCreditItems, calculateClubTicketDiscount, calculateCouponDiscountForAmounts } = pricingService;
 
 test("créditos funcionam sem ativar o desconto percentual do plano", () => {
   const summary = summarizeClubCreditItems({
