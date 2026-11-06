@@ -1,11 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
-import vm from "node:vm";
 const require = createRequire(import.meta.url);
 const { prepareRefund, prepareConcessionRefund, submitFullRefund, submitConcessionRefund } = require("../backend/services/orderRefundService");
 const { createPerformanceMonitor, percentile } = require("../backend/services/performanceMonitor");
+const { createFullOrderRefundCoordinator } = require("../backend/services/fullOrderRefundCoordinator");
+
+function refundCoordinatorForTest(context) {
+  return createFullOrderRefundCoordinator({
+    ...context,
+    goodsFiscalService: { cancelUnissued: () => {} },
+    broadcastReleasedOrderSeats: async () => {},
+    adjustConcessionStock: () => {}
+  }).cancelOrderWithRefund;
+}
 
 const payment = () => ({ provider: "mercado_pago", providerPaymentId: "ORD123", status: "approved", amount: 12.34, metadata: {} });
 const order = { id: "order1", totalPrice: 12.34 };
@@ -117,8 +125,6 @@ test("monitor keeps administrative diagnostics out of operational p95 and alerts
 });
 
 test("cancellation commits refund intent before provider I/O and retries without cancelling twice", async () => {
-  const source = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-  const functionSource = source.slice(source.indexOf("async function cancelOrderWithRefund("), source.indexOf("\nfunction cancelOrder(db,"));
   const db = { orders: [{ ...order, status: "paid" }], payments: [payment()], tickets: [{ orderId: order.id, status: "active" }] };
   let locked = false;
   let writes = 0;
@@ -156,7 +162,7 @@ test("cancellation commits refund intent before provider I/O and retries without
       return { providerRefundIds: ["REF1"], providerStatus: "refunded" };
     }
   };
-  const cancel = vm.runInNewContext(`${functionSource}; cancelOrderWithRefund`, context);
+  const cancel = refundCoordinatorForTest(context);
   await assert.rejects(cancel(order.id, "Teste", { id: "admin" }));
   assert.equal(db.orders[0].refundStatus, "pending");
   await cancel(order.id, "Teste", { id: "admin" });
@@ -169,8 +175,6 @@ test("cancellation commits refund intent before provider I/O and retries without
 });
 
 test("manual refund requirement does not block order cancellation", async () => {
-  const source = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-  const functionSource = source.slice(source.indexOf("async function cancelOrderWithRefund("), source.indexOf("\nfunction cancelOrder(db,"));
   const manualPayment = { ...payment(), provider: "manual_external" };
   const db = { orders: [{ ...order, status: "paid" }], payments: [manualPayment], tickets: [] };
   let writes = 0;
@@ -194,7 +198,7 @@ test("manual refund requirement does not block order cancellation", async () => 
     isOrderSessionExpired: () => false,
     submitFullRefund: async () => { throw new Error("must not call provider"); }
   };
-  const cancel = vm.runInNewContext(`${functionSource}; cancelOrderWithRefund`, context);
+  const cancel = refundCoordinatorForTest(context);
   const result = await cancel(order.id, "Solicitado", { id: "admin" });
   assert.equal(result.manualRefundRequired, true);
   assert.equal(db.orders[0].status, "cancelled");
@@ -204,8 +208,6 @@ test("manual refund requirement does not block order cancellation", async () => 
 });
 
 test("cancellation is blocked when session has already expired", async () => {
-  const source = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-  const functionSource = source.slice(source.indexOf("async function cancelOrderWithRefund("), source.indexOf("\nfunction cancelOrder(db,"));
   const db = { orders: [{ ...order, status: "paid" }], payments: [payment()], tickets: [] };
   const context = {
     Date, Number, String,
@@ -227,7 +229,7 @@ test("cancellation is blocked when session has already expired", async () => {
     isOrderSessionExpired: () => true,
     submitFullRefund: async () => {}
   };
-  const cancel = vm.runInNewContext(`${functionSource}; cancelOrderWithRefund`, context);
+  const cancel = refundCoordinatorForTest(context);
   await assert.rejects(cancel(order.id, "Motivo", { id: "admin" }), (err) => {
     assert.equal(err.code, "SESSION_EXPIRED");
     return true;
