@@ -70,7 +70,8 @@ test("a entrega online não é rotulada como impressão física", () => {
 test("o schema aceita o estágio pago aguardando impressão", () => {
   assert.match(orderStatusMigration, /'paid_pending_print'/);
   assert.match(orderStatusMigration, /ADD CONSTRAINT orders_status_check/);
-  assert.match(server, /LATEST_SCHEMA_MIGRATION = "037_orders_print_fulfillment_status\.sql"/);
+  const latest = server.match(/LATEST_SCHEMA_MIGRATION = "(\d{3})_[^"]+\.sql"/);
+  assert.ok(latest && Number(latest[1]) >= 37, "a migração de impressão deve continuar incluída no esquema atual");
 });
 
 test("a bilheteria exibe a recuperação da impressão na aba correta", () => {
@@ -90,9 +91,10 @@ test("uma venda física em dinheiro exige impressora instalada antes de criar pe
 });
 
 test("a reimpressão no aplicativo usa a impressora nativa", () => {
-  const start = admin.indexOf("function printOrderTicket(orderId)");
-  const end = admin.indexOf("\nasync function resendOrderTicket", start);
-  const source = admin.slice(start, end);
+  const actions = fs.readFileSync(new URL("../backend/public/admin-modules/order-management-actions.js", import.meta.url), "utf8");
+  const start = actions.indexOf("function printOrderTicket(orderId)");
+  const end = actions.indexOf("\n    async function resendOrderTicket", start);
+  const source = actions.slice(start, end);
   assert.match(source, /window\.cineDesktop\.printUrl\(url, `order-\$\{orderId\}`\)/);
   assert.ok(source.indexOf("window.cineDesktop.printUrl") < source.indexOf("window.open(url"));
   assert.match(admin, /\^\(order-\|ticket-\)/);
