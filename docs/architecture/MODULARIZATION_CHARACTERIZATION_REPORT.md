@@ -49,7 +49,9 @@
 
 - Primeiro contêiner PG16: Falhou ao conectar durante reinício temporário do PostgreSQL na inicialização; contêiner removido e espera pelo postmaster final adicionada. Repetição passou.
 - Upgrade em PG16: Recusado pelo próprio ensaio, que exige PG18. O contêiner foi removido; repetição em PG18 passou.
-- CI do commit anterior `16189b4469f7b3d767abe701bdb6a3e7e5f66127`: Security regression success (run 42125375781). PostgreSQL integration e Browser E2E antes filtravam somente codex/modularize-server-admin; esta mudança inclui a branch de trabalho. Resultado do commit atual depende de push e execução de CI.
+- CI do commit anterior `16189b4469f7b3d767abe701bdb6a3e7e5f66127`: Security regression success (run 42125375781). Na revisão anterior, PostgreSQL integration e Browser E2E filtravam somente codex/modularize-server-admin. A caracterização incluiu a branch de trabalho; os resultados aparecem abaixo.
+
+- CI do commit de caracterização `197604f7d3ba976aca71e9f790bf85576101b87e`: success; segurança 42128156061, E2E 42128156106, PostgreSQL 42128156170. Os três workflows terminaram com sucesso no commit de caracterização. PostgreSQL integration executou matrizes 16/18 e backup/restore sintético no CI.
 
 ## Mudanças estáticas
 

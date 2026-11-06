@@ -23,6 +23,14 @@
     "sha": "16189b4469f7b3d767abe701bdb6a3e7e5f66127",
     "securityRunId": 42125375781,
     "securityConclusion": "success",
-    "note": "PostgreSQL integration e Browser E2E antes filtravam somente codex/modularize-server-admin; esta mudança inclui a branch de trabalho. Resultado do commit atual depende de push e execução de CI."
+    "note": "Na revisão anterior, PostgreSQL integration e Browser E2E filtravam somente codex/modularize-server-admin. A caracterização incluiu a branch de trabalho; os resultados aparecem abaixo."
+  },
+  "ciAtCharacterizationCommit": {
+    "sha": "197604f7d3ba976aca71e9f790bf85576101b87e",
+    "securityRunId": 42128156061,
+    "browserE2eRunId": 42128156106,
+    "postgresRunId": 42128156170,
+    "conclusion": "success",
+    "note": "Os três workflows terminaram com sucesso no commit de caracterização. PostgreSQL integration executou matrizes 16/18 e backup/restore sintético no CI."
   }
 }

@@ -96,6 +96,7 @@ if (mode === "--snapshot") {
     "## Pré-requisitos e CI", "",
     ...validation.setupAttempts.map((attempt) => `- ${attempt.operation}: ${attempt.result}`),
     `- CI do commit anterior \`${validation.ciAtPreviousCommit.sha}\`: Security regression ${validation.ciAtPreviousCommit.securityConclusion} (run ${validation.ciAtPreviousCommit.securityRunId}). ${validation.ciAtPreviousCommit.note}`, "",
+    `- CI do commit de caracterização \`${validation.ciAtCharacterizationCommit.sha}\`: ${validation.ciAtCharacterizationCommit.conclusion}; segurança ${validation.ciAtCharacterizationCommit.securityRunId}, E2E ${validation.ciAtCharacterizationCommit.browserE2eRunId}, PostgreSQL ${validation.ciAtCharacterizationCommit.postgresRunId}. ${validation.ciAtCharacterizationCommit.note}`, "",
     "## Mudanças estáticas", "",
     ...[...predicateDiff.added.map((item) => `- Predicado adicionado: ${item.file} ${item.scope} ${item.predicate}`),
       ...predicateDiff.removed.map((item) => `- Predicado removido: ${item.file} ${item.scope} ${item.predicate}`),
