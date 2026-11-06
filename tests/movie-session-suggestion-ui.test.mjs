@@ -6,12 +6,14 @@ import { fileURLToPath } from "node:url";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const adminSource = fs.readFileSync(path.join(dirname, "../backend/public/admin.js"), "utf8");
+const sessionsSource = fs.readFileSync(path.join(dirname, "../backend/public/admin-modules/movie-sessions-view.js"), "utf8");
+const scheduleSource = fs.readFileSync(path.join(dirname, "../backend/public/admin-modules/session-schedule-view.js"), "utf8");
 const adminHtml = fs.readFileSync(path.join(dirname, "../backend/public/admin.html"), "utf8");
 
 test("nova sessão parte da data de estreia e recebe sugestão de horário", () => {
-  assert.match(adminSource, /releaseDate >= adminTodayKey\(\) \? releaseDate : adminTodayKey\(\)/);
-  assert.match(adminSource, /function suggestedSessionSchedule\(\)/);
-  assert.match(adminSource, /considerando \$\{suggestion\.duration\} min de filme/);
+  assert.match(sessionsSource, /releaseDate >= adminTodayKey\(\) \? releaseDate : adminTodayKey\(\)/);
+  assert.match(scheduleSource, /function suggestedSessionSchedule\(\)/);
+  assert.match(scheduleSource, /considerando \$\{suggestion\.duration\} min de filme/);
   assert.match(adminHtml, /id="sessionScheduleSuggestion"/);
   assert.match(adminHtml, /id="sessionUseSuggestedTime"/);
 });
@@ -20,5 +22,5 @@ test("a sugestão respeita alterações manuais do operador", () => {
   assert.match(adminSource, /sessionTimeManuallyEdited = true/);
   assert.match(adminSource, /apply: !state\.sessionTimeManuallyEdited/);
   assert.match(adminSource, /sessionTimeManuallyEdited = false;\s*updateSessionScheduleSuggestion\(\)/);
-  assert.match(adminSource, /date === adminTodayKey\(\)/);
+  assert.match(scheduleSource, /date === adminTodayKey\(\)/);
 });

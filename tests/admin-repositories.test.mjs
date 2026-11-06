@@ -83,13 +83,14 @@ test("rotas migradas nao entram no advisory lock global", () => {
 
 test("painel atualiza os quatro dominios sem recarregar todo o conteudo", () => {
   const admin = fs.readFileSync(path.join(root, "backend", "public", "admin.js"), "utf8");
-  const promotions = fs.readFileSync(path.join(root, "backend", "public", "admin-modules", "promotions-view.js"), "utf8");
+  const moduleSource = (file) => fs.readFileSync(path.join(root, "backend", "public", "admin-modules", file), "utf8");
   assert.match(admin, /function upsertAdminCollection/);
   assert.match(admin, /function applySessionMutation/);
-  assert.match(admin, /upsertAdminCollection\("movies", saved\)/);
-  assert.match(admin, /upsertAdminCollection\("rooms", saved\)/);
+  assert.match(moduleSource("movie-catalog-commands.js"), /upsertAdminCollection\("movies", saved\)/);
+  assert.match(moduleSource("room-list-view.js"), /upsertAdminCollection\("rooms", saved\)/);
   assert.match(admin, /upsertAdminCollection\("ticketTypes", saved\)/);
-  assert.match(admin, /upsertAdminCollection\("concessions", saved\)/);
-  assert.match(promotions, /upsertAdminCollection\("promotions", saved\)/);
-  assert.match(admin, /upsertAdminCollection\("users", saved\)/);
+  assert.match(moduleSource("concession-products-view.js"), /upsertAdminCollection\("concessions", saved\)/);
+  assert.match(moduleSource("promotions-view.js"), /upsertAdminCollection\("promotions", saved\)/);
+  assert.match(moduleSource("team-accounts-view.js"), /upsertAdminCollection\("users", saved\)/);
+  assert.match(moduleSource("customer-accounts-view.js"), /upsertAdminCollection\("users", saved\)/);
 });

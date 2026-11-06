@@ -15,8 +15,12 @@ test("IDs de pagamento mantem valores antigos validos e rejeitam codigo em atrib
 test("lista administrativa nao coloca IDs de pedidos em handlers inline", () => {
   const source = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
   const concessionSource = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/concession-sales-view.js", import.meta.url)), "utf8");
+  const campaignSource = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/email-campaign-history-view.js", import.meta.url)), "utf8");
+  const movieSource = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/movie-catalog-view.js", import.meta.url)), "utf8");
+  const scheduleSource = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/session-schedule-view.js", import.meta.url)), "utf8");
   assert.doesNotMatch(source, /onclick="[^"]*(?:openOrderView|openConcessionOrderDetail|toggleOrderMenu)\('\$\{escapeHtml\((?:order\.id|payment\.orderId)\)\}/);
   assert.doesNotMatch(concessionSource, /onclick="[^"]*(?:openOrderView|openConcessionOrderDetail|toggleOrderMenu)\('\$\{escapeHtml\((?:order\.id|payment\.orderId)\)\}/);
+  for (const moduleSource of [campaignSource, movieSource, scheduleSource]) assert.doesNotMatch(moduleSource, /\bon(?:click|dragstart|drop)="/);
   assert.match(source, /data-admin-order-id="\$\{escapeHtml\(order\.id\)\}"/);
   assert.match(concessionSource, /data-admin-order-id="\$\{escapeHtml\(order\.id\)\}"/);
   const orderMenu = source.split("function toggleOrderMenu(")[1].split("function toggleEmailCampaignMenu(")[0];
@@ -25,14 +29,14 @@ test("lista administrativa nao coloca IDs de pedidos em handlers inline", () => 
   assert.doesNotMatch(campaignMenu, /onclick=/);
   assert.match(orderMenu, /data-floating-order-action="view"/);
   assert.match(campaignMenu, /data-floating-campaign-action="edit"/);
-  assert.match(source, /data-admin-campaign-id="\$\{escapeHtml\(item\.id\)\}"/);
+  assert.match(campaignSource, /data-admin-campaign-id="\$\{escapeHtml\(item\.id\)\}"/);
   assert.doesNotMatch(source, /onclick="[^"]*copyTicketCode\('\$\{escapeHtml\(/);
   assert.match(source, /data-admin-ticket-action="copy" data-admin-ticket-value="\$\{escapeHtml\(/);
-  const movieRows = source.split('$("moviesList").innerHTML = pagination.pageItems')[1].split('if (!options.preserveForm) fillMovieForm')[0];
+  const movieRows = movieSource.split('$("moviesList").innerHTML = pagination.pageItems')[1].split('if (!options.preserveForm) fillMovieForm')[0];
   assert.doesNotMatch(movieRows, /on(?:click|dragstart|drop)="/);
   assert.match(movieRows, /data-movie-id="\$\{escapeHtml\(movie\.id\)\}"/);
   assert.doesNotMatch(source, /onclick="[^"]*(?:showSessionTickets|openSessionEditor|removeSession|openGlobalSessionEditor|openSessionDashboardDetail)\('\$\{escapeHtml\(/);
-  assert.match(source, /data-admin-session-action="global-edit" data-admin-movie-id="\$\{escapeHtml\(entry\.movie\.id\)\}"/);
+  assert.match(scheduleSource, /data-admin-session-action="global-edit" data-admin-movie-id="\$\{escapeHtml\(entry\.movie\.id\)\}"/);
 });
 
 test("listas administrativas tratam IDs como dados, nao codigo inline", () => {

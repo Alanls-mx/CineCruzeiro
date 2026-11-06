@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 
 const lookupHandler = readFileSync(new URL("../backend/services/tmdbLookupHandler.js", import.meta.url), "utf8");
 const admin = readFileSync(new URL("../backend/public/admin.js", import.meta.url), "utf8");
+const movieView = readFileSync(new URL("../backend/public/admin-modules/movie-catalog-view.js", import.meta.url), "utf8");
 const adminHtml = readFileSync(new URL("../backend/public/admin.html", import.meta.url), "utf8");
 const require = createRequire(import.meta.url);
 const { tmdbMoviePayload } = require("../backend/services/tmdbMovieMapper.js");
@@ -25,8 +26,8 @@ test("importação TMDB retorna o diagnóstico dos campos não coletados", () =>
 
 test("admin orienta o operador e oferece atalhos para preencher cada campo", () => {
   assert.match(adminHtml, /id="tmdbMissingFields"/);
-  assert.match(admin, /function renderTmdbMissingFields\(/);
-  assert.match(admin, /data-tmdb-missing-field/);
-  assert.match(admin, /setMovieWizardStep\(step\)/);
+  assert.match(movieView, /function renderTmdbMissingFields\(/);
+  assert.match(movieView, /data-tmdb-missing-field/);
+  assert.match(movieView, /setMovieWizardStep\(step\)/);
   assert.match(admin, /complete-os manualmente para finalizar o cadastro/);
 });

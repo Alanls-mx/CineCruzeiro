@@ -1,20 +1,7 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-
-const source = fs.readFileSync(new URL("../backend/public/admin.js", import.meta.url), "utf8");
-const functions = [
-  "emailCampaignPayload",
-  "selectedCampaignMovie",
-  "selectedCampaignMovies",
-  "selectedCampaignCatalogMovies",
-  "selectedCampaignCatalogItem"
-].map((name) => {
-  const match = source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`));
-  assert.ok(match, `${name} must exist`);
-  return match[0];
-}).join("\n");
+import { fileURLToPath } from "node:url";
 
 test("weekly email campaign recognizes multiple and automatic movie selections", async () => {
   const browser = await chromium.launch({ headless: true });
@@ -29,9 +16,11 @@ test("weekly email campaign recognizes multiple and automatic movie selections",
       <select id="emailCampaignTemplate"><option value="weekly" selected>Semanal</option></select>
       <select id="emailCampaignObjective"><option value="programming" selected>Programação</option></select>
     `);
-    await page.evaluate((code) => {
-      window.$ = (id) => document.getElementById(id);
-      window.state = {
+    await page.addScriptTag({ path: fileURLToPath(new URL("../backend/public/admin-modules/email-campaign-template-engine.js", import.meta.url)) });
+    await page.addScriptTag({ path: fileURLToPath(new URL("../backend/public/admin-modules/email-campaign-editor.js", import.meta.url)) });
+    await page.evaluate(() => {
+      const $ = (id) => document.getElementById(id);
+      const state = {
         content: { movies: [
           { id: "movie-a", title: "Filme A", status: "active", sessions: [] },
           { id: "movie-b", title: "Filme B", status: "active", sessions: [] },
@@ -44,34 +33,38 @@ test("weekly email campaign recognizes multiple and automatic movie selections",
         emailCampaignIdempotencyKey: "test",
         emailCampaignUseCanonicalHtml: false
       };
-      window.templateLayout = "weekly";
-      window.campaignTemplateDefinition = () => ({ catalog: "movie", layout: window.templateLayout });
-      window.campaignTemplateVariant = () => null;
-      window.campaignPreviewVariables = () => ({});
-      window.campaignTemplateHtml = () => "<p>Programação</p>";
-      window.campaignCanonicalHtmlWithEdits = () => "";
-      window.campaignTemplateAbsoluteUrl = (value) => value || "";
-      window.eval(code);
-    }, functions);
+      const engine = window.CineAdminModules.emailCampaignTemplateEngine.createEmailCampaignTemplateEngine({
+        state, $, escapeHtml: (value) => String(value), money: (value) => String(value),
+        campaignEditorAssetUrl: (value) => value, window, API_BASE: "https://example.test"
+      });
+      const editor = window.CineAdminModules.emailCampaignEditor.createEmailCampaignEditor({
+        state, $, API_BASE: "https://example.test", campaignTemplateDefinition: engine.campaignTemplateDefinition,
+        campaignTemplateVariant: engine.campaignTemplateVariant, campaignTemplateAbsoluteUrl: engine.campaignTemplateAbsoluteUrl,
+        campaignTemplateHtml: () => "<p>Programação</p>", selectedCampaignMovie: engine.selectedCampaignMovie,
+        selectedCampaignMovies: engine.selectedCampaignMovies, selectedCampaignConcessions: engine.selectedCampaignConcessions,
+        selectedCampaignClubPlan: engine.selectedCampaignClubPlan, money: (value) => String(value), couponRuleLabel: () => ""
+      });
+      window.campaignTest = { engine, editor };
+    });
 
     const explicit = await page.evaluate(() => ({
-      catalog: selectedCampaignCatalogItem().map((movie) => movie.id),
-      payload: emailCampaignPayload().movieIds
+      catalog: window.campaignTest.engine.selectedCampaignCatalogItem().map((movie) => movie.id),
+      payload: window.campaignTest.editor.emailCampaignPayload().movieIds
     }));
     assert.deepEqual(explicit, { catalog: ["movie-b"], payload: ["movie-b"] });
 
     const automatic = await page.evaluate(() => {
-      for (const option of $("emailCampaignMovies").options) option.selected = false;
+      for (const option of document.getElementById("emailCampaignMovies").options) option.selected = false;
       return {
-        catalog: selectedCampaignCatalogItem().map((movie) => movie.id),
-        payload: emailCampaignPayload().movieIds
+        catalog: window.campaignTest.engine.selectedCampaignCatalogItem().map((movie) => movie.id),
+        payload: window.campaignTest.editor.emailCampaignPayload().movieIds
       };
     });
     assert.deepEqual(automatic, { catalog: ["movie-a", "movie-b"], payload: ["movie-a", "movie-b"] });
 
     const missingSingleMovie = await page.evaluate(() => {
-      window.templateLayout = "premiere";
-      return selectedCampaignCatalogItem();
+      document.getElementById("emailCampaignTemplate").innerHTML = '<option value="premiere" selected>Estreia</option>';
+      return window.campaignTest.engine.selectedCampaignCatalogItem();
     });
     assert.equal(missingSingleMovie, null);
   } finally {

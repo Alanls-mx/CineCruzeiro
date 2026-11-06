@@ -78,12 +78,14 @@ test("gerador Gemini foi removido das rotas, serviços e interface", () => {
   const server = readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
   const adminHtml = readFileSync(new URL("../backend/public/admin.html", import.meta.url), "utf8");
   const adminJs = readFileSync(new URL("../backend/public/admin.js", import.meta.url), "utf8");
+  const campaignHistory = readFileSync(new URL("../backend/public/admin-modules/email-campaign-history-view.js", import.meta.url), "utf8");
   const integrations = readFileSync(new URL("../backend/services/integrationConfigService.js", import.meta.url), "utf8");
 
   assert.doesNotMatch(server, /campaigns\/ai-draft|email\/prompt-templates/);
   assert.doesNotMatch(adminHtml, /Gemini|Criar com IA|gerador com IA/i);
   assert.doesNotMatch(adminJs, /campaigns\/ai-draft|email\/prompt-templates|Gemini/i);
-  assert.match(adminJs, /function emailCampaignHistoryLinkedLabel\(/);
+  assert.doesNotMatch(campaignHistory, /campaigns\/ai-draft|email\/prompt-templates|Gemini/i);
+  assert.match(campaignHistory, /function emailCampaignHistoryLinkedLabel\(/);
   assert.doesNotMatch(integrations, /Gemini|generativelanguage\.googleapis/i);
   assert.equal(existsSync(new URL("../backend/services/geminiEmailAgentService.js", import.meta.url)), false);
   assert.equal(existsSync(new URL("../backend/services/emailCampaignAiService.js", import.meta.url)), false);
