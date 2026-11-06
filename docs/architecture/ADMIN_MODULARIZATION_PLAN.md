@@ -20,7 +20,7 @@ Inventário AST: 533 declarações de função no nível do arquivo; 83 nomes de
 
 ## Contrato de carregamento existente
 
-`admin.html` carrega `jsQR.js`, os 14 scripts locais abaixo, `admin.js` e então `social-studio.js`, sem bundler e sem handler HTML inline. Cada módulo publica uma API congelada em `window.CineAdminModules.<nome>` e também via CommonJS para testes. `admin.js` instancia as factories após todos os scripts de módulo; `social-studio.js` é um controlador posterior com estado/eventos próprios. A ordem, os IDs, `data-*` e a CSP (`script-src-attr 'none'`) são contrato. [Teste de composição](../../tests/admin-module-composition.test.mjs) verifica ordem, nomes, exportações e ausência de handlers inline.
+`admin.html` carrega `jsQR.js`, os 24 scripts locais abaixo, `admin.js` e então `social-studio.js`, sem bundler e sem handler HTML inline. Cada módulo publica uma API congelada em `window.CineAdminModules.<nome>` e também via CommonJS para testes. `admin.js` instancia as factories após todos os scripts de módulo; `social-studio.js` é um controlador posterior com estado/eventos próprios. A ordem, os IDs, `data-*` e a CSP (`script-src-attr 'none'`) são contrato. [Teste de composição](../../tests/admin-module-composition.test.mjs) verifica ordem, nomes, exportações e ausência de handlers inline.
 
 | Módulo em `admin-modules/` | API consumida / papel | Efeito e ciclo atual |
 | --- | --- | --- |
@@ -37,6 +37,9 @@ Inventário AST: 533 declarações de função no nível do arquivo; 83 nomes de
 | `concession-sales-view.js` | `concessionSalesView.createConcessionSalesView` | Render, consulta e abertura de pedido; refund e arquivamento injetados pelo shell. |
 | `promotions-view.js` | `promotionsView.createPromotionsView` | Render, formulários e mutações via `api` injetada; permissões vêm do shell/servidor. |
 | `ads-view.js` | `adsView.createAdsView` | Render, upload e mutações de anúncio via callbacks/API. |
+| `concession-products-view.js` | `concessionProductsView.createConcessionProductsView` | Formulário e comandos de produto/estoque; vendas seguem separadas. |
+| `session-schedule-view.js` | `sessionScheduleView.createSessionScheduleView` | Agenda, filtros, sugestão de horário, conflito e limpeza; listeners seguem presos a nós recriados. |
+| `email-*` (quatro módulos) | Factories de modelo, editor, histórico e biblioteca | Formulário, prévia, comandos, filtros e modais de marketing; timer de resolução pertence ao editor, poll de histórico pertence à view. |
 | `movie-catalog-events.js` | `movieCatalogEvents.bindMovieCatalogEvents` | Um binder de filtros e drag/drop chamado por `bindEvents`; sem disposer hoje. |
 | `movie-catalog-view.js` / `movie-catalog-commands.js` | Factories `createMovieCatalogView` / `createMovieCatalogCommands` | Lista, assistente, edição e posição em módulos separados; comandos de criação, publicação e exclusão usam `api` injetada. Dependências cruzadas com sessões são callbacks tardios, sem novo estado global. |
 | `session-ticket-actions.js` | `sessionTicketActions.createSessionTicketActionHandler` | Retorna handler delegado; o shell o chama dentro do clique global, sem registrar listener próprio. |
@@ -76,6 +79,10 @@ O aplicativo Windows injeta `window.cineDesktop` via WebView2; `checkPrinter` e 
 5. **Câmera, WebSocket, Point e financeiro:** só após testes de negação de câmera, reconnect/hold, impressão, pagamento pendente e repetição de comando. Preservar `clientRequestId`, correlação de print, saldo/estoque e autoridade do servidor.
 
 O alvo final do Admin depende destas etapas posteriores. A presente guarda e os testes protegem a composição; não demonstram ainda equivalência de todos os formulários, lifecycle de cada recurso nem prontidão operacional. [Relatório consolidado](../RELATORIO_FINAL_REFATORACAO.md) e [checklist da Fase 8](../FASE8_HOMOLOGACAO.md) continuam separados da medição de linhas.
+
+## Avanço de catálogo e marketing
+
+A etapa seguinte extraiu equipe, filmes, sessões, salas, agenda global, catálogo de produtos e campanhas para módulos coesos. A medição passou de 11.985 para 8.925 linhas físicas em `admin.js` (−3.060). O [resultado da etapa](ADMIN_MODULARIZATION_STAGE1_RESULT.md) relaciona cada módulo a endpoint, permissão, persistência, teste e risco residual. A meta de 7.000–9.000 linhas foi atingida; a meta final de 2.000–3.500 permanece para as próximas etapas. Os candidatos prioritários são o registro de eventos do shell, interfaces de bilheteria/Point, Clube e integrações, todos dependentes de testes de ciclo de vida e segurança antes de extração.
 
 ## Evidência desta etapa
 

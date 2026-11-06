@@ -71,6 +71,7 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Telemetria | [performance-view](../../backend/public/admin-modules/performance-view.js) | [teste](../../tests/admin-performance-module.test.mjs) |
 | Clube | [club-view](../../backend/public/admin-modules/club-view.js) | [teste](../../tests/admin-club-module.test.mjs) |
 | Vendas bomboniere | [concession-sales-view](../../backend/public/admin-modules/concession-sales-view.js) | [teste](../../tests/admin-concession-sales-view.test.mjs) |
+| Produtos bomboniere | [concession-products-view](../../backend/public/admin-modules/concession-products-view.js) | Formulário e catálogo; [teste](../../tests/admin-concession-products-view.test.mjs) |
 | Cupons | [promotions-view](../../backend/public/admin-modules/promotions-view.js) | [teste](../../tests/admin-promotions-view.test.mjs) |
 | Anúncios | [ads-view](../../backend/public/admin-modules/ads-view.js) | [teste](../../tests/admin-ads-view.test.mjs) |
 | Eventos de filmes | [movie-catalog-events](../../backend/public/admin-modules/movie-catalog-events.js) | [teste](../../tests/admin-movie-catalog-events.test.mjs) |
@@ -81,7 +82,9 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Contas de clientes | [customer-accounts-view](../../backend/public/admin-modules/customer-accounts-view.js) | [teste](../../tests/admin-customer-accounts-view.test.mjs) |
 | Equipe e permissões visuais | [team-accounts-view](../../backend/public/admin-modules/team-accounts-view.js) | [teste](../../tests/admin-team-accounts-view.test.mjs); autorização continua no servidor |
 | Lista e editor de sessões do filme | [movie-sessions-view](../../backend/public/admin-modules/movie-sessions-view.js) | Renderização, criação/edição/exclusão e conflitos de sala; [teste](../../tests/admin-movie-sessions-view.test.mjs) |
+| Agenda global de sessões | [session-schedule-view](../../backend/public/admin-modules/session-schedule-view.js) | Filtros, horários, conflito e intervalo de limpeza; [teste](../../tests/admin-session-schedule-view.test.mjs) |
 | Lista e formulário de salas | [room-list-view](../../backend/public/admin-modules/room-list-view.js) | Persistência via `/api/rooms` e atualização após resposta; [teste](../../tests/admin-room-list-view.test.mjs) |
 | Editor de poltronas | [room-seat-editor](../../backend/public/admin-modules/room-seat-editor.js) | Rascunho compartilhado, mapa, tipos e seleção; [teste](../../tests/admin-room-seat-editor.test.mjs) |
+| Marketing por e-mail | [email-campaign-template-engine](../../backend/public/admin-modules/email-campaign-template-engine.js), [email-campaign-editor](../../backend/public/admin-modules/email-campaign-editor.js), [email-campaign-history-view](../../backend/public/admin-modules/email-campaign-history-view.js), [email-template-library-view](../../backend/public/admin-modules/email-template-library-view.js) | [modelo](../../tests/admin-email-campaign-template-engine.test.mjs), [editor](../../tests/admin-email-campaign-editor.test.mjs), [histórico](../../tests/admin-email-campaign-history-view.test.mjs), [biblioteca](../../tests/admin-email-template-library-view.test.mjs) |
 
-Próximos candidatos, ainda **não extraídos**: outras consultas administrativas do Clube, gestão de clientes, formulários de sessão e grupos de listeners do painel. Auditar dependências e cobertura antes de mover.
+Próximos candidatos, ainda **não extraídos**: outras consultas administrativas do Clube, blocos de bilheteria/Point, integrações e grupos de listeners do painel. Auditar dependências e cobertura antes de mover.
