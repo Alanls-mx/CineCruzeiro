@@ -11956,25 +11956,30 @@ async function retryCrmDeadLetters() {
   }
 }
 
-async function initAdmin() {
-  const logo = $("adminLogoImg");
-  if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp?brand=cinecruzeiro-goldstars-v2-2026`;
-  bindEvents();
-  setupPerformanceControls();
-  setBoxOfficeTab("newSale");
-  const user = await loadAdminUser();
-  if (user?.twoFactorSetupRequired) {
-    setAdminSubtab("accounts", "security");
-    activatePanel("usersPanel", { scroll: false });
-    await openTwoFactorSettings();
-    return;
-  }
-  await loadContent();
-  restoreActivePointPayment();
-  if ($("logsPanel")?.classList.contains("active")) {
-    startPerformanceStream();
-    void loadPerformance();
-  }
+let adminInitialization = null;
+function initAdmin() {
+  if (adminInitialization) return adminInitialization;
+  adminInitialization = (async () => {
+    const logo = $("adminLogoImg");
+    if (logo && API_BASE) logo.src = `${API_BASE}/images/logo-display.webp?brand=cinecruzeiro-goldstars-v2-2026`;
+    bindEvents();
+    setupPerformanceControls();
+    setBoxOfficeTab("newSale");
+    const user = await loadAdminUser();
+    if (user?.twoFactorSetupRequired) {
+      setAdminSubtab("accounts", "security");
+      activatePanel("usersPanel", { scroll: false });
+      await openTwoFactorSettings();
+      return;
+    }
+    await loadContent();
+    restoreActivePointPayment();
+    if ($("logsPanel")?.classList.contains("active")) {
+      startPerformanceStream();
+      void loadPerformance();
+    }
+  })();
+  return adminInitialization;
 }
 
 initAdmin();
