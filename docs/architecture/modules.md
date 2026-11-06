@@ -74,6 +74,7 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Cupons | [promotions-view](../../backend/public/admin-modules/promotions-view.js) | [teste](../../tests/admin-promotions-view.test.mjs) |
 | Anúncios | [ads-view](../../backend/public/admin-modules/ads-view.js) | [teste](../../tests/admin-ads-view.test.mjs) |
 | Eventos de filmes | [movie-catalog-events](../../backend/public/admin-modules/movie-catalog-events.js) | [teste](../../tests/admin-movie-catalog-events.test.mjs) |
+| Catálogo de filmes no Admin | [movie-catalog-view](../../backend/public/admin-modules/movie-catalog-view.js) apresenta lista, formulário e assistente; [movie-catalog-commands](../../backend/public/admin-modules/movie-catalog-commands.js) coordena CRUD, publicação e ordem | [testes de view](../../tests/admin-movie-catalog-view.test.mjs), [comandos](../../tests/admin-movie-catalog-commands.test.mjs); API e permissão continuam no servidor |
 | Ações de sessões e ingressos | [session-ticket-actions](../../backend/public/admin-modules/session-ticket-actions.js) | [teste](../../tests/admin-session-ticket-actions.test.mjs) |
 | Logs | [log-presentation](../../backend/public/admin-modules/log-presentation.js), [log-events](../../backend/public/admin-modules/log-events.js) | [teste](../../tests/admin-log-events.test.mjs) |
 | Repasse de bilheteria | [ticket-finance-view](../../backend/public/admin-modules/ticket-finance-view.js) | [teste](../../tests/admin-ticket-finance-view.test.mjs) |

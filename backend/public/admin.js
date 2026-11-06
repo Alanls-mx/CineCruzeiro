@@ -1599,218 +1599,25 @@ async function persistSettings(payload, title, message) {
   showToast("Alterações salvas.");
 }
 
-function renderMoviePublishSummary() {
-  const target = $("moviePublishSummary");
-  if (!target) return;
-  const sessions = state.movieDraftSessions || [];
-  target.innerHTML = `
-    <div><span>Título</span><strong>${escapeHtml($("movieTitle").value || "Sem título")}</strong></div>
-    <div><span>Página</span><strong>/filmes/${escapeHtml($("movieSlug").value || slugify($("movieTitle").value) || "novo-filme")}</strong></div>
-    <div><span>Status no site</span><strong>${publicMovieStatusLabel($("movieStatus").value)}</strong></div>
-    <div><span>Posição no catálogo</span><strong>${escapeHtml($("movieCatalogPosition").value || "1")} de ${$("movieCatalogPosition").options.length || 1}</strong></div>
-    <div><span>Sessões cadastradas</span><strong>${sessions.length}</strong></div>
-    <div><span>Destaque da home</span><strong>${$("movieHighlight").checked ? "Sim" : "Não"}</strong></div>
-  `;
-}
+const { renderMoviePublishSummary, setMovieWizardStep, validateMovieWizardStep, renderMovies, fillMovieForm, movieFormSnapshot, confirmMovieNavigation, renderTmdbMissingFields } = window.CineAdminModules.movieCatalogView.createMovieCatalogView({
+  state, $, document, escapeHtml, slugify, publicMovieStatusLabel, setDisabled, showToast, paginateAdminItems, creationPlaceholder, currentMovie, renderAdminListPager, moviePriorityState, workflowStatusLabel, adminAssetUrl, syncCreationControl, renderMovieMediaPreview, populateMovieCatalogPositions: (...args) => populateMovieCatalogPositions(...args), renderSessions: (...args) => renderSessions(...args), closeSessionEditor: (...args) => closeSessionEditor(...args), getMoviePayload: (...args) => getMoviePayload(...args), confirm
+});
 
-function setMovieWizardStep(step) {
-  const nextStep = Math.max(0, Math.min(4, Number(step || 0)));
-  state.movieWizardStep = nextStep;
-  document.querySelectorAll("[data-movie-step]").forEach((button) => {
-    const buttonStep = Number(button.dataset.movieStep);
-    button.classList.toggle("active", buttonStep === nextStep);
-    button.classList.toggle("done", buttonStep < nextStep);
-  });
-  document.querySelectorAll("[data-movie-step-panel]").forEach((panel) => {
-    panel.classList.toggle("active", Number(panel.dataset.movieStepPanel) === nextStep);
-  });
-  setDisabled("movieWizardBack", nextStep === 0);
-  $("movieWizardNext").hidden = nextStep === 4;
-  $("moviePublishButton").hidden = nextStep !== 4;
-  if (nextStep === 4) renderMoviePublishSummary();
-}
 
-function validateMovieWizardStep(step, finalPublish = false) {
-  if (step >= 0 && !$("movieTitle").value.trim()) {
-    showToast("Informe o título do filme.", "error");
-    setMovieWizardStep(0);
-    $("movieTitle").focus();
-    return false;
-  }
-  if (step >= 0 && !$("movieSlug").value.trim()) {
-    $("movieSlug").value = slugify($("movieTitle").value);
-  }
-  if (!finalPublish) return true;
-  if (!$("movieDuration").value.trim()) {
-    showToast("Informe a duração do filme antes de publicar.", "error");
-    setMovieWizardStep(1);
-    $("movieDuration").focus();
-    return false;
-  }
-  if (!$("moviePosterUrl").value.trim()) {
-    showToast("Adicione um pôster antes de publicar.", "error");
-    setMovieWizardStep(2);
-    return false;
-  }
-  return true;
-}
 
-function renderMovies(options = {}) {
-  const catalog = [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
-  const catalogPositions = new Map(catalog.map((movie, index) => [movie.id, index + 1]));
-  const search = ($("movieCatalogSearch")?.value || "").trim().toLocaleLowerCase("pt-BR");
-  const filter = $("movieCatalogFilter")?.value || "";
-  const movies = catalog.filter((movie) => {
-    const workflow = movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published");
-    const matches = !filter || (filter === "draft" ? workflow === "draft"
-      : filter === "archived" ? workflow === "archived" || (workflow !== "draft" && movie.status === "hidden")
-      : workflow === "published" && movie.status === filter);
-    return matches && String(movie.title || "").toLocaleLowerCase("pt-BR").includes(search);
-  });
-  if (state.creating.movie) {
-    $("moviesList").innerHTML = creationPlaceholder("Novo filme em edição", "Preencha o quadro à direita e publique quando estiver pronto.");
-    if (!options.preserveForm) fillMovieForm(null);
-    return;
-  }
-  if (!movies.length) {
-    $("moviesList").innerHTML = `
-      <div class="empty-state">
-        <strong>${catalog.length ? "Nenhum filme encontrado" : "Nenhum filme cadastrado"}</strong>
-        <span>${catalog.length ? "Altere a busca ou o filtro de situação." : "Use Novo Filme ou a busca TMDB para montar o catálogo."}</span>
-      </div>
-    `;
-    if (!options.preserveForm) fillMovieForm(currentMovie());
-    return;
-  }
 
-  const pagination = paginateAdminItems(movies, "movies", options.preserveForm ? "" : "selectedMovieId");
-  $("moviesList").innerHTML = pagination.pageItems
-    .map((movie) => {
-      const sessionCount = movie.sessions?.length || 0;
-      const active = movie.id === state.selectedMovieId ? "active" : "";
-      const statusLabel = publicMovieStatusLabel(movie.status);
-      const priorityState = moviePriorityState(movie);
-      const workflowLabel = workflowStatusLabel(movie.workflowStatus);
-      const release = movie.releaseDate ? ` • estreia ${new Date(`${movie.releaseDate}T12:00:00`).toLocaleDateString("pt-BR")}` : "";
-      const automation = movie.autoPublish ? " • auto" : "";
-      const updated = movie.updatedAt ? ` • atualizado ${new Date(movie.updatedAt).toLocaleDateString("pt-BR")}` : "";
-      return `
-        <div class="movie-row ${active}" draggable="true" data-movie-id="${escapeHtml(movie.id)}">
-          <button class="drag-handle" type="button" draggable="true" aria-label="Arrastar para mudar prioridade" title="Arrastar para mudar prioridade">↕</button>
-          <div class="movie-thumb">${movie.posterUrl ? `<img src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : `<span>${escapeHtml(movie.rating || "L")}</span>`}</div>
-          <div>
-            <span class="list-title">${escapeHtml(movie.title)}</span>
-            <span class="movie-status-pill ${escapeHtml(priorityState.className)}"><span></span>${escapeHtml(priorityState.label)}</span>
-            <span class="list-meta">Posição ${catalogPositions.get(movie.id)} • ${workflowLabel} • ${statusLabel} • ${sessionCount} sessões • ${escapeHtml(movie.duration || "-")} • ${escapeHtml(movie.rating || "L")}${release}${automation}${movie.isHighlight ? " • destaque" : ""}${updated}</span>
-          </div>
-          <div class="movie-row-actions">
-            <button class="icon-button" type="button" data-movie-action="menu" aria-label="Ações do filme">•••</button>
-            <div id="movieMenu-${escapeHtml(movie.id)}" class="context-menu-popover" hidden>
-              <button type="button" data-movie-action="duplicate">Duplicar</button>
-              <button type="button" data-movie-action="move-up">Mover para cima</button>
-              <button type="button" data-movie-action="move-down">Mover para baixo</button>
-              <button type="button" data-movie-action="archive">Arquivar</button>
-              <button class="danger-text" type="button" data-movie-action="delete">Excluir</button>
-            </div>
-          </div>
-        </div>
-      `;
-    })
-    .join("") + renderAdminListPager("movies", pagination, "filme(s)");
 
-  if (!options.preserveForm) fillMovieForm(currentMovie());
-}
 
-function fillMovieForm(movie) {
-  syncCreationControl("movie", "cancelMovieCreateButton", "deleteMovieButton", Boolean(movie));
-  setDisabled("deleteMovieButton", !movie);
-  setDisabled("addSessionButton", false);
-  $("addSessionButtonLabel").textContent = movie ? "Adicionar sessão" : "Salvar rascunho e adicionar sessão";
-  $("movieFormHint").textContent = movie ? `Editando ${movie.title}` : "Novo filme";
-  $("movieId").value = movie?.id || "";
-  $("movieWorkflowStatus").value = movie?.workflowStatus || "draft";
-  $("movieTitle").value = movie?.title || "";
-  $("movieOriginalTitle").value = movie?.originalTitle || "";
-  $("movieSlug").value = movie?.slug || movie?.id || "";
-  $("movieSlug").dataset.touched = movie ? "true" : "";
-  $("movieStatus").value = movie?.status || "now_playing";
-  $("movieRating").value = movie?.rating || "L";
-  $("movieReleaseDate").value = movie?.releaseDate || "";
-  $("movieAutoPublish").checked = Boolean(movie?.autoPublish);
-  $("movieDuration").value = movie?.duration || "";
-  state.movieDraftMetadata = structuredClone(movie?.metadata || {});
-  $("movieDirector").value = movie?.director || "";
-  $("movieTag").value = movie?.tag ?? "";
-  populateMovieCatalogPositions(movie);
-  $("movieGenre").value = (movie?.genre || []).join(", ");
-  $("movieSynopsis").value = movie?.synopsis || "";
-  $("movieTrailer").value = movie?.trailerYoutubeId || "";
-  $("movieHighlight").checked = Boolean(movie?.isHighlight);
-  $("moviePosterUrl").value = movie?.posterUrl || "";
-  $("movieBackdropUrl").value = movie?.backdropUrl || "";
-  renderMovieMediaPreview("moviePosterUrl", "moviePosterPreview", "Prévia do pôster");
-  renderMovieMediaPreview("movieBackdropUrl", "movieBackdropPreview", "Prévia do banner");
-  state.movieDraftSessions = (movie?.sessions || []).map((session) => ({ ...session }));
-  closeSessionEditor();
-  renderSessions(state.movieDraftSessions);
-  setMovieWizardStep(0);
-  renderTmdbMissingFields([]);
-  state.movieFormSnapshot = movieFormSnapshot();
-}
 
-function movieFormSnapshot() {
-  return JSON.stringify({ ...getMoviePayload($("movieWorkflowStatus").value), position: $("movieCatalogPosition").value });
-}
 
-function confirmMovieNavigation() {
-  if (state.savingMovie || state.savingSession) return false;
-  return !state.movieFormSnapshot || state.movieFormSnapshot === movieFormSnapshot()
-    || confirm("Há alterações não salvas no filme. Descartar essas alterações?");
-}
 
-const TMDB_FIELD_TARGETS = {
-  title: "movieTitle",
-  duration: "movieDuration",
-  director: "movieDirector",
-  genre: "movieGenre",
-  synopsis: "movieSynopsis",
-  rating: "movieRating",
-  posterUrl: "moviePosterUrl",
-  backdropUrl: "movieBackdropUrl",
-  trailerYoutubeId: "movieTrailer",
-  releaseDate: "movieReleaseDate"
-};
 
-function renderTmdbMissingFields(fields = []) {
-  const target = $("tmdbMissingFields");
-  if (!target) return;
-  const missingFields = Array.isArray(fields) ? fields.filter((field) => field?.field && field?.label) : [];
-  target.hidden = missingFields.length === 0;
-  if (!missingFields.length) {
-    target.innerHTML = "";
-    return;
-  }
-  const plural = missingFields.length === 1 ? "dado não foi coletado" : "dados não foram coletados";
-  target.innerHTML = `
-    <div>
-      <strong>Complete ${missingFields.length} ${plural} pelo TMDB</strong>
-      <p>Selecione um campo para ir direto à etapa correspondente e informá-lo manualmente.</p>
-    </div>
-    <div class="tmdb-missing-field-list">
-      ${missingFields.map((field) => `<button class="tmdb-missing-field" type="button" data-tmdb-missing-field="${escapeHtml(field.field)}" data-tmdb-missing-step="${Number(field.step) || 0}">${escapeHtml(field.label)}</button>`).join("")}
-    </div>
-  `;
-  target.querySelectorAll("[data-tmdb-missing-field]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const step = Number(button.dataset.tmdbMissingStep || 0);
-      const fieldId = button.dataset.tmdbMissingField;
-      setMovieWizardStep(step);
-      const input = $(TMDB_FIELD_TARGETS[fieldId]);
-      input?.focus({ preventScroll: true });
-      input?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-  });
-}
+
+
+
+
+
+
 
 async function searchTmdb() {
   const query = $("tmdbQuery").value.trim();
@@ -1930,7 +1737,7 @@ function updatePerformance(data = {}) {
 
 const { renderSessions, changeMovieSessionsPage, renderSessionTicketTypeOptions, renderRoomOptions, closeSessionEditor, syncSessionCreationMode, renderSessionLinkedTickets, openSessionEditor, saveSession, removeSession } = window.CineAdminModules.movieSessionsView.createMovieSessionsView({
   state, $, currentMovie, escapeHtml, globalSessionStatusLabel, money, sessionTicketTypes, trashIcon,
-  showToast, ticketStatusText, saveMovieWithAction, adminTodayKey, setMovieWizardStep,
+  showToast, ticketStatusText, saveMovieWithAction: (...args) => saveMovieWithAction(...args), adminTodayKey, setMovieWizardStep,
   updateSessionScheduleSuggestion, applySessionMutation, renderMovies, showSuccess, api,
   setDisabled, confirm, prompt, Option, document
 });
@@ -1945,57 +1752,19 @@ function sessionTicketTypes(session = {}) {
 
 
 
-function selectMovie(id) {
-  if (!confirmMovieNavigation()) return;
-  state.creating.movie = false;
-  state.selectedMovieId = id;
-  renderMovies();
-}
+const { selectMovie, orderedMovies, movieCatalogNeighbors, movieCatalogPositionLabel, populateMovieCatalogPositions, renderMovieCatalogPositionPreview, loweredMoviePriorityMessage, saveMovieOrder, applyMovieCatalogPosition, moveMovie, handleMovieDragStart, handleMovieDragOver, handleMovieDragLeave, handleMovieDragEnd, handleMovieDrop, toggleMovieMenu, newMovie, getMoviePayload, saveMovieWithAction, saveMovie, deleteMovie, archiveMovie, duplicateMovie } = window.CineAdminModules.movieCatalogCommands.createMovieCatalogCommands({
+  state, $, document, confirm, confirmMovieNavigation, renderMovies, escapeHtml, renderMoviePublishSummary, api, setStatus, showToast, closeFloatingActionMenu, creationPlaceholder, fillMovieForm, movieFormSnapshot, currentMovie, slugify, validateMovieWizardStep, setDisabled, upsertAdminCollection, showSuccess, removeAdminCollectionItem, closeSessionEditor: (...args) => closeSessionEditor(...args), renderGlobalSessions, renderInsights
+});
 
-function orderedMovies() {
-  return [...(state.content?.movies || [])].sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
-}
 
-function movieCatalogNeighbors(movieId = "") {
-  return orderedMovies().filter((movie) => movie.id !== movieId);
-}
 
-function movieCatalogPositionLabel(position, movies) {
-  const above = movies[position - 2];
-  const below = movies[position - 1];
-  if (!above && !below) return "1 - Primeiro filme do catálogo";
-  if (!above) return `1 - Primeiro, antes de ${below.title}`;
-  if (!below) return `${position} - Último, depois de ${above.title}`;
-  return `${position} - Entre ${above.title} e ${below.title}`;
-}
 
-function populateMovieCatalogPositions(movie) {
-  const movies = movieCatalogNeighbors(movie?.id || "");
-  const currentPosition = movie
-    ? orderedMovies().findIndex((item) => item.id === movie.id) + 1
-    : movies.length + 1;
-  $("movieCatalogPosition").innerHTML = Array.from({ length: movies.length + 1 }, (_, index) => {
-    const position = index + 1;
-    return `<option value="${position}">${escapeHtml(movieCatalogPositionLabel(position, movies))}</option>`;
-  }).join("");
-  $("movieCatalogPosition").value = String(Math.max(1, currentPosition));
-  renderMovieCatalogPositionPreview();
-}
 
-function renderMovieCatalogPositionPreview() {
-  const movieId = $("movieId").value || state.selectedMovieId || "";
-  const movies = movieCatalogNeighbors(movieId);
-  const position = Math.min(Math.max(1, Number($("movieCatalogPosition").value || 1)), movies.length + 1);
-  const above = movies[position - 2];
-  const below = movies[position - 1];
-  const currentTitle = $("movieTitle").value.trim() || "Novo filme";
-  $("movieCatalogPositionPreview").innerHTML = `
-    <div><span>Imediatamente acima</span><strong>${escapeHtml(above?.title || "Nenhum filme")}</strong></div>
-    <div class="current"><span>Posição ${position} de ${movies.length + 1}</span><strong>${escapeHtml(currentTitle)}</strong></div>
-    <div><span>Imediatamente abaixo</span><strong>${escapeHtml(below?.title || "Nenhum filme")}</strong></div>
-  `;
-  if (state.movieWizardStep === 4) renderMoviePublishSummary();
-}
+
+
+
+
+
 
 function upsertAdminCollection(collection, item) {
   if (!state.content || !item?.id) return;
@@ -2029,216 +1798,6 @@ function applySessionMutation(movieId, session, removed = false) {
   renderInsights();
 }
 
-function loweredMoviePriorityMessage(changes) {
-  if (!changes.length) return "Nenhum outro filme perdeu prioridade.";
-  const visible = changes.slice(0, 3).map((change) => `${change.title}: posição ${change.from} → ${change.to}`);
-  const remaining = changes.length - visible.length;
-  return `${visible.join("; ")}${remaining > 0 ? `; e mais ${remaining} filme(s)` : ""}.`;
-}
-
-async function saveMovieOrder(ids, options = {}) {
-  if (!ids.length) return;
-  const previousPositions = new Map(orderedMovies().map((movie, index) => [movie.id, index + 1]));
-  try {
-    const result = await api("/api/movies/order", {
-      method: "PUT",
-      body: JSON.stringify({ ids })
-    });
-    state.content.movies = result.movies || state.content.movies;
-    const loweredMovies = orderedMovies()
-      .map((movie, index) => ({
-        id: movie.id,
-        title: movie.title || "Filme sem título",
-        from: previousPositions.get(movie.id),
-        to: index + 1
-      }))
-      .filter((movie) => movie.from && movie.to > movie.from);
-    if (options.render !== false) renderMovies({ preserveForm: true });
-    setStatus("Salvo");
-    if (options.notify !== false) showToast(`Prioridade atualizada. ${loweredMoviePriorityMessage(loweredMovies)}`);
-    return { movies: state.content.movies, loweredMovies };
-  } catch (error) {
-    if (options.notify !== false) showToast(error.message, "error");
-    if (options.rethrow) throw error;
-  }
-}
-
-async function applyMovieCatalogPosition(movieId, requestedPosition) {
-  const ids = orderedMovies().map((movie) => movie.id).filter((id) => id !== movieId);
-  const position = Math.min(Math.max(1, Math.trunc(Number(requestedPosition) || 1)), ids.length + 1);
-  ids.splice(position - 1, 0, movieId);
-  const result = await saveMovieOrder(ids, { render: false, notify: false, rethrow: true });
-  return { position, loweredMovies: result?.loweredMovies || [] };
-}
-
-function moveMovie(id, direction) {
-  const ids = orderedMovies().map((movie) => movie.id);
-  const index = ids.indexOf(id);
-  const nextIndex = index + Number(direction || 0);
-  if (index < 0 || nextIndex < 0 || nextIndex >= ids.length) return;
-  [ids[index], ids[nextIndex]] = [ids[nextIndex], ids[index]];
-  saveMovieOrder(ids);
-}
-
-function handleMovieDragStart(event, id) {
-  event.stopPropagation();
-  event.dataTransfer?.setData("text/plain", id);
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-  document.querySelectorAll(".movie-row").forEach((row) => {
-    row.classList.toggle("dragging", row.dataset.movieId === id);
-  });
-}
-
-function handleMovieDragOver(event) {
-  event.preventDefault();
-  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-  event.target.closest?.(".movie-row")?.classList.add("drag-over");
-}
-
-function handleMovieDragLeave(event) {
-  const row = event.target.closest?.(".movie-row");
-  if (row && !row.contains(event.relatedTarget)) row.classList.remove("drag-over");
-}
-
-function handleMovieDragEnd() {
-  document.querySelectorAll(".movie-row.drag-over, .movie-row.dragging").forEach((row) => {
-    row.classList.remove("drag-over", "dragging");
-  });
-}
-
-function handleMovieDrop(event, targetId) {
-  event.preventDefault();
-  event.stopPropagation();
-  handleMovieDragEnd();
-  const sourceId = event.dataTransfer?.getData("text/plain");
-  if (!sourceId || sourceId === targetId) return;
-  const ids = orderedMovies().map((movie) => movie.id);
-  const from = ids.indexOf(sourceId);
-  const to = ids.indexOf(targetId);
-  if (from < 0 || to < 0) return;
-  ids.splice(to, 0, ids.splice(from, 1)[0]);
-  saveMovieOrder(ids);
-}
-
-function toggleMovieMenu(movieId) {
-  closeFloatingActionMenu();
-  document.querySelectorAll(".context-menu-popover").forEach((menu) => {
-    if (menu.id !== `movieMenu-${movieId}`) menu.hidden = true;
-  });
-  const menu = $(`movieMenu-${movieId}`);
-  if (menu) menu.hidden = !menu.hidden;
-}
-
-function newMovie() {
-  if (!confirmMovieNavigation()) return;
-  state.creating.movie = true;
-  state.selectedMovieId = "";
-  $("moviesList").innerHTML = creationPlaceholder("Novo filme em edição", "Preencha o quadro à direita e publique quando estiver pronto.");
-  fillMovieForm(null);
-  $("movieWorkflowStatus").value = "draft";
-  $("movieStatus").value = "upcoming";
-  state.movieFormSnapshot = movieFormSnapshot();
-}
-
-function getMoviePayload(action = "published") {
-  const workflowStatus = action === "draft" ? "draft" : "published";
-  const status = $("movieStatus").value;
-  return {
-    id: $("movieId").value || $("movieSlug").value || undefined,
-    slug: $("movieSlug").value || slugify($("movieTitle").value),
-    workflowStatus,
-    status,
-    title: $("movieTitle").value,
-    originalTitle: $("movieOriginalTitle").value,
-    synopsis: $("movieSynopsis").value,
-    duration: $("movieDuration").value,
-    director: $("movieDirector").value,
-    genre: $("movieGenre").value.split(",").map((item) => item.trim()).filter(Boolean),
-    rating: $("movieRating").value,
-    releaseDate: $("movieReleaseDate").value,
-    autoPublish: $("movieAutoPublish").checked,
-    posterUrl: $("moviePosterUrl").value,
-    backdropUrl: $("movieBackdropUrl").value,
-    trailerYoutubeId: $("movieTrailer").value,
-    isHighlight: $("movieHighlight").checked,
-    tag: $("movieTag").value,
-    sortOrder: Number(currentMovie()?.sortOrder ?? ((orderedMovies().length + 1) * 10)),
-    metadata: {
-      ...(state.movieDraftMetadata || {}),
-      updatedFromAdmin: true
-    }
-  };
-}
-
-async function saveMovieWithAction(action = "published", options = {}) {
-  if (state.savingMovie) return;
-  if (!validateMovieWizardStep(4, action === "published")) return;
-  state.savingMovie = true;
-  ["movieDraftButton", "moviePublishButton", "addSessionButton"].forEach((id) => setDisabled(id, true));
-  try {
-    const requestedPosition = Number($("movieCatalogPosition").value || 1);
-    const payload = getMoviePayload(action);
-    const existingId = $("movieId").value || state.selectedMovieId;
-    if (existingId) payload.id = existingId;
-    const saved = existingId
-      ? await api(`/api/movies/${encodeURIComponent(existingId)}`, { method: "PUT", body: JSON.stringify(payload) })
-      : await api("/api/movies", { method: "POST", body: JSON.stringify(payload) });
-    state.creating.movie = false;
-    state.selectedMovieId = saved.id;
-    $("movieId").value = saved.id;
-    upsertAdminCollection("movies", saved);
-    let priorityChange;
-    try {
-      priorityChange = await applyMovieCatalogPosition(saved.id, requestedPosition);
-    } catch (error) {
-      renderMovies();
-      showToast(`Filme salvo, mas a posição no catálogo não foi alterada: ${error.message}`, "error");
-      return saved;
-    }
-    renderMovies();
-    if (options.quiet) return saved;
-    showToast(action === "draft" ? "Rascunho salvo." : "Filme publicado.");
-    showSuccess(
-      action === "draft" ? "Rascunho salvo" : "Filme publicado",
-      `${saved.title} foi atualizado na posição ${priorityChange.position} do catálogo administrativo. ${loweredMoviePriorityMessage(priorityChange.loweredMovies)}`
-    );
-    return saved;
-  } catch (error) {
-    showToast(error.message, "error");
-  } finally {
-    state.savingMovie = false;
-    ["movieDraftButton", "moviePublishButton", "addSessionButton"].forEach((id) => setDisabled(id, false));
-  }
-}
-
-async function saveMovie(event) {
-  event.preventDefault();
-  await saveMovieWithAction("published");
-}
-
-async function deleteMovie(id = "") {
-  const movie = id ? state.content?.movies?.find((item) => item.id === id) : currentMovie();
-  if (!movie || state.deletingMovieId) return;
-  if (!confirm(`Excluir "${movie.title}" do catálogo e da programação?\n\nO filme deixará de aparecer nas listas. Pedidos, ingressos e registros financeiros existentes serão preservados para consulta.`)) return;
-  state.deletingMovieId = movie.id;
-  setDisabled("deleteMovieButton", true);
-  try {
-    const result = await api(`/api/movies/${encodeURIComponent(movie.id)}`, { method: "DELETE" });
-    state.selectedMovieId = "";
-    removeAdminCollectionItem("movies", movie.id);
-    closeSessionEditor();
-    state.movieDraftSessions = [];
-    renderMovies();
-    renderGlobalSessions();
-    renderInsights();
-    showToast(result.historyPreserved ? "Filme excluído do catálogo. Histórico de vendas e financeiro preservado." : "Filme excluído.");
-  } catch (error) {
-    showToast(error.message, "error");
-  } finally {
-    state.deletingMovieId = "";
-    setDisabled("deleteMovieButton", !currentMovie());
-  }
-}
 
 
 
@@ -2252,52 +1811,38 @@ async function deleteMovie(id = "") {
 
 
 
-async function archiveMovie(id) {
-  const movie = state.content?.movies?.find((item) => item.id === id);
-  if (!movie) return;
-  try {
-    const { sessions, ...movieData } = movie;
-    const saved = await api(`/api/movies/${encodeURIComponent(movie.id)}`, {
-      method: "PUT",
-      body: JSON.stringify({ ...movieData, workflowStatus: "archived", status: "hidden", isHighlight: false })
-    });
-    upsertAdminCollection("movies", saved);
-    renderMovies();
-    showToast("Filme arquivado.");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
 
-async function duplicateMovie(id) {
-  const movie = state.content?.movies?.find((item) => item.id === id);
-  if (!movie) return;
-  const baseSlug = `${movie.slug || movie.id}-copia`;
-  let slug = baseSlug;
-  let suffix = 2;
-  while ((state.content?.movies || []).some((item) => item.id === slug || item.slug === slug)) slug = `${baseSlug}-${suffix++}`;
-  try {
-    const copy = await api("/api/movies", {
-      method: "POST",
-      body: JSON.stringify({
-        ...movie,
-        id: slug,
-        slug,
-        title: `${movie.title} (cópia)`,
-        workflowStatus: "draft",
-        status: "hidden",
-        isHighlight: false,
-        sessions: []
-      })
-    });
-    state.selectedMovieId = copy.id;
-    upsertAdminCollection("movies", copy);
-    renderMovies();
-    showToast("Cópia criada como rascunho.");
-  } catch (error) {
-    showToast(error.message, "error");
-  }
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function enhanceImageUploads() {
   document.querySelectorAll('input[type="file"][accept*="image"]').forEach((input) => {
