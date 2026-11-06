@@ -5,7 +5,8 @@ import { chromium } from "@playwright/test";
 
 const source = fs.readFileSync(new URL("../backend/public/admin.js", import.meta.url), "utf8");
 const html = fs.readFileSync(new URL("../backend/public/admin.html", import.meta.url), "utf8");
-const functions = ["setAdminSubtab", "applyRbacVisibility"].map((name) => {
+const accessVisibility = fs.readFileSync(new URL("../backend/public/admin-modules/admin-access-visibility.js", import.meta.url), "utf8");
+const functions = ["setAdminSubtab"].map((name) => {
   const match = source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`));
   assert.ok(match, `${name} must exist`);
   return match[0];
@@ -17,7 +18,7 @@ test("permission refresh keeps email campaigns separate from Social Studio", asy
     const page = await browser.newPage();
     await page.route("**/*", (route) => route.abort());
     await page.setContent(html.replace(/<script\b[^>]*>[^]*?<\/script>/gi, ""));
-    await page.evaluate((code) => {
+    await page.evaluate(({ code, accessVisibilityCode }) => {
       window.state = {
         adminUser: { role: "owner" },
         adminSubtabs: { marketing: "campaigns", accounts: "security" },
@@ -27,7 +28,12 @@ test("permission refresh keeps email campaigns separate from Social Studio", asy
       window.ADMIN_PERMISSION_PRESETS = {};
       // Exercise the production navigation and RBAC functions against the real admin markup.
       window.eval(code);
-    }, functions);
+      window.eval(accessVisibilityCode);
+      window.applyRbacVisibility = window.CineAdminModules.adminAccessVisibility.createAdminAccessVisibility({
+        state, $, ADMIN_PERMISSION_PRESETS, setAdminSubtab,
+        setBoxOfficeTab() {}, setConcessionTab() {}, activatePanel() {}
+      }).applyRbacVisibility;
+    }, { code: functions, accessVisibilityCode: accessVisibility });
 
     for (const tab of ["social", "campaigns", "overview", "home", "promotions", "ads", "campaigns"]) {
       const visible = await page.evaluate((selected) => {

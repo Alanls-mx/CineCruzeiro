@@ -43,11 +43,14 @@ test("lista administrativa nao coloca IDs de pedidos em handlers inline", () => 
 
 test("listas administrativas tratam IDs como dados, nao codigo inline", () => {
   const source = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
-  assert.doesNotMatch(source, /on(?:click|mouseenter|focus)="[^"\n]*\$\{/);
+  const delegated = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/delegated-events.js", import.meta.url)), "utf8");
+  const integrations = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/integration-administration.js", import.meta.url)), "utf8");
+  const interactionSource = [source, delegated, integrations].join("\n");
+  assert.doesNotMatch(interactionSource, /on(?:click|mouseenter|focus)="[^"\n]*\$\{/);
   for (const marker of [
     "data-point-print-action", "data-box-office-customer-id", "data-club-subscription-action",
     "data-integration-action", "data-webhook-action", "data-admin-select-kind", "data-tmdb-movie-id"
-  ]) assert.ok(source.includes(marker), `Ação ${marker} deve usar atributo de dados.`);
+  ]) assert.ok(interactionSource.includes(marker), `Ação ${marker} deve usar atributo de dados.`);
   const escapeSource = source.slice(source.indexOf("function escapeHtml("), source.indexOf("function adminAssetUrl("));
   const escapeHtml = vm.runInNewContext(`${escapeSource}\nescapeHtml`);
   const maliciousId = `x');globalThis.injected=true;//"<img onerror=alert(1)>`;
@@ -85,9 +88,9 @@ test("painel e login funcionam sem JavaScript inline na CSP do backend", () => {
 });
 
 test("acoes delegadas mantem selecao, paginacao e impressao", () => {
-  const source = readFileSync(fileURLToPath(new URL("../backend/public/admin.js", import.meta.url)), "utf8");
-  const start = source.indexOf('  document.addEventListener("click", (event) => {', source.indexOf('showChartHintFromPoint(event.target)'));
-  const end = source.indexOf('  document.addEventListener("keydown"', start);
+  const source = readFileSync(fileURLToPath(new URL("../backend/public/admin-modules/delegated-events.js", import.meta.url)), "utf8");
+  const start = source.indexOf('document.addEventListener("click", (event) => {', source.indexOf('showChartHintFromPoint(event.target)'));
+  const end = source.indexOf('document.addEventListener("keydown"', start);
   assert.ok(start > 0 && end > start);
   const calls = [];
   let handler;

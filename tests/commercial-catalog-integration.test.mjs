@@ -49,7 +49,7 @@ test("catálogo comercial externo salva token criptografado e não o devolve ao 
 test("catálogo comercial possui endpoint protegido, CORS opcional e os conjuntos comerciais esperados", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   const presenter = fs.readFileSync(path.join(root, "backend", "services", "commercialCatalogPresenter.js"), "utf8");
-  const admin = fs.readFileSync(path.join(root, "backend", "public", "admin.js"), "utf8");
+  const admin = fs.readFileSync(path.join(root, "backend", "public", "admin-modules", "integration-administration.js"), "utf8");
 
   assert.match(server, /pathname === "\/api\/commercial\/catalog"/);
   assert.match(server, /catalogTokensMatch/);

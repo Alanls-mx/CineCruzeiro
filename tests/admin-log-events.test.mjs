@@ -9,8 +9,8 @@ const { bindLogEvents } = require("../backend/public/admin-modules/log-events.js
 test("eventos de logs carregam antes do painel e preservam filtros e acoes", async () => {
   const html = await fs.readFile(new URL("../backend/public/admin.html", import.meta.url), "utf8");
   assert.ok(html.indexOf("admin-modules/log-events.js") < html.indexOf('src="admin.js'));
-  const admin = await fs.readFile(new URL("../backend/public/admin.js", import.meta.url), "utf8");
-  assert.match(admin, /CineAdminModules\.logEvents\.bindLogEvents/);
+  const eventModule = await fs.readFile(new URL("../backend/public/admin-modules/dashboard-and-overlay-events.js", import.meta.url), "utf8");
+  assert.match(eventModule, /CineAdminModules\.logEvents\.bindLogEvents/);
 
   const listeners = new Map();
   const elements = new Map(["logsRefreshButton", "logsExportButton", "logsPruneButton", "logsLevel", "logsCategory", "logsFrom", "logsTo", "logsSearch"].map((id) => [id, {

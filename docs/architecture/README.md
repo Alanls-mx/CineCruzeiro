@@ -19,6 +19,7 @@
 | [Plano de modularização profunda](DEEP_MODULARIZATION_PLAN.md) | Você quer a sequência de extrações, módulos de destino, orçamento de linhas e critérios de equivalência. |
 | [Preparação do Admin](ADMIN_MODULARIZATION_PLAN.md) | Você quer a linha de base de `admin.js`, contrato dos 14 módulos, estado, matriz de eventos/limpeza e sequência das próximas extrações. |
 | [Extração financeira do Admin](ADMIN_FINANCIAL_UI_EXTRACTION_RESULT.md) | Você quer comparar linhas, módulos, contratos, testes e riscos dos fluxos de bilheteria, Point, bomboniere, ingressos e Clube. |
+| [Resultado da modularização final do Admin](ADMIN_MODULARIZATION_RESULT.md) | Você quer comparar as linhas, os módulos de integração, eventos e apresentação, os testes e os limites restantes. |
 | [Extração da infraestrutura HTTP](INFRASTRUCTURE_EXTRACTION_REPORT.md) | Você quer comparar linhas, módulos, contratos e verificações da etapa B01. |
 | [Extração de catálogo e administração](CATALOG_ADMIN_EXTRACTION_REPORT.md) | Você quer comparar rotas, serviços, riscos, testes e linhas desta etapa. |
 | [Extração comercial](COMMERCE_EXTRACTION_REPORT.md) | Você quer localizar preço, reservas, emissão, QR, Clube e a matriz de invariantes preservadas. |

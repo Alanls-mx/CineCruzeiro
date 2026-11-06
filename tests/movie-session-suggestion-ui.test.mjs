@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const adminSource = fs.readFileSync(path.join(dirname, "../backend/public/admin.js"), "utf8");
+const catalogEvents = fs.readFileSync(path.join(dirname, "../backend/public/admin-modules/catalog-and-room-events.js"), "utf8");
 const sessionsSource = fs.readFileSync(path.join(dirname, "../backend/public/admin-modules/movie-sessions-view.js"), "utf8");
 const scheduleSource = fs.readFileSync(path.join(dirname, "../backend/public/admin-modules/session-schedule-view.js"), "utf8");
 const adminHtml = fs.readFileSync(path.join(dirname, "../backend/public/admin.html"), "utf8");
@@ -19,8 +19,8 @@ test("nova sessão parte da data de estreia e recebe sugestão de horário", () 
 });
 
 test("a sugestão respeita alterações manuais do operador", () => {
-  assert.match(adminSource, /sessionTimeManuallyEdited = true/);
-  assert.match(adminSource, /apply: !state\.sessionTimeManuallyEdited/);
-  assert.match(adminSource, /sessionTimeManuallyEdited = false;\s*updateSessionScheduleSuggestion\(\)/);
+  assert.match(catalogEvents, /sessionTimeManuallyEdited = true/);
+  assert.match(catalogEvents, /apply: !state\.sessionTimeManuallyEdited/);
+  assert.match(catalogEvents, /sessionTimeManuallyEdited = false;\s*updateSessionScheduleSuggestion\(\)/);
   assert.match(scheduleSource, /date === adminTodayKey\(\)/);
 });

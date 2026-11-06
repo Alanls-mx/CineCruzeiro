@@ -9,9 +9,9 @@ const { createSessionTicketActionHandler } = require("../backend/public/admin-mo
 test("session and ticket actions load before admin and dispatch exactly once", async () => {
   const html = await fs.readFile(new URL("../backend/public/admin.html", import.meta.url), "utf8");
   assert.ok(html.indexOf("admin-modules/session-ticket-actions.js") < html.indexOf('src="admin.js'));
-  const admin = await fs.readFile(new URL("../backend/public/admin.js", import.meta.url), "utf8");
-  assert.match(admin, /sessionTicketActions\.createSessionTicketActionHandler/);
-  assert.match(admin, /if \(handleSessionTicketAction\(event\)\) return;/);
+  const delegated = await fs.readFile(new URL("../backend/public/admin-modules/delegated-events.js", import.meta.url), "utf8");
+  assert.match(delegated, /sessionTicketActions\.createSessionTicketActionHandler/);
+  assert.match(delegated, /if \(handleSessionTicketAction\(event\)\) return;/);
 
   const calls = [];
   const handle = createSessionTicketActionHandler({
