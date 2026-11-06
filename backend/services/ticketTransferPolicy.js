@@ -105,9 +105,32 @@ function evaluateTicketTransfer(transfers = [], context = {}, limits = transferL
   return { ok: true };
 }
 
+function createTicketTransferEligibility({
+  orderForTicket, effectiveTicketStatus, sessionForTicket, ticketIsExpired,
+  persistedTicketTransferHistory, ticketSessionStartsAt, ticketTransferLimits
+}) {
+function canTransferTicket(db, ticket) {
+  if (!ticket) return { ok: false, message: "Ingresso nao encontrado." };
+  const order = orderForTicket(db, ticket);
+  const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
+  if (!order || order.status !== "paid") return { ok: false, message: "Somente ingressos pagos podem ser transferidos." };
+  if (status !== "active") return { ok: false, message: "Este ingresso nao esta valido para transferencia." };
+  if (ticketIsExpired(ticket, db)) return { ok: false, message: "Este ingresso ja passou do prazo de transferencia." };
+  const transferPolicy = evaluateTicketTransfer(persistedTicketTransferHistory(db, ticket), {
+    ticketId: ticket.id,
+    sessionStartsAt: ticketSessionStartsAt(ticket, db)
+  }, ticketTransferLimits);
+  if (!transferPolicy.ok) return transferPolicy;
+  return { ok: true };
+}
+
+  return { canTransferTicket };
+}
+
 module.exports = {
   DEFAULT_TRANSFER_LIMITS,
   evaluateTicketTransfer,
+  createTicketTransferEligibility,
   transferLimits,
   _test: { boundedInteger, retryAfterForWindow, timestamp, transferTimestamp }
 };

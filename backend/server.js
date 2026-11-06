@@ -122,7 +122,7 @@ const {
   paymentFinancialState,
   recognitionDate
 } = require("./services/financialRecognitionService");
-const { evaluateTicketTransfer, transferLimits } = require("./services/ticketTransferPolicy");
+const { evaluateTicketTransfer, transferLimits, createTicketTransferEligibility } = require("./services/ticketTransferPolicy");
 const { PRE_PREMIERE_WINDOW_MS, moviePremiereTiming, shouldPublishUpcomingMovie } = require("./services/moviePublicationPolicy");
 const { createMovieWorkflowService } = require("./services/movieWorkflowService");
 const { createMovieSessionInputService } = require("./services/movieSessionInputService");
@@ -2680,20 +2680,10 @@ function enrichTicket(db, ticket) {
   };
 }
 
-function canTransferTicket(db, ticket) {
-  if (!ticket) return { ok: false, message: "Ingresso nao encontrado." };
-  const order = orderForTicket(db, ticket);
-  const status = effectiveTicketStatus(ticket, order, sessionForTicket(db, ticket), db);
-  if (!order || order.status !== "paid") return { ok: false, message: "Somente ingressos pagos podem ser transferidos." };
-  if (status !== "active") return { ok: false, message: "Este ingresso nao esta valido para transferencia." };
-  if (ticketIsExpired(ticket, db)) return { ok: false, message: "Este ingresso ja passou do prazo de transferencia." };
-  const transferPolicy = evaluateTicketTransfer(persistedTicketTransferHistory(db, ticket), {
-    ticketId: ticket.id,
-    sessionStartsAt: ticketSessionStartsAt(ticket, db)
-  }, ticketTransferLimits);
-  if (!transferPolicy.ok) return transferPolicy;
-  return { ok: true };
-}
+const { canTransferTicket } = createTicketTransferEligibility({
+  orderForTicket, effectiveTicketStatus, sessionForTicket, ticketIsExpired,
+  persistedTicketTransferHistory, ticketSessionStartsAt, ticketTransferLimits
+});
 
 function extractTicketCode(value) {
   return ticketCodeService.normalizeCode(value);

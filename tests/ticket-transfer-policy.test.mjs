@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { test } from "node:test";
 
 const require = createRequire(import.meta.url);
-const { evaluateTicketTransfer } = require("../backend/services/ticketTransferPolicy");
+const { evaluateTicketTransfer, createTicketTransferEligibility } = require("../backend/services/ticketTransferPolicy");
 
 const NOW = Date.parse("2026-09-11T15:00:00.000Z");
 const LIMITS = {
@@ -13,6 +13,21 @@ const LIMITS = {
   windowMs: 24 * 60 * 60 * 1000,
   cooldownMs: 30 * 1000
 };
+
+test("elegibilidade local exige pedido pago e ingresso ativo", () => {
+  const { canTransferTicket } = createTicketTransferEligibility({
+    orderForTicket: (db) => db.order,
+    effectiveTicketStatus: (ticket) => ticket.status,
+    sessionForTicket: () => null,
+    ticketIsExpired: () => false,
+    persistedTicketTransferHistory: () => [],
+    ticketSessionStartsAt: () => new Date(NOW + 60 * 60 * 1000),
+    ticketTransferLimits: LIMITS
+  });
+  assert.equal(canTransferTicket({ order: { status: "paid" } }, { id: "ticket-1", status: "active" }).ok, true);
+  assert.equal(canTransferTicket({ order: { status: "pending_payment" } }, { id: "ticket-1", status: "active" }).ok, false);
+  assert.equal(canTransferTicket({ order: { status: "paid" } }, { id: "ticket-1", status: "used" }).ok, false);
+});
 
 function transfer(overrides = {}) {
   return {
