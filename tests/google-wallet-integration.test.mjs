@@ -40,10 +40,10 @@ test("classe Wallet sem marca configurada nao herda Cine Cruzeiro", () => {
 });
 
 test("diagnostico Wallet exige marca local antes de consultar o Google", () => {
-  const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
-  const testFlow = serverContent.slice(
-    serverContent.indexOf("async function testGoogleWalletIntegration"),
-    serverContent.indexOf("async function ", serverContent.indexOf("async function testGoogleWalletIntegration") + 1)
+  const serviceContent = fs.readFileSync(path.join(root, "backend", "services", "googleWalletIntegrationService.js"), "utf8");
+  const testFlow = serviceContent.slice(
+    serviceContent.indexOf("async function testGoogleWalletIntegration"),
+    serviceContent.indexOf("return { googleWalletApiRequest", serviceContent.indexOf("async function testGoogleWalletIntegration"))
   );
   assert.match(testFlow, /key: "cinemaBrand"/);
   assert.ok(testFlow.indexOf("checks.some((item) => !item.ok)") < testFlow.indexOf("await googleWalletApiGet"));
@@ -184,11 +184,12 @@ test("garante uso do recurso eventTicketClass na API e estrutura EventTicketObje
   const fs = await import("node:fs");
   const path = await import("node:path");
   const serverContent = fs.readFileSync(path.resolve("backend/server.js"), "utf8");
+  const serviceContent = fs.readFileSync(path.resolve("backend/services/googleWalletIntegrationService.js"), "utf8");
 
-  assert.match(serverContent, /\/eventTicketClass\//);
-  assert.doesNotMatch(serverContent, /\/genericClass\//);
+  assert.match(serviceContent, /\/eventTicketClass\//);
+  assert.doesNotMatch(serviceContent, /\/genericClass\//);
   assert.match(serverContent, /eventTicketObjects:\s*\[eventTicketObject\]/);
-  assert.match(serverContent, /passType:\s*"EventTicket"/);
+  assert.match(serviceContent, /passType:\s*"EventTicket"/);
 });
 
 test("garante que o JWT do Google Wallet contem estrutura valida e textModulesData nao contem modulos vazios", async () => {
@@ -337,10 +338,10 @@ test("fallback de classe não duplica o Issuer no Class ID", () => {
 });
 
 test("atualização visual de classe aprovada volta para revisão sem substituir outros campos", () => {
-  const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
-  const patchSlice = serverContent.slice(
-    serverContent.indexOf("eventClass = await googleWalletApiPatch"),
-    serverContent.indexOf("checks.push(", serverContent.indexOf("eventClass = await googleWalletApiPatch"))
+  const serviceContent = fs.readFileSync(path.join(root, "backend", "services", "googleWalletIntegrationService.js"), "utf8");
+  const patchSlice = serviceContent.slice(
+    serviceContent.indexOf("eventClass = await googleWalletApiPatch"),
+    serviceContent.indexOf("checks.push(", serviceContent.indexOf("eventClass = await googleWalletApiPatch"))
   );
 
   assert.match(patchSlice, /classTemplateInfo:\s*desiredTemplate/);
