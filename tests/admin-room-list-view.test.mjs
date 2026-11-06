@@ -38,3 +38,34 @@ test('room list keeps selection, pagination and escapes persisted labels', () =>
   assert.match(list.innerHTML, /data-admin-select-kind="room"/);
   assert.match(list.innerHTML, /PAGER$/);
 });
+
+test('room save updates the shared collection only after the API responds', async () => {
+  const elements = new Map();
+  const $ = (id) => {
+    if (!elements.has(id)) elements.set(id, { value: '', innerHTML: '' });
+    return elements.get(id);
+  };
+  const state = { content: { rooms: [], movies: [], orders: [], tickets: [] }, creating: { room: true },
+    roomSeatDraft: { enabled: false, seatTypes: [], screenLabel: 'TELA', rows: [] } };
+  $('roomName').value = 'Sala QA';
+  $('roomCapacity').value = '80';
+  $('roomCleanupMinutes').value = '20';
+  $('roomStatus').value = 'active';
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const calls = [];
+  const view = createRoomListView({ state, $,
+    api: async (path, options) => { calls.push([path, options]); return pending; },
+    upsertAdminCollection: (key, item) => { state.content[key].push(item); },
+    renderRooms: () => {}, renderRoomOptions: () => {}, renderGlobalSessions: () => {},
+    updateSessionScheduleSuggestion: () => {}, showToast: () => {}
+  });
+  const save = view.saveRoom({ preventDefault() {} });
+  assert.equal(state.content.rooms.length, 0);
+  assert.equal(calls[0][0], '/api/rooms');
+  assert.equal(JSON.parse(calls[0][1].body).cleanupMinutes, 20);
+  release({ id: 'room', name: 'Sala QA' });
+  await save;
+  assert.equal(state.content.rooms.length, 1);
+  assert.equal(state.selectedRoomId, 'room');
+});
