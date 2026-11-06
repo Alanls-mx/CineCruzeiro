@@ -121,6 +121,7 @@ const { createMovieWorkflowService } = require("./services/movieWorkflowService"
 const { createMovieSessionInputService } = require("./services/movieSessionInputService");
 const { createVenueInputService } = require("./services/venueInputService");
 const { createCinemaSettingsHandler } = require("./services/cinemaSettingsHandler");
+const { createAdminUserWriteHandler } = require("./services/adminUserWriteHandler");
 const { calendarDateKey, isValidCalendarDate, isValidSessionTime } = require("./services/calendarDateService");
 const { isDeletedMovie, movieHistory, assertMovieCanBeDeleted, deletedMovieRecord } = require("./services/movieCatalogLifecycleService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
@@ -10314,6 +10315,19 @@ const handleCinemaSettingsRoutes = createCinemaSettingsHandler({
   assetRecord
 });
 
+const handleAdminUserWriteRoutes = createAdminUserWriteHandler({
+  roleAlias,
+  normalizeUser,
+  adminUserPayload,
+  postgresEnabled,
+  userRepository,
+  repositoryAudit,
+  writeDb,
+  sanitizeUser,
+  readBody,
+  sendJson
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -13780,25 +13794,7 @@ async function handleApi(req, res, pathname) {
 
   if (await handleCommercialCatalogRoutes({ req, res, pathname, method, db })) return;
 
-  if (pathname === "/api/users" && method === "POST") {
-    const body = await readBody(req);
-    if (roleAlias(body.role) === "owner" && roleAlias(req.adminUser?.role) !== "owner") {
-      sendJson(res, 403, { error: { code: "OWNER_ROLE_PROTECTED", message: "Somente o dono pode criar outra conta de dono." } });
-      return;
-    }
-    const user = normalizeUser(adminUserPayload(body));
-    if (postgresEnabled() ? await userRepository.emailExists(user.email) : db.users.some((existing) => existing.email === user.email)) {
-      sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
-      return;
-    }
-    db.users = db.users.filter((existing) => existing.id !== user.id);
-    db.users.push(user);
-    const saved = postgresEnabled()
-      ? await userRepository.create(user, { audit: repositoryAudit(req, "user", user.id, null, sanitizeUser(user)) })
-      : (await writeDb(db), user);
-    sendJson(res, 201, sanitizeUser(saved));
-    return;
-  }
+  if (await handleAdminUserWriteRoutes({ req, res, pathname, method, db })) return;
 
   const userMatch = pathname.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch) {
@@ -13807,52 +13803,6 @@ async function handleApi(req, res, pathname) {
     const repositoryUser = postgresEnabled() ? await userRepository.findById(id) : null;
     if (index === -1 && !repositoryUser) {
       sendJson(res, 404, { error: "Usuario nao encontrado" });
-      return;
-    }
-
-    if (method === "PUT") {
-      const body = await readBody(req);
-      const existingUser = repositoryUser || db.users[index];
-      if (roleAlias(req.adminUser?.role) !== "owner" && roleAlias(existingUser?.role) === "owner") {
-        sendJson(res, 403, { error: { code: "OWNER_ROLE_PROTECTED", message: "Somente o dono pode excluir outra conta de dono." } });
-        return;
-      }
-      if (!existingUser) {
-        sendJson(res, 404, { error: "Usuario nao encontrado" });
-        return;
-      }
-      const nextRole = roleAlias(body.role || existingUser.role);
-      if (roleAlias(req.adminUser?.role) !== "owner" && (roleAlias(existingUser.role) === "owner" || nextRole === "owner")) {
-        sendJson(res, 403, { error: { code: "OWNER_ROLE_PROTECTED", message: "Somente o dono pode alterar contas com acesso de dono." } });
-        return;
-      }
-      const activeOwnerCount = postgresEnabled()
-        ? await userRepository.countActiveOwners()
-        : db.users.filter((candidate) => roleAlias(candidate.role) === "owner" && candidate.active !== false).length;
-      if (roleAlias(existingUser.role) === "owner" && existingUser.active !== false && (nextRole !== "owner" || body.active === false) && activeOwnerCount <= 1) {
-        sendJson(res, 409, { error: { code: "LAST_OWNER_REQUIRED", message: "Mantenha ao menos uma conta de dono ativa no painel." } });
-        return;
-      }
-      const user = normalizeUser(adminUserPayload(body, existingUser), existingUser);
-      if (postgresEnabled() ? await userRepository.emailExists(user.email, id) : db.users.some((existing, existingIndex) => existingIndex !== index && existing.email === user.email)) {
-        sendJson(res, 409, { error: { code: "USER_EMAIL_IN_USE", message: "Já existe um usuário com este e-mail." } });
-        return;
-      }
-      const accessChanged = user.role !== existingUser.role
-        || user.active !== existingUser.active
-        || user.useCustomPermissions !== existingUser.useCustomPermissions
-        || JSON.stringify(user.adminPermissions || []) !== JSON.stringify(existingUser.adminPermissions || [])
-        || Boolean(body.password);
-      if (accessChanged) user.sessionVersion = Number(existingUser.sessionVersion || 0) + 1;
-      if (index >= 0) db.users[index] = user;
-      const saved = postgresEnabled()
-        ? await userRepository.updateAdmin(user, {
-          incrementSessionVersion: accessChanged,
-          protectLastOwner: true,
-          audit: repositoryAudit(req, "user", id, sanitizeUser(existingUser), sanitizeUser(user))
-        })
-        : (await writeDb(db), user);
-      sendJson(res, 200, sanitizeUser(saved));
       return;
     }
 

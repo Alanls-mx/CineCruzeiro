@@ -1,5 +1,7 @@
 # Persistência PostgreSQL
 
+Criação/edição de contas administrativas: [adminUserWriteHandler](../../backend/services/adminUserWriteHandler.js) aguarda `userRepository.create`/`updateAdmin` antes da resposta. O dispatcher conserva `users.manage` e a exclusão que altera assinaturas/pedidos. [Teste](../../tests/admin-user-write-handler.test.mjs).
+
 Inventário **parcial** de entidades críticas, confirmado nas migrations e nos repositórios. A [migration inicial](../../backend/db/migrations/001_init.sql) cria as entidades centrais; alterações posteriores devem ser lidas em [migrations](../../backend/db/migrations). O snapshot compatível com JSON em [postgresStore](../../backend/db/postgresStore.js) não torna `db.json` uma fonte operacional de produção. Nunca executar scripts de teste contra um banco sem a [proteção de descarte](../../scripts/test-postgres-safety.js).
 
 | Entidade | Escrita principal / limite de concorrência | Leitura e impacto |
