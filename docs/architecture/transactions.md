@@ -1,5 +1,10 @@
 # Auditoria dirigida de transacoes
 
+Para a etapa de extração financeira, veja o [mapa por fluxo](FINANCIAL_TRANSACTION_MAP.md)
+e o [relatório de falhas parciais](FINANCIAL_EXTRACTION_REPORT.md). Os limites
+originais de commit, resposta e chamada externa permanecem; o dispatcher injeta
+`withCriticalMutation`, `readDb`, `writeDb`, guardas e provedores nos novos módulos.
+
 [httpResponseService](../../backend/services/httpResponseService.js) mantém o mesmo `deferUntilPostgresCommit` para `sendJson` quando `req.commitResponseAfterMutation` está ativo. A extração não cria transação e não muda os escritores; `sendNoContent` conserva o comportamento anterior. [Teste dirigido](../../tests/http-response-service.test.mjs).
 
 Extração comercial: [orderCatalogPricingService](../../backend/services/orderCatalogPricingService.js), [clubOrderCreditService](../../backend/services/clubOrderCreditService.js), [ticketIssuanceService](../../backend/services/ticketIssuanceService.js) e [ticketValidationService](../../backend/services/ticketValidationService.js) recebem o snapshot da chamada original. Não abrem transação, não escrevem fora do coordenador e não chamam provedor. `server.js` mantém `withCriticalMutation`, confirmação financeira, persistência, resposta e eventos pós-commit. [Matriz de invariantes](COMMERCE_EXTRACTION_REPORT.md). Teste de integridade em PostgreSQL descartável: `node scripts/with-local-disposable-postgres.js smoke`.

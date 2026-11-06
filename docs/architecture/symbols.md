@@ -21,8 +21,8 @@
 | `SocialStudioAutomationRepository` | [socialStudioAutomationRepository.js](../../backend/repositories/socialStudioAutomationRepository.js) | Claim/heartbeat/fencing persistente. |
 | `createTicketEmailWorker` | [ticketEmailWorker.js](../../backend/services/ticketEmailWorker.js) | Drenagem, backoff e conclusão de jobs. |
 | `createTicketEmailJobRepository` | [ticketEmailJobRepository.js](../../backend/repositories/ticketEmailJobRepository.js) | Lease PostgreSQL e atualização condicional da entrega. |
-| `claimPointCreation` | [server.js](../../backend/server.js) | Reivindica a intenção Point sob lock PostgreSQL; impede envio concorrente durante o lease. |
-| `markPointRequestSent` | [server.js](../../backend/server.js) | Confirma o registro pré-envio antes do POST ao provedor; falha no commit impede a chamada. |
-| `attemptPointCreation` | [server.js](../../backend/server.js) | Valida terminal/conta e reusa a referência e chave persistidas fora da transação. |
+| `claimPointCreation` | [pointCreationCoordinator](../../backend/services/pointCreationCoordinator.js) | Reivindica a intenção Point sob lock PostgreSQL; impede envio concorrente durante o lease. |
+| `markPointRequestSent` | [pointCreationCoordinator](../../backend/services/pointCreationCoordinator.js) | Confirma o registro pré-envio antes do POST ao provedor; falha no commit impede a chamada. |
+| `attemptPointCreation` | [pointCreationCoordinator](../../backend/services/pointCreationCoordinator.js) | Valida terminal/conta e reusa a referência e chave persistidas fora da transação. |
 
 `backend/server.js` possui funções de orquestração e muitos efeitos entre domínios. Seus símbolos ainda não formam API interna estável; para uma rota, comece pelo [catálogo](endpoints.md) e siga as chamadas reais. Para módulos do painel, o registro único de eventos permanece em [admin.js](../../backend/public/admin.js).
