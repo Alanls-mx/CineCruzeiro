@@ -30,7 +30,7 @@ Ação: painel [admin.js](../../backend/public/admin.js) → `DELETE /api/orders
 
 ## Entrega de ingressos por e-mail
 
-Ação: pedido pago em `finalizePaidOrder` → `ticketEmailRequested` no pedido → [trigger 051](../../backend/db/migrations/051_ticket_email_jobs.sql) na mesma transação → [ticketEmailJobRepository](../../backend/repositories/ticketEmailJobRepository.js) reivindica o trabalho → [ticketEmailWorker](../../backend/services/ticketEmailWorker.js) chama entrega em [server.js](../../backend/server.js) / [emailService](../../backend/services/emailService.js) → estado `emailDeliveredAt` e job concluído. Reenvio manual: `POST /api/orders/:id/resend-ticket-email`. Testes: [unidade](../../tests/ticket-email-worker.test.mjs), [PostgreSQL](../../tests/database-persistence-postgres.test.mjs). Limites em [operação](operations.md).
+Ação: pedido pago em `finalizePaidOrder` → `ticketEmailRequested` no pedido → [trigger 051](../../backend/db/migrations/051_ticket_email_jobs.sql) na mesma transação → [ticketEmailJobRepository](../../backend/repositories/ticketEmailJobRepository.js) reivindica o trabalho → [ticketEmailWorker](../../backend/services/ticketEmailWorker.js) chama [ticketEmailDeliveryCoordinator](../../backend/services/ticketEmailDeliveryCoordinator.js) / [emailService](../../backend/services/emailService.js) → estado `emailDeliveredAt` e job concluído. Reenvio manual: `POST /api/orders/:id/resend-ticket-email`. Testes: [unidade](../../tests/ticket-email-worker.test.mjs), [fila](../../tests/ticket-email-delivery-coordinator.test.mjs), [PostgreSQL](../../tests/database-persistence-postgres.test.mjs). Limites em [operação](operations.md).
 
 ## Validação de ingressos
 
