@@ -33,10 +33,11 @@ assert.equal(
 );
 
 const serverSource = fs.readFileSync(path.resolve(__dirname, "../backend/server.js"), "utf8");
-assert.match(serverSource, /const showTicketAccess = enriched\.status === "active"/);
-assert.match(serverSource, /if \(showTicketAccess\) \{[\s\S]*pdfQr\(enriched\.displayQrPayload \|\| enriched\.qrPayload \|\| enriched\.code, 222, 148, 164\)/);
-assert.match(serverSource, /if \(showTicketAccess\) page2 \+= pdfWriteValueBlock\("CODIGO"/);
-assert.match(serverSource, /QR Code desativado/);
+const pdfSource = fs.readFileSync(path.resolve(__dirname, "../backend/services/ticketDocumentPdfService.js"), "utf8");
+assert.match(pdfSource, /const showTicketAccess = enriched\.status === "active"/);
+assert.match(pdfSource, /if \(showTicketAccess\) \{[\s\S]*pdfQr\(enriched\.displayQrPayload \|\| enriched\.qrPayload \|\| enriched\.code, 222, 148, 164\)/);
+assert.match(pdfSource, /if \(showTicketAccess\) page2 \+= pdfWriteValueBlock\("CODIGO"/);
+assert.match(pdfSource, /QR Code desativado/);
 assert.match(serverSource, /const TICKET_ARCHIVED_DOCUMENT_RETENTION_DAYS = 10/);
 assert.match(serverSource, /function ticketDocumentDownloadAllowed\(/);
 assert.match(serverSource, /code: "TICKET_DOCUMENT_EXPIRED"/);

@@ -198,7 +198,7 @@ test("garante que o JWT do Google Wallet contem estrutura valida e textModulesDa
 
   const saveUrlSlice = serverContent.slice(
     serverContent.indexOf("function googleWalletSaveUrl"),
-    serverContent.indexOf("function pdfText")
+    serverContent.indexOf("function finalizePaidOrder")
   );
   assert.match(saveUrlSlice, /payload:\s*\{\s*eventTicketObjects:\s*\[eventTicketObject\]/);
   assert.match(serverContent, /buildGoogleWalletTextModules\(enriched\)/);
@@ -288,7 +288,7 @@ test("Google Wallet sincroniza o EventTicketObject antes de emitir o link", () =
   const serverContent = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
   const syncSlice = serverContent.slice(
     serverContent.indexOf("async function syncGoogleWalletEventTicketObject"),
-    serverContent.indexOf("function pdfText")
+    serverContent.indexOf("function finalizePaidOrder")
   );
 
   assert.match(syncSlice, /\/eventTicketObject\/\$\{encodeURIComponent\(eventTicketObject\.id\)\}/);
