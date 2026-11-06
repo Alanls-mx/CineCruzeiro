@@ -2330,7 +2330,7 @@ const { renderOrders, renderTodaySalesSummary, orderTicketCount, renderOrdersTab
 });
 
 const { executeOrderRefundTickets, executeOrderRefundConcessions, openOrderView, openOrderEdit, closeOrderOverlay, saveOrderEdit, cancelOrDeleteOrder, archiveOrderAdmin, restoreOrderAdmin, printOrderTicket, resendOrderTicket, openPermanentDelete, closePermanentDelete, permanentlyDeleteSelectedOrder } = window.CineAdminModules.orderManagementActions.createOrderManagementActions({
-  state, $, API_BASE, api, confirm, currentOrder, desktopThermalPrinterAvailable, fillOrderEditor, loadContent, money, orderReference, orderStatusLabel, paymentForOrder, prompt, showToast, window
+  state, $, API_BASE, api, confirm, currentOrder, desktopThermalPrinterAvailable: (...args) => desktopThermalPrinterAvailable(...args), fillOrderEditor, loadContent, money, orderReference, orderStatusLabel, paymentForOrder, prompt, showToast, window
 });
 
 

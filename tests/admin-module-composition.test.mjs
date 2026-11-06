@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicRoot = path.join(root, "backend", "public");
@@ -41,4 +42,31 @@ test("every module consumed by the shell has a frozen named API", () => {
     assert.ok(Object.values(api).every((member) => typeof member === "function"), `${file} has an unexpected export`);
   }
   for (const name of expectedNames) assert.ok(published.has(name), `admin.js requires missing module ${name}`);
+});
+
+test("module composition never reads a later const during initialization", () => {
+  const ast = ts.createSourceFile("admin.js", shell, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const declarations = new Map();
+  const collect = (name, position) => {
+    if (ts.isIdentifier(name)) declarations.set(name.text, position);
+    else if (ts.isBindingPattern(name)) name.elements.forEach((element) => collect(element.name, position));
+  };
+  for (const statement of ast.statements) {
+    if (ts.isVariableStatement(statement)) statement.declarationList.declarations.forEach((declaration) => collect(declaration.name, statement.getStart(ast)));
+  }
+  for (const statement of ast.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      const call = declaration.initializer;
+      if (!call || !ts.isCallExpression(call) || !call.expression.getText(ast).includes("CineAdminModules")) continue;
+      const argument = call.arguments[0];
+      if (!argument || !ts.isObjectLiteralExpression(argument)) continue;
+      for (const property of argument.properties) {
+        if (!ts.isShorthandPropertyAssignment(property)) continue;
+        const laterDeclaration = declarations.get(property.name.text);
+        assert.ok(!laterDeclaration || laterDeclaration < statement.getStart(ast),
+          `${call.expression.getText(ast)} reads ${property.name.text} before initialization`);
+      }
+    }
+  }
 });

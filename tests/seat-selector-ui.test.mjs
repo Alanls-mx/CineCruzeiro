@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const checkoutSource = fs.readFileSync(path.join(dirname, "../src/components/CheckoutPage.tsx"), "utf8");
-const adminSource = fs.readFileSync(path.join(dirname, "../backend/public/admin.js"), "utf8");
+const adminSource = fs.readFileSync(path.join(dirname, "../backend/public/admin-modules/box-office-seat-map.js"), "utf8");
 const adminStyles = fs.readFileSync(path.join(dirname, "../backend/public/admin.css"), "utf8");
 
 test("checkout não exibe numeração redundante abaixo das poltronas", () => {

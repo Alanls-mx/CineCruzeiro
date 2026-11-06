@@ -62,12 +62,24 @@ test("origem e CSRF mantêm a diferença entre leitura, login e sessão de clien
   assert.equal(policy.customerMutationOriginAllowed(request("POST", "/api/payments/pix", { origin: "https://foreign.example.test" }, { cine_customer: "synthetic" })), false);
 });
 
-test("a última declaração de paginação do Clube governa o comportamento atual", () => {
-  const scope = declarations("backend/public/admin.js", ["changeClubSubscriptionsPage", "filterClubSubscriptions"], {
+test("a paginação extraída do Clube preserva o comportamento efetivo", () => {
+  const file = "backend/public/admin-modules/club-view.js";
+  const source = fs.readFileSync(path.join(root, file), "utf8");
+  const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  const names = ["changeClubSubscriptionsPage", "filterClubSubscriptions"];
+  const found = [];
+  const visit = (node) => {
+    if (ts.isFunctionDeclaration(node) && names.includes(node.name?.text)) found.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(ast);
+  for (const name of names) assert.equal(found.filter((node) => node.name?.text === name).length, 1);
+  const scope = vm.createContext({
     state: { content: syntheticCinemaRecords(), clubSubscriptionsPage: 1, clubSubscriptionsSearch: "" },
     renderClub: () => { scope.renders = (scope.renders || 0) + 1; },
     $: () => null
   });
+  vm.runInContext(found.map((node) => node.getText(ast)).join("\n"), scope);
   scope.changeClubSubscriptionsPage(1);
   assert.equal(scope.state.clubSubscriptionsPage, 2, "a implementação efetiva não limita ao total de páginas");
   assert.equal(scope.renders, 1);
