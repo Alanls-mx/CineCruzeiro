@@ -88,7 +88,7 @@ test("painel atualiza os quatro dominios sem recarregar todo o conteudo", () => 
   assert.match(admin, /function applySessionMutation/);
   assert.match(moduleSource("movie-catalog-commands.js"), /upsertAdminCollection\("movies", saved\)/);
   assert.match(moduleSource("room-list-view.js"), /upsertAdminCollection\("rooms", saved\)/);
-  assert.match(admin, /upsertAdminCollection\("ticketTypes", saved\)/);
+  assert.match(moduleSource("ticket-catalog-view.js"), /upsertAdminCollection\("ticketTypes", saved\)/);
   assert.match(moduleSource("concession-products-view.js"), /upsertAdminCollection\("concessions", saved\)/);
   assert.match(moduleSource("promotions-view.js"), /upsertAdminCollection\("promotions", saved\)/);
   assert.match(moduleSource("team-accounts-view.js"), /upsertAdminCollection\("users", saved\)/);

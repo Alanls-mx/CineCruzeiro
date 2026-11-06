@@ -80,6 +80,7 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Logs | [log-presentation](../../backend/public/admin-modules/log-presentation.js), [log-events](../../backend/public/admin-modules/log-events.js) | [teste](../../tests/admin-log-events.test.mjs) |
 | Repasse de bilheteria | [ticket-finance-view](../../backend/public/admin-modules/ticket-finance-view.js) | [teste](../../tests/admin-ticket-finance-view.test.mjs) |
 | Contas de clientes | [customer-accounts-view](../../backend/public/admin-modules/customer-accounts-view.js) | [teste](../../tests/admin-customer-accounts-view.test.mjs) |
+| Tipos e lista de ingressos | [ticket-catalog-view](../../backend/public/admin-modules/ticket-catalog-view.js) | `/api/ticket-types` continua no servidor; [teste](../../tests/admin-ticket-catalog-view.test.mjs) |
 | Equipe e permissões visuais | [team-accounts-view](../../backend/public/admin-modules/team-accounts-view.js) | [teste](../../tests/admin-team-accounts-view.test.mjs); autorização continua no servidor |
 | Lista e editor de sessões do filme | [movie-sessions-view](../../backend/public/admin-modules/movie-sessions-view.js) | Renderização, criação/edição/exclusão e conflitos de sala; [teste](../../tests/admin-movie-sessions-view.test.mjs) |
 | Agenda global de sessões | [session-schedule-view](../../backend/public/admin-modules/session-schedule-view.js) | Filtros, horários, conflito e intervalo de limpeza; [teste](../../tests/admin-session-schedule-view.test.mjs) |
