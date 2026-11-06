@@ -49,7 +49,7 @@
     "test:security": "node --test tests/security/abuse.test.mjs",
     "test:security:local": "node --test tests/admin-session-ticket-actions.test.mjs tests/checkout-identifier-security.test.mjs tests/client-ip-service.test.mjs tests/commercial-catalog-http.test.mjs tests/commercial-catalog-integration.test.mjs tests/origin-policy.test.mjs tests/public-content-settings.test.mjs tests/public-remote-resource.test.mjs tests/public-seat-state-http.test.mjs tests/session-seat-availability.test.mjs tests/sql-parameterization-security.test.mjs && node scripts/movie-image-localization-tests.js && node scripts/mercado-pago-webhook-tests.js && node scripts/seat-realtime-tests.js",
     "test:permissions": "node --test tests/admin-permissions.test.mjs",
-    "test:characterization": "node --test tests/modularization-contract-characterization.test.mjs tests/static-http-contract-characterization.test.mjs tests/local-disposable-postgres-guard.test.mjs",
+    "test:characterization": "node --test tests/modularization-contract-characterization.test.mjs tests/static-http-contract-characterization.test.mjs tests/local-disposable-postgres-guard.test.mjs tests/desktop-update-handler.test.mjs tests/performance-stream-service.test.mjs tests/http-response-service.test.mjs tests/infrastructure-routes.test.mjs",
     "test:abuse-controls": "node --test tests/ticket-transfer-policy.test.mjs",
     "test:ticket-concessions": "node --test tests/ticket-concession-assignment.test.mjs",
     "test:movie-publication": "node --test tests/movie-publication-policy.test.mjs",

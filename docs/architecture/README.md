@@ -17,6 +17,7 @@
 | [Auditoria estrutural](audit.md) | Você quer entender a ordem das extrações e as responsabilidades adiadas. |
 | [Linha de base da modularização profunda](MODULARIZATION_BASELINE.md) | Você quer medir arquivos, funções, listeners, rotas candidatas e riscos no HEAD de referência. |
 | [Plano de modularização profunda](DEEP_MODULARIZATION_PLAN.md) | Você quer a sequência de extrações, módulos de destino, orçamento de linhas e critérios de equivalência. |
+| [Extração da infraestrutura HTTP](INFRASTRUCTURE_EXTRACTION_REPORT.md) | Você quer comparar linhas, módulos, contratos e verificações da etapa B01. |
 | [Caracterização HTTP e do Admin](HTTP_CONTRACT_CHARACTERIZATION.md) | Você quer preservar respostas, cookies, origem, permissões e eventos antes das extrações. |
 | [Relatório reproduzível da caracterização](MODULARIZATION_CHARACTERIZATION_REPORT.md) | Você quer contagens, cobertura, execução de testes e diferenças estáticas ante o snapshot. |
 | [Histórico da modularização](../MODULARIZACAO_ARQUITETURA.md) | Você precisa entender decisões e pendências anteriores. |
