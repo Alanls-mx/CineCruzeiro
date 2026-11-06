@@ -30,3 +30,5 @@ Seleção da bilheteria: `box-office-session-view.js` recebeu interpretação de
 Mapa presencial: `box-office-seat-map.js` recebeu canal WebSocket, owner token em `sessionStorage`, hold, reconexão, heartbeat, seleção e mapa visual. `admin.js` injeta o mesmo `state`; não há novo listener de página e `closeManualSeatRealtime` continua encerrando timers e socket. `tests/admin-box-office-seat-map.test.mjs` cobre hold próprio versus hold de outra compra. O endpoint `/api/realtime/seats` e o GET de mapa mantêm seus contratos e autoridade no servidor.
 
 Rascunho presencial: `box-office-draft-view.js` monta itens, extras, totais de ingressos e referências de hold sem enviar uma venda. `tests/admin-box-office-draft-view.test.mjs` verifica tipo, quantidade, assento e token preservados para o POST posterior. Estoque e preço final continuam sujeitos à validação do servidor.
+
+Resumo presencial: `box-office-sale-summary.js` apresenta cliente, entrega, sessão, ingressos, extras, assentos e valor calculado para a interface. O servidor mantém o cálculo autoritativo no POST. `tests/admin-box-office-sale-summary.test.mjs` cobre a composição local sem chamada externa.
