@@ -1,5 +1,7 @@
 # Relações de impacto verificadas
 
+Respostas HTTP: [server.js](../../backend/server.js) injeta `requestContext`, `postgresEnabled`, `deferUntilPostgresCommit`, política CORS e cabeçalhos em [httpResponseService](../../backend/services/httpResponseService.js); handlers recebem `sendJson`/`sendNoContent` dessa única composição. O módulo não importa `server.js` nem acessa DB por conta própria. [Teste](../../tests/http-response-service.test.mjs).
+
 Cada seta identifica o tipo de relação observado no código. Não é um grafo completo; antes de alterar um contrato, confirme todas as chamadas atuais. [Endpoints](endpoints.md) registra métodos e permissões; [persistência](persistence.md) registra escritores críticos.
 
 | Alteração pretendida | Relação direta e consumidores | Impacto / teste inicial |
