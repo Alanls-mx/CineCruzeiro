@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const server = fs.readFileSync(path.join(root, "backend/server.js"), "utf8");
 const admin = fs.readFileSync(path.join(root, "backend/public/admin.js"), "utf8");
+const pointController = fs.readFileSync(path.join(root, "backend/public/admin-modules/box-office-point-controller.js"), "utf8");
+const saleCommand = fs.readFileSync(path.join(root, "backend/public/admin-modules/box-office-sale-command.js"), "utf8");
 const adminHtml = fs.readFileSync(path.join(root, "backend/public/admin.html"), "utf8");
 const orderStatusMigration = fs.readFileSync(path.join(root, "backend/db/migrations/037_orders_print_fulfillment_status.sql"), "utf8");
 
@@ -79,15 +81,15 @@ test("a bilheteria exibe a recuperação da impressão na aba correta", () => {
   const boxOfficeEnd = adminHtml.indexOf('id="boxOfficeValidateTicket"');
   const printPanel = adminHtml.indexOf('id="pointPaymentPanel"');
   assert.ok(boxOfficeStart < printPanel && printPanel < boxOfficeEnd);
-  assert.match(admin, /document\.querySelector\("#boxOfficeNewSale \.box-office-sale-workspace"\)\.hidden = true/);
-  assert.match(admin, /document\.querySelector\("#boxOfficeNewSale \.box-office-sale-workspace"\)\.hidden = false/);
+  assert.match(pointController, /document\.querySelector\("#boxOfficeNewSale \.box-office-sale-workspace"\)\.hidden = true/);
+  assert.match(pointController, /document\.querySelector\("#boxOfficeNewSale \.box-office-sale-workspace"\)\.hidden = false/);
 });
 
 test("uma venda física em dinheiro exige impressora instalada antes de criar pedido", () => {
-  const preflight = admin.indexOf("const printer = await window.cineDesktop.checkPrinter()");
-  const createSale = admin.indexOf('const result = await api("/api/box-office/sales"');
+  const preflight = saleCommand.indexOf("const printer = await window.cineDesktop.checkPrinter()");
+  const createSale = saleCommand.indexOf('const result = await api("/api/box-office/sales"');
   assert.ok(preflight > 0 && preflight < createSale);
-  assert.match(admin, /if \(!printer\.ready\)/);
+  assert.match(saleCommand, /if \(!printer\.ready\)/);
 });
 
 test("a reimpressão no aplicativo usa a impressora nativa", () => {
@@ -97,5 +99,5 @@ test("a reimpressão no aplicativo usa a impressora nativa", () => {
   const source = actions.slice(start, end);
   assert.match(source, /window\.cineDesktop\.printUrl\(url, `order-\$\{orderId\}`\)/);
   assert.ok(source.indexOf("window.cineDesktop.printUrl") < source.indexOf("window.open(url"));
-  assert.match(admin, /\^\(order-\|ticket-\)/);
+  assert.match(pointController, /\^\(order-\|ticket-\)/);
 });
