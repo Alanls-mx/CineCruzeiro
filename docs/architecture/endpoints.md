@@ -8,6 +8,8 @@ O dispatch de `/admin`, `/admin/*`, `/images/*`, `/trailers/*` e `/uploads/*` pe
 
 `GET /api/desktop/update/*` conserva o rate limit e a precedência no dispatcher de `server.js` e entrega o arquivo via [desktopUpdateHandler](../../backend/services/desktopUpdateHandler.js): `latest.ini` na raiz sem cache, arquivos versionados (inclusive outro `latest.ini`) com cache imutável, arquivo ausente 404. Público, sem escrita ou provedor. [Teste](../../tests/desktop-update-handler.test.mjs).
 
+`GET /api/admin/logs/performance/stream` mantém o guard administrativo e a precedência de [adminLogsHandler](../../backend/services/adminLogsHandler.js); [performanceStreamService](../../backend/services/performanceStreamService.js) apenas abre e publica a stream após o guard. Retorna SSE 200 com snapshot inicial ou JSON 429 após 12 conexões, sem mutação de negócio. [Teste](../../tests/performance-stream-service.test.mjs).
+
 | Método e caminho | Estado / função e responsável | Acesso | Persistência e efeitos | Verificação |
 | --- | --- | --- | --- | --- |
 | `GET /api/content` | Ativo; catálogo público em [server.js](../../backend/server.js) | Público | Leitura de filmes, sessões e configurações públicas | [conteúdo](../../tests/public-content-settings.test.mjs) |
