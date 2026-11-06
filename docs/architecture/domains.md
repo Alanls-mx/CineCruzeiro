@@ -4,6 +4,8 @@ Este índice aponta para responsáveis confirmados, não substitui a leitura do 
 
 Operacao de atualizacao do piloto: [runner guardado](../../scripts/guarded-migration.js) vincula DDL a banco/role/release/esquema; [entrypoint quiescente](../../backend/start.js) bloqueia HTTP, webhook e WS sem carregar workers. [Matriz Fase 13.1](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md). A release antiga nao e pausada por esses modulos.
 
+Nesta etapa da modularização, [movieWorkflowService](../../backend/services/movieWorkflowService.js), [movieSessionInputService](../../backend/services/movieSessionInputService.js) e [venueInputService](../../backend/services/venueInputService.js) normalizam a entrada de filme, sessão, sala e ingresso. [cinemaSettingsHandler](../../backend/services/cinemaSettingsHandler.js), [catalogReadHandler](../../backend/services/catalogReadHandler.js), [adminUserWriteHandler](../../backend/services/adminUserWriteHandler.js), [adminCustomerHandler](../../backend/services/adminCustomerHandler.js) e [adminOverviewHandler](../../backend/services/adminOverviewHandler.js) atendem as rotas não financeiras após o guard central. [Relatório da etapa](CATALOG_ADMIN_EXTRACTION_REPORT.md).
+
 | Domínio / termos de busca | Entrada principal | Persistência ou teste |
 | --- | --- | --- |
 | Autenticação, login, 2FA | [server.js](../../backend/server.js), [adminTwoFactorService](../../backend/services/adminTwoFactorService.js), [AccountModal](../../src/components/AccountModal.tsx) | [users](../../backend/db/migrations/001_init.sql), [teste 2FA](../../scripts/admin-two-factor-tests.js) |
