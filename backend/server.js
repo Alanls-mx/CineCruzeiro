@@ -51,6 +51,7 @@ const { createStaticAssetHandler } = require("./services/staticAssetHandler");
 const { createDesktopUpdateHandler } = require("./services/desktopUpdateHandler");
 const { createPerformanceStreamService } = require("./services/performanceStreamService");
 const { createHttpResponseService } = require("./services/httpResponseService");
+const { createInfrastructureRoutes } = require("./services/infrastructureRoutes");
 const { CRM_EVENT_TYPES, normalizeCrmEvents, sendCrmWebhook, createCrmWebhookWorker } = require("./services/crmWebhookDeliveryService");
 const emailService = require("./services/emailService");
 const { resolveCampaignContext, validateCampaignTemporalClaims, filterOfferRecipients } = require("./services/emailCampaignEligibilityService");
@@ -10605,6 +10606,15 @@ const handleAdminLogsRoutes = createAdminLogsHandler({
   sendJson
 });
 
+const { handleHealthRoute, handleDesktopUpdateRoute } = createInfrastructureRoutes({
+  checkPostgresReadiness,
+  latestSchemaMigration: LATEST_SCHEMA_MIGRATION,
+  isProduction,
+  postgresEnabled,
+  sendJson,
+  serveDesktopUpdate
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -10615,20 +10625,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/health/live" && method === "GET") {
-    sendJson(res, 200, { status: "alive" }, { "Cache-Control": "no-store" });
-    return;
-  }
-
-  if (["/api/health", "/api/health/ready"].includes(pathname) && method === "GET") {
-    const readiness = postgresEnabled()
-      ? await checkPostgresReadiness(LATEST_SCHEMA_MIGRATION)
-      : { ready: !isProduction(), database: !isProduction(), migrations: !isProduction() };
-    sendJson(res, readiness.ready ? 200 : 503, {
-      status: readiness.ready ? (pathname === "/api/health" ? "ok" : "ready") : "not_ready"
-    }, { "Cache-Control": "no-store" });
-    return;
-  }
+  if (await handleHealthRoute({ res, pathname, method })) return;
 
   const context = requestContext.getStore();
   if (!req.rateLimitChecked) {
@@ -10643,10 +10640,7 @@ async function handleApi(req, res, pathname) {
     }
   }
 
-  if (pathname.startsWith("/api/desktop/update/") && method === "GET") {
-    await serveDesktopUpdate(res, pathname);
-    return;
-  }
+  if (await handleDesktopUpdateRoute({ res, pathname, method })) return;
 
   const targetedRepositoryMutation = postgresEnabled() && repositoryMutationRoute(pathname, method);
   const selfManagedOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+$/.test(pathname);

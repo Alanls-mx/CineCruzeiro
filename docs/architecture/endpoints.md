@@ -8,6 +8,8 @@ O dispatch de `/admin`, `/admin/*`, `/images/*`, `/trailers/*` e `/uploads/*` pe
 
 `GET /api/desktop/update/*` conserva o rate limit e a precedência no dispatcher de `server.js` e entrega o arquivo via [desktopUpdateHandler](../../backend/services/desktopUpdateHandler.js): `latest.ini` na raiz sem cache, arquivos versionados (inclusive outro `latest.ini`) com cache imutável, arquivo ausente 404. Público, sem escrita ou provedor. [Teste](../../tests/desktop-update-handler.test.mjs).
 
+`GET /api/health/live`, `GET /api/health` e `GET /api/health/ready` usam [infrastructureRoutes](../../backend/services/infrastructureRoutes.js). O primeiro responde 200 sem DB; os outros consultam readiness PostgreSQL no modo com banco ou sinalizam indisponibilidade em produção sem ele. Permanecem antes do rate limit. `OPTIONS` continua antes deles no dispatcher. [Teste](../../tests/infrastructure-routes.test.mjs).
+
 `GET /api/admin/logs/performance/stream` mantém o guard administrativo e a precedência de [adminLogsHandler](../../backend/services/adminLogsHandler.js); [performanceStreamService](../../backend/services/performanceStreamService.js) apenas abre e publica a stream após o guard. Retorna SSE 200 com snapshot inicial ou JSON 429 após 12 conexões, sem mutação de negócio. [Teste](../../tests/performance-stream-service.test.mjs).
 
 | Método e caminho | Estado / função e responsável | Acesso | Persistência e efeitos | Verificação |
