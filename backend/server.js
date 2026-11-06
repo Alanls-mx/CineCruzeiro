@@ -120,6 +120,7 @@ const { PRE_PREMIERE_WINDOW_MS, moviePremiereTiming, shouldPublishUpcomingMovie 
 const { createMovieWorkflowService } = require("./services/movieWorkflowService");
 const { createMovieSessionInputService } = require("./services/movieSessionInputService");
 const { createVenueInputService } = require("./services/venueInputService");
+const { createCinemaSettingsHandler } = require("./services/cinemaSettingsHandler");
 const { calendarDateKey, isValidCalendarDate, isValidSessionTime } = require("./services/calendarDateService");
 const { isDeletedMovie, movieHistory, assertMovieCanBeDeleted, deletedMovieRecord } = require("./services/movieCatalogLifecycleService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
@@ -10302,6 +10303,17 @@ const { handleHealthRoute, handleDesktopUpdateRoute } = createInfrastructureRout
   serveDesktopUpdate
 });
 
+const handleCinemaSettingsRoutes = createCinemaSettingsHandler({
+  readBody,
+  storedEditorialImageUrl,
+  postgresEnabled,
+  settingsRepository,
+  repositoryAudit,
+  writeDb,
+  sendJson,
+  assetRecord
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -12486,41 +12498,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/settings" && method === "PUT") {
-    const body = await readBody(req);
-    if (body.eventStartingPrice !== undefined) {
-      body.eventStartingPrice = Math.max(0, Number(body.eventStartingPrice || 0));
-    }
-    ["clubTransparentImages", "eventTransparentImages"].forEach((key) => {
-      if (body[key] !== undefined) body[key] = body[key] === true;
-    });
-    [
-      "eventHeroImageUrl",
-      "eventGamesImageUrl",
-      "eventPartiesImageUrl",
-      "eventCorporateImageUrl",
-      "eventGalleryImageUrl",
-      "clubHeroImageUrl",
-      "clubBannerImageUrl"
-    ].forEach((key) => {
-      if (body[key] !== undefined) body[key] = storedEditorialImageUrl(body[key]);
-    });
-    const previous = Object.fromEntries(Object.keys(body).map((key) => [key, db.settings?.[key]]));
-    db.settings = { ...db.settings, ...body };
-    const savedSettings = postgresEnabled()
-      ? await settingsRepository.patchAppSettings(body, { audit: repositoryAudit(req, "settings", "app", previous, body) })
-      : (await writeDb(db), db.settings);
-    sendJson(res, 200, assetRecord(savedSettings, [
-      "eventHeroImageUrl",
-      "eventGamesImageUrl",
-      "eventPartiesImageUrl",
-      "eventCorporateImageUrl",
-      "eventGalleryImageUrl",
-      "clubHeroImageUrl",
-      "clubBannerImageUrl"
-    ]));
-    return;
-  }
+  if (await handleCinemaSettingsRoutes({ req, res, pathname, method, db })) return;
 
   if (pathname === "/api/email/unsubscribe" && ["GET", "POST"].includes(method)) {
     const url = new URL(req.url, `http://${req.headers.host}`);
