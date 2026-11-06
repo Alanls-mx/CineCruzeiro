@@ -79,7 +79,7 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Repasse de bilheteria | [ticket-finance-view](../../backend/public/admin-modules/ticket-finance-view.js) | [teste](../../tests/admin-ticket-finance-view.test.mjs) |
 | Contas de clientes | [customer-accounts-view](../../backend/public/admin-modules/customer-accounts-view.js) | [teste](../../tests/admin-customer-accounts-view.test.mjs) |
 | Equipe e permissões visuais | [team-accounts-view](../../backend/public/admin-modules/team-accounts-view.js) | [teste](../../tests/admin-team-accounts-view.test.mjs); autorização continua no servidor |
-| Lista de sessões do filme | [movie-sessions-view](../../backend/public/admin-modules/movie-sessions-view.js) | [teste](../../tests/admin-movie-sessions-view.test.mjs) |
+| Lista e editor de sessões do filme | [movie-sessions-view](../../backend/public/admin-modules/movie-sessions-view.js) | Renderização, criação/edição/exclusão e conflitos de sala; [teste](../../tests/admin-movie-sessions-view.test.mjs) |
 | Lista de salas | [room-list-view](../../backend/public/admin-modules/room-list-view.js) | [teste](../../tests/admin-room-list-view.test.mjs) |
 
 Próximos candidatos, ainda **não extraídos**: outras consultas administrativas do Clube, gestão de clientes, formulários de sessão e grupos de listeners do painel. Auditar dependências e cobertura antes de mover.

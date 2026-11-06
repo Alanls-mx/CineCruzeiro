@@ -29,7 +29,7 @@ Inventário AST: 533 declarações de função no nível do arquivo; 83 nomes de
 | `ticket-finance-view.js` | `ticketFinanceView.createTicketFinanceView` | Render e comandos de GET/PUT/export; `bindEvents` da instância chamado uma vez pelo shell. |
 | `customer-accounts-view.js` | `customerAccountsView.createCustomerAccountsView` | Render e CRUD de cliente via `api` injetada; PII/`users.manage`. |
 | `team-accounts-view.js` | `teamAccountsView.createTeamAccountsView` | Render, formulário e comandos de equipe; presets apenas visuais; servidor mantém `users.manage`. Callback de clientes é tardio para preservar a composição sem ciclo. |
-| `movie-sessions-view.js` | `movieSessionsView.createMovieSessionsView` | Render/paginação; editor e mutação seguem no shell. |
+| `movie-sessions-view.js` | `movieSessionsView.createMovieSessionsView` | Render/paginação e editor com criação, edição, exclusão e confirmação de conflitos; o shell conserva `applySessionMutation`, programação global e registro de eventos. |
 | `room-list-view.js` | `roomListView.createRoomListView` | Render/lista; edição do layout segue no shell. |
 | `dashboard-view.js` | `dashboardView.createDashboardView` | Render/gráfico/dica; sem listener próprio permanente. |
 | `performance-view.js` | `performanceView.createPerformanceView` | Render; SSE e controles permanecem no shell. |

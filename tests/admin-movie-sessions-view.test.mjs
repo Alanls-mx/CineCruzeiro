@@ -48,3 +48,50 @@ test('estado vazio conserva ação para criar primeira sessão', () => {
   view.renderSessions([]);
   assert.match($('sessionsList').innerHTML, /Adicionar primeira sessão/);
 });
+
+test('salvar sessão mantém um único POST e libera o formulário após commit ou falha', async () => {
+  const elements = new Map();
+  const $ = (id) => {
+    if (!elements.has(id)) elements.set(id, { value: '', selectedOptions: [], disabled: false });
+    return elements.get(id);
+  };
+  $('movieId').value = 'movie';
+  $('sessionDate').value = '2026-11-10';
+  $('sessionTime').value = '21:55';
+  $('sessionRoom').value = 'Sala 1';
+  $('sessionRoom').selectedOptions = [{ dataset: { roomId: 'room' } }];
+  $('sessionFormat').value = '2D';
+  $('sessionStatus').value = 'available';
+  $('sessionCreationMode').value = 'single';
+  const state = { content: { tickets: [], orders: [] }, editingSessionId: '', savingSession: false };
+  const requests = [];
+  let fail = false;
+  let finish;
+  const pending = new Promise((resolve) => { finish = resolve; });
+  const notices = [];
+  const errors = [];
+  const view = createMovieSessionsView({ state, $,
+    document: { querySelectorAll: () => [{ value: 'full' }] },
+    api: async (path, options) => { requests.push([path, options]); if (fail) throw new Error('falha sintética'); return pending; },
+    setDisabled: (id, disabled) => { $(id).disabled = disabled; },
+    closeSessionEditor: () => {}, applySessionMutation: () => {}, renderMovies: () => {},
+    setMovieWizardStep: () => {}, showSuccess: (...args) => notices.push(args), showToast: (...args) => errors.push(args)
+  });
+  const first = view.saveSession();
+  await view.saveSession();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0][0], '/api/movies/movie/sessions');
+  assert.equal(requests[0][1].method, 'POST');
+  assert.equal(JSON.parse(requests[0][1].body).roomId, 'room');
+  assert.equal($('saveSessionButton').disabled, true);
+  finish({ id: 'session', date: '2026-11-10', time: '21:55' });
+  await first;
+  assert.equal(state.savingSession, false);
+  assert.equal($('saveSessionButton').disabled, false);
+  assert.equal(notices.length, 1);
+  fail = true;
+  await view.saveSession();
+  assert.equal(state.savingSession, false);
+  assert.equal($('saveSessionButton').disabled, false);
+  assert.deepEqual(errors[0], ['falha sintética', 'error']);
+});
