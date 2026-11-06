@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { createTicketFinanceView } = require("../backend/public/admin-modules/ticket-finance-view.js");
+const { createMovieSessionInputService } = require("../backend/services/movieSessionInputService.js");
 
 const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
 const dashboardSource = fs.readFileSync(new URL("../backend/services/adminDashboardService.js", import.meta.url), "utf8");
@@ -21,7 +22,8 @@ function extract(text, name) {
   return match[0];
 }
 const context = vm.createContext({ ...calendar, crypto, todayIsoDate: () => "2026-10-01", URL });
-vm.runInContext(["normalizeMovieSession", "sessionDatesInRange", "createMovieSessionBatch", "parseAdminPeriod", "sessionCommercialChanges"].map((name) => extract(source, name)).join("\n"), context);
+vm.runInContext(["parseAdminPeriod", "sessionCommercialChanges"].map((name) => extract(source, name)).join("\n"), context);
+Object.assign(context, createMovieSessionInputService({ ...calendar, crypto }));
 const now = new Date("2026-10-01T15:00:00Z");
 const movie = { id: "film", slug: "film", title: "Filme", duration: "120 min", sessions: [{ id: "session", date: "2026-10-02", time: "19:00", roomId: "room", status: "available" }] };
 
