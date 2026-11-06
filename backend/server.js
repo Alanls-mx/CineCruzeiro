@@ -122,6 +122,7 @@ const { createMovieSessionInputService } = require("./services/movieSessionInput
 const { createVenueInputService } = require("./services/venueInputService");
 const { createCinemaSettingsHandler } = require("./services/cinemaSettingsHandler");
 const { createAdminUserWriteHandler } = require("./services/adminUserWriteHandler");
+const { createCatalogReadHandler } = require("./services/catalogReadHandler");
 const { calendarDateKey, isValidCalendarDate, isValidSessionTime } = require("./services/calendarDateService");
 const { isDeletedMovie, movieHistory, assertMovieCanBeDeleted, deletedMovieRecord } = require("./services/movieCatalogLifecycleService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
@@ -10328,6 +10329,16 @@ const handleAdminUserWriteRoutes = createAdminUserWriteHandler({
   sendJson
 });
 
+const { handlePublicContentRoute, handleAdminContentRoute } = createCatalogReadHandler({
+  sendJson,
+  getContent,
+  getAdminContent,
+  postgresEnabled,
+  adminHasPermission,
+  emailCampaignRepository,
+  publicCampaign
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -10948,12 +10959,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/content" && method === "GET") {
-    sendJson(res, 200, getContent(db), {
-      "Cache-Control": "public, max-age=15, stale-while-revalidate=45"
-    });
-    return;
-  }
+  if (handlePublicContentRoute({ res, pathname, method, db })) return;
 
   const adminSessionSeatMapMatch = pathname.match(/^\/api\/admin\/sessions\/([^/]+)\/seat-map$/);
   if (adminSessionSeatMapMatch && method === "GET") {
@@ -11003,16 +11009,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/admin/content" && method === "GET") {
-    const content = getAdminContent(db, req.adminUser);
-    if (postgresEnabled() && adminHasPermission(req.adminUser, "marketing.view")) {
-      const history = await emailCampaignRepository.listCampaigns({ page: 1, pageSize: 25 });
-      content.emailCampaigns = history.campaigns.map(publicCampaign);
-      content.emailCampaignPagination = { page: history.page, pages: history.pages, pageSize: history.pageSize, total: history.total, totals: history.totals };
-    }
-    sendJson(res, 200, content);
-    return;
-  }
+  if (await handleAdminContentRoute({ req, res, pathname, method, db })) return;
 
   if ((pathname === "/api/dashboard" || pathname === "/api/admin/dashboard") && method === "GET") {
     const dashboardUrl = new URL(req.url, `http://${req.headers.host}`);
