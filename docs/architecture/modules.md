@@ -26,6 +26,7 @@ Na Fase 11, `cardTerminalProvider` limita a descricao da Order a 150 caracteres 
 | Filmes e sessões | [movieCatalogHandler](../../backend/services/movieCatalogHandler.js) | [publicação](../../tests/movie-publication-policy.test.mjs) |
 | Normalização e publicação de filmes | [movieWorkflowService](../../backend/services/movieWorkflowService.js) | [contrato de entrada](../../tests/movie-workflow-service.test.mjs), [HTTP](../../tests/catalog-operations-http.test.mjs) |
 | Entrada e lote de sessões | [movieSessionInputService](../../backend/services/movieSessionInputService.js) | [calendário e preços](../../tests/catalog-sessions-finance-polish.test.mjs), [HTTP](../../tests/catalog-operations-http.test.mjs) |
+| Entrada de sala e tipo de ingresso | [venueInputService](../../backend/services/venueInputService.js) | [layout e limpeza](../../tests/venue-input-service.test.mjs), [conflitos](../../tests/session-room-conflict.test.mjs) |
 | Salas, limpeza e tipos de ingresso | [venueConfigurationHandler](../../backend/services/venueConfigurationHandler.js) | [conflitos](../../tests/session-room-conflict.test.mjs) |
 | Bomboniere, promoções, anúncios | [commercialCatalogHandler](../../backend/services/commercialCatalogHandler.js) | [catálogo HTTP](../../tests/commercial-catalog-http.test.mjs) |
 | Catálogo comercial público | [commercialCatalogPresenter](../../backend/services/commercialCatalogPresenter.js), [accessPolicy](../../backend/services/commercialCatalogAccessPolicy.js) | [integração](../../tests/commercial-catalog-integration.test.mjs) |
