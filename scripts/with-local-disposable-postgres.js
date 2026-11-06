@@ -7,10 +7,10 @@ const { assertDisposableTestServer } = require("./test-postgres-safety");
 const use18 = process.argv[2] === "--pg18";
 const image = use18 ? "postgres:18-alpine" : "postgres:16-alpine";
 const dataPath = use18 ? "/var/lib/postgresql" : "/var/lib/postgresql/data";
-const allowedTargets = new Set(["smoke", "concurrency", "repositories", "guard", "upgrade"]);
+const allowedTargets = new Set(["smoke", "concurrency", "repositories", "guard", "upgrade", "backup-restore"]);
 const targets = process.argv.slice(use18 ? 3 : 2);
 if (!targets.length || targets.some((target) => !allowedTargets.has(target))) {
-  throw new Error("Escolha um ou mais: smoke, concurrency, repositories, guard, upgrade; use --pg18 para upgrade.");
+  throw new Error("Escolha um ou mais: smoke, concurrency, repositories, guard, upgrade, backup-restore; use --pg18 para upgrade.");
 }
 if (targets.includes("upgrade") && !use18) throw new Error("O ensaio upgrade exige --pg18.");
 for (const name of ["DATABASE_URL", "POSTGRES_URL", "TEST_DATABASE_URL", "TEST_POSTGRES_ADMIN_URL", "CINE_TEST_SERVER_TOKEN"]) {
@@ -89,8 +89,13 @@ async function main() {
     finally { if (oldNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = oldNodeEnv; }
     for (const target of targets) {
       process.stdout.write(`Guarded PostgreSQL suite: ${target}\n`);
-      const run = spawnSync(process.execPath, [path.join(__dirname, "with-isolated-postgres.js"), target],
-        { cwd: path.join(__dirname, ".."), env, stdio: "inherit", windowsHide: true });
+      const script = target === "backup-restore" ? "postgres-backup-restore-test.js" : "with-isolated-postgres.js";
+      const args = target === "backup-restore" ? [] : [target];
+      const targetEnv = target === "backup-restore"
+        ? { ...env, GITHUB_ACTIONS: "true", POSTGRES_SERVICE_CONTAINER_ID: id }
+        : env;
+      const run = spawnSync(process.execPath, [path.join(__dirname, script), ...args],
+        { cwd: path.join(__dirname, ".."), env: targetEnv, stdio: "inherit", windowsHide: true });
       if (run.error || run.status !== 0) throw new Error(`${target} failed (${run.error?.message || run.status})`);
     }
   } finally { cleanup(); }
