@@ -16,6 +16,8 @@ O dispatch de `/admin`, `/admin/*`, `/images/*`, `/trailers/*` e `/uploads/*` pe
 
 `GET /api/admin/customers` mantém `dashboard.view` e a busca de até 12 resultados sanitizados pelo [adminCustomerSearchService](../../backend/services/adminCustomerSearchService.js); [adminCustomerHandler](../../backend/services/adminCustomerHandler.js) só vincula query e resposta após o guard. Não escreve nem expõe hash/CPF na resposta. [Teste](../../tests/admin-customer-handler.test.mjs).
 
+`GET /api/tmdb/search` e `GET /api/tmdb/movie/:id` permanecem nos pontos de dispatch anteriores, após o guard administrativo, com a consulta externa feita por `tmdbFetch` injetado em [tmdbLookupHandler](../../backend/services/tmdbLookupHandler.js). Busca vazia conserva 400; detalhes usam [tmdbMovieMapper](../../backend/services/tmdbMovieMapper.js). Sem escrita local. [Teste](../../tests/tmdb-lookup-handler.test.mjs).
+
 `GET /api/desktop/update/*` conserva o rate limit e a precedência no dispatcher de `server.js` e entrega o arquivo via [desktopUpdateHandler](../../backend/services/desktopUpdateHandler.js): `latest.ini` na raiz sem cache, arquivos versionados (inclusive outro `latest.ini`) com cache imutável, arquivo ausente 404. Público, sem escrita ou provedor. [Teste](../../tests/desktop-update-handler.test.mjs).
 
 `GET /api/health/live`, `GET /api/health` e `GET /api/health/ready` usam [infrastructureRoutes](../../backend/services/infrastructureRoutes.js). O primeiro responde 200 sem DB; os outros consultam readiness PostgreSQL no modo com banco ou sinalizam indisponibilidade em produção sem ele. Permanecem antes do rate limit. `OPTIONS` continua antes deles no dispatcher. [Teste](../../tests/infrastructure-routes.test.mjs).

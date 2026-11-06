@@ -127,6 +127,7 @@ const { createAdminOverviewHandler } = require("./services/adminOverviewHandler"
 const { createAdminCustomerHandler } = require("./services/adminCustomerHandler");
 const { createCommercialCatalogInputService } = require("./services/commercialCatalogInputService");
 const { createAdminContentPresenter } = require("./services/adminContentPresenter");
+const { createTmdbLookupHandler } = require("./services/tmdbLookupHandler");
 const { calendarDateKey, isValidCalendarDate, isValidSessionTime } = require("./services/calendarDateService");
 const { isDeletedMovie, movieHistory, assertMovieCanBeDeleted, deletedMovieRecord } = require("./services/movieCatalogLifecycleService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
@@ -10189,6 +10190,13 @@ const handleAdminOverviewRoutes = createAdminOverviewHandler({
 
 const handleAdminCustomerRoute = createAdminCustomerHandler({ adminCustomerSearch, sendJson });
 
+const { handleTmdbSearchRoute, handleTmdbMovieRoute } = createTmdbLookupHandler({
+  tmdbFetch,
+  tmdbMoviePayload,
+  slugify,
+  sendJson
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -12954,35 +12962,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/tmdb/search" && method === "GET") {
-    const query = new URL(req.url, `http://${req.headers.host}`).searchParams.get("query");
-    if (!query) {
-      sendJson(res, 400, { error: "Informe um titulo para pesquisar." });
-      return;
-    }
-
-    const data = await tmdbFetch("/search/movie", {
-      query,
-      language: "pt-BR",
-      region: "BR",
-      include_adult: "false",
-      page: 1
-    }, db);
-
-    sendJson(
-      res,
-      200,
-      (data.results || []).slice(0, 8).map((movie) => ({
-        tmdbId: movie.id,
-        title: movie.title,
-        originalTitle: movie.original_title,
-        year: movie.release_date ? movie.release_date.slice(0, 4) : "",
-        synopsis: movie.overview || "",
-        posterUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w342${movie.poster_path}` : ""
-      }))
-    );
-    return;
-  }
+  if (await handleTmdbSearchRoute({ req, res, pathname, method, db })) return;
 
   if (pathname === "/api/subscription-plans" && method === "GET") {
     sendJson(
@@ -13561,16 +13541,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  const tmdbMovieMatch = pathname.match(/^\/api\/tmdb\/movie\/([^/]+)$/);
-  if (tmdbMovieMatch && method === "GET") {
-    const tmdbId = decodeURIComponent(tmdbMovieMatch[1]);
-    const data = await tmdbFetch(`/movie/${tmdbId}`, {
-      language: "pt-BR",
-      append_to_response: "release_dates,videos,credits"
-    }, db);
-    sendJson(res, 200, tmdbMoviePayload(data, { slugify }));
-    return;
-  }
+  if (await handleTmdbMovieRoute({ res, pathname, method, db })) return;
 
   if (pathname === "/api/uploads/images" && method === "POST") {
     const body = await readBody(req);
