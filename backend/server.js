@@ -124,6 +124,7 @@ const { createCinemaSettingsHandler } = require("./services/cinemaSettingsHandle
 const { createAdminUserWriteHandler } = require("./services/adminUserWriteHandler");
 const { createCatalogReadHandler } = require("./services/catalogReadHandler");
 const { createAdminOverviewHandler } = require("./services/adminOverviewHandler");
+const { createAdminCustomerHandler } = require("./services/adminCustomerHandler");
 const { calendarDateKey, isValidCalendarDate, isValidSessionTime } = require("./services/calendarDateService");
 const { isDeletedMovie, movieHistory, assertMovieCanBeDeleted, deletedMovieRecord } = require("./services/movieCatalogLifecycleService");
 const { findSessionRoomConflicts } = require("./services/sessionRoomConflictService");
@@ -10352,6 +10353,8 @@ const handleAdminOverviewRoutes = createAdminOverviewHandler({
   publicCampaign
 });
 
+const handleAdminCustomerRoute = createAdminCustomerHandler({ adminCustomerSearch, sendJson });
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -12381,11 +12384,7 @@ async function handleApi(req, res, pathname) {
     }
   }
 
-  if (pathname === "/api/admin/customers" && method === "GET") {
-    const query = new URL(req.url, `http://${req.headers.host}`).searchParams.get("query") || "";
-    sendJson(res, 200, { customers: adminCustomerSearch.search(db, query) });
-    return;
-  }
+  if (handleAdminCustomerRoute({ req, res, pathname, method, db })) return;
 
   if (pathname === "/api/events" && method === "POST") {
     const body = await readBody(req);
