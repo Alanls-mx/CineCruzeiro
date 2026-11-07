@@ -5,6 +5,7 @@ on:
     branches:
       - codex/modularize-server-admin
       - codex/cine-modularizacao-profunda
+      - codex/cine-backend-finalizacao
   pull_request:
 
 permissions:
