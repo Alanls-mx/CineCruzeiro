@@ -131,3 +131,7 @@ Os números são **reduções líquidas estimadas em `server.js`**; novos módul
 ## Evidência desta etapa de planejamento
 
 `node scripts/measure-modularization.mjs --summary` confirmou 13.529/3.421; `npm run docs:modularization:report` passou, registrando snapshot estático `+13/-13` predicados e `+0/-42` literais ante a base histórica; `npm run test:security:local` passou (25/25 no TAP principal e scripts complementares); `npm run docs:check` passou antes da redação e será reexecutado após ela. Os workflows Security regression, Browser E2E e PostgreSQL integration do commit de origem `715839f...` concluíram com sucesso. Não foi feito deploy, migração, chamada a provedor, acesso à VPS ou banco operacional. Sem extração de runtime, os números de linhas permanecem os da base da Fase 21.
+
+## Atualização do lote de identidade (P2)
+
+O HEAD de P3 era 11.991 linhas em `server.js` e 4.313 em `handleApi`. Cinco commits P2 (`bdf6178`, `86a8f07`, `da234b2`, `61c0908`, `8e86636`) extraíram sessão/conta Admin, credenciais/conta de cliente e modelo de usuário. A medição passou a 11.139/3.452, redução de 852/861 linhas. O resultado medido e as lacunas de PostgreSQL/OAuth/exclusão de usuário estão em [FASE21_IDENTIDADE_RESULTADO](FASE21_IDENTIDADE_RESULTADO.md). As projeções antigas da tabela P2 eram indicativas e não substituem esse valor. A meta de cerca de 10.000 linhas continua aberta; prosseguir só após cobertura adicional das famílias remanescentes.

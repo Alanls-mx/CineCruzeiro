@@ -1,5 +1,7 @@
 # Auditoria dirigida de transacoes
 
+Identidade Fase 21: os handlers de sessão/conta recebem `db`, `postgresEnabled`, repositórios e `writeDb` do servidor. Login Admin grava auditoria antes de emitir cookie; logout e troca de senha incrementam `sessionVersion` antes da resposta; registro/reset/verificação persistem token/conta antes de enviar e-mail. `ensureAdmin`, origem, rate e seleção de transação continuam no dispatcher. Não antecipar resposta ou efeito externo ao mover essas rotas. [Contrato e lacunas](FASE21_IDENTIDADE_CONTRATOS.md).
+
 Para a etapa de extração financeira, veja o [mapa por fluxo](FINANCIAL_TRANSACTION_MAP.md)
 e o [relatório de falhas parciais](FINANCIAL_EXTRACTION_REPORT.md). Os limites
 originais de commit, resposta e chamada externa permanecem; o dispatcher injeta
