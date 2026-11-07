@@ -3092,6 +3092,17 @@ async function run() {
         method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(body)
       });
       const printBody = { ok: true, jobId: localPrintSale.payload.order.pointPrint.jobId };
+      assert.equal((await request(localPrintPath, {
+        method: "POST", headers: jsonHeaders(), body: JSON.stringify(printBody)
+      })).response.status, 401);
+      assert.equal((await request(localPrintPath, {
+        method: "POST", headers: { ...jsonHeaders(adminCookie), Origin: "https://invalid.example" },
+        body: JSON.stringify(printBody)
+      })).response.status, 403);
+      const staleLocalPrint = await confirmLocalPrint({ ok: true, jobId: "old-job" });
+      assert.equal(staleLocalPrint.response.status, 409);
+      assert.equal(staleLocalPrint.payload.error.code, "PRINT_JOB_STALE");
+      assert.equal((await readPersistedDb()).tickets.filter((ticket) => ticket.orderId === localPrintOrderId).length, 0);
       const localPrintCommitFailed = failCommitForRecord(localPrintOrderId, "smoke_local_print_commit_failure", 1,
         matchingOrderWrite(localPrintOrderId, (order) => order.status === "paid"));
       let failedLocalPrint;
