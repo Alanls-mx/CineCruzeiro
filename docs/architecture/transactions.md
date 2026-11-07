@@ -6,6 +6,8 @@ Para a etapa de extração financeira, veja o [mapa por fluxo](FINANCIAL_TRANSAC
 e o [relatório de falhas parciais](FINANCIAL_EXTRACTION_REPORT.md). Os limites
 originais de commit, resposta e chamada externa permanecem; o dispatcher injeta
 `withCriticalMutation`, `readDb`, `writeDb`, guardas e provedores nos novos módulos.
+
+Na Fase 21, [snapshotPersistenceRuntime](../../backend/services/snapshotPersistenceRuntime.js) passou a possuir o `AsyncLocalStorage` da mutação JSON e a delegar `withCriticalMutation` ao lock PostgreSQL existente. Não cria transação por importação nem muda o momento de `writeDb`/COMMIT. O servidor ainda seleciona o limite transacional da rota. [Teste dirigido](../../tests/snapshot-persistence-runtime.test.mjs), [smoke JSON/PG](../../scripts/smoke-tests.js). A fila JSON não equivale a transação SQL nem resolve efeito externo inconclusivo.
 Os testes adicionais de falha antes/depois do provedor, rollback, webhook assinado
 e disputa de estoque em PostgreSQL descartável estão na
 [matriz de cobertura da Fase 21](FASE21_COBERTURA_FINANCEIRA.md). Ela registra
