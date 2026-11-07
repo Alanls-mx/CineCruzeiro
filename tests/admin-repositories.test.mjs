@@ -56,8 +56,10 @@ test("repository de pedidos usa SQL direcionado e idempotente", () => {
 
 test("backend deriva o base path publico para imagens fora do Next", () => {
   const server = fs.readFileSync(path.join(root, "backend", "server.js"), "utf8");
-  assert.match(server, /CINE_PUBLIC_BACKEND_URL \|\| process\.env\.FRONTEND_URL/);
-  assert.match(server, /new URL\(publicUrl\)\.pathname/);
+  const assetPaths = fs.readFileSync(path.join(root, "backend", "services", "publicAssetPathService.js"), "utf8");
+  assert.match(server, /createPublicAssetPathService\(/);
+  assert.match(assetPaths, /CINE_PUBLIC_BACKEND_URL \|\| env\.FRONTEND_URL/);
+  assert.match(assetPaths, /new URL\(publicUrl\)\.pathname/);
 });
 
 test("rotas migradas nao entram no advisory lock global", () => {
