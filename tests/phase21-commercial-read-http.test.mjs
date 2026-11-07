@@ -27,7 +27,8 @@ test('commercial reads preserve audience, status, cache and DTOs', { timeout: 30
     orders: [{ id: 'read-order-1', saleMode: 'concession_counter', status: 'paid', paymentStatus: 'approved', customerName: 'Cliente sintético', totalPrice: 10,
       concessionItems: [{ id: 'item-1', name: 'Pipoca', quantity: 1, unitPrice: 10, finalPrice: 10 }], createdAt: now, paidAt: now }],
     payments: [{ id: 'payment-1', orderId: 'read-order-1', status: 'approved', method: 'pix', amount: 10, approvedAt: now }],
-    movies: [], rooms: [], tickets: [], subscriptions: []
+    movies: [], rooms: [], tickets: [{ id: 'read-ticket-1', orderId: 'ticket-order', code: 'READ-TICKET-1', customerEmail: 'ana@example.test',
+      customerName: 'Ana Silva', movieTitle: 'Filme sintético', sessionDate: '2099-01-01', sessionTime: '20:00', status: 'active', createdAt: now }], subscriptions: []
   }));
   const child = spawn(process.execPath, ['backend/server.js'], {
     cwd: root, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
@@ -87,7 +88,16 @@ test('commercial reads preserve audience, status, cache and DTOs', { timeout: 30
     assert.deepEqual((await get('/api/me/subscriptions', customerCookie)).body.subscriptions, []);
     const tickets = await get('/api/me/tickets', customerCookie);
     assert.equal(tickets.response.status, 200);
-    assert.deepEqual(tickets.body, { tickets: [], upcoming: [], archived: [] });
+    assert.equal(tickets.body.tickets.length, 1);
+    assert.equal(tickets.body.tickets[0].id, 'read-ticket-1');
+    const ownedTicket = await get('/api/me/tickets/read-ticket-1', customerCookie);
+    assert.equal(ownedTicket.response.status, 200);
+    assert.equal(ownedTicket.body.ticket.id, 'read-ticket-1');
+    assert.equal((await get('/api/me/tickets/missing', customerCookie)).response.status, 404);
+    const otherRegister = await post('/api/auth/register', { firstName: 'Bia', lastName: 'Costa', email: 'bia@example.test', password: 'Senha-forte-2026!' });
+    assert.equal(otherRegister.status, 201);
+    const otherCookie = (otherRegister.headers.get('set-cookie') || '').split(';')[0];
+    assert.equal((await get('/api/me/tickets/read-ticket-1', otherCookie)).response.status, 404);
     const navigation = await new Promise((resolve, reject) => {
       http.get(`${base}/api/me/tickets`, { headers: { Cookie: customerCookie, 'sec-fetch-mode': 'navigate', Accept: 'text/html' } }, (response) => {
         response.resume();
