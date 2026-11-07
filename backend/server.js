@@ -153,6 +153,7 @@ const { createVenueInputService } = require("./services/venueInputService");
 const { createCinemaSettingsHandler } = require("./services/cinemaSettingsHandler");
 const { createAdminUserWriteHandler } = require("./services/adminUserWriteHandler");
 const { createAdminOrderReadRoutes } = require("./services/adminOrderReadRoutes");
+const { createCustomerTicketReadRoutes } = require("./services/customerTicketReadRoutes");
 const { createClubReadRoutes } = require("./services/clubReadRoutes");
 const { createAdminConcessionSalesReadHandler } = require("./services/adminConcessionSalesReadHandler");
 const { createUserAccountModelService } = require("./services/userAccountModelService");
@@ -2749,19 +2750,6 @@ function stagePaidOrderForPrint(db, order, payment, source = "box_office") {
     ticketCount: order.pendingPrintTickets.length
   };
   return order.pendingPrintTickets;
-}
-
-function findAccountTickets(db, userOrQuery) {
-  if (!userOrQuery) return [];
-  const user = typeof userOrQuery.get === "function"
-    ? (userOrQuery.get("userId") ? (db.users || []).find((item) => item.id === String(userOrQuery.get("userId")).trim()) : null)
-    : userOrQuery;
-  if (!user) return [];
-
-  return (db.tickets || [])
-    .filter((ticket) => ticketBelongsToUser(db, ticket, user))
-    .map((ticket) => enrichTicket(db, ticket))
-    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
 
 function isOrderFullyValidated(order, tickets = []) {
@@ -7467,6 +7455,17 @@ const { handleAdminOrderListRead, handleAdminOrderDetailRead } = createAdminOrde
   sendJson
 });
 
+const { handleCustomerTicketListRead, handleCustomerTicketDetailRead } = createCustomerTicketReadRoutes({
+  appFrontendUrl,
+  securityHeaders,
+  requireCustomerAuth,
+  ticketBelongsToUser,
+  enrichTicket,
+  toCustomerTicketDto,
+  getOwnedTicket,
+  sendJson
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -8940,28 +8939,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/me/tickets" && method === "GET") {
-    const isDocumentNavigation = req.headers["sec-fetch-mode"] === "navigate"
-      && String(req.headers.accept || "").includes("text/html");
-    if (isDocumentNavigation) {
-      res.writeHead(303, securityHeaders({
-        Location: `${appFrontendUrl()}/conta/ingressos`,
-        "Cache-Control": "private, no-store, max-age=0"
-      }));
-      res.end();
-      return;
-    }
-    const user = requireCustomerAuth(req, res, db);
-    if (!user) return;
-    const enrichedTickets = findAccountTickets(db, user);
-    const tickets = enrichedTickets.map(toCustomerTicketDto);
-    sendJson(res, 200, {
-      tickets,
-      upcoming: enrichedTickets.filter((ticket) => !ticket.archived).map(toCustomerTicketDto),
-      archived: enrichedTickets.filter((ticket) => ticket.archived).map(toCustomerTicketDto)
-    }, { "Cache-Control": "private, no-store, max-age=0" });
-    return;
-  }
+  if (handleCustomerTicketListRead({ req, res, pathname, method, db })) return;
 
   const accountTicketMatch = pathname.match(/^\/api\/me\/tickets\/([^/]+)(?:\/([^/]+))?$/);
   if (accountTicketMatch) {
@@ -8970,17 +8948,7 @@ async function handleApi(req, res, pathname) {
     const ticketId = decodeURIComponent(accountTicketMatch[1]);
     const action = accountTicketMatch[2] ? decodeURIComponent(accountTicketMatch[2]) : "";
 
-    if (method === "GET" && !action) {
-      const ticket = getOwnedTicket(db, ticketId, user);
-      if (!ticket) {
-        sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso nao encontrado nesta conta." } });
-        return;
-      }
-      sendJson(res, 200, { ticket: toCustomerTicketDto(enrichTicket(db, ticket)) }, {
-        "Cache-Control": "private, no-store, max-age=0"
-      });
-      return;
-    }
+    if (handleCustomerTicketDetailRead({ res, method, action, db, ticketId, user })) return;
 
     if (method === "GET" && action === "qr") {
       const ticket = getOwnedTicket(db, ticketId, user);
