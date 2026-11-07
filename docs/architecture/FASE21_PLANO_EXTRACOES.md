@@ -38,6 +38,10 @@ O cálculo de seleção de ingressos, agregação, rótulos e PDF passou para [a
 
 `socialStudioBrand` e `socialStudioContext` passaram para [socialStudioContextPresenter](../../backend/services/socialStudioContextPresenter.js), sem I/O no import. `server.js` 12.139 → 12.063 (−76 líquidas). O módulo recebe catálogo comercial, identidade, URLs e projeção de histórico por instalação; é consumido pela API Studio tokenizada, pelo handler Admin e pelo orquestrador existente. [Teste de contexto](../../tests/social-studio-context-presenter.test.mjs), [rotas](../../tests/admin-social-studio-routes.test.mjs), segurança local e lint passaram. Risco preexistente: os fallbacks de website/assinatura do cartaz ainda contêm identidade Cine Cruzeiro dentro do módulo compartilhado; mudar isso exige caracterização multi-cinema de saída visual e é trabalho funcional separado.
 
+## Execução 21.2 — consulta administrativa de pagamentos
+
+Somente `GET /api/admin/payments` passou para [adminPaymentsReadHandler](../../backend/services/adminPaymentsReadHandler.js), após logs e antes de integrações. `server.js` 12.063 → 12.023 (−40 líquidas). O módulo filtra e projeta o snapshot sem mutações, provedor ou alteração de estado; `payments.view` continua no guard central. [Teste dirigido](../../tests/admin-payments-read-handler.test.mjs), segurança local e lint passaram. Risco residual: a leitura exibe dados financeiros e pessoais conforme a autorização central existente; o teste dirigido não substitui a matriz HTTP de permissões por papel.
+
 **Branch:** `codex/cine-backend-finalizacao`; **base:** HEAD validado `715839fce442dd59d0438ff88b418cee0b5f0b31` de `codex/cine-modularizacao-profunda`. A branch é única para a Fase 21; usar commits por domínio e manter `main` e `backend/public/admin.js`/`admin-modules/` intocados. Este documento planeja, não executa, extrações. O [inventário ordenado](FASE21_INVENTARIO_ROTAS.md) é a matriz de precedência e de riscos do código atual.
 
 ## Meta e viabilidade
