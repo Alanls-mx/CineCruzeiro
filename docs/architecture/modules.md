@@ -152,3 +152,5 @@ O [admin.html](../../backend/public/admin.html) carrega módulos locais antes de
 | Selects responsivos | [responsive-select-controls](../../backend/public/admin-modules/responsive-select-controls.js) | Montagem única, eventos locais e layout do menu; [composição](../../tests/admin-module-composition.test.mjs) |
 
 O resultado e os limites desta etapa estão em [ADMIN_MODULARIZATION_RESULT](ADMIN_MODULARIZATION_RESULT.md). A composição ainda mantém helpers de navegação, estado compartilhado e compatibilidade WebView2 no shell.
+[httpRequestBodyService](../../backend/services/httpRequestBodyService.js) é dono da leitura limitada do corpo HTTP, do buffer bruto para webhooks e do erro `INVALID_JSON`/`PAYLOAD_TOO_LARGE`. Todos os endpoints que usam `readBody` mantêm autenticação, CSRF, origem, rate limit e seleção de transação no dispatcher/handler anteriores; o módulo não lê nem escreve banco, não chama provedor e não responde HTTP. [Caracterização](../../tests/phase22-http-boundary.test.mjs) e [contrato HTTP](../../tests/phase21-identity-http.test.mjs). Risco: alterar limite, raw bytes da assinatura ou prioridade entre erro de corpo e autorização.
+

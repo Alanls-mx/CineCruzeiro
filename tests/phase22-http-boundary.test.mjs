@@ -1,12 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import vm from "node:vm";
 import { Readable } from "node:stream";
+import bodyService from "../backend/services/httpRequestBodyService.js";
 
-const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-const bodyCode = source.slice(source.indexOf("async function readBody("), source.indexOf("const rateBuckets =", source.indexOf("async function readBody(")));
-const readBody = vm.runInNewContext(`${bodyCode}\nreadBody`, { Buffer, MAX_JSON_BODY_BYTES: 32 });
+const { readBody } = bodyService.createHttpRequestBodyService(32);
 
 function request(parts, declaredLength = "") {
   const req = Readable.from(parts.map((part) => Buffer.from(part)));

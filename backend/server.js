@@ -57,6 +57,7 @@ const { paymentStatusLabel, orderStatusLabel, originLabel, methodLabel,
 const { createDesktopUpdateHandler } = require("./services/desktopUpdateHandler");
 const { createPerformanceStreamService } = require("./services/performanceStreamService");
 const { createHttpResponseService } = require("./services/httpResponseService");
+const { createHttpRequestBodyService } = require("./services/httpRequestBodyService");
 const { createInfrastructureRoutes } = require("./services/infrastructureRoutes");
 const { CRM_EVENT_TYPES, normalizeCrmEvents, sendCrmWebhook, createCrmWebhookWorker } = require("./services/crmWebhookDeliveryService");
 const emailService = require("./services/emailService");
@@ -914,41 +915,7 @@ function applyAutomatedMovieTags(db, now = new Date()) {
   return changed;
 }
 
-async function readBody(req, { rawOnly = false } = {}) {
-  const chunks = [];
-  let receivedBytes = 0;
-  const declaredBytes = Number(req.headers["content-length"] || 0);
-  if (declaredBytes > MAX_JSON_BODY_BYTES) {
-    const error = new Error("A requisição excede o limite permitido.");
-    error.statusCode = 413;
-    error.code = "PAYLOAD_TOO_LARGE";
-    throw error;
-  }
-  for await (const chunk of req) {
-    receivedBytes += chunk.length;
-    if (receivedBytes > MAX_JSON_BODY_BYTES) {
-      const error = new Error("A requisição excede o limite permitido.");
-      error.statusCode = 413;
-      error.code = "PAYLOAD_TOO_LARGE";
-      throw error;
-    }
-    chunks.push(chunk);
-  }
-  const rawBuffer = Buffer.concat(chunks);
-  const raw = rawBuffer.toString("utf8");
-  req.rawBodyBuffer = rawBuffer;
-  req.rawBody = raw;
-  if (rawOnly) return rawBuffer;
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const error = new Error("JSON inválido. Revise o corpo da requisição.");
-    error.statusCode = 400;
-    error.code = "INVALID_JSON";
-    throw error;
-  }
-}
+const { readBody } = createHttpRequestBodyService(MAX_JSON_BODY_BYTES);
 
 const rateBuckets = new Map();
 let lastRateBucketSweep = 0;
