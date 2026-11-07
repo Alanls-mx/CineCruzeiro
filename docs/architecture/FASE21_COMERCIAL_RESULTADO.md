@@ -21,13 +21,13 @@ Comando: `node scripts/measure-modularization.mjs --summary`. Linhas físicas, s
 | `accd6f8` | `adminOrderReadRoutes.js` (36) | Lista/detalhe de pedido, guard Admin, `orderRepository` dirigido no PG e snapshot no detalhe como antes; teste HTTP/modal/identificadores. |
 | `35df20f` | `customerTicketReadRoutes.js` (58) | Histórico/detalhe próprio, 303 de navegação, cache privado, 404 por posse; snapshot sem escrita; teste HTTP/transferência. |
 | `3c279be` | `clubSubscriptionSummary.js` (70) | DTO de benefício, uso, crédito e gratuidade; atualiza créditos no snapshot no mesmo ponto lógico; teste sintético/Clube. |
-| Lote de relatórios | `commercialReportPeriodService.js` (70) | Intervalo, comparação e filtro de data das consultas administrativas; calendário injetado, sem persistência; teste sintético/HTTP comercial. |
+| `e0a728b` | `commercialReportPeriodService.js` (70) | Intervalo, comparação e filtro de data das consultas administrativas; calendário injetado, sem persistência; teste sintético/HTTP comercial. |
 
 Não houve mudança dos métodos, rotas, payloads, cookies, status, cabeçalhos de cache ou ordem dos guards. QR, pagamento, emissão, conciliação, reembolso, Point, webhooks e mutações do Clube permanecem nos fluxos originais. Os módulos não importam `server.js`, não iniciam workers nem chamam provedores na importação. [Mapa detalhado](FASE21_COMERCIAL_MAPA.md).
 
 ## Validação
 
-Testes dirigidos de HTTP comercial, bomboniere, Clube, pedidos, ingressos e 30 testes de `test:modularization:commerce` passaram. `npm run test:unit`, `npm run test:finance` (50/50), `npm run test:security:local` (25/25 no TAP mais scripts), `npm run lint`, `npm run build`, `npm run docs:check` e `npm run docs:modularization:report` passaram. `npm run test:e2e` passou com 19/19 cenários. A suíte de unidade contém testes PostgreSQL marcados como ignorados quando o ambiente descartável não está disponível. Docker Desktop não forneceu daemon (`dockerDesktopLinuxEngine` ausente); a bateria PostgreSQL descartável não foi executada. Nenhum banco operacional foi usado.
+Testes dirigidos de HTTP comercial, bomboniere, Clube, pedidos, ingressos, períodos de relatório e 30 testes de `test:modularization:commerce` passaram. Após o lote de relatórios, `npm run test:unit`, `npm run test:finance` (50/50), `npm run test:security:local` (25/25 no TAP mais scripts), `npm run lint`, `npm run build`, `npm run docs:check` e `npm run docs:modularization:report` passaram. `npm run test:e2e` passou com 19/19 cenários. A suíte de unidade contém testes PostgreSQL marcados como ignorados quando o ambiente descartável não está disponível. Docker Desktop não forneceu daemon (`dockerDesktopLinuxEngine` ausente); a bateria PostgreSQL descartável não foi executada. Nenhum banco operacional foi usado.
 
 ## Limites e risco residual
 
