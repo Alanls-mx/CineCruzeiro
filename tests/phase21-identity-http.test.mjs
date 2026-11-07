@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
+import twoFactor from '../backend/services/adminTwoFactorService.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -87,12 +88,36 @@ test('identity HTTP: admin login, session revocation, guard and customer isolati
     const policy = await request('/api/admin/security-policy', 'GET', undefined, cookie);
     assert.equal(policy.response.status, 200);
     assert.equal(policy.body.adminTwoFactorRequired, false);
+    const setup = await request('/api/admin/2fa/setup', 'POST', { password: 'Admin-identity-2026!' }, cookie);
+    assert.equal(setup.response.status, 200, JSON.stringify(setup.body));
+    assert.ok(setup.body.secret);
+    const enabled = await request('/api/admin/2fa/enable', 'POST', { code: twoFactor.totp(setup.body.secret) }, cookie);
+    assert.equal(enabled.response.status, 200, JSON.stringify(enabled.body));
+    assert.equal(enabled.body.recoveryCodes.length, 10);
     const customerOnly = await request('/api/auth/me', 'GET', undefined, cookie);
     assert.equal(customerOnly.response.status, 401);
     const logout = await request('/api/admin/logout', 'POST', undefined, cookie);
     assert.equal(logout.response.status, 204);
     assert.match(logout.response.headers.get('set-cookie') || '', /Max-Age=0/);
     assert.equal((await request('/api/admin/me', 'GET', undefined, cookie)).response.status, 401);
+    const challengeLogin = await request('/api/admin/login', 'POST', { email: 'qa-owner@example.test', password: 'Admin-identity-2026!' });
+    assert.equal(challengeLogin.response.status, 202, JSON.stringify(challengeLogin.body));
+    assert.equal(challengeLogin.body.twoFactorRequired, true);
+    const invalidCode = await request('/api/admin/login/2fa', 'POST', { challenge: challengeLogin.body.challenge, code: '000000' });
+    assert.equal(invalidCode.response.status, 401);
+    const verifiedCode = await request('/api/admin/login/2fa', 'POST', { challenge: challengeLogin.body.challenge, code: twoFactor.totp(setup.body.secret) });
+    assert.equal(verifiedCode.response.status, 200, JSON.stringify(verifiedCode.body));
+    const verifiedCookie = (verifiedCode.response.headers.get('set-cookie') || '').split(';')[0];
+    assert.equal((await request('/api/admin/me', 'GET', undefined, verifiedCookie)).response.status, 200);
+    const replay = await request('/api/admin/login/2fa', 'POST', { challenge: challengeLogin.body.challenge, code: twoFactor.totp(setup.body.secret) });
+    assert.equal(replay.response.status, 401);
+    const changedAdminPassword = await request('/api/admin/me/password', 'POST', {
+      currentPassword: 'Admin-identity-2026!', newPassword: 'Admin-nova-2026!', confirmPassword: 'Admin-nova-2026!'
+    }, verifiedCookie);
+    assert.equal(changedAdminPassword.response.status, 200, JSON.stringify(changedAdminPassword.body));
+    const rotatedAdminCookie = (changedAdminPassword.response.headers.get('set-cookie') || '').split(';')[0];
+    assert.equal((await request('/api/admin/me', 'GET', undefined, verifiedCookie)).response.status, 401);
+    assert.equal((await request('/api/admin/me', 'GET', undefined, rotatedAdminCookie)).response.status, 200);
     const stored = JSON.parse(await readFile(dataFile, 'utf8'));
     assert.ok(stored.auditLogs.some((entry) => entry.action === 'POST /api/admin/logout'));
     assert.ok(stored.users.find((user) => user.email === 'qa-owner@example.test').sessionVersion > 0);
@@ -117,6 +142,8 @@ test('identity HTTP: admin login, session revocation, guard and customer isolati
     assert.match(reset.response.headers.get('set-cookie') || '', /^cine_customer=/);
     assert.equal((await request('/api/auth/me', 'GET', undefined, customerCookie)).response.status, 401);
     const newCustomerCookie = (reset.response.headers.get('set-cookie') || '').split(';')[0];
+    const blockedCustomerOrigin = await request('/api/me', 'PATCH', { name: 'Ana Silva' }, newCustomerCookie, 'https://untrusted.example.test');
+    assert.equal(blockedCustomerOrigin.response.status, 403);
     const invalidName = await request('/api/me', 'PATCH', { name: 'Ana' }, newCustomerCookie);
     assert.equal(invalidName.response.status, 422);
     assert.equal(invalidName.body.error.code, 'CUSTOMER_NAME_INVALID');
@@ -135,6 +162,28 @@ test('identity HTTP: admin login, session revocation, guard and customer isolati
     assert.equal(customerLogout.body.ok, true);
     assert.match(customerLogout.response.headers.get('set-cookie') || '', /Max-Age=0/);
     assert.equal((await request('/api/auth/me', 'GET', undefined, confirmedCookie)).response.status, 401);
+
+    const team = await request('/api/users', 'POST', {
+      name: 'Operador Teste', email: 'operator@example.test', accountType: 'team', role: 'operator', password: 'Operator-2026!'
+    }, rotatedAdminCookie);
+    assert.equal(team.response.status, 201, JSON.stringify(team.body));
+    const teamLogin = await request('/api/admin/login', 'POST', { email: 'operator@example.test', password: 'Operator-2026!' });
+    assert.equal(teamLogin.response.status, 200);
+    const teamCookie = (teamLogin.response.headers.get('set-cookie') || '').split(';')[0];
+    const forbiddenUsers = await request('/api/users', 'GET', undefined, teamCookie);
+    assert.equal(forbiddenUsers.response.status, 403);
+    assert.equal(forbiddenUsers.body.error.code, 'ADMIN_FORBIDDEN');
+    const disabled = await request(`/api/users/${encodeURIComponent(team.body.id)}`, 'PUT', { name: 'Operador Teste', email: 'operator@example.test', active: false }, rotatedAdminCookie);
+    assert.equal(disabled.response.status, 200, JSON.stringify(disabled.body));
+    assert.equal((await request('/api/admin/me', 'GET', undefined, teamCookie)).response.status, 401);
+    assert.equal((await request('/api/admin/login', 'POST', { email: 'operator@example.test', password: 'Operator-2026!' })).response.status, 401);
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      assert.equal((await request('/api/auth/login', 'POST', { email: 'blocked@example.test', password: 'wrong' })).response.status, 401);
+    }
+    const rateBlocked = await request('/api/auth/login', 'POST', { email: 'blocked@example.test', password: 'wrong' });
+    assert.equal(rateBlocked.response.status, 429);
+    assert.equal(rateBlocked.body.error.code, 'CUSTOMER_LOGIN_BLOCKED');
   } finally {
     if (child.exitCode === null) {
       child.kill();
