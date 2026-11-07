@@ -985,15 +985,18 @@ async function run() {
 
     const firstSeatCheckoutCookie = (firstSeat.response.headers.get("set-cookie") || "").split(";")[0];
     if (postgresMode) {
-      await require("../backend/db/postgresStore").queryPostgres(
-        "UPDATE orders SET reservation_expires_at = now() - interval '1 second' WHERE id = $1", ["smoke-seat-a1"]
-      );
       const pgStore = require("../backend/db/postgresStore");
-      const expiryRow = await pgStore.queryPostgres(
-        "SELECT reservation_expires_at FROM orders WHERE id=$1", ["smoke-seat-a1"]
-      );
+      let expiryRow;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        expiryRow = await pgStore.queryPostgres(
+          "UPDATE orders SET reservation_expires_at = now() - interval '1 second' WHERE id = $1 RETURNING reservation_expires_at",
+          ["smoke-seat-a1"]
+        );
+        if (Date.parse(expiryRow.rows[0]?.reservation_expires_at) < Date.now()) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
       assert.ok(Date.parse(expiryRow.rows[0]?.reservation_expires_at) < Date.now(),
-        "A atualização direta da fixture deve atingir o pedido esperado");
+        JSON.stringify({ expiry: expiryRow.rows[0]?.reservation_expires_at, now: new Date().toISOString(), rows: expiryRow.rowCount }));
       let expiredInPostgres;
       for (let attempt = 0; attempt < 10; attempt += 1) {
         pgStore.invalidatePostgresSnapshot();
@@ -3077,6 +3080,49 @@ async function run() {
         failCommitForRecord, restoreQuery: () => { pg.Client.prototype.query = originalQuery; },
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID
       });
+      const localPrintSale = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie),
+        body: JSON.stringify({ ...pointSaleBody("smoke-local-print-commit"), paymentMethod: "courtesy" })
+      });
+      assert.equal(localPrintSale.response.status, 201, JSON.stringify(localPrintSale.payload));
+      const localPrintOrderId = localPrintSale.payload.order.id;
+      const localPrintPaymentId = localPrintSale.payload.payment.id;
+      const localPrintPath = `/api/box-office/point-payments/${encodeURIComponent(localPrintPaymentId)}/print-result`;
+      const confirmLocalPrint = (body) => request(localPrintPath, {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify(body)
+      });
+      const printBody = { ok: true, jobId: localPrintSale.payload.order.pointPrint.jobId };
+      const localPrintCommitFailed = failCommitForRecord(localPrintOrderId, "smoke_local_print_commit_failure", 1,
+        matchingOrderWrite(localPrintOrderId, (order) => order.status === "paid"));
+      let failedLocalPrint;
+      try { failedLocalPrint = await confirmLocalPrint(printBody); }
+      finally { pg.Client.prototype.query = originalQuery; }
+      assert.equal(localPrintCommitFailed(), true);
+      assert.equal(failedLocalPrint.response.status >= 500, true);
+      assert.equal((await readPersistedDb()).orders.find((order) => order.id === localPrintOrderId).status, "paid_pending_print");
+      assert.equal((await readPersistedDb()).tickets.filter((ticket) => ticket.orderId === localPrintOrderId).length, 0);
+      const localPrintRecovered = await confirmLocalPrint(printBody);
+      assert.equal(localPrintRecovered.response.status, 200, JSON.stringify(localPrintRecovered.payload));
+      assert.equal(localPrintRecovered.payload.completed, true);
+      assert.equal((await readPersistedDb()).tickets.filter((ticket) => ticket.orderId === localPrintOrderId).length, 1);
+      assert.equal((await confirmLocalPrint(printBody)).response.status, 200);
+      assert.equal((await readPersistedDb()).tickets.filter((ticket) => ticket.orderId === localPrintOrderId).length, 1);
+
+      const rejectedPrintSale = await request("/api/box-office/sales", {
+        method: "POST", headers: jsonHeaders(adminCookie),
+        body: JSON.stringify({ ...pointSaleBody("smoke-local-print-failed"), paymentMethod: "courtesy" })
+      });
+      assert.equal(rejectedPrintSale.response.status, 201);
+      const failedPrintResponse = await request(
+        `/api/box-office/point-payments/${encodeURIComponent(rejectedPrintSale.payload.payment.id)}/print-result`, {
+          method: "POST", headers: jsonHeaders(adminCookie),
+          body: JSON.stringify({ ok: false, jobId: rejectedPrintSale.payload.order.pointPrint.jobId, message: "Impressora simulada indisponível" })
+        }
+      );
+      assert.equal(failedPrintResponse.response.status, 200);
+      assert.equal(failedPrintResponse.payload.completed, false);
+      assert.equal((await readPersistedDb()).orders.find((order) => order.id === rejectedPrintSale.payload.order.id).status, "paid_pending_print");
+      assert.equal((await readPersistedDb()).tickets.filter((ticket) => ticket.orderId === rejectedPrintSale.payload.order.id).length, 0);
       const pointSyncFailure = await createPointSale("smoke-point-sync-commit-failure");
       const syncProviderOrder = mockPointOrders.get(pointSyncFailure.payload.payment.providerPaymentId);
       syncProviderOrder.status = "approved";
