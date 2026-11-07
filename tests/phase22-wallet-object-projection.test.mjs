@@ -1,25 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import vm from "node:vm";
+import { createRequire } from "node:module";
 
-const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-const code = source.slice(source.indexOf("function googleWalletLocalized("), source.indexOf("async function syncGoogleWalletEventTicketObject("));
+const require = createRequire(import.meta.url);
+const { createWalletTicketObjectPresenter } = require("../backend/services/walletTicketObjectPresenter.js");
 const config = { classId: "issuer.cinema", issuerId: "issuer" };
 const enriched = { status: "active", sessionDate: "2026-11-10", sessionTime: "20:00", archiveAt: "2026-11-11T03:00:00Z",
   movieTitle: "Filme", seat: "A10", ticketType: "Inteira", displayCode: "CC-001", displayQrPayload: "display-only", orderId: "order-1" };
-const baseline = vm.runInNewContext(`${code}\nwalletEventTicketObjectForTicket`, {
-  getGoogleWalletConfig: () => config,
-  enrichTicket: () => enriched,
-  googleWalletTmdbImageUrl: () => "https://image.tmdb.org/t/p/w780/poster.jpg",
-  movieForTicket: () => ({}),
-  googleWalletObjectId: () => "issuer.ticket-1",
-  getGoogleOAuthConfig: () => ({ frontendUrl: "https://cinema.example/projects/cinema-a" }),
+const { buildWalletTicketObject } = createWalletTicketObjectPresenter({
   buildGoogleWalletTextModules: () => [{ id: "filme", body: "Filme" }]
 });
+const baseline = () => buildWalletTicketObject({ config, enriched,
+  walletPosterUrl: "https://image.tmdb.org/t/p/w780/poster.jpg", objectId: "issuer.ticket-1",
+  frontendUrl: "https://cinema.example/projects/cinema-a", user: { name: "Cliente" }, ticket: { id: "ticket-1" } });
 
 test("objeto Wallet original usa identidade da instalação, QR de exibição e estado do ingresso", () => {
-  const active = baseline({}, { id: "ticket-1" }, { name: "Cliente" }, {});
+  const active = baseline();
   assert.equal(active.id, "issuer.ticket-1");
   assert.equal(active.classId, "issuer.cinema");
   assert.equal(active.state, "ACTIVE");
@@ -29,6 +25,6 @@ test("objeto Wallet original usa identidade da instalação, QR de exibição e 
   assert.equal(active.seatInfo.row.defaultValue.value, "A");
   const before = enriched.status;
   enriched.status = "cancelled";
-  assert.equal(baseline({}, { id: "ticket-1" }, { name: "Cliente" }, {}).state, "INACTIVE");
+  assert.equal(baseline().state, "INACTIVE");
   enriched.status = before;
 });

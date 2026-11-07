@@ -202,7 +202,8 @@ test("garante que o JWT do Google Wallet contem estrutura valida e textModulesDa
     serverContent.indexOf("function finalizePaidOrder")
   );
   assert.match(saveUrlSlice, /payload:\s*\{\s*eventTicketObjects:\s*\[eventTicketObject\]/);
-  assert.match(serverContent, /buildGoogleWalletTextModules\(enriched\)/);
+  assert.match(serverContent, /createWalletTicketObjectPresenter\(\{ buildGoogleWalletTextModules \}\)/);
+  assert.match(fs.readFileSync(path.join(root, "backend", "services", "walletTicketObjectPresenter.js"), "utf8"), /buildGoogleWalletTextModules\(enriched\)/);
 });
 
 test("monta o passe na ordem visual do Cine Cruzeiro e inclui a bomboniere", () => {
@@ -279,10 +280,12 @@ test("Google Wallet usa somente a origem HTTPS do TMDB para imagens de filmes", 
     serverContent.indexOf("function walletEventTicketObjectForTicket"),
     serverContent.indexOf("function googleWalletSaveUrl")
   );
+  const presenter = fs.readFileSync(path.join(root, "backend", "services", "walletTicketObjectPresenter.js"), "utf8");
   assert.match(objectSlice, /googleWalletTmdbImageUrl\(movieForTicket\(db, ticket\)\)/);
-  assert.match(objectSlice, /sourceUri:\s*\{ uri: walletPosterUrl \}/);
-  assert.match(objectSlice, /imageModulesData:\s*\[\]/);
-  assert.doesNotMatch(objectSlice, /googleWalletAbsoluteUrl\(req, db, enriched\.posterUrl/);
+  assert.match(objectSlice, /buildWalletTicketObject\(/);
+  assert.match(presenter, /sourceUri:\s*\{ uri: walletPosterUrl \}/);
+  assert.match(presenter, /imageModulesData:\s*\[\]/);
+  assert.doesNotMatch(presenter, /googleWalletAbsoluteUrl\(req, db, enriched\.posterUrl/);
 });
 
 test("Google Wallet sincroniza o EventTicketObject antes de emitir o link", () => {
