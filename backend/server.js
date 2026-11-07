@@ -47,6 +47,8 @@ const { phoneDigits, cpfDigits } = require("./services/customerContactValidation
 const { createDiscordWebhookService } = require("./services/discordWebhookService");
 const { readReleaseInfo } = require("./services/releaseInfoService");
 const { createRuntimeLifecycle } = require("./services/runtimeLifecycleService");
+const { normalizeSnapshotSettings } = require("./services/snapshotSettingsNormalizer");
+const { normalizeSnapshotMovies } = require("./services/snapshotMovieNormalizer");
 const { createStaticAssetHandler } = require("./services/staticAssetHandler");
 const { createDesktopUpdateHandler } = require("./services/desktopUpdateHandler");
 const { createPerformanceStreamService } = require("./services/performanceStreamService");
@@ -1702,71 +1704,13 @@ function appendAuditLog(db) {
 }
 
 function normalizeDb(db) {
-  db.settings = {
+  normalizeSnapshotSettings(db, {
     cinemaName: "Cine Cruzeiro",
-    defaultTicketPrice: 10,
-    currency: "BRL",
-    salesChannel: "Site + Pix",
-    heroTrailerBackgroundEnabled: false,
-    announcementEnabled: true,
     announcementText: "Promoção permanente no Cine Cruzeiro - Ingressos a apenas R$ 10,00",
-    clubTransparentImages: false,
-    clubHeroImageUrl: "",
-    clubBannerImageUrl: "",
-    eventTransparentImages: false,
-    eventHeroImageUrl: "",
-    eventGamesImageUrl: "",
-    eventPartiesImageUrl: "",
-    eventCorporateImageUrl: "",
-    eventGalleryImageUrl: "",
-    eventStartingPrice: 450,
-    adminTwoFactorRequired: true,
-    ticketDistributorRules: {
-      distributorPercent: 50,
-      courtesyPercent: 50,
-      clubTicketFee: 10
-    },
-    ...db.settings
-  };
-  if (/whatsapp/i.test(String(db.settings.salesChannel || ""))) db.settings.salesChannel = "Site + Pix";
-  db.settings.ticketDistributorRules = normalizeTicketDistributorRules(db.settings.ticketDistributorRules);
-  [
-    "clubHeroImageUrl",
-    "clubBannerImageUrl",
-    "eventHeroImageUrl",
-    "eventGamesImageUrl",
-    "eventPartiesImageUrl",
-    "eventCorporateImageUrl",
-    "eventGalleryImageUrl"
-  ].forEach((key) => {
-    db.settings[key] = storedEditorialImageUrl(db.settings[key]);
+    normalizeTicketDistributorRules,
+    storedEditorialImageUrl
   });
-  db.movies ||= [];
-  db.movies = db.movies.map((movie) => ({
-    ...movie,
-    slug: movie.slug || movie.id || slugify(movie.title || ""),
-    workflowStatus: movie.workflowStatus || (movie.status === "hidden" ? "archived" : "published"),
-    sortOrder: Number(movie.sortOrder ?? movie.displayOrder ?? 100),
-    director: movie.director || "",
-    metadata: movie.metadata || {}
-  })).sort((a, b) => Number(a.sortOrder || 100) - Number(b.sortOrder || 100) || String(a.title || "").localeCompare(String(b.title || "")));
-  db.rooms ||= [];
-  db.ticketTypes ||= [];
-  const activeTicketTypeIds = db.ticketTypes.filter((ticketType) => ticketType.active !== false).map((ticketType) => ticketType.id);
-  db.movies = db.movies.map((movie) => ({
-    ...movie,
-    sessions: (movie.sessions || []).map((session) => {
-      const selectedIds = (Array.isArray(session.ticketTypeIds) && session.ticketTypeIds.length ? session.ticketTypeIds : activeTicketTypeIds)
-        .filter((id, index, ids) => db.ticketTypes.some((ticketType) => ticketType.id === id) && ids.indexOf(id) === index);
-      const selectedTypes = selectedIds.map((id) => db.ticketTypes.find((ticketType) => ticketType.id === id)).filter(Boolean);
-      return {
-        ...session,
-        ticketTypeIds: selectedIds,
-        priceFull: Number(selectedTypes[0]?.price ?? session.priceFull ?? db.settings.defaultTicketPrice ?? 10),
-        priceHalf: Number(selectedTypes[1]?.price ?? selectedTypes[0]?.price ?? session.priceHalf ?? session.priceFull ?? db.settings.defaultTicketPrice ?? 10)
-      };
-    })
-  }));
+  normalizeSnapshotMovies(db, { slugify });
   db.orders ||= [];
   db.payments ||= [];
   db.subscriptionPlans ||= db.settings.subscriptionPlans || [];

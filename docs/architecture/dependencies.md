@@ -1,5 +1,7 @@
 # Relações de impacto verificadas
 
+Snapshot de catálogo: `server.js` chama [snapshotSettingsNormalizer](../../backend/services/snapshotSettingsNormalizer.js) antes de [snapshotMovieNormalizer](../../backend/services/snapshotMovieNormalizer.js); a sessão usa `settings.defaultTicketPrice` e tipos ativos do mesmo snapshot. `readDb` rastreia a versão normalizada antes de `writeDbToPostgres`, sem nova transação. `GET /api/content`, `GET /api/admin/content`, checkout e bilheteria continuam consumidores; guards e preços finais não foram movidos. [Teste JSON/PG](../../scripts/smoke-tests.js), [unidade](../../tests/snapshot-normalization.test.mjs).
+
 Respostas HTTP: [server.js](../../backend/server.js) injeta `requestContext`, `postgresEnabled`, `deferUntilPostgresCommit`, política CORS e cabeçalhos em [httpResponseService](../../backend/services/httpResponseService.js); handlers recebem `sendJson`/`sendNoContent` dessa única composição. O módulo não importa `server.js` nem acessa DB por conta própria. [Teste](../../tests/http-response-service.test.mjs).
 
 Identidade Fase 21: `server.js` injeta sessão, cookies, rate/bloqueio, repositório, 2FA, auditoria e resposta nos handlers de Admin/cliente; os handlers não importam o servidor e são chamados somente nos slots originais. `userAccountModelService` recebe as políticas de senha/permissão e normalizadores. O guard `ensureAdmin`, a checagem de origem e a seleção da transação continuam em `server.js`. [Mapa dos contratos](FASE21_IDENTIDADE_CONTRATOS.md).

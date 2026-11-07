@@ -24,6 +24,8 @@ Identidade Fase 21: `POST /api/admin/login`, `POST /api/admin/login/2fa`, `POST 
 
 `GET /api/content` e `GET /api/admin/content` usam [catalogReadHandler](../../backend/services/catalogReadHandler.js) nos seus pontos anteriores do dispatcher. O primeiro preserva cache público; o segundo exige a sessão/permissão administrativa central e só consulta campanhas extras com `marketing.view`. [publicContentPresenter](../../backend/services/publicContentPresenter.js) compõe a projeção; [adminContentPresenter](../../backend/services/adminContentPresenter.js) filtra usuários, pedidos e pagamentos por permissão. [Testes](../../tests/catalog-read-handler.test.mjs) e [projeção](../../tests/public-content-presenter.test.mjs).
 
+Antes dessas leituras, `readDb` aplica [snapshotSettingsNormalizer](../../backend/services/snapshotSettingsNormalizer.js) e [snapshotMovieNormalizer](../../backend/services/snapshotMovieNormalizer.js). Não há nova rota ou guard: público permanece público e Admin permanece autenticado. Defaults e preço de sessão são comparados no [smoke JSON/PostgreSQL](../../scripts/smoke-tests.js); persistência e commit continuam no dispatcher/repositórios.
+
 Na Fase 21.2, os slots abaixo mantiveram a ordem de [handleApi](../../backend/server.js), com autenticação, origem/CSRF, rate limit e wrapper de mutação no dispatcher. Métodos agrupados por família não significam que todos são aceitos para cada caminho:
 
 | Métodos e caminhos | Handler | Acesso, persistência e evidência |
