@@ -11,6 +11,7 @@ async function image(width, height, background) {
 }
 
 async function fixture() {
+  const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const poster = await image(800, 1200, "#601416");
   const backdrop = await image(1600, 900, "#163f72");
   const logo = await image(600, 300, { r: 15, g: 93, b: 210, alpha: 0.9 });
@@ -41,8 +42,8 @@ async function fixture() {
         genres: [genre],
         posterUrl: index === 3 ? "" : "asset://poster",
         backdropUrl: index === 4 ? "" : "asset://backdrop",
-        releaseDate: "2026-10-22",
-        sessions: [{ date: "2026-10-22", time: "19:30", availableForPurchase: true, ticketTypes: index === 1 ? [] : [{ name: "Inteira", price: 20 }] }]
+        releaseDate: futureDate,
+        sessions: [{ date: futureDate, time: "19:30", availableForPurchase: true, ticketTypes: index === 1 ? [] : [{ name: "Inteira", price: 20 }] }]
       })),
       concessions: [{ id: "combo", name: "Combo Casal", description: "Pipoca grande • 2 refrigerantes", price: 39.9, imageUrl: "asset://product" }],
       clubPlans: [{ id: "familia", name: "Família", monthlyPrice: 59.9, benefits: ["Quatro ingressos", "Desconto na bomboniere"] }]

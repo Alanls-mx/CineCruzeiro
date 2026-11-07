@@ -140,11 +140,13 @@ test("histórico mantém original automático separado da futura edição", asyn
 test("painel expõe editor opcional e API cobre rascunho, versão, exportação e restauração", () => {
   const admin = fs.readFileSync(new URL("../backend/public/social-studio.js", import.meta.url), "utf8");
   const server = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
+  const routes = fs.readFileSync(new URL("../backend/services/adminSocialStudioRoutes.js", import.meta.url), "utf8");
   const editor = fs.readFileSync(new URL("../src/components/social-editor/SocialEditor.tsx", import.meta.url), "utf8");
   assert.match(admin, /Editar detalhes/);
   assert.match(admin, /social-editor\?postId=/);
-  for (const action of ["scene-draft", "scene-versions", "scene-export", "scene-reset"]) assert.match(server, new RegExp(action));
-  assert.match(server, /allowManualLayoutIssues:\s*true/);
+  assert.match(server, /createAdminSocialStudioRoutes/);
+  for (const action of ["scene-draft", "scene-versions", "scene-export", "scene-reset"]) assert.match(routes, new RegExp(action));
+  assert.match(routes, /allowManualLayoutIssues:\s*true/);
   assert.match(editor, /autosave|scene-draft/i);
   assert.match(editor, /Ctrl\+Z|keydown/);
   assert.doesNotMatch(editor, /email/i);
