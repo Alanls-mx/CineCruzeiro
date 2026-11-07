@@ -1,17 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import vm from "node:vm";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-function extract(name) {
-  const match = source.match(new RegExp(`^function ${name}\\([^]*?^}`, "m"));
-  assert.ok(match, `baseline function ${name}`);
-  return match[0];
-}
 const room = require("../backend/services/roomReadProjectionService.js");
+const labels = require("../backend/services/commercialStatusLabelService.js");
 
 test("baseline room projection prefers label over stale room ID and preserves seat rows", () => {
   const db = { rooms: [
@@ -28,10 +21,6 @@ test("baseline room projection prefers label over stale room ID and preserves se
   assert.equal(room.roomSeatTypes(db.rooms[1]).length, 0);
   assert.equal(room.roomForSession(db, { roomId: "stale", room: "unknown" }).id, "stale");
 });
-
-const labelNames = ["paymentStatusLabel", "orderStatusLabel", "originLabel", "methodLabel", "providerLabel", "campaignStatusLabel"];
-const labels = vm.createContext({});
-vm.runInContext(labelNames.map(extract).join("\n"), labels);
 
 test("baseline administrative labels preserve financial and campaign wording", () => {
   assert.equal(labels.paymentStatusLabel("APPROVED"), "Pago");
