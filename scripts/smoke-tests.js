@@ -506,6 +506,16 @@ async function run() {
     assert.equal("checks" in readiness.payload, false);
     const publicContent = await request("/api/content");
     assert.equal(publicContent.response.status, 200);
+    assert.equal(publicContent.payload.settings.cinemaName, "Cine Cruzeiro");
+    assert.equal(publicContent.payload.settings.defaultTicketPrice, 10);
+    const normalizedMovie = publicContent.payload.movies.find((item) => item.id === TEST_MOVIE_ID);
+    assert.equal(normalizedMovie.slug, TEST_MOVIE_ID);
+    assert.equal(normalizedMovie.workflowStatus, "published");
+    assert.equal(normalizedMovie.sortOrder, 100);
+    const normalizedSession = normalizedMovie.sessions.find((item) => item.id === TEST_SESSION_ID);
+    assert.deepEqual(normalizedSession.ticketTypeIds, ["promocional", "triple-smoke"]);
+    assert.equal(normalizedSession.priceFull, 10);
+    assert.equal(normalizedSession.priceHalf, 25);
     assert.ok((publicContent.payload.concessions || []).every((item) => !("stock" in item) && !("reserved" in item) && !("sold" in item)));
     let maintainedDb = await readPersistedDb();
     for (let attempt = 0; attempt < 20; attempt += 1) {
