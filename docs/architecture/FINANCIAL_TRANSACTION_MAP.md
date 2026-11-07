@@ -22,3 +22,10 @@ chamada externa não participa do commit PostgreSQL. Os testes usam provedor sim
 Ramos manuais e PagBank ainda têm cobertura menor que os caminhos Point/Mercado Pago
 simulados. Não inferir equivalência de um provedor a partir de outro. A meta de linhas
 é secundária a estes limites; mover dispatcher inteiro não demonstra segurança.
+
+A [caracterização adicional da Fase 21](FASE21_COBERTURA_FINANCEIRA.md) cobre falhas
+de criação Pix/cartão simuladas, HMAC e estados tardios do webhook Mercado Pago,
+além da última unidade disputada por checkout e balcão no PostgreSQL descartável.
+Ela não cobre os mesmos failpoints para PagBank nem autoriza extração dos ramos
+financeiros remanescentes. A avaliação inicial da tabela acima deve ser lida com
+essa matriz atualizada.

@@ -988,7 +988,21 @@ async function run() {
       await require("../backend/db/postgresStore").queryPostgres(
         "UPDATE orders SET reservation_expires_at = now() - interval '1 second' WHERE id = $1", ["smoke-seat-a1"]
       );
-      require("../backend/db/postgresStore").invalidatePostgresSnapshot();
+      const pgStore = require("../backend/db/postgresStore");
+      const expiryRow = await pgStore.queryPostgres(
+        "SELECT reservation_expires_at FROM orders WHERE id=$1", ["smoke-seat-a1"]
+      );
+      assert.ok(Date.parse(expiryRow.rows[0]?.reservation_expires_at) < Date.now(),
+        "A atualização direta da fixture deve atingir o pedido esperado");
+      let expiredInPostgres;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        pgStore.invalidatePostgresSnapshot();
+        expiredInPostgres = (await readPersistedDb()).orders.find((order) => order.id === "smoke-seat-a1");
+        if (Date.parse(expiredInPostgres?.reservationExpiresAt) < Date.now()) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.ok(Date.parse(expiredInPostgres.reservationExpiresAt) < Date.now(),
+        JSON.stringify({ raw: expiryRow.rows[0]?.reservation_expires_at, snapshot: expiredInPostgres.reservationExpiresAt }));
     } else {
       const expirationDb = await readPersistedDb();
       const expiringSeatOrder = expirationDb.orders.find((order) => order.id === "smoke-seat-a1");

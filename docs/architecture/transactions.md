@@ -6,6 +6,10 @@ Para a etapa de extração financeira, veja o [mapa por fluxo](FINANCIAL_TRANSAC
 e o [relatório de falhas parciais](FINANCIAL_EXTRACTION_REPORT.md). Os limites
 originais de commit, resposta e chamada externa permanecem; o dispatcher injeta
 `withCriticalMutation`, `readDb`, `writeDb`, guardas e provedores nos novos módulos.
+Os testes adicionais de falha antes/depois do provedor, rollback, webhook assinado
+e disputa de estoque em PostgreSQL descartável estão na
+[matriz de cobertura da Fase 21](FASE21_COBERTURA_FINANCEIRA.md). Ela registra
+explicitamente os ramos financeiros que ainda não podem ser extraídos.
 
 [httpResponseService](../../backend/services/httpResponseService.js) mantém o mesmo `deferUntilPostgresCommit` para `sendJson` quando `req.commitResponseAfterMutation` está ativo. A extração não cria transação e não muda os escritores; `sendNoContent` conserva o comportamento anterior. [Teste dirigido](../../tests/http-response-service.test.mjs).
 
