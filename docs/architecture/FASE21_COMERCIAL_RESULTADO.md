@@ -8,9 +8,9 @@ Comando: `node scripts/measure-modularization.mjs --summary`. Linhas físicas, s
 
 | Arquivo/função | Antes | Depois | Redução |
 | --- | ---: | ---: | ---: |
-| `backend/server.js` | 11.139 | 10.978 | 161 (1,45%) |
+| `backend/server.js` | 11.139 | 10.919 | 220 (1,98%) |
 | `handleApi` | 3.452 | 3.310 | 142 (4,11%) |
-| Meta indicativa do lote | 8.500 | 10.978 | faltam 2.478 |
+| Meta indicativa do lote | 8.500 | 10.919 | faltam 2.419 |
 
 ## Extrações e contratos
 
@@ -21,6 +21,7 @@ Comando: `node scripts/measure-modularization.mjs --summary`. Linhas físicas, s
 | `accd6f8` | `adminOrderReadRoutes.js` (36) | Lista/detalhe de pedido, guard Admin, `orderRepository` dirigido no PG e snapshot no detalhe como antes; teste HTTP/modal/identificadores. |
 | `35df20f` | `customerTicketReadRoutes.js` (58) | Histórico/detalhe próprio, 303 de navegação, cache privado, 404 por posse; snapshot sem escrita; teste HTTP/transferência. |
 | `3c279be` | `clubSubscriptionSummary.js` (70) | DTO de benefício, uso, crédito e gratuidade; atualiza créditos no snapshot no mesmo ponto lógico; teste sintético/Clube. |
+| Lote de relatórios | `commercialReportPeriodService.js` (70) | Intervalo, comparação e filtro de data das consultas administrativas; calendário injetado, sem persistência; teste sintético/HTTP comercial. |
 
 Não houve mudança dos métodos, rotas, payloads, cookies, status, cabeçalhos de cache ou ordem dos guards. QR, pagamento, emissão, conciliação, reembolso, Point, webhooks e mutações do Clube permanecem nos fluxos originais. Os módulos não importam `server.js`, não iniciam workers nem chamam provedores na importação. [Mapa detalhado](FASE21_COMERCIAL_MAPA.md).
 
