@@ -51,7 +51,7 @@ O teste [phase21-identity-http](../../tests/phase21-identity-http.test.mjs) inic
 | `npm run docs:check` | Passou, 37 documentos com links locais existentes. |
 | `node scripts/with-local-disposable-postgres.js smoke` | **Não executado:** Docker Desktop Linux Engine indisponível (`npipe` ausente). Nenhum banco operacional foi acessado. |
 
-`npm run docs:modularization:report` foi executado, mas seu bloco de “execuções registradas” contém histórico da base e não deve ser interpretado como execução PostgreSQL desta etapa. Os testes acima são os efetivamente realizados. O CI do SHA final ainda deve ser conferido após publicação da branch.
+`npm run docs:modularization:report` foi executado, mas seu bloco de “execuções registradas” contém histórico da base e não deve ser interpretado como execução PostgreSQL desta etapa. Os testes acima são os efetivamente realizados. O workflow [Security regression do SHA `458a51f`](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42393161060) concluiu com sucesso, incluindo segurança local, permissões, finanças, manutenção, documentação, lint e build. Esse workflow não executa smoke PostgreSQL nem E2E; essas evidências estão separadas na tabela.
 
 ## Pendências e próximo lote
 
