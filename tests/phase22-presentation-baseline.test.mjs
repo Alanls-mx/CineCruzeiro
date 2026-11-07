@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { PRE_PREMIERE_WINDOW_MS } = require("../backend/services/moviePublicationPolicy.js");
+const { createPublicAssetPathService } = require("../backend/services/publicAssetPathService.js");
 const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
 
 function declaration(name) {
@@ -14,12 +15,22 @@ function declaration(name) {
   return match[0];
 }
 
-const assetNames = ["configuredAppBasePath", "publicAssetUrl", "storedAssetUrl", "storedLocalUploadUrl", "storedEditorialImageUrl", "stripPublicAssetBase", "appFrontendUrl", "getFirstEnv"];
-const assetContext = vm.createContext({
-  process: { env: { NEXT_PUBLIC_BASE_PATH: "/projects/cine", FRONTEND_URL: "https://cinema.example/projects/cine" } },
-  FRONTEND_URL_ENV_KEYS: ["FRONTEND_URL", "NEXT_PUBLIC_SITE_URL"], URL
+const assetEnv = { NEXT_PUBLIC_BASE_PATH: "/projects/cine", FRONTEND_URL: "https://cinema.example/projects/cine" };
+const assetContext = createPublicAssetPathService({
+  getEnv: () => assetEnv,
+  getFirstEnv: (keys) => { const key = keys.find((name) => assetEnv[name]); return key ? { key, value: assetEnv[key] } : null; },
+  frontendUrlEnvKeys: ["FRONTEND_URL", "NEXT_PUBLIC_SITE_URL"]
 });
-vm.runInContext(assetNames.map(declaration).join("\n"), assetContext);
+
+test("asset path composition does not read environment or call providers", () => {
+  let calls = 0;
+  createPublicAssetPathService({
+    getEnv() { calls++; return assetEnv; },
+    getFirstEnv() { calls++; return null; },
+    frontendUrlEnvKeys: ["FRONTEND_URL"]
+  });
+  assert.equal(calls, 0);
+});
 
 test("baseline asset paths preserve tenant prefix, upload storage and editorial allowlist", () => {
   assert.equal(assetContext.publicAssetUrl("/uploads/poster.webp"), "/projects/cine/uploads/poster.webp");
@@ -29,7 +40,7 @@ test("baseline asset paths preserve tenant prefix, upload storage and editorial 
   assert.equal(assetContext.storedEditorialImageUrl("https://example.test/photo"), "");
   assert.equal(assetContext.stripPublicAssetBase("/projects/cine/uploads/poster.webp"), "/uploads/poster.webp");
   assert.equal(assetContext.appFrontendUrl(), "https://cinema.example/projects/cine");
-  assetContext.process.env.FRONTEND_URL = "https://cinema.example";
+  assetEnv.FRONTEND_URL = "https://cinema.example";
   assert.equal(assetContext.appFrontendUrl(), "https://cinema.example/projects/cine");
 });
 

@@ -1,5 +1,7 @@
 # Fluxos transversais iniciais
 
+Prefixo de assets na Fase 22.1: ambiente da instalação → [publicAssetPathService](../../backend/services/publicAssetPathService.js) → `staticAssetHandler` e apresentadores. O dispatcher mantém `/uploads/*`, status, cache e permissão do shell Admin; a fábrica só transforma strings e não inicia rede nem grava. [Teste de base](../../tests/phase22-presentation-baseline.test.mjs).
+
 Leitura de conteúdo: `readDb` JSON/PostgreSQL → `normalizeDb` → [snapshotSettingsNormalizer](../../backend/services/snapshotSettingsNormalizer.js) → [snapshotMovieNormalizer](../../backend/services/snapshotMovieNormalizer.js) → demais compatibilidades legadas → presenter público/Admin. Configuração da instalação é injetada; rota e permissão não mudam. [Caracterização JSON/PG](../../scripts/smoke-tests.js).
 
 Lifecycle normal: `start.js` valida modo/release → `server.js` carrega ambiente e escuta HTTP → [backendRuntimeSchedule](../../backend/services/backendRuntimeSchedule.js) dispara manutenção, recuperação Studio e workers PostgreSQL uma vez → fechamento/sinal cancela intervalos e chama `stop` dos workers. WebSocket e SSE mantêm seus donos anteriores. O modo quiescente só carrega [maintenanceServer](../../backend/maintenanceServer.js), sem banco, provedor ou schedule. [Teste](../../tests/backend-runtime-schedule.test.mjs), [quiescent](../../tests/maintenance-startup.test.mjs). Trabalho externo em andamento não é drenado pelo cancelamento do timer.
