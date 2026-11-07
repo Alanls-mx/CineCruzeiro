@@ -117,11 +117,24 @@ test('identity HTTP: admin login, session revocation, guard and customer isolati
     assert.match(reset.response.headers.get('set-cookie') || '', /^cine_customer=/);
     assert.equal((await request('/api/auth/me', 'GET', undefined, customerCookie)).response.status, 401);
     const newCustomerCookie = (reset.response.headers.get('set-cookie') || '').split(';')[0];
-    const customerLogout = await request('/api/auth/logout', 'POST', undefined, newCustomerCookie);
+    const invalidName = await request('/api/me', 'PATCH', { name: 'Ana' }, newCustomerCookie);
+    assert.equal(invalidName.response.status, 422);
+    assert.equal(invalidName.body.error.code, 'CUSTOMER_NAME_INVALID');
+    const invalidEmailToken = await request('/api/auth/email/verify', 'POST', { token: 'invalid' });
+    assert.equal(invalidEmailToken.response.status, 400);
+    assert.equal(invalidEmailToken.body.error.code, 'EMAIL_VERIFICATION_INVALID');
+    const changeEmail = await request('/api/me/email-change/request', 'POST', { email: 'ana.new@example.test' }, newCustomerCookie);
+    assert.equal(changeEmail.response.status, 202, JSON.stringify(changeEmail.body));
+    assert.ok(changeEmail.body.verificationToken);
+    const confirmed = await request('/api/me/email-change/confirm', 'POST', { token: changeEmail.body.verificationToken });
+    assert.equal(confirmed.response.status, 200);
+    assert.equal(confirmed.body.user.email, 'ana.new@example.test');
+    const confirmedCookie = (confirmed.response.headers.get('set-cookie') || '').split(';')[0];
+    const customerLogout = await request('/api/auth/logout', 'POST', undefined, confirmedCookie);
     assert.equal(customerLogout.response.status, 200);
     assert.equal(customerLogout.body.ok, true);
     assert.match(customerLogout.response.headers.get('set-cookie') || '', /Max-Age=0/);
-    assert.equal((await request('/api/auth/me', 'GET', undefined, newCustomerCookie)).response.status, 401);
+    assert.equal((await request('/api/auth/me', 'GET', undefined, confirmedCookie)).response.status, 401);
   } finally {
     if (child.exitCode === null) {
       child.kill();
