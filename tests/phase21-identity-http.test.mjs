@@ -73,6 +73,20 @@ test('identity HTTP: admin login, session revocation, guard and customer isolati
     const blocked = await request('/api/admin/me', 'PATCH', { name: 'Admin Changed' }, cookie, 'https://untrusted.example.test');
     assert.equal(blocked.response.status, 403);
     assert.equal(blocked.body.error.code, 'ADMIN_CSRF_BLOCKED');
+    const profile = await request('/api/admin/me', 'PATCH', { name: 'Administrador Atualizado' }, cookie);
+    assert.equal(profile.response.status, 200);
+    assert.equal(profile.body.user.name, 'Administrador Atualizado');
+    const wrongPassword = await request('/api/admin/me/password', 'POST', {
+      currentPassword: 'wrong', newPassword: 'Outra-senha-2026!', confirmPassword: 'Outra-senha-2026!'
+    }, cookie);
+    assert.equal(wrongPassword.response.status, 422);
+    assert.equal(wrongPassword.body.error.code, 'CURRENT_PASSWORD_INVALID');
+    const twoFactorStatus = await request('/api/admin/2fa/status', 'GET', undefined, cookie);
+    assert.equal(twoFactorStatus.response.status, 200);
+    assert.equal(twoFactorStatus.body.enabled, false);
+    const policy = await request('/api/admin/security-policy', 'GET', undefined, cookie);
+    assert.equal(policy.response.status, 200);
+    assert.equal(policy.body.adminTwoFactorRequired, false);
     const customerOnly = await request('/api/auth/me', 'GET', undefined, cookie);
     assert.equal(customerOnly.response.status, 401);
     const logout = await request('/api/admin/logout', 'POST', undefined, cookie);
