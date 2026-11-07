@@ -132,6 +132,7 @@ const { createAdminDashboardService } = require("./services/adminDashboardServic
 const { createAdminSubscriptionPresenter } = require("./services/adminSubscriptionPresenter");
 const { createAdminCustomerSearchService } = require("./services/adminCustomerSearchService");
 const { createPublicSessionSeatPresenter } = require("./services/publicSessionSeatPresenter");
+const { createSeatMapReadHandler } = require("./services/seatMapReadHandler");
 const { createMovieCatalogHandler } = require("./services/movieCatalogHandler");
 const { createVenueConfigurationHandler } = require("./services/venueConfigurationHandler");
 const { createCommercialCatalogHandler } = require("./services/commercialCatalogHandler");
@@ -7409,6 +7410,19 @@ const handleAdminPaymentsRead = createAdminPaymentsReadHandler({
   shortOrderReference,
 });
 
+const handleSeatMapRead = createSeatMapReadHandler({
+  adminHasPermission,
+  buildAdminSessionSeatMap,
+  findSessionWithMovie,
+  listActiveSeatHolds,
+  occupiedSeatIds,
+  publicSessionSeatPresenter,
+  roomForSession,
+  roomSeatSelectionEnabled,
+  sendJson,
+  sessionSeatAvailability,
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -7967,53 +7981,7 @@ async function handleApi(req, res, pathname) {
 
   if (handlePublicContentRoute({ res, pathname, method, db })) return;
 
-  const adminSessionSeatMapMatch = pathname.match(/^\/api\/admin\/sessions\/([^/]+)\/seat-map$/);
-  if (adminSessionSeatMapMatch && method === "GET") {
-    const sessionId = decodeURIComponent(adminSessionSeatMapMatch[1]);
-    const found = findSessionWithMovie(db, sessionId);
-    if (!found) {
-      sendJson(res, 404, { error: { code: "SESSION_NOT_FOUND", message: "Sessão não encontrada." } });
-      return;
-    }
-    const room = roomForSession(db, found.session);
-    const map = buildAdminSessionSeatMap({
-      ...found,
-      room,
-      tickets: db.tickets || [],
-      orders: db.orders || [],
-      holds: roomSeatSelectionEnabled(room) ? await listActiveSeatHolds(sessionId) : [],
-      occupiedSeatIds: occupiedSeatIds(db, sessionId),
-      showPurchaser: adminHasPermission(req.adminUser, "tickets.view") && adminHasPermission(req.adminUser, "orders.view")
-    });
-    sendJson(res, 200, map, { "Cache-Control": "private, no-store" });
-    return;
-  }
-
-  const sessionSeatsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/seats$/);
-  if (sessionSeatsMatch && method === "GET") {
-    const sessionId = decodeURIComponent(sessionSeatsMatch[1]);
-    let session = null;
-    let movie = null;
-    for (const candidate of db.movies || []) {
-      const found = (candidate.sessions || []).find((item) => item.id === sessionId);
-      if (found) {
-        session = found;
-        movie = candidate;
-        break;
-      }
-    }
-    if (!session) {
-      sendJson(res, 404, { error: { code: "SESSION_NOT_FOUND", message: "Sessão não encontrada." } });
-      return;
-    }
-    const room = roomForSession(db, session);
-    const enabled = roomSeatSelectionEnabled(room);
-    const { sold, reserved } = enabled ? sessionSeatAvailability(db, sessionId) : { sold: new Set(), reserved: new Set() };
-    const ownerToken = String(new URL(req.url, `http://${req.headers.host}`).searchParams.get("ownerToken") || "").trim();
-    const holds = enabled ? await listActiveSeatHolds(sessionId) : [];
-    sendJson(res, 200, publicSessionSeatPresenter.present({ sessionId, session, movie, room, enabled, sold, reserved, holds, ownerToken }), { "Cache-Control": "no-store" });
-    return;
-  }
+  if (await handleSeatMapRead({ req, res, pathname, method, db })) return;
 
   if (await handleAdminContentRoute({ req, res, pathname, method, db })) return;
 

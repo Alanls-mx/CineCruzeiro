@@ -42,6 +42,10 @@ O cálculo de seleção de ingressos, agregação, rótulos e PDF passou para [a
 
 Somente `GET /api/admin/payments` passou para [adminPaymentsReadHandler](../../backend/services/adminPaymentsReadHandler.js), após logs e antes de integrações. `server.js` 12.063 → 12.023 (−40 líquidas). O módulo filtra e projeta o snapshot sem mutações, provedor ou alteração de estado; `payments.view` continua no guard central. [Teste dirigido](../../tests/admin-payments-read-handler.test.mjs), segurança local e lint passaram. Risco residual: a leitura exibe dados financeiros e pessoais conforme a autorização central existente; o teste dirigido não substitui a matriz HTTP de permissões por papel.
 
+## Execução 21.2 — leitura dos mapas de poltronas
+
+`GET /api/admin/sessions/:id/seat-map` e `GET /api/sessions/:id/seats` passaram para [seatMapReadHandler](../../backend/services/seatMapReadHandler.js), no slot anterior a conteúdo Admin. `server.js` 12.023 → 11.991 (−32 líquidas). O handler reutiliza `publicSessionSeatPresenter`, consulta holds sem mutá-los e exige as duas permissões de ingressos/pedidos antes de incluir comprador no mapa Admin; `rooms.view` e a sessão administrativa seguem no guard central. Respostas `404` e cabeçalhos no-store foram preservados. [Teste dirigido](../../tests/seat-map-read-handler.test.mjs), segurança local, disponibilidade de poltronas e lint passaram. Risco: concorrência de holds e tempo real requer a bateria PostgreSQL descartável.
+
 **Branch:** `codex/cine-backend-finalizacao`; **base:** HEAD validado `715839fce442dd59d0438ff88b418cee0b5f0b31` de `codex/cine-modularizacao-profunda`. A branch é única para a Fase 21; usar commits por domínio e manter `main` e `backend/public/admin.js`/`admin-modules/` intocados. Este documento planeja, não executa, extrações. O [inventário ordenado](FASE21_INVENTARIO_ROTAS.md) é a matriz de precedência e de riscos do código atual.
 
 ## Meta e viabilidade
