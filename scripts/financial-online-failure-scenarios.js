@@ -82,12 +82,12 @@ async function runOnlinePaymentFailureScenarios({ probe, request, jsonHeaders, c
   assert.equal(commitFailed(), true, "Failpoint deve atingir o commit depois da aceitação do cartão");
   assert.ok(failedCard.response.status >= 500, "Commit falho não pode responder aprovação");
   assert.equal(acceptedCount(cardId), 1);
-  assert.deepEqual(probe.calls.filter((call) => call.orderId === cardId).map((call) => call.key),
-    [`credit_card:${cardId}`, `credit_card:${cardId}`]);
   assert.deepEqual(await counts(cardId), [0, 0, 0], "Rollback não pode emitir ingresso");
   const cardRetry = await post(cardId, "card");
   assert.equal(cardRetry.response.status, 201, JSON.stringify(cardRetry.payload));
   assert.equal(acceptedCount(cardId), 1);
+  assert.deepEqual(probe.calls.filter((call) => call.orderId === cardId).map((call) => call.key),
+    [`credit_card:${cardId}`, `credit_card:${cardId}`]);
   assert.deepEqual(await counts(cardId), [1, 1, 1]);
   assert.equal((await readDb()).payments.find((item) => item.orderId === cardId).providerPaymentId,
     probe.accepted.get(`credit_card:${cardId}`).id);

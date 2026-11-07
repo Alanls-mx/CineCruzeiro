@@ -10,6 +10,7 @@ const adminTwoFactorService = require("../backend/services/adminTwoFactorService
 const ticketCodeService = require("../backend/services/ticketCodeService");
 const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 const { installOnlinePaymentProbe, runOnlinePaymentFailureScenarios } = require("./financial-online-failure-scenarios");
+const { runMercadoPagoWebhookFailureScenarios } = require("./financial-webhook-failure-scenarios");
 
 const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cine-smoke-"));
 const DATA_FILE = path.join(testRoot, "db.json");
@@ -212,6 +213,7 @@ async function run() {
     active: true
   });
   db.concessions.push({ id: "smoke-last-stock", name: "Produto último estoque", category: "pipoca", price: 5, stock: 1, active: true });
+  if (postgresMode) db.concessions.push({ id: "smoke-cross-channel-stock", name: "Produto entre canais", category: "pipoca", price: 5, stock: 1, active: true });
   db.ticketTypes = (db.ticketTypes || []).filter((item) => item.id !== "triple-smoke");
   db.ticketTypes.push({ id: "triple-smoke", name: "Triple Ingresso", price: 25, description: "Pacote de teste", bundleQuantity: 3, active: true });
   db.promotions = (db.promotions || []).filter((item) => !["cupom-smoke-20", "cupom-smoke-gratis"].includes(item.id));
@@ -2996,6 +2998,37 @@ async function run() {
     assert.equal(stockAfterRace.concessions.find((item) => item.id === "smoke-last-stock").stock, 0);
 
     if (postgresMode) {
+      const productId = "smoke-cross-channel-stock";
+      const onlineId = "smoke-online-failure-cross-channel-stock";
+      const checkoutSale = request("/api/payments/pix", {
+        method: "POST", headers: jsonHeaders(cookie), body: JSON.stringify({ order: {
+          id: onlineId, idempotencyKey: onlineId, movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
+          fullTicketsCount: 1, halfTicketsCount: 0, concessionItems: [{ id: productId, quantity: 1 }]
+        } })
+      });
+      const counterSale = request("/api/admin/concession-counter-sales", {
+        method: "POST", headers: jsonHeaders(adminCookie), body: JSON.stringify({
+          saleMode: "concession_counter", paymentMethod: "cash", concessionItems: [{ id: productId, quantity: 1 }]
+        })
+      });
+      const [checkoutResult, counterResult] = await Promise.all([checkoutSale, counterSale]);
+      assert.deepEqual([checkoutResult.response.status, counterResult.response.status].sort(), [201, 409],
+        "Somente um canal pode consumir a última unidade");
+      const raceDb = await readPersistedDb();
+      const winner = raceDb.orders.filter((order) => order.concessionItems?.some((item) => item.id === productId));
+      const product = raceDb.concessions.find((item) => item.id === productId);
+      assert.equal(winner.length, 1);
+      assert.equal(product.stock, 0);
+      assert.equal(Number(product.reserved || 0) + Number(product.sold || 0), 1);
+      if (checkoutResult.response.status === 201) {
+        assert.equal(raceDb.payments.find((payment) => payment.orderId === onlineId).status, "pending");
+        assert.equal(raceDb.tickets.filter((ticket) => ticket.orderId === onlineId).length, 0);
+      } else {
+        assert.equal(raceDb.orders.some((order) => order.id === onlineId), false);
+      }
+    }
+
+    if (postgresMode) {
       const pg = require("pg");
       const originalQuery = pg.Client.prototype.query;
       function failCommitForRecord(recordId, errorCode, occurrence = 1, matchWrite = null) {
@@ -3451,6 +3484,12 @@ async function run() {
     const setupStatusAllowed = await request("/api/admin/2fa/status", { headers: jsonHeaders(setupRequiredCookie) });
     assert.equal(setupStatusAllowed.response.status, 200);
     assert.equal(setupStatusAllowed.payload.requiredByPolicy, true);
+
+    if (postgresMode) await runMercadoPagoWebhookFailureScenarios({
+      request, jsonHeaders, cookie, movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
+      readDb: readPersistedDb, queryPostgres: require("../backend/db/postgresStore").queryPostgres,
+      secret: process.env.MERCADO_PAGO_WEBHOOK_SECRET
+    });
 
     const logout = await request("/api/auth/logout", {
       method: "POST",
