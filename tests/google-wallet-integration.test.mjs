@@ -112,7 +112,7 @@ test("Google Wallet rejeita JSON e chave privada inválidos antes de salvar", ()
 });
 
 test("painel salva alterações antes de testar a conexão", () => {
-  const admin = fs.readFileSync(path.join(root, "backend", "public", "admin.js"), "utf8");
+  const admin = fs.readFileSync(path.join(root, "backend", "public", "admin-modules", "integration-administration.js"), "utf8");
   const testFlow = admin.slice(admin.indexOf("async function testIntegration"), admin.indexOf("async function toggleIntegration"));
   assert.match(testFlow, /persistIntegrationForm\(\{ close: false, announce: false \}\)/);
   assert.ok(testFlow.indexOf("persistIntegrationForm") < testFlow.indexOf("/test"));

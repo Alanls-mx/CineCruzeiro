@@ -1,14 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import vm from "node:vm";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { toCustomerTicketDto } = require("../backend/services/customerTicketDtoService.js");
 const { createCustomerTicketReadRoutes } = require("../backend/services/customerTicketReadRoutes.js");
-const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-const projectionCode = source.slice(source.indexOf("function enrichTicket("), source.indexOf("const { canTransferTicket }", source.indexOf("function enrichTicket(")));
+const { createTicketReadProjectionService } = require("../backend/services/ticketReadProjectionService.js");
 
 const order = { id: "order-1", customerUserId: "owner", customerEmail: "owner@example.test", status: "paid", paymentStatus: "approved" };
 const movie = { title: "Filme Sintético", posterUrl: "/uploads/poster.webp" };
@@ -28,7 +25,12 @@ const dependencies = {
   publicAssetUrl: (value) => `/projects/cinema${value}`,
   shortOrderReference: () => "FILM-001"
 };
-const enrichTicket = vm.runInNewContext(`${projectionCode}\nenrichTicket`, dependencies);
+const { enrichTicket } = createTicketReadProjectionService({
+  relations: dependencies,
+  statusPolicy: dependencies,
+  concessions: dependencies,
+  presentation: dependencies
+});
 
 test("projeção original distingue ingresso ativo, usado, cancelado e arquivado sem alterar estado", () => {
   for (const status of ["active", "used", "cancelled", "archived"]) {
