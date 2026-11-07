@@ -2,16 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { createRequire } from "node:module";
 
+const require = createRequire(import.meta.url);
 const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
 function extract(name) {
   const match = source.match(new RegExp(`^function ${name}\\([^]*?^}`, "m"));
   assert.ok(match, `baseline function ${name}`);
   return match[0];
 }
-const roomNames = ["roomForSession", "roomDisplayLabel", "sessionWithCurrentRoom", "roomSeatTypes", "roomSeats", "roomSeatSelectionEnabled"];
-const room = vm.createContext({});
-vm.runInContext(roomNames.map(extract).join("\n"), room);
+const room = require("../backend/services/roomReadProjectionService.js");
 
 test("baseline room projection prefers label over stale room ID and preserves seat rows", () => {
   const db = { rooms: [
