@@ -152,6 +152,7 @@ const { createMovieSessionInputService } = require("./services/movieSessionInput
 const { createVenueInputService } = require("./services/venueInputService");
 const { createCinemaSettingsHandler } = require("./services/cinemaSettingsHandler");
 const { createAdminUserWriteHandler } = require("./services/adminUserWriteHandler");
+const { createClubReadRoutes } = require("./services/clubReadRoutes");
 const { createAdminConcessionSalesReadHandler } = require("./services/adminConcessionSalesReadHandler");
 const { createUserAccountModelService } = require("./services/userAccountModelService");
 const { createCustomerAccountRoutes } = require("./services/customerAccountRoutes");
@@ -7448,6 +7449,14 @@ const { handleAdminConcessionSalesRead } = createAdminConcessionSalesReadHandler
   sendJson
 });
 
+const { handlePublicClubRead, handleAdminClubPlanRead, handleAdminClubSubscriptionRead } = createClubReadRoutes({
+  sendJson,
+  assetRecord,
+  getCustomerUser,
+  subscriptionSummary,
+  adminSubscriptionPresenter
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -7962,25 +7971,7 @@ async function handleApi(req, res, pathname) {
 
   if (await handleTmdbSearchRoute({ req, res, pathname, method, db })) return;
 
-  if (pathname === "/api/subscription-plans" && method === "GET") {
-    sendJson(
-      res,
-      200,
-      (db.subscriptionPlans || []).filter((plan) => plan.active !== false).map((plan) => assetRecord(plan, ["imageUrl"])),
-      { "Cache-Control": "public, max-age=30, stale-while-revalidate=90" }
-    );
-    return;
-  }
-
-  if (pathname === "/api/me/subscriptions" && method === "GET") {
-    const user = getCustomerUser(req, db);
-    if (!user) {
-      sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para consultar o Clube." } });
-      return;
-    }
-    sendJson(res, 200, { subscriptions: subscriptionSummary(db, user.id) });
-    return;
-  }
+  if (await handlePublicClubRead({ req, res, pathname, method, db })) return;
 
   const mySubscriptionCancelMatch = pathname.match(/^\/api\/me\/subscriptions\/([^/]+)\/cancel$/);
   if (mySubscriptionCancelMatch && method === "POST") {
@@ -8261,10 +8252,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/admin/subscription-plans" && method === "GET") {
-    sendJson(res, 200, db.subscriptionPlans || []);
-    return;
-  }
+  if (await handleAdminClubPlanRead({ req, res, pathname, method, db })) return;
 
   if (pathname === "/api/admin/goods-fiscal-settings" && method === "PUT") {
     if (roleAlias(req.adminUser?.role) !== "owner") {
@@ -8361,10 +8349,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/admin/subscriptions" && method === "GET") {
-    sendJson(res, 200, adminSubscriptionPresenter.list(db));
-    return;
-  }
+  if (await handleAdminClubSubscriptionRead({ req, res, pathname, method, db })) return;
 
   if (pathname === "/api/admin/subscriptions/assign" && method === "POST") {
     const body = await readBody(req);
