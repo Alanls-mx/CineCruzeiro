@@ -118,6 +118,7 @@ const { createAdminPaymentsReadHandler } = require("./services/adminPaymentsRead
 const { createAdminTicketDistributorPresentation } = require("./services/adminTicketDistributorPresentation");
 const { createAdminSocialStudioRoutes } = require("./services/adminSocialStudioRoutes");
 const { createSocialStudioContextPresenter } = require("./services/socialStudioContextPresenter");
+const { createSocialStudioPublicProjectionService } = require("./services/socialStudioPublicProjectionService");
 const { createAdminEmailRoutes } = require("./services/adminEmailRoutes");
 const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const { clientIp } = require("./services/clientIpService");
@@ -5277,6 +5278,8 @@ const { buildCommercialCatalog } = createCommercialCatalogPresenter({
   todayIsoDate
 });
 
+const { publicSocialStudioPost, socialStudioDownloadName } = createSocialStudioPublicProjectionService({ slugify });
+
 const { socialStudioBrand, socialStudioContext } = createSocialStudioContextPresenter({
   appFrontendUrl,
   buildCommercialCatalog,
@@ -5292,21 +5295,6 @@ const { socialStudioBrand, socialStudioContext } = createSocialStudioContextPres
   SOCIAL_STYLES,
   SOCIAL_TEMPLATES,
 });
-
-function publicSocialStudioPost(post = {}) {
-  return {
-    ...post,
-    originalScene: undefined,
-    draftScene: undefined,
-    editedScene: undefined,
-    sceneVersions: Array.isArray(post.sceneVersions)
-      ? post.sceneVersions.map(({ scene, ...version }) => version)
-      : [],
-    editable: post.rendererVersion === "v2" || Boolean(post.originalScene),
-    hasEditedScene: Boolean(post.editedScene),
-    hasDraftScene: Boolean(post.draftScene)
-  };
-}
 
 async function editableSceneForPost(post, db) {
   if (post.originalScene) return normalizeSocialScene(post.originalScene);
@@ -5391,12 +5379,6 @@ async function persistSocialStudioPosts(db, posts, req, before = null) {
     await writeDb(db);
   }
   return normalized;
-}
-
-function socialStudioDownloadName(post = {}) {
-  const title = slugify(post.title || post.templateName || "post") || "post";
-  const extension = post.outputType === "jpg" ? "jpg" : "png";
-  return `${title}-${post.formatId || "social"}.${extension}`;
 }
 
 const { parseAdminPeriod, inDateRange, compareMetric } = createCommercialReportPeriodService({ todayIsoDate, isValidCalendarDate, datePartsInSaoPaulo });

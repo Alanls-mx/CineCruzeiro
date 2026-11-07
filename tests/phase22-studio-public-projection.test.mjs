@@ -1,13 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import vm from "node:vm";
+import { createRequire } from "node:module";
 
-const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-const publicCode = source.slice(source.indexOf("function publicSocialStudioPost("), source.indexOf("async function editableSceneForPost("));
-const publicSocialStudioPost = vm.runInNewContext(`${publicCode}\npublicSocialStudioPost`);
-const downloadCode = source.slice(source.indexOf("function socialStudioDownloadName("), source.indexOf("const { parseAdminPeriod", source.indexOf("function socialStudioDownloadName(")));
-const socialStudioDownloadName = vm.runInNewContext(`${downloadCode}\nsocialStudioDownloadName`, { slugify: (value) => String(value).toLowerCase().replace(/\s+/g, "-") });
+const require = createRequire(import.meta.url);
+const { createSocialStudioPublicProjectionService } = require("../backend/services/socialStudioPublicProjectionService.js");
+const { publicSocialStudioPost, socialStudioDownloadName } = createSocialStudioPublicProjectionService({
+  slugify: (value) => String(value).toLowerCase().replace(/\s+/g, "-")
+});
 
 test("Studio oculta cenas e preserva indicadores de edição no histórico público", () => {
   const post = { title: "Post", originalScene: { secret: 1 }, draftScene: { secret: 2 }, editedScene: { secret: 3 },
