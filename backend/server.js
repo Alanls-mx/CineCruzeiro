@@ -10286,17 +10286,19 @@ async function handleApi(req, res, pathname) {
       amount: providerStatus.amount,
       reference: providerStatus.externalReference
     })).digest("hex");
-    await withCriticalMutation(async () => {
+    const webhookOutcome = await withCriticalMutation(async () => {
       const lockedDb = await readDb();
       if (lockedDb.webhookEvents.some((event) => event.provider === provider && event.eventId === eventId)) {
         logEvent("info", "webhook.duplicate", { provider, eventId, providerPaymentId });
-        sendJson(res, 200, {
-          ok: true,
-          duplicate: true,
-          processed: false,
-          processing: { recognized: true, orderLocated: true, stateUpdated: false }
-        });
-        return;
+        return {
+          status: 200,
+          payload: {
+            ok: true,
+            duplicate: true,
+            processed: false,
+            processing: { recognized: true, orderLocated: true, stateUpdated: false }
+          }
+        };
       }
 
       const effectiveOrderId = providerStatus.externalReference || "";
@@ -10307,8 +10309,7 @@ async function handleApi(req, res, pathname) {
       );
       if (!payment) {
         logEvent("info", "webhook.payment.not_found", { provider, eventId, providerPaymentId, orderId: effectiveOrderId, verified: verification.verified });
-        sendJson(res, 503, { error: { code: "PAYMENT_NOT_RECORDED", message: "Pagamento ainda não persistido; reenvie a notificação." } });
-        return;
+        return { status: 503, payload: { error: { code: "PAYMENT_NOT_RECORDED", message: "Pagamento ainda não persistido; reenvie a notificação." } } };
       }
 
       const isClubSubscriptionPayment = payment.metadata?.kind === "club_subscription";
@@ -10320,24 +10321,28 @@ async function handleApi(req, res, pathname) {
       }
       if ((providerStatus.status === "approved" && !providerStatus.externalReference)
         || !mercadoPagoReferenceMatches(payment, providerStatus.externalReference)) {
-        sendJson(res, 409, {
-          error: {
-            code: "PAYMENT_REFERENCE_MISMATCH",
-            message: "Referencia externa do pagamento nao confere com o pedido."
+        return {
+          status: 409,
+          payload: {
+            error: {
+              code: "PAYMENT_REFERENCE_MISMATCH",
+              message: "Referencia externa do pagamento nao confere com o pedido."
+            }
           }
-        });
-        return;
+        };
       }
       if (providerStatus?.externalReference) payment.providerReference = providerStatus.externalReference;
       if ((providerStatus.status === "approved" && (!Number.isFinite(Number(providerStatus.amount)) || Number(providerStatus.amount) <= 0))
         || (providerStatus.amount && Math.round(Number(providerStatus.amount) * 100) !== Math.round(Number(payment.amount) * 100))) {
-        sendJson(res, 409, {
-          error: {
-            code: "PAYMENT_AMOUNT_MISMATCH",
-            message: "Valor confirmado pelo provedor nao confere com o pedido."
+        return {
+          status: 409,
+          payload: {
+            error: {
+              code: "PAYMENT_AMOUNT_MISMATCH",
+              message: "Valor confirmado pelo provedor nao confere com o pedido."
+            }
           }
-        });
-        return;
+        };
       }
 
       const nextStatus = providerStatus.status;
@@ -10350,8 +10355,7 @@ async function handleApi(req, res, pathname) {
       if (payment.status === "refunded") payment.refundedAt = payment.refundedAt || new Date().toISOString();
       if (payment.metadata?.cancellationRefund) {
         await writeDb(lockedDb);
-        sendJson(res, 200, { received: true, refundPending: payment.metadata.cancellationRefund.status !== "completed" });
-        return;
+        return { status: 200, payload: { received: true, refundPending: payment.metadata.cancellationRefund.status !== "completed" } };
       }
       let tickets = [];
       let subscription = null;
@@ -10409,21 +10413,28 @@ async function handleApi(req, res, pathname) {
         createdAt: new Date().toISOString()
       });
       await writeDb(lockedDb);
-      if (order?.sessionId) seatRealtimeService?.broadcastSessionRefresh(order.sessionId);
-      logEvent("info", "webhook.processed", { provider, eventId, providerPaymentId, orderId: payment.orderId, status: payment.status, tickets: tickets.length, verified: verification.verified });
-      sendJson(res, 200, {
-        ok: true,
-        processed: true,
-        processing: {
-          recognized: true,
-          orderLocated: Boolean(order),
-          stateUpdated: true,
-          status: payment.status,
-          ticketsCreated: tickets.length
+      return {
+        status: 200,
+        sessionId: order?.sessionId,
+        emailDeliveryOrderIds,
+        log: { provider, eventId, providerPaymentId, orderId: payment.orderId, status: payment.status, tickets: tickets.length, verified: verification.verified },
+        payload: {
+          ok: true,
+          processed: true,
+          processing: {
+            recognized: true,
+            orderLocated: Boolean(order),
+            stateUpdated: true,
+            status: payment.status,
+            ticketsCreated: tickets.length
+          }
         }
-      });
-      emailDeliveryOrderIds.forEach(queueTicketEmailDelivery);
+      };
     });
+    if (webhookOutcome.sessionId) seatRealtimeService?.broadcastSessionRefresh(webhookOutcome.sessionId);
+    if (webhookOutcome.log) logEvent("info", "webhook.processed", webhookOutcome.log);
+    sendJson(res, webhookOutcome.status, webhookOutcome.payload);
+    webhookOutcome.emailDeliveryOrderIds?.forEach(queueTicketEmailDelivery);
     return;
   }
 

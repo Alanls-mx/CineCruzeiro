@@ -1,7 +1,8 @@
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 
-async function runMercadoPagoWebhookFailureScenarios({ request, jsonHeaders, cookie, movieId, sessionId, readDb, queryPostgres, secret }) {
+async function runMercadoPagoWebhookFailureScenarios({ request, jsonHeaders, cookie, movieId, sessionId, readDb, queryPostgres, secret,
+  failCommitForRecord, restoreQuery }) {
   const createPix = async (id) => {
     const result = await request("/api/payments/pix", {
       method: "POST", headers: jsonHeaders(cookie), body: JSON.stringify({ order: {
@@ -77,6 +78,18 @@ async function runMercadoPagoWebhookFailureScenarios({ request, jsonHeaders, coo
   assert.equal((await persisted(lateCheckout.order.id)).tickets, 0);
   assert.equal((await readDb()).orders.find((item) => item.id === lateCheckout.order.id).latePaymentReview?.provider,
     "mercado_pago", "Aprovação tardia deve exigir conciliação sem emitir ingresso");
+
+  const commitCheckout = await createPix("smoke-webhook-failure-commit");
+  const commitFailed = failCommitForRecord(commitCheckout.order.id, "smoke_webhook_commit_failure");
+  let failedCommit;
+  try { failedCommit = await notify(commitCheckout, { action: "order.processed", status: "processed" }); }
+  finally { restoreQuery(); }
+  assert.equal(commitFailed(), true, "O failpoint precisa atingir o commit do webhook aprovado");
+  assert.ok(failedCommit.response.status >= 500, "O webhook não pode confirmar uma escrita revertida");
+  assert.deepEqual(await persisted(commitCheckout.order.id), { payment: "pending", order: "pending_payment", tickets: 0 });
+  const retry = await notify(commitCheckout, { action: "order.processed", status: "processed" });
+  assert.equal(retry.response.status, 200, JSON.stringify(retry.payload));
+  assert.deepEqual(await persisted(commitCheckout.order.id), { payment: "approved", order: "paid", tickets: 1 });
 }
 
 module.exports = { runMercadoPagoWebhookFailureScenarios };

@@ -3532,6 +3532,13 @@ async function run() {
       const recoveredCancel = await cancelPoint(pointCommitFailure.payload.payment.id);
       assert.equal(recoveredCancel.response.status, 200);
       assert.equal((await readPersistedDb()).payments.find((item) => item.id === pointCommitFailure.payload.payment.id).status, "cancelled");
+
+      await runMercadoPagoWebhookFailureScenarios({
+        request, jsonHeaders, cookie, movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
+        readDb: readPersistedDb, queryPostgres: require("../backend/db/postgresStore").queryPostgres,
+        secret: process.env.MERCADO_PAGO_WEBHOOK_SECRET, failCommitForRecord,
+        restoreQuery: () => { pg.Client.prototype.query = originalQuery; }
+      });
     }
 
     const requiredPolicy = await request("/api/admin/security-policy", {
@@ -3555,12 +3562,6 @@ async function run() {
     const setupStatusAllowed = await request("/api/admin/2fa/status", { headers: jsonHeaders(setupRequiredCookie) });
     assert.equal(setupStatusAllowed.response.status, 200);
     assert.equal(setupStatusAllowed.payload.requiredByPolicy, true);
-
-    if (postgresMode) await runMercadoPagoWebhookFailureScenarios({
-      request, jsonHeaders, cookie, movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
-      readDb: readPersistedDb, queryPostgres: require("../backend/db/postgresStore").queryPostgres,
-      secret: process.env.MERCADO_PAGO_WEBHOOK_SECRET
-    });
 
     const logout = await request("/api/auth/logout", {
       method: "POST",
