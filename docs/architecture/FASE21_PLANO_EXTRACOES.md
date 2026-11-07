@@ -30,6 +30,10 @@ O bloco `/api/payments/config`, `/api/integrations`, `/api/admin/integrations/*`
 
 [Testes de rota](../../tests/admin-integration-routes.test.mjs), [segredos](../../tests/integration-config-secrets.test.mjs), segurança local (25/25) e lint passaram. O teste estrutural de catálogo foi atualizado para verificar o handler novo **e** a delegação do servidor, sem remover o guard. Riscos residuais: simulação batch, efeitos externos do botão “testar” e persistência após falha precisam do smoke PostgreSQL descartável; nenhuma chamada a provedor real foi feita.
 
+## Execução 21.2 — apresentação do relatório da distribuidora
+
+O cálculo de seleção de ingressos, agregação, rótulos e PDF passou para [adminTicketDistributorPresentation](../../backend/services/adminTicketDistributorPresentation.js), com 271 linhas e dependências explícitas. `server.js` 12.363 → 12.139 (−224 líquidas). O módulo não escreve nem chama provedor; recebe snapshot do cinema e funções de reconhecimento financeiro já existentes. As rotas continuam em `adminReportRoutes`, com permissão `ticket_finance.view/export/configure` e persistência de regras inalteradas. [Teste da apresentação](../../tests/admin-ticket-distributor-presentation.test.mjs), [cálculo](../../tests/ticket-distributor-report.test.mjs), testes de rota, segurança local e lint passaram. Risco: a suíte de apresentação usa PDF sintético e ainda falta comparar bytes MIME/CSV/PDF em HTTP e o resultado com um conjunto financeiro PostgreSQL descartável; não extrapolar para equivalência operacional completa.
+
 **Branch:** `codex/cine-backend-finalizacao`; **base:** HEAD validado `715839fce442dd59d0438ff88b418cee0b5f0b31` de `codex/cine-modularizacao-profunda`. A branch é única para a Fase 21; usar commits por domínio e manter `main` e `backend/public/admin.js`/`admin-modules/` intocados. Este documento planeja, não executa, extrações. O [inventário ordenado](FASE21_INVENTARIO_ROTAS.md) é a matriz de precedência e de riscos do código atual.
 
 ## Meta e viabilidade
