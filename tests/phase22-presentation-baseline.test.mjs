@@ -1,19 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import vm from "node:vm";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { PRE_PREMIERE_WINDOW_MS } = require("../backend/services/moviePublicationPolicy.js");
 const { createPublicAssetPathService } = require("../backend/services/publicAssetPathService.js");
-const source = fs.readFileSync(new URL("../backend/server.js", import.meta.url), "utf8");
-
-function declaration(name) {
-  const match = source.match(new RegExp(`^function ${name}\\([^]*?^}`, "m"));
-  assert.ok(match, `baseline function ${name}`);
-  return match[0];
-}
+const calendarContext = require("../backend/services/sessionScheduleReadService.js");
 
 const assetEnv = { NEXT_PUBLIC_BASE_PATH: "/projects/cine", FRONTEND_URL: "https://cinema.example/projects/cine" };
 const assetContext = createPublicAssetPathService({
@@ -43,10 +35,6 @@ test("baseline asset paths preserve tenant prefix, upload storage and editorial 
   assetEnv.FRONTEND_URL = "https://cinema.example";
   assert.equal(assetContext.appFrontendUrl(), "https://cinema.example/projects/cine");
 });
-
-const calendarNames = ["todayIsoDate", "sessionStartsAt", "sessionSellableUntil", "sessionSalesOpenAt", "normalizedSessionStatus", "isSessionSellable", "sellableSessions", "datePartsInSaoPaulo", "saoPauloDateFromOffset", "buildCalendarDays", "buildCalendarDaysForMovies"];
-const calendarContext = vm.createContext({ Date, Intl, PRE_PREMIERE_SALES_WINDOW_MS: PRE_PREMIERE_WINDOW_MS });
-vm.runInContext(calendarNames.map(declaration).join("\n"), calendarContext);
 
 test("baseline session windows and calendar presentation preserve current time rules", () => {
   const session = { date: "2026-11-15", time: "20:00", status: "available" };
