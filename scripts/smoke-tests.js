@@ -9,6 +9,7 @@ const WebSocket = require("ws");
 const adminTwoFactorService = require("../backend/services/adminTwoFactorService");
 const ticketCodeService = require("../backend/services/ticketCodeService");
 const { assertDisposableTestDatabase } = require("./test-postgres-safety");
+const { installOnlinePaymentProbe, runOnlinePaymentFailureScenarios } = require("./financial-online-failure-scenarios");
 
 const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cine-smoke-"));
 const DATA_FILE = path.join(testRoot, "db.json");
@@ -397,6 +398,8 @@ async function run() {
   );
   if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = originalNodeEnv;
+
+  const onlinePaymentProbe = installOnlinePaymentProbe(paymentService);
 
   const pointProvider = require("../backend/services/cardTerminalProvider");
   const mockPointOrders = new Map();
@@ -3021,6 +3024,12 @@ async function run() {
       const matchingOrderWrite = (orderId, predicate) => (statement, args) =>
         statement.startsWith("INSERT INTO orders") && args.some((values) =>
           Array.isArray(values) && values.some((value) => value?.id === orderId && predicate(value)));
+      await runOnlinePaymentFailureScenarios({
+        probe: onlinePaymentProbe, request, jsonHeaders, cookie, readDb: readPersistedDb,
+        queryPostgres: require("../backend/db/postgresStore").queryPostgres,
+        failCommitForRecord, restoreQuery: () => { pg.Client.prototype.query = originalQuery; },
+        movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID
+      });
       const pointSyncFailure = await createPointSale("smoke-point-sync-commit-failure");
       const syncProviderOrder = mockPointOrders.get(pointSyncFailure.payload.payment.providerPaymentId);
       syncProviderOrder.status = "approved";
@@ -3461,6 +3470,7 @@ async function run() {
 
     console.log("Smoke tests passed.");
   } finally {
+    onlinePaymentProbe.restore();
     await new Promise((resolve) => emailWebhookServer.close(resolve));
     await new Promise((resolve) => server.close(resolve));
     await new Promise((resolve) => setTimeout(resolve, 1800));
