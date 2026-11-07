@@ -27,6 +27,7 @@
 | [Extração comercial](COMMERCE_EXTRACTION_REPORT.md) | Você quer localizar preço, reservas, emissão, QR, Clube e a matriz de invariantes preservadas. |
 | [Mapa transacional financeiro](FINANCIAL_TRANSACTION_MAP.md) | Você quer identificar commits, chamadas externas, chaves, recuperação, direitos e lacunas por fluxo. |
 | [Fase 21: extração financeira dirigida](FASE21_EXTRACAO_FINANCEIRA.md) | Você quer ver os lotes extraídos, medições, failpoints e fluxos financeiros ainda bloqueados. |
+| [Fase 21: persistência e lifecycle](FASE21_PERSISTENCIA_LIFECYCLE.md) | Você quer localizar a normalização por domínio, a fábrica do snapshot, os timers/workers e as ressalvas de shutdown. |
 | [Fase 21: cobertura de falhas financeiras](FASE21_COBERTURA_FINANCEIRA.md) | Você quer localizar os testes de falhas parciais em PostgreSQL descartável, as invariantes verificadas e os bloqueios para novas extrações. |
 | [Extração financeira dirigida](FINANCIAL_EXTRACTION_REPORT.md) | Você quer comparar módulos, linhas, testes de falha parcial e bloqueadores. |
 | [Caracterização HTTP e do Admin](HTTP_CONTRACT_CHARACTERIZATION.md) | Você quer preservar respostas, cookies, origem, permissões e eventos antes das extrações. |

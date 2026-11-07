@@ -101,6 +101,7 @@ const { createTicketEmailDeliveryCoordinator } = require("./services/ticketEmail
 const { createTicketDocumentPdfService } = require("./services/ticketDocumentPdfService");
 const { createGoogleWalletIntegrationService } = require("./services/googleWalletIntegrationService");
 const { createBackendMaintenanceTasks } = require("./services/backendMaintenanceTasks");
+const { createBackendRuntimeSchedule } = require("./services/backendRuntimeSchedule");
 const { createFullOrderRefundCoordinator } = require("./services/fullOrderRefundCoordinator");
 const { createConcessionRefundCoordinator } = require("./services/concessionRefundCoordinator");
 const { createTicketRefundCoordinator } = require("./services/ticketRefundCoordinator");
@@ -10644,6 +10645,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.once("close", () => {
+  backendRuntimeSchedule.stop();
+  runtimeLifecycle.stop("SERVER_CLOSE");
   performanceMonitor.close();
   discordWebhookService.close();
   crmWebhookWorker?.stop();
@@ -10678,6 +10681,42 @@ const { runSubscriptionMaintenance, runMovieImageMaintenance,
   businessLogEvents: BUSINESS_LOG_EVENTS
 });
 
+let lastDiscordHealthAt = 0;
+const backendRuntimeSchedule = createBackendRuntimeSchedule({
+  runSubscriptionMaintenance, runMovieImageMaintenance, runEmailAttachmentMaintenance,
+  runSystemLogMaintenance, postgresEnabled,
+  subscriptionIntervalMs: SUBSCRIPTION_MAINTENANCE_INTERVAL_MS,
+  resumeSocialStudio: () => getSocialStudioAutomationOrchestrator().resumePending()
+    .then((count) => { if (count) logEvent("info", "social_studio.automation.resumed", { count }); })
+    .catch((error) => logEvent("warn", "social_studio.automation.resume_failed", { message: error.message })),
+  startPostgresWorkers: () => {
+    emailCampaignWorker = buildEmailCampaignWorker();
+    emailCampaignWorker?.start();
+    ticketEmailWorker = createTicketEmailWorker({
+      repository: createTicketEmailJobRepository(),
+      deliver: processQueuedTicketEmailDelivery,
+      logger: logEvent
+    });
+    ticketEmailWorker.start();
+    logEvent("info", "email_campaign.worker_started", { workerId: emailCampaignWorker?.workerId || "", config: emailCampaignWorker?.config || {} });
+  },
+  stopPostgresWorkers: () => {
+    emailCampaignWorker?.stop();
+    ticketEmailWorker?.stop();
+  },
+  pruneCrmOutbox: () => createCrmOutboxRepository().prune()
+    .catch((error) => logEvent("warn", "crm_webhook.outbox_prune_failed", { message: error.message })),
+  sendDiscordHealth: () => {
+    if (!discordWebhookService.isEnabled()) return;
+    const now = Date.now();
+    if (now - lastDiscordHealthAt < discordWebhookService.healthIntervalMs()) return;
+    const snapshot = performanceMonitor.snapshot();
+    if (!snapshot.current) return;
+    lastDiscordHealthAt = now;
+    discordWebhookService.enqueueHealth(snapshot);
+  }
+});
+
 loadEnvFiles().then(() => {
   if (isProduction() && !postgresEnabled()) {
     console.error("POSTGRES_REQUIRED_IN_PRODUCTION: configure DATABASE_URL ou POSTGRES_URL antes de iniciar em producao.");
@@ -10696,58 +10735,7 @@ loadEnvFiles().then(() => {
     console.log(`Cine Cruzeiro backend: http://${HOST}:${PORT}`);
     console.log(`Painel admin: http://${HOST}:${PORT}/admin`);
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
-    void runSubscriptionMaintenance();
-    void runMovieImageMaintenance();
-    void runEmailAttachmentMaintenance();
-    void getSocialStudioAutomationOrchestrator().resumePending().then(count=>{if(count)logEvent('info','social_studio.automation.resumed',{count});}).catch(error=>logEvent('warn','social_studio.automation.resume_failed',{message:error.message}));
-    const socialStudioRecoveryTimer=setInterval(()=>{
-      void getSocialStudioAutomationOrchestrator().resumePending().then(count=>{if(count)logEvent('info','social_studio.automation.resumed',{count});}).catch(error=>logEvent('warn','social_studio.automation.resume_failed',{message:error.message}));
-    },60*1000);
-    socialStudioRecoveryTimer.unref?.();
-    if (postgresEnabled()) {
-      emailCampaignWorker = buildEmailCampaignWorker();
-      emailCampaignWorker?.start();
-      ticketEmailWorker = createTicketEmailWorker({
-        repository: createTicketEmailJobRepository(),
-        deliver: processQueuedTicketEmailDelivery,
-        logger: logEvent
-      });
-      ticketEmailWorker.start();
-      logEvent("info", "email_campaign.worker_started", { workerId: emailCampaignWorker?.workerId || "", config: emailCampaignWorker?.config || {} });
-      void runSystemLogMaintenance();
-    }
-    const systemLogMaintenanceTimer = setInterval(() => {
-      void runSystemLogMaintenance();
-    }, 6 * 60 * 60 * 1000);
-    systemLogMaintenanceTimer.unref?.();
-    const subscriptionMaintenanceTimer = setInterval(() => {
-      void runSubscriptionMaintenance();
-    }, SUBSCRIPTION_MAINTENANCE_INTERVAL_MS);
-    subscriptionMaintenanceTimer.unref?.();
-    const movieImageMaintenanceTimer = setInterval(() => {
-      void runMovieImageMaintenance();
-    }, 6 * 60 * 60 * 1000);
-    movieImageMaintenanceTimer.unref?.();
-    const emailAttachmentMaintenanceTimer = setInterval(() => {
-      void runEmailAttachmentMaintenance();
-    }, 24 * 60 * 60 * 1000);
-    emailAttachmentMaintenanceTimer.unref?.();
-    void createCrmOutboxRepository().prune().catch((error) => logEvent("warn", "crm_webhook.outbox_prune_failed", { message: error.message }));
-    const crmOutboxMaintenanceTimer = setInterval(() => {
-      void createCrmOutboxRepository().prune().catch((error) => logEvent("warn", "crm_webhook.outbox_prune_failed", { message: error.message }));
-    }, 24 * 60 * 60 * 1000);
-    crmOutboxMaintenanceTimer.unref?.();
-    let lastDiscordHealthAt = 0;
-    const discordHealthTimer = setInterval(() => {
-      if (!discordWebhookService.isEnabled()) return;
-      const now = Date.now();
-      if (now - lastDiscordHealthAt < discordWebhookService.healthIntervalMs()) return;
-      const snapshot = performanceMonitor.snapshot();
-      if (!snapshot.current) return;
-      lastDiscordHealthAt = now;
-      discordWebhookService.enqueueHealth(snapshot);
-    }, 15000);
-    discordHealthTimer.unref?.();
+    backendRuntimeSchedule.start();
   });
 }).catch((error) => {
   console.error(error);
@@ -10757,8 +10745,7 @@ loadEnvFiles().then(() => {
 for (const signal of ["SIGTERM", "SIGINT"]) {
   process.once(signal, () => {
     runtimeLifecycle.stop(signal);
-    emailCampaignWorker?.stop();
-    ticketEmailWorker?.stop();
+    backendRuntimeSchedule.stop();
     crmWebhookWorker?.stop();
     server.close(() => { void closePostgres().finally(() => process.exit(0)); });
     setTimeout(() => process.exit(1), 10000).unref?.();

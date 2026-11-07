@@ -8,6 +8,8 @@ originais de commit, resposta e chamada externa permanecem; o dispatcher injeta
 `withCriticalMutation`, `readDb`, `writeDb`, guardas e provedores nos novos módulos.
 
 Na Fase 21, [snapshotPersistenceRuntime](../../backend/services/snapshotPersistenceRuntime.js) passou a possuir o `AsyncLocalStorage` da mutação JSON e a delegar `withCriticalMutation` ao lock PostgreSQL existente. Não cria transação por importação nem muda o momento de `writeDb`/COMMIT. O servidor ainda seleciona o limite transacional da rota. [Teste dirigido](../../tests/snapshot-persistence-runtime.test.mjs), [smoke JSON/PG](../../scripts/smoke-tests.js). A fila JSON não equivale a transação SQL nem resolve efeito externo inconclusivo.
+
+O [backendRuntimeSchedule](../../backend/services/backendRuntimeSchedule.js) mantém a sequência de varreduras e workers do startup normal; `stop` impede novos ticks e invoca a parada dos workers, mas não prova conclusão de entrega SMTP/CRM, upload ou chamada financeira já iniciada. A pausa operacional da Fase 13.1 exige dreno e corte separados. [Teste](../../tests/backend-runtime-schedule.test.mjs).
 Os testes adicionais de falha antes/depois do provedor, rollback, webhook assinado
 e disputa de estoque em PostgreSQL descartável estão na
 [matriz de cobertura da Fase 21](FASE21_COBERTURA_FINANCEIRA.md). Ela registra
