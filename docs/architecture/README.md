@@ -31,6 +31,8 @@
 | [Auditoria final da Fase 21](../RELATORIO_FINAL_FASE21_BACKEND.md) | Você quer as métricas atuais, contratos exercitados, riscos financeiros, suites e decisão de encerramento do backend. |
 | [Fase 22.1: mapa estrutural](FASE22_MAPA_ESTRUTURAL.md) | Você quer localizar funções dentro e fora do dispatcher, donos, efeitos, testes e limites de extração. |
 | [Fase 22.1: resultado](FASE22_RESULTADO_22_1.md) | Você quer comparar reduções líquidas, módulos, testes e bloqueios dos primeiros lotes estruturais. |
+| [Fase 22.2: contratos HTTP](FASE22_CONTRATOS_CONTEXTO_HTTP.md) | Você quer localizar ALS, identidade, logs, cookies, CSP, corpo e resposta após commit antes de mover infraestrutura. |
+| [Fase 22.2: resultado](FASE22_RESULTADO_22_2.md) | Você quer comparar as extrações de ingresso, Studio, Wallet e corpo HTTP com testes e bloqueios. |
 | [Fase 21: cobertura de falhas financeiras](FASE21_COBERTURA_FINANCEIRA.md) | Você quer localizar os testes de falhas parciais em PostgreSQL descartável, as invariantes verificadas e os bloqueios para novas extrações. |
 | [Extração financeira dirigida](FINANCIAL_EXTRACTION_REPORT.md) | Você quer comparar módulos, linhas, testes de falha parcial e bloqueadores. |
 | [Caracterização HTTP e do Admin](HTTP_CONTRACT_CHARACTERIZATION.md) | Você quer preservar respostas, cookies, origem, permissões e eventos antes das extrações. |
