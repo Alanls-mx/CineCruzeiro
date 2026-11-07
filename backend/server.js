@@ -152,6 +152,7 @@ const { createMovieSessionInputService } = require("./services/movieSessionInput
 const { createVenueInputService } = require("./services/venueInputService");
 const { createCinemaSettingsHandler } = require("./services/cinemaSettingsHandler");
 const { createAdminUserWriteHandler } = require("./services/adminUserWriteHandler");
+const { createAdminOrderReadRoutes } = require("./services/adminOrderReadRoutes");
 const { createClubReadRoutes } = require("./services/clubReadRoutes");
 const { createAdminConcessionSalesReadHandler } = require("./services/adminConcessionSalesReadHandler");
 const { createUserAccountModelService } = require("./services/userAccountModelService");
@@ -7457,6 +7458,15 @@ const { handlePublicClubRead, handleAdminClubPlanRead, handleAdminClubSubscripti
   adminSubscriptionPresenter
 });
 
+const { handleAdminOrderListRead, handleAdminOrderDetailRead } = createAdminOrderReadRoutes({
+  postgresEnabled,
+  orderRepository,
+  orderPayment,
+  orderTickets,
+  enrichTicket,
+  sendJson
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -10615,10 +10625,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (pathname === "/api/orders" && method === "GET") {
-    sendJson(res, 200, postgresEnabled() ? await orderRepository.list() : db.orders);
-    return;
-  }
+  if (await handleAdminOrderListRead({ req, res, pathname, method, db })) return;
 
   const permanentOrderDeleteMatch = pathname.match(/^\/api\/orders\/([^/]+)\/permanent$/);
   if (permanentOrderDeleteMatch && method === "DELETE") {
@@ -10674,22 +10681,7 @@ async function handleApi(req, res, pathname) {
     return;
   }
 
-  if (adminOrderMatch && method === "GET") {
-    const orderId = decodeURIComponent(adminOrderMatch[1]);
-    const order = postgresEnabled()
-      ? await orderRepository.findById(orderId)
-      : (db.orders || []).find((item) => item.id === orderId);
-    if (!order) {
-      sendJson(res, 404, { error: { code: "ORDER_NOT_FOUND", message: "Pedido nao encontrado." } });
-      return;
-    }
-    sendJson(res, 200, {
-      order,
-      payment: orderPayment(db, order.id),
-      tickets: orderTickets(db, order.id).map((ticket) => enrichTicket(db, ticket))
-    });
-    return;
-  }
+  if (await handleAdminOrderDetailRead({ req, res, pathname, method, db, adminOrderMatch })) return;
 
   if (adminOrderMatch && method === "PATCH") {
     const orderId = decodeURIComponent(adminOrderMatch[1]);
