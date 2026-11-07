@@ -96,6 +96,32 @@ test('identity HTTP: admin login, session revocation, guard and customer isolati
     const stored = JSON.parse(await readFile(dataFile, 'utf8'));
     assert.ok(stored.auditLogs.some((entry) => entry.action === 'POST /api/admin/logout'));
     assert.ok(stored.users.find((user) => user.email === 'qa-owner@example.test').sessionVersion > 0);
+
+    const account = { firstName: 'Ana', lastName: 'Silva', email: 'ana@example.test', password: 'Senha-forte-2026!' };
+    const created = await request('/api/auth/register', 'POST', account);
+    assert.equal(created.response.status, 201, JSON.stringify(created.body));
+    const firstCustomerCookie = (created.response.headers.get('set-cookie') || '').split(';')[0];
+    assert.match(firstCustomerCookie, /^cine_customer=/);
+    assert.equal((await request('/api/auth/me', 'GET', undefined, firstCustomerCookie)).response.status, 200);
+    assert.equal((await request('/api/admin/me', 'GET', undefined, firstCustomerCookie)).response.status, 401);
+    const invalidCustomer = await request('/api/auth/login', 'POST', { email: account.email, password: 'wrong' });
+    assert.equal(invalidCustomer.response.status, 401);
+    const customerLogin = await request('/api/auth/login', 'POST', { email: account.email, password: account.password });
+    assert.equal(customerLogin.response.status, 200);
+    const customerCookie = (customerLogin.response.headers.get('set-cookie') || '').split(';')[0];
+    const recovery = await request('/api/auth/password/request', 'POST', { email: account.email });
+    assert.equal(recovery.response.status, 202);
+    assert.ok(recovery.body.resetToken, 'nonproduction reset token for isolated test');
+    const reset = await request('/api/auth/password/reset', 'POST', { token: recovery.body.resetToken, password: 'Outra-senha-2026!' });
+    assert.equal(reset.response.status, 200);
+    assert.match(reset.response.headers.get('set-cookie') || '', /^cine_customer=/);
+    assert.equal((await request('/api/auth/me', 'GET', undefined, customerCookie)).response.status, 401);
+    const newCustomerCookie = (reset.response.headers.get('set-cookie') || '').split(';')[0];
+    const customerLogout = await request('/api/auth/logout', 'POST', undefined, newCustomerCookie);
+    assert.equal(customerLogout.response.status, 200);
+    assert.equal(customerLogout.body.ok, true);
+    assert.match(customerLogout.response.headers.get('set-cookie') || '', /Max-Age=0/);
+    assert.equal((await request('/api/auth/me', 'GET', undefined, newCustomerCookie)).response.status, 401);
   } finally {
     if (child.exitCode === null) {
       child.kill();
