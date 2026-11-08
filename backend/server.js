@@ -9541,6 +9541,8 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/webhooks/mercado-pago" && method === "POST") {
+    // Other Mercado Pago branches also write events inside a critical mutation.
+    req.commitResponseAfterMutation = true;
     const body = await readBody(req);
     const provider = "mercado_pago";
     const webhookUrl = new URL(req.url, `http://${req.headers.host}`);
