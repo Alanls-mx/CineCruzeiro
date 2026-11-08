@@ -59,6 +59,7 @@ Fase 22.3: [cobertura financeira avançada](FASE22_COBERTURA_FINANCEIRA_AVANCADA
 | [Matriz 13.1](../FASE13_1_MATRIZ_ISOLAMENTO_PAUSA.md) | Você localiza entradas HTTP/WS/workers e as evidencias de pausa/isolamento. |
 | [Portão D 13.2](../FASE13_2_PORTAO_D_CORTE_DRENO.md) | Você prepara o ensaio de corte e dreno da release antiga, sem operar a VPS. |
 | [Instalações](../../config/cinema-instances.example.json) | Você precisa distinguir configuração compartilhada e específica. |
+| [Homologação funcional 23.1](../FASE23_1_HOMOLOGACAO_FUNCIONAL.md) | Você quer os resultados locais, limites e decisão da fase; consulte a [matriz](../FASE23_1_MATRIZ_FLUXOS.md) e os [defeitos corrigidos](../FASE23_1_BUGS_E_CORRECOES.md). |
 
 ## Navegação por intenção
 
