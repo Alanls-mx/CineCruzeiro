@@ -59,3 +59,36 @@ test("JSON runtime does not start PostgreSQL workers or log maintenance", () => 
   assert.equal(calls.includes("system-log"), false);
   schedule.stop();
 });
+
+test("maintenance failures are observed without stopping the remaining schedule", async () => {
+  const errors = [];
+  const timers = [];
+  const schedule = scheduleModule.createBackendRuntimeSchedule({
+    runSubscriptionMaintenance: () => {},
+    runMovieImageMaintenance: () => { throw new Error("image maintenance failed"); },
+    runEmailAttachmentMaintenance: () => Promise.reject(new Error("attachment maintenance failed")),
+    runSystemLogMaintenance: () => {},
+    resumeSocialStudio: () => {},
+    startPostgresWorkers: () => {},
+    stopPostgresWorkers: () => {},
+    postgresEnabled: () => false,
+    pruneCrmOutbox: () => {},
+    sendDiscordHealth: () => {},
+    onTaskError: (name, error) => errors.push([name, error.message]),
+    subscriptionIntervalMs: 60000,
+    setIntervalFn(callback) { timers.push(callback); return { unref() {} }; },
+    clearIntervalFn: () => {}
+  });
+  assert.doesNotThrow(() => schedule.start());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(errors, [
+    ["movie-image", "image maintenance failed"],
+    ["email-attachment", "attachment maintenance failed"]
+  ]);
+  assert.equal(timers.length, 7);
+  assert.doesNotThrow(() => timers[3]());
+  assert.doesNotThrow(() => timers[4]());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(errors.slice(2), errors.slice(0, 2));
+  schedule.stop();
+});

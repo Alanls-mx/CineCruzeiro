@@ -10150,6 +10150,9 @@ let lastDiscordHealthAt = 0;
 const backendRuntimeSchedule = createBackendRuntimeSchedule({
   runSubscriptionMaintenance, runMovieImageMaintenance, runEmailAttachmentMaintenance,
   runSystemLogMaintenance, postgresEnabled,
+  onTaskError: (task, error) => logEvent("warn", "runtime.schedule_task_failed", {
+    task, code: error?.code || "SCHEDULE_TASK_FAILED", message: error?.message || "Scheduled task failed."
+  }),
   subscriptionIntervalMs: SUBSCRIPTION_MAINTENANCE_INTERVAL_MS,
   resumeSocialStudio: () => getSocialStudioAutomationOrchestrator().resumePending()
     .then((count) => { if (count) logEvent("info", "social_studio.automation.resumed", { count }); })

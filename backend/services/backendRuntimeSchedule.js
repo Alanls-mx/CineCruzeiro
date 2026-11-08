@@ -4,7 +4,8 @@ function createBackendRuntimeSchedule({
   runSubscriptionMaintenance, runMovieImageMaintenance, runEmailAttachmentMaintenance,
   runSystemLogMaintenance, resumeSocialStudio, startPostgresWorkers,
   stopPostgresWorkers, postgresEnabled, pruneCrmOutbox, sendDiscordHealth,
-  subscriptionIntervalMs, setIntervalFn = setInterval, clearIntervalFn = clearInterval
+  subscriptionIntervalMs, onTaskError = () => {},
+  setIntervalFn = setInterval, clearIntervalFn = clearInterval
 }) {
   const timers = [];
   let started = false;
@@ -15,25 +16,36 @@ function createBackendRuntimeSchedule({
     timers.push(timer);
   }
 
+  function runObserved(name, task) {
+    try {
+      const result = task();
+      if (result && typeof result.then === "function") {
+        void Promise.resolve(result).catch((error) => onTaskError(name, error));
+      }
+    } catch (error) {
+      onTaskError(name, error);
+    }
+  }
+
   function start() {
     if (started) return;
     started = true;
-    void runSubscriptionMaintenance();
-    void runMovieImageMaintenance();
-    void runEmailAttachmentMaintenance();
-    void resumeSocialStudio();
-    every(() => { void resumeSocialStudio(); }, 60 * 1000);
+    runObserved("subscription", runSubscriptionMaintenance);
+    runObserved("movie-image", runMovieImageMaintenance);
+    runObserved("email-attachment", runEmailAttachmentMaintenance);
+    runObserved("social-studio", resumeSocialStudio);
+    every(() => runObserved("social-studio", resumeSocialStudio), 60 * 1000);
     if (postgresEnabled()) {
       startPostgresWorkers();
-      void runSystemLogMaintenance();
+      runObserved("system-log", runSystemLogMaintenance);
     }
-    every(() => { void runSystemLogMaintenance(); }, 6 * 60 * 60 * 1000);
-    every(() => { void runSubscriptionMaintenance(); }, subscriptionIntervalMs);
-    every(() => { void runMovieImageMaintenance(); }, 6 * 60 * 60 * 1000);
-    every(() => { void runEmailAttachmentMaintenance(); }, 24 * 60 * 60 * 1000);
-    void pruneCrmOutbox();
-    every(() => { void pruneCrmOutbox(); }, 24 * 60 * 60 * 1000);
-    every(sendDiscordHealth, 15000);
+    every(() => runObserved("system-log", runSystemLogMaintenance), 6 * 60 * 60 * 1000);
+    every(() => runObserved("subscription", runSubscriptionMaintenance), subscriptionIntervalMs);
+    every(() => runObserved("movie-image", runMovieImageMaintenance), 6 * 60 * 60 * 1000);
+    every(() => runObserved("email-attachment", runEmailAttachmentMaintenance), 24 * 60 * 60 * 1000);
+    runObserved("crm-outbox", pruneCrmOutbox);
+    every(() => runObserved("crm-outbox", pruneCrmOutbox), 24 * 60 * 60 * 1000);
+    every(() => runObserved("discord-health", sendDiscordHealth), 15000);
   }
 
   function stop() {
