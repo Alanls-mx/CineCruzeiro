@@ -31,3 +31,5 @@ Ambiente: navegador Chromium local, usuários e pedidos sintéticos, provedores 
 | 25 | Teclado, foco e acessibilidade detalhada | Tabulação e modais em toda a jornada. | Foco previsível e mensagens acessíveis. | Não houve auditoria completa com teclado/leitor de tela. | — | NÃO TESTADA | Sem correção. | Fazer ensaio de acessibilidade dirigido. |
 
 Contagem desta matriz: **9 homologados localmente, 14 aprovados com ressalvas, 1 dependente de homologação externa e 1 não testado**. O estado é por fluxo e não substitui a decisão global da fase.
+
+Atualização posterior: a [Fase 23.2](FASE23_2_RESILIENCIA_FINANCEIRA.md) acrescentou jornadas de cartão Mercado Pago/PagBank, retry Pix e disputas entre duas instâncias PostgreSQL. As classificações acima continuam sendo o retrato da Fase 23.1; consulte a [matriz de falhas](FASE23_2_MATRIZ_FALHAS.md) para os ramos novos e seus limites.

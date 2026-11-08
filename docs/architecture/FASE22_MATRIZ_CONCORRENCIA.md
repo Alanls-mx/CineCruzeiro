@@ -1,5 +1,7 @@
 # Fase 22.3 — matriz de concorrência e falhas
 
+Evidência posterior da Fase 23.2: [matriz de falhas financeiras](../FASE23_2_MATRIZ_FALHAS.md). Dois processos HTTP agora disputam a mesma cobrança Pix, último lugar, último produto, último crédito e webhook MP no PostgreSQL descartável. Os limites registrados abaixo permanecem históricos da Fase 22.3.
+
 Fase 22.4 acrescenta ao smoke PagBank o retry HTTP assinado por ECDSA após falha de commit e a assinatura ECDSA inválida, com SQL verificado. A disputa entre dois processos HTTP, os demais status e reembolsos continuam sem prova. Ver [resultado](FASE22_RESULTADO_22_4.md).
 
 O failpoint do evento desconhecido Mercado Pago agora seleciona o `INSERT` de `webhook_events` pelo ID externo e status. A seleção anterior por substring em qualquer parâmetro podia atingir o commit concorrente de um worker de e-mail no CI, deixando a requisição testada sem falha. A alteração torna a injeção específica da transação sob teste; não muda o caminho de produção.
