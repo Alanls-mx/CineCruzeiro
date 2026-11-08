@@ -116,6 +116,7 @@ const { createEmailCampaignAudienceService } = require("./services/emailCampaign
 const { createAdminIntegrationRoutes } = require("./services/adminIntegrationRoutes");
 const { createAdminReportRoutes } = require("./services/adminReportRoutes");
 const { createAdminPaymentsReadHandler } = require("./services/adminPaymentsReadHandler");
+const { createMercadoPagoUnknownEventHandler } = require("./services/mercadoPagoUnknownEventHandler");
 const { createAdminTicketDistributorPresentation } = require("./services/adminTicketDistributorPresentation");
 const { createAdminSocialStudioRoutes } = require("./services/adminSocialStudioRoutes");
 const { createSocialStudioContextPresenter } = require("./services/socialStudioContextPresenter");
@@ -6801,6 +6802,10 @@ const { handleCustomerTicketListRead, handleCustomerTicketDetailRead } = createC
   sendJson
 });
 
+const handleMercadoPagoUnknownEvent = createMercadoPagoUnknownEventHandler({
+  withCriticalMutation, readDb, writeDb, logEvent, sendJson
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -9591,31 +9596,9 @@ async function handleApi(req, res, pathname) {
     const isAuthorizedPaymentEvent = /subscription_authorized_payment|authorized_payment/.test(webhookTopic);
     const isSubscriptionEvent = /preapproval|subscription|authorized_payment/.test(webhookTopic);
     if (!isSubscriptionEvent && !MERCADO_PAGO_ORDER_ACTIONS.has(webhookAction)) {
-      await withCriticalMutation(async () => {
-        const lockedDb = await readDb();
-        const duplicate = lockedDb.webhookEvents.some((event) => event.provider === provider && event.eventId === eventId);
-        if (!duplicate) {
-          lockedDb.webhookEvents.push({
-            provider,
-            eventId,
-            providerPaymentId,
-            orderId,
-            requestId: verification.requestId,
-            action: webhookAction,
-            status: "ignored_unknown_event",
-            verified: true,
-            createdAt: new Date().toISOString()
-          });
-          await writeDb(lockedDb);
-        }
-        logEvent("info", "webhook.mercado_pago.ignored", { eventId, action: webhookAction, providerPaymentId, duplicate });
-        sendJson(res, 200, {
-          ok: true,
-          accepted: true,
-          processed: false,
-          duplicate,
-          processing: { recognized: false, orderLocated: false, stateUpdated: false }
-        });
+      await handleMercadoPagoUnknownEvent({
+        res, provider, eventId, providerPaymentId, orderId,
+        requestId: verification.requestId, action: webhookAction
       });
       return;
     }
