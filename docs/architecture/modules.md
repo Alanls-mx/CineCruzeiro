@@ -1,5 +1,7 @@
 # Índice de módulos extraídos
 
+Fase 22.3 acrescentou apenas testes: [falhas de checkout PagBank](../../scripts/financial-pagbank-checkout-failure-scenarios.js), [falhas de webhook PagBank](../../scripts/financial-pagbank-webhook-failure-scenarios.js) e [worker de corrida de poltrona](../../scripts/postgres-seat-race-worker.js). Seus endpoints, permissões, escritores, invariantes SQL e riscos constam na [matriz financeira](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md) e na [matriz de concorrência](FASE22_MATRIZ_CONCORRENCIA.md); nenhuma responsabilidade de produção foi transferida. `server.js` recebeu apenas o adiamento de resposta HTTP pós-commit para os dois webhooks.
+
 O [server.js](../../backend/server.js) ainda faz roteamento, autenticação, autorização, CSRF e tratamento central de erros. Os handlers abaixo recebem dependências; não devem importá-lo de volta.
 
 [publicAssetPathService](../../backend/services/publicAssetPathService.js) compõe URLs de uploads e do site a partir do ambiente da instalação, sem I/O no import. `server.js` o injeta em estáticos, projeções e documentos; os guards de `/uploads/*` e `PUT /api/settings` continuam nos donos anteriores. Não grava dados. [Caracterização](../../tests/phase22-presentation-baseline.test.mjs), [HTTP estático](../../tests/static-http-contract-characterization.test.mjs). Risco: prefixo duplicado ou liberação de URL editorial externa indevida.

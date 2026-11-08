@@ -1,5 +1,7 @@
 # Fase 22.1 — mapa estrutural do servidor
 
+Fase 22.3 não extraiu responsabilidades: `server.js` está em 10.307 linhas e `handleApi` em 3.265, quatro linhas acima da Fase 22.2, para diferir o reconhecimento HTTP dos webhooks PagBank e Mercado Pago até o commit PostgreSQL. Os limites para a extração seguinte estão na [matriz financeira avançada](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md) e na [matriz de concorrência](FASE22_MATRIZ_CONCORRENCIA.md). Os números abaixo continuam sendo a fotografia da Fase 22.1.
+
 Base: `fee9b6d0c124add36666eced7358093ed2261c2e`, branch `codex/cine-backend-desacoplamento`. Este mapa descreve o código da etapa, não substitui [endpoints](endpoints.md), [dependências](dependencies.md), [persistência](persistence.md), [transações](transactions.md) ou a [matriz financeira](FASE21_COBERTURA_FINANCEIRA.md). As contagens são reproduzíveis por `node scripts/measure-modularization.mjs --summary`; números de linha não servem como referências permanentes.
 
 ## Dimensão e precedência

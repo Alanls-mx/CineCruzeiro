@@ -1,5 +1,7 @@
 # Mapa Inteligente da Arquitetura
 
+Fase 22.3: [cobertura financeira avançada](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md), [matriz de concorrência](FASE22_MATRIZ_CONCORRENCIA.md) e [resultado da etapa](FASE22_RESULTADO_22_3.md) registram os failpoints PostgreSQL e os limites para a próxima extração.
+
 Índice progressivo verificado no código. **Não é um inventário completo**. O código-fonte prevalece sobre este mapa. `npm run docs:coverage` mede o escopo bruto sem confundir caminhos candidatos com rotas ativas.
 
 | Entrada | Use quando |
