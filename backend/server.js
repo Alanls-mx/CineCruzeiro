@@ -9458,6 +9458,8 @@ async function handleApi(req, res, pathname) {
   }
 
   if (pathname === "/api/webhooks/pag-bank" && method === "POST") {
+    // Acknowledge a verified notification only after its local transaction commits.
+    req.commitResponseAfterMutation = true;
     await readBody(req, { rawOnly: true });
     const providerConfig = integrationConfigService.resolvedConfig(db, "pagBank") || {};
     const webhookAuth = await pagBankPaymentService.verifyOrderWebhook(req, providerConfig, {
