@@ -65,6 +65,63 @@ test("card API receives only the encrypted card and cardholder tax ID", async ()
   }
 });
 
+test("PagBank AUTHORIZED captures and confirms PAID before recognizing approval", async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), key: options.headers?.["x-idempotency-key"] });
+    if (String(url).endsWith("/orders") && options.method === "POST") {
+      return { ok: true, json: async () => ({ id: "ORDE_CAPTURE", reference_id: "order-capture",
+        charges: [{ id: "CHAR_CAPTURE", status: "AUTHORIZED", amount: { value: 1000 }, payment_method: { type: "CREDIT_CARD" } }] }) };
+    }
+    if (String(url).endsWith("/capture")) return { ok: true, json: async () => ({ status: "PAID" }) };
+    return { ok: true, json: async () => ({ id: "ORDE_CAPTURE", reference_id: "order-capture",
+      charges: [{ id: "CHAR_CAPTURE", status: "PAID", amount: { value: 1000 }, payment_method: { type: "CREDIT_CARD" } }] }) };
+  };
+  try {
+    const payment = await pagBank.createOrderPayment({ id: "order-capture", totalPrice: 10, customerName: "Cliente Teste",
+      customerEmail: "teste@example.com", customerCpf: "12345678909" }, { environment: "sandbox", accessToken: "token" },
+    { method: "credit_card", card: { encrypted: "ENCRYPTED" }, idempotencyKey: "capture-once" });
+    assert.equal(payment.status, "approved");
+    assert.equal(calls.filter((call) => call.url.endsWith("/capture")).length, 1);
+    assert.equal(calls.filter((call) => call.url.endsWith("/orders/ORDE_CAPTURE")).length, 1);
+    assert.equal(calls[0].key, "capture-once");
+  } finally { global.fetch = originalFetch; }
+});
+
+test("PagBank lost capture response stays inconclusive until the Order confirms PAID", async () => {
+  const originalFetch = global.fetch;
+  const captureKeys = [];
+  let providerPaid = false;
+  global.fetch = async (url, options = {}) => {
+    if (String(url).endsWith("/orders") && options.method === "POST") {
+      return { ok: true, json: async () => ({ id: "ORDE_CAPTURERETRY", reference_id: "order-capture-retry",
+        charges: [{ id: "CHAR_CAPTURERETRY", status: "AUTHORIZED", amount: { value: 1000 }, payment_method: { type: "CREDIT_CARD" } }] }) };
+    }
+    if (String(url).endsWith("/capture")) {
+      captureKeys.push(options.headers["x-idempotency-key"]);
+      if (!providerPaid) throw new Error("Capture accepted but response lost");
+      return { ok: true, json: async () => ({ status: "PAID" }) };
+    }
+    return { ok: true, json: async () => ({ id: "ORDE_CAPTURERETRY", reference_id: "order-capture-retry",
+      charges: [{ id: "CHAR_CAPTURERETRY", status: providerPaid ? "PAID" : "AUTHORIZED",
+        amount: { value: 1000 }, payment_method: { type: "CREDIT_CARD" } }] }) };
+  };
+  try {
+    const order = { id: "order-capture-retry", totalPrice: 10, customerName: "Cliente Teste",
+      customerEmail: "teste@example.com", customerCpf: "12345678909" };
+    const config = { environment: "sandbox", accessToken: "token" };
+    const options = { method: "credit_card", card: { encrypted: "ENCRYPTED" }, idempotencyKey: "same-order-key" };
+    const uncertain = await pagBank.createOrderPayment(order, config, options);
+    assert.equal(uncertain.status, "processing");
+    providerPaid = true;
+    const confirmed = await pagBank.createOrderPayment(order, config, options);
+    assert.equal(confirmed.status, "approved");
+    assert.equal(captureKeys.length, 2);
+    assert.equal(captureKeys[0], captureKeys[1]);
+  } finally { global.fetch = originalFetch; }
+});
+
 test("legacy webhook signature remains validated over the exact raw body", async () => {
   const rawBody = '{"id":"ORDE_123", "charges":[]}';
   const signature = crypto.createHash("sha256").update(`token-${rawBody}`).digest("hex");
