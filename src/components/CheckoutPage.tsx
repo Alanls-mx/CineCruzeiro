@@ -906,7 +906,7 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
           total={checkoutTotal}
           loading={loading || clubLoading}
           paymentMethod={draft.paymentMethod || "pix"}
-          onSubmit={submitPayment}
+          onSubmit={() => { void submitPayment().catch(() => {}); }}
           onContinueToPayment={continueToPayment}
           submitDisabled={checkoutTotal > 0 && (draft.paymentMethod === "credit_card" || !mercadoPagoConfig?.enabled || !mercadoPagoConfig.configured || !mercadoPagoConfig.checkoutAvailable)}
           continueDisabled={step === "ingressos" && !ticketSelectionComplete}
@@ -1438,7 +1438,7 @@ function PaymentStep({ draft, updateDraft, total, baseTotal, couponPreview, coup
         )}
         {paymentError && <p className="mt-5 text-sm font-semibold text-rose-200">{paymentError}</p>}
         {draft.paymentMethod !== "credit_card" && (
-          <button type="button" onClick={() => void onSubmit()} disabled={loading || mercadoPagoUnavailable || clubPricingPending} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
+          <button type="button" onClick={() => { void onSubmit().catch(() => {}); }} disabled={loading || mercadoPagoUnavailable || clubPricingPending} className="mt-8 w-full bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 disabled:opacity-50">
             {loading ? "Processando..." : "Gerar Pix"}
           </button>
         )}
