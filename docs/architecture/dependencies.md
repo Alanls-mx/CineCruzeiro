@@ -1,5 +1,7 @@
 # Relações de impacto verificadas
 
+Fase 22.4: `server.js` injeta `withCriticalMutation`, `readDb`, `writeDb`, log e resposta em [mercadoPagoUnknownEventHandler](../../backend/services/mercadoPagoUnknownEventHandler.js); assinatura/HMAC e `req.commitResponseAfterMutation` continuam no dispatcher. [checkoutPreviewRoutes](../../backend/services/checkoutPreviewRoutes.js) recebe identidade de sessão e serviços de preço/Clube, mas não cria Order nem ingressos. Nenhum dos módulos importa `server.js` ou chama provedor ao ser carregado. [Teste](../../tests/phase22-financial-boundary.test.mjs).
+
 Fase 22.1: [publicAssetPathService](../../backend/services/publicAssetPathService.js) recebe a leitura de ambiente da instalação e fornece normalização de `/uploads/` e URL do frontend a `server.js`, que segue compondo [staticAssetHandler](../../backend/services/staticAssetHandler.js), settings, catálogo e PDFs. Mudar o prefixo afeta paths públicos, mas não altera autenticação, resposta ou escritor. [Teste](../../tests/phase22-presentation-baseline.test.mjs).
 
 [sessionScheduleReadService](../../backend/services/sessionScheduleReadService.js) alimenta as projeções de programação, disponibilidade e janela comercial do servidor. Recebe `PRE_PREMIERE_WINDOW_MS` da política existente; `moviePublicationPolicy` conserva a decisão de publicação e não depende do módulo novo. [Teste de janela](../../tests/phase22-presentation-baseline.test.mjs).

@@ -1,5 +1,7 @@
 # Fase 22.1 — mapa estrutural do servidor
 
+Fase 22.4: `server.js` passou de 10.307 para 10.220 linhas e `handleApi` de 3.265 para 3.167. `mercadoPagoUnknownEventHandler` possui apenas o registro idempotente do evento assinado desconhecido; `checkoutPreviewRoutes` possui apenas as prévias autenticadas de cupom/Clube. Ver [resultado 22.4](FASE22_RESULTADO_22_4.md) e [ramos financeiros](FASE22_ROTAS_FINANCEIRAS_EXTRAIDAS.md). Os números históricos abaixo continuam correspondendo à Fase 22.1.
+
 Fase 22.3 não extraiu responsabilidades: `server.js` está em 10.307 linhas e `handleApi` em 3.265, quatro linhas acima da Fase 22.2, para diferir o reconhecimento HTTP dos webhooks PagBank e Mercado Pago até o commit PostgreSQL. Os limites para a extração seguinte estão na [matriz financeira avançada](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md) e na [matriz de concorrência](FASE22_MATRIZ_CONCORRENCIA.md). Os números abaixo continuam sendo a fotografia da Fase 22.1.
 
 Base: `fee9b6d0c124add36666eced7358093ed2261c2e`, branch `codex/cine-backend-desacoplamento`. Este mapa descreve o código da etapa, não substitui [endpoints](endpoints.md), [dependências](dependencies.md), [persistência](persistence.md), [transações](transactions.md) ou a [matriz financeira](FASE21_COBERTURA_FINANCEIRA.md). As contagens são reproduzíveis por `node scripts/measure-modularization.mjs --summary`; números de linha não servem como referências permanentes.

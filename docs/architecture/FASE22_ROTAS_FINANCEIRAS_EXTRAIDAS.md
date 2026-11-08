@@ -1,0 +1,15 @@
+# Fase 22.4 — fronteiras financeiras efetivamente movidas
+
+Base: `50bd2c9`, branch `codex/cine-backend-desacoplamento`. Este inventário delimita **ramos**, não aprova provedores ou fluxos inteiros. A fonte de verdade é `backend/server.js`.
+
+| Entrada / ramo | Antes → agora | Guarda e autoridade preservadas | Escrita, commit, resposta e prova | Situação |
+| --- | --- | --- | --- | --- |
+| `POST /api/webhooks/mercado-pago`, evento assinado com referência, sem tópico de assinatura nem ação Order conhecida | Callback inline → `mercadoPagoUnknownEventHandler` | O dispatcher continua verificando HMAC, calculando ID/ação e selecionando o ramo. Evento desconhecido não aprova pagamento. | O handler usa o mesmo `withCriticalMutation`, lê `webhookEvents`, grava uma vez via `writeDb` e chama `sendJson` com o mesmo 200/payload. A rota conserva `req.commitResponseAfterMutation`, portanto o transporte só envia após o commit PostgreSQL. `financial-webhook-failure-scenarios.js` prova rollback, 5xx, retry e deduplicação SQL; `phase22-financial-boundary.test.mjs` verifica ordem interna e erro de escrita. | Extraído apenas o ramo ignorado. |
+| `POST /api/coupons/preview` e `POST /api/checkout/club-benefits/preview` | Blocos inline → `checkoutPreviewRoutes` | Autenticação do cliente e política geral de origem/rate no mesmo ponto do dispatcher; identidade vem da sessão. | Leitura e cálculo sem criação de pagamento, ingresso ou crédito. `repriceOrderFromCatalog(..., { assignSeats: false })`, códigos 401/409/200, payload e `Cache-Control: no-store` preservados. `phase22-financial-boundary.test.mjs` e smoke PostgreSQL exercitam o contrato. | Extraídas somente as prévias. |
+| `POST /api/webhooks/pag-bank`, ECDSA | Rota permanece em `server.js` | `verifyOrderWebhook` valida corpo bruto por chave pública; Order consultada continua sendo autoridade. | `financial-pagbank-webhook-failure-scenarios.js` acrescenta assinatura ECDSA válida/inválida no HTTP PostgreSQL para o ramo `PAID`, inclusive retry após falha de commit. | Cobertura ampliada; **sem extração** de transições. |
+
+## Limites transacionais
+
+O `sendJson` do ramo desconhecido é chamado dentro do callback da mutação, como antes. A emissão efetiva é diferida por `httpResponseService` porque a rota definiu `req.commitResponseAfterMutation` **antes** de ler o corpo. O teste unitário observa essa chamada interna; a prova de que nenhum 2xx escapa de um commit falho é o smoke PostgreSQL. Nenhum módulo importa `server.js`, chama provedor no import ou cria máquina de estados alternativa.
+
+Permanecem no dispatcher: assinatura e consulta de autoridade dos webhooks, Order Mercado Pago processada, assinatura do Clube, todos os estados PagBank além do ramo caracterizado, criação Pix/cartão, Point remanescente, reembolsos, estoque e crédito. A [matriz avançada](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md) especifica as lacunas. Nenhuma dessas operações deve ser movida integralmente com base no teste de ECDSA ou no número de linhas removidas.

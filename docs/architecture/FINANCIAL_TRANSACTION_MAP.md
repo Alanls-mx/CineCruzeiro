@@ -1,5 +1,7 @@
 # Mapa transacional para extrações financeiras
 
+Fase 22.4: `mercadoPagoUnknownEventHandler` registra somente eventos HMAC válidos de ação desconhecida. O dispatcher conserva a autenticação do webhook, `req.commitResponseAfterMutation`, e a ordem `withCriticalMutation` → `writeDb`/commit → HTTP 200 efetivo; o smoke PostgreSQL testa falha de commit e retry. `checkoutPreviewRoutes` lê e reprecifica sem criar pagamento/direito. O PagBank recebeu teste ECDSA HTTP para `PAID` mas permanece no dispatcher. [Inventário por ramo](FASE22_ROTAS_FINANCEIRAS_EXTRAIDAS.md).
+
 Linha de base: `backend/server.js`, `backend/services/orderRefundService.js`,
 `backend/services/paymentService.js`, `backend/services/cardTerminalProvider.js`,
 `backend/db/postgresStore.js`, `transactions.md` e `docs/FASE9_DESBLOQUEIO.md`.
