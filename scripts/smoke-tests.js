@@ -12,6 +12,7 @@ const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 const { installOnlinePaymentProbe, runOnlinePaymentFailureScenarios } = require("./financial-online-failure-scenarios");
 const { runMercadoPagoWebhookFailureScenarios } = require("./financial-webhook-failure-scenarios");
 const { runPagBankWebhookCommitScenario } = require("./financial-pagbank-webhook-failure-scenarios");
+const { runPagBankCheckoutFailureScenarios } = require("./financial-pagbank-checkout-failure-scenarios");
 
 const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cine-smoke-"));
 const DATA_FILE = path.join(testRoot, "db.json");
@@ -3552,6 +3553,15 @@ async function run() {
       });
       await runPagBankWebhookCommitScenario({
         request, jsonHeaders, cookie, movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
+        readDb: readPersistedDb, writeDb: writePersistedDb,
+        queryPostgres: require("../backend/db/postgresStore").queryPostgres,
+        failCommitForRecord, restoreQuery: () => { pg.Client.prototype.query = originalQuery; },
+        pagBank: require("../backend/services/pagBankPaymentService")
+      });
+      await runPagBankCheckoutFailureScenarios({
+        request, jsonHeaders,
+        createCustomerCookie: async (label) => (await registerCustomer(`pagbank-${label}@example.invalid`)).cookie,
+        movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
         readDb: readPersistedDb, writeDb: writePersistedDb,
         queryPostgres: require("../backend/db/postgresStore").queryPostgres,
         failCommitForRecord, restoreQuery: () => { pg.Client.prototype.query = originalQuery; },
