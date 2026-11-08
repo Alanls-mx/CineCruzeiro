@@ -1,0 +1,26 @@
+# Fase 23 — fechamento técnico e decisão operacional
+
+**Decisão: DEPLOY BLOQUEADO.** A candidata de código é `f6012bacc17d0a29339c5e10176ed81bd7badeb0`, na branch `codex/cine-homologacao-fase23`. Este relatório documenta o fechamento local; o commit documental posterior deve ser conferido no `HEAD` da branch. Não houve merge, migração, pagamento real nem alteração na VPS nesta execução.
+
+## Estado da homologação
+
+A [Fase 23.1](FASE23_1_HOMOLOGACAO_FUNCIONAL.md) classificou 25 fluxos: 9 homologados localmente, 14 com ressalvas, 1 dependente de provedor externo e 1 não testado. A [Fase 23.2](FASE23_2_RESILIENCIA_FINANCEIRA.md) ampliou o E2E para 29 jornadas tanto em JSON descartável como em PostgreSQL 16 descartável. Ela corrigiu a identidade idempotente do navegador após perda da resposta de cartão (`a401595`), tratou a rejeição do clique Pix (`5fce3d3`) e caracterizou PagBank, captura e concorrência em dois processos. Os defeitos, a reprodução e os limites estão em [bugs](FASE23_2_BUGS_E_CORRECOES.md) e [matriz de falhas](FASE23_2_MATRIZ_FALHAS.md).
+
+## Evidência local e CI
+
+No mesmo SHA de código, passaram `test:characterization`, `test:unit`, `test:security:local`, `test:finance`, `test:modularization:finance`, `test:maintenance`, `test:legacy:json`, `lint`, `build`, `docs:check`, E2E JSON 29/29 e E2E PostgreSQL 29/29. Os grupos protegidos PostgreSQL 16 `smoke concurrency repositories guard`, `backup-restore` e PostgreSQL 18 `smoke`, `concurrency repositories guard`, `upgrade` passaram. Uma primeira execução local do smoke PG18 terminou com código de processo Windows `3221226505`, sem asserção; a repetição isolada passou. Em `test:security:local`, uma primeira execução 24/25 foi seguida de teste isolado e suíte completa 25/25. Casos condicionais PG ignorados em `test:unit` não foram contados como aprovados. Nesta execução de fechamento, `test:deployment` 7/7, `test:multi-cinema:synthetic` 5/5 e `test:desktop` passaram sem mudança de código; os demais resultados são da execução anterior sobre o **mesmo SHA** e não foram repetidos sem necessidade.
+
+No SHA `f6012ba`, os workflows [Security regression](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42518244162), [Browser E2E](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42518244165) e [PostgreSQL integration 16/18](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42518244172) concluíram com sucesso. Se um commit apenas documental suceder a candidata, conferir os workflows também nesse novo SHA; o verde do código não é herdado automaticamente.
+
+## Limites que impedem implantação
+
+1. Em `POST /api/payments/pix` e `POST /api/payments/card`, `backend/server.js` ainda executa `createActiveOnlinePayment` antes de `writeDb` para o novo pedido/pagamento. A chave persistida no navegador reduz a repetição em retry do mesmo cliente, mas não cria intenção durável no servidor para recuperar aceite externo seguido de falha local e fechamento do navegador. O próprio relatório 23.2 classifica a recuperação sem cliente como **bloqueada**. A candidata não demonstra a garantia exigida de ausência de cobrança duplicada ou pagamento externo órfão em todas as falhas parciais.
+2. O [Portão D da Fase 13.2](FASE13_2_PORTAO_D_CORTE_DRENO.md) registra ausência de dreno observável da release antiga, tratamento completo de callbacks e retomada gradual de workers. O deploy anterior de desenvolvimento em 05/11 aceitou essa limitação, mas não a transformou em mecanismo seguro para novo corte. `backend/start.js` em `quiescent` impede o novo servidor de iniciar efeitos; não drena o servidor antigo. O modo `normal` inicia as categorias juntas.
+3. Reembolso concorrente entre dois operadores e cancelamento versus aprovação tardia ainda não têm prova distribuída integral; o resultado de operação externa perdida não pode ser tratado como sucesso. Provedores, terminal, SMTP e Wallet reais não foram homologados por mocks.
+4. O estado atual da VPS, do banco exclusivo, dos jobs/leases, dos callbacks, do espaço e dos outros cinemas não foi reconfirmado nesta execução. Os dados de 05/11 são históricos. Não foi criado backup novo nem demonstrado restore da base atual.
+
+Esses pontos são riscos financeiros e operacionais críticos segundo os critérios deste pedido. Não se justifica cortar a instalação de desenvolvimento apenas porque a CI está verde. O plano de release, os portões e as verificações não realizadas constam em [deploy](FASE23_DEPLOY_VPS.md); o estado de homologação remota está em [validação pós-deploy](FASE23_VALIDACAO_POS_DEPLOY.md).
+
+## Próxima decisão concreta
+
+Implementar e testar a intenção local durável para Pix/cartão antes da chamada externa, com recuperação após crash e reconciliação sem navegador; ensaiar concorrência de refunds e cancelamento/aprovação. Depois, demonstrar dreno real e retomada de callbacks/workers no prefixo Cine Cruzeiro, registrar janela/responsável/limites/reversão, refazer o preflight exclusivo, criar backup novo e restaurá-lo em isolamento. Somente então reavaliar GO/NO-GO. Não há próxima fase de modularização associada a este fechamento.
