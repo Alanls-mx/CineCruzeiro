@@ -6,6 +6,7 @@ on:
       - codex/modularize-server-admin
       - codex/cine-modularizacao-profunda
       - codex/cine-backend-finalizacao
+      - codex/cine-backend-desacoplamento
   pull_request:
 
 permissions:

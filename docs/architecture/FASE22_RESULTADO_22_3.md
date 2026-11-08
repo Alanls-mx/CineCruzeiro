@@ -49,6 +49,8 @@ Ver [matriz por ramo](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md) e [matriz de conc
 
 Nenhuma aprovação acima equivale a homologação externa. Workflows GitHub Actions só são evidência para o SHA publicado correspondente; o estado final será registrado após o push. Nenhum deploy, merge, acesso à VPS, banco operacional ou pagamento real ocorreu.
 
+Os filtros de `push` em `.github/workflows/e2e.yml` e `.github/workflows/postgres-integration.yml` foram estendidos a esta branch para que Browser E2E e PostgreSQL 16/18 rodem no mesmo SHA da Fase 22.3. Seus resultados não são inferidos dos testes locais.
+
 ## Prontidão e próximos lotes
 
 **Prontidão técnica:** os ramos de reconhecimento dos dois webhooks caracterizados têm regressão SQL reproduzível. O checkout PagBank ganhou prova de rollback e retry local. A arquitetura financeira inteira permanece **parcial**, porque os fluxos listados como bloqueados ainda não têm failpoints e corrida distribuída suficientes para extração segura.
