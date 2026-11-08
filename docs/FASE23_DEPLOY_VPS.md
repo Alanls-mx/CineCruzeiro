@@ -29,6 +29,8 @@ Nenhuma release foi empacotada ou copiada à VPS. O script multi-instalação re
 | F — recuperação | **Pendente.** Reversão de código só pode ser avaliada com schema e efeitos posteriores conhecidos; restore automático de banco é proibido. Necessários responsável financeiro, janela, limite e plano de reconciliação. |
 | G — decisão | **NO-GO.** Risco financeiro antes do primeiro commit e D bloqueado bastam para impedir o corte, independentemente dos portões pendentes. |
 
+**Ensaio manual de provedores:** aprovado **por dispensa do responsável** para a release de desenvolvimento. Não foi executado nem é evidência de homologação externa. Os portões financeiros locais, de corte, backup e recuperação permanecem independentes e não foram dispensados.
+
 ## Corte e recuperação ainda necessários
 
 Antes de uma nova decisão, confirmar a identidade exclusiva da instalação e o inventário mínimo autorizado de jobs/leases/operações inconclusivas. Ensaiar uma pausa apenas do prefixo Cine Cruzeiro na configuração efetiva, inclusive callbacks e upgrades, medindo requests em andamento e efeitos externos. Demonstrar armazenamento/retomada seguros de callbacks e liberação por categoria de worker. Criar backup novo em destino privado, registrar hashes e restaurar em ambiente isolado sem provedores nem workers. Preservar a release anterior. Preparar respostas separadas para falha antes do corte, após troca, após commit e após efeito externo; jamais repetir cobrança/refund com nova identidade ou restaurar banco sobre transações posteriores. Apenas com todos os portões aprovados executar troca de `current` e processos Cine Cruzeiro específicos; não usar `pm2 restart all` ou deploy multi-cinema.

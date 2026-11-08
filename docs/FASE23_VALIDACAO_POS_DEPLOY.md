@@ -11,6 +11,6 @@
 | WebSocket, reconexão e atualização de assentos | Não executada na VPS. |
 | Integrações e ausência de novas cobranças/estornos/ingressos | Nenhuma chamada financeira foi iniciada nesta execução; estado remoto anterior/posterior não comparado. |
 | Processos, Nginx, rotas e bancos dos outros quatro cinemas | Não verificados nesta execução; não foram alvo de comando. |
-| Provedores externos reais, terminal, SMTP e Wallet | Não homologados; mocks locais não demonstram aceite externo. |
+| Provedores externos reais, terminal, SMTP e Wallet | Ensaio manual dispensado como requisito desta release de desenvolvimento; não executado e não homologado externamente. |
 
 O resultado local está em [Fase 23.2](FASE23_2_RESILIENCIA_FINANCEIRA.md); a decisão de não implantar e os portões estão em [relatório final](FASE23_RELATORIO_FINAL.md) e [deploy](FASE23_DEPLOY_VPS.md). A próxima validação remota depende de candidata segura, preflight atual e GO registrado. Não interpretar esta página como atestado de saúde da instalação existente.
