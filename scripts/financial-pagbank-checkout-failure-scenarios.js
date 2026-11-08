@@ -19,17 +19,22 @@ async function runPagBankCheckoutFailureScenarios({ request, jsonHeaders, create
     const key = `${options.method}:${options.idempotencyKey || order.idempotencyKey || order.id}`;
     calls.push({ orderId: order.id, key });
     if (failures.get(order.id) === "before_accept") throw Object.assign(new Error("Synthetic provider unavailable"), { statusCode: 504 });
-    if (!accepted.has(key)) accepted.set(key, await originalCreate(order, config, options));
+    if (!accepted.has(key)) {
+      const result = await originalCreate(order, config, options);
+      accepted.set(key, options.method === "credit_card" ? { ...result, status: "approved", statusDetail: "PAID" } : result);
+    }
     if (failures.get(order.id) === "response_lost") throw Object.assign(new Error("Synthetic response lost"), { statusCode: 504 });
     return { ...accepted.get(key) };
   };
   // The long smoke suite already consumes the loopback payment bucket. Use a
   // reserved TEST-NET address for this independent scenario, without changing limits.
-  const post = (id, cookie) => request("/api/payments/pix", { method: "POST",
+  const post = (id, cookie, method = "pix") => request(`/api/payments/${method}`, { method: "POST",
     headers: { ...jsonHeaders(cookie), "X-Forwarded-For": "192.0.2.22" },
     body: JSON.stringify({ order: { id, idempotencyKey: id, movieId, sessionId, fullTicketsCount: 1,
       halfTicketsCount: 0, concessionItems: [], customerName: "Cliente sintético",
-      customerEmail: "synthetic@example.invalid", customerPhone: "11999999999" } }) });
+      customerEmail: "synthetic@example.invalid", customerPhone: "11999999999" },
+    ...(method === "card" ? { encryptedCard: "synthetic-encrypted-card", cardHolderName: "Cliente Sintético",
+      cardHolderTaxId: "12345678901", paymentMethodId: "visa", installments: 1 } : {}) }) });
   const counts = async (id) => {
     const [orders, payments, tickets] = await Promise.all([
       queryPostgres("SELECT count(*)::integer AS count FROM orders WHERE id=$1", [id]),
@@ -89,6 +94,23 @@ async function runPagBankCheckoutFailureScenarios({ request, jsonHeaders, create
     assert.deepEqual(concurrent.map((item) => item.response.status).sort(), [200, 201]);
     assert.equal(calls.filter((item) => item.orderId === duplicateId).length, 1);
     assert.deepEqual(await counts(duplicateId), [1, 1, 0]);
+
+    const cardId = "smoke-pagbank-failure-card-commit";
+    const cardCookie = await createCustomerCookie("card");
+    const cardCommitFailed = failCommitForRecord(cardId, "smoke_pagbank_card_commit_failure");
+    let failedCard;
+    try { failedCard = await post(cardId, cardCookie, "card"); }
+    finally { restoreQuery(); }
+    assert.equal(cardCommitFailed(), true, `O failpoint precisa atingir o cartão PagBank: HTTP ${failedCard.response.status}`);
+    assert.ok(failedCard.response.status >= 500);
+    assert.deepEqual(await counts(cardId), [0, 0, 0], "Aprovação externa seguida de rollback não emite ingresso");
+    assert.ok(accepted.has(`credit_card:${cardId}`));
+    const cardRetry = await post(cardId, cardCookie, "card");
+    assert.equal(cardRetry.response.status, 201, JSON.stringify(cardRetry.payload));
+    assert.equal(cardRetry.payload.payment.status, "approved");
+    assert.deepEqual(await counts(cardId), [1, 1, 1]);
+    assert.deepEqual(calls.filter((item) => item.orderId === cardId).map((item) => item.key),
+      [`credit_card:${cardId}`, `credit_card:${cardId}`]);
   } finally {
     pagBank.createOrderPayment = originalCreate;
     const final = await readDb();

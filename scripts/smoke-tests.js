@@ -140,10 +140,10 @@ async function holdSeat(sessionId, seatId, ownerToken) {
   });
 }
 
-async function registerCustomer(email, password = "cliente-smoke-123") {
+async function registerCustomer(email, password = "cliente-smoke-123", forwardedIp = "") {
   const result = await request("/api/auth/register", {
     method: "POST",
-    headers: jsonHeaders(),
+    headers: { ...jsonHeaders(), ...(forwardedIp ? { "X-Forwarded-For": forwardedIp } : {}) },
     body: JSON.stringify({ firstName: "Teste", lastName: "Smoke", email, password, cpf: "12345678901" })
   });
   assert.equal(result.response.status, 201);
@@ -3560,7 +3560,7 @@ async function run() {
       });
       await runPagBankCheckoutFailureScenarios({
         request, jsonHeaders,
-        createCustomerCookie: async (label) => (await registerCustomer(`pagbank-${label}@example.invalid`)).cookie,
+        createCustomerCookie: async (label) => (await registerCustomer(`pagbank-${label}@example.invalid`, undefined, "192.0.2.22")).cookie,
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
         readDb: readPersistedDb, writeDb: writePersistedDb,
         queryPostgres: require("../backend/db/postgresStore").queryPostgres,
