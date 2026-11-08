@@ -1,23 +1,25 @@
-const { test, expect } = require("@playwright/test");
+const { test, expect, request: playwrightRequest } = require("@playwright/test");
 const crypto = require("crypto");
 
 const BACKEND = "http://127.0.0.1:4000";
 const ADMIN_EMAIL = "admin-e2e@cine.local";
 const ADMIN_PASSWORD = "Admin-e2e-2026!";
 const WEBHOOK_SECRET = "e2e-webhook-secret";
-const authenticatedAdminContexts = new WeakSet();
+let sharedAdminRequest;
 
 test.describe.configure({ mode: "serial" });
+test.afterAll(async () => { await sharedAdminRequest?.dispose(); });
 
-async function adminContent(request) {
-  if (!authenticatedAdminContexts.has(request)) {
-    const login = await request.post(`${BACKEND}/api/admin/login`, {
+async function adminContent() {
+  if (!sharedAdminRequest) {
+    const context = await playwrightRequest.newContext();
+    const login = await context.post(`${BACKEND}/api/admin/login`, {
       data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD }
     });
     expect(login.ok(), `Falha no login administrativo: ${login.status()}`).toBeTruthy();
-    authenticatedAdminContexts.add(request);
+    sharedAdminRequest = context;
   }
-  const response = await request.get(`${BACKEND}/api/admin/content`);
+  const response = await sharedAdminRequest.get(`${BACKEND}/api/admin/content`);
   expect(response.ok()).toBeTruthy();
   return response.json();
 }

@@ -7,6 +7,7 @@ on:
       - codex/cine-modularizacao-profunda
       - codex/cine-backend-finalizacao
       - codex/cine-backend-desacoplamento
+      - codex/cine-homologacao-fase23
   pull_request:
 
 permissions:

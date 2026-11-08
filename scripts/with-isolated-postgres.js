@@ -12,7 +12,7 @@ function adminUrl() {
 
 async function main() {
   const target = process.argv[2];
-  if (!["smoke", "concurrency", "repositories", "upgrade", "guard", "email-campaign"].includes(target)) throw new Error("Escolha smoke, concurrency, repositories, upgrade, guard ou email-campaign.");
+  if (!["smoke", "concurrency", "repositories", "upgrade", "guard", "email-campaign", "e2e"].includes(target)) throw new Error("Escolha smoke, concurrency, repositories, upgrade, guard, email-campaign ou e2e.");
   if (process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.TEST_DATABASE_URL) {
     throw new Error("Remova URLs de banco herdadas antes de iniciar o harness de teste.");
   }
@@ -41,7 +41,8 @@ async function main() {
       await testClient.query("INSERT INTO cine_test_database_marker (id, token) VALUES (1, $1)", [token]);
       marked = true;
     } finally { await testClient.end(); }
-    const script = path.join(__dirname, target === "email-campaign" ? "postgres-email-campaign-tests.js"
+    const script = path.join(__dirname, target === "e2e" ? "run-e2e.js"
+      : target === "email-campaign" ? "postgres-email-campaign-tests.js"
       : target === "smoke" ? "smoke-tests.js"
       : target === "repositories" ? "postgres-repository-tests.js"
       : target === "upgrade" ? "postgres-upgrade-tests.js"
@@ -51,7 +52,8 @@ async function main() {
       env: {
         ...process.env, NODE_ENV: "test", DATA_STORE: "postgres", TEST_DATABASE_URL: testUrl.toString(),
         DATABASE_URL: testUrl.toString(), POSTGRES_URL: "", CINE_TEST_DB_TOKEN: token,
-        CINE_SMOKE_MODE: target === "smoke" ? "postgres" : ""
+        CINE_SMOKE_MODE: target === "smoke" ? "postgres" : "",
+        CINE_E2E_POSTGRES: target === "e2e" ? "1" : ""
       }
     });
     if (child.error) throw child.error;

@@ -7,6 +7,7 @@ on:
       - codex/cine-modularizacao-profunda
       - codex/cine-backend-finalizacao
       - codex/cine-backend-desacoplamento
+      - codex/cine-homologacao-fase23
   pull_request:
 
 permissions:
@@ -16,6 +17,19 @@ jobs:
   browser-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-postgres-isolated-only
+        ports:
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,6 +40,14 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node --test tests/e2e-session-time.test.mjs
       - run: npm run test:e2e
+      - name: Verify owned PostgreSQL service
+        env:
+          POSTGRES_SERVICE_CONTAINER_ID: ${{ job.services.postgres.id }}
+          POSTGRES_SERVICE_PORT: ${{ job.services.postgres.ports[5432] }}
+          CINE_CI_POSTGRES_MAJOR: "16"
+        run: node scripts/setup-ci-postgres.js
+      - name: Browser E2E with disposable PostgreSQL
+        run: node scripts/with-isolated-postgres.js e2e
       - name: Preserve browser failure evidence
         if: failure()
         uses: actions/upload-artifact@v4

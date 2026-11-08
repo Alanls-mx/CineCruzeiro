@@ -18,7 +18,7 @@ test("cliente cria conta, recebe plano ativo e usa crédito do Clube no checkout
   const adminLogin = await request.post(`${BACKEND}/api/admin/login`, {
     data: { email: "admin-e2e@cine.local", password: "Admin-e2e-2026!" }
   });
-  expect(adminLogin.ok()).toBeTruthy();
+  expect(adminLogin.ok(), `Admin login: ${adminLogin.status()}`).toBeTruthy();
   const assignment = await request.post(`${BACKEND}/api/admin/subscriptions/assign`, {
     data: { email, planId: "plano-e2e", status: "active" }
   });
@@ -84,7 +84,7 @@ test("mantém benefícios e total do Clube no resumo após gerar o Pix", async (
   const adminLogin = await request.post(`${BACKEND}/api/admin/login`, {
     data: { email: "admin-e2e@cine.local", password: "Admin-e2e-2026!" }
   });
-  expect(adminLogin.ok()).toBeTruthy();
+  expect(adminLogin.ok(), `Admin login: ${adminLogin.status()}`).toBeTruthy();
   const assignment = await request.post(`${BACKEND}/api/admin/subscriptions/assign`, {
     data: { email, planId: "plano-e2e", status: "active" }
   });

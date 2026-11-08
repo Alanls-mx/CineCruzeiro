@@ -1,7 +1,9 @@
 const fs = require("fs");
+const crypto = require("crypto");
 const os = require("os");
 const path = require("path");
-const { spawn } = require("child_process");
+const { execFileSync, spawn } = require("child_process");
+const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 const { sellableTomorrowSession } = require("./e2e-session-time");
 
 const root = path.resolve(__dirname, "..");
@@ -10,6 +12,10 @@ if (path.dirname(dataDir) !== fs.realpathSync(os.tmpdir()) || !path.basename(dat
   throw new Error("O diretório E2E deve ser descartável e estar diretamente em os.tmpdir().");
 }
 const dataFile = path.join(dataDir, "db.json");
+const postgresE2e = process.env.CINE_E2E_POSTGRES === "1";
+const adminPassword = "Admin-e2e-2026!";
+const adminSalt = crypto.randomBytes(16).toString("base64url");
+const adminPasswordHash = `pbkdf2_sha256$120000$${adminSalt}$${crypto.pbkdf2Sync(adminPassword, adminSalt, 120000, 32, "sha256").toString("base64url")}`;
 const processes = [];
 const frontendPort = Number(process.env.E2E_FRONTEND_PORT || 3000);
 let shuttingDown = false;
@@ -140,7 +146,7 @@ function fixture() {
       email: "admin-e2e@cine.local",
       role: "owner",
       active: true,
-      passwordHash: "",
+      passwordHash: adminPasswordHash,
       authProvider: "email",
       emailVerified: true,
       createdAt: now
@@ -166,7 +172,8 @@ function fixture() {
   };
 }
 
-fs.writeFileSync(dataFile, JSON.stringify(fixture(), null, 2));
+const e2eFixture = fixture();
+if (!postgresE2e) fs.writeFileSync(dataFile, JSON.stringify(e2eFixture, null, 2));
 
 const env = {
   ...process.env,
@@ -174,8 +181,8 @@ const env = {
   CINE_UPLOADS_DIR: path.join(dataDir, "uploads"),
   CINE_EMAIL_ATTACHMENTS_DIR: path.join(dataDir, "email-attachments"),
   CINE_TICKET_DOCUMENTS_DIR: path.join(dataDir, "ticket-documents"),
-  DATA_STORE: "json",
-  DATABASE_URL: "",
+  DATA_STORE: postgresE2e ? "postgres" : "json",
+  DATABASE_URL: postgresE2e ? process.env.TEST_DATABASE_URL : "",
   POSTGRES_URL: "",
   CINE_BACKEND_URL: "http://127.0.0.1:4000",
   NEXT_PUBLIC_CINE_API_URL: "http://127.0.0.1:4000",
@@ -183,7 +190,7 @@ const env = {
   TEST_PAYMENTS_AUTO_APPROVE: "false",
   MERCADO_PAGO_WEBHOOK_SECRET: "e2e-webhook-secret",
   ADMIN_EMAIL: "admin-e2e@cine.local",
-  ADMIN_PASSWORD: "Admin-e2e-2026!",
+  ADMIN_PASSWORD: adminPassword,
   CORS_ORIGIN: `http://127.0.0.1:${frontendPort},http://localhost:${frontendPort}`,
   NEXT_PUBLIC_CINE_WS_URL: "ws://127.0.0.1:4000",
   MOVIE_IMAGE_MAINTENANCE_ENABLED: "false"
@@ -223,5 +230,16 @@ async function shutdown(code = 0) {
 
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
-run("backend-e2e", process.execPath, ["backend/server.js"], { PORT: "4000" });
-run("frontend-e2e", process.execPath, [require.resolve("next/dist/bin/next"), "dev"], { PORT: String(frontendPort) });
+async function start() {
+  if (postgresE2e) {
+    await assertDisposableTestDatabase();
+    execFileSync(process.execPath, [path.join(__dirname, "db-migrate.js")], { cwd: root, env, stdio: "inherit" });
+    const store = require("../backend/db/postgresStore");
+    try { await store.writeDbToPostgres(e2eFixture, { importSnapshot: true }); }
+    finally { await store.closePostgres(); }
+  }
+  run("backend-e2e", process.execPath, ["backend/server.js"], { PORT: "4000" });
+  run("frontend-e2e", process.execPath, [require.resolve("next/dist/bin/next"), "dev"], { PORT: String(frontendPort) });
+}
+
+start().catch((error) => { console.error(error); void shutdown(1); });

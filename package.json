@@ -30,6 +30,7 @@
     "test:multi-cinema:synthetic": "node --test tests/phase8-multi-cinema.test.mjs",
     "lint": "tsc --noEmit",
     "test:e2e": "node scripts/run-e2e.js",
+    "test:e2e:postgres": "node scripts/with-local-disposable-postgres.js e2e",
     "test:operations": "node scripts/backup-retention-tests.js",
     "test:postgres": "node scripts/with-isolated-postgres.js concurrency",
     "test:postgres:repositories": "node scripts/with-isolated-postgres.js repositories",
