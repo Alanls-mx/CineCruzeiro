@@ -90,6 +90,29 @@ async function runMercadoPagoWebhookFailureScenarios({ request, jsonHeaders, coo
   const retry = await notify(commitCheckout, { action: "order.processed", status: "processed" });
   assert.equal(retry.response.status, 200, JSON.stringify(retry.payload));
   assert.deepEqual(await persisted(commitCheckout.order.id), { payment: "approved", order: "paid", tickets: 1 });
+
+  const ignoredCheckout = await createPix("smoke-webhook-unknown-commit");
+  const ignoredProviderId = ignoredCheckout.payment.providerPaymentId;
+  const ignoredEvents = async () => (await queryPostgres(
+    "SELECT count(*)::integer AS total FROM webhook_events WHERE provider='mercado_pago' AND provider_payment_id=$1",
+    [ignoredProviderId]
+  )).rows[0].total;
+  const ignoredCommitFailed = failCommitForRecord(ignoredProviderId, "smoke_unknown_webhook_commit_failure");
+  let ignoredFailure;
+  try { ignoredFailure = await notify(ignoredCheckout, { action: "unknown.operation", status: "pending" }); }
+  finally { restoreQuery(); }
+  assert.equal(ignoredCommitFailed(), true, "O failpoint precisa atingir o commit do evento ignorado");
+  assert.ok(ignoredFailure.response.status >= 500, "Evento ignorado não pode ser confirmado antes do commit");
+  assert.equal(await ignoredEvents(), 0);
+  assert.deepEqual(await persisted(ignoredCheckout.order.id), { payment: "pending", order: "pending_payment", tickets: 0 });
+  const ignoredRetry = await notify(ignoredCheckout, { action: "unknown.operation", status: "pending" });
+  assert.equal(ignoredRetry.response.status, 200);
+  assert.equal(ignoredRetry.payload.processed, false);
+  assert.equal(await ignoredEvents(), 1);
+  const ignoredDuplicate = await notify(ignoredCheckout, { action: "unknown.operation", status: "pending" });
+  assert.equal(ignoredDuplicate.response.status, 200);
+  assert.equal(ignoredDuplicate.payload.duplicate, true);
+  assert.equal(await ignoredEvents(), 1);
 }
 
 module.exports = { runMercadoPagoWebhookFailureScenarios };
