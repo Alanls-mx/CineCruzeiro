@@ -275,6 +275,14 @@ function ContaPageContent() {
     await logoutCustomer();
     setUser(null);
     setAuthReady(true);
+    setMode("login");
+    setForm({ firstName: "", lastName: "", email: "", password: "", phone: "", cpf: "" });
+    setResetToken("");
+    setProfile({ name: "", email: "", phone: "", cpf: "", currentPassword: "", newPassword: "", confirmPassword: "" });
+    setMessage("");
+    setProfileMessage("");
+    setVerificationFeedback(null);
+    setVerificationNotice(null);
     setSubscriptions([]);
   }
 
