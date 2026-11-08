@@ -18,6 +18,8 @@ Testes dirigidos: `phase22-financial-boundary.test.mjs` (4/4), `mercado-pago-web
 
 Suites gerais executadas com código zero: `test:characterization`, `test:unit`, `test:security:local`, `test:finance`, `test:modularization:finance`, `test:maintenance`, `lint`, `build`, `docs:check` e `test:e2e` (**19/19**). `test:legacy:json` falhou inicialmente por porta 4199 ocupada durante execução paralela do smoke PostgreSQL; repetido isoladamente, passou. PostgreSQL descartável: PG16 e PG18 `smoke concurrency repositories guard`, `backup-restore` e PG18 `upgrade`, todos com código zero. O E2E registrou aviso esperado de e-mail sem webhook configurado no ambiente sintético. Os workflows no SHA final serão registrados após a publicação. Nenhum teste em banco operacional, provedor real, VPS, deploy, migração operacional ou merge foi realizado.
 
+O primeiro CI publicado (`4161573`) passou em Security regression e Browser E2E, mas falhou no segundo smoke PG18. O failpoint do teste `financial-webhook-failure-scenarios.js` armava a falha em qualquer escrita contendo o ID externo; sob carga, uma tarefa de entrega de e-mail concorrente consumiu o failpoint. A asserção do webhook então recebeu 200. O teste foi corrigido para identificar exclusivamente `INSERT INTO webhook_events` com o mesmo ID e status `ignored_unknown_event`; não houve alteração de código de produção, HTTP ou estado financeiro. Duas execuções locais PG18 após a correção atingiram o commit correto, receberam 500 e passaram. O CI do commit de correção será verificado separadamente.
+
 ## Próximos lotes
 
 1. Completar matriz HTTP PostgreSQL PagBank `AUTHORIZED`, `DECLINED`, `CANCELED`, `REFUNDED`, falha de lookup, evento fora de ordem e divergência antes de extrair qualquer outra transição.

@@ -97,7 +97,11 @@ async function runMercadoPagoWebhookFailureScenarios({ request, jsonHeaders, coo
     "SELECT count(*)::integer AS total FROM webhook_events WHERE provider='mercado_pago' AND provider_payment_id=$1",
     [ignoredProviderId]
   )).rows[0].total;
-  const ignoredCommitFailed = failCommitForRecord(ignoredProviderId, "smoke_unknown_webhook_commit_failure");
+  // Background ticket-email writes can contain the provider ID too. Arm this
+  // failpoint only for the ignored event's transaction, not another worker.
+  const ignoredCommitFailed = failCommitForRecord(ignoredProviderId, "smoke_unknown_webhook_commit_failure", 1,
+    (statement, args) => statement.startsWith("INSERT INTO webhook_events") && args.some((values) =>
+      Array.isArray(values) && values[2] === ignoredProviderId && values[4] === "ignored_unknown_event"));
   let ignoredFailure;
   try { ignoredFailure = await notify(ignoredCheckout, { action: "unknown.operation", status: "pending" }); }
   finally { restoreQuery(); }

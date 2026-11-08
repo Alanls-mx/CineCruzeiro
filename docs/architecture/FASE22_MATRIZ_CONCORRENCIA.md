@@ -2,6 +2,8 @@
 
 Fase 22.4 acrescenta ao smoke PagBank o retry HTTP assinado por ECDSA após falha de commit e a assinatura ECDSA inválida, com SQL verificado. A disputa entre dois processos HTTP, os demais status e reembolsos continuam sem prova. Ver [resultado](FASE22_RESULTADO_22_4.md).
 
+O failpoint do evento desconhecido Mercado Pago agora seleciona o `INSERT` de `webhook_events` pelo ID externo e status. A seleção anterior por substring em qualquer parâmetro podia atingir o commit concorrente de um worker de e-mail no CI, deixando a requisição testada sem falha. A alteração torna a injeção específica da transação sob teste; não muda o caminho de produção.
+
 O harness `with-local-disposable-postgres.js` cria PostgreSQL 16 ou 18 em contêiner `tmpfs`, marcador aleatório e role sem superusuário. `with-isolated-postgres.js` cria e remove um banco exclusivo por suíte. Todos os atores abaixo são sintéticos. Uma corrida no mesmo processo não prova segurança entre processos.
 
 | Recurso disputado | Atores e barreira | Invariante SQL / efeito externo | Evidência | Limite atual |
