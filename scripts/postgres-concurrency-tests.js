@@ -1,6 +1,6 @@
 const assert = require("assert/strict");
 const crypto = require("crypto");
-const { execFileSync } = require("child_process");
+const { execFileSync, fork } = require("child_process");
 const path = require("path");
 const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 
@@ -170,6 +170,50 @@ async function resetDb(db) {
   await writeDbToPostgres(db, { importSnapshot: true });
 }
 
+async function runCrossProcessSeatRace() {
+  const workerPath = path.join(__dirname, "postgres-seat-race-worker.js");
+  const workers = ["worker-a", "worker-b"].map((ownerToken) => ({
+    ownerToken,
+    child: fork(workerPath, [], { env: process.env, stdio: ["ignore", "inherit", "inherit", "ipc"], windowsHide: true })
+  }));
+  function nextMessage(child, expected) {
+    return new Promise((resolve, reject) => {
+      const deadline = setTimeout(() => reject(new Error(`Worker sem resposta: ${expected}`)), 15000);
+      const onExit = (code) => finish(new Error(`Worker encerrou antes de ${expected}: ${code}`));
+      const onMessage = (message) => message?.type === "error"
+        ? finish(new Error(message.message))
+        : message?.type === expected ? finish(null, message) : undefined;
+      function finish(error, message) {
+        clearTimeout(deadline);
+        child.off("exit", onExit);
+        child.off("message", onMessage);
+        if (error) reject(error); else resolve(message);
+      }
+      child.on("exit", onExit);
+      child.on("message", onMessage);
+    });
+  }
+  try {
+    await Promise.all(workers.map(({ child }) => nextMessage(child, "ready")));
+    const results = workers.map(({ child, ownerToken }) => {
+      const response = nextMessage(child, "result");
+      child.send({ type: "acquire", sessionId: "sessao-concorrencia", seatId: "A1", ownerToken });
+      return response;
+    });
+    const outcomes = await Promise.all(results);
+    assert.equal(outcomes.filter((item) => item.acquired).length, 1,
+      "Duas instâncias não podem adquirir a mesma poltrona");
+    const { queryPostgres, releaseSeatHoldsForOwner } = require("../backend/db/postgresStore");
+    const held = await queryPostgres("SELECT owner_token FROM seat_holds WHERE session_id=$1 AND seat_id=$2 AND expires_at > now()",
+      ["sessao-concorrencia", "A1"]);
+    assert.equal(held.rowCount, 1);
+    assert.equal(held.rows[0].owner_token, outcomes.find((item) => item.acquired).ownerToken);
+    await releaseSeatHoldsForOwner({ sessionId: "sessao-concorrencia", ownerToken: held.rows[0].owner_token });
+  } finally {
+    for (const { child } of workers) if (!child.killed && child.exitCode === null) child.kill();
+  }
+}
+
 function checkoutBody(id, includeProduct = false) {
   return {
     order: {
@@ -317,6 +361,7 @@ async function run() {
     const winningHolds = seatHolds.filter(Boolean);
     assert.equal(winningHolds.length, 1);
     await releaseSeatHoldsForOwner({ sessionId: "sessao-concorrencia", ownerToken: winningHolds[0].ownerToken });
+    await runCrossProcessSeatRace();
 
     const lastSeat = await concurrentCheckout(["ultimo-ingresso-a", "ultimo-ingresso-b"], false, checkoutCookie);
     const seatStatuses = lastSeat.map((item) => item.response.status).sort();
