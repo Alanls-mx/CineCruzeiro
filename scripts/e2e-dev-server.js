@@ -16,6 +16,13 @@ const postgresE2e = process.env.CINE_E2E_POSTGRES === "1";
 const adminPassword = "Admin-e2e-2026!";
 const adminSalt = crypto.randomBytes(16).toString("base64url");
 const adminPasswordHash = `pbkdf2_sha256$120000$${adminSalt}$${crypto.pbkdf2Sync(adminPassword, adminSalt, 120000, 32, "sha256").toString("base64url")}`;
+function fixtureCustomer(id, name, email, password, now) {
+  const salt = crypto.randomBytes(16).toString("base64url");
+  return {
+    id, name, email, role: "customer", active: true, authProvider: "email", emailVerified: true, createdAt: now,
+    passwordHash: `pbkdf2_sha256$120000$${salt}$${crypto.pbkdf2Sync(password, salt, 120000, 32, "sha256").toString("base64url")}`
+  };
+}
 const processes = [];
 const frontendPort = Number(process.env.E2E_FRONTEND_PORT || 3000);
 let shuttingDown = false;
@@ -150,7 +157,10 @@ function fixture() {
       authProvider: "email",
       emailVerified: true,
       createdAt: now
-    }],
+    },
+    fixtureCustomer("customer-card-resilience-e2e", "Cliente Cartao", "cartao-resiliencia@e2e.local", "Cartao-e2e-2026!", now),
+    fixtureCustomer("customer-pagbank-card-e2e", "Cliente PagBank", "pagbank-cartao@e2e.local", "Pagbank-e2e-2026!", now),
+    fixtureCustomer("customer-pix-recovery-e2e", "Cliente Pix", "pix-resposta-perdida@e2e.local", "Pix-e2e-2026!", now)],
     orders: [],
     payments: [],
     tickets: [],

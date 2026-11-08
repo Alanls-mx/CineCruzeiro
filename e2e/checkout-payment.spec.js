@@ -224,6 +224,41 @@ test("Pix pendente sobrevive à atualização e a falha de consulta sem criar ou
   expect(paymentPosts).toBe(0);
 });
 
+test("Pix recupera resposta perdida com a mesma identidade após recarregar", async ({ page, request }) => {
+  const email = "pix-resposta-perdida@e2e.local";
+  const login = await page.request.post(`${BACKEND}/api/auth/login`, {
+    data: { email, password: "Pix-e2e-2026!" }
+  });
+  expect(login.status()).toBe(200);
+  await page.addInitScript(() => { window.MP_DEVICE_SESSION_ID = "e2e-device-pix-recovery"; });
+  await page.route("https://sdk.mercadopago.com/**", (route) => route.abort("blockedbyclient"));
+  await page.goto("/checkout/sessao-e2e");
+  await page.getByRole("link", { name: "Continuar para Extras" }).click();
+  await page.getByRole("button", { name: "Continuar para Pagamento" }).click();
+  await page.getByRole("button", { name: "Pix", exact: true }).click();
+  const attempts = [];
+  await page.route("**/api/payments/pix", async (route) => {
+    attempts.push(JSON.parse(route.request().postData()));
+    if (attempts.length === 1) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await page.getByRole("button", { name: "Gerar Pix", exact: true }).click();
+  await expect(page.getByText(/Failed to fetch|Não foi possível|Nao foi possivel/)).toBeVisible({ timeout: 20000 });
+  await page.reload();
+  await page.getByRole("button", { name: "Gerar Pix", exact: true }).click();
+  await expect(page.getByText("Aguardando confirmação")).toBeVisible({ timeout: 10000 });
+  expect(attempts).toHaveLength(2);
+  expect(attempts[0].idempotencyKey).toBe(attempts[1].idempotencyKey);
+  const content = await adminContent(request);
+  const orders = content.orders.filter((order) => order.customerEmail === email);
+  expect(orders).toHaveLength(1);
+  expect(content.payments.filter((payment) => payment.orderId === orders[0].id)).toHaveLength(1);
+  expect(content.tickets.filter((ticket) => ticket.orderId === orders[0].id)).toHaveLength(0);
+});
+
 test("checkout Pix recusado não emite ingresso", async ({ page, request }) => {
   const email = "checkout-recusado@e2e.local";
   await startPixCheckout(page, email);

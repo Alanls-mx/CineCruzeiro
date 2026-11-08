@@ -25,10 +25,6 @@ test.beforeAll(async () => {
     environment: "sandbox", publicKey: "PAGBANK-e2e-public-key", accessToken: "PAGBANK-e2e-token"
   });
   await adminCall("post", "/api/admin/integrations/pagBank/enable");
-  const registration = await admin.post(`${BACKEND}/api/auth/register`, {
-    data: { firstName: "Cliente", lastName: "PagBank", email, password, phone: "11999999999" }
-  });
-  expect(registration.status()).toBe(201);
 });
 
 test.afterAll(async () => {

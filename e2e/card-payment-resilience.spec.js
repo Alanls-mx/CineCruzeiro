@@ -6,13 +6,6 @@ const SDK_URL = "https://sdk.mercadopago.com/js/v2";
 const cardToken = "token-sintetico-e2e";
 const cardCustomerEmail = "cartao-resiliencia@e2e.local";
 
-test.beforeAll(async ({ request }) => {
-  const registration = await request.post(`${BACKEND}/api/auth/register`, {
-    data: { firstName: "Cliente", lastName: "Cartao", email: cardCustomerEmail, password: "Cartao-e2e-2026!", phone: "11999999999" }
-  });
-  expect(registration.status()).toBe(201);
-});
-
 async function prepareCheckout(page) {
   const login = await page.request.post(`${BACKEND}/api/auth/login`, {
     data: { email: cardCustomerEmail, password: "Cartao-e2e-2026!" }
