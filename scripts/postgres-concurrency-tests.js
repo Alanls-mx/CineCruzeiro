@@ -1,5 +1,7 @@
 const assert = require("assert/strict");
 const crypto = require("crypto");
+const fs = require("node:fs");
+const os = require("node:os");
 const { execFileSync, fork } = require("child_process");
 const path = require("path");
 const { assertDisposableTestDatabase } = require("./test-postgres-safety");
@@ -7,6 +9,8 @@ const { assertDisposableTestDatabase } = require("./test-postgres-safety");
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const PORT = 4299;
 const BASE_URL = `http://localhost:${PORT}`;
+const SECOND_BASE_URL = "http://localhost:4300";
+const providerCallFile = path.join(os.tmpdir(), `cine-financial-calls-${crypto.randomBytes(8).toString("hex")}.log`);
 
 if (!TEST_DATABASE_URL) {
   console.log("PostgreSQL concurrency tests skipped: configure TEST_DATABASE_URL.");
@@ -22,6 +26,7 @@ process.env.TEST_PAYMENTS_AUTO_APPROVE = "false";
 process.env.ADMIN_EMAIL = "admin@cinecruzeiro.local";
 process.env.ADMIN_PASSWORD = "admin-pg-test-123456";
 process.env.MERCADO_PAGO_WEBHOOK_SECRET = "postgres-concurrency-webhook-secret";
+process.env.CINE_FINANCIAL_CALL_FILE = providerCallFile;
 const adminSalt = crypto.randomBytes(16).toString("base64url");
 const adminPasswordHash = `pbkdf2_sha256$600000$${adminSalt}$${crypto.pbkdf2Sync(process.env.ADMIN_PASSWORD, adminSalt, 600000, 32, "sha256").toString("base64url")}`;
 
@@ -32,8 +37,8 @@ function jsonHeaders(cookie = "") {
   };
 }
 
-async function request(pathname, options = {}) {
-  const response = await fetch(`${BASE_URL}${pathname}`, options);
+async function request(pathname, options = {}, baseUrl = BASE_URL) {
+  const response = await fetch(`${baseUrl}${pathname}`, options);
   const payload = await response.json().catch(() => ({}));
   return { response, payload };
 }
@@ -214,6 +219,96 @@ async function runCrossProcessSeatRace() {
   }
 }
 
+async function runCrossProcessPaymentRaces() {
+  const child = fork(path.join(__dirname, "financial-second-instance.js"), [], {
+    env: { ...process.env, PORT: "4300" }, stdio: ["ignore", "inherit", "inherit", "ipc"], windowsHide: true
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Segunda instância financeira não iniciou")), 20000);
+      child.once("message", (message) => { clearTimeout(timeout); message?.type === "ready" ? resolve() : reject(new Error("Instância sem ready")); });
+      child.once("exit", (code) => { clearTimeout(timeout); reject(new Error(`Segunda instância encerrou: ${code}`)); });
+    });
+    const { queryPostgres } = require("../backend/db/postgresStore");
+    const post = (id, cookie, baseUrl, includeProduct = false) => request("/api/payments/pix", {
+      method: "POST", headers: jsonHeaders(cookie), body: JSON.stringify(checkoutBody(id, includeProduct))
+    }, baseUrl);
+    const calls = () => fs.readFileSync(providerCallFile, "utf8").trim().split("\n").filter(Boolean);
+    const sqlCount = async (table, where, value) => {
+      const result = await queryPostgres(`SELECT COUNT(*)::integer AS count FROM ${table} WHERE ${where} = $1`, [value]);
+      return result.rows[0].count;
+    };
+
+    await resetDb(baseDb({ capacity: 2, stock: 2 }));
+    let cookie = await registerCustomer("mesma-cobranca@postgres.local");
+    fs.writeFileSync(providerCallFile, "");
+    const key = "mesma-cobranca-duas-instancias";
+    // Both HTTP operations are released by the same Promise barrier onto independent servers.
+    const samePayment = await Promise.all([post(key, cookie, BASE_URL), post(key, cookie, SECOND_BASE_URL)]);
+    assert.deepEqual(samePayment.map((item) => item.response.status).sort(), [200, 201]);
+    assert.equal(calls().length, 1, "Uma identidade deve chegar ao provedor uma só vez");
+    assert.equal(await sqlCount("orders", "idempotency_key", key), 1);
+    assert.equal(await sqlCount("payments", "order_id", key), 1);
+    assert.equal(await sqlCount("tickets", "order_id", key), 0);
+    const winner = samePayment.find((item) => item.response.status === 201).payload;
+    const webhook = mercadoPagoWebhookRequest({ payment: winner.payment, order: winner.order, eventVersion: 1 });
+    const confirmations = await Promise.all([
+      request(webhook.pathname, webhook.options, BASE_URL),
+      request(webhook.pathname, webhook.options, SECOND_BASE_URL)
+    ]);
+    assert.deepEqual(confirmations.map((item) => item.response.status), [200, 200]);
+    assert.equal(confirmations.filter((item) => item.payload.processed === true).length, 1);
+    assert.equal(await sqlCount("tickets", "order_id", key), 1);
+    assert.equal(await sqlCount("payments", "order_id", key), 1);
+    assert.equal(await sqlCount("webhook_events", "order_id", key), 1);
+
+    await resetDb(baseDb({ capacity: 1, stock: 2 }));
+    cookie = await registerCustomer("ultima-poltrona-duas-instancias@postgres.local");
+    fs.writeFileSync(providerCallFile, "");
+    const seats = await Promise.all([post("cross-seat-a", cookie, BASE_URL), post("cross-seat-b", cookie, SECOND_BASE_URL)]);
+    assert.deepEqual(seats.map((item) => item.response.status).sort(), [201, 409]);
+    assert.equal(calls().length, 1);
+    assert.equal(await sqlCount("orders", "session_id", "sessao-concorrencia"), 1);
+    assert.equal(await sqlCount("payments", "order_id", seats.find((item) => item.response.status === 201).payload.order.id), 1);
+
+    await resetDb(baseDb({ capacity: 10, stock: 1 }));
+    cookie = await registerCustomer("ultimo-produto-duas-instancias@postgres.local");
+    fs.writeFileSync(providerCallFile, "");
+    const stock = await Promise.all([post("cross-stock-a", cookie, BASE_URL, true), post("cross-stock-b", cookie, SECOND_BASE_URL, true)]);
+    assert.deepEqual(stock.map((item) => item.response.status).sort(), [201, 409]);
+    assert.equal(calls().length, 1);
+    const product = await queryPostgres("SELECT available, reserved, sold FROM concession_inventory WHERE concession_id=$1", ["combo-final"]);
+    assert.equal(product.rowCount, 1);
+    assert.equal(Number(product.rows[0].available), 0);
+    assert.equal(Number(product.rows[0].reserved), 1);
+    assert.equal(Number(product.rows[0].sold), 0);
+
+    await resetDb(baseDb({ capacity: 10, stock: 2, includedTickets: 1 }));
+    const clubEmail = "ultimo-credito-duas-instancias@postgres.local";
+    const clubCookie = await registerCustomer(clubEmail);
+    const clubAdminCookie = await loginAdmin();
+    const subscription = await assignClubPlan(clubAdminCookie, clubEmail);
+    const clubPost = (id, baseUrl) => request("/api/checkout/club-credit", {
+      method: "POST", headers: { ...jsonHeaders(clubCookie), "x-idempotency-key": id },
+      body: JSON.stringify({ id, idempotencyKey: id, movieId: "filme-concorrencia", sessionId: "sessao-concorrencia",
+        ticketItems: [{ id: "promocional", quantity: 1 }], fullTicketsCount: 1, halfTicketsCount: 0, concessionItems: [] })
+    }, baseUrl);
+    const credits = await Promise.all([clubPost("cross-credit-a", BASE_URL), clubPost("cross-credit-b", SECOND_BASE_URL)]);
+    assert.deepEqual(credits.map((item) => item.response.status).sort(), [201, 409]);
+    const creditState = await queryPostgres("SELECT remaining, used FROM subscription_credits WHERE subscription_id=$1", [subscription.id]);
+    assert.equal(creditState.rowCount, 1);
+    assert.equal(Number(creditState.rows[0].remaining), 0);
+    assert.equal(Number(creditState.rows[0].used), 1);
+    const issuedOrderId = credits.find((item) => item.response.status === 201).payload.order.id;
+    assert.equal(await sqlCount("tickets", "order_id", issuedOrderId), 1);
+    assert.equal(await sqlCount("subscription_usage", "subscription_id", subscription.id), 1);
+    console.log("PostgreSQL two-instance payment, seat, stock, webhook and credit races passed.");
+  } finally {
+    if (child.exitCode === null) child.kill();
+    await new Promise((resolve) => child.exitCode !== null ? resolve() : child.once("exit", resolve));
+  }
+}
+
 function checkoutBody(id, includeProduct = false) {
   return {
     order: {
@@ -335,6 +430,13 @@ async function run() {
   });
 
   await resetDb(baseDb({ capacity: 1, stock: 2 }));
+  fs.writeFileSync(providerCallFile, "");
+  const paymentService = require("../backend/services/paymentService");
+  const originalCreateMercadoPagoOrderPayment = paymentService.createMercadoPagoOrderPayment;
+  paymentService.createMercadoPagoOrderPayment = async (order, config, options) => {
+    fs.appendFileSync(providerCallFile, `${options.idempotencyKey || order.idempotencyKey || order.id}\n`);
+    return originalCreateMercadoPagoOrderPayment(order, config, options);
+  };
   const server = require("../backend/server.js");
 
   try {
@@ -498,10 +600,12 @@ async function run() {
     assert.equal(restoredCredit.used, 0);
     assert.ok(refundedUsage.refundedAt);
 
+    await runCrossProcessPaymentRaces();
     console.log("PostgreSQL concurrency tests passed.");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await require("../backend/db/postgresStore").closePostgres();
+    fs.rmSync(providerCallFile, { force: true });
   }
 }
 
