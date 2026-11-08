@@ -4,7 +4,7 @@ Branch `codex/cine-backend-desacoplamento`. Base: `7c27cfa1c5994c23355739ced28ee
 
 ## Escopo e métricas
 
-Não houve extração financeira nem alteração de contratos HTTP, autenticação, permissões, regras de pagamento ou migrations. `server.js` passou de **10.303 para 10.307 linhas** (+4, exclusivamente dois guards de resposta após commit); `handleApi`, de **3.261 para 3.265**. `admin.js` permaneceu em **3.421**. Medição: `node scripts/measure-modularization.mjs --summary`. Os testes novos residem em três helpers especializados e um worker de corrida; `scripts/smoke-tests.js` mantém a orquestração preexistente, sem novo arquivo agregador de produção.
+Não houve extração financeira nem alteração de métodos, caminhos, payloads de sucesso, autenticação, permissões, regras de pagamento ou migrations. Em falha de commit, os dois webhooks agora devolvem erro em vez de reconhecer uma escrita revertida. `server.js` passou de **10.303 para 10.307 linhas** (+4, exclusivamente dois guards de resposta após commit); `handleApi`, de **3.261 para 3.265**. `admin.js` permaneceu em **3.421**. Medição: `node scripts/measure-modularization.mjs --summary`. Foram acrescentados **cinco grupos dirigidos de cenários**: corrida entre processos, falhas de checkout PagBank Pix, falhas de cartão PagBank, webhook PagBank e evento desconhecido Mercado Pago. Dois helpers e um worker são novos; o helper de webhook Mercado Pago foi ampliado. `scripts/smoke-tests.js` mantém a orquestração preexistente, sem novo arquivo agregador de produção.
 
 ## Defeitos reproduzidos e corrigidos
 
@@ -47,9 +47,9 @@ Ver [matriz por ramo](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md) e [matriz de conc
 | `npm run test:e2e` | 19/19 aprovados em navegador; mock de e-mail E2E sem webhook configurado registra aviso esperado |
 | `npm run test:legacy:json` | Smoke de compatibilidade JSON aprovado, isolado em diretório temporário |
 
-Nenhuma aprovação acima equivale a homologação externa. Workflows GitHub Actions só são evidência para o SHA publicado correspondente; o estado final será registrado após o push. Nenhum deploy, merge, acesso à VPS, banco operacional ou pagamento real ocorreu.
+Nenhuma aprovação acima equivale a homologação externa. Nenhum deploy, merge, acesso à VPS, banco operacional ou pagamento real ocorreu.
 
-Os filtros de `push` em `.github/workflows/e2e.yml` e `.github/workflows/postgres-integration.yml` foram estendidos a esta branch para que Browser E2E e PostgreSQL 16/18 rodem no mesmo SHA da Fase 22.3. Seus resultados não são inferidos dos testes locais.
+Os filtros de `push` em `.github/workflows/e2e.yml` e `.github/workflows/postgres-integration.yml` foram estendidos a esta branch. No SHA publicado `ede208e40d4ad2db8d7379bbd7e215e258ca188f`, passaram [Security regression](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42429462610), [Browser E2E](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42429462609) e [PostgreSQL integration 16/18](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42429462627). O presente ajuste documental gera um SHA posterior, cujo CI deve ser conferido separadamente.
 
 ## Prontidão e próximos lotes
 
