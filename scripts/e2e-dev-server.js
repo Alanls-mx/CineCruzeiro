@@ -27,7 +27,7 @@ function fixture() {
   const mercadoPago = {
     enabled: true,
     environment: "sandbox",
-    publicKey: "TEST-e2e-public-key",
+    publicKey: "TEST-e2e-public-key-0000000000000001",
     accessToken: "TEST-e2e-access-token"
   };
   return {

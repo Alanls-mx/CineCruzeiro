@@ -114,6 +114,7 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
   const [paymentError, setPaymentError] = useState("");
   const [confirmationStatus, setConfirmationStatus] = useState<"idle" | "checking" | "ready" | "retrying">("idle");
   const [loading, setLoading] = useState(false);
+  const paymentSubmissionInFlight = useRef(false);
   const [clubLoading, setClubLoading] = useState(false);
   const [clubSubscriptions, setClubSubscriptions] = useState<AccountSubscription[]>([]);
   const [customerUser, setCustomerUser] = useState<CustomerUser | null>(null);
@@ -624,6 +625,8 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
       setPaymentError("Entre na sua conta para continuar a compra.");
       return;
     }
+    if (paymentSubmissionInFlight.current) return;
+    paymentSubmissionInFlight.current = true;
     setLoading(true);
     setPaymentError("");
     try {
@@ -644,7 +647,28 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
         payment_type: checkoutDraft.paymentMethod === "credit_card" ? "credit_card" : "pix",
         items: trackingItems,
       });
-      const idempotencyKey = paymentIdempotencyKey(found.session.id);
+      const fingerprint = JSON.stringify({
+        sessionId: found.session.id,
+        customerId: customerUser.id,
+        provider: mercadoPagoConfig?.provider,
+        method: checkoutDraft.paymentMethod || "pix",
+        tickets: selectedTicketItems(checkoutDraft, availableTicketTypes),
+        seats: checkoutDraft.selectedSeatIds || [],
+        seatHoldToken: checkoutDraft.seatHoldToken || "",
+        concessions: checkoutDraft.concessionQuantities || {},
+        coupon: couponPreview?.coupon.code || "",
+        useClubCredits: checkoutDraft.useClubCredits === true,
+        useClubBenefits: checkoutDraft.useClubBenefits !== false,
+        total: checkoutTotal,
+      });
+      if (checkoutDraft.paymentAttempt && checkoutDraft.paymentAttempt.fingerprint !== fingerprint) {
+        throw new Error("Existe uma tentativa de pagamento em verificação. Retome a compra original antes de alterar os itens ou a forma de pagamento.");
+      }
+      const idempotencyKey = checkoutDraft.paymentAttempt?.fingerprint === fingerprint
+        ? checkoutDraft.paymentAttempt.key
+        : paymentIdempotencyKey(found.session.id);
+      // Persist before the network call: a lost response or reload must retry the same operation.
+      writeCheckoutDraft({ ...checkoutDraft, paymentAttempt: { key: idempotencyKey, fingerprint } });
       const result = await createCheckoutPayment(
         {
           id: idempotencyKey,
@@ -688,10 +712,18 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
       updateDraft({ paymentResult: result });
       router.push(checkoutPathFor("confirmacao"));
     } catch (err) {
+      const httpStatus = (err as Error & { httpStatus?: number })?.httpStatus;
+      if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+        const persisted = readCheckoutDraft();
+        if (persisted?.sessionId === found.session.id && persisted.paymentAttempt) {
+          writeCheckoutDraft({ ...persisted, paymentAttempt: undefined });
+        }
+      }
       setPaymentError(err instanceof Error ? err.message : "Nao foi possivel iniciar o pagamento.");
       void refreshSeatMap();
       throw err;
     } finally {
+      paymentSubmissionInFlight.current = false;
       setLoading(false);
     }
   }, [availableTicketTypes, draft, checkoutPathFor, found, mercadoPagoConfig, router, updateDraft, customerUser, clubSubscriptions, checkoutTotal, trackingItems, refreshSeatMap, couponPreview]);
@@ -861,7 +893,7 @@ export function CheckoutPage({ sessionId, step, startNew = false }: { sessionId:
               draft={draft}
               confirmationStatus={confirmationStatus}
               orderReference={`${found.movie.title} - ${found.session.time} • ${found.session.format}`}
-              onRestartPayment={() => updateDraft({ paymentResult: undefined, seatHoldToken: crypto.randomUUID() })}
+              onRestartPayment={() => updateDraft({ paymentResult: undefined, paymentAttempt: undefined, seatHoldToken: crypto.randomUUID() })}
             />
           )}
         </section>

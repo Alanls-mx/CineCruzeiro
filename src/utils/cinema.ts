@@ -112,6 +112,7 @@ export type StoredCheckoutDraft = {
   couponCode?: string;
   extrasVisited?: boolean;
   paymentMethod?: "pix" | "credit_card";
+  paymentAttempt?: { key: string; fingerprint: string };
   useClubBenefits?: boolean;
   useClubCredits?: boolean;
   customerName?: string;

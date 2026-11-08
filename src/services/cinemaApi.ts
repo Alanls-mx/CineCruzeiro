@@ -576,7 +576,7 @@ export async function createCheckoutPayment(
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(apiErrorMessage(data, data.detail || "Desculpe, não foi possível gerar o pagamento. Tente novamente."));
+    throw Object.assign(new Error(apiErrorMessage(data, data.detail || "Desculpe, não foi possível gerar o pagamento. Tente novamente.")), { httpStatus: response.status });
   }
 
   return data as {
