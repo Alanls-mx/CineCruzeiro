@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 
 // PG-only characterization: an existing synthetic checkout is linked to a
 // synthetic PagBank Order. Provider methods are replaced only for that ID.
@@ -25,17 +26,16 @@ async function runPagBankWebhookCommitScenario({ request, jsonHeaders, cookie, m
   await writeDb(fixture);
   const amount = Number(payment.amount);
   const body = { id: providerId, reference_id: id, metadata: { ps_order_id: providerId }, charges: [{ id: chargeId }] };
-  const signed = () => request("/api/webhooks/pag-bank", {
-    method: "POST", headers: { "Content-Type": "application/json", "x-test-pagbank-commit": providerId },
-    body: JSON.stringify(body)
+  const rawBody = JSON.stringify(body);
+  const testToken = "synthetic-pagbank-webhook-only";
+  const previousToken = process.env.PAGBANK_ACCESS_TOKEN;
+  process.env.PAGBANK_ACCESS_TOKEN = testToken;
+  const signature = crypto.createHash("sha256").update(`${testToken}-${rawBody}`).digest("hex");
+  const notify = (value = signature) => request("/api/webhooks/pag-bank", {
+    method: "POST", headers: { "Content-Type": "application/json", "x-authenticity-token": value }, body: rawBody
   });
-  const originalVerify = pagBank.verifyOrderWebhook;
   const originalFetch = pagBank.fetchOrder;
   let fetchCount = 0;
-  pagBank.verifyOrderWebhook = async (req, config, options) => {
-    if (req.headers["x-test-pagbank-commit"] !== providerId) return originalVerify(req, config, options);
-    return { verified: true, scheme: "synthetic-test-only" };
-  };
   pagBank.fetchOrder = async (orderId, config) => {
     if (orderId !== providerId) return originalFetch(orderId, config);
     fetchCount += 1;
@@ -55,27 +55,31 @@ async function runPagBankWebhookCommitScenario({ request, jsonHeaders, cookie, m
   };
   try {
     assert.deepEqual(await persisted(), { order: "pending_payment", payment: "pending", tickets: 0, events: 0 });
+    const invalid = await notify("0".repeat(64));
+    assert.equal(invalid.response.status, 401);
+    assert.deepEqual(await persisted(), { order: "pending_payment", payment: "pending", tickets: 0, events: 0 });
     const tripped = failCommitForRecord(id, "synthetic_pagbank_webhook_commit_failure", 1,
       (statement, args) => statement.startsWith("INSERT INTO orders") && args.some((values) =>
         Array.isArray(values) && values.some((value) => value?.id === id && value.status === "paid")));
     let failed;
-    try { failed = await signed(); }
+    try { failed = await notify(); }
     finally { restoreQuery(); }
     assert.equal(tripped(), true, `O failpoint precisa atingir o commit do webhook PagBank: HTTP ${failed.response.status} ${JSON.stringify(failed.payload)}`);
     assert.ok(failed.response.status >= 500, `Commit revertido recebeu HTTP ${failed.response.status}`);
     assert.deepEqual(await persisted(), { order: "pending_payment", payment: "pending", tickets: 0, events: 0 });
-    const retry = await signed();
+    const retry = await notify();
     assert.equal(retry.response.status, 200, JSON.stringify(retry.payload));
     assert.equal(retry.payload.ticketsCreated, 1);
     assert.deepEqual(await persisted(), { order: "paid", payment: "approved", tickets: 1, events: 1 });
-    const duplicate = await signed();
+    const duplicate = await notify();
     assert.equal(duplicate.response.status, 200);
     assert.equal(duplicate.payload.duplicate, true);
     assert.deepEqual(await persisted(), { order: "paid", payment: "approved", tickets: 1, events: 1 });
     assert.equal(fetchCount, 3);
   } finally {
-    pagBank.verifyOrderWebhook = originalVerify;
     pagBank.fetchOrder = originalFetch;
+    if (previousToken === undefined) delete process.env.PAGBANK_ACCESS_TOKEN;
+    else process.env.PAGBANK_ACCESS_TOKEN = previousToken;
   }
 }
 
