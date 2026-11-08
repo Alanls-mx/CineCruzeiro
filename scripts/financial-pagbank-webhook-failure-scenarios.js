@@ -35,6 +35,7 @@ async function runPagBankWebhookCommitScenario({ request, jsonHeaders, cookie, m
     method: "POST", headers: { "Content-Type": "application/json", "x-authenticity-token": value }, body: rawBody
   });
   const originalFetch = pagBank.fetchOrder;
+  const originalGlobalFetch = global.fetch;
   let fetchCount = 0;
   pagBank.fetchOrder = async (orderId, config) => {
     if (orderId !== providerId) return originalFetch(orderId, config);
@@ -67,7 +68,21 @@ async function runPagBankWebhookCommitScenario({ request, jsonHeaders, cookie, m
     assert.equal(tripped(), true, `O failpoint precisa atingir o commit do webhook PagBank: HTTP ${failed.response.status} ${JSON.stringify(failed.payload)}`);
     assert.ok(failed.response.status >= 500, `Commit revertido recebeu HTTP ${failed.response.status}`);
     assert.deepEqual(await persisted(), { order: "pending_payment", payment: "pending", tickets: 0, events: 0 });
-    const retry = await notify();
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const publicKeyBase64 = publicKey.export({ type: "spki", format: "der" }).toString("base64");
+    global.fetch = async (url, options) => {
+      if (String(url).endsWith("/public-keys?type=webhook")) {
+        return { ok: true, json: async () => ({ public_key: publicKeyBase64 }) };
+      }
+      return originalGlobalFetch(url, options);
+    };
+    const signedNotify = (signature) => request("/api/webhooks/pag-bank", {
+      method: "POST", headers: { "Content-Type": "application/json", "x-payload-signature": signature }, body: rawBody
+    });
+    const invalidEcdsa = await signedNotify(crypto.sign("sha256", Buffer.from(`${rawBody} `), privateKey).toString("base64"));
+    assert.equal(invalidEcdsa.response.status, 401);
+    assert.deepEqual(await persisted(), { order: "pending_payment", payment: "pending", tickets: 0, events: 0 });
+    const retry = await signedNotify(crypto.sign("sha256", Buffer.from(rawBody), privateKey).toString("base64"));
     assert.equal(retry.response.status, 200, JSON.stringify(retry.payload));
     assert.equal(retry.payload.ticketsCreated, 1);
     assert.deepEqual(await persisted(), { order: "paid", payment: "approved", tickets: 1, events: 1 });
@@ -78,6 +93,7 @@ async function runPagBankWebhookCommitScenario({ request, jsonHeaders, cookie, m
     assert.equal(fetchCount, 3);
   } finally {
     pagBank.fetchOrder = originalFetch;
+    global.fetch = originalGlobalFetch;
     if (previousToken === undefined) delete process.env.PAGBANK_ACCESS_TOKEN;
     else process.env.PAGBANK_ACCESS_TOKEN = previousToken;
   }
