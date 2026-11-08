@@ -6315,6 +6315,7 @@ async function reconcileOnlineCheckoutOrder(orderId, snapshotDb) {
 }
 
 const handleMovieCatalogRoutes = createMovieCatalogHandler({
+  appendSystemLogToPostgres,
   assertMovieCanBeDeleted,
   buildSessionAutocorrectPlan,
   createMovieSessionBatch,

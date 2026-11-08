@@ -74,10 +74,13 @@ Na Fase 21, [pointLocalPrintResultHandler](../../backend/services/pointLocalPrin
 
 Na Fase 11, `cardTerminalProvider` limita a descricao da Order a 150 caracteres e compoe a impressao com nome de cinema recebido de `server.js`, sem marca fixa no modulo compartilhado. [Teste Point](../../scripts/mercado-pago-point-tests.js); [relatorio do piloto](../FASE11_HOMOLOGACAO_PILOTO.md). Nao houve endpoint, permissao ou escritor novo.
 
+Na edição/cancelamento de `PUT /api/movies/:movieId/sessions/:sessionId`, o guard administrativo permanece no dispatcher. O handler grava a sessão e a auditoria pelo `sessionRepository` antes de publicar `session.updated` ou `session.cancelled` na visão técnica PostgreSQL. O registro de apresentação em `system_logs` não altera a transação comercial nem o status HTTP se falhar. [E2E PostgreSQL](../../e2e/session-sales-consistency.spec.js). Risco residual: a apresentação técnica é assíncrona; `audit_logs` é a trilha transacional.
+
 | Responsabilidade | Módulo | Verificação |
 | --- | --- | --- |
 | Indicadores administrativos | [adminDashboardService](../../backend/services/adminDashboardService.js) | [teste do dashboard](../../tests/admin-dashboard-module.test.mjs) |
 | Filmes e sessões | [movieCatalogHandler](../../backend/services/movieCatalogHandler.js) | [publicação](../../tests/movie-publication-policy.test.mjs) |
+
 | Normalização e publicação de filmes | [movieWorkflowService](../../backend/services/movieWorkflowService.js) | [contrato de entrada](../../tests/movie-workflow-service.test.mjs), [HTTP](../../tests/catalog-operations-http.test.mjs) |
 | Busca e importação TMDB | [tmdbLookupHandler](../../backend/services/tmdbLookupHandler.js) usa [tmdbMovieMapper](../../backend/services/tmdbMovieMapper.js) | [busca/mapeamento](../../tests/tmdb-lookup-handler.test.mjs), [feedback](../../tests/tmdb-import-feedback.test.mjs) |
 | Entrada e lote de sessões | [movieSessionInputService](../../backend/services/movieSessionInputService.js) | [calendário e preços](../../tests/catalog-sessions-finance-polish.test.mjs), [HTTP](../../tests/catalog-operations-http.test.mjs) |

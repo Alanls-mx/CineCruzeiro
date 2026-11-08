@@ -6,7 +6,7 @@ test("sessão com vendas exige confirmação, sincroniza horário e cancelamento
   const login = await request.post(`${BACKEND}/api/admin/login`, {
     data: { email: "admin-e2e@cine.local", password: "Admin-e2e-2026!" }
   });
-  expect(login.ok()).toBeTruthy();
+  expect(login.ok(), `Admin login: ${login.status()}`).toBeTruthy();
 
   const sale = await request.post(`${BACKEND}/api/box-office/sales`, {
     data: {
@@ -56,8 +56,10 @@ test("sessão com vendas exige confirmação, sincroniza horário e cancelamento
   let content = await (await request.get(`${BACKEND}/api/admin/content`)).json();
   expect(content.orders.find((item) => item.id === order.id).sessionTime).toBe("20:30");
   expect(content.tickets.find((item) => item.id === ticket.id).sessionTime).toBe("20:30");
-  const updatedLogs = await (await request.get(`${BACKEND}/api/admin/logs?view=technical&search=session.updated`)).json();
-  expect(updatedLogs.logs.some((item) => item.event === "session.updated" && item.metadata?.entityId === "sessao-e2e")).toBeTruthy();
+  await expect.poll(async () => {
+    const updatedLogs = await (await request.get(`${BACKEND}/api/admin/logs?view=technical&search=session.updated`)).json();
+    return updatedLogs.logs.some((item) => item.event === "session.updated" && item.metadata?.entityId === "sessao-e2e");
+  }).toBe(true);
 
   const deletion = await request.delete(`${BACKEND}/api/movies/filme-e2e/sessions/sessao-e2e`);
   expect(deletion.status()).toBe(409);
@@ -80,8 +82,10 @@ test("sessão com vendas exige confirmação, sincroniza horário e cancelamento
   expect(cancelledTicket.status).toBe("cancelled");
   expect(affectedOrder.refundStatus).toBe("required");
   expect(affectedPayment.refundStatus).toBe("required");
-  const cancelledLogs = await (await request.get(`${BACKEND}/api/admin/logs?view=technical&search=session.cancelled`)).json();
-  expect(cancelledLogs.logs.some((item) => item.event === "session.cancelled" && item.metadata?.entityId === "sessao-e2e")).toBeTruthy();
+  await expect.poll(async () => {
+    const cancelledLogs = await (await request.get(`${BACKEND}/api/admin/logs?view=technical&search=session.cancelled`)).json();
+    return cancelledLogs.logs.some((item) => item.event === "session.cancelled" && item.metadata?.entityId === "sessao-e2e");
+  }).toBe(true);
 
   const validation = await request.post(`${BACKEND}/api/tickets/validate`, { data: { code: ticket.code } });
   expect(validation.status()).toBe(409);

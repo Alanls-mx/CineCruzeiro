@@ -1,4 +1,5 @@
 function createMovieCatalogHandler({
+  appendSystemLogToPostgres,
   assertMovieCanBeDeleted,
   buildSessionAutocorrectPlan,
   createMovieSessionBatch,
@@ -344,6 +345,15 @@ function createMovieCatalogHandler({
           reason: changeReason,
           audit: repositoryAudit(req, "session", session.id, previousSession, session)
         });
+        if (commercialChanges.length || previousSession.status !== session.status) {
+          const event = session.status === "cancelled" ? "session.cancelled" : "session.updated";
+          void appendSystemLogToPostgres({
+            level: "info", category: "session", event,
+            actorUserId: req.adminUser?.id || "", actorEmail: req.adminUser?.email || "",
+            method, path: pathname,
+            metadata: { entityId: session.id, movieId: movie.id, reason: changeReason, changes: commercialChanges }
+          }).catch((error) => console.error("session.system_log_failed", { code: error?.code || "UNKNOWN" }));
+        }
       } else {
         await writeDb(db);
       }
