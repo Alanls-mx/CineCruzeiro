@@ -166,7 +166,7 @@ test("cliente aplica cupom e o backend mantém o desconto no pedido", async ({ p
   expect(pending.order.totalPrice).toBe(12);
 });
 
-test("checkout Pix permanece pendente, preserva bomboniere e entrega ingresso apenas após webhook aprovado", async ({ page, request }) => {
+test("checkout Pix permanece pendente, preserva bomboniere e entrega ingresso apenas após webhook aprovado", async ({ page, request, browser }) => {
   const email = "checkout-aprovado@e2e.local";
   await startPixCheckout(page, email, { concession: true });
   const pending = await latestOrderFor(request, email);
@@ -183,6 +183,43 @@ test("checkout Pix permanece pendente, preserva bomboniere e entrega ingresso ap
   const product = content.concessions.find((item) => item.id === "pipoca-e2e");
   expect(product.sold).toBe(soldBeforeApproval + 1);
   expect(product.reserved).toBe(0);
+
+  const other = await browser.newContext();
+  try {
+    const registration = await other.request.post(`${BACKEND}/api/auth/register`, {
+      data: { firstName: "Outro", lastName: "Cliente", email: "outro-cliente@e2e.local", password: "Outro-e2e-2026!" }
+    });
+    expect(registration.status()).toBe(201);
+    const ticketId = content.tickets.find((ticket) => ticket.orderId === pending.order.id).id;
+    for (const path of [`/api/me/tickets/${ticketId}`, `/api/me/tickets/${ticketId}/qr`, `/api/checkout/orders/${pending.order.id}`]) {
+      const response = await other.request.get(`${BACKEND}${path}`);
+      expect(response.status(), path).toBe(404);
+    }
+  } finally {
+    await other.close();
+  }
+});
+
+test("Pix pendente sobrevive à atualização e a falha de consulta sem criar outra cobrança", async ({ page, request }) => {
+  const email = "checkout-retomada@e2e.local";
+  await startPixCheckout(page, email);
+  const pending = await latestOrderFor(request, email);
+  let paymentPosts = 0;
+  page.on("request", (sent) => {
+    if (sent.method() === "POST" && /\/api\/payments\/(pix|card)$/.test(sent.url())) paymentPosts += 1;
+  });
+  await page.route("**/api/checkout/orders/**", (route) => route.abort("failed"));
+  await page.reload();
+  await expect(page.getByText("Conferindo a confirmação do pagamento")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Não refaça o pagamento enquanto conferimos.", { exact: false })).toBeVisible();
+  await page.unroute("**/api/checkout/orders/**");
+  await expect(page.getByText("Aguardando confirmação")).toBeVisible({ timeout: 12000 });
+  await expect(page.getByAltText("QR Code para pagamento via Pix")).toBeVisible();
+  const content = await adminContent(request);
+  expect(content.orders.filter((order) => order.customerEmail === email)).toHaveLength(1);
+  expect(content.payments.filter((payment) => payment.orderId === pending.order.id)).toHaveLength(1);
+  expect(content.tickets.filter((ticket) => ticket.orderId === pending.order.id)).toHaveLength(0);
+  expect(paymentPosts).toBe(0);
 });
 
 test("checkout Pix recusado não emite ingresso", async ({ page, request }) => {
