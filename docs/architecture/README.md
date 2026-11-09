@@ -1,6 +1,6 @@
 # Mapa Inteligente da Arquitetura
 
-Fase 23: [intenção durável de Pix/cartão e recuperação por callback](ONLINE_CHECKOUT_INTENT.md), com limites de reconciliação sem callback documentados.
+Fase 23: [intenção durável de Pix/cartão, callback e reconciliação por consulta](ONLINE_CHECKOUT_INTENT.md), com revisão manual obrigatória quando o PagBank não devolveu Order ID.
 
 Fase 22.4: [resultado](FASE22_RESULTADO_22_4.md) e [ramos financeiros efetivamente extraídos](FASE22_ROTAS_FINANCEIRAS_EXTRAIDAS.md). O webhook Mercado Pago desconhecido e as prévias comerciais ganharam handlers específicos; o PagBank ganhou caracterização ECDSA HTTP sem extração financeira ampla.
 

@@ -833,6 +833,22 @@ async function fetchMercadoPagoOrder(providerPaymentId, integrationConfig = {}) 
   return normalizeMercadoPagoOrder(data);
 }
 
+async function searchMercadoPagoOrdersByReference(reference, createdAt, integrationConfig = {}) {
+  if (!reference || !Number.isFinite(Date.parse(createdAt))) return null;
+  if (isTestPaymentsMode() && !isProduction()) return null;
+  const accessToken = getMercadoPagoAccessToken(integrationConfig);
+  if (!accessToken) return null;
+  const begin = new Date(Date.parse(createdAt) - 60 * 60 * 1000).toISOString();
+  const end = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const result = await mercadoPagoOrdersClient(accessToken, 5000).search({
+    options: { begin_date: begin, end_date: end, external_reference: String(reference).slice(0, 64), limit: 2, offset: 0 },
+    requestOptions: { timeout: 5000, maxRetries: 0 }
+  });
+  if (!Array.isArray(result?.data)) return null;
+  return { total: Number(result.paging?.total ?? result.data.length),
+    orders: result.data.map((order) => normalizeMercadoPagoOrder(order)) };
+}
+
 async function fetchMercadoPagoWebhookOrder(providerPaymentId, integrationConfig = {}) {
   const order = await fetchMercadoPagoOrder(providerPaymentId, integrationConfig);
   if (!order || String(order.id).toLowerCase() !== String(providerPaymentId || "").toLowerCase()) {
@@ -907,6 +923,7 @@ module.exports = {
   cancelMercadoPagoSubscription,
   fetchMercadoPagoAuthorizedPayment,
   fetchMercadoPagoWebhookOrder,
+  searchMercadoPagoOrdersByReference,
   fetchMercadoPagoSubscription,
   fetchProviderPaymentStatus,
   getMercadoPagoAccessToken,

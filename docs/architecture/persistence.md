@@ -2,6 +2,8 @@
 
 Fase 23: `orders` e `payments` passam a ser gravados no mesmo commit antes da criação externa de Pix/cartão. `payments.metadata.onlineIntent` guarda chave, hash da compra/conta, claim, lease e histórico; sem token secreto ou cartão. `tickets` continua posterior à aprovação. PostgreSQL e JSON legado preservados. [Contrato e lacunas](ONLINE_CHECKOUT_INTENT.md).
 
+A consulta de recuperação usa o mesmo `payments.metadata.onlineIntent` para `reconcileClaim`, `reconcileLeaseUntil`, `reconcileAttempts` e `nextReconcileAt`; não cria tabela nem migration. O claim e o resultado são confirmados em commits separados, com GET externo entre eles. Webhook concorrente pode concluir primeiro e o resultado tardio é descartado. PagBank sem ID vira `review_required`, sem criar nova cobrança.
+
 Fase 22.4: apenas o registro de evento Mercado Pago desconhecido mudou de arquivo, de `server.js` para [mercadoPagoUnknownEventHandler](../../backend/services/mercadoPagoUnknownEventHandler.js). Escritor continua `writeDb` dentro de `withCriticalMutation`; `webhookEvents` deduplica por provedor/ID e HTTP 200 é diferido até commit. [checkoutPreviewRoutes](../../backend/services/checkoutPreviewRoutes.js) não escreve em `orders`, `payments`, `tickets`, créditos ou estoque. [Smoke SQL](../../scripts/financial-webhook-failure-scenarios.js).
 
 Fase 22.1: [publicAssetPathService](../../backend/services/publicAssetPathService.js) não lê nem escreve DB ou arquivo. A normalização de URL editorial ainda ocorre no snapshot e `PUT /api/settings`; somente a função de transformação foi movida. [Teste](../../tests/phase22-presentation-baseline.test.mjs). O commit e os escritores existentes permanecem inalterados.

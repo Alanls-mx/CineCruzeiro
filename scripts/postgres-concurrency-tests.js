@@ -13,6 +13,7 @@ const SECOND_BASE_URL = "http://localhost:4300";
 const LOST_RESPONSE_KEY = "cross-instance-provider-response-lost";
 const providerCallFile = path.join(os.tmpdir(), `cine-financial-calls-${crypto.randomBytes(8).toString("hex")}.log`);
 const refundCallFile = path.join(os.tmpdir(), `cine-financial-refunds-${crypto.randomBytes(8).toString("hex")}.log`);
+const reconcileCallFile = path.join(os.tmpdir(), `cine-financial-reconcile-${crypto.randomBytes(8).toString("hex")}.log`);
 
 if (!TEST_DATABASE_URL) {
   console.log("PostgreSQL concurrency tests skipped: configure TEST_DATABASE_URL.");
@@ -30,6 +31,7 @@ process.env.ADMIN_PASSWORD = "admin-pg-test-123456";
 process.env.MERCADO_PAGO_WEBHOOK_SECRET = "postgres-concurrency-webhook-secret";
 process.env.CINE_FINANCIAL_CALL_FILE = providerCallFile;
 process.env.CINE_FINANCIAL_REFUND_FILE = refundCallFile;
+process.env.CINE_FINANCIAL_RECONCILE_FILE = reconcileCallFile;
 const adminSalt = crypto.randomBytes(16).toString("base64url");
 const adminPasswordHash = `pbkdf2_sha256$600000$${adminSalt}$${crypto.pbkdf2Sync(process.env.ADMIN_PASSWORD, adminSalt, 600000, 32, "sha256").toString("base64url")}`;
 
@@ -231,7 +233,7 @@ async function runCrossProcessSeatRace() {
   }
 }
 
-async function runCrossProcessPaymentRaces() {
+async function runCrossProcessPaymentRaces(server) {
   const child = fork(path.join(__dirname, "financial-second-instance.js"), [], {
     env: { ...process.env, PORT: "4300", CINE_FINANCIAL_LOST_KEY: LOST_RESPONSE_KEY },
     stdio: ["ignore", "inherit", "inherit", "ipc"], windowsHide: true
@@ -288,6 +290,26 @@ async function runCrossProcessPaymentRaces() {
     assert.equal(await sqlCount("orders", "idempotency_key", LOST_RESPONSE_KEY), 1);
     assert.equal(await sqlCount("payments", "order_id", LOST_RESPONSE_KEY), 1);
     assert.equal(await sqlCount("tickets", "order_id", LOST_RESPONSE_KEY), 0);
+    fs.writeFileSync(reconcileCallFile, "");
+    const uncertain = await readDbFromPostgres();
+    const lostPayment = uncertain.payments.find((item) => item.orderId === LOST_RESPONSE_KEY);
+    const reconcileOnChild = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Reconciliação da segunda instância não respondeu")), 15000);
+      child.once("message", (message) => {
+        clearTimeout(timeout);
+        if (message?.type !== "reconciled" || message.error) reject(new Error(message?.error || "Resposta inválida"));
+        else resolve(message.result);
+      });
+      child.send({ type: "reconcile", paymentId: lostPayment.id });
+    });
+    const recoveryResults = await Promise.all([
+      server.testOnlinePaymentReconciliation.reconcile(lostPayment.id), reconcileOnChild
+    ]);
+    assert.deepEqual(recoveryResults.sort(), ["completed", "skipped"]);
+    assert.equal(await sqlCount("tickets", "order_id", LOST_RESPONSE_KEY), 1);
+    assert.deepEqual(calls(), [LOST_RESPONSE_KEY], "Consulta não pode recriar cobrança externa");
+    assert.equal(fs.readFileSync(reconcileCallFile, "utf8").trim().split("\n").filter(Boolean).length, 1,
+      "O claim deve autorizar apenas uma consulta concorrente");
 
     refundSeed.integrations = {
       ...(refundSeed.integrations || {}),
@@ -494,6 +516,15 @@ async function run() {
     fs.appendFileSync(providerCallFile, `${options.idempotencyKey || order.idempotencyKey || order.id}\n`);
     return originalCreateMercadoPagoOrderPayment(order, config, options);
   };
+  paymentService.searchMercadoPagoOrdersByReference = async (reference) => {
+    fs.appendFileSync(reconcileCallFile, `${reference}\n`);
+    if (reference !== LOST_RESPONSE_KEY) return { total: 0, orders: [] };
+    const db = await require("../backend/db/postgresStore").readDbFromPostgres();
+    const order = db.orders.find((item) => item.id === reference);
+    return { total: 1, orders: [{ provider: "mercado_pago", id: "ORD_TEST_CROSS_RECOVERY",
+      externalReference: reference, amount: Number(order.totalPrice), status: "approved",
+      raw: { currency_id: "BRL" } }] };
+  };
   const refundService = require("../backend/services/orderRefundService");
   const originalSubmitFullRefund = refundService.submitFullRefund;
   refundService.submitFullRefund = async (refund, ...args) => {
@@ -664,13 +695,14 @@ async function run() {
     assert.equal(restoredCredit.used, 0);
     assert.ok(refundedUsage.refundedAt);
 
-    await runCrossProcessPaymentRaces();
+    await runCrossProcessPaymentRaces(server);
     console.log("PostgreSQL concurrency tests passed.");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await require("../backend/db/postgresStore").closePostgres();
     fs.rmSync(providerCallFile, { force: true });
     fs.rmSync(refundCallFile, { force: true });
+    fs.rmSync(reconcileCallFile, { force: true });
   }
 }
 

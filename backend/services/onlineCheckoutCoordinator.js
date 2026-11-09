@@ -3,6 +3,7 @@ const {
   checkoutRequestFingerprint, providerAccountFingerprint, appendIntentHistory,
   pendingCheckoutPayment, intentOf, sameCheckoutIntent
 } = require("./onlineCheckoutIntentService");
+const { createOnlinePaymentReconciliationService } = require("./onlinePaymentReconciliationService");
 
 function createOnlineCheckoutCoordinator(deps) {
   const {
@@ -303,7 +304,10 @@ function createOnlineCheckoutCoordinator(deps) {
     sendJson(res, 201, result.response, { "Set-Cookie": checkoutAccessCookie(req, result.order.id) });
   }
 
-  return { handle };
+  const recovery = createOnlinePaymentReconciliationService({ withCriticalMutation, readDb, writeDb,
+    activeOnlinePaymentProvider, paymentService, pagBankPaymentService,
+    createPaymentRecord, finalize, logEvent });
+  return { handle, reconcile: recovery.reconcile, scan: recovery.scan };
 }
 
 module.exports = { createOnlineCheckoutCoordinator };

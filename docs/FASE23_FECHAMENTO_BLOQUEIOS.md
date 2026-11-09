@@ -8,7 +8,7 @@ Commits de implementação desta continuação: `1c7f447` (intenção antes da c
 
 | Frente | Evidência | Limite |
 | --- | --- | --- |
-| Intenção Pix/cartão | [Fronteiras de commit](architecture/ONLINE_CHECKOUT_INTENT.md); smoke PG confirma por outra conexão o pedido antes da chamada externa; failpoints e webhooks assinados simulados de MP/PagBank recuperam aceite com resposta perdida ou falha no commit final. | Sem callback, a intenção `unknown`/`result_known` não é reconciliada automaticamente; não há consulta implementada por referência para ambos os provedores. |
+| Intenção Pix/cartão | [Fronteiras de commit](architecture/ONLINE_CHECKOUT_INTENT.md); smoke PG confirma o pedido antes da chamada externa e agora recupera via consulta simulada por referência/ID, sem navegador ou callback. Duas instâncias disputam um claim de reconciliação. | PagBank sem Order ID vai para revisão; nenhuma consulta real foi executada. A release instalada não tem o novo reconciliador. |
 | Retry entre servidores | Duas instâncias sobre PostgreSQL descartável compartilham claim e chave; resposta perdida em uma instância, retry 202 na outra, uma chamada sintética e nenhum ingresso. | Simulador não comprova deduplicação do provedor real. |
 | Callback antecipado | Cancelamento assinado durante o POST ao provedor não é rebaixado pela resposta pendente tardia; retorna 409 e não expõe QR nem envia ingresso. | Outros eventos fora de ordem ainda dependem de cobertura dirigida. |
 | Reembolso integral concorrente | [Dois operadores e dois processos](architecture/FASE23_REEMBOLSO_CONCORRENTE.md) reutilizam uma identidade e terminam com um ingresso reembolsado. | O adaptador pode ser invocado mais de uma vez com a mesma chave; reembolso parcial e corrida cancelamento/aprovação não têm prova distribuída completa. |
@@ -20,7 +20,7 @@ Passaram: smoke financeiro e concorrência de duas instâncias em PostgreSQL 16 
 
 ## Bloqueadores objetivos para GO
 
-1. Reconciliação sem navegador/callback para intenção sem ID externo, especialmente PagBank, e conclusão automática de `result_known` após falha no commit final. A busca por referência documentada para Mercado Pago e a consulta por ID do PagBank exigem estratégias distintas, com validação de valor, conta, referência e duplicidade. Não fazer novo POST apenas para descobrir o resultado.
+1. PagBank sem Order ID não possui consulta automática confiável; manter revisão controlada. A nova consulta Mercado Pago por referência e a consulta por ID conhecido têm prova apenas sintética, sem validação externa manual (dispensada). Não fazer novo POST apenas para descobrir o resultado.
 2. Prova distribuída de reembolso parcial e de cancelamento concorrente com aprovação tardia, mantendo direitos e estoque até confirmação. O teste atual comprova identidade local do estorno integral, não exatamente um efeito externo real.
 3. Dreno verificável da **release instalada**, incluindo requests, WS, workers, Point, impressão, leases e efeitos externos inconclusivos; callback durável ou recuperação demonstrada; retomada gradual por categoria. O teste de proxy não satisfaz essas condições.
 4. Preflight remoto atual, janela/responsável/limites/reversão, backup novo e restore isolado, conferência de schema e isolamento dos outros quatro cinemas. Nenhuma dessas ações foi realizada nesta etapa.

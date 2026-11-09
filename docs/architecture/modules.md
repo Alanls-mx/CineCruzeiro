@@ -1,5 +1,7 @@
 # Índice de módulos extraídos
 
+Fase 23: [onlinePaymentReconciliationService](../../backend/services/onlinePaymentReconciliationService.js) recebe banco, provedor e finalização por injeção do [onlineCheckoutCoordinator](../../backend/services/onlineCheckoutCoordinator.js). Não importa `server.js` nem inicia timer no import. Dono do timer: [backendRuntimeSchedule](../../backend/services/backendRuntimeSchedule.js). [Teste](../../tests/online-payment-reconciliation.test.mjs).
+
 Fase 23: [onlineCheckoutCoordinator](../../backend/services/onlineCheckoutCoordinator.js) recebe dependências explícitas de `server.js` para preparar, reivindicar, registrar resultado e finalizar Pix/cartão; [onlineCheckoutIntentService](../../backend/services/onlineCheckoutIntentService.js) define identidade e histórico sem chamar provedor. Entradas `POST /api/payments/pix|card`, sessão de cliente e origem/CSRF no dispatcher; escritor `orders`/`payments` antes do efeito externo, `tickets` após aprovação. [Testes e risco residual](ONLINE_CHECKOUT_INTENT.md).
 
 Fase 22.4: [mercadoPagoUnknownEventHandler](../../backend/services/mercadoPagoUnknownEventHandler.js) recebe dependências explícitas e registra apenas webhook Mercado Pago HMAC válido de ação desconhecida; [checkoutPreviewRoutes](../../backend/services/checkoutPreviewRoutes.js) serve prévias autenticadas de cupom e Clube sem criar pagamento. [Teste dirigido](../../tests/phase22-financial-boundary.test.mjs), [smoke SQL](../../scripts/smoke-tests.js), [limites](FASE22_ROTAS_FINANCEIRAS_EXTRAIDAS.md).

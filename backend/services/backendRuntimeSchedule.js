@@ -4,7 +4,7 @@ function createBackendRuntimeSchedule({
   runSubscriptionMaintenance, runMovieImageMaintenance, runEmailAttachmentMaintenance,
   runSystemLogMaintenance, resumeSocialStudio, startPostgresWorkers,
   stopPostgresWorkers, postgresEnabled, pruneCrmOutbox, sendDiscordHealth,
-  subscriptionIntervalMs, onTaskError = () => {},
+  subscriptionIntervalMs, reconcileOnlinePayments = () => {}, onTaskError = () => {},
   setIntervalFn = setInterval, clearIntervalFn = clearInterval
 }) {
   const timers = [];
@@ -38,6 +38,8 @@ function createBackendRuntimeSchedule({
     if (postgresEnabled()) {
       startPostgresWorkers();
       runObserved("system-log", runSystemLogMaintenance);
+      runObserved("online-payment-reconciliation", reconcileOnlinePayments);
+      every(() => runObserved("online-payment-reconciliation", reconcileOnlinePayments), 30 * 1000);
     }
     every(() => runObserved("system-log", runSystemLogMaintenance), 6 * 60 * 60 * 1000);
     every(() => runObserved("subscription", runSubscriptionMaintenance), subscriptionIntervalMs);

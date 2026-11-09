@@ -17,6 +17,7 @@ test("runtime schedule starts once, preserves trigger order and removes every ti
     postgresEnabled: () => true,
     pruneCrmOutbox: task("crm-prune"),
     sendDiscordHealth: task("discord-health"),
+    reconcileOnlinePayments: task("online-reconciliation"),
     subscriptionIntervalMs: 60000,
     setIntervalFn(callback, ms) {
       const timer = { callback, ms, unref: task("unref") };
@@ -28,13 +29,15 @@ test("runtime schedule starts once, preserves trigger order and removes every ti
   assert.deepEqual(calls, []);
   schedule.start();
   assert.deepEqual(calls.filter((name) => name !== "unref"), [
-    "subscription", "movie", "attachment", "studio", "workers-start", "system-log", "crm-prune"
+    "subscription", "movie", "attachment", "studio", "workers-start", "system-log", "online-reconciliation", "crm-prune"
   ]);
-  assert.deepEqual(timers.map((timer) => timer.ms), [60000, 21600000, 60000, 21600000, 86400000, 86400000, 15000]);
+  assert.deepEqual(timers.map((timer) => timer.ms), [60000, 30000, 21600000, 60000, 21600000, 86400000, 86400000, 15000]);
   schedule.start();
-  assert.equal(timers.length, 7);
+  assert.equal(timers.length, 8);
   timers[0].callback();
   assert.equal(calls.at(-1), "studio");
+  timers[1].callback();
+  assert.equal(calls.at(-1), "online-reconciliation");
   schedule.stop();
   assert.ok(timers.every((timer) => timer.cleared));
   assert.equal(calls.at(-1), "workers-stop");

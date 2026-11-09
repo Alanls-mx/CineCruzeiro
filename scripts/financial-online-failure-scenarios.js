@@ -35,7 +35,7 @@ function installOnlinePaymentProbe(paymentService) {
 }
 
 async function runOnlinePaymentFailureScenarios({ probe, request, jsonHeaders, cookie, readDb, queryPostgres,
-  failCommitForRecord, restoreQuery, movieId, sessionId, webhookSecret }) {
+  failCommitForRecord, restoreQuery, movieId, sessionId, webhookSecret, paymentService, reconciliation }) {
   const bodyFor = (id, method) => ({
     order: { id, idempotencyKey: id, movieId, sessionId, fullTicketsCount: 1, halfTicketsCount: 0,
       customerName: "Cliente sintético", customerEmail: "synthetic@example.invalid", customerPhone: "11999999999", concessionItems: [] },
@@ -120,6 +120,22 @@ async function runOnlinePaymentFailureScenarios({ probe, request, jsonHeaders, c
   assert.equal(recovered.response.status, 200);
   assert.equal(callCount(lostId), 1);
 
+  const noBrowserId = "smoke-online-failure-no-browser";
+  probe.failures.set(noBrowserId, "response_lost");
+  const noBrowser = await post(noBrowserId, "pix");
+  assert.equal(noBrowser.response.status, 503);
+  probe.failures.delete(noBrowserId);
+  const noBrowserPayment = (await readDb()).payments.find((item) => item.orderId === noBrowserId);
+  const originalSearch = paymentService.searchMercadoPagoOrdersByReference;
+  paymentService.searchMercadoPagoOrdersByReference = async (reference) => reference === noBrowserId
+    ? { total: 1, orders: [{ ...probe.accepted.get(`pix:${noBrowserId}`), status: "approved",
+      raw: { currency_id: "BRL" } }] } : null;
+  try {
+    assert.equal(await reconciliation.reconcile(noBrowserPayment.id), "completed");
+  } finally { paymentService.searchMercadoPagoOrdersByReference = originalSearch; }
+  assert.deepEqual(await counts(noBrowserId), [1, 1, 1], "Consulta recupera cobrança sem navegador e sem webhook");
+  assert.equal(callCount(noBrowserId), 1);
+
   const cardId = "smoke-online-failure-commit-card";
   const commitFailed = failCommitForRecord(cardId, "smoke_online_card_commit_failure", 3);
   let failedCard;
@@ -153,6 +169,12 @@ async function runOnlinePaymentFailureScenarios({ probe, request, jsonHeaders, c
   const finalRetry = await post(finalId, "card");
   assert.equal(finalRetry.response.status, 200);
   assert.equal(callCount(finalId), 1, "Retry após falha no commit final não recria a cobrança");
+  const originalFetch = paymentService.fetchMercadoPagoOrder;
+  paymentService.fetchMercadoPagoOrder = async (id) => ({ ...probe.accepted.get(`credit_card:${finalId}`), id,
+    raw: { currency_id: "BRL" } });
+  try { assert.equal(await reconciliation.reconcile(knownResult.id), "completed"); }
+  finally { paymentService.fetchMercadoPagoOrder = originalFetch; }
+  assert.deepEqual(await counts(finalId), [1, 1, 1], "Consulta por ID conclui o commit final perdido");
   const finalWebhook = await notifyAccepted(finalId, "credit_card");
   assert.equal(finalWebhook.response.status, 200, JSON.stringify(finalWebhook.payload));
   assert.deepEqual(await counts(finalId), [1, 1, 1]);

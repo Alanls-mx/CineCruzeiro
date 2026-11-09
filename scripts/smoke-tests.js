@@ -3091,7 +3091,8 @@ async function run() {
         queryPostgres: require("../backend/db/postgresStore").queryPostgres,
         failCommitForRecord, restoreQuery: () => { pg.Client.prototype.query = originalQuery; },
         movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
-        webhookSecret: process.env.MERCADO_PAGO_WEBHOOK_SECRET
+        webhookSecret: process.env.MERCADO_PAGO_WEBHOOK_SECRET,
+        paymentService, reconciliation: server.testOnlinePaymentReconciliation
       });
       const localPrintSale = await request("/api/box-office/sales", {
         method: "POST", headers: jsonHeaders(adminCookie),

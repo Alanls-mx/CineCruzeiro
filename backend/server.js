@@ -9983,6 +9983,7 @@ const backendRuntimeSchedule = createBackendRuntimeSchedule({
     task, code: error?.code || "SCHEDULE_TASK_FAILED", message: error?.message || "Scheduled task failed."
   }),
   subscriptionIntervalMs: SUBSCRIPTION_MAINTENANCE_INTERVAL_MS,
+  reconcileOnlinePayments: () => process.env.PAYMENTS_MODE === "test" ? Promise.resolve(0) : onlineCheckoutCoordinator.scan(),
   resumeSocialStudio: () => getSocialStudioAutomationOrchestrator().resumePending()
     .then((count) => { if (count) logEvent("info", "social_studio.automation.resumed", { count }); })
     .catch((error) => logEvent("warn", "social_studio.automation.resume_failed", { message: error.message })),
@@ -10049,4 +10050,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   });
 }
 
+if (process.env.NODE_ENV === "test") {
+  Object.defineProperty(server, "testOnlinePaymentReconciliation", { value: onlineCheckoutCoordinator });
+}
 module.exports = server;
