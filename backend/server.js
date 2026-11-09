@@ -107,6 +107,7 @@ const { createGoogleWalletIntegrationService } = require("./services/googleWalle
 const { createWalletTicketObjectPresenter } = require("./services/walletTicketObjectPresenter");
 const { createBackendMaintenanceTasks } = require("./services/backendMaintenanceTasks");
 const { createBackendRuntimeSchedule } = require("./services/backendRuntimeSchedule");
+const { createControlledStartupService } = require("./services/controlledStartupService");
 const { createFullOrderRefundCoordinator } = require("./services/fullOrderRefundCoordinator");
 const { createConcessionRefundCoordinator } = require("./services/concessionRefundCoordinator");
 const { createTicketRefundCoordinator } = require("./services/ticketRefundCoordinator");
@@ -247,6 +248,7 @@ const memorySeatHolds = new Map();
 const paymentReconciliationAttempts = new Map();
 const mobileAuthHandoffs = new Map();
 let seatRealtimeService = null;
+let controlledStartup = null;
 let emailCampaignWorker = null;
 let ticketEmailWorker = null;
 let crmWebhookWorker = null;
@@ -445,7 +447,8 @@ function configureCrmWebhookWorker(db) {
   const version = ++crmWebhookConfigVersion;
   const worker = getCrmWebhookWorker();
   worker.stop();
-  if (crmWebhookRuntimeConfig.enabled && crmWebhookRuntimeConfig.configured && crmWebhookRuntimeConfig.events.length) {
+  if ((!controlledStartup || controlledStartup.allowsWorkers())
+    && crmWebhookRuntimeConfig.enabled && crmWebhookRuntimeConfig.configured && crmWebhookRuntimeConfig.events.length) {
     const timer = setTimeout(() => {
       if (version === crmWebhookConfigVersion) worker.start();
     }, 0);
@@ -9882,6 +9885,14 @@ const server = http.createServer(async (req, res) => {
   });
   requestContext.run(store, async () => {
     try {
+      if (pathname.startsWith("/api/") && controlledStartup
+        && (!controlledStartup.allowsRequest(pathname, req.method)
+          || (req.method === "GET" && ["/api/health", "/api/health/ready"].includes(pathname)
+            && !controlledStartup.readinessAllowed()))) {
+        sendJson(res, 503, { error: { code: "RELEASE_STARTUP_PENDING", message: "Atualização em andamento. Tente novamente em instantes." } },
+          { "Retry-After": "30", "Cache-Control": "no-store" });
+        return;
+      }
       const securitySignal = suspiciousRequestRule(url);
       if (securitySignal) {
         logEvent("warn", "security.suspicious_request", {
@@ -9946,6 +9957,7 @@ server.once("close", () => {
   crmWebhookWorker?.stop();
 });
 seatRealtimeService = createSeatRealtimeService(server, {
+  acceptUpgrade: () => !controlledStartup || controlledStartup.allowsSocket(),
   allowedOrigins: allowedCorsOrigins,
   getSessionState: realtimeSeatState,
   selectSeat: selectRealtimeSeat,
@@ -10021,8 +10033,37 @@ loadEnvFiles().then(() => {
     process.exit(1);
   }
   enablePostgresCacheInvalidation();
+  controlledStartup = createControlledStartupService({
+    enabled: process.env.CINE_CONTROLLED_STARTUP === "1",
+    onTransition: (previous, current) => {
+      logEvent("info", "release.startup_stage_changed", { previous, current });
+      if (current === "callbacks") backendRuntimeSchedule.startReconciliation();
+      if (current === "workers") {
+        backendRuntimeSchedule.startWorkers();
+        void readDb().then(configureCrmWebhookWorker).catch((error) => {
+          logEvent("error", "release.crm_worker_start_failed", { code: error.code || "DATABASE_ERROR" });
+        });
+      }
+      if (current === "full") {
+        backendRuntimeSchedule.start();
+        void readDb().then(configureDiscordWebhook).catch((error) => {
+          logEvent("error", "release.discord_start_failed", { code: error.code || "DATABASE_ERROR" });
+        });
+      }
+    }
+  });
+  if (controlledStartup.enabled) {
+    process.on("SIGUSR2", () => {
+      if (!server.listening) {
+        logEvent("warn", "release.startup_advance_rejected", { reason: "HTTP_NOT_LISTENING" });
+        return;
+      }
+      controlledStartup.advance();
+    });
+    logEvent("info", "release.controlled_startup_enabled", { stage: controlledStartup.stage() });
+  }
   void readDb().then((db) => {
-    configureDiscordWebhook(db);
+    if (controlledStartup.allowsIntegrations()) configureDiscordWebhook(db);
     configureCrmWebhookWorker(db);
   }).catch((error) => {
     console.warn(JSON.stringify({ level: "warn", event: "discord.configuration_load_failed", reason: error.name || "database" }));
@@ -10033,7 +10074,7 @@ loadEnvFiles().then(() => {
     console.log(`Cine Cruzeiro backend: http://${HOST}:${PORT}`);
     console.log(`Painel admin: http://${HOST}:${PORT}/admin`);
     console.log(`TMDB: ${tmdb.configured ? `configurado via ${tmdb.mode}` : "nao configurado"}`);
-    backendRuntimeSchedule.start();
+    if (!controlledStartup.enabled) backendRuntimeSchedule.start();
   });
 }).catch((error) => {
   console.error(error);

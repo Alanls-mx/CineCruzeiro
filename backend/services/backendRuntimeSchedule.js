@@ -8,7 +8,9 @@ function createBackendRuntimeSchedule({
   setIntervalFn = setInterval, clearIntervalFn = clearInterval
 }) {
   const timers = [];
-  let started = false;
+  let fullStarted = false;
+  let reconciliationStarted = false;
+  let workersStarted = false;
 
   function every(callback, intervalMs) {
     const timer = setIntervalFn(callback, intervalMs);
@@ -27,19 +29,31 @@ function createBackendRuntimeSchedule({
     }
   }
 
+  function startReconciliation() {
+    if (reconciliationStarted || !postgresEnabled()) return;
+    reconciliationStarted = true;
+    runObserved("online-payment-reconciliation", reconcileOnlinePayments);
+    every(() => runObserved("online-payment-reconciliation", reconcileOnlinePayments), 30 * 1000);
+  }
+
+  function startWorkers() {
+    if (workersStarted || !postgresEnabled()) return;
+    workersStarted = true;
+    startPostgresWorkers();
+  }
+
   function start() {
-    if (started) return;
-    started = true;
+    if (fullStarted) return;
+    fullStarted = true;
     runObserved("subscription", runSubscriptionMaintenance);
     runObserved("movie-image", runMovieImageMaintenance);
     runObserved("email-attachment", runEmailAttachmentMaintenance);
     runObserved("social-studio", resumeSocialStudio);
     every(() => runObserved("social-studio", resumeSocialStudio), 60 * 1000);
     if (postgresEnabled()) {
-      startPostgresWorkers();
+      startWorkers();
       runObserved("system-log", runSystemLogMaintenance);
-      runObserved("online-payment-reconciliation", reconcileOnlinePayments);
-      every(() => runObserved("online-payment-reconciliation", reconcileOnlinePayments), 30 * 1000);
+      startReconciliation();
     }
     every(() => runObserved("system-log", runSystemLogMaintenance), 6 * 60 * 60 * 1000);
     every(() => runObserved("subscription", runSubscriptionMaintenance), subscriptionIntervalMs);
@@ -51,13 +65,15 @@ function createBackendRuntimeSchedule({
   }
 
   function stop() {
-    if (!started) return;
-    started = false;
+    if (!fullStarted && !reconciliationStarted && !workersStarted) return;
+    fullStarted = false;
+    reconciliationStarted = false;
     for (const timer of timers.splice(0)) clearIntervalFn(timer);
-    stopPostgresWorkers();
+    if (workersStarted) stopPostgresWorkers();
+    workersStarted = false;
   }
 
-  return { start, stop };
+  return { start, startReconciliation, startWorkers, stop };
 }
 
 module.exports = { createBackendRuntimeSchedule };

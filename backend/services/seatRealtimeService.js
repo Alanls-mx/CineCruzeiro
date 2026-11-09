@@ -91,6 +91,11 @@ function createSeatRealtimeService(server, options) {
   server.on("upgrade", (request, socket, head) => {
     const pathname = new URL(request.url || "/", "http://localhost").pathname;
     if (pathname !== path) return;
+    if (options.acceptUpgrade && !options.acceptUpgrade()) {
+      socket.write("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 30\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     const origin = String(request.headers.origin || "").replace(/\/+$/, "");
     const allowedOrigins = options.allowedOrigins?.() || [];
     if (origin && allowedOrigins.length && !allowedOrigins.includes(origin)) {

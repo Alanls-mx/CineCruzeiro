@@ -63,6 +63,36 @@ test("JSON runtime does not start PostgreSQL workers or log maintenance", () => 
   schedule.stop();
 });
 
+test("controlled startup separates reconciliation, delivery workers and ancillary tasks", () => {
+  const calls = [];
+  const timers = [];
+  const task = (name) => () => { calls.push(name); };
+  const schedule = scheduleModule.createBackendRuntimeSchedule({
+    runSubscriptionMaintenance: task("subscription"), runMovieImageMaintenance: task("movie"),
+    runEmailAttachmentMaintenance: task("attachment"), runSystemLogMaintenance: task("log"),
+    resumeSocialStudio: task("studio"), startPostgresWorkers: task("workers"),
+    stopPostgresWorkers: task("stop-workers"), postgresEnabled: () => true,
+    pruneCrmOutbox: task("prune"), sendDiscordHealth: task("health"),
+    reconcileOnlinePayments: task("reconcile"), subscriptionIntervalMs: 60000,
+    setIntervalFn(callback, ms) { const timer = { callback, ms }; timers.push(timer); return timer; },
+    clearIntervalFn(timer) { timer.cleared = true; }
+  });
+  schedule.startReconciliation();
+  schedule.startReconciliation();
+  assert.deepEqual(calls, ["reconcile"]);
+  assert.deepEqual(timers.map((timer) => timer.ms), [30000]);
+  schedule.startWorkers();
+  schedule.startWorkers();
+  assert.deepEqual(calls, ["reconcile", "workers"]);
+  schedule.start();
+  assert.equal(calls.filter((name) => name === "reconcile").length, 1);
+  assert.equal(calls.filter((name) => name === "workers").length, 1);
+  assert.ok(calls.includes("studio"));
+  schedule.stop();
+  assert.ok(timers.every((timer) => timer.cleared));
+  assert.equal(calls.filter((name) => name === "stop-workers").length, 1);
+});
+
 test("maintenance failures are observed without stopping the remaining schedule", async () => {
   const errors = [];
   const timers = [];
