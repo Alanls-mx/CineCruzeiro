@@ -347,6 +347,38 @@ async function runCrossProcessPaymentRaces(server) {
     partialBase.users.push(refundSeed.users.find((user) => user.email === "mesma-cobranca@postgres.local"));
     await resetDb(partialBase);
     cookie = initialCustomerCookie;
+    const lateKey = "cross-instance-late-approval-after-cancel";
+    const pendingBeforeCancel = await post(lateKey, cookie, BASE_URL);
+    assert.equal(pendingBeforeCancel.response.status, 201, JSON.stringify(pendingBeforeCancel.payload));
+    const canceledPending = await request(`/api/orders/${encodeURIComponent(lateKey)}`, {
+      method: "PATCH", headers: jsonHeaders(secondOperator),
+      body: JSON.stringify({ action: "cancel", reason: "Late approval distributed test" })
+    }, SECOND_BASE_URL);
+    assert.equal(canceledPending.response.status, 200, JSON.stringify(canceledPending.payload));
+    const lateWebhook = mercadoPagoWebhookRequest({ payment: pendingBeforeCancel.payload.payment,
+      order: pendingBeforeCancel.payload.order });
+    const lateApproval = await request(lateWebhook.pathname, lateWebhook.options, BASE_URL);
+    assert.ok([200, 409].includes(lateApproval.response.status), JSON.stringify(lateApproval.payload));
+    const lateSnapshot = await readDbFromPostgres();
+    assert.equal(lateSnapshot.orders.find((item) => item.id === lateKey).status, "cancelled");
+    assert.equal(lateSnapshot.tickets.filter((item) => item.orderId === lateKey).length, 0);
+    assert.equal(await sqlCount("payments", "order_id", lateKey), 1);
+    const raceKey = "cross-instance-cancel-versus-approval";
+    const racePending = await post(raceKey, cookie, BASE_URL);
+    assert.equal(racePending.response.status, 201, JSON.stringify(racePending.payload));
+    const raceWebhook = mercadoPagoWebhookRequest({ payment: racePending.payload.payment,
+      order: racePending.payload.order });
+    const [raceCancel, raceApproval] = await Promise.all([
+      request(`/api/orders/${encodeURIComponent(raceKey)}`, { method: "PATCH",
+        headers: jsonHeaders(secondOperator), body: JSON.stringify({ action: "cancel", reason: "Concurrent approval" }) }, SECOND_BASE_URL),
+      request(raceWebhook.pathname, raceWebhook.options, BASE_URL)
+    ]);
+    assert.equal(raceCancel.response.status, 200, JSON.stringify(raceCancel.payload));
+    assert.ok([200, 409].includes(raceApproval.response.status), JSON.stringify(raceApproval.payload));
+    const raceSnapshot = await readDbFromPostgres();
+    assert.ok(["cancelled", "refunded"].includes(raceSnapshot.orders.find((item) => item.id === raceKey).status));
+    assert.equal(raceSnapshot.tickets.filter((item) => item.orderId === raceKey && item.status === "active").length, 0);
+    assert.equal(await sqlCount("payments", "order_id", raceKey), 1);
     const checkoutIntegrations = structuredClone((await readDbFromPostgres()).integrations || {});
     for (const scope of ["tickets", "concessions"]) {
       const partialKey = `partial-${scope}-two-instances`;
