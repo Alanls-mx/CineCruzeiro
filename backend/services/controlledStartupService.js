@@ -22,12 +22,12 @@ function createControlledStartupService({ enabled = false, onTransition = () => 
 
   function allowsRequest(pathname, method) {
     if (!enabled || stage() === "full") return true;
-    if (method === "GET" && HEALTH_PATHS.has(pathname)) return true;
+    if ((method === "GET" || method === "OPTIONS") && HEALTH_PATHS.has(pathname)) return true;
     if (stageIndex >= 1 && AUTH_PATHS.has(pathname)) return true;
-    if (stageIndex >= 2 && method === "POST" && CALLBACK_PATHS.has(pathname)) return true;
+    if (stageIndex >= 2 && (method === "POST" || method === "OPTIONS") && CALLBACK_PATHS.has(pathname)) return true;
     if (stageIndex >= 3) {
-      if (method === "POST" && CHECKOUT_POST_PATHS.has(pathname)) return true;
-      if ((method === "GET" || method === "HEAD")
+      if ((method === "POST" || method === "OPTIONS") && CHECKOUT_POST_PATHS.has(pathname)) return true;
+      if ((method === "GET" || method === "HEAD" || method === "OPTIONS")
         && CHECKOUT_READ_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`))) return true;
     }
     return false;

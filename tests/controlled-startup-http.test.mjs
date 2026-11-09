@@ -60,6 +60,7 @@ test("controlled startup gates actual HTTP and WebSocket entry before advancing"
     assert.equal(blocked.headers.get("retry-after"), "30");
     assert.equal((await blocked.json()).error.code, "RELEASE_STARTUP_PENDING");
     assert.equal((await response("/api/webhooks/mercado-pago", "POST")).status, 503);
+    assert.equal((await response("/api/payments/pix", "OPTIONS")).status, 503);
 
     const socket = new WebSocket(`ws://127.0.0.1:${port}/api/realtime/seats`);
     const status = await new Promise((resolve, reject) => {
@@ -76,6 +77,7 @@ test("controlled startup gates actual HTTP and WebSocket entry before advancing"
     assert.notEqual((await response("/api/webhooks/mercado-pago", "POST")).status, 503);
     assert.equal((await response("/api/payments/pix", "POST")).status, 503);
     await advance(); // checkout
+    assert.equal((await response("/api/payments/pix", "OPTIONS")).status, 204);
     assert.notEqual((await response("/api/movies")).status, 503);
     assert.equal((await response("/api/admin/social-studio/campaigns", "POST")).status, 503);
   } finally {

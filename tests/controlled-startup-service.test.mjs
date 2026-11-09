@@ -23,6 +23,7 @@ test("controlled startup fails closed and advances only one category per signal"
   assert.equal(gate.allowsRequest("/api/health/live", "GET"), true);
   assert.equal(gate.allowsRequest("/api/webhooks/mercado-pago", "POST"), false);
   assert.equal(gate.allowsRequest("/api/payments/pix", "POST"), false);
+  assert.equal(gate.allowsRequest("/api/payments/pix", "OPTIONS"), false);
   assert.equal(gate.allowsRequest("/api/admin/payments", "GET"), false);
   assert.equal(gate.allowsSocket(), false);
   assert.equal(gate.allowsWorkers(), false);
@@ -35,9 +36,11 @@ test("controlled startup fails closed and advances only one category per signal"
   assert.equal(gate.allowsRequest("/api/webhooks/pag-bank", "POST"), false);
   assert.equal(gate.advance(), "callbacks");
   assert.equal(gate.allowsRequest("/api/webhooks/pag-bank", "POST"), true);
+  assert.equal(gate.allowsRequest("/api/webhooks/pag-bank", "OPTIONS"), true);
   assert.equal(gate.allowsRequest("/api/payments/card", "POST"), false);
   assert.equal(gate.advance(), "checkout");
   assert.equal(gate.allowsRequest("/api/payments/card", "POST"), true);
+  assert.equal(gate.allowsRequest("/api/payments/card", "OPTIONS"), true);
   assert.equal(gate.allowsRequest("/api/checkout/club-credit", "POST"), true);
   assert.equal(gate.allowsRequest("/api/checkout/club-benefits/preview", "GET"), true);
   assert.equal(gate.allowsRequest("/api/admin/social-studio/campaigns", "POST"), false);
