@@ -256,6 +256,7 @@ async function runCrossProcessPaymentRaces(server) {
 
     await resetDb(baseDb({ capacity: 2, stock: 2 }));
     let cookie = await registerCustomer("mesma-cobranca@postgres.local");
+    const initialCustomerCookie = cookie;
     fs.writeFileSync(providerCallFile, "");
     const key = "mesma-cobranca-duas-instancias";
     // Both HTTP operations are released by the same Promise barrier onto independent servers.
@@ -340,6 +341,62 @@ async function runCrossProcessPaymentRaces(server) {
     assert.equal(refunded.orders.find((item) => item.id === key).status, "refunded");
     assert.equal(refunded.tickets.filter((item) => item.orderId === key).length, 1);
     assert.equal(refunded.tickets.find((item) => item.orderId === key).status, "refunded");
+
+    const partialBase = baseDb({ capacity: 2, stock: 2 });
+    partialBase.users.push(refundSeed.users.find((user) => user.email === "mesma-cobranca@postgres.local"));
+    await resetDb(partialBase);
+    cookie = initialCustomerCookie;
+    const checkoutIntegrations = structuredClone((await readDbFromPostgres()).integrations || {});
+    for (const scope of ["tickets", "concessions"]) {
+      const partialKey = `partial-${scope}-two-instances`;
+      const created = await post(partialKey, cookie, BASE_URL, true);
+      assert.equal(created.response.status, 201, JSON.stringify(created.payload));
+      const approvedWebhook = mercadoPagoWebhookRequest({ payment: created.payload.payment, order: created.payload.order });
+      const approved = await request(approvedWebhook.pathname, approvedWebhook.options);
+      assert.equal(approved.response.status, 200, JSON.stringify(approved.payload));
+      const partialSeed = await readDbFromPostgres({ trackChanges: false });
+      const partialPayment = partialSeed.payments.find((item) => item.orderId === partialKey);
+      assert.equal(partialPayment.status, "approved");
+      partialSeed.integrations = {
+        ...(partialSeed.integrations || {}),
+        mercadoPago: { enabled: false },
+        pagBank: { enabled: true, environment: "sandbox", publicKey: "synthetic-key", accessToken: "synthetic-token" }
+      };
+      partialPayment.provider = "pag_bank";
+      partialPayment.providerPaymentId = `ORDE_TEST-${scope.toUpperCase()}-RACE`;
+      partialPayment.metadata = { ...(partialPayment.metadata || {}), transactionId: `CHAR_TEST-${scope.toUpperCase()}-RACE`,
+        providerEnvironment: "sandbox" };
+      await resetDb(partialSeed);
+      const before = await readDbFromPostgres();
+      const stockBefore = before.concessions.find((item) => item.id === "combo-final").stock;
+      fs.writeFileSync(refundCallFile, "");
+      const path = `/api/orders/${encodeURIComponent(partialKey)}/refund-${scope}`;
+      const refundPartial = (operatorCookie, baseUrl) => request(path, { method: "POST",
+        headers: jsonHeaders(operatorCookie), body: JSON.stringify({ reason: "Distributed partial refund" }) }, baseUrl);
+      const results = await Promise.all([
+        refundPartial(firstOperator, BASE_URL), refundPartial(secondOperator, SECOND_BASE_URL)
+      ]);
+      assert.deepEqual(results.map((item) => item.response.status), [200, 200],
+        `${scope}: ${results.map((item) => JSON.stringify(item.payload)).join(" | ")}`);
+      const calls = fs.readFileSync(refundCallFile, "utf8").trim().split("\n").filter(Boolean);
+      assert.ok(calls.length >= 1, `${scope}: provider must receive the refund identity`);
+      assert.equal(new Set(calls).size, 1, `${scope}: operators must reuse one refund identity`);
+      const after = await readDbFromPostgres();
+      const order = after.orders.find((item) => item.id === partialKey);
+      const payment = after.payments.find((item) => item.orderId === partialKey);
+      const ticket = after.tickets.find((item) => item.orderId === partialKey);
+      const refund = scope === "tickets" ? order.ticketRefund : order.concessionRefund;
+      assert.equal(refund.status, "completed");
+      assert.ok(calls.every((id) => id === refund.id));
+      assert.equal(payment.status, "approved", "A different product remains paid after a partial refund");
+      assert.equal(Number(payment.refundedAmount), Number(refund.amount));
+      assert.equal(ticket.status, scope === "tickets" ? "refunded" : "active");
+      assert.equal(after.concessions.find((item) => item.id === "combo-final").stock,
+        stockBefore + (scope === "concessions" ? 1 : 0));
+      assert.equal(await sqlCount("tickets", "order_id", partialKey), 1);
+      after.integrations = checkoutIntegrations;
+      await resetDb(after);
+    }
 
     await resetDb(baseDb({ capacity: 1, stock: 2 }));
     cookie = await registerCustomer("ultima-poltrona-duas-instancias@postgres.local");
@@ -532,6 +589,14 @@ async function run() {
     await new Promise((resolve) => setTimeout(resolve, 60));
     return originalSubmitFullRefund(refund, ...args);
   };
+  for (const method of ["submitPartialRefund", "submitConcessionRefund"]) {
+    const original = refundService[method];
+    refundService[method] = async (refund, ...args) => {
+      fs.appendFileSync(refundCallFile, `${refund.id}\n`);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return original(refund, ...args);
+    };
+  }
   const server = require("../backend/server.js");
 
   try {

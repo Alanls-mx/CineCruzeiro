@@ -49,6 +49,14 @@ async function start() {
     await new Promise((resolve) => setTimeout(resolve, 60));
     return originalRefund(refund, ...args);
   };
+  for (const method of ["submitPartialRefund", "submitConcessionRefund"]) {
+    const original = refundService[method];
+    refundService[method] = async (refund, ...args) => {
+      fs.appendFileSync(refundFile, `${refund.id}\n`);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return original(refund, ...args);
+    };
+  }
   const server = require("../backend/server.js");
   process.on("message", (message) => {
     if (message?.type !== "reconcile" || !acceptedLost) return;
