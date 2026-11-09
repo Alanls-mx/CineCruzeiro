@@ -1,5 +1,11 @@
 # Fase 23 — estado da validação na VPS
 
+## Situação de 09/11/2026
+
+Foi realizado **preflight de leitura**, não deploy. `current` ainda aponta para `6d216eb5fb956bba88d9726b3cf7aaaf8de86f8b`; backend/frontend Cine e os processos dos outros quatro cinemas estavam online no instante da consulta. Nginx passou no teste de configuração, PostgreSQL 18.6 tinha 50 migrations no banco exclusivo e três pagamentos Mercado Pago permaneciam pendentes. Não houve teste de site, conta, checkout, callback ou provedores na candidata na VPS, nem backup/restauração. Nenhuma linha histórica abaixo deve ser interpretada como validação posterior à implantação desta candidata. **Implantação não executada; NO-GO.**
+
+## Registro histórico anterior ao preflight de 09/11
+
 **Atualização posterior:** a [continuação local](FASE23_FECHAMENTO_BLOQUEIOS.md) ainda não foi implantada. As verificações remotas abaixo permanecem não executadas para esta candidata; ensaios PostgreSQL descartáveis e de proxy não representam saúde da VPS.
 
 **Não aplicável: deploy não executado.** SHA efetivamente instalado, versão atual de `current`, uptime PM2, banco e quatro outros cinemas não foram observados nesta execução. O [registro de 05/11](FASE13_2_IMPLANTACAO_2026-11-05.md) é histórico e não foi apresentado como estado presente.

@@ -1,5 +1,28 @@
 # Fase 23 — candidata e portões de implantação na VPS
 
+## Preflight restrito de 09/11/2026 — somente leitura
+
+Autorizado para metadados e contagens agregadas do **Cine Cruzeiro**. Host `ip-172-31-41-15` (`18.231.175.103`); `current` resolve para `/home/ubuntu/projects/cinecruzeiro/releases/20261105-221045-6d216eb`, manifesto SHA `6d216eb5fb956bba88d9726b3cf7aaaf8de86f8b`. PM2: backend e frontend Cine Cruzeiro online (backend com um restart registrado); os processos dos quatro cinemas vizinhos estavam online. Nginx validou sua configuração e mantém o prefixo do Cine, com API/admin/assets em `127.0.0.1:4100` e frontend em `127.0.0.1:3100`.
+
+PostgreSQL 18.6 ativo; banco e role exclusivos nomeados `cinecruzeiro`, 50 migrations registradas, últimas 051/052. O disco raiz tinha cerca de 3,0 GB livres de 28 GB (90% ocupado), memória disponível cerca de 1,6 GB. Contagens pontuais: três pedidos e três pagamentos Mercado Pago pendentes desde 09–10/10; nenhuma lease travada nas filas consultadas e nenhum hold ativo. Isto não prova dreno nem saúde financeira. Nenhum backup, restore, migration, chamada a provedor, reinício ou troca de release foi realizado.
+
+**Decisão atual: NO-GO técnico e operacional.** O SHA antigo não tem dreno demonstrável; a candidata possui retomada controlada opcional, mas ainda falta inbox/recovery de callbacks durante o corte e teste integrado entre as duas releases. Os três pagamentos pendentes requerem conciliação autorizada. Também faltam backup atual/restauração isolada, janela, executores, limite de interrupção e plano de recuperação aprovado. O espaço livre deve entrar no cálculo do backup, sem limpeza arbitrária. O ensaio manual de provedores continua **dispensado, não executado**.
+
+Para a futura execução controlada, a candidata deve iniciar com `CINE_CONTROLLED_STARTUP=1` e sem receber tráfego de checkout. Cada SIGUSR2 enviado **ao PID exato do backend Cine Cruzeiro** promove apenas um estágio; conferir o evento de transição antes do próximo. Não promover para `checkout` até conciliar pendências; não promover para `workers` sem conferir leases/ownership. Esta instrução prepara o procedimento, não autoriza sinais na VPS. O modo padrão não usa esses estágios. Não usar `deploy-all-vps.mjs`, `pm2 restart all` nem `db:migrate` comum para este piloto.
+
+| Campo da ficha operacional desta troca | Situação |
+| --- | --- |
+| SHA instalado | `6d216eb5fb956bba88d9726b3cf7aaaf8de86f8b`, confirmado por `release-info.json` de `current`. |
+| SHA candidato | Commit de código `001f7af1c72137b0597098004d3e7ed1b880899d`; fixar o SHA final após a documentação e a CI. |
+| Janela e executores | **Não definidos**: responsável pelo corte e responsável pela conciliação financeira precisam ser designados. |
+| Recursos permitidos | Planejamento restrito ao backend/frontend, prefixo Nginx e banco exclusivo do Cine Cruzeiro. Nenhuma escrita autorizada nesta verificação. |
+| Limite de interrupção | **Não aprovado**; definir duração máxima e critérios de abortar antes da janela. |
+| Dreno e callbacks | **Sem prova integrada** com a release antiga. Escolher parada supervisionada com inventário/conciliação ou release intermediária; testar callback assinado durante a troca. |
+| Backup e restauração | Novo backup da base/artefatos atuais e restore isolado **pendentes de autorização específica**; 3 GB livres exigem dimensionamento prévio. |
+| STOP e recuperação | Parar diante de estado inconclusivo sem autoridade, callback não recuperável, dreno sem prova, backup inválido, startup malsucedido ou impacto a outro cinema. Reverter código isoladamente; não restaurar banco sobre transações posteriores. |
+
+## Registro histórico anterior ao preflight de 09/11
+
 **Atualização posterior:** ver [fechamento dos bloqueios](FASE23_FECHAMENTO_BLOQUEIOS.md) e [dreno/callbacks](FASE23_CORTE_CALLBACKS.md). A intenção Pix/cartão e a reconciliação por consulta permitida foram implementadas localmente; o portão D e os casos sem autoridade consultável seguem bloqueados. O manifesto de SHA abaixo descreve a candidata anterior, não a branch após esta continuação. Nenhum novo deploy foi executado.
 
 **Resultado: NO-GO; implantação não iniciada.** Cinema de destino: Cine Cruzeiro, instalação de desenvolvimento. A referência histórica é `/home/ubuntu/projects/cinecruzeiro` e prefixo `/projects/cinecruzeiro`; nenhum deles foi tratado como identidade confirmada da VPS atual. Nenhum comando SSH, backup remoto, DDL, alteração de Nginx, troca de `current` ou PM2 foi executado nesta etapa.

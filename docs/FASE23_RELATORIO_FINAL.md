@@ -1,5 +1,13 @@
 # Fase 23 — fechamento técnico e decisão operacional
 
+## Atualização de 09/11/2026
+
+Preflight remoto restrito confirmou a release `6d216eb5fb956bba88d9726b3cf7aaaf8de86f8b`, PostgreSQL 18.6/50 migrations, processos Cine e vizinhos online e três pagamentos Mercado Pago pendentes. Nenhum dado pessoal ou valor foi consultado. A candidata acrescentou startup controlado opcional com seis estágios; testes unitários, HTTP e WebSocket dirigidos passaram. Essa função **não drena a release instalada**, não fornece inbox durável de callbacks e não substitui reconciliação dos pagamentos antigos. Backup novo/restauração isolada e ensaio integrado de corte não foram realizados. Decisão: **NO-GO; sem deploy, migração ou pagamento real**. A validação manual dos provedores continua dispensada e não executada. Ver [corte](FASE23_CORTE_CALLBACKS.md) e [preflight](FASE23_DEPLOY_VPS.md).
+
+No commit de código `001f7af1c72137b0597098004d3e7ed1b880899d`, passaram: `test:maintenance` 15/15, `test:security:local` 25/25, `test:finance` 56/56, `test:characterization` 43/43, `test:unit` (exit 0; subtestes PostgreSQL condicionais ainda ignorados), `lint`, `build`, `docs:check`, WebSocket dirigido, E2E JSON 29/29 e PostgreSQL 29/29, smoke PostgreSQL descartável, concorrência/repositórios/guard/backup-restore PostgreSQL 16, concorrência/upgrade PostgreSQL 18, proxy sintético, deployment e isolamento multi-cinema sintético. Esses testes não exercitaram o corte completo entre o SHA antigo e a candidata. Workflows no **SHA final** ainda não foram verificados; CI anterior não é evidência para este commit.
+
+## Registro histórico anterior ao preflight de 09/11
+
 **Atualização da continuação:** `5f84c2e` acrescentou consulta e reconciliação sintéticas sem navegador/webhook para pagamentos online; `0e3caf9` e `2a83636` acrescentaram concorrência de reembolso parcial em duas instâncias e resposta externa perdida. O ensaio protegido de concorrência passou em PostgreSQL 16 e 18. Os parágrafos de candidato `f6012ba` abaixo são históricos; a falta de intenção durável descrita neles foi corrigida posteriormente. Persistem bloqueios de dreno da release instalada, callback durante corte, retomada gradual, corrida cancelamento/aprovação e preflight/backup atuais. **NO-GO; nenhum deploy nesta continuação.**
 
 **Atualização posterior:** a [continuação dos bloqueios](FASE23_FECHAMENTO_BLOQUEIOS.md) implementou intenção durável antes do provedor e acrescentou falhas/concorrência sintéticas. A decisão permanece **NO-GO**, agora pelas lacunas de reconciliação sem callback, concorrência restante e dreno da release antiga. O SHA e os workflows citados abaixo são históricos e não validam os commits novos.
