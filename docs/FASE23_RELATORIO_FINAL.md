@@ -1,5 +1,7 @@
 # Fase 23 — fechamento técnico e decisão operacional
 
+**Atualização da continuação:** `5f84c2e` acrescentou consulta e reconciliação sintéticas sem navegador/webhook para pagamentos online; `0e3caf9` e `2a83636` acrescentaram concorrência de reembolso parcial em duas instâncias e resposta externa perdida. O ensaio protegido de concorrência passou em PostgreSQL 16 e 18. Os parágrafos de candidato `f6012ba` abaixo são históricos; a falta de intenção durável descrita neles foi corrigida posteriormente. Persistem bloqueios de dreno da release instalada, callback durante corte, retomada gradual, corrida cancelamento/aprovação e preflight/backup atuais. **NO-GO; nenhum deploy nesta continuação.**
+
 **Atualização posterior:** a [continuação dos bloqueios](FASE23_FECHAMENTO_BLOQUEIOS.md) implementou intenção durável antes do provedor e acrescentou falhas/concorrência sintéticas. A decisão permanece **NO-GO**, agora pelas lacunas de reconciliação sem callback, concorrência restante e dreno da release antiga. O SHA e os workflows citados abaixo são históricos e não validam os commits novos.
 
 **Decisão: DEPLOY BLOQUEADO.** A candidata de código é `f6012bacc17d0a29339c5e10176ed81bd7badeb0`, na branch `codex/cine-homologacao-fase23`. Este relatório documenta o fechamento local; o commit documental posterior deve ser conferido no `HEAD` da branch. Não houve merge, migração, pagamento real nem alteração na VPS nesta execução.

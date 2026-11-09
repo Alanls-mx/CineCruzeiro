@@ -4,6 +4,8 @@
 
 **Não aplicável: deploy não executado.** SHA efetivamente instalado, versão atual de `current`, uptime PM2, banco e quatro outros cinemas não foram observados nesta execução. O [registro de 05/11](FASE13_2_IMPLANTACAO_2026-11-05.md) é histórico e não foi apresentado como estado presente.
 
+A continuação local acrescentou reconciliação e testes distribuídos de reembolso parcial, mas não executou o ensaio integrado de corte da release instalada nem alterou a VPS. Nenhuma verificação pós-deploy pode ser inferida dos testes PostgreSQL descartáveis.
+
 | Verificação exigida | Resultado desta execução |
 | --- | --- |
 | Site, filmes, sessões, assets, basePath e console na release nova | Não executada; release nova não instalada. |

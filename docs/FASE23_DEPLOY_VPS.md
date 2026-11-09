@@ -1,8 +1,10 @@
 # Fase 23 — candidata e portões de implantação na VPS
 
-**Atualização posterior:** ver [fechamento dos bloqueios](FASE23_FECHAMENTO_BLOQUEIOS.md) e [dreno/callbacks](FASE23_CORTE_CALLBACKS.md). A intenção Pix/cartão foi implementada localmente; o portão D e a reconciliação sem callback seguem bloqueados. O manifesto de SHA abaixo descreve a candidata anterior, não a branch após esta continuação. Nenhum novo deploy foi executado.
+**Atualização posterior:** ver [fechamento dos bloqueios](FASE23_FECHAMENTO_BLOQUEIOS.md) e [dreno/callbacks](FASE23_CORTE_CALLBACKS.md). A intenção Pix/cartão e a reconciliação por consulta permitida foram implementadas localmente; o portão D e os casos sem autoridade consultável seguem bloqueados. O manifesto de SHA abaixo descreve a candidata anterior, não a branch após esta continuação. Nenhum novo deploy foi executado.
 
 **Resultado: NO-GO; implantação não iniciada.** Cinema de destino: Cine Cruzeiro, instalação de desenvolvimento. A referência histórica é `/home/ubuntu/projects/cinecruzeiro` e prefixo `/projects/cinecruzeiro`; nenhum deles foi tratado como identidade confirmada da VPS atual. Nenhum comando SSH, backup remoto, DDL, alteração de Nginx, troca de `current` ou PM2 foi executado nesta etapa.
+
+**Candidata desta continuação:** a branch possui reconciliação sintética e provas distribuídas de reembolso parcial posteriores ao manifesto histórico abaixo. O SHA final deve ser lido do HEAD após o commit documental. A release em execução na VPS continua não identificada nesta execução. Nenhum portão de corte, callback ou backup foi liberado por esses commits; não há autorização operacional específica de janela/responsável/limites/reversão para a troca atual.
 
 ## Manifesto da candidata local
 

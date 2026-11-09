@@ -2,6 +2,8 @@
 
 Este documento define o ensaio necessário antes de trocar a release da instalação de desenvolvimento Cine Cruzeiro. A configuração da VPS e a release em execução não foram consultadas nesta etapa. O teste sintético de Nginx da Fase 13.2 demonstra precedência do prefixo e isolamento dos cinemas vizinhos, mas não observa trabalho já aceito pelo processo antigo.
 
+**Reavaliação da candidata:** `backendRuntimeSchedule.stop()` cancela disparos futuros, mas `runObserved` não aguarda as promessas em curso. `backend/start.js` em `normal` carrega `server.js` e dispara os workers sem portões separados. O reconciliador novo recupera pagamentos online por consulta quando a autoridade permite; ele não torna duráveis callbacks de reembolso nem drena retrospectivamente a release instalada. Os objetos Git `6d216eb` e `ea7c5df` são referências históricas disponíveis localmente, não prova de qual SHA roda hoje. Não foi feito ensaio integrado com a release instalada. **Portão D: bloqueado.**
+
 | Superfície | Condição para dreno observável | Situação |
 | --- | --- | --- |
 | HTTP/SSE | Bloquear novas mutações no prefixo; contar requests com efeito ainda ativos, IDs de operação e conclusão/estado incerto antes do encerramento. | Release antiga não fornece prova integral. |
