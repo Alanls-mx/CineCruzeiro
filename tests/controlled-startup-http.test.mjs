@@ -10,6 +10,9 @@ import { WebSocket } from "ws";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const safeEnvironment = Object.fromEntries([
+  "PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA"
+].filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]]));
 
 test("controlled startup gates actual HTTP and WebSocket entry before advancing", { timeout: 30000 }, async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "cine-controlled-startup-"));
@@ -26,7 +29,7 @@ test("controlled startup gates actual HTTP and WebSocket entry before advancing"
   });`], {
     cwd: root, stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
     env: {
-      ...process.env, DATABASE_URL: "", POSTGRES_URL: "", DATA_STORE: "json", PAYMENTS_MODE: "test",
+      ...safeEnvironment, DATABASE_URL: "", POSTGRES_URL: "", DATA_STORE: "json", PAYMENTS_MODE: "test",
       CINE_CONTROLLED_STARTUP: "1", NODE_ENV: "test", PORT: String(port), BIND_HOST: "127.0.0.1",
       CINE_DATA_FILE: path.join(dir, "db.json"), CINE_UPLOADS_DIR: path.join(dir, "uploads"),
       CINE_EMAIL_ATTACHMENTS_DIR: path.join(dir, "email"), CINE_TICKET_DOCUMENTS_DIR: path.join(dir, "tickets"),

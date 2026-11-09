@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
 
 const repo = fileURLToPath(new URL("..", import.meta.url));
+const safeEnvironment = Object.fromEntries([
+  "PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA"
+].filter((name) => process.env[name] !== undefined).map((name) => [name, process.env[name]]));
 const installedSha = process.argv[2];
 if (!/^[a-f0-9]{40}$/.test(installedSha || "")) {
   throw new Error("Informe o SHA completo confirmado da release instalada.");
@@ -43,7 +46,7 @@ try {
   });`], {
     cwd: oldRoot, stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
     env: {
-      ...process.env, NODE_ENV: "test", DATA_STORE: "json", PAYMENTS_MODE: "test",
+      ...safeEnvironment, NODE_ENV: "test", DATA_STORE: "json", PAYMENTS_MODE: "test",
       DATABASE_URL: "", POSTGRES_URL: "", TEST_DATABASE_URL: "", PORT: String(port), BIND_HOST: "127.0.0.1",
       CINE_DATA_FILE: dataFile, CINE_UPLOADS_DIR: path.join(root, "uploads"),
       CINE_EMAIL_ATTACHMENTS_DIR: path.join(root, "email"), CINE_TICKET_DOCUMENTS_DIR: path.join(root, "tickets"),
