@@ -4,6 +4,8 @@
 
 O preflight SSH somente de leitura confirmou que a release instalada é `6d216eb5fb956bba88d9726b3cf7aaaf8de86f8b`, com banco exclusivo PostgreSQL 18.6 e migrations até 052. As contagens agregadas revelaram três pedidos e três pagamentos Mercado Pago pendentes de 09–10/10; não havia holds ativos ou leases travadas nas filas verificadas naquele instante. A candidata ganhou retomada controlada opcional e portões HTTP/WebSocket testados localmente, sem alterar o startup padrão. Os testes dirigidos de manutenção, segurança, financeiro e poltronas passaram. Ainda não há dreno demonstrado da release antiga, inbox durável de callbacks no corte, ensaio integrado, reconciliação individual das três pendências ou backup atual/restauração isolada. **GO técnico: não; GO operacional: não; deploy: não executado.** A dispensa do ensaio manual externo permanece **dispensada, não executada**.
 
+Probe adicional com o SHA instalado mostrou ausência concreta de dreno gracioso sob stream HTTP e WebSocket abertos: saída forçada após ~10 s, stream abortado e socket 1006. [Reprodução](../scripts/phase23-installed-release-drain-probe.mjs). Os fluxos de job/callback ainda não foram simulados no corte; a classificação NO-GO permanece.
+
 ## Registro histórico anterior ao preflight de 09/11
 
 **Decisão atual: NO-GO para troca da release na VPS.** Este registro sucede o relatório de encerramento anterior; não altera retrospectivamente o SHA nem a evidência da candidata antiga. A branch de trabalho permanece `codex/cine-homologacao-fase23`. Nenhum banco operacional, provedor real ou processo da VPS foi acessado nesta etapa. O ensaio manual externo permanece **dispensado, não executado**.
