@@ -1,5 +1,7 @@
 # Fase 23 — fechamento técnico e decisão operacional
 
+**Atualização posterior:** a [continuação dos bloqueios](FASE23_FECHAMENTO_BLOQUEIOS.md) implementou intenção durável antes do provedor e acrescentou falhas/concorrência sintéticas. A decisão permanece **NO-GO**, agora pelas lacunas de reconciliação sem callback, concorrência restante e dreno da release antiga. O SHA e os workflows citados abaixo são históricos e não validam os commits novos.
+
 **Decisão: DEPLOY BLOQUEADO.** A candidata de código é `f6012bacc17d0a29339c5e10176ed81bd7badeb0`, na branch `codex/cine-homologacao-fase23`. Este relatório documenta o fechamento local; o commit documental posterior deve ser conferido no `HEAD` da branch. Não houve merge, migração, pagamento real nem alteração na VPS nesta execução.
 
 ## Estado da homologação
