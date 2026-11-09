@@ -1,5 +1,7 @@
 # Fluxos transversais iniciais
 
+Fase 23, Pix/cartão: cliente autenticado → reprecificação e reserva → commit da [intenção](ONLINE_CHECKOUT_INTENT.md) → claim exclusivo confirmado → provedor sem transação aberta → commit da resposta → ingresso somente após aprovação. Retry inconclusivo recebe 202 sem nova chamada; webhook assinado pode recuperar por referência.
+
 Fase 22.4: ação Mercado Pago desconhecida → HMAC e classificação em `server.js` → [mercadoPagoUnknownEventHandler](../../backend/services/mercadoPagoUnknownEventHandler.js) → `webhookEvents`/commit → reconhecimento HTTP diferido. Prévia cupom/Clube → sessão do cliente no dispatcher → [checkoutPreviewRoutes](../../backend/services/checkoutPreviewRoutes.js) → reprecificação sem assento → resposta sem cache. PagBank `PAID` permanece no dispatcher; [smoke ECDSA](../../scripts/financial-pagbank-webhook-failure-scenarios.js) acrescenta prova HTTP/SQL.
 
 Prefixo de assets na Fase 22.1: ambiente da instalação → [publicAssetPathService](../../backend/services/publicAssetPathService.js) → `staticAssetHandler` e apresentadores. O dispatcher mantém `/uploads/*`, status, cache e permissão do shell Admin; a fábrica só transforma strings e não inicia rede nem grava. [Teste de base](../../tests/phase22-presentation-baseline.test.mjs).

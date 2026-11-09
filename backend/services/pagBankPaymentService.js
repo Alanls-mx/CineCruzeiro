@@ -122,9 +122,9 @@ async function createOrderPayment(order, config = {}, options = {}) {
   const method = options.method === "credit_card" ? "credit_card" : "pix";
   if (process.env.PAYMENTS_MODE === "test" && process.env.NODE_ENV !== "production") {
     return normalizeOrder({
-      id: `ORDE_TEST_${crypto.randomUUID()}`,
+      id: `ORDE_TEST-${crypto.randomUUID()}`,
       reference_id: order.id,
-      charges: [{ id: `CHAR_TEST_${crypto.randomUUID()}`, reference_id: order.id, status: method === "credit_card" && process.env.TEST_PAYMENTS_AUTO_APPROVE === "true" ? "PAID" : "WAITING", amount: { value: toCents(order.totalPrice) }, payment_method: { type: method === "pix" ? "PIX" : "CREDIT_CARD" } }],
+      charges: [{ id: `CHAR_TEST-${crypto.randomUUID()}`, reference_id: order.id, status: method === "credit_card" && process.env.TEST_PAYMENTS_AUTO_APPROVE === "true" ? "PAID" : "WAITING", amount: { value: toCents(order.totalPrice) }, payment_method: { type: method === "pix" ? "PIX" : "CREDIT_CARD" } }],
       qr_codes: method === "pix" ? [{ text: `PIX TESTE PAGBANK ${order.id}` }] : []
     }, method);
   }

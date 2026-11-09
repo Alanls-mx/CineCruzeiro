@@ -1,5 +1,7 @@
 # Mapa Inteligente da Arquitetura
 
+Fase 23: [intenção durável de Pix/cartão e recuperação por callback](ONLINE_CHECKOUT_INTENT.md), com limites de reconciliação sem callback documentados.
+
 Fase 22.4: [resultado](FASE22_RESULTADO_22_4.md) e [ramos financeiros efetivamente extraídos](FASE22_ROTAS_FINANCEIRAS_EXTRAIDAS.md). O webhook Mercado Pago desconhecido e as prévias comerciais ganharam handlers específicos; o PagBank ganhou caracterização ECDSA HTTP sem extração financeira ampla.
 
 Fase 22.3: [cobertura financeira avançada](FASE22_COBERTURA_FINANCEIRA_AVANCADA.md), [matriz de concorrência](FASE22_MATRIZ_CONCORRENCIA.md) e [resultado da etapa](FASE22_RESULTADO_22_3.md) registram os failpoints PostgreSQL e os limites para a próxima extração.

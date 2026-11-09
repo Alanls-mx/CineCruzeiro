@@ -129,6 +129,8 @@ const { buildAdminSessionSeatMap } = require("./services/adminSessionSeatMapServ
 const { sessionSeatAvailability } = require("./services/sessionSeatAvailability");
 const { occupiedSeatIds, createOrderSeatAssignmentService } = require("./services/orderSeatAssignmentService");
 const { checkoutIdentifier } = require("./services/checkoutIdentifier");
+const { createOnlineCheckoutCoordinator } = require("./services/onlineCheckoutCoordinator");
+const { appendIntentHistory } = require("./services/onlineCheckoutIntentService");
 const { findExistingCheckout, createCheckoutPresentationService } = require("./services/checkoutPresentationService");
 const { publicContentSettings } = require("./services/publicContentSettings");
 const { openPublicResource, downloadPublicBuffer } = require("./services/publicRemoteResource");
@@ -3946,8 +3948,11 @@ function expireStaleReservations(db, expiredOrders = []) {
   const now = Date.now();
   let changed = false;
   (db.orders || []).forEach((order) => {
+    const inFlightPayment = (db.payments || []).find((payment) => payment.orderId === order.id
+      && ["sending", "unknown", "result_known", "review_required"].includes(payment.metadata?.onlineIntent?.state));
     if (
       order.status !== "pending_payment" ||
+      inFlightPayment ||
       !order.reservationExpiresAt ||
       new Date(order.reservationExpiresAt).getTime() > now
     ) {
@@ -6813,6 +6818,20 @@ const handleCheckoutPreviewRoutes = createCheckoutPreviewRoutes({
   summarizeClubCreditItems, sendJson
 });
 
+const onlineCheckoutCoordinator = createOnlineCheckoutCoordinator({
+  withCriticalMutation, readDb, writeDb, expireStaleReservations, getCustomerUser,
+  sendJson, normalizePaymentOrder, checkoutIdentifier, findExistingCheckout,
+  checkoutAccessAllowed, checkoutResponse, checkoutAccessCookie, repriceOrderFromCatalog,
+  applyClubPlanBenefits, reserveClubCreditsForOrder, assertClientPricingMatches,
+  materializeOrderAccounting, claimSeatHoldsForOrder, finalizeOrderWithoutCharge,
+  activeOnlinePaymentProvider, createActiveOnlinePayment, mercadoPagoDeviceId,
+  frontendUrlForRequest, cpfDigits, createPaymentRecord, reserveConcessionStock,
+  finalizePaidOrder, consumePendingClubCredit, releaseOrderSeatHolds,
+  broadcastSessionRefresh: (sessionId) => seatRealtimeService?.broadcastSessionRefresh(sessionId),
+  queueTicketEmailDelivery, logEvent, paymentStatusAfterWebhook,
+  paymentService, pagBankPaymentService
+});
+
 async function handleApi(req, res, pathname) {
   const method = req.method;
   if (method === "OPTIONS") {
@@ -7951,103 +7970,7 @@ async function handleApi(req, res, pathname) {
   if (await handleCheckoutPreviewRoutes({ req, res, pathname, method, db })) return;
 
   if (pathname === "/api/payments/pix" && method === "POST") {
-    const body = await readBody(req);
-    const created = await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      expireStaleReservations(lockedDb);
-      const customerUser = getCustomerUser(req, lockedDb);
-      if (!customerUser) {
-        sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para gerar o pagamento por Pix." } });
-        return;
-      }
-      if (String(customerUser.name || "").trim().split(/\s+/).length < 2) {
-        sendJson(res, 422, { error: { code: "CUSTOMER_LAST_NAME_REQUIRED", message: "Complete nome e sobrenome em Minha Conta antes de pagar." } });
-        return;
-      }
-      const rawOrder = body.order || body;
-      const normalizedOrder = normalizePaymentOrder(rawOrder);
-      normalizedOrder.idempotencyKey = checkoutIdentifier(body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id);
-      normalizedOrder.customerUserId = customerUser.id;
-      normalizedOrder.customerEmail = customerUser.email || "";
-      normalizedOrder.customerCpf = customerUser.cpf || "";
-      normalizedOrder.customerName = customerUser.name || "";
-      normalizedOrder.customerRegisteredAt = customerUser.createdAt || "";
-      const existing = findExistingCheckout(lockedDb, normalizedOrder, "pix");
-      if (existing) {
-        if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {
-          sendJson(res, 409, { error: { code: "IDEMPOTENCY_KEY_CONFLICT", message: "Esta referência de compra já está em uso." } });
-          return;
-        }
-        sendJson(res, 200, checkoutResponse(lockedDb, existing.order, existing.payment, existing.tickets), {
-          "Set-Cookie": checkoutAccessCookie(req, existing.order.id)
-        });
-        return;
-      }
-      const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
-      const pixReservationTtlMs = paymentService.mercadoPagoPixExpirationMs();
-      order.reservationExpiresAt = new Date(Date.now() + pixReservationTtlMs).toISOString();
-      applyClubPlanBenefits(lockedDb, order, customerUser);
-      if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
-      assertClientPricingMatches(rawOrder, order);
-      materializeOrderAccounting(lockedDb, order);
-      await claimSeatHoldsForOrder(lockedDb, order);
-      if (order.totalPrice <= 0) {
-        if (!order.couponId) {
-          sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de gerar o Pix." } });
-          return;
-        }
-        const completed = await finalizeOrderWithoutCharge(lockedDb, order, customerUser);
-        await writeDb(lockedDb);
-        return { response: checkoutResponse(lockedDb, completed.order, null, completed.tickets), order: completed.order, tickets: completed.tickets };
-      }
-      const active = activeOnlinePaymentProvider(lockedDb);
-      if (!(active.config?.enabled && active.config?.configured) && process.env.PAYMENTS_MODE !== "test") {
-        sendJson(res, 412, { error: { code: "PAYMENT_PROVIDER_NOT_CONFIGURED", message: `${active.name} está indisponível. Configure e habilite a integração no painel administrativo.` } });
-        return;
-      }
-      const providerPayment = await createActiveOnlinePayment(order, active, {
-        method: "pix",
-        deviceId: mercadoPagoDeviceId(req),
-        idempotencyKey: body.idempotencyKey || req.headers["x-idempotency-key"],
-        notificationUrl: `${frontendUrlForRequest(req, lockedDb).replace(/\/$/, "")}/api/webhooks/pag-bank`
-      });
-      const payment = createPaymentRecord(order, providerPayment, "pix");
-      const savedOrder = {
-        ...order,
-        paymentMethod: "PIX",
-        paymentProvider: payment.provider,
-        paymentId: payment.providerPaymentId,
-        paymentStatus: payment.status,
-        status: payment.status === "approved" ? "paid" : "pending_payment",
-        reservationExpiresAt: payment.status === "approved" ? "" : (payment.expiresAt || order.reservationExpiresAt)
-      };
-      reserveConcessionStock(lockedDb, savedOrder);
-      const tickets = payment.status === "approved" ? finalizePaidOrder(lockedDb, savedOrder, payment, "online") : [];
-      if (tickets.length) consumePendingClubCredit(lockedDb, savedOrder, tickets, customerUser?.id);
-      lockedDb.payments.unshift(payment);
-      lockedDb.orders.unshift(savedOrder);
-      await writeDb(lockedDb);
-      logEvent("info", "payment.created", {
-        orderId: savedOrder.id,
-        paymentId: payment.id,
-        method: payment.method,
-        provider: payment.provider,
-        status: payment.status,
-        couponCode: savedOrder.couponCode || "",
-        couponDiscount: savedOrder.couponDiscount || 0
-      });
-      return { response: checkoutResponse(lockedDb, savedOrder, payment, tickets), order: savedOrder, tickets };
-    });
-    if (created) {
-      try {
-        await releaseOrderSeatHolds(created.order, created.order.status === "pending_payment" ? "held" : "unavailable");
-        seatRealtimeService?.broadcastSessionRefresh(created.order.sessionId);
-      } catch (error) {
-        logEvent("warn", "seat_realtime.release_hold_error", { orderId: created.order.id, message: error.message });
-      }
-      if (created.tickets.length) queueTicketEmailDelivery(created.order.id);
-      sendJson(res, 201, created.response, { "Set-Cookie": checkoutAccessCookie(req, created.order.id) });
-    }
+    await onlineCheckoutCoordinator.handle(req, res, await readBody(req), "pix");
     return;
   }
 
@@ -8057,111 +7980,7 @@ async function handleApi(req, res, pathname) {
       sendJson(res, 400, { error: { code: "CARD_DATA_NOT_ALLOWED", message: "O Cine Cruzeiro não recebe dados de cartão. Envie apenas o token ou cartão criptografado gerado pelo provedor ativo." } });
       return;
     }
-    const created = await withCriticalMutation(async () => {
-      const lockedDb = await readDb();
-      expireStaleReservations(lockedDb);
-      const customerUser = getCustomerUser(req, lockedDb);
-      if (!customerUser) {
-        sendJson(res, 401, { error: { code: "AUTH_REQUIRED", message: "Entre na sua conta para pagar com cartão." } });
-        return;
-      }
-      if (String(customerUser.name || "").trim().split(/\s+/).length < 2) {
-        sendJson(res, 422, { error: { code: "CUSTOMER_LAST_NAME_REQUIRED", message: "Complete nome e sobrenome em Minha Conta antes de pagar." } });
-        return;
-      }
-      const rawOrder = body.order || body;
-      const normalizedOrder = normalizePaymentOrder(rawOrder);
-      normalizedOrder.idempotencyKey = checkoutIdentifier(body.idempotencyKey || req.headers["x-idempotency-key"] || normalizedOrder.idempotencyKey || normalizedOrder.id);
-      normalizedOrder.customerUserId = customerUser.id;
-      normalizedOrder.customerEmail = customerUser.email || "";
-      normalizedOrder.customerCpf = customerUser.cpf || "";
-      normalizedOrder.customerName = customerUser.name || "";
-      normalizedOrder.customerRegisteredAt = customerUser.createdAt || "";
-      const existing = findExistingCheckout(lockedDb, normalizedOrder, "credit_card");
-      if (existing) {
-        if (!checkoutAccessAllowed(req, lockedDb, existing.order)) {
-          sendJson(res, 409, { error: { code: "IDEMPOTENCY_KEY_CONFLICT", message: "Esta referência de compra já está em uso." } });
-          return;
-        }
-        sendJson(res, 200, checkoutResponse(lockedDb, existing.order, existing.payment, existing.tickets), {
-          "Set-Cookie": checkoutAccessCookie(req, existing.order.id)
-        });
-        return;
-      }
-      const order = repriceOrderFromCatalog(lockedDb, normalizedOrder);
-      order.reservationExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      applyClubPlanBenefits(lockedDb, order, customerUser);
-      if (normalizedOrder.useClubCredits) reserveClubCreditsForOrder(lockedDb, order, customerUser, normalizedOrder.idempotencyKey);
-      assertClientPricingMatches(rawOrder, order);
-      materializeOrderAccounting(lockedDb, order);
-      await claimSeatHoldsForOrder(lockedDb, order);
-      if (order.totalPrice <= 0) {
-        if (!order.couponId) {
-          sendJson(res, 409, { error: { code: "PAYMENT_AMOUNT_INVALID", message: "O valor desta compra ficou zerado. Revise os benefícios selecionados antes de pagar." } });
-          return;
-        }
-        const completed = await finalizeOrderWithoutCharge(lockedDb, order, customerUser);
-        await writeDb(lockedDb);
-        return { response: checkoutResponse(lockedDb, completed.order, null, completed.tickets), order: completed.order, tickets: completed.tickets };
-      }
-      const active = activeOnlinePaymentProvider(lockedDb);
-      if (!(active.config?.enabled && active.config?.configured) && process.env.PAYMENTS_MODE !== "test") {
-        sendJson(res, 412, { error: { code: "PAYMENT_PROVIDER_NOT_CONFIGURED", message: `${active.name} está indisponível. Configure e habilite a integração no painel administrativo.` } });
-        return;
-      }
-      const providerPayment = await createActiveOnlinePayment(order, active, {
-        method: "credit_card",
-        deviceId: mercadoPagoDeviceId(req),
-        card: {
-          token: body.cardToken || body.token || body.card?.token || body.payment?.token,
-          encrypted: body.encryptedCard || body.card?.encrypted,
-          holderName: body.cardHolderName || body.card?.holderName,
-          holderTaxId: cpfDigits(body.cardHolderTaxId || body.card?.holderTaxId),
-          paymentMethodId: body.paymentMethodId || body.payment_method_id || body.card?.paymentMethodId || body.card?.payment_method_id,
-          paymentTypeId: body.paymentTypeId || body.payment_type_id || body.card?.paymentTypeId || body.card?.payment_type_id || "credit_card",
-          installments: body.installments || body.card?.installments || 1
-        },
-        idempotencyKey: body.idempotencyKey || req.headers["x-idempotency-key"],
-        statementDescriptor: "CINE CRUZEIRO",
-        notificationUrl: `${frontendUrlForRequest(req, lockedDb).replace(/\/$/, "")}/api/webhooks/pag-bank`
-      });
-      const payment = createPaymentRecord(order, providerPayment, "credit_card");
-      const savedOrder = {
-        ...order,
-        paymentMethod: "CREDIT_CARD",
-        paymentProvider: payment.provider,
-        paymentId: payment.providerPaymentId,
-        paymentStatus: payment.status,
-        status: payment.status === "approved" ? "paid" : "pending_payment",
-        reservationExpiresAt: payment.status === "approved" ? "" : (payment.expiresAt || order.reservationExpiresAt)
-      };
-      reserveConcessionStock(lockedDb, savedOrder);
-      const tickets = payment.status === "approved" ? finalizePaidOrder(lockedDb, savedOrder, payment, "online") : [];
-      if (tickets.length) consumePendingClubCredit(lockedDb, savedOrder, tickets, customerUser?.id);
-      lockedDb.payments.unshift(payment);
-      lockedDb.orders.unshift(savedOrder);
-      await writeDb(lockedDb);
-      logEvent("info", "payment.created", {
-        orderId: savedOrder.id,
-        paymentId: payment.id,
-        method: payment.method,
-        provider: payment.provider,
-        status: payment.status,
-        couponCode: savedOrder.couponCode || "",
-        couponDiscount: savedOrder.couponDiscount || 0
-      });
-      return { response: checkoutResponse(lockedDb, savedOrder, payment, tickets), order: savedOrder, tickets };
-    });
-    if (created) {
-      try {
-        await releaseOrderSeatHolds(created.order, created.order.status === "pending_payment" ? "held" : "unavailable");
-        seatRealtimeService?.broadcastSessionRefresh(created.order.sessionId);
-      } catch (error) {
-        logEvent("warn", "seat_realtime.release_hold_error", { orderId: created.order.id, message: error.message });
-      }
-      if (created.tickets.length) queueTicketEmailDelivery(created.order.id);
-      sendJson(res, 201, created.response, { "Set-Cookie": checkoutAccessCookie(req, created.order.id) });
-    }
+    await onlineCheckoutCoordinator.handle(req, res, body, "credit_card");
     return;
   }
 
@@ -9433,12 +9252,16 @@ async function handleApi(req, res, pathname) {
         sendJson(res, 200, { ok: true, duplicate: true });
         return;
       }
-      const payment = (lockedDb.payments || []).find((item) => item.provider === "pag_bank" && item.providerPaymentId === providerOrderId);
+      const payment = (lockedDb.payments || []).find((item) => item.provider === "pag_bank" && (
+        item.providerPaymentId === providerOrderId
+        || (!item.providerPaymentId && item.metadata?.onlineIntent && item.orderId === providerStatus.externalReference)
+      ));
       const order = payment && (lockedDb.orders || []).find((item) => item.id === payment.orderId);
       if (!payment || !order) {
         sendJson(res, 503, { error: { code: "PAGBANK_ORDER_NOT_RECORDED", message: "Pedido ainda não persistido; o PagBank pode reenviar a notificação." } });
         return;
       }
+      if (!payment.providerPaymentId) payment.providerPaymentId = providerOrderId;
       if (!mercadoPagoReferenceMatches(payment, providerStatus.externalReference)
         || !providerStatus.externalReference
         || Math.abs(Number(providerStatus.amount) - Number(payment.amount)) > 0.01) {
@@ -9447,9 +9270,11 @@ async function handleApi(req, res, pathname) {
         return;
       }
       const wasPaid = order.status === "paid";
-      payment.status = paymentStatusAfterWebhook(payment.status, providerStatus.status);
+      payment.status = payment.metadata?.onlineIntent && payment.status === "processing" && providerStatus.status === "pending"
+        ? "pending" : paymentStatusAfterWebhook(payment.status, providerStatus.status);
       payment.updatedAt = new Date().toISOString();
       payment.metadata = { ...(payment.metadata || {}), providerStatus: providerStatus.raw || null, lastWebhookAt: payment.updatedAt };
+      if (payment.metadata.onlineIntent) appendIntentHistory(payment.metadata.onlineIntent, "completed", "pag_bank_webhook");
       if (payment.status === "approved") payment.approvedAt ||= payment.updatedAt;
       if (payment.status === "refunded") payment.refundedAt ||= payment.updatedAt;
       let tickets = [];
@@ -9664,7 +9489,8 @@ async function handleApi(req, res, pathname) {
       const payment = lockedDb.payments.find((item) =>
         item.provider === provider &&
         (String(item.providerPaymentId || "").toLowerCase() === providerPaymentId.toLowerCase()
-          || (item.metadata?.kind === "point_sale" && !item.providerPaymentId && item.providerReference === effectiveOrderId))
+          || (item.metadata?.kind === "point_sale" && !item.providerPaymentId && item.providerReference === effectiveOrderId)
+          || (item.metadata?.onlineIntent && !item.providerPaymentId && item.orderId === effectiveOrderId))
       );
       if (!payment) {
         logEvent("info", "webhook.payment.not_found", { provider, eventId, providerPaymentId, orderId: effectiveOrderId, verified: verification.verified });
@@ -9706,8 +9532,10 @@ async function handleApi(req, res, pathname) {
 
       const nextStatus = providerStatus.status;
       payment.metadata = { ...(payment.metadata || {}), lastWebhookAt: new Date().toISOString(), verification, providerStatus: providerStatus.raw || null };
-      payment.status = paymentStatusAfterWebhook(payment.status, nextStatus);
+      payment.status = payment.metadata?.onlineIntent && payment.status === "processing" && nextStatus === "pending"
+        ? "pending" : paymentStatusAfterWebhook(payment.status, nextStatus);
       payment.updatedAt = new Date().toISOString();
+      if (payment.metadata.onlineIntent) appendIntentHistory(payment.metadata.onlineIntent, "completed", "mercado_pago_webhook");
       if (payment.status === "approved") payment.approvedAt = payment.approvedAt || new Date().toISOString();
       if (payment.status === "expired") payment.expiredAt = payment.expiredAt || new Date().toISOString();
       if (payment.status === "cancelled") payment.cancelledAt = payment.cancelledAt || new Date().toISOString();

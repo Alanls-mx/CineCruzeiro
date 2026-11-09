@@ -3090,7 +3090,8 @@ async function run() {
         probe: onlinePaymentProbe, request, jsonHeaders, cookie, readDb: readPersistedDb,
         queryPostgres: require("../backend/db/postgresStore").queryPostgres,
         failCommitForRecord, restoreQuery: () => { pg.Client.prototype.query = originalQuery; },
-        movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID
+        movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID,
+        webhookSecret: process.env.MERCADO_PAGO_WEBHOOK_SECRET
       });
       const localPrintSale = await request("/api/box-office/sales", {
         method: "POST", headers: jsonHeaders(adminCookie),

@@ -1,5 +1,7 @@
 # Domínios e pontos de entrada
 
+Fase 23: Pix/cartão usa o [coordenador de intenção online](../../backend/services/onlineCheckoutCoordinator.js), que confirma `orders`/`payments` antes do provedor; callback assinado ou conclusão autorizada liberam ingressos. [Limites e testes](ONLINE_CHECKOUT_INTENT.md).
+
 Este índice aponta para responsáveis confirmados, não substitui a leitura do código. Rotas que ainda estão em [server.js](../../backend/server.js) não são apresentadas como módulos extraídos.
 
 Checkout/pedidos: [orderCatalogPricingService](../../backend/services/orderCatalogPricingService.js) calcula preço a partir do catálogo; [checkoutPricingService](../../backend/services/checkoutPricingService.js) rateia descontos; [orderTicketSelectionService](../../backend/services/orderTicketSelectionService.js) escolhe tipos. Reservas: [orderSeatAssignmentService](../../backend/services/orderSeatAssignmentService.js) usa [sessionSeatAvailability](../../backend/services/sessionSeatAvailability.js). Ingressos: [ticketIssuanceService](../../backend/services/ticketIssuanceService.js), [ticketValidationService](../../backend/services/ticketValidationService.js) e [ticketTransferPolicy](../../backend/services/ticketTransferPolicy.js). Clube: [clubCheckoutBenefitsService](../../backend/services/clubCheckoutBenefitsService.js), [clubOrderCreditService](../../backend/services/clubOrderCreditService.js) e `clubDomainService`. A coordenação financeira e as rotas seguem em `server.js`; [matriz](COMMERCE_EXTRACTION_REPORT.md).
