@@ -11,9 +11,14 @@ function fixture() {
   let failProvider = false;
   let failFinalCommit = false;
   let commits = 0;
+  let mutationTail = Promise.resolve();
   const events = [];
   const coordinator = refundFactory.createFullOrderRefundCoordinator({
-    withCriticalMutation: async (fn) => fn(),
+    withCriticalMutation: (fn) => {
+      const result = mutationTail.then(fn);
+      mutationTail = result.catch(() => {});
+      return result;
+    },
     readDb: async () => structuredClone(persisted),
     writeDb: async (db) => {
       commits += 1;
@@ -76,4 +81,18 @@ test("falha no commit final preserva a intenção e não libera direitos", async
   assert.equal(state.read().tickets[0].status, "active");
   assert.equal(state.read().payments[0].metadata.cancellationRefund.id, "refund-original");
   assert.equal(state.events.includes("assentos"), false);
+});
+
+test("dois operadores reutilizam a mesma identidade de estorno e liberam direitos uma vez", async () => {
+  const state = fixture();
+  const results = await Promise.all([
+    state.coordinator.cancelOrderWithRefund("pedido", "desistência", { id: "operador-a" }),
+    state.coordinator.cancelOrderWithRefund("pedido", "desistência", { id: "operador-b" })
+  ]);
+  assert.deepEqual(results.map((result) => result.order.status), ["refunded", "refunded"]);
+  assert.deepEqual(new Set(state.events.filter((event) => event.startsWith("provider:"))), new Set(["provider:refund-original"]));
+  assert.equal(state.read().payments[0].metadata.cancellationRefund.id, "refund-original");
+  assert.equal(state.read().tickets[0].status, "refunded");
+  assert.equal(state.events.filter((event) => event === "assentos").length, 2,
+    "Duas respostas podem atualizar a visualização; a mutação financeira é idempotente");
 });

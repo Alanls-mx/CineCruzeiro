@@ -10,7 +10,9 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const PORT = 4299;
 const BASE_URL = `http://localhost:${PORT}`;
 const SECOND_BASE_URL = "http://localhost:4300";
+const LOST_RESPONSE_KEY = "cross-instance-provider-response-lost";
 const providerCallFile = path.join(os.tmpdir(), `cine-financial-calls-${crypto.randomBytes(8).toString("hex")}.log`);
+const refundCallFile = path.join(os.tmpdir(), `cine-financial-refunds-${crypto.randomBytes(8).toString("hex")}.log`);
 
 if (!TEST_DATABASE_URL) {
   console.log("PostgreSQL concurrency tests skipped: configure TEST_DATABASE_URL.");
@@ -27,6 +29,7 @@ process.env.ADMIN_EMAIL = "admin@cinecruzeiro.local";
 process.env.ADMIN_PASSWORD = "admin-pg-test-123456";
 process.env.MERCADO_PAGO_WEBHOOK_SECRET = "postgres-concurrency-webhook-secret";
 process.env.CINE_FINANCIAL_CALL_FILE = providerCallFile;
+process.env.CINE_FINANCIAL_REFUND_FILE = refundCallFile;
 const adminSalt = crypto.randomBytes(16).toString("base64url");
 const adminPasswordHash = `pbkdf2_sha256$600000$${adminSalt}$${crypto.pbkdf2Sync(process.env.ADMIN_PASSWORD, adminSalt, 600000, 32, "sha256").toString("base64url")}`;
 
@@ -153,6 +156,15 @@ function baseDb({ capacity = 1, stock = 1, includedTickets = 2, bundleQuantity =
       authProvider: "email",
       createdAt: now
     }, {
+      id: "admin-second",
+      name: "Segundo Operador",
+      email: "admin-second@postgres.local",
+      role: "owner",
+      active: true,
+      passwordHash: adminPasswordHash,
+      authProvider: "email",
+      createdAt: now
+    }, {
       id: "cliente-roundtrip",
       name: "Cliente Roundtrip",
       email: "roundtrip@cine.local",
@@ -221,7 +233,8 @@ async function runCrossProcessSeatRace() {
 
 async function runCrossProcessPaymentRaces() {
   const child = fork(path.join(__dirname, "financial-second-instance.js"), [], {
-    env: { ...process.env, PORT: "4300" }, stdio: ["ignore", "inherit", "inherit", "ipc"], windowsHide: true
+    env: { ...process.env, PORT: "4300", CINE_FINANCIAL_LOST_KEY: LOST_RESPONSE_KEY },
+    stdio: ["ignore", "inherit", "inherit", "ipc"], windowsHide: true
   });
   try {
     await new Promise((resolve, reject) => {
@@ -229,7 +242,7 @@ async function runCrossProcessPaymentRaces() {
       child.once("message", (message) => { clearTimeout(timeout); message?.type === "ready" ? resolve() : reject(new Error("Instância sem ready")); });
       child.once("exit", (code) => { clearTimeout(timeout); reject(new Error(`Segunda instância encerrou: ${code}`)); });
     });
-    const { queryPostgres } = require("../backend/db/postgresStore");
+    const { queryPostgres, readDbFromPostgres } = require("../backend/db/postgresStore");
     const post = (id, cookie, baseUrl, includeProduct = false) => request("/api/payments/pix", {
       method: "POST", headers: jsonHeaders(cookie), body: JSON.stringify(checkoutBody(id, includeProduct))
     }, baseUrl);
@@ -245,7 +258,8 @@ async function runCrossProcessPaymentRaces() {
     const key = "mesma-cobranca-duas-instancias";
     // Both HTTP operations are released by the same Promise barrier onto independent servers.
     const samePayment = await Promise.all([post(key, cookie, BASE_URL), post(key, cookie, SECOND_BASE_URL)]);
-    assert.deepEqual(samePayment.map((item) => item.response.status).sort(), [200, 201]);
+    assert.equal(samePayment.filter((item) => item.response.status === 201).length, 1);
+    assert.equal(samePayment.every((item) => [200, 201, 202].includes(item.response.status)), true);
     assert.equal(calls().length, 1, "Uma identidade deve chegar ao provedor uma só vez");
     assert.equal(await sqlCount("orders", "idempotency_key", key), 1);
     assert.equal(await sqlCount("payments", "order_id", key), 1);
@@ -261,6 +275,49 @@ async function runCrossProcessPaymentRaces() {
     assert.equal(await sqlCount("tickets", "order_id", key), 1);
     assert.equal(await sqlCount("payments", "order_id", key), 1);
     assert.equal(await sqlCount("webhook_events", "order_id", key), 1);
+    const refundSeed = await readDbFromPostgres({ trackChanges: false });
+
+    await resetDb(baseDb({ capacity: 2, stock: 2 }));
+    cookie = await registerCustomer("resposta-perdida-duas-instancias@postgres.local");
+    fs.writeFileSync(providerCallFile, "");
+    const lostResponse = await post(LOST_RESPONSE_KEY, cookie, SECOND_BASE_URL);
+    assert.equal(lostResponse.response.status, 503);
+    const retryOnOtherServer = await post(LOST_RESPONSE_KEY, cookie, BASE_URL);
+    assert.equal(retryOnOtherServer.response.status, 202);
+    assert.deepEqual(calls(), [LOST_RESPONSE_KEY], "O segundo processo não pode recriar a cobrança inconclusiva");
+    assert.equal(await sqlCount("orders", "idempotency_key", LOST_RESPONSE_KEY), 1);
+    assert.equal(await sqlCount("payments", "order_id", LOST_RESPONSE_KEY), 1);
+    assert.equal(await sqlCount("tickets", "order_id", LOST_RESPONSE_KEY), 0);
+
+    refundSeed.integrations = {
+      ...(refundSeed.integrations || {}),
+      mercadoPago: { enabled: false },
+      pagBank: { enabled: true, environment: "sandbox", publicKey: "synthetic-key", accessToken: "synthetic-token" }
+    };
+    const refundPayment = refundSeed.payments.find((item) => item.orderId === key);
+    refundPayment.provider = "pag_bank";
+    refundPayment.providerPaymentId = "ORDE_TEST-REFUND-RACE";
+    refundPayment.metadata = { ...(refundPayment.metadata || {}), transactionId: "CHAR_TEST-REFUND-RACE",
+      providerEnvironment: "sandbox" };
+    await resetDb(refundSeed);
+    fs.writeFileSync(refundCallFile, "");
+    const firstOperator = await loginAdmin();
+    const secondLogin = await request("/api/admin/login", { method: "POST", headers: jsonHeaders(),
+      body: JSON.stringify({ email: "admin-second@postgres.local", password: process.env.ADMIN_PASSWORD }) }, SECOND_BASE_URL);
+    assert.equal(secondLogin.response.status, 200);
+    const secondOperator = secondLogin.response.headers.get("set-cookie")?.split(";")[0] || "";
+    const cancel = (cookie, baseUrl) => request(`/api/orders/${encodeURIComponent(key)}`, { method: "PATCH",
+      headers: jsonHeaders(cookie), body: JSON.stringify({ action: "cancel", reason: "Teste de estorno concorrente" }) }, baseUrl);
+    const refunds = await Promise.all([cancel(firstOperator, BASE_URL), cancel(secondOperator, SECOND_BASE_URL)]);
+    assert.deepEqual(refunds.map((item) => item.response.status), [200, 200],
+      `Refund concorrente: ${refunds.map((item) => JSON.stringify(item.payload)).join(" | ")}`);
+    const refundCalls = fs.readFileSync(refundCallFile, "utf8").trim().split("\n").filter(Boolean);
+    assert.ok(refundCalls.length >= 1);
+    assert.equal(new Set(refundCalls).size, 1, "Dois operadores devem reutilizar a mesma identidade de estorno");
+    const refunded = await readDbFromPostgres();
+    assert.equal(refunded.orders.find((item) => item.id === key).status, "refunded");
+    assert.equal(refunded.tickets.filter((item) => item.orderId === key).length, 1);
+    assert.equal(refunded.tickets.find((item) => item.orderId === key).status, "refunded");
 
     await resetDb(baseDb({ capacity: 1, stock: 2 }));
     cookie = await registerCustomer("ultima-poltrona-duas-instancias@postgres.local");
@@ -437,6 +494,13 @@ async function run() {
     fs.appendFileSync(providerCallFile, `${options.idempotencyKey || order.idempotencyKey || order.id}\n`);
     return originalCreateMercadoPagoOrderPayment(order, config, options);
   };
+  const refundService = require("../backend/services/orderRefundService");
+  const originalSubmitFullRefund = refundService.submitFullRefund;
+  refundService.submitFullRefund = async (refund, ...args) => {
+    fs.appendFileSync(refundCallFile, `${refund.id}\n`);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    return originalSubmitFullRefund(refund, ...args);
+  };
   const server = require("../backend/server.js");
 
   try {
@@ -606,6 +670,7 @@ async function run() {
     await new Promise((resolve) => server.close(resolve));
     await require("../backend/db/postgresStore").closePostgres();
     fs.rmSync(providerCallFile, { force: true });
+    fs.rmSync(refundCallFile, { force: true });
   }
 }
 

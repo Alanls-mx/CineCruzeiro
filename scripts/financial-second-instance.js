@@ -12,15 +12,30 @@ async function start() {
     throw new Error("A segunda instância financeira exige PostgreSQL descartável e provedor simulado.");
   }
   const callFile = path.resolve(process.env.CINE_FINANCIAL_CALL_FILE || "");
+  const refundFile = path.resolve(process.env.CINE_FINANCIAL_REFUND_FILE || "");
   if (path.dirname(callFile) !== path.resolve(os.tmpdir()) || !path.basename(callFile).startsWith("cine-financial-calls-")) {
     throw new Error("Arquivo de chamadas sintéticas fora do diretório descartável.");
+  }
+  if (path.dirname(refundFile) !== path.resolve(os.tmpdir()) || !path.basename(refundFile).startsWith("cine-financial-refunds-")) {
+    throw new Error("Arquivo de estornos sintéticos fora do diretório descartável.");
   }
   await assertDisposableTestDatabase(process.env.TEST_DATABASE_URL);
   const paymentService = require("../backend/services/paymentService");
   const originalCreate = paymentService.createMercadoPagoOrderPayment;
   paymentService.createMercadoPagoOrderPayment = async (order, config, options) => {
     fs.appendFileSync(callFile, `${options.idempotencyKey || order.idempotencyKey || order.id}\n`);
-    return originalCreate(order, config, options);
+    const accepted = await originalCreate(order, config, options);
+    if (order.id === process.env.CINE_FINANCIAL_LOST_KEY) {
+      throw Object.assign(new Error("Synthetic response lost after acceptance"), { statusCode: 504 });
+    }
+    return accepted;
+  };
+  const refundService = require("../backend/services/orderRefundService");
+  const originalRefund = refundService.submitFullRefund;
+  refundService.submitFullRefund = async (refund, ...args) => {
+    fs.appendFileSync(refundFile, `${refund.id}\n`);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    return originalRefund(refund, ...args);
   };
   const server = require("../backend/server.js");
   if (server.listening) process.send?.({ type: "ready" });
