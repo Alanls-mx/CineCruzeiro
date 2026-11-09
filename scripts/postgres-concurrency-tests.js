@@ -14,6 +14,7 @@ const LOST_RESPONSE_KEY = "cross-instance-provider-response-lost";
 const providerCallFile = path.join(os.tmpdir(), `cine-financial-calls-${crypto.randomBytes(8).toString("hex")}.log`);
 const refundCallFile = path.join(os.tmpdir(), `cine-financial-refunds-${crypto.randomBytes(8).toString("hex")}.log`);
 const reconcileCallFile = path.join(os.tmpdir(), `cine-financial-reconcile-${crypto.randomBytes(8).toString("hex")}.log`);
+let loseNextPartialRefund = false;
 
 if (!TEST_DATABASE_URL) {
   console.log("PostgreSQL concurrency tests skipped: configure TEST_DATABASE_URL.");
@@ -373,6 +374,14 @@ async function runCrossProcessPaymentRaces(server) {
       const path = `/api/orders/${encodeURIComponent(partialKey)}/refund-${scope}`;
       const refundPartial = (operatorCookie, baseUrl) => request(path, { method: "POST",
         headers: jsonHeaders(operatorCookie), body: JSON.stringify({ reason: "Distributed partial refund" }) }, baseUrl);
+      loseNextPartialRefund = true;
+      const lost = await refundPartial(firstOperator, BASE_URL);
+      assert.equal(lost.response.status, 409, JSON.stringify(lost.payload));
+      const uncertain = await readDbFromPostgres();
+      const pending = uncertain.orders.find((item) => item.id === partialKey);
+      assert.equal((scope === "tickets" ? pending.ticketRefund : pending.concessionRefund).status, "pending");
+      assert.equal(uncertain.tickets.find((item) => item.orderId === partialKey).status, "active");
+      assert.equal(uncertain.concessions.find((item) => item.id === "combo-final").stock, stockBefore);
       const results = await Promise.all([
         refundPartial(firstOperator, BASE_URL), refundPartial(secondOperator, SECOND_BASE_URL)
       ]);
@@ -594,7 +603,12 @@ async function run() {
     refundService[method] = async (refund, ...args) => {
       fs.appendFileSync(refundCallFile, `${refund.id}\n`);
       await new Promise((resolve) => setTimeout(resolve, 60));
-      return original(refund, ...args);
+      const result = await original(refund, ...args);
+      if (loseNextPartialRefund) {
+        loseNextPartialRefund = false;
+        throw Object.assign(new Error("Synthetic refund response lost after acceptance"), { code: "SYNTHETIC_RESPONSE_LOST" });
+      }
+      return result;
     };
   }
   const server = require("../backend/server.js");
