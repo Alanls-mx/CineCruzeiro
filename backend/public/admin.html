@@ -3118,6 +3118,27 @@
       </div>
     </div>
 
+    <div id="ticketSessionChangeOverlay" class="success-overlay" hidden>
+      <form id="ticketSessionChangeForm" class="success-card order-card ticket-session-change-card">
+        <div class="form-head">
+          <div>
+            <div class="section-title">Trocar sessão do ingresso</div>
+            <p id="ticketSessionChangeSummary">Carregando ingresso…</p>
+          </div>
+          <button id="ticketSessionChangeClose" class="ghost-button icon-only-sm" type="button" aria-label="Fechar">×</button>
+        </div>
+        <p>O valor pago será mantido. O cliente receberá um e-mail com a nova sessão e o ingresso atualizado.</p>
+        <div class="form-grid">
+          <label>Nova sessão<select id="ticketSessionChangeSession" required></select></label>
+          <label>Poltrona<select id="ticketSessionChangeSeat" disabled><option value="">Selecione uma sessão primeiro</option></select></label>
+        </div>
+        <div class="button-row">
+          <button id="ticketSessionChangeCancel" class="ghost-button" type="button">Cancelar</button>
+          <button id="ticketSessionChangeSubmit" class="primary-button" type="submit" disabled>Confirmar troca</button>
+        </div>
+      </form>
+    </div>
+
     <div id="permanentDeleteOverlay" class="success-overlay" hidden>
       <form id="permanentDeleteForm" class="success-card order-card destructive-card">
         <div class="form-head">
@@ -3301,6 +3322,7 @@
     <script src="admin-modules/movie-catalog-events.js?v=20261010-modularization"></script>
     <script src="admin-modules/session-ticket-actions.js?v=20261010-modularization"></script>
     <script src="admin-modules/ticket-catalog-view.js?v=20261106-ticket-catalog"></script>
+    <script src="admin-modules/ticket-session-change-view.js?v=20261110-ticket-session-change"></script>
     <script src="admin-modules/order-management-view.js?v=20261106-order-management"></script>
     <script src="admin-modules/order-management-actions.js?v=20261106-order-actions"></script>
     <script src="admin-modules/payment-center-view.js?v=20261106-payment-center"></script>

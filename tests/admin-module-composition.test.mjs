@@ -15,7 +15,8 @@ const require = createRequire(import.meta.url);
 test("admin shell loads each local module before composition without inline handlers", () => {
   const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"[^>]*><\/script>/g)].map((match) => match[1].split("?")[0]);
   const modulePaths = scripts.filter((entry) => entry.startsWith("admin-modules/"));
-  assert.equal(modulePaths.length, 53);
+  assert.equal(modulePaths.length, 54);
+  assert.ok(modulePaths.includes("admin-modules/ticket-session-change-view.js"));
   assert.equal(new Set(modulePaths).size, modulePaths.length);
   assert.ok(scripts.indexOf("jsQR.js") < scripts.indexOf(modulePaths[0]));
   assert.ok(modulePaths.every((entry) => scripts.indexOf(entry) < scripts.indexOf("admin.js")));

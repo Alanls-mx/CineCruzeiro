@@ -1,5 +1,5 @@
 ((root) => {
-  function createSessionTicketActionHandler({ openSessionDashboardDetail, showSessionTickets, openSessionEditor, removeSession, openGlobalSessionEditor, copyTicketCode, openOrderView }) {
+  function createSessionTicketActionHandler({ openSessionDashboardDetail, showSessionTickets, openSessionEditor, removeSession, openGlobalSessionEditor, copyTicketCode, openOrderView, openTicketSessionChange }) {
     return (event) => {
       const sessionAction = event.target.closest?.("[data-admin-session-action][data-admin-session-id]");
       if (sessionAction) {
@@ -16,6 +16,7 @@
       if (ticketAction) {
         if (ticketAction.dataset.adminTicketAction === "copy") void copyTicketCode(ticketAction.dataset.adminTicketValue);
         else if (ticketAction.dataset.adminTicketAction === "order") openOrderView(ticketAction.dataset.adminTicketValue);
+        else if (ticketAction.dataset.adminTicketAction === "change-session") void openTicketSessionChange(ticketAction.dataset.adminTicketValue);
         return true;
       }
       return false;

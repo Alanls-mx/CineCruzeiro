@@ -7,7 +7,7 @@
     closeAdminDrawer, closeAdminProfileMenu, closeConcessionOrderOverlay, closeFloatingActionMenu, closeIntegrationConfig, closeResponsiveSelects,
     closeTwoFactorSettings, copyCommercialCatalogLink, copyCommercialCatalogToken, copyTicketCode, createSessionFromDashboard, deleteClubSubscription,
     deleteEmailCampaign, duplicateEmailCampaign, editEmailCampaign, generateCommercialCatalogToken, importTmdbMovie, loadPromotionUsage,
-    openConcessionOrderDetail, openGlobalSessionEditor, openIntegrationConfig, openOrderEdit, openOrderView, openPermanentDelete,
+    openConcessionOrderDetail, openGlobalSessionEditor, openIntegrationConfig, openOrderEdit, openOrderView, openPermanentDelete, openTicketSessionChange,
     openSessionDashboardDetail, openSessionEditor, printOrderTicket, printPhysicalTicket, removeSession, requestLocalPointPaymentPrint,
     resendOrderTicket, resendWebhookRun, resolvePendingSalePrint, restoreOrderAdmin, retryCrmDeadLetters, retryEmailCampaignFailures,
     retryPendingSalePrint, revealCommercialCatalogToken, scanNextTicket, selectAd, selectBoxOfficeCustomerById, selectClubPlan,
@@ -17,7 +17,7 @@
   }) {
     const handleSessionTicketAction = window.CineAdminModules.sessionTicketActions.createSessionTicketActionHandler({
       openSessionDashboardDetail, showSessionTickets, openSessionEditor, removeSession,
-      openGlobalSessionEditor, copyTicketCode, openOrderView
+      openGlobalSessionEditor, copyTicketCode, openOrderView, openTicketSessionChange
     });
 
     document.addEventListener("mouseover", (event) => showChartHintFromPoint(event.target));

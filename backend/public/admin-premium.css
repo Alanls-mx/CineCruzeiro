@@ -2202,7 +2202,7 @@ td {
 
 .issued-ticket-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) minmax(130px, 0.9fr) 60px 70px minmax(120px, 0.8fr) minmax(140px, 1fr) 90px 68px;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(130px, 0.9fr) 60px 70px minmax(120px, 0.8fr) minmax(140px, 1fr) 90px 115px;
   align-items: center;
   gap: var(--sp-10);
   min-width: 900px;
@@ -2297,6 +2297,10 @@ td {
   justify-self: end;
   white-space: nowrap;
 }
+.issued-ticket-actions { display: grid; gap: 5px; }
+.issued-ticket-actions .ghost-button { justify-self: stretch; }
+.ticket-session-change-card { width: min(540px, 100%); gap: 16px; }
+.ticket-session-change-card .form-grid { grid-template-columns: 1fr; }
 
 /* ── 24. Overlays & Modals ────────────────────────────────────────────── */
 .error-banner, .toast { border-radius: var(--radius); box-shadow: var(--shadow); }

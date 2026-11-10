@@ -1,5 +1,7 @@
 # Fluxos transversais iniciais
 
+Troca manual de ingresso: Admin com `orders.edit` → GET de destinos/poltronas → POST com origem válida → lock da mutação → releitura do snapshot → validação de pagamento/ingresso, sessão futura e poltrona sem venda/reserva/hold → alteração do ingresso e retirada da poltrona antiga do pedido original → auditoria e commit → atualização de sala em tempo real → PDF e e-mail personalizado. Pedido, pagamento, valor, referência e crédito do Clube permanecem originais; QR anterior perde validade. Falha de e-mail é comunicada na resposta. [Teste de domínio](../../tests/ticket-session-change.test.mjs), [HTTP isolado](../../tests/ticket-session-change-http.test.mjs).
+
 Recuperação Fase 23: intenção `unknown`/`result_known` → claim e lease confirmados → GET do provedor fora da transação → validação de referência/valor/moeda/conta → resultado confirmado no banco → finalização idempotente de direitos. Sem Order ID PagBank: revisão manual, sem novo POST. [Contrato](ONLINE_CHECKOUT_INTENT.md).
 
 Fase 23, Pix/cartão: cliente autenticado → reprecificação e reserva → commit da [intenção](ONLINE_CHECKOUT_INTENT.md) → claim exclusivo confirmado → provedor sem transação aberta → commit da resposta → ingresso somente após aprovação. Retry inconclusivo recebe 202 sem nova chamada; webhook assinado pode recuperar por referência.

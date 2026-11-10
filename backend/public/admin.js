@@ -2091,8 +2091,9 @@ function renderRooms() {
 
 
 const { renderTickets, renderIssuedTicketFilters, filteredIssuedTickets, renderIssuedTickets, changeIssuedTicketsPage, showSessionTickets, selectTicket, newTicket, fillTicketForm, saveTicket, deleteTicket } = window.CineAdminModules.ticketCatalogView.createTicketCatalogView({
-  state, $, activatePanel, api, confirm, creationPlaceholder, currentTicket, escapeHtml, issuedTicketSessionLabel, money, movieById, paginateAdminItems, removeAdminCollectionItem, renderAdminListPager, setDisabled, showToast, syncCreationControl, ticketStatusText, upsertAdminCollection
+  state, $, activatePanel, adminCan, api, confirm, creationPlaceholder, currentTicket, escapeHtml, issuedTicketSessionLabel, money, movieById, paginateAdminItems, removeAdminCollectionItem, renderAdminListPager, setDisabled, showToast, syncCreationControl, ticketStatusText, upsertAdminCollection
 });
+const ticketSessionChangeView = window.CineAdminModules.ticketSessionChangeView.createTicketSessionChangeView({ $, api, escapeHtml, loadContent, showToast });
 
 const { renderOrders, renderTodaySalesSummary, orderTicketCount, renderOrdersTable, changeOrdersPage, statusClass, originLabel, paymentForOrder, movieForOrder, sectionHtml, orderDetailHtml, fillOrderEditor } = window.CineAdminModules.orderManagementView.createOrderManagementView({
   state, $, adminAssetUrl, adminCan, escapeHtml, financialStatusEventHtml, getOrderValidationSummary, isOrderEffectivelyActive, isOrderEffectivelyArchived, isOrderFullyValidated, isOrderSessionExpired, money, orderMatchesStatusFilter: (...args) => orderMatchesStatusFilter(...args), orderReference, orderStatusLabel, paymentMethodLabel, paymentStatusLabel, providerLabel, renderManualSaleOptions: (...args) => renderManualSaleOptions(...args)
@@ -3146,6 +3147,7 @@ const {
 const { applyRbacVisibility } = window.CineAdminModules.adminAccessVisibility.createAdminAccessVisibility({ $, ADMIN_PERMISSION_PRESETS, activatePanel, setAdminSubtab, setBoxOfficeTab, setConcessionTab, state });
 
 function bindEvents() {
+  ticketSessionChangeView.bindEvents();
   const numericContactFields = new Set(["manualCustomerPhone", "manualCustomerCpf", "customerUserPhone", "customerUserCpf", "orderCustomerPhone", "orderCustomerCpf"]);
   document.addEventListener("input", (event) => {
     const input = event.target;
@@ -3174,7 +3176,7 @@ function bindEvents() {
     changePaymentsPage, changeWebhookHistoryPage, clearSessionAutocorrectPreview, closeAdminDrawer, closeAdminProfileMenu, closeConcessionOrderOverlay, closeFloatingActionMenu,
     closeIntegrationConfig, closeResponsiveSelects, closeTwoFactorSettings, copyCommercialCatalogLink, copyCommercialCatalogToken, copyTicketCode, createSessionFromDashboard,
     deleteClubSubscription, deleteEmailCampaign, duplicateEmailCampaign, editEmailCampaign, generateCommercialCatalogToken, importTmdbMovie, loadPromotionUsage,
-    openConcessionOrderDetail, openGlobalSessionEditor, openIntegrationConfig, openOrderEdit, openOrderView, openPermanentDelete, openSessionDashboardDetail,
+    openConcessionOrderDetail, openGlobalSessionEditor, openIntegrationConfig, openOrderEdit, openOrderView, openPermanentDelete, openTicketSessionChange: ticketSessionChangeView.open, openSessionDashboardDetail,
     openSessionEditor, printOrderTicket, printPhysicalTicket, removeSession, requestLocalPointPaymentPrint, resendOrderTicket, resendWebhookRun,
     resolvePendingSalePrint, restoreOrderAdmin, retryCrmDeadLetters, retryEmailCampaignFailures, retryPendingSalePrint, revealCommercialCatalogToken, scanNextTicket,
     selectAd, selectBoxOfficeCustomerById, selectClubPlan, selectConcession, selectCustomerAccount, selectPromotion, selectRoom,

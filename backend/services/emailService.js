@@ -607,6 +607,30 @@ async function sendTicketTransfer(db, input = {}) {
   return Boolean(toSent || fromSent);
 }
 
+async function sendTicketSessionChanged(db, input = {}) {
+  const ticket = input.ticket || {};
+  if (!ticket.customerEmail) return false;
+  const previous = input.previous || {};
+  const brandName = String(db.settings?.cinemaName || db.settings?.name || "Cinema").trim();
+  const oldSession = `${previous.movieTitle || "Filme"} — ${brazilianDate(previous.sessionDate)} às ${previous.sessionTime || ""}, ${previous.sessionRoom || "sala a confirmar"}, poltrona ${previous.seat || "lugar livre"}`;
+  const newSession = `${ticket.movieTitle || "Filme"} — ${brazilianDate(ticket.sessionDate)} às ${ticket.sessionTime || ""}, ${ticket.sessionRoom || "sala a confirmar"}, poltrona ${ticket.seat || "lugar livre"}`;
+  return sendTransactional(db, {
+    to: ticket.customerEmail,
+    subject: `Sua sessão foi alterada: ${ticket.movieTitle || brandName}`,
+    html: baseLayout("Sua sessão foi alterada", `
+      <p>Olá, ${htmlEscape(ticket.customerName || "cliente")}.</p>
+      <p>O ${htmlEscape(brandName)} alterou a sessão do seu ingresso. O valor já pago permanece o mesmo.</p>
+      <p><strong>Sessão anterior:</strong><br>${htmlEscape(oldSession)}</p>
+      <p><strong>Nova sessão:</strong><br>${htmlEscape(newSession)}</p>
+      ${ticketCard(ticket, { accountUrl: input.accountUrl, siteUrl: input.siteUrl })}
+      <p>Use o ingresso atualizado em sua conta. O código anterior foi invalidado.</p>
+    `, { kicker: "Atualização do ingresso", logoUrl: input.logoUrl, siteUrl: input.siteUrl,
+      brand: { name: brandName } }),
+    text: `Olá, ${ticket.customerName || "cliente"}. Sua sessão foi alterada de ${oldSession} para ${newSession}. O valor pago permanece o mesmo. Consulte seu ingresso atualizado: ${input.accountUrl || ""}`,
+    attachments: input.attachments || []
+  }, "ticket.session_changed", { ticketId: ticket.id, previousSessionId: previous.sessionId, sessionId: ticket.sessionId });
+}
+
 function promotionMessage(input = {}, recipient = {}) {
   const personalizedHtml = interpolateCampaign(input.html || "", recipient, input.variables);
   const personalizedMessage = interpolateCampaign(input.message || "", recipient, input.variables);
@@ -736,6 +760,7 @@ module.exports = {
   sendEmailVerification,
   sendPrivateEventInquiry,
   sendTicketTransfer,
+  sendTicketSessionChanged,
   sendTicketDelivery,
   sendMarketingDelivery,
   sendPromotionCampaign,

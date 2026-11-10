@@ -128,6 +128,7 @@ const { createSeatRealtimeService } = require("./services/seatRealtimeService");
 const { clientIp } = require("./services/clientIpService");
 const { buildAdminSessionSeatMap } = require("./services/adminSessionSeatMapService");
 const { sessionSeatAvailability } = require("./services/sessionSeatAvailability");
+const { destinationSessions, seatsForDestination, changeTicketSession } = require("./services/ticketSessionChangeService");
 const { occupiedSeatIds, createOrderSeatAssignmentService } = require("./services/orderSeatAssignmentService");
 const { checkoutIdentifier } = require("./services/checkoutIdentifier");
 const { createOnlineCheckoutCoordinator } = require("./services/onlineCheckoutCoordinator");
@@ -1344,6 +1345,7 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
+  if (/^\/api\/admin\/tickets\/[^/]+\/session-change$/.test(pathname)) return "orders.edit";
   if (pathname === "/api/admin/concession-counter-sales") return "concessions.sell";
   if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
   if (/^\/api\/admin\/concession-sales\/[^/]+$/.test(pathname) && method === "DELETE") return "concessions.delete";
@@ -6868,6 +6870,7 @@ async function handleApi(req, res, pathname) {
   const selfManagedPermanentOrderDeletion = method === "DELETE" && /^\/api\/orders\/[^/]+\/permanent$/.test(pathname);
   const selfManagedConcessionArchive = method === "POST" && /^\/api\/admin\/concession-sales\/[^/]+\/archive$/.test(pathname);
   const selfManagedTicketValidation = method === "POST" && pathname === "/api/tickets/validate";
+  const selfManagedTicketSessionChange = method === "POST" && /^\/api\/admin\/tickets\/[^/]+\/session-change$/.test(pathname);
   const selfManagedClubAssignment = method === "POST" && pathname === "/api/admin/subscriptions/assign";
   const selfManagedBoxOfficeSale = method === "POST" && ["/api/box-office/sales", "/api/tickets/manual", "/api/admin/concession-counter-sales"].includes(pathname);
   const selfManagedPointCancellation = method === "POST" && /^\/api\/box-office\/point-payments\/[^/]+\/cancel$/.test(pathname);
@@ -6879,7 +6882,7 @@ async function handleApi(req, res, pathname) {
   req.commitResponseAfterMutation = selfManagedBoxOfficeSale || pathname.startsWith("/api/box-office/point-payments/");
   req.repositoryMutation = targetedRepositoryMutation;
   if (postgresEnabled() && mutatesState(method) && adminAuthRequired(pathname, method)
-    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !selfManagedRefundFlow && !context?.adminMutationLocked) {
+    && !targetedRepositoryMutation && !selfManagedOrderDeletion && !selfManagedPermanentOrderDeletion && !selfManagedConcessionArchive && !selfManagedTicketValidation && !selfManagedTicketSessionChange && !selfManagedClubAssignment && !selfManagedBoxOfficeSale && !selfManagedPointCancellation && !selfManagedRefundFlow && !context?.adminMutationLocked) {
     context.adminMutationLocked = true;
     try {
       await withCriticalMutation(() => handleApi(req, res, pathname));
@@ -6987,6 +6990,77 @@ async function handleApi(req, res, pathname) {
   }
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
+
+  const ticketSessionChangeMatch = pathname.match(/^\/api\/admin\/tickets\/([^/]+)\/session-change$/);
+  if (ticketSessionChangeMatch && ["GET", "POST"].includes(method)) {
+    const ticketId = decodeURIComponent(ticketSessionChangeMatch[1]);
+    const ticket = (db.tickets || []).find((item) => item.id === ticketId);
+    if (!ticket) {
+      sendJson(res, 404, { error: { code: "TICKET_NOT_FOUND", message: "Ingresso não encontrado." } });
+      return;
+    }
+    if (method === "GET") {
+      const selectedSessionId = String(new URL(req.url, `http://${req.headers.host || "localhost"}`).searchParams.get("sessionId") || "");
+      const destinations = destinationSessions(db).filter(({ session }) => session.id !== ticket.sessionId);
+      const chosen = destinations.find(({ session }) => session.id === selectedSessionId);
+      const holds = chosen ? await listActiveSeatHolds(chosen.session.id) : [];
+      sendJson(res, 200, {
+        ticket: enrichTicket(db, ticket),
+        sessions: destinations.map(({ movie, session }) => ({ id: session.id, movieId: movie.id, movieTitle: movie.title,
+          date: session.date, time: session.time, room: roomDisplayLabel(roomForSession(db, session)) || session.room || "" })),
+        seatSelectionEnabled: Boolean(chosen && roomSeatSelectionEnabled(roomForSession(db, chosen.session))),
+        seats: chosen ? seatsForDestination(db, chosen.session, holds) : []
+      });
+      return;
+    }
+    const body = await readBody(req);
+    let outcome;
+    try {
+      outcome = await withCriticalMutation(async () => {
+        const lockedDb = await readDb();
+        const targetSessionId = String(body.sessionId || "").trim();
+        const target = destinationSessions(lockedDb).find(({ session }) => session.id === targetSessionId);
+        const holds = target ? await listActiveSeatHolds(targetSessionId) : [];
+        const result = changeTicketSession(lockedDb, { ticketId, sessionId: targetSessionId,
+          seatId: String(body.seatId || "").trim(), holds, adminUser: req.adminUser });
+        if (result.unchanged) return { unchanged: true, ticket: enrichTicket(lockedDb, result.ticket) };
+        await writeDb(lockedDb);
+        return { ...result, ticket: enrichTicket(lockedDb, result.ticket), db: lockedDb };
+      });
+    } catch (error) {
+      if (!error.statusCode) throw error;
+      sendJson(res, error.statusCode, { error: { code: error.code, message: error.message } });
+      return;
+    }
+    if (outcome.unchanged) {
+      sendJson(res, 200, { ticket: outcome.ticket, unchanged: true, emailSent: false });
+      return;
+    }
+    seatRealtimeService?.broadcastSessionRefresh(outcome.previous.sessionId);
+    seatRealtimeService?.broadcastSessionRefresh(outcome.next.sessionId);
+    let emailSent = false;
+    try {
+      const siteUrl = appFrontendUrl();
+      let attachment = null;
+      try {
+        attachment = { filename: `ingresso-${ticketId.replace(/[^a-z0-9-]/gi, "-")}.pdf`,
+          content: await ticketDownloadPdf(outcome.db, outcome.ticket), contentType: "application/pdf" };
+      } catch (error) {
+        logEvent("warn", "ticket.session_change_pdf.failed", { ticketId, message: error.message });
+      }
+      emailSent = await emailService.sendTicketSessionChanged(outcome.db, {
+        ticket: outcome.ticket, previous: outcome.previous, siteUrl,
+        accountUrl: `${siteUrl}/conta/ingressos`,
+        attachments: attachment ? [attachment] : []
+      });
+    } catch (error) {
+      logEvent("warn", "ticket.session_change_email.failed", { ticketId, message: error.message });
+    }
+    logEvent("info", "ticket.session_changed", { ticketId, fromSessionId: outcome.previous.sessionId,
+      toSessionId: outcome.next.sessionId, adminUserId: req.adminUser.id, emailSent });
+    sendJson(res, 200, { ticket: outcome.ticket, previous: outcome.previous, emailSent });
+    return;
+  }
 
   if (await handleAdminAccountRoutes({ req, res, pathname, method, db })) return;
 

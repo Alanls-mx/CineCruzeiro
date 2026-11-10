@@ -1,5 +1,5 @@
 ((root) => {
-  function createTicketCatalogView({ state, $, activatePanel, api, confirm, creationPlaceholder, currentTicket, escapeHtml, issuedTicketSessionLabel, money, movieById, paginateAdminItems, removeAdminCollectionItem, renderAdminListPager, setDisabled, showToast, syncCreationControl, ticketStatusText, upsertAdminCollection }) {
+  function createTicketCatalogView({ state, $, activatePanel, adminCan, api, confirm, creationPlaceholder, currentTicket, escapeHtml, issuedTicketSessionLabel, money, movieById, paginateAdminItems, removeAdminCollectionItem, renderAdminListPager, setDisabled, showToast, syncCreationControl, ticketStatusText, upsertAdminCollection }) {
     const pendingActions = new Set();
     async function once(key, action, event) {
       event?.preventDefault?.();
@@ -143,7 +143,10 @@
                 <span class="mini-label">Status</span>
                 <span class="status-pill status-${escapeHtml(ticket.status || "unknown")}">${escapeHtml(ticketStatusText(ticket.status))}</span>
               </div>
-              <button class="ghost-button" type="button" data-admin-session-action="tickets" data-admin-session-id="${escapeHtml(ticket.sessionId || "")}">Sessão</button>
+              <div class="issued-ticket-actions">
+                <button class="ghost-button" type="button" data-admin-session-action="tickets" data-admin-session-id="${escapeHtml(ticket.sessionId || "")}">Sessão</button>
+                ${adminCan("orders.edit") && ticket.status === "active" ? `<button class="ghost-button" type="button" data-admin-ticket-action="change-session" data-admin-ticket-value="${escapeHtml(ticket.id)}">Trocar sessão</button>` : ""}
+              </div>
             </article>
           `).join("")}
         </div>

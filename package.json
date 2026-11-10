@@ -62,7 +62,7 @@
     "test:coupon": "node --test tests/coupon-lifecycle.test.mjs",
     "test:finance": "node --test tests/club-checkout-pricing.test.mjs tests/club-free-item-pricing.test.mjs tests/concession-finance.test.mjs tests/concession-cancellation.test.mjs tests/financial-recognition.test.mjs tests/operations-monitor-refund.test.mjs tests/ticket-distributor-report.test.mjs tests/pagbank-integration.test.mjs tests/mercado-pago-webhook-authority.test.mjs tests/phase21-provider-contract-failures.test.mjs",
     "test:ticket-code": "node --test tests/ticket-code.test.mjs",
-    "test:ticket-security": "node --test tests/ticket-security.test.mjs",
+    "test:ticket-security": "node --test tests/ticket-security.test.mjs tests/ticket-session-change.test.mjs tests/ticket-session-change-http.test.mjs",
     "test:integrity": "node --test tests/goods-fiscal-lifecycle.test.mjs",
     "test:admin-repositories": "node --test tests/admin-repositories.test.mjs tests/admin-repositories-postgres.test.mjs",
     "test:email-campaign": "node --test tests/email-campaign.test.mjs tests/email-campaign-reliability.test.mjs tests/email-campaign-postgres.test.mjs tests/email-template-library.test.mjs tests/email-automation.test.mjs tests/email-campaign-input-service.test.mjs tests/email-campaign-audience-service.test.mjs",

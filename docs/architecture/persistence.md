@@ -1,5 +1,7 @@
 # Persistência PostgreSQL
 
+Troca manual: o snapshot escreve `tickets` (nova sessão, filme, poltrona, código, token QR e histórico), `orders` (retira apenas a poltrona antiga da reserva de venda paga) e `audit_logs` no mesmo commit. `payments` e `subscription_usage` mantêm a origem financeira. Não há migration nova. O teste HTTP usa arquivo JSON temporário; o banco operacional não é usado em testes.
+
 Fase 23: `orders` e `payments` passam a ser gravados no mesmo commit antes da criação externa de Pix/cartão. `payments.metadata.onlineIntent` guarda chave, hash da compra/conta, claim, lease e histórico; sem token secreto ou cartão. `tickets` continua posterior à aprovação. PostgreSQL e JSON legado preservados. [Contrato e lacunas](ONLINE_CHECKOUT_INTENT.md).
 
 A consulta de recuperação usa o mesmo `payments.metadata.onlineIntent` para `reconcileClaim`, `reconcileLeaseUntil`, `reconcileAttempts` e `nextReconcileAt`; não cria tabela nem migration. O claim e o resultado são confirmados em commits separados, com GET externo entre eles. Webhook concorrente pode concluir primeiro e o resultado tardio é descartado. PagBank sem ID vira `review_required`, sem criar nova cobrança.
