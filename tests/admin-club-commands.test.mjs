@@ -13,7 +13,7 @@ test("credit adjustment sends one request and refreshes only after the API respo
   let promptCount = 0;
   const commands = createClubCommands({
     state: {}, $: () => null,
-    prompt: () => (++promptCount === 1 ? "2" : "Ajuste sintético"),
+    prompt: () => (++promptCount === 1 ? "2" : "não deve pedir motivo"),
     api: async (path, options) => { requests.push([path, options]); await pending; },
     loadContent: async () => notices.push("refreshed"),
     showSuccess: () => notices.push("success"),
@@ -21,10 +21,10 @@ test("credit adjustment sends one request and refreshes only after the API respo
   });
   const first = commands.adjustClubCredit("subscription-qa");
   await commands.adjustClubCredit("subscription-qa");
-  assert.equal(promptCount, 2);
+  assert.equal(promptCount, 1);
   assert.equal(requests.length, 1);
   assert.equal(requests[0][0], "/api/admin/subscriptions/subscription-qa/credits/adjust");
-  assert.deepEqual(JSON.parse(requests[0][1].body), { delta: 2, reason: "Ajuste sintético" });
+  assert.deepEqual(JSON.parse(requests[0][1].body), { delta: 2 });
   assert.deepEqual(notices, []);
   release();
   await first;
@@ -53,4 +53,24 @@ test("assignment double submit is prevented and API errors remain visible", asyn
   await first;
   assert.deepEqual(notices, [["API indisponível", "error"]]);
   assert.equal(elements.get("clubAssignEmail").value, "qa@example.test");
+});
+
+test("subscription cancellation keeps confirmation without requesting a reason", async () => {
+  const requests = [];
+  let approved = false;
+  const commands = createClubCommands({
+    state: {},
+    confirm: () => approved,
+    prompt: () => { throw new Error("motivo não deve ser solicitado"); },
+    api: async (path, options) => requests.push([path, options]),
+    loadContent: async () => {},
+    showSuccess: () => {},
+    showToast: (message) => { throw new Error(message); },
+    clubStatusLabel: (status) => status
+  });
+  await commands.updateClubSubscription("subscription-qa", "cancelled");
+  assert.equal(requests.length, 0);
+  approved = true;
+  await commands.updateClubSubscription("subscription-qa", "cancelled");
+  assert.deepEqual(JSON.parse(requests[0][1].body), { status: "cancelled" });
 });

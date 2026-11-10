@@ -1585,7 +1585,7 @@ const { renderSessions, changeMovieSessionsPage, renderSessionTicketTypeOptions,
   state, $, currentMovie, escapeHtml, globalSessionStatusLabel: (...args) => globalSessionStatusLabel(...args), money, sessionTicketTypes, trashIcon,
   showToast, ticketStatusText, saveMovieWithAction: (...args) => saveMovieWithAction(...args), adminTodayKey: (...args) => adminTodayKey(...args), setMovieWizardStep,
   updateSessionScheduleSuggestion: (...args) => updateSessionScheduleSuggestion(...args), applySessionMutation, renderMovies, showSuccess, api,
-  setDisabled, confirm, prompt, Option, document
+  setDisabled, confirm, Option, document
 });
 
 function sessionTicketTypes(session = {}) {
@@ -2099,7 +2099,7 @@ const { renderOrders, renderTodaySalesSummary, orderTicketCount, renderOrdersTab
 });
 
 const { executeOrderRefundTickets, executeOrderRefundConcessions, openOrderView, openOrderEdit, closeOrderOverlay, saveOrderEdit, cancelOrDeleteOrder, archiveOrderAdmin, restoreOrderAdmin, printOrderTicket, resendOrderTicket, openPermanentDelete, closePermanentDelete, permanentlyDeleteSelectedOrder } = window.CineAdminModules.orderManagementActions.createOrderManagementActions({
-  state, $, API_BASE, api, confirm, currentOrder, desktopThermalPrinterAvailable: (...args) => desktopThermalPrinterAvailable(...args), fillOrderEditor, loadContent, money, orderReference, orderStatusLabel, paymentForOrder, prompt, showToast, window
+  state, $, API_BASE, api, confirm, currentOrder, desktopThermalPrinterAvailable: (...args) => desktopThermalPrinterAvailable(...args), fillOrderEditor, loadContent, money, orderReference, orderStatusLabel, paymentForOrder, showToast, window
 });
 
 

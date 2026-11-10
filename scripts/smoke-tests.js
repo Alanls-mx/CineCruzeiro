@@ -1863,6 +1863,25 @@ async function run() {
     const activeClub = clubSubscriptions.payload.subscriptions.find((subscription) => subscription.planId === oneCreditPlan.payload.id && subscription.status === "active");
     assert.equal(activeClub.creditsRemaining, 1);
 
+    const addCreditWithoutReason = await request(`/api/admin/subscriptions/${encodeURIComponent(activeClub.id)}/credits/adjust`, {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ delta: 1 })
+    });
+    assert.equal(addCreditWithoutReason.response.status, 200);
+    assert.equal(addCreditWithoutReason.payload.credit.remaining, 2);
+    assert.deepEqual(addCreditWithoutReason.payload.subscription.history.at(-1), {
+      action: "credit_adjust", delta: 1, reason: "Ajuste administrativo de créditos", by: "admin",
+      at: addCreditWithoutReason.payload.subscription.history.at(-1).at
+    });
+    const restoreCredit = await request(`/api/admin/subscriptions/${encodeURIComponent(activeClub.id)}/credits/adjust`, {
+      method: "POST",
+      headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ delta: -1, reason: "Reposição do saldo inicial no teste" })
+    });
+    assert.equal(restoreCredit.response.status, 200);
+    assert.equal(restoreCredit.payload.credit.remaining, 1);
+
     const clubIdempotency = `club-smoke-${Date.now()}`;
     const clubCredit = await request("/api/checkout/club-credit", {
       method: "POST",
@@ -2447,7 +2466,7 @@ async function run() {
     const permanentDelete = await request(`/api/orders/${encodeURIComponent(deletionSale.payload.order.id)}/permanent`, {
       method: "DELETE",
       headers: jsonHeaders(adminCookie),
-      body: JSON.stringify({ reason: "Remocao permanente smoke", confirmation: "EXCLUIR" })
+      body: JSON.stringify({ confirmation: "EXCLUIR" })
     });
     assert.equal(permanentDelete.response.status, 200);
     const contentAfterPermanentDelete = await request("/api/admin/content", { headers: jsonHeaders(adminCookie) });

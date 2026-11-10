@@ -1,6 +1,6 @@
 ((root) => {
   function createMovieSessionsView({ state, $, currentMovie, escapeHtml, globalSessionStatusLabel,
-    money, sessionTicketTypes, trashIcon, showToast, ticketStatusText, saveMovieWithAction, adminTodayKey, setMovieWizardStep, updateSessionScheduleSuggestion, applySessionMutation, renderMovies, showSuccess, api, setDisabled, confirm, prompt, Option, document }) {
+    money, sessionTicketTypes, trashIcon, showToast, ticketStatusText, saveMovieWithAction, adminTodayKey, setMovieWizardStep, updateSessionScheduleSuggestion, applySessionMutation, renderMovies, showSuccess, api, setDisabled, confirm, Option, document }) {
     function renderSessions(sessions) {
       if (!sessions.length) {
         $("sessionsList").innerHTML = `
@@ -247,11 +247,7 @@
           || (state.content?.orders || []).some((order) => order.sessionId === sessionId);
         if (sensitiveChange && hasHistory) {
           if (!confirm("Esta sessão possui vendas. Confirmar a alteração pode mudar os dados dos ingressos já emitidos e, em caso de cancelamento, exigir reembolso.")) return;
-          const reason = prompt("Informe o motivo da alteração:", "Ajuste operacional da sessão");
-          if (reason === null) return;
-          if (reason.trim().length < 6) { showToast("Informe um motivo com pelo menos 6 caracteres.", "error"); return; }
           payload.confirmSalesImpact = true;
-          payload.changeReason = reason.trim();
         }
       }
     
@@ -268,11 +264,7 @@
           } catch (error) {
             if (error.code === "SESSION_CHANGE_CONFIRMATION_REQUIRED" && !payload.confirmSalesImpact) {
               if (!confirm(error.message)) return;
-              const reason = prompt("Informe o motivo da alteração (mínimo de 6 caracteres):", "");
-              if (reason === null) return;
-              if (reason.trim().length < 6) throw new Error("Informe um motivo com pelo menos 6 caracteres.");
               payload.confirmSalesImpact = true;
-              payload.changeReason = reason.trim();
             } else if (error.code === "SESSION_ROOM_CONFLICT" && !payload.confirmRoomConflict) {
               const conflicts = error.payload?.error?.conflicts || [];
               const details = [...new Set(conflicts.map((conflict) => `${conflict.movieTitle} em ${new Date(`${conflict.date}T12:00:00`).toLocaleDateString("pt-BR")} às ${conflict.time}`))].join("\n");

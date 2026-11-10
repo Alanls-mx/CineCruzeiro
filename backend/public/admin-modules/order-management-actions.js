@@ -1,5 +1,5 @@
 ((root) => {
-  function createOrderManagementActions({ state, $, API_BASE, api, confirm, currentOrder, desktopThermalPrinterAvailable, fillOrderEditor, loadContent, money, orderReference, orderStatusLabel, paymentForOrder, prompt, showToast, window }) {
+  function createOrderManagementActions({ state, $, API_BASE, api, confirm, currentOrder, desktopThermalPrinterAvailable, fillOrderEditor, loadContent, money, orderReference, orderStatusLabel, paymentForOrder, showToast, window }) {
     const pendingActions = new Set();
     async function once(key, action, event) {
       event?.preventDefault?.();
@@ -12,12 +12,11 @@
     async function executeOrderRefundTickets(orderId = state.selectedOrderId) {
       const order = (state.content?.orders || []).find((item) => item.id === orderId);
       if (!order) return;
-      const reason = prompt("Informe o motivo para reembolsar o valor dos ingressos deste pedido:", "Cancelamento de ingressos pelo painel");
-      if (reason === null) return;
+      if (!confirm("Confirmar o reembolso dos ingressos deste pedido?")) return;
       try {
         const result = await api(`/api/orders/${encodeURIComponent(order.id)}/refund-tickets`, {
           method: "POST",
-          body: JSON.stringify({ reason })
+          body: JSON.stringify({})
         });
         await loadContent({ silent: true });
         closeOrderOverlay();
@@ -30,12 +29,11 @@
     async function executeOrderRefundConcessions(orderId = state.selectedOrderId) {
       const order = (state.content?.orders || []).find((item) => item.id === orderId);
       if (!order) return;
-      const reason = prompt("Informe o motivo para reembolsar o valor da bomboniere deste pedido:", "Cancelamento de bomboniere pelo painel");
-      if (reason === null) return;
+      if (!confirm("Confirmar o reembolso dos itens de bomboniere deste pedido?")) return;
       try {
         const result = await api(`/api/orders/${encodeURIComponent(order.id)}/refund-concessions`, {
           method: "POST",
-          body: JSON.stringify({ reason })
+          body: JSON.stringify({})
         });
         await loadContent({ silent: true });
         closeOrderOverlay();
@@ -92,13 +90,12 @@
         return;
       }
       const draft = ["draft", "test"].includes(order.status);
-      const action = draft ? "excluir" : "cancelar";
-      const reason = prompt(`Informe o motivo para ${action} este pedido.${order.status === "paid" ? " O pagamento Mercado Pago aprovado sera reembolsado integralmente, quando elegivel." : ""}`);
-      if (reason === null) return;
+      const warning = order.status === "paid" ? " O pagamento aprovado poderá ser reembolsado, quando elegível." : "";
+      if (!confirm(`Confirmar ${draft ? "exclusão" : "cancelamento"} deste pedido?${warning}`)) return;
       try {
         const result = await api(`/api/orders/${encodeURIComponent(order.id)}`, {
           method: draft ? "DELETE" : "PATCH",
-          body: JSON.stringify(draft ? { reason } : { action: "cancel", reason })
+          body: JSON.stringify(draft ? {} : { action: "cancel" })
         });
         await loadContent({ silent: true });
         closeOrderOverlay();
@@ -117,12 +114,11 @@
     async function archiveOrderAdmin(orderId = state.selectedOrderId) {
       const order = (state.content?.orders || []).find((item) => item.id === orderId);
       if (!order) return;
-      const reason = prompt("Motivo para arquivar este pedido:");
-      if (reason === null) return;
+      if (!confirm("Arquivar este pedido?")) return;
       try {
         await api(`/api/orders/${encodeURIComponent(order.id)}`, {
           method: "PATCH",
-          body: JSON.stringify({ action: "archive", reason })
+          body: JSON.stringify({ action: "archive" })
         });
         await loadContent({ silent: true });
         closeOrderOverlay();
@@ -175,7 +171,6 @@
       state.selectedOrderId = order.id;
       const payment = paymentForOrder(order.id);
       $("permanentDeleteSummary").textContent = `${orderReference(order)} • ${order.movieTitle || "Pedido"} • ${money(order.totalPrice)} • ${orderStatusLabel(order.status)}${payment && !["box_office", "admin", "external_manual", "manual_external", "internal_club"].includes(payment.provider) ? " • provider externo vinculado" : ""}`;
-      $("permanentDeleteReason").value = "";
       $("permanentDeleteConfirmation").value = "";
       $("permanentDeleteOverlay").hidden = false;
     }
@@ -192,7 +187,6 @@
         await api(`/api/orders/${encodeURIComponent(order.id)}/permanent`, {
           method: "DELETE",
           body: JSON.stringify({
-            reason: $("permanentDeleteReason").value,
             confirmation: $("permanentDeleteConfirmation").value
           })
         });

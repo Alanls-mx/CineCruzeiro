@@ -304,15 +304,15 @@ function createMovieCatalogHandler({
         sendJson(res, 409, {
           error: {
             code: "SESSION_CHANGE_CONFIRMATION_REQUIRED",
-            message: "Esta sessão possui vendas. Confirme o impacto e informe o motivo para alterar data, horário, sala, formato ou cancelar.",
+            message: "Esta sessão possui vendas. Confirme o impacto para alterar data, horário, sala, formato ou cancelar.",
             changes: commercialChanges,
             cancellation: session.status === "cancelled"
           }
         });
         return true;
       }
-      const changeReason = String(body.changeReason || "").trim();
-      if (hasHistory && (commercialChanges.length || session.status === "cancelled") && changeReason.length < 6) {
+      const suppliedReason = String(body.changeReason || "").trim();
+      if (hasHistory && (commercialChanges.length || session.status === "cancelled") && suppliedReason && suppliedReason.length < 6) {
         sendJson(res, 422, {
           error: {
             code: "SESSION_CHANGE_REASON_REQUIRED",
@@ -321,6 +321,8 @@ function createMovieCatalogHandler({
         });
         return true;
       }
+      const changeReason = suppliedReason || (hasHistory && (commercialChanges.length || session.status === "cancelled")
+        ? "Alteração administrativa da sessão" : "");
       movie.sessions[sessionIndex] = session;
       const synchronized = syncSessionSnapshotRecords(db, movie, session, { reason: changeReason });
       if (commercialChanges.length || previousSession.status !== session.status) {

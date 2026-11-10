@@ -78,13 +78,11 @@
     async function deleteClubPlan() {
       const plan = currentClubPlan();
       if (!plan) return;
-      const reason = prompt(`Motivo para excluir ou desativar ${plan.name}:`);
-      if (reason === null) return;
       if (!confirm(`Confirmar exclusão/desativação do plano ${plan.name}?`)) return;
       try {
         const result = await api(`/api/admin/subscription-plans/${encodeURIComponent(plan.id)}`, {
           method: "DELETE",
-          body: JSON.stringify({ reason })
+          body: JSON.stringify({})
         });
         state.selectedClubPlanId = "";
         await loadContent({ silent: true });
@@ -115,12 +113,11 @@
     }
 
     async function updateClubSubscription(id, status) {
-      const reason = status === "cancelled" ? prompt("Motivo do cancelamento:") : "Ajuste pelo painel";
-      if (reason === null) return;
+      if (status === "cancelled" && !confirm("Confirmar o cancelamento desta assinatura?")) return;
       try {
         await api(`/api/admin/subscriptions/${encodeURIComponent(id)}`, {
           method: "PATCH",
-          body: JSON.stringify({ status, reason })
+          body: JSON.stringify({ status })
         });
         await loadContent({ silent: true });
         showSuccess("Assinatura atualizada", `Status alterado para ${clubStatusLabel(status)}.`);
@@ -148,15 +145,10 @@
         showToast("Informe um número inteiro diferente de zero.", "error");
         return;
       }
-      const reason = prompt("Motivo obrigatório do ajuste:");
-      if (!reason) {
-        showToast("Informe o motivo do ajuste.", "error");
-        return;
-      }
       try {
         await api(`/api/admin/subscriptions/${encodeURIComponent(id)}/credits/adjust`, {
           method: "POST",
-          body: JSON.stringify({ delta, reason })
+          body: JSON.stringify({ delta })
         });
         await loadContent({ silent: true });
         showSuccess("Créditos ajustados", "O saldo do cliente foi atualizado com registro no histórico da assinatura.");

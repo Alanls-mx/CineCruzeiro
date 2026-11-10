@@ -4687,12 +4687,13 @@ function permanentlyDeleteOrder(db, orderId, body = {}, adminUser = {}) {
     error.statusCode = 422;
     throw error;
   }
-  const reason = String(body.reason || "").trim();
-  if (reason.length < 6) {
+  const suppliedReason = String(body.reason || "").trim();
+  if (suppliedReason && suppliedReason.length < 6) {
     const error = new Error("Informe um motivo claro para a exclusão permanente.");
     error.statusCode = 422;
     throw error;
   }
+  const reason = suppliedReason || "Exclusão permanente por administrador";
   const index = (db.orders || []).findIndex((item) => item.id === orderId);
   if (index === -1) {
     const error = new Error("Pedido nao encontrado.");
@@ -7807,7 +7808,7 @@ async function handleApi(req, res, pathname) {
     }
     subscription.updatedAt = new Date().toISOString();
     subscription.history ||= [];
-    subscription.history.push({ action: "status", status: subscription.status, statusLabel: subscriptionStatusLabel(subscription.status), by: req.adminUser?.id || "", reason: body.reason || "", at: new Date().toISOString() });
+    subscription.history.push({ action: "status", status: subscription.status, statusLabel: subscriptionStatusLabel(subscription.status), by: req.adminUser?.id || "", reason: String(body.reason || "").trim() || "Alteração administrativa da assinatura", at: new Date().toISOString() });
     await writeDb(db);
     sendJson(res, 200, { ...subscription, statusLabel: subscriptionStatusLabel(subscription.status), credit: currentSubscriptionCredit(db, subscription) });
     return;
@@ -7862,11 +7863,7 @@ async function handleApi(req, res, pathname) {
   if (adminCreditAdjustMatch && method === "POST") {
     const id = decodeURIComponent(adminCreditAdjustMatch[1]);
     const body = await readBody(req);
-    const reason = String(body.reason || "").trim();
-    if (!reason) {
-      sendJson(res, 400, { error: { code: "REASON_REQUIRED", message: "Informe o motivo do ajuste de crédito." } });
-      return;
-    }
+    const reason = String(body.reason || "").trim() || "Ajuste administrativo de créditos";
     const subscription = (db.subscriptions || []).find((item) => item.id === id);
     if (!subscription) {
       sendJson(res, 404, { error: { code: "SUBSCRIPTION_NOT_FOUND", message: "Assinatura nao encontrada." } });
