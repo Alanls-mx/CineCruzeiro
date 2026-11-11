@@ -52,3 +52,15 @@ test("pending orders do not count as received revenue", () => {
   assert.match($("todaySalesSummary").innerHTML, /Receita hoje<\/span><strong>R\$ 10\.00<\/strong>/);
   assert.doesNotMatch($("todaySalesSummary").innerHTML, /R\$ 90\.00/);
 });
+
+test("customer content remains text beside the ticket copy control", () => {
+  const { view } = fixture();
+  const html = view.orderDetailHtml({
+    id: "order-qa", status: "paid", createdAt: "2026-11-06T12:00:00Z",
+    customerName: "<button>Cliente</button>", operationalNotes: "<input>",
+    tickets: [{ displayCode: "CC-TEST" }]
+  });
+  assert.doesNotMatch(html, /<button>Cliente|<input>/);
+  assert.match(html, /&lt;button/);
+  assert.match(html, /<button class="copy-code"/);
+});

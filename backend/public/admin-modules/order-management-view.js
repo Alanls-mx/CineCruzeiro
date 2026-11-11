@@ -197,7 +197,7 @@
         <section class="order-detail-section">
           <h3>${escapeHtml(title)}</h3>
           <dl>
-            ${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${String(value).includes("<") ? value : escapeHtml(value || "-")}</dd></div>`).join("")}
+            ${rows.map(([label, value, renderedHtml]) => `<div><dt>${escapeHtml(label)}</dt><dd>${renderedHtml === true ? value : escapeHtml(value || "-")}</dd></div>`).join("")}
           </dl>
         </section>
       `;
@@ -244,8 +244,8 @@
           ["Contato", [order.customerPhone, order.customerEmail].filter(Boolean).join(" • ") || "-"]
         ])}
         ${sectionHtml("Sessão", [
-          ["Filme", `${movie?.posterUrl ? `<img class="inline-poster" src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : ""}${escapeHtml(order.movieTitle || movie?.title || "-")}`],
-          ["Data e horário", escapeHtml(formatAdminSessionDateTime(order.sessionDate, order.sessionTime)) || "-"],
+          ["Filme", `${movie?.posterUrl ? `<img class="inline-poster" src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : ""}${escapeHtml(order.movieTitle || movie?.title || "-")}`, true],
+          ["Data e horário", formatAdminSessionDateTime(order.sessionDate, order.sessionTime) || "-"],
           ["Sala", order.sessionRoom || "Sala Cruzeiro"],
           ["Poltronas", Array.isArray(order.selectedSeats) && order.selectedSeats.length ? order.selectedSeats.map((seat) => seat.label).join(", ") : "Lugar livre"],
           ["Formato", order.sessionFormat || "-"]
@@ -253,17 +253,17 @@
         ${sectionHtml("Ingressos", [
           ["Quantidade", `${orderTicketCount(order)} ingresso(s)`],
           ["Status no cinema", isOrderSessionExpired(order) ? "Sessão já expirada (Não reembolsável)" : val.ticketsValidated ? "Validados no cinema (Não reembolsável)" : val.ticketsCancelled ? "Cancelados / Reembolsados" : "Aguardando validação QR Code"],
-          ["Códigos", tickets]
+          ["Códigos", tickets, true]
         ])}
         ${sectionHtml("Serviços de cinema", [
-          ["Ingressos", serviceRows],
+          ["Ingressos", serviceRows, true],
           ["Subtotal", money(order.serviceSubtotal || 0)],
           ["Créditos do Clube", money(order.clubCreditsApplied || 0)],
           ["Tratamento fiscal", "Conforme regra contábil vigente do Clube"]
         ])}
         ${sectionHtml("Mercadorias da bomboniere", [
           ["Status no balcão", val.concessionsDelivered ? "Entregue no balcão (Não reembolsável)" : val.concessionsCancelled ? "Cancelada / Reembolsada" : (order.concessionItems && order.concessionItems.length) ? "Aguardando retirada" : "Sem itens de bomboniere"],
-          ["Produtos", goodsRows === "-" ? extras : goodsRows],
+          ["Produtos", goodsRows === "-" ? extras : goodsRows, true],
           ["Subtotal", money(order.goodsSubtotal || 0)],
           ["Status NFC-e", goodsFiscalLabel]
         ])}
@@ -279,7 +279,7 @@
           ["Orientação", order.manualRefundReason || payment?.metadata?.manualRefund?.reason || "-"],
           ["Referência externa", payment?.providerPaymentId || payment?.providerReference || "-"]
         ])}
-        ${sectionHtml("Histórico", [["Eventos", history], ["Observação", order.operationalNotes || "-"]])}
+        ${sectionHtml("Histórico", [["Eventos", history, true], ["Observação", order.operationalNotes || "-"]])}
       `;
     }
 
