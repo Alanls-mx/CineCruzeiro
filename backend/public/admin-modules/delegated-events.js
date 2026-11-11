@@ -202,7 +202,8 @@
         const orderAction = Object.hasOwn(orderActions, orderKey) ? orderActions[orderKey] : null;
         const campaignAction = Object.hasOwn(campaignActions, campaignKey) ? campaignActions[campaignKey] : null;
         if (orderKey === "change-session" && floating.dataset.orderId && floatingAction.dataset.ticketId) {
-          void openTicketSessionChange(floatingAction.dataset.ticketId);
+          const trigger = document.querySelector(`#ordersPanel .box-office-tab-panel.active [data-admin-order-action="menu"][data-admin-order-id="${CSS.escape(floating.dataset.orderId)}"]`);
+          void openTicketSessionChange(floatingAction.dataset.ticketId, trigger);
           closeFloatingActionMenu();
         } else if (orderAction && floating.dataset.orderId) {
           orderAction(floating.dataset.orderId);

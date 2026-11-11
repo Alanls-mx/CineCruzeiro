@@ -39,7 +39,24 @@ test("admin troca ingresso de filme e poltrona mantendo a venda", async ({ page 
   await expect(page.locator("#ticketSessionChangeOverlay")).toBeVisible();
   await expect(page.locator("#ticketSessionChangeSummary")).toContainText(/\d{2}\/\d{2}\/\d{4} às \d{2}h\d{2}/);
   await expect(page.locator("#ticketSessionChangeSession option[value='sessao-troca-e2e']")).toContainText(/\d{2}\/\d{2}\/\d{4} às \d{2}h\d{2}/);
+  await expect(page.locator("#ticketSessionChangeClose")).toBeFocused();
+  await page.keyboard.press("Escape");
+  const menuTrigger = page.locator(`#ordersList [data-admin-order-action="menu"][data-admin-order-id="${orderId}"]`);
+  await expect(menuTrigger).toBeFocused();
+  await menuTrigger.press("Enter");
+  await orderAction.click();
+  let releaseSeats;
+  const waiting = new Promise(resolve => { releaseSeats = resolve; });
+  await page.route("**/session-change?sessionId=*", async route => {
+    await waiting;
+    await route.continue();
+  });
   await page.locator("#ticketSessionChangeSession").selectOption("sessao-troca-e2e");
+  try {
+    await expect(page.locator("#ticketSessionChangeSubmit")).toBeDisabled();
+  } finally {
+    releaseSeats();
+  }
   await expect(page.locator('#ticketSessionChangeSeat option[value="A1"]')).toHaveCount(1);
   await page.locator("#ticketSessionChangeSeat").selectOption("A1");
   await page.locator("#ticketSessionChangeSubmit").click();

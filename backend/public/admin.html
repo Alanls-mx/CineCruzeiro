@@ -3119,10 +3119,10 @@
     </div>
 
     <div id="ticketSessionChangeOverlay" class="success-overlay" hidden>
-      <form id="ticketSessionChangeForm" class="success-card order-card ticket-session-change-card">
+      <form id="ticketSessionChangeForm" role="dialog" aria-labelledby="ticketSessionChangeTitle" class="success-card order-card ticket-session-change-card">
         <div class="form-head">
           <div>
-            <div class="section-title">Trocar sessão do ingresso</div>
+            <div id="ticketSessionChangeTitle" class="section-title">Trocar sessão do ingresso</div>
             <p id="ticketSessionChangeSummary">Carregando ingresso…</p>
           </div>
           <button id="ticketSessionChangeClose" class="ghost-button icon-only-sm" type="button" aria-label="Fechar">×</button>
@@ -3322,7 +3322,7 @@
     <script src="admin-modules/movie-catalog-events.js?v=20261010-modularization"></script>
     <script src="admin-modules/session-ticket-actions.js?v=20261110-ticket-session-visibility"></script>
     <script src="admin-modules/ticket-catalog-view.js?v=20261110-ticket-session-visibility"></script>
-    <script src="admin-modules/ticket-session-change-view.js?v=20261110-order-session-ui"></script>
+    <script src="admin-modules/ticket-session-change-view.js?v=20261111-exchange"></script>
     <script src="admin-modules/order-management-view.js?v=20261111-escaped-details"></script>
     <script src="admin-modules/order-management-actions.js?v=20261106-order-actions"></script>
     <script src="admin-modules/payment-center-view.js?v=20261106-payment-center"></script>
@@ -3336,7 +3336,7 @@
     <script src="admin-modules/ticket-validation-controller.js?v=20261106-ticket-validation"></script>
     <script src="admin-modules/ticket-qr-reader.js?v=20261106-qr-reader"></script>
     <script src="admin-modules/integration-administration.js?v=20261106-integration-extraction"></script>
-    <script src="admin-modules/delegated-events.js?v=20261110-order-menu-exchange"></script>
+    <script src="admin-modules/delegated-events.js?v=20261111-exchange"></script>
     <script src="admin-modules/account-events.js?v=20261106-event-extraction"></script>
     <script src="admin-modules/dashboard-and-overlay-events.js?v=20261106-event-extraction"></script>
     <script src="admin-modules/catalog-and-room-events.js?v=20261106-event-extraction"></script>
