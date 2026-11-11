@@ -2,7 +2,7 @@
 
 Documentação atualizada da plataforma pública, checkout, Clube Cine Cruzeiro e painel administrativo.
 
-Última revisão: 22 de setembro de 2026.
+Última revisão: 11 de novembro de 2026.
 
 ## 1. Visão geral
 
@@ -20,6 +20,8 @@ Produção:
 - painel: <https://lumixengine.com/projects/cinecruzeiro/admin>
 - health check: <https://lumixengine.com/projects/cinecruzeiro/api/health>
 - base path de produção: `/projects/cinecruzeiro`
+
+O código da `main` inclui o [polimento geral de novembro](docs/POLIMENTO_GERAL_CINE_CRUZEIRO.md). A revisão cobriu site, checkout e Admin, com [correções reproduzidas](docs/POLIMENTO_BUGS_CORRIGIDOS.md) e [evidência visual](docs/POLIMENTO_VALIDACAO_VISUAL.md). A publicação de 11/11 aplicou os arquivos de interface alterados sobre a release existente da VPS; o restante do código de `main` não foi implantado como uma release integral. Consulte o [estado operacional](docs/FASE23_DEPLOY_VPS.md) antes de outra atualização.
 
 ## 2. Estado atual
 
@@ -132,7 +134,9 @@ O código, a publicação de versões e as instruções de compilação ficam em
 |   |-- public/
 |   |   |-- admin.html
 |   |   |-- admin.css
-|   |   `-- admin.js
+|   |   |-- admin.js
+|   |   `-- admin-modules/
+|   |-- repositories/
 |   |-- services/
 |   |   |-- emailService.js
 |   |   |-- integrationConfigService.js
@@ -151,8 +155,10 @@ O código, a publicação de versões e as instruções de compilação ficam em
 |-- scripts/
 |   |-- db-migrate.js
 |   |-- smoke-tests.js
-|   |-- mercado-pago-webhook-tests.js
+|   |-- with-local-disposable-postgres.js
 |   `-- postgres-concurrency-tests.js
+|-- tests/
+|-- e2e/
 |-- src/
 |   |-- app/
 |   |-- components/
@@ -996,11 +1002,18 @@ npm run build
 Testes disponíveis:
 
 ```bash
-npm test
+npm run test:unit
+npm run test:security:local
+npm run test:finance
+npm run test:maintenance
+npm run test:multi-cinema:synthetic
 npm run test:e2e
-npm run audit:security
-TEST_DATABASE_URL=postgresql://... npm run test:postgres
+npm run test:e2e:postgres
+node scripts/with-local-disposable-postgres.js smoke concurrency repositories guard
+npm run docs:check
 ```
+
+Os testes PostgreSQL usam banco descartável protegido. O harness local precisa de Docker funcional; os workflows de integração e navegador no GitHub também exercitam PostgreSQL. `npm run test:legacy:json` cobre a compatibilidade JSON. O [relatório do polimento](docs/POLIMENTO_GERAL_CINE_CRUZEIRO.md) distingue resultados locais, casos ignorados e os workflows aprovados no commit avaliado.
 
 ### Auditoria defensiva de produção
 
@@ -1027,7 +1040,7 @@ Coberturas relevantes incluem autenticação, e-mail, evento privado, pagamento,
 
 ## 29. Deploy na VPS
 
-O procedimento operacional completo, com comandos, dados persistentes, rollback, health checks e politica de exclusao de releases, esta em [`DEPLOY_VPS.md`](DEPLOY_VPS.md). Esse runbook e a referencia para publicacoes em producao.
+O procedimento operacional, os dados persistentes e a recuperação estão em [`DEPLOY_VPS.md`](DEPLOY_VPS.md). Para o Cine Cruzeiro, consulte também os [portões da Fase 23](docs/FASE23_DEPLOY_VPS.md) e o [runbook de corte](docs/FASE13_RUNBOOK_EXECUCAO.md). O script de deploy para múltiplos cinemas não executa a atualização desta instalação.
 
 Monitoramento e resposta a incidentes estão em [`OPERATIONS.md`](OPERATIONS.md). Backup criptografado, restauração isolada, RPO e RTO estão em [`DISASTER_RECOVERY.md`](DISASTER_RECOVERY.md).
 
@@ -1052,19 +1065,7 @@ cinecruzeiro-backend  -> 127.0.0.1:4100
 cinecruzeiro-frontend -> 127.0.0.1:3100
 ```
 
-Fluxo recomendado:
-
-1. testar e gerar commit;
-2. publicar no GitHub;
-3. criar release isolada na VPS;
-4. instalar dependências;
-5. carregar env e uploads persistentes de `shared/`;
-6. executar build;
-7. aplicar migrations;
-8. trocar o symlink `current` atomicamente;
-9. recarregar PM2;
-10. verificar health check e páginas públicas;
-11. remover releases antigas somente após sucesso.
+Antes de uma troca de release, conferir o SHA candidato, o CI no mesmo SHA, o estado financeiro, a pausa de requests e workers, os callbacks, o espaço em disco e o backup restaurado em ambiente isolado. Uma migration necessária ao piloto exige o runner protegido e a conferência do alvo descritos no runbook. A troca de `current` e a retomada dos processos ficam sujeitas a esses portões. Preservar a release anterior para recuperação.
 
 O deploy não deve alterar a aplicação principal da LumixEngine fora do caminho `/projects/cinecruzeiro`.
 
@@ -1158,4 +1159,4 @@ Diretrizes atuais:
 - `CLUBE_HIBRIDO_E_FISCAL.md`: domínio híbrido, fluxos, estados e limites fiscais;
 - `DOCUMENTACAO.md`: documentação histórica extensa, podendo conter decisões anteriores já substituídas por este README.
 
-Este `README.md` é a referência resumida e canônica para o estado atual do código em 31 de agosto de 2026.
+Este README resume o código e aponta para os relatórios de validação e operação. O [Mapa Inteligente](docs/architecture/README.md) localiza domínios, rotas, dependências e persistência.
