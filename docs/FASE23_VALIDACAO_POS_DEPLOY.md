@@ -1,5 +1,9 @@
 # Fase 23 — estado da validação na VPS
 
+## Publicação parcial de 11/11/2026
+
+Os sete arquivos de interface alterados no commit `bb38d06` foram aplicados à instalação existente. O frontend compilou e reiniciou; o backend financeiro continuou em execução. Home, catálogo, Admin e health check responderam HTTP 200, e os dois processos PM2 do Cine Cruzeiro ficaram online. A renderização corrigida de detalhes do pedido foi conferida no JavaScript servido. Esta verificação cobre disponibilidade e arquivos publicados; compra, envio de e-mail, Point, Wallet e pagamentos reais não foram exercitados após a publicação. O [registro de implantação parcial](FASE23_DEPLOY_VPS.md) contém a composição da release e os portões da futura troca integral.
+
 ## Situação de 09/11/2026
 
 Foi realizado **preflight de leitura**, não deploy. `current` ainda aponta para `6d216eb5fb956bba88d9726b3cf7aaaf8de86f8b`; backend/frontend Cine e os processos dos outros quatro cinemas estavam online no instante da consulta. Nginx passou no teste de configuração, PostgreSQL 18.6 tinha 50 migrations no banco exclusivo e três pagamentos Mercado Pago permaneciam pendentes. Não houve teste de site, conta, checkout, callback ou provedores na candidata na VPS, nem backup/restauração. Nenhuma linha histórica abaixo deve ser interpretada como validação posterior à implantação desta candidata. **Implantação não executada; NO-GO.**

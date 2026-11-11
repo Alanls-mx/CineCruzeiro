@@ -1,5 +1,11 @@
 # Fase 23 — candidata e portões de implantação na VPS
 
+## Estado após a publicação parcial de 11/11/2026
+
+A release `20261111-polimento-bb38d06` foi ativada para os arquivos de interface alterados no commit `bb38d06`. O frontend foi compilado na VPS e reiniciado; o backend financeiro permaneceu em execução. Os arquivos do Admin também foram copiados para a release anterior, da qual o processo backend ainda servia arquivos estáticos. A release anterior e uma cópia dos arquivos do Admin foram preservadas. A verificação confirmou HTTP 200 para home, catálogo, Admin e health check, além dos dois processos PM2 online. Esta foi uma publicação parcial sobre a base instalada, e o `release-info.json` herdado identifica o código base do backend, não a totalidade do commit `bb38d06`.
+
+As avaliações NO-GO abaixo registram o estado da **troca integral de backend** na época dos respectivos preflights. A publicação parcial de interface não executou corte financeiro, migration, reconciliação dos pagamentos pendentes ou restauração de backup operacional. Antes de uma troca integral, reconfirmar esses estados e aplicar o runbook de corte ao SHA candidato.
+
 ## Preflight restrito de 09/11/2026 — somente leitura
 
 Autorizado para metadados e contagens agregadas do **Cine Cruzeiro**. Host `ip-172-31-41-15` (`18.231.175.103`); `current` resolve para `/home/ubuntu/projects/cinecruzeiro/releases/20261105-221045-6d216eb`, manifesto SHA `6d216eb5fb956bba88d9726b3cf7aaaf8de86f8b`. PM2: backend e frontend Cine Cruzeiro online (backend com um restart registrado); os processos dos quatro cinemas vizinhos estavam online. Nginx validou sua configuração e mantém o prefixo do Cine, com API/admin/assets em `127.0.0.1:4100` e frontend em `127.0.0.1:3100`.

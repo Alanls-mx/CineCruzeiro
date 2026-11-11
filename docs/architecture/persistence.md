@@ -1,5 +1,7 @@
 # Persistência PostgreSQL
 
+Estado de 11/11/2026: o [preflight da Fase 23](../FASE23_DEPLOY_VPS.md) confirmou PostgreSQL 18.6 e migrations até 052 na instalação do Cine Cruzeiro em 09/11. A descrição abaixo que situa 051 e 052 como pendentes refere-se à auditoria anterior da Fase 12. A publicação parcial de interface de 11/11 não executou migrations. Confirme o histórico real antes de qualquer nova alteração.
+
 Troca manual: o snapshot escreve `tickets` (nova sessão, filme, poltrona, código, token QR e histórico), `orders` (retira apenas a poltrona antiga da reserva de venda paga) e `audit_logs` no mesmo commit. `payments` e `subscription_usage` mantêm a origem financeira. Não há migration nova. O teste HTTP usa arquivo JSON temporário; o banco operacional não é usado em testes.
 
 Fase 23: `orders` e `payments` passam a ser gravados no mesmo commit antes da criação externa de Pix/cartão. `payments.metadata.onlineIntent` guarda chave, hash da compra/conta, claim, lease e histórico; sem token secreto ou cartão. `tickets` continua posterior à aprovação. PostgreSQL e JSON legado preservados. [Contrato e lacunas](ONLINE_CHECKOUT_INTENT.md).

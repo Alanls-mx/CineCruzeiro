@@ -1,5 +1,7 @@
 # Relações de impacto verificadas
 
+As observações datadas sobre release instalada, outros cinemas e migrations representam o estado do preflight indicado em cada seção. Para a publicação parcial de interface de 11/11/2026 e os portões de uma troca integral, consulte o [registro da Fase 23](../FASE23_DEPLOY_VPS.md).
+
 Troca de sessão: painel `ticket-session-change-view` → `GET/POST /api/admin/tickets/:id/session-change` em `server.js` (`orders.edit`) → `ticketSessionChangeService` lê filmes/sessões/salas/holds/ocupação e escreve ingresso, poltrona original no pedido e auditLogs sob `withCriticalMutation` → resposta pós-commit; `emailService.sendTicketSessionChanged` e PDF só após commit. Pagamento, referência financeira e crédito não são regravados. [Teste](../../tests/ticket-session-change-http.test.mjs).
 
 Fase 23: `server.js` injeta persistência, guards de checkout e provedores no [onlineCheckoutCoordinator](../../backend/services/onlineCheckoutCoordinator.js); o módulo importa apenas [onlineCheckoutIntentService](../../backend/services/onlineCheckoutIntentService.js) e não importa `server.js`. O dispatcher mantém sessão/origem/CSRF e a autoridade do webhook. [Limites](ONLINE_CHECKOUT_INTENT.md).

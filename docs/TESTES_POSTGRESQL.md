@@ -1,5 +1,7 @@
 # Persistência dos testes
 
+Estado atual: `package.json` define `npm test` como unidade, smoke PostgreSQL, concorrência e repositórios. Para executar apenas a unidade, use `npm run test:unit`. O navegador usa `npm run test:e2e` com dados sintéticos ou `npm run test:e2e:postgres` no harness descartável. Os workflows do GitHub verificam PostgreSQL 16 e 18; veja os resultados do SHA avaliado, pois os registros de fases abaixo são históricos. O [relatório de novembro](POLIMENTO_GERAL_CINE_CRUZEIRO.md) identifica os testes locais e os executados no CI.
+
 O fluxo principal usa PostgreSQL. `npm test` executa a suíte unitária, o smoke HTTP, a concorrência e os testes de repositório em **três bancos descartáveis diferentes**. O modo JSON é legado e só é executado por `npm run test:legacy:json`.
 
 Fase 13.1: `npm run test:postgres:guard` cria um banco marcado adicional dentro do servidor descartavel e o remove somente apos conferir seu marcador. Ambos recebem o mesmo esquema 050; o teste demonstra recusa sem DDL por alvo/role/SHA/historico/origem divergentes e sucesso atomico de 051/052. O job PostgreSQL 16 **e** 18 executa esse ensaio. `npm run test:maintenance` usa HTTP local e dois processos sem banco ou provedores externos. Nenhum desses comandos autoriza usar banco de desenvolvimento/operacional ou testa a transicao da release antiga na VPS.

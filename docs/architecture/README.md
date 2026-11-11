@@ -1,5 +1,7 @@
 # Mapa Inteligente da Arquitetura
 
+Estado de 11/11/2026: `main` contém o [polimento de interface](../POLIMENTO_GERAL_CINE_CRUZEIRO.md). Houve [publicação parcial](../FASE23_DEPLOY_VPS.md) dos arquivos de interface no Cine Cruzeiro. Os parágrafos abaixo descrevem fases anteriores e preservam suas decisões na data registrada; confirme o estado atual no código e no registro operacional antes de executar comandos.
+
 Fase 23, preflight 09/11/2026: a release instalada foi confirmada em `6d216eb5…`; a candidata ganhou [startup controlado opcional](../FASE23_CORTE_CALLBACKS.md), mas o corte e os callbacks continuam NO-GO. Nenhum deploy ocorreu.
 
 Fase 23: [intenção durável de Pix/cartão, callback e reconciliação por consulta](ONLINE_CHECKOUT_INTENT.md), com revisão manual obrigatória quando o PagBank não devolveu Order ID.

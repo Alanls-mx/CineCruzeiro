@@ -1,6 +1,6 @@
 # Cine Cruzeiro
 
-Documentação atualizada da plataforma pública, checkout, Clube Cine Cruzeiro e painel administrativo.
+Guia da plataforma pública, checkout, Clube Cine Cruzeiro e painel administrativo. As versões de dependências e os comandos executáveis são definidos em `package.json` e `package-lock.json`.
 
 Última revisão: 11 de novembro de 2026.
 
@@ -21,7 +21,7 @@ Produção:
 - health check: <https://lumixengine.com/projects/cinecruzeiro/api/health>
 - base path de produção: `/projects/cinecruzeiro`
 
-O código da `main` inclui o [polimento geral de novembro](docs/POLIMENTO_GERAL_CINE_CRUZEIRO.md). A revisão cobriu site, checkout e Admin, com [correções reproduzidas](docs/POLIMENTO_BUGS_CORRIGIDOS.md) e [evidência visual](docs/POLIMENTO_VALIDACAO_VISUAL.md). A publicação de 11/11 aplicou os arquivos de interface alterados sobre a release existente da VPS; o restante do código de `main` não foi implantado como uma release integral. Consulte o [estado operacional](docs/FASE23_DEPLOY_VPS.md) antes de outra atualização.
+O código da `main` inclui o [polimento geral de novembro](docs/POLIMENTO_GERAL_CINE_CRUZEIRO.md). A revisão cobriu site, checkout e Admin, com [correções reproduzidas](docs/POLIMENTO_BUGS_CORRIGIDOS.md) e [evidência visual](docs/POLIMENTO_VALIDACAO_VISUAL.md). A publicação de 11/11 aplicou sete arquivos de interface alterados sobre a release existente da VPS. O restante do código de `main` aguarda uma publicação integral. Consulte o [estado operacional](docs/FASE23_DEPLOY_VPS.md) antes de outra atualização.
 
 ## 2. Estado atual
 
@@ -85,10 +85,10 @@ O Social Studio também expõe uma API de automação protegida para o n8n. O or
 
 ### Frontend
 
-- Next.js 16 com App Router;
-- React 18;
+- Next.js 16.4.5 com App Router;
+- React e React DOM 19.2.4 (`^19.2.4` no manifesto);
 - TypeScript;
-- Tailwind CSS;
+- Tailwind CSS 3 (`^3.4.14` no manifesto);
 - Lucide React;
 - `next/image`;
 - SDK web oficial do Mercado Pago;
@@ -96,7 +96,7 @@ O Social Studio também expõe uma API de automação protegida para o n8n. O or
 
 ### Backend
 
-- Node.js `>=20.9.0 <25` (produção atualmente em Node 22);
+- Node.js `>=20.9.0 <25` (VPS observada com Node 22 na auditoria de 09/11/2026);
 - servidor HTTP nativo em CommonJS;
 - PostgreSQL com migrations SQL;
 - `pg` para acesso ao banco;
@@ -121,7 +121,7 @@ O Admin utiliza HTML, CSS e JavaScript próprios servidos pelo backend. Essa dec
 - inventário local de impressoras, câmeras/leitores, portas COM/PDV e monitores;
 - atualização nativa automática com manifesto HTTPS, verificação SHA-256 e reinício confirmado pelo operador.
 
-O código, a publicação de versões e as instruções de compilação ficam em [`desktop/windows`](desktop/windows/README.md). O aplicativo usa o painel publicado como fonte única da interface e das regras; alterações nativas são entregues pelo atualizador automático versionado.
+O código, a publicação de versões e os scripts de compilação ficam em [`desktop/windows`](desktop/windows). O aplicativo usa o painel publicado como fonte única da interface e das regras; alterações nativas são entregues pelo atualizador automático versionado.
 
 ## 5. Estrutura principal
 
@@ -324,7 +324,7 @@ A integração de ingressos utiliza a nova Orders API. A integração legada de 
 
 Configurações principais:
 
-- ambiente `sandbox` ou `production`;
+- ambiente `production` na configuração administrável atual; testes de pagamento usam provedores simulados e credenciais de teste isoladas;
 - public key;
 - access token;
 - webhook secret;
@@ -1040,9 +1040,9 @@ Coberturas relevantes incluem autenticação, e-mail, evento privado, pagamento,
 
 ## 29. Deploy na VPS
 
-O procedimento operacional, os dados persistentes e a recuperação estão em [`DEPLOY_VPS.md`](DEPLOY_VPS.md). Para o Cine Cruzeiro, consulte também os [portões da Fase 23](docs/FASE23_DEPLOY_VPS.md) e o [runbook de corte](docs/FASE13_RUNBOOK_EXECUCAO.md). O script de deploy para múltiplos cinemas não executa a atualização desta instalação.
+O procedimento operacional do Cine Cruzeiro está no [runbook de corte](docs/FASE13_RUNBOOK_EXECUCAO.md), nos [portões da Fase 23](docs/FASE23_DEPLOY_VPS.md) e no [registro do banco](docs/DATABASE_OPERATIONS.md). O script de deploy para múltiplos cinemas não executa a atualização desta instalação.
 
-Monitoramento e resposta a incidentes estão em [`OPERATIONS.md`](OPERATIONS.md). Backup criptografado, restauração isolada, RPO e RTO estão em [`DISASTER_RECOVERY.md`](DISASTER_RECOVERY.md).
+Monitoramento, efeitos externos e recuperação estão no [mapa operacional](docs/architecture/operations.md). O [runbook da Fase 13](docs/FASE13_RUNBOOK_EXECUCAO.md) descreve backup, restauração isolada e retorno da release.
 
 Estrutura atual:
 
@@ -1155,8 +1155,8 @@ Diretrizes atuais:
 
 ## 33. Referências complementares
 
-- `DESIGN.md`: sistema visual e decisões de interface;
-- `CLUBE_HIBRIDO_E_FISCAL.md`: domínio híbrido, fluxos, estados e limites fiscais;
-- `DOCUMENTACAO.md`: documentação histórica extensa, podendo conter decisões anteriores já substituídas por este README.
+- [Sistema visual](docs/SISTEMA_VISUAL.md): decisões de interface;
+- [Mapa de domínios](docs/architecture/domains.md) e [fluxos](docs/architecture/flows.md): regras do Clube e demais jornadas;
+- [Relatório do polimento](docs/POLIMENTO_GERAL_CINE_CRUZEIRO.md): validação de novembro e limites dos testes.
 
-Este README resume o código e aponta para os relatórios de validação e operação. O [Mapa Inteligente](docs/architecture/README.md) localiza domínios, rotas, dependências e persistência.
+Este README resume o código e aponta para os relatórios de validação e operação. O [estado atual da documentação](docs/ESTADO_ATUAL_DOCUMENTACAO.md) distingue código, testes, instalação e relatórios históricos. O [Mapa Inteligente](docs/architecture/README.md) localiza domínios, rotas, dependências e persistência.

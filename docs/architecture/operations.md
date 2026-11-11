@@ -1,5 +1,7 @@
 # Operações assíncronas e limites de recuperação
 
+Estado de 11/11/2026: os trechos datados das Fases 12 e 13 abaixo documentam as condições verificadas naquelas fases. A release instalada recebeu uma [publicação parcial de interface](../FASE23_DEPLOY_VPS.md). A candidata de backend possui [startup controlado opcional](../FASE23_CORTE_CALLBACKS.md), enquanto a troca integral ainda exige verificar dreno, callbacks e conciliação na instalação efetiva.
+
 ## Ingressos por e-mail
 
 Fonte: [finalizePaidOrder](../../backend/server.js), [migration 051](../../backend/db/migrations/051_ticket_email_jobs.sql), [repositório](../../backend/repositories/ticketEmailJobRepository.js), [worker](../../backend/services/ticketEmailWorker.js), [emailService](../../backend/services/emailService.js).
