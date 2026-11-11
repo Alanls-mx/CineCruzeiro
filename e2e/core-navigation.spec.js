@@ -22,3 +22,10 @@ test("painel administrativo entrega shell e tela de autenticacao", async ({ page
   await expect(page.getByRole("button", { name: "Entrar no painel" })).toBeVisible();
   await expect(page.locator("#loginForm")).toBeVisible();
 });
+
+test("filme sem cartaz apresenta o título na primeira tela do celular", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto("/filmes/filme-e2e");
+  const title = page.getByRole("heading", { name: "Filme E2E", exact: true });
+  await expect(title).toBeInViewport({ ratio: 1 });
+});

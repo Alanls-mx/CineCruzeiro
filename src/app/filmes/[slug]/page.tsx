@@ -77,12 +77,12 @@ export default function FilmeDetalhePage() {
                 )}
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,10,18,.55),#060a12)]" />
               </div>
-              <div className="relative mx-auto grid max-w-[1320px] gap-10 px-4 py-14 sm:px-6 md:grid-cols-[300px_1fr] lg:px-8">
-                <div className="relative aspect-[2/3] w-full max-w-[300px] overflow-hidden bg-brand-950">
-                  {movie.posterUrl && (
+              <div className={`relative mx-auto grid max-w-[1320px] gap-10 px-4 py-14 sm:px-6 lg:px-8 ${movie.posterUrl ? "md:grid-cols-[300px_1fr]" : ""}`}>
+                {movie.posterUrl && (
+                  <div className="relative aspect-[2/3] w-full max-w-[300px] overflow-hidden bg-brand-950">
                     <Image src={movie.posterUrl} alt={`Poster de ${movie.title}`} fill unoptimized={isUploadedAsset(movie.posterUrl)} quality={74} sizes="300px" className="object-cover" />
-                  )}
-                </div>
+                  </div>
+                )}
                 <div className="self-end pb-4">
                   <MovieTagBadge tag={movie.tag} />
                   <h1 className="mt-4 font-display text-5xl font-black leading-none tracking-tight sm:text-6xl">{movie.title}</h1>
