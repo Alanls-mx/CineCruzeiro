@@ -2171,6 +2171,12 @@ function toggleOrderMenu(orderId, event) {
   if (!order) return;
   const isArchived = isOrderEffectivelyArchived(order);
   const terminated = ["cancelled", "refunded"].includes(order.status) || isOrderFullyValidated(order);
+  const issuedTickets = (state.content?.tickets || []).filter((ticket) => ticket.orderId === order.id);
+  const orderTickets = issuedTickets.length ? issuedTickets : order.tickets || [];
+  const exchangeableTickets = adminCan("orders.edit") && order.status === "paid"
+    && !["pending", "completed"].includes(order.refundStatus)
+    ? orderTickets.filter((ticket) => ticket.id && ticket.status === "active" && !ticket.usedAt)
+    : [];
   if (!floating.hidden && floating.dataset.orderId === orderId) {
     closeFloatingActionMenu();
     return;
@@ -2179,6 +2185,7 @@ function toggleOrderMenu(orderId, event) {
   floating.innerHTML = `
     <button type="button" data-floating-order-action="view">Visualizar</button>
     ${!terminated && adminCan("orders.edit") ? `<button type="button" data-floating-order-action="edit">Editar</button>` : ""}
+    ${exchangeableTickets.map((ticket, index) => `<button type="button" data-floating-order-action="change-session" data-ticket-id="${escapeHtml(ticket.id)}">Trocar sessão${exchangeableTickets.length > 1 ? ` · ${escapeHtml(ticket.displayCode || ticket.code || `Ingresso ${index + 1}`)}` : ""}</button>`).join("")}
     ${!terminated && adminCan("orders.print") ? `<button type="button" data-floating-order-action="print">Imprimir ingresso</button>` : ""}
     ${!terminated && adminCan("orders.resend") ? `<button type="button" data-floating-order-action="resend">Reenviar ingresso</button>` : ""}
     ${isArchived || terminated || !adminCan("orders.cancel") ? "" : `<button type="button" data-floating-order-action="cancel">Cancelar</button>`}

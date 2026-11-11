@@ -203,20 +203,6 @@
       `;
     }
 
-    function sessionActionPanelForOrder(order) {
-      const issuedTickets = (state.content?.tickets || []).filter((ticket) => ticket.orderId === order.id);
-      const orderTickets = issuedTickets.length ? issuedTickets : order.tickets || [];
-      const sessionActions = adminCan("orders.edit") ? orderTickets.map((ticket) => {
-        const canChange = adminCan("orders.edit") && order.status === "paid" && ticket.status === "active"
-          && !ticket.usedAt && !["pending", "completed"].includes(order.refundStatus);
-        return `<div class="order-ticket-session-row">
-          <div><strong>${escapeHtml(ticket.movieTitle || order.movieTitle || "Filme")}</strong><span>${escapeHtml(formatAdminSessionDateTime(ticket.sessionDate || order.sessionDate, ticket.sessionTime || order.sessionTime))} · ${escapeHtml(ticket.seat || "Lugar livre")}</span></div>
-          <button class="ghost-button" type="button" data-admin-ticket-action="change-session" data-admin-ticket-value="${escapeHtml(ticket.id)}" ${canChange ? "" : 'disabled title="Disponível apenas para ingressos ativos de pedidos pagos, sem reembolso em andamento."'}>Trocar sessão</button>
-        </div>`;
-      }).join("") : "";
-      return sessionActions ? `<section class="order-ticket-session-actions" aria-label="Ações dos ingressos"><div class="section-title">Ações dos ingressos</div><p>Escolha um ingresso para trocar de sessão ou filme.</p>${sessionActions}</section>` : "";
-    }
-
     function orderDetailHtml(order) {
       const payment = paymentForOrder(order.id);
       const movie = movieForOrder(order);
@@ -303,7 +289,6 @@
       $("orderOverlayTitle").textContent = mode === "edit" ? "Editar pedido" : "Visualizar pedido";
       $("orderOverlaySubtitle").textContent = order ? `${orderReference(order)} • ${orderStatusLabel(order.status)}` : "Pedido não encontrado.";
       $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
-      $("orderTicketSessionActions").innerHTML = order ? sessionActionPanelForOrder(order) : "";
       $("orderEditFields").hidden = mode !== "edit";
       $("orderSaveButton").hidden = mode !== "edit" || !adminCan("orders.edit");
 

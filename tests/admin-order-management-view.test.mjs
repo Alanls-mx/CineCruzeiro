@@ -39,7 +39,6 @@ test("order modal preserves permissions and clears stale customer data", () => {
   view.fillOrderEditor(null, "view");
   assert.equal(state.selectedOrderId, "");
   assert.equal($("orderDetailBody").innerHTML, "");
-  assert.equal($("orderTicketSessionActions").innerHTML, "");
   for (const id of ["orderCustomerName", "orderCustomerPhone", "orderCustomerEmail", "orderCustomerCpf", "orderOperationalNotes"]) assert.equal($(id).value, "");
 });
 

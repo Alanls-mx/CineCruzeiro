@@ -6991,6 +6991,8 @@ th {
   z-index: 120;
   min-width: 210px;
   max-width: min(280px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
   display: grid;
   gap: 4px;
   padding: 8px;
