@@ -27,11 +27,14 @@ test("admin troca ingresso de filme e poltrona mantendo a venda", async ({ page 
   await expect(action).toBeVisible();
   await page.locator(`[data-admin-ticket-action="order"][data-admin-ticket-value="${orderId}"]`).click();
   await expect(page.locator("#orderOverlay")).toBeVisible();
-  const orderAction = page.locator(`#orderDetailBody [data-admin-ticket-action="change-session"][data-admin-ticket-value="${ticketId}"]`);
+  const orderAction = page.locator(`#orderTicketSessionActions [data-admin-ticket-action="change-session"][data-admin-ticket-value="${ticketId}"]`);
   await expect(orderAction).toBeVisible();
+  await expect(page.locator("#orderDetailBody [data-admin-ticket-action='change-session']")).toHaveCount(0);
+  await expect(page.locator("#orderTicketSessionActions")).toContainText(/\d{2}\/\d{2}\/\d{4} às \d{2}h\d{2}/);
   await orderAction.click();
   await expect(page.locator("#orderOverlay")).toBeHidden();
   await expect(page.locator("#ticketSessionChangeOverlay")).toBeVisible();
+  await expect(page.locator("#ticketSessionChangeSession option[value='sessao-poltronas-e2e']")).toContainText(/\d{2}\/\d{2}\/\d{4} às \d{2}h\d{2}/);
   await page.locator("#ticketSessionChangeSession").selectOption("sessao-poltronas-e2e");
   await expect(page.locator('#ticketSessionChangeSeat option[value="A1"]')).toHaveCount(1);
   await page.locator("#ticketSessionChangeSeat").selectOption("A1");

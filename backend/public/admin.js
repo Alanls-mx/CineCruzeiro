@@ -1180,7 +1180,15 @@ function issuedTicketSessionLabel(ticket) {
   const date = ticket.sessionDate || session?.date || "";
   const time = ticket.sessionTime || session?.time || "";
   const format = ticket.sessionFormat || session?.format || "";
-  return [date ? new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR") : "", time, format].filter(Boolean).join(" • ");
+  return [formatAdminSessionDateTime(date, time), format].filter(Boolean).join(" • ");
+}
+
+function formatAdminSessionDateTime(date, time) {
+  const dateParts = String(date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const localDate = dateParts ? `${dateParts[3]}/${dateParts[2]}/${dateParts[1]}` : String(date || "");
+  const timeParts = String(time || "").match(/^(\d{2}):(\d{2})/);
+  const localTime = timeParts ? `${timeParts[1]}h${timeParts[2]}` : String(time || "");
+  return [localDate, localTime].filter(Boolean).join(" às ");
 }
 
 function ticketStatusText(status = "") {
@@ -2093,10 +2101,10 @@ function renderRooms() {
 const { renderTickets, renderIssuedTicketFilters, filteredIssuedTickets, renderIssuedTickets, changeIssuedTicketsPage, showSessionTickets, selectTicket, newTicket, fillTicketForm, saveTicket, deleteTicket } = window.CineAdminModules.ticketCatalogView.createTicketCatalogView({
   state, $, activatePanel, adminCan, api, confirm, creationPlaceholder, currentTicket, escapeHtml, issuedTicketSessionLabel, money, movieById, paginateAdminItems, removeAdminCollectionItem, renderAdminListPager, setDisabled, showToast, syncCreationControl, ticketStatusText, upsertAdminCollection
 });
-const ticketSessionChangeView = window.CineAdminModules.ticketSessionChangeView.createTicketSessionChangeView({ $, api, closeOrderOverlay: () => closeOrderOverlay(), escapeHtml, loadContent, showToast });
+const ticketSessionChangeView = window.CineAdminModules.ticketSessionChangeView.createTicketSessionChangeView({ $, api, closeOrderOverlay: () => closeOrderOverlay(), escapeHtml, formatAdminSessionDateTime, loadContent, showToast });
 
 const { renderOrders, renderTodaySalesSummary, orderTicketCount, renderOrdersTable, changeOrdersPage, statusClass, originLabel, paymentForOrder, movieForOrder, sectionHtml, orderDetailHtml, fillOrderEditor } = window.CineAdminModules.orderManagementView.createOrderManagementView({
-  state, $, adminAssetUrl, adminCan, escapeHtml, financialStatusEventHtml, getOrderValidationSummary, isOrderEffectivelyActive, isOrderEffectivelyArchived, isOrderFullyValidated, isOrderSessionExpired, money, orderMatchesStatusFilter: (...args) => orderMatchesStatusFilter(...args), orderReference, orderStatusLabel, paymentMethodLabel, paymentStatusLabel, providerLabel, renderManualSaleOptions: (...args) => renderManualSaleOptions(...args)
+  state, $, adminAssetUrl, adminCan, escapeHtml, financialStatusEventHtml, formatAdminSessionDateTime, getOrderValidationSummary, isOrderEffectivelyActive, isOrderEffectivelyArchived, isOrderFullyValidated, isOrderSessionExpired, money, orderMatchesStatusFilter: (...args) => orderMatchesStatusFilter(...args), orderReference, orderStatusLabel, paymentMethodLabel, paymentStatusLabel, providerLabel, renderManualSaleOptions: (...args) => renderManualSaleOptions(...args)
 });
 
 const { executeOrderRefundTickets, executeOrderRefundConcessions, openOrderView, openOrderEdit, closeOrderOverlay, saveOrderEdit, cancelOrDeleteOrder, archiveOrderAdmin, restoreOrderAdmin, printOrderTicket, resendOrderTicket, openPermanentDelete, closePermanentDelete, permanentlyDeleteSelectedOrder } = window.CineAdminModules.orderManagementActions.createOrderManagementActions({

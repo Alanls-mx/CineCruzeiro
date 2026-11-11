@@ -2301,10 +2301,16 @@ td {
 .issued-ticket-actions .ghost-button { justify-self: stretch; }
 .ticket-session-change-card { width: min(540px, 100%); gap: 16px; }
 .ticket-session-change-card .form-grid { grid-template-columns: 1fr; }
-.order-ticket-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; }
-.order-ticket-action-row + .order-ticket-action-row { border-top: 1px solid var(--line-soft); }
-.order-ticket-action-row .list-meta { flex: 1 1 170px; white-space: normal; }
-.order-ticket-action-row .ghost-button { padding: 5px 9px; font-size: 11px; }
+#orderTicketSessionActions:not(:empty) { flex: 0 1 auto; min-height: 0; overflow-y: auto; border-top: 1px solid var(--line-soft); }
+.order-ticket-session-actions { display: grid; gap: var(--sp-8); padding: var(--sp-12) 0; }
+.order-ticket-session-actions .section-title { margin: 0; font-size: 13px; }
+.order-ticket-session-actions p { margin: 0; color: var(--muted); font-size: 12px; }
+.order-ticket-session-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--sp-8) var(--sp-16); }
+.order-ticket-session-row + .order-ticket-session-row { border-top: 1px solid var(--line-soft); padding-top: var(--sp-8); }
+.order-ticket-session-row > div { display: grid; gap: 3px; min-width: 0; }
+.order-ticket-session-row strong, .order-ticket-session-row span { overflow-wrap: anywhere; }
+.order-ticket-session-row span { color: var(--muted); font-size: 12px; }
+.order-ticket-session-row .ghost-button { min-height: 36px; flex: 0 0 auto; }
 
 /* ── 24. Overlays & Modals ────────────────────────────────────────────── */
 .error-banner, .toast { border-radius: var(--radius); box-shadow: var(--shadow); }

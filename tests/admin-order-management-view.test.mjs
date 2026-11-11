@@ -15,6 +15,7 @@ function fixture(canEdit = false) {
   const view = createOrderManagementView({ state, $, adminAssetUrl: String,
     adminCan: (permission) => canEdit && permission === "orders.edit",
     escapeHtml: (value) => String(value ?? "").replaceAll("<", "&lt;"),
+    formatAdminSessionDateTime: (date, time) => [date ? date.split("-").reverse().join("/") : "", time ? time.replace(":", "h") : ""].filter(Boolean).join(" às "),
     getOrderValidationSummary: () => ({ hasTickets: false, hasConcessions: false, ticketsValidated: false, ticketsCancelled: false, concessionsDelivered: false, concessionsCancelled: false }),
     isOrderEffectivelyArchived: () => false, isOrderFullyValidated: () => false, isOrderSessionExpired: () => false,
     money: (value) => `R$ ${Number(value || 0).toFixed(2)}`, orderReference: (order) => order.id,
@@ -38,6 +39,7 @@ test("order modal preserves permissions and clears stale customer data", () => {
   view.fillOrderEditor(null, "view");
   assert.equal(state.selectedOrderId, "");
   assert.equal($("orderDetailBody").innerHTML, "");
+  assert.equal($("orderTicketSessionActions").innerHTML, "");
   for (const id of ["orderCustomerName", "orderCustomerPhone", "orderCustomerEmail", "orderCustomerCpf", "orderOperationalNotes"]) assert.equal($(id).value, "");
 });
 

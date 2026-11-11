@@ -1,5 +1,5 @@
 ((root) => {
-  function createOrderManagementView({ state, $, adminAssetUrl, adminCan, escapeHtml, financialStatusEventHtml, getOrderValidationSummary, isOrderEffectivelyActive, isOrderEffectivelyArchived, isOrderFullyValidated, isOrderSessionExpired, money, orderMatchesStatusFilter, orderReference, orderStatusLabel, paymentMethodLabel, paymentStatusLabel, providerLabel, renderManualSaleOptions }) {
+  function createOrderManagementView({ state, $, adminAssetUrl, adminCan, escapeHtml, financialStatusEventHtml, formatAdminSessionDateTime, getOrderValidationSummary, isOrderEffectivelyActive, isOrderEffectivelyArchived, isOrderFullyValidated, isOrderSessionExpired, money, orderMatchesStatusFilter, orderReference, orderStatusLabel, paymentMethodLabel, paymentStatusLabel, providerLabel, renderManualSaleOptions }) {
     function renderOrders() {
       renderManualSaleOptions();
       const orders = state.content?.orders || [];
@@ -203,21 +203,29 @@
       `;
     }
 
+    function sessionActionPanelForOrder(order) {
+      const issuedTickets = (state.content?.tickets || []).filter((ticket) => ticket.orderId === order.id);
+      const orderTickets = issuedTickets.length ? issuedTickets : order.tickets || [];
+      const sessionActions = adminCan("orders.edit") ? orderTickets.map((ticket) => {
+        const canChange = adminCan("orders.edit") && order.status === "paid" && ticket.status === "active"
+          && !ticket.usedAt && !["pending", "completed"].includes(order.refundStatus);
+        return `<div class="order-ticket-session-row">
+          <div><strong>${escapeHtml(ticket.movieTitle || order.movieTitle || "Filme")}</strong><span>${escapeHtml(formatAdminSessionDateTime(ticket.sessionDate || order.sessionDate, ticket.sessionTime || order.sessionTime))} · ${escapeHtml(ticket.seat || "Lugar livre")}</span></div>
+          <button class="ghost-button" type="button" data-admin-ticket-action="change-session" data-admin-ticket-value="${escapeHtml(ticket.id)}" ${canChange ? "" : 'disabled title="Disponível apenas para ingressos ativos de pedidos pagos, sem reembolso em andamento."'}>Trocar sessão</button>
+        </div>`;
+      }).join("") : "";
+      return sessionActions ? `<section class="order-ticket-session-actions" aria-label="Ações dos ingressos"><div class="section-title">Ações dos ingressos</div><p>Escolha um ingresso para trocar de sessão ou filme.</p>${sessionActions}</section>` : "";
+    }
+
     function orderDetailHtml(order) {
       const payment = paymentForOrder(order.id);
       const movie = movieForOrder(order);
       const val = getOrderValidationSummary(order);
       const sandboxRefundSimulated = [order.ticketRefund, order.concessionRefund, payment?.metadata?.cancellationRefund, payment?.metadata?.ticketRefund, payment?.metadata?.concessionRefund].some((refund) => refund?.simulated === true);
       const issuedTickets = (state.content?.tickets || []).filter((ticket) => ticket.orderId === order.id);
-      const tickets = (issuedTickets.length ? issuedTickets : order.tickets || []).map((ticket) => {
-        const canChange = adminCan("orders.edit") && order.status === "paid" && ticket.status === "active"
-          && !ticket.usedAt && !["pending", "completed"].includes(order.refundStatus);
-        return `<div class="order-ticket-action-row">
-          <button class="copy-code" type="button" data-admin-ticket-action="copy" data-admin-ticket-value="${escapeHtml(ticket.displayCode || ticket.code)}">${escapeHtml(ticket.displayCode || ticket.code)}</button>
-          <span class="list-meta">${escapeHtml(ticket.movieTitle || order.movieTitle || "Filme")} · ${escapeHtml(ticket.sessionDate || order.sessionDate || "")} ${escapeHtml(ticket.sessionTime || order.sessionTime || "")} · ${escapeHtml(ticket.seat || "Lugar livre")}</span>
-          ${adminCan("orders.edit") ? `<button class="ghost-button" type="button" data-admin-ticket-action="change-session" data-admin-ticket-value="${escapeHtml(ticket.id)}" ${canChange ? "" : 'disabled title="Disponível apenas para ingressos ativos de pedidos pagos, sem reembolso em andamento."'}>Trocar sessão</button>` : ""}
-        </div>`;
-      }).join("") || "-";
+      const tickets = (issuedTickets.length ? issuedTickets : order.tickets || []).map((ticket) =>
+        `<button class="copy-code" type="button" data-admin-ticket-action="copy" data-admin-ticket-value="${escapeHtml(ticket.displayCode || ticket.code)}">${escapeHtml(ticket.displayCode || ticket.code)}</button>`
+      ).join(" ") || "-";
       const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name || item.id)} x${Number(item.quantity || 0)}`).join("<br>") || "-";
       const history = (order.auditTrail || []).map((entry) => `${escapeHtml(entry.action || "alteração")} • ${new Date(entry.at || order.createdAt).toLocaleString("pt-BR")}`).join("<br>") || `Criação • ${new Date(order.createdAt).toLocaleString("pt-BR")}`;
       const serviceItems = (state.content?.orderServiceItems || []).filter((item) => item.orderId === order.id);
@@ -251,7 +259,7 @@
         ])}
         ${sectionHtml("Sessão", [
           ["Filme", `${movie?.posterUrl ? `<img class="inline-poster" src="${escapeHtml(adminAssetUrl(movie.posterUrl))}" alt="">` : ""}${escapeHtml(order.movieTitle || movie?.title || "-")}`],
-          ["Data e horário", [order.sessionDate, order.sessionTime].filter(Boolean).join(" • ") || order.sessionTime || "-"],
+          ["Data e horário", escapeHtml(formatAdminSessionDateTime(order.sessionDate, order.sessionTime)) || "-"],
           ["Sala", order.sessionRoom || "Sala Cruzeiro"],
           ["Poltronas", Array.isArray(order.selectedSeats) && order.selectedSeats.length ? order.selectedSeats.map((seat) => seat.label).join(", ") : "Lugar livre"],
           ["Formato", order.sessionFormat || "-"]
@@ -295,6 +303,7 @@
       $("orderOverlayTitle").textContent = mode === "edit" ? "Editar pedido" : "Visualizar pedido";
       $("orderOverlaySubtitle").textContent = order ? `${orderReference(order)} • ${orderStatusLabel(order.status)}` : "Pedido não encontrado.";
       $("orderDetailBody").innerHTML = order ? orderDetailHtml(order) : "";
+      $("orderTicketSessionActions").innerHTML = order ? sessionActionPanelForOrder(order) : "";
       $("orderEditFields").hidden = mode !== "edit";
       $("orderSaveButton").hidden = mode !== "edit" || !adminCan("orders.edit");
 

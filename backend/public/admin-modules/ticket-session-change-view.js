@@ -1,5 +1,5 @@
 ((root) => {
-  function createTicketSessionChangeView({ $, api, closeOrderOverlay, escapeHtml, loadContent, showToast }) {
+  function createTicketSessionChangeView({ $, api, closeOrderOverlay, escapeHtml, formatAdminSessionDateTime, loadContent, showToast }) {
     let ticketId = "";
     let sessions = [];
     let submitting = false;
@@ -52,8 +52,8 @@
         if (ticketId !== id || version !== requestVersion || overlay().hidden) return;
         const ticket = result.ticket || {};
         sessions = result.sessions || [];
-        $("ticketSessionChangeSummary").textContent = `${ticket.customerName || ticket.customerEmail || "Cliente"} · ${ticket.movieTitle || "Filme"} · ${ticket.sessionDate || ""} ${ticket.sessionTime || ""} · ${ticket.seat || "Lugar livre"}`;
-        sessionSelect().innerHTML = `<option value="">Selecione outra sessão</option>${sessions.map((session) => `<option value="${escapeHtml(session.id)}">${escapeHtml(`${session.movieTitle} · ${session.date} ${session.time} · ${session.room}`)}</option>`).join("")}`;
+        $("ticketSessionChangeSummary").textContent = `${ticket.customerName || ticket.customerEmail || "Cliente"} · ${ticket.movieTitle || "Filme"} · ${formatAdminSessionDateTime(ticket.sessionDate, ticket.sessionTime)} · ${ticket.seat || "Lugar livre"}`;
+        sessionSelect().innerHTML = `<option value="">Selecione outra sessão</option>${sessions.map((session) => `<option value="${escapeHtml(session.id)}">${escapeHtml(`${session.movieTitle} · ${formatAdminSessionDateTime(session.date, session.time)} · ${session.room}`)}</option>`).join("")}`;
         seatSelect().innerHTML = `<option value="">Selecione uma sessão primeiro</option>`;
         if (!sessions.length) $("ticketSessionChangeSummary").textContent += " · Não há sessões futuras disponíveis.";
         $("ticketSessionChangeSubmit").disabled = !sessions.length;
