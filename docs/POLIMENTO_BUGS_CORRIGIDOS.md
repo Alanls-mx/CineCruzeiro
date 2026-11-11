@@ -1,0 +1,11 @@
+# Problemas reproduzidos e corrigidos
+
+| Gravidade | Reprodução e impacto | Correção e evidência |
+| --- | --- | --- |
+| P1 • Validação bloqueada | No SHA inicial o Browser E2E esperou a poltrona A1 livre. O teste de disputa por WebSocket já tinha reservado A1 na mesma sessão. A execução local completa reproduziu a falha com 29 passes e uma falha. | `2efad4e` adiciona uma sessão futura exclusiva ao cenário de troca. A asserção continua exigindo a poltrona A1 e confirma ingresso, sessão, preço e pedido após a troca. [Log inicial](https://github.com/Alanls-mx/CineCruzeiro/actions/runs/42933297708) |
+| P1 • Conteúdo injetado no Admin | Um nome com a marcação de botão e uma observação com a marcação de campo viravam elementos HTML no detalhe do pedido. O teste reproduziu o problema antes da correção. | `0e9f393` escapa valores por padrão. Apenas linhas de apresentação construídas pelo painel inserem marcação. O teste também exige que o botão legítimo de copiar código continue funcional como elemento HTML. |
+| P2 • Consulta de poltronas | Durante a consulta de disponibilidade, o botão de confirmar permitia o envio antecipado com a poltrona ainda desabilitada. Uma falha atrasada podia substituir o resultado da seleção mais recente. | `5921c06` bloqueia a confirmação durante a consulta, ignora falhas obsoletas e reinicia os campos ao abrir. O navegador segura a resposta artificialmente e verifica o bloqueio. Escape fecha o diálogo e devolve o foco ao botão do pedido. |
+| P2 • Filme sem pôster | Uma área vazia empurrava o título para baixo no detalhe e havia um link sem nome no catálogo. | `b208621` e `cdff49b` renderizam a coluna do pôster quando existe arte. O título no catálogo abre o filme. O teste verifica o título inteiro na primeira tela de 360 × 640. |
+| P2 • Pix copia e cola | Sem a API de clipboard, o checkout indicava cópia bem-sucedida. Uma recusa da escrita podia rejeitar a promessa sem feedback visível. | `5c71c04` oferece o texto selecionável se a cópia automática falhar. O teste desativa a API, verifica o código e prossegue com a mesma compra até a aprovação sintética. |
+
+As verificações de autorização, concorrência, commit, auditoria, liberação de assento e emissão de direitos continuam nos testes HTTP e de domínio. As mudanças deste lote atingem a interface, seus testes e as sessões sintéticas do navegador.
