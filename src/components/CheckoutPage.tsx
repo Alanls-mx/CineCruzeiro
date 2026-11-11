@@ -1648,6 +1648,7 @@ function CardPaymentBrick({ publicKey, amount, loading, onSubmit }: { publicKey:
 
 function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestartPayment }: { draft: StoredCheckoutDraft; confirmationStatus: "idle" | "checking" | "ready" | "retrying"; orderReference: string; onRestartPayment: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [manualCopy, setManualCopy] = useState(false);
   const result = draft.paymentResult as CheckoutPaymentResult | undefined;
   const expiresAt = result?.payment?.expiresAt || result?.order?.reservationExpiresAt || "";
   const [remainingMs, setRemainingMs] = useState(() => {
@@ -1675,9 +1676,15 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
   const remainingLabel = `${String(Math.floor(remainingMs / 60000)).padStart(2, "0")}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, "0")}`;
   const copyPix = async () => {
     if (!result?.payment?.qrCode) return;
-    await navigator.clipboard?.writeText(result.payment.qrCode);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(result.payment.qrCode);
+      setManualCopy(false);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+      setManualCopy(true);
+    }
   };
 
   return (
@@ -1751,6 +1758,13 @@ function ConfirmationStep({ draft, confirmationStatus, orderReference, onRestart
                     <button type="button" onClick={copyPix} tabIndex={pixVisible ? 0 : -1} className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-gold-400 px-5 text-sm font-black text-slate-950 transition duration-200 hover:bg-gold-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
                       {copied ? "Código copiado" : "Copiar código Pix"}
                     </button>
+                    {manualCopy && pixVisible && (
+                      <label className="mt-3 block text-sm text-slate-200">
+                        <span role="status">Selecione e copie o código Pix manualmente.</span>
+                        <textarea className="mt-2 block w-full rounded bg-slate-950 p-2" readOnly
+                          value={result.payment.qrCode} onFocus={(event) => event.currentTarget.select()} />
+                      </label>
+                    )}
                   </div>
                 </div>
               </div>

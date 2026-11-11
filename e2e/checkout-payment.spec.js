@@ -171,6 +171,9 @@ test("cliente aplica cupom e o backend mantém o desconto no pedido", async ({ p
 test("checkout Pix permanece pendente, preserva bomboniere e entrega ingresso apenas após webhook aprovado", async ({ page, request, browser }) => {
   const email = "checkout-aprovado@e2e.local";
   await startPixCheckout(page, email, { concession: true });
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { value: undefined }));
+  await page.getByRole("button", { name: "Copiar código Pix" }).click();
+  await expect(page.getByRole("textbox", { name: /copie o código Pix manualmente/ })).toHaveValue(/.+/);
   const pending = await latestOrderFor(request, email);
   let content = await adminContent(request);
   const soldBeforeApproval = content.concessions.find((item) => item.id === "pipoca-e2e").sold;
