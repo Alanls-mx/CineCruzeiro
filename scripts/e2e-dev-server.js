@@ -115,6 +115,15 @@ function fixture() {
           roomId: "sala-marcada-e2e",
           ticketTypeIds: ["inteira-e2e"],
           status: "available"
+        }, {
+          id: "sessao-troca-e2e",
+          date: sellableTomorrowSession(new Date(referenceDate.getTime() + 86400000)).date,
+          time: sessionTime,
+          format: "2D Legendado",
+          room: "Sala Marcada E2E",
+          roomId: "sala-marcada-e2e",
+          ticketTypeIds: ["inteira-e2e"],
+          status: "available"
         }]
       }
     ],

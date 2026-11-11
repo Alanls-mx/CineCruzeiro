@@ -38,8 +38,8 @@ test("admin troca ingresso de filme e poltrona mantendo a venda", async ({ page 
   await expect(page.locator("#orderOverlay")).toBeHidden();
   await expect(page.locator("#ticketSessionChangeOverlay")).toBeVisible();
   await expect(page.locator("#ticketSessionChangeSummary")).toContainText(/\d{2}\/\d{2}\/\d{4} às \d{2}h\d{2}/);
-  await expect(page.locator("#ticketSessionChangeSession option[value='sessao-poltronas-e2e']")).toContainText(/\d{2}\/\d{2}\/\d{4} às \d{2}h\d{2}/);
-  await page.locator("#ticketSessionChangeSession").selectOption("sessao-poltronas-e2e");
+  await expect(page.locator("#ticketSessionChangeSession option[value='sessao-troca-e2e']")).toContainText(/\d{2}\/\d{2}\/\d{4} às \d{2}h\d{2}/);
+  await page.locator("#ticketSessionChangeSession").selectOption("sessao-troca-e2e");
   await expect(page.locator('#ticketSessionChangeSeat option[value="A1"]')).toHaveCount(1);
   await page.locator("#ticketSessionChangeSeat").selectOption("A1");
   await page.locator("#ticketSessionChangeSubmit").click();
@@ -47,7 +47,7 @@ test("admin troca ingresso de filme e poltrona mantendo a venda", async ({ page 
   const content = await (await page.request.get(`${backend}/api/admin/content`)).json();
   const ticket = content.tickets.find((item) => item.id === ticketId);
   const order = content.orders.find((item) => item.id === orderId);
-  expect(ticket.sessionId).toBe("sessao-poltronas-e2e");
+  expect(ticket.sessionId).toBe("sessao-troca-e2e");
   expect(ticket.movieId).toBe("filme-poltronas-e2e");
   expect(ticket.seat).toBe("A1");
   expect(order.totalPrice).toBe(sold.orders[0].totalPrice);
