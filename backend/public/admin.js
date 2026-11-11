@@ -2093,7 +2093,7 @@ function renderRooms() {
 const { renderTickets, renderIssuedTicketFilters, filteredIssuedTickets, renderIssuedTickets, changeIssuedTicketsPage, showSessionTickets, selectTicket, newTicket, fillTicketForm, saveTicket, deleteTicket } = window.CineAdminModules.ticketCatalogView.createTicketCatalogView({
   state, $, activatePanel, adminCan, api, confirm, creationPlaceholder, currentTicket, escapeHtml, issuedTicketSessionLabel, money, movieById, paginateAdminItems, removeAdminCollectionItem, renderAdminListPager, setDisabled, showToast, syncCreationControl, ticketStatusText, upsertAdminCollection
 });
-const ticketSessionChangeView = window.CineAdminModules.ticketSessionChangeView.createTicketSessionChangeView({ $, api, escapeHtml, loadContent, showToast });
+const ticketSessionChangeView = window.CineAdminModules.ticketSessionChangeView.createTicketSessionChangeView({ $, api, closeOrderOverlay: () => closeOrderOverlay(), escapeHtml, loadContent, showToast });
 
 const { renderOrders, renderTodaySalesSummary, orderTicketCount, renderOrdersTable, changeOrdersPage, statusClass, originLabel, paymentForOrder, movieForOrder, sectionHtml, orderDetailHtml, fillOrderEditor } = window.CineAdminModules.orderManagementView.createOrderManagementView({
   state, $, adminAssetUrl, adminCan, escapeHtml, financialStatusEventHtml, getOrderValidationSummary, isOrderEffectivelyActive, isOrderEffectivelyArchived, isOrderFullyValidated, isOrderSessionExpired, money, orderMatchesStatusFilter: (...args) => orderMatchesStatusFilter(...args), orderReference, orderStatusLabel, paymentMethodLabel, paymentStatusLabel, providerLabel, renderManualSaleOptions: (...args) => renderManualSaleOptions(...args)

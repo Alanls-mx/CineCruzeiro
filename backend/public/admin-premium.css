@@ -2301,6 +2301,10 @@ td {
 .issued-ticket-actions .ghost-button { justify-self: stretch; }
 .ticket-session-change-card { width: min(540px, 100%); gap: 16px; }
 .ticket-session-change-card .form-grid { grid-template-columns: 1fr; }
+.order-ticket-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; }
+.order-ticket-action-row + .order-ticket-action-row { border-top: 1px solid var(--line-soft); }
+.order-ticket-action-row .list-meta { flex: 1 1 170px; white-space: normal; }
+.order-ticket-action-row .ghost-button { padding: 5px 9px; font-size: 11px; }
 
 /* ── 24. Overlays & Modals ────────────────────────────────────────────── */
 .error-banner, .toast { border-radius: var(--radius); box-shadow: var(--shadow); }

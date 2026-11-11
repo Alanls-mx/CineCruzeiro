@@ -145,7 +145,7 @@
               </div>
               <div class="issued-ticket-actions">
                 <button class="ghost-button" type="button" data-admin-session-action="tickets" data-admin-session-id="${escapeHtml(ticket.sessionId || "")}">Sessão</button>
-                ${adminCan("orders.edit") && ticket.status === "active" ? `<button class="ghost-button" type="button" data-admin-ticket-action="change-session" data-admin-ticket-value="${escapeHtml(ticket.id)}">Trocar sessão</button>` : ""}
+                ${adminCan("orders.edit") ? `<button class="ghost-button" type="button" data-admin-ticket-action="change-session" data-admin-ticket-value="${escapeHtml(ticket.id)}" ${ticket.status === "active" && ticket.orderStatus === "paid" ? "" : 'disabled title="Disponível apenas para ingressos ativos de pedidos pagos."'}>Trocar sessão</button>` : ""}
               </div>
             </article>
           `).join("")}

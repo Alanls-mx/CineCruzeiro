@@ -25,7 +25,12 @@ test("admin troca ingresso de filme e poltrona mantendo a venda", async ({ page 
   await page.goto(`${backend}/admin#ticketsPanel`);
   const action = page.locator(`[data-admin-ticket-action="change-session"][data-admin-ticket-value="${ticketId}"]`);
   await expect(action).toBeVisible();
-  await action.click();
+  await page.locator(`[data-admin-ticket-action="order"][data-admin-ticket-value="${orderId}"]`).click();
+  await expect(page.locator("#orderOverlay")).toBeVisible();
+  const orderAction = page.locator(`#orderDetailBody [data-admin-ticket-action="change-session"][data-admin-ticket-value="${ticketId}"]`);
+  await expect(orderAction).toBeVisible();
+  await orderAction.click();
+  await expect(page.locator("#orderOverlay")).toBeHidden();
   await expect(page.locator("#ticketSessionChangeOverlay")).toBeVisible();
   await page.locator("#ticketSessionChangeSession").selectOption("sessao-poltronas-e2e");
   await expect(page.locator('#ticketSessionChangeSeat option[value="A1"]')).toHaveCount(1);

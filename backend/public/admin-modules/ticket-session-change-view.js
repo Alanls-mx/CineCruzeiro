@@ -1,5 +1,5 @@
 ((root) => {
-  function createTicketSessionChangeView({ $, api, escapeHtml, loadContent, showToast }) {
+  function createTicketSessionChangeView({ $, api, closeOrderOverlay, escapeHtml, loadContent, showToast }) {
     let ticketId = "";
     let sessions = [];
     let submitting = false;
@@ -43,6 +43,7 @@
     async function open(id) {
       const version = ++requestVersion;
       ticketId = id;
+      closeOrderOverlay();
       overlay().hidden = false;
       $("ticketSessionChangeSummary").textContent = "Carregando ingresso e sessões…";
       $("ticketSessionChangeSubmit").disabled = true;

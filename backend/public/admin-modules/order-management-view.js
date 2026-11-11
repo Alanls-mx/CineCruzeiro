@@ -208,10 +208,16 @@
       const movie = movieForOrder(order);
       const val = getOrderValidationSummary(order);
       const sandboxRefundSimulated = [order.ticketRefund, order.concessionRefund, payment?.metadata?.cancellationRefund, payment?.metadata?.ticketRefund, payment?.metadata?.concessionRefund].some((refund) => refund?.simulated === true);
-      const tickets = (order.tickets || []).map((ticket) => `
-        <button class="copy-code" type="button" data-admin-ticket-action="copy" data-admin-ticket-value="${escapeHtml(ticket.displayCode || ticket.code)}">${escapeHtml(ticket.displayCode || ticket.code)}</button>
-        <span class="list-meta">${escapeHtml(orderStatusLabel(ticket.status))}</span>
-      `).join("<br>") || "-";
+      const issuedTickets = (state.content?.tickets || []).filter((ticket) => ticket.orderId === order.id);
+      const tickets = (issuedTickets.length ? issuedTickets : order.tickets || []).map((ticket) => {
+        const canChange = adminCan("orders.edit") && order.status === "paid" && ticket.status === "active"
+          && !ticket.usedAt && !["pending", "completed"].includes(order.refundStatus);
+        return `<div class="order-ticket-action-row">
+          <button class="copy-code" type="button" data-admin-ticket-action="copy" data-admin-ticket-value="${escapeHtml(ticket.displayCode || ticket.code)}">${escapeHtml(ticket.displayCode || ticket.code)}</button>
+          <span class="list-meta">${escapeHtml(ticket.movieTitle || order.movieTitle || "Filme")} · ${escapeHtml(ticket.sessionDate || order.sessionDate || "")} ${escapeHtml(ticket.sessionTime || order.sessionTime || "")} · ${escapeHtml(ticket.seat || "Lugar livre")}</span>
+          ${adminCan("orders.edit") ? `<button class="ghost-button" type="button" data-admin-ticket-action="change-session" data-admin-ticket-value="${escapeHtml(ticket.id)}" ${canChange ? "" : 'disabled title="Disponível apenas para ingressos ativos de pedidos pagos, sem reembolso em andamento."'}>Trocar sessão</button>` : ""}
+        </div>`;
+      }).join("") || "-";
       const extras = (order.concessionItems || []).map((item) => `${escapeHtml(item.name || item.id)} x${Number(item.quantity || 0)}`).join("<br>") || "-";
       const history = (order.auditTrail || []).map((entry) => `${escapeHtml(entry.action || "alteração")} • ${new Date(entry.at || order.createdAt).toLocaleString("pt-BR")}`).join("<br>") || `Criação • ${new Date(order.createdAt).toLocaleString("pt-BR")}`;
       const serviceItems = (state.content?.orderServiceItems || []).filter((item) => item.orderId === order.id);
