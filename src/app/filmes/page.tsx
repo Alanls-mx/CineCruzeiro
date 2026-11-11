@@ -138,9 +138,9 @@ export default function FilmesPage() {
 
 function MovieSchedule({ movie, filter, selectedDay, days, priority = false }: { movie: Movie; filter: SessionFilter; selectedDay: number; days: Array<{ isoDate: string; label: string; weekday: string; displayDate: string }>; priority?: boolean }) {
   return (
-    <article className="grid gap-5 border-t border-white/8 pt-8 lg:grid-cols-[180px_1fr]">
-      <Link href={`/filmes/${movieSlug(movie)}`} className="relative block aspect-[2/3] w-full max-w-[180px] overflow-hidden bg-brand-950">
-        {movie.posterUrl && (
+    <article className={`grid gap-5 border-t border-white/8 pt-8 ${movie.posterUrl ? "lg:grid-cols-[180px_1fr]" : ""}`}>
+      {movie.posterUrl && (
+        <Link href={`/filmes/${movieSlug(movie)}`} className="relative block aspect-[2/3] w-full max-w-[180px] overflow-hidden bg-brand-950">
           <Image
             src={movie.posterUrl}
             alt={`Poster de ${movie.title}`}
@@ -151,13 +151,13 @@ function MovieSchedule({ movie, filter, selectedDay, days, priority = false }: {
             sizes="180px"
             className="object-cover"
           />
-        )}
-      </Link>
+        </Link>
+      )}
       <div className="min-w-0">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <MovieTagBadge tag={movie.tag} className="mb-3" />
-            <h2 className="font-display text-3xl font-black">{movie.title}</h2>
+            <h2 className="font-display text-3xl font-black"><Link href={`/filmes/${movieSlug(movie)}`}>{movie.title}</Link></h2>
             <MovieMetadata rating={movie.rating} duration={movie.duration} className="mt-3" />
           </div>
         </div>
