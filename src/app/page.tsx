@@ -90,7 +90,7 @@ export default async function HomePage() {
                   <p className="mt-5 max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">{featured.synopsis}</p>
                   <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm font-semibold text-slate-300">
                     <MovieMetadata rating={featured.rating} duration={featured.duration} genres={featured.genre} />
-                    <span className="text-gold-400">Ingressos {money(firstSession?.priceFull || 10)}</span>
+                    {firstSession && <span className="text-gold-400">Ingressos {money(firstSession.priceFull)}</span>}
                   </div>
                   <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                     {firstSession && (
