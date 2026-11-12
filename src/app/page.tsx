@@ -6,12 +6,11 @@ import { Ticket } from "lucide-react";
 import { HomeTrailerButton } from "@/components/HomeTrailerButton";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { MovieMetadata } from "@/components/MovieMetadata";
-import { RoxyHistory, RoxyWelcome } from "@/components/RoxyHeritage";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { CinemaContent } from "@/services/cinemaApi";
 import { homeFeaturedMovie, loadHomeContent } from "@/services/homeContent";
 import { Movie } from "@/types";
-import { isUploadedAsset, movieSlug, money } from "@/utils/cinema";
+import { assetPath, isUploadedAsset, movieSlug, money } from "@/utils/cinema";
 import { normalizeMovieTag } from "@/utils/movieTags";
 
 export const dynamic = "force-dynamic";
@@ -32,14 +31,13 @@ export async function generateMetadata(): Promise<Metadata> {
       .update(`${featured.id}|${featured.title}|${featured.posterUrl}|${featured.backdropUrl}`)
       .digest("hex").slice(0, 10);
     const imageUrl = `${new URL(siteUrl).origin}${basePath}/og/home?day=${encodeURIComponent(day)}&movie=${encodeURIComponent(featured.id)}&art=${artVersion}`;
-    const cinemaName = isRoxy ? "Cine Roxy" : "Cine Cruzeiro";
-    const title = `${featured.title} | ${cinemaName}`;
-    const description = featured.synopsis?.trim().slice(0, 180) || `Confira ${featured.title} no ${cinemaName}.`;
+    const title = `${featured.title} | Cine Cruzeiro`;
+    const description = featured.synopsis?.trim().slice(0, 180) || `Confira ${featured.title} no Cine Cruzeiro.`;
 
     return {
       title,
       description,
-      openGraph: { title, description, images: [{ url: imageUrl, width: 1200, height: 630, alt: `${featured.title} em destaque no ${cinemaName}` }] },
+      openGraph: { title, description, images: [{ url: imageUrl, width: 1200, height: 630, alt: `${featured.title} em destaque no Cine Cruzeiro` }] },
       twitter: { card: "summary_large_image", title, description, images: [imageUrl] },
     };
   } catch {
@@ -123,10 +121,9 @@ export default async function HomePage() {
             </section>
             <MovieStrip title="Em Cartaz" movies={content.nowPlaying} />
             <MovieStrip title="Em Breve" movies={content.upcoming} muted />
-            {isRoxy && <RoxyHistory />}
           </>
         ) : (
-          isRoxy ? <><RoxyWelcome /><RoxyHistory /></> : <HomeError message={error || "Nenhum filme disponível na programação."} />
+          <HomeError message={error || "Nenhum filme disponível na programação."} />
         )}
       </main>
       <SiteFooter />
@@ -185,6 +182,27 @@ function MovieStrip({ title, movies, muted = false }: { title: string; movies: M
 }
 
 function HomeError({ message }: { message: string }) {
+  if (isRoxy) return (
+    <section className="relative overflow-hidden">
+      <div className="absolute inset-0 opacity-35" style={{ backgroundImage: `url(${assetPath("/images/cine-roxy/auditorio.jpg")})`, backgroundSize: "cover", backgroundPosition: "center" }} aria-hidden="true" />
+      <div className="absolute inset-0 bg-[linear-gradient(90deg,#060a12_0%,rgba(6,10,18,.86)_35%,rgba(6,10,18,.38)_100%)]" aria-hidden="true" />
+      <div className="relative mx-auto grid min-h-[620px] max-w-[1320px] items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8">
+        <div className="max-w-3xl">
+          <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Cine Roxy · Passos, MG</p>
+          <h1 className="mt-5 font-display text-5xl font-black leading-none tracking-tight text-white sm:text-6xl lg:text-7xl">Sua próxima história começa aqui.</h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">{message} Confira os filmes e horários publicados pelo cinema enquanto preparamos esta programação.</p>
+          <a href="https://www.adorocinema.com/programacao/cinema-F0894/" className="mt-8 inline-flex items-center justify-center bg-gold-400 px-7 py-4 text-sm font-black text-slate-950 transition hover:bg-gold-300">Consultar horários ↗</a>
+        </div>
+        <div className="cinema-hero-poster-frame relative w-full max-w-[260px] justify-self-center sm:max-w-[300px] lg:justify-self-end">
+          <div className="cinema-hero-poster relative z-10 flex aspect-[2/3] w-full items-end overflow-hidden bg-brand-950 shadow-[0_22px_80px_rgba(0,0,0,.45)]">
+            <img src={assetPath("/images/cine-roxy/auditorio.jpg")} alt="Sala do Cine Roxy" className="absolute inset-0 h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" aria-hidden="true" />
+            <img src={assetPath("/images/cine-roxy/logo-horizontal.svg")} alt="Cine Roxy" className="relative m-5 w-[85%]" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
   return (
     <section className="mx-auto max-w-[1320px] px-4 py-24 sm:px-6 lg:px-8">
       <h1 className="font-display text-4xl font-black">Programação indisponível</h1>
