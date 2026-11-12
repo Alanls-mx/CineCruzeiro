@@ -1519,7 +1519,8 @@ function appendAuditLog(db) {
 function normalizeDb(db) {
   normalizeSnapshotSettings(db, {
     cinemaName: "Cine Cruzeiro",
-    announcementText: "Promoção permanente no Cine Cruzeiro - Ingressos a apenas R$ 10,00",
+    announcementText: process.env.CINE_INSTANCE_SLUG === "cine-roxy" ? "" : "Promoção permanente no Cine Cruzeiro - Ingressos a apenas R$ 10,00",
+    announcementEnabled: process.env.CINE_INSTANCE_SLUG !== "cine-roxy",
     normalizeTicketDistributorRules,
     storedEditorialImageUrl
   });

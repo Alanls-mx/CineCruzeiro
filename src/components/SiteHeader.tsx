@@ -37,7 +37,8 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
   const [remoteContent, setRemoteContent] = useState<CinemaContent | null>(null);
 
   const effectiveSettings = settings || remoteContent?.settings;
-  const showAnnouncement = effectiveSettings?.announcementEnabled === true;
+  const showAnnouncement = effectiveSettings?.announcementEnabled === true
+    && !(isRoxy && /promoção permanente.*10,00/i.test(effectiveSettings?.announcementText || ""));
   const announcementText = effectiveSettings?.announcementText?.trim();
 
   useEffect(() => setOpen(false), [pathname]);
@@ -178,7 +179,7 @@ export function SiteFooter() {
           )}
         </div>
         <div className="space-y-2">
-          <h3 className="font-bold text-white">Compra rápida</h3>
+          <h3 className="font-bold text-white">{isRoxy ? "Visite o cinema" : "Compra rápida"}</h3>
           {isRoxy ? (
             <>
               <a href="https://www.adorocinema.com/programacao/cinema-F0894/" className="block hover:text-white">Ver horários ↗</a>
@@ -199,15 +200,23 @@ export function SiteFooter() {
         {showLocation && (
           <div id={isRoxy ? "localizacao" : undefined} className="space-y-2 md:col-span-2 lg:col-span-1">
             <h3 className="font-bold text-white">Onde estamos</h3>
-            <div className="overflow-hidden rounded-lg border border-white/10 bg-[#171127]">
-              <iframe
-                title={`Mapa do ${brand.name}`}
-                src={mapEmbedUrl}
-                className="block h-36 w-full"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            </div>
+            {isRoxy ? (
+              <a href={mapDirectionsUrl} target="_blank" rel="noopener noreferrer" className="flex h-36 flex-col justify-end rounded-lg border border-[#a5302b]/40 bg-[radial-gradient(circle_at_68%_30%,rgba(198,46,35,.23),transparent_55%),#1b1112] p-4 text-white transition hover:border-[#ee5144]">
+                <span className="text-2xl text-[#f35b4d]">⌖</span>
+                <span className="mt-2 text-xs font-black uppercase tracking-[.16em]">Centro de Passos</span>
+                <span className="mt-1 text-xs text-stone-300">Abrir no Google Maps ↗</span>
+              </a>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-white/10 bg-[#171127]">
+                <iframe
+                  title={`Mapa do ${brand.name}`}
+                  src={mapEmbedUrl}
+                  className="block h-36 w-full"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              </div>
+            )}
             <a href={mapDirectionsUrl} target="_blank" rel="noopener noreferrer" className="block leading-relaxed text-slate-300 underline-offset-4 hover:text-white hover:underline">
               {isRoxy ? "Praça Monsenhor Messias Bragança, 178 · Centro, Passos–MG ↗" : "Av. Getúlio Vargas, 481 · Centro, Colatina–ES ↗"}
             </a>

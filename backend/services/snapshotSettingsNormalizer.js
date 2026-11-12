@@ -1,13 +1,13 @@
 // Legacy snapshot defaults are applied at read time in both JSON and PostgreSQL modes.
 // Installation-specific copy is supplied by the server, not fixed in this module.
-function normalizeSnapshotSettings(db, { cinemaName, announcementText, normalizeTicketDistributorRules, storedEditorialImageUrl }) {
+function normalizeSnapshotSettings(db, { cinemaName, announcementText, announcementEnabled = true, normalizeTicketDistributorRules, storedEditorialImageUrl }) {
   db.settings = {
     cinemaName,
     defaultTicketPrice: 10,
     currency: "BRL",
     salesChannel: "Site + Pix",
     heroTrailerBackgroundEnabled: false,
-    announcementEnabled: true,
+    announcementEnabled,
     announcementText,
     clubTransparentImages: false,
     clubHeroImageUrl: "",
