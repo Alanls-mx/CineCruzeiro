@@ -1272,12 +1272,36 @@ body[data-cinema-theme="cine-roxy"] .bg-slate-950,
 body[data-cinema-theme="cine-roxy"] [class*="bg-[#060a12]"],
 body[data-cinema-theme="cine-roxy"] [class*="bg-[#050810]"] { background-color: #0e0a0b !important; }
 body[data-cinema-theme="cine-roxy"] .bg-brand-900,
+body[data-cinema-theme="cine-roxy"] .bg-brand-900\/70,
+body[data-cinema-theme="cine-roxy"] .bg-brand-900\/80,
+body[data-cinema-theme="cine-roxy"] .bg-brand-900\/85,
 body[data-cinema-theme="cine-roxy"] .bg-slate-900,
-body[data-cinema-theme="cine-roxy"] [class*="bg-[#091122]"] { background-color: #211315 !important; }
+body[data-cinema-theme="cine-roxy"] [class*="bg-[#091122]"],
+body[data-cinema-theme="cine-roxy"] [class*="bg-[#0b1425]"] { background-color: #211315 !important; }
+body[data-cinema-theme="cine-roxy"] .bg-brand-850,
+body[data-cinema-theme="cine-roxy"] .bg-brand-800,
+body[data-cinema-theme="cine-roxy"] .bg-slate-800 { background-color: #3a1b1d !important; }
+body[data-cinema-theme="cine-roxy"] .bg-brand-700,
+body[data-cinema-theme="cine-roxy"] .bg-brand-600,
+body[data-cinema-theme="cine-roxy"] .bg-blue-700,
+body[data-cinema-theme="cine-roxy"] .bg-blue-600 { background-color: #a72827 !important; }
 body[data-cinema-theme="cine-roxy"] .bg-gold-400 { background-color: #c72925 !important; color: #fff !important; }
-body[data-cinema-theme="cine-roxy"] .hover\:bg-gold-300:hover { background-color: #e23c35 !important; }
+body[data-cinema-theme="cine-roxy"] .hover\:bg-gold-300:hover,
+body[data-cinema-theme="cine-roxy"] .hover\:bg-gold-400:hover { background-color: #e23c35 !important; }
+body[data-cinema-theme="cine-roxy"] .text-brand-100,
+body[data-cinema-theme="cine-roxy"] .text-brand-200 { color: #ffe2d9 !important; }
+body[data-cinema-theme="cine-roxy"] .text-brand-500,
+body[data-cinema-theme="cine-roxy"] .text-brand-400,
 body[data-cinema-theme="cine-roxy"] .text-brand-300,
 body[data-cinema-theme="cine-roxy"] .text-gold-400,
+body[data-cinema-theme="cine-roxy"] .text-gold-300,
+body[data-cinema-theme="cine-roxy"] .text-blue-300,
+body[data-cinema-theme="cine-roxy"] .text-blue-400,
 body[data-cinema-theme="cine-roxy"] .hover\:text-gold-400:hover { color: #ff7d6f !important; }
-body[data-cinema-theme="cine-roxy"] .bg-brand-700 { background-color: #8d1d1a !important; }
+body[data-cinema-theme="cine-roxy"] .border-brand-850,
+body[data-cinema-theme="cine-roxy"] .border-brand-800,
+body[data-cinema-theme="cine-roxy"] .border-brand-700,
+body[data-cinema-theme="cine-roxy"] .border-brand-600,
+body[data-cinema-theme="cine-roxy"] .border-brand-500,
+body[data-cinema-theme="cine-roxy"] .border-brand-400 { border-color: rgba(255, 125, 111, .3) !important; }
 body[data-cinema-theme="cine-roxy"] .cinema-hero-poster { border: 1px solid rgba(255, 125, 111, .3); }
