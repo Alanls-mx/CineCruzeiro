@@ -6,6 +6,7 @@ import { Ticket } from "lucide-react";
 import { HomeTrailerButton } from "@/components/HomeTrailerButton";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { MovieMetadata } from "@/components/MovieMetadata";
+import { RoxyHistory, RoxyWelcome } from "@/components/RoxyHeritage";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
 import { CinemaContent } from "@/services/cinemaApi";
 import { homeFeaturedMovie, loadHomeContent } from "@/services/homeContent";
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.NODE_ENV === "production" ? "https://lumixengine.com" : "http://localhost:3000");
 const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || (process.env.NODE_ENV === "production" ? "/projects/cinecruzeiro" : "")).replace(/\/+$/, "");
+const isRoxy = process.env.NEXT_PUBLIC_CINEMA_SLUG === "cine-roxy";
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
@@ -30,13 +32,14 @@ export async function generateMetadata(): Promise<Metadata> {
       .update(`${featured.id}|${featured.title}|${featured.posterUrl}|${featured.backdropUrl}`)
       .digest("hex").slice(0, 10);
     const imageUrl = `${new URL(siteUrl).origin}${basePath}/og/home?day=${encodeURIComponent(day)}&movie=${encodeURIComponent(featured.id)}&art=${artVersion}`;
-    const title = `${featured.title} | Cine Cruzeiro`;
-    const description = featured.synopsis?.trim().slice(0, 180) || `Confira ${featured.title} no Cine Cruzeiro.`;
+    const cinemaName = isRoxy ? "Cine Roxy" : "Cine Cruzeiro";
+    const title = `${featured.title} | ${cinemaName}`;
+    const description = featured.synopsis?.trim().slice(0, 180) || `Confira ${featured.title} no ${cinemaName}.`;
 
     return {
       title,
       description,
-      openGraph: { title, description, images: [{ url: imageUrl, width: 1200, height: 630, alt: `${featured.title} em destaque no Cine Cruzeiro` }] },
+      openGraph: { title, description, images: [{ url: imageUrl, width: 1200, height: 630, alt: `${featured.title} em destaque no ${cinemaName}` }] },
       twitter: { card: "summary_large_image", title, description, images: [imageUrl] },
     };
   } catch {
@@ -120,9 +123,10 @@ export default async function HomePage() {
             </section>
             <MovieStrip title="Em Cartaz" movies={content.nowPlaying} />
             <MovieStrip title="Em Breve" movies={content.upcoming} muted />
+            {isRoxy && <RoxyHistory />}
           </>
         ) : (
-          <HomeError message={error || "Nenhum filme disponível na programação."} />
+          isRoxy ? <><RoxyWelcome /><RoxyHistory /></> : <HomeError message={error || "Nenhum filme disponível na programação."} />
         )}
       </main>
       <SiteFooter />

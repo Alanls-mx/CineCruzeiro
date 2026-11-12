@@ -38,6 +38,13 @@ const CINEMA_BRANDS: Record<string, CinemaBrand> = {
     clubLabel: "Clube Cine Gama",
     footerSummary: "Programação e ingressos para Colatina.",
   },
+  "cine-roxy": {
+    name: "Cine Roxy",
+    footerDescription: "Cinema de rua no coração de Passos desde 1945. Um lugar para encontrar grandes histórias diante da tela.",
+    footerSignature: "A tradição do cinema em Passos.",
+    clubLabel: "Clube Cine Roxy",
+    footerSummary: "Praça Monsenhor Messias Bragança, 178 · Centro, Passos–MG.",
+  },
   "cinemania-cosmopolis": {
     name: "CineMania Cosmópolis",
     footerDescription: "Estreias, encontros e diversão para fazer da programação de Cosmópolis uma experiência completa.",

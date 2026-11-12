@@ -27,11 +27,13 @@ const mediumIconUrl = `${basePath}/images/favicon-32.png?brand=cinecruzeiro-icon
 const vectorIconUrl = `${basePath}/images/favicon.svg?brand=cinecruzeiro-icon-blue-star-20261005`;
 const appleIconUrl = `${basePath}/images/favicon-180.png?brand=cinecruzeiro-icon-blue-star-20261005`;
 const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG || "default";
+const isRoxy = cinemaTheme === "cine-roxy";
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
-  title: "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
-  description:
-    "Compre seus ingressos para o Cine Cruzeiro em 30 segundos via Pix. Sala única com projeção Laser 4K, som Dolby 7.1, pipoca quentinha artesanal e zero filas.",
+  title: isRoxy ? "Cine Roxy | Cinema em Passos desde 1945" : "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
+  description: isRoxy
+    ? "Conheça o Cine Roxy, cinema de rua no centro de Passos, MG, desde 1945. História, localização e acesso à programação oficial."
+    : "Compre seus ingressos para o Cine Cruzeiro em 30 segundos via Pix. Sala única com projeção Laser 4K, som Dolby 7.1, pipoca quentinha artesanal e zero filas.",
   keywords: [
     "Cine Cruzeiro",
     "cinema de bairro",
@@ -40,7 +42,7 @@ export const metadata: Metadata = {
     "filmes em cartaz",
     "aluguel de cinema para eventos",
   ],
-  icons: {
+  icons: isRoxy ? { icon: [{ url: `${basePath}/images/cine-roxy/mark.svg`, type: "image/svg+xml", sizes: "any" }] } : {
     icon: [
       { url: vectorIconUrl, type: "image/svg+xml", sizes: "any" },
       { url: smallIconUrl, type: "image/png", sizes: "16x16" },
@@ -57,8 +59,8 @@ export const metadata: Metadata = {
     follow: true,
   },
   openGraph: {
-    title: "Cine Cruzeiro | O Cinema do Seu Bairro",
-    description: "Sem filas de shopping, pipoca crocante na manteiga e ingressos sem taxas no Pix.",
+    title: isRoxy ? "Cine Roxy | Cinema em Passos desde 1945" : "Cine Cruzeiro | O Cinema do Seu Bairro",
+    description: isRoxy ? "O cinema de Passos na Praça Monsenhor Messias Bragança, 178." : "Sem filas de shopping, pipoca crocante na manteiga e ingressos sem taxas no Pix.",
     url: `${publicUrl}/`,
     type: "website",
     images: [logoUrl],
