@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { CalendarDays, Clock, MonitorPlay } from "lucide-react";
 import { Movie, Session } from "@/types";
-import { calendarDayFullLabel, money } from "@/utils/cinema";
+import { calendarDayFullLabel, cinemaBrand, money } from "@/utils/cinema";
 
 export type SessionFilter = "todos" | "normal" | "dublado" | "legendado" | "3d";
 
@@ -37,8 +37,8 @@ export function MovieSessionSelector({
     <section className="rounded-lg bg-brand-900/60 p-5 shadow-xl shadow-blue-950/10">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-4">
         <div>
-          <h3 className="text-sm font-black uppercase tracking-[.18em] text-white">Cine Cruzeiro</h3>
-          <p className="mt-1 text-sm text-slate-400">Sala única, projeção laser 4K, som Dolby 7.1. Lugares por ordem de chegada.</p>
+          <h3 className="text-sm font-black uppercase tracking-[.18em] text-white">{cinemaBrand().name}</h3>
+          <p className="mt-1 text-sm text-slate-400">{cinemaBrand().name === "Cine Gama" ? "Sessões no Centro de Colatina. Escolha uma sessão e confira as poltronas disponíveis." : "Sala única, projeção laser 4K, som Dolby 7.1. Lugares por ordem de chegada."}</p>
         </div>
         <MonitorPlay className="h-5 w-5 text-brand-300" />
       </div>

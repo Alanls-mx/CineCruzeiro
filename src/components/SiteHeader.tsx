@@ -22,6 +22,7 @@ type SiteHeaderProps = {
 
 export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAction = false }: SiteHeaderProps = {}) {
   const brand = cinemaBrand();
+  const items = brand.name === "Cine Gama" ? [...navItems, { href: "/o-cinema", label: "Nossa história" }] : navItems;
   const brandLogo = brand.name === "Cine Estação Amparo"
     ? assetPath("/images/cine-estacao/logo.webp?brand=estacao-amparo-v1")
     : assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026");
@@ -78,7 +79,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
         </Link>
 
         <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-200 md:flex">
-          {navItems.map((item) => (
+          {items.map((item) => (
             <Link key={item.href} href={item.href} className="transition hover:text-gold-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold-400">
               {item.label}
             </Link>
@@ -107,7 +108,7 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
       {open && (
         <div id="site-mobile-navigation" className="border-t border-white/8 bg-[#060a12] px-4 py-5 md:hidden">
           <nav className="mx-auto flex max-w-[1320px] flex-col gap-4 text-base font-bold text-slate-100">
-            {navItems.map((item) => (
+            {items.map((item) => (
               <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
                 {item.label}
               </Link>
@@ -151,6 +152,7 @@ export function SiteFooter() {
           <Link href="/filmes" className="block hover:text-white">Filmes em cartaz</Link>
           <Link href="/clube" className="block hover:text-white">{brand.clubLabel}</Link>
           <Link href="/eventos" className="block hover:text-white">Eventos e sala fechada</Link>
+          {brand.name === "Cine Gama" && <Link href="/o-cinema" className="block hover:text-white">Nossa história</Link>}
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Compra rápida</h3>

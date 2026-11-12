@@ -33,10 +33,10 @@ const CINEMA_BRANDS: Record<string, CinemaBrand> = {
   },
   "cine-gama": {
     name: "Cine Gama",
-    footerDescription: "Grandes histórias, conforto e diversão para transformar cada ida ao cinema em um programa especial.",
-    footerSignature: "Cinema feito para Colatina.",
+    footerDescription: "Na Avenida Getúlio Vargas, a tradição do antigo Cine Alhambra encontra a programação de hoje em Colatina.",
+    footerSignature: "Cinema de rua, memória e encontros em Colatina.",
     clubLabel: "Clube Cine Gama",
-    footerSummary: "Programação e ingressos para Colatina.",
+    footerSummary: "Filmes, sessões e ingressos em Colatina, ES.",
   },
   "cinemania-cosmopolis": {
     name: "CineMania Cosmópolis",

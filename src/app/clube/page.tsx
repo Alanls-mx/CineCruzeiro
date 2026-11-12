@@ -57,6 +57,7 @@ export default function ClubePage() {
   const preserveTransparentImages = settings.clubTransparentImages === true;
   const editorialImages = cinemaEditorialImages();
   const brand = cinemaBrand();
+  const isGama = brand.name === "Cine Gama";
   const heroImage = uploadedImageUrl(settings.clubHeroImageUrl) || editorialImages?.clubHero || "";
   const bannerImage = uploadedImageUrl(settings.clubBannerImageUrl) || editorialImages?.clubBanner || "";
 
@@ -67,10 +68,10 @@ export default function ClubePage() {
         <section className="mx-auto grid max-w-[1040px] items-center gap-7 px-4 py-6 sm:px-6 md:grid-cols-[.9fr_.7fr] lg:px-8 lg:py-9">
           <div className="relative z-10 max-w-lg">
             <h1 className="font-display text-3xl font-black leading-[1.02] sm:text-4xl lg:text-5xl">
-              {brand.clubLabel}: cinema todo mês, sem pensar duas vezes.
+              {isGama ? "Clube Cine Gama: mais motivos para voltar ao cinema." : `${brand.clubLabel}: cinema todo mês, sem pensar duas vezes.`}
             </h1>
             <p className="mt-4 max-w-md text-sm leading-6 text-slate-300 sm:text-base">
-              Assine, receba créditos mensais e transforme a ida ao cinema em rotina de bairro: ingresso digital, benefícios na bomboniere e fila expressa.
+              {isGama ? "Conheça os planos disponíveis e transforme cada visita ao cinema de rua de Colatina em um novo encontro. Créditos e benefícios dependem das condições do plano escolhido." : "Assine, receba créditos mensais e transforme a ida ao cinema em rotina de bairro: ingresso digital, benefícios na bomboniere e fila expressa."}
             </p>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
               <a href="#planos" className="inline-flex min-h-[44px] items-center justify-center bg-gold-400 px-5 text-sm font-black text-slate-950 transition hover:bg-gold-300">

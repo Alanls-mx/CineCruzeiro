@@ -31,6 +31,7 @@ export default function EventosPage() {
   const preserveTransparentImages = settings.eventTransparentImages === true;
   const editorialImages = cinemaEditorialImages();
   const brand = cinemaBrand();
+  const isGama = brand.name === "Cine Gama";
   const eventHero = publicAssetPath(settings.eventHeroImageUrl) || editorialImages?.eventHero || "";
   const eventGames = publicAssetPath(settings.eventGamesImageUrl) || editorialImages?.eventGames || "";
   const eventParties = publicAssetPath(settings.eventPartiesImageUrl) || editorialImages?.eventParties || "";
@@ -79,9 +80,9 @@ export default function EventosPage() {
       <main className="flex-1 overflow-hidden">
         <section className="mx-auto grid max-w-[1320px] items-center gap-12 px-4 py-12 sm:px-6 lg:grid-cols-[.9fr_1.1fr] lg:px-8 lg:py-20">
           <div>
-            <h1 className="font-display text-5xl font-black leading-none sm:text-7xl">Uma sessão só para o seu grupo.</h1>
+            <h1 className="font-display text-5xl font-black leading-none sm:text-7xl">{isGama ? "Seu encontro na tela grande de Colatina." : "Uma sessão só para o seu grupo."}</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-              Aniversários, games, eventos privados e encontros corporativos em um cinema de rua com tela grande, som forte e atendimento próximo.
+              {isGama ? "Na Avenida Getúlio Vargas, o Cine Gama pode ser cenário para aniversários, sessões privadas, jogos e encontros. Conte sua ideia e consulte formatos e datas com a equipe." : "Aniversários, games, eventos privados e encontros corporativos em um cinema de rua com tela grande, som forte e atendimento próximo."}
             </p>
             <div className="mt-6 inline-flex items-center gap-3 border-l-2 border-gold-400 bg-white/[0.04] px-4 py-3 text-sm text-slate-200">
               <Tag className="h-4 w-4 shrink-0 text-gold-400" aria-hidden="true" />
@@ -100,7 +101,7 @@ export default function EventosPage() {
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
             <div className={`absolute inset-0 ${preserveTransparentImages ? "bg-[linear-gradient(180deg,transparent_58%,rgba(6,10,18,.82))]" : "bg-[linear-gradient(180deg,rgba(6,10,18,.05),rgba(6,10,18,.78))]"}`} />
-            <p className="absolute bottom-0 left-0 max-w-md p-6 font-display text-3xl font-black leading-tight">A tela grande vira aniversário, campeonato, apresentação ou sessão privada.</p>
+            <p className="absolute bottom-0 left-0 max-w-md p-6 font-display text-3xl font-black leading-tight">{isGama ? "Um cinema de rua de Colatina para reunir o seu grupo." : "A tela grande vira aniversário, campeonato, apresentação ou sessão privada."}</p>
           </div>
         </section>
 
