@@ -18,7 +18,7 @@ const publicContentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   `connect-src 'self' https: wss:${process.env.NODE_ENV === "production" ? "" : " ws:"}`,
-  "frame-src 'self' https://accounts.google.com https://www.youtube.com https://www.youtube-nocookie.com https://*.mercadopago.com https://*.mercadopago.com.br https://*.mercadolibre.com https://*.mercadolivre.com.br",
+  "frame-src 'self' https://accounts.google.com https://www.google.com https://www.youtube.com https://www.youtube-nocookie.com https://*.mercadopago.com https://*.mercadopago.com.br https://*.mercadolibre.com https://*.mercadolivre.com.br",
   "worker-src 'self' blob:",
   ...(process.env.NODE_ENV === "production" ? ["upgrade-insecure-requests"] : []),
 ].join("; ");

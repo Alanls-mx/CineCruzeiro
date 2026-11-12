@@ -125,12 +125,16 @@ export function SiteHeader({ settings, mutedPrimaryAction = false, textPrimaryAc
 
 export function SiteFooter() {
   const brand = cinemaBrand();
+  const isCineGama = brand.name === "Cine Gama";
+  const gamaMapQuery = "Cine Gama, Av. Getúlio Vargas, 481, Centro, Colatina, ES";
+  const gamaMapEmbedUrl = `https://www.google.com/maps?q=${encodeURIComponent(gamaMapQuery)}&output=embed`;
+  const gamaMapDirectionsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gamaMapQuery)}`;
   const brandLogo = brand.name === "Cine Estação Amparo"
     ? assetPath("/images/cine-estacao/logo.webp?brand=estacao-amparo-v1")
     : assetPath("/images/logo-header-compact.webp?brand=cinecruzeiro-goldstars-v2-2026");
   return (
     <footer className="border-t border-white/8 bg-[#050810] text-xs text-slate-400">
-      <div className="mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 md:grid-cols-[1.25fr_1fr_1fr_1fr] lg:px-8">
+      <div className={`mx-auto grid max-w-[1320px] gap-6 px-4 py-7 sm:px-6 lg:px-8 ${isCineGama ? "md:grid-cols-2 lg:grid-cols-[1.2fr_.85fr_.85fr_.7fr_1.5fr]" : "md:grid-cols-[1.25fr_1fr_1fr_1fr]"}`}>
         <div>
           <img
             src={brandLogo}
@@ -162,6 +166,23 @@ export function SiteFooter() {
           <Link href="/privacidade" className="block hover:text-white">Política de privacidade</Link>
           <Link href="/termos" className="block hover:text-white">Termos de uso</Link>
         </div>
+        {isCineGama && (
+          <div className="space-y-2 md:col-span-2 lg:col-span-1">
+            <h3 className="font-bold text-white">Onde estamos</h3>
+            <div className="overflow-hidden rounded-lg border border-white/10 bg-[#171127]">
+              <iframe
+                title="Mapa do Cine Gama em Colatina"
+                src={gamaMapEmbedUrl}
+                className="block h-36 w-full"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+            <a href={gamaMapDirectionsUrl} target="_blank" rel="noopener noreferrer" className="block leading-relaxed text-slate-300 underline-offset-4 hover:text-white hover:underline">
+              Av. Getúlio Vargas, 481 · Centro, Colatina–ES ↗
+            </a>
+          </div>
+        )}
       </div>
       <div className="border-t border-white/8">
         <div className="mx-auto flex max-w-[1320px] flex-col gap-2 px-4 py-3 text-xs text-slate-400 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
