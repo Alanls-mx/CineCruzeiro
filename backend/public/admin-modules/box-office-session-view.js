@@ -1,5 +1,5 @@
 ((root) => {
-  function createBoxOfficeSessionView({ state, $, escapeHtml, money, sessionTicketTypes, renderSaleMode, renderManualSaleItems, loadManualSeatMap, updateManualTotal, reconcileManualSeatSelection }) {
+  function createBoxOfficeSessionView({ state, $, escapeHtml, money, sessionTicketTypes, renderSaleMode, renderManualSaleItems, loadManualSeatMap, closeManualSeatRealtime, updateManualTotal, reconcileManualSeatSelection }) {
     function manualSessionStartsAt(session = {}) {
       const date = String(session.date || "").slice(0, 10);
       const time = /^\d{2}:\d{2}$/.test(String(session.time || "")) ? session.time : "00:00";
@@ -35,7 +35,9 @@
     function isManualSessionSellable(session = {}, now = new Date()) {
       if (!session || ["sold_out", "cancelled", "hidden", "archived"].includes(String(session.status || "").trim().toLowerCase())) return false;
       const startsAt = manualSessionStartsAt(session);
-      return startsAt ? startsAt.getTime() + 10 * 60 * 1000 > now.getTime() : false;
+      // Keep the box office aligned with sessionScheduleReadService.isSessionSellable.
+      return startsAt ? startsAt.getTime() - 24 * 60 * 60 * 1000 <= now.getTime()
+        && startsAt.getTime() + 10 * 60 * 1000 > now.getTime() : false;
     }
 
     function manualSessionsForDate(movie, date) {
@@ -49,6 +51,16 @@
       const movieSelect = $("manualMovieSelect");
       const dateInput = $("manualSessionDate");
       if (!movieSelect || !dateInput) return;
+
+      // A content refresh may remove or close a session already placed in the basket.
+      // Release its holds and prevent the stale draft from reaching the sale endpoint.
+      state.manualSaleItems = state.manualSaleItems.filter((item) => {
+        const movie = movies.find((candidate) => candidate.id === item.movieId);
+        const session = (movie?.sessions || []).find((candidate) => candidate.id === item.sessionId);
+        if (session && isManualSessionSellable(session)) return true;
+        closeManualSeatRealtime(item.sessionId, true);
+        return false;
+      });
 
       const sellableSessions = movies.flatMap((movie) => (movie.sessions || []).filter((session) => isManualSessionSellable(session)));
       const availableDates = [...new Set(sellableSessions.map((session) => session.date).filter(Boolean))].sort();
@@ -88,8 +100,8 @@
       if (availability) {
         const formattedDate = selectedDate ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR") : "a data selecionada";
         availability.textContent = sessions.length
-          ? `${sessions.length} ${sessions.length === 1 ? "sessão disponível" : "sessões disponíveis"} em ${formattedDate}. Sessões encerradas não são exibidas.`
-          : `Nenhuma sessão disponível em ${formattedDate}. Escolha outra data.`;
+          ? `${sessions.length} ${sessions.length === 1 ? "sessão disponível" : "sessões disponíveis"} em ${formattedDate}. Sessões fora do período de venda não são exibidas.`
+          : `Nenhuma sessão aberta para venda em ${formattedDate}. ${state.content?.movies?.some((item) => (item.sessions || []).some((session) => isManualSessionSellable(session))) ? "Escolha outra data." : "Volte quando a venda de uma sessão começar."}`;
       }
       renderManualTicketTypes();
       void loadManualSeatMap();

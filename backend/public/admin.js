@@ -2259,6 +2259,7 @@ const { manualSessionStartsAt, manualSessionDateIso, manualSessionDateDisplay, m
   renderSaleMode: (...args) => renderSaleMode(...args),
   renderManualSaleItems: (...args) => renderManualSaleItems(...args),
   loadManualSeatMap: (...args) => loadManualSeatMap(...args),
+  closeManualSeatRealtime: (...args) => closeManualSeatRealtime(...args),
   updateManualTotal: (...args) => updateManualTotal(...args),
   reconcileManualSeatSelection: (...args) => reconcileManualSeatSelection(...args)
 });

@@ -30,3 +30,26 @@ test("realtime map keeps my hold and leaves another buyer's hold unavailable", (
   map.reconcileManualSeatSelection();
   assert.deepEqual(state.manualSelectedSeatIds, []);
 });
+
+test("seat map clears and stays hidden when no session is selected", async () => {
+  const section = { hidden: false };
+  const state = {
+    manualSeatMapStatus: "ready", manualSeatMapSessionId: "old-session", manualSeatMap: { enabled: true },
+    manualSeatRequestToken: 0, manualSelectedSeatIds: ["A1"], manualSaleItems: [],
+    manualSeatRealtimeChannels: new Map(), manualSeatRealtimeSessionId: ""
+  };
+  let requests = 0;
+  const map = createBoxOfficeSeatMap({ state, $: (id) => id === "manualSeatSection" ? section : null,
+    api: async () => { requests++; }, API_BASE: "", showToast: () => {}, escapeHtml: String,
+    accessibilityIcon: "", obeseSeatIcon: "", currentManualTicketTypes: () => [],
+    manualTicketItems: () => [], currentManualMovieSession: () => ({ session: undefined }),
+    renderManualSaleSummary: () => {}
+  });
+  await map.loadManualSeatMap();
+  assert.equal(section.hidden, true);
+  assert.equal(state.manualSeatMapStatus, "idle");
+  assert.equal(state.manualSeatMapSessionId, "");
+  assert.equal(state.manualSeatMap, null);
+  assert.deepEqual(state.manualSelectedSeatIds, []);
+  assert.equal(requests, 0);
+});
