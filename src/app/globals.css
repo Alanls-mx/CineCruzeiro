@@ -1257,55 +1257,27 @@ textarea:focus {
   }
 }
 
-/* Cine Roxy: vermelho do letreiro original, sala escura e movimento de luz contido. */
+/* The Roxy keeps the shared layout; only brand colors and a quiet poster border differ. */
 body[data-cinema-theme="cine-roxy"] {
   --background: #0e0a0b;
   --foreground: #fff6f0;
   color-scheme: dark;
-  background: radial-gradient(ellipse 70% 35% at 80% 0%, rgba(173, 32, 27, .17), transparent), #0e0a0b;
+  background-color: #0e0a0b;
+  background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(199, 41, 37, .18), transparent);
 }
-
 body[data-cinema-theme="cine-roxy"] header.sticky,
-body[data-cinema-theme="cine-roxy"] footer {
-  background: #120b0d !important;
-  border-color: rgba(255, 255, 255, .12) !important;
-}
-
+body[data-cinema-theme="cine-roxy"] footer { background: #120b0d !important; border-color: rgba(255, 255, 255, .12) !important; }
 body[data-cinema-theme="cine-roxy"] .bg-brand-950,
 body[data-cinema-theme="cine-roxy"] .bg-slate-950,
 body[data-cinema-theme="cine-roxy"] [class*="bg-[#060a12]"],
 body[data-cinema-theme="cine-roxy"] [class*="bg-[#050810]"] { background-color: #0e0a0b !important; }
-
 body[data-cinema-theme="cine-roxy"] .bg-brand-900,
 body[data-cinema-theme="cine-roxy"] .bg-slate-900,
 body[data-cinema-theme="cine-roxy"] [class*="bg-[#091122]"] { background-color: #211315 !important; }
-
-body[data-cinema-theme="cine-roxy"] .bg-gold-400,
-body[data-cinema-theme="cine-roxy"] .roxy-primary { background-color: #c72925 !important; color: #fff !important; }
-body[data-cinema-theme="cine-roxy"] .hover\:bg-gold-300:hover,
-body[data-cinema-theme="cine-roxy"] .roxy-primary:hover { background-color: #e23c35 !important; }
+body[data-cinema-theme="cine-roxy"] .bg-gold-400 { background-color: #c72925 !important; color: #fff !important; }
+body[data-cinema-theme="cine-roxy"] .hover\:bg-gold-300:hover { background-color: #e23c35 !important; }
 body[data-cinema-theme="cine-roxy"] .text-brand-300,
 body[data-cinema-theme="cine-roxy"] .text-gold-400,
 body[data-cinema-theme="cine-roxy"] .hover\:text-gold-400:hover { color: #ff7d6f !important; }
-
-body[data-cinema-theme="cine-roxy"] .cinema-hero-poster-frame::before {
-  content: "";
-  position: absolute;
-  inset: 8% -8%;
-  border: 1px solid rgba(244, 69, 59, .5);
-  transform: rotate(-4deg);
-  background: linear-gradient(145deg, rgba(195, 33, 29, .26), transparent 55%);
-  box-shadow: 0 0 65px rgba(188, 31, 27, .22);
-}
-body[data-cinema-theme="cine-roxy"] .cinema-hero-poster-frame::after { display: none; }
-
-.roxy-welcome > div:first-child { filter: saturate(.8); transform: scale(1.03); }
-.roxy-eyebrow { color: #ff7469; font-size: .78rem; font-weight: 900; letter-spacing: .24em; text-transform: uppercase; }
-.roxy-history { background: linear-gradient(135deg, #160c0e, #0e0a0b 65%); }
-
-@media (prefers-reduced-motion: no-preference) {
-  body[data-cinema-theme="cine-roxy"] .roxy-welcome > div:first-child { animation: roxyLight 14s ease-in-out infinite alternate; }
-  body[data-cinema-theme="cine-roxy"] .roxy-welcome h1 { animation: roxyReveal 850ms cubic-bezier(.16, 1, .3, 1) both; }
-}
-@keyframes roxyLight { from { transform: scale(1.03); opacity: .72; } to { transform: scale(1.08); opacity: 1; } }
-@keyframes roxyReveal { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+body[data-cinema-theme="cine-roxy"] .bg-brand-700 { background-color: #8d1d1a !important; }
+body[data-cinema-theme="cine-roxy"] .cinema-hero-poster { border: 1px solid rgba(255, 125, 111, .3); }

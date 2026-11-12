@@ -162,7 +162,6 @@ export function SiteFooter() {
           <Link href="/filmes" className="block hover:text-white">Filmes em cartaz</Link>
           <Link href="/clube" className="block hover:text-white">{brand.clubLabel}</Link>
           <Link href="/eventos" className="block hover:text-white">Eventos e sala fechada</Link>
-          {isRoxy && <a href="https://www.google.com/maps/search/?api=1&query=Cine%20Roxy%2C%20Pra%C3%A7a%20Monsenhor%20Messias%20Bragan%C3%A7a%2C%20178%2C%20Passos%20MG" target="_blank" rel="noopener noreferrer" className="block hover:text-white">Como chegar ↗</a>}
         </div>
         <div className="space-y-2">
           <h3 className="font-bold text-white">Compra rápida</h3>
