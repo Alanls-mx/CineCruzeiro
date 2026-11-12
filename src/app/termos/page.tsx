@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalContact } from "@/components/LegalContact";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
-import { cinemaBrand } from "@/utils/cinema";
 
 export const metadata: Metadata = {
   title: "Termos de Uso | Cine Cruzeiro",
@@ -77,7 +76,6 @@ const sections = [
 ];
 
 export default function TermsPage() {
-  const isGama = cinemaBrand().name === "Cine Gama";
   return (
     <div className="min-h-dvh bg-[#060a12] text-white">
       <SiteHeader mutedPrimaryAction />
@@ -85,18 +83,14 @@ export default function TermsPage() {
         <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Termos</p>
         <h1 className="mt-4 font-display text-4xl font-black sm:text-5xl">Termos de Uso</h1>
         <p className="mt-5 max-w-3xl text-base leading-7 text-slate-300">
-          Última atualização: {isGama ? "12/11/2026" : "01/10/2026"}. Condições de uso da conta, compra, sessão, ingresso digital, bomboniere e {cinemaBrand().clubLabel}.
+          Última atualização: 01/10/2026. Condições de uso da conta, compra, sessão, ingresso digital, bomboniere e Clube Cine Cruzeiro.
         </p>
         <div className="mt-10 grid gap-6">
           {sections.map((section) => (
             <section key={section.title} className="border-t border-white/10 pt-6">
               <h2 className="font-display text-2xl font-black">{section.title}</h2>
               <div className="mt-4 space-y-3 text-sm leading-7 text-slate-300">
-                {(isGama && section.title === "1. Plataforma e responsável"
-                  ? ["O Cine Gama oferece consulta da programação e os serviços disponíveis neste site. O cinema está identificado no cadastro público da ANCINE como G M Z Empresa de Cinemas Ltda; a plataforma é desenvolvida pela LumixEngine.", section.body[1]]
-                  : isGama && section.title === "7. Cancelamentos, arrependimento e reembolsos"
-                    ? ["Para pedir cancelamento, troca ou reembolso, procure a equipe no cinema ou use o canal informado no comprovante da compra. Tenha o número do pedido em mãos e não envie dados completos do cartão.", ...section.body.slice(1)]
-                    : section.body).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                {section.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
               </div>
             </section>
           ))}

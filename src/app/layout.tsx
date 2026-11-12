@@ -27,14 +27,12 @@ const mediumIconUrl = `${basePath}/images/favicon-32.png?brand=cinecruzeiro-icon
 const vectorIconUrl = `${basePath}/images/favicon.svg?brand=cinecruzeiro-icon-blue-star-20261005`;
 const appleIconUrl = `${basePath}/images/favicon-180.png?brand=cinecruzeiro-icon-blue-star-20261005`;
 const cinemaTheme = process.env.NEXT_PUBLIC_CINEMA_SLUG || "default";
-const isCineGama = cinemaTheme === "cine-gama";
 export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin),
-  title: isCineGama ? "Cine Gama | Cinema de rua em Colatina" : "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
-  description: isCineGama
-    ? "Confira filmes e sessões no Cine Gama, no Centro de Colatina. Um cinema de rua com raízes no antigo Cine Alhambra."
-    : "Compre seus ingressos para o Cine Cruzeiro em 30 segundos via Pix. Sala única com projeção Laser 4K, som Dolby 7.1, pipoca quentinha artesanal e zero filas.",
-  keywords: isCineGama ? ["Cine Gama", "cinema em Colatina", "Cine Alhambra", "filmes em Colatina", "ingressos de cinema"] : [
+  title: "Cine Cruzeiro | O Cinema do Seu Bairro • Sem Filas e Preço Justo",
+  description:
+    "Compre seus ingressos para o Cine Cruzeiro em 30 segundos via Pix. Sala única com projeção Laser 4K, som Dolby 7.1, pipoca quentinha artesanal e zero filas.",
+  keywords: [
     "Cine Cruzeiro",
     "cinema de bairro",
     "ingressos de cinema",
@@ -59,8 +57,8 @@ export const metadata: Metadata = {
     follow: true,
   },
   openGraph: {
-    title: isCineGama ? "Cine Gama | Cinema de rua em Colatina" : "Cine Cruzeiro | O Cinema do Seu Bairro",
-    description: isCineGama ? "Na Avenida Getúlio Vargas, o cinema faz parte da história de Colatina. Confira a programação." : "Sem filas de shopping, pipoca crocante na manteiga e ingressos sem taxas no Pix.",
+    title: "Cine Cruzeiro | O Cinema do Seu Bairro",
+    description: "Sem filas de shopping, pipoca crocante na manteiga e ingressos sem taxas no Pix.",
     url: `${publicUrl}/`,
     type: "website",
     images: [logoUrl],

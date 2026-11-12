@@ -224,23 +224,32 @@ body[data-cinema-theme="cinemax-piraju"]::after {
   opacity: 0.52;
 }
 
-/* Cine Gama: a quiet auditorium glow leaves the film artwork in charge. */
+/* Cine Gama: three warm strokes cross a violet film ribbon, taken from the mark. */
 body[data-cinema-theme="cine-gama"]::before {
-  top: 7vh;
-  right: -20vw;
-  width: 70vw;
-  height: 65vh;
-  background: radial-gradient(ellipse, rgba(118, 73, 151, .14), transparent 68%);
-  opacity: .85;
+  top: 18vh;
+  right: -10vw;
+  width: 62vw;
+  height: 54vh;
+  background:
+    linear-gradient(121deg, transparent 25%, rgba(255, 119, 0, 0.02) 26% 31%, transparent 32%),
+    linear-gradient(121deg, transparent 37%, rgba(255, 157, 27, 0.13) 38% 43%, transparent 44%),
+    linear-gradient(121deg, transparent 49%, rgba(255, 188, 52, 0.12) 50% 55%, transparent 56%),
+    repeating-linear-gradient(32deg, transparent 0 38px, rgba(137, 118, 255, 0.11) 39px 52px, transparent 53px 92px);
+  border-left: 1px solid rgba(181, 163, 255, 0.18);
+  opacity: 0.8;
+  transform: skewY(-7deg);
 }
 
 body[data-cinema-theme="cine-gama"]::after {
-  bottom: -17vh;
-  left: -18vw;
-  width: 60vw;
-  height: 58vh;
-  background: radial-gradient(ellipse, rgba(78, 44, 139, .1), transparent 70%);
-  opacity: .7;
+  bottom: 10vh;
+  left: -8vw;
+  width: 54vw;
+  height: 90px;
+  border-top: 2px solid rgba(119, 100, 232, 0.36);
+  border-bottom: 2px solid rgba(255, 121, 0, 0.28);
+  background: repeating-linear-gradient(90deg, transparent 0 28px, rgba(198, 184, 255, 0.18) 28px 41px, transparent 41px 68px);
+  opacity: 0.65;
+  transform: rotate(9deg);
 }
 
 /* CineMania: a blue reel ribbon with a single gold glint keeps the mark's premium contrast. */
@@ -281,6 +290,8 @@ body[data-cinema-theme="cinemania-cosmopolis"]::after {
   body[data-cinema-theme="cinemania-cosmopolis"] .cinema-hero-poster-frame::after { animation: cinemaniaPosterGlint 5s ease-in-out infinite; }
   body[data-cinema-theme="cinemax-piraju"]::before { animation: cinemaxTide 26s ease-in-out infinite alternate; }
   body[data-cinema-theme="cinemax-piraju"]::after { animation: cinemaxReel 58s linear infinite; }
+  body[data-cinema-theme="cine-gama"]::before { animation: gamaSweep 34s ease-in-out infinite alternate; }
+  body[data-cinema-theme="cine-gama"]::after { animation: gamaFilmFlow 44s linear infinite; }
   body[data-cinema-theme="cinemania-cosmopolis"]::before { animation: cinemaniaFilmPass 46s linear infinite; }
   body[data-cinema-theme="cinemania-cosmopolis"]::after { animation: cinemaniaGlint 8s ease-in-out infinite; }
 }
@@ -298,6 +309,8 @@ body[data-cinema-theme="cinemania-cosmopolis"]::after {
 @keyframes cinemaniaPosterGlint { 0%, 100% { opacity: 0.28; transform: rotate(45deg) scale(0.78); } 50% { opacity: 1; transform: rotate(45deg) scale(1.12); } }
 @keyframes cinemaxTide { from { transform: translateX(-2vw) rotate(-7deg); } to { transform: translateX(7vw) rotate(-4deg); } }
 @keyframes cinemaxReel { to { transform: rotate(360deg); } }
+@keyframes gamaSweep { from { transform: translateX(0) skewY(-7deg); } to { transform: translateX(-7vw) skewY(-3deg); } }
+@keyframes gamaFilmFlow { to { transform: translateX(17vw) rotate(9deg); } }
 @keyframes cinemaniaFilmPass { to { transform: translateX(19vw) rotate(8deg); } }
 @keyframes cinemaniaGlint { 0%, 100% { opacity: 0.14; transform: rotate(45deg) scale(0.78); } 50% { opacity: 0.58; transform: rotate(45deg) scale(1.08); } }
 

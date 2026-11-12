@@ -3,7 +3,6 @@ import Link from "next/link";
 import { LegalContact } from "@/components/LegalContact";
 import { PrivacyMeasurementControl } from "@/components/PrivacyMeasurementControl";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
-import { cinemaBrand } from "@/utils/cinema";
 
 export const metadata: Metadata = {
   title: "Política de Privacidade | Cine Cruzeiro",
@@ -77,7 +76,6 @@ const sections = [
 ];
 
 export default function PrivacyPage() {
-  const isGama = cinemaBrand().name === "Cine Gama";
   return (
     <div className="min-h-dvh bg-[#060a12] text-white">
       <SiteHeader mutedPrimaryAction />
@@ -85,16 +83,14 @@ export default function PrivacyPage() {
         <p className="text-sm font-black uppercase tracking-[.22em] text-brand-300">Privacidade</p>
         <h1 className="mt-4 font-display text-4xl font-black sm:text-5xl">Política de Privacidade</h1>
         <p className="mt-5 max-w-3xl text-base leading-7 text-slate-300">
-          Última atualização: {isGama ? "12/11/2026" : "01/10/2026"}. Saiba como tratamos os dados de conta, compras, Clube, bomboniere, entrada e comunicações.
+          Última atualização: 01/10/2026. Saiba como tratamos os dados de conta, compras, Clube, bomboniere, entrada e comunicações.
         </p>
         <div className="mt-10 grid gap-6">
           {sections.map((section) => (
             <section key={section.title} className="border-t border-white/10 pt-6">
               <h2 className="font-display text-2xl font-black">{section.title}</h2>
               <div className="mt-4 space-y-3 text-sm leading-7 text-slate-300">
-                {(isGama && section.title === "1. Responsável e atendimento"
-                  ? ["O Cine Gama, identificado no cadastro público da ANCINE como G M Z Empresa de Cinemas Ltda, é responsável pelo atendimento no cinema. Os canais disponíveis para solicitações estão indicados ao final desta página.", section.body[1]]
-                  : section.body).map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                {section.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                 {section.title === "5. Cookies e medição" && <PrivacyMeasurementControl />}
               </div>
             </section>
