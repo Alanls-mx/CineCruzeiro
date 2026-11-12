@@ -95,7 +95,7 @@ export default function EventosPage() {
           </div>
           <div className={`relative min-h-[360px] overflow-hidden rounded-[10px] shadow-[0_30px_90px_rgba(0,0,0,.45)] lg:min-h-[560px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
             {eventHero ? (
-              <Image src={eventHero} alt={settings.eventHeroImageUrl ? "Sala de cinema reservada para evento privado" : "Cena ilustrativa de um evento em sala de cinema"} fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} className={preserveTransparentImages && settings.eventHeroImageUrl ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 1024px) 100vw, 56vw" />
+              <Image src={eventHero} alt={brand.name === "Cine Roxy" ? "Arte ilustrativa de uma sessão privada do Cine Roxy" : settings.eventHeroImageUrl ? "Sala de cinema reservada para evento privado" : "Cena ilustrativa de um evento em sala de cinema"} fill priority unoptimized={isUploadedAsset(settings.eventHeroImageUrl)} className={preserveTransparentImages && settings.eventHeroImageUrl ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 1024px) 100vw, 56vw" />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.28),transparent_36%),linear-gradient(135deg,#0d1930,#030712)]" />
             )}
@@ -113,7 +113,7 @@ export default function EventosPage() {
             </div>
             <div className={`relative min-h-[420px] overflow-hidden rounded-[10px] ${preserveTransparentImages ? "bg-[#091122]" : ""}`}>
               {eventGallery ? (
-                <Image src={eventGallery} alt={settings.eventGalleryImageUrl ? "Público entrando em uma sala de cinema" : "Cena ilustrativa de espectadores em uma sala de cinema"} fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} className={preserveTransparentImages && settings.eventGalleryImageUrl ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 768px) 100vw, 42vw" />
+                <Image src={eventGallery} alt={brand.name === "Cine Roxy" ? "Arte ilustrativa de um encontro em sessão privada do Cine Roxy" : settings.eventGalleryImageUrl ? "Público entrando em uma sala de cinema" : "Cena ilustrativa de espectadores em uma sala de cinema"} fill unoptimized={isUploadedAsset(settings.eventGalleryImageUrl)} className={preserveTransparentImages && settings.eventGalleryImageUrl ? "object-contain p-5 sm:p-8" : "object-cover"} sizes="(max-width: 768px) 100vw, 42vw" />
               ) : (
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(250,204,21,.18),transparent_32%),linear-gradient(135deg,#0d1930,#030712)]" />
               )}
@@ -196,7 +196,7 @@ function Experience({ image, preserveTransparency, icon, title, text }: { image:
     <article className="grid gap-4 sm:grid-cols-[190px_1fr]">
       <div className={`relative min-h-[160px] overflow-hidden rounded-[10px] ${preserveTransparency ? "bg-[#091122]" : ""}`}>
         {image ? (
-          <Image src={image} alt={title} fill unoptimized={isUploadedAsset(image)} className={preserveTransparency ? "object-contain p-4" : "object-cover"} sizes="(max-width: 640px) 100vw, 190px" />
+          <Image src={image} alt={`Arte ilustrativa: ${title}`} fill unoptimized={isUploadedAsset(image)} className={preserveTransparency ? "object-contain p-4" : "object-cover"} sizes="(max-width: 640px) 100vw, 190px" />
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_35%_25%,rgba(37,99,235,.24),transparent_38%),linear-gradient(135deg,#0d1930,#030712)]" />
         )}

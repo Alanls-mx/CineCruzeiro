@@ -85,7 +85,7 @@ export default function ClubePage() {
             {heroImage ? (
               <Image
                 src={heroImage}
-                alt={settings.clubHeroImageUrl ? "Público em uma sala de cinema" : "Cena ilustrativa de amigos chegando ao cinema"}
+                alt={brand.name === "Cine Roxy" ? "Arte ilustrativa do Clube Cine Roxy com ingressos e cartão de associado" : settings.clubHeroImageUrl ? "Público em uma sala de cinema" : "Cena ilustrativa de amigos chegando ao cinema"}
                 fill
                 priority
                 unoptimized={isUploadedAsset(settings.clubHeroImageUrl)}
@@ -149,7 +149,7 @@ export default function ClubePage() {
             {bannerImage ? (
               <Image
                 src={bannerImage}
-                alt={settings.clubBannerImageUrl ? "Imagem do clube de cinema" : "Imagem ilustrativa de pipoca no cinema"}
+                alt={brand.name === "Cine Roxy" ? "Arte ilustrativa de cartões e ingressos do Clube Cine Roxy" : settings.clubBannerImageUrl ? "Imagem do clube de cinema" : "Imagem ilustrativa de pipoca no cinema"}
                 fill
                 unoptimized={isUploadedAsset(settings.clubBannerImageUrl)}
                 quality={72}

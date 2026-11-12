@@ -68,6 +68,18 @@ export function cinemaBrand() {
 
 export function cinemaEditorialImages() {
   const slug = String(process.env.NEXT_PUBLIC_CINEMA_SLUG || "").trim().toLowerCase();
+  if (slug === "cine-roxy") {
+    const image = (name: string) => assetPath(`/images/cine-roxy/editorial/${name}.webp`);
+    return {
+      clubHero: image("club-hero"),
+      clubBanner: image("club-banner"),
+      eventHero: image("events-hero"),
+      eventGames: image("events-games"),
+      eventParties: image("events-parties"),
+      eventCorporate: image("events-corporate"),
+      eventGallery: image("events-gallery"),
+    };
+  }
   if (!["cine-estacao-amparo", "cinemax-piraju", "cine-gama", "cinemania-cosmopolis"].includes(slug)) return null;
   const image = (name: string) => assetPath(`/images/cinema-editorial/${slug}/${name}.webp`);
   return {
