@@ -44,6 +44,8 @@ const pagBankPaymentService = require("./services/pagBankPaymentService");
 const { MercadoPagoSubscriptionProvider } = require("./services/subscriptionPaymentProvider");
 const integrationConfigService = require("./services/integrationConfigService");
 const { phoneDigits, cpfDigits } = require("./services/customerContactValidationService");
+const { attachQuickSaleAttendeeNames } = require("./services/boxOfficeAttendeeNames");
+const { createSessionTicketManifestPdf } = require("./services/sessionTicketManifestPdfService");
 const { createDiscordWebhookService } = require("./services/discordWebhookService");
 const { readReleaseInfo } = require("./services/releaseInfoService");
 const { createRuntimeLifecycle } = require("./services/runtimeLifecycleService");
@@ -1345,6 +1347,7 @@ function requiredAdminRoles(pathname, method) {
 }
 
 function requiredAdminPermission(pathname, method) {
+  if (/^\/api\/admin\/sessions\/[^/]+\/manifest\.pdf$/.test(pathname)) return "tickets.view";
   if (/^\/api\/admin\/tickets\/[^/]+\/session-change$/.test(pathname)) return "orders.edit";
   if (pathname === "/api/admin/concession-counter-sales") return "concessions.sell";
   if (/^\/api\/admin\/concession-sales\/[^/]+\/refund$/.test(pathname)) return "concessions.refund";
@@ -2950,6 +2953,7 @@ const { pdfRect, pdfLine, pdfWriteText, brl, buildPdf,
   stripPublicAssetBase, pathIsInside, movieForTicket, slugify,
   downloadPublicBuffer, enrichTicket, brazilianDate, methodLabel
 });
+const sessionTicketManifestPdf = createSessionTicketManifestPdf({ pdfRect, pdfLine, pdfWriteText, buildPdf });
 
 const { deliverTicketsByEmail, processQueuedTicketEmailDelivery, queueTicketEmailDelivery } = createTicketEmailDeliveryCoordinator({
   enrichTicket, googleWalletSaveUrl, ticketDownloadPdf, logEvent, emailService,
@@ -6991,6 +6995,30 @@ async function handleApi(req, res, pathname) {
 
   if (!ensureAdmin(req, res, db, pathname, method)) return;
 
+  const sessionManifestMatch = pathname.match(/^\/api\/admin\/sessions\/([^/]+)\/manifest\.pdf$/);
+  if (sessionManifestMatch && method === "GET") {
+    const sessionId = decodeURIComponent(sessionManifestMatch[1]);
+    const movie = (db.movies || []).find((item) => (item.sessions || []).some((session) => session.id === sessionId));
+    const session = movie?.sessions?.find((item) => item.id === sessionId);
+    if (!session) {
+      sendJson(res, 404, { error: { code: "SESSION_NOT_FOUND", message: "Sessão não encontrada." } });
+      return;
+    }
+    const pdf = sessionTicketManifestPdf({ cinemaName: db.settings?.cinemaName || db.settings?.name || "Cinema", movie, session, tickets: db.tickets || [] });
+    res.writeHead(200, {
+      ...securityHeaders({
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="lista-sessao-${String(session.date || "data").replace(/[^0-9-]/g, "")}-${sessionId.replace(/[^a-zA-Z0-9_-]/g, "")}.pdf"`,
+        "Cache-Control": "no-store"
+      }),
+      "Access-Control-Allow-Origin": responseCorsOrigin(req),
+      "Access-Control-Allow-Credentials": "true",
+      Vary: "Origin"
+    });
+    res.end(pdf);
+    return;
+  }
+
   const ticketSessionChangeMatch = pathname.match(/^\/api\/admin\/tickets\/([^/]+)\/session-change$/);
   if (ticketSessionChangeMatch && ["GET", "POST"].includes(method)) {
     const ticketId = decodeURIComponent(ticketSessionChangeMatch[1]);
@@ -8755,6 +8783,7 @@ async function handleApi(req, res, pathname) {
         const order = concessionCounterSale
           ? repriceConcessionCounterOrder(lockedDb, normalizedOrder)
           : repriceOrderFromCatalog(lockedDb, normalizedOrder);
+        if (saleMode === "quick") attachQuickSaleAttendeeNames(order, saleItem.attendeeNames);
         if (paymentMethod === "courtesy") {
           order.discountValue = Number(order.totalPrice || 0);
           order.totalPrice = 0;

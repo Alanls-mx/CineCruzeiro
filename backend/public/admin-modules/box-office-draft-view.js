@@ -75,6 +75,7 @@
       const subtotal = ticketItems.reduce((sum, item) => sum + item.quantity * Number(ticketTypes.get(item.id)?.price || 0), 0);
       const selectedSeatIds = state.manualSeatMap?.enabled ? [...state.manualSelectedSeatIds] : [];
       const seatChannel = state.manualSeatRealtimeChannels.get(session.id);
+      const attendeeCount = ticketItems.reduce((sum, item) => sum + item.quantity * Math.max(1, Number(ticketTypes.get(item.id)?.bundleQuantity || 1)), 0);
       return {
         movieId: movie.id,
         movieTitle: movie.title,
@@ -83,6 +84,7 @@
         sessionTime: session.time || "",
         sessionFormat: session.format || "",
         ticketItems,
+        attendeeNames: (state.manualAttendeeNamesBySession?.[session.id] || []).slice(0, attendeeCount),
         ticketSummary: ticketItems.map((item) => ({
           ...item,
           name: ticketTypes.get(item.id)?.name || "Ingresso",
@@ -135,6 +137,7 @@
 
     function clearManualSaleItems() {
       state.manualSaleItems = [];
+      state.manualAttendeeNamesBySession = {};
       const reopenCurrentSession = Boolean(state.manualSeatMapSessionId);
       closeManualSeatRealtime("", true);
       renderManualSaleItems();
@@ -179,7 +182,34 @@
       renderManualSaleSummary();
     }
 
-    return { manualConcessionItems, renderManualConcessions, manualTicketItems, manualSaleDraft, manualDraftSeatSelectionComplete, addManualSaleItem, removeManualSaleItem, clearManualSaleItems, renderManualSaleItems };
+    function renderQuickSaleNames() {
+      const section = $("manualQuickSaleNamesSection");
+      const target = $("manualQuickSaleNames");
+      if (!section || !target) return;
+      const items = state.manualSaleItems.length ? state.manualSaleItems : [manualSaleDraft()].filter(Boolean);
+      section.hidden = state.saleMode !== "quick" || items.length === 0;
+      if (section.hidden) { target.innerHTML = ""; return; }
+      state.manualAttendeeNamesBySession ||= {};
+      target.innerHTML = items.map((item) => {
+        const count = item.ticketSummary.reduce((sum, ticket) => sum + ticket.quantity * ticket.bundleQuantity, 0);
+        const ticketLabels = item.ticketSummary.flatMap((ticket) => Array.from({ length: ticket.quantity * ticket.bundleQuantity }, () => ticket.name));
+        const names = (state.manualAttendeeNamesBySession[item.sessionId] || item.attendeeNames || []).slice(0, count);
+        state.manualAttendeeNamesBySession[item.sessionId] = names;
+        item.attendeeNames = [...names];
+        return `<div class="manual-quick-sale-group"><strong>${escapeHtml(item.movieTitle)} · ${escapeHtml([item.sessionDate, item.sessionTime].filter(Boolean).join(" • "))}</strong>
+          <div class="manual-quick-sale-names-grid">${Array.from({ length: count }, (_, index) => `<label>Ingresso ${index + 1} · ${escapeHtml(ticketLabels[index] || "Ingresso")}${item.selectedSeatLabels?.[index] ? ` · ${escapeHtml(item.selectedSeatLabels[index])}` : ""}<input type="text" required maxlength="80" autocomplete="name" data-quick-attendee-session="${escapeHtml(item.sessionId)}" data-quick-attendee-index="${index}" value="${escapeHtml(names[index] || "")}" placeholder="Nome e sobrenome" /></label>`).join("")}</div></div>`;
+      }).join("");
+      target.querySelectorAll("[data-quick-attendee-session]").forEach((input) => input.addEventListener("input", () => {
+        const sessionId = input.dataset.quickAttendeeSession;
+        const index = Number(input.dataset.quickAttendeeIndex);
+        const names = state.manualAttendeeNamesBySession[sessionId] ||= [];
+        names[index] = input.value;
+        const basketItem = state.manualSaleItems.find((item) => item.sessionId === sessionId);
+        if (basketItem) basketItem.attendeeNames = [...names];
+      }));
+    }
+
+    return { manualConcessionItems, renderManualConcessions, manualTicketItems, manualSaleDraft, manualDraftSeatSelectionComplete, addManualSaleItem, removeManualSaleItem, clearManualSaleItems, renderManualSaleItems, renderQuickSaleNames };
   }
   const api = Object.freeze({ createBoxOfficeDraftView });
   if (typeof module === "object" && module.exports) module.exports = api;

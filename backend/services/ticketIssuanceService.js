@@ -36,6 +36,7 @@ function createTicketIssuanceService({ todayIsoDate, fallbackCustomerName }) {
       const selectedSeat = Array.isArray(order.selectedSeats) ? order.selectedSeats[index - 1] : null;
       tickets.push({
         ...base,
+        customerName: order.attendeeNames?.[index - 1] || base.customerName,
         id: `ticket-${Date.now()}-${index}-${crypto.randomBytes(2).toString("hex")}`,
         code,
         qrToken,

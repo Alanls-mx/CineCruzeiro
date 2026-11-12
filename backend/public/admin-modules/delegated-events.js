@@ -12,11 +12,11 @@
     resendOrderTicket, resendWebhookRun, resolvePendingSalePrint, restoreOrderAdmin, retryCrmDeadLetters, retryEmailCampaignFailures,
     retryPendingSalePrint, revealCommercialCatalogToken, scanNextTicket, selectAd, selectBoxOfficeCustomerById, selectClubPlan,
     selectConcession, selectCustomerAccount, selectPromotion, selectRoom, selectTicket, selectUser,
-    sendExistingEmailCampaign, setBoxOfficeTab, showChartHintFromPoint, showSessionTickets, showWebhookRun, testIntegration,
+    sendExistingEmailCampaign, setBoxOfficeTab, showChartHintFromPoint, showSessionTickets, downloadSessionTicketList, showWebhookRun, testIntegration,
     toggleEmailCampaignMenu, toggleIntegration, toggleOrderMenu, updateClubSubscription, viewClubSubscription, viewEmailCampaignReport
   }) {
     const handleSessionTicketAction = window.CineAdminModules.sessionTicketActions.createSessionTicketActionHandler({
-      openSessionDashboardDetail, showSessionTickets, openSessionEditor, removeSession,
+      openSessionDashboardDetail, showSessionTickets, downloadSessionTicketList, openSessionEditor, removeSession,
       openGlobalSessionEditor, copyTicketCode, openOrderView, openTicketSessionChange
     });
 

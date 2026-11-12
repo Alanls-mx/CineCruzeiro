@@ -1,5 +1,5 @@
 ((root) => {
-  function createMovieSessionsView({ state, $, currentMovie, escapeHtml, globalSessionStatusLabel,
+  function createMovieSessionsView({ state, $, adminCan = () => false, currentMovie, escapeHtml, globalSessionStatusLabel,
     money, sessionTicketTypes, trashIcon, showToast, ticketStatusText, saveMovieWithAction, adminTodayKey, setMovieWizardStep, updateSessionScheduleSuggestion, applySessionMutation, renderMovies, showSuccess, api, setDisabled, confirm, Option, document }) {
     function renderSessions(sessions) {
       if (!sessions.length) {
@@ -57,6 +57,7 @@
                 <span title="${escapeHtml(ticketTypeSummary)}">${escapeHtml(ticketTypeSummary)}${capacity ? ` • ${sold}/${capacity} vendidos` : linkedTickets.length ? ` • ${linkedTickets.length} ingresso(s)` : ""}</span>
                 <div class="session-row-actions">
                   <button class="ghost-button" type="button" data-admin-session-action="tickets" data-admin-session-id="${escapeHtml(session.id)}">Ingressos</button>
+                  ${adminCan("tickets.view") ? `<button class="ghost-button" type="button" data-admin-session-action="manifest" data-admin-session-id="${escapeHtml(session.id)}">Baixar lista PDF</button>` : ""}
                   <button class="ghost-button" type="button" data-admin-session-action="edit" data-admin-session-id="${escapeHtml(session.id)}">Editar</button>
                   <button class="icon-button danger-icon" type="button" data-admin-session-action="remove" data-admin-session-id="${escapeHtml(session.id)}" aria-label="Excluir sessão">${trashIcon}</button>
                 </div>

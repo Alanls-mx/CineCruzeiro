@@ -17,6 +17,7 @@ test("session and ticket actions load before admin and dispatch exactly once", a
   const handle = createSessionTicketActionHandler({
     openSessionDashboardDetail: (...args) => calls.push(["dashboard", ...args]),
     showSessionTickets: (...args) => calls.push(["tickets", ...args]),
+    downloadSessionTicketList: (...args) => calls.push(["manifest", ...args]),
     openSessionEditor: (...args) => calls.push(["edit", ...args]),
     removeSession: (...args) => calls.push(["remove", ...args]),
     openGlobalSessionEditor: (...args) => calls.push(["global-edit", ...args]),
@@ -31,11 +32,11 @@ test("session and ticket actions load before admin and dispatch exactly once", a
     return selector.startsWith("[data-admin-ticket-action]")
       ? { dataset: { adminTicketAction: action, adminTicketValue: "t1" } } : null;
   } } });
-  for (const action of ["dashboard", "tickets", "edit", "remove", "global-edit"]) assert.equal(handle(session(action)), true);
+  for (const action of ["dashboard", "tickets", "manifest", "edit", "remove", "global-edit"]) assert.equal(handle(session(action)), true);
   for (const action of ["copy", "order"]) assert.equal(handle(ticket(action)), true);
   assert.equal(handle({ target: { closest: () => null } }), false);
   assert.deepEqual(calls, [
-    ["dashboard", "m1", "s1"], ["tickets", "s1"], ["edit", "s1"],
+    ["dashboard", "m1", "s1"], ["tickets", "s1"], ["manifest", "s1"], ["edit", "s1"],
     ["remove", "s1"], ["global-edit", "m1", "s1"], ["copy", "t1"], ["order", "t1"]
   ]);
 });

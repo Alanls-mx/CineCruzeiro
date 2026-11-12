@@ -45,3 +45,33 @@ test("Point double-submit sends one sale and a timeout retains its request ident
     globalThis.sessionStorage = oldStorage;
   }
 });
+
+test("venda rápida bloqueia nomes faltantes e envia um por ingresso sem alterar o pagamento", async () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { cineDesktop: { checkPrinter: async () => ({ ready: true }) } };
+  try {
+    const fields = new Map();
+    const $ = (id) => {
+      if (!fields.has(id)) fields.set(id, { value: "", disabled: false, textContent: "" });
+      return fields.get(id);
+    };
+    const item = { movieId: "m1", movieTitle: "Filme", sessionId: "s1", ticketItems: [{ id: "combo", quantity: 1 }], ticketSummary: [{ quantity: 1, bundleQuantity: 2 }], selectedSeatIds: ["A1", "A2"] };
+    const state = { saleMode: "quick", manualSaleItems: [item], manualAttendeeNamesBySession: { s1: ["Ana Silva"] }, manualConcessionQuantities: {}, manualSelectedSeatIds: ["A1", "A2"] };
+    const messages = [];
+    const payloads = [];
+    const command = createBoxOfficeSaleCommand({ state, $, api: async (_path, options) => { payloads.push(JSON.parse(options.body)); return { orders: [{ status: "paid" }], tickets: [{}, {}] }; },
+      document: { querySelector: () => ({ value: "cash", focus() {} }) }, showToast: (message) => messages.push(message), showSuccess: () => {},
+      manualSaleDraft: () => null, manualDraftSeatSelectionComplete: () => true, manualTicketDeliveryMethod: () => "physical", manualConcessionItems: () => [],
+      closeManualSeatRealtime: () => {}, renderManualSaleItems: () => {}, startPointPaymentTracking: () => {}, loadContent: async () => {}, loadManualSeatMap: () => {}
+    });
+    await command.createManualTicket({ preventDefault() {} });
+    assert.equal(payloads.length, 0);
+    assert.match(messages[0], /2 ingresso/);
+    state.manualAttendeeNamesBySession.s1.push("Bruno Lima");
+    await command.createManualTicket({ preventDefault() {} });
+    assert.deepEqual(payloads[0].saleItems[0].attendeeNames, ["Ana Silva", "Bruno Lima"]);
+    assert.equal(payloads[0].paymentMethod, "cash");
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});

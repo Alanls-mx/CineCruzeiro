@@ -98,11 +98,12 @@ function ticketPrintContent(tickets = [], orders = [], cinemaName = "Cinema") {
     const format = printText(ticket.sessionFormat, 24);
     const room = printText(ticket.sessionRoom || "Sala", 30);
     const type = printText(ticket.ticketType || "Ingresso", 24);
+    const customerName = printText(ticket.customerName || "Cliente", 80);
     const code = printText(ticket.displayCode || ticketCodeService.displayCode(ticket), 42);
     const qrPayload = printText(ticket.displayQrPayload || ticketCodeService.qrPayload(code), 160);
     content += `{center}{b}${index + 1}/${normalized.length} - ${movie}{/b}{br}`;
     content += `${date} ${time}${format ? ` - ${format}` : ""}{br}`;
-    content += `${room}{br}${type}{br}{s}${code}{/s}{br}`;
+    content += `${room}{br}${type}{br}Cliente: ${customerName}{br}{s}${code}{/s}{br}`;
     content += `{qr}${qrPayload}{/qr}{br}--------------------------------{/center}{br}`;
   });
   if (concessions.length) {

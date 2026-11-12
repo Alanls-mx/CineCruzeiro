@@ -38,7 +38,7 @@ function buildAdminSessionSeatMap({ movie, session, room, tickets = [], orders =
           purchase: {
             orderId: order.id,
             orderReference: order.reference || order.publicReference || order.id,
-            customerName: order.saleMode === "quick" ? "Venda rápida" : order.customerName || ticket?.customerName || "Cliente não identificado",
+            customerName: ticket?.customerName || order.customerName || "Cliente não identificado",
             createdAt: order.createdAt || "",
             paidAt: order.paidAt || "",
             origin: order.origin || "",

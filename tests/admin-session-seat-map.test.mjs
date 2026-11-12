@@ -39,3 +39,13 @@ test("mapa oculta dados de compradores sem permissao", () => {
   assert.equal(map.rows[0].seats[0].purchase, undefined);
   assert.equal(map.rows[0].seats[1].purchase, undefined);
 });
+
+test("mapa da sessão mostra o nome do portador da venda rápida", () => {
+  const map = service.buildAdminSessionSeatMap({
+    ...input,
+    tickets: [{ ...input.tickets[0], customerName: "Ana Silva" }],
+    orders: [{ ...input.orders[0], saleMode: "quick", customerName: "Venda rápida de balcão" }],
+    showPurchaser: true
+  });
+  assert.equal(map.rows[0].seats[0].purchase.customerName, "Ana Silva");
+});

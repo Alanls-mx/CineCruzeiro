@@ -167,6 +167,7 @@ let state = {
   customerSearchTimer: null,
   customerSearchRequestId: 0,
   manualSaleItems: [],
+  manualAttendeeNamesBySession: {},
   manualConcessionQuantities: {},
   concessionCounterQuantities: {},
   concessionCounterSearch: "",
@@ -1590,11 +1591,22 @@ function updatePerformance(data = {}) {
 }
 
 const { renderSessions, changeMovieSessionsPage, renderSessionTicketTypeOptions, renderRoomOptions, closeSessionEditor, syncSessionCreationMode, renderSessionLinkedTickets, openSessionEditor, saveSession, removeSession } = window.CineAdminModules.movieSessionsView.createMovieSessionsView({
-  state, $, currentMovie, escapeHtml, globalSessionStatusLabel: (...args) => globalSessionStatusLabel(...args), money, sessionTicketTypes, trashIcon,
+  state, $, adminCan, currentMovie, escapeHtml, globalSessionStatusLabel: (...args) => globalSessionStatusLabel(...args), money, sessionTicketTypes, trashIcon,
   showToast, ticketStatusText, saveMovieWithAction: (...args) => saveMovieWithAction(...args), adminTodayKey: (...args) => adminTodayKey(...args), setMovieWizardStep,
   updateSessionScheduleSuggestion: (...args) => updateSessionScheduleSuggestion(...args), applySessionMutation, renderMovies, showSuccess, api,
   setDisabled, confirm, Option, document
 });
+
+function downloadSessionTicketList(sessionId) {
+  if (!adminCan("tickets.view")) { showToast("Sem permissão para consultar ingressos.", "error"); return; }
+  const link = document.createElement("a");
+  link.href = `${API_BASE}/api/admin/sessions/${encodeURIComponent(sessionId)}/manifest.pdf`;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast("Preparando lista da sessão em PDF.");
+}
 
 function sessionTicketTypes(session = {}) {
   const activeTypes = (state.content?.ticketTypes || []).filter((ticketType) => ticketType.active !== false);
@@ -1877,7 +1889,7 @@ const { defaultRoomSeatDraft, roomSeatAccessibilityLabel, roomSeatAccessibilityI
 
 
 
-const { adminTodayKey, globalSessionRoomKey, globalSessionDuration, sessionTimeMinutes, minutesAsSessionTime, suggestedSessionSchedule, updateSessionScheduleSuggestion, globalSessionTime, globalSessionEntries, globalSessionConflictMap, globalSessionStatusLabel, renderGlobalSessionOptions, renderGlobalSessions, roomForGlobalSession, sessionTicketRevenue, renderOngoingSessions } = window.CineAdminModules.sessionScheduleView.createSessionScheduleView({ state, $, adminAssetUrl, currentMovie, escapeHtml, money, openSessionSeatMap, renderAdminListPager });
+const { adminTodayKey, globalSessionRoomKey, globalSessionDuration, sessionTimeMinutes, minutesAsSessionTime, suggestedSessionSchedule, updateSessionScheduleSuggestion, globalSessionTime, globalSessionEntries, globalSessionConflictMap, globalSessionStatusLabel, renderGlobalSessionOptions, renderGlobalSessions, roomForGlobalSession, sessionTicketRevenue, renderOngoingSessions } = window.CineAdminModules.sessionScheduleView.createSessionScheduleView({ state, $, adminCan, adminAssetUrl, currentMovie, escapeHtml, money, openSessionSeatMap, renderAdminListPager });
 
 
 
@@ -2279,7 +2291,7 @@ const { manualRequestedSeatCount, manualSeatById, manualSeatColor, manualSeatOwn
   renderManualSaleSummary: (...args) => renderManualSaleSummary(...args)
 });
 
-const { manualConcessionItems, renderManualConcessions, manualTicketItems, manualSaleDraft, manualDraftSeatSelectionComplete, addManualSaleItem, removeManualSaleItem, clearManualSaleItems, renderManualSaleItems } = window.CineAdminModules.boxOfficeDraftView.createBoxOfficeDraftView({
+const { manualConcessionItems, renderManualConcessions, manualTicketItems, manualSaleDraft, manualDraftSeatSelectionComplete, addManualSaleItem, removeManualSaleItem, clearManualSaleItems, renderManualSaleItems, renderQuickSaleNames } = window.CineAdminModules.boxOfficeDraftView.createBoxOfficeDraftView({
   state: state,
   $: $,
   document: document,
@@ -2460,6 +2472,7 @@ function renderSaleMode() {
     $("manualCustomerPhone").value = "";
     $("manualCustomerCpf").value = "";
   }
+  renderQuickSaleNames();
   renderManualSaleSummary();
 }
 
@@ -2619,6 +2632,7 @@ function scheduleBoxOfficeCustomerSearch({ immediate = false } = {}) {
 }
 
 function updateManualTotal() {
+  renderQuickSaleNames();
   const concessionsById = new Map((state.content?.concessions || []).map((item) => [item.id, item]));
   const concessionsTotal = manualConcessionItems().reduce((sum, item) => sum + item.quantity * Number(concessionsById.get(item.id)?.price || 0), 0);
   if (state.manualSaleItems.length) {
@@ -3196,7 +3210,7 @@ function bindEvents() {
     openSessionEditor, printOrderTicket, printPhysicalTicket, removeSession, requestLocalPointPaymentPrint, resendOrderTicket, resendWebhookRun,
     resolvePendingSalePrint, restoreOrderAdmin, retryCrmDeadLetters, retryEmailCampaignFailures, retryPendingSalePrint, revealCommercialCatalogToken, scanNextTicket,
     selectAd, selectBoxOfficeCustomerById, selectClubPlan, selectConcession, selectCustomerAccount, selectPromotion, selectRoom,
-    selectTicket, selectUser, sendExistingEmailCampaign, setBoxOfficeTab, showChartHintFromPoint, showSessionTickets, showWebhookRun,
+    selectTicket, selectUser, sendExistingEmailCampaign, setBoxOfficeTab, showChartHintFromPoint, showSessionTickets, downloadSessionTicketList, showWebhookRun,
     testIntegration, toggleEmailCampaignMenu, toggleIntegration, toggleOrderMenu, updateClubSubscription, viewClubSubscription, viewEmailCampaignReport
   });
   window.CineAdminModules.bindAccountEvents.bindAccountEvents({

@@ -1,5 +1,5 @@
 ((root) => {
-  function createSessionScheduleView({ state, $, adminAssetUrl, currentMovie, escapeHtml, money, openSessionSeatMap, renderAdminListPager }) {
+  function createSessionScheduleView({ state, $, adminCan = () => false, adminAssetUrl, currentMovie, escapeHtml, money, openSessionSeatMap, renderAdminListPager }) {
     function adminTodayKey() {
       return state.content?.calendar?.today || new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
     }
@@ -216,6 +216,7 @@
             <div class="global-session-alert">${related.length ? `<strong>Conflito de horário</strong><small>${escapeHtml(conflictCopy)}</small>` : `<span>Horário livre</span>`}</div>
             <div class="global-session-actions">
               <button class="ghost-button" type="button" data-session-seat-map="${escapeHtml(entry.session.id)}">Mapa</button>
+              ${adminCan("tickets.view") ? `<button class="ghost-button" type="button" data-admin-session-action="manifest" data-admin-session-id="${escapeHtml(entry.session.id)}">Baixar lista PDF</button>` : ""}
               <button class="ghost-button" type="button" data-admin-session-action="global-edit" data-admin-movie-id="${escapeHtml(entry.movie.id)}" data-admin-session-id="${escapeHtml(entry.session.id)}">Editar</button>
             </div>
           </article>`;

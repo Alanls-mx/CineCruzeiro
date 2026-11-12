@@ -67,6 +67,8 @@ test("operador conclui venda rápida com ingresso e bomboniere pela interface do
   await page.getByRole("button", { name: "Adicionar filme à venda" }).click();
   await expect(page.locator("#manualSaleItems")).toContainText("Filme E2E");
   await expect(page.locator("#manualSaleItems")).toContainText("1× Ingresso Inteiro");
+  await expect(page.locator("#manualQuickSaleNamesSection")).toBeVisible();
+  await page.locator('[data-quick-attendee-session="sessao-e2e"][data-quick-attendee-index="0"]').fill("Cliente Presencial E2E");
   await page.getByRole("button", { name: "Finalizar venda rápida" }).click();
   await expect(page.getByText("Impressão confirmada. Os ingressos foram emitidos e ativados.")).toBeVisible({ timeout: 10000 });
 
@@ -80,7 +82,13 @@ test("operador conclui venda rápida com ingresso e bomboniere pela interface do
   expect(order).toBeTruthy();
   expect(order.status).toBe("paid");
   expect(order.concessionItems).toEqual(expect.arrayContaining([expect.objectContaining({ id: "pipoca-e2e", quantity: 1 })]));
-  expect(content.tickets.filter((ticket) => ticket.orderId === order.id)).toHaveLength(1);
+  const issuedTickets = content.tickets.filter((ticket) => ticket.orderId === order.id);
+  expect(issuedTickets).toHaveLength(1);
+  expect(issuedTickets[0].customerName).toBe("Cliente Presencial E2E");
+  const manifest = await request.get(`${BACKEND}/api/admin/sessions/sessao-e2e/manifest.pdf`);
+  expect(manifest.status()).toBe(200);
+  expect(manifest.headers()["content-type"]).toContain("application/pdf");
+  expect((await manifest.body()).toString("latin1")).toContain("Cliente Presencial E2E");
 });
 
 function connectSeatClient(ownerToken) {

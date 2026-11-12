@@ -5,16 +5,15 @@ function createTicketDocumentPdfService({
 }) {
   const __dirname = backendDir;
 function pdfText(value) {
-  const safe = String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\x20-\x7E]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
-  return `(${safe})`;
+  const safe = String(value ?? "").normalize("NFC").replace(/[\x00-\x1f\x7f]+/g, " ").replace(/\s+/g, " ").trim();
+  const punctuation = { "\u2013": "-", "\u2014": "-", "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2026": "..." };
+  return `(${Array.from(safe, (character) => {
+    const code = character.codePointAt(0);
+    if (character === "\\" || character === "(" || character === ")") return `\\${character}`;
+    if (code >= 32 && code <= 126) return character;
+    if (code >= 160 && code <= 255) return `\\${code.toString(8).padStart(3, "0")}`;
+    return punctuation[character] || "?";
+  }).join("")})`;
 }
 
 function pdfColor(hex) {
@@ -245,8 +244,8 @@ function buildPdf(pages, options = {}) {
     ]));
   });
 
-  objects.push(Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", "utf8"));
-  objects.push(Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>", "utf8"));
+  objects.push(Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", "utf8"));
+  objects.push(Buffer.from("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>", "utf8"));
 
   images.forEach((image) => {
     objects.push(Buffer.concat([
@@ -293,6 +292,7 @@ function ticketThermalPdf(db, tickets) {
     text(item.sessionFormat);
     text(`POLTRONA: ${item.seat}`, 14, true);
     text(item.ticketType || "Ingresso");
+    text(`CLIENTE: ${item.customerName || "Cliente"}`, 10, true);
     const qrSize = 120;
     content += pdfQr(item.displayQrPayload || item.qrPayload || item.code, 53, y - qrSize - 18, qrSize, 4);
     y -= qrSize + 45;
@@ -438,7 +438,7 @@ async function ticketDownloadPdf(db, ticket) {
   page2 += pdfWriteValueBlock("TIPO", enriched.ticketType || "Ingresso", 338, 538, { valueSize: 13, maxChars: 20, maxLines: 1 });
   page2 += pdfWriteValueBlock("SALA", enriched.sessionRoom || "Cine Cruzeiro", 338, 462, { valueSize: 11, maxChars: 28, maxLines: 2 });
   page2 += pdfWriteValueBlock("ASSENTO", seatLabel, 338, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
-  page2 += pdfWriteValueBlock("STATUS", ticketStatusLabel(enriched.status), 78, 390, { valueSize: 13, maxChars: 20, maxLines: 1 });
+  page2 += pdfWriteValueBlock("NOME", enriched.customerName || "Cliente", 78, 390, { valueSize: 11, maxChars: 30, maxLines: 2 });
   if (enriched.paymentSource === "subscription_credit") {
     page2 += pdfWriteValueBlock("ORIGEM", "Credito Clube", 338, 326, { valueSize: 11, maxChars: 24, maxLines: 1 });
   }

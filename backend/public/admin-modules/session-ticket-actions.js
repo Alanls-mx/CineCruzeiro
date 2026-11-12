@@ -1,5 +1,5 @@
 ((root) => {
-  function createSessionTicketActionHandler({ openSessionDashboardDetail, showSessionTickets, openSessionEditor, removeSession, openGlobalSessionEditor, copyTicketCode, openOrderView, openTicketSessionChange }) {
+  function createSessionTicketActionHandler({ openSessionDashboardDetail, showSessionTickets, downloadSessionTicketList, openSessionEditor, removeSession, openGlobalSessionEditor, copyTicketCode, openOrderView, openTicketSessionChange }) {
     return (event) => {
       const sessionAction = event.target.closest?.("[data-admin-session-action][data-admin-session-id]");
       if (sessionAction) {
@@ -7,6 +7,7 @@
         const movieId = sessionAction.dataset.adminMovieId;
         if (sessionAction.dataset.adminSessionAction === "dashboard") openSessionDashboardDetail(movieId, sessionId);
         else if (sessionAction.dataset.adminSessionAction === "tickets") showSessionTickets(sessionId);
+        else if (sessionAction.dataset.adminSessionAction === "manifest") downloadSessionTicketList(sessionId);
         else if (sessionAction.dataset.adminSessionAction === "edit") openSessionEditor(sessionId);
         else if (sessionAction.dataset.adminSessionAction === "remove") removeSession(sessionId);
         else if (sessionAction.dataset.adminSessionAction === "global-edit") openGlobalSessionEditor(movieId, sessionId);

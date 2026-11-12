@@ -19,6 +19,19 @@
         showToast("Selecione o usuário que receberá os ingressos.", "error");
         return;
       }
+      if (state.saleMode === "quick") {
+        for (const item of saleItems) {
+          const required = item.ticketSummary.reduce((sum, ticket) => sum + ticket.quantity * ticket.bundleQuantity, 0);
+          const names = state.manualAttendeeNamesBySession?.[item.sessionId] || item.attendeeNames || [];
+          const invalid = Array.from({ length: required }, (_, index) => String(names[index] || "").trim().replace(/\s+/g, " "))
+            .some((name) => name.length < 2 || name.length > 80 || !/\p{L}/u.test(name));
+          if (names.length !== required || invalid) {
+            showToast(`Informe o nome de cada um dos ${required} ingresso(s) de ${item.movieTitle}.`, "error");
+            document.querySelector("[data-quick-attendee-session]")?.focus();
+            return;
+          }
+        }
+      }
 
       const submitButton = $("manualSaleSubmitButton");
       try {
@@ -54,6 +67,7 @@
             movieId: item.movieId,
             sessionId: item.sessionId,
             ticketItems: item.ticketItems,
+            ...(saleMode === "quick" ? { attendeeNames: state.manualAttendeeNamesBySession?.[item.sessionId] || item.attendeeNames || [] } : {}),
             selectedSeatIds: item.selectedSeatIds || [],
             seatHoldToken: item.seatHoldToken || "",
             autoAssignSeats: false
@@ -78,6 +92,7 @@
         const result = await api("/api/box-office/sales", { method: "POST", body: JSON.stringify(payload) });
         const orders = result.orders || (result.order ? [result.order] : []);
         state.manualSaleItems = [];
+        state.manualAttendeeNamesBySession = {};
         state.manualConcessionQuantities = {};
         state.manualSelectedSeatIds = [];
         closeManualSeatRealtime();

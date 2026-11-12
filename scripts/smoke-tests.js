@@ -1042,6 +1042,7 @@ async function run() {
         sessionId: TEST_SEAT_SESSION_ID,
         ticketItems: [{ id: "promocional", quantity: 1 }],
         selectedSeatIds: [],
+        attendeeNames: ["Cliente Smoke"],
         autoAssignSeats: false,
         paymentMethod: "courtesy",
         saleMode: "quick"
@@ -1060,6 +1061,7 @@ async function run() {
         sessionId: TEST_SEAT_SESSION_ID,
         ticketItems: [{ id: "promocional", quantity: 1 }],
         selectedSeatIds: ["a3"],
+        attendeeNames: ["Cliente Smoke"],
         autoAssignSeats: false,
         paymentMethod: "courtesy",
         saleMode: "quick"
@@ -1077,6 +1079,7 @@ async function run() {
         ticketItems: [{ id: "promocional", quantity: 1 }],
         selectedSeatIds: ["a3"],
         seatHoldToken: adminSeatHoldToken,
+        attendeeNames: ["Cliente Smoke"],
         autoAssignSeats: false,
         paymentMethod: "courtesy",
         saleMode: "quick"
@@ -1093,6 +1096,7 @@ async function run() {
         sessionId: TEST_SEAT_SESSION_ID,
         ticketItems: [{ id: "promocional", quantity: 1 }],
         selectedSeatIds: ["a2"],
+        attendeeNames: ["Cliente Smoke"],
         autoAssignSeats: false,
         paymentMethod: "courtesy",
         saleMode: "quick"
@@ -1108,6 +1112,16 @@ async function run() {
     });
     assert.equal(confirmedSeatPrint.response.status, 200);
     assert.equal(confirmedSeatPrint.payload.completed, true);
+    const manifestPath = `/api/admin/sessions/${encodeURIComponent(TEST_SEAT_SESSION_ID)}/manifest.pdf`;
+    const anonymousManifest = await fetch(`${BASE_URL}${manifestPath}`);
+    assert.equal(anonymousManifest.status, 401);
+    const sessionManifest = await fetch(`${BASE_URL}${manifestPath}`, { headers: { Cookie: adminCookie } });
+    assert.equal(sessionManifest.status, 200);
+    assert.match(sessionManifest.headers.get("content-type") || "", /application\/pdf/);
+    assert.match(sessionManifest.headers.get("content-disposition") || "", /attachment/);
+    const manifestBytes = Buffer.from(await sessionManifest.arrayBuffer());
+    assert.match(manifestBytes.toString("latin1"), /^%PDF-1\.4/);
+    assert.match(manifestBytes.toString("latin1"), /Cliente Smoke/);
 
     const raceSeatSale = () => request("/api/box-office/sales", {
       method: "POST",
@@ -1115,7 +1129,7 @@ async function run() {
       body: JSON.stringify({
         movieId: TEST_SEAT_MOVIE_ID, sessionId: TEST_SEAT_SESSION_ID,
         ticketItems: [{ id: "promocional", quantity: 1 }], selectedSeatIds: ["b1"],
-        autoAssignSeats: false, paymentMethod: "courtesy", saleMode: "quick"
+        autoAssignSeats: false, paymentMethod: "courtesy", saleMode: "quick", attendeeNames: ["Cliente Smoke"]
       })
     });
     const competingSeatSales = await Promise.all([raceSeatSale(), raceSeatSale()]);
@@ -2231,6 +2245,7 @@ async function run() {
         movieId: TEST_MOVIE_ID,
         sessionId: TEST_SESSION_ID,
         ticketItems: [{ id: "meia", quantity: 1 }],
+        attendeeNames: ["Cliente Smoke"],
         saleMode: "quick",
         paymentMethod: "cash"
       })
@@ -2245,6 +2260,7 @@ async function run() {
         movieId: TEST_MOVIE_ID,
         sessionId: TEST_SESSION_ID,
         ticketItems: [{ id: "promocional", quantity: 2 }],
+        attendeeNames: ["Ana Smoke", "Bruno Smoke"],
         concessionItems: [{ id: "combo-classico", quantity: 1 }],
         saleMode: "quick",
         paymentMethod: "cash"
@@ -2365,6 +2381,13 @@ async function run() {
       "A validacao deve estar persistida quando HTTP 200 for recebido."
     );
 
+    const missingAttendeeSale = await request("/api/box-office/sales", {
+      method: "POST", headers: jsonHeaders(adminCookie),
+      body: JSON.stringify({ movieId: TEST_MOVIE_ID, sessionId: TEST_SESSION_ID, ticketItems: [{ id: "triple-smoke", quantity: 1 }], saleMode: "quick", paymentMethod: "cash", attendeeNames: ["Nome Incompleto"] })
+    });
+    assert.equal(missingAttendeeSale.response.status, 422);
+    assert.equal(missingAttendeeSale.payload.error.code, "BOX_OFFICE_ATTENDEE_NAMES_INVALID");
+
     const bundledTicketSale = await request("/api/box-office/sales", {
       method: "POST",
       headers: jsonHeaders(adminCookie),
@@ -2372,6 +2395,7 @@ async function run() {
         movieId: TEST_MOVIE_ID,
         sessionId: TEST_SESSION_ID,
         ticketItems: [{ id: "triple-smoke", quantity: 2 }],
+        attendeeNames: ["Ana Smoke", "Bruno Smoke", "Carla Smoke", "Davi Smoke", "Eva Smoke", "Fabio Smoke"],
         saleMode: "quick",
         paymentMethod: "cash"
       })
@@ -2382,6 +2406,9 @@ async function run() {
     assert.equal(bundledTicketSale.payload.order.ticketItems[0].ticketQuantity, 6);
     assert.equal(bundledTicketSale.payload.tickets.length, 6);
     assert.ok(bundledTicketSale.payload.tickets.every((ticket) => ticket.ticketType === "Triple Ingresso"));
+    assert.deepEqual(bundledTicketSale.payload.tickets.map((ticket) => ticket.customerName), ["Ana Smoke", "Bruno Smoke", "Carla Smoke", "Davi Smoke", "Eva Smoke", "Fabio Smoke"]);
+    const persistedBundledTickets = (await readPersistedDb()).orders.find((order) => order.id === bundledTicketSale.payload.order.id)?.pendingPrintTickets || [];
+    assert.deepEqual(persistedBundledTickets.map((ticket) => ticket.customerName), ["Ana Smoke", "Bruno Smoke", "Carla Smoke", "Davi Smoke", "Eva Smoke", "Fabio Smoke"]);
 
     const adminLogs = await request("/api/admin/logs?page=1&pageSize=10", { headers: jsonHeaders(adminCookie) });
     assert.equal(adminLogs.response.status, 200);
@@ -2430,6 +2457,7 @@ async function run() {
       body: JSON.stringify({
         movieId: TEST_MOVIE_ID,
         sessionId: TEST_EXPIRED_SESSION_ID,
+        attendeeNames: ["Cliente Smoke"],
         ticketItems: [{ id: "promocional", quantity: 1 }],
         saleMode: "quick",
         paymentMethod: "cash"
@@ -2447,6 +2475,7 @@ async function run() {
         fullTicketsCount: 1,
         halfTicketsCount: 0,
         saleMode: "quick",
+        attendeeNames: ["Cliente Smoke"],
         paymentMethod: "cash"
       })
     });
@@ -2884,6 +2913,7 @@ async function run() {
       fullTicketsCount: 1,
       halfTicketsCount: 0,
       saleMode: "quick",
+      attendeeNames: ["Cliente Smoke"],
       paymentMethod: "point_debit",
       clientRequestId: key
     });
