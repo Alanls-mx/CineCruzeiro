@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { createHash } from "node:crypto";
 import { Ticket } from "lucide-react";
 import { HomeTrailerButton } from "@/components/HomeTrailerButton";
+import { HomeConcessionBanner } from "@/components/HomeConcessionBanner";
 import { MovieTagBadge } from "@/components/MovieTagBadge";
 import { MovieMetadata } from "@/components/MovieMetadata";
 import { SiteFooter, SiteHeader } from "@/components/SiteHeader";
@@ -11,6 +12,7 @@ import { CinemaContent } from "@/services/cinemaApi";
 import { homeFeaturedMovie, loadHomeContent } from "@/services/homeContent";
 import { Movie } from "@/types";
 import { isUploadedAsset, movieSlug, money } from "@/utils/cinema";
+import { concessionCampaignSlides } from "@/utils/concessionCampaign";
 import { normalizeMovieTag } from "@/utils/movieTags";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +63,9 @@ export default async function HomePage() {
     <div className="min-h-screen bg-[#060a12] text-white">
       <SiteHeader settings={content?.settings} />
       <main>
+        {content && String(process.env.NEXT_PUBLIC_CINEMA_SLUG || "cinecruzeiro").toLowerCase() === "cinecruzeiro" && (
+          <HomeConcessionBanner slides={concessionCampaignSlides(content)} />
+        )}
         {content && featured ? (
           <>
             <section className="relative overflow-hidden">

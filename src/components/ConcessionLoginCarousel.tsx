@@ -4,20 +4,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fetchCinemaContent } from "@/services/cinemaApi";
 import { assetPath } from "@/utils/cinema";
+import { concessionCampaignSlides, type ConcessionCampaignSlide } from "@/utils/concessionCampaign";
 import styles from "./ConcessionLoginCarousel.module.css";
-
-const ARTWORKS = [
-  { id: "combo-classico", name: "Combo Clássico", price: 25, file: "combo-classico.webp" },
-  { id: "pipoca-grande", name: "Pipoca Grande", price: 18, file: "pipoca-grande.webp" },
-  { id: "combo-familia", name: "Combo Família", price: 42, file: "combo-familia.webp" },
-  { id: "nachos-queijo", name: "Nachos com Queijo", price: 17, file: "nachos-queijo.webp" },
-];
-
-type Slide = (typeof ARTWORKS)[number] & {
-  badge?: string;
-  savings?: number;
-  offerEndsAt?: string;
-};
 
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
@@ -29,7 +17,7 @@ function offerDeadline(value?: string) {
 }
 
 export function ConcessionLoginCarousel() {
-  const [slides, setSlides] = useState<Slide[]>([]);
+  const [slides, setSlides] = useState<ConcessionCampaignSlide[]>([]);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -41,14 +29,7 @@ export function ConcessionLoginCarousel() {
     fetchCinemaContent()
       .then((content) => {
         if (!active) return;
-        setSlides(ARTWORKS.flatMap((art) => {
-          const product = content.concessions.find((item) => item.id === art.id && item.active !== false && Number(item.price) === art.price);
-          if (!product) return [];
-          const compareAt = Number(product.compareAt || 0);
-          const savings = compareAt > product.price ? compareAt - product.price : undefined;
-          const offer = content.promotions.find((item) => item.active !== false && !item.couponCode && String(item.concessionId || item.productId || "") === product.id);
-          return [{ ...art, badge: product.badge, savings, offerEndsAt: typeof offer?.endsAt === "string" ? offer.endsAt : undefined }];
-        }));
+        setSlides(concessionCampaignSlides(content));
       })
       .catch(() => {});
     return () => { active = false; };
